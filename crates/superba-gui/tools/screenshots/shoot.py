@@ -389,12 +389,18 @@ class Session:
             time.sleep(6)
 
     def fixtures(self):
-        """A router request log and session names (fixtures.py), in this HOME only."""
-        p = self.run([sys.executable, "-I", str(HERE / "fixtures.py"),
-                      "--data-dir", str(self.home / ".local/share/superba"),
-                      "--codex-home", str(self.home / ".codex"),
-                      "--upstream", f"127.0.0.1:{self.ports['overseas']}",
-                      "--line-host", f"cn-fast=127.0.0.1:{self.ports['cn-fast']}"])
+        """A router request log and session names (fixtures.py), in this HOME only.
+        With a desktop app its Codex creates the state database first: the app
+        cannot open a hand-made one (fixtures.py)."""
+        argv = [sys.executable, "-I", str(HERE / "fixtures.py"),
+                "--data-dir", str(self.home / ".local/share/superba"),
+                "--codex-home", str(self.home / ".codex"),
+                "--upstream", f"127.0.0.1:{self.ports['overseas']}",
+                "--line-host", f"cn-fast=127.0.0.1:{self.ports['cn-fast']}"]
+        codex = self.app_dir() / "resources" / "codex"
+        if self.args.app_dir and codex.exists():
+            argv += ["--codex", str(codex)]
+        p = self.run(argv)
         log(f"fixtures: {p.stdout.strip()}")
         data = self.home / ".local/share/superba"
         if self.args.no_router_log:

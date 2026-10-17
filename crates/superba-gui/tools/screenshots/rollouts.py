@@ -25,12 +25,19 @@ Everything is synthetic: no prompt or answer text, no keys, loopback only.
 """
 
 import argparse
+import importlib.util
 import json
 import random
 import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+# `insert_threads` (rows that fit the table, Codex's own or the minimal one).
+_spec = importlib.util.spec_from_file_location("fixtures", HERE / "fixtures.py")
+fixtures = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(fixtures)
 
 # The router log's sessions (fixtures.py SESSIONS) and one direct-only session.
 ROUTER_THREADS = [
@@ -134,6 +141,7 @@ class Rollout:
         d.mkdir(parents=True, exist_ok=True)
         name = f"rollout-{day.strftime('%Y-%m-%dT%H-%M-%S')}-{self.thread}.jsonl"
         (d / name).write_text("".join(self.lines))
+        return d / name
 
 
 def router_requests(data_dir):
@@ -222,20 +230,14 @@ def main(argv=None):
     r.turn(t, [(0, 2400, 31_000, 29_800, 210)])
     r.turn(t + 6 * 60_000, [], end="failed")
     r.turn(t + 12 * 60_000, [], end="stopped")
-    r.write(sessions, start)
+    rollout = r.write(sessions, start)
     written += 1
     # Its name in state_5.sqlite (fixtures.py writes the others).
-    db = Path(args.codex_home) / "state_5.sqlite"
+    db = Path(args.codex_home) / fixtures.STATE_DB
     if db.exists():
-        conn = sqlite3.connect(db)
-        created = start // 1000
-        conn.execute(
-            "INSERT OR REPLACE INTO threads (id, rollout_path, created_at, updated_at, source,"
-            " model_provider, cwd, title, first_user_message) VALUES (?,?,?,?,?,?,?,?,?)",
-            (thread, None, created, created + 1800, "vscode", "openai", "/tmp/project", title,
-             title))
-        conn.commit()
-        conn.close()
+        row = fixtures.thread_row(thread, title, start // 1000)
+        row["rollout_path"] = str(rollout)
+        fixtures.insert_threads(db, [row])
     moved = backdate_state(args.data_dir, args.now) if args.backdate_state and args.data_dir else 0
     print(f"{written} rollouts, router log {'mirrored' if routed is not None else 'absent'}, "
           f"{moved} generations backdated")

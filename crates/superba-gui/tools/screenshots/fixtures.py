@@ -11,7 +11,13 @@ Writes, into an isolated home only:
   newest rows show the Timing tab with a first event that arrived together with
   the response headers and with a normal one;
 - `<CODEX_HOME>/state_5.sqlite`: a Codex `threads` table whose ids are the
-  sessions' `prompt_cache_key`s, so the log shows session names.
+  sessions' `prompt_cache_key`s, so the log shows session names. With `--codex`
+  the database is Codex's own (that Codex creates and migrates it first, see
+  `codex_state_db`), so a desktop app started on this home later can open it; a
+  hand-made `threads` table makes Codex fail its first migration ("failed to
+  initialize sqlite state runtime"), and desktop app 26.1007 then never opens its
+  window. Without `--codex` (no app will run on this home) the table is a minimal
+  one.
 
 Everything is synthetic: no prompt text beyond short neutral titles, no keys,
 no hosts other than loopback. Deterministic for a given `now`.
@@ -22,13 +28,19 @@ the last line tried is known), and a custom site with its single line.
 
     python3 -I fixtures.py --data-dir HOME/.local/share/superba \\
         --codex-home HOME/.codex --upstream 127.0.0.1:PORT \\
-        [--line-host LINE=HOST:PORT ...] [--now EPOCH_MS]
+        [--line-host LINE=HOST:PORT ...] [--codex APP/resources/codex] [--now EPOCH_MS]
+
+Other scripts load this file (importlib) for `insert_threads`.
 """
 
 import argparse
 import json
+import os
+import queue
 import random
 import sqlite3
+import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -404,41 +416,149 @@ def write_usage(data_dir, now_ms, upstream):
     return len(rows)
 
 
-def write_threads(codex_home, now_ms):
-    db = Path(codex_home) / "state_5.sqlite"
-    db.parent.mkdir(parents=True, exist_ok=True)
+STATE_DB = "state_5.sqlite"
+
+# A minimal `threads` table (what Superba reads), only for a home no Codex opens.
+MINIMAL_THREADS = """
+CREATE TABLE IF NOT EXISTS threads (
+  id TEXT PRIMARY KEY,
+  rollout_path TEXT,
+  created_at INTEGER,
+  updated_at INTEGER,
+  source TEXT,
+  model_provider TEXT,
+  cwd TEXT,
+  title TEXT,
+  first_user_message TEXT,
+  archived INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+# Values for required columns of Codex's own `threads` table that a fixture row
+# does not give (Codex's migration tests write the same two).
+THREAD_DEFAULTS = {"rollout_path": "", "sandbox_policy": "read-only",
+                   "approval_mode": "on-request"}
+
+
+def made_by_codex(db):
+    """True when `db` is a state database Codex created (it records its
+    migrations in `_sqlx_migrations`)."""
+    if not Path(db).exists():
+        return False
     conn = sqlite3.connect(db)
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS threads (
-          id TEXT PRIMARY KEY,
-          rollout_path TEXT,
-          created_at INTEGER,
-          updated_at INTEGER,
-          source TEXT,
-          model_provider TEXT,
-          cwd TEXT,
-          title TEXT,
-          first_user_message TEXT,
-          archived INTEGER NOT NULL DEFAULT 0
-        );
-    """)
-    dashboard = [(t[0], t[1], t[7]) for t in DASHBOARD_SESSIONS] + week_threads(now_ms)
-    for thread, title, first in dashboard:
-        created = (now_ms // 1000) - first * 60
+    try:
+        return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
+                            " AND name = '_sqlx_migrations'").fetchone() is not None
+    finally:
+        conn.close()
+
+
+def codex_state_db(codex, codex_home, timeout=60):
+    """Let `codex` create and migrate CODEX_HOME's state database: `codex
+    app-server` opens it at start, before it answers `initialize`; it is then
+    stopped (end of input, else by PID). A database not made by Codex is
+    replaced. Leaves Codex's other start-up files (installation id, logs) in
+    CODEX_HOME, as any Codex would."""
+    home = Path(codex_home)
+    home.mkdir(parents=True, exist_ok=True)
+    for name in (STATE_DB, STATE_DB + "-wal", STATE_DB + "-shm"):
+        (home / name).unlink(missing_ok=True)
+    env = dict(os.environ, CODEX_HOME=str(home))
+    p = subprocess.Popen([str(codex), "app-server"], stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=home,
+                         text=True)
+    messages = queue.Queue()
+    errors = []
+
+    def read_stdout():
+        for line in p.stdout:
+            try:
+                messages.put(json.loads(line))
+            except ValueError:
+                pass
+        messages.put(None)
+
+    def read_stderr():
+        for line in p.stderr:
+            errors.append(line.rstrip())
+            del errors[:-20]
+
+    threading.Thread(target=read_stdout, daemon=True).start()
+    threading.Thread(target=read_stderr, daemon=True).start()
+    try:
+        p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "clientInfo": {"name": "superba-screenshots", "version": "1"}}}) + "\n")
+        p.stdin.flush()
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                msg = messages.get(timeout=max(0.1, deadline - time.monotonic()))
+            except queue.Empty:
+                raise SystemExit(f"{codex} app-server did not answer initialize in {timeout} s")
+            if msg is None:
+                p.wait()
+                raise SystemExit(f"{codex} app-server exited ({p.returncode}): "
+                                 + " / ".join(errors))
+            if isinstance(msg, dict) and msg.get("id") == 1:
+                if "error" in msg:
+                    raise SystemExit(f"{codex} app-server: initialize failed: {msg['error']}")
+                break
+    finally:
+        p.stdin.close()
+        try:
+            p.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+    if not made_by_codex(home / STATE_DB):
+        raise SystemExit(f"{codex} app-server left no state database in {home}")
+
+
+def insert_threads(db, rows):
+    """Insert or replace `rows` (dicts of `threads` columns) in the `threads`
+    table of `db`, creating the minimal table when there is none. Only the
+    columns the table has are written; Codex's required ones a row leaves out
+    get THREAD_DEFAULTS, or an empty value of their type."""
+    conn = sqlite3.connect(db)
+    conn.executescript(MINIMAL_THREADS)
+    columns = conn.execute("PRAGMA table_info(threads)").fetchall()
+    for row in rows:
+        values = {}
+        for _cid, name, kind, notnull, default, pk in columns:
+            value = row.get(name)
+            if value is None and notnull and default is None and not pk:
+                value = THREAD_DEFAULTS.get(
+                    name, 0 if "INT" in (kind or "").upper() else "")
+            if value is not None:
+                values[name] = value
         conn.execute(
-            "INSERT OR REPLACE INTO threads (id, rollout_path, created_at, updated_at, source,"
-            " model_provider, cwd, title, first_user_message) VALUES (?,?,?,?,?,?,?,?,?)",
-            (thread, None, created, created + 1800, "vscode", "openai", "/tmp/project", title,
-             title))
-    for index, (thread, title, *_rest) in enumerate(SESSIONS):
-        created = (now_ms // 1000) - (len(SESSIONS) - index) * 5 * 3600
-        conn.execute(
-            "INSERT OR REPLACE INTO threads (id, rollout_path, created_at, updated_at, source,"
-            " model_provider, cwd, title, first_user_message) VALUES (?,?,?,?,?,?,?,?,?)",
-            (thread, None, created, created + 1800, "vscode", "openai", "/tmp/project", title,
-             title))
+            f"INSERT OR REPLACE INTO threads ({', '.join(values)})"
+            f" VALUES ({', '.join('?' for _ in values)})", tuple(values.values()))
     conn.commit()
     conn.close()
+
+
+def thread_row(thread, title, created):
+    """A `threads` row of a session (VS Code source, like the desktop app's)."""
+    return {"id": thread, "created_at": created, "updated_at": created + 1800,
+            "created_at_ms": created * 1000, "updated_at_ms": (created + 1800) * 1000,
+            "source": "vscode", "model_provider": "openai", "cwd": "/tmp/project",
+            "title": title, "first_user_message": title}
+
+
+def write_threads(codex_home, now_ms, codex=None):
+    db = Path(codex_home) / STATE_DB
+    db.parent.mkdir(parents=True, exist_ok=True)
+    if codex and not made_by_codex(db):
+        codex_state_db(codex, codex_home)
+    rows = []
+    dashboard = [(t[0], t[1], t[7]) for t in DASHBOARD_SESSIONS] + week_threads(now_ms)
+    for thread, title, first in dashboard:
+        rows.append(thread_row(thread, title, (now_ms // 1000) - first * 60))
+    for index, (thread, title, *_rest) in enumerate(SESSIONS):
+        rows.append(thread_row(thread, title,
+                               (now_ms // 1000) - (len(SESSIONS) - index) * 5 * 3600))
+    insert_threads(db, rows)
 
 
 def main(argv=None):
@@ -450,6 +570,8 @@ def main(argv=None):
                     help="host:port of every line without its own --line-host")
     ap.add_argument("--line-host", action="append", default=[], metavar="LINE=HOST:PORT",
                     help="upstream host:port of one line (cn-fast, overseas or default)")
+    ap.add_argument("--codex", help="Codex binary that creates the state database first "
+                    "(the desktop app's resources/codex when an app runs on this home)")
     ap.add_argument("--now", type=int, default=int(time.time() * 1000))
     args = ap.parse_args(argv)
     known = {line for _, lines in PROVIDERS.values() for line, _ in lines}
@@ -459,7 +581,7 @@ def main(argv=None):
             ap.error(f"--line-host {spec}: expected one of {sorted(known)}=HOST:PORT")
         LINE_HOSTS[line] = host
     n = write_usage(args.data_dir, args.now, args.upstream)
-    write_threads(args.codex_home, args.now)
+    write_threads(args.codex_home, args.now, args.codex)
     print(json.dumps({"requests": n, "sessions": len(SESSIONS)}))
 
 
