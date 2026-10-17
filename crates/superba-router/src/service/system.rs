@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -18,13 +18,8 @@ pub struct SystemRunner;
 
 impl CommandRunner for SystemRunner {
     fn run(&self, program: &str, args: &[OsString]) -> io::Result<CommandOutput> {
-        let mut command = Command::new(program);
+        let mut command = superba_core::process::command(program);
         command.args(args).stdin(Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
         let output = command.output()?;
         Ok(CommandOutput {
             code: output.status.code(),
@@ -54,7 +49,7 @@ impl CommandRunner for SystemRunner {
             use std::os::unix::fs::PermissionsExt;
             log.set_permissions(fs::Permissions::from_mode(0o600))?;
         }
-        let mut command = Command::new(exe);
+        let mut command = superba_core::process::command(exe);
         command.args(args).envs(env.iter().map(|(k, v)| (k, v)));
         command
             .stdin(Stdio::null())
@@ -65,11 +60,7 @@ impl CommandRunner for SystemRunner {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0000_0200 | 0x0800_0000);
-        }
+        superba_core::process::no_window_new_group(&mut command);
         let mut child = command.spawn()?;
         let pid = child.id();
         std::thread::spawn(move || {

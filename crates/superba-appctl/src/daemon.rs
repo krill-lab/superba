@@ -44,7 +44,7 @@ async fn run(
     home: &CodexHome,
     timeout: Duration,
 ) -> Result<std::process::Output> {
-    let mut cmd = tokio::process::Command::new(binary);
+    let mut cmd = tokio::process::Command::from(superba_core::process::command(binary));
     cmd.args(args)
         .env(superba_core::codex::ENV_CODEX_HOME, home.root())
         .stdin(std::process::Stdio::null())

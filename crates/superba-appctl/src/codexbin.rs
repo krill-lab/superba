@@ -65,7 +65,7 @@ pub async fn debug_models(
         .prefix("superba-codex-home-")
         .tempdir()
         .map_err(|e| Error::io(std::env::temp_dir(), &e))?;
-    let mut cmd = tokio::process::Command::new(binary);
+    let mut cmd = tokio::process::Command::from(superba_core::process::command(binary));
     cmd.args(debug_models_args(catalog))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

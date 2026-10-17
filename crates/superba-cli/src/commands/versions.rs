@@ -336,7 +336,7 @@ fn open_installer(path: &std::path::Path, out: &mut Output) -> superba_core::Res
     } else {
         "xdg-open"
     };
-    match std::process::Command::new(program).arg(path).spawn() {
+    match superba_core::process::command(program).arg(path).spawn() {
         Ok(_) => out.line(text("cli.versions.opened")),
         Err(_) => out.line(text("cli.versions.open_failed")),
     }

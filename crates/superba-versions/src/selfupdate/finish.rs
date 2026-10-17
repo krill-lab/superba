@@ -150,7 +150,7 @@ fn log_line(args: &FinishArgs, line: &str) {
 
 /// Start the second stage detached from this process.
 pub fn spawn(plan: &FinishPlan) -> Result<()> {
-    let mut cmd = Command::new(&plan.exe);
+    let mut cmd = superba_core::process::command(&plan.exe);
     cmd.args(plan.args.to_args())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -169,10 +169,9 @@ fn detach(cmd: &mut Command) {
 
 #[cfg(windows)]
 fn detach(cmd: &mut Command) {
-    use std::os::windows::process::CommandExt;
     // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP (CREATE_NO_WINDOW is ignored together
     // with DETACHED_PROCESS, and a detached child has no console anyway).
-    cmd.creation_flags(0x0000_0008 | 0x0000_0200);
+    superba_core::process::detach(cmd);
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -221,7 +220,7 @@ pub fn run(args: &FinishArgs) -> Result<()> {
         });
         if let Some(dir) = dir {
             let spb = dir.join(apply::bin_name("spb", platform.os));
-            let status = Command::new(&spb)
+            let status = superba_core::process::command(&spb)
                 .args(["self-update", "restart-router"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -236,11 +235,11 @@ pub fn run(args: &FinishArgs) -> Result<()> {
 
 fn relaunch(args: &FinishArgs) {
     let mut cmd = if let Some(app) = &args.open_app {
-        let mut c = Command::new("open");
+        let mut c = superba_core::process::command("open");
         c.arg(app);
         c
     } else if let Some(exe) = &args.relaunch {
-        Command::new(exe)
+        superba_core::process::command(exe)
     } else {
         return;
     };

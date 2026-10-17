@@ -2,7 +2,6 @@
 //! clones; blobs are fetched on demand) or a plain checkout directory.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use superba_catalog::format::sources;
@@ -83,7 +82,7 @@ impl GitRepo {
 
     fn git(&self, args: &[&str]) -> Result<Vec<u8>> {
         // No automatic `git gc` from on-demand blob fetches in a shared clone.
-        let out = Command::new("git")
+        let out = superba_core::process::command("git")
             .args(["-c", "gc.auto=0", "-C"])
             .arg(&self.path)
             .args(args)
@@ -189,7 +188,7 @@ pub fn read_checkout(root: &Path, tag: &str) -> Result<SourceFiles> {
     for path in sources::ALL {
         let p = root.join(path);
         let text = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
-        let blob = Command::new("git")
+        let blob = superba_core::process::command("git")
             .args(["hash-object", "--no-filters"])
             .arg(&p)
             .output()
@@ -202,7 +201,7 @@ pub fn read_checkout(root: &Path, tag: &str) -> Result<SourceFiles> {
             blobs.push((path.to_owned(), blob));
         }
     }
-    let commit = Command::new("git")
+    let commit = superba_core::process::command("git")
         .arg("-C")
         .arg(root)
         .args(["rev-parse", "HEAD"])

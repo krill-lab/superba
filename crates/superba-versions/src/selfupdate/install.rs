@@ -192,7 +192,7 @@ impl SelfUpdater {
                 message: "the package holds no spb".into(),
             });
         }
-        let out = std::process::Command::new(&spb)
+        let out = superba_core::process::command(&spb)
             .arg("--version")
             .stdin(std::process::Stdio::null())
             .output()

@@ -331,9 +331,8 @@ impl RemoteShell for SystemSsh {
         timeout: Duration,
     ) -> Result<ScriptOutput> {
         let args = ssh_args(&host.ssh, self.connect_timeout_secs)?;
-        let mut cmd = tokio::process::Command::new(&self.program);
+        let mut cmd = tokio::process::Command::from(superba_core::process::command(&self.program));
         cmd.args(&self.extra_args).args(&args);
-        no_console_window(&mut cmd);
         let out = run_with_stdin(cmd, script.as_bytes(), timeout, &host.label).await?;
         if out.is_ssh_failure() {
             return Err(Error::Ssh {
@@ -352,9 +351,8 @@ impl RemoteShell for SystemSsh {
         timeout: Duration,
     ) -> Result<ScriptOutput> {
         let args = ssh_payload_args(&host.ssh, self.connect_timeout_secs)?;
-        let mut cmd = tokio::process::Command::new(&self.program);
+        let mut cmd = tokio::process::Command::from(superba_core::process::command(&self.program));
         cmd.args(&self.extra_args).args(&args);
-        no_console_window(&mut cmd);
         let input = Input {
             prefix: payload_prefix(script),
             file: Some(payload.to_path_buf()),
@@ -369,16 +367,6 @@ impl RemoteShell for SystemSsh {
         Ok(out)
     }
 }
-
-/// Windows only: keep the GUI from flashing a console window for each ssh call.
-#[cfg(target_os = "windows")]
-fn no_console_window(cmd: &mut tokio::process::Command) {
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    cmd.creation_flags(CREATE_NO_WINDOW);
-}
-
-#[cfg(not(target_os = "windows"))]
-fn no_console_window(_cmd: &mut tokio::process::Command) {}
 
 /// What a run writes to the child's stdin: `prefix`, then the bytes of `file`.
 #[derive(Debug, Default)]
@@ -564,7 +552,7 @@ impl RemoteShell for LocalShell {
 
 impl LocalShell {
     fn command(&self) -> tokio::process::Command {
-        let mut cmd = tokio::process::Command::new("/bin/sh");
+        let mut cmd = tokio::process::Command::from(superba_core::process::command("/bin/sh"));
         cmd.env_clear();
         cmd.env("HOME", &self.home);
         cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin");

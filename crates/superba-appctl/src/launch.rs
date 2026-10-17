@@ -269,7 +269,9 @@ pub fn spawn(spec: &LaunchSpec, install: &AppInstall, log: Option<&Path>) -> Res
 
 #[cfg(not(target_os = "macos"))]
 fn configure_command(spec: &LaunchSpec, log: Option<&Path>) -> std::process::Command {
-    let mut cmd = std::process::Command::new(&spec.program);
+    // Detached (see `process::detached_command`): the app is a GUI program that must
+    // outlive us; it has no console window to hide.
+    let mut cmd = superba_core::process::detached_command(&spec.program);
     cmd.args(&spec.args);
     for k in &spec.env_remove {
         cmd.env_remove(k);
@@ -349,7 +351,6 @@ mod imp {
     //! LaunchServices gives the app its own TCC responsibility. Native launch
     //! and privacy behavior must be checked on macOS; argv/PID selection are pure.
     use std::path::Path;
-    use std::process::Command;
     use std::time::{Duration, Instant};
 
     use superba_core::{AppInstall, Error, Result, Timestamp};
@@ -367,7 +368,7 @@ mod imp {
             .map(|e| e.pid)
             .collect();
         let executable = norm_path(&spec.program);
-        let mut cmd = Command::new("/usr/bin/open");
+        let mut cmd = superba_core::process::command("/usr/bin/open");
         cmd.args(macos_open_argv(
             &install.path,
             &spec.env_set,
@@ -426,15 +427,11 @@ mod imp {
     //! Windows: MSIX activation through COM, direct spawn otherwise. Not exercised
     //! in CI (Linux); kept small. Environment variables cannot be passed to an
     //! activated package.
-    use std::os::windows::process::CommandExt;
     use std::path::Path;
 
     use superba_core::{AppInstall, Error, Result};
 
     use super::{LaunchSpec, Spawned, configure_command, spawn_direct};
-
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
     fn aumid(install: &AppInstall) -> Option<String> {
         // MSIX installs carry their package family name as id
@@ -498,9 +495,8 @@ mod imp {
             let pid = activate(&id, &spec.args)?;
             return Ok(Spawned { pid: Some(pid) });
         }
-        let mut cmd = configure_command(spec, log);
-        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
-        spawn_direct(cmd)
+        // `configure_command` applies DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP.
+        spawn_direct(configure_command(spec, log))
     }
 }
 

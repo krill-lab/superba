@@ -113,7 +113,7 @@ pub fn features_list(
     config: Option<&str>,
     cache_dir: &std::path::Path,
 ) -> Result<superba_core::settings::FeaturesList> {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     use std::time::{Duration, Instant};
 
     let home = cache_dir.join(format!("features-list-{}", std::process::id()));
@@ -140,7 +140,7 @@ pub fn features_list(
             let _ = std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600));
         }
     }
-    let mut child = Command::new(binary)
+    let mut child = superba_core::process::command(binary)
         .args(["features", "list"])
         .env("CODEX_HOME", &home)
         .env_remove("CODEX_SQLITE_HOME")

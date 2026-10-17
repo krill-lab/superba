@@ -46,7 +46,7 @@ pub fn version_of(exe: &Path) -> Option<CodexVersion> {
         return None;
     }
     let spawn = || {
-        std::process::Command::new(exe)
+        superba_core::process::command(exe)
             .arg("--version")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())

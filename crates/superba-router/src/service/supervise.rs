@@ -1,7 +1,7 @@
 //! A small self-supervisor for platforms without a persistent service manager.
 
 use std::io;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -218,18 +218,13 @@ pub fn supervise(spec: &ServiceSpec, stop: &AtomicBool) -> Result<SuperviseEnd> 
     }
     atomic_write(&spec.pid_file, &format!("{our_pid}\n"), 0o600)?;
     let mut spawn = || -> io::Result<Box<dyn SupervisedChild>> {
-        let mut command = Command::new(&spec.exe);
+        let mut command = superba_core::process::command(&spec.exe);
         command
             .args(spec.run_args())
             .envs(spec.env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000);
-        }
         let child = command.spawn()?;
         tracing::info!(pid = child.id(), "Router started");
         Ok(Box::new(RouterChild(child)))

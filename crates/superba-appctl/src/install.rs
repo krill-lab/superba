@@ -833,8 +833,102 @@ pub fn candidate_paths(env: &dyn EnvSource, home_dir: &Path) -> Vec<PathBuf> {
     paths
 }
 
+/// Registry key (under `HKCU` and `HKLM\\SOFTWARE\\Classes`) that lists the registered
+/// MSIX packages by full name, each with a `PackageRootFolder` value.
 #[cfg(target_os = "windows")]
-async fn msix_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppInstall> {
+const APPX_REPOSITORY_KEY: &str =
+    "Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\Repository\\Packages";
+
+/// Split an MSIX package full name (`Name_Version_Arch_ResourceId_PublisherId`) into
+/// the package it names. Resource packages (a non-empty `ResourceId`) and anything
+/// that is not one of the OpenAI desktop families give `None`.
+pub fn parse_appx_full_name(full_name: &str, root: &str) -> Option<AppxPackage> {
+    let parts: Vec<&str> = full_name.split('_').collect();
+    let [name, version, _arch, resource, publisher] = parts.as_slice() else {
+        return None;
+    };
+    if !resource.is_empty()
+        || !matches!(
+            *name,
+            "OpenAI.Codex" | "OpenAI.CodexBeta" | "OpenAI.ChatGPT-Desktop"
+        )
+        || root.is_empty()
+    {
+        return None;
+    }
+    Some(AppxPackage {
+        name: (*name).to_owned(),
+        family_name: format!("{name}_{publisher}"),
+        install_location: PathBuf::from(root),
+        version: Some((*version).to_owned()),
+    })
+}
+
+/// Of several registered versions of one family keep the newest.
+pub fn newest_appx_per_family(mut packages: Vec<AppxPackage>) -> Vec<AppxPackage> {
+    fn key(package: &AppxPackage) -> Vec<u64> {
+        package
+            .version
+            .as_deref()
+            .unwrap_or_default()
+            .split('.')
+            .map(|part| part.parse().unwrap_or(0))
+            .collect()
+    }
+    packages.sort_by_key(|package| std::cmp::Reverse(key(package)));
+    let mut seen = HashSet::new();
+    packages.retain(|package| seen.insert(package.family_name.clone()));
+    packages
+}
+
+/// The registered OpenAI MSIX packages, read from the registry: no child process.
+/// `None` when the repository key cannot be opened at all.
+#[cfg(target_os = "windows")]
+fn registry_appx_packages() -> Option<Vec<AppxPackage>> {
+    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    let hives = [
+        RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey(format!("Software\\Classes\\{APPX_REPOSITORY_KEY}")),
+        RegKey::predef(HKEY_LOCAL_MACHINE)
+            .open_subkey(format!("SOFTWARE\\Classes\\{APPX_REPOSITORY_KEY}")),
+    ];
+    let mut readable = false;
+    let mut packages = Vec::new();
+    for hive in hives.into_iter().flatten() {
+        readable = true;
+        for full_name in hive.enum_keys().flatten() {
+            if !full_name.starts_with("OpenAI.") {
+                continue;
+            }
+            let Ok(sub) = hive.open_subkey(&full_name) else {
+                continue;
+            };
+            let Ok(root) = sub.get_value::<String, _>("PackageRootFolder") else {
+                continue;
+            };
+            packages.extend(parse_appx_full_name(&full_name, &root));
+        }
+    }
+    readable.then(|| newest_appx_per_family(packages))
+}
+
+/// `Get-AppxPackage` through a hidden PowerShell: only when the registry cannot be
+/// read, and cached for [`APPX_FALLBACK_TTL`] so it is never run on every refresh.
+#[cfg(target_os = "windows")]
+async fn powershell_appx_packages(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppxPackage> {
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    static CACHE: Mutex<Option<(Instant, Vec<AppxPackage>)>> = Mutex::new(None);
+    const APPX_FALLBACK_TTL: Duration = Duration::from_secs(300);
+    if let Ok(cache) = CACHE.lock()
+        && let Some((at, packages)) = cache.as_ref()
+        && at.elapsed() < APPX_FALLBACK_TTL
+    {
+        return packages.clone();
+    }
     // Resolve PowerShell from the supplied environment, never the process PATH.
     let powershell = env_path(env, "SystemRoot")
         .map(|root| root.join("System32/WindowsPowerShell/v1.0/powershell.exe"))
@@ -851,20 +945,34 @@ async fn msix_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppInstall> 
                 .map(|dir| dir.join("powershell.exe"))
                 .find(|path| path.is_file())
         });
-    let Some(powershell) = powershell else {
-        return Vec::new();
+    let packages = match powershell {
+        None => Vec::new(),
+        Some(powershell) => {
+            let mut command = Command::from(superba_core::process::command(powershell));
+            command.args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
+                "Get-AppxPackage -Name 'OpenAI.*' | Select-Object Name,PackageFamilyName,InstallLocation,Version | ConvertTo-Json -Compress"])
+                .stdin(Stdio::null()).kill_on_drop(true);
+            match timeout(Duration::from_secs(10), command.output()).await {
+                Ok(Ok(output)) if output.status.success() => {
+                    parse_appx_packages_json(&String::from_utf8_lossy(&output.stdout))
+                }
+                _ => Vec::new(),
+            }
+        }
     };
-    let mut command = Command::new(powershell);
-    command.args(["-NoProfile", "-NonInteractive", "-Command",
-        "Get-AppxPackage -Name 'OpenAI.*' | Select-Object Name,PackageFamilyName,InstallLocation,Version | ConvertTo-Json -Compress"])
-        .stdin(Stdio::null()).kill_on_drop(true);
-    let Ok(Ok(output)) = timeout(Duration::from_secs(10), command.output()).await else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
+    if let Ok(mut cache) = CACHE.lock() {
+        *cache = Some((Instant::now(), packages.clone()));
     }
-    parse_appx_packages_json(&String::from_utf8_lossy(&output.stdout))
+    packages
+}
+
+#[cfg(target_os = "windows")]
+async fn msix_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppInstall> {
+    let packages = match registry_appx_packages() {
+        Some(packages) => packages,
+        None => powershell_appx_packages(env, home_dir).await,
+    };
+    packages
         .into_iter()
         .filter_map(|package| {
             let mut install = inspect_install(&package.install_location)?;
@@ -924,7 +1032,45 @@ pub async fn detect_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppIns
 /// ([`crate::codexid::resolve_binary`]): that program is asked, and the
 /// launcher only if it does not answer.
 /// A timed-out child is killed; unsuccessful commands and unparseable output yield `None`.
+///
+/// Results are remembered per binary file (path, size, mtime) for ten minutes (a
+/// failed probe for one), so the same binary is not spawned again on every overview
+/// refresh. A rewritten binary has a new stamp and is probed again at once.
 pub async fn codex_version(binary: &Path) -> Option<CodexVersion> {
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    type Cache = Mutex<HashMap<crate::codexbin::FileStamp, (Instant, Option<CodexVersion>)>>;
+    static CACHE: std::sync::LazyLock<Cache> = std::sync::LazyLock::new(Default::default);
+    const VERSION_KEEP: Duration = Duration::from_secs(600);
+    const VERSION_RETRY: Duration = Duration::from_secs(60);
+
+    let stamp = crate::codexbin::FileStamp::of(binary);
+    if let Some(stamp) = &stamp
+        && let Ok(cache) = CACHE.lock()
+        && let Some((at, version)) = cache.get(stamp)
+        && at.elapsed()
+            < if version.is_some() {
+                VERSION_KEEP
+            } else {
+                VERSION_RETRY
+            }
+    {
+        return version.clone();
+    }
+    let version = probe_codex_version(binary).await;
+    if let Some(stamp) = stamp
+        && let Ok(mut cache) = CACHE.lock()
+    {
+        if cache.len() >= 256 {
+            cache.clear();
+        }
+        cache.insert(stamp, (Instant::now(), version.clone()));
+    }
+    version
+}
+
+async fn probe_codex_version(binary: &Path) -> Option<CodexVersion> {
     let target = crate::codexid::resolve_binary(binary);
     if target != binary
         && let Some(version) = version_of(&target).await
@@ -936,7 +1082,7 @@ pub async fn codex_version(binary: &Path) -> Option<CodexVersion> {
 
 async fn version_of(binary: &Path) -> Option<CodexVersion> {
     let binary = fs::canonicalize(binary).ok()?;
-    let mut command = Command::new(binary);
+    let mut command = Command::from(superba_core::process::command(binary));
     command
         .arg("--version")
         .stdin(Stdio::null())

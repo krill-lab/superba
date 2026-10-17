@@ -139,12 +139,10 @@ impl NativeEnv for SystemNativeEnv {
 /// written next to it re-applies the value at every login.
 #[cfg(target_os = "macos")]
 mod macos {
-    use std::process::Command;
-
     use super::*;
 
     fn launchctl(args: &[&str]) -> Result<String> {
-        let out = Command::new("/bin/launchctl")
+        let out = superba_core::process::command("/bin/launchctl")
             .args(args)
             .output()
             .map_err(|e| Error::Process {

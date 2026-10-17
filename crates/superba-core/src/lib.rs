@@ -47,6 +47,7 @@ pub mod models;
 pub mod origin;
 pub mod paths;
 pub mod plan;
+pub mod process;
 pub mod profile;
 pub mod remote;
 pub mod requests;

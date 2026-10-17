@@ -37,6 +37,7 @@ libc.workspace = true
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true
 windows-sys.workspace = true
+winreg.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true

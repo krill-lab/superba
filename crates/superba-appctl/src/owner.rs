@@ -327,7 +327,7 @@ mod imp {
     use super::{Listener, parse_lsof};
 
     pub(super) fn listeners(port: u16, _candidate_pids: &[u32]) -> Option<Vec<Listener>> {
-        let out = std::process::Command::new("/usr/sbin/lsof")
+        let out = superba_core::process::command("/usr/sbin/lsof")
             .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-Fpn"])
             .output()
             .ok()?;

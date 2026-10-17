@@ -215,7 +215,7 @@ fn fc_match_files() -> Vec<PathBuf> {
         "sans-serif:lang=zh-cn:weight=medium",
         "sans-serif:lang=zh-cn:weight=bold",
     ] {
-        let Ok(output) = std::process::Command::new("fc-match")
+        let Ok(output) = superba_core::process::command("fc-match")
             .args(["-f", "%{file}", pattern])
             .stdin(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
