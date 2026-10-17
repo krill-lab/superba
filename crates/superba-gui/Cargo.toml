@@ -58,5 +58,8 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 toml.workspace = true
 
+[build-dependencies]
+winresource.workspace = true
+
 [lints]
 workspace = true

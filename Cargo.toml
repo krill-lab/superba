@@ -118,6 +118,7 @@ fontdb = "0.24"
 open = "5"
 
 # --- platform specific (declare under [target.'cfg(...)'.dependencies] in crates)
+winresource = { version = "0.1", default-features = false }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Security",

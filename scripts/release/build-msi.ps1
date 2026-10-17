@@ -24,6 +24,7 @@ if (-not $ProductVersion) { $ProductVersion = "$($Matches[1]).$($Matches[2]).$($
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $wxs = Join-Path $root 'packaging/windows/superba.wxs'
 $marker = Join-Path $root 'packaging/windows/superba-msi.marker'
+$icon = Join-Path $root 'assets/icon/superba.ico'
 $stage = (Resolve-Path $StageDir).Path
 # The marker lives in the repository; the MSI takes everything from one folder.
 $work = Join-Path ([IO.Path]::GetTempPath()) ("superba-msi-" + [guid]::NewGuid().ToString('N'))
@@ -36,6 +37,7 @@ try {
     Copy-Item -LiteralPath $src -Destination $work
   }
   Copy-Item -LiteralPath $marker -Destination $work
+  Copy-Item -LiteralPath $icon -Destination $work
   $outDir = Split-Path -Parent $Out
   if ($outDir) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
   & wix build $wxs -arch x64 -d "ProductVersion=$ProductVersion" -d "DisplayVersion=$Version" `

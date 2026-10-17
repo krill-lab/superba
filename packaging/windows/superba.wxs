@@ -27,6 +27,9 @@
         DowngradeErrorMessage="A newer version of Superba is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- The Superba icon (assets/icon/superba.ico): Apps & features and the shortcut. -->
+    <Icon Id="Superba.ico" SourceFile="$(StageDir)\superba.ico" />
+    <Property Id="ARPPRODUCTICON" Value="Superba.ico" />
     <Property Id="ARPCOMMENTS" Value="Superba $(DisplayVersion)" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/krill-lab/superba" />
     <Property Id="ARPHELPLINK" Value="https://github.com/krill-lab/superba/issues" />
@@ -72,7 +75,8 @@
 
     <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder">
       <Shortcut Id="SuperbaShortcut" Name="Superba" Description="Superba"
-                Target="[INSTALLFOLDER]superba.exe" WorkingDirectory="INSTALLFOLDER" />
+                Target="[INSTALLFOLDER]superba.exe" WorkingDirectory="INSTALLFOLDER"
+                Icon="Superba.ico" />
       <RegistryValue Root="HKCU" Key="Software\Krill\Superba" Name="StartMenuShortcut"
                      Type="integer" Value="1" KeyPath="yes" />
     </Component>
