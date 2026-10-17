@@ -216,6 +216,7 @@ fn notes_box(ui: &mut Ui, cx: &Cx<'_>, notes: &str) {
             egui::ScrollArea::vertical()
                 .id_salt("superba-release-notes")
                 .max_height(180.0)
+                .min_scrolled_height(180.0)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 3.0;
