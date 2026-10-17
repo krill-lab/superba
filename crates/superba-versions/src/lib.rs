@@ -530,9 +530,18 @@ fn unpack(
             .map_err(|e| Error::io(&tmp, &e))?;
         let dest = dirs.entry(version, target);
         if dest.exists() {
+            // An incomplete entry of this version (a complete one is reused
+            // before downloading): replaced only when nothing uses it.
             store::remove_dir(&dest)?;
         }
-        std::fs::rename(&tmp, &dest).map_err(|e| Error::io(&dest, &e))
+        // Windows: the antivirus may still hold the binary just written and run.
+        store::rename_retrying(&tmp, &dest).map_err(|e| {
+            if store::is_in_use(&e) {
+                store::in_use_error(&dest, &format!("Windows kept a new file in it busy: {e}"))
+            } else {
+                Error::io(&dest, &e)
+            }
+        })
     })();
     if result.is_err() {
         let _ = std::fs::remove_dir_all(&tmp);
