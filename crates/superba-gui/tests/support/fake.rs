@@ -18,6 +18,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 // Per-area state and the bodies of the v0.3 service methods (plan §4 C2): each
 // area's owner edits only its file; `impl SwitchService` below delegates.
 mod hosts;
+mod import;
 mod models;
 mod providers;
 mod router;
@@ -103,6 +104,7 @@ struct Areas {
     hosts: Mutex<hosts::State>,
     versions: Mutex<versions::State>,
     selfupdate: Mutex<selfupdate::State>,
+    import: Mutex<import::State>,
 }
 
 struct FakeState {
@@ -1877,6 +1879,14 @@ impl SwitchService for FakeService {
         request: SelfUpdateInstallRequest,
     ) -> Result<SelfUpdateReport> {
         selfupdate::install(self, request).await
+    }
+
+    async fn import_scan(&self, request: ImportScanRequest) -> Result<ImportScan> {
+        import::scan(self, request).await
+    }
+
+    async fn import_apply(&self, request: ImportApplyRequest) -> Result<ImportReport> {
+        import::apply(self, request).await
     }
 
     async fn install_codex(&self, request: InstallRequest) -> Result<InstallReport> {

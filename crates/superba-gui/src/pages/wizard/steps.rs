@@ -11,8 +11,8 @@ use crate::design::tokens::{radius, text};
 use crate::design::widgets::FormRow;
 use crate::design::widgets::choice_card::choice_card_ui;
 use crate::design::widgets::{
-    Badge, Card, Choice, Dropdown, KeyInput, Latency, LatencyBadge, Status, StatusDot, Text,
-    choice_cards, link_button,
+    Badge, Button, Card, Choice, Dropdown, KeyInput, Latency, LatencyBadge, Status, StatusDot,
+    Text, choice_cards, link_button,
 };
 use crate::pages::{Action, Cx, auth_mode_for_line, key_access_status};
 
@@ -704,6 +704,20 @@ pub(super) fn provider(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, _out: &mut Vec<
         ui.add_space(8.0);
         ui.label(Text::small(cx.tr.t("wizard.rerun.keeps"), cx.pal));
     }
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        if ui
+            .add(
+                Button::ghost(cx.tr.t("wizard.provider.import"))
+                    .icon(Icon::Download)
+                    .small(),
+            )
+            .on_hover_text(cx.tr.t("wizard.provider.import_tip"))
+            .clicked()
+        {
+            w.import = Some(crate::pages::import::ImportDialog::open(cx));
+        }
+    });
 }
 
 /// Title and body of a preset card.

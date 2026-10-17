@@ -12,7 +12,10 @@
 //! refresh). The official login has its own detail without tabs. "Add provider"
 //! is a two-step dialog over the presets (Krill pre-selected).
 //!
-//! Commands: `add`, `profile:<id>` / `site:<id>` (select; `site:` also opens the
+//! "Import from other tools" (step 1 of Add provider, the palette, the `import`
+//! command) opens [`crate::pages::import`]'s dialog over the page.
+//!
+//! Commands: `add`, `import`, `profile:<id>` / `site:<id>` (select; `site:` also opens the
 //! key editor of a key-less site), `tab:connection|account|usage`,
 //! `test:<provider command>` (`test:profile:<id>`: select and test it).
 
@@ -137,6 +140,8 @@ pub struct State {
     pub(crate) reports: HashMap<SiteId, SiteReport>,
     /// The Add provider dialog.
     pub add: Option<AddDialog>,
+    /// The import dialog (providers from cc-switch, AI Toolbox).
+    pub import: Option<crate::pages::import::ImportDialog>,
     /// The delete confirmation.
     pub(crate) remove: Option<RemoveDialog>,
 }
@@ -154,7 +159,7 @@ impl std::fmt::Debug for State {
 impl State {
     /// A dialog of this page is open (the shell leaves Enter / Escape to it).
     pub fn is_modal_open(&self) -> bool {
-        self.add.is_some() || self.remove.is_some()
+        self.add.is_some() || self.remove.is_some() || self.import.is_some()
     }
 
     /// The entry being renamed in the list and the typed name.
@@ -171,6 +176,13 @@ impl State {
     pub fn open_add(&mut self) {
         if !self.is_modal_open() {
             self.add = Some(AddDialog::new());
+        }
+    }
+
+    /// Open the import dialog (and start scanning the other tools' stores).
+    pub fn open_import(&mut self, cx: &Cx<'_>) {
+        if self.add.is_none() && self.remove.is_none() && self.import.is_none() {
+            self.import = Some(crate::pages::import::ImportDialog::open(cx));
         }
     }
 
@@ -348,33 +360,79 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     });
     add::show(ui.ctx(), cx, state, out);
     detail::remove_dialog(ui.ctx(), cx, state);
+    show_import(ui.ctx(), cx, state, out);
 }
 
-/// Command palette entries: test the connection of each key-based provider.
+/// The import dialog, when open; when it finishes with imports the page reloads,
+/// selects the first imported provider and offers a switch to it.
+fn show_import(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    use crate::pages::import::{self, ImportOutcomeUi};
+    let Some(d) = state.import.as_mut() else {
+        return;
+    };
+    let outcome = import::show_dialog(ctx, cx, d, out);
+    match &outcome {
+        ImportOutcomeUi::Continue => {}
+        ImportOutcomeUi::Close => state.import = None,
+        ImportOutcomeUi::Done { first, .. } => {
+            import::finished_actions(cx, &outcome, out);
+            state.import = None;
+            if let Some(id) = first {
+                state.select(ProviderId::Profile(id.clone()));
+            }
+        }
+    }
+}
+
+/// Command palette entries: import from other tools, and test the connection of
+/// each key-based provider.
 pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
     let _ = state;
-    providers::list(cx.data)
-        .into_iter()
-        .filter(|p| p.kind != ProviderKind::Official && p.has_key())
-        .map(|p| PaletteItem {
-            title: cx
-                .tr
-                .f("providers.palette.test", &[("name", &list::name(cx, &p))]),
-            detail: Some(list::secondary(cx, &p)),
-            keywords: vec![p.site.id.to_string(), "test".into(), "probe".into()],
-            group: PaletteGroup::Commands,
-            action: Action::PageCommand {
-                page: Page::Providers,
-                command: format!("test:{}", p.id.command()),
-            },
-        })
-        .collect()
+    let import = PaletteItem {
+        title: cx.tr.t("providers.palette.import"),
+        detail: Some(cx.tr.t("providers.palette.import_detail")),
+        keywords: vec![
+            "import".into(),
+            "cc-switch".into(),
+            "ccs".into(),
+            "ai-toolbox".into(),
+            "导入".into(),
+        ],
+        group: PaletteGroup::Commands,
+        action: Action::PageCommand {
+            page: Page::Providers,
+            command: "import".into(),
+        },
+    };
+    let mut items = vec![import];
+    items.extend(
+        providers::list(cx.data)
+            .into_iter()
+            .filter(|p| p.kind != ProviderKind::Official && p.has_key())
+            .map(|p| PaletteItem {
+                title: cx
+                    .tr
+                    .f("providers.palette.test", &[("name", &list::name(cx, &p))]),
+                detail: Some(list::secondary(cx, &p)),
+                keywords: vec![p.site.id.to_string(), "test".into(), "probe".into()],
+                group: PaletteGroup::Commands,
+                action: Action::PageCommand {
+                    page: Page::Providers,
+                    command: format!("test:{}", p.id.command()),
+                },
+            }),
+    );
+    items
 }
 
 /// Run a command addressed to this page (see the module docs).
 pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     if command == "add" {
         state.open_add();
+        return;
+    }
+    if command == "import" {
+        state.open_import(cx);
         return;
     }
     if let Some(tab) = command.strip_prefix("tab:") {

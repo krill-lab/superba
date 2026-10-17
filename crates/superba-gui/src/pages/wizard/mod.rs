@@ -11,6 +11,12 @@
 //! and its profile, the line & models step probes the draft with the typed key,
 //! and only Apply saves the site, the profile and the key (then plans the
 //! switch). Skip or Escape on any step writes nothing.
+//!
+//! The provider step also offers "Import from other tools" (cc-switch, AI
+//! Toolbox; [`crate::pages::import`]), shown in place of the steps: importing
+//! saves providers only (nothing is written to Codex), then the wizard closes on
+//! the Providers page with the first imported provider selected and a switch to
+//! it offered.
 
 mod steps;
 
@@ -132,6 +138,8 @@ pub struct Wizard {
     pub(crate) original_read: Option<ReadTask<Option<Secret>>>,
     pub(crate) original_requested: bool,
     pub(crate) original_error: Option<superba_core::Error>,
+    /// "Import from other tools", shown instead of the steps while open.
+    pub import: Option<crate::pages::import::ImportDialog>,
 }
 
 impl std::fmt::Debug for Wizard {
@@ -196,6 +204,7 @@ impl Wizard {
             original_read: None,
             original_requested: false,
             original_error: None,
+            import: None,
         };
         w.select_preset(data, &w.preset.clone());
         w
@@ -412,9 +421,48 @@ pub fn show(
         outcome = body(&mut ui, cx, w, out);
     });
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        outcome = WizardOutcome::Close;
+        // Escape leaves the import view first (not while it imports).
+        match &w.import {
+            Some(d) if d.busy() => {}
+            Some(_) => w.import = None,
+            None => outcome = WizardOutcome::Close,
+        }
     }
     outcome
+}
+
+/// The import view inside the wizard; `Close` when it finished with imports.
+fn import_view(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) -> WizardOutcome {
+    use crate::pages::import::{self, ImportOutcomeUi};
+    let Some(d) = w.import.as_mut() else {
+        return WizardOutcome::Continue;
+    };
+    let list_height = (ui.available_height() - 150.0).max(160.0);
+    let outcome = import::body(ui, cx, d, out, list_height);
+    match &outcome {
+        ImportOutcomeUi::Continue => WizardOutcome::Continue,
+        ImportOutcomeUi::Close => {
+            w.import = None;
+            WizardOutcome::Continue
+        }
+        ImportOutcomeUi::Done {
+            imported, first, ..
+        } => {
+            w.import = None;
+            if *imported == 0 {
+                return WizardOutcome::Continue;
+            }
+            import::finished_actions(cx, &outcome, out);
+            out.push(match first {
+                Some(id) => Action::PageCommand {
+                    page: super::Page::Providers,
+                    command: format!("profile:{id}"),
+                },
+                None => Action::Go(super::Page::Providers),
+            });
+            WizardOutcome::Close
+        }
+    }
 }
 
 fn body(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) -> WizardOutcome {
@@ -434,6 +482,13 @@ fn body(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) -> Wiza
         });
     });
     ui.add_space(20.0);
+    if w.import.is_some() {
+        let o = import_view(ui, cx, w, out);
+        return match o {
+            WizardOutcome::Continue => outcome,
+            other => other,
+        };
+    }
     steps::stepper(ui, cx, w);
     ui.add_space(18.0);
 

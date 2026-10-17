@@ -39,6 +39,7 @@
 
 pub mod diagnostics;
 pub mod hosts;
+pub mod import;
 pub mod models;
 pub mod overview;
 pub mod preferences;

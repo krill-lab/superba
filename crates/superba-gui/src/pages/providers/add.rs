@@ -7,7 +7,9 @@
 //! and processes are untouched, and a toast offers "Switch to this provider".
 //! Switching right away is opt-in ("Switch to it right after adding", off by
 //! default; a custom site must pass the test first) and plans the switch, which
-//! shows its restart prompt. The same quick-pick as the setup wizard.
+//! shows its restart prompt. The same quick-pick as the setup wizard. Step 1
+//! also offers "Import from other tools" (cc-switch, AI Toolbox; see
+//! [`crate::pages::import`]).
 
 use egui::{Align, Layout, TextEdit, Ui, vec2};
 use superba_core::catalog::Preset;
@@ -70,6 +72,9 @@ pub struct AddDialog {
     check_task: Option<ReadTask<LineChecks>>,
     saving: Option<(bool, ReadTask<Profile>)>,
     focused: bool,
+    /// "Import from other tools" was chosen: the page replaces this dialog with
+    /// the import dialog.
+    pub open_import: bool,
 }
 
 impl std::fmt::Debug for AddDialog {
@@ -115,6 +120,7 @@ impl AddDialog {
             check_task: None,
             saving: None,
             focused: false,
+            open_import: false,
         }
     }
 
@@ -370,6 +376,11 @@ pub(super) fn show(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, out: &mu
         state.select(id);
         return;
     }
+    if d.open_import {
+        state.add = None;
+        state.open_import(cx);
+        return;
+    }
     if !saving && (close || response.should_close()) {
         state.add = None;
     }
@@ -400,6 +411,20 @@ fn choose(
         .collect();
     choice_cards(ui, &mut d.pick, &items);
     ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        if ui
+            .add(
+                Button::ghost(cx.tr.t("providers.add.import"))
+                    .icon(Icon::Download)
+                    .small(),
+            )
+            .on_hover_text(cx.tr.t("providers.add.import_tip"))
+            .clicked()
+        {
+            d.open_import = true;
+        }
+    });
+    ui.add_space(4.0);
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         if ui
             .add(Button::primary(cx.tr.t("providers.add.continue")).kbd("Enter"))
