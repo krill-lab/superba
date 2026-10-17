@@ -110,6 +110,19 @@ back to the official ChatGPT login.
   `CODEX_CLI_PATH`), and check the newest ChatGPT desktop app build for this
   system. Downloads are verified and the install command is shown, never run with
   elevated rights.
+- **Windows: the ChatGPT app installer package.** The Updates page (下载安装包)
+  and `spb app download [--source official|store] [--open]` download the app's
+  MSIX for this machine from OpenAI's server (`windows-release.json` on
+  persistent.oaistatic.com) or, as the fallback or by choice (Preferences >
+  Network), from the Microsoft Store CDN with links resolved by
+  store.rg-adguard.net, a third-party resolver. Downloads show progress, can be
+  cancelled and resume (`Range` + `If-Range`); each file is checked (size, the
+  listed SHA-1 and the CDN's own, the manifest identity `OpenAI.Codex` of
+  OpenAI's Store publisher, and the signature with `WinVerifyTrust`), framework
+  packages it still needs are fetched too, and the package is opened with App
+  Installer, where you click Install: never installed silently, never elevated.
+  Afterwards the page offers to reopen ChatGPT through Superba so hot switching
+  keeps working.
 
 ### Superba updates
 

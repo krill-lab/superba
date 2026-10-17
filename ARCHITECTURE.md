@@ -381,6 +381,7 @@ and remote writers.
 | Graceful quit | SIGTERM, confirm before kill | `NSRunningApplication.terminate` | `WM_CLOSE`, confirm before `taskkill /F` |
 | ssh client | system OpenSSH | system OpenSSH | `System32\OpenSSH\ssh.exe` (ssh-agent often disabled) |
 | Keyring | Secret Service (file fallback when headless) | Keychain | Credential Manager |
+| App update | verified `.deb` / `.rpm`, install command shown | Sparkle (the app's own) | MSIX from `windows-release.json` (persistent.oaistatic.com) or the Store CDN via store.rg-adguard.net (`superba_versions::winapp`); size / SHA-1 / manifest identity checked, `WinVerifyTrust` signer must be OpenAI's Store publisher (`CN=50BDFD77-…`, Microsoft Marketplace CA); opened with App Installer (`ShellExecuteExW` "open"), never `Add-AppxPackage`, never elevated (`superba_appctl::package`) |
 
 Platform code sits behind `cfg(target_os = ...)`, is kept small and commented, and
 must compile on Linux. Linux is the reference implementation and the only platform
