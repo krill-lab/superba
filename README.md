@@ -103,7 +103,14 @@ Pre-built archives are published on the releases page for:
 | macOS 11+ (Apple silicon and Intel) | `superba-<version>-macos-universal.dmg` / `.zip` — signed and notarized `Superba.app` plus `spb` |
 | Linux x86_64 / aarch64 (glibc) | `superba-<version>-linux-<arch>.tar.gz` (`superba`, `spb`, `superba-router`) |
 | Linux x86_64, CLI only (static musl) | `spb-<version>-linux-x86_64-musl.tar.gz` (`spb`, `superba-router`) |
-| Windows x86_64 | `superba-<version>-windows-x86_64.zip` (`superba.exe`, `spb.exe`, `superba-router.exe`) |
+| Windows 10+ x86_64 | `superba-<version>-windows-x86_64.msi` — per-user installer (`superba.exe`, `spb.exe`, `superba-router.exe`) |
+
+On Windows, run the `.msi` (no administrator rights needed): it installs to
+`%LOCALAPPDATA%\Programs\Superba`, adds a Start-menu shortcut and puts `spb` on your
+user `PATH` (open a new terminal afterwards). A newer `.msi` upgrades it in place;
+**Settings > Apps** (or `msiexec /x`) removes it and also stops and removes the local
+router's login startup entry. There is no zip for Windows. Silent install:
+`msiexec /i superba-<version>-windows-x86_64.msi /qn`.
 
 `superba-router` is the optional local router; keep it next to `superba` and
 `spb` (on macOS it lives inside `Superba.app`, so move the app to Applications

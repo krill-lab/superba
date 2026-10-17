@@ -1,0 +1,104 @@
+<#
+.SYNOPSIS
+  Installs, upgrades and removes the Superba MSI per-user and checks each step.
+  Run by .github/workflows/package-test.yml on windows-latest (changes the
+  current user's profile: use a disposable machine).
+#>
+param(
+  [Parameter(Mandatory)][string]$StageDir,
+  [string]$BaseVersion = '0.1.0',
+  [string]$UpgradeVersion = '0.1.1-alpha.1',
+  [string]$UpgradeVersion2 = '0.1.1-alpha.2'
+)
+$ErrorActionPreference = 'Stop'
+$here = $PSScriptRoot
+$work = Join-Path $env:RUNNER_TEMP 'msi-test'
+New-Item -ItemType Directory -Path $work -Force | Out-Null
+$installDir = Join-Path $env:LOCALAPPDATA 'Programs\Superba'
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$files = 'superba.exe','spb.exe','superba-router.exe','LICENSE-MIT','LICENSE-APACHE',
+         'THIRD-PARTY-NOTICES.txt','LICENSE-Geist-OFL.txt','superba-msi.marker'
+
+function Fail($m) { throw "MSI test failed: $m" }
+function Check($ok, $m) { if (-not $ok) { Fail $m } else { Write-Host "ok: $m" } }
+
+function Build($version, $name) {
+  $out = Join-Path $work $name
+  & "$here\build-msi.ps1" -StageDir $StageDir -Version $version -Out $out
+  return $out
+}
+function Msi($verb, $msi, $log) {
+  $p = Start-Process msiexec.exe -ArgumentList @($verb, "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
+  if ($p.ExitCode -ne 0) {
+    Get-Content $log -Tail 60 | Write-Host
+    Fail "msiexec $verb exited with $($p.ExitCode)"
+  }
+}
+function ArpEntries {
+  Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
+    ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'Superba *' }
+}
+function UserPath { [Environment]::GetEnvironmentVariable('Path', 'User') }
+function RouterProcs {
+  Get-Process -Name superba-router -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($installDir, [StringComparison]::OrdinalIgnoreCase) }
+}
+
+$msi1 = Build $BaseVersion 'base.msi'
+$msi2 = Build $UpgradeVersion 'upgrade1.msi'
+$msi3 = Build $UpgradeVersion2 'upgrade2.msi'
+
+# --- install ---------------------------------------------------------------
+Msi '/i' $msi1 (Join-Path $work 'install.log')
+foreach ($f in $files) { Check (Test-Path (Join-Path $installDir $f)) "installed $f" }
+$v = & (Join-Path $installDir 'spb.exe') --version
+Check ($LASTEXITCODE -eq 0 -and "$v" -match '\d+\.\d+\.\d+') "spb --version ($v)"
+Check ((UserPath) -split ';' -contains $installDir) 'install folder is on the user PATH'
+$arp = @(ArpEntries)
+Check ($arp.Count -eq 1) 'one Add/Remove Programs entry'
+Check ($arp[0].DisplayName -eq "Superba $BaseVersion") "ARP name ($($arp[0].DisplayName))"
+Check ($arp[0].DisplayVersion -eq $BaseVersion.Split('-')[0]) "ARP version ($($arp[0].DisplayVersion))"
+$lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Superba.lnk'
+Check (Test-Path $lnk) 'Start menu shortcut'
+Check (-not (Test-Path 'HKLM:\Software\Krill\Superba')) 'nothing was written machine-wide'
+
+# A login-startup entry and a running router from the install folder, to see
+# the upgrade keep the entry (and stop the process) and the removal drop both.
+$rtData = Join-Path $work 'router-data'
+New-Item -ItemType Directory -Path $rtData -Force | Out-Null
+$routerExe = Join-Path $installDir 'superba-router.exe'
+$runCmd = "`"$routerExe`" supervise --data-dir `"$rtData`""
+Set-ItemProperty -Path $runKey -Name 'SuperbaRouter' -Value $runCmd
+$proc = Start-Process $routerExe -ArgumentList @('supervise', '--data-dir', "`"$rtData`"") -PassThru -WindowStyle Hidden
+Start-Sleep -Seconds 3
+$routerAlive = -not $proc.HasExited
+Write-Host "router process alive before the upgrade: $routerAlive"
+
+# --- upgrade (higher X.Y.Z, then a pre-release of the same X.Y.Z) -----------
+Msi '/i' $msi2 (Join-Path $work 'upgrade1.log')
+$arp = @(ArpEntries)
+Check ($arp.Count -eq 1) 'upgrade leaves one ARP entry'
+Check ($arp[0].DisplayName -eq "Superba $UpgradeVersion") "ARP name after the upgrade ($($arp[0].DisplayName))"
+foreach ($f in $files) { Check (Test-Path (Join-Path $installDir $f)) "after the upgrade: $f" }
+Check (@((UserPath) -split ';' | Where-Object { $_ -eq $installDir }).Count -eq 1) 'PATH has the folder exactly once'
+Check ($null -ne (Get-ItemProperty $runKey).SuperbaRouter) 'upgrade keeps the login-startup entry'
+Check (@(RouterProcs).Count -eq 0) 'upgrade stopped the router of the install'
+& (Join-Path $installDir 'spb.exe') --version | Out-Null
+Check ($LASTEXITCODE -eq 0) 'spb runs after the upgrade'
+
+Msi '/i' $msi3 (Join-Path $work 'upgrade2.log')
+$arp = @(ArpEntries)
+Check ($arp.Count -eq 1 -and $arp[0].DisplayName -eq "Superba $UpgradeVersion2") 'same X.Y.Z pre-release upgrades in place'
+
+# --- uninstall ---------------------------------------------------------------
+$proc2 = Start-Process $routerExe -ArgumentList @('supervise', '--data-dir', "`"$rtData`"") -PassThru -WindowStyle Hidden
+Start-Sleep -Seconds 3
+Msi '/x' $msi3 (Join-Path $work 'uninstall.log')
+Check (-not (Test-Path (Join-Path $installDir 'spb.exe'))) 'spb.exe removed'
+Check ((-not (Test-Path $installDir)) -or @(Get-ChildItem $installDir -Force).Count -eq 0) 'install folder is gone'
+Check (-not ((UserPath) -split ';' -contains $installDir)) 'PATH entry removed'
+Check (@(ArpEntries).Count -eq 0) 'ARP entry removed'
+Check (-not (Test-Path $lnk)) 'Start menu shortcut removed'
+Check ($null -eq (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).SuperbaRouter) 'login-startup entry removed'
+Check (@(RouterProcs).Count -eq 0) 'no router process left'
+Write-Host 'MSI install, upgrade and uninstall checks passed.'

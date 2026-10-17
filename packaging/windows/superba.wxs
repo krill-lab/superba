@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Superba per-user MSI (WiX v5, built by scripts/release/build-msi.ps1).
+
+  Variables (wix build -d NAME=VALUE):
+    ProductVersion  numeric X.Y.Z (MSI compares only the first three fields)
+    DisplayVersion  the full release version (for example 0.1.0-alpha.2)
+    StageDir        folder holding the files listed below
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Superba $(DisplayVersion)"
+      Manufacturer="Krill"
+      Version="$(ProductVersion)"
+      UpgradeCode="669520BE-07D0-496D-8173-085AA3DEE133"
+      Scope="perUser"
+      Language="1033"
+      InstallerVersion="500"
+      Compressed="yes">
+
+    <SummaryInformation Description="Superba $(DisplayVersion) (per-user installer)" Manufacturer="Krill" />
+
+    <!-- A newer MSI replaces the installed one in place. Pre-releases of one
+         X.Y.Z share a ProductVersion, so the same version may upgrade. -->
+    <MajorUpgrade
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of Superba is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPCOMMENTS" Value="Superba $(DisplayVersion)" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/krill-lab/superba" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/krill-lab/superba/issues" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsSubFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Superba" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <ComponentGroup Id="Programs" Directory="INSTALLFOLDER">
+      <Component>
+        <File Id="SuperbaExe" Source="$(StageDir)\superba.exe" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Id="SpbExe" Source="$(StageDir)\spb.exe" KeyPath="yes" />
+        <!-- spb's folder on the user PATH; removed again on uninstall. -->
+        <Environment Id="SpbOnPath" Name="PATH" Value="[INSTALLFOLDER]" Action="set"
+                     Part="last" System="no" Permanent="no" />
+      </Component>
+      <Component>
+        <File Id="RouterExe" Source="$(StageDir)\superba-router.exe" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Id="LicenseMit" Source="$(StageDir)\LICENSE-MIT" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Id="LicenseApache" Source="$(StageDir)\LICENSE-APACHE" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Id="ThirdParty" Source="$(StageDir)\THIRD-PARTY-NOTICES.txt" KeyPath="yes" />
+      </Component>
+      <Component>
+        <File Id="LicenseGeist" Source="$(StageDir)\LICENSE-Geist-OFL.txt" KeyPath="yes" />
+      </Component>
+      <!-- Tells the self-update that this copy came from the MSI. -->
+      <Component>
+        <File Id="MsiMarker" Source="$(StageDir)\superba-msi.marker" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder">
+      <Shortcut Id="SuperbaShortcut" Name="Superba" Description="Superba"
+                Target="[INSTALLFOLDER]superba.exe" WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU" Key="Software\Krill\Superba" Name="StartMenuShortcut"
+                     Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!-- The install location, for tools that look it up. -->
+    <Component Id="InstallRegistry" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKCU" Key="Software\Krill\Superba" Name="InstallDir"
+                     Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\Krill\Superba" Name="Version"
+                     Type="string" Value="$(DisplayVersion)" />
+    </Component>
+
+    <Feature Id="Main" Title="Superba" Level="1">
+      <ComponentGroupRef Id="Programs" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="InstallRegistry" />
+    </Feature>
+
+    <!-- Removal: take the router's login startup out, stop its process, and
+         (if Codex still goes through it) switch Codex back to direct. Before
+         InstallValidate so no file is "in use" afterwards. An upgrade only
+         stops the router (--keep-service); the new version restarts it. -->
+    <CustomAction Id="RouterRemove" Directory="INSTALLFOLDER" Return="ignore"
+                  ExeCommand="&quot;[INSTALLFOLDER]spb.exe&quot; router uninstall --quiet" />
+    <CustomAction Id="RouterStop" Directory="INSTALLFOLDER" Return="ignore"
+                  ExeCommand="&quot;[INSTALLFOLDER]spb.exe&quot; router uninstall --quiet --keep-service" />
+    <InstallExecuteSequence>
+      <Custom Action="RouterRemove" Before="InstallValidate"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="RouterStop" Before="InstallValidate"
+              Condition="REMOVE=&quot;ALL&quot; AND UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

@@ -27,7 +27,11 @@ pub(super) async fn run(command: &RouterCommand, rt: &Runtime, out: &mut Output)
         }
         RouterCommand::Enable { members, exec } => enable(members, exec, rt, out).await,
         RouterCommand::Disable { uninstall, exec } => disable(*uninstall, exec, rt, out).await,
-        RouterCommand::Uninstall => {
+        RouterCommand::Uninstall {
+            quiet: true,
+            keep_service,
+        } => installer_teardown(*keep_service, rt, out).await,
+        RouterCommand::Uninstall { .. } => {
             let view = rt.service.router_uninstall().await?;
             out.line(text("cli.router.uninstalled"))?;
             out.value(&view)?;
@@ -51,6 +55,35 @@ pub(super) async fn run(command: &RouterCommand, rt: &Runtime, out: &mut Output)
             super::requests::clear(*older_than, rt, out).await
         }
     }
+}
+
+/// `spb router uninstall --quiet [--keep-service]`, run by the Windows installer before it
+/// removes or replaces the files: take the router out of Codex and out of login startup
+/// (unless this is an upgrade), then stop the router processes started from this install
+/// so their file can be replaced. Every step is best effort and the exit code is always OK:
+/// an installer must never fail because of the router.
+async fn installer_teardown(keep_service: bool, rt: &Runtime, out: &mut Output) -> Result {
+    if !keep_service {
+        if let Ok(view) = rt.service.router_status().await
+            && view.codex_routed
+        {
+            // Configuration only: the uninstaller does not restart Codex.
+            let exec = ExecArgs {
+                yes: true,
+                write_only: true,
+                ..ExecArgs::default()
+            };
+            let _ = execute::run(router_switch(false, &exec), &exec, rt, out).await;
+        }
+        let _ = rt.service.router_uninstall().await;
+    }
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(ToOwned::to_owned))
+    {
+        superba_switch::installer::stop_router_processes(&dir);
+    }
+    Ok(exit::OK)
 }
 
 async fn install(members: &[String], rt: &Runtime, out: &mut Output) -> Result<RouterView> {

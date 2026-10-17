@@ -222,6 +222,8 @@ pub fn run(args: &FinishArgs) -> Result<()> {
             let spb = dir.join(apply::bin_name("spb", platform.os));
             let status = superba_core::process::command(&spb)
                 .args(["self-update", "restart-router"])
+                // The MSI's removal step stopped the router: start it although it is down.
+                .env(super::msi::ENV_FORCE_ROUTER_RESTART, "1")
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())

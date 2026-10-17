@@ -504,7 +504,15 @@ pub enum RouterCommand {
         exec: ExecArgs,
     },
     #[command(about = english("cli.help.router_uninstall"))]
-    Uninstall,
+    Uninstall {
+        /// Used by the Windows installer: no output, never fails; also switches Codex back to
+        /// direct, and stops the router processes of this install.
+        #[arg(long, hide = true)]
+        quiet: bool,
+        /// With `--quiet`: only stop the router processes of this install (an upgrade).
+        #[arg(long, hide = true, requires = "quiet")]
+        keep_service: bool,
+    },
     #[command(about = english("cli.help.router_watch"))]
     Watch {
         #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..=600), help = english("cli.help.router_interval"))]

@@ -30,7 +30,7 @@ macOS builds both architectures with deployment target 11.0, combines them with
 | `spb-<ver>-linux-x86_64-musl.tar.gz` | `spb`, `superba-router`, release documents |
 | `superba-<ver>-macos-universal.zip` | `Superba.app` (with `superba-router` in `Contents/MacOS`), universal `spb`, release documents |
 | `superba-<ver>-macos-universal.dmg` | `Superba.app` (with `superba-router` in `Contents/MacOS`), universal `spb`, release documents |
-| `superba-<ver>-windows-x86_64.zip` | `superba.exe`, `spb.exe`, `superba-router.exe`, release documents |
+| `superba-<ver>-windows-x86_64.msi` | per-user installer: `superba.exe`, `spb.exe`, `superba-router.exe`, release documents; the only Windows package |
 
 `superba-router` is the opt-in local router. `superba` and `spb` install it as a
 per-user service from where they find it: next to themselves (every archive, the
@@ -47,7 +47,7 @@ locally: `cargo install --locked cargo-about --version 0.9.2 --features cli`, th
 `cargo about generate --workspace -c about.toml scripts/release/third-party-notices.hbs`.
 Linux tarballs
 and the macOS ZIP contain a directory matching the archive basename. The DMG
-and Windows ZIP place the listed items at their root. The GNU tarball directory
+places the listed items at its root. The GNU tarball directory
 is `superba-<ver>-linux-<arch>/`; the musl directory is
 `spb-<ver>-linux-x86_64-musl/`.
 
@@ -60,7 +60,7 @@ and this repository's scripts. Every third-party action in both workflows is
 pinned to a full commit SHA (its version in a comment); update pins deliberately.
 Only the final job has `contents: write`.
 
-The final job requires all six archives, generates `SHA256SUMS.txt`, and uses
+The final job requires all six packages, generates `SHA256SUMS.txt`, and uses
 `GITHUB_TOKEN` to create the release with generated notes and tag
 verification. It is created as a draft with every asset attached and then
 published: `vX.Y.Z` becomes the latest release, `-alpha.N` / `-beta.N` / `-rc.N`
@@ -235,11 +235,42 @@ executable permissions on binaries, and prints the finished archive's absolute
 path. It stages privately and moves a completed archive into the output
 directory. Both packaging helpers accept numeric `X.Y.Z` versions without `v`.
 
+## Windows MSI
+
+`packaging/windows/superba.wxs` (WiX v5, installed in the signing job with
+`dotnet tool install --global wix --version 5.0.2`) describes a per-user MSI
+(`Scope="perUser"`, no elevation): `superba.exe`, `spb.exe`, `superba-router.exe`,
+`LICENSE-MIT`, `LICENSE-APACHE`, `THIRD-PARTY-NOTICES.txt`, `LICENSE-Geist-OFL.txt`
+and `superba-msi.marker` in `%LOCALAPPDATA%\Programs\Superba`, a Start-menu shortcut,
+and that folder appended to the user `PATH` (removed on uninstall). The UpgradeCode
+`669520BE-07D0-496D-8173-085AA3DEE133` is fixed forever; `MajorUpgrade` (also for the
+same version, because pre-releases of one `X.Y.Z` share a ProductVersion) replaces the
+installed copy in place and refuses downgrades. `scripts/release/build-msi.ps1` maps the
+release version to the numeric ProductVersion (`0.1.0-alpha.2` becomes `0.1.0`) and keeps
+the full version in the product name and the ARP comments.
+
+Before the files are removed, a custom action runs `spb router uninstall --quiet`: it
+switches Codex back to direct if it still goes through the router (configuration only),
+removes the router's login startup entry and stops every `superba-router.exe` started
+from the install folder. During an upgrade it runs with `--keep-service` (it only stops
+the process; the update restarts the router).
+
+The MSI is built in `sign-windows`, after the three executables are signed (and signed
+again as a whole when the optional Authenticode secrets are set; WiX runs while no key is
+on disk). Test it without tagging: run **Package test**
+(`gh workflow run package-test.yml --ref <branch>`), which builds the MSI on
+`windows-latest` and runs `scripts/release/test-msi.ps1`: per-user install, files,
+`spb --version`, `PATH`, Add/Remove Programs, Start-menu shortcut, an upgrade to a higher
+version and to a same-`X.Y.Z` pre-release, then uninstall and a check that nothing is left.
+
+Self-update on Windows downloads this MSI, verifies it against `SHA256SUMS.txt` and runs
+`msiexec /i <msi> /passive` after Superba exits.
+
 ## Optional Windows signing
 
 Set `WINDOWS_SIGNING_PFX_BASE64` and `WINDOWS_SIGNING_PFX_PASSWORD` to enable the
-commented Authenticode hook. It selects an x64 `signtool.exe` from the Windows
-SDK, signs the three executables with SHA-256 and the RFC 3161 timestamp endpoint
-`http://timestamp.digicert.com`, and verifies the signatures before packaging.
-The PFX is removed by an `always()` cleanup step. Without the PFX secret the
-signing step is skipped and unsigned binaries are packaged with `Compress-Archive`.
+Authenticode hook. It selects an x64 `signtool.exe` from the Windows SDK, signs the three
+executables and then the MSI with SHA-256 and the RFC 3161 timestamp endpoint
+`http://timestamp.digicert.com`, and verifies the signatures. The PFX is removed by an
+`always()` cleanup step (and by a `finally` in the MSI signing step). Without the PFX
+secret signing is skipped and unsigned binaries are packaged.

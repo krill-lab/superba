@@ -384,6 +384,10 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: unsigned-windows-x86_64
@@ -426,15 +430,47 @@ jobs:
         run: |
           $pfx = Join-Path $env:RUNNER_TEMP 'superba-signing.pfx'
           if (Test-Path -LiteralPath $pfx) { Remove-Item -LiteralPath $pfx -Force }
-      - name: Package Windows binaries
+      # The MSI is the only Windows package. WiX is third-party code, so it runs
+      # after the signing key was removed from disk (the PFX is only decoded
+      # again in the MSI signing step below, which runs no third-party tool).
+      - name: Install WiX
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $staging = Join-Path $env:RUNNER_TEMP "superba-$env:RELEASE_VERSION-windows-x86_64"
-          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { throw 'wix install failed' }
+          "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
+      - name: Build the MSI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Copy-Item "unsigned/windows/*" -Destination $staging
-          Compress-Archive -Path "$staging/*" -DestinationPath "dist/superba-$env:RELEASE_VERSION-windows-x86_64.zip" -Force
+          ./scripts/release/build-msi.ps1 -StageDir unsigned/windows -Version $env:RELEASE_VERSION `
+            -Out "dist/superba-$env:RELEASE_VERSION-windows-x86_64.msi"
+      - name: Sign the MSI (optional Authenticode)
+        if: steps.windows-signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfx = Join-Path $env:RUNNER_TEMP 'superba-signing.pfx'
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64))
+            $sdkTools = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe"
+            $signtool = $sdkTools | Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+            if (-not $signtool) { throw 'Windows SDK signtool.exe was not found' }
+            $msi = "dist/superba-$env:RELEASE_VERSION-windows-x86_64.msi"
+            $signArgs = @('sign', '/fd', 'SHA256', '/f', $pfx, '/p', $env:WINDOWS_SIGNING_PFX_PASSWORD,
+                          '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', $msi)
+            & $signtool.FullName @signArgs
+            if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing failed for the MSI' }
+            & $signtool.FullName verify /pa /all $msi
+            if ($LASTEXITCODE -ne 0) { throw 'Authenticode verification failed for the MSI' }
+          } finally {
+            if (Test-Path -LiteralPath $pfx) { Remove-Item -LiteralPath $pfx -Force }
+          }
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -468,7 +504,7 @@ jobs:
             "spb-$RELEASE_VERSION-linux-x86_64-musl.tar.gz"
             "superba-$RELEASE_VERSION-macos-universal.zip"
             "superba-$RELEASE_VERSION-macos-universal.dmg"
-            "superba-$RELEASE_VERSION-windows-x86_64.zip"
+            "superba-$RELEASE_VERSION-windows-x86_64.msi"
           )
           for archive in "${archives[@]}"; do
             test -s "$archive"

@@ -79,7 +79,13 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 | macOS 11+（Apple 芯片和 Intel） | `superba-<版本>-macos-universal.dmg` / `.zip` —— 已签名并公证的 `Superba.app` 以及 `spb` |
 | Linux x86_64 / aarch64（glibc） | `superba-<版本>-linux-<架构>.tar.gz`（`superba`、`spb`、`superba-router`） |
 | Linux x86_64，仅 CLI（musl 静态） | `spb-<版本>-linux-x86_64-musl.tar.gz`（`spb`、`superba-router`） |
-| Windows x86_64 | `superba-<版本>-windows-x86_64.zip`（`superba.exe`、`spb.exe`、`superba-router.exe`） |
+| Windows 10+ x86_64 | `superba-<版本>-windows-x86_64.msi` —— 本用户安装包（`superba.exe`、`spb.exe`、`superba-router.exe`） |
+
+Windows 上直接运行 `.msi`（无需管理员权限）：安装到 `%LOCALAPPDATA%\Programs\Superba`，
+创建开始菜单快捷方式，并把 `spb` 加入当前用户的 `PATH`（装完请新开终端）。新版 `.msi`
+原地升级；在“设置 > 应用”（或 `msiexec /x`）卸载时，会同时停止并移除本地路由器的开机
+启动项。Windows 不再提供 zip。静默安装：
+`msiexec /i superba-<版本>-windows-x86_64.msi /qn`。
 
 `superba-router` 是可选的本地路由程序，请和 `superba`、`spb` 放在一起（macOS 上
 它在 `Superba.app` 内部，开启路由前请先把 app 移到“应用程序”文件夹）。每个版本附带

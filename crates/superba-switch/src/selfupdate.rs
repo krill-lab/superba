@@ -44,7 +44,10 @@ impl Switcher {
     /// Restart the router service when it is installed and running.
     pub(crate) async fn restart_router_if_running(&self) -> Result<bool> {
         let (info, live) = self.deps.router.overview().await;
-        if !(info.installed && live.is_up()) {
+        // After an MSI upgrade the installer has stopped the router on purpose.
+        let forced = std::env::var_os(superba_versions::selfupdate::msi::ENV_FORCE_ROUTER_RESTART)
+            .is_some_and(|v| v == "1");
+        if !(info.installed && (live.is_up() || forced)) {
             return Ok(false);
         }
         self.deps.router.restart().await?;

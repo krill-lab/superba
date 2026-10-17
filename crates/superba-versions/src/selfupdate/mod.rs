@@ -28,6 +28,7 @@ pub mod apply;
 mod fetch;
 pub mod finish;
 mod install;
+pub mod msi;
 pub mod release;
 pub mod state;
 pub mod version;
