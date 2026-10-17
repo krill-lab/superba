@@ -6,7 +6,7 @@
 
 mod fakes;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use fakes::v3::files_in;
@@ -20,6 +20,9 @@ use superba_core::{
     SwitchPlan, SwitchRequest, SwitchService, TargetId, codex::ENV_CODEX_CLI_PATH,
 };
 use superba_switch::Switcher;
+
+/// The Codex executable file name of the platform.
+const CODEX_EXE: &str = if cfg!(windows) { "codex.exe" } else { "codex" };
 
 fn req(profile: &str) -> SwitchRequest {
     SwitchRequest::profile(ProfileId::new(profile))
@@ -677,6 +680,10 @@ fn pin_request(pin: AppCodexPin) -> SwitchRequest {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "pinning the app's Codex is not offered on Windows (PIN_SUPPORTED)"
+)]
 async fn pinning_downloads_first_then_fully_restarts_with_the_executable() {
     let w = World::new();
     let sw = w.switcher();
@@ -718,6 +725,10 @@ async fn pinning_downloads_first_then_fully_restarts_with_the_executable() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "pinning the app's Codex is not offered on Windows (PIN_SUPPORTED)"
+)]
 async fn a_mismatching_app_server_is_reported_and_the_pin_not_stored() {
     let w = World::new();
     let v = CodexVersion::new(0, 162, 0);
@@ -745,6 +756,10 @@ async fn a_mismatching_app_server_is_reported_and_the_pin_not_stored() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "pinning the app's Codex is not offered on Windows (PIN_SUPPORTED)"
+)]
 async fn unpinned_launches_remove_an_inherited_value_and_below_floor_is_blocked() {
     let w = World::new();
     let sw = w.switcher();
@@ -778,6 +793,10 @@ async fn unpinned_launches_remove_an_inherited_value_and_below_floor_is_blocked(
 }
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "pinning the app's Codex is not offered on Windows (PIN_SUPPORTED)"
+)]
 async fn the_pinned_version_is_the_app_consumer_for_catalogs() {
     let w = World::new();
     let v = CodexVersion::new(0, 163, 0);
@@ -1139,7 +1158,7 @@ async fn installs_go_to_the_store_locally_or_to_a_host_with_a_hot_restart() {
         })
         .await
         .unwrap();
-    assert!(report.executable.unwrap().ends_with("bin/codex"));
+    assert!(Path::new(&report.executable.unwrap()).ends_with(Path::new("bin").join(CODEX_EXE)));
 
     let mut host = remote_host("dev", Some("h-dev"));
     host.sources = vec![superba_core::HostSource::GlobalState];
@@ -1169,7 +1188,9 @@ async fn installs_go_to_the_store_locally_or_to_a_host_with_a_hot_restart() {
         })
         .await
         .unwrap();
-    assert!(report.executable.unwrap().ends_with(".local/bin/codex"));
+    assert!(
+        Path::new(&report.executable.unwrap()).ends_with(Path::new(".local/bin").join(CODEX_EXE))
+    );
     assert!(
         w.calls()
             .contains(&"versions.install_standalone 0.162.0".to_owned())
@@ -1182,7 +1203,9 @@ async fn rollbacks_go_to_the_standalone_layout_or_a_host_with_a_hot_restart() {
     let sw = w.switcher();
     let report = sw.rollback_codex(InstallTarget::Local).await.unwrap();
     assert_eq!(report.version, CodexVersion::new(0, 150, 1));
-    assert!(report.executable.unwrap().ends_with(".local/bin/codex"));
+    assert!(
+        Path::new(&report.executable.unwrap()).ends_with(Path::new(".local/bin").join(CODEX_EXE))
+    );
     assert!(
         w.calls()
             .contains(&"versions.rollback_standalone".to_owned())
@@ -1400,6 +1423,10 @@ async fn blocked_reasons_name_the_catalog() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "pinning the app's Codex is not offered on Windows (PIN_SUPPORTED)"
+)]
 async fn a_persisted_pin_plans_the_cli_path_variable() {
     let w = World::new();
     w.profiles

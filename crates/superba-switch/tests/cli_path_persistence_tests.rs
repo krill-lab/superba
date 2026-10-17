@@ -117,6 +117,10 @@ async fn the_also_outside_superba_choice_moves_the_persisted_value_with_it() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "pinning the app's Codex is not offered on Windows (PIN_SUPPORTED)"
+)]
 async fn unpinning_without_persistence_still_clears_a_persisted_value() {
     let w = World::new();
     let sw = w.switcher();

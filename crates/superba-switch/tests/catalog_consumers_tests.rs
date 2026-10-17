@@ -105,7 +105,7 @@ async fn applied_with_catalog(w: &World, sw: &Switcher) -> PathBuf {
     assert_eq!(outcome.status, OutcomeStatus::Switched);
     std::fs::write(
         w.ctx.codex_home().config_toml(),
-        format!("model_catalog_json = \"{}\"\n", file.display()),
+        format!("model_catalog_json = {:?}\n", file.display().to_string()),
     )
     .unwrap();
     file
@@ -116,6 +116,10 @@ async fn applied_with_catalog(w: &World, sw: &Switcher) -> PathBuf {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "pinning the app's Codex is not offered on Windows (PIN_SUPPORTED)"
+)]
 async fn a_pin_whose_codex_refuses_the_catalog_rebuilds_it_before_the_app_restarts() {
     let w = World::new();
     let sw = w.switcher();
@@ -158,6 +162,10 @@ async fn a_pin_whose_codex_refuses_the_catalog_rebuilds_it_before_the_app_restar
 }
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "pinning the app's Codex is not offered on Windows (PIN_SUPPORTED)"
+)]
 async fn a_pin_whose_codex_accepts_the_catalog_rewrites_nothing() {
     let w = World::new();
     let sw = w.switcher();
@@ -188,6 +196,10 @@ async fn a_pin_without_a_catalog_file_does_not_check_one() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "pinning the app's Codex is not offered on Windows (PIN_SUPPORTED)"
+)]
 async fn a_pin_whose_catalog_cannot_be_repaired_is_blocked_before_anything_changes() {
     let w = World::new();
     let sw = w.switcher();

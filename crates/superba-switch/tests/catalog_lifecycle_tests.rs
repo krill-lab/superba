@@ -85,7 +85,7 @@ async fn switch_with_window(w: &World, sw: &Switcher, n: u64) -> PathBuf {
 fn config_names(w: &World, file: Option<&PathBuf>) {
     let home = w.ctx.codex_home();
     let body = match file {
-        Some(f) => format!("model_catalog_json = \"{}\"\n", f.display()),
+        Some(f) => format!("model_catalog_json = {:?}\n", f.display().to_string()),
         None => String::new(),
     };
     std::fs::write(home.config_toml(), body).unwrap();
