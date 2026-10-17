@@ -100,6 +100,11 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
     ) -> Result<RouterEndpointInfo>;
     /// Stop and remove the service; delete the secrets and runtime files.
     async fn uninstall(&self) -> Result<()>;
+    /// Restart the installed service so it runs the binary on disk (after a
+    /// Superba update). Configuration, port and token stay.
+    async fn restart(&self) -> Result<()> {
+        Err(Error::not_implemented("router restart"))
+    }
     /// Service state and liveness.
     async fn overview(&self) -> (RouterServiceInfo, Liveness);
     /// Ask the running router (admin API on loopback).
@@ -203,6 +208,10 @@ impl superba_router::watchdog::DirectModeFallback for AlreadyDirect {
 
 #[async_trait]
 impl RouterControl for SystemRouterControl {
+    async fn restart(&self) -> Result<()> {
+        self.manager.restart(ROUTER_START_WAIT).await
+    }
+
     fn endpoint(&self) -> Result<RouterEndpointInfo> {
         self.manager.endpoint().map(info)
     }

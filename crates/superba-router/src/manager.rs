@@ -287,6 +287,14 @@ impl RouterManager {
         Ok(endpoint)
     }
 
+    /// Restart the installed service (after its binary was replaced by an
+    /// update) and wait until the router answers, at most `wait`. Keeps the
+    /// configuration, port and token.
+    pub async fn restart(&self, wait: Duration) -> Result<()> {
+        self.service.restart(&self.spec)?;
+        self.wait_until_up(wait).await
+    }
+
     /// Apply a changed configuration: write it and reload a running router.
     /// `listen_port` 0 keeps the current port; a different port restarts the
     /// service (Codex's config must follow).

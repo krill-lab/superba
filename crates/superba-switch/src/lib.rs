@@ -32,6 +32,7 @@ pub mod models;
 pub mod planner;
 pub mod router;
 pub mod rules;
+mod selfupdate;
 pub mod service;
 mod settings;
 mod sites;
@@ -578,6 +579,36 @@ impl SwitchService for Switcher {
 
     async fn router_watch(&self) -> Result<superba_core::RouterWatch> {
         self.router_watch_impl().await
+    }
+
+    async fn self_update_view(&self) -> Result<superba_core::SelfUpdateView> {
+        self.self_update_view_impl().await
+    }
+
+    async fn self_update_check(
+        &self,
+        request: superba_core::SelfUpdateCheckRequest,
+    ) -> Result<superba_core::SelfUpdateView> {
+        self.self_update_check_impl(request).await
+    }
+
+    async fn self_update_skip(
+        &self,
+        version: Option<String>,
+    ) -> Result<superba_core::SelfUpdateView> {
+        self.self_update_skip_impl(version).await
+    }
+
+    async fn self_update_install(
+        &self,
+        request: superba_core::SelfUpdateInstallRequest,
+    ) -> Result<superba_core::SelfUpdateReport> {
+        self.refuse_elevated()?;
+        self.self_update_install_impl(request).await
+    }
+
+    async fn self_update_restart_router(&self) -> Result<bool> {
+        self.restart_router_if_running().await
     }
 
     async fn account(&self, request: AccountRequest) -> Result<AccountReport> {
