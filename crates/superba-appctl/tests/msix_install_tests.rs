@@ -6,6 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use superba_appctl::appx::canonical;
 use superba_appctl::codexbin::version_in_bytes;
 use superba_appctl::install::{
     AppxPackage, appx_install, inspect_install, install_matches, parse_appx_applications,
@@ -47,7 +48,8 @@ fn package(parent: &Path) -> PathBuf {
         root.join("app/resources/owl-app.ini"),
         "[Owl]\nUserDataDirectoryName=Codex\nAppVersion=26.1013.40934\n",
     );
-    root.canonicalize().unwrap()
+    // Canonical in the plain form installs use (no `\\?\` prefix on Windows).
+    canonical(&root).unwrap()
 }
 
 fn registered(root: &Path) -> AppxPackage {

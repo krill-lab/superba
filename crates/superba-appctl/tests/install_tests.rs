@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use pretty_assertions::assert_eq;
 use serde_json::json;
+// Install paths are canonical in the plain form (no `\\?\` prefix on Windows).
+use superba_appctl::appx::canonical;
 use superba_appctl::install::{
     ENV_SUPERBA_APP_DIR, OwlAppIni, appimage_install, explicit_install, inspect_install,
     parse_appx_application_id, parse_appx_packages_json, parse_codex_package_json,
@@ -35,7 +37,7 @@ fn linux_app(root: &Path, name: &str) -> PathBuf {
         root.join("resources/linux-package-metadata.json"),
         r#"{"codexAppBrand":"chatgpt","version":"26.1007.70000"}"#,
     );
-    fs::canonicalize(root).unwrap()
+    canonical(root).unwrap()
 }
 
 fn mac_app(root: &Path, id: &str, name: &str, framework: &str) -> PathBuf {
@@ -67,7 +69,7 @@ fn mac_app(root: &Path, id: &str, name: &str, framework: &str) -> PathBuf {
         root.join("Contents/Resources/codex-cli/codex-package.json"),
         r#"{"layoutVersion":1,"version":"0.162.0-alpha.17.2","entrypoint":"bin/codex","target":"aarch64-apple-darwin"}"#,
     );
-    fs::canonicalize(root).unwrap()
+    canonical(root).unwrap()
 }
 
 #[test]
@@ -439,7 +441,7 @@ fn inspect_windows_layout_finds_nested_desktop_and_skips_resources_subtrees() {
     write(root.join("resources/ChatGPT.exe"), "decoy");
     write(root.join("resources/codex.exe"), "fake CLI");
     write(root.join("resources/app.asar"), "fake archive");
-    let root = root.canonicalize().unwrap();
+    let root = canonical(&root).unwrap();
     let install = inspect_install(&root).unwrap();
     assert_eq!(install.executable, root.join("app/bin/ChatGPT.exe"));
     assert_eq!(
@@ -490,7 +492,7 @@ fn bundled_codex_is_one_identity_with_its_launcher_target_and_wsl_twin() {
         "fake Linux CLI for WSL",
     );
     write(package.join("app/resources/codex.exe"), "fake CLI");
-    let package = package.canonicalize().unwrap();
+    let package = canonical(&package).unwrap();
     let install = inspect_install(&package).unwrap();
     let exe = package.join("app/resources/codex.exe");
     assert_eq!(install.bundled_codex, Some(exe.clone()));
@@ -508,7 +510,7 @@ fn appimages_are_standalone_files_with_unknown_versions() {
         write(&path, "fake AppImage");
         let install = appimage_install(&path).unwrap();
         assert_eq!(install.variant, variant);
-        assert_eq!(install.executable, path.canonicalize().unwrap());
+        assert_eq!(install.executable, canonical(&path).unwrap());
         assert_eq!(install.executable, install.path);
         assert!(install.app_version.is_none());
         assert!(install.bundled_codex.is_none());
