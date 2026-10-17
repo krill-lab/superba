@@ -48,6 +48,9 @@ Geist look).
 - **Any OpenAI-compatible site.** Add a Responses API site by its base URL, map
   Codex model names to the site's names, and probe it (latency, key, model list,
   one Responses call) before switching.
+- **Import from cc-switch and AI Toolbox.** Their Codex providers (Krill lines
+  become the Krill preset, other sites custom sites with their lines), previewed
+  with conflicts and keys before anything is saved; their files are only read.
 - **Models and speed.** The Models page (and `spb models`) lists a provider's
   models with their context window and auto-compact limit, lets you override
   them per model (shown as default or custom, validated, resettable), and the
@@ -171,6 +174,43 @@ spb restore generation --generation 3
 spb uninstall                     # restore and remove Superba's shell blocks
 ```
 
+## Import from cc-switch and AI Toolbox
+
+Set up Codex providers in [cc-switch](https://github.com/farion1231/cc-switch) or
+[AI Toolbox](https://github.com/coulsontl/ai-toolbox) already? **Providers > Add >
+Import from other tools** (also on the first-run wizard's provider step and in the
+command palette) or `spb import` reads their configuration and imports the Codex
+providers into Superba.
+
+- **Read-only.** Superba only reads the other tool's store, also while that tool
+  runs, and never writes to it: cc-switch's `~/.cc-switch/cc-switch.db` (schemas
+  1 to 20; or the older `config.json`), AI Toolbox's `ai-toolbox.db` in its app
+  data folder (schemas 4 to 29), honouring their data-folder overrides. A store of
+  an unknown version or format (AI Toolbox's pre-0.9.2 SurrealDB folder) is
+  skipped with the reason.
+- **What a provider becomes.** An address on a Krill line becomes the Krill
+  preset on that line; any other address a custom OpenAI-compatible site with its
+  base URL, its lines (the tool's alternative addresses), model, reasoning effort
+  and model mapping. Keys go into Superba's key storage (the OS keyring).
+  Claude Code, Gemini and other non-Codex providers, ChatGPT logins and providers
+  that only work through the other tool's local proxy are listed as not
+  importable, with the reason.
+- **Preview first.** Each provider shows what it becomes, whether its key comes
+  along, and conflicts with providers you have (same name or same address): skip
+  (the default), rename (import it next to the existing one) or update (key,
+  address or line, model; its name and Codex settings stay). Nothing is written to
+  Codex and nothing restarts: switch to an imported provider when you want it.
+
+```sh
+spb import ccs --dry-run                     # what would be imported, nothing written
+spb import ai-toolbox --select "My Relay,Krill" --on-conflict rename
+spb import ccs --json                        # the stores, the preview and the result
+```
+
+A key the other tool keeps in the system keychain or reads from an environment
+variable is not copied: that provider is imported without a key, with a note, and
+you add the key in Superba.
+
 ## How hot switching works
 
 Codex reads `config.toml`, `auth.json` and its environment only when its
@@ -252,6 +292,7 @@ See [SECURITY.md](SECURITY.md#the-local-router) for what the router can see.
 | `state_5.sqlite`, `thread_history_*.sqlite`, `sessions/**/rollout-*.jsonl` | only when you migrate sessions | backups plus a ledger; `spb sessions rollback <id>` |
 | Remote hosts' `~/.codex` and shell files | only for hosts you select | per-host backups on the host; `spb remote rollback <target>` |
 | Router service (`superba-router.service`, `com.krill.superba.router` LaunchAgent, `SuperbaRouter` Run value) | only while the local router is installed | `spb router uninstall` / `spb uninstall` |
+| cc-switch / AI Toolbox stores | only when you import from them | read only, never written (a database with pending changes is read from a private copy in Superba's cache, removed right after) |
 | Superba's data dir | always | `~/.local/share/superba` (Linux), `~/Library/Application Support/com.krill-code.Superba` (macOS), `%APPDATA%\krill-code\Superba\data` (Windows); override with `SUPERBA_DATA_DIR` |
 
 Keys you give Superba are stored in the OS keyring (Keychain, Credential
@@ -282,6 +323,7 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | `spb launch [--restart]` | open (or fully restart) the desktop app through Superba |
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | session providers |
 | `spb remote list \| apply \| rollback` | SSH remote hosts |
+| `spb import ccs\|ai-toolbox [--dry-run] [--select NAMES] [--on-conflict skip\|rename\|update]` | import Codex providers from cc-switch or AI Toolbox (their files are only read; Codex is not changed) |
 | `spb doctor`, `spb recover`, `spb uninstall` | diagnostics, crash recovery, clean removal |
 
 Useful flags for commands that execute a plan: `--dry-run` (show the plan only),

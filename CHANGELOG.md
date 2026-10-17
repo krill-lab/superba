@@ -32,6 +32,19 @@ back to the official ChatGPT login.
   Providers page has a list with a context menu, inline rename, Test and Delete
   (confirmed), and an add-provider dialog and first-run wizard that share the same
   option cards.
+- **Import from cc-switch and AI Toolbox**: Providers > Add > Import from other
+  tools, the first-run wizard, the command palette and `spb import ccs|ai-toolbox
+  [--dry-run] [--json] [--select NAMES] [--on-conflict skip|rename|update]` read
+  the Codex providers of cc-switch (`cc-switch.db` schemas 1 to 20, `config.json`
+  v1 and v2) and AI Toolbox (`ai-toolbox.db` schemas 4 to 29) without writing to
+  them (databases with pending changes are read from a private copy). A Krill line
+  becomes the Krill preset on that line, any other address a custom site with its
+  lines, model and model mapping; keys go into Superba's key storage. A preview
+  per tool shows each target, whether the key comes along (a key in the keychain
+  or an environment variable stays behind, with a note), and conflicts with
+  existing providers (skip by default, rename or update). Non-Codex providers,
+  ChatGPT logins and proxy-only providers are listed with the reason; unknown
+  versions are skipped with one. Nothing is written to Codex and nothing restarts.
 - **Automatic authentication** for Krill keys: a personal access token (PAT,
   `CODEX_AUTHAPI_BASE_URL` persisted in shell rc blocks, `environment.d`,
   LaunchAgent or `HKCU\Environment`) where the line supports it, else a plain

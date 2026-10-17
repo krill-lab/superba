@@ -44,6 +44,7 @@ never linked into the binaries).
 | `superba-remote` | `RemoteHosts` | `SshRemoteHosts` | remote agent |
 | `superba-catalog` | `CatalogSource` (`SnapshotSource`) | `CatalogStore` | catalog agent |
 | `superba-router` | the `superba-router` binary; `RouterManager`, watchdog, admin client | `RouterServer` | router agent |
+| `superba-import` | — (read-only scan of cc-switch / AI Toolbox stores, mapping, conflicts; used by `superba-switch`'s `import_scan` / `import_apply`) | `read_source`, `preview`, `plan` | import agent |
 | `superba-switch` | `SwitchService` (+ `detect_context`, `SwitcherDeps`, `RouterControl`, `settings_catalog`) | `Switcher` | switch agent |
 | `superba-cli` | `spb` binary + `superba_cli::main_with_args` | — | cli agent |
 | `superba-gui` | `superba` binary | `SuperbaApp` | gui agent |
@@ -321,6 +322,7 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 | `logs/` | binaries |
 | `cache/usage/` (usage reports per site, key fingerprint and range; no keys) | net |
 | `cache/transports.json` (WebSocket / zstd checks per site, line, base URL and key fingerprint, with the time of the check; no keys) | switch |
+| `cache/import/import-<uuid>/` (a private 0700 copy of another tool's database with pending `-wal` / `-journal` changes, removed right after reading) | import |
 | `router/` (`config.json`, 0600 `secrets.json` and `runtime.json`, log) | router |
 | `catalog/` (a downloaded, signature-checked settings catalog; unused while remote updates are off) | catalog |
 | `selfupdate.json` (ETags and answers of the release check, last check time, skipped version, macOS backup to remove; no secrets), `downloads/superba-update/` (verified Superba packages and staging) | versions |
@@ -537,6 +539,25 @@ while the app runs, verify, recover) is a side effect that pure rendering cannot
 it would get its own `AuthRuntime`-style trait (`prepare` -> prepared material +
 handle, `release`) in a new crate, called by `superba-switch` during execution, so
 planning stays side-effect free.
+
+### Provider import from other tools
+
+`superba-import` reads the Codex providers of cc-switch (`~/.cc-switch/cc-switch.db`,
+schemas 1 to 20, or `config.json` v1 / v2; the `app_paths.json` data-dir override)
+and AI Toolbox (`<app data>/com.ai-toolbox/ai-toolbox.db`, JSONB documents, schemas
+4 to 29; `AI_TOOLBOX_DATA_DIR`, `app_paths.json`) without writing to them:
+rollback-journal databases are opened `mode=ro` in one read transaction, WAL
+databases `immutable=1` when their WAL is empty and otherwise from a private copy of
+the database and its WAL (header compared before and after, `quick_check`), a hot
+journal likewise. An unknown layout or JSON version is skipped with a reason; a
+newer schema whose provider table is unchanged is read with a note. `preview` maps
+each provider (Krill line origin -> the Krill preset on that line, else a custom
+site with its lines and model map), finds conflicts with existing profiles (same
+name, same address) and pre-selects the importable ones; `plan` turns selections
+(skip / rename / update) into sites and profiles. `superba-switch` re-reads the
+sources for an import (keys never leave the service) and saves through
+`save_site` / `save_profile` (secret store, router member resync); Codex is never
+touched.
 
 ## 9. Security
 

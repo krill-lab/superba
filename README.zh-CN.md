@@ -38,6 +38,8 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
   检查；每次切换都会预览每个改动的键及原因。
 - **任意兼容 OpenAI 的站点。** 用 base URL 添加 Responses API 站点，把 Codex 的模型名
   映射到站点上的名称，切换前先检测（延迟、Key、模型列表、一次 Responses 请求）。
+- **从 cc-switch 和 AI Toolbox 导入。** 导入它们的 Codex 供应商（Krill 线路变成 Krill 预设，
+  其他站点变成带线路的自定义站点），保存前先预览冲突和 Key；它们的文件只读不写。
 - **模型与速度档。** 模型页（以及 `spb models`）列出供应商的模型及其上下文窗口和
   自动压缩上限，可按模型覆盖（区分默认值与自定义值，带校验，可重置）；标准 / Fast /
   Ultrafast 速度档控件会说明每个档位对终端和桌面 app 各自的效果。
@@ -140,6 +142,34 @@ spb restore generation --generation 3
 spb uninstall                     # 还原并移除 Superba 写入的 shell 配置块
 ```
 
+## 从 cc-switch 和 AI Toolbox 导入
+
+已经在 [cc-switch](https://github.com/farion1231/cc-switch) 或
+[AI Toolbox](https://github.com/coulsontl/ai-toolbox) 里配置过 Codex 供应商？用
+**供应商 > 添加 > 从其他工具导入**（首次运行向导的供应商一步和命令面板里也有）或
+`spb import`，读取它们的配置，把其中的 Codex 供应商导入 Superba。
+
+- **只读。** Superba 只读取另一个工具的存储（即使它正在运行），从不写入：cc-switch 的
+  `~/.cc-switch/cc-switch.db`（数据库版本 1 至 20；或更早的 `config.json`），AI Toolbox
+  应用数据目录下的 `ai-toolbox.db`（数据库版本 4 至 29），并遵循它们自己的数据目录设置。
+  未知版本或格式的存储（AI Toolbox 0.9.2 之前的 SurrealDB 目录）会跳过并说明原因。
+- **导入成什么。** 地址是 Krill 线路的，导入为该线路上的 Krill 预设；其他地址导入为
+  自定义 OpenAI 兼容站点，带上 base URL、线路（该工具里的备用地址）、模型、推理强度和
+  模型映射。Key 存入 Superba 的 Key 存储（系统钥匙串）。Claude Code、Gemini 等非 Codex
+  供应商、ChatGPT 登录，以及只能经由另一个工具本地代理使用的供应商，会列为不可导入并说明原因。
+- **先预览。** 每个供应商都显示它会变成什么、Key 是否一起导入，以及与已有供应商的冲突
+  （同名或同地址）：跳过（默认）、重命名（与已有的并存导入）或更新（Key、地址或线路、模型；
+  名称和 Codex 设置保持不变）。不会写入 Codex，也不会重启：想用时再切换到导入的供应商。
+
+```sh
+spb import ccs --dry-run                     # 将导入什么，不写入任何内容
+spb import ai-toolbox --select "My Relay,Krill" --on-conflict rename
+spb import ccs --json                        # 存储、预览和结果
+```
+
+另一个工具存放在系统钥匙串里、或从环境变量读取的 Key 不会被复制：该供应商导入时不带 Key，
+并附有说明，之后在 Superba 里补上 Key 即可。
+
 ## 热切换的原理
 
 Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环境变量，
@@ -203,6 +233,7 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 | `state_5.sqlite`、`thread_history_*.sqlite`、`sessions/**/rollout-*.jsonl` | 仅在迁移会话时 | 备份加迁移账本；`spb sessions rollback <id>` |
 | 远程主机的 `~/.codex` 和 shell 文件 | 仅限你选中的主机 | 在主机上按次备份；`spb remote rollback <目标>` |
 | 路由服务（`superba-router.service`、`com.krill.superba.router` LaunchAgent、`SuperbaRouter` 启动项） | 仅在安装了本地路由时 | `spb router uninstall` / `spb uninstall` |
+| cc-switch / AI Toolbox 的存储 | 仅在从它们导入时 | 只读，从不写入（有未落盘改动的数据库会先复制到 Superba 缓存里的私有副本再读，读完即删） |
 | Superba 数据目录 | 始终 | `~/.local/share/superba`（Linux）、`~/Library/Application Support/com.krill-code.Superba`（macOS）、`%APPDATA%\krill-code\Superba\data`（Windows）；可用 `SUPERBA_DATA_DIR` 覆盖 |
 
 你交给 Superba 的 Key 存在系统钥匙串（Keychain、凭据管理器、Secret Service）中；
@@ -233,6 +264,7 @@ ChaCha20-Poly1305 加密。
 | `spb launch [--restart]` | 通过 Superba 打开（或完整重启）桌面 app |
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | 会话 provider |
 | `spb remote list \| apply \| rollback` | SSH 远程主机 |
+| `spb import ccs\|ai-toolbox [--dry-run] [--select 名称] [--on-conflict skip\|rename\|update]` | 从 cc-switch 或 AI Toolbox 导入 Codex 供应商（只读取它们的文件，不改动 Codex） |
 | `spb doctor`、`spb recover`、`spb uninstall` | 诊断、崩溃恢复、彻底移除 |
 
 执行计划的命令常用参数：`--dry-run`（只显示计划）、`--countdown N`（0–30 秒，
