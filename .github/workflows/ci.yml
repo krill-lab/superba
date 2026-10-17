@@ -165,6 +165,10 @@ jobs:
         env:
           CARGO_PROFILE_RELEASE_DEBUG: "0"
         run: cargo build --release --locked -p superba-gui -p superba-cli -p superba-router
+      # A clean Windows has no VC++ runtime: the programs must not import it (user bug 43).
+      - name: Check the programs need no C runtime DLL
+        shell: pwsh
+        run: ./scripts/release/check-imports.ps1 target/release/superba.exe target/release/spb.exe target/release/superba-router.exe
       - name: Stage the release files
         shell: pwsh
         run: |

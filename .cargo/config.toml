@@ -1,0 +1,17 @@
+# Windows (MSVC): link the C runtime statically. A dynamically linked CRT makes
+# superba.exe, spb.exe and superba-router.exe import VCRUNTIME140.dll and the
+# UCRT api-ms-win-crt-* sets; a clean Windows has no VC++ redistributable, the
+# MSI does not ship it, and the programs then exit at once with 0xC0000135
+# (STATUS_DLL_NOT_FOUND) without any message (user bug 43).
+#
+# Applies to every build for these targets, local and CI: with `--target` only
+# to the target artifacts; without `--target` on a Windows host also to build
+# scripts and proc-macros, which works the same (cc-rs builds the bundled C code
+# with /MT when it sees `crt-static`). A RUSTFLAGS environment variable replaces
+# these flags: the release and MSI jobs check the imports of what they built
+# (scripts/release/check-imports.ps1).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

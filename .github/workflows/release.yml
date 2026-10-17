@@ -218,6 +218,14 @@ jobs:
           # tar keeps the bundle's permissions for the signing job.
           mkdir -p unsigned
           tar -czf "unsigned/macos-universal.tar.gz" -C "$RUNNER_TEMP" "superba-$RELEASE_VERSION-macos-universal"
+      # A clean Windows has no VC++ runtime and the MSI does not ship it: the
+      # programs must not import it (static CRT, .cargo/config.toml; user bug 43).
+      - name: Check the Windows programs need no C runtime DLL
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          ./scripts/release/check-imports.ps1 "target/$env:BUILD_TARGET/release/superba.exe" `
+            "target/$env:BUILD_TARGET/release/spb.exe" "target/$env:BUILD_TARGET/release/superba-router.exe"
       - name: Stage unsigned Windows binaries
         if: matrix.platform == 'windows'
         run: |
