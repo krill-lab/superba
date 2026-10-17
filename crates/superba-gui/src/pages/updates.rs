@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use egui::{Align, Color32, FontId, Layout, Rect, Sense, Ui, UiBuilder, pos2, vec2};
+use superba_core::paths::display_path;
 use superba_core::{
     AppCodexPin, AppDownloadReport, AppUpdateAction, CliUpdateAction, CliVersionRow,
     CodexInstallKind, CodexRelease, CodexVersion, CompatTier, InstallReport, InstallRequest,
@@ -479,7 +480,7 @@ impl State {
                 }
                 AppCodexPin::Path { path } => {
                     self.choice = PinChoice::Path;
-                    self.path = path.display().to_string();
+                    self.path = display_path(path);
                 }
                 _ => self.choice = PinChoice::Bundled,
             }
@@ -661,10 +662,12 @@ fn app_section(
     icon_section(ui, cx, Icon::AppWindow, &cx.tr.t("updates.app.title"));
     match &view.app.install {
         Some(i) => kv(ui, cx, &cx.tr.t("updates.app.installed_label"), |ui| {
+            // The release version, with the MSIX package version labeled (user bug 43).
+            let version = i.version_text().map(|v| cx.localize(&v));
             ui.label(Text::mono(
                 app_line(
                     cx,
-                    i.app_version.as_deref(),
+                    version.as_deref(),
                     None,
                     i.bundled_codex_version.as_ref(),
                 ),
@@ -749,7 +752,7 @@ fn app_section(
             }
             if let Some(rep) = &state.downloaded {
                 kv(ui, cx, &cx.tr.t("updates.app.file"), |ui| {
-                    ui.label(Text::mono(rep.path.display().to_string(), cx.pal));
+                    ui.label(Text::mono(display_path(&rep.path), cx.pal));
                     if ui
                         .add(Button::new(cx.tr.t("updates.app.open_installer")).small())
                         .clicked()
@@ -1020,7 +1023,7 @@ pub fn mismatch_paths(cx: &Cx<'_>, view: &VersionsView) -> Option<String> {
         ("updates.pin.expected_path", view.expected_codex()),
     ]
     .into_iter()
-    .filter_map(|(key, path)| path.map(|p| cx.tr.f(key, &[("path", &p.display())])))
+    .filter_map(|(key, path)| path.map(|p| cx.tr.f(key, &[("path", &display_path(&p))])))
     .collect();
     (!lines.is_empty()).then(|| lines.join("\n"))
 }
@@ -1071,7 +1074,7 @@ fn pin_section(
         kv(ui, cx, &cx.tr.t("updates.pin.effective"), |ui| {
             let r = ui.label(Text::mono(v.to_string(), cx.pal));
             if let Some(exe) = &pin.effective_exe {
-                r.on_hover_text(exe.display().to_string());
+                r.on_hover_text(display_path(exe));
             }
         });
     }
@@ -1424,7 +1427,7 @@ fn cli_section(
             ui.spacing_mut().item_spacing.x = 12.0;
             // The path takes what the other columns leave, shortened in the
             // middle so the file name stays visible (review ux-visual #12).
-            let path = row.binary.path.display().to_string();
+            let path = display_path(&row.binary.path);
             let path_w = (ui.available_width() - CLI_FIXED_COLUMNS).clamp(220.0, 440.0);
             let shown = crate::design::widgets::value_chip::fit(
                 ui,

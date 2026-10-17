@@ -2,6 +2,7 @@
 //! computer, environment facts and the activity log.
 
 use egui::{Align, Layout, ScrollArea, Ui};
+use superba_core::paths::display_path;
 use superba_core::{CodexProcessKind, EnvObservation, FeedOrigin, Severity};
 
 use super::{Action, Cx, Page, empty_state, error_state, kv, page_header, section};
@@ -171,7 +172,7 @@ fn environment(ui: &mut Ui, cx: &Cx<'_>) {
     Card::new().flat().show(ui, |ui| {
         if let Some(o) = cx.data.overview.value.as_ref() {
             kv(ui, cx, &cx.tr.t("diag.env.codex_home"), |ui| {
-                ui.label(Text::mono(o.codex_home.display().to_string(), cx.pal));
+                ui.label(Text::mono(display_path(&o.codex_home), cx.pal));
             });
             if let Some(c) = &o.config {
                 kv(ui, cx, &cx.tr.t("diag.env.provider"), |ui| {
@@ -189,13 +190,10 @@ fn environment(ui: &mut Ui, cx: &Cx<'_>) {
         }
         if let Some(paths) = &cx.data.paths {
             kv(ui, cx, &cx.tr.t("diag.env.data_dir"), |ui| {
-                super::elided(ui, Text::mono(paths.data_dir.display().to_string(), cx.pal));
+                super::elided(ui, Text::mono(display_path(&paths.data_dir), cx.pal));
             });
             kv(ui, cx, &cx.tr.t("diag.env.router_db"), |ui| {
-                super::elided(
-                    ui,
-                    Text::mono(paths.router_db.display().to_string(), cx.pal),
-                );
+                super::elided(ui, Text::mono(display_path(&paths.router_db), cx.pal));
             });
         }
         kv(

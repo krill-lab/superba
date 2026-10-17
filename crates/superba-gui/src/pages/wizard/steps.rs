@@ -1,6 +1,7 @@
 //! The wizard's steps (UX §3.2), background reads and the custom-site draft.
 
 use egui::{Align, Align2, Frame, Layout, Margin, Rect, Sense, Stroke, TextEdit, Ui, pos2, vec2};
+use superba_core::paths::display_path;
 use superba_core::{AuthMode, AuthShape, KeyAccess, LegacySessionChoice, LineCaps, Profile, Site};
 
 use super::{Step, Wizard, legacy_count, probe_request};
@@ -511,11 +512,12 @@ pub(super) fn detect(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Act
                 cx,
                 Status::Ok,
                 cx.tr.t("wizard.detect.app"),
-                format!(
-                    "{} · {}",
-                    i.app_version.clone().unwrap_or_default(),
-                    i.path.display()
-                ),
+                i.version_text()
+                    .map(|v| cx.localize(&v))
+                    .into_iter()
+                    .chain([display_path(&i.path)])
+                    .collect::<Vec<_>>()
+                    .join(" · "),
             ),
             None => check_row(
                 ui,
@@ -537,7 +539,7 @@ pub(super) fn detect(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Act
                         .as_ref()
                         .map(|v| v.to_string())
                         .unwrap_or_default(),
-                    b.path.display()
+                    display_path(&b.path)
                 ),
             ),
             None => check_row(

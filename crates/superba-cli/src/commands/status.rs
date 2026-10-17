@@ -53,8 +53,11 @@ pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
         .map(|install| {
             vec![
                 install.id.clone(),
-                install.path.display().to_string(),
-                out.optional(install.app_version.as_ref()),
+                superba_core::paths::display_path(&install.path),
+                install
+                    .version_text()
+                    .map(|v| out.render(&v))
+                    .unwrap_or_else(|| out.none()),
                 out.optional(install.bundled_codex_version.as_ref()),
             ]
         })

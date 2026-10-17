@@ -20,3 +20,8 @@ newer = "比 app 自带的 Codex 新很多（未经测试）"
 [app_source]
 official = "OpenAI 官方下载服务器（persistent.oaistatic.com）"
 store_mirror = "Microsoft Store CDN，链接由第三方 store.rg-adguard.net 解析"
+
+[app_version]
+release = "{version}"
+with_package = "{version}（包 {package}）"
+package = "包 {package}"

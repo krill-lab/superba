@@ -231,7 +231,8 @@ fn a_verified_package_is_explained_and_opened_dependencies_first() {
     );
     for want in [
         "OpenAI.Codex_26.1013.4894.0_x64__2p2nqsd0c76g0.msix",
-        "26.1013.4894.0（app 26.1013.40934） · x64",
+        // The release version, the package version labeled (user bug 43).
+        "26.1013.40934（包 26.1013.4894.0） · x64",
         "Microsoft Store CDN，链接由第三方 store.rg-adguard.net 解析",
         "store.rg-adguard.net 是第三方链接解析服务",
         "未使用：official server (persistent.oaistatic.com): HTTP 503",

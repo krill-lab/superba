@@ -299,8 +299,12 @@ impl Recent {
             let dir = downloads_dir()
                 .ok_or_else(|| superba_core::Error::other("no home directory to export into"))?;
             let path = dir.join(name);
-            std::fs::write(&path, text.as_bytes())
-                .map_err(|e| superba_core::Error::other(format!("{}: {e}", path.display())))?;
+            std::fs::write(&path, text.as_bytes()).map_err(|e| {
+                superba_core::Error::other(format!(
+                    "{}: {e}",
+                    superba_core::paths::display_path(&path)
+                ))
+            })?;
             Ok((path, n))
         }));
     }
@@ -340,9 +344,13 @@ impl Recent {
             out.push(match done {
                 Ok((path, n)) => Action::Toast {
                     status: Status::Ok,
-                    text: cx
-                        .tr
-                        .f("requests.exported", &[("n", &n), ("path", &path.display())]),
+                    text: cx.tr.f(
+                        "requests.exported",
+                        &[
+                            ("n", &n),
+                            ("path", &superba_core::paths::display_path(&path)),
+                        ],
+                    ),
                 },
                 Err(e) => Action::Toast {
                     status: Status::Error,

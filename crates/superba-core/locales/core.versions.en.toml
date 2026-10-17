@@ -22,3 +22,10 @@ newer = "Much newer than the app's own Codex (untested)"
 [app_source]
 official = "OpenAI download server (persistent.oaistatic.com)"
 store_mirror = "Microsoft Store CDN, link resolved by store.rg-adguard.net (third-party)"
+
+# The desktop app version: the release version, with the MSIX package version
+# labeled when there is one (AppInstall::version_text).
+[app_version]
+release = "{version}"
+with_package = "{version} (package {package})"
+package = "package {package}"

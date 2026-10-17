@@ -930,7 +930,7 @@ pub fn build(
                     "{target}: its bundled Codex ({path}) did not report its version, so the list follows {fallback}; availability is not shown for {target}.",
                 )
                 .arg("target", &info.label)
-                .arg("path", binary.display())
+                .arg("path", superba_core::paths::display_path(binary))
                 .arg_text("fallback", fallback),
             );
         } else if c.is_none() {

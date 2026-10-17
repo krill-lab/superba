@@ -576,7 +576,7 @@ fn path_field(
             .and_then(Value::as_str)
             .and_then(existing_parent)
             && link_button(ui, &cx.tr.t("codex_settings.detail.reveal"), true)
-                .on_hover_text(dir.display().to_string())
+                .on_hover_text(superba_core::paths::display_path(&dir))
                 .clicked()
         {
             out.push(Action::OpenUrl(dir.display().to_string()));

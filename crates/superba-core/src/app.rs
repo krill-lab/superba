@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::codex::{CodexVersion, LOCAL_HOST_ID};
 use crate::env::EnvObservation;
+use crate::i18n::LocalizedText;
 use crate::ids::TargetId;
 use crate::time::Timestamp;
 
@@ -45,6 +46,56 @@ pub struct AppInstall {
     /// Its version.
     #[serde(default)]
     pub bundled_codex_version: Option<CodexVersion>,
+}
+
+impl AppInstall {
+    /// The MSIX package version of a Windows install (`26.1013.4894.0`), read from
+    /// its folder, which is named by the package full name
+    /// (`OpenAI.Codex_26.1013.4894.0_x64__2p2nqsd0c76g0`). It is not the app's
+    /// release version ([`Self::app_version`], `26.1013.40934`). `None` for any
+    /// other install.
+    pub fn package_version(&self) -> Option<&str> {
+        let name = self.path.file_name()?.to_str()?;
+        let parts: Vec<&str> = name.split('_').collect();
+        let [family, version, arch, _resource, publisher] = parts.as_slice() else {
+            return None;
+        };
+        let numeric = version.split('.').count() == 4
+            && version
+                .split('.')
+                .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
+        (numeric && !family.is_empty() && !arch.is_empty() && !publisher.is_empty())
+            .then_some(*version)
+    }
+
+    /// The app version for display: [`app_version_text`] of the release version
+    /// and the package version.
+    pub fn version_text(&self) -> Option<LocalizedText> {
+        app_version_text(self.app_version.as_deref(), self.package_version())
+    }
+}
+
+/// A desktop app version for display, the same everywhere: the release version
+/// (`26.1013.40934`) and, for an MSIX package, its package version labeled
+/// (`26.1013.40934 (package 26.1013.4894.0)`). A release version equal to the
+/// package version is one read from the package (the app's own was unreadable)
+/// and is shown as the package version.
+pub fn app_version_text(release: Option<&str>, package: Option<&str>) -> Option<LocalizedText> {
+    let release = release.filter(|r| Some(*r) != package);
+    match (release, package) {
+        (Some(r), Some(p)) => Some(
+            LocalizedText::new("app_version.with_package", "{version} (package {package})")
+                .arg("version", r)
+                .arg("package", p),
+        ),
+        (Some(r), None) => {
+            Some(LocalizedText::new("app_version.release", "{version}").arg("version", r))
+        }
+        (None, Some(p)) => {
+            Some(LocalizedText::new("app_version.package", "package {package}").arg("package", p))
+        }
+        (None, None) => None,
+    }
 }
 
 /// A CDP endpoint of a running app.

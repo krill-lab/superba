@@ -79,7 +79,7 @@ pub fn default_backend(cx: &Cx<'_>) -> Option<Arc<dyn RouterBackend>> {
             .as_ref()
             .map(|m| m.spec().exe.clone())
             .filter(|exe| superba_router::manager::is_network_location(exe))
-            .map(|exe| exe.display().to_string()),
+            .map(|exe| superba_core::paths::display_path(&exe)),
         manager,
     }))
 }

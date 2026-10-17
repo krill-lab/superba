@@ -146,3 +146,27 @@ fn map_environment_distinguishes_missing_empty_and_nonempty_values() {
     assert_eq!(env.var_non_empty("SPACE"), None);
     assert_eq!(env.var_non_empty("VALUE").as_deref(), Some(" retained "));
 }
+
+#[test]
+fn display_paths_drop_the_windows_verbatim_prefix() {
+    use superba_core::paths::display_path;
+    // User bug 43: the wizard showed `\\?\C:\Program Files\WindowsApps\...`.
+    for (raw, shown) in [
+        (
+            r"\\?\C:\Program Files\WindowsApps\OpenAI.Codex_26.1013.4894.0_x64__2p2nqsd0c76g0",
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_26.1013.4894.0_x64__2p2nqsd0c76g0",
+        ),
+        (
+            r"\\?\UNC\server\share\codex.exe",
+            r"\\server\share\codex.exe",
+        ),
+        (r"\\?\unc\server\share", r"\\server\share"),
+        // Verbatim forms without a shorter name, and plain paths, stay as they are.
+        (r"\\?\Volume{0b1c}\dir", r"\\?\Volume{0b1c}\dir"),
+        (r"C:\Users\me\codex.exe", r"C:\Users\me\codex.exe"),
+        (r"\\server\share", r"\\server\share"),
+        ("/home/me/.codex", "/home/me/.codex"),
+    ] {
+        assert_eq!(display_path(Path::new(raw)), shown, "{raw}");
+    }
+}

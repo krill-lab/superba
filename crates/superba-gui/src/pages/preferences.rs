@@ -383,7 +383,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
             .data
             .paths
             .as_ref()
-            .map(|p| p.data_dir.display().to_string())
+            .map(|p| superba_core::paths::display_path(&p.data_dir))
             .unwrap_or_default();
         row(ui, cx, &cx.tr.t("prefs.data.dir"), &dir, false, |ui| {
             if ui

@@ -207,17 +207,17 @@ fn report_rows(
     out: &mut Vec<Action>,
 ) {
     kv(ui, cx, &cx.tr.t("updates.win.file"), |ui| {
-        ui.label(Text::mono(w.package.path.display().to_string(), cx.pal));
+        ui.label(Text::mono(
+            superba_core::paths::display_path(&w.package.path),
+            cx.pal,
+        ));
     });
     let id = &w.package.identity;
     kv(ui, cx, &cx.tr.t("updates.win.version"), |ui| {
-        let text = match &w.release_version {
-            Some(r) => cx.tr.f(
-                "updates.win.version_value",
-                &[("version", &id.version), ("release", r)],
-            ),
-            None => id.version.clone(),
-        };
+        // Labeled like the installed app: release version, package version (user bug 43).
+        let text = superba_core::app_version_text(w.release_version.as_deref(), Some(&id.version))
+            .map(|v| cx.localize(&v))
+            .unwrap_or_default();
         ui.label(Text::mono(format!("{text} · {}", id.arch), cx.pal));
     });
     kv(ui, cx, &cx.tr.t("updates.win.source"), |ui| {

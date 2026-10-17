@@ -28,6 +28,27 @@ pub trait EnvSource: Send + Sync + fmt::Debug {
     }
 }
 
+/// `path` as text for people to read: without the `\\?\` prefix that
+/// canonicalized Windows paths carry (`\\?\C:\Program Files\…` is shown as
+/// `C:\Program Files\…`, `\\?\UNC\server\share` as `\\server\share`).
+/// For display only: a long path may need its prefix to be opened.
+pub fn display_path(path: &Path) -> String {
+    let text = path.display().to_string();
+    const UNC: &str = r"\\?\UNC\";
+    if text
+        .get(..UNC.len())
+        .is_some_and(|p| p.eq_ignore_ascii_case(UNC))
+    {
+        return format!(r"\\{}", &text[UNC.len()..]);
+    }
+    match text.strip_prefix(r"\\?\") {
+        // Only drive paths (`C:\`): other verbatim forms (`\\?\Volume{…}`) have
+        // no shorter name.
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_owned(),
+        _ => text,
+    }
+}
+
 /// The real process environment.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ProcessEnv;
