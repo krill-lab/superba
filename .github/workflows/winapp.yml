@@ -1,0 +1,230 @@
+name: Windows app
+
+# The real ChatGPT app for Windows (the MSIX package OpenAI.Codex) on a hosted
+# runner (user bugs 40 and 41): download the official package, install it,
+# check what a standard user may do with the package files, then let Superba
+# activate it by AUMID with --remote-debugging-port, connect over CDP, quit it
+# gracefully, quit it without CDP and by force, relaunch it, and load the Codex
+# settings page source with it installed. Manual runs only:
+#   gh workflow run winapp.yml --ref <branch>
+
+on:
+  workflow_dispatch:
+
+# Third-party actions are pinned to full commit SHAs (version in a comment).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  winapp:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Runner facts
+        shell: pwsh
+        run: |
+          [Environment]::OSVersion.VersionString
+          (Get-CimInstance Win32_OperatingSystem).Caption
+          "user: $(whoami), session $((Get-Process -Id $PID).SessionId)"
+          whoami /groups | Select-String 'Mandatory Label'
+          Get-Process explorer, sihost -ErrorAction SilentlyContinue | Format-Table Id, SessionId, ProcessName
+          Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -ErrorAction SilentlyContinue | Format-List
+      - name: Download the official package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Invoke-RestMethod 'https://persistent.oaistatic.com/codex-app-prod/windows-release.json'
+          $package = $release.packages | Where-Object architecture -eq 'x64'
+          "packageVersion $($release.packageVersion): $($package.downloadUrl)"
+          $dir = Join-Path $env:RUNNER_TEMP 'msix'
+          New-Item -ItemType Directory -Path $dir | Out-Null
+          curl.exe --fail --location --retry 3 --silent --show-error --output "$dir\ChatGPT-x64.msix" $package.downloadUrl
+          if ($LASTEXITCODE -ne 0) { throw "download failed ($LASTEXITCODE)" }
+          "size $((Get-Item "$dir\ChatGPT-x64.msix").Length)"
+          Get-AuthenticodeSignature "$dir\ChatGPT-x64.msix" | Format-List Status, StatusMessage
+      - name: Install the package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            Add-AppxPackage -Path "$env:RUNNER_TEMP\msix\ChatGPT-x64.msix"
+          } catch {
+            $_ | Format-List * -Force
+            Get-AppxLog -All | Select-Object -Last 40 | Format-List TimeCreated, Message
+            throw
+          }
+          Get-AppxPackage -Name OpenAI.Codex | Format-List Name, PackageFullName, PackageFamilyName, InstallLocation, Version, SignatureKind, Status
+          $root = (Get-AppxPackage -Name OpenAI.Codex).InstallLocation
+          "root=$root" >> $env:GITHUB_ENV
+          foreach ($dir in @((Split-Path $root), $root)) {
+            "--- ACL of ${dir}:"
+            (Get-Acl $dir).Access | ForEach-Object {
+              "  $($_.IdentityReference): $($_.FileSystemRights) $($_.AccessControlType) (inherit: $($_.InheritanceFlags))"
+            }
+          }
+      - name: What a standard user may do with the package files
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $name = 'superbait'
+          $password = 'Sb-' + [guid]::NewGuid().ToString('N').Substring(0, 16) + '!a1'
+          $secure = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name $name -Password $secure -AccountNeverExpires -PasswordNeverExpires | Out-Null
+          Add-LocalGroupMember -Group 'Users' -Member $name
+          $probe = Join-Path $env:RUNNER_TEMP 'probe'
+          New-Item -ItemType Directory -Path $probe -Force | Out-Null
+          icacls $probe /grant "${name}:(OI)(CI)F" | Out-Null
+          $script = @'
+          param($root, $out)
+          function Try-It($label, [scriptblock]$block) {
+            try { $r = & $block; "$label OK: $r" } catch { "$label FAILED: $($_.Exception.Message)" }
+          }
+          & {
+            "whoami: $(whoami)"
+            Try-It 'list C:\Program Files\WindowsApps' { (Get-ChildItem 'C:\Program Files\WindowsApps' -ErrorAction Stop | Measure-Object).Count }
+            Try-It 'list the package folder' { (Get-ChildItem $root -ErrorAction Stop | Measure-Object).Count }
+            Try-It 'stat app\resources\codex.exe' { (Get-Item "$root\app\resources\codex.exe" -ErrorAction Stop).Length }
+            Try-It 'read AppxManifest.xml' { (Get-Content "$root\AppxManifest.xml" -TotalCount 3 -ErrorAction Stop) -join ' ' }
+            Try-It 'read app\resources\owl-app.ini' { (Get-Content "$root\app\resources\owl-app.ini" -ErrorAction Stop) -join ' ' }
+            Try-It 'read 1 MB of codex.exe' { $f = [IO.File]::OpenRead("$root\app\resources\codex.exe"); $b = New-Object byte[] 1048576; $n = $f.Read($b, 0, $b.Length); $f.Close(); $n }
+            Try-It 'run codex.exe --version' { $o = & "$root\app\resources\codex.exe" --version 2>&1; "$o (exit $LASTEXITCODE)" }
+          } *> $out
+          '@
+          Set-Content -Path "$probe\probe.ps1" -Value $script
+          $cred = New-Object System.Management.Automation.PSCredential($name, $secure)
+          try {
+            # One argument string: Start-Process does not quote array elements.
+            $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$probe\probe.ps1`" `"$env:root`" `"$probe\out.txt`""
+            $p = Start-Process -FilePath 'powershell.exe' -Credential $cred -LoadUserProfile -WorkingDirectory $probe `
+              -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+            "standard user probe exited with $($p.ExitCode)"
+          } catch {
+            "cannot start a process as the standard user: $($_.Exception.Message)"
+          }
+          if (Test-Path "$probe\out.txt") { Get-Content "$probe\out.txt" }
+          "--- the same as this runner user (an administrator):"
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$probe\probe.ps1" $env:root "$probe\admin.txt"
+          Get-Content "$probe\admin.txt"
+          Remove-LocalUser -Name $name
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: winapp
+          cache-on-failure: true
+      - name: Build the tests and spb
+        shell: bash
+        run: |
+          cargo test -p superba-appctl --locked --no-run --test windows_app_it
+          cargo test -p superba-gui --locked --no-run --test windows_settings_it
+          cargo test -p superba-versions --locked --no-run --test windows_store_it
+          # The runner user is an administrator and Superba refuses to run
+          # elevated by design; this test build lifts that one check.
+          cargo build -p superba-cli --locked --bin spb --features superba-switch/test-unelevated
+      - name: Activate, CDP, quit and relaunch the packaged app
+        shell: bash
+        env:
+          SUPERBA_WINAPP_IT: "1"
+          SUPERBA_WINAPP_REPORT: ${{ runner.temp }}/winapp-report.txt
+          RUST_LOG: superba_appctl=debug
+        run: cargo test -p superba-appctl --locked --test windows_app_it -- --ignored --nocapture
+      - name: Load the Codex settings source with the package installed
+        if: ${{ always() }}
+        shell: bash
+        env:
+          SUPERBA_WINAPP_IT: "1"
+          SUPERBA_DATA_DIR: ${{ runner.temp }}/superba-data
+          SUPERBA_SECRET_BACKEND: file
+        run: cargo test -p superba-gui --locked --test windows_settings_it -- --ignored --nocapture
+      - name: The Codex store with a running codex.exe
+        if: ${{ always() }}
+        shell: bash
+        env:
+          SUPERBA_WINAPP_IT: "1"
+        run: cargo test -p superba-versions --locked --test windows_store_it -- --ignored --nocapture
+      - name: "The user's flow: restart through spb an app that Windows started"
+        if: ${{ always() }}
+        shell: pwsh
+        env:
+          SUPERBA_DATA_DIR: ${{ runner.temp }}\spb-data
+          SUPERBA_SECRET_BACKEND: file
+          SUPERBA_LOCALE: zh-CN
+        run: |
+          $spb = Join-Path $PWD 'target\debug\spb.exe'
+          function Show-App($label) {
+            "--- ${label}:"
+            Get-CimInstance Win32_Process -Filter "Name='ChatGPT.exe'" |
+              Where-Object { $_.CommandLine -notmatch '--type=' } |
+              ForEach-Object { "  pid $($_.ProcessId) parent $($_.ParentProcessId): $($_.CommandLine)" }
+          }
+          # Opened the way the user opens it (Start menu), so without a debugging port.
+          Start-Process explorer.exe 'shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App'
+          Start-Sleep -Seconds 20
+          Show-App 'opened from the Start menu'
+          '=== spb launch --restart --yes --force (no CDP: windows close, then forced)'
+          & $spb launch --restart --yes --force
+          "exit $LASTEXITCODE"
+          Show-App 'after the first restart'
+          '=== spb launch --restart --yes (CDP: the app quits by itself)'
+          & $spb launch --restart --yes
+          "exit $LASTEXITCODE"
+          Show-App 'after the second restart'
+          '=== spb status'
+          & $spb status
+          Get-Process ChatGPT -ErrorAction SilentlyContinue | Stop-Process -Force
+      - name: "User bug 41: the settings catalog of the 0.1.1-alpha.1 Windows build and of this one"
+        if: ${{ always() }}
+        shell: pwsh
+        env:
+          SUPERBA_DATA_DIR: ${{ runner.temp }}\catalog-data
+          SUPERBA_SECRET_BACKEND: file
+        run: |
+          $msi = Join-Path $env:RUNNER_TEMP 'superba-0.1.1-alpha.1.msi'
+          curl.exe --fail --location --silent --show-error --output $msi `
+            'https://github.com/krill-lab/superba/releases/download/v0.1.1-alpha.1/superba-0.1.1-alpha.1-windows-x86_64.msi'
+          $dir = Join-Path $env:RUNNER_TEMP 'superba-0.1.1-alpha.1'
+          Start-Process msiexec.exe -ArgumentList "/a `"$msi`" /qn TARGETDIR=`"$dir`"" -Wait
+          $old = Get-ChildItem $dir -Recurse -Filter spb.exe | Select-Object -First 1 -ExpandProperty FullName
+          $new = Join-Path $PWD 'target\debug\spb.exe'
+          # Without a provider `settings list` stops after loading the catalog;
+          # the 0.1.1-alpha.1 build (checked out with CRLF line endings) logs
+          # why its built-in catalog does not load.
+          foreach ($spb in @($old, $new)) {
+            "=== $spb settings list"
+            & $spb settings list 2>&1 | Select-Object -First 12
+            "exit $LASTEXITCODE"
+          }
+          exit 0
+      - name: App processes and logs
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like '*WindowsApps*' -or $_.Name -like 'codex*' } |
+            Format-Table ProcessId, ParentProcessId, Name, ExecutablePath -AutoSize
+          Get-ChildItem "$env:LOCALAPPDATA\OpenAI\Codex\bin" -ErrorAction SilentlyContinue | Format-Table Name, Length, LastWriteTime
+          if (Test-Path "$env:RUNNER_TEMP\winapp-report.txt") { Get-Content "$env:RUNNER_TEMP\winapp-report.txt" }
+      - name: Keep the report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: winapp-report
+          path: ${{ runner.temp }}/winapp-report.txt
+          if-no-files-found: ignore
+          retention-days: 7
