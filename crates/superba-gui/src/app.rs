@@ -826,9 +826,21 @@ impl SuperbaApp {
         self.flow.on_event(&ev, now);
         match &ev {
             SwitchEvent::Phase { phase, .. } => {
-                let key = phase_key(*phase);
+                // The end of a run with a step that failed (a relaunch that did
+                // not happen, a failed check) is not "Done" (user bug 40).
+                let failed = *phase == SwitchPhase::Done
+                    && self.flow.run().is_some_and(|run| {
+                        run.steps
+                            .iter()
+                            .any(|(_, status)| matches!(status, StepStatus::Failed { .. }))
+                    });
+                let key = if failed {
+                    "phase.done_failed"
+                } else {
+                    phase_key(*phase)
+                };
                 let text = self.tr.f("log.phase", &[("phase", &self.tr.t(key))]);
-                self.log(Status::Idle, text);
+                self.log(if failed { Status::Warn } else { Status::Idle }, text);
             }
             SwitchEvent::Step {
                 step,
@@ -958,6 +970,39 @@ impl SuperbaApp {
                                         ToastAction::Retry(Box::new(plan.request.clone())),
                                     )
                                     .action(self.tr.t("action.details"), ToastAction::ViewLog)
+                                    .sticky(),
+                            );
+                        }
+                        OutcomeStatus::WrittenOnly
+                            if outcome
+                                .notices
+                                .iter()
+                                .any(|n| n.severity == Severity::Danger) =>
+                        {
+                            // Written, but something the user expects did not
+                            // happen (ChatGPT did not open again): an error toast
+                            // with the reason, not the green "written" one.
+                            let reason = outcome
+                                .notices
+                                .iter()
+                                .find(|n| n.severity == Severity::Danger)
+                                .map(|n| pages::localize_text(&self.tr, &self.data, &n.text))
+                                .unwrap_or_default();
+                            let next = outcome
+                                .notices
+                                .iter()
+                                .find(|n| n.text.key == "switch.done.launch_failed")
+                                .map(|n| pages::localize_text(&self.tr, &self.data, &n.text));
+                            let body = match &next {
+                                Some(next) => format!("{reason}\n{next}"),
+                                None => reason.clone(),
+                            };
+                            self.log(Status::Error, body.replace('\n', " "));
+                            self.toasts.push(
+                                Toast::new(Status::Error, self.tr.t("toast.written_launch_failed"))
+                                    .body(body)
+                                    .action(self.tr.t("action.open_app"), ToastAction::OpenApp)
+                                    .action(self.tr.t("action.view_log"), ToastAction::ViewLog)
                                     .sticky(),
                             );
                         }

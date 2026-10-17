@@ -1770,6 +1770,12 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
     let mut answer = None;
     dialog(ctx, egui::Id::unique("decision"), 520.0, |ui| {
         let (title, body) = match &request {
+            // Windows: closing the window leaves the app running in the
+            // notification area, so without CDP there is nothing to wait for.
+            DecisionRequest::ForceQuit { .. } if cfg!(windows) => (
+                "decide.force_quit.title_windows",
+                "decide.force_quit.body_windows",
+            ),
             DecisionRequest::ForceQuit { .. } => {
                 ("decide.force_quit.title", "decide.force_quit.body")
             }

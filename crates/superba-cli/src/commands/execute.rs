@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use superba_core::{
     AuthShape, CheckResult, Error, ExecuteOptions, LocalizedText, OutcomeStatus, PlanChoice,
-    PlanSettings, RestartKind, SettingChange, StepStatus, SwitchEvent, SwitchOutcome, SwitchPlan,
-    SwitchRequest, SwitchStep, TargetId,
+    PlanSettings, RestartKind, SettingChange, StepStatus, SwitchEvent, SwitchOutcome, SwitchPhase,
+    SwitchPlan, SwitchRequest, SwitchStep, TargetId,
 };
 use superba_switch::messages;
 
@@ -392,6 +392,21 @@ impl RenderedProgress {
                 self.steps.push((step.clone(), status.clone()));
             }
             Progress::Event(SwitchEvent::Log { text, .. }) => self.logs.push(text.clone()),
+            // A run that ends with a failed step (ChatGPT not reopened, a failed
+            // check) is not "Done" (user bug 40).
+            Progress::Event(SwitchEvent::Phase {
+                phase: SwitchPhase::Done,
+                ..
+            }) if self
+                .steps
+                .iter()
+                .any(|(_, status)| matches!(status, StepStatus::Failed { .. })) =>
+            {
+                return out.progress(
+                    text("cli.format.phase")
+                        .arg_text("phase", messages::text("switch.phase.done_failed")),
+                );
+            }
             _ => {}
         }
         message.render(out)
@@ -423,7 +438,10 @@ fn render_outcome(
     let summary = outcome.notices.iter().find(|notice| {
         matches!(
             notice.text.key.as_str(),
-            "switch.done.switched" | "switch.done.restored" | "switch.done.written_only"
+            "switch.done.switched"
+                | "switch.done.restored"
+                | "switch.done.written_only"
+                | "switch.done.launch_failed"
         )
     });
     if let Some(summary) = summary {

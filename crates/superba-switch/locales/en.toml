@@ -23,6 +23,7 @@ nav_restore = "Returning to the conversation"
 recovery = "Verification failed"
 rollback_restart = "Restoring the previous configuration"
 done = "Done"
+done_failed = "Finished, but a step failed"
 
 [switch.step]
 write_config = "Write configuration"
@@ -170,6 +171,7 @@ not_running = "Configuration written. ChatGPT is not running; the change applies
 written_only = "Configuration written. Restart ChatGPT yourself to apply it."
 restored = "Restored {destination} in {seconds} s"
 remote_switched = "Remote host {host} switched"
+launch_failed = "The configuration is written, but ChatGPT did not open again. Open ChatGPT yourself (Start menu, Dock or app menu); it uses the new configuration."
 hot_unavailable = "This switch took effect, but hot switching is unavailable for now (ChatGPT did not expose its debug port in time)."
 app_launched = "ChatGPT was opened by Superba"
 

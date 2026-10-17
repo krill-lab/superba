@@ -712,9 +712,9 @@ impl Run<'_> {
             return;
         }
         if let Err(e) = self.launch_app(true).await {
-            self.notices.push(Notice::danger(
-                text("switch.failed.launch").arg_text("detail", e.to_text()),
-            ));
+            let failed = text("switch.failed.launch").arg_text("detail", e.to_text());
+            self.ev.log(Severity::Danger, failed.clone());
+            self.notices.push(Notice::danger(failed));
         }
     }
 
@@ -1228,9 +1228,13 @@ impl Run<'_> {
                 })
             }
             Err(e) => {
-                self.notices.push(Notice::danger(
-                    text("switch.failed.launch").arg_text("detail", e.to_text()),
-                ));
+                // The new configuration is complete and journaled, so it stays;
+                // but the app Superba quit is not running again. Say so at once
+                // (the activity log, the CLI progress) and in the outcome, which
+                // tells the user to open the app themselves.
+                let failed = text("switch.failed.launch").arg_text("detail", e.to_text());
+                self.ev.log(Severity::Danger, failed.clone());
+                self.notices.push(Notice::danger(failed));
                 Ok(LocalResult {
                     status: OutcomeStatus::WrittenOnly,
                     restart,
@@ -2017,8 +2021,17 @@ impl Run<'_> {
                 ));
             }
             OutcomeStatus::WrittenOnly => {
-                self.notices
-                    .push(Notice::info(text("switch.done.written_only")));
+                // After a failed relaunch the app is not running: "restart it"
+                // would be wrong.
+                let launch_failed = self
+                    .notices
+                    .iter()
+                    .any(|n| n.text.key == "switch.failed.launch");
+                self.notices.push(if launch_failed {
+                    Notice::warning(text("switch.done.launch_failed"))
+                } else {
+                    Notice::info(text("switch.done.written_only"))
+                });
             }
             _ => {}
         }

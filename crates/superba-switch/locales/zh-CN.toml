@@ -22,6 +22,7 @@ nav_restore = "正在回到原对话"
 recovery = "验证未通过"
 rollback_restart = "正在恢复切换前的配置"
 done = "完成"
+done_failed = "已结束，但有步骤失败"
 
 [switch.step]
 write_config = "写入配置"
@@ -169,6 +170,7 @@ not_running = "配置已写入。ChatGPT 没有在运行，下次打开就会生
 written_only = "配置已写入。请自行重启 ChatGPT 使其生效。"
 restored = "已还原到 {destination} · 用时 {seconds} 秒"
 remote_switched = "远程主机 {host} 已切换"
+launch_failed = "配置已写入，但 ChatGPT 没有重新打开。请自己打开 ChatGPT（开始菜单、程序坞或应用菜单），打开后使用新配置。"
 hot_unavailable = "这次切换已生效，但热切暂时不可用（ChatGPT 没有及时开放调试端口）。"
 app_launched = "已由 Superba 打开 ChatGPT"
 

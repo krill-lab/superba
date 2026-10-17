@@ -1666,3 +1666,61 @@ async fn unobservable_app_servers_skip_the_process_check_instead_of_rolling_back
         CheckResult::Skipped { .. }
     ));
 }
+
+// --- a relaunch that fails (user bug 40) -----------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_relaunch_is_reported_at_once_and_not_as_a_plain_written_switch() {
+    let w = no_cdp_world();
+    *w.app.fail_launch.lock().unwrap() = Some(Error::NotFound {
+        what: r"desktop app install path:\\?\C:\Program Files\WindowsApps\OpenAI.Codex_1_x64__p"
+            .into(),
+    });
+    let (o, ev) = run(&w, req("work"), allow_full(), ScriptedDecider::with(&[])).await;
+    // The configuration stays (complete and journaled) ...
+    assert_eq!(o.status, OutcomeStatus::WrittenOnly);
+    assert_eq!(journal_status(&w), vec![JournalStatus::Done]);
+    // ... the step failed, and the activity log says why before the run ends.
+    let events = ev.events.lock().unwrap().clone();
+    let failed_step = events.iter().position(|e| {
+        matches!(
+            e,
+            SwitchEvent::Step {
+                step: superba_core::SwitchStep::LaunchApp,
+                status: superba_core::StepStatus::Failed { .. },
+                ..
+            }
+        )
+    });
+    let danger_log = events.iter().position(|e| {
+        matches!(e, SwitchEvent::Log { level: superba_core::Severity::Danger, text } if text.key == "switch.failed.launch")
+    });
+    let done = events.iter().position(|e| {
+        matches!(
+            e,
+            SwitchEvent::Phase {
+                phase: SwitchPhase::Done,
+                ..
+            }
+        )
+    });
+    assert!(
+        failed_step.is_some() && danger_log.is_some() && done.is_some(),
+        "{events:?}"
+    );
+    assert!(failed_step < danger_log && danger_log < done);
+    // The outcome tells the user to open the app, not to "restart" it.
+    let keys = notice_keys(&o);
+    assert!(
+        keys.contains(&"switch.failed.launch".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        keys.contains(&"switch.done.launch_failed".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        !keys.contains(&"switch.done.written_only".to_owned()),
+        "{keys:?}"
+    );
+}
