@@ -200,6 +200,13 @@ back to the official ChatGPT login.
   with the settings diff.
 - **Doctor**: stale Codex processes, processes without the PAT auth address,
   foreign environment variables, unparseable configs, keyring problems.
+- **Quiet in the background**: installs, Codex binaries and their versions are
+  watched by one background monitor (a metadata check of a few paths, focus
+  changes, refresh buttons, after switches and installs) instead of being
+  detected on every 5-second overview read; no timer starts a process (`codex
+  --version`, `lsof`, `systemctl`, `launchctl`, `tasklist`, PowerShell); while the
+  window is hidden or minimised only the router watchdog keeps running (it also
+  keeps running now, falling back to direct mode when the router dies).
 - **Release pipeline**: Linux (glibc x86_64 / aarch64; static musl `spb` +
   `superba-router`), macOS universal (signed and notarized when the signing
   environment is configured; the router inside `Superba.app`), Windows x86_64;

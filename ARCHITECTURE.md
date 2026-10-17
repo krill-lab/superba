@@ -78,9 +78,9 @@ panics.
 | `ProfileStore` | `profiles.json` (`ProfileSet`: profiles, custom sites, settings) | `load`, `save` |
 | `LineProber` | Latency/health of lines, key validation, auth API health, models, Responses probe, WebSocket / zstd transport probe, account and usage data | `probe`, `probe_all`, `check_key`, `check_authapi(site, origin, key)`, `list_models`, `probe_responses`, `probe_transports`, `account_summary`, `usage_report` |
 | `SessionMigrator` | Session provider scan, migration with backup + ledger, rollback, crash recovery | `scan`, `plan`, `migrate`, `rollback`, `history`, `recover` |
-| `AppController` | Installs, CLI binaries, launch with CDP, bridge, hot restart, quit, processes, turn activity, renderer state, daemon, launcher entry | `detect_installs`, `codex_binaries`, `running_session`, `launch`, `probe_bridge`, `hot_restart`, `quit`, `full_restart`, `processes`, `turn_activity`, `renderer_state`, `current_thread`, `return_to_thread`, `restart_daemon`, `stop_daemon`, `remote_connections`, `launcher_entry`, `set_launcher_entry` |
+| `AppController` | Installs, CLI binaries, launch with CDP, bridge, hot restart, quit, processes, turn activity, renderer state, daemon, launcher entry | `detect_installs`, `codex_binaries`, `running_session`, `launch`, `probe_bridge`, `hot_restart`, `quit`, `full_restart`, `processes`, `session_and_processes`, `turn_activity`, `renderer_state`, `current_thread`, `return_to_thread`, `restart_daemon`, `stop_daemon`, `remote_connections`, `launcher_entry`, `set_launcher_entry`, `environment_stamp`, `forget_cached_probes` |
 | `RemoteHosts` | SSH hosts: discovery, probe, remote apply/rollback, turn activity, verification | `discover(home, from_app, live)`, `probe`, `plan_apply`, `apply`, `rollback`, `turn_activity`, `verify(RemoteVerifyRequest)` |
-| `SwitchService` | Application service for GUI and CLI | `overview`, `sites`, `profile_set`, `save_profile`, `delete_profile`, `save_settings`, `save_site`, `delete_site`, `probe_lines`, `probe_site`, `line_transports`, `check_key`, `account`, `sessions`, `doctor`, `open_app`, `recover`, `plan`, `plan_settings`, `execute`, `settings_view`, `edit_settings`, `router_status`, `router_install`, `router_set_enabled`, `router_uninstall`, `router_watch`, `router_fall_back` |
+| `SwitchService` | Application service for GUI and CLI | `overview`, `sites`, `profile_set`, `save_profile`, `delete_profile`, `save_settings`, `save_site`, `delete_site`, `probe_lines`, `probe_site`, `line_transports`, `check_key`, `account`, `sessions`, `doctor`, `open_app`, `recover`, `plan`, `plan_settings`, `execute`, `settings_view`, `edit_settings`, `router_status`, `router_install`, `router_set_enabled`, `router_uninstall`, `router_watch`, `router_fall_back`, `environment_event`, `environment_generation` |
 | `SwitchDecider` | Mid-execution questions (wait for turns, force quit, IPC failed, verification failed) | `decide(DecisionRequest) -> Decision` |
 | `SwitchEvents` | Progress events to the UI | `emit(SwitchEvent)` |
 | `Clock` | Injectable time (countdowns, ages) | `now`, `monotonic` |
@@ -636,6 +636,50 @@ mode; tests use an in-memory `SwitchService` under
   every desktop app of the user, so on Linux the script runs itself in an
   unprivileged user + PID namespace (same uid) and refuses to shoot while an app
   of another HOME is visible.
+
+### Background probing (user request 34)
+
+Nothing on a timer starts a process, and nothing runs while the window is hidden
+except the router watchdog.
+
+- **Environment monitor** (`superba_switch::monitor::EnvMonitor`, one thread
+  `superba-env-monitor` per `Switcher`, started by the GUI's first
+  `SwitchService::environment_event(Shown)`). It owns the slow facts: desktop app
+  installs (paths, versions, MSIX packages) and Codex binaries (bundled and CLI,
+  with versions). The overview, Updates, Models and Settings views read its
+  snapshot (`Arc` clone); `plan`, `execute`, `recover` and installs still detect
+  themselves. It detects again on: an explicit refresh (`EnvironmentEvent::Refresh`:
+  Refresh, "Check now"; cached probes are forgotten, so each binary is asked once);
+  an action (`invalidate` after `execute`, `install_codex`, `rollback_codex`,
+  `versions(true)`); a change seen by the stamp check every 30 s while shown
+  (`AppController::environment_stamp`: size and mtime of the install locations and
+  the directories installs are discovered in, the PATH directories, the standalone
+  Codex layout in the Codex home (`packages/standalone`, its `current` link), the
+  binaries found and their launchers' targets, on Windows the MSIX repository
+  registry key's last write time; metadata only, no directory listing; the Codex
+  home's own files are read by the overview directly); the focus coming back
+  (a check, a detection when the last one is over 10 min old); and every 30 min
+  while shown. Hidden: no checks; a pending detection waits for the next read.
+  `spb` and tests run no thread: the first read detects, events and `invalidate`
+  make the next read detect again.
+- **Probe caches** (`superba-appctl`): `codex --version` answers (also "none") are
+  kept per binary file and launcher target stamp until an explicit refresh
+  (`AppController::forget_cached_probes`); the Windows PowerShell package fallback
+  (only without a readable registry) runs once until then; CDP listener checks
+  (`lsof` on macOS) are kept for the life of the app process (pid + start time),
+  negative answers re-checked three times with growing pauses.
+- **Fast facts** keep cheap probes: the overview reads the process table once
+  (`AppController::session_and_processes`), `config.toml` / `auth.json`, the
+  bridge (CDP on loopback) and the account summary (cached 60 s by `superba-net`).
+  The Router page's service status (`systemctl`, `launchctl print`, `tasklist`) is
+  remembered by `RouterManager::overview` until a lifecycle call or a liveness
+  change; liveness itself is HTTP on loopback.
+- **GUI cadence** (`superba_gui::cadence`): overview every 5 s while shown (an
+  unchanged answer does not wake the window), router watchdog every 5 s also
+  while hidden (eframe calls only `App::logic` then), remote host list every
+  5 min and when the focus comes back after a minute, Superba's update check once
+  a day while shown; window shown / hidden / focus events go to the monitor, and a
+  new `environment_generation` reloads the views built from it.
 
 ## 12. Packaging and self-update
 
