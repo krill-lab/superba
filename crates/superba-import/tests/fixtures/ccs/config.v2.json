@@ -1,0 +1,131 @@
+{
+  "version": 2,
+  "claude": {
+    "providers": {
+      "8d2c1f0e-1111-4c3b-9a55-000000000001": {
+        "id": "8d2c1f0e-1111-4c3b-9a55-000000000001",
+        "name": "Example Relay (Claude)",
+        "settingsConfig": {
+          "env": {
+            "ANTHROPIC_AUTH_TOKEN": "sk-test-v2-claude-0000000000000000",
+            "ANTHROPIC_BASE_URL": "https://relay.example.com"
+          }
+        },
+        "websiteUrl": "https://relay.example.com",
+        "category": "third_party",
+        "createdAt": 1760000000000,
+        "sortIndex": 0
+      }
+    },
+    "current": "8d2c1f0e-1111-4c3b-9a55-000000000001"
+  },
+  "codex": {
+    "providers": {
+      "3f6a9b2c-2222-4d1e-8f00-000000000001": {
+        "id": "3f6a9b2c-2222-4d1e-8f00-000000000001",
+        "name": "OpenAI Official",
+        "settingsConfig": {
+          "auth": {
+            "OPENAI_API_KEY": null,
+            "tokens": {
+              "id_token": "eyJ-test-id-token.payload.sig",
+              "access_token": "eyJ-test-access-token.payload.sig",
+              "refresh_token": "rt-test-refresh-0000",
+              "account_id": "00000000-aaaa-bbbb-cccc-000000000000"
+            },
+            "last_refresh": "2025-11-01T08:00:00.000000Z"
+          },
+          "config": "model = \"gpt-5-codex\"\nmodel_reasoning_effort = \"high\"\n\n[mcp_servers.fetch]\ncommand = \"uvx\"\nargs = [\"mcp-server-fetch\"]\n\n[projects.\"/home/alice/src/demo\"]\ntrust_level = \"trusted\"\n"
+        },
+        "websiteUrl": "https://chatgpt.com/codex",
+        "category": "official",
+        "createdAt": 1760000000001,
+        "sortIndex": 0
+      },
+      "3f6a9b2c-2222-4d1e-8f00-000000000002": {
+        "id": "3f6a9b2c-2222-4d1e-8f00-000000000002",
+        "name": "PackyCode",
+        "settingsConfig": {
+          "auth": {
+            "OPENAI_API_KEY": "sk-test-v2-codex-packy-000000000000"
+          },
+          "config": "model_provider = \"packycode\"\nmodel = \"gpt-5-codex\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.packycode]\nname = \"packycode\"\nbase_url = \"https://codex-api.packycode.example/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = true"
+        },
+        "websiteUrl": "https://codex.packycode.example/",
+        "category": "third_party",
+        "createdAt": 1760000000002,
+        "sortIndex": 1,
+        "notes": "main relay",
+        "meta": {
+          "custom_endpoints": {
+            "https://codex-api-hk.packycode.example/v1": {
+              "url": "https://codex-api-hk.packycode.example/v1",
+              "addedAt": 1760000100000
+            },
+            "https://codex-api-us.packycode.example/v1": {
+              "url": "https://codex-api-us.packycode.example/v1",
+              "addedAt": 1760000200000,
+              "lastUsed": 1760000300000
+            }
+          },
+          "usage_script": {
+            "enabled": false,
+            "language": "javascript",
+            "code": "({ request: { url: \"{{baseUrl}}/user/balance\", method: \"GET\" }, extractor: function (r) { return { remaining: r.balance, unit: \"USD\" }; } })",
+            "timeout": 10
+          },
+          "isPartner": true,
+          "partnerPromotionKey": "packycode"
+        }
+      },
+      "3f6a9b2c-2222-4d1e-8f00-000000000003": {
+        "id": "3f6a9b2c-2222-4d1e-8f00-000000000003",
+        "name": "My Gateway",
+        "settingsConfig": {
+          "auth": {
+            "OPENAI_API_KEY": "sk-test-v2-codex-mygw-000000000000"
+          },
+          "config": "model_provider = \"my_gateway\"\nmodel = \"gpt-5\"\nmodel_reasoning_effort = \"medium\"\ndisable_response_storage = true\n\n[model_providers.my_gateway]\nname = \"my_gateway\"\nbase_url = \"https://gw.example.org/openai/v1\"\nwire_api = \"responses\"\nenv_key = \"my_gateway\"\nrequires_openai_auth = true\n\n[model_providers.old_unused]\nname = \"old_unused\"\nbase_url = \"https://stale.example.net/v1\"\nwire_api = \"chat\"\n\n[mcp_servers.fetch]\ncommand = \"uvx\"\nargs = [\"mcp-server-fetch\"]\n"
+        },
+        "category": "custom",
+        "createdAt": 1760000000003,
+        "sortIndex": 2
+      }
+    },
+    "current": "3f6a9b2c-2222-4d1e-8f00-000000000002"
+  },
+  "gemini": {
+    "providers": {
+      "6b1d0c7e-3333-4f2a-9e10-000000000001": {
+        "id": "6b1d0c7e-3333-4f2a-9e10-000000000001",
+        "name": "Example Gemini Relay",
+        "settingsConfig": {
+          "env": {
+            "GEMINI_API_KEY": "sk-test-v2-gemini-0000000000000000",
+            "GOOGLE_GEMINI_BASE_URL": "https://gemini-relay.example.com",
+            "GEMINI_MODEL": "gemini-2.5-pro"
+          },
+          "config": {}
+        },
+        "category": "third_party",
+        "createdAt": 1760000000004
+      }
+    },
+    "current": "6b1d0c7e-3333-4f2a-9e10-000000000001"
+  },
+  "mcp": {
+    "servers": {}
+  },
+  "prompts": {
+    "claude": { "prompts": {} },
+    "codex": { "prompts": {} },
+    "gemini": { "prompts": {} }
+  },
+  "skills": {
+    "skills": {},
+    "repos": []
+  },
+  "common_config_snippets": {
+    "codex": "approval_policy = \"on-request\"\n"
+  }
+}

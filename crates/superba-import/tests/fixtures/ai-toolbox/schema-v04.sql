@@ -1,0 +1,283 @@
+-- AI Toolbox (github.com/coulsontl/ai-toolbox) main database fixture: <app_data>/ai-toolbox.db
+-- PRAGMA user_version = 4  <=>  releases: v0.9.2 - v0.9.4 (2026-05-27 .. 2026-06-05); also performs the one-time SurrealDB import
+-- FAKE DATA ONLY (sk-test-* keys, fake tokens). Generated for read-only importer tests.
+-- `data` is SQLite JSONB (binary) -> load with SQLite >= 3.45.0 (jsonb()/json_valid(x,4)).
+-- Read back with: SELECT id, json(data), created_at, updated_at FROM <table>.
+-- Omitted on purpose (non-JSONB, unrelated to providers): proxy_request_logs, usage_daily_rollups, model_pricing.
+-- The real app opens the file with PRAGMA journal_mode=WAL (ai-toolbox.db-wal / -shm next to it).
+BEGIN;
+CREATE TABLE IF NOT EXISTS settings (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS app_migration (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS claude_provider (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS claude_common_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS claude_prompt_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS codex_provider (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS codex_common_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS codex_prompt_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS codex_official_account (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS codex_plugin_workspace_roots (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gemini_cli_provider (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gemini_cli_common_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gemini_cli_prompt_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gemini_cli_official_account (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS opencode_common_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS opencode_prompt_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS opencode_favorite_plugin (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS opencode_favorite_provider (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS openclaw_common_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oh_my_openagent_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oh_my_openagent_global_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oh_my_opencode_slim_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oh_my_opencode_slim_global_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS skill (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS skill_group (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS skill_repo (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS skill_preferences (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS skill_settings (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS custom_tool (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mcp_server (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mcp_preferences (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS favorite_mcp (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS wsl_sync_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS wsl_file_mapping (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ssh_sync_config (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ssh_connection (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ssh_file_mapping (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS proxy_gateway_settings (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS image_channel (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS image_job (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS image_asset (
+    id TEXT PRIMARY KEY NOT NULL,
+    data BLOB NOT NULL CHECK (json_valid(data, 4)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_codex_provider_is_applied ON codex_provider (json_extract(data, '$.is_applied'));
+CREATE INDEX IF NOT EXISTS idx_codex_provider_sort_index ON codex_provider (json_extract(data, '$.sort_index'));
+CREATE INDEX IF NOT EXISTS idx_codex_prompt_config_is_applied ON codex_prompt_config (json_extract(data, '$.is_applied'));
+CREATE INDEX IF NOT EXISTS idx_codex_prompt_config_sort_index ON codex_prompt_config (json_extract(data, '$.sort_index'));
+CREATE INDEX IF NOT EXISTS idx_codex_official_account_is_applied ON codex_official_account (json_extract(data, '$.is_applied'));
+CREATE INDEX IF NOT EXISTS idx_codex_official_account_sort_index ON codex_official_account (json_extract(data, '$.sort_index'));
+CREATE INDEX IF NOT EXISTS idx_codex_official_account_provider_id ON codex_official_account (json_extract(data, '$.provider_id'));
+CREATE INDEX IF NOT EXISTS idx_claude_provider_is_applied ON claude_provider (json_extract(data, '$.is_applied'));
+CREATE INDEX IF NOT EXISTS idx_claude_provider_sort_index ON claude_provider (json_extract(data, '$.sort_index'));
+CREATE INDEX IF NOT EXISTS idx_gemini_cli_provider_is_applied ON gemini_cli_provider (json_extract(data, '$.is_applied'));
+CREATE INDEX IF NOT EXISTS idx_gemini_cli_provider_sort_index ON gemini_cli_provider (json_extract(data, '$.sort_index'));
+CREATE INDEX IF NOT EXISTS idx_opencode_favorite_provider_provider_id ON opencode_favorite_provider (json_extract(data, '$.provider_id'));
+CREATE INDEX IF NOT EXISTS idx_opencode_favorite_provider_created_at ON opencode_favorite_provider (created_at);
+INSERT INTO settings (id, data, created_at, updated_at) VALUES ('app', jsonb('{"language":"zh-CN","theme":"system","created_at":"2026-05-20T09:29:00.000000000+08:00","updated_at":"2026-05-27T10:05:00.000000000+08:00"}'), '2026-05-20T09:29:00.000000000+08:00', '2026-05-27T10:05:00.000000000+08:00');
+INSERT INTO codex_provider (id, data, created_at, updated_at) VALUES ('0f8e3c1a9b7d4e2f8a6c5b4d3e2f1a0b', jsonb('{"name":"默认配置","category":"official","settings_config":"{\"auth\":{},\"config\":\"model = \\\"gpt-5.5\\\"\"}","sort_index":0,"is_applied":false,"is_disabled":false,"created_at":"2026-05-20T09:30:00.123456789+08:00","updated_at":"2026-05-27T10:00:00.000000000+08:00"}'), '2026-05-20T09:30:00.123456789+08:00', '2026-05-27T10:00:00.000000000+08:00');
+INSERT INTO codex_provider (id, data, created_at, updated_at) VALUES ('4a1d2c3b5e6f47a8b9c0d1e2f3a4b5c6', jsonb('{"name":"Example Relay","category":"custom","settings_config":"{\"auth\":{\"OPENAI_API_KEY\":\"sk-test-relay-4f9c2a7e1b\"},\"config\":\"model = \\\"gpt-5.5\\\"\\nmodel_provider = \\\"custom\\\"\\n\\n[model_providers.custom]\\nname = \\\"OpenAI\\\"\\nwire_api = \\\"responses\\\"\\nrequires_openai_auth = true\\nbase_url = \\\"https://relay.example.com/v1\\\"\"}","website_url":"https://relay.example.com","notes":"主力中转（测试数据）","sort_index":1,"is_applied":true,"is_disabled":false,"created_at":"2026-05-20T09:30:00.123456789+08:00","updated_at":"2026-05-27T10:00:00.000000000+08:00"}'), '2026-05-20T09:30:00.123456789+08:00', '2026-05-27T10:00:00.000000000+08:00');
+INSERT INTO codex_provider (id, data, created_at, updated_at) VALUES ('7b2e9f10c3d84a56b7e8f9a0b1c2d3e4', jsonb('{"name":"备用中转 Backup","category":"custom","settings_config":"{\"auth\":{\"OPENAI_API_KEY\":\"sk-test-backup-8d3e1f\"},\"config\":\"model = \\\"gpt-5.4\\\"\\nmodel_provider = \\\"custom\\\"\\nmodel_reasoning_effort = \\\"xhigh\\\"\\n\\n[model_providers.custom]\\nname = \\\"OpenAI\\\"\\nwire_api = \\\"responses\\\"\\nrequires_openai_auth = true\\nbase_url = \\\"https://backup.example.net/v1\\\"\"}","sort_index":2,"is_applied":false,"is_disabled":true,"created_at":"2026-05-20T09:30:00.123456789+08:00","updated_at":"2026-05-27T10:00:00.000000000+08:00"}'), '2026-05-20T09:30:00.123456789+08:00', '2026-05-27T10:00:00.000000000+08:00');
+INSERT INTO codex_provider (id, data, created_at, updated_at) VALUES ('k3x9q2m7v1b8n4c6z0wd', jsonb('{"name":"Manual TOML relay","category":"custom","settings_config":"{\"auth\":{},\"config\":\"model = \\\"gpt-5.3-codex\\\"\\nmodel_provider = \\\"legacyrelay\\\"\\n\\n[model_providers.legacyrelay]\\nname = \\\"Legacy Relay\\\"\\nbase_url = \\\"https://legacy-relay.example.org/v1\\\"\\nwire_api = \\\"responses\\\"\\nexperimental_bearer_token = \\\"sk-test-bearer-2b7d9e\\\"\"}","sort_index":3,"is_applied":false,"is_disabled":false,"created_at":"2026-05-20T09:30:00.123456789+08:00","updated_at":"2026-05-27T10:00:00.000000000+08:00"}'), '2026-05-20T09:30:00.123456789+08:00', '2026-05-27T10:00:00.000000000+08:00');
+INSERT INTO codex_provider (id, data, created_at, updated_at) VALUES ('9c3f0a21d4e54b67c8d9e0f1a2b3c4d5', jsonb('{"name":"Azure OpenAI (env key)","category":"custom","settings_config":"{\"auth\":{},\"config\":\"model = \\\"gpt-5.4\\\"\\nmodel_provider = \\\"azure\\\"\\n\\n[model_providers.azure]\\nname = \\\"Azure OpenAI\\\"\\nbase_url = \\\"https://example-resource.openai.azure.com/openai/v1\\\"\\nenv_key = \\\"AZURE_OPENAI_API_KEY\\\"\\nwire_api = \\\"responses\\\"\"}","sort_index":4,"is_applied":false,"is_disabled":false,"created_at":"2026-05-20T09:30:00.123456789+08:00","updated_at":"2026-05-27T10:00:00.000000000+08:00"}'), '2026-05-20T09:30:00.123456789+08:00', '2026-05-27T10:00:00.000000000+08:00');
+INSERT INTO codex_provider (id, data, created_at, updated_at) VALUES ('2d4f6a8c0e1b3d5f7a9c1e3b5d7f9a1c', jsonb('{"name":"Mirror (model from common config)","category":"custom","settings_config":"{\"auth\":{\"OPENAI_API_KEY\":\"sk-test-mirror-6a1c3e\"},\"config\":\"model_provider = \\\"custom\\\"\\n\\n[model_providers.custom]\\nname = \\\"OpenAI\\\"\\nwire_api = \\\"responses\\\"\\nrequires_openai_auth = true\\nbase_url = \\\"https://mirror.example.com/v1\\\"\"}","sort_index":5,"is_applied":false,"is_disabled":false,"created_at":"2026-05-20T09:30:00.123456789+08:00","updated_at":"2026-05-27T10:00:00.000000000+08:00"}'), '2026-05-20T09:30:00.123456789+08:00', '2026-05-27T10:00:00.000000000+08:00');
+INSERT INTO codex_common_config (id, data, created_at, updated_at) VALUES ('common', jsonb('{"config":"model = \"gpt-5.4\"\nmodel_reasoning_effort = \"high\"\n\n[features]\nweb_search_request = true","updated_at":"2026-05-27T10:05:00.000000000+08:00","created_at":"2026-05-20T09:31:00.000000000+08:00"}'), '2026-05-20T09:31:00.000000000+08:00', '2026-05-27T10:05:00.000000000+08:00');
+INSERT INTO codex_official_account (id, data, created_at, updated_at) VALUES ('b1c2d3e4f5a64b7c8d9e0f1a2b3c4d5e', jsonb('{"provider_id":"0f8e3c1a9b7d4e2f8a6c5b4d3e2f1a0b","name":"alice@example.com","kind":"oauth","auth_snapshot":"{\"OPENAI_API_KEY\":null,\"auth_mode\":\"chatgpt\",\"tokens\":{\"id_token\":\"eyJhbGciOiJub25lIn0.TEST-ID-NOT-A-REAL-TOKEN.c2lnbmF0dXJl\",\"access_token\":\"eyJhbGciOiJub25lIn0.TEST-ACCESS-NOT-A-REAL-TOKEN.c2lnbmF0dXJl\",\"refresh_token\":\"rt_test_0000000000000000\",\"account_id\":\"acct-test-0001\"},\"last_refresh\":\"2026-09-30T01:02:03.000000Z\"}","email":"alice@example.com","auth_mode":"chatgpt","account_id":"acct-test-0001","plan_type":"plus","last_refresh":"2026-09-30T01:02:03.000000Z","sort_index":0,"is_applied":true,"created_at":"2026-05-20T09:31:00.000000000+08:00","updated_at":"2026-05-27T10:05:00.000000000+08:00"}'), '2026-05-20T09:31:00.000000000+08:00', '2026-05-27T10:05:00.000000000+08:00');
+INSERT INTO codex_prompt_config (id, data, created_at, updated_at) VALUES ('c4d5e6f7a8b94c0d1e2f3a4b5c6d7e8f', jsonb('{"name":"默认提示词","content":"# AGENTS.md\n\nAlways answer in Chinese.\n","is_applied":true,"sort_index":0,"created_at":"2026-05-20T09:31:00.000000000+08:00","updated_at":"2026-05-27T10:05:00.000000000+08:00"}'), '2026-05-20T09:31:00.000000000+08:00', '2026-05-27T10:05:00.000000000+08:00');
+INSERT INTO claude_provider (id, data, created_at, updated_at) VALUES ('d5e6f7a8b9c04d1e2f3a4b5c6d7e8f9a', jsonb('{"name":"Claude Relay","category":"custom","settings_config":"{\"env\":{\"ANTHROPIC_BASE_URL\":\"https://claude-relay.example.com\",\"ANTHROPIC_AUTH_TOKEN\":\"sk-test-claude-1a2b3c\",\"ANTHROPIC_MODEL\":\"claude-opus-4-7\"}}","sort_index":0,"is_applied":true,"is_disabled":false,"created_at":"2026-05-20T09:31:00.000000000+08:00","updated_at":"2026-05-27T10:05:00.000000000+08:00"}'), '2026-05-20T09:31:00.000000000+08:00', '2026-05-27T10:05:00.000000000+08:00');
+INSERT INTO gemini_cli_provider (id, data, created_at, updated_at) VALUES ('e6f7a8b9c0d14e2f3a4b5c6d7e8f9a0b', jsonb('{"name":"Gemini Relay","category":"custom","settings_config":"{\"env\":{\"GEMINI_API_KEY\":\"test-gemini-4d5e6f\",\"GOOGLE_GEMINI_BASE_URL\":\"https://gemini-relay.example.com\",\"GEMINI_MODEL\":\"gemini-3.1-pro-preview\"},\"config\":{}}","sort_index":0,"is_applied":false,"is_disabled":false,"created_at":"2026-05-20T09:31:00.000000000+08:00","updated_at":"2026-05-27T10:05:00.000000000+08:00"}'), '2026-05-20T09:31:00.000000000+08:00', '2026-05-27T10:05:00.000000000+08:00');
+INSERT INTO opencode_favorite_provider (id, data, created_at, updated_at) VALUES ('a8b9c0d1e2f34a4b5c6d7e8f9a0b1c2d', jsonb('{"provider_id":"codex:3e5a7c9e1b3d5f7a9c1e3b5d7f9b1d3e","npm":"@ai-sdk/openai","base_url":"https://old-relay.example.com/v1","provider_config":{"npm":"@ai-sdk/openai","name":"Old Relay (deleted from Codex list)","options":{"baseURL":"https://old-relay.example.com/v1","apiKey":"sk-test-oldrelay-9e8d7c","__aiToolboxSourcePayload":{"name":"Old Relay (deleted from Codex list)","category":"custom","settingsConfig":"{\"auth\":{\"OPENAI_API_KEY\":\"sk-test-oldrelay-9e8d7c\"},\"config\":\"model = \\\"gpt-5.4\\\"\\nmodel_provider = \\\"custom\\\"\\n\\n[model_providers.custom]\\nname = \\\"OpenAI\\\"\\nwire_api = \\\"responses\\\"\\nbase_url = \\\"https://old-relay.example.com/v1\\\"\"}","notes":"deleted provider kept as backup"}},"models":{"gpt-5.4":{}}},"diagnostics":null,"created_at":"2026-05-20T09:31:00.000000000+08:00","updated_at":"2026-05-27T10:05:00.000000000+08:00"}'), '2026-05-20T09:31:00.000000000+08:00', '2026-05-27T10:05:00.000000000+08:00');
+INSERT INTO opencode_favorite_provider (id, data, created_at, updated_at) VALUES ('19b0c1d2e3f44a5b6c7d8e9f0a1b2c3d', jsonb('{"provider_id":"opencode:openrouter","npm":"@openrouter/ai-sdk-provider","base_url":"","provider_config":{"npm":"@openrouter/ai-sdk-provider","name":"OpenRouter","options":{"apiKey":"sk-test-or-000"},"models":{"openai/gpt-5.5":{}}},"diagnostics":null,"created_at":"2026-05-20T09:31:00.000000000+08:00","updated_at":"2026-05-27T10:05:00.000000000+08:00"}'), '2026-05-20T09:31:00.000000000+08:00', '2026-05-27T10:05:00.000000000+08:00');
+COMMIT;
+PRAGMA user_version = 4;

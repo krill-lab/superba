@@ -4457,6 +4457,7 @@ dependencies = [
  "superba-catalog",
  "superba-cli",
  "superba-core",
+ "superba-import",
  "superba-models",
  "superba-router",
  "superba-switch",
@@ -4469,6 +4470,22 @@ dependencies = [
  "url",
  "windows-sys 0.61.2",
  "winresource",
+]
+
+[[package]]
+name = "superba-import"
+version = "0.1.0"
+dependencies = [
+ "pretty_assertions",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "superba-core",
+ "tempfile",
+ "toml",
+ "tracing",
+ "url",
+ "uuid",
 ]
 
 [[package]]
@@ -4587,6 +4604,7 @@ dependencies = [
  "hex",
  "libc",
  "pretty_assertions",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",
@@ -4594,6 +4612,7 @@ dependencies = [
  "superba-catalog",
  "superba-config",
  "superba-core",
+ "superba-import",
  "superba-models",
  "superba-net",
  "superba-remote",

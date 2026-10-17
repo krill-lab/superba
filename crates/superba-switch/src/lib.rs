@@ -16,6 +16,7 @@
 //!   renderer), NavRestore, Recovery, RollingBack; remote hosts in parallel;
 //! - start-up recovery, overview, doctor, profiles and sites ([`service`]);
 //! - account data of a profile (identity, balance, usage; `SwitchService::account`);
+//! - provider import from other tools ([`superba_import`]: cc-switch, AI Toolbox);
 //! - the UI state machine ([`machine`]) and the shared wording ([`messages`]).
 //!
 //! Construction: [`detect_context`] resolves the real home / data dir once;
@@ -25,6 +26,7 @@
 mod account;
 pub mod executor;
 pub mod hosts;
+mod import;
 pub mod journal;
 pub mod machine;
 pub mod messages;
@@ -634,6 +636,20 @@ impl SwitchService for Switcher {
 
     async fn self_update_restart_router(&self) -> Result<bool> {
         self.restart_router_if_running().await
+    }
+
+    async fn import_scan(
+        &self,
+        request: superba_core::ImportScanRequest,
+    ) -> Result<superba_core::ImportScan> {
+        self.import_scan_impl(request).await
+    }
+
+    async fn import_apply(
+        &self,
+        request: superba_core::ImportApplyRequest,
+    ) -> Result<superba_core::ImportReport> {
+        self.import_apply_impl(request).await
     }
 
     async fn account(&self, request: AccountRequest) -> Result<AccountReport> {

@@ -1,0 +1,24 @@
+{
+  "providers": {
+    "1755500000000": {
+      "id": "1755500000000",
+      "name": "Claude Official",
+      "settingsConfig": {
+        "env": {}
+      },
+      "websiteUrl": "https://www.anthropic.com/claude-code"
+    },
+    "1755500123456": {
+      "id": "1755500123456",
+      "name": "Example Relay",
+      "settingsConfig": {
+        "env": {
+          "ANTHROPIC_AUTH_TOKEN": "sk-test-v1-claude-0000000000000000",
+          "ANTHROPIC_BASE_URL": "https://relay.example.com"
+        }
+      },
+      "websiteUrl": "https://relay.example.com"
+    }
+  },
+  "current": "1755500123456"
+}

@@ -14,6 +14,7 @@ superba-core.workspace = true
 superba-appctl.workspace = true
 superba-catalog.workspace = true
 superba-config.workspace = true
+superba-import.workspace = true
 superba-models.workspace = true
 superba-net.workspace = true
 superba-remote.workspace = true
@@ -47,6 +48,7 @@ test-unelevated = []
 [dev-dependencies]
 superba-switch = { path = ".", features = ["test-unelevated"] }
 pretty_assertions.workspace = true
+rusqlite.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
