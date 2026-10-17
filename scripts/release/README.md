@@ -257,8 +257,8 @@ the process; the update restarts the router).
 
 The MSI is built in `sign-windows`, after the three executables are signed (and signed
 again as a whole when the optional Authenticode secrets are set; WiX runs while no key is
-on disk). Test it without tagging: run **Package test**
-(`gh workflow run package-test.yml --ref <branch>`), which builds the MSI on
+on disk). Test it without tagging: run the `msi-package` job of CI
+(`gh workflow run ci.yml --ref <branch> -f msi_only=true`), which builds the MSI on
 `windows-latest` and runs `scripts/release/test-msi.ps1`: per-user install, files,
 `spb --version`, `PATH`, Add/Remove Programs, Start-menu shortcut, an upgrade to a higher
 version and to a same-`X.Y.Z` pre-release, then uninstall and a check that nothing is left.
