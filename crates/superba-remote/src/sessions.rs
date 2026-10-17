@@ -50,10 +50,10 @@ sb_t=$(printf '%s\n' "$sb_all" | head -n {max} | while IFS= read -r sb_e; do
   sb_k=${{sb_e%% *}}
   sb_f=${{sb_e#* }}
   case "$sb_f" in
-    *.zst)
+    (*.zst)
       if [ -n "$sb_z" ]; then sb_c=1; sb_l=$("$sb_z" -dcq < "$sb_f" 2>/dev/null | head -n 1)
       else sb_c=2; sb_l=; fi ;;
-    *) sb_c=0; sb_l=$(head -n 1 "$sb_f" 2>/dev/null) ;;
+    (*) sb_c=0; sb_l=$(head -n 1 "$sb_f" 2>/dev/null) ;;
   esac
   printf '%s\t%s\t%s\t%s\n' "$sb_k" "$sb_c" "${{sb_f##*/}}" "$sb_l"
 done | awk -F '\t' '

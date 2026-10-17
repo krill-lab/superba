@@ -160,7 +160,16 @@ fn an_unreadable_launcher_falls_back_to_the_known_codexcli_path() {
 #[test]
 fn only_codex_programs_continue_the_chain() {
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    // Windows canonicalises to a verbatim `\\?\C:\..` path. Inside a shell script
+    // that is mangled by backslash escapes and, being verbatim, cannot take `/`
+    // either; so the whole layout uses the plain `C:\..` form, and the script
+    // names its target with forward slashes, as launchers do.
+    let plain = |p: PathBuf| match p.to_str().and_then(|t| t.strip_prefix(r"\\?\")) {
+        Some(t) => PathBuf::from(t),
+        None => p,
+    };
+    let root = plain(fs::canonicalize(temp.path()).unwrap());
+    let script_path = |p: &Path| p.display().to_string().replace('\\', "/");
     // An npm-style wrapper execs node: the wrapper is the program.
     let node = write(&root.join("bin/node"), "native node (fake)");
     let wrapper = write(
@@ -173,7 +182,7 @@ fn only_codex_programs_continue_the_chain() {
     let (_, launcher, binary) = mac_app(&root);
     let outer = write(
         &root.join("tools/codex"),
-        &format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", launcher.display()),
+        &format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script_path(&launcher)),
     );
     let id = CodexIdentity::of(&outer);
     assert_eq!(id.launchers, vec![outer.clone(), launcher]);

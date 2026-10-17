@@ -1,0 +1,8 @@
+# Signed catalogs, feeds, fixtures and golden files are compared byte for byte
+# (sizes and sha256 in index.json): check text out with LF on every platform,
+# Windows included (core.autocrlf would otherwise rewrite them to CRLF).
+* text=auto eol=lf
+*.png binary
+*.ttf binary
+*.sqlite binary
+*.sig -text

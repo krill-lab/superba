@@ -126,8 +126,8 @@ if [ "$sb_got" != "$want_size" ]; then sb_put got "$sb_got"; sb_fail size_mismat
 sb_got=$(sb_sha256 "$tmp/pkg")
 if [ "$sb_got" = none ]; then sb_fail no_sha256_tool; return 0; fi
 if [ "$sb_got" != "$want_sha" ]; then sb_put got "$sb_got"; sb_fail sha256_mismatch; return 0; fi
-if ! mkdir "$tmp/x" || ! (cd "$tmp/x" && gzip -dc ../pkg | tar -xf -) >/dev/null 2>&1; then sb_fail extract; return 0; fi
-rm -f "$tmp/pkg"
+if ! mkdir "$tmp/x" || ! (cd "$tmp/x" && gzip -dc ../pkg > ../pkg.tar && tar -xf ../pkg.tar) >/dev/null 2>&1; then sb_fail extract; return 0; fi
+rm -f "$tmp/pkg" "$tmp/pkg.tar"
 if [ -f "$tmp/x/bin/codex" ]; then pkg="$tmp/x"
 elif [ -f "$tmp/x/package/vendor/$t/bin/codex" ]; then pkg="$tmp/x/package/vendor/$t"
 else sb_fail no_codex_in_package; return 0; fi
