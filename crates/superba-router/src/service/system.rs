@@ -69,6 +69,66 @@ impl CommandRunner for SystemRunner {
         Ok(pid)
     }
 
+    fn run_timeout(
+        &self,
+        program: &str,
+        args: &[OsString],
+        timeout: std::time::Duration,
+    ) -> io::Result<CommandOutput> {
+        use std::io::Read;
+        let mut command = superba_core::process::command(program);
+        command
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command.spawn()?;
+        let reader = |pipe: Option<Box<dyn Read + Send>>| {
+            std::thread::spawn(move || {
+                let mut bytes = Vec::new();
+                if let Some(pipe) = pipe {
+                    let _ = pipe.take(1 << 20).read_to_end(&mut bytes);
+                }
+                String::from_utf8_lossy(&bytes).into_owned()
+            })
+        };
+        let out = reader(
+            child
+                .stdout
+                .take()
+                .map(|p| Box::new(p) as Box<dyn Read + Send>),
+        );
+        let err = reader(
+            child
+                .stderr
+                .take()
+                .map(|p| Box::new(p) as Box<dyn Read + Send>),
+        );
+        let deadline = std::time::Instant::now() + timeout;
+        let code = loop {
+            if let Some(status) = child.try_wait()? {
+                break status.code();
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                let mut stderr = err.join().unwrap_or_default();
+                stderr.push_str(&format!("\n(stopped after {} s)", timeout.as_secs()));
+                return Ok(CommandOutput {
+                    code: None,
+                    stdout: out.join().unwrap_or_default(),
+                    stderr,
+                });
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        Ok(CommandOutput {
+            code,
+            stdout: out.join().unwrap_or_default(),
+            stderr: err.join().unwrap_or_default(),
+        })
+    }
+
     fn is_router_process(&self, pid: u32) -> bool {
         pid != 0 && router_process(pid)
     }

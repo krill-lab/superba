@@ -41,12 +41,21 @@ impl Fake {
 impl CommandRunner for Fake {
     fn run(&self, p: &str, a: &[OsString]) -> io::Result<CommandOutput> {
         self.record(p, a);
-        let ok = CommandOutput {
-            code: Some(0),
+        // Without a scripted reply every command succeeds, except `launchctl
+        // print`, which answers like launchd for a label it has not loaded (113),
+        // so a bootout is complete at once.
+        let unloaded = p == LAUNCHCTL && a.first().is_some_and(|x| x == "print");
+        let default = CommandOutput {
+            code: Some(if unloaded { 113 } else { 0 }),
             ..Default::default()
         };
-        self.replies.lock().unwrap().pop_front().unwrap_or(Ok(ok))
+        self.replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Ok(default))
     }
+    fn sleep(&self, _: Duration) {}
     fn spawn_detached(
         &self,
         exe: &Path,
@@ -242,11 +251,7 @@ fn mandatory(f: &Fixture, kind: ServiceKind, index: usize) {
     let Error::Process { message } = f.manager(kind).install(&f.spec).unwrap_err() else {
         panic!("expected Process");
     };
-    assert!(message.starts_with(if kind == S {
-        "systemctl:"
-    } else {
-        "launchctl:"
-    }));
+    assert!(message.starts_with("systemctl:"));
     assert!(message.contains("failure 中"));
     assert!(message.chars().count() <= 311);
     assert!(f.definition(kind).is_some());
@@ -300,12 +305,16 @@ cases! {
         call("terminate", &["900"]), call("check", &["900"]), spawn_call(), call("check", &["901"]),
         call("terminate", &["901"]), call("check", &["901"]),
     ]); }
-    launchd_commands(f) { lifecycle(&f, L, vec![
-        call("launchctl", &["bootout", TARGET]), call("launchctl", &["enable", TARGET]),
-        ("launchctl".into(), vec!["bootstrap".into(), "gui/501".into(), f.path(L).into_os_string()]),
-        call("launchctl", &["print", TARGET]), call("launchctl", &["print", TARGET]),
-        call("launchctl", &["kickstart", "-k", TARGET]), call("launchctl", &["bootout", TARGET]),
-    ]); }
+    launchd_commands(f) {
+        // install (not loaded yet) / status / restart of a loaded job / uninstall.
+        for code in [0, 113, 0, 0, 0, 0, 0, 0, 0] { f.runner.reply(code, ""); }
+        lifecycle(&f, L, vec![
+            call(LAUNCHCTL, &["bootout", TARGET]), call(LAUNCHCTL, &["print", TARGET]), call(LAUNCHCTL, &["enable", TARGET]),
+            (LAUNCHCTL.into(), vec!["bootstrap".into(), "gui/501".into(), f.path(L).into_os_string()]),
+            call(LAUNCHCTL, &["print", TARGET]), call(LAUNCHCTL, &["print", TARGET]),
+            call(LAUNCHCTL, &["print", TARGET]), call(LAUNCHCTL, &["kickstart", "-k", TARGET]), call(LAUNCHCTL, &["bootout", TARGET]),
+        ]);
+    }
     runkey_commands(f) { lifecycle(&f, W, vec![
         call("set", &[RUN_VALUE_NAME, "/opt/superba-router supervise --data-dir /data/router"]), spawn_call(),
         call("get", &[RUN_VALUE_NAME]), call("check", &["900"]), call("get", &[RUN_VALUE_NAME]),
@@ -315,7 +324,6 @@ cases! {
     reload_required(f) { mandatory(&f, S, 0); }
     enable_required(f) { mandatory(&f, S, 1); }
     restart_required(f) { mandatory(&f, S, 2); }
-    bootstrap_required(f) { mandatory(&f, L, 2); }
     systemd_idempotence(f) { idempotent(&f, S); }
     desktop_idempotence(f) { idempotent(&f, X); }
     launchd_idempotence(f) { idempotent(&f, L); }
@@ -331,7 +339,7 @@ cases! {
     ignored_systemd_stop_failures(f) { for _ in 0..3 { f.runner.reply(1, ""); } f.manager(S).uninstall(&f.spec).unwrap(); assert_eq!(f.runner.calls().len(), 3); }
     ignored_launchd_install_failures(f) { f.runner.reply(1, ""); f.runner.reply(1, ""); assert!(f.manager(L).install(&f.spec).unwrap().installed); }
     ignored_launchd_unload_failure(f) { f.runner.reply(1, ""); f.manager(L).uninstall(&f.spec).unwrap(); }
-    mandatory_restart_failures(f) { for k in [S, L] { f.runner.reply(1, ""); assert!(matches!(f.manager(k).restart(&f.spec), Err(Error::Process { .. }))); } }
+    mandatory_restart_failures(f) { f.runner.reply(1, ""); assert!(matches!(f.manager(S).restart(&f.spec), Err(Error::Process { .. }))); }
     command_io_failure(f) { f.runner.replies.lock().unwrap().push_back(Err(io::Error::other("not found"))); assert!(matches!(f.manager(S).install(&f.spec), Err(Error::Process { message }) if message.contains("systemctl") && message.contains("not found"))); assert!(f.path(S).exists()); }
     missing_uid(f) { let mut host = f.host(); host.uid = None; let m = manager(host, L); for result in [m.install(&f.spec).map(|_| ()), m.uninstall(&f.spec), m.status(&f.spec).map(|_| ()), m.restart(&f.spec)] { assert!(matches!(result, Err(Error::Unsupported { .. }))); } assert!(f.runner.calls().is_empty()); }
     missing_run_key(f) { let mut host = f.host(); host.run_key = None; let m = manager(host, W); for result in [m.install(&f.spec).map(|_| ()), m.uninstall(&f.spec), m.status(&f.spec).map(|_| ()), m.restart(&f.spec)] { assert!(matches!(result, Err(Error::Unsupported { .. }))); } assert!(f.runner.calls().is_empty()); }

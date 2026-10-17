@@ -30,6 +30,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use superba_core::Result;
@@ -41,6 +42,7 @@ pub mod supervise;
 mod system;
 mod systemd;
 
+pub use launchd::{LAUNCHCTL, launchctl_print_fields};
 pub use system::SystemRunner;
 #[cfg(windows)]
 pub use system::WindowsRunKey;
@@ -136,6 +138,135 @@ impl CommandOutput {
     pub fn success(&self) -> bool {
         self.code == Some(0)
     }
+
+    /// `exit 5` / `killed by a signal`, for messages.
+    pub fn exit_text(&self) -> String {
+        match self.code {
+            Some(code) => format!("exit {code}"),
+            None => "killed by a signal".into(),
+        }
+    }
+
+    /// Standard error, else standard output, trimmed and cut to `max` characters.
+    pub fn message(&self, max: usize) -> String {
+        let text = if self.stderr.trim().is_empty() {
+            self.stdout.trim()
+        } else {
+            self.stderr.trim()
+        };
+        cut(text, max)
+    }
+}
+
+/// `text` cut to `max` characters, with `…` when cut.
+pub(crate) fn cut(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        text.to_owned()
+    } else {
+        let mut out: String = text.chars().take(max).collect();
+        out.push('…');
+        out
+    }
+}
+
+/// A command that was run for diagnostics and what it answered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandRecord {
+    /// The command line as a user would type it (arguments with spaces quoted).
+    pub command: String,
+    /// Its output, or why it could not run.
+    pub result: std::result::Result<CommandRecordOutput, String>,
+}
+
+/// [`CommandOutput`] in a serializable form.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandRecordOutput {
+    /// Exit code; `None` when killed by a signal (or stopped after its timeout).
+    pub code: Option<i32>,
+    /// Standard output.
+    pub stdout: String,
+    /// Standard error.
+    pub stderr: String,
+}
+
+impl CommandRecord {
+    /// Run `program args` through `runner` (at most `timeout`) and record it.
+    pub fn run(
+        runner: &dyn CommandRunner,
+        program: &str,
+        args: &[OsString],
+        timeout: Duration,
+    ) -> Self {
+        let command = command_line(program, args);
+        let result = runner
+            .run_timeout(program, args, timeout)
+            .map(|o| CommandRecordOutput {
+                code: o.code,
+                stdout: o.stdout,
+                stderr: o.stderr,
+            })
+            .map_err(|e| e.to_string());
+        Self { command, result }
+    }
+
+    /// True when the command ran and exited with 0.
+    pub fn success(&self) -> bool {
+        matches!(&self.result, Ok(o) if o.code == Some(0))
+    }
+}
+
+/// `program args` as a user would type it in a POSIX shell.
+pub fn command_line(program: &str, args: &[OsString]) -> String {
+    let quote = |s: &str| {
+        if !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "/._-:=@,+%".contains(c))
+        {
+            s.to_owned()
+        } else {
+            format!("'{}'", s.replace('\'', "'\\''"))
+        }
+    };
+    std::iter::once(quote(program))
+        .chain(args.iter().map(|a| quote(&a.to_string_lossy())))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// What the service manager reports about the service, for diagnostics
+/// (`spb router doctor`, the detail of a failed start). Never secrets: service
+/// definitions hold paths and `RUST_LOG` only.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceDiagnosis {
+    /// Where the definition lives (plist, unit, desktop entry); `None` for the
+    /// Windows Run key.
+    pub definition_path: Option<PathBuf>,
+    /// The definition's text, when it exists.
+    pub definition: Option<String>,
+    /// The program the definition starts, when it could be read.
+    pub program: Option<PathBuf>,
+    /// The service manager's own view (`launchctl print ...`).
+    pub query: Option<CommandRecord>,
+    /// Facts from it (`state`, `pid`, `runs`, `last exit code`, ...).
+    pub fields: Vec<(String, String)>,
+    /// The service manager has it loaded (`None` when it cannot tell).
+    pub loaded: Option<bool>,
+    /// It keeps exiting and being restarted.
+    pub crash_looping: bool,
+    /// Exit code of the last run, when the service manager reports one.
+    pub last_exit_code: Option<i32>,
+    /// Signal that ended the last run (`Killed: 9`), when reported.
+    pub last_signal: Option<String>,
+}
+
+impl ServiceDiagnosis {
+    /// The value of `key` in [`ServiceDiagnosis::fields`].
+    pub fn field(&self, key: &str) -> Option<&str> {
+        self.fields
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    }
 }
 
 /// Runs external commands and manages detached processes. The real one is
@@ -163,6 +294,24 @@ pub trait CommandRunner: Send + Sync + fmt::Debug {
     /// Ask the process to stop (SIGTERM on Unix; terminate the process tree on
     /// Windows). Callers check [`CommandRunner::is_router_process`] first.
     fn terminate(&self, pid: u32) -> std::io::Result<()>;
+
+    /// [`CommandRunner::run`], giving up after `timeout` (diagnostic commands
+    /// such as `superba-router --version`, which macOS may hold while Gatekeeper
+    /// asks the user). The default ignores the timeout.
+    fn run_timeout(
+        &self,
+        program: &str,
+        args: &[OsString],
+        timeout: Duration,
+    ) -> std::io::Result<CommandOutput> {
+        let _ = timeout;
+        self.run(program, args)
+    }
+
+    /// Wait between polls of the service manager. Fakes return at once.
+    fn sleep(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
 }
 
 /// Access to the per-user Run key (Windows). Faked in tests.
@@ -229,6 +378,24 @@ pub trait ServiceManager: Send + Sync + fmt::Debug {
     fn status(&self, spec: &ServiceSpec) -> Result<ServiceStatus>;
     /// Restart a running service (e.g. after a binary update).
     fn restart(&self, spec: &ServiceSpec) -> Result<()>;
+    /// Everything the service manager reports, for diagnostics. The default
+    /// has the [`ServiceManager::status`] detail only.
+    fn diagnose(&self, spec: &ServiceSpec) -> ServiceDiagnosis {
+        let status = self.status(spec);
+        let mut d = ServiceDiagnosis::default();
+        match status {
+            Ok(s) => {
+                if let Some(detail) = s.detail {
+                    d.fields.push(("state".into(), detail));
+                }
+                if let Some(pid) = s.pid {
+                    d.fields.push(("pid".into(), pid.to_string()));
+                }
+            }
+            Err(e) => d.fields.push(("error".into(), e.to_string())),
+        }
+        d
+    }
 }
 
 /// Backend `kind` on `host`.

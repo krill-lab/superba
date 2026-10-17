@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use superba_core::{DataDir, Error, Result, Secret};
@@ -12,8 +13,11 @@ use url::Url;
 
 use crate::client::AdminClient;
 use crate::config::{ROUTER_BASE_PATH, RouterConfig, RouterSecrets};
+use crate::doctor::{self, DoctorInput, RouterFacts};
 use crate::paths::RouterPaths;
-use crate::service::{self, ServiceHost, ServiceManager, ServiceSpec, ServiceStatus};
+use crate::service::{
+    self, CommandRunner, ServiceHost, ServiceManager, ServiceSpec, ServiceStatus, SystemRunner,
+};
 use crate::stats::StatsConfig;
 use crate::watchdog::{self, DirectModeFallback, FallbackReason, Liveness};
 
@@ -81,6 +85,17 @@ pub fn router_exe_candidates(
     path_var: Option<&std::ffi::OsStr>,
     home: Option<&Path>,
 ) -> Vec<PathBuf> {
+    router_exe_candidates_for(current_exe, path_var, home, cfg!(target_os = "macos"))
+}
+
+/// [`router_exe_candidates`] with the macOS bundle locations included or not
+/// (`macos`), so the macOS layouts are tested on every platform.
+pub fn router_exe_candidates_for(
+    current_exe: &Path,
+    path_var: Option<&std::ffi::OsStr>,
+    home: Option<&Path>,
+    macos: bool,
+) -> Vec<PathBuf> {
     let name = router_exe_name();
     let mut out: Vec<PathBuf> = Vec::new();
     let mut push = |p: PathBuf| {
@@ -92,7 +107,7 @@ pub fn router_exe_candidates(
     if let Ok(real) = std::fs::canonicalize(current_exe) {
         push(router_exe_next_to(&real));
     }
-    if cfg!(target_os = "macos") {
+    if macos {
         let in_bundle = |app: PathBuf| app.join("Contents").join("MacOS").join(&name);
         if let Some(dir) = current_exe.parent() {
             push(in_bundle(dir.join("Superba.app")));
@@ -110,16 +125,50 @@ pub fn router_exe_candidates(
     out
 }
 
-/// The router program for the Superba binary `current_exe`: the first of
-/// [`router_exe_candidates`] that exists, else the path next to `current_exe`
-/// (so a missing program is reported where it was expected).
+/// The program to use among `candidates` (in order): the first existing one
+/// that is not on a disk image or in a translocated copy, else the first
+/// existing one (so the "temporary location" error names it), else `fallback`.
+///
+/// A copy in `/Applications` therefore wins over the one on a still-mounted
+/// DMG when `spb` is run from the DMG (or the app was once opened from it): the
+/// service must keep working after the DMG is ejected.
+pub fn pick_router_exe(
+    candidates: &[PathBuf],
+    is_file: impl Fn(&Path) -> bool,
+    fallback: PathBuf,
+) -> PathBuf {
+    let existing: Vec<&PathBuf> = candidates.iter().filter(|p| is_file(p)).collect();
+    existing
+        .iter()
+        .find(|p| !is_transient_location(p))
+        .or(existing.first())
+        .map(|p| (*p).clone())
+        .unwrap_or(fallback)
+}
+
+/// The router program for the Superba binary `current_exe`: see
+/// [`router_exe_candidates`] and [`pick_router_exe`]; the path next to
+/// `current_exe` when none exists (so a missing program is reported where it
+/// was expected). Always absolute (launchd and systemd need absolute paths).
 pub fn find_router_exe(current_exe: &Path) -> PathBuf {
     let path = std::env::var_os("PATH");
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    router_exe_candidates(current_exe, path.as_deref(), home.as_deref())
-        .into_iter()
-        .find(|p| p.is_file())
-        .unwrap_or_else(|| router_exe_next_to(current_exe))
+    let candidates = router_exe_candidates(current_exe, path.as_deref(), home.as_deref());
+    absolute(pick_router_exe(
+        &candidates,
+        |p| p.is_file(),
+        router_exe_next_to(current_exe),
+    ))
+}
+
+/// `path` made absolute against the current directory (unchanged when it is
+/// already absolute or the current directory is unknown).
+pub fn absolute(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        std::path::absolute(&path).unwrap_or(path)
+    }
 }
 
 /// [`find_router_exe`] for the running process.
@@ -130,16 +179,54 @@ pub fn current_router_exe() -> PathBuf {
 }
 
 /// A path the per-user service cannot keep using: a macOS disk image
-/// (`/Volumes/...`) or an app that Gatekeeper runs from a temporary, randomized
-/// location (`.../AppTranslocation/...`) because it was opened straight from the
-/// download.
+/// (`/Volumes/...` on a read-only file system) or an app that Gatekeeper runs
+/// from a temporary, randomized location (`.../AppTranslocation/...`) because it
+/// was opened straight from the download. A writable `/Volumes/<disk>` (an
+/// external drive the user installed apps on) is not transient.
 pub fn is_transient_location(exe: &Path) -> bool {
+    transient_location(exe, &read_only_fs)
+}
+
+/// [`is_transient_location`] with the read-only check injected (`None` = the
+/// file system cannot be inspected, e.g. the path does not exist, which counts
+/// as read-only under `/Volumes`).
+pub fn transient_location(exe: &Path, read_only: &dyn Fn(&Path) -> Option<bool>) -> bool {
+    if exe
+        .components()
+        .any(|c| c.as_os_str() == "AppTranslocation")
+    {
+        return true;
+    }
     let mut components = exe.components().map(|c| c.as_os_str());
     let first_two = (components.next(), components.next());
     matches!(first_two, (Some(root), Some(v)) if root == "/" && v == "Volumes")
-        || exe
-            .components()
-            .any(|c| c.as_os_str() == "AppTranslocation")
+        && read_only(exe).unwrap_or(true)
+}
+
+/// Whether the file system holding `path` is mounted read-only (a disk image,
+/// a translocated app); `None` when it cannot be inspected.
+#[cfg(unix)]
+pub fn read_only_fs(path: &Path) -> Option<bool> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut st = std::mem::MaybeUninit::<libc::statvfs>::zeroed();
+    // SAFETY: `c` is a NUL-terminated path and `st` points to writable memory
+    // of the right type; statvfs only writes into it.
+    let rc = unsafe { libc::statvfs(c.as_ptr(), st.as_mut_ptr()) };
+    if rc != 0 {
+        return None;
+    }
+    // SAFETY: statvfs succeeded and filled the struct.
+    let st = unsafe { st.assume_init() };
+    // ST_RDONLY is 1 on Linux and macOS (sys/statvfs.h).
+    Some(st.f_flag & 1 != 0)
+}
+
+/// Whether the file system holding `path` is mounted read-only (never on
+/// Windows, where the check is not needed).
+#[cfg(not(unix))]
+pub fn read_only_fs(_path: &Path) -> Option<bool> {
+    None
 }
 
 /// Check that the service can run `exe`: it exists and, on macOS, does not live
@@ -152,6 +239,20 @@ pub fn check_router_exe(exe: &Path) -> Result<()> {
                 exe.display()
             ),
         });
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(exe)
+            .map_err(|e| Error::io(exe, &e))?
+            .permissions()
+            .mode();
+        if mode & 0o111 == 0 {
+            return Err(Error::invalid(format!(
+                "the local router program {} is not executable (reinstall Superba)",
+                exe.display()
+            )));
+        }
     }
     if cfg!(target_os = "macos") && is_transient_location(exe) {
         return Err(Error::invalid(format!(
@@ -172,11 +273,14 @@ pub fn free_loopback_port() -> Result<u16> {
         .map_err(|e| Error::other(format!("no free loopback port: {e}")))
 }
 
-/// The service definition for `data_dir` running `exe`.
+/// The service definition for `data_dir` running `exe`. Relative paths are
+/// made absolute: a service manager starts the router from `/` (launchd) or the
+/// home directory, never from the caller's directory.
 pub fn service_spec(data_dir: &DataDir, exe: PathBuf) -> ServiceSpec {
-    let paths = RouterPaths::new(data_dir);
+    let data_dir = DataDir::new(absolute(data_dir.root().to_path_buf()));
+    let paths = RouterPaths::new(&data_dir);
     ServiceSpec {
-        exe,
+        exe: absolute(exe),
         data_dir: data_dir.root().to_path_buf(),
         log_file: paths.log_file(),
         pid_file: paths.supervisor_pid(),
@@ -184,12 +288,25 @@ pub fn service_spec(data_dir: &DataDir, exe: PathBuf) -> ServiceSpec {
     }
 }
 
+/// How long a new router may need before it counts as crash-looping: a
+/// healthy router binds in well under a second, so two exits in this time
+/// (launchd restarts it after 5 s) mean it will not come up by itself.
+const CRASH_LOOP_AFTER: Duration = Duration::from_secs(6);
+
 /// Router mode lifecycle.
 #[derive(Debug)]
 pub struct RouterManager {
     paths: RouterPaths,
     spec: ServiceSpec,
     service: Box<dyn ServiceManager>,
+    /// Runs the diagnostic commands of [`RouterManager::doctor`].
+    runner: Arc<dyn CommandRunner>,
+    /// Check the macOS specifics in diagnostics.
+    macos: bool,
+    /// The user's home (diagnostics).
+    home: Option<PathBuf>,
+    /// Where the router program was looked for (diagnostics).
+    candidates: Vec<PathBuf>,
 }
 
 impl RouterManager {
@@ -201,16 +318,59 @@ impl RouterManager {
             paths,
             spec,
             service,
+            runner: Arc::new(SystemRunner),
+            macos: cfg!(target_os = "macos"),
+            home: None,
+            candidates: Vec::new(),
         }
+    }
+
+    /// Diagnostics run their commands through `runner`, check macOS specifics
+    /// when `macos`, and look for protected folders below `home` (tests
+    /// simulate a Mac with these).
+    pub fn with_diagnostics(
+        mut self,
+        runner: Arc<dyn CommandRunner>,
+        macos: bool,
+        home: Option<PathBuf>,
+    ) -> Self {
+        self.runner = runner;
+        self.macos = macos;
+        self.home = home;
+        self
     }
 
     /// The real platform service manager for the user whose home is `home`.
     pub fn system(data_dir: &DataDir, home: PathBuf, exe: PathBuf) -> Self {
-        Self::new(
-            data_dir,
-            exe,
-            service::for_platform(ServiceHost::system(home)),
-        )
+        let host = ServiceHost::system(home.clone());
+        let runner = host.runner.clone();
+        let candidates = std::env::current_exe()
+            .map(|current| {
+                router_exe_candidates(&current, std::env::var_os("PATH").as_deref(), Some(&home))
+            })
+            .unwrap_or_default();
+        let mut manager = Self::new(data_dir, exe, service::for_platform(host)).with_diagnostics(
+            runner,
+            cfg!(target_os = "macos"),
+            Some(home),
+        );
+        manager.candidates = candidates;
+        manager
+    }
+
+    /// Everything about the router for a support request (`spb router doctor`,
+    /// the Router page's Diagnostics); see [`crate::doctor`].
+    pub async fn doctor(&self) -> RouterFacts {
+        doctor::collect(DoctorInput {
+            paths: &self.paths,
+            spec: &self.spec,
+            service: self.service.as_ref(),
+            runner: self.runner.as_ref(),
+            macos: self.macos,
+            home: self.home.as_deref(),
+            candidates: self.candidates.clone(),
+        })
+        .await
     }
 
     /// Router files.
@@ -408,15 +568,45 @@ impl RouterManager {
     }
 
     async fn wait_until_up(&self, wait: Duration) -> Result<()> {
-        let deadline = Instant::now() + wait;
+        let started = Instant::now();
+        let deadline = started + wait;
+        let mut next_service_check = started + CRASH_LOOP_AFTER;
         loop {
             let last = match watchdog::check(&self.paths).await {
                 Liveness::Up(_) => return Ok(()),
                 Liveness::Down { detail } => detail,
             };
-            if Instant::now() >= deadline {
+            let now = Instant::now();
+            // A crash loop will not end by waiting: say why now instead of at the
+            // deadline.
+            if now >= next_service_check {
+                next_service_check = now + Duration::from_secs(1);
+                if self.service.diagnose(&self.spec).crash_looping {
+                    return Err(Error::Process {
+                        message: format!(
+                            "the local router keeps stopping right after it starts: {last}\n{}",
+                            doctor::start_failure_detail(
+                                &self.paths,
+                                &self.spec,
+                                self.service.as_ref(),
+                                8
+                            )
+                        ),
+                    });
+                }
+            }
+            if now >= deadline {
                 return Err(Error::Timeout {
-                    what: format!("the local router did not start: {last}"),
+                    what: format!(
+                        "the local router did not start within {} s: {last}\n{}",
+                        wait.as_secs().max(1),
+                        doctor::start_failure_detail(
+                            &self.paths,
+                            &self.spec,
+                            self.service.as_ref(),
+                            8
+                        )
+                    ),
                 });
             }
             tokio::time::sleep(Duration::from_millis(200)).await;

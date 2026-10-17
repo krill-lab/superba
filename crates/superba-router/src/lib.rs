@@ -56,11 +56,18 @@
 //!
 //! See [`paths::RouterPaths`]: `config.json` (no secret), `secrets.json` (0600:
 //! router token + member keys), `runtime.json` (0600: pid, port, admin token).
+//!
+//! ## Diagnostics
+//!
+//! [`doctor`] gathers the program, service, configuration, port and log facts
+//! behind `spb router doctor`; a start that fails names the service manager's
+//! view and the last log lines instead of a bare timeout.
 
 #![warn(missing_docs)]
 
 pub mod client;
 pub mod config;
+pub mod doctor;
 pub mod health;
 pub mod manager;
 pub mod members;

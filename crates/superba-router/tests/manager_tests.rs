@@ -112,6 +112,11 @@ impl DirectModeFallback for Fallback {
 fn fake_exe(dir: &std::path::Path) -> std::path::PathBuf {
     let exe = dir.join(superba_router::manager::router_exe_name());
     std::fs::write(&exe, b"").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     exe
 }
 
