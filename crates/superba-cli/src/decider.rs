@@ -1,13 +1,15 @@
 //! Flag-only decisions and nonblocking progress delivery.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use superba_core::{
-    Clock, Decision, DecisionRequest, Result, StepStatus, SwitchDecider, SwitchEvent, SwitchEvents,
+    Clock, Decision, DecisionRequest, Result, SessionStage, StepStatus, SwitchDecider, SwitchEvent,
+    SwitchEvents,
 };
 use superba_switch::messages;
+use superba_switch::session_events::session_progress_line;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::{Output, text::text};
@@ -65,6 +67,14 @@ impl Progress {
                         .arg("severity", out.severity(level))
                         .arg_text("text", value),
                 ),
+                SwitchEvent::Sessions { progress } => {
+                    let done = progress.stage == SessionStage::Done;
+                    out.live_progress(session_progress_line(&progress), done)?;
+                    if done {
+                        out.finish_progress()?;
+                    }
+                    Ok(())
+                }
                 _ => Ok(()),
             },
         }
@@ -76,6 +86,8 @@ pub struct CliEvents {
     sender: Option<UnboundedSender<Progress>>,
     clock: Arc<dyn Clock>,
     next_turns_ms: AtomicU64,
+    /// Session progress throttle: (stage of the last line, earliest next line in ms).
+    sessions: Mutex<Option<(SessionStage, u64)>>,
 }
 
 impl CliEvents {
@@ -87,6 +99,7 @@ impl CliEvents {
                 sender: (!json).then_some(sender),
                 clock,
                 next_turns_ms: AtomicU64::new(0),
+                sessions: Mutex::new(None),
             }),
             receiver,
         )
@@ -129,7 +142,31 @@ impl SwitchEvents for CliEvents {
                 return;
             }
         }
+        if let SwitchEvent::Sessions { progress } = &event
+            && !self.session_line_due(progress.stage)
+        {
+            return;
+        }
         self.send(Progress::Event(event));
+    }
+}
+
+/// Shortest time between two session progress lines (a new stage and the end
+/// always print).
+const SESSION_LINE_MS: u64 = 250;
+
+impl CliEvents {
+    fn session_line_due(&self, stage: SessionStage) -> bool {
+        let now = u64::try_from(self.clock.monotonic().as_millis()).unwrap_or(u64::MAX);
+        let mut last = self.sessions.lock().unwrap_or_else(|p| p.into_inner());
+        let due = match *last {
+            Some((seen, next)) => seen != stage || stage == SessionStage::Done || now >= next,
+            None => true,
+        };
+        if due {
+            *last = Some((stage, now.saturating_add(SESSION_LINE_MS)));
+        }
+        due
     }
 }
 

@@ -298,6 +298,16 @@ impl Output {
             .map_err(|e| Error::io("stderr", &e))
     }
 
+    /// A progress line that keeps changing (the session migration): rewritten in
+    /// place on a terminal; elsewhere written only at `milestone`s (a new stage,
+    /// the end) so logs stay short.
+    pub(crate) fn live_progress(&mut self, value: LocalizedText, milestone: bool) -> Result<()> {
+        if self.json || (!self.stderr_terminal && !milestone) {
+            return Ok(());
+        }
+        self.countdown_tick(value)
+    }
+
     pub(crate) fn finish_progress(&mut self) -> Result<()> {
         if self.progress_open {
             self.progress_open = false;
