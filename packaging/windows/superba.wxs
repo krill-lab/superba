@@ -98,7 +98,7 @@
     <!-- Removal: take the router's login startup out, stop its process, and
          (if Codex still goes through it) switch Codex back to direct. Before
          InstallValidate so no file is "in use" afterwards. An upgrade only
-         stops the router (--keep-service); the new version restarts it. -->
+         stops the router (keep-service flag); the new version restarts it. -->
     <CustomAction Id="RouterRemove" Directory="INSTALLFOLDER" Return="ignore"
                   ExeCommand="&quot;[INSTALLFOLDER]spb.exe&quot; router uninstall --quiet" />
     <CustomAction Id="RouterStop" Directory="INSTALLFOLDER" Return="ignore"
