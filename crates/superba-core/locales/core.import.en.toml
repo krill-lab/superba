@@ -1,0 +1,48 @@
+# superba-core messages of the provider import from other tools (cc-switch, AI
+# Toolbox; superba-import). Concatenated into the core catalog like the other
+# area files; every key must also exist in core.import.zh-CN.toml.
+
+[import.reason]
+bad_toml = "Its config.toml part could not be read: {error}"
+bad_url = "The address {url} is not a valid URL."
+chatgpt_account = "A ChatGPT account signed in through {tool}: Superba has the official login built in (Official ChatGPT); sign in there."
+full_url = "Its address is a full endpoint URL that only {tool}'s local gateway understands."
+gateway_protocol = "It talks to a {protocol} API through {tool}'s local proxy; Codex needs a Responses API."
+insecure_url = "The address {url} uses plain http; Superba sends keys over https only."
+managed_account = "A {what} account that only works through {tool}'s local proxy."
+no_base_url = "No base URL is set for it."
+not_codex = "A {app} provider: Superba sets up Codex only."
+official = "The official ChatGPT login: Superba has it built in (Official ChatGPT), sign in there."
+unknown = "It cannot be imported."
+unreadable_settings = "Its settings in {tool} could not be read."
+
+[import.note]
+chat_wire_api = "It is set up for the Chat Completions API; Superba uses the Responses API. Test it before you switch."
+disabled = "It is disabled in {tool}."
+duplicate = "Same address and key as {name} from {tool}, which is selected instead."
+env_key = "The key comes from the environment variable {name}; it is imported without a key."
+extra_urls_skipped = "Other addresses with a different path are not added as lines: {urls}"
+ignored_settings = "Not imported from its config.toml: {keys}."
+keychain = "{tool} keeps this key in the system keychain, which Superba does not read: it is imported without a key. Add the key in Superba afterwards."
+krill_model_map = "Krill serves Codex's model names; the model mapping is not imported."
+krill_unknown_line = "{url} is a Krill address but not one of its lines; the default line is used."
+no_key = "No key is stored for it; it is imported without a key."
+
+[import.skip]
+conflict = "{name} already exists in Superba; it was left as it is."
+duplicate = "Selected twice; imported once."
+gone = "It is no longer in the other tool's configuration."
+not_importable = "Not importable: {reason}"
+site_rejected = "The address was refused: {detail}"
+update_kind = "{name} is a different kind of provider and cannot be updated from this one; choose Rename to import it next to it."
+
+[import.store]
+bad_json = "It is not valid JSON: {error}"
+ccs_json_superseded = "Left over from before CC Switch moved to its database; not read."
+moved = "{tool} keeps its data in {path} now; this copy is not read."
+newer_schema = "Schema {version} is newer than the newest Superba knows ({known}); its provider table is unchanged, so it was read."
+not_initialised = "It has no providers yet (schema {version}); open {tool} once."
+surrealdb = "This is AI Toolbox's old database format (v0.9.1 and older), which Superba cannot read. Open AI Toolbox v0.9.2 to v1.1.3 once to convert it, then import again."
+unknown_layout = "Its layout (schema {version}) is not one Superba knows; nothing was read."
+unknown_version = "Version {version} is not one Superba knows; nothing was read."
+unreadable = "It could not be read: {error}. Close {tool} and try again."

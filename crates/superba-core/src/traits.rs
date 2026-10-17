@@ -941,6 +941,29 @@ pub trait SwitchService: Send + Sync {
         Err(crate::Error::not_implemented("self update router restart"))
     }
 
+    // --- provider import from other tools ----------------------------------------
+
+    /// Look for the configurations of other tools (cc-switch, AI Toolbox) and
+    /// preview their providers as Superba would import them: target (Krill
+    /// preset or a custom site), key present or not, conflicts with existing
+    /// providers. Reads the other tools' files only; writes nothing.
+    async fn import_scan(&self, request: crate::ImportScanRequest) -> Result<crate::ImportScan> {
+        let _ = request;
+        Err(crate::Error::not_implemented("provider import scan"))
+    }
+
+    /// Import the selected providers from a fresh scan of their sources: new
+    /// custom sites, profiles and keys (into Superba's key storage), or updates
+    /// of existing providers where chosen. Nothing is written to Codex and
+    /// nothing restarts; with `dry_run` nothing is written at all.
+    async fn import_apply(
+        &self,
+        request: crate::ImportApplyRequest,
+    ) -> Result<crate::ImportReport> {
+        let _ = request;
+        Err(crate::Error::not_implemented("provider import"))
+    }
+
     // --- v0.3: models and speed ------------------------------------------------
 
     /// The Models page of a profile: model list (provider, feed or snapshot, with

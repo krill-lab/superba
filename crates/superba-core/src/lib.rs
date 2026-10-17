@@ -21,6 +21,7 @@
 //! - [`plan`]: restart decisions, switch plans, execution events and the overview.
 //! - [`traits`]: the component contracts.
 //! - [`usage`]: account balance and usage data from standard endpoints.
+//! - [`import`]: provider import from other tools (cc-switch, AI Toolbox).
 //! - [`router`]: router mode settings and status; [`views`]: settings page rows,
 //!   settings edits and the settings part of a plan.
 //! - v0.3: [`models`] (model lists, overrides, speed tiers, the catalog file),
@@ -44,6 +45,7 @@ pub mod fdlimit;
 pub mod feeds;
 pub mod i18n;
 pub mod ids;
+pub mod import;
 pub mod models;
 pub mod origin;
 pub mod paths;
@@ -80,6 +82,7 @@ pub use error::{Error, Result};
 pub use feeds::*;
 pub use i18n::{Catalog, Locale, LocalizedText, Notice, Severity};
 pub use ids::*;
+pub use import::*;
 pub use models::*;
 pub use origin::{CodexPath, Origin};
 pub use paths::{CodexHome, DataDir, EnvSource, LocalContext, MapEnv, ProcessEnv};
