@@ -63,7 +63,7 @@ pub fn load(input: Input) -> Result<Model> {
                 notices: Vec::new(),
             }),
     }
-    .ok_or_else(|| Error::other("the settings catalog cannot be loaded"))?;
+    .ok_or_else(|| catalog_error(ctx.as_ref()))?;
     let config = read_config(input.overview.as_ref());
     let mut model = build(
         loaded.source.store(),
@@ -90,6 +90,26 @@ pub fn load(input: Input) -> Result<Model> {
     Ok(model)
 }
 
+/// Why the settings catalog cannot be loaded, with the catalog's own reason
+/// (a damaged built-in snapshot or download says which file and why), so the
+/// page names it instead of only failing.
+fn catalog_error(ctx: Option<&superba_core::LocalContext>) -> Error {
+    let reason = match ctx {
+        Some(ctx) => {
+            superba_catalog::load(Some(&superba_catalog::remote::cache_dir(&ctx.data_dir)))
+                .err()
+                .map(|e| e.to_string())
+        }
+        None => superba_catalog::SnapshotSource::builtin()
+            .err()
+            .map(|e| e.to_string()),
+    };
+    Error::other(match reason {
+        Some(r) => format!("the settings catalog cannot be loaded: {r}"),
+        None => "the settings catalog cannot be loaded".to_owned(),
+    })
+}
+
 /// The Codex binary whose `features list` is compared with the catalog: the
 /// app's bundled Codex, else the CLI first on PATH. Also returns its target label.
 fn runtime_binary(overview: Option<&Overview>) -> Option<(std::path::PathBuf, String)> {
@@ -97,11 +117,17 @@ fn runtime_binary(overview: Option<&Overview>) -> Option<(std::path::PathBuf, St
     if let Some(path) = o.app.installs.iter().find_map(|i| i.bundled_codex.clone()) {
         return Some((path, "App".into()));
     }
+    cli_binary(o).map(|b| (b.path.clone(), "CLI".into()))
+}
+
+/// The CLI first on PATH; never a copy of the app's own Codex (on Windows the
+/// app runs a relocated copy under `%LOCALAPPDATA%\OpenAI\Codex\bin`).
+fn cli_binary(o: &Overview) -> Option<&superba_core::CodexBinary> {
     o.cli
         .binaries
         .iter()
+        .filter(|b| b.source != superba_core::InstallSource::AppBundled)
         .min_by_key(|b| b.path_rank.unwrap_or(usize::MAX))
-        .map(|b| (b.path.clone(), "CLI".into()))
 }
 
 /// Run `codex features list` read-only: Codex gets a private `CODEX_HOME` under
@@ -470,12 +496,7 @@ fn targets(store: &CatalogStore, overview: Option<&Overview>) -> Result<Targets>
                 install.bundled_codex_version.clone(),
             ));
         }
-        let cli = o
-            .cli
-            .binaries
-            .iter()
-            .min_by_key(|b| b.path_rank.unwrap_or(usize::MAX));
-        if let Some(b) = cli {
+        if let Some(b) = cli_binary(o) {
             local.push((TargetKey::Cli, "CLI".into(), b.version.clone()));
         }
         // Only SSH hosts the desktop app is connected to (never ssh-config
@@ -874,8 +895,45 @@ pub fn build(
         .collect();
 
     let mut notes: Vec<LocalizedText> = Vec::new();
+    // The app's bundled Codex that reported no version (e.g. inside a Windows
+    // MSIX package): say which binary and what the list follows instead.
+    let app_binary = overview
+        .and_then(|o| o.app.installs.iter().find(|i| i.bundled_codex.is_some()))
+        .filter(|i| i.bundled_codex_version.is_none())
+        .and_then(|i| i.bundled_codex.clone());
+    let cli_version = t
+        .infos
+        .iter()
+        .zip(&t.catalogs)
+        .find(|(i, (_, c))| i.key == TargetKey::Cli && c.is_some())
+        .and_then(|(i, _)| i.version.clone());
     for (info, (_, c)) in t.infos.iter().zip(&t.catalogs) {
-        if c.is_none() {
+        if c.is_none()
+            && info.key == TargetKey::App
+            && let Some(binary) = &app_binary
+        {
+            let fallback = match &cli_version {
+                Some(v) => LocalizedText::new(
+                    "codex_settings.note.follows_cli",
+                    "the CLI's Codex {version}",
+                )
+                .arg("version", v),
+                None => LocalizedText::new(
+                    "codex_settings.note.follows_latest",
+                    "the newest settings catalog (Codex {version})",
+                )
+                .arg("version", &t.primary.codex_version),
+            };
+            notes.push(
+                LocalizedText::new(
+                    "codex_settings.note.app_version_unknown",
+                    "{target}: its bundled Codex ({path}) did not report its version, so the list follows {fallback}; availability is not shown for {target}.",
+                )
+                .arg("target", &info.label)
+                .arg("path", binary.display())
+                .arg_text("fallback", fallback),
+            );
+        } else if c.is_none() {
             notes.push(
                 LocalizedText::new(
                     "codex_settings.note.version_unknown",

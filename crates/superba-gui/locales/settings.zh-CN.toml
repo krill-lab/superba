@@ -149,6 +149,9 @@ title = "{n} 项待应用的更改"
 unsupported = "{targets} 不认识"
 
 [codex_settings.note]
+app_version_unknown = "{target}：自带的 Codex（{path}）没有报告版本，列表按{fallback}显示，不显示 {target} 的可用性。"
+follows_cli = "命令行的 Codex {version}"
+follows_latest = "最新的设置目录（Codex {version}）"
 runtime_differs = "{target} 的 Codex 报告有 {n} 个功能与设置目录不同，以 Codex 报告的为准。"
 version_unknown = "{target} 的 Codex 版本未知，不显示它的可用性。"
 

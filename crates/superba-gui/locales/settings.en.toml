@@ -150,6 +150,9 @@ title = "{n} pending {n|change|changes}"
 unsupported = "unknown to {targets}"
 
 [codex_settings.note]
+app_version_unknown = "{target}: its bundled Codex ({path}) did not report its version, so the list follows {fallback}; availability is not shown for {target}."
+follows_cli = "the CLI's Codex {version}"
+follows_latest = "the newest settings catalog (Codex {version})"
 runtime_differs = "{target} Codex reports {n} features differently from the settings catalog; what Codex reports is shown."
 version_unknown = "The Codex version of {target} is unknown; availability is not shown for it."
 
