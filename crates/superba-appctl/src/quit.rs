@@ -3,8 +3,14 @@
 //! - Linux: SIGTERM to the main pid (Chromium shuts down cleanly).
 //! - macOS: `NSRunningApplication::terminate` for the main pid, without Apple
 //!   Events or Automation consent; SIGTERM for processes not registered as apps.
-//! - Windows: `WM_CLOSE` to the main process's top-level windows; force-kill only
-//!   when the caller allows it (`taskkill /T` without `/F` cannot close the app).
+//! - Windows: closing its windows does not quit the app (it keeps running in
+//!   the notification area: its `window-all-closed` handler skips `app.quit()`
+//!   on win32). With CDP the controller asks the renderer bridge to quit
+//!   ([`QUIT_APP_JS`], the app's own `quit-app` message, as its menu does);
+//!   without it `WM_CLOSE` closes the windows and the wait is short
+//!   ([`WINDOWS_CLOSE_ONLY_WAIT`]) before the caller is told it timed out.
+//!   Force-kill only when the caller allows it, and then of the whole process
+//!   tree (`TerminateProcess` on the main process and every descendant).
 //!
 //! Exit is "real" when the pid is gone, a zombie, or reused (start time differs).
 
@@ -14,9 +20,50 @@ use superba_core::{AppSession, QuitOptions, QuitOutcome};
 
 use crate::procs::{self, Liveness};
 
+/// JavaScript for the main renderer that asks the app to quit through its own
+/// `quit-app` message (`app.quit()` in the main process, which runs the app's
+/// shutdown handlers). Evaluates to `true` when the bridge took the message.
+pub const QUIT_APP_JS: &str = "(() => { const b = window.electronBridge; \
+     if (!b || typeof b.sendMessageFromView !== 'function') return false; \
+     b.sendMessageFromView({type:'quit-app'}); return true; })()";
+
+/// On Windows without CDP only the windows can be closed and the app stays
+/// running; waiting the whole graceful timeout for it is pointless.
+pub const WINDOWS_CLOSE_ONLY_WAIT: Duration = Duration::from_secs(5);
+
 /// Ask the process to quit (platform specific; best effort).
 pub fn request_quit(session: &AppSession) -> bool {
     imp::request_quit(session)
+}
+
+/// How the quit was asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuitRequest {
+    /// The app was asked to quit (CDP `quit-app`, SIGTERM, `terminate`).
+    App,
+    /// Only its windows were asked to close (Windows without CDP).
+    WindowsOnly,
+}
+
+/// The processes a forced quit ends, main process first: the main process
+/// and every descendant still alive in `entries` (a recorded child that is
+/// gone or whose pid was reused is not in the list).
+pub fn kill_targets(
+    main_pid: u32,
+    main_started: Option<superba_core::Timestamp>,
+    children: &[(u32, Option<superba_core::Timestamp>)],
+    alive: &dyn Fn(u32, Option<superba_core::Timestamp>) -> bool,
+) -> Vec<u32> {
+    let mut out = Vec::new();
+    if alive(main_pid, main_started) {
+        out.push(main_pid);
+    }
+    for (pid, started) in children {
+        if *pid != main_pid && !out.contains(pid) && alive(*pid, *started) {
+            out.push(*pid);
+        }
+    }
+    out
 }
 
 /// Poll until `pid` is gone or `timeout` passes. Returns true if it exited.
@@ -82,17 +129,45 @@ pub async fn wait_children_exit(
 /// [`CHILD_EXIT_GRACE`] for its child processes (renderers, the Codex app-server)
 /// so the caller sees the whole app gone.
 pub async fn quit(session: &AppSession, options: &QuitOptions) -> QuitOutcome {
+    quit_after(session, options, None).await
+}
+
+/// [`quit`] where the quit may already have been asked for (`requested`, e.g.
+/// through CDP); otherwise it is asked for here.
+pub async fn quit_after(
+    session: &AppSession,
+    options: &QuitOptions,
+    requested: Option<QuitRequest>,
+) -> QuitOutcome {
     if procs::liveness(session.main_pid, session.started_at) == Liveness::Gone {
         return QuitOutcome::NotRunning;
     }
     let entries = procs::snapshot_os(procs::ReadOpts { environ: false });
     let children = descendants(&entries, session.main_pid);
-    request_quit(session);
-    let graceful = Duration::from_millis(if options.graceful_timeout_ms == 0 {
+    let request = match requested {
+        Some(r) => r,
+        None if cfg!(windows) => {
+            request_quit(session);
+            QuitRequest::WindowsOnly
+        }
+        None => {
+            request_quit(session);
+            QuitRequest::App
+        }
+    };
+    let mut graceful = Duration::from_millis(if options.graceful_timeout_ms == 0 {
         15_000
     } else {
         options.graceful_timeout_ms
     });
+    if request == QuitRequest::WindowsOnly {
+        graceful = graceful.min(WINDOWS_CLOSE_ONLY_WAIT);
+        tracing::info!(
+            main = session.main_pid,
+            "only the app's windows can be closed (no CDP); it keeps running in the \
+             notification area until it is asked through the app or ended"
+        );
+    }
     if wait_exit(session, graceful).await {
         if !wait_children_exit(&children, CHILD_EXIT_GRACE).await {
             tracing::warn!(
@@ -105,7 +180,18 @@ pub async fn quit(session: &AppSession, options: &QuitOptions) -> QuitOutcome {
     if !options.force {
         return QuitOutcome::TimedOut;
     }
-    procs::kill(session.main_pid);
+    if cfg!(windows) {
+        // Windows: end the whole tree (renderers, GPU and utility processes, the
+        // Codex app-server), main process first so it starts nothing new.
+        let targets = kill_targets(session.main_pid, session.started_at, &children, &|p, s| {
+            procs::liveness(p, s) == Liveness::Alive
+        });
+        for pid in targets {
+            procs::kill(pid);
+        }
+    } else {
+        procs::kill(session.main_pid);
+    }
     if wait_exit(session, Duration::from_secs(5)).await {
         if !wait_children_exit(&children, CHILD_EXIT_GRACE).await {
             tracing::warn!(
@@ -149,8 +235,8 @@ mod imp {
 
 #[cfg(windows)]
 mod imp {
-    //! Windows: post WM_CLOSE to every visible top-level window of the main pid.
-    //! Not exercised in CI.
+    //! Windows: post WM_CLOSE to every visible top-level window of the main pid
+    //! (exercised on a real Windows runner by `tests/windows_app_it.rs`).
     use superba_core::AppSession;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows_sys::Win32::UI::WindowsAndMessaging::{

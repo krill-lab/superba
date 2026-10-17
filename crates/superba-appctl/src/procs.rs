@@ -543,10 +543,11 @@ fn mask_api_key_tokens(s: &str) -> String {
     out
 }
 
-/// Normalize a path for comparison (canonical when it exists, trailing separators
-/// removed otherwise).
+/// Normalize a path for comparison (canonical when it exists, in the plain
+/// `C:\...` form on Windows, trailing separators removed otherwise).
 pub fn norm_path(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| p.components().collect())
+    crate::appx::canonical(p)
+        .unwrap_or_else(|_| crate::appx::plain_path(&p.components().collect::<PathBuf>()))
 }
 
 /// What to read for each process.

@@ -340,6 +340,100 @@ pub fn scan_floor(path: &Path) -> Result<CodexVersion> {
     })
 }
 
+/// Text the Codex binary embeds its own version right after (`codex-doctor/<v>`,
+/// the app-server daemon's name): the version of a binary that cannot be run
+/// (inside an MSIX package) is read from these, without running it.
+const VERSION_MARKERS: &[&[u8]] = &[b"codex-doctor/", b"Codex App Server Daemon"];
+
+/// A Codex version at the start of `bytes`: `MAJOR.MINOR.PATCH`, then an
+/// optional `-<word>` with dot-separated numbers (`0.163.0-alpha.10.2`). Text
+/// glued to it (`...10.2failed`) is not part of it.
+fn version_at(bytes: &[u8]) -> Option<CodexVersion> {
+    let mut i = 0;
+    let digits = |i: &mut usize| {
+        let start = *i;
+        while *i < bytes.len() && bytes[*i].is_ascii_digit() && *i - start < 9 {
+            *i += 1;
+        }
+        *i > start
+    };
+    for part in 0..3 {
+        if part > 0 {
+            if bytes.get(i) != Some(&b'.') {
+                return None;
+            }
+            i += 1;
+        }
+        if !digits(&mut i) {
+            return None;
+        }
+    }
+    if bytes.get(i) == Some(&b'-') {
+        let mut j = i + 1;
+        while j < bytes.len() && bytes[j].is_ascii_lowercase() && j - i < 16 {
+            j += 1;
+        }
+        if j > i + 1 {
+            i = j;
+            while bytes.get(i) == Some(&b'.') {
+                let mut k = i + 1;
+                if !digits(&mut k) {
+                    break;
+                }
+                i = k;
+            }
+        }
+    }
+    CodexVersion::parse(std::str::from_utf8(&bytes[..i]).ok()?).ok()
+}
+
+/// The version a Codex binary embeds after one of [`VERSION_MARKERS`].
+pub fn version_in_bytes(bytes: &[u8]) -> Option<CodexVersion> {
+    VERSION_MARKERS.iter().find_map(|marker| {
+        memchr::memmem::find_iter(bytes, marker)
+            .find_map(|pos| version_at(&bytes[pos + marker.len()..]))
+    })
+}
+
+/// [`version_in_bytes`] of a (large) file, streamed in chunks with an overlap,
+/// remembered per file stamp. `None` when the file cannot be read or holds no
+/// marked version.
+pub fn scanned_version(path: &Path) -> Option<CodexVersion> {
+    type Cache = Mutex<HashMap<FileStamp, Option<CodexVersion>>>;
+    static CACHE: std::sync::LazyLock<Cache> = std::sync::LazyLock::new(Default::default);
+    const CHUNK: usize = 8 * 1024 * 1024;
+    const OVERLAP: usize = 128;
+
+    let stamp = FileStamp::of(path)?;
+    if let Some(v) = lock(&CACHE).get(&stamp) {
+        return v.clone();
+    }
+    let scan = || -> Option<CodexVersion> {
+        let mut f = fs::File::open(path).ok()?;
+        let mut buf = vec![0_u8; CHUNK + OVERLAP];
+        let mut carry = 0_usize;
+        loop {
+            let n = f.read(&mut buf[carry..]).ok()?;
+            if n == 0 {
+                return None;
+            }
+            let len = carry + n;
+            if let Some(v) = version_in_bytes(&buf[..len]) {
+                return Some(v);
+            }
+            carry = len.min(OVERLAP);
+            buf.copy_within(len - carry..len, 0);
+        }
+    };
+    let version = scan();
+    let mut cache = lock(&CACHE);
+    if cache.len() >= 64 {
+        cache.clear();
+    }
+    cache.insert(stamp, version.clone());
+    version
+}
+
 /// How `binary` was installed: Superba's store (`store_dir`), bundled in a
 /// desktop app install, else by its resolved path
 /// ([`CodexInstallKind::from_resolved_path`]).

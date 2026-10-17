@@ -332,6 +332,22 @@ pub fn parse_appx_application_id(xml: &str) -> Option<String> {
     None
 }
 
+/// Every `<Application>` of an Appx manifest in document order, as
+/// `(Id, Executable)` (the executable is package relative, `app/ChatGPT.exe`).
+pub fn parse_appx_applications(xml: &str) -> Vec<(String, Option<String>)> {
+    let mut remaining = xml;
+    let mut apps = Vec::new();
+    while let Some(tag) = next_xml_tag(&mut remaining) {
+        if !tag.closing
+            && tag.name.rsplit(':').next() == Some("Application")
+            && let Some(id) = xml_attribute(tag.attributes, "Id")
+        {
+            apps.push((id, xml_attribute(tag.attributes, "Executable")));
+        }
+    }
+    apps
+}
+
 /// One supported package reported by `Get-AppxPackage`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppxPackage {
@@ -498,20 +514,110 @@ fn inspect_bundle(root: &Path) -> Option<AppInstall> {
     })
 }
 
+/// The registered MSIX package a directory is the install folder of: the
+/// folder name is the package full name (`OpenAI.Codex_<ver>_x64__<publisher>`)
+/// and the manifest sits in it. Only the name is parsed (nothing is listed).
+fn package_of_root(root: &Path) -> Option<AppxPackage> {
+    let name = root.file_name()?.to_str()?;
+    let package = parse_appx_full_name(name, &root.to_string_lossy())?;
+    root.join("AppxManifest.xml").is_file().then_some(package)
+}
+
 fn install_from_resources(root: &Path, executable: PathBuf, resources: &Path) -> AppInstall {
     let (version, brand) = fs::read_to_string(resources.join("linux-package-metadata.json"))
         .map(|text| parse_linux_package_metadata(&text))
         .unwrap_or_default();
-    let id = format!("path:{}", root.display());
+    // An MSIX folder is named by its package family, as registry discovery does,
+    // so a running app found by its executable has the same id as the install.
+    let package = package_of_root(root);
+    let id = match &package {
+        Some(p) => p.family_name.clone(),
+        None => format!("path:{}", root.display()),
+    };
     let (bundled_codex, bundled_codex_version) = bundled_cli(resources);
     AppInstall {
         variant: variant(&id, &executable, brand.as_deref()),
         id,
         path: root.to_owned(),
         executable,
-        app_version: read_owl(resources).app_version.or(version),
+        app_version: read_owl(resources)
+            .app_version
+            .or(version)
+            .or(package.and_then(|p| p.version)),
         bundled_codex,
         bundled_codex_version,
+    }
+}
+
+/// True when `path` is a file, or exists but may not be inspected (a package
+/// file under `WindowsApps` whose folder grants no read to this user).
+fn present_file(path: &Path) -> bool {
+    match fs::metadata(path) {
+        Ok(meta) => meta.is_file(),
+        Err(e) => e.kind() == std::io::ErrorKind::PermissionDenied,
+    }
+}
+
+/// The install of a registered MSIX package, built from its manifest: the main
+/// application's executable (`app/ChatGPT.exe`) and the `resources` folder next
+/// to it. Only files named by the manifest are opened, by full path; the
+/// package folder and `WindowsApps` are never listed. Without a readable
+/// manifest the known layout of the OpenAI package is assumed.
+pub fn appx_install(package: &AppxPackage) -> Option<AppInstall> {
+    let root = crate::appx::plain_path(&package.install_location);
+    let manifest = fs::read_to_string(root.join("AppxManifest.xml")).ok();
+    let apps = manifest
+        .as_deref()
+        .map(parse_appx_applications)
+        .unwrap_or_default();
+    let relative = crate::appx::main_application(&apps)
+        .and_then(|(_, exe)| exe.clone())
+        .unwrap_or_else(|| "app/ChatGPT.exe".to_owned());
+    let executable = crate::appx::package_file(&root, &relative)?;
+    let resources = executable.parent()?.join("resources");
+    let (mut bundled_codex, bundled_codex_version) = bundled_cli(&resources);
+    if bundled_codex.is_none() && present_file(&resources.join("codex.exe")) {
+        bundled_codex = Some(resources.join("codex.exe"));
+    }
+    let id = package.family_name.clone();
+    Some(AppInstall {
+        variant: variant(&id, &executable, None),
+        id,
+        path: root,
+        executable,
+        app_version: read_owl(&resources).app_version.or(package.version.clone()),
+        bundled_codex,
+        bundled_codex_version,
+    })
+}
+
+/// Whether `id` names `install`: the same id, a package family in another
+/// case, or a `path:` id (an older form, also with a verbatim `\\?\` prefix)
+/// of its folder or executable.
+pub fn install_matches(install: &AppInstall, id: &str) -> bool {
+    if install.id == id || (crate::appx::is_family_name(id) && install.id.eq_ignore_ascii_case(id))
+    {
+        return true;
+    }
+    let Some(path) = id.strip_prefix("path:") else {
+        return false;
+    };
+    let wanted = crate::appx::plain_path(Path::new(path));
+    let same = |p: &Path| same_file_name(&crate::appx::plain_path(p), &wanted);
+    same(&install.path)
+        || same(&install.executable)
+        || install
+            .id
+            .strip_prefix("path:")
+            .is_some_and(|own| same(Path::new(own)))
+}
+
+/// Path equality, ignoring ASCII case on Windows (paths are case-insensitive there).
+fn same_file_name(a: &Path, b: &Path) -> bool {
+    if cfg!(windows) {
+        a.as_os_str().eq_ignore_ascii_case(b.as_os_str())
+    } else {
+        a == b
     }
 }
 
@@ -568,7 +674,7 @@ pub fn inspect_install(path: &Path) -> Option<AppInstall> {
     if let Some(install) = appimage_install(path) {
         return Some(install);
     }
-    let path = fs::canonicalize(path).ok()?;
+    let path = crate::appx::canonical(path).ok()?;
     if let Some(bundle) = path.ancestors().find(|path| {
         path.extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
@@ -617,8 +723,6 @@ pub(crate) struct CandidateRoots {
     pub(crate) scan_dirs: Vec<PathBuf>,
 }
 
-// macOS paths are fixed (no XDG or Windows variables), so it is unused there.
-#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn env_path(env: &dyn EnvSource, key: &str) -> Option<PathBuf> {
     env.var_os(key)
         .filter(|value| !value.is_empty())
@@ -773,7 +877,7 @@ pub fn appimage_install(path: &Path) -> Option<AppInstall> {
     } else {
         AppVariant::Codex
     };
-    let path = fs::canonicalize(path).ok()?;
+    let path = crate::appx::canonical(path).ok()?;
     Some(AppInstall {
         id: format!("path:{}", path.display()),
         variant,
@@ -998,16 +1102,7 @@ async fn msix_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppInstall> 
         Some(packages) => packages,
         None => powershell_appx_packages(env, home_dir).await,
     };
-    packages
-        .into_iter()
-        .filter_map(|package| {
-            let mut install = inspect_install(&package.install_location)?;
-            install.id = package.family_name;
-            install.variant = variant(&install.id, &install.executable, None);
-            install.app_version = install.app_version.or(package.version);
-            Some(install)
-        })
-        .collect()
+    packages.iter().filter_map(appx_install).collect()
 }
 
 /// Detect explicit, platform and MSIX installs, deduplicating by canonical main executable.
@@ -1024,8 +1119,8 @@ pub async fn detect_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppIns
     let mut seen = HashMap::<PathBuf, usize>::new();
     let mut unique: Vec<AppInstall> = Vec::new();
     for install in installs {
-        let executable =
-            fs::canonicalize(&install.executable).unwrap_or_else(|_| install.executable.clone());
+        let executable = crate::appx::canonical(&install.executable)
+            .unwrap_or_else(|_| install.executable.clone());
         if let Some(&index) = seen.get(&executable) {
             let first = &mut unique[index];
             // An explicit MSIX path keeps its priority but gains the discovered family id.
@@ -1047,7 +1142,7 @@ pub async fn detect_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppIns
         if install.bundled_codex_version.is_none()
             && let Some(binary) = &install.bundled_codex
         {
-            install.bundled_codex_version = codex_version(binary).await;
+            install.bundled_codex_version = bundled_codex_version(binary, env).await;
         }
     }
     unique
@@ -1083,6 +1178,40 @@ fn version_key(
         .then(|| crate::codexbin::FileStamp::of(&target))
         .flatten();
     Some((own, target))
+}
+
+/// The version of an app's bundled Codex: its `--version`. A binary inside an
+/// MSIX package (`WindowsApps`) that does not answer from outside the package
+/// is asked through the app's own relocated copy
+/// ([`crate::appx::relocated_codex_candidates`]) of the same size, else its
+/// version is read from the binary ([`crate::codexbin::scanned_version`],
+/// nothing is run).
+pub async fn bundled_codex_version(binary: &Path, env: &dyn EnvSource) -> Option<CodexVersion> {
+    if let Some(version) = codex_version(binary).await {
+        return Some(version);
+    }
+    if !crate::appx::in_windows_apps(binary) {
+        return None;
+    }
+    if let (Some(local), Ok(packaged)) = (env_path(env, "LOCALAPPDATA"), fs::metadata(binary)) {
+        for copy in crate::appx::relocated_codex_candidates(&local) {
+            if fs::metadata(&copy).is_ok_and(|m| m.len() == packaged.len())
+                && let Some(version) = codex_version(&copy).await
+            {
+                tracing::debug!(copy = %copy.display(), "bundled Codex version from the app's copy");
+                return Some(version);
+            }
+        }
+    }
+    let path = binary.to_path_buf();
+    let version = tokio::task::spawn_blocking(move || crate::codexbin::scanned_version(&path))
+        .await
+        .ok()
+        .flatten();
+    if version.is_some() {
+        tracing::debug!(binary = %binary.display(), "bundled Codex version read from the binary");
+    }
+    version
 }
 
 /// Run the supplied binary with `--version`, null stdin and a five-second deadline.

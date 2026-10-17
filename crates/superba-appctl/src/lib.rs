@@ -19,6 +19,7 @@
 //! only platform exercised end to end.
 
 pub mod activity;
+pub mod appx;
 pub mod cdp;
 pub mod clibin;
 pub mod codexbin;
@@ -203,8 +204,18 @@ impl DesktopAppController {
 
     async fn find_install(&self, id: Option<&str>) -> Result<AppInstall> {
         let installs = install::detect_installs(self.ctx.env.as_ref(), &self.ctx.home_dir).await;
+        // An id recorded earlier may be an older form of the same install (a
+        // `path:` id, also with a verbatim `\\?\` prefix, for an MSIX folder).
         let found = match id {
-            Some(id) => installs.into_iter().find(|i| i.id == id),
+            Some(id) => installs
+                .iter()
+                .position(|i| i.id == id)
+                .or_else(|| {
+                    installs
+                        .iter()
+                        .position(|i| install::install_matches(i, id))
+                })
+                .map(|at| installs[at].clone()),
             None => installs.into_iter().next(),
         };
         found.ok_or_else(|| Error::NotFound {
@@ -786,7 +797,20 @@ impl AppController for DesktopAppController {
     }
 
     async fn quit(&self, session: &AppSession, options: &QuitOptions) -> Result<QuitOutcome> {
-        let outcome = quit::quit(session, options).await;
+        // Windows: closing the windows leaves the app running in the notification
+        // area; with CDP the app is asked to quit the way its own menu does.
+        let requested = if cfg!(windows) && session.cdp.is_some() {
+            match self.eval_main(session, quit::QUIT_APP_JS).await {
+                Ok((_, Value::Bool(true))) => Some(quit::QuitRequest::App),
+                other => {
+                    tracing::info!(?other, "cannot ask the app to quit over CDP");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let outcome = quit::quit_after(session, options, requested).await;
         if matches!(
             outcome,
             QuitOutcome::Exited | QuitOutcome::Killed | QuitOutcome::NotRunning

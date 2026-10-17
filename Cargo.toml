@@ -143,6 +143,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_ProcessStatus",
   "Win32_NetworkManagement_IpHelper",
   "Win32_Networking_WinSock",
+  "Win32_Storage_Packaging_Appx",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Shell",
 ] }

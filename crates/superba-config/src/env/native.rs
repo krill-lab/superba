@@ -177,7 +177,10 @@ mod macos {
 /// Windows: the per-user environment lives in `HKCU\Environment` (this is also
 /// what `setx` from the legacy tutorial wrote). After a change Explorer must be
 /// told with a `WM_SETTINGCHANGE("Environment")` broadcast; Windows Terminal and
-/// VS Code ignore it and need a restart (the UI says so).
+/// VS Code ignore it and need a restart (the UI says so). The ChatGPT app (an
+/// MSIX package activated by Superba or the Start menu) reads the values from
+/// the registry at each activation, broadcast or not (checked on a Windows
+/// runner); a running app keeps the environment it started with.
 #[cfg(windows)]
 mod windows {
     use winreg::RegKey;
