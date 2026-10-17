@@ -65,6 +65,7 @@ fn main() -> ExitCode {
     attach_parent_console();
     let cli = Cli::parse();
     init_logging();
+    raise_open_files_limit();
     match cli.command {
         Command::Run { data_dir } => run(data_dir),
         Command::Supervise { data_dir } => supervise_cmd(data_dir),
@@ -94,6 +95,22 @@ fn init_logging() {
         .with_writer(std::io::stderr)
         .with_ansi(false)
         .try_init();
+}
+
+/// launchd starts agents with a soft limit of 256 open files, and every proxied
+/// request holds two sockets: raise the soft limit towards
+/// [`superba_core::fdlimit::OPEN_FILES_TARGET`] (never above the hard limit).
+/// Never fails; the values go to the debug log.
+fn raise_open_files_limit() {
+    use superba_core::fdlimit;
+    if let Some(limit) = fdlimit::raise_open_files_limit(fdlimit::OPEN_FILES_TARGET) {
+        tracing::debug!(
+            before = ?limit.before,
+            after = ?limit.after,
+            hard = ?limit.hard,
+            "open-file limit (RLIMIT_NOFILE soft)"
+        );
+    }
 }
 
 fn runtime() -> Option<tokio::runtime::Runtime> {

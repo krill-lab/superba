@@ -106,6 +106,22 @@ pub async fn run(cli: &Cli, rt: &Runtime, out: &mut Output) -> u8 {
     }
 }
 
+/// Raise the soft open-file limit (macOS starts apps and launchd agents with 256)
+/// towards [`superba_core::fdlimit::OPEN_FILES_TARGET`]. Defence in depth: Superba
+/// keeps few files open at once anyway. Never fails; the values go to the debug
+/// log. Shared by `spb`, `superba <subcommand>` and the GUI.
+pub fn raise_open_files_limit() {
+    use superba_core::fdlimit;
+    if let Some(limit) = fdlimit::raise_open_files_limit(fdlimit::OPEN_FILES_TARGET) {
+        tracing::debug!(
+            before = ?limit.before,
+            after = ?limit.after,
+            hard = ?limit.hard,
+            "open-file limit (RLIMIT_NOFILE soft)"
+        );
+    }
+}
+
 /// Parse, initialize logging and the async runtime, and run with production services.
 /// Help, version and parse failures do not construct the production service.
 pub fn main_with_args<I, T>(args: I) -> ExitCode
@@ -182,6 +198,7 @@ where
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .try_init();
+    raise_open_files_limit();
     let executor = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

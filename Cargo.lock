@@ -4290,6 +4290,7 @@ dependencies = [
  "sys-locale",
  "tempfile",
  "tokio",
+ "tracing",
  "tracing-subscriber",
  "url",
  "winresource",

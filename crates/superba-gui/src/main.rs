@@ -36,6 +36,8 @@ fn main() -> ExitCode {
             return ExitCode::from(superba_cli::exit::USAGE);
         }
     };
+    // macOS starts apps with a soft limit of 256 open files.
+    superba_cli::raise_open_files_limit();
     match superba_gui::run(gui_args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
