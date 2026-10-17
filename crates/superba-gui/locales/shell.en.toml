@@ -207,6 +207,15 @@ search = "Search…"
 switched = "Switched to {line}"
 what_restarts = "What restarts?"
 
+[startup]
+# Native message box and stderr when the GUI cannot start or stops on a panic
+# (user bug 43); {path} is a log file.
+crash_body = "Superba stopped because of an internal error: {reason}\n\nA crash report was written to {path}."
+crash_title = "Superba stopped"
+failed_body = "{reason}\n\nDetails are in {path}."
+failed_title = "Superba could not start"
+window_failed = "Superba could not open its window ({reason}). Updating the graphics driver may help."
+
 [step]
 launch = "Open ChatGPT"
 migrate = "Migrate sessions"

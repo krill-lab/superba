@@ -206,6 +206,13 @@ search = "搜索…"
 switched = "已切换到 {line}"
 what_restarts = "哪些内容会重启？"
 
+[startup]
+crash_body = "Superba 遇到内部错误，必须关闭：{reason}\n\n崩溃报告已写入 {path}。"
+crash_title = "Superba 已停止"
+failed_body = "{reason}\n\n详细信息见 {path}。"
+failed_title = "Superba 无法启动"
+window_failed = "Superba 无法打开窗口（{reason}）。更新显卡驱动可能有帮助。"
+
 [step]
 launch = "打开 ChatGPT"
 migrate = "迁移会话"

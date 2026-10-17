@@ -34,7 +34,6 @@ superba-models.workspace = true
 superba-router.workspace = true
 superba-versions.workspace = true
 anyhow.workspace = true
-eframe.workspace = true
 egui.workspace = true
 fontdb.workspace = true
 open.workspace = true
@@ -51,8 +50,18 @@ url.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
+# Renderer: OpenGL (glow) on Linux and macOS (Linux CI and the screenshots run on
+# Xvfb + Mesa llvmpipe).
+[target.'cfg(not(windows))'.dependencies]
+eframe = { workspace = true, features = ["glow"] }
+
+# Renderer: wgpu with Direct3D 12 on Windows. Machines without a 3D driver (VMs,
+# some RDP setups) only have Windows' OpenGL 1.1, which glow cannot use; Direct3D 12
+# falls back to the WARP software rasterizer that every Windows 10/11 has (user bug 43).
 [target.'cfg(windows)'.dependencies]
+eframe = { workspace = true, features = ["wgpu_no_default_features"] }
 windows-sys.workspace = true
+wgpu.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

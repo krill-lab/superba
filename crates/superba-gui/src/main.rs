@@ -38,10 +38,19 @@ fn main() -> ExitCode {
     };
     // macOS starts apps with a soft limit of 256 open files.
     superba_cli::raise_open_files_limit();
-    match superba_gui::run(gui_args) {
+    // From here on the GUI never ends silently: a failed start or a panic is
+    // logged and, on Windows (no console), shown in a message box (user bug 43).
+    let report = superba_gui::startup::Reporter::new(
+        gui_args
+            .locale
+            .unwrap_or_else(superba_gui::i18n::system_locale),
+    );
+    report.begin();
+    report.install_panic_hook();
+    match superba_gui::run(gui_args, &report) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("error: {e:#}");
+            report.report_failure(&e);
             ExitCode::from(superba_cli::exit::ERROR)
         }
     }

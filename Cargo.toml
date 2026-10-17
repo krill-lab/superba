@@ -117,7 +117,11 @@ sys-locale = "0.3"
 
 
 # --- GUI (superba-gui only; `spb` must never link these)
-eframe = { version = "0.37", default-features = false, features = ["glow", "accesskit", "wayland", "x11", "clipboard", "links"] }
+# The renderer is chosen per platform in superba-gui's Cargo.toml: wgpu (Direct3D 12,
+# WARP when there is no usable GPU) on Windows, glow (OpenGL) elsewhere.
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "wayland", "x11", "clipboard", "links"] }
+# Windows GUI renderer backends (through eframe's egui-wgpu): Direct3D 12 only.
+wgpu = { version = "30", default-features = false, features = ["std", "dx12"] }
 egui = "0.37"
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
 fontdb = "0.24"
@@ -138,6 +142,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Console",
   "Win32_System_LibraryLoader",
   "Win32_System_Registry",
+  "Win32_System_StationsAndDesktops",
   "Win32_System_Threading",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_ProcessStatus",
