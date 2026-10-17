@@ -58,6 +58,14 @@ back to the official ChatGPT login.
 - **Session provider migration** for users of the old Krill tutorial
   (`model_provider = "krill"`): sessions in `state_5.sqlite` and rollout files are
   migrated to `openai` (and back) with backups, a ledger and exact rollback.
+  While it runs, Superba holds Codex's own writer coordination lock, so a Codex
+  that starts meanwhile waits instead of writing a session being migrated; only
+  a few files are open at once whatever the session count (hundreds of sessions
+  used to fail under macOS's limit of 256 open files with a wrong "a Codex
+  process holds …" message). Errors keep the real OS cause ("too many open
+  files" with the limit, permission denied, file not found), and the binaries
+  raise their soft open-file limit at startup (up to 8192, within the hard
+  limit).
 - **Remote hosts** connected to the app over SSH are switched together with the
   local machine (system `ssh`, `BatchMode`, secrets only through stdin), with
   their own settings plan; their sessions and Codex versions are listed per host.

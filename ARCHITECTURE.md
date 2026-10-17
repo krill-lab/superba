@@ -302,7 +302,9 @@ knows (`AppController::remote_connections`, with `hostId`) and the live ssh link
 Codex home (`CODEX_HOME` or `<home>/.codex`, `superba_core::CodexHome`):
 `config.toml`, `auth.json`, `state_5.sqlite` (under `CODEX_SQLITE_HOME` if set),
 `sessions/`, `archived_sessions/`, `.codex-global-state.json`,
-`app-server-control/`, `tmp/superba-migrate.lock`.
+`app-server-control/`, `tmp/superba-migrate.lock`, and Codex's
+`thread-writer-locks/` (a session migration holds its `.coordination.lock` for the
+whole write and only probes the per-thread locks, one at a time).
 
 Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 `superba_core::DataDir`):
