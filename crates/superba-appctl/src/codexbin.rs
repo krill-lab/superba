@@ -79,9 +79,23 @@ pub async fn debug_models(
     cmd.env("CODEX_HOME", home.path())
         .env("HOME", home.path())
         .env("USERPROFILE", home.path());
-    let mut child = cmd.spawn().map_err(|e| Error::Process {
-        message: format!("cannot run {}: {e}", binary.display()),
-    })?;
+    // A binary that is being rewritten (an npm / brew update, or a writer that
+    // still holds it open) fails with ETXTBSY for a moment: retry briefly.
+    let mut attempt = 0;
+    let mut child = loop {
+        attempt += 1;
+        match cmd.spawn() {
+            Ok(child) => break child,
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && attempt < 10 => {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(e) => {
+                return Err(Error::Process {
+                    message: format!("cannot run {}: {e}", binary.display()),
+                });
+            }
+        }
+    };
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
     let work = async {
