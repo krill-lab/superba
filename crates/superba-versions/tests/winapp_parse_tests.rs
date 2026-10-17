@@ -750,3 +750,37 @@ fn the_real_package_when_one_is_given() {
         superba_versions::winapp::download::hash_file(std::path::Path::new(&path)).unwrap();
     eprintln!("{} {} sha1 {sha1}", m.identity.name, m.identity.version);
 }
+
+fn pkg(arch: &str) -> superba_core::AppPackage {
+    superba_core::AppPackage {
+        os: superba_core::AppOs::Windows,
+        kind: AppPackageKind::Msix,
+        arch: arch.into(),
+        url: format!(
+            "https://persistent.oaistatic.com/codex-app-prod/releases/1/ChatGPT-{arch}.msix"
+        ),
+        sha256: None,
+        size: None,
+        signature: None,
+    }
+}
+
+#[test]
+fn the_native_architecture_picks_the_package_and_arm64_falls_back_to_x64() {
+    use superba_versions::winapp::windows_package_for;
+    let both = [pkg("x64"), pkg("arm64")];
+    // An x64 Superba on ARM64 Windows passes the native "arm64".
+    assert_eq!(windows_package_for(&both, "arm64").unwrap().arch, "arm64");
+    assert_eq!(windows_package_for(&both, "aarch64").unwrap().arch, "arm64");
+    assert_eq!(windows_package_for(&both, "x64").unwrap().arch, "x64");
+    assert_eq!(windows_package_for(&both, "x86_64").unwrap().arch, "x64");
+    let x64_only = [pkg("x64")];
+    assert_eq!(windows_package_for(&x64_only, "arm64").unwrap().arch, "x64");
+    let arm_only = [pkg("arm64")];
+    // x64 machines cannot run arm64 packages.
+    assert!(windows_package_for(&arm_only, "x64").is_none());
+    assert!(windows_package_for(&both, "riscv64").is_none());
+    let mut linux = pkg("arm64");
+    linux.os = superba_core::AppOs::Linux;
+    assert!(windows_package_for(&[linux], "arm64").is_none());
+}

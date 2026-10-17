@@ -89,6 +89,22 @@ pub fn msix_arch(arch: &str) -> Option<&'static str> {
     }
 }
 
+/// The Windows package of `packages` for a machine of native architecture
+/// `arch` (any spelling `msix_arch` knows): its own architecture, else (ARM64
+/// runs x64 apps emulated) an x64 package.
+pub fn windows_package_for<'a>(
+    packages: &'a [superba_core::AppPackage],
+    arch: &str,
+) -> Option<&'a superba_core::AppPackage> {
+    let native = msix_arch(arch)?;
+    let of = |want: &str| {
+        packages
+            .iter()
+            .find(|p| p.os == superba_core::AppOs::Windows && msix_arch(&p.arch) == Some(want))
+    };
+    of(native).or_else(|| (native == "arm64").then(|| of("x64")).flatten())
+}
+
 /// Compare dotted package versions (`26.1013.4894.0`) numerically.
 pub fn version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     crate::app::app_version_cmp(a, b)

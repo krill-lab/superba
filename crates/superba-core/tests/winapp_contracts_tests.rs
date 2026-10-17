@@ -104,9 +104,13 @@ fn the_windows_action_and_report_round_trip() {
         source: WindowsAppSource::OfficialFirst,
         store_url: Some("ms-windows-store://pdp/?ProductId=9PLM9XGG6VKS".into()),
         command: Some("winget upgrade --id 9PLM9XGG6VKS --source msstore".into()),
+        native_arch: Some("arm64".into()),
+        installed_arch: Some("x64".into()),
     };
     let json = round_trip(&action);
     assert_eq!(json["kind"], "windows_package");
+    assert_eq!(json["native_arch"], "arm64");
+    assert_eq!(action.emulated_install(), Some(("x64", "arm64")));
     // Written by an older Superba: only the kind.
     let bare: AppUpdateAction = serde_json::from_str(r#"{"kind":"windows_package"}"#).unwrap();
     assert!(matches!(
@@ -199,4 +203,39 @@ fn progress_has_a_fraction_and_the_shared_sink_carries_the_cancel() {
     shared.cancel();
     assert!(sink.cancel_requested() && shared.cancelled());
     assert!(!NoDownloadProgress.cancel_requested());
+}
+
+#[test]
+fn an_install_of_another_architecture_is_emulated_only_where_it_must_be() {
+    for (installed, native, emulated) in [
+        ("x64", "arm64", true),
+        ("X64", "ARM64", true),
+        ("x86", "arm64", true),
+        ("x86", "x64", true),
+        ("arm64", "arm64", false),
+        ("x64", "x64", false),
+        ("neutral", "arm64", false),
+        ("arm64", "x64", false),
+    ] {
+        assert_eq!(
+            emulated_arch(installed, native),
+            emulated,
+            "{installed} on {native}"
+        );
+    }
+    let action = |native: Option<&str>, installed: Option<&str>| AppUpdateAction::WindowsPackage {
+        package: None,
+        source: WindowsAppSource::OfficialFirst,
+        store_url: None,
+        command: None,
+        native_arch: native.map(str::to_owned),
+        installed_arch: installed.map(str::to_owned),
+    };
+    assert_eq!(
+        action(Some("arm64"), Some("arm64")).emulated_install(),
+        None
+    );
+    assert_eq!(action(Some("arm64"), None).emulated_install(), None);
+    assert_eq!(action(None, Some("x64")).emulated_install(), None);
+    assert_eq!(AppUpdateAction::None.emulated_install(), None);
 }

@@ -195,6 +195,14 @@ impl HttpVersionStore {
         self
     }
 
+    /// The machine's native architecture for desktop app packages (Windows:
+    /// `arm64` when this x64 build runs emulated on ARM64), instead of this
+    /// process's.
+    pub fn with_native_arch(mut self, arch: &str) -> Self {
+        self.arch = arch.to_owned();
+        self
+    }
+
     /// `<data dir>/codex/`.
     pub fn store_dir(&self) -> PathBuf {
         self.data_dir.codex_store_dir()
@@ -607,13 +615,13 @@ impl HttpVersionStore {
                 r.packages.retain(|p| self.official_app_url(&p.url));
                 // The size of this machine's package (for the download button):
                 // windows-release.json does not list it.
-                let arch = winapp::msix_arch(&self.arch);
-                for p in r
-                    .packages
-                    .iter_mut()
-                    .filter(|p| Some(p.arch.to_ascii_lowercase().as_str()) == arch)
-                {
-                    p.size = http::content_length(&client, &p.url, METADATA_TIMEOUT).await;
+                let url =
+                    winapp::windows_package_for(&r.packages, &self.arch).map(|p| p.url.clone());
+                if let Some(url) = url {
+                    let size = http::content_length(&client, &url, METADATA_TIMEOUT).await;
+                    for p in r.packages.iter_mut().filter(|p| p.url == url) {
+                        p.size = size;
+                    }
                 }
                 Ok(Some(r))
             }

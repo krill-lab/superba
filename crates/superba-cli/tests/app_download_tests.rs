@@ -177,3 +177,33 @@ fn a_bad_source_value_is_refused_naming_the_valid_ones() {
             .is_ok()
     );
 }
+
+#[tokio::test]
+async fn app_check_reports_an_emulated_install_and_the_native_package() {
+    let service = FakeService::new();
+    {
+        let mut v3 = service.v3.lock().unwrap();
+        v3.versions.app.update_available = false;
+        v3.versions.app.action = Some(AppUpdateAction::WindowsPackage {
+            package: None,
+            source: WindowsAppSource::OfficialFirst,
+            store_url: Some("ms-windows-store://pdp/?ProductId=9PLM9XGG6VKS".into()),
+            command: Some("winget upgrade --id 9PLM9XGG6VKS --source msstore".into()),
+            native_arch: Some("arm64".into()),
+            installed_arch: Some("x64".into()),
+        });
+    }
+    let (code, stdout, _) = invoke(service.clone(), &["--locale", "zh-CN", "app", "check"]).await;
+    assert_eq!(code, 0, "{stdout}");
+    assert!(
+        stdout.contains("已安装 x64 版（仿真运行），可换成 arm64 原生版。"),
+        "{stdout}"
+    );
+    let (_, stdout, _) = invoke(service, &["app", "check"]).await;
+    assert!(
+        stdout.contains(
+            "The x64 build is installed (it runs emulated); the native arm64 build can replace it."
+        ),
+        "{stdout}"
+    );
+}

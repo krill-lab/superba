@@ -65,6 +65,7 @@ async fn both_real_sources_resolve_and_verify_the_current_package() {
             WindowsAppRequest {
                 source: WindowsAppSource::OfficialOnly,
                 installed: Vec::new(),
+                arch: "x64".into(),
             },
             Arc::new(NoDownloadProgress),
         )
@@ -95,6 +96,7 @@ async fn both_real_sources_resolve_and_verify_the_current_package() {
             WindowsAppRequest {
                 source: WindowsAppSource::StoreMirrorOnly,
                 installed: Vec::new(),
+                arch: "x64".into(),
             },
             Arc::new(NoDownloadProgress),
         )

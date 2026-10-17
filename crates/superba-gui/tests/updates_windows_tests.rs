@@ -31,21 +31,38 @@ fn harness(service: Arc<FakeService>, locale: Locale) -> Harness {
 const DOWNLOADS: &str = r"C:\Users\me\AppData\Local\Superba\data\downloads";
 
 fn windows_view(service: &FakeService, source: WindowsAppSource) {
+    windows_view_arch(service, source, "x64", Some("x64"));
+}
+
+fn windows_view_arch(
+    service: &FakeService,
+    source: WindowsAppSource,
+    native: &str,
+    installed: Option<&str>,
+) {
     let mut view = service.versions_view();
     view.app.update_available = true;
     view.app.action = Some(AppUpdateAction::WindowsPackage {
         package: Some(AppPackage {
             os: AppOs::Windows,
             kind: AppPackageKind::Msix,
-            arch: "x64".into(),
-            url: "https://persistent.oaistatic.com/codex-app-prod/releases/26.1013.4894.0/ChatGPT-x64.msix".into(),
+            arch: native.into(),
+            url: format!(
+                "https://persistent.oaistatic.com/codex-app-prod/releases/26.1013.4894.0/ChatGPT-{native}.msix"
+            ),
             sha256: None,
-            size: Some(948_993_815),
+            size: Some(if native == "arm64" {
+                1_022_040_777
+            } else {
+                948_993_815
+            }),
             signature: None,
         }),
         source,
         store_url: Some("ms-windows-store://pdp/?ProductId=9PLM9XGG6VKS".into()),
         command: Some("winget upgrade --id 9PLM9XGG6VKS --source msstore".into()),
+        native_arch: Some(native.into()),
+        installed_arch: installed.map(str::to_owned),
     });
     view.app_codex.supported = false;
     service.set_versions(view);
@@ -394,4 +411,43 @@ fn progress_lines_name_the_stage() {
             "Verifying a.msix…",
         ]
     );
+}
+
+#[test]
+fn an_x64_install_on_arm64_offers_the_native_package() {
+    let service = fake();
+    windows_view_arch(
+        &service,
+        WindowsAppSource::OfficialFirst,
+        "arm64",
+        Some("x64"),
+    );
+    let mut h = harness(service.clone(), Locale::ZhCn);
+    let mut state = State::default();
+    let f = h.until(
+        |ui, cx, out| updates::show(ui, cx, &mut state, out),
+        |f| f.has("原生版"),
+    );
+    for want in [
+        "已安装 x64 版（仿真运行），可换成 arm64 原生版。",
+        "下载 arm64 原生版安装包（1022 MB）",
+        "先在 Windows 设置 → 应用 中卸载 ChatGPT",
+    ] {
+        assert!(f.has(want), "{want} missing:\n{}", f.all_text());
+    }
+    // Native installs say nothing about emulation.
+    windows_view_arch(
+        &service,
+        WindowsAppSource::OfficialFirst,
+        "arm64",
+        Some("arm64"),
+    );
+    let mut h = harness(service.clone(), Locale::En);
+    let mut state = State::default();
+    let f = h.until(
+        |ui, cx, out| updates::show(ui, cx, &mut state, out),
+        |f| f.has("Download installer"),
+    );
+    assert!(f.has("Download installer (1022 MB)"), "{}", f.all_text());
+    assert!(!f.has("emulated"));
 }

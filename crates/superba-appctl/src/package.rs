@@ -15,6 +15,13 @@
 //!   a double click. Nothing is installed silently (`Add-AppxPackage` is never
 //!   run) and nothing is elevated.
 //!
+//! - The machine's native architecture ([`native_arch`]): Superba ships an
+//!   x64 build, which ARM64 Windows (e.g. in Parallels on a Mac) runs under
+//!   emulation, where the process architecture and `GetNativeSystemInfo` both
+//!   say x64. `IsWow64Process2` (looked up at run time: Windows 10 1511 and
+//!   later) reports the host's machine; else the registry's system-wide
+//!   `PROCESSOR_ARCHITECTURE`, which is not emulated.
+//!
 //! The Windows parts cannot run in CI (Linux); they are kept small. Elsewhere
 //! every function reports `Unsupported`.
 
@@ -38,6 +45,50 @@ pub fn parse_full_name(full_name: &str) -> Option<InstalledPackage> {
         version: (*version).to_owned(),
         arch: arch.to_ascii_lowercase(),
         publisher_id: (*publisher_id).to_owned(),
+    })
+}
+
+/// The MSIX architecture of a PE machine type (`IMAGE_FILE_MACHINE_*`).
+pub fn machine_arch(machine: u16) -> Option<&'static str> {
+    match machine {
+        0xAA64 => Some("arm64"),
+        0x8664 => Some("x64"),
+        0x014C => Some("x86"),
+        0x01C4 => Some("arm"),
+        _ => None,
+    }
+}
+
+/// The MSIX architecture of a `PROCESSOR_ARCHITECTURE` value (`ARM64`,
+/// `AMD64`, `x86`).
+pub fn processor_arch(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_uppercase().as_str() {
+        "ARM64" => Some("arm64"),
+        "AMD64" | "X64" => Some("x64"),
+        "X86" => Some("x86"),
+        "ARM" => Some("arm"),
+        _ => None,
+    }
+}
+
+/// The MSIX architecture of the machine (`arm64`, `x64`, `x86`): on Windows
+/// the native one even when this process is emulated; elsewhere the process's.
+pub fn native_arch() -> &'static str {
+    static NATIVE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    NATIVE.get_or_init(|| {
+        #[cfg(windows)]
+        if let Some(a) = imp::native_machine()
+            .and_then(machine_arch)
+            .or_else(imp::registry_arch)
+        {
+            return a;
+        }
+        processor_arch(match std::env::consts::ARCH {
+            "aarch64" => "ARM64",
+            "x86" => "x86",
+            _ => "AMD64",
+        })
+        .unwrap_or("x64")
     })
 }
 
@@ -114,6 +165,42 @@ mod imp {
     };
     use windows_sys::Win32::UI::Shell::{SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW};
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    /// The host's machine type from `IsWow64Process2`, looked up at run time
+    /// so Superba still starts where it is missing.
+    pub(super) fn native_machine() -> Option<u16> {
+        use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+        type IsWow64Process2 = unsafe extern "system" fn(
+            windows_sys::Win32::Foundation::HANDLE,
+            *mut u16,
+            *mut u16,
+        ) -> windows_sys::core::BOOL;
+        let kernel32 = wide("kernel32.dll");
+        // SAFETY: kernel32 is always loaded; the symbol, when present, has the
+        // documented signature above; both out-pointers are valid locals.
+        unsafe {
+            let module = GetModuleHandleW(kernel32.as_ptr());
+            if module.is_null() {
+                return None;
+            }
+            let f = GetProcAddress(module, c"IsWow64Process2".as_ptr().cast())?;
+            let f = std::mem::transmute::<unsafe extern "system" fn() -> isize, IsWow64Process2>(f);
+            let (mut process, mut native) = (0_u16, 0_u16);
+            (f(GetCurrentProcess(), &raw mut process, &raw mut native) != 0).then_some(native)
+        }
+    }
+
+    /// The system-wide `PROCESSOR_ARCHITECTURE` (not the emulated process's).
+    pub(super) fn registry_arch() -> Option<&'static str> {
+        use winreg::RegKey;
+        use winreg::enums::HKEY_LOCAL_MACHINE;
+        let key = RegKey::predef(HKEY_LOCAL_MACHINE)
+            .open_subkey("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")
+            .ok()?;
+        let value: String = key.get_value("PROCESSOR_ARCHITECTURE").ok()?;
+        super::processor_arch(&value)
+    }
 
     fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
         s.as_ref().encode_wide().chain(std::iter::once(0)).collect()

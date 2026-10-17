@@ -122,13 +122,6 @@ async fn manifest_of(path: &Path, arch: &str) -> Result<PackageManifest> {
 }
 
 impl HttpVersionStore {
-    /// The machine's MSIX architecture.
-    fn msix_arch(&self) -> Result<&'static str> {
-        msix_arch(&self.arch).ok_or_else(|| Error::Unsupported {
-            what: format!("the ChatGPT app on a {} computer", self.arch),
-        })
-    }
-
     /// `url` may be followed for a Store mirror download: the Microsoft CDN,
     /// or the test CDN base of [`crate::sources::Endpoints::store_cdn_extra`].
     pub(crate) fn store_cdn_url(&self, url: &str) -> bool {
@@ -156,7 +149,11 @@ impl HttpVersionStore {
         request: WindowsAppRequest,
         progress: Arc<dyn DownloadProgressSink>,
     ) -> Result<AppDownloadReport> {
-        let arch = self.msix_arch()?;
+        // The machine's native architecture (the caller's: an x64 Superba on
+        // ARM64 Windows still asks for arm64).
+        let arch = msix_arch(&request.arch).ok_or_else(|| Error::Unsupported {
+            what: format!("the ChatGPT app on a {} computer", request.arch),
+        })?;
         let store = self.store_update().await.unwrap_or_default();
         let mut reasons: Vec<String> = Vec::new();
         let order = request.source.order();

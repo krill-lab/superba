@@ -12,13 +12,53 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use superba_core::{
-    AppDownloadReport, AppDownloadRequest, AppPackageKind, DownloadProgress, DownloadProgressSink,
-    DownloadStage, Error, PackageSigner, Result, WindowsAppRequest, WindowsPackageFile,
+    AppDownloadReport, AppDownloadRequest, AppInstall, AppPackageKind, DownloadProgress,
+    DownloadProgressSink, DownloadStage, Error, InstalledPackage, PackageSigner, Result,
+    WindowsAppRequest, WindowsPackageFile,
 };
 use superba_versions::winapp::trust::{self, SignerRole};
-use superba_versions::winapp::{PACKAGE_NAME, download, msix, msix_arch};
+use superba_versions::winapp::{OPENAI_PUBLISHER_ID, PACKAGE_NAME, download, msix, version_cmp};
 
 use crate::Switcher;
+
+/// The machine's native architecture and the installed app's (Windows).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WindowsArch {
+    /// Native MSIX architecture (`arm64`, `x64`).
+    pub native: String,
+    /// Architecture of the installed app package, when it is registered.
+    pub installed: Option<String>,
+}
+
+impl WindowsArch {
+    /// `native` and the architecture of the app package registered for
+    /// `install` (an MSIX install's id is its family name), else of OpenAI's
+    /// `OpenAI.Codex`; the newest version when several are registered.
+    pub fn of(native: &str, install: Option<&AppInstall>, packages: &[InstalledPackage]) -> Self {
+        let family = |p: &InstalledPackage| format!("{}_{}", p.name, p.publisher_id);
+        let pick = |want: &dyn Fn(&InstalledPackage) -> bool| {
+            packages
+                .iter()
+                .filter(|p| want(p))
+                .max_by(|a, b| version_cmp(&a.version, &b.version))
+                .map(|p| p.arch.to_ascii_lowercase())
+        };
+        let installed = install
+            .and_then(|i| pick(&|p| family(p) == i.id))
+            .or_else(|| pick(&|p| p.name == PACKAGE_NAME && p.publisher_id == OPENAI_PUBLISHER_ID));
+        Self {
+            native: native.to_owned(),
+            installed,
+        }
+    }
+
+    /// The installed app runs emulated (x64 on ARM64).
+    pub fn emulated(&self) -> bool {
+        self.installed
+            .as_deref()
+            .is_some_and(|i| superba_core::emulated_arch(i, &self.native))
+    }
+}
 
 /// Signers already checked, by file (path, size, modification time): a 1 GB
 /// package is not verified again when it is opened right after its download.
@@ -90,8 +130,18 @@ impl Switcher {
             .unwrap_or(set.settings.network.windows_app_source);
         let installed = self.deps.app.installed_packages().await.unwrap_or_default();
         let store = (self.deps.versions)(&set.settings.network);
+        // The native architecture: arm64 on ARM64 Windows even while this x64
+        // build runs emulated (an x64 package only when no arm64 one is offered).
+        let arch = superba_appctl::package::native_arch().to_owned();
         let mut report = store
-            .download_windows_app(WindowsAppRequest { source, installed }, progress.clone())
+            .download_windows_app(
+                WindowsAppRequest {
+                    source,
+                    installed,
+                    arch,
+                },
+                progress.clone(),
+            )
             .await?;
         let Some(win) = report.windows.as_mut() else {
             return Err(Error::other(
@@ -149,7 +199,7 @@ impl Switcher {
                 ),
             });
         }
-        let arch = msix_arch(std::env::consts::ARCH).unwrap_or("x64");
+        let arch = superba_appctl::package::native_arch();
         let p = path.clone();
         let a = arch.to_owned();
         let manifest = tokio::task::spawn_blocking(move || msix::read_manifest(&p, &a))

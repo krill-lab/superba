@@ -44,7 +44,7 @@ mod sites;
 mod transports;
 pub mod usage;
 pub mod versions;
-mod winapp;
+pub mod winapp;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -210,10 +210,16 @@ impl SwitcherDeps {
             versions: {
                 let data_dir = ctx.data_dir.clone();
                 Arc::new(move |network: &superba_core::NetworkSettings| {
-                    Arc::new(
-                        superba_versions::HttpVersionStore::new(&data_dir, network.clone())
-                            .with_feed(default_feeds(&data_dir, network)),
-                    ) as Arc<dyn superba_core::VersionStore>
+                    let store = superba_versions::HttpVersionStore::new(&data_dir, network.clone())
+                        .with_feed(default_feeds(&data_dir, network));
+                    // Windows: app packages for the machine's native architecture
+                    // (arm64 while this x64 build runs emulated on ARM64).
+                    let store = if cfg!(windows) {
+                        store.with_native_arch(superba_appctl::package::native_arch())
+                    } else {
+                        store
+                    };
+                    Arc::new(store) as Arc<dyn superba_core::VersionStore>
                 })
             },
             feeds: {

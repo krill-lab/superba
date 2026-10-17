@@ -371,6 +371,7 @@ fn request(source: WindowsAppSource) -> WindowsAppRequest {
     WindowsAppRequest {
         source,
         installed: Vec::new(),
+        arch: "x64".into(),
     }
 }
 
@@ -697,15 +698,109 @@ async fn missing_framework_dependencies_are_downloaded_and_installed_ones_skippe
 #[tokio::test]
 async fn an_unknown_architecture_is_unsupported() {
     let w = World::new().await;
-    let s = w.store(WindowsAppSource::OfficialFirst, "riscv64");
+    let s = w.store(WindowsAppSource::OfficialFirst, "x86_64");
+    let mut req = request(WindowsAppSource::OfficialFirst);
+    req.arch = "riscv64".into();
     let e = s
-        .download_windows_app(
-            request(WindowsAppSource::OfficialFirst),
-            Arc::new(Sink::default()),
-        )
+        .download_windows_app(req, Arc::new(Sink::default()))
         .await
         .unwrap_err();
     assert!(matches!(e, Error::Unsupported { .. }), "{e:?}");
+}
+
+fn arm64_msix(version: &str) -> Vec<u8> {
+    msix(
+        &manifest(
+            "OpenAI.Codex",
+            version,
+            "arm64",
+            OPENAI_STORE_PUBLISHER,
+            false,
+            &[],
+        ),
+        &payload(30_000),
+    )
+}
+
+#[tokio::test]
+async fn an_x64_superba_on_arm64_windows_downloads_the_native_arm64_package() {
+    // The process is x64 (emulated); the request carries the native arch.
+    let w = World::new().await;
+    let arm = arm64_msix("26.1014.5.0");
+    let x64 = app_msix("26.1014.5.0", &[]);
+    w.mirror(&[
+        ("OpenAI.Codex_26.1014.5.0_x64__2p2nqsd0c76g0.msix", &x64),
+        ("OpenAI.Codex_26.1014.5.0_arm64__2p2nqsd0c76g0.msix", &arm),
+    ]);
+    let s = w.store(WindowsAppSource::StoreMirrorOnly, "x86_64");
+    let mut req = request(WindowsAppSource::StoreMirrorOnly);
+    req.arch = "arm64".into();
+    let r = s
+        .download_windows_app(req, Arc::new(Sink::default()))
+        .await
+        .unwrap();
+    let win = r.windows.unwrap();
+    assert_eq!(win.package.identity.arch, "arm64");
+    assert!(
+        r.path
+            .ends_with("OpenAI.Codex_26.1014.5.0_arm64__2p2nqsd0c76g0.msix")
+    );
+    assert!(
+        w.mock
+            .requests("/cdn/filestreamingservice/files/0")
+            .is_empty()
+    );
+
+    // The official server: the arm64 msix of windows-release.json.
+    let w = World::new().await;
+    let release = format!(
+        r#"{{"packageVersion":"26.1014.5.0","packages":[
+          {{"architecture":"x64","downloadUrl":"{}"}},
+          {{"architecture":"arm64","downloadUrl":"{}"}}]}}"#,
+        w.mock.url("/app/releases/26.1014.5.0/ChatGPT-x64.msix"),
+        w.mock.url("/app/releases/26.1014.5.0/ChatGPT-arm64.msix"),
+    );
+    w.mock
+        .route("/app/windows-release.json", Route::ok(release));
+    w.mock.route(
+        "/app/releases/26.1014.5.0/ChatGPT-arm64.msix",
+        Route::ok(arm.clone()),
+    );
+    w.mock.route(
+        "/app/releases/26.1014.5.0/ChatGPT-x64.msix",
+        Route::ok(x64.clone()),
+    );
+    let s = w.store(WindowsAppSource::OfficialOnly, "x86_64");
+    let mut req = request(WindowsAppSource::OfficialOnly);
+    req.arch = "arm64".into();
+    let r = s
+        .download_windows_app(req, Arc::new(Sink::default()))
+        .await
+        .unwrap();
+    assert_eq!(r.windows.unwrap().package.identity.arch, "arm64");
+    assert_eq!(r.package.arch, "arm64");
+    assert!(
+        w.mock
+            .requests("/app/releases/26.1014.5.0/ChatGPT-x64.msix")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn arm64_falls_back_to_x64_only_when_no_arm64_package_is_offered() {
+    let w = World::new().await;
+    let x64 = app_msix("26.1014.5.0", &[]);
+    // windows-release.json's arm64 URL is refused (not on the official host),
+    // so only the x64 package is offered.
+    w.official("26.1014.5.0", &x64);
+    let s = w.store(WindowsAppSource::OfficialOnly, "x86_64");
+    let mut req = request(WindowsAppSource::OfficialOnly);
+    req.arch = "arm64".into();
+    let r = s
+        .download_windows_app(req, Arc::new(Sink::default()))
+        .await
+        .unwrap();
+    assert_eq!(r.windows.unwrap().package.identity.arch, "x64");
 }
 
 #[test]

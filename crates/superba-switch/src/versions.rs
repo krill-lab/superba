@@ -263,8 +263,13 @@ pub fn install_command(package: &AppPackage, path: &Path) -> Option<String> {
     }
 }
 
-/// The per-OS update action (`source`: where the Windows package comes from).
-fn update_action(latest: &AppRelease, source: superba_core::WindowsAppSource) -> AppUpdateAction {
+/// The per-OS update action (`source`: where the Windows package comes from;
+/// `arch`: the machine's native and the installed app's architecture there).
+fn update_action(
+    latest: &AppRelease,
+    source: superba_core::WindowsAppSource,
+    arch: &crate::winapp::WindowsArch,
+) -> AppUpdateAction {
     if cfg!(target_os = "linux") {
         match package_for_here(latest) {
             Some(p) => AppUpdateAction::LinuxPackage {
@@ -283,10 +288,13 @@ fn update_action(latest: &AppRelease, source: superba_core::WindowsAppSource) ->
         // page and winget stay as alternatives.
         let id = latest.store_product_id.as_deref();
         AppUpdateAction::WindowsPackage {
-            package: package_for_here(latest).cloned(),
+            package: superba_versions::winapp::windows_package_for(&latest.packages, &arch.native)
+                .cloned(),
             source,
             store_url: id.map(|id| format!("ms-windows-store://pdp/?ProductId={id}")),
             command: id.map(|id| format!("winget upgrade --id {id} --source msstore")),
+            native_arch: Some(arch.native.clone()),
+            installed_arch: arch.installed.clone(),
         }
     }
 }
@@ -591,14 +599,25 @@ impl Switcher {
             (Some(l), Some(v)) => app_version_newer(&l.version, v),
             _ => false,
         };
-        // Windows also offers the package when the app is not installed.
-        let offer = update_available || (cfg!(windows) && install.is_none());
+        // Windows also offers the package when the app is not installed, or
+        // when the installed one runs emulated (x64 on ARM64).
+        let arch = if cfg!(windows) {
+            let packages = d.app.installed_packages().await.unwrap_or_default();
+            crate::winapp::WindowsArch::of(
+                superba_appctl::package::native_arch(),
+                install.as_ref(),
+                &packages,
+            )
+        } else {
+            crate::winapp::WindowsArch::default()
+        };
+        let offer = update_available || (cfg!(windows) && (install.is_none() || arch.emulated()));
         let source = set.settings.network.windows_app_source;
         let app = AppVersionsSection {
             action: latest
                 .as_ref()
                 .filter(|_| offer)
-                .map(|l| update_action(l, source)),
+                .map(|l| update_action(l, source, &arch)),
             install: install.clone(),
             latest,
             update_available,

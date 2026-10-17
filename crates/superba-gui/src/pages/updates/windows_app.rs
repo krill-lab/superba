@@ -322,30 +322,70 @@ fn report_rows(
     }
 }
 
+/// What the Windows row offers (from the update action).
+#[derive(Clone, Copy, Debug)]
+pub struct Offer<'a> {
+    /// The official package for this machine, when known.
+    pub package: Option<&'a AppPackage>,
+    /// The configured source.
+    pub source: WindowsAppSource,
+    /// Microsoft Store page.
+    pub store_url: Option<&'a str>,
+    /// `winget` command.
+    pub command: Option<&'a str>,
+    /// The installed app's and the native architecture when the app runs
+    /// emulated (`("x64", "arm64")`).
+    pub emulated: Option<(&'a str, &'a str)>,
+}
+
+/// The download button's label.
+pub fn download_label(cx: &Cx<'_>, offer: &Offer<'_>) -> String {
+    let size = offer
+        .package
+        .and_then(|p| p.size)
+        .map(|s| format!("{} MB", (s + 500_000) / 1_000_000));
+    match (offer.emulated, size) {
+        (Some((_, native)), Some(size)) => cx.tr.f(
+            "updates.win.download_native",
+            &[("arch", &native), ("size", &size)],
+        ),
+        (Some((_, native)), None) => cx.tr.f(
+            "updates.win.download_native_unknown_size",
+            &[("arch", &native)],
+        ),
+        (None, Some(size)) => cx.tr.f("updates.win.download", &[("size", &size)]),
+        (None, None) => cx.tr.t("updates.win.download_unknown_size"),
+    }
+}
+
 /// Draw the Windows rows of the app section.
-#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut Ui,
     cx: &Cx<'_>,
     state: &mut WinState,
-    package: Option<&AppPackage>,
-    source: WindowsAppSource,
-    store_url: Option<&str>,
-    command: Option<&str>,
+    offer: &Offer<'_>,
     out: &mut Vec<Action>,
 ) {
     state.poll(cx);
     let downloading = state.downloading();
     let windows = state.report.as_ref().and_then(|r| r.windows.clone());
+    if let Some((installed, native)) = offer.emulated {
+        callout(
+            ui,
+            cx,
+            Status::Warn,
+            &cx.tr.f(
+                "updates.win.emulated",
+                &[("installed", &installed), ("native", &native)],
+            ),
+        );
+        ui.add(
+            egui::Label::new(Text::caption(cx.tr.t("updates.win.emulated_hint"), cx.pal)).wrap(),
+        );
+    }
     if windows.is_none() {
         FormRow::unlabeled().show(ui, |ui| {
-            let label = match package.and_then(|p| p.size) {
-                Some(s) => cx.tr.f(
-                    "updates.win.download",
-                    &[("size", &format!("{} MB", (s + 500_000) / 1_000_000))],
-                ),
-                None => cx.tr.t("updates.win.download_unknown_size"),
-            };
+            let label = download_label(cx, offer);
             if ui
                 .add(
                     Button::primary(label)
@@ -377,7 +417,7 @@ pub fn show(
         ui.label(Text::caption(line, cx.pal));
     }
     kv(ui, cx, &cx.tr.t("updates.win.source_label"), |ui| {
-        ui.label(Text::small(cx.tr.t(source_key(source)), cx.pal));
+        ui.label(Text::small(cx.tr.t(source_key(offer.source)), cx.pal));
         if link_button(ui, &cx.tr.t("updates.win.change_source"), true).clicked() {
             out.push(Action::Go(Page::Preferences));
         }
@@ -392,12 +432,12 @@ pub fn show(
     if let Some(w) = &windows {
         report_rows(ui, cx, state, w, out);
     }
-    if let Some(url) = store_url
+    if let Some(url) = offer.store_url
         && link_button(ui, &cx.tr.t("updates.app.store"), true).clicked()
     {
         out.push(Action::OpenUrl(url.to_owned()));
     }
-    if let Some(c) = command {
+    if let Some(c) = offer.command {
         command_row(ui, cx, c, out);
     }
     ui.add(egui::Label::new(Text::caption(cx.tr.t("updates.win.note"), cx.pal)).wrap());

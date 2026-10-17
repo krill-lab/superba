@@ -788,14 +788,18 @@ fn app_section(
             source,
             store_url,
             command,
+            ..
         } => windows_app::show(
             ui,
             cx,
             &mut state.windows,
-            package.as_ref(),
-            *source,
-            store_url.as_deref(),
-            command.as_deref(),
+            &windows_app::Offer {
+                package: package.as_ref(),
+                source: *source,
+                store_url: store_url.as_deref(),
+                command: command.as_deref(),
+                emulated: action.emulated_install(),
+            },
             out,
         ),
         _ => {}

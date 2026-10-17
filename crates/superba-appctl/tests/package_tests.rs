@@ -50,3 +50,30 @@ fn outside_windows_nothing_is_verified_or_opened() {
     ));
     assert!(package::installed_packages().is_empty());
 }
+
+#[test]
+fn machine_types_and_processor_names_map_to_msix_architectures() {
+    use superba_appctl::package::{machine_arch, native_arch, processor_arch};
+    // IMAGE_FILE_MACHINE_* as IsWow64Process2 reports the host.
+    assert_eq!(machine_arch(0xAA64), Some("arm64"));
+    assert_eq!(machine_arch(0x8664), Some("x64"));
+    assert_eq!(machine_arch(0x014C), Some("x86"));
+    assert_eq!(machine_arch(0), None);
+    // The system-wide PROCESSOR_ARCHITECTURE (not the emulated process's).
+    assert_eq!(processor_arch("ARM64"), Some("arm64"));
+    assert_eq!(processor_arch("AMD64"), Some("x64"));
+    assert_eq!(processor_arch("x86"), Some("x86"));
+    assert_eq!(processor_arch("IA64"), None);
+    // Outside Windows: the process's own architecture.
+    #[cfg(not(windows))]
+    assert_eq!(
+        native_arch(),
+        match std::env::consts::ARCH {
+            "aarch64" => "arm64",
+            "x86" => "x86",
+            _ => "x64",
+        }
+    );
+    #[cfg(windows)]
+    assert!(["x64", "arm64", "x86"].contains(&native_arch()));
+}

@@ -404,9 +404,44 @@ pub enum AppUpdateAction {
         /// `winget upgrade --id ... --source msstore`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         command: Option<String>,
+        /// The machine's native MSIX architecture (`arm64` on ARM64 Windows
+        /// even while Superba runs as x64 under emulation).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_arch: Option<String>,
+        /// Architecture of the installed app package, from the registry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        installed_arch: Option<String>,
     },
     /// Nothing to do (up to date or unknown).
     None,
+}
+
+impl AppUpdateAction {
+    /// Windows: the installed app's architecture and the machine's native one
+    /// when they differ (`("x64", "arm64")`: the app runs emulated and the
+    /// native package can replace it).
+    pub fn emulated_install(&self) -> Option<(&str, &str)> {
+        match self {
+            AppUpdateAction::WindowsPackage {
+                native_arch: Some(native),
+                installed_arch: Some(installed),
+                ..
+            } => emulated_arch(installed, native).then_some((installed.as_str(), native.as_str())),
+            _ => None,
+        }
+    }
+}
+
+/// An app package built for `installed` runs emulated on a `native` machine
+/// (x64 or x86 on arm64, x86 on x64); neutral packages never do.
+pub fn emulated_arch(installed: &str, native: &str) -> bool {
+    let (i, n) = (installed.to_ascii_lowercase(), native.to_ascii_lowercase());
+    i != "neutral"
+        && i != n
+        && matches!(
+            (i.as_str(), n.as_str()),
+            ("x64" | "x86", "arm64") | ("x86", "x64")
+        )
 }
 
 /// The ChatGPT app section of the Updates page.
@@ -771,6 +806,10 @@ pub struct AppDownloadRequest {
 pub struct WindowsAppRequest {
     /// Sources to try.
     pub source: crate::profile::WindowsAppSource,
+    /// MSIX architecture to download for: the machine's native one (`arm64`
+    /// on ARM64 Windows, where an x64 package would run emulated); an x64
+    /// package only when no arm64 one is offered.
+    pub arch: String,
     /// Packages registered on this machine (framework dependencies already
     /// installed are not downloaded).
     pub installed: Vec<InstalledPackage>,

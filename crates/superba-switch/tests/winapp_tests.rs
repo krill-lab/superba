@@ -547,3 +547,77 @@ async fn only_superbas_own_downloads_are_opened() {
     assert!(s.switcher.open_windows_package(other.path).await.is_err());
     assert!(s.app.opened.lock().unwrap().is_empty());
 }
+
+fn registered(name: &str, version: &str, arch: &str, publisher_id: &str) -> InstalledPackage {
+    InstalledPackage {
+        name: name.into(),
+        version: version.into(),
+        arch: arch.into(),
+        publisher_id: publisher_id.into(),
+    }
+}
+
+#[test]
+fn an_x64_app_on_arm64_windows_is_reported_as_emulated() {
+    use superba_switch::winapp::WindowsArch;
+    let install = AppInstall {
+        id: "OpenAI.Codex_2p2nqsd0c76g0".into(),
+        variant: AppVariant::Codex,
+        path: PathBuf::from(
+            r"C:\Program Files\WindowsApps\OpenAI.Codex_26.1013.4894.0_x64__2p2nqsd0c76g0",
+        ),
+        executable: PathBuf::from("app/ChatGPT.exe"),
+        app_version: Some("26.1013.40934".into()),
+        bundled_codex: None,
+        bundled_codex_version: None,
+    };
+    let packages = vec![
+        registered(
+            "Microsoft.VCLibs.140.00.UWPDesktop",
+            "14.0.33519.0",
+            "arm64",
+            "8wekyb3d8bbwe",
+        ),
+        registered("OpenAI.Codex", "26.1007.2.0", "arm64", "2p2nqsd0c76g0"),
+        registered("OpenAI.Codex", "26.1013.4894.0", "x64", "2p2nqsd0c76g0"),
+    ];
+    // The newest registered version of the install's family decides.
+    let a = WindowsArch::of("arm64", Some(&install), &packages);
+    assert_eq!(a.installed.as_deref(), Some("x64"));
+    assert!(a.emulated());
+    // Native on ARM64 and on x64: nothing to say.
+    let native = vec![registered(
+        "OpenAI.Codex",
+        "26.1013.4894.0",
+        "arm64",
+        "2p2nqsd0c76g0",
+    )];
+    assert!(!WindowsArch::of("arm64", Some(&install), &native).emulated());
+    assert!(!WindowsArch::of("x64", Some(&install), &packages[2..]).emulated());
+    // Without an install (or one that is not an MSIX), OpenAI's package counts;
+    // a package of another publisher never does.
+    assert!(WindowsArch::of("arm64", None, &packages).emulated());
+    let other = vec![registered(
+        "OpenAI.Codex",
+        "27.0.0.0",
+        "x64",
+        "abcdefghjkmnp",
+    )];
+    assert_eq!(WindowsArch::of("arm64", None, &other).installed, None);
+    assert!(!WindowsArch::of("arm64", None, &[]).emulated());
+}
+
+#[tokio::test]
+async fn the_download_asks_for_the_machines_native_architecture() {
+    let s = setup(Vec::new());
+    let f = s.app_file();
+    s.sign(
+        &f.path.file_name().unwrap().to_string_lossy(),
+        OPENAI_STORE_PUBLISHER,
+        MARKETPLACE,
+    );
+    s.report(f, Vec::new());
+    s.download(None).await.unwrap();
+    let requests = s.store.requests.lock().unwrap().clone();
+    assert_eq!(requests[0].arch, superba_appctl::package::native_arch());
+}

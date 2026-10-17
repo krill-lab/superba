@@ -300,9 +300,18 @@ pub(super) async fn app(command: &AppCommand, rt: &Runtime, out: &mut Output) ->
                     out.line(text("cli.versions.windows_action").arg("url", store_url))?;
                     out.data_line(command)?;
                 }
-                Some(AppUpdateAction::WindowsPackage {
-                    store_url, command, ..
-                }) => {
+                Some(
+                    action @ AppUpdateAction::WindowsPackage {
+                        store_url, command, ..
+                    },
+                ) => {
+                    if let Some((installed, native)) = action.emulated_install() {
+                        out.line(
+                            text("cli.versions.windows_emulated")
+                                .arg("installed", installed)
+                                .arg("native", native),
+                        )?;
+                    }
                     out.line(text("cli.versions.windows_package_action"))?;
                     if let Some(url) = store_url {
                         out.line(text("cli.versions.windows_store_alt").arg("url", url))?;
