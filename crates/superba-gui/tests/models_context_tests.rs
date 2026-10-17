@@ -343,7 +343,15 @@ async fn an_edit_is_echoed_at_once_and_stays_while_the_view_reloads() {
     });
     page.fake.apply_models(&ProfileId::new("krill"));
     page.command("refresh");
-    page.wait(|p, _| p.state.view().is_some_and(|v| v.applied.is_some()));
+    // The view had applied values before the switch already: wait for the
+    // refreshed view, whose catalog entry carries the saved window.
+    page.wait(|p, _| {
+        p.state
+            .view()
+            .and_then(|v| v.applied.as_ref())
+            .and_then(|a| a.models.get("gpt-5.5"))
+            .is_some_and(|m| m.context_window == Some(200_000))
+    });
     let row = page.row("gpt-5.5");
     assert!(row.contains(&"200K".to_owned()), "{row:?}");
     assert!(row.contains(&"Applied".to_owned()), "{row:?}");
