@@ -356,6 +356,8 @@ pub struct State {
     /// App version seen when the page first loaded (a later different one means
     /// the app was updated while Superba ran).
     pub first_app_version: Option<String>,
+    /// Superba's own update (the first section).
+    pub superba: super::updates_self::SelfState,
     toasts: Vec<(Status, String)>,
     /// The page's view was fetched online or an install finished: the shell
     /// reloads its own copy (the sidebar badge and the Overview read it).
@@ -395,6 +397,7 @@ impl State {
             || self.persist_task.is_some()
             || !self.installs.is_empty()
             || self.download.is_some()
+            || self.superba.busy()
     }
 
     /// An install for `target` is running.
@@ -557,6 +560,9 @@ impl State {
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     state.poll(cx);
     state.load(cx);
+    if let Some((status, text)) = state.superba.poll(cx, out) {
+        state.toasts.push((status, text));
+    }
     for (status, text) in state.toasts.drain(..) {
         out.push(Action::Toast { status, text });
     }
@@ -578,7 +584,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
         state.persist_pending = None;
     }
     let checked = state.view.value.as_ref().and_then(|v| v.checked_at);
-    let checking = state.view.loading();
+    let checking = state.view.loading() || cx.data.selfupdate.loading;
     page_header(ui, cx, Page::Updates, |ui| {
         if ui
             .add(
@@ -591,6 +597,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
             .clicked()
         {
             state.check();
+            out.push(Action::CheckSelfUpdate);
         }
         if let Some(t) = checked {
             ui.label(Text::caption(
@@ -599,6 +606,10 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
             ));
         }
     });
+    // Superba itself comes first and does not wait for the other versions.
+    icon_section(ui, cx, Icon::Bolt, &cx.tr.t("updates.superba.title"));
+    super::updates_self::show(ui, cx, &mut state.superba, out);
+    section_gap(ui, cx);
     let Some(view) = state.view.value.clone() else {
         match &state.view.error {
             Some(e) => crate::pages::error_state(ui, cx, &cx.tr.t("updates.load_failed"), e),
@@ -1634,6 +1645,21 @@ fn remote_action(
 /// Command palette entries.
 pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
     let mut items = vec![PaletteItem {
+        title: cx.tr.t("updates.palette.check_superba"),
+        detail: None,
+        keywords: vec![
+            "superba".into(),
+            "update".into(),
+            "upgrade".into(),
+            "更新".into(),
+        ],
+        group: PaletteGroup::Commands,
+        action: Action::PageCommand {
+            page: Page::Updates,
+            command: "check_superba".into(),
+        },
+    }];
+    items.push(PaletteItem {
         title: cx.tr.t("updates.palette.check"),
         detail: None,
         keywords: vec!["update".into(), "version".into(), "更新".into()],
@@ -1642,7 +1668,7 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
             page: Page::Updates,
             command: "check".into(),
         },
-    }];
+    });
     if state.view.value.as_ref().is_some_and(|v| {
         v.cli
             .iter()
@@ -1665,9 +1691,9 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
 /// Run a command addressed to this page: `check`, `update_cli` (update the
 /// first updatable CLI), `focus:<target id>` (bring a remote row into view).
 pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
-    let _ = out;
     match command {
         "check" => state.check(),
+        "check_superba" => out.push(Action::CheckSelfUpdate),
         "update_cli" => {
             // The version the page's local picker targets, when it is newer.
             let version = state.view.value.as_ref().and_then(|v| {

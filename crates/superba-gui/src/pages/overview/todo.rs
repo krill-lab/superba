@@ -46,6 +46,8 @@ pub enum TodoKind {
     Notice,
     /// Requests of models without a price (cost not counted).
     Unpriced,
+    /// A newer Superba.
+    SuperbaUpdate,
     /// A newer desktop app.
     AppUpdate,
     /// A newer Codex CLI.
@@ -71,7 +73,9 @@ impl Todo {
     /// The button's label (translated).
     pub fn fix_label(&self, cx: &Cx<'_>) -> String {
         cx.tr.t(match self.kind {
-            TodoKind::AppUpdate | TodoKind::CliUpdate => "overview.todo.fix.update",
+            TodoKind::SuperbaUpdate | TodoKind::AppUpdate | TodoKind::CliUpdate => {
+                "overview.todo.fix.update"
+            }
             TodoKind::LineUnreachable => "overview.todo.fix.probe",
             TodoKind::Unpriced => "overview.todo.fix.prices",
             TodoKind::RouterDown | TodoKind::RouterDirect | TodoKind::MemberDown => {
@@ -91,9 +95,10 @@ impl Todo {
                 Some(site) => Action::Probe(site.clone()),
                 None => Action::Go(Page::Providers),
             },
-            TodoKind::PinMismatch | TodoKind::AppUpdate | TodoKind::CliUpdate => {
-                Action::Go(Page::Updates)
-            }
+            TodoKind::PinMismatch
+            | TodoKind::SuperbaUpdate
+            | TodoKind::AppUpdate
+            | TodoKind::CliUpdate => Action::Go(Page::Updates),
             TodoKind::Unpriced => Action::Go(Page::Models),
             TodoKind::PlainKeys | TodoKind::Finding(_) | TodoKind::Notice => {
                 Action::Go(Page::Diagnostics)
@@ -262,7 +267,19 @@ pub fn todos(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Vec<Todo> {
         ));
     }
 
-    // Offers: updates.
+    // Offers: updates (Superba first).
+    if let Some(release) = data.self_update_offered() {
+        push(todo(
+            TodoKind::SuperbaUpdate,
+            Status::Idle,
+            tr.f(
+                "overview.todo.superba_update",
+                &[("version", &release.version)],
+            ),
+            Some(tr.t("overview.todo.superba_update_detail")),
+            None,
+        ));
+    }
     if let Some(v) = data.versions.value.as_ref() {
         if v.app.update_available {
             let version = v.app.latest.as_ref().map(|l| l.version.to_string());

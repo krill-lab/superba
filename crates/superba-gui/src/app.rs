@@ -266,6 +266,10 @@ pub struct SuperbaApp {
     account_loaded_for: Option<(Option<superba_core::ProfileId>, u64)>,
     models_loaded_for: Option<(superba_core::ProfileId, u64)>,
     last_hosts: Instant,
+    /// The last automatic Superba update check (every 24 h while running).
+    last_selfupdate: Instant,
+    /// Preferences choices about updates as last sent to the backend.
+    selfupdate_prefs: (bool, bool),
     had_providers: bool,
     pending_key_save: bool,
     wizard_request: Option<SwitchRequest>,
@@ -334,6 +338,8 @@ impl SuperbaApp {
             account_loaded_for: None,
             models_loaded_for: None,
             last_hosts: Instant::now(),
+            last_selfupdate: Instant::now(),
+            selfupdate_prefs: (true, false),
             had_providers: false,
             pending_key_save: false,
             wizard_request: None,
@@ -404,6 +410,15 @@ impl SuperbaApp {
         self.backend.send(Command::Versions { refresh: false });
         self.data.feeds.start();
         self.backend.send(Command::Feeds { refresh: false });
+        self.check_self_update(false);
+    }
+
+    /// Ask the backend for Superba's own update state. An automatic check does
+    /// nothing while the preference is off or the answer is fresh.
+    fn check_self_update(&mut self, manual: bool) {
+        self.last_selfupdate = Instant::now();
+        self.data.selfupdate.start();
+        self.backend.send(Command::SelfUpdateCheck { manual });
     }
 
     fn load_account(&mut self, refresh: bool) {
@@ -582,6 +597,10 @@ impl SuperbaApp {
                     if let Ok(set) = &r
                         && !self.settings_loaded
                     {
+                        self.selfupdate_prefs = (
+                            set.settings.auto_update_check,
+                            set.settings.include_prereleases,
+                        );
                         self.settings = set.settings.clone();
                         self.settings_loaded = true;
                         self.apply_settings(ctx);
@@ -688,6 +707,15 @@ impl SuperbaApp {
                         self.log(Status::Warn, text);
                     }
                     self.data.versions.finish(r);
+                }
+                Reply::SelfUpdate(r) => {
+                    // Never a toast: an unreachable release page is a quiet state.
+                    if let Err(e) = &r
+                        && !e.is_not_implemented()
+                    {
+                        tracing::debug!(error = %e, "self-update check failed");
+                    }
+                    self.data.selfupdate.finish(r);
                 }
                 Reply::Feeds(r) => self.data.feeds.finish(r),
                 Reply::ModelsView(r) => self.data.active_models.finish(r),
@@ -1113,9 +1141,29 @@ impl SuperbaApp {
             Action::OpenApp => self.backend.send(Command::OpenApp),
             Action::SaveSettings => {
                 self.apply_settings(ctx);
-                self.backend
-                    .send(Command::SaveSettings(self.settings.clone()));
+                let prefs = (
+                    self.settings.auto_update_check,
+                    self.settings.include_prereleases,
+                );
+                if prefs != self.selfupdate_prefs {
+                    // A changed update choice is acted on at once: check again.
+                    self.selfupdate_prefs = prefs;
+                    self.last_selfupdate = Instant::now();
+                    self.data.selfupdate.start();
+                    self.backend
+                        .send(Command::SaveSettingsThenSelfUpdate(self.settings.clone()));
+                } else {
+                    self.backend
+                        .send(Command::SaveSettings(self.settings.clone()));
+                }
             }
+            Action::CheckSelfUpdate => self.check_self_update(true),
+            Action::SkipSelfUpdate(version) => {
+                self.data.selfupdate.start();
+                self.backend.send(Command::SelfUpdateSkip(version));
+            }
+            Action::LaterSelfUpdate(version) => self.data.selfupdate_later = Some(version),
+            Action::QuitApp => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Action::SetLocale(l) => self.set_locale(l),
             Action::OpenUrl(url) => {
                 let _ = open::that_detached(url);
@@ -1497,6 +1545,13 @@ impl eframe::App for SuperbaApp {
         {
             self.handle_action(&ctx, Action::LoadHosts);
         }
+        // Superba's own update: at start (see `load_shell_data`) and every 24 h.
+        if self.entered
+            && !self.data.selfupdate.loading
+            && self.last_selfupdate.elapsed() > Duration::from_secs(24 * 3600)
+        {
+            self.check_self_update(false);
+        }
         // Poll the overview every few seconds while idle.
         if self.last_poll.elapsed() > Duration::from_secs(5) && !self.data.overview.loading {
             self.last_poll = Instant::now();
@@ -1746,7 +1801,16 @@ pub fn shell_badges(tr: &Tr, data: &Data) -> Vec<(Page, pages::NavBadge, String)
             tr.f("shell.badge.unsynced", &[("n", &unsynced)]),
         ));
     }
-    if data.update_available() {
+    if let Some(release) = data.self_update_offered() {
+        out.push((
+            Page::Updates,
+            pages::NavBadge::Dot(Status::Idle),
+            tr.f(
+                "shell.badge.superba_update",
+                &[("version", &release.version)],
+            ),
+        ));
+    } else if data.update_available() {
         out.push((
             Page::Updates,
             pages::NavBadge::Dot(Status::Idle),

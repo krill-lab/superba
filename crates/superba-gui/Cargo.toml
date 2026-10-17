@@ -32,6 +32,7 @@ superba-switch.workspace = true
 superba-catalog.workspace = true
 superba-models.workspace = true
 superba-router.workspace = true
+superba-versions.workspace = true
 anyhow.workspace = true
 eframe.workspace = true
 egui.workspace = true

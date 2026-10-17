@@ -4353,6 +4353,7 @@ dependencies = [
  "superba-models",
  "superba-router",
  "superba-switch",
+ "superba-versions",
  "sys-locale",
  "tempfile",
  "tokio",

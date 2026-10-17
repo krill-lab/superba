@@ -301,6 +301,37 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
     ui.label(Text::small(cx.tr.t("prefs.network.note"), cx.pal));
 
     ui.add_space(24.0);
+    section(ui, cx, &cx.tr.t("prefs.updates.title"), None);
+    Card::new().flat().show(ui, |ui| {
+        row(
+            ui,
+            cx,
+            &cx.tr.t("prefs.updates.auto"),
+            &cx.tr.t("prefs.updates.auto_desc"),
+            false,
+            |ui| {
+                ui.add(Toggle::new(
+                    &mut settings.auto_update_check,
+                    cx.tr.t("prefs.updates.auto"),
+                ));
+            },
+        );
+        row(
+            ui,
+            cx,
+            &cx.tr.t("prefs.updates.prerelease"),
+            &cx.tr.t("prefs.updates.prerelease_desc"),
+            true,
+            |ui| {
+                ui.add(Toggle::new(
+                    &mut settings.include_prereleases,
+                    cx.tr.t("prefs.updates.prerelease"),
+                ));
+            },
+        );
+    });
+
+    ui.add_space(24.0);
     section(ui, cx, &cx.tr.t("prefs.data.title"), None);
     Card::new().flat().show(ui, |ui| {
         let dir = cx

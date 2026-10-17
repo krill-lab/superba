@@ -48,6 +48,7 @@ pub mod sessions;
 pub mod settings;
 pub mod shared;
 pub mod updates;
+pub mod updates_self;
 pub mod wizard;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -384,6 +385,16 @@ pub enum Action {
     /// Reload the remote hosts the app is connected to (sidebar badge,
     /// Overview).
     LoadHosts,
+    /// Check for a newer Superba now (the Updates page, the command palette).
+    CheckSelfUpdate,
+    /// Skip a version of Superba (`None` clears the skip).
+    SkipSelfUpdate(Option<String>),
+    /// "Later": stop reminding about this Superba version until the next start
+    /// (the sidebar dot and the Overview to-do).
+    LaterSelfUpdate(String),
+    /// Quit Superba (an update was installed and the new version starts by
+    /// itself once this process has exited).
+    QuitApp,
     /// Reload [`Data::versions`] from the cached lists (no online check), e.g.
     /// after an install changed what is installed.
     LoadVersions,
@@ -519,6 +530,11 @@ pub struct Data {
     /// Versions of the app and Codex (the sidebar's update dot, the Overview's
     /// "this computer" column). Loaded by the shell; pages may read it.
     pub versions: Load<VersionsView>,
+    /// Superba's own update (the Updates page's first section, the Overview
+    /// to-do, the sidebar dot). Loaded by the shell.
+    pub selfupdate: Load<superba_core::SelfUpdateView>,
+    /// The Superba version the user answered "later" to in this session.
+    pub selfupdate_later: Option<String>,
     /// State of the model-list / price / version feeds (Diagnostics).
     pub feeds: Load<FeedsStatus>,
     /// Models view of the applied key-based profile (the Overview's speed
@@ -564,15 +580,24 @@ impl Data {
         })
     }
 
-    /// A newer ChatGPT app or a newer Codex CLI for an installed binary exists
-    /// (sidebar dot, UX §2.1).
+    /// A newer Superba the user has neither skipped nor put off ("later").
+    pub fn self_update_offered(&self) -> Option<&superba_core::SelfRelease> {
+        let view = self.selfupdate.value.as_ref()?;
+        let latest = view.latest.as_ref()?;
+        (view.offered() && self.selfupdate_later.as_deref() != Some(latest.version.as_str()))
+            .then_some(latest)
+    }
+
+    /// A newer Superba, ChatGPT app or a newer Codex CLI for an installed binary
+    /// exists (sidebar dot, UX §2.1).
     pub fn update_available(&self) -> bool {
-        self.versions.value.as_ref().is_some_and(|v| {
-            v.app.update_available
-                || v.cli
-                    .iter()
-                    .any(|row| !matches!(row.action, CliUpdateAction::None))
-        })
+        self.self_update_offered().is_some()
+            || self.versions.value.as_ref().is_some_and(|v| {
+                v.app.update_available
+                    || v.cli
+                        .iter()
+                        .any(|row| !matches!(row.action, CliUpdateAction::None))
+            })
     }
 }
 

@@ -186,6 +186,7 @@ watch.suspect = "本地路由没有响应（{detail}）。Codex 会等待它；�
 [shell]
 badge.routed = "Codex 正经由本地路由"
 badge.unsynced = "{n} 台主机有未同步的设置"
+badge.superba_update = "Superba {version} 可更新"
 badge.update = "有可用更新"
 # Page state and responsive layouts (fixgui2).
 failed_title = "切换到「{dest}」失败"

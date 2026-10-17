@@ -21,6 +21,7 @@ mod hosts;
 mod models;
 mod providers;
 mod router;
+mod selfupdate;
 mod sessions;
 mod settings;
 mod versions;
@@ -101,6 +102,7 @@ struct Areas {
     router: Mutex<router::State>,
     hosts: Mutex<hosts::State>,
     versions: Mutex<versions::State>,
+    selfupdate: Mutex<selfupdate::State>,
 }
 
 struct FakeState {
@@ -1856,6 +1858,25 @@ impl SwitchService for FakeService {
 
     async fn versions(&self, refresh: bool) -> Result<VersionsView> {
         versions::versions(self, refresh).await
+    }
+
+    async fn self_update_view(&self) -> Result<SelfUpdateView> {
+        selfupdate::view(self).await
+    }
+
+    async fn self_update_check(&self, request: SelfUpdateCheckRequest) -> Result<SelfUpdateView> {
+        selfupdate::check(self, request).await
+    }
+
+    async fn self_update_skip(&self, version: Option<String>) -> Result<SelfUpdateView> {
+        selfupdate::skip(self, version).await
+    }
+
+    async fn self_update_install(
+        &self,
+        request: SelfUpdateInstallRequest,
+    ) -> Result<SelfUpdateReport> {
+        selfupdate::install(self, request).await
     }
 
     async fn install_codex(&self, request: InstallRequest) -> Result<InstallReport> {

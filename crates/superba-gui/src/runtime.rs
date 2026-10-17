@@ -220,6 +220,17 @@ pub enum Command {
         /// Check online now instead of using the cached lists.
         refresh: bool,
     },
+    /// Look for a newer Superba (`manual` = the user asked: ignores the
+    /// automatic-check preference and the 24 h interval).
+    SelfUpdateCheck {
+        /// The user asked.
+        manual: bool,
+    },
+    /// Save the settings, then check for a newer Superba (a Preferences choice
+    /// about updates changed).
+    SaveSettingsThenSelfUpdate(Settings),
+    /// Skip a version of Superba (`None` clears the skip).
+    SelfUpdateSkip(Option<String>),
     /// State of the feeds (`refresh` = fetch now).
     Feeds {
         /// Fetch now.
@@ -352,6 +363,8 @@ pub enum Reply {
     Hosts(Result<Vec<superba_core::HostView>>),
     /// Versions loaded.
     Versions(Result<superba_core::VersionsView>),
+    /// The self-update state (after a check or a skip).
+    SelfUpdate(Result<superba_core::SelfUpdateView>),
     /// Feed state loaded.
     Feeds(Result<superba_core::FeedsStatus>),
     /// Models view loaded.
@@ -624,6 +637,28 @@ async fn handle(
         Command::Hosts => out.send(Reply::Hosts(service.hosts().await)),
         Command::Versions { refresh } => {
             out.send(Reply::Versions(service.versions(refresh).await));
+        }
+        Command::SelfUpdateCheck { manual } => {
+            out.send(Reply::SelfUpdate(
+                service
+                    .self_update_check(superba_core::SelfUpdateCheckRequest { manual })
+                    .await,
+            ));
+        }
+        Command::SaveSettingsThenSelfUpdate(settings) => {
+            let saved = service.save_settings(settings).await;
+            let ok = saved.is_ok();
+            out.send(Reply::SettingsSaved(saved));
+            if ok {
+                out.send(Reply::SelfUpdate(
+                    service
+                        .self_update_check(superba_core::SelfUpdateCheckRequest { manual: true })
+                        .await,
+                ));
+            }
+        }
+        Command::SelfUpdateSkip(version) => {
+            out.send(Reply::SelfUpdate(service.self_update_skip(version).await));
         }
         Command::Feeds { refresh } => {
             let result = if refresh {

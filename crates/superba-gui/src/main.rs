@@ -9,6 +9,16 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<_> = std::env::args_os().collect();
+    // The second stage of an update: swap files, restart the router, start the
+    // new Superba, once the process that downloaded it has exited.
+    if superba_versions::selfupdate::finish::is_finish_invocation(&args) {
+        return match superba_versions::selfupdate::finish::FinishArgs::parse(&args)
+            .and_then(|a| superba_versions::selfupdate::finish::run(&a))
+        {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(_) => ExitCode::from(superba_cli::exit::ERROR),
+        };
+    }
     if superba_cli::is_cli_invocation(&args) {
         attach_parent_console();
         return superba_cli::main_with_args(args);

@@ -187,6 +187,7 @@ watch.suspect = "The local router is not answering ({detail}). Codex waits for i
 [shell]
 badge.routed = "Codex is routed through the local router"
 badge.unsynced = "{n} {n|host has|hosts have} unsynced settings"
+badge.superba_update = "Superba {version} is available"
 badge.update = "An update is available"
 # Page state and responsive layouts (fixgui2).
 failed_title = "Switching to “{dest}” failed"

@@ -299,7 +299,14 @@ fn check_and_palette_commands() {
             .into_iter()
             .map(|i| i.title)
             .collect();
-        assert_eq!(titles, ["Check for updates", "Update Codex CLI"]);
+        assert_eq!(
+            titles,
+            [
+                "Check for Superba updates",
+                "Check for updates",
+                "Update Codex CLI"
+            ]
+        );
     });
     h.frame(|_, cx, out| updates::command(&mut state, cx, "update_cli", out));
     h.until(
