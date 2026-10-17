@@ -128,14 +128,19 @@ impl ScanEnv<'_> {
         }
     }
 
-    /// `path` for display: `~/...` under the home directory.
+    /// `path` for display, with this system's separator throughout:
+    /// `~/.cc-switch/cc-switch.db` under the home directory
+    /// (`~\.cc-switch\cc-switch.db` on Windows), else the whole path. A path
+    /// joined from a `/`-separated setting (a `~/Dropbox/cc-switch` override)
+    /// shows no mixed separators on Windows.
     pub fn display(&self, path: &Path) -> String {
+        // Re-joining the components writes the native separator between them.
+        let native = |p: &Path| p.components().collect::<PathBuf>().display().to_string();
         match path.strip_prefix(self.home) {
             Ok(rest) if !rest.as_os_str().is_empty() => {
-                let sep = if self.os == Os::Windows { '\\' } else { '/' };
-                format!("~{sep}{}", rest.display())
+                format!("~{}{}", std::path::MAIN_SEPARATOR, native(rest))
             }
-            _ => path.display().to_string(),
+            _ => native(path),
         }
     }
 

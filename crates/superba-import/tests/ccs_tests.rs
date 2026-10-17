@@ -9,7 +9,7 @@ mod support;
 
 use superba_core::{ForeignApp, ImportSource, StoreStatus};
 use superba_import::{ForeignKey, ForeignProvider, Os, SourceRead};
-use support::{Home, fixture, listing};
+use support::{Home, fixture, listing, native};
 
 fn codex(read: &SourceRead) -> Vec<&ForeignProvider> {
     read.providers
@@ -39,7 +39,10 @@ fn nothing_installed_reports_the_missing_database() {
     let read = h.read(ImportSource::Ccs, Os::Linux);
     assert_eq!(read.stores.len(), 1);
     assert_eq!(read.stores[0].status, StoreStatus::Missing);
-    assert_eq!(read.stores[0].display_path, "~/.cc-switch/cc-switch.db");
+    assert_eq!(
+        read.stores[0].display_path,
+        native("~/.cc-switch/cc-switch.db")
+    );
     assert!(read.providers.is_empty());
 }
 
@@ -329,7 +332,7 @@ fn the_app_paths_override_moves_the_data_directory() {
     let read = h.read(ImportSource::Ccs, Os::Linux);
     assert_eq!(
         read.stores[0].display_path,
-        "~/Dropbox/cc-switch/cc-switch.db"
+        native("~/Dropbox/cc-switch/cc-switch.db")
     );
     assert_eq!(read.stores[1].status, StoreStatus::Superseded);
     assert_eq!(
@@ -346,7 +349,10 @@ fn the_app_paths_override_moves_the_data_directory() {
     );
     v20(&h);
     let read = h.read(ImportSource::Ccs, Os::Linux);
-    assert_eq!(read.stores[0].display_path, "~/.cc-switch/cc-switch.db");
+    assert_eq!(
+        read.stores[0].display_path,
+        native("~/.cc-switch/cc-switch.db")
+    );
 
     // macOS keeps the store file under Application Support.
     let h = Home::new();
@@ -356,7 +362,7 @@ fn the_app_paths_override_moves_the_data_directory() {
     );
     h.db("Sync/cc-switch.db", &fixture("ccs/schema-v20.sql"), false);
     let read = h.read(ImportSource::Ccs, Os::MacOs);
-    assert_eq!(read.stores[0].display_path, "~/Sync/cc-switch.db");
+    assert_eq!(read.stores[0].display_path, native("~/Sync/cc-switch.db"));
 }
 
 #[test]

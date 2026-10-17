@@ -21,6 +21,12 @@ pub fn fixture(rel: &str) -> String {
     std::fs::read_to_string(fixtures().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
+/// `path` (written with `/`) as [`superba_import::ScanEnv::display`] shows it on
+/// this system: `\`-separated on Windows.
+pub fn native(path: &str) -> String {
+    path.replace('/', std::path::MAIN_SEPARATOR_STR)
+}
+
 /// A temporary home.
 pub struct Home {
     pub tmp: tempfile::TempDir,

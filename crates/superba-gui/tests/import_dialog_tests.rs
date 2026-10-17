@@ -30,6 +30,12 @@ use superba_import::{ForeignKey, ForeignProvider, Os, ScanEnv, SourceRead};
 use support::fake::{FakeOptions, FakeService};
 use support::ui::Harness;
 
+/// `path` (written with `/`) as the importer shows it on this system
+/// (`\`-separated on Windows).
+fn native(path: &str) -> String {
+    path.replace('/', std::path::MAIN_SEPARATOR_STR)
+}
+
 /// A scan built by the real importer: cc-switch's JSON v2 fixture, and an AI
 /// Toolbox store with a Krill provider (current), a key kept in the keychain,
 /// a provider named like an existing one and a Claude Code provider.
@@ -86,7 +92,7 @@ fn fixture_scan() -> ImportScan {
         source: ImportSource::AiToolbox,
         stores: vec![ImportStore {
             path: home.join(".local/share/com.ai-toolbox/ai-toolbox.db"),
-            display_path: "~/.local/share/com.ai-toolbox/ai-toolbox.db".into(),
+            display_path: native("~/.local/share/com.ai-toolbox/ai-toolbox.db"),
             format: "AI Toolbox database, schema 22".into(),
             status: StoreStatus::Read,
             note: None,
@@ -197,7 +203,11 @@ async fn the_dialog_shows_each_tool_with_targets_keys_and_conflicts() {
         }
         // Tools and their stores.
         assert!(all.contains(&"CC Switch") && all.contains(&"AI Toolbox"));
-        assert!(all.iter().any(|t| t.contains("~/.cc-switch/config.json")));
+        let store = native("~/.cc-switch/config.json");
+        assert!(
+            all.iter().any(|t| t.contains(&store)),
+            "{store} missing: {all:#?}"
+        );
         // Not importable ones are collapsed behind a count.
         assert!(
             all.iter()

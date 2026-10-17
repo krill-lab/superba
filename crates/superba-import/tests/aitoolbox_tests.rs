@@ -9,7 +9,7 @@ mod support;
 
 use superba_core::{ForeignApp, ImportSource, StoreStatus};
 use superba_import::{ForeignKey, ForeignProvider, Os, SourceRead};
-use support::{Home, fixture, listing};
+use support::{Home, fixture, listing, native};
 
 const DB: &str = ".local/share/com.ai-toolbox/ai-toolbox.db";
 
@@ -45,13 +45,13 @@ fn nothing_installed_reports_the_missing_database() {
     assert_eq!(read.stores[0].status, StoreStatus::Missing);
     assert_eq!(
         read.stores[0].display_path,
-        "~/.local/share/com.ai-toolbox/ai-toolbox.db"
+        native("~/.local/share/com.ai-toolbox/ai-toolbox.db")
     );
     // Per OS.
     let read = h.read(ImportSource::AiToolbox, Os::MacOs);
     assert_eq!(
         read.stores[0].display_path,
-        "~/Library/Application Support/com.ai-toolbox/ai-toolbox.db"
+        native("~/Library/Application Support/com.ai-toolbox/ai-toolbox.db")
     );
     let h = h.with_env("APPDATA", "C:\\Users\\alice\\AppData\\Roaming");
     let read = h.read(ImportSource::AiToolbox, Os::Windows);
@@ -264,7 +264,7 @@ fn the_data_directory_override_and_the_environment_variable() {
     let read = h.read(ImportSource::AiToolbox, Os::Linux);
     assert_eq!(
         read.stores[0].display_path,
-        "~/ai-toolbox-data/ai-toolbox.db"
+        native("~/ai-toolbox-data/ai-toolbox.db")
     );
     assert_eq!(read.stores[0].format, "AI Toolbox database, schema 22");
     assert_eq!(read.stores[1].status, StoreStatus::Superseded);
