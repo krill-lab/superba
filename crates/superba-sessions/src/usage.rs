@@ -858,7 +858,15 @@ impl UsageIndex {
                 if !is_rollout_name(name) {
                     continue;
                 }
-                let Ok(meta) = entry.metadata() else {
+                // On Windows the walk's metadata comes from the directory listing,
+                // whose size/mtime lag behind while Codex still has the rollout
+                // open for appending; stat the file itself there.
+                let meta = if cfg!(windows) {
+                    std::fs::metadata(entry.path()).ok()
+                } else {
+                    entry.metadata().ok()
+                };
+                let Some(meta) = meta else {
                     continue;
                 };
                 found.push(Found {

@@ -155,6 +155,19 @@ fn path_key(path: &Path) -> String {
     }
 }
 
+/// `path` without the verbatim `\\?\` prefix `fs::canonicalize` gives a Windows drive
+/// path (other paths are unchanged): the form the user and the launcher script
+/// write, which the rest of the paths in a report share.
+fn plain(path: &Path) -> PathBuf {
+    if cfg!(windows)
+        && let Some(rest) = path.to_str().and_then(|t| t.strip_prefix(r"\\?\"))
+        && !rest.starts_with("UNC\\")
+    {
+        return PathBuf::from(rest);
+    }
+    path.to_owned()
+}
+
 /// `path` with `.` dropped and `..` applied to the preceding name.
 pub fn lexical(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
@@ -224,7 +237,7 @@ pub fn launcher_target(path: &Path) -> Option<PathBuf> {
     if let Ok(canonical) = fs::canonicalize(path)
         && let Some(dir) = canonical.parent()
     {
-        dirs.push(dir.to_owned());
+        dirs.push(plain(dir));
     }
     if let Some(dir) = path.parent().filter(|d| !dirs.iter().any(|x| x == d)) {
         dirs.push(dir.to_owned());

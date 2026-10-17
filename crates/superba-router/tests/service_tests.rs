@@ -142,11 +142,15 @@ impl Fixture {
         manager(self.host(), kind)
     }
     fn path(&self, kind: ServiceKind) -> PathBuf {
-        self.home.path().join(match kind {
-            S => ".config/systemd/user/superba-router.service",
-            L => "Library/LaunchAgents/com.krill.superba.router.plist",
-            _ => ".config/autostart/superba-router.desktop",
-        })
+        // Joined like the service does (directory, then file): the launchd job
+        // is bootstrapped with this path as an argument, so on Windows a
+        // `/` inside one join and a `\` between two would not compare equal.
+        let (dir, file) = match kind {
+            S => (".config/systemd/user", "superba-router.service"),
+            L => ("Library/LaunchAgents", "com.krill.superba.router.plist"),
+            _ => (".config/autostart", "superba-router.desktop"),
+        };
+        self.home.path().join(dir).join(file)
     }
     fn definition(&self, kind: ServiceKind) -> Option<String> {
         if kind == W {

@@ -122,12 +122,15 @@ async fn fails_over_on_connection_refused_and_opens_the_breaker() {
     let st = r.status().await;
     let a = &st.members[0].lines[0];
     assert_eq!(a.state, LineState::Open);
-    assert!(
-        a.last_error
-            .as_deref()
-            .unwrap()
-            .starts_with("connect failed")
-    );
+    // A closed loopback port is refused at once on Unix ("connect failed"); on
+    // Windows the refusal only arrives after the SYN retries, past the 1 s test
+    // timeout, so the same dead line reads "connect timeout" there.
+    let error = a.last_error.as_deref().unwrap();
+    if cfg!(windows) {
+        assert!(error.starts_with("connect "), "{error}");
+    } else {
+        assert!(error.starts_with("connect failed"), "{error}");
+    }
     assert_eq!(a.failovers_away, 1);
     assert_eq!(st.totals.failovers, 1);
     assert!(st.recent.iter().any(|e| e.kind == RouteEventKind::Failover));
@@ -315,7 +318,12 @@ async fn all_lines_down_answers_router_unavailable() {
     assert_eq!(v["error"]["type"], "router_unavailable");
     let msg = v["error"]["message"].as_str().unwrap();
     assert!(msg.starts_with("Superba local router: no line reachable"));
-    assert!(msg.contains("krill/a: connect failed"), "{msg}");
+    // See fails_over_on_connection_refused_and_opens_the_breaker for Windows.
+    assert!(
+        msg.contains("krill/a: connect failed")
+            || (cfg!(windows) && msg.contains("krill/a: connect timeout")),
+        "{msg}"
+    );
     assert!(msg.contains("site/c: HTTP 503"), "{msg}");
     let st = r.status().await;
     assert_eq!(st.totals.unavailable, 1);

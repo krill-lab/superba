@@ -63,7 +63,19 @@ fn setup() -> Env {
     write(&home.join(".profile"), b"", 0o644);
     let data = DataDir::new(tmp.path().join("data"));
     let engine = engine();
-    let shell = Arc::new(LocalShell::new(&home).with_login_shell("/bin/sh"));
+    let mut local = LocalShell::new(&home).with_login_shell("/bin/sh");
+    // LocalShell's PATH is only /usr/local/bin:/usr/bin:/bin, where a Linux
+    // runner has zstd but a macOS one (Homebrew) does not: the simulated host
+    // gets the directory of the zstd the test itself uses.
+    let zstd_dir = std::env::var_os("PATH")
+        .and_then(|path| std::env::split_paths(&path).find(|d| d.join("zstd").is_file()));
+    if let Some(dir) = zstd_dir {
+        local = local.with_env(
+            "PATH",
+            format!("/usr/local/bin:/usr/bin:/bin:{}", dir.display()),
+        );
+    }
+    let shell = Arc::new(local);
     let hosts = SshRemoteHosts::new(engine.clone(), data.clone()).with_shell(shell.clone());
     Env {
         tmp,

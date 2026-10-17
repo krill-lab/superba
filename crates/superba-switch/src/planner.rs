@@ -608,7 +608,15 @@ pub(crate) fn elevated(env: &dyn superba_core::EnvSource) -> bool {
     env.var_non_empty("SUDO_USER").is_some() && effective_root()
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "test-unelevated"))]
+pub(crate) fn elevated(_env: &dyn superba_core::EnvSource) -> bool {
+    // Hosted Windows CI runners run as an administrator, which would block every
+    // plan; the tests build with this feature (never enabled for a real build)
+    // and exercise the Unix `sudo` rule through the injected environment instead.
+    false
+}
+
+#[cfg(all(windows, not(feature = "test-unelevated")))]
 pub(crate) fn elevated(_env: &dyn superba_core::EnvSource) -> bool {
     use windows_sys::Win32::{
         Foundation::CloseHandle,

@@ -421,6 +421,13 @@ async fn codex_list_install_and_pin() {
     assert_eq!(installs[0].target, InstallTarget::Store);
     assert_eq!(installs[1].target, InstallTarget::Local);
 
+    // `/opt/..` is rooted but not absolute on Windows (the CLI would add a drive).
+    let pinned = std::env::temp_dir()
+        .join("opt")
+        .join("codex")
+        .join("bin")
+        .join("codex");
+    let pinned_arg = pinned.to_str().unwrap().to_owned();
     for (args, expected) in [
         (
             vec!["codex", "pin", "0.162.0", "--dry-run"],
@@ -434,10 +441,8 @@ async fn codex_list_install_and_pin() {
         ),
         (vec!["codex", "unpin", "--dry-run"], AppCodexPin::Bundled),
         (
-            vec!["codex", "pin", "/opt/codex/bin/codex", "--dry-run"],
-            AppCodexPin::Path {
-                path: "/opt/codex/bin/codex".into(),
-            },
+            vec!["codex", "pin", pinned_arg.as_str(), "--dry-run"],
+            AppCodexPin::Path { path: pinned },
         ),
     ] {
         let (code, _, stderr) = run(&service, &args).await;

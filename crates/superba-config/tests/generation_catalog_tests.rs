@@ -96,7 +96,8 @@ async fn restoring_a_generation_whose_catalog_file_exists_names_it_again() {
         cfg.contains(&format!(
             "{} = \"{}\"",
             k::MODEL_CATALOG_JSON,
-            file.display()
+            // A TOML basic string: Windows backslashes are escaped.
+            file.display().to_string().replace('\\', "\\\\")
         )),
         "{cfg}"
     );

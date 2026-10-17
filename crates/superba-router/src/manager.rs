@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -197,9 +197,9 @@ pub fn transient_location(exe: &Path, read_only: &dyn Fn(&Path) -> Option<bool>)
     {
         return true;
     }
-    let mut components = exe.components().map(|c| c.as_os_str());
+    let mut components = exe.components();
     let first_two = (components.next(), components.next());
-    matches!(first_two, (Some(root), Some(v)) if root == "/" && v == "Volumes")
+    matches!(first_two, (Some(Component::RootDir), Some(Component::Normal(v))) if v == "Volumes")
         && read_only(exe).unwrap_or(true)
 }
 
