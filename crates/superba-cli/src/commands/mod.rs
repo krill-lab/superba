@@ -2,6 +2,7 @@
 
 mod account;
 mod execute;
+mod import;
 mod key;
 mod lines;
 mod models;
@@ -138,6 +139,7 @@ pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) 
             }
         },
         Command::Remote { command } => remote::run(command, rt, out).await,
+        Command::Import(args) => import::run(args, rt, out).await,
         Command::Doctor => status::doctor(rt, out).await,
         Command::Recover => status::recover(rt, out).await,
         Command::Uninstall {

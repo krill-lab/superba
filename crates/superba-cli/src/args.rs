@@ -114,6 +114,8 @@ pub enum Command {
         #[command(subcommand)]
         command: FeedsCommand,
     },
+    #[command(about = english("cli.import.help.about"))]
+    Import(ImportArgs),
     #[command(about = english("cli.help.doctor"))]
     Doctor,
     #[command(about = english("cli.help.recover"))]
@@ -801,6 +803,55 @@ pub enum AppCommand {
         #[arg(long, help = english("cli.help.app_download_open"))]
         open: bool,
     },
+}
+
+/// `spb import`: providers from another tool.
+#[derive(Debug, Clone, Args)]
+pub struct ImportArgs {
+    #[arg(value_enum, help = english("cli.import.help.source"))]
+    pub source: ImportSourceArg,
+    #[arg(long, help = english("cli.import.help.dry_run"))]
+    pub dry_run: bool,
+    #[arg(long, value_name = "NAMES", value_delimiter = ',', help = english("cli.import.help.select"))]
+    pub select: Vec<String>,
+    #[arg(long, value_enum, default_value_t = ConflictArg::Skip, help = english("cli.import.help.on_conflict"))]
+    pub on_conflict: ConflictArg,
+}
+
+/// Tools `spb import` reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ImportSourceArg {
+    #[value(alias = "cc-switch")]
+    Ccs,
+    #[value(name = "ai-toolbox", alias = "aitoolbox")]
+    AiToolbox,
+}
+
+impl From<ImportSourceArg> for superba_core::ImportSource {
+    fn from(value: ImportSourceArg) -> Self {
+        match value {
+            ImportSourceArg::Ccs => Self::Ccs,
+            ImportSourceArg::AiToolbox => Self::AiToolbox,
+        }
+    }
+}
+
+/// What `spb import` does with a provider that collides with an existing one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ConflictArg {
+    Skip,
+    Rename,
+    Update,
+}
+
+impl From<ConflictArg> for superba_core::ConflictAction {
+    fn from(value: ConflictArg) -> Self {
+        match value {
+            ConflictArg::Skip => Self::Skip,
+            ConflictArg::Rename => Self::Rename,
+            ConflictArg::Update => Self::Update,
+        }
+    }
 }
 
 /// `spb self-update`.
