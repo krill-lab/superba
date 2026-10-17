@@ -165,11 +165,15 @@ impl Progress {
         let mut st = self.lock();
         st.step_done = u32::try_from(index).unwrap_or(u32::MAX).min(st.step_total);
         let title = thread.and_then(|t| st.titles.get(t).cloned());
+        // The stage's own report names no file: its first file goes out at
+        // once instead of waiting for the throttle (a short stage would
+        // otherwise never name one).
+        let first = st.current.is_none();
         st.current = Some(SessionCurrent {
             title,
             file: file.map(Path::to_path_buf),
         });
-        self.send(&mut st, false);
+        self.send(&mut st, first);
     }
 
     /// One rollout file of `thread` is in place.
