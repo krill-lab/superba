@@ -16,3 +16,7 @@ compatible = "兼容"
 older = "较旧：基本对话可用，可能缺少新功能"
 below_floor = "低于 app 要求的最低版本"
 newer = "比 app 自带的 Codex 新很多（未经测试）"
+
+[app_source]
+official = "OpenAI 官方下载服务器（persistent.oaistatic.com）"
+store_mirror = "Microsoft Store CDN，链接由第三方 store.rg-adguard.net 解析"

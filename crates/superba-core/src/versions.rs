@@ -75,6 +75,38 @@ pub enum AppPackageKind {
     MacZip,
     /// Windows MSIX.
     Msix,
+    /// Windows MSIX bundle (packages for several architectures).
+    MsixBundle,
+    /// Windows APPX (framework dependencies such as VCLibs).
+    Appx,
+    /// Windows APPX bundle.
+    AppxBundle,
+}
+
+impl AppPackageKind {
+    /// The kind of a Windows package file by its extension (`.msix`,
+    /// `.msixbundle`, `.appx`, `.appxbundle`, any case).
+    pub fn windows_from_file_name(name: &str) -> Option<Self> {
+        let ext = name.rsplit_once('.')?.1.to_ascii_lowercase();
+        Some(match ext.as_str() {
+            "msix" => AppPackageKind::Msix,
+            "msixbundle" => AppPackageKind::MsixBundle,
+            "appx" => AppPackageKind::Appx,
+            "appxbundle" => AppPackageKind::AppxBundle,
+            _ => return None,
+        })
+    }
+
+    /// An MSIX / APPX package or bundle (opened with App Installer).
+    pub fn is_windows_package(self) -> bool {
+        matches!(
+            self,
+            AppPackageKind::Msix
+                | AppPackageKind::MsixBundle
+                | AppPackageKind::Appx
+                | AppPackageKind::AppxBundle
+        )
+    }
 }
 
 /// One downloadable app package.
@@ -354,6 +386,25 @@ pub enum AppUpdateAction {
         /// `winget upgrade --id ... --source msstore`.
         command: String,
     },
+    /// Windows: download the MSIX package (OpenAI's server, else the Microsoft
+    /// Store CDN, per [`crate::NetworkSettings::windows_app_source`]), verify it
+    /// and open it with App Installer, where the user installs it; the Store page
+    /// and `winget` stay as alternatives.
+    WindowsPackage {
+        /// The official package for this machine, when `windows-release.json`
+        /// lists one (the Store mirror's file is resolved at download time).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        package: Option<AppPackage>,
+        /// The configured source.
+        #[serde(default)]
+        source: crate::profile::WindowsAppSource,
+        /// `ms-windows-store://pdp/?ProductId=...`, when the product is known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        store_url: Option<String>,
+        /// `winget upgrade --id ... --source msstore`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        command: Option<String>,
+    },
     /// Nothing to do (up to date or unknown).
     None,
 }
@@ -559,6 +610,292 @@ pub struct AppDownloadReport {
     /// Command to install it (shown, never run with privileges).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// Windows: where the package came from, its identity, signer and the
+    /// framework packages to install first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows: Option<WindowsAppDownload>,
+}
+
+/// Where a Windows app package came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum AppPackageSource {
+    /// OpenAI's download server
+    /// (`persistent.oaistatic.com/codex-app-prod/windows-release.json`).
+    Official,
+    /// The Microsoft Store CDN (`*.dl.delivery.mp.microsoft.com`), its
+    /// temporary links resolved by store.rg-adguard.net, a third-party resolver.
+    StoreMirror,
+}
+
+impl AppPackageSource {
+    /// Stable code (`official`, `store`), as `spb app download --source` takes it.
+    pub fn code(self) -> &'static str {
+        match self {
+            AppPackageSource::Official => "official",
+            AppPackageSource::StoreMirror => "store",
+        }
+    }
+
+    /// Display text.
+    pub fn text(self) -> LocalizedText {
+        match self {
+            AppPackageSource::Official => LocalizedText::new(
+                "app_source.official",
+                "OpenAI download server (persistent.oaistatic.com)",
+            ),
+            AppPackageSource::StoreMirror => LocalizedText::new(
+                "app_source.store_mirror",
+                "Microsoft Store CDN, link resolved by store.rg-adguard.net (third-party)",
+            ),
+        }
+    }
+}
+
+/// Identity of an MSIX / APPX package, from its `AppxManifest.xml` (or the
+/// bundle's `AppxBundleManifest.xml`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MsixIdentity {
+    /// Package name (`OpenAI.Codex`).
+    pub name: String,
+    /// Package version (`26.1013.4894.0`).
+    pub version: String,
+    /// Processor architecture (`x64`, `arm64`, `neutral`).
+    pub arch: String,
+    /// Publisher distinguished name (`CN=50BDFD77-...`).
+    pub publisher: String,
+    /// Publisher id derived from [`MsixIdentity::publisher`] (`2p2nqsd0c76g0`).
+    pub publisher_id: String,
+    /// A framework package (VCLibs and the like).
+    #[serde(default)]
+    pub framework: bool,
+}
+
+impl MsixIdentity {
+    /// `Name_PublisherId`.
+    pub fn family_name(&self) -> String {
+        format!("{}_{}", self.name, self.publisher_id)
+    }
+}
+
+/// A package dependency declared in an `AppxManifest.xml`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MsixDependency {
+    /// Package name (`Microsoft.VCLibs.140.00.UWPDesktop`).
+    pub name: String,
+    /// Lowest acceptable version.
+    pub min_version: String,
+    /// Publisher distinguished name.
+    pub publisher: String,
+}
+
+/// An MSIX / APPX package registered on this machine.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstalledPackage {
+    /// Package name.
+    pub name: String,
+    /// Version.
+    pub version: String,
+    /// Architecture (`x64`, `arm64`, `x86`, `neutral`).
+    pub arch: String,
+    /// Publisher id (`8wekyb3d8bbwe`).
+    pub publisher_id: String,
+}
+
+/// The signer of a package whose signature Windows accepted
+/// (`WinVerifyTrust`: chain to a trusted root, timestamp honoured).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackageSigner {
+    /// Subject distinguished name of the signing certificate.
+    pub subject: String,
+    /// Issuer distinguished name of the signing certificate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+}
+
+/// One verified package file of a Windows app download (the app, or a
+/// framework package it needs).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowsPackageFile {
+    /// Local file.
+    pub path: PathBuf,
+    /// Identity from its manifest.
+    pub identity: MsixIdentity,
+    /// Size in bytes.
+    pub size: u64,
+    /// sha256 (hex) of the file.
+    pub sha256: String,
+    /// sha1 (hex) the source listed and the file matched (Store mirror).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha1: Option<String>,
+    /// The verified signer (set once the signature was checked).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signer: Option<PackageSigner>,
+}
+
+/// The Windows part of an [`AppDownloadReport`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowsAppDownload {
+    /// Where the package came from.
+    pub source: AppPackageSource,
+    /// Why the sources tried before failed (the official server, when the
+    /// Store mirror was used as the fallback).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallback_reasons: Vec<String>,
+    /// The app package.
+    pub package: WindowsPackageFile,
+    /// The app release the package belongs to (`26.1013.40934`), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_version: Option<String>,
+    /// Framework packages that are not installed yet, in install order: open
+    /// (install) these before the app.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<WindowsPackageFile>,
+    /// Dependencies that are neither installed nor downloadable here (App
+    /// Installer tries to get them from the Microsoft Store).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unresolved: Vec<MsixDependency>,
+}
+
+/// What [`crate::SwitchService::download_app_package`] downloads.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppDownloadRequest {
+    /// Windows: the source for this download (`None`: the network setting).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<crate::profile::WindowsAppSource>,
+}
+
+/// What [`VersionStore::download_windows_app`] downloads.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WindowsAppRequest {
+    /// Sources to try.
+    pub source: crate::profile::WindowsAppSource,
+    /// Packages registered on this machine (framework dependencies already
+    /// installed are not downloaded).
+    pub installed: Vec<InstalledPackage>,
+}
+
+/// Stage of a package download.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum DownloadStage {
+    /// Looking up the package (release JSON, Store mirror listing).
+    Resolving,
+    /// Transferring bytes.
+    Downloading,
+    /// Checking size, checksum, manifest and signature.
+    Verifying,
+}
+
+/// One progress report of a package download.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadProgress {
+    /// Stage.
+    pub stage: DownloadStage,
+    /// Source in use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<AppPackageSource>,
+    /// File being downloaded (empty while resolving).
+    #[serde(default)]
+    pub file: String,
+    /// Bytes on disk.
+    #[serde(default)]
+    pub done: u64,
+    /// Total bytes, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
+    /// Bytes that were already on disk when this transfer started (resumed).
+    #[serde(default)]
+    pub resumed_from: u64,
+    /// 1-based number of this file among `count` (dependencies, then the app).
+    #[serde(default)]
+    pub index: usize,
+    /// Number of files.
+    #[serde(default)]
+    pub count: usize,
+}
+
+impl DownloadProgress {
+    /// A report for `stage` with nothing transferred yet.
+    pub fn stage(stage: DownloadStage, source: Option<AppPackageSource>) -> Self {
+        Self {
+            stage,
+            source,
+            file: String::new(),
+            done: 0,
+            total: None,
+            resumed_from: 0,
+            index: 0,
+            count: 0,
+        }
+    }
+
+    /// Fraction done (0..=1), when the total is known.
+    pub fn fraction(&self) -> Option<f32> {
+        let total = self.total.filter(|t| *t > 0)?;
+        Some((self.done.min(total) as f64 / total as f64) as f32)
+    }
+}
+
+/// Receives [`DownloadProgress`] reports. Must not block. A download asked to
+/// stop ends with [`Error::Cancelled`] and keeps its partial file, so the next
+/// attempt resumes it.
+pub trait DownloadProgressSink: Send + Sync {
+    /// A new report.
+    fn report(&self, progress: DownloadProgress);
+
+    /// The user asked to stop. Default: never.
+    fn cancel_requested(&self) -> bool {
+        false
+    }
+}
+
+/// A [`DownloadProgressSink`] that drops every report and never cancels.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoDownloadProgress;
+
+impl DownloadProgressSink for NoDownloadProgress {
+    fn report(&self, _progress: DownloadProgress) {}
+}
+
+/// A [`DownloadProgressSink`] keeping the latest report and a cancel flag that
+/// the UI reads and sets.
+#[derive(Debug, Default)]
+pub struct SharedDownloadProgress {
+    latest: std::sync::Mutex<Option<DownloadProgress>>,
+    cancel: std::sync::atomic::AtomicBool,
+}
+
+impl SharedDownloadProgress {
+    /// The latest report.
+    pub fn latest(&self) -> Option<DownloadProgress> {
+        self.latest
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// Ask the download to stop.
+    pub fn cancel(&self) {
+        self.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// A stop was asked for.
+    pub fn cancelled(&self) -> bool {
+        self.cancel.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl DownloadProgressSink for SharedDownloadProgress {
+    fn report(&self, progress: DownloadProgress) {
+        *self.latest.lock().unwrap_or_else(|p| p.into_inner()) = Some(progress);
+    }
+
+    fn cancel_requested(&self) -> bool {
+        self.cancelled()
+    }
 }
 
 /// The official standalone Codex layout of one machine: releases under
@@ -644,6 +981,21 @@ pub trait VersionStore: Send + Sync {
 
     /// Download and verify an app package into `<data dir>/downloads/`.
     async fn download_app(&self, package: &AppPackage) -> Result<AppDownloadReport>;
+
+    /// Windows: download the ChatGPT MSIX for this machine's architecture from
+    /// the sources of `request` (resumable, into `<data dir>/downloads/`), check
+    /// its size, checksum and manifest identity, and the framework packages it
+    /// needs that are not installed. The caller checks the signatures
+    /// ([`crate::AppController::verify_package_signature`]) before opening any of
+    /// them. A cancel through `progress` keeps the partial file.
+    async fn download_windows_app(
+        &self,
+        request: WindowsAppRequest,
+        progress: std::sync::Arc<dyn DownloadProgressSink>,
+    ) -> Result<AppDownloadReport> {
+        let _ = (request, progress);
+        Err(Error::not_implemented("VersionStore::download_windows_app"))
+    }
 
     /// Install `version` (made available with [`VersionStore::ensure`] first) into
     /// the local standalone layout: a new release directory, then the `current`

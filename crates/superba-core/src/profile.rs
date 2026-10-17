@@ -391,6 +391,36 @@ pub enum FeedSourceChoice {
     JsDelivr,
 }
 
+/// Where the ChatGPT desktop app package is downloaded from on Windows
+/// (Preferences -> Network; `spb app download --source`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum WindowsAppSource {
+    /// OpenAI's own download (`persistent.oaistatic.com`); the Microsoft Store
+    /// mirror only when that fails.
+    #[default]
+    OfficialFirst,
+    /// OpenAI's own download only.
+    OfficialOnly,
+    /// The Microsoft Store CDN only, its temporary links resolved by
+    /// store.rg-adguard.net (a third-party link resolver; the files still come
+    /// from Microsoft's CDN and are verified).
+    StoreMirrorOnly,
+}
+
+impl WindowsAppSource {
+    /// The sources tried, in order.
+    pub fn order(self) -> &'static [crate::versions::AppPackageSource] {
+        use crate::versions::AppPackageSource::{Official, StoreMirror};
+        match self {
+            WindowsAppSource::OfficialFirst => &[Official, StoreMirror],
+            WindowsAppSource::OfficialOnly => &[Official],
+            WindowsAppSource::StoreMirrorOnly => &[StoreMirror],
+        }
+    }
+}
+
 /// Network preferences (Preferences -> Network).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -407,6 +437,8 @@ pub struct NetworkSettings {
     /// Extra mirror base URLs (https).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub extra_mirrors: Vec<String>,
+    /// Windows: where the ChatGPT desktop app package comes from.
+    pub windows_app_source: WindowsAppSource,
 }
 
 impl NetworkSettings {
@@ -424,6 +456,7 @@ impl Default for NetworkSettings {
             feed_source: FeedSourceChoice::Auto,
             third_party_proxies: false,
             extra_mirrors: Vec::new(),
+            windows_app_source: WindowsAppSource::OfficialFirst,
         }
     }
 }

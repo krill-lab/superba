@@ -1047,6 +1047,7 @@ fn versions_types_round_trip() {
         path: PathBuf::from("/data/downloads/chatgpt.deb"),
         sha256: "cd".repeat(32),
         command: Some("sudo apt install ./chatgpt.deb".into()),
+        windows: None,
     });
 }
 
@@ -1478,6 +1479,7 @@ fn v3_settings_round_trip_with_every_field_set() {
         feed_source: FeedSourceChoice::JsDelivr,
         third_party_proxies: true,
         extra_mirrors: vec!["https://mirror.example/feeds/".into()],
+        windows_app_source: WindowsAppSource::StoreMirrorOnly,
     };
     s.app_codex = AppCodexSettings {
         pin: AppCodexPin::Version {

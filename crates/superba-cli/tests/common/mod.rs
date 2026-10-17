@@ -632,6 +632,7 @@ impl SwitchService for FakeService {
             path: "/fake/downloads/chatgpt_26.1013_amd64.deb".into(),
             sha256: "ab".repeat(32),
             command: Some("sudo apt install /fake/downloads/chatgpt_26.1013_amd64.deb".into()),
+            windows: None,
         })
     }
     async fn feeds_status(&self) -> Result<FeedsStatus> {

@@ -18,3 +18,7 @@ compatible = "Compatible"
 older = "Older: basic chat works, newer features may be missing"
 below_floor = "Below the app's minimum version"
 newer = "Much newer than the app's own Codex (untested)"
+
+[app_source]
+official = "OpenAI download server (persistent.oaistatic.com)"
+store_mirror = "Microsoft Store CDN, link resolved by store.rg-adguard.net (third-party)"

@@ -52,7 +52,7 @@ use crate::config::{
     ResolvedEndpoints, ResolvedProfile, StashScope,
 };
 use crate::env::{EnvApplied, EnvOp, EnvPlan, EnvReport};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::feeds::{FeedSnapshot, FeedsStatus};
 use crate::ids::{LineId, ProfileId, SiteId, TargetId};
 use crate::models::{ModelList, ModelsEdit, ModelsEditReport, ModelsView, ModelsViewRequest};
@@ -84,7 +84,8 @@ use crate::time::Timestamp;
 use crate::transports::{LineTransports, LineTransportsRequest, TransportProbe};
 use crate::usage::{AccountReport, AccountRequest, UsageQuery, UsageReport};
 use crate::versions::{
-    AppDownloadReport, CodexInstallKind, InstallReport, InstallRequest, InstallTarget, VersionsView,
+    AppDownloadReport, AppDownloadRequest, CodexInstallKind, DownloadProgressSink, InstallReport,
+    InstallRequest, InstallTarget, InstalledPackage, PackageSigner, VersionsView,
 };
 use crate::views::{
     PlanSettings, SettingsEdit, SettingsEditReport, SettingsView, SettingsViewRequest,
@@ -586,6 +587,33 @@ pub trait AppController: Send + Sync {
     /// Superba's store, other), from its resolved path.
     async fn cli_install_kind(&self, binary: &Path) -> Result<CodexInstallKind>;
 
+    /// Windows: the MSIX / APPX packages registered for this user (read from the
+    /// registry), so framework dependencies already installed are not
+    /// downloaded. Empty elsewhere.
+    async fn installed_packages(&self) -> Result<Vec<InstalledPackage>> {
+        Ok(Vec::new())
+    }
+
+    /// Windows: check the signature of a downloaded MSIX / APPX package with
+    /// `WinVerifyTrust` (chain to a trusted root, timestamp honoured) and return
+    /// its signer. The caller decides whether that signer is acceptable.
+    async fn verify_package_signature(&self, path: &Path) -> Result<PackageSigner> {
+        let _ = path;
+        Err(Error::Unsupported {
+            what: "checking package signatures on this platform".into(),
+        })
+    }
+
+    /// Windows: open a package with its default handler (`ShellExecute` "open":
+    /// App Installer), where the user installs it. Never installs silently and
+    /// never elevates.
+    async fn open_package_installer(&self, path: &Path) -> Result<()> {
+        let _ = path;
+        Err(Error::Unsupported {
+            what: "opening package installers on this platform".into(),
+        })
+    }
+
     /// [`Self::running_session`] and [`Self::processes`] from one look at the
     /// process table: the overview's fast facts, read every few seconds. Spawns
     /// no process. Default: the two calls.
@@ -1015,6 +1043,29 @@ pub trait SwitchService: Send + Sync {
     /// Download and verify the newest app package for this OS (Linux); the
     /// report names the file and the install command to show.
     async fn download_app_update(&self) -> Result<AppDownloadReport>;
+
+    /// Download and verify the newest app package for this OS, reporting to
+    /// `progress` (a cancel there keeps the partial file for resuming). Windows:
+    /// the MSIX from the source of `request` (else the network setting), with
+    /// its manifest identity, the framework packages it still needs and every
+    /// signature checked. Elsewhere [`SwitchService::download_app_update`].
+    async fn download_app_package(
+        &self,
+        request: AppDownloadRequest,
+        progress: Arc<dyn DownloadProgressSink>,
+    ) -> Result<AppDownloadReport> {
+        let _ = (request, progress);
+        self.download_app_update().await
+    }
+
+    /// Windows: open a package downloaded by
+    /// [`SwitchService::download_app_package`] with App Installer (its
+    /// signature is checked again first); the user installs it. Never installs
+    /// silently and never elevates.
+    async fn open_app_package(&self, path: PathBuf) -> Result<()> {
+        let _ = path;
+        Err(Error::not_implemented("SwitchService::open_app_package"))
+    }
 
     // --- v0.3: request log and stats ----------------------------------------
 

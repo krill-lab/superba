@@ -903,5 +903,6 @@ fn report(package: &AppPackage, path: PathBuf, sha256: String) -> AppDownloadRep
         path,
         sha256,
         command,
+        windows: None,
     }
 }

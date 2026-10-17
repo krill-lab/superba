@@ -269,5 +269,6 @@ pub(super) async fn download_app_update(fake: &FakeService) -> Result<AppDownloa
         sha256: package.sha256.clone().unwrap_or_default(),
         package,
         command: Some(command),
+        windows: None,
     })
 }

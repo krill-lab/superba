@@ -118,6 +118,7 @@ impl VersionStore for FakeVersions {
             path: self.store_dir.join("chatgpt.deb"),
             sha256: "00".repeat(32),
             command: None,
+            windows: None,
         })
     }
 
