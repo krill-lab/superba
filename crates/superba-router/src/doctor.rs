@@ -22,7 +22,7 @@ use superba_core::{Error, Secret};
 
 use crate::client::AdminClient;
 use crate::config::{RouterConfig, RouterSecrets};
-use crate::manager::is_transient_location;
+use crate::manager::{is_network_location, is_transient_location};
 use crate::paths::RouterPaths;
 use crate::runtime::RuntimeInfo;
 use crate::service::{
@@ -75,6 +75,9 @@ pub struct ExeFacts {
     pub version: Option<CommandRecord>,
     /// On a disk image or in a Gatekeeper-translocated copy.
     pub transient: bool,
+    /// On a network share (a Windows UNC path or mapped network drive).
+    #[serde(default)]
+    pub network: bool,
     /// Inside a folder macOS keeps from background processes (Desktop,
     /// Documents, Downloads, iCloud Drive).
     pub protected_folder: bool,
@@ -260,6 +263,14 @@ pub enum Finding {
         /// The program.
         path: PathBuf,
     },
+    /// The program the service starts is on a network share (a Windows UNC
+    /// path such as a Parallels shared folder, or a mapped network drive): at
+    /// login the share may not be connected yet, and the router does not
+    /// start.
+    ExeOnNetwork {
+        /// The program.
+        path: PathBuf,
+    },
     /// macOS quarantine attribute on the program or its app.
     Quarantined {
         /// The app (or program) to clear.
@@ -345,6 +356,7 @@ impl Finding {
         !matches!(
             self,
             Finding::ProtectedFolder { .. }
+                | Finding::ExeOnNetwork { .. }
                 | Finding::NotConfigured
                 | Finding::StaleDefinition { .. }
                 | Finding::LogError { .. }
@@ -369,6 +381,10 @@ impl Finding {
             ),
             Finding::ExeTransient { path } => format!(
                 "Superba runs from a temporary location ({}); move Superba.app to the Applications folder and open it from there.",
+                path.display()
+            ),
+            Finding::ExeOnNetwork { path } => format!(
+                "The router program {} is on a network share; the background service starts it at login, often before the share is connected, and the router then does not start. Install Superba with the MSI (or copy it to a local folder) and turn the router on from there.",
                 path.display()
             ),
             Finding::Quarantined { path } => format!(
@@ -489,6 +505,7 @@ fn exe_facts(input: &DoctorInput<'_>) -> ExeFacts {
         executable,
         size: meta.as_ref().map(|m| m.len()),
         transient: is_transient_location(&path),
+        network: is_network_location(&path),
         candidates: input
             .candidates
             .iter()
@@ -770,6 +787,11 @@ pub fn findings(facts: &RouterFacts, macos: bool, home: Option<&Path>) -> Vec<Fi
             path: exe.path.clone(),
         });
     }
+    if exe.network {
+        out.push(Finding::ExeOnNetwork {
+            path: exe.path.clone(),
+        });
+    }
     if macos {
         let bundle_quarantined = exe.bundle.as_ref().filter(|(_, q)| q.is_some());
         if let Some((bundle, _)) = bundle_quarantined {
@@ -835,6 +857,12 @@ pub fn findings(facts: &RouterFacts, macos: bool, home: Option<&Path>) -> Vec<Fi
             program: program.clone(),
             expected: exe.path.clone(),
         });
+        // Still starting the copy on a network share (installed from there).
+        if crate::manager::network_path_text(&program.to_string_lossy()) {
+            out.push(Finding::ExeOnNetwork {
+                path: program.clone(),
+            });
+        }
     }
     if installed && d.loaded == Some(false) {
         out.push(Finding::ServiceNotLoaded);

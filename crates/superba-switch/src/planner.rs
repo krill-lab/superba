@@ -1418,31 +1418,28 @@ impl Switcher {
             }
             SwitchIntent::Router { enable } => {
                 let router = &set.settings.router;
-                if *enable {
-                    Self::require_eligible_member(set, sites)?;
-                }
-                // Turning the router on applies a profile whose key the router
-                // can send as an API key (the applied one when it can be a
-                // member); turning it off, any key-based profile.
-                let usable = |id: &ProfileId| {
-                    set.profile(id).is_some_and(|p| {
-                        let site = sites.iter().find(|s| s.id == p.site_id);
-                        if *enable {
-                            crate::router_doctor::eligibility(p, site).is_eligible()
-                        } else {
+                let applied = state.active.as_ref().and_then(|a| a.profile_id.as_ref());
+                // Turning the router on applies a member whose key the router
+                // can send as an API key (the applied one when it is such a
+                // member): the rule of the Router page and `spb router enable`.
+                // Turning it off, any key-based profile.
+                let profile_id = if *enable {
+                    Self::require_eligible_member(set, sites, applied)?
+                } else {
+                    let usable = |id: &ProfileId| {
+                        set.profile(id).is_some_and(|p| {
+                            let site = sites.iter().find(|s| s.id == p.site_id);
                             !p.is_builtin() && site.is_some_and(|s| s.kind != SiteKind::Official)
-                        }
-                    })
+                        })
+                    };
+                    applied
+                        .filter(|id| usable(id))
+                        .or_else(|| router.members.iter().find(|id| usable(id)))
+                        .cloned()
+                        .ok_or_else(|| Error::NotFound {
+                            what: "a key-based profile to switch".into(),
+                        })?
                 };
-                let profile_id = state
-                    .active
-                    .as_ref()
-                    .and_then(|a| a.profile_id.clone())
-                    .filter(|id| usable(id))
-                    .or_else(|| router.members.iter().find(|id| usable(id)).cloned())
-                    .ok_or_else(|| Error::NotFound {
-                        what: "a key-based profile to switch".into(),
-                    })?;
                 let profile = set.profile(&profile_id).ok_or_else(|| Error::NotFound {
                     what: format!("profile {profile_id}"),
                 })?;

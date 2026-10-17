@@ -573,7 +573,7 @@ impl Switcher {
         let mut set = d.profiles.load().await?;
         if enabled {
             let sites = all_sites(&set, self.deps.ctx.env.as_ref());
-            Self::require_eligible_member(&set, &sites)?;
+            Self::require_eligible_member(&set, &sites, None)?;
             if !d.router.liveness().await.is_up() {
                 // Start (or repair) it with the stored members first.
                 let built = self

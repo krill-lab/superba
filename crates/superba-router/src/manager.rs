@@ -203,6 +203,50 @@ pub fn transient_location(exe: &Path, read_only: &dyn Fn(&Path) -> Option<bool>)
         && read_only(exe).unwrap_or(true)
 }
 
+/// A program on a network share: a Windows UNC path (`\\server\share\...`, as
+/// a Parallels shared folder `\\Mac\Home\...` is) or, on Windows, a drive
+/// letter mapped to one (its canonical path is a UNC path). The per-user
+/// service (the Run key) starts it at login, often before the share is
+/// connected, so the router does not come up (user bug 39); an installed copy
+/// (the MSI) does not have that problem.
+pub fn is_network_location(path: &Path) -> bool {
+    if network_path_text(&path.to_string_lossy()) {
+        return true;
+    }
+    #[cfg(windows)]
+    if let Ok(real) = std::fs::canonicalize(path) {
+        return network_path_text(&real.to_string_lossy());
+    }
+    false
+}
+
+/// [`is_network_location`] on the text of a path, without the file system:
+/// `\\server\share\...` and `\\?\UNC\server\share\...` (`//server/share` too
+/// on Windows, where it means the same). Local device and verbatim paths
+/// (`\\?\C:\...`, `\\.\...`) are not network paths.
+pub fn network_path_text(path: &str) -> bool {
+    let unified = if cfg!(windows) {
+        path.replace('/', "\\")
+    } else {
+        path.to_owned()
+    };
+    let Some(rest) = unified.strip_prefix(r"\\") else {
+        return false;
+    };
+    if let Some(verbatim) = rest
+        .strip_prefix(r"?\")
+        .or_else(|| rest.strip_prefix(r".\"))
+    {
+        return verbatim
+            .get(..4)
+            .is_some_and(|p| p.eq_ignore_ascii_case(r"UNC\"));
+    }
+    let mut parts = rest.split('\\');
+    let server = parts.next().unwrap_or_default();
+    let share = parts.next().unwrap_or_default();
+    !server.is_empty() && !share.is_empty()
+}
+
 /// Whether the file system holding `path` is mounted read-only (a disk image,
 /// a translocated app); `None` when it cannot be inspected.
 #[cfg(unix)]

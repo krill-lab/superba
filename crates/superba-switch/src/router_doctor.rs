@@ -168,11 +168,35 @@ pub fn router_candidates(set: &ProfileSet, sites: &[Site]) -> Vec<RouterCandidat
     out
 }
 
-/// At least one member can carry traffic.
-pub fn has_eligible_member(candidates: &[RouterCandidate]) -> bool {
+/// The members that can carry traffic, in priority order.
+pub fn eligible_members(candidates: &[RouterCandidate]) -> impl Iterator<Item = &ProfileId> {
     candidates
         .iter()
-        .any(|c| c.member && c.eligibility.is_eligible())
+        .filter(|c| c.member && c.eligibility.is_eligible())
+        .filter_map(|c| c.profile_id.as_ref())
+}
+
+/// At least one member can carry traffic: the one gate for turning router mode
+/// on (Router page, `spb router enable`, `router_set_enabled`, the planner).
+pub fn has_eligible_member(candidates: &[RouterCandidate]) -> bool {
+    eligible_members(candidates).next().is_some()
+}
+
+/// The profile turning router mode on applies: the applied profile when it is
+/// a member that can carry traffic, else the first such member. Never a
+/// profile outside the members (turning the router on does not add one), so
+/// it is `Some` exactly when [`has_eligible_member`] holds. The routed
+/// configuration always uses the API-key form (router mode is API key only),
+/// whatever the profile's auth choice.
+pub fn router_mode_profile(
+    candidates: &[RouterCandidate],
+    applied: Option<&ProfileId>,
+) -> Option<ProfileId> {
+    let mut eligible = eligible_members(candidates);
+    match applied {
+        Some(id) if eligible_members(candidates).any(|m| m == id) => Some(id.clone()),
+        _ => eligible.next().cloned(),
+    }
 }
 
 /// The error for turning the router on without an eligible member, with the
@@ -235,6 +259,7 @@ fn finding_text(f: &Finding) -> LocalizedText {
         Finding::ExeNotExecutable { path } => key("exe_not_executable").arg("path", path.display()),
         Finding::ExeDoesNotRun { detail } => key("exe_does_not_run").arg("detail", detail),
         Finding::ExeTransient { path } => key("exe_transient").arg("path", path.display()),
+        Finding::ExeOnNetwork { path } => key("exe_on_network").arg("path", path.display()),
         Finding::Quarantined { path } => key("quarantined").arg("path", path.display()),
         Finding::ProtectedFolder { path } => key("protected_folder").arg("path", path.display()),
         Finding::NotConfigured => key("not_configured"),
@@ -349,6 +374,8 @@ fn program_section(facts: &RouterFacts) -> RouterDoctorSection {
     }
     let location = if exe.transient {
         "switch.router_doctor.value.location_transient"
+    } else if exe.network {
+        "switch.router_doctor.value.location_network"
     } else if exe.protected_folder {
         "switch.router_doctor.value.location_protected"
     } else {
@@ -758,14 +785,16 @@ impl Switcher {
         Ok(router_candidates(&set, &sites))
     }
 
-    /// Refuse to turn router mode on without a member that can carry traffic.
-    pub(crate) fn require_eligible_member(set: &ProfileSet, sites: &[Site]) -> Result<()> {
+    /// The profile turning router mode on applies ([`router_mode_profile`]);
+    /// refused without a member that can carry traffic.
+    pub(crate) fn require_eligible_member(
+        set: &ProfileSet,
+        sites: &[Site],
+        applied: Option<&ProfileId>,
+    ) -> Result<ProfileId> {
         let candidates = router_candidates(set, sites);
-        if has_eligible_member(&candidates) {
-            Ok(())
-        } else {
-            Err(no_eligible_member_error(&candidates))
-        }
+        router_mode_profile(&candidates, applied)
+            .ok_or_else(|| no_eligible_member_error(&candidates))
     }
 
     pub(crate) async fn router_doctor_impl(&self) -> Result<RouterDoctorReport> {
