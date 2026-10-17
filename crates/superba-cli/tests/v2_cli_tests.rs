@@ -256,8 +256,13 @@ async fn router_enable_dry_run_installs_nothing() {
         "nothing to plan before the router runs"
     );
 
-    // With the router running, the dry run plans the router switch only.
-    service.v2.lock().unwrap().router.running = true;
+    // With the router running (work is its member), the dry run plans the
+    // router switch only.
+    {
+        let mut v2 = service.v2.lock().unwrap();
+        v2.router.running = true;
+        v2.router.settings.members = vec![superba_core::ProfileId::new("work")];
+    }
     let (code, stdout, stderr) = invoke(service.clone(), &["router", "enable", "--dry-run"]).await;
     assert_eq!(code, 0, "{stderr}");
     assert!(

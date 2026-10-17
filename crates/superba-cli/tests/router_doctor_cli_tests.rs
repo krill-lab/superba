@@ -159,3 +159,71 @@ fn doctor_parses_its_foreground_flag() {
         superba_cli::Cli::try_parse_from(["spb", "router", "doctor", "--foreground"]).unwrap();
     assert!(format!("{cli:?}").contains("Doctor { foreground: true }"));
 }
+
+/// User bug 39: Krill ("work") with its key is already the member and the
+/// router is answering.
+fn member_running(service: &FakeService) {
+    key(service);
+    service.profiles.lock().unwrap().settings.router.members = vec![ProfileId::new("work")];
+    let mut v2 = service.v2.lock().unwrap();
+    v2.router.installed = true;
+    v2.router.running = true;
+    v2.router.port = Some(50_947);
+    v2.router.settings.members = vec![ProfileId::new("work")];
+}
+
+#[tokio::test]
+async fn enable_with_a_keyed_member_and_a_running_router_plans_router_mode() {
+    let service = FakeService::new();
+    member_running(&service);
+    // The doctor and enable agree: work is a member that can carry traffic.
+    let (code, stdout, _) =
+        invoke(service.clone(), &["--locale", "zh-CN", "router", "doctor"]).await;
+    assert_eq!(code, 0);
+    assert!(
+        stdout.contains("成员 · 可以作为成员（使用 API key）"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("开启路由需要至少一个"), "{stdout}");
+    let (code, stdout, stderr) = invoke(service.clone(), &["router", "enable", "--yes"]).await;
+    assert!(
+        !stdout.contains("needs at least one member"),
+        "{stdout}{stderr}"
+    );
+    assert_ne!(code, 3, "not blocked: {stdout}{stderr}");
+    let calls = service.calls();
+    assert!(
+        calls.router_installs.is_empty(),
+        "the running router is kept"
+    );
+    assert!(
+        calls.plans.iter().any(|r| matches!(
+            r.intent,
+            superba_core::SwitchIntent::Router { enable: true }
+        )),
+        "{:?}",
+        calls.plans
+    );
+}
+
+#[tokio::test]
+async fn enable_while_the_router_runs_still_says_why_a_pat_only_member_cannot_carry_traffic() {
+    let service = FakeService::new();
+    member_running(&service);
+    service
+        .profiles
+        .lock()
+        .unwrap()
+        .profiles
+        .iter_mut()
+        .find(|p| p.id.as_str() == "work")
+        .unwrap()
+        .set_auth(AuthChoice::Pat);
+    let (code, stdout, _) = invoke(service.clone(), &["router", "enable", "--yes"]).await;
+    assert_eq!(code, 3, "{stdout}");
+    assert!(
+        stdout.contains("(work, member): set to use a personal access token (PAT) only"),
+        "{stdout}"
+    );
+    assert!(service.calls().plans.is_empty(), "nothing planned");
+}

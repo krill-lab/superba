@@ -9,7 +9,9 @@ use std::time::Duration;
 use superba_core::{
     ProfileId, RouterDoctorReport, RouterInstallRequest, RouterView, RouterWatchState, SwitchIntent,
 };
-use superba_switch::router_doctor::{Eligibility, RouterCandidate, router_candidates};
+use superba_switch::router_doctor::{
+    Eligibility, RouterCandidate, has_eligible_member, router_candidates,
+};
 
 use super::{Result, execute, request, usage};
 use crate::{ExecArgs, Output, RouterCommand, Runtime, exit, text::text};
@@ -112,17 +114,16 @@ async fn enable(members: &[String], exec: &ExecArgs, rt: &Runtime, out: &mut Out
         return Err(usage(out, text("cli.router.local_only")));
     }
     let view = rt.service.router_status().await?;
+    // Say plainly when no member can carry traffic, and what to run next,
+    // instead of failing later in the install or the plan (user bug 28). The
+    // one rule of the Router page, the planner and `spb router doctor`, also
+    // while the router is already running (user bug 39).
+    let candidates = candidates_with(members, &view, rt).await?;
+    if !has_eligible_member(&candidates) {
+        no_eligible_member(&candidates, out)?;
+        return Ok(exit::BLOCKED);
+    }
     if !members.is_empty() || !view.running {
-        // Say plainly when no member can carry traffic, and what to run next,
-        // instead of failing later in the install or the plan (user bug 28).
-        let candidates = candidates_with(members, &view, rt).await?;
-        if !candidates
-            .iter()
-            .any(|c| c.member && c.eligibility.is_eligible())
-        {
-            no_eligible_member(&candidates, out)?;
-            return Ok(exit::BLOCKED);
-        }
         if exec.dry_run {
             // A dry run writes nothing: no service, no copied keys.
             let names: Vec<String> = if members.is_empty() {
