@@ -10,6 +10,11 @@
 //! pid is one of them and that the socket is bound to loopback only.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::time::{Duration, Instant};
+
+use superba_core::Timestamp;
+
+use crate::codexbin::{Caches, lock};
 
 /// A listening socket found for a port.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -224,6 +229,93 @@ pub fn decide_with_socket_inodes(
             }
         }
         (check, _) => check,
+    }
+}
+
+/// A listener check is about one app main process: (port, pid, start time).
+pub type OwnerKey = (u16, u32, Option<Timestamp>);
+
+/// A remembered listener check ([`Caches::owner_check`]).
+#[derive(Clone, Debug)]
+pub struct OwnerMemo {
+    check: OwnerCheck,
+    at: Instant,
+    /// Checks in a row with this (negative) answer.
+    attempts: u32,
+}
+
+/// A negative answer (nothing listens yet, a foreign listener, cannot tell) is
+/// checked again at most this many times on the polled paths, ...
+pub const OWNER_RECHECKS: u32 = 3;
+/// ... each after this many seconds times the attempts so far. Afterwards it
+/// stands until an explicit check ([`Caches::record_owner`]) or
+/// [`Caches::forget_owners`].
+pub const OWNER_RECHECK_STEP: Duration = Duration::from_secs(2);
+
+impl Caches {
+    /// The listener check for an app main process, as the polled paths (the
+    /// overview's session, the bridge probe) need it. A process that owns its CDP
+    /// listener keeps it for its lifetime, so a verified answer is reused for as
+    /// long as that process (pid and start time) lives; a negative one is checked
+    /// again a few times with growing pauses (an app that is still starting opens
+    /// its listener a moment later), then kept. On macOS a check runs `lsof`, so
+    /// this keeps the polled paths from starting a process every few seconds.
+    pub fn owner_check(
+        &self,
+        port: u16,
+        pid: u32,
+        started_at: Option<Timestamp>,
+        check: impl FnOnce() -> OwnerCheck,
+    ) -> OwnerCheck {
+        let key = (port, pid, started_at);
+        if let Some(memo) = lock(&self.owners).get(&key)
+            && (memo.check == OwnerCheck::Verified
+                || memo.attempts >= OWNER_RECHECKS
+                || memo.at.elapsed() < OWNER_RECHECK_STEP * memo.attempts)
+        {
+            return memo.check.clone();
+        }
+        let fresh = check();
+        self.remember_owner(key, fresh.clone());
+        fresh
+    }
+
+    /// Store an answer an explicit (uncached) check got, so the polled paths see
+    /// it (launch and restart wait for the listener themselves).
+    pub fn record_owner(
+        &self,
+        port: u16,
+        pid: u32,
+        started_at: Option<Timestamp>,
+        check: OwnerCheck,
+    ) {
+        let key = (port, pid, started_at);
+        lock(&self.owners).remove(&key);
+        self.remember_owner(key, check);
+    }
+
+    /// Forget every remembered listener check.
+    pub fn forget_owners(&self) {
+        lock(&self.owners).clear();
+    }
+
+    fn remember_owner(&self, key: OwnerKey, check: OwnerCheck) {
+        let mut owners = lock(&self.owners);
+        if owners.len() >= 64 {
+            owners.clear();
+        }
+        let attempts = match owners.get(&key) {
+            Some(memo) if memo.check == check && check != OwnerCheck::Verified => memo.attempts + 1,
+            _ => 1,
+        };
+        owners.insert(
+            key,
+            OwnerMemo {
+                check,
+                at: Instant::now(),
+                attempts,
+            },
+        );
     }
 }
 

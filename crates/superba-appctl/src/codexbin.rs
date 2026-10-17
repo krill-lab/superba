@@ -202,6 +202,11 @@ pub struct Caches {
     debug_models: Mutex<HashMap<(String, String), String>>,
     /// asar stamp -> floor.
     floors: Mutex<HashMap<FileStamp, CodexVersion>>,
+    /// CDP listener checks of app main processes ([`crate::owner::OwnerMemo`]).
+    pub(crate) owners: Mutex<HashMap<crate::owner::OwnerKey, crate::owner::OwnerMemo>>,
+    /// The change-check path list of the last detection result: (identity of
+    /// the result, paths) ([`crate::watch`]).
+    pub(crate) watch: Mutex<Option<(u64, Vec<PathBuf>)>>,
 }
 
 /// Entries kept in the `debug models` cache (outputs are up to a few MB).
@@ -246,7 +251,7 @@ impl Caches {
     }
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 

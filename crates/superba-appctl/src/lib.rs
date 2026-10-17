@@ -32,6 +32,7 @@ pub mod procs;
 pub mod quit;
 pub mod renderer;
 pub mod store;
+pub mod watch;
 
 #[cfg(test)]
 #[path = "../tests/common/mod.rs"]
@@ -276,7 +277,9 @@ impl DesktopAppController {
             };
             let cdp = port.filter(|p| *p != 0).map(|port| CdpEndpoint {
                 port,
-                owner_verified: owner::check_owner(port, pid) == OwnerCheck::Verified,
+                owner_verified: self.caches.owner_check(port, pid, entry.started_at, || {
+                    owner::check_owner(port, pid)
+                }) == OwnerCheck::Verified,
             });
             out.push(AppSession {
                 app_server_exe: codexbin::app_server_exe(snap, pid),
@@ -331,9 +334,13 @@ impl DesktopAppController {
         };
         let port = ep.port;
         let pid = session.main_pid;
-        let check = tokio::task::spawn_blocking(move || owner::check_owner(port, pid))
-            .await
-            .unwrap_or(OwnerCheck::Unknown);
+        let started_at = session.started_at;
+        let caches = self.caches.clone();
+        let check = tokio::task::spawn_blocking(move || {
+            caches.owner_check(port, pid, started_at, || owner::check_owner(port, pid))
+        })
+        .await
+        .unwrap_or(OwnerCheck::Unknown);
         match check {
             OwnerCheck::Verified | OwnerCheck::Unknown => {}
             OwnerCheck::NotListening => {
@@ -533,6 +540,53 @@ impl AppController for DesktopAppController {
         Ok(self.pick_session(sessions))
     }
 
+    async fn session_and_processes(
+        &self,
+        home: &CodexHome,
+    ) -> (Result<Option<AppSession>>, Result<Vec<ProcessInfo>>) {
+        let snap = match snapshot_async(ReadOpts { environ: true }).await {
+            Ok(snap) => snap,
+            Err(e) => return (Err(e.clone()), Err(e)),
+        };
+        let this = self.clone();
+        let home = home.clone();
+        match tokio::task::spawn_blocking(move || {
+            (this.sessions_in(&snap), processes_for_home(&snap, &home))
+        })
+        .await
+        {
+            Ok((sessions, processes)) => (Ok(self.pick_session(sessions)), Ok(processes)),
+            Err(e) => {
+                let e = blocking_err(e);
+                (Err(e.clone()), Err(e))
+            }
+        }
+    }
+
+    fn environment_stamp(&self, installs: &[AppInstall], binaries: &[CodexBinary]) -> Option<u64> {
+        let key = watch::inputs_key(installs, binaries);
+        let mut cached = codexbin::lock(&self.caches.watch);
+        let paths = match cached.as_ref() {
+            Some((k, paths)) if *k == key => paths,
+            _ => {
+                let paths = watch::watch_paths(
+                    self.ctx.env.as_ref(),
+                    &self.ctx.home_dir,
+                    self.ctx.codex_home().root(),
+                    installs,
+                    binaries,
+                );
+                &cached.insert((key, paths)).1
+            }
+        };
+        Some(watch::metadata_stamp(paths))
+    }
+
+    fn forget_cached_probes(&self) {
+        install::forget_probe_caches();
+        self.caches.forget_owners();
+    }
+
     async fn launch(&self, options: &LaunchOptions) -> Result<AppSession> {
         if cfg!(windows) && options.env.contains_key(ENV_CODEX_CLI_PATH) {
             // Windows: packaged apps get no per-launch environment and a pinned
@@ -626,6 +680,8 @@ impl AppController for DesktopAppController {
                 let check = tokio::task::spawn_blocking(move || owner::check_owner(port, pid))
                     .await
                     .unwrap_or(OwnerCheck::Unknown);
+                self.caches
+                    .record_owner(port, pid, started_at, check.clone());
                 checked_endpoint(port, check)
             }
             None => None,

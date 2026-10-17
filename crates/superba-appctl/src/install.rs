@@ -611,10 +611,10 @@ pub fn explicit_install(env: &dyn EnvSource) -> Option<AppInstall> {
         .find_map(|path| inspect_install(Path::new(&path)))
 }
 
-struct CandidateRoots {
-    installs: Vec<PathBuf>,
-    desktop_dirs: Vec<PathBuf>,
-    scan_dirs: Vec<PathBuf>,
+pub(crate) struct CandidateRoots {
+    pub(crate) installs: Vec<PathBuf>,
+    pub(crate) desktop_dirs: Vec<PathBuf>,
+    pub(crate) scan_dirs: Vec<PathBuf>,
 }
 
 // macOS paths are fixed (no XDG or Windows variables), so it is unused there.
@@ -626,7 +626,7 @@ fn env_path(env: &dyn EnvSource, key: &str) -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "linux")]
-fn candidate_roots(env: &dyn EnvSource, home: &Path) -> CandidateRoots {
+pub(crate) fn candidate_roots(env: &dyn EnvSource, home: &Path) -> CandidateRoots {
     CandidateRoots {
         installs: [
             "/usr/lib/chatgpt",
@@ -658,7 +658,7 @@ fn candidate_roots(env: &dyn EnvSource, home: &Path) -> CandidateRoots {
 }
 
 #[cfg(target_os = "macos")]
-fn candidate_roots(_env: &dyn EnvSource, home: &Path) -> CandidateRoots {
+pub(crate) fn candidate_roots(_env: &dyn EnvSource, home: &Path) -> CandidateRoots {
     // Bundle metadata, rather than the displayed application name, identifies the app.
     CandidateRoots {
         installs: Vec::new(),
@@ -668,7 +668,7 @@ fn candidate_roots(_env: &dyn EnvSource, home: &Path) -> CandidateRoots {
 }
 
 #[cfg(target_os = "windows")]
-fn candidate_roots(env: &dyn EnvSource, home: &Path) -> CandidateRoots {
+pub(crate) fn candidate_roots(env: &dyn EnvSource, home: &Path) -> CandidateRoots {
     // MSIX roots are obtained separately from PowerShell.
     let local = env_path(env, "LOCALAPPDATA").unwrap_or_else(|| home.join("AppData/Local"));
     CandidateRoots {
@@ -679,7 +679,7 @@ fn candidate_roots(env: &dyn EnvSource, home: &Path) -> CandidateRoots {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn candidate_roots(_env: &dyn EnvSource, _home: &Path) -> CandidateRoots {
+pub(crate) fn candidate_roots(_env: &dyn EnvSource, _home: &Path) -> CandidateRoots {
     CandidateRoots {
         installs: Vec::new(),
         desktop_dirs: Vec::new(),
@@ -914,18 +914,44 @@ fn registry_appx_packages() -> Option<Vec<AppxPackage>> {
     readable.then(|| newest_appx_per_family(packages))
 }
 
+/// Subkey count and last write time of the MSIX package repository keys
+/// (`HKCU` and `HKLM`): they change when a package is added, updated or
+/// removed. One `RegQueryInfoKey` per hive, no enumeration.
+#[cfg(target_os = "windows")]
+pub(crate) fn registry_appx_stamp() -> Vec<(u32, u32, u32)> {
+    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    [
+        RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey(format!("Software\\Classes\\{APPX_REPOSITORY_KEY}")),
+        RegKey::predef(HKEY_LOCAL_MACHINE)
+            .open_subkey(format!("SOFTWARE\\Classes\\{APPX_REPOSITORY_KEY}")),
+    ]
+    .into_iter()
+    .map(|key| {
+        key.and_then(|k| k.query_info())
+            .map(|info| {
+                let at = &*info.last_write_time;
+                (info.sub_keys, at.dwHighDateTime, at.dwLowDateTime)
+            })
+            .unwrap_or_default()
+    })
+    .collect()
+}
+
 /// `Get-AppxPackage` through a hidden PowerShell: only when the registry cannot be
-/// read, and cached for [`APPX_FALLBACK_TTL`] so it is never run on every refresh.
+/// read, and then once until [`forget_probe_caches`] (an explicit refresh), so a
+/// detection repeated on a timer never starts PowerShell.
 #[cfg(target_os = "windows")]
 async fn powershell_appx_packages(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppxPackage> {
     use std::sync::Mutex;
-    use std::time::Instant;
 
-    static CACHE: Mutex<Option<(Instant, Vec<AppxPackage>)>> = Mutex::new(None);
-    const APPX_FALLBACK_TTL: Duration = Duration::from_secs(300);
+    static CACHE: Mutex<Option<(u64, Vec<AppxPackage>)>> = Mutex::new(None);
+    let epoch = probe_epoch();
     if let Ok(cache) = CACHE.lock()
         && let Some((at, packages)) = cache.as_ref()
-        && at.elapsed() < APPX_FALLBACK_TTL
+        && *at == epoch
     {
         return packages.clone();
     }
@@ -961,7 +987,7 @@ async fn powershell_appx_packages(env: &dyn EnvSource, home_dir: &Path) -> Vec<A
         }
     };
     if let Ok(mut cache) = CACHE.lock() {
-        *cache = Some((Instant::now(), packages.clone()));
+        *cache = Some((epoch, packages.clone()));
     }
     packages
 }
@@ -1027,45 +1053,76 @@ pub async fn detect_installs(env: &dyn EnvSource, home_dir: &Path) -> Vec<AppIns
     unique
 }
 
+/// Bumped by [`forget_probe_caches`]: cached probe answers from an earlier epoch
+/// are asked again.
+static PROBE_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The current probe epoch.
+pub(crate) fn probe_epoch() -> u64 {
+    PROBE_EPOCH.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Forget every remembered `--version` answer (and, on Windows, the PowerShell
+/// package list): the next detection asks each binary again. For an explicit
+/// refresh only; detection on a timer relies on file stamps instead.
+pub fn forget_probe_caches() {
+    PROBE_EPOCH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// What identifies the answer of `binary --version`: the stamp of the file and,
+/// for a launcher script, of the program it runs.
+fn version_key(
+    binary: &Path,
+) -> Option<(
+    crate::codexbin::FileStamp,
+    Option<crate::codexbin::FileStamp>,
+)> {
+    let own = crate::codexbin::FileStamp::of(binary)?;
+    let target = crate::codexid::resolve_binary(binary);
+    let target = (target != binary)
+        .then(|| crate::codexbin::FileStamp::of(&target))
+        .flatten();
+    Some((own, target))
+}
+
 /// Run the supplied binary with `--version`, null stdin and a five-second deadline.
 /// A launcher script is not run when the program it execs is known
 /// ([`crate::codexid::resolve_binary`]): that program is asked, and the
 /// launcher only if it does not answer.
 /// A timed-out child is killed; unsuccessful commands and unparseable output yield `None`.
 ///
-/// Results are remembered per binary file (path, size, mtime) for ten minutes (a
-/// failed probe for one), so the same binary is not spawned again on every overview
-/// refresh. A rewritten binary has a new stamp and is probed again at once.
+/// Answers (also "no answer") are remembered per binary file and, for a
+/// launcher, the program it runs (path, size, mtime) until
+/// [`forget_probe_caches`]: the same file always reports the same version, so a
+/// detection repeated on a timer spawns nothing, and an updated binary (new
+/// stamp) is asked again at once.
 pub async fn codex_version(binary: &Path) -> Option<CodexVersion> {
     use std::sync::Mutex;
-    use std::time::Instant;
 
-    type Cache = Mutex<HashMap<crate::codexbin::FileStamp, (Instant, Option<CodexVersion>)>>;
+    type Key = (
+        crate::codexbin::FileStamp,
+        Option<crate::codexbin::FileStamp>,
+    );
+    type Cache = Mutex<HashMap<Key, (u64, Option<CodexVersion>)>>;
     static CACHE: std::sync::LazyLock<Cache> = std::sync::LazyLock::new(Default::default);
-    const VERSION_KEEP: Duration = Duration::from_secs(600);
-    const VERSION_RETRY: Duration = Duration::from_secs(60);
 
-    let stamp = crate::codexbin::FileStamp::of(binary);
-    if let Some(stamp) = &stamp
+    let epoch = probe_epoch();
+    let key = version_key(binary);
+    if let Some(key) = &key
         && let Ok(cache) = CACHE.lock()
-        && let Some((at, version)) = cache.get(stamp)
-        && at.elapsed()
-            < if version.is_some() {
-                VERSION_KEEP
-            } else {
-                VERSION_RETRY
-            }
+        && let Some((at, version)) = cache.get(key)
+        && *at == epoch
     {
         return version.clone();
     }
     let version = probe_codex_version(binary).await;
-    if let Some(stamp) = stamp
+    if let Some(key) = key
         && let Ok(mut cache) = CACHE.lock()
     {
         if cache.len() >= 256 {
             cache.clear();
         }
-        cache.insert(stamp, (Instant::now(), version.clone()));
+        cache.insert(key, (epoch, version.clone()));
     }
     version
 }

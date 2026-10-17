@@ -174,6 +174,40 @@ fn extra_directories(env: &dyn EnvSource, home: &Path) -> Vec<PathBuf> {
     directories
 }
 
+/// The directories [`find_codex_binaries`] looks in besides PATH, without
+/// listing any of them: a directory whose children are searched (nvm's node
+/// versions, the app's `Codex/bin`) stands for them (its modification time
+/// changes when a child is added or removed). For change checks.
+pub(crate) fn watched_directories(env: &dyn EnvSource, home: &Path) -> Vec<PathBuf> {
+    let mut directories = vec![
+        home.join(".npm-global/bin"),
+        home.join(".local/bin"),
+        home.join(".cargo/bin"),
+        home.join(".nvm/versions/node"),
+    ];
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    directories.extend(
+        [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/home/linuxbrew/.linuxbrew/bin",
+        ]
+        .map(PathBuf::from),
+    );
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = env.var_os("APPDATA").filter(|value| !value.is_empty()) {
+            directories.push(PathBuf::from(appdata).join("npm"));
+        }
+        if let Some(local) = env.var_os("LOCALAPPDATA").filter(|value| !value.is_empty()) {
+            directories.push(PathBuf::from(local).join("OpenAI/Codex/bin"));
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = env;
+    directories
+}
+
 struct Discovery<'a> {
     installs: &'a [AppInstall],
     seen: HashMap<PathBuf, usize>,
