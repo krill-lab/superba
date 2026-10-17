@@ -69,13 +69,14 @@ pub(crate) fn pick_profile<'a>(
 impl Switcher {
     async fn local_settings_inputs(&self) -> (Vec<SettingsConsumer>, Option<Vec<u8>>) {
         let d = &self.deps;
-        let installs = d.app.detect_installs().await.unwrap_or_default();
+        let facts = self.monitor.facts().await;
+        let installs = facts.installs.clone();
         // The app's pinned Codex reads the home when one is set.
         let installs = match d.profiles.load().await {
             Ok(set) => self.effective_installs(installs, &set).await,
             Err(_) => installs,
         };
-        let binaries = d.app.codex_binaries().await.unwrap_or_default();
+        let binaries = facts.binaries.clone();
         let consumers = local_consumers(None, &installs, &binaries);
         let bytes = tokio::fs::read(d.ctx.codex_home().config_toml()).await.ok();
         (consumers, bytes)

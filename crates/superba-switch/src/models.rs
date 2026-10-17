@@ -1146,10 +1146,9 @@ impl Switcher {
             .ok_or_else(|| Error::NotFound {
                 what: format!("site {}", profile.site_id),
             })?;
-        let installs = self
-            .effective_installs(d.app.detect_installs().await.unwrap_or_default(), &set)
-            .await;
-        let binaries = d.app.codex_binaries().await.unwrap_or_default();
+        let facts = self.monitor.facts().await;
+        let installs = self.effective_installs(facts.installs.clone(), &set).await;
+        let binaries = facts.binaries.clone();
         let install_id = set.settings.preferred_app_id.clone();
         let (app, _) = local_codexes(install_id.as_deref(), &installs, &binaries);
         let app_version = app.as_ref().and_then(|a| a.version.clone());

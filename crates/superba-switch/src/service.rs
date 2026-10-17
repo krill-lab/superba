@@ -477,8 +477,12 @@ impl Switcher {
             .await
             .ok()
             .flatten();
-        let installs = d.app.detect_installs().await.unwrap_or_default();
-        let session = d.app.running_session().await.ok().flatten();
+        // Slow facts from the environment monitor's snapshot (no detection on
+        // this polled path); fast facts from one look at the process table.
+        let facts = self.monitor.facts().await;
+        let installs = facts.installs.clone();
+        let (session, processes) = d.app.session_and_processes(&home).await;
+        let session = session.ok().flatten();
         let hot_switch = match &session {
             None if installs.is_empty() => HotSwitchStatus::NotInstalled,
             None => HotSwitchStatus::NotRunning,
@@ -505,9 +509,9 @@ impl Switcher {
             })
             .map(|l| l.id.clone());
         let active = config.as_ref().and_then(|c| c.active.clone());
-        let mut processes = d.app.processes(&home).await.unwrap_or_default();
+        let mut processes = processes.unwrap_or_default();
         rules::mark_stale(&mut processes, active.as_ref().map(|a| a.applied_at));
-        let binaries = d.app.codex_binaries().await.unwrap_or_default();
+        let binaries = facts.binaries.clone();
         let remotes = {
             let live: Vec<_> = processes
                 .iter()

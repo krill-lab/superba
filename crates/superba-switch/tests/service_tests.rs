@@ -349,7 +349,14 @@ async fn overview_reports_hot_switch_status_and_the_auth_line() {
         sw.overview().await.unwrap().app.hot_switch,
         HotSwitchStatus::NotRunning
     );
+    // Installs are a slow fact of the environment monitor: the overview sees
+    // the uninstall after the monitor detects again (here: an explicit refresh).
     w.app.installs.lock().unwrap().clear();
+    assert_eq!(
+        sw.overview().await.unwrap().app.hot_switch,
+        HotSwitchStatus::NotRunning
+    );
+    sw.environment_event(superba_core::EnvironmentEvent::Refresh);
     assert_eq!(
         sw.overview().await.unwrap().app.hot_switch,
         HotSwitchStatus::NotInstalled

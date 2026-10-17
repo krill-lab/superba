@@ -559,7 +559,12 @@ impl Switcher {
         let store = self.version_store(&set);
         let mut notes = Vec::new();
         let mut online_ok = false;
-        let installs = d.app.detect_installs().await.unwrap_or_default();
+        // "Check now" also looks at this machine again.
+        if refresh {
+            self.monitor.invalidate();
+        }
+        let facts = self.monitor.facts().await;
+        let installs = facts.installs.clone();
         let install = Self::preferred_install(&set, &installs).cloned();
 
         // The ChatGPT app.
@@ -621,7 +626,7 @@ impl Switcher {
             None => None,
         };
         let mut stored: Vec<StoredCodex> = store.stored().await.unwrap_or_default();
-        let binaries = d.app.codex_binaries().await.unwrap_or_default();
+        let binaries = facts.binaries.clone();
         for s in &mut stored {
             s.pinned = matches!(&pin, AppCodexPin::Version { version } if version == &s.version);
             s.in_use = effective_exe

@@ -29,6 +29,7 @@ pub mod journal;
 pub mod machine;
 pub mod messages;
 pub mod models;
+pub mod monitor;
 pub mod planner;
 pub mod router;
 pub mod router_doctor;
@@ -376,6 +377,9 @@ pub struct Switcher {
     /// The language the UI reported ([`SwitchService::set_ui_locale`]); the
     /// default stats line template is resolved in it.
     reported_locale: Arc<Mutex<Option<superba_core::Locale>>>,
+    /// The environment monitor: installs and Codex binaries for the views
+    /// ([`monitor`]).
+    monitor: monitor::EnvMonitor,
 }
 
 /// Execution context of computed plans, keyed by plan id (things the serializable
@@ -418,6 +422,7 @@ impl Switcher {
         let usage = Arc::new(std::sync::Mutex::new(
             superba_sessions::usage::UsageIndex::new(deps.ctx.codex_home()),
         ));
+        let monitor = monitor::EnvMonitor::new(deps.app.clone(), monitor::MonitorTuning::default());
         Self {
             deps,
             tuning,
@@ -430,7 +435,19 @@ impl Switcher {
             pin_override: Arc::new(Mutex::new(None)),
             usage,
             reported_locale: Arc::new(Mutex::new(None)),
+            monitor,
         }
+    }
+
+    /// Replace the environment monitor's intervals (before it is used).
+    pub fn with_monitor_tuning(mut self, tuning: monitor::MonitorTuning) -> Self {
+        self.monitor = monitor::EnvMonitor::new(self.deps.app.clone(), tuning);
+        self
+    }
+
+    /// The environment monitor.
+    pub fn monitor(&self) -> &monitor::EnvMonitor {
+        &self.monitor
     }
 
     /// Dependencies.
@@ -681,7 +698,10 @@ impl SwitchService for Switcher {
         request: superba_core::InstallRequest,
     ) -> Result<superba_core::InstallReport> {
         self.refuse_elevated()?;
-        self.install_codex_impl(request).await
+        let result = self.install_codex_impl(request).await;
+        // A new or replaced Codex binary: the views read it after this.
+        self.monitor.invalidate();
+        result
     }
 
     async fn rollback_codex(
@@ -689,7 +709,9 @@ impl SwitchService for Switcher {
         target: superba_core::InstallTarget,
     ) -> Result<superba_core::InstallReport> {
         self.refuse_elevated()?;
-        self.rollback_codex_impl(target).await
+        let result = self.rollback_codex_impl(target).await;
+        self.monitor.invalidate();
+        result
     }
 
     async fn download_app_update(&self) -> Result<superba_core::AppDownloadReport> {
@@ -737,6 +759,14 @@ impl SwitchService for Switcher {
 
     async fn set_ui_locale(&self, locale: superba_core::Locale) -> Result<()> {
         self.set_ui_locale_impl(locale).await
+    }
+
+    fn environment_event(&self, event: superba_core::EnvironmentEvent) {
+        self.monitor.event(event);
+    }
+
+    fn environment_generation(&self) -> u64 {
+        self.monitor.generation()
     }
 
     async fn price_table(&self) -> Result<superba_core::PriceTable> {
@@ -795,6 +825,9 @@ impl SwitchService for Switcher {
         decider: Arc<dyn SwitchDecider>,
         events: Arc<dyn SwitchEvents>,
     ) -> Result<SwitchOutcome> {
-        self.execute_impl(plan, options, decider, events).await
+        let result = self.execute_impl(plan, options, decider, events).await;
+        // A switch can pin, launch or install: the views read the machine again.
+        self.monitor.invalidate();
+        result
     }
 }
