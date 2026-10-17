@@ -814,6 +814,16 @@ pub trait SwitchService: Send + Sync {
     /// GUI calls this every few seconds; `spb router watch` in a loop.
     async fn router_watch(&self) -> Result<RouterWatch>;
 
+    /// Everything about the local router for a support request: the program
+    /// and its macOS state (quarantine, translocation, signature), the service
+    /// definition and the service manager's view (`launchctl print` on macOS),
+    /// configuration and keys (present or missing only), port and health, the
+    /// end of the log, which providers can be members and why, and the
+    /// problems found. Read-only; never a key or token.
+    async fn router_doctor(&self) -> Result<crate::RouterDoctorReport> {
+        Err(crate::Error::not_implemented("router doctor"))
+    }
+
     /// Identity, balance and (on request) usage of a profile's key from the
     /// standard account endpoints. Each part is optional and fails independently;
     /// never blocks or changes anything.

@@ -409,3 +409,80 @@ pub struct RouterWatch {
     #[serde(default)]
     pub error: Option<crate::Error>,
 }
+
+/// `spb router doctor` and the Router page's Diagnostics: everything needed to
+/// see why the local router does not start, as one block a user can paste into
+/// a support request. Built by the switch service; never holds a key or token.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterDoctorReport {
+    /// Heading (Superba version, platform).
+    pub title: LocalizedText,
+    /// Problems found, most important first, each saying what to do.
+    #[serde(default)]
+    pub findings: Vec<crate::i18n::Notice>,
+    /// Facts in display order.
+    #[serde(default)]
+    pub sections: Vec<RouterDoctorSection>,
+    /// The command that runs the router in a terminal exactly as the service
+    /// does (program and arguments), for `spb router doctor --foreground`.
+    #[serde(default)]
+    pub foreground: Vec<String>,
+}
+
+/// One part of a [`RouterDoctorReport`].
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterDoctorSection {
+    /// Heading.
+    pub title: LocalizedText,
+    /// Label / value rows.
+    #[serde(default)]
+    pub rows: Vec<RouterDoctorRow>,
+    /// Verbatim lines (command output, the end of the log).
+    #[serde(default)]
+    pub lines: Vec<String>,
+}
+
+/// One fact.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterDoctorRow {
+    /// What it is.
+    pub label: LocalizedText,
+    /// Its value (paths and command output are passed verbatim as arguments).
+    pub value: LocalizedText,
+}
+
+impl RouterDoctorReport {
+    /// Plain text with `render` resolving the texts: the heading, the findings
+    /// (`!` for problems, `-` for notes), then each section with its rows and
+    /// lines indented. Meant to be copied as a whole.
+    pub fn render_text(&self, render: &dyn Fn(&LocalizedText) -> String) -> String {
+        let mut out = render(&self.title);
+        out.push('\n');
+        if !self.findings.is_empty() {
+            out.push('\n');
+            for f in &self.findings {
+                let mark = match f.severity {
+                    crate::i18n::Severity::Info => '-',
+                    _ => '!',
+                };
+                out.push_str(&format!("{mark} {}\n", render(&f.text)));
+            }
+        }
+        for section in &self.sections {
+            out.push_str(&format!("\n[{}]\n", render(&section.title)));
+            for row in &section.rows {
+                out.push_str(&format!(
+                    "  {}: {}\n",
+                    render(&row.label),
+                    render(&row.value)
+                ));
+            }
+            for line in &section.lines {
+                out.push_str("    ");
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        out
+    }
+}
