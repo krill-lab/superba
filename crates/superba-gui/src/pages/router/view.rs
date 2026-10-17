@@ -72,7 +72,7 @@ pub(super) fn router_column(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &m
             // Turning it on installs / starts the service first when needed (like
             // `spb router enable`); it needs a member with an API key.
             let starting = state.op.as_ref().is_some_and(|(op, _)| *op == Op::Start);
-            let eligible = super::eligibility::has_eligible_member(cx);
+            let eligible = super::eligibility::has_eligible_member(cx, state);
             let enabled = request.is_ok()
                 && !cx.busy
                 && state.op.is_none()
@@ -224,6 +224,16 @@ fn service_and_status(
                 state.start(cx, Op::Uninstall, |b| b.uninstall());
             }
         });
+    }
+    if let Some(path) = &snapshot.network_exe {
+        // The Run key starts the program at sign-in, before the share is
+        // connected (user bug 39: \\Mac\Home\... of a Parallels shared folder).
+        note(
+            ui,
+            cx,
+            Status::Warn,
+            cx.tr.f("router.service.network_exe", &[("path", path)]),
+        );
     }
     // Process.
     kv(ui, cx, &cx.tr.t("router.process"), |ui| {

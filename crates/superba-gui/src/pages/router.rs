@@ -249,8 +249,15 @@ impl State {
             let op = *op;
             self.op = None;
             match result {
-                Ok(()) if op == Op::Start => self.ready_plan = self.then_plan.take(),
-                Ok(()) => {}
+                Ok(()) => {
+                    if op == Op::Start {
+                        self.ready_plan = self.then_plan.take();
+                    }
+                    // The members (and the service) changed: the shell's copy
+                    // of the profile set too, not only this page's snapshot
+                    // (user bug 39).
+                    out.push(Action::Refresh);
+                }
                 Err(e) => {
                     self.then_plan = None;
                     self.op_error = Some(super::error_text(cx.tr, &e));
@@ -528,19 +535,11 @@ fn banner(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     } else {
         (Status::Idle, cx.tr.t("router.banner.off"))
     };
-    let members = state
-        .snapshot
-        .as_ref()
-        .is_some_and(|s| !s.members.is_empty())
-        || cx
-            .data
-            .profiles
-            .value
-            .as_ref()
-            .is_some_and(|p| !p.settings.router.members.is_empty());
+    let members = eligibility::has_members(cx, state);
     // Members alone are not enough: one must have a key the router can send
     // as an API key (user bug 28); the panel below says why and how to fix it.
-    let eligible = eligibility::has_eligible_member(cx);
+    // Both come from the snapshot that lists the members (user bug 39).
+    let eligible = eligibility::has_eligible_member(cx, state);
     let button = (!on).then(|| {
         (
             cx.tr.t("router.banner.turn_on"),
@@ -686,19 +685,20 @@ fn page_command(page: Page, command: &str) -> Action {
 /// tabs and recording (Usage).
 pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
     let on = mode(cx).is_router();
-    let members = cx
-        .data
-        .profiles
-        .value
-        .as_ref()
-        .is_some_and(|p| !p.settings.router.members.is_empty());
+    let members = eligibility::has_members(cx, state);
+    let ready = members && eligibility::has_eligible_member(cx, state);
     let keywords = || vec!["router".into(), "failover".into(), "proxy".into()];
     let mut items = Vec::new();
-    if !on && !members {
-        // Nothing to turn on yet: the Router page explains how to add members.
+    if !on && !ready {
+        // Nothing to turn on yet: the Router page explains how to add members
+        // (or why none can carry traffic), as the disabled 开启 does.
         items.push(PaletteItem {
             title: cx.tr.t("router.palette.setup"),
-            detail: Some(cx.tr.t("router.needs_member")),
+            detail: Some(cx.tr.t(if members {
+                "router.eligibility.none"
+            } else {
+                "router.needs_member"
+            })),
             keywords: keywords(),
             group: PaletteGroup::Router,
             action: Action::Go(Page::Router),

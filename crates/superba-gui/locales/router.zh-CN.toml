@@ -55,6 +55,7 @@ install = "安装并启动"
 reinstall = "重新安装"
 restart = "重启"
 install_hint = "安装保持路由运行的用户级后台服务并启动它。"
+network_exe = "路由程序在网络共享上（{path}）：后台服务在登录时启动它，那时共享常常还没连上，路由就起不来。请用 MSI 安装 Superba（或复制到本机文件夹）。"
 
 [router.live]
 up = "正在应答"

@@ -17,6 +17,7 @@ use superba_core::{
 use superba_router::manager::{RouterManager, current_router_exe};
 use superba_router::watchdog::Liveness;
 use superba_router::{RouteEventKind, RouterStatus};
+use superba_switch::router_doctor::{RouterCandidate, router_candidates};
 
 use super::model::{
     Candidate, EventView, LineHealth, LineMetrics, LineView, Live, MemberKind, MemberView,
@@ -51,6 +52,9 @@ pub struct SystemRouter {
     service: Arc<dyn SwitchService>,
     /// Read-only access to the service manager and the admin API.
     manager: Option<Arc<RouterManager>>,
+    /// The router program, when it lives on a network share (checked once:
+    /// the program does not move while Superba runs).
+    network_exe: Option<String>,
 }
 
 impl std::fmt::Debug for SystemRouter {
@@ -71,6 +75,11 @@ pub fn default_backend(cx: &Cx<'_>) -> Option<Arc<dyn RouterBackend>> {
     });
     Some(Arc::new(SystemRouter {
         service: cx.service.clone(),
+        network_exe: manager
+            .as_ref()
+            .map(|m| m.spec().exe.clone())
+            .filter(|exe| superba_router::manager::is_network_location(exe))
+            .map(|exe| exe.display().to_string()),
         manager,
     }))
 }
@@ -226,6 +235,21 @@ pub fn candidates(sites: &[Site], profiles: &ProfileSet, members: &[ProfileId]) 
     out
 }
 
+/// Every provider as a possible member, with the members this snapshot lists
+/// (`view.settings.members`): the 开启 gate and its explanation read the same
+/// load as the member list, never the shell's older copy of the profile set
+/// (user bug 39: a member added on this page or with `spb` was listed, yet 开启
+/// stayed disabled with "添加 Krill 为成员").
+pub fn eligibility(
+    view: &RouterView,
+    sites: &[Site],
+    profiles: &ProfileSet,
+) -> Vec<RouterCandidate> {
+    let mut set = profiles.clone();
+    set.settings.router.members = view.settings.members.clone();
+    router_candidates(&set, sites)
+}
+
 /// Custom sites without a profile that has a key (they cannot be members yet).
 pub fn keyless_sites(sites: &[Site], profiles: &ProfileSet) -> Vec<String> {
     sites
@@ -313,6 +337,7 @@ impl SystemRouter {
         Self {
             service,
             manager: None,
+            network_exe: None,
         }
     }
 
@@ -320,6 +345,7 @@ impl SystemRouter {
         SystemRouter {
             service: self.service.clone(),
             manager: self.manager.clone(),
+            network_exe: self.network_exe.clone(),
         }
     }
 
@@ -390,11 +416,13 @@ impl RouterBackend for SystemRouter {
             Ok(Snapshot {
                 keyless: keyless_sites(&sites, &profiles),
                 candidates: candidates(&sites, &profiles, &view.settings.members),
+                eligibility: eligibility(&view, &sites, &profiles),
                 members,
                 service,
                 live,
                 port: view.port,
                 recording: view.stats.clone(),
+                network_exe: this.network_exe.clone(),
             })
         })
     }

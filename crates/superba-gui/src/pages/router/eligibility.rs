@@ -5,6 +5,13 @@
 //! none (or is set to PAT only), which opens the Providers page key field.
 //! The rules are the switch service's ([`superba_switch::router_doctor`]), so
 //! the page, `spb router enable` and `spb router doctor` say the same thing.
+//!
+//! The facts come from the page's own snapshot, loaded together with the member
+//! list it shows (user bug 39: the gate read the shell's copy of the profile
+//! set, loaded at start and not after a member was added here or with `spb`,
+//! so Krill was listed as member #1 while the panel offered to add it and 开启
+//! stayed disabled). The shell's copy is only the fallback before the first
+//! snapshot.
 
 use egui::{Align, Layout, Ui};
 use superba_core::SiteKind;
@@ -16,9 +23,12 @@ use crate::design::icons::Icon;
 use crate::design::widgets::{Button, Status, StatusDot, Text};
 use crate::pages::{Action, Cx, Page};
 
-/// Every provider as a possible member, from the loaded profiles and sites
-/// (empty while the profiles load).
-pub fn candidates(cx: &Cx<'_>) -> Vec<RouterCandidate> {
+/// Every provider as a possible member: the snapshot's (loaded with the member
+/// list), else from the shell's profiles and sites (empty while they load).
+pub fn candidates(cx: &Cx<'_>, state: &State) -> Vec<RouterCandidate> {
+    if let Some(s) = &state.snapshot {
+        return s.eligibility.clone();
+    }
     cx.data
         .profiles
         .value
@@ -27,11 +37,25 @@ pub fn candidates(cx: &Cx<'_>) -> Vec<RouterCandidate> {
         .unwrap_or_default()
 }
 
-/// At least one member can carry traffic. `true` while the profiles load, so
-/// nothing flickers disabled at start.
-pub fn has_eligible_member(cx: &Cx<'_>) -> bool {
-    cx.data.profiles.value.is_none()
-        || superba_switch::router_doctor::has_eligible_member(&candidates(cx))
+/// At least one member can carry traffic (the one rule:
+/// [`superba_switch::router_doctor::has_eligible_member`]). `true` while
+/// nothing is loaded yet, so nothing flickers disabled at start.
+pub fn has_eligible_member(cx: &Cx<'_>, state: &State) -> bool {
+    (state.snapshot.is_none() && cx.data.profiles.value.is_none())
+        || superba_switch::router_doctor::has_eligible_member(&candidates(cx, state))
+}
+
+/// The router has members (the snapshot's list, else the shell's settings).
+pub fn has_members(cx: &Cx<'_>, state: &State) -> bool {
+    match &state.snapshot {
+        Some(s) => !s.members.is_empty(),
+        None => cx
+            .data
+            .profiles
+            .value
+            .as_ref()
+            .is_some_and(|p| !p.settings.router.members.is_empty()),
+    }
 }
 
 /// The page command that opens the key field for `c` on the Providers page.
@@ -56,10 +80,10 @@ fn as_member(cx: &Cx<'_>, c: &RouterCandidate) -> Option<Candidate> {
 
 /// The explanation and the fixes; draws nothing when a member is eligible.
 pub fn panel(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    if has_eligible_member(cx) {
+    if has_eligible_member(cx, state) {
         return;
     }
-    let all = candidates(cx);
+    let all = candidates(cx, state);
     let busy = cx.busy || state.op.is_some();
     egui::Frame::new()
         .fill(cx.pal.surface)

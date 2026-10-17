@@ -56,6 +56,7 @@ install = "Install and start"
 reinstall = "Reinstall"
 restart = "Restart"
 install_hint = "Install the per-user background service that keeps the router running, and start it."
+network_exe = "The router program is on a network share ({path}): the background service starts it when you sign in, often before the share is connected, and then the router does not start. Install Superba with the MSI (or copy it to a local folder)."
 
 [router.live]
 up = "Answering"

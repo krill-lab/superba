@@ -246,6 +246,12 @@ pub struct Snapshot {
     pub port: Option<u16>,
     /// Request recording counters of the running router.
     pub recording: Option<superba_core::RouterStatsStatus>,
+    /// Every provider as a possible member with its eligibility, from the same
+    /// profile set as `members` (the gate of 开启; user bug 39).
+    pub eligibility: Vec<superba_switch::router_doctor::RouterCandidate>,
+    /// The router program, when it lives on a network share (a Windows UNC
+    /// path or mapped network drive): the service may not start at login.
+    pub network_exe: Option<String>,
 }
 
 /// Move the member at `from` one step up (`up = true`) or down; returns the new
