@@ -109,7 +109,8 @@ pub fn router_exe_candidates_for(
         push(router_exe_next_to(&real));
     }
     if macos {
-        let in_bundle = |app: PathBuf| app.join("Contents").join("MacOS").join(&name);
+        // A macOS bundle's program never has the host's `.exe` suffix.
+        let in_bundle = |app: PathBuf| app.join("Contents").join("MacOS").join("superba-router");
         if let Some(dir) = current_exe.parent() {
             push(in_bundle(dir.join("Superba.app")));
         }

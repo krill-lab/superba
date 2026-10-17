@@ -306,8 +306,12 @@ impl Mac {
     }
 
     fn plist(&self) -> PathBuf {
+        // Joined like the service does (directory, then file): the bootstrap
+        // command line is compared as text, and on Windows a `/` inside one
+        // join and a `\` between two do not compare equal.
         self.home
-            .join("Library/LaunchAgents/com.krill.superba.router.plist")
+            .join("Library/LaunchAgents")
+            .join("com.krill.superba.router.plist")
     }
 
     fn router(&self) -> RouterManager {
