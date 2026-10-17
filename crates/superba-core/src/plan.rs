@@ -866,6 +866,12 @@ pub enum SwitchEvent {
         /// Message.
         text: LocalizedText,
     },
+    /// Sessions are being migrated or restored (several reports a second while
+    /// they move, a last one at [`crate::SessionStage::Done`]).
+    Sessions {
+        /// Progress.
+        progress: crate::SessionProgress,
+    },
 }
 
 /// A question asked by `execute` through [`crate::SwitchDecider`].

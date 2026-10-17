@@ -101,6 +101,7 @@ fn user_set() -> ProfileSet {
         router: Default::default(),
         auto_update_check: false,
         include_prereleases: true,
+        reduce_motion: true,
     };
     set
 }

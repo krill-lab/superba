@@ -245,6 +245,10 @@ pub struct Settings {
     /// Also offer pre-releases of Superba. Off by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub include_prereleases: bool,
+    /// Reduce motion: animated scenes (the session migration dialog) show a
+    /// still frame. Off by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub reduce_motion: bool,
 }
 
 fn default_true() -> bool {
@@ -278,6 +282,7 @@ impl Default for Settings {
             app_codex: AppCodexSettings::default(),
             auto_update_check: true,
             include_prereleases: false,
+            reduce_motion: false,
         }
     }
 }

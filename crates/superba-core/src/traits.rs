@@ -73,6 +73,7 @@ use crate::requests::{
 };
 use crate::router::{RouterInstallRequest, RouterStatsSettings, RouterView, RouterWatch};
 use crate::secret::{KeyRef, Secret, SecretBackend, SecretBytes};
+use crate::session_progress::SessionProgressSink;
 use crate::sessions::{
     ConsumersStopped, HostSessions, MigrationPlan, MigrationReceipt, MigrationRequest,
     RollbackReport, SessionReport, SessionTitle,
@@ -444,6 +445,34 @@ pub trait SessionMigrator: Send + Sync {
         let _ = stopped;
         self.recover(home).await
     }
+
+    /// `migrate_stopped` reporting its progress to `progress`. When the sink
+    /// asks to stop while [`crate::SessionProgress::can_stop`], everything done
+    /// so far is undone and the call fails with [`crate::Error::Cancelled`].
+    /// Default: `migrate_stopped` without reports.
+    async fn migrate_stopped_with_progress(
+        &self,
+        home: &CodexHome,
+        plan: &MigrationPlan,
+        stopped: &ConsumersStopped,
+        progress: Arc<dyn SessionProgressSink>,
+    ) -> Result<MigrationReceipt> {
+        let _ = progress;
+        self.migrate_stopped(home, plan, stopped).await
+    }
+
+    /// `rollback_stopped` reporting its progress to `progress` (a rollback never
+    /// stops half-way). Default: `rollback_stopped` without reports.
+    async fn rollback_stopped_with_progress(
+        &self,
+        home: &CodexHome,
+        migration_id: &str,
+        stopped: &ConsumersStopped,
+        progress: Arc<dyn SessionProgressSink>,
+    ) -> Result<RollbackReport> {
+        let _ = progress;
+        self.rollback_stopped(home, migration_id, stopped).await
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -680,6 +709,15 @@ pub struct ModelListRequest<'a> {
 pub trait SwitchEvents: Send + Sync {
     /// Handle one event.
     fn emit(&self, event: SwitchEvent);
+
+    /// The user asked to stop the session migration in progress. Polled while
+    /// sessions move; honoured only while the latest
+    /// [`SwitchEvent::Sessions`] report says
+    /// [`can_stop`](crate::SessionProgress::can_stop) (everything is then
+    /// undone and the switch ends as cancelled). Default: never.
+    fn stop_requested(&self) -> bool {
+        false
+    }
 }
 
 /// An [`SwitchEvents`] sink that drops everything.
