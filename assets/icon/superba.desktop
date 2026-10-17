@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Superba
+Comment=Switch Codex between model providers
+Exec=superba
+Icon=superba
+Terminal=false
+Categories=Development;Utility;
+StartupWMClass=superba

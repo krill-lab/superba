@@ -49,7 +49,15 @@ Linux tarballs
 and the macOS ZIP contain a directory matching the archive basename. The DMG
 places the listed items at its root. The GNU tarball directory
 is `superba-<ver>-linux-<arch>/`; the musl directory is
-`spb-<ver>-linux-x86_64-musl/`.
+`spb-<ver>-linux-x86_64-musl/`. The GNU tarball also holds `superba.desktop` and
+`icons/hicolor/<N>x<N>/apps/superba.png` (16 to 512 px): copy `icons/` to
+`~/.local/share/icons/` and the desktop file to `~/.local/share/applications/`.
+
+App icon: `assets/icon/superba.svg` is the master; `scripts/icons/render.sh`
+regenerates `assets/icon/png/*.png`, `assets/icon/superba.ico` (embedded in
+`superba.exe`/`spb.exe` by each crate's `build.rs`, and used by the MSI) and
+`scripts/release/Superba.icns` (picked up by `macos-bundle.sh`) with a pure-Rust
+renderer (resvg). Re-run it and commit the outputs after changing the SVG.
 
 Build jobs never see signing secrets: they have no environment, no secrets and no
 build cache, and hand the unsigned macOS app and Windows binaries to two signing

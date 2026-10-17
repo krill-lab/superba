@@ -1,0 +1,14 @@
+# Throwaway generator for the Superba icon rasters; not part of the workspace.
+[package]
+name = "superba-icon-render"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+resvg = { version = "0.45", default-features = false }
+ico = "0.4"
+icns = "0.3"
+png = "0.17"

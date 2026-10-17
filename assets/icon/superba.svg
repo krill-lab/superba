@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">superba — Pearl</title><desc id="desc">A sculpted coral krill on a softly lit pearl-white rounded tile, with a subtle sea-blue accent.</desc>
+<defs>
+<linearGradient id="base" x1="240" y1="48" x2="790" y2="976" gradientUnits="userSpaceOnUse"><stop offset="0.000" stop-color="#FFFFFF"/><stop offset="0.500" stop-color="#F4F6FA"/><stop offset="1.000" stop-color="#DFE6F0"/></linearGradient>
+<linearGradient id="mark" x1="380" y1="105" x2="630" y2="845" gradientUnits="userSpaceOnUse"><stop offset="0.000" stop-color="#FF9A65"/><stop offset="0.500" stop-color="#FF6277"/><stop offset="1.000" stop-color="#EB327F"/></linearGradient>
+<linearGradient id="edge" x1="512" y1="48" x2="512" y2="976" gradientUnits="userSpaceOnUse"><stop stop-color="#fff" stop-opacity=".8"/><stop offset=".45" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#71869E" stop-opacity=".30"/></linearGradient>
+<radialGradient id="light" cx=".28" cy=".05" r=".9"><stop stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<filter id="baseShadow" x="-15%" y="-15%" width="130%" height="140%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#0B1730" flood-opacity=".20"/></filter>
+<filter id="markShadow" x="-25%" y="-25%" width="150%" height="160%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#D33670" flood-opacity=".22"/></filter>
+<clipPath id="tile"><rect x="48" y="48" width="928" height="928" rx="208"/></clipPath>
+</defs>
+<rect x="48" y="48" width="928" height="928" rx="208" fill="url(#base)" filter="url(#baseShadow)"/>
+<g clip-path="url(#tile)"><rect x="48" y="48" width="928" height="928" fill="url(#light)"/><ellipse cx="512" cy="934" rx="384" ry="77" fill="#CCE6F8" opacity=".38"/></g>
+<rect x="50" y="50" width="924" height="924" rx="206" stroke="url(#edge)" stroke-width="4"/>
+<g transform="translate(58 83) scale(.87)"><g fill="url(#mark)" filter="url(#markShadow)"><path d="M237 122L728 113C802 110 861 162 857 230L826 232C829 178 784 140 728 140L387 133Z"/><path d="M354 167L696 160C752 158 800 187 823 229L790 236C771 203 738 187 693 187Z"/><path d="M527 218H857C852 402 734 557 527 547Z"/><path d="M500 218C418 221 343 253 281 309L500 527Z"/><path d="M259 330C203 389 171 467 168 550H479Z"/><path d="M168 580H477L278 779C211 728 174 655 168 580Z"/><path d="M499 603V834C427 834 363 818 304 793Z"/><path d="M530 603L736 809C670 830 596 841 530 834Z"/></g><path d="M550 236H812" stroke="#FFD1B9" stroke-opacity=".65" stroke-width="6" stroke-linecap="round"/><circle cx="668" cy="350" r="95" fill="#FFFFFF"/><circle cx="668" cy="350" r="71" fill="#172638"/><circle cx="692" cy="326" r="21" fill="#FFFFFF"/></g>
+</svg>

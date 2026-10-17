@@ -80,6 +80,17 @@ done
 if [[ -n "$notices" ]]; then
     install -m 644 -- "$notices" "$staging/$package/THIRD-PARTY-NOTICES.txt"
 fi
+if [[ "$headless" == false ]]; then
+    # Desktop integration: copy `icons/` to ~/.local/share/icons and
+    # superba.desktop to ~/.local/share/applications (set Exec to the full path
+    # of `superba` if it is not on PATH).
+    install -m 644 -- "$repo_root/assets/icon/superba.desktop" "$staging/$package/superba.desktop"
+    for size in 16 32 48 64 128 256 512; do
+        icon_dir="$staging/$package/icons/hicolor/${size}x${size}/apps"
+        mkdir -p -- "$icon_dir"
+        install -m 644 -- "$repo_root/assets/icon/png/superba-$size.png" "$icon_dir/superba.png"
+    done
+fi
 archive="$out/$package.tar.gz"
 tar -czf "$staging/$package.tar.gz" -C "$staging" "$package"
 mv -f -- "$staging/$package.tar.gz" "$archive"
