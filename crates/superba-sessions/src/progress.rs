@@ -138,6 +138,8 @@ impl Progress {
         st.stage = stage;
         st.step_done = 0;
         st.step_total = u32::try_from(steps).unwrap_or(u32::MAX);
+        // The previous stage's last file is not this stage's.
+        st.current = None;
         self.send(&mut st, true);
     }
 

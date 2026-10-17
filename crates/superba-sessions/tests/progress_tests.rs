@@ -200,6 +200,12 @@ async fn migration_reports_forward_progress_and_ends_done() {
                 && c.file.is_some()
         })
     }));
+    // A new stage starts without the previous stage's file.
+    for pair in reports.windows(2) {
+        if pair[0].stage != pair[1].stage {
+            assert_eq!(pair[1].current, None, "{:?}", pair[1]);
+        }
+    }
     // Throttled: far fewer reports than files touched.
     assert!(
         reports.len() < 4 * total as usize,
