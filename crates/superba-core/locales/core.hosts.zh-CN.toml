@@ -16,3 +16,11 @@ settings = "只修改 {host} 上的 Codex 设置，它的连接、Key 和模型�
 truncated = "该主机有 {count} 个会话文件，只统计了前 {max} 个。"
 no_zstd = "有 {count} 个压缩的会话文件没有统计：该主机上没有 zstd。"
 no_meta = "有 {count} 个会话文件读不到会话头信息，没有统计。"
+
+# 桌面 app 连接远程主机的方式（superba_core::HostKind）。
+[host_kind]
+ssh = "SSH 主机"
+remote_control = "远程控制设备"
+wsl = "WSL 发行版"
+cloud = "ChatGPT 云端"
+unknown = "其他连接"

@@ -1543,6 +1543,7 @@ pub fn remote_host(key: &str, host_id: Option<&str>) -> RemoteHost {
         target_id: TargetId::remote(key),
         label: key.into(),
         host_id: host_id.map(str::to_owned),
+        kind: superba_core::HostKind::Ssh,
         ssh: superba_core::SshEndpoint {
             alias: Some(key.into()),
             ..Default::default()

@@ -17,3 +17,11 @@ settings = "Only Codex settings change on {host}; its connection, key and model 
 truncated = "The host has {count} session files; only the first {max} were counted."
 no_zstd = "{count} compressed session files were not counted: the host has no zstd."
 no_meta = "{count} session files have no readable session header and were not counted."
+
+# How the desktop app reaches a remote host (superba_core::HostKind).
+[host_kind]
+ssh = "SSH host"
+remote_control = "Remote-control device"
+wsl = "WSL distribution"
+cloud = "ChatGPT cloud"
+unknown = "Other connection"

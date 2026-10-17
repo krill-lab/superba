@@ -192,6 +192,7 @@ fn alias_host(user: &str) -> RemoteHost {
         target_id: TargetId::remote(&format!("remote-ssh-discovered:{alias}")),
         label: alias.clone(),
         host_id: Some(format!("remote-ssh-discovered:{alias}")),
+        kind: superba_core::HostKind::Ssh,
         ssh: SshEndpoint {
             alias: Some(alias),
             ..SshEndpoint::default()
@@ -433,6 +434,7 @@ async fn remote_hosts_against_an_sshd_container() {
         target_id: TargetId::remote("bob@127.0.0.1"),
         label: "bob".into(),
         host_id: None,
+        kind: superba_core::HostKind::Ssh,
         ssh: SshEndpoint {
             alias: None,
             host: Some("127.0.0.1".into()),

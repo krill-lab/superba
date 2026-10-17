@@ -53,10 +53,9 @@ use superba_core::codex::{
 };
 use superba_core::{
     AppController, AppInstall, AppSession, BridgeStatus, CdpEndpoint, CodexBinary, CodexHome,
-    CodexInstallKind, CodexProcessKind, CodexVersion, EnvSource, Error, HostSource,
-    HotRestartOutcome, HotRestartRequest, InstallSource, LaunchOptions, LocalContext, ProcessInfo,
-    QuitOptions, QuitOutcome, RemoteHost, RendererState, Result, SshEndpoint, TargetId, ThreadRef,
-    Timestamp, TurnActivity,
+    CodexInstallKind, CodexProcessKind, CodexVersion, EnvSource, Error, HotRestartOutcome,
+    HotRestartRequest, InstallSource, LaunchOptions, LocalContext, ProcessInfo, QuitOptions,
+    QuitOutcome, RemoteHost, RendererState, Result, TargetId, ThreadRef, Timestamp, TurnActivity,
 };
 
 use crate::launch::CdpPlan;
@@ -932,17 +931,7 @@ impl AppController for DesktopAppController {
 
     async fn remote_connections(&self, session: &AppSession) -> Result<Vec<RemoteHost>> {
         let p = self.dom_probe(session).await?;
-        Ok(renderer::remote_host_ids(&p)
-            .into_iter()
-            .map(|host_id| RemoteHost {
-                target_id: TargetId::remote(&host_id),
-                label: host_id.clone(),
-                host_id: Some(host_id),
-                ssh: SshEndpoint::default(),
-                sources: vec![HostSource::Cdp],
-                connected: None,
-            })
-            .collect())
+        Ok(renderer::remote_hosts(&p))
     }
 
     async fn launcher_entry(&self) -> Result<bool> {

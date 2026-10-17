@@ -9,6 +9,14 @@
 //! observed in a live file written by the app, so every field is parsed defensively,
 //! and hosts reported by the renderer (`from_app`, via CDP) are merged in as an
 //! independent source of host ids.
+//!
+//! Host kinds (user bug 36): `codex-managed-remote-connections` holds SSH
+//! connections only (the app maps every entry to an SSH connection, ids
+//! `remote-ssh-discovered:<alias>` / `remote-ssh-codex-managed:<uuid>` or legacy
+//! ones). The renderer also reports WSL distributions (`remote-wsl:<distro>`),
+//! ChatGPT remote-control devices (`remote-control:<environment id>`) and hosts
+//! run by ChatGPT (`durable`, `chatgpt:<account>:<user>`); those keep their
+//! [`HostKind`], never get an SSH endpoint and are never reached over SSH.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -17,8 +25,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use superba_core::{
-    CodexHome, CodexProcessKind, Error, HostSource, ProcessInfo, RemoteHost, Result, SshEndpoint,
-    TargetId,
+    CodexHome, CodexProcessKind, Error, HostKind, HostSource, ProcessInfo, RemoteHost, Result,
+    SshEndpoint, TargetId, looks_like_host_id,
 };
 
 /// Global-state key containing the app's remote connections.
@@ -173,6 +181,21 @@ pub fn parse_codex_app_config(bytes: &[u8]) -> Vec<String> {
         }
     }
     aliases
+}
+
+/// The alias of a `remote-ssh-discovered:<encodeURIComponent(alias)>` host id
+/// (JavaScript `decodeURIComponent`); `None` for other ids or a bad encoding.
+pub fn discovered_alias(host_id: &str) -> Option<String> {
+    superba_core::discovered_ssh_alias(host_id)
+}
+
+/// The kind of an entry of the app's saved connections: SSH, unless its id says
+/// otherwise (the app never stores other kinds there; legacy ids are SSH).
+pub fn saved_connection_kind(host_id: &str) -> HostKind {
+    match HostKind::of_host_id(host_id) {
+        HostKind::Unknown => HostKind::Ssh,
+        kind => kind,
+    }
 }
 
 /// Return `remote-ssh-discovered:` plus JavaScript `encodeURIComponent(alias)`.
@@ -569,7 +592,10 @@ pub fn endpoint_from_ssh_argv(argv: &[String]) -> Option<SshEndpoint> {
 
 /// Convert app state into a host, preferring an alias over explicit parameters.
 pub fn host_from_connection(c: &AppConnection) -> RemoteHost {
-    let ssh = if let Some(alias) = &c.alias {
+    let kind = saved_connection_kind(&c.host_id);
+    let ssh = if !kind.is_managed() {
+        SshEndpoint::default()
+    } else if let Some(alias) = &c.alias {
         SshEndpoint {
             alias: Some(alias.clone()),
             ..SshEndpoint::default()
@@ -583,10 +609,17 @@ pub fn host_from_connection(c: &AppConnection) -> RemoteHost {
             identity: c.identity.clone(),
         }
     };
+    let label = c
+        .display_name
+        .clone()
+        .filter(|name| !looks_like_host_id(name))
+        .or_else(|| kind.is_managed().then(|| ssh.label()))
+        .unwrap_or_default();
     RemoteHost {
         target_id: TargetId::remote(&c.host_id),
-        label: c.display_name.clone().unwrap_or_else(|| ssh.label()),
+        label,
         host_id: Some(c.host_id.clone()),
+        kind,
         ssh,
         sources: vec![HostSource::GlobalState],
         connected: None,
@@ -600,7 +633,11 @@ fn same_present(left: &Option<String>, right: &Option<String>) -> bool {
 
 fn same_host(left: &RemoteHost, right: &RemoteHost) -> bool {
     same_present(&left.host_id, &right.host_id)
-        || same_present(&left.ssh.alias, &right.ssh.alias)
+        || (left.kind == right.kind && same_endpoint(left, right))
+}
+
+fn same_endpoint(left: &RemoteHost, right: &RemoteHost) -> bool {
+    same_present(&left.ssh.alias, &right.ssh.alias)
         || (same_present(&left.ssh.host, &right.ssh.host)
             && left.ssh.port.unwrap_or(22) == right.ssh.port.unwrap_or(22)
             && (left.ssh.user == right.ssh.user
@@ -616,11 +653,14 @@ fn add_source(host: &mut RemoteHost, source: HostSource) {
 
 fn fill_host(existing: &mut RemoteHost, incoming: RemoteHost) {
     existing.host_id = existing.host_id.take().or(incoming.host_id);
-    existing.ssh.alias = existing.ssh.alias.take().or(incoming.ssh.alias);
-    existing.ssh.host = existing.ssh.host.take().or(incoming.ssh.host);
-    existing.ssh.port = existing.ssh.port.or(incoming.ssh.port);
-    existing.ssh.user = existing.ssh.user.take().or(incoming.ssh.user);
-    existing.ssh.identity = existing.ssh.identity.take().or(incoming.ssh.identity);
+    // Only SSH hosts have an endpoint; the first record's kind stays.
+    if existing.kind.is_managed() && incoming.kind.is_managed() {
+        existing.ssh.alias = existing.ssh.alias.take().or(incoming.ssh.alias);
+        existing.ssh.host = existing.ssh.host.take().or(incoming.ssh.host);
+        existing.ssh.port = existing.ssh.port.or(incoming.ssh.port);
+        existing.ssh.user = existing.ssh.user.take().or(incoming.ssh.user);
+        existing.ssh.identity = existing.ssh.identity.take().or(incoming.ssh.identity);
+    }
     if existing.label.is_empty() {
         existing.label = incoming.label;
     }
@@ -656,12 +696,60 @@ fn merge_host(hosts: &mut Vec<RemoteHost>, mut incoming: RemoteHost, live: bool)
     }
 }
 
+/// A host reported by the renderer, normalised: the app's id prefix wins over
+/// the reported kind when it names another kind (or the reported kind is
+/// unknown); an SSH host whose id is
+/// `remote-ssh-discovered:<alias>` gets that alias when no endpoint came with it;
+/// a host of another kind never carries an SSH endpoint; a raw id is no label.
+pub fn host_from_app(host: &RemoteHost) -> RemoteHost {
+    let mut host = host.clone();
+    if let Some(id) = host.host_id.as_deref() {
+        let by_id = HostKind::of_host_id(id);
+        let other_kind = matches!(
+            by_id,
+            HostKind::RemoteControl | HostKind::Wsl | HostKind::Cloud
+        );
+        if (host.kind == HostKind::Ssh && other_kind)
+            || (host.kind == HostKind::Unknown && by_id != HostKind::Unknown)
+        {
+            host.kind = by_id;
+        }
+    }
+    let mut from_id = false;
+    if host.kind.is_managed() {
+        if host.ssh.alias.is_none()
+            && host.ssh.host.is_none()
+            && let Some(alias) = host.host_id.as_deref().and_then(discovered_alias)
+        {
+            host.ssh.alias = Some(alias);
+            from_id = true;
+        }
+    } else {
+        host.ssh = SshEndpoint::default();
+    }
+    let label = host.label.trim();
+    let raw = (label.is_empty() && from_id)
+        || (!label.is_empty()
+            && (looks_like_host_id(label)
+                || host.host_id.as_deref().map(str::trim) == Some(label)));
+    if raw {
+        let has_endpoint = host.ssh.alias.is_some() || host.ssh.host.is_some();
+        host.label = if host.kind.is_managed() && has_endpoint {
+            host.ssh.label()
+        } else {
+            String::new()
+        };
+    }
+    host
+}
+
 fn endpoint_host(ssh: SshEndpoint, source: HostSource) -> RemoteHost {
     let label = ssh.label();
     RemoteHost {
         target_id: TargetId::remote(&label),
         label,
         host_id: None,
+        kind: HostKind::Ssh,
         ssh,
         sources: vec![source],
         connected: None,
@@ -686,7 +774,7 @@ pub fn merge_hosts(
         merge_host(&mut hosts, host_from_connection(connection), false);
     }
     for host in from_app {
-        merge_host(&mut hosts, host.clone(), false);
+        merge_host(&mut hosts, host_from_app(host), false);
     }
     for alias in declared_aliases.iter().filter_map(|alias| non_empty(alias)) {
         let ssh = SshEndpoint {

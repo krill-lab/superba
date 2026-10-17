@@ -44,6 +44,7 @@ fn host(id: &str, sources: Vec<HostSource>) -> RemoteOverview {
             target_id: TargetId::remote(id),
             label: id.into(),
             host_id: None,
+            kind: superba_core::HostKind::Ssh,
             ssh: SshEndpoint {
                 alias: Some(id.into()),
                 ..SshEndpoint::default()

@@ -284,6 +284,7 @@ fn fake_remote(now: Timestamp, devbox: bool) -> RemoteOverview {
             target_id: target_id.clone(),
             label: label.into(),
             host_id: Some(host_id.into()),
+            kind: superba_core::HostKind::Ssh,
             ssh: SshEndpoint {
                 alias: devbox.then(|| label.into()),
                 host: Some(format!("{label}.example.com")),

@@ -56,6 +56,7 @@ pub fn host_view() -> HostView {
             target_id: TargetId::remote("dev"),
             label: "dev".into(),
             host_id: Some("h-dev".into()),
+            kind: superba_core::HostKind::Ssh,
             ssh: SshEndpoint {
                 alias: Some("dev".into()),
                 ..SshEndpoint::default()

@@ -473,6 +473,7 @@ pub fn host(alias: &str, host_id: Option<&str>) -> RemoteHost {
         target_id: TargetId::remote(host_id.unwrap_or(alias)),
         label: alias.to_owned(),
         host_id: host_id.map(str::to_owned),
+        kind: superba_core::HostKind::Ssh,
         ssh: SshEndpoint {
             alias: Some(alias.to_owned()),
             ..SshEndpoint::default()

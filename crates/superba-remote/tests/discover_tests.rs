@@ -45,6 +45,7 @@ fn renderer(id: Option<&str>, label: &str, ssh: SshEndpoint) -> RemoteHost {
         target_id: TargetId::remote("stale-id"),
         label: label.into(),
         host_id: id.map(str::to_owned),
+        kind: superba_core::HostKind::Ssh,
         ssh,
         sources: vec![HostSource::Cdp],
         connected: None,

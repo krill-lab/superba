@@ -333,6 +333,7 @@ pub fn overview() -> Overview {
                 target_id: TargetId::new("ssh:a"),
                 label: "Test host".into(),
                 host_id: Some("app-host-a".into()),
+                kind: superba_core::HostKind::Ssh,
                 ssh: SshEndpoint {
                     alias: Some("a".into()),
                     ..Default::default()

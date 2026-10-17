@@ -125,6 +125,7 @@ fn ssh_config_only() -> RemoteHost {
         target_id: TargetId::remote(SSH_CONFIG_ONLY),
         label: SSH_CONFIG_ONLY.into(),
         host_id: None,
+        kind: superba_core::HostKind::Ssh,
         ssh: SshEndpoint {
             alias: Some(SSH_CONFIG_ONLY.into()),
             host: Some("old-box.example.com".into()),

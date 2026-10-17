@@ -506,6 +506,7 @@ fn target_ids_distinguish_local_and_remote_and_local_consumers_share_a_home() {
         target_id: remote.clone(),
         label: "Build".into(),
         host_id: Some("build".into()),
+        kind: superba_core::HostKind::Ssh,
         ssh: SshEndpoint {
             alias: Some("build".into()),
             ..SshEndpoint::default()

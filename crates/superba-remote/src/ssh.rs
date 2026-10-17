@@ -26,6 +26,22 @@ pub const MAX_STDOUT_BYTES: u64 = 96 * 1024 * 1024;
 /// Most stderr bytes accepted from one remote script.
 pub const MAX_STDERR_BYTES: u64 = 1024 * 1024;
 
+/// Refuse a host the desktop app does not reach over SSH (a ChatGPT
+/// remote-control device, a WSL distribution, a ChatGPT-hosted or unknown host;
+/// user bug 36): nothing is ever sent to it with `ssh`.
+pub fn require_ssh(host: &RemoteHost) -> Result<()> {
+    if host.is_managed() {
+        return Ok(());
+    }
+    Err(Error::Unsupported {
+        what: format!(
+            "SSH access to {} ({}): the ChatGPT app does not reach it over SSH, so Superba cannot probe, sync, switch or scan it",
+            host.title(),
+            host.kind.text()
+        ),
+    })
+}
+
 /// Raw result of one remote script run.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScriptOutput {
@@ -330,6 +346,7 @@ impl RemoteShell for SystemSsh {
         script: &str,
         timeout: Duration,
     ) -> Result<ScriptOutput> {
+        require_ssh(host)?;
         let args = ssh_args(&host.ssh, self.connect_timeout_secs)?;
         let mut cmd = tokio::process::Command::from(superba_core::process::command(&self.program));
         cmd.args(&self.extra_args).args(&args);
@@ -350,6 +367,7 @@ impl RemoteShell for SystemSsh {
         payload: &Path,
         timeout: Duration,
     ) -> Result<ScriptOutput> {
+        require_ssh(host)?;
         let args = ssh_payload_args(&host.ssh, self.connect_timeout_secs)?;
         let mut cmd = tokio::process::Command::from(superba_core::process::command(&self.program));
         cmd.args(&self.extra_args).args(&args);

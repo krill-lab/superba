@@ -15,11 +15,22 @@
 //!   main process navigates the renderer with a `{type:"navigate-to-route", path}`
 //!   message delivered as a window `message` event, and local threads live at
 //!   `/local/<conversation id>`.
+//! - remote connections (app bundle 26.1013, user bug 36): the preload mirrors the
+//!   main process's shared objects into the renderer and exposes them read-only,
+//!   without IPC, as `window.electronBridge.getSharedObjectSnapshotValue(key)`;
+//!   `remote_ssh_connections`, `remote_wsl_connections` and
+//!   `remote_control_connections` are arrays of `{hostId, displayName, source,
+//!   ...}` (SSH entries add `sshAlias`, `sshHost`, `sshPort`, `identity`).
 
-use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use superba_core::codex::js_string;
-use superba_core::{RendererState, TargetId, ThreadActivity, ThreadRef};
+use superba_core::{
+    HostKind, HostSource, RemoteHost, RendererState, SshEndpoint, TargetId, ThreadActivity,
+    ThreadRef, looks_like_host_id,
+};
 
 /// Selectors and labels used by the renderer scripts.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,6 +61,20 @@ pub struct DomHooks {
     pub local_thread_route: String,
     /// Host message type that navigates the renderer.
     pub navigate_message: String,
+    /// Shared objects holding the app's remote connections (read through
+    /// `electronBridge.getSharedObjectSnapshotValue`).
+    #[serde(default = "default_connection_objects")]
+    pub connection_objects: Vec<String>,
+}
+
+fn default_connection_objects() -> Vec<String> {
+    [
+        "remote_ssh_connections",
+        "remote_wsl_connections",
+        "remote_control_connections",
+    ]
+    .map(str::to_owned)
+    .to_vec()
 }
 
 impl Default for DomHooks {
@@ -88,6 +113,7 @@ impl Default for DomHooks {
             ]),
             local_thread_route: "/local/".into(),
             navigate_message: "navigate-to-route".into(),
+            connection_objects: default_connection_objects(),
         }
     }
 }
@@ -113,6 +139,56 @@ pub struct DomProbe {
     /// Sidebar rows.
     #[serde(default)]
     pub rows: Vec<DomRow>,
+    /// The app's remote connections (malformed entries are dropped).
+    #[serde(default, deserialize_with = "lenient_connections")]
+    pub connections: Vec<DomConnection>,
+}
+
+/// One remote connection of the app, as its renderer holds it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DomConnection {
+    /// The app's `hostId`.
+    pub host_id: String,
+    /// Name the app shows.
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// `codex-managed` / `discovered` (SSH), `wsl`, `remote-control`.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// SSH config alias.
+    #[serde(default)]
+    pub ssh_alias: Option<String>,
+    /// SSH host (`host` or `user@host`).
+    #[serde(default)]
+    pub ssh_host: Option<String>,
+    /// SSH port.
+    #[serde(default)]
+    pub ssh_port: Option<u16>,
+    /// SSH identity file (referenced only).
+    #[serde(default)]
+    pub identity: Option<String>,
+}
+
+impl DomConnection {
+    /// The kind the app's `source` names, else the id's.
+    pub fn kind(&self) -> HostKind {
+        match self.source.as_deref() {
+            Some("codex-managed" | "discovered") => HostKind::Ssh,
+            Some("wsl") => HostKind::Wsl,
+            Some("remote-control") => HostKind::RemoteControl,
+            _ => HostKind::of_host_id(&self.host_id),
+        }
+    }
+}
+
+fn lenient_connections<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<DomConnection>, D::Error> {
+    let values = Option::<Vec<Value>>::deserialize(d)?.unwrap_or_default();
+    Ok(values
+        .into_iter()
+        .filter_map(|v| serde_json::from_value::<DomConnection>(v).ok())
+        .filter(|c| !c.host_id.trim().is_empty())
+        .collect())
 }
 
 /// One sidebar thread row.
@@ -161,7 +237,22 @@ pub fn probe_js(hooks: &DomHooks) -> String {
   const text = (document.body && document.body.innerText) || '';
   const composer = any(cfg.composer);
   const login = !composer && cfg.login_texts.some((t) => text.includes(t));
-  return {{ url: String(location.href), conversation, stop, composer, login, rows }};
+  const str = (v) => (typeof v === 'string' && v.trim() ? v : null);
+  const connections = [];
+  try {{
+    const bridge = window.electronBridge;
+    const read = bridge && bridge.getSharedObjectSnapshotValue;
+    for (const key of (typeof read === 'function' ? cfg.connection_objects : [])) {{
+      const list = read.call(bridge, key);
+      for (const c of (Array.isArray(list) ? list : [])) {{
+        if (!c || !str(c.hostId)) continue;
+        const port = Number.isInteger(c.sshPort) && c.sshPort > 0 && c.sshPort < 65536 ? c.sshPort : null;
+        connections.push({{ hostId: c.hostId, displayName: str(c.displayName), source: str(c.source),
+          sshAlias: str(c.sshAlias), sshHost: str(c.sshHost), sshPort: port, identity: str(c.identity) }});
+      }}
+    }}
+  }} catch (e) {{}}
+  return {{ url: String(location.href), conversation, stop, composer, login, rows, connections }};
 }})()"#
     )
 }
@@ -280,6 +371,64 @@ pub fn remote_host_ids(p: &DomProbe) -> Vec<String> {
     ids.sort();
     ids.dedup();
     ids
+}
+
+/// Remote hosts the renderer knows: the app's remote connections (kind, display
+/// name, SSH endpoint) and, for host ids seen only on sidebar rows, the kind their
+/// id implies. A raw `hostId` is never a label (`label` is empty instead).
+pub fn remote_hosts(p: &DomProbe) -> Vec<RemoteHost> {
+    let mut hosts: Vec<RemoteHost> = Vec::new();
+    for c in &p.connections {
+        let host_id = c.host_id.trim().to_owned();
+        if host_id == superba_core::codex::LOCAL_HOST_ID
+            || hosts.iter().any(|h| h.host_id.as_deref() == Some(&host_id))
+        {
+            continue;
+        }
+        let kind = c.kind();
+        let ssh = if kind.is_managed() {
+            let alias = c.ssh_alias.clone();
+            SshEndpoint {
+                host: alias.is_none().then(|| c.ssh_host.clone()).flatten(),
+                port: alias.is_none().then_some(c.ssh_port).flatten(),
+                identity: alias
+                    .is_none()
+                    .then(|| c.identity.clone().map(PathBuf::from))
+                    .flatten(),
+                alias,
+                user: None,
+            }
+        } else {
+            SshEndpoint::default()
+        };
+        let label = c
+            .display_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty() && !looks_like_host_id(n))
+            .map(str::to_owned)
+            .unwrap_or_default();
+        hosts.push(remote_host(host_id, label, kind, ssh));
+    }
+    for id in remote_host_ids(p) {
+        if !hosts.iter().any(|h| h.host_id.as_deref() == Some(&id)) {
+            let kind = HostKind::of_host_id(&id);
+            hosts.push(remote_host(id, String::new(), kind, SshEndpoint::default()));
+        }
+    }
+    hosts
+}
+
+fn remote_host(host_id: String, label: String, kind: HostKind, ssh: SshEndpoint) -> RemoteHost {
+    RemoteHost {
+        target_id: TargetId::remote(&host_id),
+        label,
+        host_id: Some(host_id),
+        kind,
+        ssh,
+        sources: vec![HostSource::Cdp],
+        connected: None,
+    }
 }
 
 /// True if `id` is safe to place in a route (ids are UUID-like).

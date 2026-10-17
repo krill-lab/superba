@@ -298,6 +298,7 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
                 target_id: TargetId::remote("build"),
                 label: "Build host".into(),
                 host_id: Some("build".into()),
+                kind: superba_core::HostKind::Ssh,
                 ssh: SshEndpoint {
                     alias: Some("builder".into()),
                     ..SshEndpoint::default()

@@ -208,6 +208,7 @@ impl SshRemoteHosts {
         nonce: &str,
         timeout: Duration,
     ) -> Result<Records> {
+        ssh::require_ssh(host)?;
         let out = self.shell.run(host, script, timeout).await?;
         let recs = Records::parse(&out.stdout, nonce)?;
         tracing::debug!(host = %host.label, status = ?out.status, "remote script finished");
