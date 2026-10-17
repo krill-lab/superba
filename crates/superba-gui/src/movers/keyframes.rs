@@ -153,4 +153,3 @@ impl Track {
         keys.last().map_or(self.base, |&(_, v)| v)
     }
 }
-
