@@ -88,99 +88,262 @@ pub(crate) fn check_foreign_locks(home: &CodexHome, notices: &mut Vec<Notice>) -
     Ok(())
 }
 
-/// Refuse while a Codex process holds a thread writer lock of this home.
-pub(crate) fn check_writer_locks(home: &CodexHome) -> Result<()> {
-    let dir = home.root().join(WRITER_LOCK_DIR);
-    let Ok(entries) = fs::read_dir(&dir) else {
-        return Ok(());
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("lock") {
-            continue;
-        }
-        let file = match OpenOptions::new().read(true).open(&path) {
-            Ok(file) => file,
-            Err(err) => {
-                // Windows: a holder that opened the file without sharing makes the
-                // open itself fail (sharing violation); treat that as held.
-                // Elsewhere an unreadable lock file proves nothing.
-                if cfg!(windows) && err.kind() != std::io::ErrorKind::NotFound {
-                    return Err(Error::Locked {
-                        what: format!("a Codex process holds {}", path.display()),
-                    });
-                }
-                continue;
-            }
-        };
-        match file.try_lock() {
-            Ok(()) => {
-                let _ = file.unlock();
-            }
-            Err(fs::TryLockError::WouldBlock) => {
-                let thread = path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                return Err(Error::Locked {
-                    what: format!("a Codex process is writing thread {thread}"),
-                });
-            }
-            Err(fs::TryLockError::Error(_)) => {}
-        }
-    }
-    Ok(())
-}
-
-/// Codex writer locks held by Superba while it rewrites threads, so a Codex
-/// process that starts meanwhile cannot write them. Released on drop.
+/// Codex's thread writer locks and how Superba keeps writers out while it
+/// rewrites sessions.
+///
+/// Codex (since July 2026, `codex-rs/rollout/src/writer_lock.rs`) holds an
+/// exclusive lock on `thread-writer-locks/<thread>.lock` for as long as a process
+/// has that thread open for writing. Every Codex writer first takes the exclusive
+/// `thread-writer-locks/.coordination.lock` (blocking) and only then creates,
+/// locks, unlocks or deletes a thread lock; Codex's own rollout compression relies
+/// on exactly that rule to replace the files of idle threads ("holds coordination
+/// through publication after probing that the thread is idle").
+///
+/// Superba does the same for a whole write operation (migrate, rollback,
+/// recovery): [`WriterGate::acquire`] takes the coordination lock and keeps it
+/// until the operation ends, then [`WriterGate::check_no_writers`] and
+/// [`WriterGate::check_idle`] probe the thread locks one at a time (open, try to
+/// lock, unlock, close). A thread lock found free stays free while the gate is
+/// held, because nobody can lock it without the coordination lock: a Codex that
+/// starts meanwhile waits in its coordination lock until Superba is done, and then
+/// reads the migrated files. A thread lock found held is a genuine conflict.
+///
+/// This replaces holding every migrated thread's lock for the whole operation,
+/// which kept one open file per session (EMFILE at ~235 sessions under macOS's
+/// soft limit of 256) and made the automatic rollback after a failed migration
+/// collide with Superba's own locks. The handles open at once are now bounded:
+/// the migrate lock, the coordination lock and one probe.
 #[derive(Debug)]
-pub(crate) struct WriterLocks {
-    _files: Vec<File>,
+pub(crate) struct WriterGate {
+    root: PathBuf,
+    /// `thread-writer-locks/`; `None` when this Codex does not use writer locks.
+    dir: Option<PathBuf>,
+    /// The held coordination lock (released on drop).
+    _coordination: Option<File>,
 }
 
-/// Take Codex's writer lock of every thread in `thread_ids` (creating missing
-/// lock files) when this Codex version uses writer locks at all. Fails with
-/// `Error::Locked` when one is held.
-pub(crate) fn hold_writer_locks<'a>(
-    home: &CodexHome,
-    thread_ids: impl IntoIterator<Item = &'a str>,
-) -> Result<WriterLocks> {
-    let dir = home.root().join(WRITER_LOCK_DIR);
-    let mut files = Vec::new();
-    if !dir.is_dir() {
-        return Ok(WriterLocks { _files: files });
-    }
-    for id in thread_ids {
-        // Thread ids name files: only plain ids (Codex uses UUIDs).
-        if id.is_empty()
-            || !id
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        {
-            continue;
+/// Attempts (25 ms apart) to take Codex's coordination lock: Codex holds it only
+/// for a moment (opening, closing or publishing a thread).
+const COORDINATION_ATTEMPTS: u32 = 120;
+/// Codex's coordination lock inside [`WRITER_LOCK_DIR`].
+const COORDINATION_LOCK: &str = ".coordination.lock";
+
+/// Result of probing one lock file.
+enum Probe {
+    /// Missing or not locked.
+    Free,
+    /// Locked by someone else (a genuine conflict).
+    Held,
+    /// The probe itself failed.
+    Failed(std::io::Error),
+}
+
+impl WriterGate {
+    /// Take Codex's coordination lock of `home` (creating it like Codex does) when
+    /// this Codex version uses writer locks at all. Fails with `Error::Locked` only
+    /// when a Codex process keeps holding it; other failures keep their OS error.
+    pub(crate) fn acquire(home: &CodexHome) -> Result<Self> {
+        let dir = home.root().join(WRITER_LOCK_DIR);
+        if !dir.is_dir() {
+            return Ok(Self {
+                root: home.root().to_path_buf(),
+                dir: None,
+                _coordination: None,
+            });
         }
-        let path = dir.join(format!("{id}.lock"));
+        let path = dir.join(COORDINATION_LOCK);
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
             .read(true)
             .write(true)
             .open(&path)
-            .map_err(|_| Error::Locked {
-                what: format!("a Codex process holds {}", path.display()),
-            })?;
-        match file.try_lock() {
-            Ok(()) => files.push(file),
-            Err(fs::TryLockError::WouldBlock) => {
-                return Err(Error::Locked {
-                    what: format!("a Codex process is writing thread {id}"),
-                });
+            .map_err(|e| Error::io(&path, &e))?;
+        let mut attempts = 0;
+        loop {
+            match file.try_lock() {
+                Ok(()) => break,
+                Err(fs::TryLockError::WouldBlock) if attempts + 1 < COORDINATION_ATTEMPTS => {
+                    attempts += 1;
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+                Err(fs::TryLockError::WouldBlock) => {
+                    return Err(Error::Locked {
+                        what: format!(
+                            "a Codex process{} keeps holding its session lock {}; try again in a moment",
+                            holder_suffix(&path),
+                            path.display()
+                        ),
+                    });
+                }
+                Err(fs::TryLockError::Error(e)) => return Err(Error::io(&path, &e)),
             }
-            Err(fs::TryLockError::Error(e)) => return Err(Error::io(&path, &e)),
+        }
+        Ok(Self {
+            root: home.root().to_path_buf(),
+            dir: Some(dir),
+            _coordination: Some(file),
+        })
+    }
+
+    /// Refuse while any thread of the home has a Codex writer. Lock files Superba
+    /// may not open prove nothing and are skipped (stale files of another user);
+    /// every other failure is returned with its OS error.
+    pub(crate) fn check_no_writers(&self) -> Result<()> {
+        let Some(dir) = &self.dir else {
+            return Ok(());
+        };
+        // Collect the names first: no directory handle stays open while probing.
+        let mut paths: Vec<PathBuf> = match fs::read_dir(dir) {
+            Ok(entries) => entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.extension().and_then(|e| e.to_str()) == Some("lock")
+                        && p.file_name().and_then(|n| n.to_str()) != Some(COORDINATION_LOCK)
+                })
+                .collect(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(Error::io(dir, &e)),
+        };
+        paths.sort();
+        for path in paths {
+            let thread = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            match probe(&path) {
+                Probe::Free => {}
+                Probe::Held => return Err(self.conflict(&thread, &path)),
+                Probe::Failed(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {}
+                Probe::Failed(e) => return Err(Error::io(&path, &e)),
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuse while one of `threads` (the sessions about to be rewritten) has a
+    /// Codex writer. Stricter than [`Self::check_no_writers`]: a lock file of these
+    /// threads that cannot be probed fails the operation with its OS error.
+    pub(crate) fn check_idle<'a>(&self, threads: impl IntoIterator<Item = &'a str>) -> Result<()> {
+        let Some(dir) = &self.dir else {
+            return Ok(());
+        };
+        for id in threads {
+            // Thread ids name files: only plain ids (Codex uses UUIDs).
+            if id.is_empty()
+                || !id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                continue;
+            }
+            let path = dir.join(format!("{id}.lock"));
+            match probe(&path) {
+                Probe::Free => {}
+                Probe::Held => return Err(self.conflict(id, &path)),
+                Probe::Failed(e) => return Err(Error::io(&path, &e)),
+            }
+        }
+        Ok(())
+    }
+
+    /// `Error::Locked` for a thread whose writer lock is held, naming the
+    /// session file and (where the platform tells) the process holding it.
+    fn conflict(&self, thread: &str, lock: &Path) -> Error {
+        let session = session_file_of(&self.root, thread)
+            .map(|p| format!(", {}", p.display()))
+            .unwrap_or_default();
+        Error::Locked {
+            what: format!(
+                "a Codex process{} is writing session {thread}{session} (it holds {})",
+                holder_suffix(lock),
+                lock.display()
+            ),
         }
     }
-    Ok(WriterLocks { _files: files })
+}
+
+/// Open `path` read-only (no create), try to lock it and release it at once.
+/// Read access is enough for `flock`/`LockFileEx`, so lock files of another
+/// owner can still be probed.
+fn probe(path: &Path) -> Probe {
+    let file = match OpenOptions::new().read(true).open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Probe::Free,
+        Err(e) if is_sharing_violation(&e) => return Probe::Held,
+        Err(e) => return Probe::Failed(e),
+    };
+    match file.try_lock() {
+        Ok(()) => {
+            let _ = file.unlock();
+            Probe::Free
+        }
+        Err(fs::TryLockError::WouldBlock) => Probe::Held,
+        Err(fs::TryLockError::Error(e)) => Probe::Failed(e),
+    }
+}
+
+/// Windows: a holder that opened the file without sharing makes the open itself
+/// fail (`ERROR_SHARING_VIOLATION` / `ERROR_LOCK_VIOLATION`): the file is held.
+fn is_sharing_violation(err: &std::io::Error) -> bool {
+    cfg!(windows) && matches!(err.raw_os_error(), Some(32 | 33))
+}
+
+/// The rollout file of `thread` (live or archived), for messages. Walks the
+/// session folders; used only when reporting a conflict.
+fn session_file_of(root: &Path, thread: &str) -> Option<PathBuf> {
+    if thread.is_empty() {
+        return None;
+    }
+    ["sessions", "archived_sessions"].iter().find_map(|sub| {
+        walkdir::WalkDir::new(root.join(sub))
+            .follow_links(false)
+            .max_depth(8)
+            .into_iter()
+            .flatten()
+            .find(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|n| crate::rollout::is_rollout_name(n) && n.contains(thread))
+            })
+            .map(|e| e.into_path())
+    })
+}
+
+/// ` (pid 4242 codex)` for the processes holding a lock on `path` when the
+/// platform tells (Linux `/proc/locks`); empty otherwise.
+fn holder_suffix(path: &Path) -> String {
+    let Some(pids) = lock_holders(&[path.to_path_buf()]) else {
+        return String::new();
+    };
+    let me = std::process::id();
+    let list: Vec<String> = pids
+        .into_iter()
+        .filter(|pid| *pid != me)
+        .map(|pid| match process_name(pid) {
+            Some(name) => format!("pid {pid} {name}"),
+            None => format!("pid {pid}"),
+        })
+        .collect();
+    if list.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", list.join(", "))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn process_name(pid: u32) -> Option<String> {
+    let name = fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
+    let name = name.trim();
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn process_name(pid: u32) -> Option<String> {
+    let _ = pid;
+    None
 }
 
 /// Validate a caller's [`ConsumersStopped`] token for `home` at `now`.

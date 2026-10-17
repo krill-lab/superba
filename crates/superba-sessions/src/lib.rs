@@ -21,7 +21,9 @@
 //! - writes refuse while a Codex process uses the home (process scan), unless the
 //!   caller passes a [`ConsumersStopped`] token (`*_stopped` methods); Codex's
 //!   thread writer locks, the migrate lock (`CodexHome::migrate_lock`) and locks of
-//!   similar tools are always checked;
+//!   similar tools are always checked, and Codex's writer coordination lock is
+//!   held for the whole write so no Codex can start writing a session meanwhile
+//!   (a handful of files is open at once, whatever the session count);
 //! - backups: rollout pre-images and SQLite online backups (through the WAL) with
 //!   `integrity_check`, in `DataDir::migrate_backup_dir(id)`;
 //! - rollouts: only the provider token of `session_meta` lines changes; size and

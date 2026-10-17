@@ -86,10 +86,14 @@ pub(crate) fn is_compressed(path: &Path) -> bool {
 
 /// Find every rollout under `sessions/` and `archived_sessions/` and read its head.
 /// Unreadable files and symbolic links are reported in `warnings` and skipped.
+/// Files and folders that could not be read only because too many files were
+/// open (a passing condition, not a property of the file) are also pushed to
+/// `exhausted`: writes refuse rather than work from an incomplete list.
 pub(crate) fn discover(
     sessions_dir: &Path,
     archived_dir: &Path,
     warnings: &mut Vec<Notice>,
+    exhausted: &mut Vec<Error>,
 ) -> Vec<RolloutFile> {
     let mut out = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
@@ -107,6 +111,11 @@ pub(crate) fn discover(
                 Err(err) => {
                     let path = err.path().unwrap_or(root).to_path_buf();
                     warnings.push(text::unreadable(&path, &err.to_string()));
+                    if let Some(io) = err.io_error()
+                        && superba_core::fdlimit::file_limit_hit(io).is_some()
+                    {
+                        exhausted.push(Error::io(&path, io));
+                    }
                     continue;
                 }
             };
@@ -143,7 +152,12 @@ pub(crate) fn discover(
                     len,
                     head,
                 }),
-                Err(err) => warnings.push(text::unreadable(&path, &err.to_string())),
+                Err(err) => {
+                    warnings.push(text::unreadable(&path, &err.to_string()));
+                    if superba_core::fdlimit::file_limit_hit(&err).is_some() {
+                        exhausted.push(Error::io(&path, &err));
+                    }
+                }
             }
         }
     }

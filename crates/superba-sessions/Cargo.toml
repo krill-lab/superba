@@ -31,5 +31,9 @@ pretty_assertions.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 
+[target.'cfg(unix)'.dev-dependencies]
+# setrlimit in the open-file limit tests
+rustix.workspace = true
+
 [lints]
 workspace = true

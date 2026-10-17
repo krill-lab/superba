@@ -1,9 +1,11 @@
 //! Planning and the writing operations: migrate, rollback, recover.
 //!
-//! Order of a migration: locks and safety checks (no pending ledger, no live
-//! Codex, every database readable) -> fresh inventory and selection -> computed
-//! rewrites -> refusal of unsupported triggers -> Codex writer locks held ->
-//! disk-space check -> backups (rollout pre-images, SQLite online backups +
+//! Order of a migration: locks and safety checks (migrate lock, no live Codex,
+//! Codex's writer coordination lock taken and kept to the end, no thread writer
+//! lock held, no pending ledger, every database readable) -> fresh inventory and
+//! selection -> computed rewrites -> refusal of unsupported triggers -> thread
+//! writer locks of the rewritten sessions probed free -> disk-space check ->
+//! backups (rollout pre-images, SQLite online backups +
 //! integrity_check) -> ledger (pending) -> rollouts (hash-guarded, mtime kept) ->
 //! one transaction per database (cells recorded in the ledger before commit) ->
 //! verification -> ledger completed. Any failure (or panic) rolls everything back
@@ -20,7 +22,7 @@ use superba_core::{
     MigrationReceipt, MigrationRequest, Result, RollbackReport, SessionReport, Timestamp,
 };
 
-use crate::guard::{self, MigrateLock};
+use crate::guard::{self, MigrateLock, WriterGate};
 use crate::inventory::{Inventory, Selected, validate_provider_id};
 use crate::ledger::{self, DbEntry, Ledger, LedgerState, RolloutEntry, Stored};
 use crate::rollout::{self, Edit, Rewrite, RolloutFile};
@@ -45,6 +47,15 @@ pub(crate) struct Engine<'a> {
 pub(crate) fn absolute_home(home: &CodexHome) -> CodexHome {
     let abs = |p: &Path| std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
     CodexHome::new(abs(home.root())).with_sqlite_home(abs(home.sqlite_home()))
+}
+
+/// Locks held for the whole of a writing operation (released on drop).
+struct WriteLocks {
+    /// Codex's thread-writer coordination lock: no Codex can start writing a
+    /// thread of the home while it is held (see [`WriterGate`]).
+    writers: WriterGate,
+    /// Superba's own lock: one session migration per home at a time.
+    _migrate: MigrateLock,
 }
 
 /// Computed work of one migration.
@@ -154,21 +165,26 @@ impl Engine<'_> {
         Ok(stored.ledger)
     }
 
-    /// Locks and checks shared by every writing operation. The returned lock must
-    /// be held until the operation ends.
+    /// Locks and checks shared by every writing operation. The returned locks must
+    /// be held until the operation ends: from here on no Codex process can start
+    /// writing a thread of `home`, and none was writing one.
     fn prepare_write(
         &self,
         home: &CodexHome,
         token: Option<&ConsumersStopped>,
-    ) -> Result<MigrateLock> {
-        let lock = MigrateLock::acquire(home)?;
+    ) -> Result<WriteLocks> {
+        let migrate = MigrateLock::acquire(home)?;
         let mut notices = Vec::new();
         guard::check_foreign_locks(home, &mut notices)?;
         let dirs = crate::inventory::sqlite_dirs(home, self.home_dir, &mut notices);
         let dbs = sqlite::candidate_files(&dirs);
         guard::check_processes(home, &dbs, token, self.now())?;
-        guard::check_writer_locks(home)?;
-        Ok(lock)
+        let writers = WriterGate::acquire(home)?;
+        writers.check_no_writers()?;
+        Ok(WriteLocks {
+            writers,
+            _migrate: migrate,
+        })
     }
 
     /// Refuse while a migration of `home` other than `except` awaits recovery.
@@ -209,7 +225,7 @@ impl Engine<'_> {
             )));
         }
         ledger::validate_id(&plan.id)?;
-        let _lock = self.prepare_write(home, token)?;
+        let locks = self.prepare_write(home, token)?;
         self.check_no_pending(home, None)?;
         let dir = self.data_dir.migrate_backup_dir(&plan.id);
         if dir.exists() {
@@ -246,8 +262,12 @@ impl Engine<'_> {
                 });
             }
         }
-        let threads: BTreeSet<&str> = work.providers.keys().map(String::as_str).collect();
-        let _writers = guard::hold_writer_locks(home, threads.iter().copied())?;
+        // Already checked for every thread under the gate held since
+        // `prepare_write`; repeated for the rewritten threads, which must not be
+        // skipped when their lock file cannot be probed.
+        locks
+            .writers
+            .check_idle(work.providers.keys().map(String::as_str))?;
         self.check_space(&work)?;
         let mut stored = self.write_backups(home, plan, &dir, &work)?;
 
@@ -260,7 +280,9 @@ impl Engine<'_> {
             ))),
         };
         if let Err(err) = result {
-            return Err(self.fail(home, &mut stored, err));
+            // Still under the same locks: the rollback must not wait for (or
+            // collide with) anything this operation holds.
+            return Err(self.fail(&mut stored, err, &locks.writers));
         }
         ledger::prune(self.data_dir, home.root(), KEEP_BACKUPS);
         Ok(stored.ledger.receipt(&stored.dir))
@@ -524,13 +546,13 @@ impl Engine<'_> {
     }
 
     /// Roll back after a failed migration and turn `err` into the returned error.
-    fn fail(&self, home: &CodexHome, stored: &mut Stored, err: Error) -> Error {
+    fn fail(&self, stored: &mut Stored, err: Error, writers: &WriterGate) -> Error {
         if self.faults.crash {
             return err;
         }
         stored.ledger.state = LedgerState::RollingBack;
         let _ = stored.save();
-        let undone = catch_unwind(AssertUnwindSafe(|| self.undo(home, &stored.ledger)))
+        let undone = catch_unwind(AssertUnwindSafe(|| self.undo(&stored.ledger, writers)))
             .unwrap_or_else(|p| Err(Error::other(format!("panicked: {}", panic_text(&p)))));
         match undone {
             Ok(report) => {
@@ -570,15 +592,15 @@ impl Engine<'_> {
         if stored.ledger.state == LedgerState::RolledBack {
             return Ok(RollbackReport::default());
         }
-        let _lock = self.prepare_write(home, token)?;
+        let locks = self.prepare_write(home, token)?;
         self.check_no_pending(home, Some(migration_id))?;
-        self.rollback_locked(home, &mut stored)
+        self.rollback_locked(&mut stored, &locks.writers)
     }
 
-    fn rollback_locked(&self, home: &CodexHome, stored: &mut Stored) -> Result<RollbackReport> {
+    fn rollback_locked(&self, stored: &mut Stored, writers: &WriterGate) -> Result<RollbackReport> {
         stored.ledger.state = LedgerState::RollingBack;
         stored.save()?;
-        let report = catch_unwind(AssertUnwindSafe(|| self.undo(home, &stored.ledger)))
+        let report = catch_unwind(AssertUnwindSafe(|| self.undo(&stored.ledger, writers)))
             .unwrap_or_else(|p| Err(Error::other(format!("panicked: {}", panic_text(&p)))))?;
         stored.ledger.state = LedgerState::RolledBack;
         stored.ledger.rolled_back_at = Some(self.now());
@@ -604,10 +626,10 @@ impl Engine<'_> {
         if pending.is_empty() {
             return Ok(RollbackReport::default());
         }
-        let _lock = self.prepare_write(home, token)?;
+        let locks = self.prepare_write(home, token)?;
         let mut total = RollbackReport::default();
         for mut stored in pending {
-            let r = self.rollback_locked(home, &mut stored)?;
+            let r = self.rollback_locked(&mut stored, &locks.writers)?;
             total.restored_threads += r.restored_threads;
             total.restored_rollouts += r.restored_rollouts;
             total.skipped_changed += r.skipped_changed;
@@ -634,8 +656,9 @@ impl Engine<'_> {
     }
 
     /// Restore every thread whose recorded items are all still in their migrated
-    /// (or original) state; threads changed since are skipped as a whole.
-    pub(crate) fn undo(&self, home: &CodexHome, l: &Ledger) -> Result<RollbackReport> {
+    /// (or original) state; threads changed since are skipped as a whole. The
+    /// caller holds `writers` (Codex's coordination lock) for the whole call.
+    pub(crate) fn undo(&self, l: &Ledger, writers: &WriterGate) -> Result<RollbackReport> {
         let backup_dir = self.data_dir.migrate_backup_dir(&l.id);
         let mut state: BTreeMap<&str, bool> = BTreeMap::new(); // thread -> restorable
         let mut rollout_after: Vec<(usize, Fingerprint)> = Vec::new();
@@ -673,8 +696,7 @@ impl Engine<'_> {
             cells_after.push(after);
         }
         let restorable = |thread: &str| state.get(thread).copied().unwrap_or(false);
-        let _writers =
-            guard::hold_writer_locks(home, state.iter().filter(|(_, ok)| **ok).map(|(id, _)| *id))?;
+        writers.check_idle(state.iter().filter(|(_, ok)| **ok).map(|(id, _)| *id))?;
         let mut report = RollbackReport {
             skipped_changed: state.values().filter(|ok| !**ok).count() as u32,
             ..RollbackReport::default()

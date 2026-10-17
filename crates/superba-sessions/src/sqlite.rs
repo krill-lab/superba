@@ -193,8 +193,28 @@ pub(crate) fn ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-fn db_err(path: &Path, err: impl std::fmt::Display) -> Error {
-    Error::other(format!("SQLite error on {}: {err}", path.display()))
+/// SQLite failure on `path`, classified so the message names the real cause: a
+/// busy or locked database is a genuine lock conflict (another process is
+/// writing it, after the busy timeout); a database SQLite cannot open is reported
+/// with the OS error behind it when the file itself cannot be opened either (too
+/// many open files, permission denied, missing); anything else stays an SQLite
+/// error.
+fn db_err(path: &Path, err: rusqlite::Error) -> Error {
+    match err.sqlite_error_code() {
+        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) => {
+            Error::Locked {
+                what: format!(
+                    "the database {} is in use by another process ({err})",
+                    path.display()
+                ),
+            }
+        }
+        Some(rusqlite::ErrorCode::CannotOpen) => match std::fs::File::open(path) {
+            Err(io) => Error::io(path, &io),
+            Ok(_) => Error::other(format!("SQLite error on {}: {err}", path.display())),
+        },
+        _ => Error::other(format!("SQLite error on {}: {err}", path.display())),
+    }
 }
 
 /// Candidate database files in `dirs` (and their `sqlite/` subdirectories).
@@ -457,7 +477,7 @@ pub(crate) enum InspectError {
 pub(crate) fn discover(
     dirs: &[PathBuf],
     warnings: &mut Vec<Notice>,
-) -> (Vec<DbInfo>, Vec<(PathBuf, String)>) {
+) -> (Vec<DbInfo>, Vec<(PathBuf, Error)>) {
     let mut out = Vec::new();
     let mut failed = Vec::new();
     for path in candidate_files(dirs) {
@@ -473,7 +493,7 @@ pub(crate) fn discover(
             }
             Err(InspectError::Other(err)) => {
                 warnings.push(text::db_unreadable(&path, &err.to_string()));
-                failed.push((path, err.to_string()));
+                failed.push((path, err));
             }
         }
     }

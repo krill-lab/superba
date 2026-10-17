@@ -21,7 +21,9 @@ use crate::util::{normalize_dir, uuid_v7_ms};
 pub(crate) struct Inventory {
     pub dbs: Vec<DbInfo>,
     /// Databases that could not be read (busy, permissions, ...): writes refuse.
-    pub failed_dbs: Vec<(PathBuf, String)>,
+    pub failed_dbs: Vec<(PathBuf, Error)>,
+    /// Rollouts or folders skipped because too many files were open: writes refuse.
+    pub failed_rollouts: Vec<Error>,
     pub rows: Vec<ThreadRow>,
     pub rollouts: Vec<RolloutFile>,
     pub warnings: Vec<Notice>,
@@ -89,14 +91,16 @@ impl Inventory {
                 Ok(mut r) => rows.append(&mut r),
                 Err(err) => {
                     warnings.push(text::db_unreadable(&db.path, &err.to_string()));
-                    failed_dbs.push((db.path.clone(), err.to_string()));
+                    failed_dbs.push((db.path.clone(), err));
                 }
             }
         }
+        let mut failed_rollouts = Vec::new();
         let rollouts = rollout::discover(
             &home.sessions_dir(),
             &home.archived_sessions_dir(),
             &mut warnings,
+            &mut failed_rollouts,
         );
         let headless = rollouts
             .iter()
@@ -111,19 +115,21 @@ impl Inventory {
         Inventory {
             dbs,
             failed_dbs,
+            failed_rollouts,
             rows,
             rollouts,
             warnings,
         }
     }
 
-    /// Writes need every database: refuse while one could not be read.
+    /// Writes need every database (and every rollout that was only skipped for
+    /// lack of file handles): refuse while one could not be read, with the
+    /// reason it could not be read (in use by another process, too many open
+    /// files, permission, ...; the error names the database).
     pub(crate) fn require_complete(&self) -> Result<()> {
-        match self.failed_dbs.first() {
-            None => Ok(()),
-            Some((path, err)) => Err(Error::Locked {
-                what: format!("cannot read the database {}: {err}", path.display()),
-            }),
+        match (self.failed_dbs.first(), self.failed_rollouts.first()) {
+            (Some((_, err)), _) | (None, Some(err)) => Err(err.clone()),
+            (None, None) => Ok(()),
         }
     }
 
