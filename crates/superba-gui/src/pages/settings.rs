@@ -1,0 +1,445 @@
+//! Codex settings of this computer (UX §3.6), driven by the settings catalog:
+//! three fixed panes — a rail (Common, Changed, categories with counts), a paged
+//! list of Chinese-first two-line rows, and a detail pane (names, badges with
+//! availability per local Codex, the Chinese explanation and the official
+//! English text, the editor, default / current / recommended values, what each
+//! connected remote host would skip when syncing, reset) — and a pending bar that
+//! saves the edits into the provider's profile and hands them to the switch flow
+//! (preview, then apply with a hot restart). Remote hosts get settings only
+//! through Remote hosts → Sync settings; there is no target filter here.
+//!
+//! Commands: `focus:<config path>` (select a setting, widening the filter),
+//! `profile:<id>` (edit another provider's settings), `migrate` (queue every
+//! legacy migration), `search` (Ctrl/Cmd+F), `save` (Ctrl/Cmd+S).
+
+mod detail;
+pub mod editor;
+pub mod model;
+mod rail;
+pub mod source;
+mod view;
+
+use egui::Ui;
+use superba_core::Locale;
+
+use self::model::{Change, Filter, Model, Pending, Rail};
+use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, error_state, page_header};
+use crate::design::widgets::PagedState;
+use crate::runtime::ReadTask;
+
+/// Page-local state, kept across navigation.
+pub struct State {
+    /// Loaded model.
+    model: Option<Model>,
+    /// Last load error (the previous model stays visible).
+    error: Option<superba_core::Error>,
+    /// Load in flight.
+    task: Option<ReadTask<Model>>,
+    /// Overview stamp the model was loaded for (reload after a switch).
+    loaded_for: Option<superba_core::Timestamp>,
+    /// List filter (rail, search, Advanced).
+    pub filter: Filter,
+    /// Filter of the last frame (a change selects the first row).
+    shown_filter: Option<Filter>,
+    /// Edits not yet handed to the switch flow.
+    pub pending: Pending,
+    /// Text buffers of the number / text editors, keyed by path.
+    buffers: std::collections::HashMap<String, String>,
+    /// Rejected input per path (i18n key of the reason).
+    invalid: std::collections::HashMap<String, &'static str>,
+    /// Select this path on the next frame (palette, migration notice).
+    focus: Option<String>,
+    /// Paging and selection of the list.
+    pub table: PagedState,
+    /// Profile chosen in the provider picker (`None` = the applied one).
+    profile: Option<superba_core::ProfileId>,
+    /// Saving the pending edits into the profile.
+    saving: Option<ReadTask<source::AfterSave>>,
+    /// Last save error.
+    save_error: Option<String>,
+    /// Profile set the model was built from (reload when it changes).
+    loaded_profiles: Option<superba_core::ProfileSet>,
+    /// The diff dialog is open.
+    pub diff_open: bool,
+    /// The detail sheet is open (narrow windows).
+    pub sheet_open: bool,
+    /// Path whose full explanation is shown in a dialog.
+    pub expanded: Option<String>,
+    /// Focus the search field on the next frame.
+    focus_search: bool,
+    /// The large text editor, when open.
+    editor: Option<editor::TextEditor>,
+    /// Row buffers of the list and map editors, keyed by path.
+    rows: std::collections::HashMap<String, editor::Rows>,
+    /// Path whose list / map rows are open in a dialog.
+    pub rows_dialog: Option<String>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            model: None,
+            error: None,
+            task: None,
+            loaded_for: None,
+            filter: Filter {
+                rail: Rail::Common,
+                ..Filter::default()
+            },
+            shown_filter: None,
+            pending: Pending::default(),
+            buffers: Default::default(),
+            invalid: Default::default(),
+            focus: None,
+            table: PagedState::default(),
+            profile: None,
+            saving: None,
+            save_error: None,
+            loaded_profiles: None,
+            diff_open: false,
+            sheet_open: false,
+            expanded: None,
+            focus_search: false,
+            editor: None,
+            rows: Default::default(),
+            rows_dialog: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("settings::State")
+            .field("entries", &self.model.as_ref().map(|m| m.entries.len()))
+            .field("filter", &self.filter)
+            .field("pending", &self.pending.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl State {
+    /// The loaded model, if any.
+    pub fn model(&self) -> Option<&Model> {
+        self.model.as_ref()
+    }
+
+    /// Replace the model (tests and the loader); pending edits that the new model
+    /// already contains are dropped.
+    pub fn set_model(&mut self, model: Model) {
+        self.pending.rebase(&model);
+        // Without a curated Common list (an older catalog) start at the first
+        // category instead of an empty list.
+        if self.filter.rail == Rail::Common && model.entries.iter().all(|e| e.common.is_none()) {
+            self.filter.rail = model
+                .categories
+                .first()
+                .map(|c| Rail::Category(c.id.clone()))
+                .unwrap_or_default();
+        }
+        self.model = Some(model);
+        self.error = None;
+    }
+
+    /// Record a pending edit for `path` (no-op for unknown paths).
+    pub fn edit(&mut self, path: &str, change: Change) {
+        if let Some(model) = &self.model {
+            self.pending.set_path(model, path, change);
+        }
+    }
+
+    /// The rows the list shows now.
+    pub fn rows(&self) -> Vec<&model::Entry> {
+        match &self.model {
+            Some(m) => m.listed(&self.filter, &self.pending),
+            None => Vec::new(),
+        }
+    }
+
+    /// The selected entry.
+    pub fn selected(&self) -> Option<&model::Entry> {
+        let rows = self.rows();
+        self.table.selected.and_then(|i| rows.get(i).copied())
+    }
+
+    /// Queue the migration of every legacy key set in the configuration.
+    pub fn migrate_all(&mut self) {
+        let Some(model) = &self.model else {
+            return;
+        };
+        let changes: Vec<_> = model
+            .migrations()
+            .flat_map(|e| model.migration_changes(e))
+            .collect();
+        for (path, change) in changes {
+            self.pending.set_path(model, &path, change);
+        }
+    }
+
+    /// Select `path` (widening the filter when it is hidden).
+    pub fn focus(&mut self, path: &str) {
+        if let Some(model) = &self.model
+            && let Some(entry) = model.entry(path)
+            && !self.filter.accepts(entry, &self.pending)
+        {
+            self.filter = Filter {
+                advanced: self.filter.advanced || !entry.stage.in_default_view(),
+                rail: Rail::Category(entry.category.clone()),
+                query: String::new(),
+            };
+            if !self.filter.accepts(entry, &self.pending) {
+                self.filter.rail = Rail::All;
+                self.filter.advanced = true;
+            }
+        }
+        self.focus = Some(path.to_owned());
+        self.apply_focus();
+    }
+
+    /// Select the focused path in the current list, when it is listed.
+    fn apply_focus(&mut self) {
+        let Some(path) = self.focus.clone() else {
+            return;
+        };
+        let rows = self.rows();
+        if rows.is_empty() && self.model.is_none() {
+            return;
+        }
+        let total = rows.len();
+        let index = rows.iter().position(|e| e.path == path);
+        if let Some(i) = index {
+            if self.table.per_page == 0 {
+                self.table.per_page = 1;
+            }
+            self.table.select(i, total);
+            self.sheet_open = true;
+        }
+        self.shown_filter = Some(self.filter.clone());
+        self.focus = None;
+    }
+
+    /// Edit the Codex settings of another profile (pending edits are dropped).
+    pub fn select_profile(&mut self, cx: &Cx<'_>, profile: superba_core::ProfileId) {
+        if self.profile.as_ref() == Some(&profile) {
+            return;
+        }
+        self.profile = Some(profile);
+        self.pending.clear();
+        self.buffers.clear();
+        self.invalid.clear();
+        self.task = None;
+        self.load(cx);
+    }
+
+    /// Save the pending edits into the profile (then apply them through the switch
+    /// flow when the profile is applied).
+    fn save(&mut self, cx: &Cx<'_>) {
+        if self.saving.is_some() || self.pending.is_empty() || cx.busy {
+            return;
+        }
+        let Some(model) = self.model.clone() else {
+            return;
+        };
+        if source::blocked_reason(cx, &model).is_some() {
+            return;
+        }
+        self.save_error = None;
+        self.saving = Some(crate::runtime::task(source::save(
+            cx.service.clone(),
+            model,
+            self.pending.clone(),
+        )));
+    }
+
+    /// Start a (re)load unless one is running.
+    fn load(&mut self, cx: &Cx<'_>) {
+        if self.task.is_none() {
+            self.loaded_for = cx.data.overview.value.as_ref().map(|o| o.generated_at);
+            self.loaded_profiles = cx.data.profiles.value.clone();
+            self.task = Some(source::load_task(cx, self.profile.clone()));
+        }
+    }
+
+    /// Poll the load and the save; true while either runs.
+    fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) -> bool {
+        let stamp = cx.data.overview.value.as_ref().map(|o| o.generated_at);
+        // A switch rewrites config.toml: reload once the overview after it arrives.
+        let switched = cx
+            .data
+            .overview
+            .value
+            .as_ref()
+            .and_then(|o| o.active.as_ref())
+            .map(|a| a.applied_at);
+        // Wait for the profile set: the page edits a profile's settings.
+        let profiles_ready = cx.data.profiles.value.is_some() || cx.data.profiles.error.is_some();
+        let first = self.model.is_none() && self.error.is_none() && profiles_ready;
+        let after_switch =
+            !cx.busy && stamp.is_some() && self.loaded_for.is_some_and(|l| switched > Some(l));
+        let profiles_changed = self.model.is_some()
+            && self.loaded_profiles.is_some()
+            && cx.data.profiles.value.is_some()
+            && self.loaded_profiles.as_ref() != cx.data.profiles.value.as_ref();
+        if first || after_switch || profiles_changed {
+            self.load(cx);
+        }
+        if let Some(task) = &self.saving
+            && let Some(result) = task.poll()
+        {
+            self.saving = None;
+            match result {
+                Ok(after) => {
+                    let name = self.model.as_ref().and_then(|m| m.profile.clone());
+                    self.pending.clear();
+                    self.buffers.clear();
+                    self.save_error = None;
+                    out.push(Action::Refresh);
+                    match after {
+                        source::AfterSave::Apply(profile) => out.push(Action::Switch {
+                            profile,
+                            line: None,
+                            auth: None,
+                        }),
+                        source::AfterSave::Saved => out.push(Action::Toast {
+                            status: crate::design::widgets::Status::Ok,
+                            text: cx.tr.f(
+                                "codex_settings.pending.saved_later",
+                                &[("provider", &name.unwrap_or_default())],
+                            ),
+                        }),
+                    }
+                    // Show the saved values at once; the overview refresh reloads.
+                    self.task = None;
+                    self.load(cx);
+                }
+                Err(e) => self.save_error = Some(super::error_text(cx.tr, &e)),
+            }
+        }
+        let Some(task) = &self.task else {
+            return self.saving.is_some();
+        };
+        match task.poll() {
+            Some(Ok(model)) => {
+                self.task = None;
+                self.set_model(model);
+                self.apply_focus();
+                false
+            }
+            Some(Err(e)) => {
+                self.task = None;
+                self.error = Some(e);
+                false
+            }
+            None => true,
+        }
+    }
+}
+
+/// Draw the page: header, then the strip, the three panes and the footer in the
+/// fixed page rectangle (no page-level scrolling).
+pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    let loading = state.poll(cx, out);
+    if loading {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(60));
+    }
+    page_header(ui, cx, Page::Settings, |ui| {
+        if ui
+            .add(
+                crate::design::widgets::Button::ghost(cx.tr.t("codex_settings.reload"))
+                    .icon(crate::design::icons::Icon::Refresh)
+                    .small()
+                    .loading(loading)
+                    .enabled(!loading),
+            )
+            .clicked()
+        {
+            state.task = None;
+            state.load(cx);
+        }
+    });
+    if state.model.is_none() {
+        match &state.error {
+            Some(e) => error_state(ui, cx, &cx.tr.t("codex_settings.load_failed"), e),
+            None => view::loading(ui, cx),
+        }
+        return;
+    }
+    let events = view::page(ui, cx, state, out);
+    if events.save {
+        state.save(cx);
+    }
+    if let Some(profile) = events.profile {
+        state.select_profile(cx, profile);
+    }
+}
+
+/// Unsaved edits and dialogs of the page.
+pub fn status(state: &State) -> PageStatus {
+    PageStatus {
+        modal: state.diff_open
+            || state.expanded.is_some()
+            || state.editor.is_some()
+            || state.rows_dialog.is_some(),
+        pending: state.pending.len(),
+        ..PageStatus::default()
+    }
+}
+
+/// Command palette entries: one per listed setting (Chinese name first in
+/// Chinese, keywords include the path and the English name); choosing one
+/// selects it on this page.
+pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
+    let Some(model) = &state.model else {
+        return Vec::new();
+    };
+    let zh = cx.tr.locale() == Locale::ZhCn;
+    let everything = Filter::default();
+    model
+        .visible(&everything, &state.pending)
+        .map(|e| PaletteItem {
+            title: e.title_for(zh).text.to_owned(),
+            // One short line: the first line (or item) of a long value.
+            detail: Some(
+                e.shown_value(&state.pending)
+                    .map(|v| {
+                        let s = editor::shown(cx, v);
+                        crate::design::elide::elide_cols(&s.head, 48, s.shape.ellipsis())
+                    })
+                    .unwrap_or_else(|| cx.tr.t("codex_settings.value.unset")),
+            ),
+            keywords: [
+                Some(e.path.clone()),
+                e.name.clone(),
+                e.name_zh.clone(),
+                e.text.en.clone(),
+                e.text.zh.clone(),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+            group: PaletteGroup::Settings,
+            action: Action::PageCommand {
+                page: Page::Settings,
+                command: format!("focus:{}", e.path),
+            },
+        })
+        .collect()
+}
+
+/// Run a command addressed to this page (see the module docs).
+pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
+    let _ = out;
+    if let Some(path) = command.strip_prefix("focus:") {
+        state.focus(path);
+    } else if let Some(id) = command.strip_prefix("profile:") {
+        state.select_profile(cx, superba_core::ProfileId::new(id));
+    } else if command == "migrate" {
+        state.migrate_all();
+        state.diff_open = true;
+    } else if command == "search" {
+        state.focus_search = true;
+    } else if command == "save" && !cx.busy {
+        // Ctrl/Cmd+S with pending edits (the shell sends it only then).
+        state.save(cx);
+    }
+}

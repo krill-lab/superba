@@ -1,0 +1,42 @@
+{
+  "format": 1,
+  "serial": 2,
+  "generated": "2026-10-17",
+  "files": [
+    {
+      "path": "app-versions.json",
+      "size": 6207,
+      "sha256": "30f4dd39655cf104d0600df9130944ba1b4839dcd9e886b7a43e1d09986e0371"
+    },
+    {
+      "path": "codex-versions.json",
+      "size": 40891,
+      "sha256": "93f7cf7f646545a2995bc9ab3ff5eb7fc68201a9e2f3f6d0208644facbb3b7be"
+    },
+    {
+      "path": "models.json",
+      "size": 15347,
+      "sha256": "47811dbc0aa2b9713c183a36df05e78c4252f192d6a26bef6eae471ae11dc24c"
+    },
+    {
+      "path": "prices.json",
+      "size": 14769,
+      "sha256": "a4207b3fc2aac8b7a0acdc434ec6065c048d558da3c02b1de8be0da44f2be3a2"
+    },
+    {
+      "path": "prompts/0fae6672.md",
+      "size": 20923,
+      "sha256": "0fae66723e9ba38083bd5a26f83f5c6c944954daaea3436084ab75eb8fdf46c8"
+    },
+    {
+      "path": "prompts/ac8ae107.md",
+      "size": 20903,
+      "sha256": "ac8ae107a0d72fe3476b430afb161ea4e67da2e446d778aefc44828160559807"
+    },
+    {
+      "path": "prompts.json",
+      "size": 2073,
+      "sha256": "36f38588ee8dc1ed468a3d8d2d284624a70b9aa24ac3f13fcbd19f6985e830a3"
+    }
+  ]
+}

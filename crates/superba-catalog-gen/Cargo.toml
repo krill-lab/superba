@@ -1,0 +1,41 @@
+[package]
+name = "superba-catalog-gen"
+description = "Generator of Superba's Codex settings catalog: extracts config keys and features from openai/codex release tags, writes catalog/dist, syncs overlays, reports coverage and signs the index"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "superba-catalog-gen"
+path = "src/main.rs"
+
+[dependencies]
+superba-catalog.workspace = true
+# features-check uses the settings engine's canonical cross-check.
+superba-config.workspace = true
+superba-core.workspace = true
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+ed25519-dalek = { workspace = true, features = ["zeroize"] }
+# feeds: RPM primary.xml.gz, Sparkle appcasts, package checksums
+flate2.workspace = true
+getrandom.workspace = true
+hex.workspace = true
+quick-xml.workspace = true
+quote.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+syn.workspace = true
+toml.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

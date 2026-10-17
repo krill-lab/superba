@@ -1,0 +1,169 @@
+# superba-gui UI texts (Simplified Chinese), area "settings". Every key must exist in
+# settings.en.toml with the same {placeholders} (tests/i18n_tests.rs).
+
+[codex_settings]
+advanced = "高级"
+advanced_hint = "同时显示开发中、已弃用和已移除的条目、旧版键名以及快捷键等大类设置。"
+apply_now = "立即应用"
+catalog_approximate = "目录中没有这个确切版本，使用最接近的旧版本。"
+catalog_outdated = "此 Codex 比 Superba 的设置目录更新；它新增的设置暂未列出。"
+changed = "已修改"
+common = "常用"
+config_error = "无法解析 config.toml，设置为只读：{error}"
+contributor_note = "贡献者注释"
+contributor_note_hint = "上游 Codex 没有此设置的说明，这段说明由 Superba 贡献者撰写。"
+load_failed = "无法加载 Codex 设置"
+loading = "正在读取设置目录和你的配置…"
+needs_version = "需 ≥ {version}"
+no_profile = "Codex 设置属于使用 Key 的供应商。请先添加 Krill Key 或自定义站点。"
+no_profile_short = "没有使用 Key 的供应商"
+no_targets = "尚未找到 Codex：使用目录中的最新版本。"
+no_zh = "暂无中文说明"
+only_on = "仅 {os}"
+platform_hint = "上游仅为某一个操作系统说明此设置。"
+provider = "供应商"
+provider_applied = "{name}（使用中）"
+read_only_config = "无法解析 config.toml，请先修复后再修改设置。"
+reload = "重新读取"
+reset = "恢复默认"
+reset_hint = "从 config.toml 中删除此键，让 Codex 使用默认值。"
+search = "搜索名称、键名或说明"
+search_results = "搜索结果"
+unapplied = "有 {n} 项已保存的设置不在 config.toml 中。Superba 只写入已安装的 Codex 认识的设置；更新 Codex 后可再次应用。"
+unapplied_waiting = "有 {n} 项已保存的设置等待下次切换时写入。"
+use_recommended = "使用推荐值"
+version_unknown = "版本未知"
+zh_missing = "暂缺中文"
+zh_stale = "中文说明可能已过时"
+
+[codex_settings.scope]
+consumers = "本机：App codex {app} · CLI {cli} · 目录 {catalog}"
+label = "本机"
+official = "官方登录时 Superba 不写入 Codex 设置"
+
+[codex_settings.value]
+codex_decides = "由 Codex 决定"
+off = "关"
+on = "开"
+unset = "未设置"
+
+[codex_settings.stage]
+deprecated = "已弃用"
+experimental = "实验性"
+removed = "已移除"
+stable = "稳定"
+under_development = "开发中"
+
+[codex_settings.badge]
+legacy = "旧版键名"
+
+[codex_settings.detail]
+add = "添加"
+all_rows = "全部 {n} 项…"
+collapse = "收起"
+copy = "复制值"
+current = "当前"
+default = "默认"
+edit = "编辑…"
+edit_in_file = "在 config.toml 中编辑"
+empty_list = "列表为空"
+empty_map = "没有条目"
+expand = "展开"
+items = "{n} 项"
+key = "键"
+managed_by_models = "在「模型」页管理 →"
+managed_by_provider = "由供应商管理 →"
+managed_by_speed = "由速度档位管理 →"
+managed_by_superba = "由 Superba 管理，不能在这里修改"
+map_value = "值"
+move_down = "下移"
+move_up = "上移"
+no_official = "上游没有英文说明"
+none = "选择一项设置，查看它的作用。"
+official = "官方说明"
+pick_file = "选择文件…"
+pick_folder = "添加文件夹…"
+recommended = "推荐值"
+remote = "远程主机（同步时）"
+remote_tip = "同步设置到远程主机时，该主机的 Codex 版本不认识的键会被跳过。"
+remove = "删除"
+reveal = "打开所在位置"
+runtime = "实际生效：{effective}（目录预测：{predicted}）"
+since = "自 {version}"
+source_file = "（config.toml）"
+source_managed = "（Superba 写入）"
+value = "取值"
+view = "查看全部…"
+
+[codex_settings.invalid]
+bool = "请输入 true 或 false。"
+duplicate_key = "有重复的键名。"
+empty = "请输入值，或恢复默认。"
+empty_key = "每个值都需要键名。"
+integer = "请输入整数。"
+list = "请输入 TOML 数组。"
+maximum = "数值高于最大值。"
+minimum = "数值低于最小值。"
+number = "请输入数字。"
+option = "请选择列出的值之一。"
+read_only = "此设置需在 config.toml 中编辑。"
+table = "请输入 TOML 表。"
+
+[codex_settings.migrate]
+button = "迁移…"
+notice = "config.toml 中设置了 {n} 个旧版键名，可迁移到新的键名。"
+one = "迁移"
+restore_note = "迁移会从 config.toml 中删除旧版键名（改为写入替代键）。恢复原配置会把旧版键名恢复回来。"
+short = "旧键 {n}"
+
+[codex_settings.legacy]
+deprecated = "上游已弃用。"
+ignored = "旧版键名，当前 Codex 版本会忽略它。"
+replaced = "旧版键名，已由 {path} 取代。"
+
+[codex_settings.avail]
+no = "{target}（{version}）不认识此设置，写入后在那里不生效。"
+unknown = "{target} 的 Codex 版本未知。"
+yes = "{target}（{version}）支持此设置。"
+
+[codex_settings.empty]
+body = "清空搜索、换一个分类或打开「高级」。"
+title = "没有匹配的设置"
+
+[codex_settings.pager]
+next = "下一页"
+prev = "上一页"
+
+[codex_settings.pending]
+busy = "请等待当前切换完成。"
+close = "关闭"
+count = "{n} 项更改未保存"
+diff = "查看差异"
+discard = "放弃"
+drop = "撤销这项更改"
+note = "保存只写入供应商的配置；确认切换预览之后才会修改 config.toml。"
+save = "保存"
+save_apply = "保存并应用"
+saved_later = "已保存，下次切换到 {provider} 时生效"
+title = "{n} 项待应用的更改"
+unsupported = "{targets} 不认识"
+
+[codex_settings.note]
+runtime_differs = "{target} 的 Codex 报告有 {n} 个功能与设置目录不同，以 Codex 报告的为准。"
+version_unknown = "{target} 的 Codex 版本未知，不显示它的可用性。"
+
+[codex_settings.editor]
+count = "{lines} 行 · {chars} 个字符"
+empty_hint = "留空保存即恢复默认"
+note = "保存后进入下方的待保存更改，点「保存并应用」才写入 config.toml。"
+read_only = "只读"
+save = "保存"
+title = "编辑「{name}」"
+wrap = "自动换行"
+
+# 固定宽度里的设置值（设置页、切换预览、远程主机）。
+[values]
+collapse = "收起完整差异"
+expand = "显示完整差异"
+more_items = "+{n} 项"
+more_lines = "+{n} 行"

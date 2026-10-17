@@ -1,0 +1,278 @@
+# Hand-maintained metadata for the Codex settings catalog.
+#
+# Upstream sources carry no grouping (the schema is sorted alphabetically) and no
+# platform markers, so people maintain both here. The app applies this file at run
+# time; changing it does not require regenerating dist/. After editing, run
+# `superba-catalog-gen index` (updates dist/index.json) and see CONTRIBUTING.md.
+#
+# [[category]]: settings categories in display order. `keys` are config path
+#   prefixes matched on whole segments (the longest prefix wins); `features` are
+#   registry keys shown in this category instead of "features". The UI label is the
+#   i18n key `catalog.category.<id>` (crates/superba-catalog/locales); `label` is the
+#   English fallback.
+# [[platform]]: config paths (prefixes) that only apply on some operating systems.
+# [common]: the settings page's "Common" list, in display order (dotted config
+#   paths; `features.<key>` for feature toggles). Entries a consumer's Codex does
+#   not know are hidden from the list. Keys Superba manages elsewhere (model,
+#   speed tiers, provider) do not belong here.
+
+format = 1
+
+[[category]]
+id = "model"
+label = "Model"
+keys = [
+    "model",
+    "model_catalog_json",
+    "model_reasoning_effort",
+    "model_reasoning_summary",
+    "model_verbosity",
+    "oss_provider",
+    "personality",
+    "plan_mode_reasoning_effort",
+    "review_model",
+    "service_tier",
+]
+features = ["fast_mode", "ultrafast_mode"]
+
+[[category]]
+id = "provider"
+label = "Provider and sign-in"
+keys = [
+    "chatgpt_base_url",
+    "cli_auth_credentials_store",
+    "forced_chatgpt_workspace_id",
+    "forced_login_method",
+    "model_provider",
+    "model_providers",
+    "openai_base_url",
+    "profile",
+    "profiles",
+]
+
+[[category]]
+id = "context"
+label = "Context and instructions"
+keys = [
+    "compact_prompt",
+    "developer_instructions",
+    "experimental_compact_prompt_file",
+    "goals",
+    "include_apps_instructions",
+    "include_collaboration_mode_instructions",
+    "include_environment_context",
+    "include_environment_context_time",
+    "include_permissions_instructions",
+    "instructions",
+    "memories",
+    "model_auto_compact_token_limit",
+    "model_auto_compact_token_limit_scope",
+    "model_context_window",
+    "model_instructions_file",
+    "model_post_turn_compact_threshold_percent",
+    "project_doc_fallback_filenames",
+    "project_doc_max_bytes",
+    "project_root_markers",
+    "tool_output_token_limit",
+]
+features = ["context_management", "token_budget", "memories"]
+
+[[category]]
+id = "approvals"
+label = "Approvals and sandbox"
+keys = [
+    "allow_login_shell",
+    "approval_policy",
+    "approvals_reviewer",
+    "auto_review",
+    "default_permissions",
+    "permissions",
+    "sandbox_mode",
+    "sandbox_workspace_write",
+    "shell_environment_policy",
+    "windows",
+]
+
+[[category]]
+id = "tools"
+label = "Tools"
+keys = [
+    "background_terminal_max_timeout",
+    "browser_use",
+    "computer_use",
+    "hooks",
+    "skills",
+    "tool_suggest",
+    "tools",
+    "web_search",
+]
+
+[[category]]
+id = "apps"
+label = "Apps and plugins"
+keys = ["apps", "apps_mcp_product_sku", "marketplaces", "plugins"]
+
+[[category]]
+id = "mcp"
+label = "MCP servers"
+keys = [
+    "mcp_enterprise_managed_auth",
+    "mcp_oauth_callback_port",
+    "mcp_oauth_callback_url",
+    "mcp_oauth_credentials_store",
+    "mcp_optional_startup_grace_ms",
+    "mcp_servers",
+]
+
+[[category]]
+id = "agents"
+label = "Agents"
+keys = ["agents", "orchestrator"]
+
+[[category]]
+id = "realtime"
+label = "Realtime and audio"
+keys = [
+    "audio",
+    "experimental_realtime_start_instructions",
+    "experimental_realtime_webrtc_call_base_url",
+    "experimental_realtime_ws_backend_prompt",
+    "experimental_realtime_ws_base_url",
+    "experimental_realtime_ws_model",
+    "experimental_realtime_ws_startup_context",
+    "realtime",
+]
+
+[[category]]
+id = "interface"
+label = "Interface"
+keys = [
+    "check_for_update_on_startup",
+    "desktop",
+    "disable_paste_burst",
+    "file_opener",
+    "hide_agent_reasoning",
+    "notice",
+    "notify",
+    "show_raw_agent_reasoning",
+    "suppress_unstable_features_warning",
+    "tui",
+]
+
+[[category]]
+id = "storage"
+label = "History and storage"
+keys = [
+    "allow_symlinked_codex_home",
+    "experimental_thread_store",
+    "ghost_snapshot",
+    "history",
+    "log_dir",
+    "projects",
+    "sqlite_home",
+    "thread_unload_delay_secs",
+]
+
+[[category]]
+id = "telemetry"
+label = "Telemetry and feedback"
+keys = ["analytics", "feedback", "otel", "responses_api_metadata"]
+
+[[category]]
+id = "features"
+label = "Features"
+
+[[category]]
+id = "other"
+label = "Other"
+
+[[platform]]
+prefix = "windows"
+os = ["windows"]
+
+[[platform]]
+prefix = "computer_use.macos"
+os = ["macos"]
+
+[[platform]]
+prefix = "computer_use.windows"
+os = ["windows"]
+
+[[platform]]
+prefix = "features.elevated_windows_sandbox"
+os = ["windows"]
+
+[[platform]]
+prefix = "features.enable_experimental_windows_sandbox"
+os = ["windows"]
+
+[[platform]]
+prefix = "features.experimental_windows_sandbox"
+os = ["windows"]
+
+[[platform]]
+prefix = "features.windows_sandbox_service"
+os = ["windows"]
+
+[[platform]]
+prefix = "features.use_legacy_landlock"
+os = ["linux"]
+
+[[platform]]
+prefix = "features.use_linux_sandbox_bwrap"
+os = ["linux"]
+
+# [[migration]]: legacy keys whose replacement is a different key and value. Only
+# rules verified in upstream code, with the release and function as `source`.
+# Aliases (`[features].collab` -> `multi_agent`) and ignored keys come from the
+# generated catalog and need no entry here. If both web search flags are true,
+# Codex prefers `cached`.
+
+[[migration]]
+path = "features.web_search_cached"
+canonical = "web_search"
+when = true
+value = "cached"
+source = "openai/codex rust-v0.163.0: codex-rs/core/src/config/mod.rs resolve_web_search_mode"
+
+[[migration]]
+path = "features.web_search_request"
+canonical = "web_search"
+when = true
+value = "live"
+source = "openai/codex rust-v0.163.0: codex-rs/core/src/config/mod.rs resolve_web_search_mode"
+
+[[migration]]
+path = "features.web_search"
+canonical = "web_search"
+when = true
+value = "live"
+source = "openai/codex rust-v0.163.0: codex-rs/features/src/legacy.rs (alias of web_search_request) and resolve_web_search_mode"
+
+[common]
+paths = [
+    "approval_policy",
+    "sandbox_mode",
+    "sandbox_workspace_write.network_access",
+    "web_search",
+    "model_reasoning_summary",
+    "model_verbosity",
+    "plan_mode_reasoning_effort",
+    "review_model",
+    "personality",
+    "features.multi_agent",
+    "features.goals",
+    "features.memories",
+    "features.hooks",
+    "features.prevent_idle_sleep",
+    "hide_agent_reasoning",
+    "show_raw_agent_reasoning",
+    "notify",
+    "history.persistence",
+    "file_opener",
+    "project_doc_max_bytes",
+    "shell_environment_policy.inherit",
+    "tui.notifications",
+    "analytics.enabled",
+    "check_for_update_on_startup",
+]

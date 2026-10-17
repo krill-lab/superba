@@ -1,0 +1,48 @@
+# superba-catalog 的界面文字（catalog.*）。通过 superba_catalog::i18n_source(locale)
+# 叠加到二进制自己的界面文字目录上。
+
+[catalog.match]
+nearest = "Codex {installed} 的设置项取自 Codex {used} 的目录。"
+newer = "Codex {installed} 比设置目录更新（目录最新为 {used}），之后新增的设置项未列出。"
+older = "Codex {installed} 比设置目录更旧；当前显示 Codex {used} 的设置项，部分可能不适用。"
+
+[catalog.cache]
+rejected = "下载的设置目录未通过校验，未被使用：{error}"
+
+[catalog.stage]
+under_development = "开发中"
+experimental = "实验性"
+stable = "稳定"
+deprecated = "已弃用"
+removed = "已移除"
+unknown = "未知阶段"
+
+[catalog.text]
+no_zh = "暂无中文说明"
+zh_stale = "中文说明可能已过时"
+en_missing = "无官方说明"
+official = "Codex 官方说明"
+human_note = "Superba 贡献者注释"
+
+[catalog.source]
+builtin = "内置目录"
+cache = "已下载的目录"
+directory = "本地目录"
+signed = "已签名"
+unsigned = "未签名"
+
+[catalog.category]
+model = "模型"
+provider = "服务商与登录"
+context = "上下文与指令"
+approvals = "审批与沙箱"
+tools = "工具"
+apps = "应用与插件"
+mcp = "MCP 服务器"
+agents = "智能体"
+realtime = "实时与音频"
+interface = "界面"
+storage = "历史与存储"
+telemetry = "遥测与反馈"
+features = "功能开关"
+other = "其他"

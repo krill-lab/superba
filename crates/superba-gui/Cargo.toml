@@ -1,0 +1,61 @@
+[package]
+name = "superba-gui"
+description = "Superba desktop GUI (egui/eframe, Geist look); the superba binary also accepts spb subcommands"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish.workspace = true
+# Geist Sans / Geist Mono are bundled under assets/fonts (SIL Open Font License 1.1,
+# see assets/fonts/LICENSE-Geist-OFL.txt).
+include = ["src/**", "assets/**", "locales/**", "tests/**", "Cargo.toml"]
+
+[lib]
+name = "superba_gui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "superba"
+path = "src/main.rs"
+
+[features]
+default = []
+# Native file dialogs (identity files, custom site import).
+file-dialogs = ["dep:rfd"]
+
+[dependencies]
+superba-core.workspace = true
+superba-cli.workspace = true
+superba-switch.workspace = true
+superba-catalog.workspace = true
+superba-models.workspace = true
+superba-router.workspace = true
+anyhow.workspace = true
+eframe.workspace = true
+egui.workspace = true
+fontdb.workspace = true
+open.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+rfd = { workspace = true, optional = true }
+sys-locale.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+toml.workspace = true
+
+[lints]
+workspace = true

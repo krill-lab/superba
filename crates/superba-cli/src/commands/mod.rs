@@ -1,0 +1,161 @@
+//! Commands build requests and display service results; switching belongs to the service.
+
+mod account;
+mod execute;
+mod key;
+mod lines;
+mod models;
+mod preview;
+mod profile;
+mod remote;
+mod requests;
+mod restore;
+mod router;
+mod sessions;
+mod settings;
+mod site;
+mod status;
+mod switch;
+mod versions;
+
+use superba_core::{Error, LocalizedText, Secret, Site, SiteId, SwitchIntent, SwitchRequest};
+
+use crate::{Command, ExecArgs, Output, Runtime, exit, text::text};
+
+pub(crate) struct Failure {
+    pub error: Error,
+    pub code: u8,
+}
+
+impl From<Error> for Failure {
+    fn from(error: Error) -> Self {
+        let code = match &error {
+            Error::Blocked { .. } => exit::BLOCKED,
+            Error::Cancelled => exit::CANCELLED,
+            _ => exit::ERROR,
+        };
+        Self { error, code }
+    }
+}
+
+pub(crate) type Result<T = u8> = std::result::Result<T, Failure>;
+
+pub(crate) fn usage(out: &Output, message: LocalizedText) -> Failure {
+    Failure {
+        error: Error::invalid(out.render(&message)),
+        code: exit::USAGE,
+    }
+}
+
+pub(crate) fn missing(out: &Output, message: LocalizedText) -> Error {
+    Error::NotFound {
+        what: out.render(&message),
+    }
+}
+
+pub(crate) fn stdin_secret(rt: &Runtime, out: &Output) -> Result<Secret> {
+    let line = (rt.read_stdin_line)().map_err(|_| Error::other(out.label("cli.error.stdin")))?;
+    let secret = Secret::new(line);
+    if secret.is_empty() {
+        return Err(usage(out, text("cli.error.empty_key")));
+    }
+    Ok(secret)
+}
+
+pub(crate) async fn site(rt: &Runtime, out: &Output, id: &str) -> Result<Site> {
+    rt.service
+        .sites()
+        .await?
+        .into_iter()
+        .find(|site| site.id == SiteId::new(id))
+        .ok_or_else(|| missing(out, text("cli.error.site_missing").arg("id", id)).into())
+}
+
+pub(crate) fn request(intent: SwitchIntent, exec: &ExecArgs) -> SwitchRequest {
+    SwitchRequest {
+        intent,
+        targets: exec.targets(),
+        model_override: None,
+        legacy_sessions: None,
+        take_over_foreign_env: None,
+        accept_unknown_versions: false,
+        key_resolutions: Default::default(),
+        accept_shared_home: false,
+        migration_exclude: Vec::new(),
+    }
+}
+
+pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) -> Result {
+    match command {
+        Command::Status => status::run(rt, out).await,
+        Command::Lines { site, probe } => lines::run(site, *probe, rt, out).await,
+        Command::Key { command } => key::run(command, rt, out).await,
+        Command::Profile { command } => profile::run(command, rt, out).await,
+        Command::Switch(args) => switch::run(args, rt, out).await,
+        Command::Restore(args) => restore::run(args, rt, out).await,
+        Command::Launch { restart, exec } => {
+            if *restart {
+                execute::run(
+                    request(SwitchIntent::RestartApp { install_id: None }, exec),
+                    exec,
+                    rt,
+                    out,
+                )
+                .await
+            } else {
+                if exec != &ExecArgs::default() {
+                    return Err(usage(out, text("cli.error.launch_flags")));
+                }
+                let session = rt.service.open_app().await?;
+                status::app_session(&session, out)?;
+                out.value(&session)?;
+                Ok(exit::OK)
+            }
+        }
+        Command::Sessions { command, host } => {
+            sessions::run(command.as_ref(), host.as_deref(), rt, out).await
+        }
+        Command::Models {
+            command,
+            profile,
+            refresh,
+        } => models::run(command.as_ref(), profile.as_deref(), *refresh, rt, out).await,
+        Command::Speed(args) => models::speed(args, rt, out).await,
+        Command::Codex { command } => versions::codex(command, rt, out).await,
+        Command::App { command } => versions::app(command, rt, out).await,
+        Command::Feeds { command } => versions::feeds(command, rt, out).await,
+        Command::Site { command } => site::run(command, rt, out).await,
+        Command::Account(args) => account::run(args, rt, out).await,
+        Command::Settings { command } => settings::run(command, rt, out).await,
+        Command::Router { command } => router::run(command, rt, out).await,
+        Command::Usage(args) => match &args.command {
+            None => requests::log(&args.log, rt, out).await,
+            Some(crate::UsageCommand::Log(log)) => requests::log(log, rt, out).await,
+            Some(crate::UsageCommand::Stats { by, since }) => {
+                requests::stats(*by, *since, rt, out).await
+            }
+        },
+        Command::Remote { command } => remote::run(command, rt, out).await,
+        Command::Doctor => status::doctor(rt, out).await,
+        Command::Recover => status::recover(rt, out).await,
+        Command::Uninstall {
+            delete_backups,
+            provider,
+            exec,
+        } => {
+            execute::run(
+                request(
+                    SwitchIntent::Uninstall {
+                        delete_backups: *delete_backups,
+                        provider: provider.map(Into::into),
+                    },
+                    exec,
+                ),
+                exec,
+                rt,
+                out,
+            )
+            .await
+        }
+    }
+}

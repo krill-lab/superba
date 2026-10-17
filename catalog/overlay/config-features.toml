@@ -1,0 +1,881 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:features.apps_mcp_path_override.enabled"]
+en = ""
+en_hash = ""
+zh_name = "Apps MCP 路径覆盖（已移除）"
+zh = "已移除：旧版用于覆盖 Apps MCP 路径的兼容开关，现在会被忽略，无需设置。"
+zh_basis = ""
+
+["config:features.apps_mcp_path_override.path"]
+en = ""
+en_hash = ""
+zh_name = "Apps MCP 覆盖路径（已移除）"
+zh = "已移除：旧版 Apps MCP 路径覆盖所用的路径，现在会被忽略，无需设置。"
+zh_basis = ""
+
+["config:features.async_compaction.enabled"]
+en = ""
+en_hash = ""
+zh_name = "后台预压缩"
+zh = "开发中：开启 `async_compaction` 功能，在前台达到压缩阈值之前就在后台准备远程压缩，减少等待。仅对支持远程压缩的供应商（如内置 OpenAI）生效，开启 `token_budget` 时不生效。"
+zh_basis = ""
+
+["config:features.async_compaction.model_async_compact_threshold_percent"]
+en = "Percentage of the model's full context window that starts background compaction. Defaults to 65; valid values are 1–100, including when disabled."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "ee5e2833bf685d45"
+zh_name = "后台压缩触发百分比"
+zh = "上下文用量达到模型完整上下文窗口的该百分比时开始后台压缩，默认 65；取值 1–100，即使功能未开启也会校验该范围。"
+zh_basis = "ee5e2833bf685d45"
+
+["config:features.code_mode.default_exec_yield_time_ms"]
+en = "Default yield timeout for code-mode exec calls, in milliseconds."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "eaa2a80b76ee2a62"
+zh_name = "代码模式让出时间"
+zh = "代码模式中 `exec` 调用的默认让出时间（毫秒）：脚本运行超过该时间仍未结束时，先把已有输出交给模型，脚本继续运行，之后可用 `wait` 取回结果。默认 30000（30 秒）。"
+zh_basis = "eaa2a80b76ee2a62"
+
+["config:features.code_mode.direct_only_tool_namespaces"]
+en = "Exact tool namespaces to expose only as direct model tools. These tools bypass deferral, remain top-level in code-mode-only sessions, and are omitted from the nested code-mode tool surface."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b758a915f21bb02f"
+zh_name = "仅直接暴露的命名空间"
+zh = "只作为模型直接工具提供的工具命名空间（需完全匹配）。这些工具不延迟加载，在仅代码模式的会话中也保留在顶层，并且不出现在代码模式的嵌套工具中。"
+zh_basis = "b758a915f21bb02f"
+
+["config:features.code_mode.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用代码模式"
+zh = "开发中：开启 `code_mode` 功能，让模型编写 JavaScript，在独立宿主进程的 V8 隔离环境中编排和组合工具调用（通过 `exec`/`wait` 工具）。本节其他设置只在开启后生效。"
+zh_basis = ""
+
+["config:features.code_mode.excluded_tool_namespaces"]
+en = "Exact tool namespaces to omit from the code-mode nested tool surface."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "87797af2ed9d8f68"
+zh_name = "排除的工具命名空间"
+zh = "不在代码模式嵌套工具中提供的工具命名空间（需完全匹配）。"
+zh_basis = "87797af2ed9d8f68"
+
+["config:features.code_mode.experimental_show_cell_overhead"]
+en = "Show handler duration, code-mode host duration, and harness overhead in each code-mode cell response. Experimental: this option and the response format may change or be removed."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "5b808b8d227e6a1f"
+zh_name = "显示单元耗时开销"
+zh = "实验性：在每个代码模式单元的返回结果中附上处理器耗时、代码模式宿主耗时和框架开销。该选项和返回格式随时可能变化或移除。"
+zh_basis = "5b808b8d227e6a1f"
+
+["config:features.code_mode.tool_input_schema_max_bytes"]
+en = "Maximum UTF-8 bytes per rendered tool input type, with a 16,000-byte minimum and default. For ordinary MCP tools, this is also at least their server's explicitly configured input limit."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "f557cd33f97ba734"
+zh_name = "工具输入类型字节上限"
+zh = "代码模式中每个工具输入类型（渲染为 TypeScript 声明）允许的最大 UTF-8 字节数，最小值和默认值都是 16000；普通 MCP 工具至少取其服务器显式配置的输入上限。"
+zh_basis = "f557cd33f97ba734"
+
+["config:features.code_mode_host.disable_in_process_fallback"]
+en = "Keep code mode fail-closed when the standalone host is unavailable."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c42ab95f490e79b9"
+zh_name = "禁用进程内回退"
+zh = "独立宿主进程不可用时，不回退到进程内运行代码模式，而是直接失败（fail-closed）。默认 `false`。"
+zh_basis = "c42ab95f490e79b9"
+
+["config:features.code_mode_host.enabled"]
+en = ""
+en_hash = ""
+zh_name = "独立代码模式宿主"
+zh = "在独立宿主进程中运行 JavaScript 代码模式（`code_mode_host` 功能，稳定，默认开启）。"
+zh_basis = ""
+
+["config:features.codex_hooks"]
+en = ""
+en_hash = ""
+zh_name = "生命周期钩子（旧名）"
+zh = "`[features].hooks` 的旧名称：启用从 `hooks.json` 加载的生命周期钩子（类似 Claude Code 的钩子）。该功能已稳定且默认开启，使用旧名会提示改用 `hooks`。"
+zh_basis = ""
+
+["config:features.collab"]
+en = ""
+en_hash = ""
+zh_name = "子代理协作（旧名）"
+zh = "`[features].multi_agent` 的旧名称：启用多代理协作工具（终端界面中称为 Subagents），让模型可以派生子代理。该功能已稳定且默认开启，建议改用 `multi_agent`。"
+zh_basis = ""
+
+["config:features.connectors"]
+en = ""
+en_hash = ""
+zh_name = "应用连接器（旧名）"
+zh = "`[features].apps` 的旧名称：启用 Apps 应用连接器。该功能已稳定且默认开启，但只在 ChatGPT 登录时可用；建议改用 `apps`。"
+zh_basis = ""
+
+["config:features.current_time_reminder.clock_source"]
+en = ""
+en_hash = ""
+zh_name = "时钟来源"
+zh = "当前时间提醒使用的时钟：`system`（默认，本机系统时间）或 `external`（由宿主提供的外部时钟，宿主未提供时会报错）。"
+zh_basis = ""
+
+["config:features.current_time_reminder.delivery_mode"]
+en = ""
+en_hash = ""
+zh_name = "时间提醒发送时机"
+zh = "控制当前时间提醒可以在哪些推理请求前插入：`any_inference`（默认）或 `after_user_or_tool_output`。"
+zh_basis = ""
+
+["config:features.current_time_reminder.delivery_mode=after_user_or_tool_output"]
+en = "Allow reminders after user input or tool output; new context windows still force one."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "29be4dcff5383e68"
+zh_name = "用户输入或工具输出后"
+zh = "只在用户输入或工具输出之后发送提醒；进入新的上下文窗口时仍会强制发送一次。"
+zh_basis = "29be4dcff5383e68"
+
+["config:features.current_time_reminder.delivery_mode=any_inference"]
+en = "Allow a reminder before any inference request once the interval is due."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3ae33a4751b3ba33"
+zh_name = "任意推理请求前"
+zh = "达到提醒间隔后，任何一次推理请求前都可以发送提醒（默认）。"
+zh_basis = "3ae33a4751b3ba33"
+
+["config:features.current_time_reminder.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用当前时间提醒"
+zh = "开发中：开启 `current_time_reminder` 功能，定期把当前时间加入模型可见的上下文。本节其他设置只在开启后生效。"
+zh_basis = ""
+
+["config:features.current_time_reminder.reminder_interval_seconds"]
+en = ""
+en_hash = ""
+zh_name = "时间提醒间隔"
+zh = "两次当前时间提醒之间至少间隔的秒数，默认 1。"
+zh_basis = ""
+
+["config:features.current_time_reminder.sleep_tool"]
+en = "Expose the input-interruptible `clock.sleep` tool."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c3709ed3c0dee7f9"
+zh_name = "提供 clock.sleep 工具"
+zh = "向模型提供可被用户输入打断的 `clock.sleep` 等待工具。默认 `false`。"
+zh_basis = "c3709ed3c0dee7f9"
+
+["config:features.enable_experimental_windows_sandbox"]
+en = ""
+en_hash = ""
+zh_name = "Windows 沙箱（旧名）"
+zh = "旧开关：未设置 `[windows].sandbox` 时，设为 `true` 等同于把 `[windows].sandbox` 设为 `unelevated`（受限令牌沙箱）。请直接使用 `[windows].sandbox`；仅 Windows 有效。"
+zh_basis = ""
+
+["config:features.experimental_use_unified_exec_tool"]
+en = ""
+en_hash = ""
+zh_name = "统一执行工具（旧名）"
+zh = "`[features].unified_exec` 的旧名称：使用单一的、基于 PTY 的统一命令执行工具。该功能已稳定且默认开启，建议改用 `unified_exec`。"
+zh_basis = ""
+
+["config:features.guardianv2.async_classifier_conversation_token_limit"]
+en = "Reset retained async history when the next request exceeds this token estimate. Defaults to 100,000. Fresh requests remain subject to the model's input limit."
+en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
+en_hash = "8584143d962173b0"
+zh_name = "分类器会话 token 上限"
+zh = "Guardian v2 后台分类器以 `conversation` 模式运行时会保留历史；下一次请求的估算 token 数超过该值时，清空保留的历史重新开始。默认 100000；单次请求仍受模型输入上限约束。"
+zh_basis = "8584143d962173b0"
+
+["config:features.guardianv2.async_classifier_mode"]
+en = "Classifier experiment override. Otherwise use the model default, then snapshots."
+en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
+en_hash = "e4713b5d224eec23"
+zh_name = "后台分类器模式"
+zh = "覆盖 Guardian v2 后台风险分类器的实验模式：`snapshot`（每次单独发送当前快照）或 `conversation`（在持续的分类会话中累积历史）。未设置时先用模型目录的默认值，再回退到 `snapshot`。"
+zh_basis = "e4713b5d224eec23"
+
+["config:features.guardianv2.classifier_instructions"]
+en = ""
+en_hash = ""
+zh_name = "分类器提示词"
+zh = "自定义 Guardian v2 后台风险分类器的提示词，替换模型目录或内置的默认提示词。设置后若未同时设置 `review_threshold`，阈值默认改为 0.8（沿用旧的校准）。"
+zh_basis = ""
+
+["config:features.guardianv2.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用 Guardian v2"
+zh = "开发中：开启 `guardianv2` 功能。审批交给自动审查（`approvals_reviewer = auto_review`）时，后台持续给会话中的动作打风险分，低风险动作可被快速批准，其余仍走同步的 Guardian 审查。本节其他设置只在开启后生效。"
+zh_basis = ""
+
+["config:features.guardianv2.free_guardian"]
+en = "Legacy setting retained for config compatibility; the backend now controls Guardian billing."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "d8a20b933b934140"
+zh_name = "免费 Guardian（已弃用）"
+zh = "已弃用：仅为兼容旧配置保留，Guardian 的计费现由后端决定，此值不起作用。"
+zh_basis = "d8a20b933b934140"
+
+["config:features.guardianv2.max_action_tokens"]
+en = ""
+en_hash = ""
+zh_name = "待审动作 token 上限"
+zh = "提交给分类器的单个待审动作（工具名和参数）允许的最大 token 数；超过时该动作无法后台评分，会改走同步审查。范围 100–100000，默认 10000。"
+zh_basis = ""
+
+["config:features.guardianv2.max_classifier_instruction_tokens"]
+en = ""
+en_hash = ""
+zh_name = "分类器提示词 token 上限"
+zh = "分类器提示词（不含固定的记录来源说明）最多保留的 token 数，范围 100–100000；默认不截断，除非模型目录给出上限。"
+zh_basis = ""
+
+["config:features.guardianv2.max_parent_compaction_tokens"]
+en = ""
+en_hash = ""
+zh_name = "复用压缩结果 token 上限"
+zh = "复用主会话压缩结果时允许的最大 token 估算值，超过则视为无法复用；范围 100–100000，默认 25000。"
+zh_basis = ""
+
+["config:features.guardianv2.max_tool_call_lag"]
+en = ""
+en_hash = ""
+zh_name = "风险分允许滞后数"
+zh = "快速批准时，复用的风险分最多可以落后当前动作几个工具调用；超过则视为分数过期，改走同步审查。默认 2。"
+zh_basis = ""
+
+["config:features.guardianv2.persist_scores"]
+en = "Persist reviewed actions and risk scores to rollout files for debugging."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "371a13243bd6c90a"
+zh_name = "保存风险评分"
+zh = "把审查过的动作和风险分写入会话记录（rollout 文件），用于调试。默认 `false`。"
+zh_basis = "371a13243bd6c90a"
+
+["config:features.guardianv2.reasoning_effort"]
+en = ""
+en_hash = ""
+zh_name = "分类器推理强度"
+zh = "Guardian v2 后台分类器使用的推理强度，默认 `low`（模型目录可另给默认值）。"
+zh_basis = ""
+
+["config:features.guardianv2.reuse_parent_compaction"]
+en = ""
+en_hash = ""
+zh_name = "复用主会话压缩结果"
+zh = "是否把主会话最近一次（加密的）压缩结果作为分类器的上下文，默认 `true`。关闭后，主会话发生过压缩时会改走同步审查。"
+zh_basis = ""
+
+["config:features.guardianv2.review_scope"]
+en = ""
+en_hash = ""
+zh_name = "审查范围"
+zh = "`review_scope` 表：决定哪些类型的工具调用参与 Guardian v2 后台分类和快速批准。模型目录自带审查策略时以目录为准。"
+zh_basis = ""
+
+["config:features.guardianv2.review_scope.computer_use_only"]
+en = "Restrict asynchronous classification and fast approvals to browser and computer-use tools."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0654078eebe6c3f0"
+zh_name = "仅限浏览器和电脑操作"
+zh = "只对浏览器和电脑操作（computer use）类工具做后台分类和快速批准，其他工具仍走同步审查。默认 `true`。"
+zh_basis = "0654078eebe6c3f0"
+
+["config:features.guardianv2.review_scope.sandboxed_exec_commands"]
+en = "Include sandboxed shell command calls in Guardian v2 classification."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "57069846f0298781"
+zh_name = "包含沙箱内命令"
+zh = "把在沙箱中执行的 Shell 命令也纳入 Guardian v2 分类。默认 `false`，且只有 `computer_use_only = false` 时才生效。"
+zh_basis = "57069846f0298781"
+
+["config:features.guardianv2.review_threshold"]
+en = ""
+en_hash = ""
+zh_name = "风险分阈值"
+zh = "风险分低于该值的动作可被快速批准，达到或超过则改走同步审查；取值 0.0–1.0，默认 0.5（自定义了分类器提示词时默认 0.8）。"
+zh_basis = ""
+
+["config:features.guardianv2.transcript"]
+en = ""
+en_hash = ""
+zh_name = "分类器对话记录"
+zh = "`transcript` 表：控制提供给 Guardian v2 后台分类器的对话记录包含哪些内容，以及各部分的 token 上限。"
+zh_basis = ""
+
+["config:features.guardianv2.transcript.include_images"]
+en = "Include recent screenshots from messages and configured tool outputs."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3467709c0c01e2e3"
+zh_name = "包含截图"
+zh = "在对话记录中附上消息和指定工具输出里的近期截图。默认 `true`。"
+zh_basis = "3467709c0c01e2e3"
+
+["config:features.guardianv2.transcript.max_message_entry_tokens"]
+en = ""
+en_hash = ""
+zh_name = "单条消息 token 上限"
+zh = "对话记录中每条消息最多保留的 token 数，范围 100–100000，默认 2000；不能大于 `max_message_transcript_tokens`。"
+zh_basis = ""
+
+["config:features.guardianv2.transcript.max_message_transcript_tokens"]
+en = ""
+en_hash = ""
+zh_name = "消息总 token 上限"
+zh = "对话记录中所有消息合计最多保留的 token 数，范围 100–100000，默认 10000。"
+zh_basis = ""
+
+["config:features.guardianv2.transcript.max_recent_non_user_entries"]
+en = ""
+en_hash = ""
+zh_name = "最近非用户条目数"
+zh = "对话记录中最多保留的最近非用户条目（助手消息、工具调用等）数量，正整数，默认 40。"
+zh_basis = ""
+
+["config:features.guardianv2.transcript.max_tool_entry_tokens"]
+en = ""
+en_hash = ""
+zh_name = "单条工具记录 token 上限"
+zh = "每条工具调用或工具输出最多保留的 token 数，范围 100–100000，默认 1000；不能大于 `max_tool_transcript_tokens`。"
+zh_basis = ""
+
+["config:features.guardianv2.transcript.max_tool_transcript_tokens"]
+en = ""
+en_hash = ""
+zh_name = "工具记录总 token 上限"
+zh = "所有工具调用和工具输出合计最多保留的 token 数，范围 100–100000，默认 10000。"
+zh_basis = ""
+
+["config:features.guardianv2.transcript.sources"]
+en = ""
+en_hash = ""
+zh_name = "对话记录来源"
+zh = "除用户和助手消息外还要放入对话记录的内容：`tool_calls`（工具调用）、`tool_outputs`（工具输出）、`reasoning`（推理内容）。默认是前两项。"
+zh_basis = ""
+
+["config:features.guardianv2.transcript_mode"]
+en = "Transcript encoding for synchronous Guardian review and asynchronous scoring. Defaults to line."
+en_source = "openai/codex rust-v0.162.0: codex-rs/core/config.schema.json"
+en_hash = "f54f89b25d9f0fd5"
+zh_name = "对话记录格式"
+zh = "同步 Guardian 审查和后台评分共用的对话记录编码格式：`line`（默认）或 `json`。"
+zh_basis = "f54f89b25d9f0fd5"
+
+["config:features.guardianv2.transcript_mode=json"]
+en = "Host-owned metadata with message text escaped as a JSON string."
+en_source = "openai/codex rust-v0.162.0: codex-rs/core/config.schema.json"
+en_hash = "4a798be3c0a73b9a"
+zh_name = "JSON 格式"
+zh = "由宿主生成的元数据，消息正文以转义后的 JSON 字符串形式给出。"
+zh_basis = "4a798be3c0a73b9a"
+
+["config:features.guardianv2.transcript_mode=line"]
+en = "Numbered entries with a role prefix and unescaped text."
+en_source = "openai/codex rust-v0.162.0: codex-rs/core/config.schema.json"
+en_hash = "370a884e1d95f27f"
+zh_name = "逐行格式"
+zh = "按条编号，每条带角色前缀，正文不做转义（默认）。"
+zh_basis = "370a884e1d95f27f"
+
+["config:features.imagegenext"]
+en = ""
+en_hash = ""
+zh_name = "图片生成（旧名）"
+zh = "`[features].image_generation` 的旧名称：启用基于扩展的图片生成。该功能已稳定且默认开启；同时写了 `image_generation` 时以后者为准，此键被忽略。"
+zh_basis = ""
+
+["config:features.memory_tool"]
+en = ""
+en_hash = ""
+zh_name = "记忆功能（旧名）"
+zh = "`[features].memories` 的旧名称：启用启动时的记忆提炼和基于文件的记忆整合。默认关闭；建议改用 `memories`，具体参数见 `[memories]`。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.default_wait_timeout_ms"]
+en = ""
+en_hash = ""
+zh_name = "默认等待超时"
+zh = "调用 `wait_agent` 等待子代理而未指定超时时使用的默认值（毫秒），默认 30000；范围 0–3600000。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.disable_direct_message"]
+en = "Disable the model's direct-message tools; spawning and automatic child results remain available."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "3fcb7e7f482c6441"
+zh_name = "禁用直接消息"
+zh = "不向模型提供多代理的直接消息工具（`send_message`、`followup_task`）；派生子代理和子代理结果的自动回传仍可用。默认 `false`。"
+zh_basis = "3fcb7e7f482c6441"
+
+["config:features.multi_agent_v2.disable_native_tools"]
+en = "Hide native multi-agent tools while retaining the V2 runtime for host-provided tools."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "587d5100d8575d9e"
+zh_name = "隐藏原生多代理工具"
+zh = "隐藏 Codex 自带的多代理工具，但保留多代理 v2 运行时，供宿主提供的工具使用。默认 `false`。"
+zh_basis = "587d5100d8575d9e"
+
+["config:features.multi_agent_v2.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用多代理 v2"
+zh = "开启 `multi_agent_v2` 功能（稳定，默认关闭）：基于任务路径的新版多代理路由，开启后优先于 `[agents]` 中的 v1 设置。本节其他设置只在开启后生效。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.expose_spawn_agent_model_overrides"]
+en = "Exposes `model` and `reasoning_effort` on the multi-agent v2 spawn tool and adds corresponding guidance to root and subagent usage hints."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a6d01873f835d8d3"
+zh_name = "允许指定子代理模型"
+zh = "在多代理 v2 的 `spawn_agent` 工具上提供 `model` 和 `reasoning_effort` 参数，并在主代理和子代理的使用提示中加入相应说明。默认 `true`。"
+zh_basis = "a6d01873f835d8d3"
+
+["config:features.multi_agent_v2.hide_spawn_agent_metadata"]
+en = ""
+en_hash = ""
+zh_name = "隐藏子代理元数据"
+zh = "派生子代理时隐藏代理元数据：`spawn_agent` 的结果只返回任务名而不含昵称，工具说明中也不带继承模型的提示。默认 `true`。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.max_concurrent_threads_per_session"]
+en = ""
+en_hash = ""
+zh_name = "并发代理会话上限"
+zh = "每个会话同时打开的代理会话数上限，默认 4；未设置时若配置了 `agents.max_concurrent_threads_per_session`，则取该值加 1。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.max_wait_timeout_ms"]
+en = ""
+en_hash = ""
+zh_name = "最长等待超时"
+zh = "`wait_agent` 允许的最长等待时间（毫秒），默认 3600000（1 小时），范围 0–3600000。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.message_board_in_memory"]
+en = "Keep the message board in memory for a training session, including ephemeral sessions."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "f0c731f28030f34e"
+zh_name = "内存留言板"
+zh = "把代理树共享的留言板保存在内存中（用于训练会话），临时会话也能使用。默认 `false`，即保存在本地状态数据库中。"
+zh_basis = "f0c731f28030f34e"
+
+["config:features.multi_agent_v2.message_board_remote"]
+en = "Use a session-scoped remote board instead of local storage."
+en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
+en_hash = "8b041f45fa330b7d"
+zh_name = "远程留言板"
+zh = "改用按会话划分的远程留言板代替本地存储，需要填写 `url` 和凭据。留言板本身需开启 `agent_message_board` 功能。"
+zh_basis = "8b041f45fa330b7d"
+
+["config:features.multi_agent_v2.message_board_remote.bearer_token"]
+en = "Board credential supplied directly by a runtime config override."
+en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
+en_hash = "9c61e9ba503a0830"
+zh_name = "留言板凭据"
+zh = "由运行时配置覆盖直接传入的远程留言板凭据（Bearer token）；也可改用 `bearer_token_env_var` 从环境变量读取。"
+zh_basis = "9c61e9ba503a0830"
+
+["config:features.multi_agent_v2.message_board_remote.bearer_token_env_var"]
+en = "Read the credential from this environment variable instead of bearer_token."
+en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
+en_hash = "6e782dbf466409a5"
+zh_name = "凭据环境变量"
+zh = "从该环境变量读取远程留言板凭据，代替 `bearer_token`；变量不存在时会话启动会报错。"
+zh_basis = "6e782dbf466409a5"
+
+["config:features.multi_agent_v2.message_board_remote.url"]
+en = ""
+en_hash = ""
+zh_name = "留言板地址"
+zh = "远程留言板服务的 URL（必填）。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.min_wait_timeout_ms"]
+en = ""
+en_hash = ""
+zh_name = "最短等待超时"
+zh = "`wait_agent` 允许的最短等待时间（毫秒），默认 10000，范围 0–3600000。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.multi_agent_mode_hint_text"]
+en = ""
+en_hash = ""
+zh_name = "多代理模式提示"
+zh = "自定义告诉模型何时使用多代理的模式提示，替换内置提示（内置提示默认只在用户明确要求时派生子代理，推理强度为 `ultra` 时改为主动派生）。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.non_code_mode_only"]
+en = ""
+en_hash = ""
+zh_name = "不放入代码模式"
+zh = "多代理工具只作为模型直接工具提供，不出现在代码模式的嵌套工具中。默认 `true`。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.preserve_fork_prefix"]
+en = "Preserve the parent's model-visible history on full forks and append child instructions. Defaults to false. Legacy compaction without a reusable context baseline still rebuilds."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "b0067d642ca33bd5"
+zh_name = "分叉时保留父会话前缀"
+zh = "完整分叉子代理时保留父会话中模型可见的历史，并在其后追加子代理指令。默认 `false`；没有可复用上下文基线的旧式压缩仍会重建历史。"
+zh_basis = "b0067d642ca33bd5"
+
+["config:features.multi_agent_v2.root_agent_usage_hint_text"]
+en = ""
+en_hash = ""
+zh_name = "主代理使用提示"
+zh = "替换注入给主代理的多代理使用说明；设为空字符串则不注入。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.subagent_developer_instructions"]
+en = "Overrides inherited developer instructions for subagents without role-specific instructions."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8593b7625b728697"
+zh_name = "子代理开发者指令"
+zh = "对没有角色专属指令的子代理，用这段开发者指令替换从父会话继承来的开发者指令。"
+zh_basis = "8593b7625b728697"
+
+["config:features.multi_agent_v2.subagent_usage_hint_text"]
+en = ""
+en_hash = ""
+zh_name = "子代理使用提示"
+zh = "替换注入给子代理的多代理使用说明；设为空字符串则不注入。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.tool_namespace"]
+en = ""
+en_hash = ""
+zh_name = "工具命名空间"
+zh = "多代理 v2 工具所在的命名空间，默认 `collaboration`；只能使用字母、数字、`_` 和 `-`，长度 1–64。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.usage_hint_enabled"]
+en = "Deprecated compatibility field. Its value is ignored."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7f36013e9623fdb6"
+zh_name = "使用提示开关（已弃用）"
+zh = "已弃用：仅为兼容旧配置保留，值会被忽略。"
+zh_basis = "7f36013e9623fdb6"
+
+["config:features.multi_agent_v2.usage_hint_text"]
+en = ""
+en_hash = ""
+zh_name = "spawn_agent 使用提示"
+zh = "追加到 `spawn_agent` 工具说明末尾的使用提示，替换默认的代理角色说明。"
+zh_basis = ""
+
+["config:features.multi_agent_v2.wait_agent_enabled"]
+en = "Expose the multi-agent v2 `wait_agent` tool."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "aa06ef965fb2b8be"
+zh_name = "提供 wait_agent 工具"
+zh = "向模型提供多代理 v2 的 `wait_agent` 工具，用于等待子代理的结果。默认 `true`。"
+zh_basis = "aa06ef965fb2b8be"
+
+["config:features.network_proxy.allow_local_binding"]
+en = "Permits local servers and direct host-loopback connections and skips the proxy's additional private-network destination checks. Proxy domain rules still apply. Defaults to true for MXC, which cannot enforce false; otherwise defaults to false."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "cb1a8716651af2b8"
+zh_name = "允许本地连接"
+zh = "允许在沙箱内启动本地服务并直接连接本机回环地址，同时跳过代理额外的内网目标检查；代理的域名规则仍然有效。在 MXC（Windows 原生沙箱）下默认 `true` 且无法强制为 `false`，其他情况默认 `false`。"
+zh_basis = "cb1a8716651af2b8"
+
+["config:features.network_proxy.allow_upstream_proxy"]
+en = ""
+en_hash = ""
+zh_name = "允许上游代理"
+zh = "托管代理转发出站流量时，是否经由环境中配置的上游代理（如 `HTTPS_PROXY`）。默认 `true`。"
+zh_basis = ""
+
+["config:features.network_proxy.credential_broker"]
+en = ""
+en_hash = ""
+zh_name = "凭据代管"
+zh = "开启凭据代管：沙箱内命令只拿到同格式的占位凭据，代理在请求发往允许的地址时再换成真实凭据（会自动启用 MITM 解密）。默认 `false`；开启 `credential_masking` 功能也会启用它。"
+zh_basis = ""
+
+["config:features.network_proxy.credentials"]
+en = ""
+en_hash = ""
+zh_name = "代管凭据列表"
+zh = "按名称定义需要代管的凭据（`credentials.<name>`），每项说明凭据来自哪些环境变量、格式如何、可注入到哪些地址以及注入方式。"
+zh_basis = ""
+
+["config:features.network_proxy.credentials.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个代管凭据"
+zh = "一类由环境变量提供的凭据的定义，至少需要 `env`、`patterns` 和目标地址（`url_prefixes` 或 `url_prefix_from_env`）。"
+zh_basis = ""
+
+["config:features.network_proxy.credentials.<name>.auth"]
+en = ""
+en_hash = ""
+zh_name = "注入方式"
+zh = "凭据注入的方式，可多选：`bearer`（`Authorization: Bearer`）、`token`（`Authorization: token`）、`basic`（`Authorization: Basic`）、`header`（写入 `header` 指定的请求头）。未填写时为 `bearer`。"
+zh_basis = ""
+
+["config:features.network_proxy.credentials.<name>.env"]
+en = ""
+en_hash = ""
+zh_name = "凭据环境变量"
+zh = "保存真实凭据的环境变量名列表，沙箱内看到的是替换后的占位值；不能与内置凭据来源重名。"
+zh_basis = ""
+
+["config:features.network_proxy.credentials.<name>.header"]
+en = ""
+en_hash = ""
+zh_name = "自定义请求头"
+zh = "注入方式包含 `header` 时写入凭据的请求头名称；使用 `header` 方式时必填，否则不能填写。"
+zh_basis = ""
+
+["config:features.network_proxy.credentials.<name>.patterns"]
+en = ""
+en_hash = ""
+zh_name = "凭据格式"
+zh = "描述凭据格式的正则表达式列表，用于识别凭据并生成同格式的占位值；至少一项。"
+zh_basis = ""
+
+["config:features.network_proxy.credentials.<name>.prefix"]
+en = ""
+en_hash = ""
+zh_name = "请求头值前缀"
+zh = "注入方式为 `header` 时放在凭据前面的前缀，只能与 `header` 一起使用。"
+zh_basis = ""
+
+["config:features.network_proxy.credentials.<name>.url_prefix_from_env"]
+en = "Environment variable containing an additional URL prefix or hostname."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a1c53f43880da040"
+zh_name = "目标地址环境变量"
+zh = "从该环境变量读取一个额外允许注入的 URL 前缀或主机名；不能与 `env` 中的变量相同。"
+zh_basis = "a1c53f43880da040"
+
+["config:features.network_proxy.credentials.<name>.url_prefixes"]
+en = "URL prefixes authorized for injection. Bare loopback hosts imply HTTP; other bare hosts imply HTTPS."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "da9c97b123d36540"
+zh_name = "允许注入的地址"
+zh = "允许注入真实凭据的 URL 前缀列表。只写主机名时，回环地址按 HTTP 处理，其他主机按 HTTPS 处理。"
+zh_basis = "da9c97b123d36540"
+
+["config:features.network_proxy.dangerously_allow_all_unix_sockets"]
+en = ""
+en_hash = ""
+zh_name = "允许所有 Unix 套接字"
+zh = "危险：允许经代理访问任意本地 Unix 套接字（如 `docker.sock`），不再限于 `unix_sockets` 中允许的路径；此时代理只会监听回环地址。执行时默认 `false`。"
+zh_basis = ""
+
+["config:features.network_proxy.dangerously_allow_non_loopback_proxy"]
+en = ""
+en_hash = ""
+zh_name = "允许非回环监听"
+zh = "危险：允许代理监听非回环地址，使其他机器也能访问。默认 `false`，此时非回环地址会被改回 `127.0.0.1`；启用 Unix 套接字转发时此项无效。"
+zh_basis = ""
+
+["config:features.network_proxy.domains"]
+en = ""
+en_hash = ""
+zh_name = "域名规则"
+zh = "按域名模式设置访问规则，值为 `allow` 或 `deny`；同一模式规则冲突时 `deny` 优先。"
+zh_basis = ""
+
+["config:features.network_proxy.domains.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单条域名规则"
+zh = "该域名模式的规则：`allow` 允许访问，`deny` 禁止访问。"
+zh_basis = ""
+
+["config:features.network_proxy.enable_socks5"]
+en = ""
+en_hash = ""
+zh_name = "启用 SOCKS5"
+zh = "是否同时提供 SOCKS5 代理（监听 `socks_url`）。默认 `true`。"
+zh_basis = ""
+
+["config:features.network_proxy.enable_socks5_udp"]
+en = ""
+en_hash = ""
+zh_name = "启用 SOCKS5 UDP"
+zh = "是否允许通过 SOCKS5 转发 UDP。默认 `true`；`limited` 模式下 UDP 始终被阻止。"
+zh_basis = ""
+
+["config:features.network_proxy.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用托管网络代理"
+zh = "实验性：开启 `network_proxy` 功能，为沙箱会话启动托管网络代理，按本节规则控制命令的出站网络访问。本节其他设置只在开启后生效。"
+zh_basis = ""
+
+["config:features.network_proxy.mode"]
+en = ""
+en_hash = ""
+zh_name = "代理模式"
+zh = "`full`（默认）允许所有 HTTP 方法，HTTPS 直接建立隧道；`limited` 只允许 `GET`、`HEAD`、`OPTIONS`，并阻止 HTTPS CONNECT（除非启用 MITM）、SOCKS5 UDP 和非 HTTPS 的 SOCKS5 TCP。"
+zh_basis = ""
+
+["config:features.network_proxy.proxy_url"]
+en = ""
+en_hash = ""
+zh_name = "HTTP 代理地址"
+zh = "托管 HTTP 代理的监听地址，默认 `http://127.0.0.1:3128`。"
+zh_basis = ""
+
+["config:features.network_proxy.socks_url"]
+en = ""
+en_hash = ""
+zh_name = "SOCKS5 代理地址"
+zh = "托管 SOCKS5 代理的监听地址，默认监听 `127.0.0.1:8081`。"
+zh_basis = ""
+
+["config:features.network_proxy.unix_sockets"]
+en = ""
+en_hash = ""
+zh_name = "Unix 套接字规则"
+zh = "按路径设置允许或禁止经代理访问的本地 Unix 套接字，值为 `allow` 或 `deny`；`allow` 的路径必须是绝对路径。"
+zh_basis = ""
+
+["config:features.network_proxy.unix_sockets.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单条套接字规则"
+zh = "该 Unix 套接字路径的规则：`allow` 允许，`deny` 禁止。"
+zh_basis = ""
+
+["config:features.non_prefixed_mcp_tool_names.enabled"]
+en = ""
+en_hash = ""
+zh_name = "MCP 工具名不加前缀"
+zh = "开发中：开启 `non_prefixed_mcp_tool_names` 功能，模型看到的 MCP 工具名不再带旧的 `mcp__` 命名空间前缀；未填写 `server_names` 时对所有 MCP 服务器生效。"
+zh_basis = ""
+
+["config:features.non_prefixed_mcp_tool_names.server_names"]
+en = "MCP servers whose tools should omit the legacy `mcp__` namespace prefix."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "68dbcbca625ea736"
+zh_name = "不加前缀的服务器"
+zh = "只对这些 MCP 服务器的工具省略旧的 `mcp__` 前缀，其他服务器保持原样。"
+zh_basis = "68dbcbca625ea736"
+
+["config:features.request_permissions"]
+en = ""
+en_hash = ""
+zh_name = "申请额外权限（旧名）"
+zh = "`[features].exec_permission_approvals` 的旧名称（开发中，默认关闭）：允许命令执行工具在保持沙箱的前提下申请额外权限。建议改用新名称。"
+zh_basis = ""
+
+["config:features.rollout_budget.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用会话总预算"
+zh = "开发中：开启 `rollout_budget` 功能，为一个会话及其所有子代理统计共享的加权 token 预算，用完后会话以超出预算的错误结束。开启时必须同时设置 `limit_tokens` 和 `reminder_at_remaining_tokens`。"
+zh_basis = ""
+
+["config:features.rollout_budget.limit_tokens"]
+en = ""
+en_hash = ""
+zh_name = "预算总量"
+zh = "共享预算的加权 token 总量（正整数），开启该功能时必填。"
+zh_basis = ""
+
+["config:features.rollout_budget.prefill_token_weight"]
+en = ""
+en_hash = ""
+zh_name = "输入 token 权重"
+zh = "计算预算时输入（预填充）token 的权重，非负数，默认 1.0。"
+zh_basis = ""
+
+["config:features.rollout_budget.reminder_at_remaining_tokens"]
+en = "Remaining weighted-token values that trigger reminders when crossed."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "56da7984a5f13f90"
+zh_name = "剩余预算提醒点"
+zh = "剩余加权 token 降到这些值时各提醒模型一次；每个值都必须为正且小于 `limit_tokens`，开启该功能时必填。"
+zh_basis = "56da7984a5f13f90"
+
+["config:features.rollout_budget.sampling_token_weight"]
+en = ""
+en_hash = ""
+zh_name = "输出 token 权重"
+zh = "计算预算时模型输出（采样）token 的权重，非负数，默认 1.0。"
+zh_basis = ""
+
+["config:features.sleep_tool.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用等待工具"
+zh = "是否允许注册内置的 sleep 等待工具（`sleep_tool` 功能，稳定，默认开启）。"
+zh_basis = ""
+
+["config:features.sleep_tool.mode"]
+en = ""
+en_hash = ""
+zh_name = "等待工具注册方式"
+zh = "`model_driven`（默认）按模型和旧的时钟配置决定是否提供等待工具；`always_on` 始终提供。"
+zh_basis = ""
+
+["config:features.sleep_tool.mode=always_on"]
+en = "Register sleep regardless of the model or legacy clock configuration."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4b40f27e3757dc2b"
+zh_name = "始终提供"
+zh = "无论模型或旧的时钟配置如何，都注册等待工具。"
+zh_basis = "4b40f27e3757dc2b"
+
+["config:features.sleep_tool.mode=model_driven"]
+en = "Preserve the existing model and legacy clock configuration defaults."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "dd1417de1a936227"
+zh_name = "由模型决定"
+zh = "保持原有行为：是否提供等待工具由模型目录和旧的时钟配置决定（默认）。"
+zh_basis = "dd1417de1a936227"
+
+["config:features.telepathy"]
+en = ""
+en_hash = ""
+zh_name = "Chronicle（旧名）"
+zh = "`[features].chronicle` 的旧名称（开发中，默认关闭）：启用 Chronicle 旁路进程，被动采集屏幕上下文形成记忆。建议改用 `chronicle`。"
+zh_basis = ""
+
+["config:features.tool_registry"]
+en = ""
+en_hash = ""
+zh_name = "工具注册设置"
+zh = "`[features.tool_registry]` 表：工具注册相关的设置。它不是功能开关，不能写成 `true`/`false`。"
+zh_basis = ""
+
+["config:features.tool_registry.error_on_tool_collisions"]
+en = "Fail the turn when multiple tools share the same effective name."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ad209b739215c277"
+zh_name = "工具重名时报错"
+zh = "多个工具的实际名称相同时，让该轮次直接失败。默认 `false`。"
+zh_basis = "ad209b739215c277"
+
+["config:features.tool_registry.turn_metadata_includes_tool_info"]
+en = "Include authoritative tool information in per-turn request metadata."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3f2022db5c22a8bd"
+zh_name = "轮次元数据含工具信息"
+zh = "在每轮请求的元数据中附上权威的工具信息。默认 `false`。"
+zh_basis = "3f2022db5c22a8bd"
+
+["config:features.web_search"]
+en = ""
+en_hash = ""
+zh_name = "联网搜索（旧开关）"
+zh = "已弃用：旧的联网搜索开关，联网搜索现已默认开启（`cached` 模式）。设为 `true` 且未设置顶层 `web_search` 时改用 `live` 实时搜索，设为 `false` 并不会关闭搜索；请改用顶层 `web_search`（`live`、`indexed`、`cached` 或 `disabled`）。"
+zh_basis = ""

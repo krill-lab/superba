@@ -1,0 +1,19 @@
+# superba-core messages of the remote hosts area (settings sync, Codex installs on
+# hosts). Concatenated after en.toml into the core catalog, so this file must
+# start with a table header and must not repeat a key of another core file
+# (enforced by tests). Every key must also exist in core.hosts.zh-CN.toml.
+
+[host_sync]
+write = "Write"
+skip = "Skip: {reason}"
+remove = "Remove"
+conflict = "Changed on the host since the last sync"
+
+[host_scope]
+connection = "Only the connection of {host} changes (provider, line, key and model); its own Codex settings stay."
+settings = "Only Codex settings change on {host}; its connection, key and model stay."
+
+[host_sessions]
+truncated = "The host has {count} session files; only the first {max} were counted."
+no_zstd = "{count} compressed session files were not counted: the host has no zstd."
+no_meta = "{count} session files have no readable session header and were not counted."

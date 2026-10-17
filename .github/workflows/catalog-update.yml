@@ -1,0 +1,306 @@
+name: Codex catalog update
+
+# Watches openai/codex release tags (rust-v*) and the desktop app's public package
+# indexes, and opens or updates a pull request that updates catalog/: per-version
+# files, change summaries, overlays with official English only (new entries arrive
+# with empty Chinese fields, which maintainers write per entry from the codex
+# source before a release), coverage and the index; and the data feeds in
+# catalog/feeds/ (model list, prompts, Codex releases with package checksums,
+# desktop app builds with their bundled Codex). Cross-repository release events
+# cannot trigger a workflow here, so it polls. See catalog/CONTRIBUTING.md.
+#
+# Two jobs keep third-party code away from write access:
+# - `regenerate` builds and runs the generator and the catalog tests (every
+#   dependency's build script runs here) with a read-only token that is not
+#   persisted, and uploads the catalog/ change as a patch.
+# - `pull-request` runs no cargo and no third-party code: it applies the patch,
+#   commits, pushes the branch and opens or updates the pull request.
+#
+# Automation never signs: the index signatures are the trust root of remote catalog
+# and feed updates, so a maintainer signs after reviewing and merging
+# (catalog/CONTRIBUTING.md). `publish-feeds` copies the signed feeds of the default
+# branch to the public feeds repository; it is off until that repository exists
+# (repository variable SUPERBA_FEEDS_PUBLISH=true and secret FEEDS_DEPLOY_KEY).
+#
+# Pull requests opened with GITHUB_TOKEN do not trigger other workflows; set the
+# CATALOG_BOT_TOKEN secret (GitHub App or fine-grained token with contents and
+# pull-requests write) if CI must run on them.
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      rebuild:
+        description: "Re-extract every selected version (not only new ones)"
+        type: boolean
+        default: false
+
+# Third-party actions are pinned to full commit SHAs (version in a comment).
+# Each job sets its own permissions.
+permissions: {}
+
+concurrency:
+  group: catalog-update
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  UPSTREAM: https://github.com/openai/codex
+  APP_BASE: https://persistent.oaistatic.com/codex-app-prod
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      update: ${{ steps.diff.outputs.update }}
+      latest: ${{ steps.diff.outputs.latest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: catalog-update
+      - name: Build the generator
+        run: cargo build --locked -p superba-catalog-gen
+      - name: Look for new releases
+        id: tags
+        env:
+          REBUILD: ${{ inputs.rebuild || false }}
+        run: |
+          gen=target/debug/superba-catalog-gen
+          git ls-remote --tags "$UPSTREAM" 'rust-v*' > "$RUNNER_TEMP/ls-remote.txt"
+          "$gen" tags --ls-remote "$RUNNER_TEMP/ls-remote.txt" --missing > "$RUNNER_TEMP/missing.txt"
+          if [[ -s "$RUNNER_TEMP/missing.txt" || "$REBUILD" == "true" ]]; then
+            echo "update=true" >> "$GITHUB_OUTPUT"
+            printf 'New releases:\n'; cat "$RUNNER_TEMP/missing.txt"
+          else
+            echo "update=false" >> "$GITHUB_OUTPUT"
+            echo "The catalog has every selected release."
+          fi
+      - name: Regenerate the catalog
+        if: steps.tags.outputs.update == 'true'
+        env:
+          REBUILD: ${{ inputs.rebuild || false }}
+        run: |
+          set -euo pipefail
+          gen=target/debug/superba-catalog-gen
+          # Blobless clone: commits and trees only; the three source files of each
+          # release are fetched on demand.
+          git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM" "$RUNNER_TEMP/codex"
+          cp catalog/dist/index.json "$RUNNER_TEMP/old-index.json"
+          before=$("$gen" human-digest)
+          if [[ "$REBUILD" == "true" ]]; then
+            "$gen" build --git "$RUNNER_TEMP/codex"
+          else
+            "$gen" build --git "$RUNNER_TEMP/codex" --only-new
+          fi
+          "$gen" overlay-sync
+          "$gen" coverage --write
+          "$gen" index
+          # Guard: human-written text (zh, zh_name, en_note) must not change and no
+          # Chinese text may be added by automation.
+          after=$("$gen" human-digest)
+          if [[ "$before" != "$after" ]]; then
+            echo "::error::human-written overlay text changed"; exit 1
+          fi
+          if git diff -U0 -- catalog/overlay | grep -E '^\+(zh|zh_name|en_note) = "[^"]'; then
+            echo "::error::the update added human-owned text"; exit 1
+          fi
+          "$gen" check
+          "$gen" summary --old-index "$RUNNER_TEMP/old-index.json" > "$RUNNER_TEMP/summary.md"
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Download the desktop app indexes and Codex checksums
+        id: feedsin
+        run: |
+          set -euo pipefail
+          in="$RUNNER_TEMP/feeds-in"; mkdir -p "$in/sums"
+          for a in amd64 arm64; do
+            curl -fsSL -o "$in/Packages-$a" "$APP_BASE/linux/deb/dists/stable/main/binary-$a/Packages"
+          done
+          for a in x86_64 aarch64; do
+            curl -fsSL -o "$in/repomd-$a.xml" "$APP_BASE/linux/rpm/$a/repodata/repomd.xml"
+            p=$(grep -o 'href="repodata/[0-9a-f]*-primary.xml.gz"' "$in/repomd-$a.xml" | head -1 | sed 's/href="//;s/"$//')
+            [[ "$p" =~ ^repodata/[0-9a-f]+-primary\.xml\.gz$ ]] || { echo "::error::unexpected repomd"; exit 1; }
+            curl -fsSL -o "$in/primary-$a.xml.gz" "$APP_BASE/linux/rpm/$a/$p"
+          done
+          curl -fsSL -o "$in/windows-store-update.json" "$APP_BASE/windows-store-update.json"
+          latest=$(awk '/^Version:/ {print $2; exit}' "$in/Packages-amd64")
+          [[ "$latest" =~ ^[0-9]+(\.[0-9]+)+$ ]] || { echo "::error::unexpected app version"; exit 1; }
+          curl -fsSL -o "$in/appcast.xml" "$APP_BASE/appcast-$latest.xml" || rm -f "$in/appcast.xml"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          # The Codex bundled by a build the feed does not know yet: download the deb,
+          # check it against Packages, read resources/codex --version.
+          bundled=""
+          if ! jq -e --arg v "$latest" '.releases[] | select(.version == $v and .bundled_codex != null)' catalog/feeds/app-versions.json > /dev/null; then
+            file=$(awk '/^Filename:/ {print $2; exit}' "$in/Packages-amd64")
+            sha=$(awk '/^SHA256:/ {print $2; exit}' "$in/Packages-amd64")
+            [[ "$file" =~ ^pool/main/c/chatgpt/chatgpt_[0-9.]+_amd64\.deb$ ]] || { echo "::error::unexpected Filename"; exit 1; }
+            curl -fsSL -o "$RUNNER_TEMP/app.deb" "$APP_BASE/linux/deb/$file"
+            echo "$sha  $RUNNER_TEMP/app.deb" | sha256sum -c -
+            mkdir -p "$RUNNER_TEMP/app"
+            dpkg-deb --fsys-tarfile "$RUNNER_TEMP/app.deb" | tar -x -C "$RUNNER_TEMP/app" ./usr/lib/chatgpt/resources/codex
+            v=$(env -i HOME="$RUNNER_TEMP/app" PATH=/usr/bin:/bin "$RUNNER_TEMP/app/usr/lib/chatgpt/resources/codex" --version | awk '{print $NF}')
+            [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::unexpected codex version"; exit 1; }
+            bundled="$latest=$v"
+            rm -rf "$RUNNER_TEMP/app" "$RUNNER_TEMP/app.deb"
+          fi
+          echo "bundled=$bundled" >> "$GITHUB_OUTPUT"
+          # Package checksums of every release from the floor (small files).
+          git ls-remote --tags "$UPSTREAM" 'rust-v*' | awk '{print $2}' | sed 's|refs/tags/||; s|\^{}||' | sort -u \
+            | grep -E '^rust-v0\.(1[4-9][0-9]|[2-9][0-9]{2})\.[0-9]+(-alpha\.[0-9.]+)?$' > "$in/tags.txt"
+          while read -r tag; do
+            if [[ "$tag" == *-alpha* ]] && ! grep -q "\"${tag#rust-v}\"" catalog/sources.toml catalog/feeds/app-versions.json; then
+              continue
+            fi
+            curl -fsSL -o "$in/sums/$tag.SHA256SUMS" \
+              "https://github.com/openai/codex/releases/download/$tag/codex-package_SHA256SUMS" \
+              || rm -f "$in/sums/$tag.SHA256SUMS"
+          done < "$in/tags.txt"
+      - name: Regenerate the feeds
+        run: |
+          set -euo pipefail
+          gen=target/debug/superba-catalog-gen
+          in="$RUNNER_TEMP/feeds-in"
+          [[ -d "$RUNNER_TEMP/codex" ]] || git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM" "$RUNNER_TEMP/codex"
+          args=(--apt "$in/Packages-amd64" --apt "$in/Packages-arm64"
+                --rpm "x86_64=$in/primary-x86_64.xml.gz" --rpm "aarch64=$in/primary-aarch64.xml.gz"
+                --windows-store "$in/windows-store-update.json")
+          [[ -f "$in/appcast.xml" ]] && args+=(--appcast "$in/appcast.xml")
+          [[ -n "${{ steps.feedsin.outputs.bundled }}" ]] && args+=(--bundled "${{ steps.feedsin.outputs.bundled }}")
+          "$gen" feeds models --git "$RUNNER_TEMP/codex"
+          "$gen" feeds app-versions "${args[@]}"
+          "$gen" feeds codex-versions --git "$RUNNER_TEMP/codex" --sums-dir "$in/sums"
+          "$gen" feeds index
+          "$gen" feeds check
+          if [[ ! -f "$RUNNER_TEMP/summary.md" ]]; then
+            printf '## Catalog feeds update\n\nRegenerated catalog/feeds/ (models, prompts, Codex releases, desktop app builds; latest app %s). A maintainer signs the feed index after merging.\n' \
+              "${{ steps.feedsin.outputs.latest }}" > "$RUNNER_TEMP/summary.md"
+          fi
+      - name: Test the catalog crates
+        run: cargo test --locked -p superba-catalog -p superba-catalog-gen
+      - name: Export the catalog change
+        id: diff
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out"
+          git add -- catalog
+          if git diff --cached --quiet -- catalog; then
+            echo "No catalog changes."
+            echo "update=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --cached --binary -- catalog > "$RUNNER_TEMP/out/catalog.patch"
+          cp "$RUNNER_TEMP/summary.md" "$RUNNER_TEMP/out/summary.md"
+          echo "update=true" >> "$GITHUB_OUTPUT"
+          echo "latest=$(jq -r '.versions[-1].version' catalog/dist/index.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.diff.outputs.update == 'true'
+        with:
+          name: catalog-update
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error
+          retention-days: 3
+
+  pull-request:
+    needs: regenerate
+    if: needs.regenerate.outputs.update == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          token: ${{ secrets.CATALOG_BOT_TOKEN || github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: catalog-update
+          path: ${{ runner.temp }}/in
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ secrets.CATALOG_BOT_TOKEN || github.token }}
+          LATEST: ${{ needs.regenerate.outputs.latest }}
+        run: |
+          set -euo pipefail
+          patch="$RUNNER_TEMP/in/catalog.patch"
+          # The patch may only touch catalog/.
+          if git apply --numstat -- "$patch" | cut -f3- | grep -v '^catalog/' | grep -q .; then
+            echo "::error::the catalog patch touches files outside catalog/"; exit 1
+          fi
+          if ! [[ "$LATEST" =~ ^[0-9A-Za-z.+-]+$ ]]; then
+            echo "::error::unexpected version string"; exit 1
+          fi
+          branch="catalog/codex-update"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
+          git apply --index -- "$patch"
+          git commit -m "chore(catalog): Codex releases up to $LATEST"
+          # The branch is regenerated from the default branch on every run (do not
+          # push to it by hand; sign after merging instead). Skip identical pushes.
+          if git fetch --quiet --depth=1 origin "$branch" 2>/dev/null \
+            && git diff --quiet FETCH_HEAD HEAD -- catalog; then
+            echo "The open pull request already has these changes."; exit 0
+          fi
+          git push --force origin "$branch"
+          title="chore(catalog): Codex releases up to $LATEST"
+          if gh pr view "$branch" --json state -q .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit "$branch" --title "$title" --body-file "$RUNNER_TEMP/in/summary.md"
+          else
+            gh pr create --base "${{ github.event.repository.default_branch }}" --head "$branch" \
+              --title "$title" --body-file "$RUNNER_TEMP/in/summary.md"
+          fi
+
+  # Copies the signed feeds of the default branch to the public feeds repository
+  # (raw/jsDelivr mirrors read them there). Off until that repository exists. No
+  # cargo and no third-party code: it only checks that the index is signed and its
+  # serial is newer than the published one, then pushes the files and purges the
+  # jsDelivr cache of the branch.
+  publish-feeds:
+    if: ${{ vars.SUPERBA_FEEDS_PUBLISH == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      FEEDS_REPO: krill-lab/superba-feeds
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Publish the signed feeds
+        env:
+          DEPLOY_KEY: ${{ secrets.FEEDS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "$DEPLOY_KEY" ]] || { echo "FEEDS_DEPLOY_KEY is not set; nothing to do."; exit 0; }
+          [[ -f catalog/feeds/index.json.sig ]] || { echo "The feed index is not signed yet."; exit 0; }
+          key="$RUNNER_TEMP/deploy_key"; umask 077; printf '%s\n' "$DEPLOY_KEY" > "$key"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone --quiet --depth=1 "git@github.com:$FEEDS_REPO.git" "$RUNNER_TEMP/pub"
+          new=$(jq -r .serial catalog/feeds/index.json)
+          old=$(jq -r .serial "$RUNNER_TEMP/pub/index.json" 2>/dev/null || echo 0)
+          if (( new <= old )); then echo "Published serial $old is current."; exit 0; fi
+          find "$RUNNER_TEMP/pub" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R catalog/feeds/. "$RUNNER_TEMP/pub/"
+          cd "$RUNNER_TEMP/pub"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A .
+          git commit -q -m "feeds: serial $new"
+          git push -q origin HEAD:main
+          for f in index.json index.json.sig $(jq -r '.files[].path' index.json); do
+            curl -fsS -o /dev/null "https://purge.jsdelivr.net/gh/$FEEDS_REPO@main/$f" || true
+          done

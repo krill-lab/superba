@@ -1,0 +1,13 @@
+# Which openai/codex releases the catalog contains (read by superba-catalog-gen).
+format = 1
+repo = "openai/codex"
+# Oldest release included. Stable releases from here on are included automatically.
+floor = "0.155.0"
+# Include every alpha tag >= floor (they are frequent; normally off).
+prereleases = false
+# Prereleases included anyway: the builds the desktop app bundles.
+# 0.162.0-alpha.17.2: ChatGPT/Codex desktop app 26.1007 (26.1007.21434, 26.1007.71326).
+# 0.163.0-alpha.10.2: desktop app 26.1013 (26.1013.31256, 26.1013.40934).
+extra_versions = ["0.162.0-alpha.17.2", "0.163.0-alpha.10.2"]
+# Versions never included.
+exclude_versions = []

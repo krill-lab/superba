@@ -1,0 +1,47 @@
+# superba-core messages of the request log area (router requests, statuses,
+# clients). Concatenated after en.toml into the core catalog, so this file must
+# start with a table header and must not repeat a key of another core file
+# (enforced by tests). Every key must also exist in core.requests.zh-CN.toml.
+
+[request_client]
+desktop = "Desktop app"
+tui = "Terminal"
+exec = "codex exec"
+other = "Other"
+
+# Where a request row comes from (Usage page, CSV, spb usage).
+[request_source]
+router = "Local router"
+rollout = "Codex session files"
+
+[request_status]
+ok = "OK"
+http = "HTTP {status} {code}"
+failed = "Failed {code}"
+incomplete = "Incomplete {reason}"
+broken = "Stream broken"
+cancelled = "Cancelled"
+
+# Fragments of the default reply stats line (Router -> stats line). The
+# placeholders are filled by the local router; keep them unchanged.
+[stats_template]
+tps = "{tps} tok/s"
+ttft = "first token {ttft}"
+turn_tokens = "turn {input} in / {output} out"
+cached = "cached {cached}"
+cost = "≈ {cost}"
+requests = "{requests} req"
+separator = " · "
+
+# How a request body reached the upstream (request log detail, CSV, spb).
+[request_compression]
+none = "Uncompressed"
+client_zstd = "zstd (from Codex)"
+router_zstd = "zstd (compressed by the router)"
+zstd_refused = "Uncompressed (zstd refused, sent again)"
+
+# Transport checks of a line (Providers -> Connection, spb).
+[transport_support]
+supported = "Supported"
+unsupported = "Not supported"
+unknown = "Unknown"

@@ -1,0 +1,84 @@
+# superba-gui UI texts (Simplified Chinese), area "hosts". Every key must exist in
+# hosts.en.toml with the same {placeholders} (tests/i18n_tests.rs).
+
+[hosts]
+refresh = "重新检测"
+loading = "正在查找 ChatGPT app 记录的主机…"
+load_failed = "无法读取远程主机"
+connected = "已连接"
+not_connected = "未连接"
+app_record = "app 记录"
+probed = "检测于 {age}"
+probe = "立即检测"
+probe_failed = "上次检测失败：{detail}"
+not_probed = "尚未检测"
+connection = "连接"
+connection_unknown = "没有配置连接"
+follow = "随本机切换"
+follow_tip = "本机每次切换时，也切换这台主机的连接（直连，不经过路由）。不改动设置；设置请用「同步设置」。"
+codex = "Codex"
+codex_missing = "未找到"
+update_hint = "有更新 {version} →"
+sessions_label = "会话"
+hot_label = "热切"
+disk_low = "主目录只剩 {mb} MB；安装 Codex 大约需要 600 MB。"
+shared_home = "这个主目录好像和另一台机器共用（网络主目录）；写入会同时影响两边。"
+
+[hosts.kind]
+standalone = "独立安装"
+npm = "npm"
+
+[hosts.list]
+synced = "设置已同步"
+unsynced = "{n} 项设置未同步"
+probe_failed = "检测失败"
+more = "还有 {n} 台…"
+
+[hosts.sync]
+title = "设置同步"
+last = "上次同步 {time} · 本机之后改了 {n} 项"
+never = "从未同步"
+fit = "本机 {local} 项设置 → 该主机可接收 {ok} 项，{skip} 项需要更新 Codex"
+checking = "正在检查该主机的 Codex 能接收哪些设置…"
+not_checked = "还没有对比"
+button = "同步设置…"
+needs_probe = "请先检测该主机（能同步哪些设置取决于它的 Codex 版本）"
+
+[hosts.sessions]
+open = "查看会话 →"
+
+[hosts.hot]
+ok = "可以（app 记录了 hostId）"
+reconnect = "需要在 app 里重新连接该主机才会生效"
+
+[hosts.empty]
+title = "没有远程主机"
+body = "ChatGPT 桌面 app 还没有记录任何远程主机。在 app 里添加 SSH 主机后，它会出现在这里。"
+
+[hosts.palette]
+sync = "同步设置到 {host}"
+sync_detail = "推送本机的 Codex 设置，按该主机的 Codex 版本过滤"
+
+[hosts.syncdlg]
+title = "同步设置到 {host} · codex {version}"
+title_plain = "同步设置到 {host}"
+body = "把这台电脑上供应商「{provider}」的 Codex 设置推送到 {host}。不包含连接（供应商、线路、Key）和模型覆盖。"
+body_plain = "把这台电脑上的 Codex 设置推送到 {host}。不包含连接（供应商、线路、Key）和模型覆盖。"
+unreachable = "无法连接 {host}：请确认主机在线、SSH 可以登录，然后重试。"
+loading = "正在和主机对比设置…"
+nothing = "没有需要同步的设置：主机上已经是这些值。"
+write = "将写入（{n}）"
+skip = "跳过（{n}）"
+remove = "将恢复主机原值（{n}）"
+remove_reason = "上次同步写入、本机已不再设置；恢复主机原来的值"
+conflict = "上次同步后在主机上被改过"
+conflict_badge = "冲突"
+keep_host = "保持不勾选即保留主机上的值"
+unset = "未设置"
+restart = "同步后会热重启 {host} 上的 Codex 内核（约 1 秒；正在生成的回复会中断，Superba 会先等它结束）。"
+confirm = "同步 {n} 项"
+
+[hosts.syncdlg.col]
+setting = "设置"
+local = "本机"
+host = "{host} 当前"

@@ -1,0 +1,398 @@
+{
+ "models": [
+  {
+   "slug": "gpt-5.5",
+   "display_name": "GPT-5.5",
+   "description": "Frontier model for complex coding, research, and real-world work.",
+   "default_reasoning_level": "medium",
+   "supported_reasoning_levels": [
+    {
+     "effort": "low",
+     "description": "Fast responses with lighter reasoning"
+    },
+    {
+     "effort": "medium",
+     "description": "Balances speed and reasoning depth for everyday tasks"
+    },
+    {
+     "effort": "high",
+     "description": "Greater reasoning depth for complex problems"
+    },
+    {
+     "effort": "xhigh",
+     "description": "Extra high reasoning depth for complex problems"
+    }
+   ],
+   "shell_type": "shell_command",
+   "visibility": "list",
+   "supported_in_api": true,
+   "priority": 0,
+   "additional_speed_tiers": [
+    "fast"
+   ],
+   "service_tiers": [
+    {
+     "id": "priority",
+     "name": "Fast",
+     "description": "1.5x speed, increased usage"
+    }
+   ],
+   "availability_nux": {
+    "message": "[250 characters trimmed for the test fixture]"
+   },
+   "upgrade": null,
+   "base_instructions": "[21459 characters trimmed for the test fixture]",
+   "model_messages": {
+    "instructions_template": "[19754 characters trimmed for the test fixture]",
+    "instructions_variables": {
+     "personality_default": "",
+     "personality_friendly": "[1723 characters trimmed for the test fixture]",
+     "personality_pragmatic": "[1598 characters trimmed for the test fixture]"
+    }
+   },
+   "supports_reasoning_summaries": true,
+   "default_reasoning_summary": "none",
+   "support_verbosity": true,
+   "default_verbosity": "low",
+   "apply_patch_tool_type": "freeform",
+   "web_search_tool_type": "text_and_image",
+   "truncation_policy": {
+    "mode": "tokens",
+    "limit": 10000
+   },
+   "supports_parallel_tool_calls": true,
+   "supports_image_detail_original": true,
+   "context_window": 272000,
+   "max_context_window": 272000,
+   "effective_context_window_percent": 95,
+   "experimental_supported_tools": [],
+   "input_modalities": [
+    "text",
+    "image"
+   ],
+   "supports_search_tool": true,
+   "use_responses_lite": false
+  },
+  {
+   "slug": "gpt-5.4",
+   "display_name": "gpt-5.4",
+   "description": "Strong model for everyday coding.",
+   "default_reasoning_level": "medium",
+   "supported_reasoning_levels": [
+    {
+     "effort": "low",
+     "description": "Fast responses with lighter reasoning"
+    },
+    {
+     "effort": "medium",
+     "description": "Balances speed and reasoning depth for everyday tasks"
+    },
+    {
+     "effort": "high",
+     "description": "Greater reasoning depth for complex problems"
+    },
+    {
+     "effort": "xhigh",
+     "description": "Extra high reasoning depth for complex problems"
+    }
+   ],
+   "shell_type": "shell_command",
+   "visibility": "list",
+   "supported_in_api": true,
+   "priority": 2,
+   "additional_speed_tiers": [
+    "fast"
+   ],
+   "service_tiers": [
+    {
+     "id": "priority",
+     "name": "Fast",
+     "description": "1.5x speed, increased usage"
+    }
+   ],
+   "availability_nux": null,
+   "upgrade": null,
+   "base_instructions": "[14731 characters trimmed for the test fixture]",
+   "model_messages": {
+    "instructions_template": "[12896 characters trimmed for the test fixture]",
+    "instructions_variables": {
+     "personality_default": "",
+     "personality_friendly": "[2419 characters trimmed for the test fixture]",
+     "personality_pragmatic": "[1853 characters trimmed for the test fixture]"
+    }
+   },
+   "supports_reasoning_summaries": true,
+   "default_reasoning_summary": "none",
+   "support_verbosity": true,
+   "default_verbosity": "low",
+   "apply_patch_tool_type": "freeform",
+   "web_search_tool_type": "text_and_image",
+   "truncation_policy": {
+    "mode": "tokens",
+    "limit": 10000
+   },
+   "supports_parallel_tool_calls": true,
+   "supports_image_detail_original": true,
+   "context_window": 272000,
+   "max_context_window": 1000000,
+   "effective_context_window_percent": 95,
+   "experimental_supported_tools": [],
+   "input_modalities": [
+    "text",
+    "image"
+   ],
+   "supports_search_tool": true,
+   "use_responses_lite": false
+  },
+  {
+   "slug": "gpt-5.4-mini",
+   "display_name": "GPT-5.4-Mini",
+   "description": "Small, fast, and cost-efficient model for simpler coding tasks.",
+   "default_reasoning_level": "medium",
+   "supported_reasoning_levels": [
+    {
+     "effort": "low",
+     "description": "Fast responses with lighter reasoning"
+    },
+    {
+     "effort": "medium",
+     "description": "Balances speed and reasoning depth for everyday tasks"
+    },
+    {
+     "effort": "high",
+     "description": "Greater reasoning depth for complex problems"
+    },
+    {
+     "effort": "xhigh",
+     "description": "Extra high reasoning depth for complex problems"
+    }
+   ],
+   "shell_type": "shell_command",
+   "visibility": "list",
+   "supported_in_api": true,
+   "priority": 4,
+   "additional_speed_tiers": [],
+   "service_tiers": [],
+   "availability_nux": null,
+   "upgrade": null,
+   "base_instructions": "[12948 characters trimmed for the test fixture]",
+   "model_messages": {
+    "instructions_template": "[11114 characters trimmed for the test fixture]",
+    "instructions_variables": {
+     "personality_default": "",
+     "personality_friendly": "[2419 characters trimmed for the test fixture]",
+     "personality_pragmatic": "[1853 characters trimmed for the test fixture]"
+    }
+   },
+   "supports_reasoning_summaries": true,
+   "default_reasoning_summary": "none",
+   "support_verbosity": true,
+   "default_verbosity": "medium",
+   "apply_patch_tool_type": "freeform",
+   "web_search_tool_type": "text_and_image",
+   "truncation_policy": {
+    "mode": "tokens",
+    "limit": 10000
+   },
+   "supports_parallel_tool_calls": true,
+   "supports_image_detail_original": true,
+   "context_window": 272000,
+   "max_context_window": 272000,
+   "effective_context_window_percent": 95,
+   "experimental_supported_tools": [],
+   "input_modalities": [
+    "text",
+    "image"
+   ],
+   "supports_search_tool": true,
+   "use_responses_lite": false
+  },
+  {
+   "slug": "gpt-5.3-codex",
+   "display_name": "gpt-5.3-codex",
+   "description": "Coding-optimized model.",
+   "default_reasoning_level": "medium",
+   "supported_reasoning_levels": [
+    {
+     "effort": "low",
+     "description": "Fast responses with lighter reasoning"
+    },
+    {
+     "effort": "medium",
+     "description": "Balances speed and reasoning depth for everyday tasks"
+    },
+    {
+     "effort": "high",
+     "description": "Greater reasoning depth for complex problems"
+    },
+    {
+     "effort": "xhigh",
+     "description": "Extra high reasoning depth for complex problems"
+    }
+   ],
+   "shell_type": "shell_command",
+   "visibility": "list",
+   "supported_in_api": true,
+   "priority": 6,
+   "additional_speed_tiers": [],
+   "service_tiers": [],
+   "availability_nux": null,
+   "upgrade": {
+    "model": "gpt-5.4",
+    "migration_markdown": "[386 characters trimmed for the test fixture]"
+   },
+   "base_instructions": "[12341 characters trimmed for the test fixture]",
+   "model_messages": {
+    "instructions_template": "[10507 characters trimmed for the test fixture]",
+    "instructions_variables": {
+     "personality_default": "",
+     "personality_friendly": "[2419 characters trimmed for the test fixture]",
+     "personality_pragmatic": "[1853 characters trimmed for the test fixture]"
+    }
+   },
+   "supports_reasoning_summaries": true,
+   "default_reasoning_summary": "none",
+   "support_verbosity": true,
+   "default_verbosity": "low",
+   "apply_patch_tool_type": "freeform",
+   "web_search_tool_type": "text",
+   "truncation_policy": {
+    "mode": "tokens",
+    "limit": 10000
+   },
+   "supports_parallel_tool_calls": true,
+   "supports_image_detail_original": true,
+   "context_window": 272000,
+   "max_context_window": 272000,
+   "effective_context_window_percent": 95,
+   "experimental_supported_tools": [],
+   "input_modalities": [
+    "text",
+    "image"
+   ],
+   "supports_search_tool": true,
+   "use_responses_lite": false
+  },
+  {
+   "slug": "gpt-5.2",
+   "display_name": "gpt-5.2",
+   "description": "Optimized for professional work and long-running agents.",
+   "default_reasoning_level": "medium",
+   "supported_reasoning_levels": [
+    {
+     "effort": "low",
+     "description": "Balances speed with some reasoning; useful for straightforward queries and short explanations"
+    },
+    {
+     "effort": "medium",
+     "description": "Provides a solid balance of reasoning depth and latency for general-purpose tasks"
+    },
+    {
+     "effort": "high",
+     "description": "Maximizes reasoning depth for complex or ambiguous problems"
+    },
+    {
+     "effort": "xhigh",
+     "description": "Extra high reasoning for complex problems"
+    }
+   ],
+   "shell_type": "shell_command",
+   "visibility": "list",
+   "supported_in_api": true,
+   "priority": 10,
+   "additional_speed_tiers": [],
+   "service_tiers": [],
+   "availability_nux": null,
+   "upgrade": {
+    "model": "gpt-5.4",
+    "migration_markdown": "[386 characters trimmed for the test fixture]"
+   },
+   "base_instructions": "[21544 characters trimmed for the test fixture]",
+   "supports_reasoning_summaries": true,
+   "default_reasoning_summary": "auto",
+   "support_verbosity": true,
+   "default_verbosity": "low",
+   "apply_patch_tool_type": "freeform",
+   "web_search_tool_type": "text",
+   "truncation_policy": {
+    "mode": "bytes",
+    "limit": 10000
+   },
+   "supports_parallel_tool_calls": true,
+   "supports_image_detail_original": false,
+   "context_window": 272000,
+   "max_context_window": 272000,
+   "effective_context_window_percent": 95,
+   "experimental_supported_tools": [],
+   "input_modalities": [
+    "text",
+    "image"
+   ],
+   "supports_search_tool": true,
+   "use_responses_lite": false
+  },
+  {
+   "slug": "codex-auto-review",
+   "display_name": "Codex Auto Review",
+   "description": "Automatic approval review model for Codex.",
+   "default_reasoning_level": "medium",
+   "supported_reasoning_levels": [
+    {
+     "effort": "low",
+     "description": "Fast responses with lighter reasoning"
+    },
+    {
+     "effort": "medium",
+     "description": "Balances speed and reasoning depth for everyday tasks"
+    },
+    {
+     "effort": "high",
+     "description": "Greater reasoning depth for complex problems"
+    },
+    {
+     "effort": "xhigh",
+     "description": "Extra high reasoning depth for complex problems"
+    }
+   ],
+   "shell_type": "shell_command",
+   "visibility": "hide",
+   "supported_in_api": true,
+   "priority": 29,
+   "additional_speed_tiers": [],
+   "service_tiers": [],
+   "availability_nux": null,
+   "upgrade": null,
+   "base_instructions": "[14731 characters trimmed for the test fixture]",
+   "model_messages": {
+    "instructions_template": "[12896 characters trimmed for the test fixture]",
+    "instructions_variables": {
+     "personality_default": "",
+     "personality_friendly": "[2419 characters trimmed for the test fixture]",
+     "personality_pragmatic": "[1853 characters trimmed for the test fixture]"
+    }
+   },
+   "supports_reasoning_summaries": true,
+   "default_reasoning_summary": "none",
+   "support_verbosity": true,
+   "default_verbosity": "low",
+   "apply_patch_tool_type": "freeform",
+   "web_search_tool_type": "text_and_image",
+   "truncation_policy": {
+    "mode": "tokens",
+    "limit": 10000
+   },
+   "supports_parallel_tool_calls": true,
+   "supports_image_detail_original": true,
+   "context_window": 272000,
+   "max_context_window": 1000000,
+   "effective_context_window_percent": 95,
+   "experimental_supported_tools": [],
+   "input_modalities": [
+    "text",
+    "image"
+   ],
+   "supports_search_tool": true,
+   "use_responses_lite": false
+  }
+ ]
+}

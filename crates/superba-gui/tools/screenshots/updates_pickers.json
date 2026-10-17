@@ -1,0 +1,31 @@
+{
+  "_comment": "Window coordinates (1280x800) of the Updates page's version pickers with updates_pickers.py's mock world, per language. pin_*: page as opened; cli_* and remote_*: after `scroll` (page at its end). *_shown: the field once its box is ticked (wider). Re-measure with --probe after layout changes.",
+  "zh-CN": {
+    "pin_box": [357, 432],
+    "pin_field": [560, 432],
+    "pin_first_row": [520, 468],
+    "pin_menu": [650, 600],
+    "scroll": ["scroll", 760, 500, 10],
+    "cli_box": [300, 423],
+    "cli_field": [500, 423],
+    "cli_field_shown": [480, 423],
+    "cli_menu": [550, 600],
+    "remote_box": [300, 640],
+    "remote_field": [500, 640],
+    "remote_field_shown": [480, 640]
+  },
+  "en": {
+    "pin_box": [387, 447],
+    "pin_field": [620, 447],
+    "pin_first_row": [590, 483],
+    "pin_menu": [650, 610],
+    "scroll": ["scroll", 760, 500, 10],
+    "cli_box": [300, 407],
+    "cli_field": [530, 407],
+    "cli_field_shown": [500, 407],
+    "cli_menu": [550, 600],
+    "remote_box": [300, 624],
+    "remote_field": [530, 624],
+    "remote_field_shown": [500, 624]
+  }
+}

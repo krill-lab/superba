@@ -1,0 +1,34 @@
+# cargo-about configuration: generates THIRD-PARTY-NOTICES.txt for release archives
+# (scripts/release/README.md). Every license used by a crate linked into `superba`
+# or `spb` on any release target must be listed here.
+accepted = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    "OFL-1.1",
+    "0BSD",
+    "CC0-1.0",
+    "Unlicense",
+]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+ignore-transitive-dependencies = false
+# The workspace crates themselves (publish = false) are Superba, not third parties.
+private = { ignore = true }

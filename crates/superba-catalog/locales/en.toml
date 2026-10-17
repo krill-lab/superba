@@ -1,0 +1,48 @@
+# UI strings of superba-catalog (catalog.*). Layer onto the binary's catalog with
+# superba_catalog::i18n_source(locale).
+
+[catalog.match]
+nearest = "Settings for Codex {installed} come from the catalog of Codex {used}."
+newer = "Codex {installed} is newer than the settings catalog (latest: {used}); settings added since then are not listed."
+older = "Codex {installed} is older than the settings catalog; showing Codex {used}, so some settings may not apply."
+
+[catalog.cache]
+rejected = "The downloaded settings catalog failed verification and is not used: {error}"
+
+[catalog.stage]
+under_development = "Under development"
+experimental = "Experimental"
+stable = "Stable"
+deprecated = "Deprecated"
+removed = "Removed"
+unknown = "Unknown stage"
+
+[catalog.text]
+no_zh = "No Chinese description yet"
+zh_stale = "Chinese description may be outdated"
+en_missing = "No official description"
+official = "Official Codex description"
+human_note = "Note from Superba contributors"
+
+[catalog.source]
+builtin = "Built-in catalog"
+cache = "Downloaded catalog"
+directory = "Local catalog"
+signed = "Signed"
+unsigned = "Not signed"
+
+[catalog.category]
+model = "Model"
+provider = "Provider and sign-in"
+context = "Context and instructions"
+approvals = "Approvals and sandbox"
+tools = "Tools"
+apps = "Apps and plugins"
+mcp = "MCP servers"
+agents = "Agents"
+realtime = "Realtime and audio"
+interface = "Interface"
+storage = "History and storage"
+telemetry = "Telemetry and feedback"
+features = "Features"
+other = "Other"

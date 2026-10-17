@@ -1,0 +1,9 @@
+# Catalog text (Chinese names and explanations, curation) needs a maintainer's
+# review, and so do the hand-written feed data (prices, extra models) and the
+# trusted signing keys; see catalog/CONTRIBUTING.md.
+/catalog/overlay/ @krill-lab/superba-maintainers
+/catalog/curation.toml @krill-lab/superba-maintainers
+/catalog/sources.toml @krill-lab/superba-maintainers
+/catalog/models-extra.json @krill-lab/superba-maintainers
+/catalog/feeds/prices.json @krill-lab/superba-maintainers
+/crates/superba-catalog/src/integrity.rs @krill-lab/superba-maintainers

@@ -1,0 +1,20 @@
+Superba third-party notices
+===========================
+
+Superba (`superba` and `spb`) is distributed under the MIT or Apache-2.0 license
+(LICENSE-MIT, LICENSE-APACHE). The binaries include the third-party software
+listed below. The Geist fonts embedded in the `superba` GUI are licensed under the
+SIL Open Font License 1.1 (LICENSE-Geist-OFL.txt, shipped next to this file).
+
+{{#each licenses}}
+--------------------------------------------------------------------------------
+{{{name}}} ({{{id}}})
+
+Used by:
+{{#each used_by}}
+  - {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

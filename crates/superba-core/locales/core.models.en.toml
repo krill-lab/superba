@@ -1,0 +1,33 @@
+# superba-core messages of the models area (speed tiers, model lists, the model
+# catalog file). Concatenated after en.toml into the core catalog, so this file
+# must start with a table header and must not repeat a key of another core file
+# (enforced by tests). Every key must also exist in core.models.zh-CN.toml.
+
+[speed_tier]
+standard = "Standard"
+fast = "Fast"
+ultrafast = "Ultrafast"
+
+[speed_effect]
+applies = "Applies"
+via_model_name = "Applies through the model name {model}"
+app_forces_standard = "The desktop app runs Standard in API-key mode"
+not_offered = "The model does not offer this tier; it runs Standard"
+app_menu = "Set in the app's own speed menu"
+
+[catalog_file]
+not_needed = "No model catalog file"
+written = "Model catalog file written for Codex {version}"
+failed = "Model catalog file not written: {reason}"
+
+[models_note]
+generic_template = "{model}: no catalog entry is known; Codex's settings for unknown models are used"
+generic_without_prompt = "{model}: the generic instructions of this Codex version are not available; another model's instructions are used"
+filled_fields = "{model}: fields Codex {version} requires were taken from its built-in catalog ({fields})"
+compact_clamped = "{model}: auto-compact at {limit} tokens is above 90% of the context window; Codex compacts at {effective}"
+max_raised = "{model}: the maximum context window was raised to {window} tokens; the upstream may refuse longer prompts"
+override_unknown_model = "The settings for {model} are kept but not used: the model is not in the list"
+duplicate = "{model} is listed more than once; the first entry is used"
+model_added = "{model} (the default model) is not in the list; it was added"
+tier_not_offered = "No listed model offers {tier}; Codex runs Standard"
+tier_not_offered_by_model = "{model} does not offer {tier}; it runs Standard"

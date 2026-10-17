@@ -1,0 +1,170 @@
+# superba-gui UI texts (English), area "settings". Flat dotted keys under their tables.
+# Every key must exist in settings.zh-CN.toml with the same {placeholders} and must not be
+# defined in another area file (tests/i18n_tests.rs).
+
+[codex_settings]
+advanced = "Advanced"
+advanced_hint = "Also show features under development, deprecated and removed entries, legacy keys and large families such as key bindings."
+apply_now = "Apply now"
+catalog_approximate = "The catalog has no entry for this exact version; the nearest older version is used."
+catalog_outdated = "This Codex is newer than Superba's settings catalog; settings it added are not listed yet."
+changed = "Changed"
+common = "Common"
+config_error = "config.toml could not be parsed, so settings are read-only: {error}"
+contributor_note = "Contributor note"
+contributor_note_hint = "Written by a Superba contributor because upstream Codex has no description for this setting."
+load_failed = "Codex settings could not be loaded"
+loading = "Reading the settings catalog and your configuration…"
+needs_version = "Needs ≥ {version}"
+no_profile = "Codex settings belong to a key-based provider. Add a Krill key or a custom site first."
+no_profile_short = "no key-based provider"
+no_targets = "No Codex found yet: the latest catalog version is used."
+no_zh = "No Chinese explanation yet"
+only_on = "{os} only"
+platform_hint = "Upstream documents this setting for one operating system only."
+provider = "Provider"
+provider_applied = "{name} (in use)"
+read_only_config = "config.toml could not be parsed; fix it before changing settings."
+reload = "Reload"
+reset = "Reset to default"
+reset_hint = "Remove the key from config.toml so Codex uses its default."
+search = "Search names, keys or explanations"
+search_results = "Search results"
+unapplied = "{n} saved {n|setting is|settings are} not in config.toml. Superba writes a setting only where the installed Codex knows it; apply again after updating Codex."
+unapplied_waiting = "{n} saved {n|setting is|settings are} waiting for the next switch."
+use_recommended = "Use recommended"
+version_unknown = "version unknown"
+zh_missing = "No Chinese yet"
+zh_stale = "Translation may be outdated"
+
+[codex_settings.scope]
+consumers = "This computer: App codex {app} · CLI {cli} · catalog {catalog}"
+label = "This computer"
+official = "Superba writes no Codex settings for the official login"
+
+[codex_settings.value]
+codex_decides = "set by Codex"
+off = "off"
+on = "on"
+unset = "not set"
+
+[codex_settings.stage]
+deprecated = "Deprecated"
+experimental = "Experimental"
+removed = "Removed"
+stable = "Stable"
+under_development = "Under development"
+
+[codex_settings.badge]
+legacy = "Legacy key"
+
+[codex_settings.detail]
+add = "Add"
+all_rows = "All {n}…"
+collapse = "Show less"
+copy = "Copy value"
+current = "Current"
+default = "Default"
+edit = "Edit…"
+edit_in_file = "Edit in config.toml"
+empty_list = "The list is empty"
+empty_map = "No entries"
+expand = "Show all"
+items = "{n} items"
+key = "key"
+managed_by_models = "Managed on the Models page →"
+managed_by_provider = "Managed by the provider →"
+managed_by_speed = "Managed by the speed control →"
+managed_by_superba = "Managed by Superba; not editable here"
+map_value = "value"
+move_down = "Move down"
+move_up = "Move up"
+no_official = "Upstream has no English description"
+none = "Select a setting to see what it does."
+official = "Official description"
+pick_file = "Choose file…"
+pick_folder = "Add folder…"
+recommended = "Recommended"
+remote = "Remote hosts"
+remote_tip = "When you sync settings to a remote host, keys its Codex version does not know are skipped."
+remove = "Remove"
+reveal = "Show in folder"
+runtime = "In effect: {effective} (catalog predicts {predicted})"
+since = "since {version}"
+source_file = "(config.toml)"
+source_managed = "(by Superba)"
+value = "Value"
+view = "View all…"
+
+[codex_settings.invalid]
+bool = "Enter true or false."
+duplicate_key = "A key is given twice."
+empty = "Enter a value, or reset to the default."
+empty_key = "Every value needs a key."
+integer = "Enter a whole number."
+list = "Enter a TOML array."
+maximum = "The value is above the maximum."
+minimum = "The value is below the minimum."
+number = "Enter a number."
+option = "Choose one of the listed values."
+read_only = "This setting is edited in config.toml."
+table = "Enter a TOML table."
+
+[codex_settings.migrate]
+button = "Migrate…"
+notice = "{n} legacy {n|key is|keys are} set in config.toml and can be migrated to {n|its|their} replacement."
+one = "Migrate"
+restore_note = "Migrating removes the legacy key from config.toml (the replacement is written instead). Restoring the original configuration brings the legacy key back."
+short = "{n} legacy {n|key|keys}"
+
+[codex_settings.legacy]
+deprecated = "Deprecated by upstream."
+ignored = "Legacy key, ignored by current Codex versions."
+replaced = "Legacy key, replaced by {path}."
+
+[codex_settings.avail]
+no = "{target} ({version}) does not know this setting; writing it has no effect there."
+unknown = "The Codex version of {target} is unknown."
+yes = "{target} ({version}) supports this setting."
+
+[codex_settings.empty]
+body = "Clear the search, pick another category or turn on Advanced."
+title = "No settings match"
+
+[codex_settings.pager]
+next = "Next page"
+prev = "Previous page"
+
+[codex_settings.pending]
+busy = "Wait until the current switch has finished."
+close = "Close"
+count = "{n} unsaved {n|change|changes}"
+diff = "View diff"
+discard = "Discard"
+drop = "Drop this change"
+note = "Saving stores the changes in the provider's profile; config.toml changes only after you confirm the switch preview."
+save = "Save"
+save_apply = "Save & apply"
+saved_later = "Saved; applies on the next switch to {provider}"
+title = "{n} pending {n|change|changes}"
+unsupported = "unknown to {targets}"
+
+[codex_settings.note]
+runtime_differs = "{target} Codex reports {n} features differently from the settings catalog; what Codex reports is shown."
+version_unknown = "The Codex version of {target} is unknown; availability is not shown for it."
+
+[codex_settings.editor]
+count = "{lines} lines · {chars} characters"
+empty_hint = "Save it empty to use the default"
+note = "Saved edits join the pending changes; config.toml changes on Save & apply."
+read_only = "Read-only"
+save = "Save"
+title = "Edit {name}"
+wrap = "Wrap lines"
+
+# Setting values in fixed widths (Settings, the switch preview, Remote hosts).
+[values]
+collapse = "Hide the full change"
+expand = "Show the full change"
+more_items = "+{n} more"
+more_lines = "+{n} lines"

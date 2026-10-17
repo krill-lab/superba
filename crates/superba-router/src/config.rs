@@ -1,0 +1,526 @@
+//! Router configuration (`router/config.json`) and secrets (`router/secrets.json`).
+//!
+//! The configuration holds no secret: members (Krill lines and custom compatible
+//! sites, in priority order), their lines as full base URLs, per-member model
+//! mapping and tuning. The secrets file (0600) holds the router token Codex
+//! presents and each member's own API key. Keys live there, not in the OS keyring,
+//! because the router is a background service that must start at login without a
+//! keyring prompt; the protection is the same as Codex's own `auth.json`, which in
+//! router mode holds only the local router token.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use superba_core::{Error, Result, Secret, SiteKind};
+use url::Url;
+use zeroize::Zeroize;
+
+use crate::paths::RouterPaths;
+use crate::stats::StatsConfig;
+use crate::token;
+
+/// Current format of both files.
+pub const CONFIG_FORMAT: u32 = 1;
+
+/// Path prefix Codex is pointed at: `openai_base_url =
+/// "http://127.0.0.1:<port>/backend-api/codex"`. Requests below it are routed with
+/// the remainder appended to each line's base URL.
+pub const ROUTER_BASE_PATH: &str = "/backend-api/codex";
+
+/// Alternative prefix for OpenAI-style clients (`http://127.0.0.1:<port>/v1`).
+pub const ROUTER_V1_PATH: &str = "/v1";
+
+/// Hosts of the official ChatGPT login. The official login is never a router
+/// member (decision 6): it stays a direct switch target.
+const CHATGPT_HOSTS: &[&str] = &["chatgpt.com", "chat.openai.com", "auth.openai.com"];
+
+/// The whole router configuration.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterConfig {
+    /// File format ([`CONFIG_FORMAT`]).
+    pub format: u32,
+    /// Loopback port (always bound on `127.0.0.1`). Persisted because Codex's
+    /// `openai_base_url` names it; `0` picks an ephemeral port (tests only).
+    pub listen_port: u16,
+    /// Members in priority order (first = preferred).
+    pub members: Vec<MemberConfig>,
+    /// Timeouts, stickiness and breaker parameters.
+    #[serde(default)]
+    pub tuning: Tuning,
+    /// Use the system / environment proxy settings for upstream requests.
+    #[serde(default = "default_true")]
+    pub use_system_proxy: bool,
+    /// Extra PEM root certificate(s) to trust for upstream TLS (e2e forwarders).
+    #[serde(default)]
+    pub extra_ca_file: Option<PathBuf>,
+    /// Request log, stats line and prices. `None` (tests): requests and
+    /// WebSockets pass byte for byte and nothing is recorded. Superba always
+    /// writes it (see
+    /// [`RouterManager::write_config`](crate::manager::RouterManager::write_config)).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<StatsConfig>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Kind of a member. The official ChatGPT login has no variant on purpose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemberKind {
+    /// A Krill relay (its lines are interchangeable entry points).
+    Krill,
+    /// A custom OpenAI-compatible Responses API site.
+    Compatible,
+}
+
+impl MemberKind {
+    /// Member kind for a Superba site kind; refuses the official ChatGPT login.
+    pub fn for_site(kind: SiteKind) -> Result<Self> {
+        match kind {
+            SiteKind::Krill => Ok(MemberKind::Krill),
+            SiteKind::Compatible => Ok(MemberKind::Compatible),
+            SiteKind::Official => Err(Error::invalid(
+                "the official ChatGPT login is never routed through the local router",
+            )),
+            _ => Err(Error::invalid("this site kind cannot be a router member")),
+        }
+    }
+}
+
+/// One provider: a Krill relay or a custom compatible site, with its own key.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemberConfig {
+    /// Stable id (`[a-z0-9._-]`), also the key of its secret.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Kind.
+    pub kind: MemberKind,
+    /// Lines in priority order; interchangeable at any request boundary.
+    pub lines: Vec<LineConfig>,
+    /// The member serves Responses over WebSocket. When false, WebSocket
+    /// handshakes routed to it are answered 426 locally (Codex then uses HTTP).
+    /// Superba sets it from the site kind and the lines' probe results
+    /// ([`MemberConfig::apply_websocket_hints`]).
+    #[serde(default)]
+    pub websocket: bool,
+    /// Model names rewritten in request bodies for this member (`codex name` →
+    /// `member name`).
+    #[serde(default)]
+    pub model_map: BTreeMap<String, String>,
+}
+
+/// One entry point of a member.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LineConfig {
+    /// Stable id, unique within the member.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Full base URL the request remainder is appended to, e.g.
+    /// `https://api.krill-code.net/backend-api/codex` or `https://api.example.com/v1`.
+    pub base_url: Url,
+    /// Unauthenticated health probe; default `<base_url>/models` (any answer other
+    /// than 502-504 or an edge interception counts as alive, 401 included).
+    #[serde(default)]
+    pub probe_url: Option<Url>,
+    /// The line accepts zstd request bodies (Superba's transport probe):
+    /// `Some(true)` = Responses request bodies Codex sent uncompressed are
+    /// compressed for it; `None` (not checked) and `Some(false)` = sent as they
+    /// are. See [`crate::transport`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zstd: Option<bool>,
+    /// The line serves the Responses WebSocket for this member's key (probe):
+    /// `Some(false)` = never offered for a WebSocket (the handshake got 426);
+    /// `None` = not checked (offered when the member serves WebSocket).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub websocket: Option<bool>,
+}
+
+impl MemberConfig {
+    /// Derive [`MemberConfig::websocket`] from the lines' probe results: a
+    /// Krill member serves WebSocket unless every line refused the handshake
+    /// (WebSocket is a per-account gate, the same on every line); a compatible
+    /// site only when some line upgraded one.
+    pub fn apply_websocket_hints(&mut self) {
+        self.websocket = match self.kind {
+            MemberKind::Krill => self.lines.iter().any(|l| l.websocket != Some(false)),
+            MemberKind::Compatible => self.lines.iter().any(|l| l.websocket == Some(true)),
+        };
+    }
+}
+
+impl LineConfig {
+    /// The probe URL in effect.
+    pub fn effective_probe_url(&self) -> Url {
+        self.probe_url
+            .clone()
+            .unwrap_or_else(|| join_path(&self.base_url, "/models", None))
+    }
+}
+
+/// Timeouts, stickiness and breaker parameters. Defaults follow the router spike.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Tuning {
+    /// TCP + TLS connect timeout per attempt. There is deliberately no
+    /// time-to-first-byte timeout: Codex has none and relays may queue.
+    pub connect_timeout_ms: u64,
+    /// Idle time after which a conversation's pin is forgotten.
+    pub sticky_ttl_secs: u64,
+    /// Maximum number of pinned conversations (least recently used are dropped).
+    pub sticky_capacity: usize,
+    /// Largest request body accepted (bodies are buffered for failover).
+    pub max_body_bytes: usize,
+    /// Consecutive 502/503/504 answers (or edge interceptions) that open a line's
+    /// breaker. Connect failures and broken streams open it at once.
+    pub breaker_threshold: u32,
+    /// First open period of a breaker; doubles on each re-open.
+    pub breaker_base_ms: u64,
+    /// Longest open period.
+    pub breaker_max_ms: u64,
+    /// Timeout of one health probe.
+    pub probe_timeout_ms: u64,
+    /// Probe every line at start and open lines when their backoff ends. When
+    /// off, breakers recover only through real requests.
+    pub active_probes: bool,
+}
+
+impl Default for Tuning {
+    fn default() -> Self {
+        Self {
+            connect_timeout_ms: 4_000,
+            sticky_ttl_secs: 2 * 60 * 60,
+            sticky_capacity: 4_096,
+            max_body_bytes: 256 * 1024 * 1024,
+            breaker_threshold: 2,
+            breaker_base_ms: 5_000,
+            breaker_max_ms: 60_000,
+            probe_timeout_ms: 5_000,
+            active_probes: true,
+        }
+    }
+}
+
+impl RouterConfig {
+    /// A configuration with defaults for `members` on `listen_port`.
+    pub fn new(listen_port: u16, members: Vec<MemberConfig>) -> Self {
+        Self {
+            format: CONFIG_FORMAT,
+            listen_port,
+            members,
+            tuning: Tuning::default(),
+            use_system_proxy: true,
+            extra_ca_file: None,
+            stats: None,
+        }
+    }
+
+    /// Look up a member.
+    pub fn member(&self, id: &str) -> Option<&MemberConfig> {
+        self.members.iter().find(|m| m.id == id)
+    }
+
+    /// Check every rule; the router refuses to start (or reload) otherwise.
+    pub fn validate(&self) -> Result<()> {
+        if self.format != CONFIG_FORMAT {
+            return Err(Error::invalid(format!(
+                "router config format {} is not supported (expected {CONFIG_FORMAT})",
+                self.format
+            )));
+        }
+        if self.members.is_empty() {
+            return Err(Error::invalid("the router needs at least one member"));
+        }
+        let mut ids = BTreeSet::new();
+        for m in &self.members {
+            check_id("member", &m.id)?;
+            if !ids.insert(m.id.as_str()) {
+                return Err(Error::invalid(format!("duplicate member id {:?}", m.id)));
+            }
+            if m.lines.is_empty() {
+                return Err(Error::invalid(format!("member {:?} has no line", m.id)));
+            }
+            let mut line_ids = BTreeSet::new();
+            for l in &m.lines {
+                check_id("line", &l.id)?;
+                if !line_ids.insert(l.id.as_str()) {
+                    return Err(Error::invalid(format!(
+                        "duplicate line id {:?} in member {:?}",
+                        l.id, m.id
+                    )));
+                }
+                check_upstream_url(&l.base_url)?;
+                if let Some(p) = &l.probe_url {
+                    check_upstream_url(p)?;
+                }
+            }
+            for (from, to) in &m.model_map {
+                if from.trim().is_empty() || to.trim().is_empty() {
+                    return Err(Error::invalid(format!(
+                        "member {:?}: empty model name in the model mapping",
+                        m.id
+                    )));
+                }
+            }
+        }
+        let t = &self.tuning;
+        if t.connect_timeout_ms == 0 || t.breaker_base_ms == 0 || t.probe_timeout_ms == 0 {
+            return Err(Error::invalid("router timeouts must be positive"));
+        }
+        if t.breaker_max_ms < t.breaker_base_ms || t.breaker_threshold == 0 {
+            return Err(Error::invalid("invalid router breaker settings"));
+        }
+        if t.sticky_capacity == 0 || t.max_body_bytes == 0 {
+            return Err(Error::invalid("router capacities must be positive"));
+        }
+        if let Some(stats) = &self.stats {
+            stats.validate()?;
+        }
+        Ok(())
+    }
+
+    /// Read `config.json`.
+    pub fn load(paths: &RouterPaths) -> Result<Self> {
+        let path = paths.config_json();
+        let bytes = fs::read(&path).map_err(|e| Error::io(&path, &e))?;
+        let cfg: RouterConfig =
+            serde_json::from_slice(&bytes).map_err(|e| Error::parse("router config.json", e))?;
+        cfg.validate()?;
+        Ok(cfg)
+    }
+
+    /// Validate and write `config.json` atomically (0600).
+    pub fn save(&self, paths: &RouterPaths) -> Result<()> {
+        self.validate()?;
+        let mut bytes = serde_json::to_vec_pretty(self)
+            .map_err(|e| Error::other(format!("serialize router config: {e}")))?;
+        bytes.push(b'\n');
+        write_private(&paths.config_json(), &bytes)
+    }
+}
+
+/// The router's secrets: the token Codex presents and each member's own key.
+#[derive(Clone, Debug)]
+pub struct RouterSecrets {
+    /// Token Codex sends as its API key (`auth.json` `OPENAI_API_KEY`).
+    pub router_token: Secret,
+    /// Member id → that member's API key.
+    pub member_keys: BTreeMap<String, Secret>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SecretsWire {
+    format: u32,
+    router_token: String,
+    member_keys: BTreeMap<String, String>,
+}
+
+impl Drop for SecretsWire {
+    fn drop(&mut self) {
+        self.router_token.zeroize();
+        for v in self.member_keys.values_mut() {
+            v.zeroize();
+        }
+    }
+}
+
+impl RouterSecrets {
+    /// Fresh secrets with a new random router token.
+    pub fn generate(member_keys: BTreeMap<String, Secret>) -> Self {
+        Self {
+            router_token: Secret::new(token::generate(token::ROUTER_TOKEN_PREFIX)),
+            member_keys,
+        }
+    }
+
+    /// The key of `member`.
+    pub fn key(&self, member: &str) -> Option<&Secret> {
+        self.member_keys.get(member)
+    }
+
+    /// Check that the token is set and every member of `config` has a key.
+    pub fn validate_for(&self, config: &RouterConfig) -> Result<()> {
+        if self.router_token.is_empty() {
+            return Err(Error::Secret {
+                message: "the router token is empty".into(),
+            });
+        }
+        for m in &config.members {
+            match self.member_keys.get(&m.id) {
+                Some(k) if !k.is_empty() => {}
+                _ => {
+                    return Err(Error::Secret {
+                        message: format!("no API key for router member {:?}", m.id),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Read `secrets.json`.
+    pub fn load(paths: &RouterPaths) -> Result<Self> {
+        let path = paths.secrets_json();
+        let bytes = fs::read(&path).map_err(|e| Error::io(&path, &e))?;
+        let wire: SecretsWire = serde_json::from_slice(&bytes).map_err(|_| Error::Secret {
+            // The parser message could quote file content: keep it out.
+            message: "router secrets.json is not valid".into(),
+        })?;
+        if wire.format != CONFIG_FORMAT {
+            return Err(Error::Secret {
+                message: format!("router secrets format {} is not supported", wire.format),
+            });
+        }
+        Ok(Self {
+            router_token: Secret::new(wire.router_token.as_str()),
+            member_keys: wire
+                .member_keys
+                .iter()
+                .map(|(k, v)| (k.clone(), Secret::new(v.as_str())))
+                .collect(),
+        })
+    }
+
+    /// Write `secrets.json` atomically with mode 0600.
+    pub fn save(&self, paths: &RouterPaths) -> Result<()> {
+        let wire = SecretsWire {
+            format: CONFIG_FORMAT,
+            router_token: self.router_token.expose().to_owned(),
+            member_keys: self
+                .member_keys
+                .iter()
+                .map(|(k, v)| (k.clone(), v.expose().to_owned()))
+                .collect(),
+        };
+        let mut bytes = serde_json::to_vec_pretty(&wire)
+            .map_err(|e| Error::other(format!("serialize router secrets: {e}")))?;
+        bytes.push(b'\n');
+        let result = write_private(&paths.secrets_json(), &bytes);
+        bytes.zeroize();
+        result
+    }
+}
+
+fn check_id(what: &str, id: &str) -> Result<()> {
+    let ok = !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b));
+    if ok {
+        Ok(())
+    } else {
+        Err(Error::invalid(format!(
+            "{what} id {id:?} must be 1-64 characters of a-z, 0-9, '.', '_' or '-'"
+        )))
+    }
+}
+
+/// Upstream rule: https, or plain http to a loopback host (tests, local
+/// forwarders); no credentials, query or fragment; never a ChatGPT host.
+pub fn check_upstream_url(url: &Url) -> Result<()> {
+    let loopback = match url.host() {
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        Some(url::Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
+        None => return Err(Error::invalid(format!("{url}: no host"))),
+    };
+    match url.scheme() {
+        "https" => {}
+        "http" if loopback => {}
+        other => {
+            return Err(Error::invalid(format!(
+                "{url}: scheme {other} not allowed (https required)"
+            )));
+        }
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(Error::invalid(format!(
+            "{}: must not contain credentials",
+            url.host_str().unwrap_or_default()
+        )));
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err(Error::invalid(format!(
+            "{url}: must not contain a query or fragment"
+        )));
+    }
+    let host = url
+        .host_str()
+        .unwrap_or_default()
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    if CHATGPT_HOSTS
+        .iter()
+        .any(|h| host == *h || host.ends_with(&format!(".{h}")))
+    {
+        return Err(Error::invalid(
+            "the official ChatGPT login is never routed through the local router",
+        ));
+    }
+    Ok(())
+}
+
+/// `base` with `rest` (an absolute path) appended to its path, plus `query`.
+pub(crate) fn join_path(base: &Url, rest: &str, query: Option<&str>) -> Url {
+    let mut url = base.clone();
+    let mut path = base.path().trim_end_matches('/').to_owned();
+    if !rest.starts_with('/') {
+        path.push('/');
+    }
+    path.push_str(rest);
+    url.set_path(&path);
+    url.set_query(query);
+    url
+}
+
+/// Write `bytes` to `path` atomically (temp file + rename) with mode 0600 on Unix.
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| Error::invalid(format!("{} has no parent", path.display())))?;
+    create_private_dir(dir)?;
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("router");
+    let tmp = dir.join(format!(
+        ".{file_name}.{}.tmp",
+        token::generate("").get(..12).unwrap_or("tmp")
+    ));
+    let write = || -> std::io::Result<()> {
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        drop(f);
+        fs::rename(&tmp, path)
+    };
+    write().map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        Error::io(path, &e)
+    })
+}
+
+/// Create `dir` (and parents); the leaf gets mode 0700 on Unix.
+pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
+    fs::create_dir_all(dir).map_err(|e| Error::io(dir, &e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+    }
+    Ok(())
+}

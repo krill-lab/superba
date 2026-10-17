@@ -1,0 +1,475 @@
+# superba-gui UI texts (English), area "router". Flat dotted keys under their tables.
+# Every key must exist in router.zh-CN.toml with the same {placeholders} and must not be
+# defined in another area file (tests/i18n_tests.rs).
+
+[router]
+turn_on = "Turn on"
+turn_off = "Turn off"
+preview_hint = "Review the Codex configuration change before it is applied."
+needs_member = "Add at least one member first."
+unavailable = "The local router is not available in this build."
+loading = "Reading the router's configuration…"
+process = "Router process"
+service_label = "Background service"
+mode_label = "Router mode"
+
+[router.section]
+title = "Router"
+
+[usage.tab]
+recent = "Recent requests"
+active = "Active requests"
+stats = "Statistics"
+
+[usage.banner]
+on = "Router on ({addr}): requests through it show first token, TPS, line and transport; the rest come from Codex's session files."
+on_tip = "Requests the local router recorded are listed once, with its timing and line. Requests that did not go through it (earlier ones, or while it was paused) are read from Codex's session files on this computer: model, tokens, cost and duration, no first token, TPS, line or transport."
+off = "Router off: requests come from Codex's session files on this computer (first token, TPS, line and transport only through the local router)."
+off_tip = "Codex writes every model request's usage into its session files (CODEX_HOME/sessions). Superba reads them read-only: model, input, output, cache, cost and duration. Turn on the local router for first token, TPS, the line that answered, transport and HTTP status."
+settings = "Open Router"
+
+[usage.palette]
+open_recent = "Open recent requests"
+open_active = "Open active requests"
+open_stats = "Open usage statistics"
+
+[router.banner]
+on = "Router on — this computer's Codex requests go through the local process superba-router ({addr}). The official login and remote hosts don't use it."
+off = "Router off — Codex connects to the provider directly."
+turn_on = "Turn on the router…"
+tip = "When on, Codex sends requests to superba-router on 127.0.0.1, which forwards them to the first healthy member. The official ChatGPT login never goes through it; remote hosts stay direct. If the router stops, Superba switches Codex back to a direct line. Member keys are copied into the router's own key file (readable only by you). Account errors (401, 403, 429) are never retried elsewhere."
+
+[router.mode]
+on = "On"
+off = "Off"
+unknown = "Unknown"
+
+[router.service]
+uninstall = "Uninstall"
+uninstall_hint = "Stop and remove the background service and the router's files. Turn router mode off first."
+running = "Running"
+stopped = "Stopped"
+installed = "Installed"
+not_installed = "Not installed"
+none = "Not available on this system"
+install = "Install and start"
+reinstall = "Reinstall"
+restart = "Restart"
+install_hint = "Install the per-user background service that keeps the router running, and start it."
+
+[router.live]
+up = "Answering"
+down = "Not running"
+down_on = "Codex is waiting for the router; it resumes when the router is back or Superba falls back to direct mode."
+uptime = "uptime"
+requests = "requests"
+active = "active"
+failovers = "failovers"
+unavailable = "unavailable"
+sessions = "conversations"
+
+[router.members]
+title = "Members (by priority)"
+help = "Providers in priority order. A conversation stays with its member; it moves only when every line of that member fails. 401, 403 and 429 are never retried elsewhere."
+empty = "No members yet: add a provider below."
+pick = "Choose a provider…"
+add = "Add member"
+remove = "Remove member"
+up = "Move up"
+down = "Move down"
+no_key = "No key"
+mappings = "{n} model {n|mapping|mappings}"
+key_note = "The member's key is copied into the router's own key file (readable only by you), so the router can start without asking for the keyring."
+keyless = "Not listed until they have a key: {sites} (add one on the Providers page)."
+
+[router.kind]
+krill = "Krill"
+compatible = "Custom"
+
+[router.line]
+up = "Healthy"
+down = "Down"
+probing = "Checking"
+unknown = "No data"
+retry_in = "retry in {time}"
+requests = "{n} requests"
+failovers = "{n} failed over"
+websockets = "{n} WebSocket"
+last_error = "Last failure"
+
+[router.events]
+title = "Recent routing events"
+show = "Show"
+hide = "Hide"
+ago = "{time} ago"
+
+[router.event]
+failover = "Failed over"
+line_down = "Line down"
+line_up = "Line back"
+unavailable = "No member could answer"
+stream_broken = "Stream broken"
+member_changed = "Conversation moved"
+reloaded = "Configuration reloaded"
+
+[router.palette]
+setup = "Set up the local router"
+on = "Turn the local router on"
+off = "Turn the local router off"
+detail = "Fail over across providers and their lines"
+stats_on = "Turn the stats line on"
+stats_off = "Turn the stats line off"
+pause_recording = "Pause request recording"
+resume_recording = "Resume request recording"
+
+[requests]
+search = "Search sessions, models, cache keys…"
+remote_note = "Requests of remote hosts aren't shown here: they don't go through the local router and their session files stay on the host."
+total = "Total"
+total_count = "{n} req."
+no_price = "{n} without an official price; set one in Models"
+new_rows = "↑ {n} new {n|request|requests}"
+loading = "Loading…"
+paused = "Recording paused"
+truncated = "Newest {n} shown"
+truncated_tip = "More requests match; narrow the range or filters to see older ones."
+export_csv = "Export CSV"
+export_hint = "Save the shown requests as a CSV file in your Downloads folder (numbers only, no content)."
+exported = "Exported {n} {n|request|requests} to {path}"
+cleared = "Deleted {n} {n|request|requests} from the router's history"
+
+[requests.sources]
+collapse = "Hide the list"
+expand = "Show the list"
+
+[requests.group]
+session_short = "Sessions"
+provider_short = "Providers"
+all = "All"
+title_gen = "Title generation"
+line_unknown = "Line unknown"
+line_unknown_tip = "requests from Codex session files, or that failed before any line answered"
+
+[requests.range]
+24h = "24 h"
+7d = "7 days"
+30d = "30 days"
+
+[requests.filter]
+all_providers = "All providers"
+all_models = "All models"
+
+[requests.filter.status]
+all = "All statuses"
+ok = "Completed"
+failed = "Failed"
+failover = "Failed over"
+
+[requests.filter.client]
+all = "App + CLI"
+
+[requests.col]
+cache_key = "Cache key"
+date = "Date"
+session = "Session"
+status = "Status"
+provider = "Provider"
+input = "Input"
+output = "Output"
+cache_read = "Cached"
+cache_write = "Written"
+ttft = "TTFT"
+duration = "Elapsed"
+tps = "TPS"
+cost = "Cost"
+model = "Model"
+client = "Client"
+transport = "Transport"
+
+[requests.csv]
+model = "Model"
+client = "Client"
+line = "Line"
+host = "Upstream host"
+source = "Source"
+
+[requests.status]
+ok = "Done"
+failover = "Failover"
+failed = "Failed"
+incomplete = "Partial"
+cancelled = "Stopped"
+broken = "Cut off"
+waiting = "Waiting for first token"
+streaming = "Streaming"
+holding = "Adding stats line"
+
+# Short failure reasons of the status cell; the wire code only in tooltips and the detail pane.
+[requests.reason]
+bad_request = "Bad request"
+connection = "Connection failed"
+content_filter = "Filtered"
+context = "Context too long"
+disconnected = "Disconnected"
+max_tokens = "Output limit"
+no_member = "No member answered"
+overloaded = "Overloaded"
+quota = "Quota used up"
+rate_limit = "Rate limited"
+retries = "Too many retries"
+server = "Server error"
+too_large = "Too large"
+unauthorized = "Unauthorized"
+upstream = "Upstream down"
+
+[requests.transport]
+sse = "SSE"
+
+[requests.kind]
+turn = "Turn"
+prewarm = "Prewarm"
+compaction = "Compaction"
+memory = "Memory"
+title = "Title"
+other = "Other"
+
+[requests.tip]
+input = "Non-cached input; raw input_tokens {raw}"
+input_col = "Input without cached and cache-write tokens"
+output = "Includes {reasoning} reasoning tokens"
+tps = "Output tokens per second from the first Responses event to response.completed"
+failover = "Failed over {n} {n|time|times} before {line} answered"
+cost = "Estimate at OpenAI list prices × the provider's ratio"
+unpriced = "No official price; set one in Models"
+cancelled_cost = "No usage arrived; the provider may still bill a cancelled request."
+router_only = "Only available through the local router"
+cache_read = "Cache read: input_tokens_details.cached_tokens"
+cache_write = "Cache write: cache_write_tokens (— when the provider never reports it)"
+ttft = "First token: request received → first output delta (or a whole output item)"
+duration = "Completed in: request received → response.completed or the end of the stream"
+
+[requests.toolbar]
+clear = "Clear"
+clear_tip = "Delete the local router's request history (asks first)"
+reload = "Reload"
+pause = "Pause recording"
+resume = "Resume recording"
+pause_tip = "The router keeps routing but stops writing request rows."
+collapse = "Hide details"
+expand = "Show details"
+
+[requests.clear]
+title = "Delete request history?"
+confirm = "Every request the local router recorded is deleted from this computer ({n} {n|is|are} in the current view). Codex's own session files are not touched. This can't be undone."
+
+[requests.detail]
+general = "General"
+source = "Source"
+line_router_only = "line only available through the local router"
+rollout_timing = "Duration {duration}: from the request's last input to its usage record, derived from Codex's session files."
+rollout_timing_note = "First token, first event and the other timing marks are only available through the local router."
+timing = "Timing"
+model = "Model"
+client = "Client"
+tier = "{requested} · answered {answered}"
+usage_in = "Input {input} · cache read {cached}"
+usage_out = "Cache write {write} · output {output} (reasoning {reasoning})"
+speed_times = "First token {ttft} · completed {duration}"
+speed_tps = "{tps} tok/s (from the first event)"
+ttfb = "Headers"
+failovers = "{n} {n|failover|failovers}"
+no_failover = "no failover"
+upstream_id = "x-request-id"
+host = "Host"
+price_list = "At OpenAI list prices · {rev}"
+price_override = "At your price from Models"
+price_override_tip = "Estimate at the price set in Models × the provider's ratio"
+unpriced = "No official price; set one in Models"
+price_source = "Source"
+no_usage = "No usage was reported"
+copy_key = "Copy cache key"
+copy_thread = "Copy thread id"
+copy = "Copy"
+unavailable = "Details are not available for this request."
+stripped = "{n} earlier stats {n|line|lines} removed before sending upstream"
+line_injected = "Stats line added to this answer"
+line_not_injected = "No stats line on this answer"
+line_exec = "Stats line: never for codex exec"
+line_na = "Stats line: not used for this kind of request"
+tier_label = "Speed tier"
+raw_log = "Router log (raw, English)"
+
+[requests.detail.outcome]
+answered = "answered"
+connect_failed = "connection failed"
+connect_timeout = "connection timed out"
+intercepted = "intercepted by the line's edge"
+no_response = "no response"
+upstream_error = "upstream error"
+zstd_refused = "zstd body refused, sent again uncompressed"
+
+[requests.detail.card]
+request = "Request"
+usage = "Usage"
+speed = "Speed"
+route = "Route"
+session = "Session"
+cost = "Cost"
+
+[requests.detail.mark]
+received = "Received"
+sent = "Sent upstream"
+headers = "Upstream headers"
+first_event = "First event"
+first_token = "First token"
+last_delta = "Last output"
+done = "Completed"
+
+[requests.detail.same]
+received = "sent right away"
+sent = "same ms as sending"
+headers = "arrived with the headers"
+first_event = "arrived with the first event"
+first_token = "arrived with the first token"
+last_delta = "arrived with the last output"
+
+[requests.detail.missing]
+ws_headers = "none on WebSocket"
+no_events = "no events received"
+no_output = "no output"
+
+[requests.detail.tps]
+window = "{output} output tokens in {window} (first event → completed)"
+short = "TPS is —: only {window} from the first event to completed (under 0.2 s)"
+few = "TPS is —: fewer than 10 output tokens"
+
+[requests.empty]
+off = "No Codex requests in this range. Requests are read from Codex's session files on this computer; with the local router on they also show first token, TPS, line and transport."
+off_action = "Open Router"
+none = "No requests yet. Send a message in ChatGPT or codex."
+filtered = "No requests match the filters"
+clear_filters = "Clear filters"
+
+[requests.active]
+elapsed = "Elapsed"
+deltas = "Deltas received"
+rate = "≈ tok/s"
+empty = "Nothing in flight right now."
+router_off = "Only the local router sees requests while they run, and it is off. Recent requests and Statistics work without it (from Codex's session files)."
+router_off_action = "Open Router"
+
+[requests.stats]
+group = "Group by"
+requests = "Requests"
+success = "Success rate"
+hit = "Cache hit rate"
+avg_ttft = "Avg TTFT"
+avg_tps = "Avg TPS"
+compare = "Compare with billing"
+compare_body = "Put the local estimate for {provider} next to its billed cost of the last 7 days (uses the provider's usage API, which allows a few queries per hour)."
+calibrate = "Compare and calibrate…"
+no_data = "No requests in this range"
+bars_requests = "{n} requests, by day"
+bars_requests_hourly = "{n} requests, by hour"
+bars_cost = "{cost} in this range, by day (OpenAI list prices)"
+bars_cost_hourly = "{cost} in this range, by hour (OpenAI list prices)"
+
+[requests.stats.by]
+model = "Model"
+provider = "Provider"
+session = "Session"
+day = "Day"
+
+[requests.stats.metric]
+requests = "Requests"
+cost = "Cost"
+
+[stats_line]
+title = "Reply stats line"
+body = "The local router adds a quote line after the last reply of each turn; the ChatGPT app shows it as a quote block. Only while the router is on; changes only reload the router."
+needs_router = "Turn on the router to use the stats line"
+on = "On"
+off = "Off"
+clients = "Used for"
+exec_never = "codex exec never gets it (its output file would contain the line)."
+show = "Show"
+template = "Template"
+placeholders = "Placeholders: {tps} {ttft} {input} {output} {cached} {cost} {requests}"
+unknown = "Unknown placeholders: {names}"
+style_label = "Style"
+default_hint = "Default (follows the UI language)"
+custom = "Custom template · reset to use the checkboxes"
+reset = "Reset to default"
+preview = "Preview · last turn ({time})"
+preview_sample = "Preview · sample data"
+sample_reply = "Done — fetch_all is async now, and the tests cover the new path."
+
+[stats_line.client]
+app = "Desktop app"
+tui = "Terminal codex (TUI)"
+
+[stats_line.metric]
+tps = "Speed"
+ttft = "First token"
+turn_tokens = "Turn in/out"
+cached = "Cache"
+cost = "Cost"
+
+[stats_line.style]
+quote = "Quote"
+italic = "Italic quote"
+
+[stats_line.note]
+stored = "The line is saved in the conversation and included in copy, share and notifications; the router removes it before sending history upstream, so the model never sees it and caching is unaffected."
+off = "Lines already in replies stay when you turn this off; without the router they are sent upstream as plain text (about 20–30 tokens each)."
+
+[recording]
+title = "Recording"
+usage = "Record requests (usage and timing)"
+usage_days = "Keep usage records"
+days = "{n} {n|day|days}"
+note = "Records stay on this computer in Superba's data folder, readable only by you: numbers only (times, provider, line, model, status, tokens, cost), never headers, prompts or answers."
+counters = "Since the router started: {written} rows written, {dropped} dropped"
+db_size = "database {size}"
+
+[prices]
+title = "Prices (for cost estimates)"
+table_label = "Price table"
+table = "{source} {rev}"
+table_tip = "OpenAI's official API list prices in USD per 1M tokens (with the Fast, Flex and Ultrafast prices OpenAI publishes), shipped signed with Superba and refreshed with the model list. Per-model prices are set on the Models page."
+ratio = "× {ratio}"
+edit = "Edit"
+save = "Save"
+invalid = "Enter a ratio such as 0.3 or 30%"
+calibrate = "Calibrate from billing…"
+calibrate_tip = "Compare the last 7 days of the local estimate with the billed cost and suggest a ratio."
+calibrate_title = "Calibrate {provider} from billing"
+calibrate_result = "Billed ${billed} vs estimated ${est} over 7 days → ratio × {ratio}"
+calibrate_no_data = "Not enough data: there is no billed cost or no local estimate for these days."
+calibrate_note = "Existing rows keep their estimate; the new ratio applies to new requests."
+calibrate_apply = "Use this ratio"
+day = "Day (UTC)"
+estimated = "Estimated"
+billed = "Billed"
+no_providers = "No key-based provider yet: add one on the Providers page, then set its price ratio here."
+note = "Relays often sell below OpenAI's list price; the ratio scales every estimate of that provider, routed or read from Codex's session files (default × 1). Costs are always estimates at OpenAI list prices (≈)."
+view = "View…"
+view_title = "Price table"
+view_body = "USD per 1M tokens from OpenAI's official price pages (revision {rev}: the date they were read). Standard prices are shown; Fast, Flex and Ultrafast use their own official prices."
+view_empty = "The table has no prices yet, so costs show “—”. A price per model can be set on the Models page."
+view_loading = "Loading the price table…"
+
+[prices.source]
+builtin = "Built-in"
+cache = "Downloaded"
+
+[prices.col]
+model = "Model"
+input = "Input"
+cached = "Cached input"
+output = "Output"
+source = "Source"
+
+# Request detail: how the request body went upstream (user request 14).
+[requests.compression]
+label = "Request body"

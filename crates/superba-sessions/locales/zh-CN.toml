@@ -1,0 +1,11 @@
+# superba-sessions 消息目录（简体中文）。键名用 "." 展开。
+
+[sessions.warn]
+unreadable = "无法读取 {path}：{error}"
+symlink_skipped = "已跳过符号链接 {path}；会话文件必须是普通文件。"
+no_session_meta = "有 {count} 个会话文件没有会话元数据，已保持原样。"
+db_unreadable = "无法读取数据库 {path}：{error}"
+db_on_share = "已跳过数据库 {path}：SQLite 无法在网络共享或 WSL 共享上加锁。"
+sqlite_home_unresolved = "无法使用 config.toml 中的 sqlite_home = \"{value}\"。"
+session_index_provider = "session_index.jsonl 中含有 provider 信息；Superba 不会修改它。"
+stale_foreign_lock = "已忽略其他工具遗留的旧锁：{path}"

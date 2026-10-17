@@ -1,0 +1,139 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:agents"]
+en = "Agent-related settings (thread limits, etc.)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "61b17872a00bf115"
+zh_name = "子代理设置"
+zh = "多代理（子代理）相关设置：是否启用、同时运行的子代理上限、嵌套深度、子代理默认模型和推理强度，以及以 `[agents.<角色名>]` 定义的自定义角色。"
+zh_basis = "61b17872a00bf115"
+
+["config:agents.<name>"]
+en = ""
+en_hash = ""
+zh_name = "自定义代理角色"
+zh = "一个自定义子代理角色，表名为角色名，主代理派生子代理时可以选用。内置角色有 `default`、`explorer` 和 `worker`。"
+zh_basis = ""
+
+["config:agents.<name>.config_file"]
+en = "Path to a role-specific config layer. Relative paths are resolved relative to the `config.toml` that defines them."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ed30c93f20fa80b0"
+zh_name = "角色配置文件"
+zh = "该角色专用的配置层文件路径，相对路径以定义它的 `config.toml` 所在目录为基准。角色配置可以定制或收紧子代理的设置，但不能扩大父会话的权限。"
+zh_basis = "ed30c93f20fa80b0"
+
+["config:agents.<name>.description"]
+en = "Human-facing role documentation used in spawn tool guidance. Required unless supplied by the referenced agent role file."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d7daf9f0454e54c1"
+zh_name = "角色说明"
+zh = "面向人的角色说明，会写进派生子代理工具的说明中，帮助模型选择角色。除非引用的角色文件中已提供，否则必须填写。"
+zh_basis = "d7daf9f0454e54c1"
+
+["config:agents.<name>.nickname_candidates"]
+en = "Candidate nicknames for agents spawned with this role."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "08d062d3910e364a"
+zh_name = "昵称候选"
+zh = "使用该角色派生的子代理可选用的昵称列表，用于在界面中区分各个子代理。"
+zh_basis = "08d062d3910e364a"
+
+["config:agents.default_subagent_model"]
+en = "Default model for spawned subagents when the spawn call does not select one."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3f3bc5ce0e0494b8"
+zh_name = "子代理默认模型"
+zh = "派生子代理时调用没有指定模型，就使用这个模型；未设置时沿用父会话的模型。"
+zh_basis = "3f3bc5ce0e0494b8"
+
+["config:agents.default_subagent_reasoning_effort"]
+en = "Default reasoning effort for spawned subagents when the spawn call does not select one."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f627efb351308780"
+zh_name = "子代理默认推理强度"
+zh = "派生子代理时调用没有指定推理强度，就使用这个值（如 `low`、`medium`、`high`）；须是所选模型支持的级别。"
+zh_basis = "f627efb351308780"
+
+["config:agents.enabled"]
+en = "Whether multi-agent tools are enabled. Defaults to true. An enabled `features.multi_agent_v2` setting takes precedence."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a925aa4c7b807e85"
+zh_name = "启用多代理"
+zh = "是否向模型提供派生和管理子代理的多代理工具，默认 `true`。开启功能开关 `multi_agent_v2` 时以该开关为准。"
+zh_basis = "a925aa4c7b807e85"
+
+["config:agents.interrupt_message"]
+en = "Whether to record a model-visible message when an agent turn is interrupted. Defaults to true."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bbd662cf854bdcd6"
+zh_name = "记录中断提示"
+zh = "轮次被中断时，是否在历史中写入一条模型可见的中断说明，让模型知道上一轮被打断，默认 `true`。"
+zh_basis = "bbd662cf854bdcd6"
+
+["config:agents.max_concurrent_threads_per_session"]
+en = "Maximum number of spawned agent threads that can be open concurrently per session. When unset, the selected multi-agent backend uses its default."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f6a067a6dd12c57e"
+zh_name = "子代理并发上限"
+zh = "每个会话中可同时存在的子代理数量上限（旧名 `max_threads`），至少为 1。未设置时由所用多代理版本决定：V1 默认 6 个，V2 默认 3 个。"
+zh_basis = "f6a067a6dd12c57e"
+
+["config:agents.max_depth"]
+en = "Maximum nesting depth for V1 agent threads. Ignored by V2."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6ce07a5f035e5799"
+zh_name = "子代理嵌套深度"
+zh = "V1 多代理中子代理可以逐层派生的最大层数，默认 `1`，即子代理不能再派生子代理；V2 忽略此项。"
+zh_basis = "6ce07a5f035e5799"
+
+["config:orchestrator"]
+en = "Orchestrator-owned feature settings."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "418c29e3337e21d9"
+zh_name = "编排层设置"
+zh = "由编排层（orchestrator）控制的功能设置，目前用于决定是否向模型提供内置应用连接器（Apps）的 MCP 工具；`skills` 子项已弃用。"
+zh_basis = "418c29e3337e21d9"
+
+["config:orchestrator.mcp"]
+en = ""
+en_hash = ""
+zh_name = "编排层 MCP"
+zh = "编排层自有 MCP 工具（内置的 Codex Apps 应用连接器服务器）的开关设置。"
+zh_basis = ""
+
+["config:orchestrator.mcp.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用编排层 MCP"
+zh = "是否向模型提供内置 Codex Apps MCP 服务器的工具和资源，默认 `true`；设为 `false` 时应用连接器（Apps）在 Codex 中不可用。"
+zh_basis = ""
+
+["config:orchestrator.skills"]
+en = "Legacy no-op setting retained for compatibility. Use `cloud.skills` to configure cloud skills."
+en_source = "openai/codex rust-v0.157.0: codex-rs/core/config.schema.json"
+en_hash = "3ed531bab1b29585"
+zh_name = "编排层技能（已弃用）"
+zh = "已弃用、不再起作用的旧设置，仅为兼容旧配置而保留；云端技能请改用 `cloud.skills` 配置。"
+zh_basis = "3ed531bab1b29585"
+
+["config:orchestrator.skills.enabled"]
+en = ""
+en_hash = ""
+zh_name = "编排层技能开关（已弃用）"
+zh = "已弃用的旧开关，设置后没有任何效果；请改用 `cloud.skills.enabled`。"
+zh_basis = ""

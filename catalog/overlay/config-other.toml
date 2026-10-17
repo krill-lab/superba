@@ -1,0 +1,61 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:cloud"]
+en = "Cloud-owned feature settings."
+en_source = "openai/codex rust-v0.157.0: codex-rs/core/config.schema.json"
+en_hash = "d25eafadabb29759"
+zh_name = "云端功能设置"
+zh = "`[cloud]` 表：由云端提供的功能的设置，目前包含 `cloud.skills`（云端技能）。"
+zh_basis = "d25eafadabb29759"
+
+["config:cloud.skills"]
+en = "Cloud skills are permitted by default; the host must supply a cloud provider."
+en_source = "openai/codex rust-v0.157.0: codex-rs/core/config.schema.json"
+en_hash = "0cb3de1ab1b401e2"
+zh_name = "云端技能"
+zh = "控制是否发现云端技能并提供给模型。默认允许，但只有运行 Codex 的宿主程序提供了云端来源时才会实际出现。"
+zh_basis = "0cb3de1ab1b401e2"
+
+["config:cloud.skills.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用云端技能"
+zh = "设为 `false` 可禁止发现和使用云端技能；未设置时默认允许（`true`）。"
+zh_basis = ""
+
+["config:daybreak"]
+en = "Default Daybreak preference for new threads and non-interactive turns."
+en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
+en_hash = "94a492957a0f4072"
+zh_name = "默认启用 Daybreak"
+zh = "新会话和非交互轮次（如 `codex exec`）默认是否选用 Daybreak，即 OpenAI 面向网络安全工作的模型访问计划（cyber access program）。默认 `false`；启用后要求使用 `openai` 模型供应商、已登录 ChatGPT 或使用 OpenAI API Key，且所选模型提供 Daybreak，否则会报错；该选项本身不授予访问资格。"
+zh_basis = "94a492957a0f4072"
+
+["config:experimental_use_unified_exec_tool"]
+en = ""
+en_hash = ""
+zh_name = "统一执行工具（旧开关）"
+zh = "旧版顶层开关，等同于 `[features].unified_exec`：启用或关闭单一的、基于 PTY 的统一命令执行工具。该功能已稳定且默认开启，使用此键会提示已弃用，建议改用 `[features].unified_exec`。"
+zh_basis = ""
+
+["config:features"]
+en = "Centralized feature flags (new). Prefer this over individual toggles."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0f4c0c66d8d224e0"
+zh_name = "功能开关表"
+zh = "`[features]` 表：集中管理各项功能开关，键为功能名，值为 `true`/`false`，部分功能可写成带参数的子表。推荐用它代替各处单独的旧开关；未知的键会被忽略并记录警告。"
+zh_basis = "0f4c0c66d8d224e0"

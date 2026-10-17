@@ -1,0 +1,145 @@
+# superba-gui UI texts (English), area "models". Flat dotted keys under their tables.
+# Every key must exist in models.zh-CN.toml with the same {placeholders} and must not be
+# defined in another area file (tests/i18n_tests.rs).
+
+[models]
+all = "All models (default)"
+all_capped = "model max"
+all_compact_capped = "90% cap"
+all_hint = "model_context_window · model_auto_compact_token_limit"
+apply_now = "Apply now"
+apply_now_tip = "Apply {provider} again: Codex restarts (hot) and reads the saved model settings."
+catalog_note = "With per-model overrides Superba writes model_catalog_json: Codex uses Superba's model list, refreshed from the provider on every switch."
+codex_default = "Codex default"
+compact_capped = "capped 90%"
+compact_default = "Default · 90% of the window"
+compact_default_short = "90%"
+compact_share = "at {percent}%"
+default = "Default"
+default_model = "Default model"
+effort = "Reasoning effort"
+exact = "{value} tokens ({source})"
+hidden = "hidden"
+load_failed = "The model list could not be loaded"
+loading.body = "Asking the provider for its models; the built-in list is used when it does not answer."
+loading.title = "Loading models…"
+max = "max {max}"
+not_applied = "Saved, not used by Codex yet: {n}"
+official_readonly = "The official login uses ChatGPT's own model list; Superba doesn't change it."
+pat_per_model = "With a personal access token Codex reads {provider}'s live model list, so per-model context and compaction values are not written. Use the All models row, or switch the provider to an API key."
+pat_scope = "Personal access token: only the All models row applies"
+picker_mode = "Show this site's models in Codex's model list"
+picker_mode_tip = "Superba writes model_catalog_json from the site's /v1/models list, so the app's model picker shows the site's real models (metadata from the built-in list where the name matches)."
+provider = "Provider"
+refresh = "Refresh model list"
+reset = "Reset to default"
+saved = "Saved for {provider}."
+saved_later = "Saved; applies on the next switch to {provider}."
+saved_no_restart = "Saved for {provider}; nothing Codex reads changed, so no restart."
+saved_restart = "Saved. {provider} is in use, so Codex restarts (hot) to load the new model settings."
+search = "Filter models"
+show_hidden = "Show hidden models"
+show_hidden_n = "Hidden models ({n})"
+window_unknown = "The model's context window is unknown"
+
+[models.after_save]
+next_switch = "Takes effect the next time you switch to {provider}; Codex is not restarted"
+no_restart = "Saving needs no Codex restart: nothing {provider}'s Codex reads changes"
+restart = "Saving restarts Codex: {provider} is the provider in use"
+
+[models.col]
+compact = "Auto-compact"
+context = "Context window"
+model = "Model"
+price = "Price $/1M in · cached · out"
+speed = "Speed tiers"
+upstream = "Upstream name"
+
+[models.diff]
+close = "Close"
+empty = "Nothing changed."
+hidden = "Hidden"
+name = "Display name"
+title = "Unsaved model changes"
+
+[models.hover]
+all_compact = "Auto-compact limit of every model (model_auto_compact_token_limit). Codex compacts at 90% of the window at most; a model's own value wins."
+all_window = "Context window of every model (model_context_window). Each model is capped at its own maximum; a model's own value wins."
+clamped = "Set to {limit}; Codex caps it at 90% of the window: {value}"
+edit_compact = "Type tokens (300k) or a share of the window (80%), below the context window; clear the field for the default."
+edit_window = "Type 400000, 400k or 1m; clear the field for the default."
+max = "Maximum: {value}"
+model_default = "Model default: {value}"
+unused = "The saved custom value {value} is not used with a personal access token."
+usable = "Codex uses up to {percent}% of it per turn: {value}"
+
+[models.invalid]
+compact_not_below = "The auto-compact limit must be below the context window ({window})"
+compact_too_small = "The auto-compact limit must be at least {min}"
+format = "Enter tokens (400000, 400k, 1m) or a percentage (80%)"
+format_window = "Enter tokens, e.g. 400000, 400k or 1m"
+over_limit = "The context window can be at most {max}"
+over_max = "Above this model's maximum {max}"
+percent_needs_window = "A percentage needs a context window; enter tokens instead"
+too_small = "The context window must be at least {min}"
+
+[models.palette]
+context = "Set the context window of {model}"
+current = "current"
+speed = "Speed: {tier}"
+
+[models.pending]
+count = "{n} unsaved {n|change|changes}"
+diff = "View diff"
+discard = "Discard"
+save = "Save"
+save_apply = "Save & apply"
+
+[models.price]
+body = "USD per 1M tokens. Used only for the request log's estimated cost; it replaces the built-in price of this model for this provider."
+cached = "Cached input"
+input = "Input"
+invalid = "Enter input and output prices as plain numbers (cached is optional)"
+output = "Output"
+remove = "Remove override"
+save = "Use these prices"
+table = "Built-in price: {price}"
+tip = "Price used for cost estimates; click to override"
+title = "Price of {model}"
+
+[models.source]
+builtin = "The provider doesn't list models; built-in list (codex {version} · via {mirror} · {date})"
+bundled = "The provider doesn't list models; the list of this computer's Codex {version}"
+official = "Official login: built-in list (read-only)"
+other = "{n} models"
+snapshot = "The provider doesn't list models; the list built into Superba (codex {version})"
+union = "Models of the router members: {members}"
+upstream = "From the provider {path} · {n} models · {age}"
+
+[models.speed]
+app_model_tip = "In the desktop app a speed tier reaches the provider only through a tier model name on sites that map it; picking another model in the app drops it."
+billing_note = "Billed at the provider's price for this tier, usually higher"
+effect = "Terminal Codex: {cli} · desktop app: {app}"
+standard_effect = "Standard: Codex sends no speed tier"
+label = "Speed"
+none = "This site doesn't publish speed tiers"
+provider_note = "Provider's description: {text}"
+
+[models.upstream]
+pick = "Pick from the site's model list"
+
+[models.state]
+applied = "Applied"
+applied_tip = "Codex uses these values now."
+next_switch = "Next switch"
+next_switch_tip = "Saved; {provider} is not the provider in use, so this applies when you switch to it."
+not_applied = "Not applied"
+not_applied_tip = "Saved, but Codex still uses the previous values; they apply when {provider} is applied again."
+not_used = "Not used"
+unsaved = "Unsaved"
+unsaved_tip = "This row has unsaved changes."
+
+[models.tag]
+all = "All models"
+custom = "Custom"
+default = "Default"

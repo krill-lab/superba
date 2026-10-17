@@ -1,0 +1,2060 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:check_for_update_on_startup"]
+en = "When `true`, checks for Codex updates on startup and surfaces update prompts. Set to `false` only if your Codex updates are centrally managed. Defaults to `true`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8aeef8c54c260677"
+zh_name = "启动时检查更新"
+zh = "为 `true`（默认）时，Codex CLI 的终端界面（TUI）启动时会检查是否有新版本并提示升级；从源码构建的版本不做此检查。只有在 Codex 版本由组织统一管理时才建议设为 `false`。"
+zh_basis = "8aeef8c54c260677"
+
+["config:desktop"]
+en = "Opaque desktop settings stored alongside the rest of config.toml."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "522378532e377221"
+zh_name = "桌面 app 设置"
+zh = "桌面 app 保存在 `config.toml` 中的 `[desktop]` 表，内容由桌面 app 自行维护，Codex 只把它当作不透明数据保存，一般无需手动编辑。其中的工作树根目录 `git-worktree-root`（须为绝对路径，默认 `$CODEX_HOME/worktrees`）也会被 CLI 沿用。"
+zh_basis = "522378532e377221"
+
+["config:disable_paste_burst"]
+en = "Legacy fallback for `tui.disable_paste_burst`. Prefer the setting under `[tui]`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "836a76af694925d2"
+zh_name = "禁用粘贴突发检测（旧）"
+zh = "`tui.disable_paste_burst` 的旧位置，仅在 `[tui]` 下没有设置该项时作为后备生效。建议改用 `[tui]` 下的同名设置。"
+zh_basis = "836a76af694925d2"
+
+["config:file_opener"]
+en = "Optional URI-based file opener. If set, citations to files in the model output will be hyperlinked using the specified URI scheme."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "860c5508230ead66"
+zh_name = "文件引用打开方式"
+zh = "模型回复中引用的文件会按这里选择的 URI 方案生成可点击的超链接，可选 `vscode`、`vscode-insiders`、`windsurf`、`cursor` 或 `none`。未设置时按 `vscode` 处理；设为 `none` 则不生成链接。"
+zh_basis = "860c5508230ead66"
+
+["config:file_opener=none"]
+en = "Option to disable the URI-based file opener."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "abb42283365d677c"
+zh_name = "不生成文件链接"
+zh = "关闭基于 URI 的文件打开方式：模型输出中的文件引用保持为纯文本，不生成编辑器超链接。"
+zh_basis = "abb42283365d677c"
+
+["config:hide_agent_reasoning"]
+en = "When set to `true`, `AgentReasoning` events will be hidden from the UI/output. Defaults to `false`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2edd2b498a9dbb35"
+zh_name = "隐藏推理过程"
+zh = "设为 `true` 时不显示模型的推理（`AgentReasoning`）事件，默认 `false`。依据 0.163 源码，目前只有 `codex exec` 的文本输出读取此项（不再向 stderr 打印推理摘要），终端界面（TUI）不受影响。"
+zh_basis = "2edd2b498a9dbb35"
+
+["config:notice"]
+en = "Collection of in-product notices (different from notifications) See [`crate::types::Notice`] for more details"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1cf0743333012136"
+zh_name = "产品内提示状态"
+zh = "记录各类产品内提示（警告、新功能引导、确认框等）是否已被确认或隐藏的表，与桌面通知（notifications）无关。这些值通常由 Codex 在用户选择“不再提示”等操作后自动写入，一般无需手动修改。"
+zh_basis = "1cf0743333012136"
+
+["config:notice.external_config_migration_prompts"]
+en = "Tracks scopes where external config migration prompts should be suppressed."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "9adfb98bc8f2499a"
+zh_name = "外部配置迁移提示"
+zh = "记录在哪些范围内不再弹出“从其他代理工具（如 Claude Code）导入配置”的迁移提示，分为用户主目录级和各项目级，并记录上次提示的时间。由 Codex 自动维护。"
+zh_basis = "9adfb98bc8f2499a"
+
+["config:notice.external_config_migration_prompts.home"]
+en = "Tracks whether home-level external config migration prompts are hidden."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "41f56394be2813b5"
+zh_name = "隐藏主目录级迁移提示"
+zh = "为 `true` 时，不再提示把用户主目录下其他代理工具（如 Claude Code）的配置迁移到 Codex。由 Codex 在用户选择不再提示后写入。"
+zh_basis = "41f56394be2813b5"
+
+["config:notice.external_config_migration_prompts.home_last_prompted_at"]
+en = "Tracks the last time the home-level external config migration prompt was shown."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e1e0c0e0a025e752"
+zh_name = "主目录级上次提示时间"
+zh = "上一次显示主目录级外部配置迁移提示的时间，以整数时间戳保存。由 Codex 自动写入。"
+zh_basis = "e1e0c0e0a025e752"
+
+["config:notice.external_config_migration_prompts.project_last_prompted_at"]
+en = "Tracks the last time a project-level external config migration prompt was shown."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "45c45768c285c851"
+zh_name = "项目级上次提示时间"
+zh = "按项目路径记录上一次显示项目级外部配置迁移提示的时间（整数时间戳）。由 Codex 自动写入。"
+zh_basis = "45c45768c285c851"
+
+["config:notice.external_config_migration_prompts.project_last_prompted_at.<name>"]
+en = ""
+en_hash = ""
+zh_name = "某项目上次提示时间"
+zh = "以项目路径为键、整数时间戳为值的一条记录：该项目上一次显示外部配置迁移提示的时间。"
+zh_basis = ""
+
+["config:notice.external_config_migration_prompts.projects"]
+en = "Tracks which project paths have opted out of external config migration prompts."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5aa790fad0ffdcd7"
+zh_name = "已关闭迁移提示的项目"
+zh = "按项目路径记录是否已关闭项目级外部配置迁移提示（例如导入该项目中 Claude Code 配置的提示）。由 Codex 自动维护。"
+zh_basis = "5aa790fad0ffdcd7"
+
+["config:notice.external_config_migration_prompts.projects.<name>"]
+en = ""
+en_hash = ""
+zh_name = "某项目的迁移提示开关"
+zh = "以项目路径为键的一条记录；值为 `true` 表示该项目不再弹出外部配置迁移提示。"
+zh_basis = ""
+
+["config:notice.fast_default_opt_out"]
+en = "Tracks whether the user opted out of Codex-managed fast defaults."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5f00cf8782d4c839"
+zh_name = "不使用默认 Fast 档"
+zh = "记录用户是否退出了 Codex 管理的 Fast 默认档。为 `true` 且没有显式设置 `service_tier` 时，TUI 以普通服务档（`default`）发送请求，不再自动采用模型默认的 Fast 档。"
+zh_basis = "5f00cf8782d4c839"
+
+["config:notice.hide_full_access_warning"]
+en = "Tracks whether the user has acknowledged the full access warning prompt."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "73ec11cc355cd1ac"
+zh_name = "隐藏完全访问警告"
+zh = "记录用户是否已确认“完全访问”（Full Access）权限模式的警告；为 `true` 时切换到该模式不再弹出警告。由 Codex 自动写入。"
+zh_basis = "73ec11cc355cd1ac"
+
+["config:notice.hide_gov_cloud_guidance"]
+en = "Tracks whether the user has acknowledged the AWS GovCloud guidance."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "5d1057f03ba6c9d3"
+zh_name = "隐藏 GovCloud 指引"
+zh = "记录用户是否已确认 AWS GovCloud 使用指引；为 `true` 后不再显示。TUI 只在使用 Amazon Bedrock 模型供应商或连接外部（非内嵌）app-server 时于启动阶段检查此指引。"
+zh_basis = "5d1057f03ba6c9d3"
+
+["config:notice.hide_gpt-5.1-codex-max_migration_prompt"]
+en = "Tracks whether the user has seen the gpt-5.1-codex-max migration prompt"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7d6925b49f92616d"
+zh_name = "隐藏 codex-max 迁移提示"
+zh = "记录用户是否已看过“迁移到 `gpt-5.1-codex-max` 模型”的启动提示；为 `true` 时，引用此键的模型升级提示不再显示。由 Codex 自动写入。"
+zh_basis = "7d6925b49f92616d"
+
+["config:notice.hide_gpt5_1_migration_prompt"]
+en = "Tracks whether the user has seen the model migration prompt"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a59d2c9fc37de577"
+zh_name = "隐藏 GPT-5.1 迁移提示"
+zh = "记录用户是否已看过启动时的模型迁移（升级）提示，键名源自 GPT-5.1 迁移；为 `true` 时，引用此键的模型升级提示不再显示。由 Codex 自动写入。"
+zh_basis = "a59d2c9fc37de577"
+
+["config:notice.hide_rate_limit_model_nudge"]
+en = "Tracks whether the user opted out of the rate limit model switch reminder."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "882781c14bd4297a"
+zh_name = "隐藏限额换模型提醒"
+zh = "记录用户是否关闭了“接近用量限额时建议切换到更省额度的模型”的提醒；为 `true` 时不再弹出。由 Codex 在用户选择不再提醒后写入。"
+zh_basis = "882781c14bd4297a"
+
+["config:notice.hide_world_writable_warning"]
+en = "Tracks whether the user has acknowledged the Windows world-writable directories warning."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b854136fe86ab747"
+zh_name = "隐藏可写目录警告"
+zh = "记录用户是否已确认 Windows 上关于“所有人可写（world-writable）目录”的沙箱警告；为 `true` 时不再显示。"
+zh_basis = "b854136fe86ab747"
+
+["config:notice.model_migrations"]
+en = "Tracks acknowledged model migrations as old->new model slug mappings."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "000dab1a03d00d7c"
+zh_name = "已确认的模型迁移"
+zh = "以“旧模型名 → 新模型名”的映射记录用户已确认过的模型迁移，避免重复弹出同一个迁移提示。由 Codex 自动写入。"
+zh_basis = "000dab1a03d00d7c"
+
+["config:notice.model_migrations.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单条模型迁移记录"
+zh = "以旧模型名为键、新模型名为值的一条已确认迁移记录。"
+zh_basis = ""
+
+["config:notify"]
+en = "Optional external command to spawn for end-user notifications."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "380322062e5d86d1"
+zh_name = "外部通知命令"
+zh = "每个轮次完成（代理处理完一次用户提交）后要执行的外部命令，以字符串数组写出命令及其参数；Codex 执行时会在末尾再追加一个描述该事件的 JSON 字符串参数（事件类型如 `agent-turn-complete`）。未设置则不启用；它与 TUI 的桌面通知 `tui.notifications` 是两套独立机制。"
+zh_basis = "380322062e5d86d1"
+
+["config:show_raw_agent_reasoning"]
+en = "When set to `true`, `AgentReasoningRawContentEvent` events will be shown in the UI/output. Defaults to `false`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1338374cf5983987"
+zh_name = "显示原始推理内容"
+zh = "设为 `true` 时显示模型的原始推理内容（`AgentReasoningRawContentEvent`），而不只是推理摘要；只有模型或服务商实际返回原始推理时才有内容。默认 `false`；使用 `--oss` 本地模型且未设置此项时默认开启。"
+zh_basis = "1338374cf5983987"
+
+["config:suppress_unstable_features_warning"]
+en = "Suppress warnings about unstable (under development) features."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "34b96d8fb03699d3"
+zh_name = "隐藏开发中功能警告"
+zh = "启用了开发中（不稳定）的功能时，Codex 默认会给出警告；设为 `true` 可不再显示该警告，默认 `false`。"
+zh_basis = "34b96d8fb03699d3"
+
+["config:tui"]
+en = "Collection of settings that are specific to the TUI."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "dcde8f8aa5afce3d"
+zh_name = "终端界面设置"
+zh = "只对 Codex CLI 终端界面（TUI）生效的设置集合，包括通知、动画、快捷键、状态栏、主题等；不影响桌面 app 和 `codex exec`。"
+zh_basis = "dcde8f8aa5afce3d"
+
+["config:tui.agents_overview_grouping"]
+en = "Last selected grouping in Agent Command Center."
+en_source = "openai/codex rust-v0.162.0-alpha.17.2: codex-rs/core/config.schema.json"
+en_hash = "206b55e7d038c308"
+zh_name = "代理总览分组方式"
+zh = "代理总览（Agent Command Center）上次选择的任务分组方式：`project`（默认，按项目）、`status`（按状态）或 `model`（按模型）。由 TUI 自动记住，也可手动设置。"
+zh_basis = "206b55e7d038c308"
+
+["config:tui.alternate_screen"]
+en = """
+Controls whether the TUI uses the terminal's alternate screen buffer.
+
+- `auto` (default): Use alternate screen. - `always`: Always use alternate screen. - `never`: Never use alternate screen (inline mode only, preserves scrollback)."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6beb1054e9225998"
+zh_name = "备用屏幕模式"
+zh = "控制 TUI 是否使用终端的备用屏幕（alternate screen）。`auto`（默认）通常使用备用屏幕，但在 macOS 自带终端 Terminal.app 经 SSH 运行时改用原生回滚；`always` 始终使用；`never` 始终以内联模式运行并保留终端回滚历史。命令行参数 `--no-alt-screen` 优先于此设置。"
+zh_basis = "6beb1054e9225998"
+
+["config:tui.alternate_screen=always"]
+en = "Always use alternate screen mode."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "cb82912968d9272e"
+zh_name = "始终使用备用屏幕"
+zh = "无论终端类型和运行方式如何（包括 macOS Terminal.app 经 SSH 运行），都在备用屏幕中绘制 TUI。"
+zh_basis = "cb82912968d9272e"
+
+["config:tui.alternate_screen=auto"]
+en = "Use alternate screen mode."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c4f3d6bb438fb44d"
+zh_name = "自动选择"
+zh = "默认值：一般使用备用屏幕，仅在 macOS 自带终端 Terminal.app 经 SSH 运行时改为内联模式。"
+zh_basis = "c4f3d6bb438fb44d"
+
+["config:tui.alternate_screen=never"]
+en = "Never use alternate screen (inline mode only)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "081867fea6bea130"
+zh_name = "不使用备用屏幕"
+zh = "只用内联模式：对话内容直接写入终端回滚，可用终端自身的滚动和复制；此时全屏对话记录 `tui.fullscreen_transcript` 不生效。"
+zh_basis = "081867fea6bea130"
+
+["config:tui.animations"]
+en = "Enable animations (welcome screen, shimmer effects, spinners). Defaults to `true`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2db93d1001ed7216"
+zh_name = "界面动画"
+zh = "TUI 动画总开关（欢迎画面、流光文字、加载转圈等），默认 `true`；关闭后 `tui.effects` 下的各项效果也都不生效。首次启动时若检测到屏幕阅读器且未设置此项，Codex 会自动写入 `false`。"
+zh_basis = "2db93d1001ed7216"
+
+["config:tui.auto_recap"]
+en = "Generate automatic conversation recaps when the terminal is unfocused. Defaults to `true`. Disabling this leaves `/recap` available on demand."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1938c1c8cd355cbb"
+zh_name = "自动会话回顾"
+zh = "终端失去焦点后自动生成会话回顾（总结进展和下一步），默认 `true`。依据源码，至少完成 3 个轮次且失焦约 30 分钟才会触发，每次生成会额外发起一次临时模型请求；关闭后仍可用 `/recap` 手动生成。"
+zh_basis = "1938c1c8cd355cbb"
+
+["config:tui.copy_on_select"]
+en = "Copy selected transcript or footer text when the mouse button is released. Defaults to `auto`: enabled except in direct terminals known to forward their native copy shortcut (Ghostty 1.2+, Kitty on macOS, Windows Terminal, and VS Code on Windows). Unknown terminals, Ghostty without a recognized version, and tmux/Zellij default to copying."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "e4e4eebc65149316"
+zh_name = "选中即复制"
+zh = "松开鼠标时自动复制所选的对话记录或底栏文字。默认 `auto`：直接运行在已知会转发原生复制快捷键的终端（Ghostty 1.2+、macOS 上的 Kitty、Windows Terminal、Windows 上的 VS Code）中时关闭，其余情况（包括未识别的终端以及 tmux/Zellij 内）开启。"
+zh_basis = "e4e4eebc65149316"
+
+["config:tui.copy_on_select=always"]
+en = "Copy every nonempty transcript or footer mouse selection on release."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "cfbaca4a2aec5445"
+zh_name = "始终选中即复制"
+zh = "只要用鼠标选中了非空的对话记录或底栏文字，松开时就复制。"
+zh_basis = "cfbaca4a2aec5445"
+
+["config:tui.copy_on_select=auto"]
+en = "Use the terminal-specific default."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "8bb8f5a892b065de"
+zh_name = "按终端自动"
+zh = "按终端类型使用默认行为（规则见 `tui.copy_on_select`）。"
+zh_basis = "8bb8f5a892b065de"
+
+["config:tui.copy_on_select=never"]
+en = "Require an explicit copy action."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "4a3859751db4e4fb"
+zh_name = "不自动复制"
+zh = "松开鼠标时不复制，需要显式执行复制操作。"
+zh_basis = "4a3859751db4e4fb"
+
+["config:tui.copy_on_select_clear_selection"]
+en = "Deselect transcript text after Copy on select confirms clipboard delivery. Defaults to `false` and has no effect when Copy on select is off."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "96fac46330891c9b"
+zh_name = "复制后取消选中"
+zh = "“选中即复制”确认内容已写入剪贴板后，自动取消对话记录中的选中状态。默认 `false`；“选中即复制”关闭时无效。"
+zh_basis = "96fac46330891c9b"
+
+["config:tui.disable_paste_burst"]
+en = "When true, disables burst-paste detection for typed input entirely. All characters are inserted as they are received, and no buffering or placeholder replacement will occur for fast keypress bursts. Overrides the legacy top-level `disable_paste_burst` setting. Defaults to `false`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "805fb983d92780c7"
+zh_name = "禁用粘贴突发检测"
+zh = "在不支持括号粘贴（bracketed paste）的终端里，Codex 会把短时间内连续到达的按键识别为一次粘贴，避免粘贴内容中的回车直接提交。设为 `true` 则完全关闭该检测，字符按收到的顺序逐个插入。默认 `false`，优先于顶层旧设置 `disable_paste_burst`。"
+zh_basis = "805fb983d92780c7"
+
+["config:tui.effects"]
+en = "Individual visual effects. Each also requires animations to be enabled."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "8923715dc1394352"
+zh_name = "视觉效果"
+zh = "逐项开关 TUI 的视觉效果，默认全部开启；每项都还要求 `tui.animations` 为 `true`。关闭某项只去掉动画，不影响其背后的状态显示。"
+zh_basis = "8923715dc1394352"
+
+["config:tui.effects.effort"]
+en = "Animate reasoning-effort changes in the composer and footer."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "c765768f50dd32ce"
+zh_name = "推理强度切换动画"
+zh = "切换推理强度时，在输入框和底栏播放动画。默认 `true`。"
+zh_basis = "c765768f50dd32ce"
+
+["config:tui.effects.progress"]
+en = "Animate activity bullets and loading spinners."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "2aff566b190da89d"
+zh_name = "进度动画"
+zh = "为活动条目的圆点和加载转圈播放动画，默认 `true`；关闭后进度仍会显示，只是不再动。"
+zh_basis = "2aff566b190da89d"
+
+["config:tui.effects.shimmer"]
+en = "Shimmer status and loading text."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "b2902dcee59cd497"
+zh_name = "文字流光效果"
+zh = "在状态文字和加载文字上显示流光（shimmer）效果，默认 `true`。"
+zh_basis = "b2902dcee59cd497"
+
+["config:tui.effects.starfield"]
+en = "Animate the composer starfield."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "3dbfc135799a5b57"
+zh_name = "输入框星空动画"
+zh = "输入框里的星空（starfield）动画，默认 `true`。依据源码，只在使用名称含 `astra` 的模型开始新任务时出现。"
+zh_basis = "3dbfc135799a5b57"
+
+["config:tui.effects.title"]
+en = "Blink the terminal-title indicator when user action is required."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "3e536327f4697146"
+zh_name = "标题提醒闪烁"
+zh = "需要用户操作（如审批）时，让终端窗口/标签标题里的指示符闪烁，默认 `true`。"
+zh_basis = "3e536327f4697146"
+
+["config:tui.effects.welcome"]
+en = "Animate the welcome artwork."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "25c93d2986494350"
+zh_name = "欢迎画面动画"
+zh = "播放欢迎画面的图案动画，默认 `true`。"
+zh_basis = "25c93d2986494350"
+
+["config:tui.fullscreen_transcript"]
+en = "Own the fullscreen transcript, including scrolling, selection, and search. Defaults to `true`; alternate-screen restrictions take precedence."
+en_source = "openai/codex rust-v0.157.0: codex-rs/core/config.schema.json"
+en_hash = "ab39f7c66f140fed"
+zh_name = "全屏对话记录"
+zh = "是否由 Codex 自己接管全屏对话记录，在 Codex 的全屏视图里滚动、选择和搜索。默认 `true`；设为 `false` 则改用终端原生的复制、粘贴和回滚。`tui.alternate_screen` 为 `never` 时总是使用终端原生回滚；也可用 `/tui` 命令选择，修改在下次启动时生效。"
+zh_basis = "ab39f7c66f140fed"
+
+["config:tui.keymap"]
+en = """
+Keybinding overrides for the TUI.
+
+This supports rebinding selected actions globally and by context. Context bindings take precedence over `global` bindings."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e19bb193c5f874a2"
+zh_name = "快捷键自定义"
+zh = "自定义 TUI 的快捷键：可在 `global` 中全局重绑，也可按上下文（如 `composer`、`pager`、`approval`）重绑，上下文中的绑定优先于 `global`。值可以是 `ctrl-a` 这样的单个按键、最多两段的组合键（如 `ctrl-x ctrl-s`）或它们的列表，空列表表示解除绑定；也可用 `/keymap` 命令交互设置。"
+zh_basis = "e19bb193c5f874a2"
+
+["config:tui.keymap.agents"]
+en = ""
+en_hash = ""
+zh_name = "代理总览快捷键"
+zh = "代理总览（Agent Command Center）里的快捷键，用于恢复、搜索、新建、分叉、重命名、停止、归档、删除、隐藏和置顶任务。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.agents.archive"]
+en = "Archive the selected task and its child agents after confirmation."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a2e679f9e85eb64d"
+zh_name = "归档任务"
+zh = "确认后归档选中的任务及其子代理。默认 `a`。"
+zh_basis = "a2e679f9e85eb64d"
+
+["config:tui.keymap.agents.delete"]
+en = "Permanently delete the selected task and its child agents after confirmation."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f8a558ff739ab984"
+zh_name = "删除任务"
+zh = "确认后永久删除选中的任务及其子代理。默认 `backspace`。"
+zh_basis = "f8a558ff739ab984"
+
+["config:tui.keymap.agents.fork"]
+en = "Fork the selected conversation and open the new session."
+en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
+en_hash = "4a8070d83e6ff01b"
+zh_name = "分叉会话"
+zh = "分叉（fork）选中的对话并打开得到的新会话。默认 `f`。"
+zh_basis = "4a8070d83e6ff01b"
+
+["config:tui.keymap.agents.hide"]
+en = "Hide the selected task until explicitly resumed or the TUI restarts."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3c35d5006bf792ae"
+zh_name = "隐藏任务"
+zh = "在总览中隐藏选中的任务，直到再次显式恢复它或重启 TUI。默认 `h`。"
+zh_basis = "3c35d5006bf792ae"
+
+["config:tui.keymap.agents.new_task"]
+en = "Open a new session in the selected checkout."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "378699f4ad99312d"
+zh_name = "新建任务"
+zh = "在选中任务所在的代码检出目录中新开一个会话。默认 `n`。"
+zh_basis = "378699f4ad99312d"
+
+["config:tui.keymap.agents.new_worktree"]
+en = "Open a new session in a worktree from the project default branch."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "d2e8ff2eff1cee8c"
+zh_name = "在新工作树中新建"
+zh = "从项目默认分支新建一个 Git 工作树（worktree），并在其中打开新会话。默认 `w`。"
+zh_basis = "d2e8ff2eff1cee8c"
+
+["config:tui.keymap.agents.rename"]
+en = "Rename the selected task."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "19c624b0758ace83"
+zh_name = "重命名任务"
+zh = "重命名选中的任务。默认 `r`。"
+zh_basis = "19c624b0758ace83"
+
+["config:tui.keymap.agents.resume"]
+en = "Open the session resume picker."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f9cf9c41d6870afc"
+zh_name = "打开会话恢复选择器"
+zh = "打开会话恢复选择器，挑选要继续的历史会话。默认 `o`。"
+zh_basis = "f9cf9c41d6870afc"
+
+["config:tui.keymap.agents.search"]
+en = "Search the available agent tasks."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1870dd8a3f514078"
+zh_name = "搜索任务"
+zh = "在可用的代理任务中搜索。默认 `f3` 或 `/`。"
+zh_basis = "1870dd8a3f514078"
+
+["config:tui.keymap.agents.stop"]
+en = "Stop the selected running task."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ee64388e69894a00"
+zh_name = "停止任务"
+zh = "停止选中的、正在运行的任务。默认 `x`。"
+zh_basis = "ee64388e69894a00"
+
+["config:tui.keymap.agents.toggle_grouping"]
+en = "Toggle grouping tasks by status or project."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3e65d9661764cdfe"
+zh_name = "切换任务分组"
+zh = "切换任务的分组方式（如按状态或按项目），所选分组会保存到 `tui.agents_overview_grouping`。默认 `g`。"
+zh_basis = "3e65d9661764cdfe"
+
+["config:tui.keymap.agents.toggle_pin"]
+en = "Pin or unpin the selected task in the shared sidebar section."
+en_source = "openai/codex rust-v0.162.0: codex-rs/core/config.schema.json"
+en_hash = "a62d25f3f8ba3b60"
+zh_name = "置顶任务"
+zh = "在共享侧边栏区域中置顶或取消置顶选中的任务。默认 `p`。"
+zh_basis = "a62d25f3f8ba3b60"
+
+["config:tui.keymap.approval"]
+en = ""
+en_hash = ""
+zh_name = "审批浮层快捷键"
+zh = "命令、文件修改、权限和 MCP 信息征询等审批浮层里的快捷键，例如批准、本会话内批准、拒绝和打开详情。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.approval.approve"]
+en = "Approve the primary option."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b94afaf206f6373a"
+zh_name = "批准"
+zh = "选择主选项（“是，继续”），批准本次请求。默认 `y`。"
+zh_basis = "b94afaf206f6373a"
+
+["config:tui.keymap.approval.approve_for_prefix"]
+en = "Approve with exec-policy prefix when that option exists."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "457f506160e3f73d"
+zh_name = "按命令前缀批准"
+zh = "存在该选项时，批准并把命令前缀写入执行策略（exec policy），以后以相同前缀开头的命令不再询问；网络访问审批中对应“以后允许此主机”。默认 `p`。"
+zh_basis = "457f506160e3f73d"
+
+["config:tui.keymap.approval.approve_for_session"]
+en = "Approve for session when that option exists."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "da27eaa7e056170a"
+zh_name = "本会话内批准"
+zh = "存在该选项时，在本会话内批准：同一命令、同一批文件或同一组权限在本会话中不再询问。默认 `a`。"
+zh_basis = "da27eaa7e056170a"
+
+["config:tui.keymap.approval.cancel"]
+en = "Cancel an elicitation request."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "29247319fb1036bc"
+zh_name = "取消信息征询"
+zh = "取消 MCP 服务器发起的信息征询（elicitation）请求；无论如何设置，`esc` 始终也能取消。默认 `c`。"
+zh_basis = "29247319fb1036bc"
+
+["config:tui.keymap.approval.decline"]
+en = "Decline and provide corrective guidance."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e83e73474c3b8d2a"
+zh_name = "拒绝并给出指示"
+zh = "拒绝请求并停下来，让用户告诉 Codex 应该怎么换种做法（“否，并告诉 Codex 怎么做”）。默认 `esc` 或 `n`。"
+zh_basis = "e83e73474c3b8d2a"
+
+["config:tui.keymap.approval.deny"]
+en = "Deny without providing follow-up guidance."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fd8438a23fe58a50"
+zh_name = "拒绝并继续"
+zh = "拒绝请求但不给出后续指示，代理跳过该操作继续工作（如“否，不运行并继续”）。默认 `d`。"
+zh_basis = "fd8438a23fe58a50"
+
+["config:tui.keymap.approval.open_fullscreen"]
+en = "Open the full-screen approval details view."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ca758d7ae789ad4e"
+zh_name = "打开审批详情"
+zh = "打开全屏的审批详情视图，查看完整的命令或改动。默认 `ctrl-a`，也接受 `ctrl-shift-a`。"
+zh_basis = "ca758d7ae789ad4e"
+
+["config:tui.keymap.approval.open_thread"]
+en = "Open the thread that requested approval when shown from another thread."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "66c149a1538e357d"
+zh_name = "跳转到发起会话"
+zh = "当审批请求来自另一个会话（如子代理）时，跳转到发起该请求的会话。默认 `o`。"
+zh_basis = "66c149a1538e357d"
+
+["config:tui.keymap.chat"]
+en = ""
+en_hash = ""
+zh_name = "聊天界面快捷键"
+zh = "主聊天界面里的快捷键，例如中断轮次、调整推理强度、切换权限模式、处理异步问题和实时语音。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.chat.decrease_reasoning_effort"]
+en = "Decrease the active reasoning effort."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "be74de4fd66d5600"
+zh_name = "降低推理强度"
+zh = "把当前推理强度调低一档。默认 `alt-,` 或 `shift-down`。"
+zh_basis = "be74de4fd66d5600"
+
+["config:tui.keymap.chat.edit_queued_message"]
+en = "Move up through pending async questions, then edit the most recently queued message."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "07e6be38aa39f7ec"
+zh_name = "编辑排队消息"
+zh = "先向上浏览待回答的异步问题，再编辑最近一条排队待发送的消息。默认 `shift-left` 或 `alt-up`。"
+zh_basis = "07e6be38aa39f7ec"
+
+["config:tui.keymap.chat.increase_reasoning_effort"]
+en = "Increase the active reasoning effort."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f835a66c83bb7565"
+zh_name = "提高推理强度"
+zh = "把当前推理强度调高一档。默认 `alt-.` 或 `shift-up`。"
+zh_basis = "f835a66c83bb7565"
+
+["config:tui.keymap.chat.interrupt_turn"]
+en = "Interrupt the active turn."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0241f4ea19354ffa"
+zh_name = "中断当前轮次"
+zh = "中断正在进行的轮次，让代理停止当前工作。默认 `esc`。"
+zh_basis = "0241f4ea19354ffa"
+
+["config:tui.keymap.chat.next_permission_mode"]
+en = "Switch to the next available permission mode."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fa5063d03dc5c811"
+zh_name = "下一个权限模式"
+zh = "切换到下一个可用的权限模式（审批与沙箱的组合预设）。默认未绑定按键。"
+zh_basis = "fa5063d03dc5c811"
+
+["config:tui.keymap.chat.previous_permission_mode"]
+en = "Switch to the previous available permission mode."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e91d06a957527100"
+zh_name = "上一个权限模式"
+zh = "切换到上一个可用的权限模式（审批与沙箱的组合预设）。默认未绑定按键。"
+zh_basis = "e91d06a957527100"
+
+["config:tui.keymap.chat.prompt_stack_back"]
+en = "Move back through pending async questions toward the composer."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0b353d59bf26321a"
+zh_name = "返回输入框"
+zh = "在待回答的异步问题之间往回移动，直到回到输入框。默认 `shift-right` 或 `alt-down`。"
+zh_basis = "0b353d59bf26321a"
+
+["config:tui.keymap.chat.skip_question"]
+en = "Skip the focused question."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "32f748b1df3499dc"
+zh_name = "跳过问题"
+zh = "跳过当前聚焦的问题。默认 `ctrl-]`。"
+zh_basis = "32f748b1df3499dc"
+
+["config:tui.keymap.chat.toggle_voice"]
+en = "Start or stop a voice conversation."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "547b07187bd5b132"
+zh_name = "开始/结束语音对话"
+zh = "开始或结束实时语音对话。默认 `f8`。"
+zh_basis = "547b07187bd5b132"
+
+["config:tui.keymap.chat.toggle_voice_mute"]
+en = "Toggle the microphone in an active voice conversation."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fddef7384429159b"
+zh_name = "语音静音"
+zh = "在进行中的实时语音对话里开关麦克风。默认 `f9`；若 `f9` 已被其他快捷键占用，则不使用默认值。"
+zh_basis = "fddef7384429159b"
+
+["config:tui.keymap.composer"]
+en = ""
+en_hash = ""
+zh_name = "输入框快捷键"
+zh = "输入框（composer）里的快捷键：提交、排队发送、快捷键提示和历史搜索。这里的设置优先于 `global` 中的同名动作。"
+zh_basis = ""
+
+["config:tui.keymap.composer.history_search_next"]
+en = "Move to the next match in reverse history search."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0f6c966b32d0db00"
+zh_name = "历史搜索下一项"
+zh = "在反向历史搜索中跳到下一个匹配项。默认 `ctrl-s`。"
+zh_basis = "0f6c966b32d0db00"
+
+["config:tui.keymap.composer.history_search_previous"]
+en = "Open reverse history search or move to the previous match."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0b5004504ef57eaa"
+zh_name = "反向历史搜索"
+zh = "打开对已发送提示词的反向历史搜索，或跳到上一个匹配项。默认 `ctrl-r`。"
+zh_basis = "0b5004504ef57eaa"
+
+["config:tui.keymap.composer.queue"]
+en = "Queue the current composer draft while a task is running."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "67d38a6e01371eb2"
+zh_name = "排队发送"
+zh = "任务运行期间把当前草稿加入待发送队列，等当前轮次结束后再发出。默认 `tab`，优先于 `global.queue`。"
+zh_basis = "67d38a6e01371eb2"
+
+["config:tui.keymap.composer.submit"]
+en = "Submit the current composer draft."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "87639b57071b52f9"
+zh_name = "提交草稿"
+zh = "提交输入框中的当前草稿。默认 `enter`，优先于 `global.submit`。"
+zh_basis = "87639b57071b52f9"
+
+["config:tui.keymap.composer.toggle_shortcuts"]
+en = "Toggle the composer shortcut overlay."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bbc6560ff872984a"
+zh_name = "快捷键提示浮层"
+zh = "显示或隐藏输入框的快捷键提示浮层。默认 `?`，优先于 `global.toggle_shortcuts`。"
+zh_basis = "bbc6560ff872984a"
+
+["config:tui.keymap.editor"]
+en = ""
+en_hash = ""
+zh_name = "文本编辑快捷键"
+zh = "输入框等文本区域里的编辑快捷键：光标移动、删除、换行，以及 Emacs 风格的剪切（kill）与粘回（yank）。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.editor.delete_backward"]
+en = "Delete one grapheme to the left."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8966fa6f10eac08d"
+zh_name = "向左删除字符"
+zh = "删除光标左侧的一个字符（字形簇）。默认 `backspace`、`shift-backspace` 或 `ctrl-h`。"
+zh_basis = "8966fa6f10eac08d"
+
+["config:tui.keymap.editor.delete_backward_word"]
+en = "Delete the previous word."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a6844e2f3909c605"
+zh_name = "删除前一个词"
+zh = "删除光标前的一个词。默认包括 `alt-backspace`、`ctrl-backspace`、`ctrl-w` 等。"
+zh_basis = "a6844e2f3909c605"
+
+["config:tui.keymap.editor.delete_forward"]
+en = "Delete one grapheme to the right."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ee629ca92e1609ed"
+zh_name = "向右删除字符"
+zh = "删除光标右侧的一个字符（字形簇）。默认 `delete`、`shift-delete` 或 `ctrl-d`。"
+zh_basis = "ee629ca92e1609ed"
+
+["config:tui.keymap.editor.delete_forward_word"]
+en = "Delete the next word."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7b488feadf34e5a1"
+zh_name = "删除后一个词"
+zh = "删除光标后的一个词。默认包括 `alt-delete`、`ctrl-delete`、`alt-d` 等。"
+zh_basis = "7b488feadf34e5a1"
+
+["config:tui.keymap.editor.insert_newline"]
+en = "Insert a newline in the editor."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d515bb5a75673591"
+zh_name = "插入换行"
+zh = "在编辑区中插入换行而不提交。默认包括 `ctrl-j`、`shift-enter`、`alt-enter` 等。"
+zh_basis = "d515bb5a75673591"
+
+["config:tui.keymap.editor.kill_line_end"]
+en = "Kill text from cursor to line end."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c2c5e34286fed501"
+zh_name = "剪切到行尾"
+zh = "把光标到行尾的文本剪切到剪切缓冲区（kill buffer），之后可用 `yank` 粘回。默认 `ctrl-k`。"
+zh_basis = "c2c5e34286fed501"
+
+["config:tui.keymap.editor.kill_line_start"]
+en = "Kill text from cursor to line start."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ec618e18c8670a04"
+zh_name = "剪切到行首"
+zh = "把光标到行首的文本剪切到剪切缓冲区。默认 `ctrl-u`。"
+zh_basis = "ec618e18c8670a04"
+
+["config:tui.keymap.editor.kill_whole_line"]
+en = "Kill the current line."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "82ceacfffa725c40"
+zh_name = "剪切整行"
+zh = "把当前整行剪切到剪切缓冲区。默认未绑定按键。"
+zh_basis = "82ceacfffa725c40"
+
+["config:tui.keymap.editor.move_down"]
+en = "Move cursor down one visual line."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "06255c94d3770475"
+zh_name = "光标下移一行"
+zh = "把光标下移一个显示行（自动换行后的视觉行）。默认 `down` 或 `ctrl-n`。"
+zh_basis = "06255c94d3770475"
+
+["config:tui.keymap.editor.move_left"]
+en = "Move cursor left by one grapheme."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2ebdeec733cd5e35"
+zh_name = "光标左移"
+zh = "把光标左移一个字符（字形簇）。默认 `left` 或 `ctrl-b`。"
+zh_basis = "2ebdeec733cd5e35"
+
+["config:tui.keymap.editor.move_line_end"]
+en = "Move cursor to end of line."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1ffab6a15d6cad8e"
+zh_name = "移到行尾"
+zh = "把光标移到行尾。默认 `end` 或 `ctrl-e`。"
+zh_basis = "1ffab6a15d6cad8e"
+
+["config:tui.keymap.editor.move_line_start"]
+en = "Move cursor to beginning of line."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "9ae661dbada9c9a9"
+zh_name = "移到行首"
+zh = "把光标移到行首。默认 `home` 或 `ctrl-a`。"
+zh_basis = "9ae661dbada9c9a9"
+
+["config:tui.keymap.editor.move_right"]
+en = "Move cursor right by one grapheme."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "468f06a35cd692e6"
+zh_name = "光标右移"
+zh = "把光标右移一个字符（字形簇）。默认 `right` 或 `ctrl-f`。"
+zh_basis = "468f06a35cd692e6"
+
+["config:tui.keymap.editor.move_up"]
+en = "Move cursor up one visual line."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8702c36302625d1f"
+zh_name = "光标上移一行"
+zh = "把光标上移一个显示行（自动换行后的视觉行）。默认 `up` 或 `ctrl-p`。"
+zh_basis = "8702c36302625d1f"
+
+["config:tui.keymap.editor.move_word_left"]
+en = "Move cursor to beginning of previous word."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d3fe6c2b3a0037d0"
+zh_name = "移到前一个词首"
+zh = "把光标移到前一个词的开头。默认 `alt-b`、`alt-left` 或 `ctrl-left`。"
+zh_basis = "d3fe6c2b3a0037d0"
+
+["config:tui.keymap.editor.move_word_right"]
+en = "Move cursor to end of next word."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c347a959eb014afc"
+zh_name = "移到后一个词尾"
+zh = "把光标移到下一个词的末尾。默认 `alt-f`、`alt-right` 或 `ctrl-right`。"
+zh_basis = "c347a959eb014afc"
+
+["config:tui.keymap.editor.yank"]
+en = "Yank the kill buffer."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e9acb6a565febe88"
+zh_name = "粘回剪切内容"
+zh = "把剪切缓冲区（kill buffer）中的文本粘贴到光标处。默认 `ctrl-y`。"
+zh_basis = "e9acb6a565febe88"
+
+["config:tui.keymap.global"]
+en = ""
+en_hash = ""
+zh_name = "全局快捷键"
+zh = "在任何界面都可用的快捷键；具体上下文（如 `composer`）没有覆盖同名动作时使用这里的绑定。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.global.clear_terminal"]
+en = "Clear the terminal UI."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b41c1dfc1ebd31d0"
+zh_name = "清屏"
+zh = "清空并重绘终端界面。默认 `ctrl-l`。"
+zh_basis = "b41c1dfc1ebd31d0"
+
+["config:tui.keymap.global.copy"]
+en = "Copy the last agent response to the clipboard."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3166d080f1a039ce"
+zh_name = "复制最近回复"
+zh = "把代理的最近一条回复复制到剪贴板。默认 `ctrl-o`。"
+zh_basis = "3166d080f1a039ce"
+
+["config:tui.keymap.global.find_transcript"]
+en = "Find text in the full transcript."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "604df35767de64fd"
+zh_name = "在对话记录中查找"
+zh = "在完整的对话记录中搜索文本。默认 `f3`。"
+zh_basis = "604df35767de64fd"
+
+["config:tui.keymap.global.focus_activity"]
+en = "Focus activity groups in the owned transcript to inspect their details."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "24fdf976ffe8e898"
+zh_name = "聚焦活动分组"
+zh = "在 Codex 接管的全屏对话记录中聚焦到活动分组，以便查看其详情。默认 `f4`；该键已被自定义绑定占用时不使用默认值。"
+zh_basis = "24fdf976ffe8e898"
+
+["config:tui.keymap.global.leader"]
+en = "Prefix for persistent, context-aware shortcut menus."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "421bfee37aefffab"
+zh_name = "前导键"
+zh = "前导键（leader）：按下后弹出随上下文变化的快捷菜单，其他动作可绑定成 `leader c` 这样的形式。默认 `ctrl-x`（`ctrl-x` 已被其他绑定占用时不设默认）；每个绑定只能是单个按键（不能是按键序列，可列出多个备选），且须带 `ctrl`/`alt` 或为非字符键。"
+zh_basis = "421bfee37aefffab"
+
+["config:tui.keymap.global.open_agents"]
+en = "Open the shared agent-session overview."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c0c965bf19618344"
+zh_name = "打开代理总览"
+zh = "打开共享的代理会话总览（Agent Command Center），在其中查看和管理各个任务。默认未绑定按键。"
+zh_basis = "c0c965bf19618344"
+
+["config:tui.keymap.global.open_external_editor"]
+en = "Open the external editor for the current draft."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "92f93d64e00ee9b7"
+zh_name = "用外部编辑器编辑"
+zh = "用外部编辑器（优先 `$VISUAL`，其次 `$EDITOR`）编辑当前草稿，保存退出后内容回填到输入框。默认 `ctrl-g`。"
+zh_basis = "92f93d64e00ee9b7"
+
+["config:tui.keymap.global.open_transcript"]
+en = "Open the transcript overlay."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7e63678eb8e6b3d7"
+zh_name = "打开对话记录"
+zh = "打开对话记录浮层，浏览完整对话。默认 `ctrl-t`。"
+zh_basis = "7e63678eb8e6b3d7"
+
+["config:tui.keymap.global.queue"]
+en = "Queue the current composer draft while a task is running."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "67d38a6e01371eb2"
+zh_name = "排队发送（全局）"
+zh = "任务运行期间把当前草稿加入待发送队列。这是全局后备绑定，设置了 `composer.queue` 时以后者为准；内置默认 `tab`。"
+zh_basis = "67d38a6e01371eb2"
+
+["config:tui.keymap.global.submit"]
+en = "Submit the current composer draft."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "87639b57071b52f9"
+zh_name = "提交草稿（全局）"
+zh = "提交输入框中的当前草稿。这是全局后备绑定，设置了 `composer.submit` 时以后者为准；内置默认 `enter`。"
+zh_basis = "87639b57071b52f9"
+
+["config:tui.keymap.global.toggle_fast_mode"]
+en = "Toggle Fast mode."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "05255b713d94dc07"
+zh_name = "切换 Fast 模式"
+zh = "开关 Fast 模式（Fast 服务档）。默认未绑定按键。"
+zh_basis = "05255b713d94dc07"
+
+["config:tui.keymap.global.toggle_raw_output"]
+en = "Toggle raw scrollback mode for copy-friendly transcript selection."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "731a572090c0085c"
+zh_name = "切换原始输出模式"
+zh = "开关原始滚动输出模式，让对话记录便于在终端里直接选择复制，作用同 `/raw`。默认 `alt-r`。"
+zh_basis = "731a572090c0085c"
+
+["config:tui.keymap.global.toggle_shortcuts"]
+en = "Toggle the composer shortcut overlay."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bbc6560ff872984a"
+zh_name = "快捷键提示（全局）"
+zh = "显示或隐藏输入框的快捷键提示浮层。这是全局后备绑定，设置了 `composer.toggle_shortcuts` 时以后者为准；内置默认 `?`。"
+zh_basis = "bbc6560ff872984a"
+
+["config:tui.keymap.global.toggle_side_conversation"]
+en = "Switch between a side conversation and its parent without closing either."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "edab45b9253f6ad9"
+zh_name = "切换旁支对话"
+zh = "在旁支对话（用 `/side` 开启的临时分叉会话）与其主会话之间来回切换，两者都不会关闭。默认 `ctrl-/`。"
+zh_basis = "edab45b9253f6ad9"
+
+["config:tui.keymap.global.toggle_vim_mode"]
+en = "Toggle Vim mode for the composer input."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a0bf871fd1ceaec3"
+zh_name = "切换 Vim 模式"
+zh = "开关输入框的 Vim 编辑模式，作用同 `/vim`。默认未绑定按键。"
+zh_basis = "a0bf871fd1ceaec3"
+
+["config:tui.keymap.list"]
+en = ""
+en_hash = ""
+zh_name = "列表选择快捷键"
+zh = "弹出式选择列表（如模型、主题选择器）里的快捷键：移动、翻页、跳到首尾、确认和取消。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.list.accept"]
+en = "Accept current selection."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "697c32212cfaf82c"
+zh_name = "确认选择"
+zh = "确认当前选中的项。默认 `enter`。"
+zh_basis = "697c32212cfaf82c"
+
+["config:tui.keymap.list.cancel"]
+en = "Cancel and close selection view."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ae3e8da2be02e508"
+zh_name = "取消并关闭"
+zh = "取消并关闭选择视图。默认 `esc`。"
+zh_basis = "ae3e8da2be02e508"
+
+["config:tui.keymap.list.jump_bottom"]
+en = "Jump to the last list item."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "09cb0e8964a661d0"
+zh_name = "跳到最后一项"
+zh = "跳到列表的最后一项。默认 `end`。"
+zh_basis = "09cb0e8964a661d0"
+
+["config:tui.keymap.list.jump_top"]
+en = "Jump to the first list item."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e87aeb6d3261ecb8"
+zh_name = "跳到第一项"
+zh = "跳到列表的第一项。默认 `home`。"
+zh_basis = "e87aeb6d3261ecb8"
+
+["config:tui.keymap.list.move_down"]
+en = "Move list selection down."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "63644f1310eeeea1"
+zh_name = "向下选择"
+zh = "把选中项下移一项。默认包括 `down`、`ctrl-n`、`ctrl-j` 和 `j`。"
+zh_basis = "63644f1310eeeea1"
+
+["config:tui.keymap.list.move_left"]
+en = "Move horizontally left in list pickers that support horizontal actions."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2939049bf9ddf16a"
+zh_name = "向左移动"
+zh = "在支持横向操作的列表选择器中向左移动。默认 `left` 或 `ctrl-h`。"
+zh_basis = "2939049bf9ddf16a"
+
+["config:tui.keymap.list.move_right"]
+en = "Move horizontally right in list pickers that support horizontal actions."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "716cd5bd6c834915"
+zh_name = "向右移动"
+zh = "在支持横向操作的列表选择器中向右移动。默认 `right` 或 `ctrl-l`。"
+zh_basis = "716cd5bd6c834915"
+
+["config:tui.keymap.list.move_up"]
+en = "Move list selection up."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "77b92ab7cb14df63"
+zh_name = "向上选择"
+zh = "把选中项上移一项。默认包括 `up`、`ctrl-p`、`ctrl-k` 和 `k`。"
+zh_basis = "77b92ab7cb14df63"
+
+["config:tui.keymap.list.page_down"]
+en = "Move list selection down by one page."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a80f09d86fd18b4a"
+zh_name = "向下翻页"
+zh = "把选中项向下移动一页。默认 `page-down` 或 `ctrl-f`。"
+zh_basis = "a80f09d86fd18b4a"
+
+["config:tui.keymap.list.page_up"]
+en = "Move list selection up by one page."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0eaa2a4821ec305c"
+zh_name = "向上翻页"
+zh = "把选中项向上移动一页。默认 `page-up` 或 `ctrl-b`。"
+zh_basis = "0eaa2a4821ec305c"
+
+["config:tui.keymap.pager"]
+en = ""
+en_hash = ""
+zh_name = "翻页浮层快捷键"
+zh = "对话记录浮层和其他静态浮层（分页查看器）里的快捷键：滚动、翻页、跳到首尾、查找和关闭。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.pager.close"]
+en = "Close the pager overlay."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "9218bed1723cb771"
+zh_name = "关闭浮层"
+zh = "关闭分页浮层。默认 `q` 或 `ctrl-c`。"
+zh_basis = "9218bed1723cb771"
+
+["config:tui.keymap.pager.close_transcript"]
+en = "Close the transcript overlay via its dedicated toggle key."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "329d623afc7c80d2"
+zh_name = "关闭对话记录"
+zh = "用对话记录专用的切换键关闭对话记录浮层。默认 `ctrl-t`。"
+zh_basis = "329d623afc7c80d2"
+
+["config:tui.keymap.pager.find"]
+en = "Find text in a transcript pager."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "dbda362a54b60da7"
+zh_name = "在浮层中查找"
+zh = "在对话记录分页浮层中查找文本。默认 `f3` 或 `/`。"
+zh_basis = "dbda362a54b60da7"
+
+["config:tui.keymap.pager.half_page_down"]
+en = "Scroll down by half a page."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a30f93ad74df564e"
+zh_name = "向下半页"
+zh = "向下滚动半页。默认 `ctrl-d`。"
+zh_basis = "a30f93ad74df564e"
+
+["config:tui.keymap.pager.half_page_up"]
+en = "Scroll up by half a page."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "67350687547ea745"
+zh_name = "向上半页"
+zh = "向上滚动半页。默认 `ctrl-u`。"
+zh_basis = "67350687547ea745"
+
+["config:tui.keymap.pager.jump_bottom"]
+en = "Jump to the end."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d939eed7385b702a"
+zh_name = "跳到末尾"
+zh = "跳到内容末尾。默认 `end`。"
+zh_basis = "d939eed7385b702a"
+
+["config:tui.keymap.pager.jump_top"]
+en = "Jump to the beginning."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2c25697eaa13da17"
+zh_name = "跳到开头"
+zh = "跳到内容开头。默认 `home`。"
+zh_basis = "2c25697eaa13da17"
+
+["config:tui.keymap.pager.page_down"]
+en = "Scroll down by one page."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "dbab2c7850aea7aa"
+zh_name = "向下翻页"
+zh = "向下滚动一页。默认 `page-down`、`space` 或 `ctrl-f`。"
+zh_basis = "dbab2c7850aea7aa"
+
+["config:tui.keymap.pager.page_up"]
+en = "Scroll up by one page."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2a02b024f4f44940"
+zh_name = "向上翻页"
+zh = "向上滚动一页。默认 `page-up`、`shift-space` 或 `ctrl-b`。"
+zh_basis = "2a02b024f4f44940"
+
+["config:tui.keymap.pager.scroll_down"]
+en = "Scroll down by one row."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "459c53a03da32b51"
+zh_name = "向下滚动一行"
+zh = "向下滚动一行。默认 `down` 或 `j`。"
+zh_basis = "459c53a03da32b51"
+
+["config:tui.keymap.pager.scroll_up"]
+en = "Scroll up by one row."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6509518851abcb8e"
+zh_name = "向上滚动一行"
+zh = "向上滚动一行。默认 `up` 或 `k`。"
+zh_basis = "6509518851abcb8e"
+
+["config:tui.keymap.vim_normal"]
+en = ""
+en_hash = ""
+zh_name = "Vim 普通模式快捷键"
+zh = "输入框处于 Vim 普通模式（Normal）时的按键。大写字母的动作（如 `A`）在配置中要写成 `shift-a`，不同终端对 Shift 的上报差异由 Codex 处理。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.vim_normal.append_after_cursor"]
+en = "Enter insert mode after cursor (`a`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0725962b3d09406c"
+zh_name = "在光标后插入"
+zh = "在光标之后进入插入模式（Vim 的 `a`）。默认 `a`。"
+zh_basis = "0725962b3d09406c"
+
+["config:tui.keymap.vim_normal.append_line_end"]
+en = "Enter insert mode at end of line (`A`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5fd76ddaba800341"
+zh_name = "在行尾插入"
+zh = "在行尾进入插入模式（Vim 的 `A`）。默认 `shift-a`。"
+zh_basis = "5fd76ddaba800341"
+
+["config:tui.keymap.vim_normal.cancel_operator"]
+en = "Cancel a pending operator and return to normal mode."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e1f307ddee969c96"
+zh_name = "取消待定操作符"
+zh = "取消尚未完成的操作符（如已按下 `d` 还没选动作），回到普通模式。默认 `esc`。"
+zh_basis = "e1f307ddee969c96"
+
+["config:tui.keymap.vim_normal.change_to_line_end"]
+en = "Change from cursor to end of line and enter insert mode (`C`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6f12ac7769248219"
+zh_name = "修改到行尾"
+zh = "删除从光标到行尾的内容并进入插入模式（Vim 的 `C`）。默认 `shift-c`。"
+zh_basis = "6f12ac7769248219"
+
+["config:tui.keymap.vim_normal.delete_char"]
+en = "Delete character under cursor (`x`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "9a519cb693ef7e25"
+zh_name = "删除光标处字符"
+zh = "删除光标下的字符（Vim 的 `x`）。默认 `x`。"
+zh_basis = "9a519cb693ef7e25"
+
+["config:tui.keymap.vim_normal.delete_to_line_end"]
+en = "Delete from cursor to end of line (`D`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7f4e8f121424011f"
+zh_name = "删除到行尾"
+zh = "删除从光标到行尾的内容（Vim 的 `D`）。默认 `shift-d`。"
+zh_basis = "7f4e8f121424011f"
+
+["config:tui.keymap.vim_normal.enter_insert"]
+en = "Enter insert mode at cursor (`i`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7e4517697cfb606c"
+zh_name = "进入插入模式"
+zh = "在光标处进入插入模式（Vim 的 `i`）。默认 `i`，也可用 Insert 键。"
+zh_basis = "7e4517697cfb606c"
+
+["config:tui.keymap.vim_normal.enter_replace_mode"]
+en = "Enter replace mode and overwrite characters under the cursor (`R`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "17bdfb87278e2a4e"
+zh_name = "进入替换模式"
+zh = "进入替换模式，输入的字符逐个覆盖光标下的字符（Vim 的 `R`）。默认 `shift-r`。"
+zh_basis = "17bdfb87278e2a4e"
+
+["config:tui.keymap.vim_normal.find_backward"]
+en = "Find the previous character on the current line (`F`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e28d475d2796eaad"
+zh_name = "行内向左查找字符"
+zh = "在当前行向左查找下一个输入的字符并跳到该处（Vim 的 `F`）。默认 `shift-f`。"
+zh_basis = "e28d475d2796eaad"
+
+["config:tui.keymap.vim_normal.find_forward"]
+en = "Find the next character on the current line (`f`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "64103a253b002430"
+zh_name = "行内向右查找字符"
+zh = "在当前行向右查找下一个输入的字符并跳到该处（Vim 的 `f`）。默认 `f`。"
+zh_basis = "64103a253b002430"
+
+["config:tui.keymap.vim_normal.insert_line_start"]
+en = "Enter insert mode at first non-blank of line (`I`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "368e7ab7b5511a04"
+zh_name = "在行首插入"
+zh = "在本行第一个非空白字符处进入插入模式（Vim 的 `I`）。默认 `shift-i`。"
+zh_basis = "368e7ab7b5511a04"
+
+["config:tui.keymap.vim_normal.jump_bottom"]
+en = "Jump to the last buffer line (`G`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0482de49ef00856b"
+zh_name = "跳到最后一行"
+zh = "跳到缓冲区的最后一行（Vim 的 `G`）。默认 `shift-g`。"
+zh_basis = "0482de49ef00856b"
+
+["config:tui.keymap.vim_normal.jump_top"]
+en = "Begin a jump to the first buffer line (`gg`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "45c25375a556d8a4"
+zh_name = "跳到第一行"
+zh = "跳到缓冲区的第一行。默认是两段组合键 `g g`（即 Vim 的 `gg`），也可改绑为单个按键。"
+zh_basis = "45c25375a556d8a4"
+
+["config:tui.keymap.vim_normal.move_down"]
+en = "Move cursor down (`j`), or recall newer composer history at history boundaries."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "53b4a843a1f25115"
+zh_name = "光标下移"
+zh = "光标下移一行（Vim 的 `j`）；已在边界时改为调出较新的输入历史。默认 `j` 或 `down`。"
+zh_basis = "53b4a843a1f25115"
+
+["config:tui.keymap.vim_normal.move_left"]
+en = "Move cursor left (`h`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fad280a5bfd56c2d"
+zh_name = "光标左移"
+zh = "光标左移一个字符（Vim 的 `h`）。默认 `h` 或 `left`。"
+zh_basis = "fad280a5bfd56c2d"
+
+["config:tui.keymap.vim_normal.move_line_end"]
+en = "Move cursor to end of line (`$`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a8d90765b9585525"
+zh_name = "移到行尾"
+zh = "把光标移到行尾（Vim 的 `$`）。默认 `$`。"
+zh_basis = "a8d90765b9585525"
+
+["config:tui.keymap.vim_normal.move_line_start"]
+en = "Move cursor to start of line (`0`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f94d303aaed8eb1a"
+zh_name = "移到行首"
+zh = "把光标移到行首（Vim 的 `0`）。默认 `0`。"
+zh_basis = "f94d303aaed8eb1a"
+
+["config:tui.keymap.vim_normal.move_right"]
+en = "Move cursor right (`l`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c1d6da3be2b1c3be"
+zh_name = "光标右移"
+zh = "光标右移一个字符（Vim 的 `l`）。默认 `l` 或 `right`。"
+zh_basis = "c1d6da3be2b1c3be"
+
+["config:tui.keymap.vim_normal.move_up"]
+en = "Move cursor up (`k`), or recall older composer history at history boundaries."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c8ecd6888c2a3f26"
+zh_name = "光标上移"
+zh = "光标上移一行（Vim 的 `k`）；已在边界时改为调出较早的输入历史。默认 `k` 或 `up`。"
+zh_basis = "c8ecd6888c2a3f26"
+
+["config:tui.keymap.vim_normal.move_word_backward"]
+en = "Move cursor to start of previous word (`b`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b3684dc74ee1195a"
+zh_name = "移到前一个词首"
+zh = "把光标移到前一个词的开头（Vim 的 `b`）。默认 `b`。"
+zh_basis = "b3684dc74ee1195a"
+
+["config:tui.keymap.vim_normal.move_word_end"]
+en = "Move cursor to end of current/next word (`e`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ea6bc34f82b69ad0"
+zh_name = "移到词尾"
+zh = "把光标移到当前或下一个词的末尾（Vim 的 `e`）。默认 `e`。"
+zh_basis = "ea6bc34f82b69ad0"
+
+["config:tui.keymap.vim_normal.move_word_forward"]
+en = "Move cursor to start of next word (`w`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "931d64eafbd9ee86"
+zh_name = "移到下一个词首"
+zh = "把光标移到下一个词的开头（Vim 的 `w`）。默认 `w`。"
+zh_basis = "931d64eafbd9ee86"
+
+["config:tui.keymap.vim_normal.open_line_above"]
+en = "Open a new line above and enter insert mode (`O`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ca264efef2c7490c"
+zh_name = "在上方新开一行"
+zh = "在当前行上方新开一行并进入插入模式（Vim 的 `O`）。默认 `shift-o`。"
+zh_basis = "ca264efef2c7490c"
+
+["config:tui.keymap.vim_normal.open_line_below"]
+en = "Open a new line below and enter insert mode (`o`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7080752c9b9793a6"
+zh_name = "在下方新开一行"
+zh = "在当前行下方新开一行并进入插入模式（Vim 的 `o`）。默认 `o`。"
+zh_basis = "7080752c9b9793a6"
+
+["config:tui.keymap.vim_normal.paste_after"]
+en = "Paste after cursor (`p`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "618e1219766ac5cf"
+zh_name = "在光标后粘贴"
+zh = "把已复制（yank）的内容粘贴到光标之后（Vim 的 `p`）。默认 `p`。"
+zh_basis = "618e1219766ac5cf"
+
+["config:tui.keymap.vim_normal.redo"]
+en = "Redo the last undone edit (`ctrl-r`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "55cee80b59fd1d12"
+zh_name = "重做"
+zh = "重做上一次被撤销的编辑（Vim 的 `ctrl-r`）。默认 `ctrl-r`。"
+zh_basis = "55cee80b59fd1d12"
+
+["config:tui.keymap.vim_normal.repeat_last_change"]
+en = "Repeat the last complete edit (`.`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3bf0cb97b58a44d5"
+zh_name = "重复上次修改"
+zh = "重复上一次完整的编辑操作（Vim 的 `.`）。默认 `.`。"
+zh_basis = "3bf0cb97b58a44d5"
+
+["config:tui.keymap.vim_normal.replace_char"]
+en = "Replace the character under the cursor (`r`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5608ea880760d14b"
+zh_name = "替换单个字符"
+zh = "用下一个输入的字符替换光标下的字符（Vim 的 `r`）。默认 `r`。"
+zh_basis = "5608ea880760d14b"
+
+["config:tui.keymap.vim_normal.start_change_operator"]
+en = "Begin change operator; next keys select a text object."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bcf04e55fba7f87b"
+zh_name = "修改操作符"
+zh = "开始修改（change）操作符，随后的按键选择文本对象（如 `ciw`），所选内容被删除后进入插入模式（Vim 的 `c`）。默认 `c`。"
+zh_basis = "bcf04e55fba7f87b"
+
+["config:tui.keymap.vim_normal.start_delete_operator"]
+en = "Begin delete operator; next key selects motion (`d`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0370bb790249c537"
+zh_name = "删除操作符"
+zh = "开始删除操作符，下一个按键选择动作范围（Vim 的 `d`）。默认 `d`。"
+zh_basis = "0370bb790249c537"
+
+["config:tui.keymap.vim_normal.start_yank_operator"]
+en = "Begin yank operator; next key selects motion (`y`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "12463efb4750f3b5"
+zh_name = "复制操作符"
+zh = "开始复制（yank）操作符，下一个按键选择动作范围（Vim 的 `y`）。默认 `y`。"
+zh_basis = "12463efb4750f3b5"
+
+["config:tui.keymap.vim_normal.substitute_char"]
+en = "Delete character under cursor and enter insert mode (`s`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "058537db25fa0897"
+zh_name = "替换字符并插入"
+zh = "删除光标下的字符并进入插入模式（Vim 的 `s`）。默认 `s`。"
+zh_basis = "058537db25fa0897"
+
+["config:tui.keymap.vim_normal.till_backward"]
+en = "Stop after the previous character on the current line (`T`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f78b6af7f5401a18"
+zh_name = "向左移到字符后"
+zh = "在当前行向左查找下一个输入的字符，停在它的后一位（Vim 的 `T`）。默认 `shift-t`。"
+zh_basis = "f78b6af7f5401a18"
+
+["config:tui.keymap.vim_normal.till_forward"]
+en = "Stop before the next character on the current line (`t`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "73f2ede370e69139"
+zh_name = "向右移到字符前"
+zh = "在当前行向右查找下一个输入的字符，停在它的前一位（Vim 的 `t`）。默认 `t`。"
+zh_basis = "73f2ede370e69139"
+
+["config:tui.keymap.vim_normal.undo"]
+en = "Undo the last complete edit (`u`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fa8d77a3355b9c29"
+zh_name = "撤销"
+zh = "撤销上一次完整的编辑（Vim 的 `u`）。默认 `u`。"
+zh_basis = "fa8d77a3355b9c29"
+
+["config:tui.keymap.vim_normal.yank_line"]
+en = "Yank the entire line (`Y`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "150c7b579ee51da1"
+zh_name = "复制整行"
+zh = "复制（yank）整行（Vim 的 `Y`）。默认 `shift-y`。"
+zh_basis = "150c7b579ee51da1"
+
+["config:tui.keymap.vim_operator"]
+en = ""
+en_hash = ""
+zh_name = "Vim 操作符等待快捷键"
+zh = "按下 `d` 或 `y` 后等待动作时生效的按键：重复操作符键（`dd`、`yy`）作用于整行，按 `esc` 取消且不修改文本。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.vim_operator.cancel"]
+en = "Cancel the pending operator and return to normal mode."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ffc85bd7396a78b4"
+zh_name = "取消操作符"
+zh = "取消待定的操作符并回到普通模式。默认 `esc`。"
+zh_basis = "ffc85bd7396a78b4"
+
+["config:tui.keymap.vim_operator.delete_line"]
+en = "Repeat delete operator to delete the whole line (`dd`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1baa825636825bfa"
+zh_name = "删除整行"
+zh = "再按一次删除操作符键以删除整行（Vim 的 `dd`）。默认 `d`。"
+zh_basis = "1baa825636825bfa"
+
+["config:tui.keymap.vim_operator.motion_down"]
+en = "Motion: down one line (`j`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "696c686eb9d55498"
+zh_name = "动作：下移一行"
+zh = "作为操作符的动作范围：向下一行（Vim 的 `j`）。默认 `j`。"
+zh_basis = "696c686eb9d55498"
+
+["config:tui.keymap.vim_operator.motion_find_backward"]
+en = "Motion: find the previous character on the current line (`F`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c50dd1dac0f3939f"
+zh_name = "动作：向左查找字符"
+zh = "作为操作符的动作范围：到当前行左侧的下一个指定字符（Vim 的 `F`）。默认 `shift-f`。"
+zh_basis = "c50dd1dac0f3939f"
+
+["config:tui.keymap.vim_operator.motion_find_forward"]
+en = "Motion: find the next character on the current line (`f`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4b6e644cd1e53a43"
+zh_name = "动作：向右查找字符"
+zh = "作为操作符的动作范围：到当前行右侧的下一个指定字符（Vim 的 `f`）。默认 `f`。"
+zh_basis = "4b6e644cd1e53a43"
+
+["config:tui.keymap.vim_operator.motion_jump_bottom"]
+en = "Motion: jump to the last buffer line (`G`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0562435c946adfb2"
+zh_name = "动作：到最后一行"
+zh = "作为操作符的动作范围：到缓冲区最后一行（Vim 的 `G`）。默认 `shift-g`。"
+zh_basis = "0562435c946adfb2"
+
+["config:tui.keymap.vim_operator.motion_jump_top"]
+en = "Motion: begin a jump to the first buffer line (`gg`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bdb5af0991e0da46"
+zh_name = "动作：到第一行"
+zh = "作为操作符的动作范围：到缓冲区第一行。默认是两段组合键 `g g`（即 Vim 的 `gg`），也可改绑为单个按键。"
+zh_basis = "bdb5af0991e0da46"
+
+["config:tui.keymap.vim_operator.motion_left"]
+en = "Motion: left (`h`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "66632498668db561"
+zh_name = "动作：左移"
+zh = "作为操作符的动作范围：向左一个字符（Vim 的 `h`）。默认 `h`。"
+zh_basis = "66632498668db561"
+
+["config:tui.keymap.vim_operator.motion_line_end"]
+en = "Motion: to end of line (`$`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "749f7745e1a1b410"
+zh_name = "动作：到行尾"
+zh = "作为操作符的动作范围：到行尾（Vim 的 `$`）。默认 `$`。"
+zh_basis = "749f7745e1a1b410"
+
+["config:tui.keymap.vim_operator.motion_line_start"]
+en = "Motion: to start of line (`0`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "931e17deb18f550f"
+zh_name = "动作：到行首"
+zh = "作为操作符的动作范围：到行首（Vim 的 `0`）。默认 `0`。"
+zh_basis = "931e17deb18f550f"
+
+["config:tui.keymap.vim_operator.motion_right"]
+en = "Motion: right (`l`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a674b3df2d8b0dbb"
+zh_name = "动作：右移"
+zh = "作为操作符的动作范围：向右一个字符（Vim 的 `l`）。默认 `l`。"
+zh_basis = "a674b3df2d8b0dbb"
+
+["config:tui.keymap.vim_operator.motion_till_backward"]
+en = "Motion: stop after the previous character on the current line (`T`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1f1cff0f4fd335a5"
+zh_name = "动作：向左到字符后"
+zh = "作为操作符的动作范围：到当前行左侧指定字符的后一位（Vim 的 `T`）。默认 `shift-t`。"
+zh_basis = "1f1cff0f4fd335a5"
+
+["config:tui.keymap.vim_operator.motion_till_forward"]
+en = "Motion: stop before the next character on the current line (`t`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0eff9a3169ae59da"
+zh_name = "动作：向右到字符前"
+zh = "作为操作符的动作范围：到当前行右侧指定字符的前一位（Vim 的 `t`）。默认 `t`。"
+zh_basis = "0eff9a3169ae59da"
+
+["config:tui.keymap.vim_operator.motion_up"]
+en = "Motion: up one line (`k`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "63a4c537f0803f50"
+zh_name = "动作：上移一行"
+zh = "作为操作符的动作范围：向上一行（Vim 的 `k`）。默认 `k`。"
+zh_basis = "63a4c537f0803f50"
+
+["config:tui.keymap.vim_operator.motion_word_backward"]
+en = "Motion: to start of previous word (`b`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6a74ca33a4ac4a7e"
+zh_name = "动作：到前一个词首"
+zh = "作为操作符的动作范围：到前一个词的开头（Vim 的 `b`）。默认 `b`。"
+zh_basis = "6a74ca33a4ac4a7e"
+
+["config:tui.keymap.vim_operator.motion_word_end"]
+en = "Motion: to end of current/next word (`e`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0a4a2f465a0d6b2f"
+zh_name = "动作：到词尾"
+zh = "作为操作符的动作范围：到当前或下一个词的末尾（Vim 的 `e`）。默认 `e`。"
+zh_basis = "0a4a2f465a0d6b2f"
+
+["config:tui.keymap.vim_operator.motion_word_forward"]
+en = "Motion: to start of next word (`w`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f295ce7c0ad57afc"
+zh_name = "动作：到下一个词首"
+zh = "作为操作符的动作范围：到下一个词的开头（Vim 的 `w`）。默认 `w`。"
+zh_basis = "f295ce7c0ad57afc"
+
+["config:tui.keymap.vim_operator.select_around_text_object"]
+en = "Select an around text object after an operator."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e695e80c6848a436"
+zh_name = "选择外围文本对象"
+zh = "在操作符之后选择包含边界的文本对象（Vim 的 `a`，如 `daw`、`da(`）。默认 `a`。"
+zh_basis = "e695e80c6848a436"
+
+["config:tui.keymap.vim_operator.select_inner_text_object"]
+en = "Select an inner text object after an operator."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "394a44c793d8d023"
+zh_name = "选择内部文本对象"
+zh = "在操作符之后选择不含边界的文本对象（Vim 的 `i`，如 `diw`、`ci(`）。默认 `i`。"
+zh_basis = "394a44c793d8d023"
+
+["config:tui.keymap.vim_operator.yank_line"]
+en = "Repeat yank operator to yank the whole line (`yy`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "00c2c467475fd079"
+zh_name = "复制整行"
+zh = "再按一次复制操作符键以复制整行（Vim 的 `yy`）。默认 `y`。"
+zh_basis = "00c2c467475fd079"
+
+["config:tui.keymap.vim_search"]
+en = ""
+en_hash = ""
+zh_name = "Vim 搜索快捷键"
+zh = "Vim 普通模式和操作符等待模式共用的搜索按键：正向/反向搜索，以及重复上次搜索。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.vim_search.backward"]
+en = "Search backward in the active buffer (`?`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d0052f332417a5b7"
+zh_name = "反向搜索"
+zh = "在当前缓冲区中朝文本开头方向搜索（Vim 的 `?`）。默认 `?`。"
+zh_basis = "d0052f332417a5b7"
+
+["config:tui.keymap.vim_search.forward"]
+en = "Search forward in the active buffer (`/`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "925ca551c3a53ebf"
+zh_name = "正向搜索"
+zh = "在当前缓冲区中朝文本末尾方向搜索（Vim 的 `/`）。默认 `/`。"
+zh_basis = "925ca551c3a53ebf"
+
+["config:tui.keymap.vim_search.next"]
+en = "Repeat the accepted search (`n`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4ba6cbad7ae254a4"
+zh_name = "下一个匹配"
+zh = "按原方向重复上一次已确认的搜索（Vim 的 `n`）。默认 `n`。"
+zh_basis = "4ba6cbad7ae254a4"
+
+["config:tui.keymap.vim_search.previous"]
+en = "Repeat in the opposite direction (`N`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "046c5e94859c08a4"
+zh_name = "上一个匹配"
+zh = "按相反方向重复上一次搜索（Vim 的 `N`）。默认 `shift-n`。"
+zh_basis = "046c5e94859c08a4"
+
+["config:tui.keymap.vim_text_object"]
+en = ""
+en_hash = ""
+zh_name = "Vim 文本对象快捷键"
+zh = "在操作符后接 `i`（内部）或 `a`（外围）时，用来指定文本对象种类的按键，如词、括号、引号。每项可设为单个按键、按键列表，或用空列表解除绑定。"
+zh_basis = ""
+
+["config:tui.keymap.vim_text_object.backtick"]
+en = "Text object: backticks."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ef233245faaedad5"
+zh_name = "反引号对象"
+zh = "文本对象：一对反引号包围的内容。默认为反引号键。"
+zh_basis = "ef233245faaedad5"
+
+["config:tui.keymap.vim_text_object.big_word"]
+en = "Text object: whitespace-delimited WORD."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8664c3bffcaec82d"
+zh_name = "WORD 对象"
+zh = "文本对象：以空白分隔的 WORD（可含标点）。默认 `shift-w`。"
+zh_basis = "8664c3bffcaec82d"
+
+["config:tui.keymap.vim_text_object.braces"]
+en = "Text object: braces."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e72a4f3c024f392f"
+zh_name = "花括号对象"
+zh = "文本对象：一对花括号 `{}` 包围的内容。默认 `{`、`}` 或 `shift-b`。"
+zh_basis = "e72a4f3c024f392f"
+
+["config:tui.keymap.vim_text_object.brackets"]
+en = "Text object: brackets."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e94449f2008dea9d"
+zh_name = "方括号对象"
+zh = "文本对象：一对方括号 `[]` 包围的内容。默认 `[` 或 `]`。"
+zh_basis = "e94449f2008dea9d"
+
+["config:tui.keymap.vim_text_object.cancel"]
+en = "Cancel the pending text-object command."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c834ebc5dfdfc534"
+zh_name = "取消文本对象"
+zh = "取消尚未完成的文本对象命令。默认 `esc`。"
+zh_basis = "c834ebc5dfdfc534"
+
+["config:tui.keymap.vim_text_object.double_quote"]
+en = "Text object: double quotes."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8b40ed2cb9ee19fb"
+zh_name = "双引号对象"
+zh = "文本对象：一对英文双引号包围的内容。默认为双引号键。"
+zh_basis = "8b40ed2cb9ee19fb"
+
+["config:tui.keymap.vim_text_object.parentheses"]
+en = "Text object: parentheses."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bc5dc0a21483058c"
+zh_name = "圆括号对象"
+zh = "文本对象：一对圆括号 `()` 包围的内容。默认 `(`、`)` 或 `b`。"
+zh_basis = "bc5dc0a21483058c"
+
+["config:tui.keymap.vim_text_object.single_quote"]
+en = "Text object: single quotes."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "45862cd98b283e48"
+zh_name = "单引号对象"
+zh = "文本对象：一对英文单引号包围的内容。默认为单引号键。"
+zh_basis = "45862cd98b283e48"
+
+["config:tui.keymap.vim_text_object.word"]
+en = "Text object: word."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8e1be9e64396ca57"
+zh_name = "词对象"
+zh = "文本对象：一个词（word）。默认 `w`。"
+zh_basis = "8e1be9e64396ca57"
+
+["config:tui.model_availability_nux"]
+en = "Startup tooltip availability NUX state persisted by the TUI."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0b6e16deb47249f9"
+zh_name = "模型可用性提示状态"
+zh = "TUI 保存的启动提示（新模型可用性介绍）状态：按模型名记录该提示已显示的次数。由 TUI 自动维护，一般无需修改。"
+zh_basis = "0b6e16deb47249f9"
+
+["config:tui.model_availability_nux.<name>"]
+en = ""
+en_hash = ""
+zh_name = "某模型的提示次数"
+zh = "以模型名（slug）为键、已显示次数为值的一条记录。"
+zh_basis = ""
+
+["config:tui.mouse_scroll_speed"]
+en = "Mouse wheel speed multiplier for transcript scrolling, based on one row per event. Defaults to `1.0`. Positive fractional values slow scrolling; values above `1.0` speed it up."
+en_source = "openai/codex rust-v0.162.0-alpha.17.2: codex-rs/core/config.schema.json"
+en_hash = "dde18191e96cc1fd"
+zh_name = "鼠标滚动速度"
+zh = "滚动对话记录时鼠标滚轮的速度倍数，以每个滚动事件移动一行为基准，默认 `1.0`。小于 `1.0` 的正数减慢滚动，大于 `1.0` 加快；必须是有限的正数。"
+zh_basis = "dde18191e96cc1fd"
+
+["config:tui.notification_condition"]
+en = "Controls whether TUI notifications are delivered only when the terminal is unfocused or regardless of focus. Defaults to `unfocused`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ef61b04ca8111fa3"
+zh_name = "通知触发条件"
+zh = "TUI 桌面通知的发送时机：`unfocused`（默认）仅在终端失去焦点时发送，`always` 不论焦点都发送。"
+zh_basis = "ef61b04ca8111fa3"
+
+["config:tui.notification_condition=always"]
+en = "Emit TUI notifications regardless of terminal focus."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "df9609ec1c8283f8"
+zh_name = "始终通知"
+zh = "无论终端是否处于焦点，都发送 TUI 通知。"
+zh_basis = "df9609ec1c8283f8"
+
+["config:tui.notification_condition=unfocused"]
+en = "Emit TUI notifications only while the terminal is unfocused."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "72e93e1de41f26ca"
+zh_name = "仅失焦时通知"
+zh = "只在终端失去焦点时发送 TUI 通知（默认）。"
+zh_basis = "72e93e1de41f26ca"
+
+["config:tui.notification_method"]
+en = "Notification method to use for terminal notifications. Defaults to `auto`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "cb0194be63661045"
+zh_name = "终端通知方式"
+zh = "发送终端通知的方式：`auto`（默认）在 Ghostty、iTerm2、Kitty、Warp、WezTerm 中使用 OSC 9 桌面通知，其他终端使用 BEL 响铃；也可固定为 `osc9` 或 `bel`。"
+zh_basis = "cb0194be63661045"
+
+["config:tui.notifications"]
+en = "Enable desktop notifications from the TUI. Defaults to `true`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "dfc3b73aa036fd95"
+zh_name = "桌面通知"
+zh = "是否从 TUI 发送桌面通知，默认 `true`。也可写成事件类型列表，只为列出的事件发通知：`agent-turn-complete`（轮次完成）、`approval-requested`（请求审批）、`plan-mode-prompt`（计划模式提问）、`async-question`（异步问题）。"
+zh_basis = "dfc3b73aa036fd95"
+
+["config:tui.pet"]
+en = """
+Pet id to preselect in the terminal pet picker.
+
+Custom pet ids resolve against CODEX_HOME/pets/<pet-id>/pet.json."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0873c773a8473526"
+zh_name = "终端宠物"
+zh = "终端宠物选择器中预选的宠物 ID，设置后 TUI 中会显示该宠物，设为 `disabled` 则隐藏。自定义宠物从 `CODEX_HOME/pets/<pet-id>/pet.json` 加载；也可用 `/pets` 命令选择。"
+zh_basis = "0873c773a8473526"
+
+["config:tui.pet_anchor"]
+en = """
+Where the terminal pet should anchor vertically.
+
+Defaults to `composer`, which follows the current TUI composer viewport."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a6c9a6fba031aaf3"
+zh_name = "宠物停靠位置"
+zh = "终端宠物在垂直方向上的停靠位置：`composer`（默认）跟随当前输入框区域，`screen-bottom` 固定在终端屏幕最底部。"
+zh_basis = "a6c9a6fba031aaf3"
+
+["config:tui.pet_anchor=composer"]
+en = "Anchor the pet to the bottom of the current TUI composer viewport."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0ddbe60922dbba0a"
+zh_name = "跟随输入框"
+zh = "把宠物停靠在当前 TUI 输入框视口的底部（默认）。"
+zh_basis = "0ddbe60922dbba0a"
+
+["config:tui.pet_anchor=screen-bottom"]
+en = "Anchor the pet to the physical bottom of the terminal screen."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b3e4436d95e2f6d2"
+zh_name = "固定在屏幕底部"
+zh = "把宠物停靠在终端屏幕的物理底部。"
+zh_basis = "b3e4436d95e2f6d2"
+
+["config:tui.question_esc_back"]
+en = "Escape returns from async questions to the composer, preserving the answer draft."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b5566d0c89f4c104"
+zh_name = "Esc 返回输入框"
+zh = "回答代理提出的异步问题时，按 `esc` 收起问题并回到输入框，同时保留已写的回答草稿，默认 `true`。设为 `false` 时 `esc` 按其他快捷键规则处理（例如中断当前轮次）。"
+zh_basis = "b5566d0c89f4c104"
+
+["config:tui.raw_output_mode"]
+en = "Start the TUI in raw scrollback mode for copy-friendly transcript output. Defaults to `false`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "93fb05a477b0e8a6"
+zh_name = "启动时原始输出模式"
+zh = "以原始滚动输出模式启动 TUI，让对话记录便于在终端里直接选择复制，默认 `false`。运行中可用 `/raw` 或 `alt-r` 切换。"
+zh_basis = "93fb05a477b0e8a6"
+
+["config:tui.rendering"]
+en = "Rich content rendering. Independent of animations and visual effects."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "a4353908bdf372a9"
+zh_name = "富内容渲染"
+zh = "逐项开关 TUI 中的富内容渲染，默认全部开启，与动画和视觉效果设置无关；关闭某项后显示原始源码文本。"
+zh_basis = "a4353908bdf372a9"
+
+["config:tui.rendering.lists"]
+en = "Render Markdown bullets and task-list markers as Unicode symbols."
+en_source = "openai/codex rust-v0.157.0: codex-rs/core/config.schema.json"
+en_hash = "5ed054bf06fa26a4"
+zh_name = "列表符号渲染"
+zh = "把 Markdown 列表符号和任务列表标记渲染成 Unicode 符号，默认 `true`。"
+zh_basis = "5ed054bf06fa26a4"
+
+["config:tui.rendering.math"]
+en = "Render math expressions using Unicode notation."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "02df7cad1e428916"
+zh_name = "数学公式渲染"
+zh = "用 Unicode 记号渲染数学表达式，默认 `true`。"
+zh_basis = "02df7cad1e428916"
+
+["config:tui.rendering.mermaid"]
+en = "Render Mermaid code blocks as diagrams."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "121c8b8bae179c85"
+zh_name = "Mermaid 图表渲染"
+zh = "把 Mermaid 代码块渲染成图表，默认 `true`。"
+zh_basis = "121c8b8bae179c85"
+
+["config:tui.rendering.tables"]
+en = "Render pipe tables, including tables inside Markdown fences."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "fa111d98ca0413fc"
+zh_name = "表格渲染"
+zh = "渲染竖线分隔（pipe）的表格，包括 Markdown 代码围栏中的表格，默认 `true`。"
+zh_basis = "fa111d98ca0413fc"
+
+["config:tui.resume_cwd"]
+en = "Working directory to use when resuming or forking a session. When unset, prompt if the current and session directories differ."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1d40f5db13e01079"
+zh_name = "恢复会话时的目录"
+zh = "恢复或分叉会话时使用的工作目录：`current` 为启动 Codex 的目录，`session` 为会话中记录的最近工作目录。未设置时，如果两者不同会询问用户。"
+zh_basis = "1d40f5db13e01079"
+
+["config:tui.resume_cwd=current"]
+en = "Use the directory where Codex was launched."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2f17911f54d9ed4c"
+zh_name = "当前目录"
+zh = "使用启动 Codex 时所在的目录。"
+zh_basis = "2f17911f54d9ed4c"
+
+["config:tui.resume_cwd=session"]
+en = "Use the latest working directory recorded in the selected session."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bea63afea3fe7b30"
+zh_name = "会话记录的目录"
+zh = "使用所选会话中记录的最近一次工作目录。"
+zh_basis = "bea63afea3fe7b30"
+
+["config:tui.right_click_paste"]
+en = "Right-click text paste fallback. Defaults to `auto` (Windows/WSL/Linux). `on` also enables macOS; neither mode reads over SSH or in recognized VS Code terminals. This controls the fullscreen fallback, not the terminal's own paste binding."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "64715a91555e4183"
+zh_name = "右键粘贴"
+zh = "全屏 TUI 在没有选中文字时的右键粘贴后备功能。默认 `auto`（仅 Windows/WSL/Linux）；`on` 还会在 macOS 上启用；两种模式在 SSH 中或已识别的 VS Code 终端里都不读取剪贴板。它只控制 Codex 的后备行为，不影响终端自身的粘贴快捷键。"
+zh_basis = "64715a91555e4183"
+
+["config:tui.right_click_paste=auto"]
+en = "Enable on Windows/WSL/Linux, except recognized terminal-owned paste paths."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "0c558cdafa3b4c39"
+zh_name = "自动"
+zh = "在 Windows/WSL/Linux 上启用，但已识别由终端自身处理粘贴的情况除外（默认）。"
+zh_basis = "0c558cdafa3b4c39"
+
+["config:tui.right_click_paste=off"]
+en = "Leave right-click paste to the terminal."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "4fa17d985e40f7ef"
+zh_name = "关闭"
+zh = "Codex 不处理右键粘贴，完全交给终端。"
+zh_basis = "4fa17d985e40f7ef"
+
+["config:tui.right_click_paste=on"]
+en = "Enable on supported local platforms; selection and terminal-owned paste still win."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "94965e45b4804064"
+zh_name = "开启"
+zh = "在所有支持的本地平台（含 macOS）上启用；有选中文字或由终端处理粘贴时仍以它们为准。"
+zh_basis = "94965e45b4804064"
+
+["config:tui.screen_reader_detection_done"]
+en = "Records the one-time screen-reader detection attempt. Either value skips detection."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "b72c07abd78eb010"
+zh_name = "屏幕阅读器检测标记"
+zh = "记录是否已做过一次性的屏幕阅读器检测；只要此键存在（不论 `true` 还是 `false`）就跳过检测。检测发现屏幕阅读器且未设置 `tui.animations` 时，Codex 会自动关闭动画。"
+zh_basis = "b72c07abd78eb010"
+
+["config:tui.session_picker_view"]
+en = "Preferred layout for resume/fork session picker results."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5cd1fa5dd30e13fa"
+zh_name = "会话选择器布局"
+zh = "恢复/分叉会话选择器的结果列表布局：`dense`（默认，紧凑）或 `comfortable`（宽松）。"
+zh_basis = "5cd1fa5dd30e13fa"
+
+["config:tui.show_server_version_notice"]
+en = "Show informational notices about connected app server version differences. Defaults to `true`; this does not control compatibility errors or version status."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "9c70df014f9b7271"
+zh_name = "服务端版本差异提示"
+zh = "TUI 连接的 app-server 版本与自身不同时，是否显示说明性提示，默认 `true`；不影响兼容性错误和版本状态的显示。"
+zh_basis = "9c70df014f9b7271"
+
+["config:tui.show_tooltips"]
+en = "Show startup tooltips in the TUI welcome screen. Defaults to `true`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bf695b76e48b4b9e"
+zh_name = "启动小提示"
+zh = "在 TUI 欢迎屏幕上显示使用小提示，默认 `true`。"
+zh_basis = "bf695b76e48b4b9e"
+
+["config:tui.status_line"]
+en = """
+Ordered list of status line item identifiers.
+
+When set, the TUI renders the selected items as the status line. When unset, the TUI defaults to: `model-with-reasoning`, `current-dir`, and `thread-name`."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "cf5e278fa690a4be"
+zh_name = "状态栏项目"
+zh = "状态栏要显示的项目 ID 列表（按顺序）。未设置时默认为 `model-with-reasoning`、`current-dir` 和 `thread-name`；可选项目还有 Git 分支、上下文用量、限额剩余等，可用 `/statusline` 命令交互配置。"
+zh_basis = "cf5e278fa690a4be"
+
+["config:tui.status_line_use_colors"]
+en = "Color status line items with colors derived from the active syntax theme. Defaults to `true`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "79b102e1329b179f"
+zh_name = "状态栏着色"
+zh = "用当前语法高亮主题派生的颜色给状态栏项目着色，默认 `true`。"
+zh_basis = "79b102e1329b179f"
+
+["config:tui.terminal_resize_reflow_max_rows"]
+en = "Trim terminal resize-reflow replay to the most recent rendered terminal rows when the transcript exceeds this cap. Omit to use Codex's terminal-specific default. Set to `0` to keep all rendered rows."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e87959757d268076"
+zh_name = "缩放重排行数上限"
+zh = "终端窗口尺寸变化时，TUI 会重新排版并重放已渲染的对话记录；记录超过此行数时只重放最近的这些行。不设置时使用按终端类型决定的默认值（无法识别终端时为 1000 行），设为 `0` 则保留全部行。"
+zh_basis = "e87959757d268076"
+
+["config:tui.terminal_title"]
+en = """
+Ordered list of terminal title item identifiers.
+
+When set, the TUI renders the selected items into the terminal window/tab title. When unset, the TUI defaults to: `activity`, `thread-name`, and `project-name`. The `activity` item spins while working and shows an action-required message when blocked on the user."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e3e88c707c382359"
+zh_name = "终端标题项目"
+zh = "写入终端窗口/标签标题的项目 ID 列表（按顺序）。未设置时默认为 `activity`、`thread-name` 和 `project-name`；其中 `activity` 在工作时显示转动指示，等待用户操作时显示提醒。可用 `/title` 命令交互配置。"
+zh_basis = "e3e88c707c382359"
+
+["config:tui.theme"]
+en = """
+Syntax highlighting theme name (kebab-case).
+
+When set, overrides automatic light/dark theme detection. Use `/theme` in the TUI or see `$CODEX_HOME/themes` for custom themes."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c93c2c651087a4b9"
+zh_name = "语法高亮主题"
+zh = "语法高亮主题名（kebab-case），设置后不再自动按终端亮色/暗色选择主题。可在 TUI 中用 `/theme` 选择，自定义主题放在 `$CODEX_HOME/themes`。"
+zh_basis = "c93c2c651087a4b9"
+
+["config:tui.vim_mode_default"]
+en = "Start the composer in Vim mode (`Normal`) by default. Defaults to `false`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "359596ac6ade90af"
+zh_name = "默认 Vim 模式"
+zh = "输入框启动时默认进入 Vim 模式（普通模式 `Normal`），默认 `false`。运行中可用 `/vim` 切换。"
+zh_basis = "359596ac6ade90af"
+
+["config:tui.whimsy"]
+en = "Enable decorative effects such as Astra composer stars. Also requires animations. Defaults to `true`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4239b73db573e2ac"
+zh_name = "装饰效果（已移除）"
+zh = "已移除，仅 0.155.x 有效：开启装饰效果，例如使用 Astra 模型时输入框里的星星，还需同时开启动画，默认 `true`。0.156 起由 `tui.effects` 下的各项（如 `tui.effects.starfield`）取代。"
+zh_basis = "4239b73db573e2ac"

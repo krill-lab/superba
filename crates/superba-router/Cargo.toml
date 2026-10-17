@@ -1,0 +1,61 @@
+[package]
+name = "superba-router"
+description = "Superba local smart router (opt-in): loopback proxy with per-request failover across Krill lines and compatible sites, conversation stickiness, admin API, per-user service lifecycle and watchdog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[lib]
+name = "superba_router"
+path = "src/lib.rs"
+
+[[bin]]
+name = "superba-router"
+path = "src/bin/superba-router.rs"
+
+[dependencies]
+superba-core.workspace = true
+# price lookup helpers shared with the switch service
+superba-models.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+clap.workspace = true
+futures-util.workspace = true
+http.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+memchr.workspace = true
+reqwest.workspace = true
+# request log (usage.sqlite3)
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+# frame-terminating WebSocket relay while request stats are configured
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+zstd.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg.workspace = true
+windows-sys.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

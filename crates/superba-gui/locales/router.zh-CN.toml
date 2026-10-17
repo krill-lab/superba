@@ -1,0 +1,474 @@
+# superba-gui UI texts (Simplified Chinese), area "router". Every key must exist in
+# router.en.toml with the same {placeholders} (tests/i18n_tests.rs).
+
+[router]
+turn_on = "开启"
+turn_off = "关闭"
+preview_hint = "应用前先预览 Codex 配置的变更。"
+needs_member = "请先添加至少一个成员。"
+unavailable = "此版本不提供本地路由。"
+loading = "正在读取路由配置…"
+process = "路由进程"
+service_label = "后台服务"
+mode_label = "路由模式"
+
+[router.section]
+title = "路由"
+
+[usage.tab]
+recent = "最近请求"
+active = "活动请求"
+stats = "统计"
+
+[usage.banner]
+on = "路由已开启（{addr}）：经过它的请求带首字、TPS、线路和传输方式；其余请求来自 Codex 会话记录。"
+on_tip = "本地路由记录过的请求只列一次，带它测得的耗时和线路。没有经过路由的请求（更早的、或暂停记录期间的）从这台电脑上 Codex 的会话记录读取：模型、输入、输出、缓存、费用和完成时间，没有首字、TPS、线路和传输方式。"
+off = "路由未开启：请求来自这台电脑上 Codex 的会话记录（首字、TPS、线路和传输方式仅本地路由可提供）。"
+off_tip = "Codex 会把每次模型请求的用量写进会话记录（CODEX_HOME/sessions）。Superba 只读这些文件：模型、输入、输出、缓存、费用和完成时间。开启本地路由后还能看到首字、TPS、应答的线路、传输方式和 HTTP 状态。"
+settings = "打开路由"
+
+[usage.palette]
+open_recent = "打开最近请求"
+open_active = "打开活动请求"
+open_stats = "打开用量统计"
+
+[router.banner]
+on = "路由已开启 —— 这台电脑上 Codex 的请求经由本机进程 superba-router（{addr}）转发。官方登录和远程主机不经过它。"
+off = "路由已关闭 —— Codex 直接连接供应商。"
+turn_on = "开启路由…"
+tip = "开启后，Codex 把请求发给本机 127.0.0.1 上的 superba-router，由它转发给第一个健康的成员。官方 ChatGPT 登录永远不经过路由；远程主机保持直连。路由停止时 Superba 会把 Codex 改回直连。成员的 Key 复制到路由自己的密钥文件（仅你可读）。账号错误（401、403、429）不会换到别处重试。"
+
+[router.mode]
+on = "已开启"
+off = "已关闭"
+unknown = "未知"
+
+[router.service]
+uninstall = "卸载"
+uninstall_hint = "停止并移除后台服务和路由的文件。请先关闭路由模式。"
+running = "运行中"
+stopped = "已停止"
+installed = "已安装"
+not_installed = "未安装"
+none = "此系统不支持"
+install = "安装并启动"
+reinstall = "重新安装"
+restart = "重启"
+install_hint = "安装保持路由运行的用户级后台服务并启动它。"
+
+[router.live]
+up = "正在应答"
+down = "未运行"
+down_on = "Codex 正在等待路由；路由恢复或 Superba 回退到直连后会继续。"
+uptime = "运行时长"
+requests = "请求"
+active = "进行中"
+failovers = "故障转移"
+unavailable = "不可用"
+sessions = "会话"
+
+[router.members]
+title = "成员（按优先级）"
+help = "按优先级排列的供应商。会话固定在一个成员上，只有该成员的所有线路都失败时才会换成员；401 / 403 / 429 不会换到别处重试。"
+empty = "还没有成员：在下方添加供应商。"
+pick = "选择供应商…"
+add = "添加成员"
+remove = "移除成员"
+up = "上移"
+down = "下移"
+no_key = "缺少密钥"
+mappings = "{n} 条模型映射"
+key_note = "成员的密钥会复制到路由自己的密钥文件中（仅你可读），这样路由启动时不需要访问钥匙串。"
+keyless = "以下供应商还没有 Key，暂不能加入：{sites}（可在「供应商」页添加）。"
+
+[router.kind]
+krill = "Krill"
+compatible = "自定义"
+
+[router.line]
+up = "健康"
+down = "故障"
+probing = "检测中"
+unknown = "无数据"
+retry_in = "{time}后重试"
+requests = "{n} 个请求"
+failovers = "{n} 次转出"
+websockets = "{n} 个 WebSocket"
+last_error = "最近一次失败"
+
+[router.events]
+title = "最近的路由事件"
+show = "展开"
+hide = "收起"
+ago = "{time}前"
+
+[router.event]
+failover = "故障转移"
+line_down = "线路故障"
+line_up = "线路恢复"
+unavailable = "没有成员能应答"
+stream_broken = "流中断"
+member_changed = "会话换了成员"
+reloaded = "配置已重新加载"
+
+[router.palette]
+setup = "设置本地路由"
+on = "开启本地路由"
+off = "关闭本地路由"
+detail = "在供应商和它们的线路之间故障转移"
+stats_on = "开启统计行"
+stats_off = "关闭统计行"
+pause_recording = "暂停记录请求"
+resume_recording = "继续记录请求"
+
+[requests]
+search = "搜索会话、模型、缓存键…"
+remote_note = "远程主机的请求不在这里显示：它们不经过本地路由，会话记录也留在远程主机上。"
+total = "合计"
+total_count = "{n} 条"
+no_price = "{n} 个没有官方价格；可在「模型」页设置价格"
+new_rows = "↑ {n} 条新请求"
+loading = "正在载入…"
+paused = "已暂停记录"
+truncated = "显示最新 {n} 条"
+truncated_tip = "符合条件的请求更多；缩小时间范围或筛选条件可查看更早的记录。"
+export_csv = "导出 CSV"
+export_hint = "把当前显示的请求保存为 CSV 文件，放在「下载」文件夹（只有数字，不含内容）。"
+exported = "已导出 {n} 条请求到 {path}"
+cleared = "已从路由的请求记录中删除 {n} 条"
+
+[requests.sources]
+collapse = "收起列表"
+expand = "展开列表"
+
+[requests.group]
+session_short = "会话"
+provider_short = "供应商"
+all = "全部"
+title_gen = "标题生成"
+line_unknown = "线路未知"
+line_unknown_tip = "来自 Codex 会话记录，或在任何线路应答前失败的请求"
+
+[requests.range]
+24h = "24 小时"
+7d = "7 天"
+30d = "30 天"
+
+[requests.filter]
+all_providers = "全部供应商"
+all_models = "全部模型"
+
+[requests.filter.status]
+all = "全部状态"
+ok = "完成"
+failed = "失败"
+failover = "发生故障转移"
+
+[requests.filter.client]
+all = "App + CLI"
+
+[requests.col]
+cache_key = "缓存键"
+date = "日期"
+session = "会话"
+status = "状态"
+provider = "供应商"
+input = "输入"
+output = "输出"
+cache_read = "缓存读取"
+cache_write = "缓存写入"
+ttft = "首字"
+duration = "完成时间"
+tps = "TPS"
+cost = "费用"
+model = "模型"
+client = "客户端"
+transport = "传输"
+
+[requests.csv]
+model = "模型"
+client = "客户端"
+line = "线路"
+host = "上游主机"
+source = "来源"
+
+[requests.status]
+ok = "完成"
+failover = "转移"
+failed = "失败"
+incomplete = "未完成"
+cancelled = "取消"
+broken = "中断"
+waiting = "等待首字"
+streaming = "输出中"
+holding = "添加统计行"
+
+# 状态单元格里的失败原因（短）；错误码只在提示和详情里。
+[requests.reason]
+bad_request = "请求无效"
+connection = "连接失败"
+content_filter = "内容过滤"
+context = "超出上下文"
+disconnected = "断流"
+max_tokens = "输出达上限"
+no_member = "无可用成员"
+overloaded = "过载"
+quota = "额度用尽"
+rate_limit = "限流"
+retries = "重试过多"
+server = "服务器错误"
+too_large = "请求过大"
+unauthorized = "未授权"
+upstream = "上游不可用"
+
+[requests.transport]
+sse = "SSE"
+
+[requests.kind]
+turn = "对话轮次"
+prewarm = "预热"
+compaction = "压缩上下文"
+memory = "记忆"
+title = "标题生成"
+other = "其他"
+
+[requests.tip]
+input = "不含缓存的输入；原始 input_tokens {raw}"
+input_col = "不含缓存读取和缓存写入的输入"
+output = "含推理 {reasoning} token"
+tps = "从第一个 Responses 事件到 response.completed 的每秒输出 token"
+failover = "故障转移 {n} 次后由 {line} 应答"
+cost = "按 OpenAI 官方价 × 供应商比例估算"
+unpriced = "没有 OpenAI 官方价格；可在「模型」页设置价格"
+cancelled_cost = "没有收到用量；供应商仍可能对取消的请求计费。"
+router_only = "仅本地路由可提供"
+cache_read = "缓存读取：input_tokens_details.cached_tokens"
+cache_write = "缓存写入：cache_write_tokens（供应商从不返回时显示 —）"
+ttft = "首字：从收到请求到第一个输出 delta（或整块到达的输出项）"
+duration = "完成时间：从收到请求到 response.completed 或流结束"
+
+[requests.toolbar]
+clear = "清空"
+clear_tip = "删除本地路由的请求记录（会先确认）"
+reload = "重新载入"
+pause = "暂停记录"
+resume = "继续记录"
+pause_tip = "路由照常转发，只是不再写入请求记录。"
+collapse = "收起详情"
+expand = "展开详情"
+
+[requests.clear]
+title = "删除请求记录？"
+confirm = "本地路由在这台电脑上记录的所有请求都会被删除（当前视图中有 {n} 条）。Codex 自己的会话记录不受影响。无法撤销。"
+
+[requests.detail]
+general = "通用"
+source = "来源"
+line_router_only = "线路仅本地路由可提供"
+rollout_timing = "完成时间 {duration}：从这次请求的最后一条输入到它的用量记录，由 Codex 会话记录推算。"
+rollout_timing_note = "首字、第一个事件等计时节点仅本地路由可提供。"
+timing = "计时"
+model = "模型"
+client = "客户端"
+tier = "{requested} · 实际 {answered}"
+usage_in = "输入 {input} · 缓存读取 {cached}"
+usage_out = "缓存写入 {write} · 输出 {output}（推理 {reasoning}）"
+speed_times = "首字 {ttft} · 完成 {duration}"
+speed_tps = "{tps} tok/s（从首个事件算）"
+ttfb = "响应头"
+failovers = "{n} 次故障转移"
+no_failover = "无故障转移"
+upstream_id = "x-request-id"
+host = "主机"
+price_list = "按 OpenAI 官方价估算 · {rev}"
+price_override = "按「模型」页的价格估算"
+price_override_tip = "按「模型」页设置的价格 × 供应商比例估算"
+unpriced = "无官方价格，可在「模型」页设置"
+price_source = "来源"
+no_usage = "没有收到用量"
+copy_key = "复制缓存键"
+copy_thread = "复制 thread id"
+copy = "复制"
+unavailable = "这条请求没有详细信息。"
+stripped = "发往上游前去掉了 {n} 行旧的统计行"
+line_injected = "这条回复已添加统计行"
+line_not_injected = "这条回复没有统计行"
+line_exec = "统计行：codex exec 从不添加"
+line_na = "统计行：这类请求不使用"
+tier_label = "速度档位"
+raw_log = "路由原始日志（英文）"
+
+[requests.detail.outcome]
+answered = "已应答"
+connect_failed = "连接失败"
+connect_timeout = "连接超时"
+intercepted = "被线路边缘拦截"
+no_response = "无响应"
+upstream_error = "上游错误"
+zstd_refused = "zstd 请求体被拒，已不压缩重发"
+
+[requests.detail.card]
+request = "请求"
+usage = "用量"
+speed = "速度"
+route = "路由"
+session = "会话"
+cost = "费用"
+
+[requests.detail.mark]
+received = "收到请求"
+sent = "发往上游"
+headers = "上游响应头"
+first_event = "首个事件"
+first_token = "首字"
+last_delta = "最后输出"
+done = "完成"
+
+[requests.detail.same]
+received = "立即发出"
+sent = "与发出同时"
+headers = "与响应头同时到达"
+first_event = "与首个事件同时到达"
+first_token = "与首字同时到达"
+last_delta = "与最后输出同时"
+
+[requests.detail.missing]
+ws_headers = "WebSocket 没有单独的响应头"
+no_events = "没有收到事件"
+no_output = "没有输出"
+
+[requests.detail.tps]
+window = "{output} 个输出 token，用时 {window}（首个事件 → 完成）"
+short = "TPS 为 —：首个事件到完成只有 {window}（不足 0.2 秒）"
+few = "TPS 为 —：输出少于 10 个 token"
+
+[requests.empty]
+off = "这个时间范围内没有 Codex 请求。请求从这台电脑上 Codex 的会话记录读取；开启本地路由后还会显示首字、TPS、线路和传输方式。"
+off_action = "打开路由"
+none = "还没有请求。在 ChatGPT 或 codex 里发一条消息试试。"
+filtered = "没有符合筛选条件的请求"
+clear_filters = "清除筛选"
+
+[requests.active]
+elapsed = "已用时"
+deltas = "已收到的输出"
+rate = "≈ tok/s"
+empty = "现在没有进行中的请求。"
+router_off = "只有本地路由能看到正在进行的请求，而路由未开启。最近请求和统计不需要路由（来自 Codex 会话记录）。"
+router_off_action = "打开路由"
+
+[requests.stats]
+group = "分组"
+requests = "请求"
+success = "成功率"
+hit = "命中率"
+avg_ttft = "平均首字"
+avg_tps = "平均 TPS"
+compare = "与账单对比"
+compare_body = "把 {provider} 近 7 天的本地估算费用和账单费用放在一起对比（使用供应商的用量接口，每小时只能查询几次）。"
+calibrate = "对比并校准…"
+no_data = "这段时间没有请求"
+bars_requests = "共 {n} 个请求（按天）"
+bars_requests_hourly = "共 {n} 个请求（按小时）"
+bars_cost = "这段时间 {cost}（按天；按 OpenAI 官方价估算）"
+bars_cost_hourly = "这段时间 {cost}（按小时；按 OpenAI 官方价估算）"
+
+[requests.stats.by]
+model = "模型"
+provider = "供应商"
+session = "会话"
+day = "日期"
+
+[requests.stats.metric]
+requests = "请求数"
+cost = "费用"
+
+[stats_line]
+title = "回复统计行"
+body = "由本地路由在每一轮最后一条回复后追加一行引用，ChatGPT app 把它显示成引用块。只在路由开启时生效；修改只需重新加载路由。"
+needs_router = "开启路由后才能使用统计行"
+on = "开"
+off = "关"
+clients = "用于"
+exec_never = "codex exec 从不添加（否则它的输出文件里也会带上这一行）。"
+show = "显示"
+template = "模板"
+placeholders = "可用占位符：{tps} {ttft} {input} {output} {cached} {cost} {requests}"
+unknown = "不认识的占位符：{names}"
+style_label = "样式"
+default_hint = "默认（跟随界面语言）"
+custom = "已自定义模板 · 恢复默认后可用勾选"
+reset = "恢复默认"
+preview = "预览 · 最近一轮（{time}）"
+preview_sample = "预览 · 示例数据"
+sample_reply = "好的，我已经把 fetch_all 改成了异步版本，并补上了测试。"
+
+[stats_line.client]
+app = "桌面 app"
+tui = "终端 codex（TUI）"
+
+[stats_line.metric]
+tps = "速度"
+ttft = "首字"
+turn_tokens = "本轮 in/out"
+cached = "缓存"
+cost = "费用"
+
+[stats_line.style]
+quote = "引用"
+italic = "斜体引用"
+
+[stats_line.note]
+stored = "统计行会保存在会话里，复制、分享和桌面通知里也会带上它；路由在下一轮发往上游前会去掉它，模型看不到，也不影响缓存。"
+off = "关闭后，已有回复里的统计行保留；以后如果不经过路由，它们会作为普通文本发往上游（每行约 20–30 token）。"
+
+[recording]
+title = "记录"
+usage = "记录请求（用量和耗时）"
+usage_days = "用量记录保留"
+days = "{n} 天"
+note = "记录保存在本机 Superba 的数据目录里，仅你可读：只有数字（时间、供应商、线路、模型、状态、token、费用），从不记录请求头、提示词或回答。"
+counters = "路由启动以来：已写入 {written} 行，丢弃 {dropped} 行"
+db_size = "数据库 {size}"
+
+[prices]
+title = "价格（估算费用用）"
+table_label = "价格表"
+table = "{source} {rev}"
+table_tip = "OpenAI 官方 API 标价（美元 / 百万 token，含官方公布的 Fast、Flex、Ultrafast 价格），随 Superba 签名发布，并和模型列表一起更新。单个模型的价格在「模型」页设置。"
+ratio = "× {ratio}"
+edit = "编辑"
+save = "保存"
+invalid = "请输入比例，例如 0.3 或 30%"
+calibrate = "按账单校准…"
+calibrate_tip = "对比近 7 天的本地估算和账单费用，给出建议的比例。"
+calibrate_title = "按账单校准 {provider}"
+calibrate_result = "近 7 天账单 ${billed}，估算 ${est} → 比例 × {ratio}"
+calibrate_no_data = "数据不足：这几天没有账单费用或没有本地估算。"
+calibrate_note = "已有记录的估算保持不变；新比例只用于之后的请求。"
+calibrate_apply = "使用这个比例"
+day = "日期（UTC）"
+estimated = "估算"
+billed = "账单"
+no_providers = "还没有使用 Key 的供应商：在「供应商」页添加后，可以在这里设置它的价格比例。"
+note = "中转站通常低于 OpenAI 标价出售；比例按倍数调整该供应商的每一笔估算，经过路由的请求和来自 Codex 会话记录的请求都算（默认 × 1）。费用始终是按 OpenAI 官方价估算的值（≈）。"
+view = "查看…"
+view_title = "价格表"
+view_body = "单位为美元/百万 token，取自 OpenAI 官方价格页（版本 {rev}，即读取日期）。表中是标准价格；Fast、Flex、Ultrafast 按各自的官方价格计算。"
+view_empty = "价格表还没有价格，所以费用显示 —。可以在「模型」页为单个模型设置价格。"
+view_loading = "正在读取价格表…"
+
+[prices.source]
+builtin = "内置"
+cache = "已下载"
+
+[prices.col]
+model = "模型"
+input = "输入"
+cached = "缓存输入"
+output = "输出"
+source = "来源"
+
+# 请求详情：请求体以何种方式发往上游（用户需求 14）。
+[requests.compression]
+label = "请求体"

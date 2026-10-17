@@ -1,0 +1,129 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:audio"]
+en = "Machine-local realtime audio device preferences used by realtime voice."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "85a11e290e8b9f29"
+zh_name = "实时语音音频设备"
+zh = "实时语音使用的本机音频设备偏好：麦克风、扬声器和麦克风声道。终端界面（TUI）的实时语音设置会写到这里，对下一次语音对话生效。"
+zh_basis = "85a11e290e8b9f29"
+
+["config:audio.microphone"]
+en = ""
+en_hash = ""
+zh_name = "麦克风设备"
+zh = "实时语音使用的输入设备名称，需与系统列出的设备名完全一致；不设置时使用系统默认麦克风。"
+zh_basis = ""
+
+["config:audio.microphone_channel"]
+en = "One-based microphone channels to mix; unset mixes all input channels."
+en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
+en_hash = "0486cde413dc48f3"
+zh_name = "麦克风声道"
+zh = "要混合采集的麦克风声道编号，从 1 开始，可写单个数字或数组（如 `[1, 2]`）；不设置时混合全部输入声道。"
+zh_basis = "0486cde413dc48f3"
+
+["config:audio.speaker"]
+en = ""
+en_hash = ""
+zh_name = "扬声器设备"
+zh = "实时语音播放所用的输出设备名称；不设置时使用系统默认输出设备。"
+zh_basis = ""
+
+["config:experimental_realtime_start_instructions"]
+en = "Experimental / do not use. Replaces the built-in realtime start instructions inserted into developer messages when realtime becomes active."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4484797e6f3ad363"
+zh_name = "实时语音开始指令（实验）"
+zh = "实验性，官方注明请勿使用：替换实时语音开启时插入开发者消息里的内置“开始”指令。客户端为本次会话单独提供的开始指令优先于此项。"
+zh_basis = "4484797e6f3ad363"
+
+["config:experimental_realtime_webrtc_call_base_url"]
+en = "Experimental / do not use. Overrides only the WebRTC realtime call creation base URL. This is separate from `experimental_realtime_ws_base_url` because WebRTC call creation is HTTP, while sideband control is websocket."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "768bc9b12ac672a6"
+zh_name = "WebRTC 通话地址（实验）"
+zh = "实验性，官方注明请勿使用：只覆盖创建 WebRTC 实时通话的 HTTP 请求所用的基础 URL。它与 `experimental_realtime_ws_base_url` 分开，因为后者管的是 WebSocket 旁路控制连接；项目内的 `.codex/config.toml` 不能设置此项。"
+zh_basis = "768bc9b12ac672a6"
+
+["config:experimental_realtime_ws_backend_prompt"]
+en = "Experimental / do not use. Overrides only the realtime conversation websocket transport instructions (the `Op::RealtimeConversation` `/ws` session.update instructions) without changing normal prompts."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "37740e1614ec416b"
+zh_name = "实时语音后端提示词（实验）"
+zh = "实验性，官方注明请勿使用：替换实时语音 WebSocket 会话 `session.update` 中的指令，不影响普通对话的提示词。非空时优先于客户端传入的提示词和内置提示词。"
+zh_basis = "37740e1614ec416b"
+
+["config:experimental_realtime_ws_base_url"]
+en = "Experimental / do not use. Overrides only the realtime conversation websocket transport base URL (the `Op::RealtimeConversation` `/v1/realtime` connection) without changing normal provider HTTP requests."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "19af0fc605f8ce64"
+zh_name = "实时语音 WebSocket 地址（实验）"
+zh = "实验性，官方注明请勿使用：只覆盖实时语音 WebSocket 连接（`/v1/realtime`）的基础 URL，普通模型请求的地址不变；WebRTC 通话的旁路控制连接也使用这个地址。项目内的 `.codex/config.toml` 不能设置此项。"
+zh_basis = "19af0fc605f8ce64"
+
+["config:experimental_realtime_ws_model"]
+en = "Experimental / do not use. Selects the realtime websocket model/snapshot used for the `Op::RealtimeConversation` connection."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a4c58c3c29600adf"
+zh_name = "实时语音模型（实验）"
+zh = "实验性，官方注明请勿使用：指定实时语音 WebSocket 连接使用的模型或快照。客户端请求里指定的模型优先；都未指定时按协议版本取内置默认值（v1/v2 为 `gpt-realtime-1.5`，v3 为 `gpt-live-1-codex`）。"
+zh_basis = "a4c58c3c29600adf"
+
+["config:experimental_realtime_ws_startup_context"]
+en = "Experimental / do not use. Replaces the synthesized realtime startup context appended to websocket session instructions. An empty string disables startup context injection entirely."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "52c5bc363469f8db"
+zh_name = "实时语音启动上下文（实验）"
+zh = "实验性，官方注明请勿使用：替换 Codex 自动合成、附加在实时语音会话指令之后的启动上下文。设为空字符串则完全不注入启动上下文。"
+zh_basis = "52c5bc363469f8db"
+
+["config:realtime"]
+en = "Experimental / do not use. Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a2a3643e3cdc7905"
+zh_name = "实时语音会话设置"
+zh = "实验性，官方注明请勿使用：选择实时语音会话的协议版本 `version`、会话类型 `type`、传输方式 `transport` 和音色 `voice`。"
+zh_basis = "a2a3643e3cdc7905"
+
+["config:realtime.transport"]
+en = ""
+en_hash = ""
+zh_name = "实时语音传输方式"
+zh = "实时语音的传输方式：`webrtc`（默认）或 `websocket`。依据 0.163 源码，实际使用的传输由客户端发起语音会话时决定（未指定时用 WebSocket），此项目前主要供客户端读取。"
+zh_basis = ""
+
+["config:realtime.type"]
+en = ""
+en_hash = ""
+zh_name = "实时语音会话类型"
+zh = "`conversational`（默认）为语音对话，`transcription` 只做语音转写。WebRTC 通话只支持 `conversational`。"
+zh_basis = ""
+
+["config:realtime.version"]
+en = ""
+en_hash = ""
+zh_name = "实时语音协议版本"
+zh = "实时语音协议版本：`v1`、`v2`（默认）或 `v3`（无分帧的双向协议，默认模型 `gpt-live-1-codex`）。只对 WebSocket 传输生效；WebRTC 通话未指定版本时用 `v1`，且不支持 `v2`。"
+zh_basis = ""
+
+["config:realtime.voice"]
+en = ""
+en_hash = ""
+zh_name = "实时语音音色"
+zh = "实时语音回复使用的音色，如 `alloy`、`cedar`、`marin`。每个协议版本只支持其中一部分，选了当前版本不支持的音色会导致语音会话启动失败；不设置时用该版本的默认音色，客户端指定的音色优先。"
+zh_basis = ""

@@ -1,0 +1,33 @@
+# superba-config message catalog (English). Every key must also exist in
+# zh-CN.toml (enforced by tests). Placeholders use {name}.
+
+[config.note]
+provider_base_url_missing = "The original provider table [model_providers.{provider}] has no base_url; openai_base_url is restored as it was."
+sign_in_required = "No saved ChatGPT login: sign in again in ChatGPT after switching."
+live_login_kept = "The ChatGPT login currently in auth.json is kept."
+drift_kept = "Kept your own value of {key}."
+profile_override = "config.toml selects profile \"{profile}\"; its settings may override the keys Superba writes."
+credentials_store = "cli_auth_credentials_store = \"{store}\": Codex may read credentials from the OS keyring instead of auth.json."
+openai_provider_table = "config.toml defines [model_providers.openai]; Codex may ignore or reject it. Superba never writes it."
+legacy_provider_table = "The [model_providers.{provider}] table is kept unchanged."
+signed_out = "You signed out of ChatGPT since the last switch; that saved login will not be restored."
+stale_login = "This ChatGPT login was saved {days} days ago; you may need to sign in again after restoring it."
+setting_shape_conflict = "Skipped {key}: config.toml has a different kind of value at or above it."
+generation_catalog_missing = "The model catalog file {file} of generation {generation} no longer exists, so the restored config.toml does not name it (Codex could not start otherwise); its per-model settings are not restored."
+
+[env.scope]
+non_utf8_skipped = "Skipped {path}: it contains non-UTF-8 bytes; convert it to UTF-8 so Superba can scan and edit it. Other locations are still planned."
+new_shells = "New terminal windows get the new value right away."
+linux_session = "Apps started from the desktop menu see it after logging out and back in (systemd environment.d; some KDE / X11 sessions ignore it)."
+restart_running = "Running IDEs and terminals keep the old value until restarted."
+macos_launchd = "Apps opened from the Dock or Finder from now on get it immediately (launchctl); it is re-applied at every login."
+windows_broadcast = "New Command Prompt / PowerShell windows opened from Explorer get the new value right away."
+windows_terminal = "Windows Terminal and VS Code must be fully restarted to see it."
+
+[config.settings]
+partial_support = "{key} has no effect for {consumers}; it is written for the others."
+no_catalog = "No settings catalog is available; settings for {consumer} are not checked."
+catalog_approximate = "The settings catalog has no entry for {consumer}; Codex {catalog} is used instead."
+catalog_outdated = "{consumer} is newer than the settings catalog (Codex {catalog}); newer keys are not checked."
+catalog_below_floor = "{consumer} is older than the settings catalog (from Codex {catalog}); keys are not checked."
+version_unknown = "The Codex version of {consumer} is unknown; settings are written without a version check."

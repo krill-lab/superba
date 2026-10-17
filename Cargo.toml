@@ -1,0 +1,144 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+authors = ["Krill <admin@krill-code.com>"]
+license = "MIT OR Apache-2.0"
+homepage = "https://www.krill-code.com"
+publish = false
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+
+# Every dependency any crate is expected to need is declared here once, so the
+# parallel crate owners only add `foo.workspace = true` lines to their own
+# Cargo.toml and rarely touch this file or Cargo.lock.
+[workspace.dependencies]
+# --- internal crates
+superba-core = { path = "crates/superba-core", version = "0.1.0" }
+superba-config = { path = "crates/superba-config", version = "0.1.0" }
+superba-net = { path = "crates/superba-net", version = "0.1.0" }
+superba-sessions = { path = "crates/superba-sessions", version = "0.1.0" }
+superba-appctl = { path = "crates/superba-appctl", version = "0.1.0" }
+superba-remote = { path = "crates/superba-remote", version = "0.1.0" }
+superba-switch = { path = "crates/superba-switch", version = "0.1.0" }
+superba-cli = { path = "crates/superba-cli", version = "0.1.0" }
+superba-catalog = { path = "crates/superba-catalog", version = "0.1.0" }
+superba-router = { path = "crates/superba-router", version = "0.1.0" }
+superba-models = { path = "crates/superba-models", version = "0.1.0" }
+superba-versions = { path = "crates/superba-versions", version = "0.1.0" }
+
+# --- async runtime and plumbing
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "process", "fs", "time", "sync", "net", "io-util", "signal"] }
+async-trait = "0.1"
+futures-util = { version = "0.3", features = ["sink"] }
+
+# --- serialization and file formats
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+toml_edit = "0.25"
+toml = "1.1"
+base64 = "0.23"
+hex = "0.4"
+
+# --- errors, logging
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# --- network
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "http2", "system-proxy"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+url = { version = "2.5", features = ["serde"] }
+# local router (superba-router): loopback HTTP/1.1 server with upgrades; already in
+# the lock file through reqwest
+hyper = { version = "1.12", features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+http = "1.5"
+http-body = "1.0"
+http-body-util = "0.1.5"
+bytes = "1.12"
+
+# --- crypto, ids
+sha2 = "0.11"
+chacha20poly1305 = { version = "0.11", features = ["zeroize"] }
+zeroize = { version = "1.9", features = ["derive", "std"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+# Codex settings catalog (superba-catalog): signature check of the catalog index;
+# signing and key generation only in superba-catalog-gen
+ed25519-dalek = { version = "3", default-features = false }
+getrandom = "0.3"
+
+# --- filesystem, storage, processes
+directories = "6"
+rusqlite = { version = "0.40", default-features = false, features = ["bundled", "backup", "cache"] }
+zstd = "0.14"
+# Codex packages (superba-versions): tar.gz extraction; RPM `primary.xml.gz`,
+# Sparkle appcasts (quick-xml)
+flate2 = "1"
+tar = "0.4"
+quick-xml = "0.41"
+# byte searches on hot paths (router stats-line strip, app.asar scan)
+memchr = "2.8"
+walkdir = "2"
+fs4 = "1"
+sysinfo = { version = "0.39", default-features = false, features = ["system", "user"] }
+which = "8"
+keyring = "4.2"
+libc = "0.2"
+
+# --- catalog generator only (superba-catalog-gen; never linked into the app binaries)
+syn = { version = "2", features = ["full", "visit", "extra-traits"] }
+quote = "1"
+
+# --- CLI
+clap = { version = "4.6", features = ["derive", "env", "wrap_help"] }
+sys-locale = "0.3"
+
+
+# --- GUI (superba-gui only; `spb` must never link these)
+eframe = { version = "0.37", default-features = false, features = ["glow", "accesskit", "wayland", "x11", "clipboard", "links"] }
+egui = "0.37"
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
+fontdb = "0.24"
+open = "5"
+
+# --- platform specific (declare under [target.'cfg(...)'.dependencies] in crates)
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Console",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_ProcessStatus",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_Networking_WinSock",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+winreg = "0.56"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+
+# --- dev / test
+tempfile = "3"
+pretty_assertions = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

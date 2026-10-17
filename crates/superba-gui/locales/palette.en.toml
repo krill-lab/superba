@@ -1,0 +1,27 @@
+# superba-gui UI texts (English), area "palette". Flat dotted keys under their tables.
+# Every key must exist in palette.zh-CN.toml with the same {placeholders} and must not be
+# defined in another area file (tests/i18n_tests.rs).
+
+[palette]
+empty = "No matching commands"
+go = "{page}"
+group.commands = "Commands"
+group.navigate = "Go to"
+group.router = "Router"
+group.settings = "Codex settings"
+group.switch = "Switch"
+hint.move = "move"
+hint.run = "run"
+hint.toggle = "open or close"
+placeholder = "Type a command or search…"
+probe = "Test lines"
+restore_official = "Restore the official ChatGPT login"
+restore_original = "Restore the original configuration"
+current = "Current"
+already_current = "Codex already uses {line}."
+add_provider = "Add provider"
+check_updates = "Check for updates"
+run_wizard = "Run setup"
+speed = "Speed: {tier}"
+switch_provider = "Switch to {provider}"
+switch_provider_line = "Switch to {provider} · {line}"

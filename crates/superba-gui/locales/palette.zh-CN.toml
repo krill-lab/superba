@@ -1,0 +1,26 @@
+# superba-gui UI texts (Simplified Chinese), area "palette". Every key must exist in
+# palette.en.toml with the same {placeholders} (tests/i18n_tests.rs).
+
+[palette]
+empty = "没有匹配的命令"
+go = "{page}"
+group.commands = "命令"
+group.navigate = "前往"
+group.router = "路由"
+group.settings = "Codex 设置"
+group.switch = "切换"
+hint.move = "移动"
+hint.run = "执行"
+hint.toggle = "打开或关闭"
+placeholder = "输入命令或搜索…"
+probe = "测试线路"
+restore_official = "恢复官方 ChatGPT 登录"
+restore_original = "恢复原始配置"
+current = "当前"
+already_current = "Codex 已在使用{line}。"
+add_provider = "添加供应商"
+check_updates = "检查更新"
+run_wizard = "运行设置向导"
+speed = "速度：{tier}"
+switch_provider = "切换到 {provider}"
+switch_provider_line = "切换到 {provider} · {line}"

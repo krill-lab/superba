@@ -1,0 +1,368 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:allow_login_shell"]
+en = """
+Whether the model may request a login shell for shell-based tools. Default to `true`
+
+If `true`, the model may request a login shell (`login = true`), and omitting `login` defaults to using a login shell. If `false`, the model can never use a login shell: `login = true` requests are rejected, and omitting `login` defaults to a non-login shell."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "62a2065c870c3ce3"
+zh_name = "允许登录 Shell"
+zh = "是否允许 shell 类工具以登录 shell 方式运行命令（会加载 `~/.bash_profile`、`~/.zprofile` 等），默认 `true`，模型未指定时也默认使用登录 shell。设为 `false` 时，模型的 `login = true` 请求会被拒绝，未指定时改用非登录 shell。"
+zh_basis = "62a2065c870c3ce3"
+
+["config:approval_policy"]
+en = "Default approval policy for executing commands."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "09b203aa33ccf7c5"
+zh_name = "审批策略"
+zh = "执行命令等操作何时需要用户审批：`on-request`（由模型决定何时请求，旧值 `on-failure` 同义）、`never`（从不请求），或用 `granular` 表按类别控制。未设置时默认 `on-request`，被标记为不受信任的项目改用内部的严格策略；显式写 `untrusted` 已不再支持，会导致配置报错。"
+zh_basis = "09b203aa33ccf7c5"
+
+["config:approval_policy.granular"]
+en = ""
+en_hash = ""
+zh_name = "按类别审批"
+zh = "按类别控制审批提示的写法（`approval_policy = { granular = { ... } }`）。某项为 `true` 时该类请求照常交给用户审批，为 `false` 时直接自动拒绝、不打扰用户；其中 `sandbox_approval`、`rules`、`mcp_elicitations` 三项必须填写。"
+zh_basis = ""
+
+["config:approval_policy.granular.mcp_elicitations"]
+en = "Whether to allow MCP elicitation prompts."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4d5530e67be41087"
+zh_name = "MCP 信息请求"
+zh = "是否允许 MCP 服务器向用户发起信息请求（elicitation）提示；`false` 时这类请求会被自动拒绝。"
+zh_basis = "4d5530e67be41087"
+
+["config:approval_policy.granular.request_permissions"]
+en = "Whether to allow prompts triggered by the `request_permissions` tool."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2268f69527216436"
+zh_name = "申请权限提示"
+zh = "是否允许由 `request_permissions` 工具触发的权限申请提示，默认 `false`（自动拒绝）。"
+zh_basis = "2268f69527216436"
+
+["config:approval_policy.granular.rules"]
+en = "Whether to allow prompts triggered by execpolicy `prompt` rules."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0c3bee0c63af47c1"
+zh_name = "规则触发的审批"
+zh = "是否允许由执行策略（execpolicy）中 `prompt` 规则触发的审批提示；`false` 时这类请求会被自动拒绝。"
+zh_basis = "0c3bee0c63af47c1"
+
+["config:approval_policy.granular.sandbox_approval"]
+en = "Whether to allow shell command approval requests, including inline `with_additional_permissions` and `require_escalated` requests."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7b7bc1f86644efe1"
+zh_name = "Shell 命令审批"
+zh = "是否允许 shell 命令的审批请求，包括在命令中直接申请 `with_additional_permissions` 或 `require_escalated` 的提权请求；`false` 时这些请求会被自动拒绝。"
+zh_basis = "7b7bc1f86644efe1"
+
+["config:approval_policy.granular.skill_approval"]
+en = "Whether to allow approval prompts triggered by skill script execution."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fb448274ad171085"
+zh_name = "技能脚本审批"
+zh = "是否允许运行技能脚本时触发的审批提示，默认 `false`（自动拒绝）。"
+zh_basis = "fb448274ad171085"
+
+["config:approval_policy=never"]
+en = "Never ask the user to approve commands. Failures are immediately returned to the model, and never escalated to the user for approval."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1b9d767a51b68773"
+zh_name = "从不询问"
+zh = "从不请求用户审批。命令失败时直接把结果返回给模型，不会升级给用户确认。"
+zh_basis = "1b9d767a51b68773"
+
+["config:approval_policy=on-request"]
+en = "The model decides when to ask the user for approval."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e094420643edf5ba"
+zh_name = "按需询问"
+zh = "由模型判断何时需要请求用户审批，例如命令需要越出沙箱限制时。这是默认值。"
+zh_basis = "e094420643edf5ba"
+
+["config:approvals_reviewer"]
+en = "Configures who approval requests are routed to for review once they have been escalated. This does not disable separate safety checks such as ARC."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "587bef0aa3a52384"
+zh_name = "审批审核者"
+zh = "已升级的审批请求（如越出沙箱、被拦截的网络访问、MCP 审批提示）交给谁审核：`user`（默认，由用户决定）或 `auto_review`（由专门的自动审核子代理收集上下文、按风险批准或拒绝）。旧值 `guardian_subagent` 等同于 `auto_review`；ARC 等独立安全检查不受此项影响。"
+zh_basis = "587bef0aa3a52384"
+
+["config:auto_review"]
+en = "Optional policy instructions for the guardian auto-reviewer."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4c8ee415f6172107"
+zh_name = "自动审核策略"
+zh = "审批交给 `auto_review` 时，自动审核子代理（Guardian）的策略设置：可以追加或替换审核策略文本、调整读取会话历史的预算和连续拒绝时的熔断方式。"
+zh_basis = "4c8ee415f6172107"
+
+["config:auto_review.circuit_break_action"]
+en = "Controls whether circuit-breaker interruptions include a structured error. Strict mode writes structured errors that older clients may not recognize when reading shared history. Defaults to `default`."
+en_source = "openai/codex rust-v0.159.0: codex-rs/core/config.schema.json"
+en_hash = "4d2fb0c493038ae4"
+zh_name = "熔断方式"
+zh = "同一轮次中自动审核拒绝过多（连续 3 次，或最近 50 次中达到 10 次）而中断该轮次时，是否附带结构化错误：`default`（默认，只发警告并中断）或 `strict`（另附结构化错误）。严格模式写入的错误可能无法被读取共享历史的旧客户端识别。"
+zh_basis = "4d2fb0c493038ae4"
+
+["config:auto_review.circuit_break_action=default"]
+en = "Emit the warning and interrupt without structured error details."
+en_source = "openai/codex rust-v0.159.0: codex-rs/core/config.schema.json"
+en_hash = "3f7b69ef729fbd07"
+zh_name = "默认"
+zh = "发出警告并中断轮次，不附带结构化错误详情。"
+zh_basis = "3f7b69ef729fbd07"
+
+["config:auto_review.circuit_break_action=strict"]
+en = "Emit the same warning and interruption, with structured error details."
+en_source = "openai/codex rust-v0.159.0: codex-rs/core/config.schema.json"
+en_hash = "b94602f20cb4ab21"
+zh_name = "严格"
+zh = "同样发出警告并中断轮次，另外附带结构化错误详情。"
+zh_basis = "b94602f20cb4ab21"
+
+["config:auto_review.conversation_history_max_output_tokens"]
+en = "Maximum estimated tokens per Guardian history-tool response, before the standard serialization allowance. Defaults to 4,000; stricter parent tool limits still apply."
+en_source = "openai/codex rust-v0.160.0: codex-rs/core/config.schema.json"
+en_hash = "8178973b7c8e50e8"
+zh_name = "历史工具输出上限"
+zh = "自动审核读取会话历史的工具每次返回的最大估算 token 数（不含标准序列化余量），默认 4,000；上级工具更严格的限制仍然生效。"
+zh_basis = "8178973b7c8e50e8"
+
+["config:auto_review.experimental_conversation_history_prompt"]
+en = "Experimental replacement for the history-retrieval instructions when history tools and Apps are enabled. Omitted or blank values use the built-in prompt."
+en_source = "openai/codex rust-v0.160.0: codex-rs/core/config.schema.json"
+en_hash = "e0e6c77f0ad3b973"
+zh_name = "历史检索提示词（实验）"
+zh = "实验性：启用历史工具和应用（Apps）时，用来替换自动审核内置的历史检索说明；留空或不设置则使用内置提示词。"
+zh_basis = "e0e6c77f0ad3b973"
+
+["config:auto_review.experimental_policy_template"]
+en = "Experimental full Guardian prompt template containing the tenant policy placeholder."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "59d5dc998caf3103"
+zh_name = "审核模板（实验）"
+zh = "实验性：完整替换自动审核的提示词模板。模板中应包含 `{{ tenant_policy_config }}` 占位符，运行时会替换为生效的审核策略。"
+zh_basis = "59d5dc998caf3103"
+
+["config:auto_review.extra_policy"]
+en = "Additional policy text inserted into the Guardian template's `{{ extra_policy }}` slot."
+en_source = "openai/codex rust-v0.157.0: codex-rs/core/config.schema.json"
+en_hash = "8cc528ffe1d117b3"
+zh_name = "附加审核策略"
+zh = "插入到自动审核模板 `{{ extra_policy }}` 位置的附加策略文本，与基础策略一起生效；管理员 requirements 中的同类设置优先。"
+zh_basis = "8cc528ffe1d117b3"
+
+["config:auto_review.policy"]
+en = "Additional policy instructions inserted into the guardian prompt."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6f8d0bbde4d240c6"
+zh_name = "审核策略"
+zh = "写入自动审核提示词策略配置部分的自定义策略，设置后取代模型自带的默认策略；管理员 requirements 中的同类设置优先。"
+zh_basis = "6f8d0bbde4d240c6"
+
+["config:default_permissions"]
+en = "Default permissions profile to apply. Names starting with `:` refer to built-in profiles; other names are resolved from the `[permissions]` table."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "baed5c536bb8ad72"
+zh_name = "默认权限配置档"
+zh = "默认使用的权限配置档名称。以 `:` 开头的是内置配置档（`:read-only`、`:workspace`、`:danger-full-access`），其他名称从 `[permissions]` 表中查找。在同一配置层中它优先于 `sandbox_mode`。"
+zh_basis = "baed5c536bb8ad72"
+
+["config:permissions"]
+en = "Named permissions profiles."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f5f7972ab95bdf1a"
+zh_name = "权限配置档"
+zh = "自定义的命名权限配置档，以 `[permissions.<名称>]` 定义，可设置 `description`、`extends`（继承另一个配置档）、`workspace_roots`、`filesystem` 和 `network`，由 `default_permissions` 选用。"
+zh_basis = "f5f7972ab95bdf1a"
+
+["config:sandbox_mode"]
+en = "Sandbox mode to use."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3b4ad4464a367ce9"
+zh_name = "沙箱模式"
+zh = "模型执行命令时的沙箱级别：`read-only`（只读）、`workspace-write`（可写工作区）或 `danger-full-access`（不使用沙箱）。未设置时默认只读，已对当前目录做过信任选择时默认 `workspace-write`；Windows 未启用沙箱时 `workspace-write` 会降为只读。"
+zh_basis = "3b4ad4464a367ce9"
+
+["config:sandbox_workspace_write"]
+en = "Sandbox configuration to apply if `sandbox` is `WorkspaceWrite`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "46a072d4807b90dc"
+zh_name = "工作区可写设置"
+zh = "沙箱模式为 `workspace-write` 时的补充设置：额外可写目录、是否允许联网，以及是否把 `$TMPDIR` 和 `/tmp` 排除在可写范围之外。"
+zh_basis = "46a072d4807b90dc"
+
+["config:sandbox_workspace_write.exclude_slash_tmp"]
+en = ""
+en_hash = ""
+zh_name = "排除 /tmp"
+zh = "设为 `true` 时 `/tmp` 不再默认可写；默认 `false`。"
+zh_basis = ""
+
+["config:sandbox_workspace_write.exclude_tmpdir_env_var"]
+en = ""
+en_hash = ""
+zh_name = "排除 $TMPDIR"
+zh = "设为 `true` 时环境变量 `$TMPDIR` 指向的目录不再默认可写；默认 `false`。"
+zh_basis = ""
+
+["config:sandbox_workspace_write.network_access"]
+en = ""
+en_hash = ""
+zh_name = "允许联网"
+zh = "是否允许 `workspace-write` 沙箱中的命令访问网络，默认 `false`（禁止联网）。"
+zh_basis = ""
+
+["config:sandbox_workspace_write.writable_roots"]
+en = ""
+en_hash = ""
+zh_name = "额外可写目录"
+zh = "除当前工作区外额外允许写入的目录列表，须为绝对路径。"
+zh_basis = ""
+
+["config:shell_environment_policy"]
+en = ""
+en_hash = ""
+zh_name = "Shell 环境变量策略"
+zh = "决定 shell 等工具启动子进程时传入哪些环境变量：先按 `inherit` 取初始变量，再按需移除名字含 `KEY`、`SECRET`、`TOKEN` 的变量，然后依次应用 `exclude`、`set` 和 `include_only`（或新写法 `filters`）。"
+zh_basis = ""
+
+["config:shell_environment_policy.exclude"]
+en = "Legacy list of regular expressions to exclude."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "af052db492ed7016"
+zh_name = "排除变量（旧）"
+zh = "旧写法：要从环境中移除的变量名模式列表。模式实际按通配符匹配（支持 `*` 和 `?`，不区分大小写），不是正则表达式；不能与 `filters` 同时使用。"
+zh_basis = "af052db492ed7016"
+
+["config:shell_environment_policy.experimental_use_profile"]
+en = ""
+en_hash = ""
+zh_name = "使用 Shell 配置文件（实验）"
+zh = "实验性：是否通过 shell 的 profile 来运行命令，默认 `false`。依据源码，Codex 0.163 中该值会被解析，但未见实际使用之处。"
+zh_basis = ""
+
+["config:shell_environment_policy.filters"]
+en = """
+Pattern actions used by the canonical table representation.
+
+Ordinary config keeps accepting the legacy arrays above during the migration. Requirements will accept only this keyed form, keeping array compatibility isolated so the legacy fields can be deprecated later. Pattern keys merge case-insensitively across config layers, matching how the resulting patterns match environment variable names."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "68b85ca1a2acdecb"
+zh_name = "变量筛选规则"
+zh = "新写法的筛选规则表，键为变量名模式（支持 `*`、`?` 通配，不区分大小写），值为 `include` 或 `exclude`。不能与旧的 `exclude`、`include_only` 混用；`include` 不会加回被 `exclude` 移除的变量。"
+zh_basis = "68b85ca1a2acdecb"
+
+["config:shell_environment_policy.filters.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单条筛选规则"
+zh = "一条变量筛选规则：键为变量名模式，值为 `include` 时只保留匹配的变量，为 `exclude` 时移除匹配的变量。"
+zh_basis = ""
+
+["config:shell_environment_policy.ignore_default_excludes"]
+en = ""
+en_hash = ""
+zh_name = "不排除敏感变量"
+zh = "是否跳过默认排除规则（移除名字含 `KEY`、`SECRET`、`TOKEN` 的变量），默认 `true`，即这些变量默认会传给命令；设为 `false` 可自动移除它们。"
+zh_basis = ""
+
+["config:shell_environment_policy.include_only"]
+en = "Legacy list of regular expressions to include."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5fb0819774e9e696"
+zh_name = "仅保留变量（旧）"
+zh = "旧写法：非空时只保留名称匹配这些模式的变量（`*`、`?` 通配，不区分大小写），在应用 `set` 之后执行；不能与 `filters` 同时使用。"
+zh_basis = "5fb0819774e9e696"
+
+["config:shell_environment_policy.inherit"]
+en = ""
+en_hash = ""
+zh_name = "继承范围"
+zh = "子进程环境变量的起点：`all`（默认，继承 Codex 进程的全部环境变量）、`core`（只继承 `HOME`、`PATH`、`USER` 等核心变量）或 `none`（不继承）。"
+zh_basis = ""
+
+["config:shell_environment_policy.inherit=all"]
+en = "Inherits the full environment from the parent process."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "45bccd0f8f9d8c68"
+zh_name = "全部继承"
+zh = "继承父进程（Codex）的全部环境变量。"
+zh_basis = "45bccd0f8f9d8c68"
+
+["config:shell_environment_policy.inherit=core"]
+en = '"Core" environment variables for the platform. On UNIX, this would include HOME, LOGNAME, PATH, SHELL, and USER, among others.'
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5c6e116e732c6442"
+zh_name = "仅核心变量"
+zh = "只继承平台的核心环境变量，在 UNIX 上包括 `HOME`、`LOGNAME`、`PATH`、`SHELL`、`USER` 等。"
+zh_basis = "5c6e116e732c6442"
+
+["config:shell_environment_policy.inherit=none"]
+en = "Do not inherit any environment variables from the parent process."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "de0705739e548e92"
+zh_name = "不继承"
+zh = "不从父进程继承任何环境变量，只保留 `set` 中显式设置的变量。"
+zh_basis = "de0705739e548e92"
+
+["config:shell_environment_policy.set"]
+en = ""
+en_hash = ""
+zh_name = "设置变量"
+zh = "强制写入子进程环境的变量表（键为变量名，值为字符串），在排除规则之后、`include_only` 之前应用。"
+zh_basis = ""
+
+["config:shell_environment_policy.set.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个变量"
+zh = "要设置的一个环境变量，键为变量名，值为字符串。"
+zh_basis = ""
+
+["config:windows"]
+en = "Windows-specific configuration."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ac695f786bfcf37c"
+zh_name = "Windows 设置"
+zh = "仅在 Windows 上生效的设置，用于选择沙箱实现（`sandbox`）以及是否允许 MXC 沙箱（`allow_mxc`）。"
+zh_basis = "ac695f786bfcf37c"
+
+["config:windows.allow_mxc"]
+en = "False blocks both explicit MXC configuration and automatic selection."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "563ce954cc682424"
+zh_name = "允许 MXC 沙箱"
+zh = "设为 `false` 时禁止使用 MXC 沙箱：显式设置 `windows.sandbox` 为 `mxc` 会报错，也不会自动选用 MXC（Codex 0.163 起）。"
+zh_basis = "563ce954cc682424"
+
+["config:windows.sandbox"]
+en = ""
+en_hash = ""
+zh_name = "Windows 沙箱实现"
+zh = "Windows 上使用的沙箱实现：`elevated`（提升模式，设置时需要管理员权限）、`unelevated`（无需管理员的受限令牌模式）或 `mxc`（系统原生 MXC 沙箱，Codex 0.156 起）。未设置时参考旧的 `[features]` 开关，都没有时 Windows 上不启用沙箱。"
+zh_basis = ""
+
+["config:windows.sandbox_private_desktop"]
+en = 'Defaults to `true`. Set to `false` to launch the final sandboxed child process on `Winsta0\\Default` instead of a private desktop.'
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fc336edaffd3ef7e"
+zh_name = "沙箱私有桌面（旧）"
+zh = "仅 Codex 0.155：是否在私有桌面中启动最终的沙箱子进程，默认 `true`；设为 `false` 时改在默认交互桌面（`Winsta0` 的 `Default`）上启动。之后的版本已移除此项。"
+zh_basis = "fc336edaffd3ef7e"

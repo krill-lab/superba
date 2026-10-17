@@ -1,0 +1,20 @@
+# superba-core messages of the versions area (Codex installs, compatibility with
+# the desktop app, app updates). Concatenated after en.toml into the core
+# catalog, so this file must start with a table header and must not repeat a key
+# of another core file (enforced by tests). Every key must also exist in
+# core.versions.zh-CN.toml.
+
+[install_kind]
+standalone = "Standalone"
+npm = "npm"
+homebrew = "Homebrew"
+app_bundled = "Bundled with the app"
+superba_store = "Managed by Superba"
+other = "Other"
+
+[compat_tier]
+same = "Same as the app"
+compatible = "Compatible"
+older = "Older: basic chat works, newer features may be missing"
+below_floor = "Below the app's minimum version"
+newer = "Much newer than the app's own Codex (untested)"

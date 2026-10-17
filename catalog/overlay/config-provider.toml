@@ -1,0 +1,545 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:chatgpt_base_url"]
+en = "Base URL for requests to ChatGPT (as opposed to the OpenAI API)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "9b79515e84139d35"
+zh_name = "ChatGPT 后端地址"
+zh = "ChatGPT 后端接口（而非 OpenAI API）的基础地址，默认 `https://chatgpt.com/backend-api/`。账号额度与用量、插件和应用连接器、云任务、使用统计等请求发往这里，模型推理请求则走 `openai_base_url` 或模型供应商的 `base_url`；项目内的 `.codex/config.toml` 不能设置此项。"
+zh_basis = "9b79515e84139d35"
+
+["config:cli_auth_credentials_store"]
+en = "Preferred backend for storing CLI auth credentials. file (default): Use a file in the Codex home directory. keyring: Use an OS-specific keyring service. auto: Use the keyring if available, otherwise use a file."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "997d3dc662158756"
+zh_name = "登录凭据存储方式"
+zh = "CLI 登录凭据（API key、ChatGPT 令牌等）的存放位置：`file`（默认，`$CODEX_HOME/auth.json`）、`keyring`（系统钥匙串）、`auto`（有钥匙串就用钥匙串，否则用文件）或 `ephemeral`（只留在当前进程内存中）。"
+zh_basis = "997d3dc662158756"
+
+["config:cli_auth_credentials_store=auto"]
+en = "Use keyring when available; otherwise, fall back to a file in CODEX_HOME."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "422f8093b3eed73c"
+zh_name = "自动选择"
+zh = "系统钥匙串可用时存入钥匙串，否则退回到 `CODEX_HOME` 下的文件。"
+zh_basis = "422f8093b3eed73c"
+
+["config:cli_auth_credentials_store=ephemeral"]
+en = "Store credentials in memory only for the current process."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "22fc044dd8991f42"
+zh_name = "仅内存"
+zh = "凭据只保存在当前进程的内存中，不写磁盘，进程退出后即失效。"
+zh_basis = "22fc044dd8991f42"
+
+["config:cli_auth_credentials_store=file"]
+en = "Persist credentials in CODEX_HOME/auth.json."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "23d39de5f9e211ad"
+zh_name = "文件"
+zh = "凭据持久化到 `CODEX_HOME/auth.json`，这是默认值。"
+zh_basis = "23d39de5f9e211ad"
+
+["config:cli_auth_credentials_store=keyring"]
+en = "Persist credentials in the keyring. Fail if unavailable."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a7d156b52e08f75d"
+zh_name = "系统钥匙串"
+zh = "凭据持久化到操作系统提供的钥匙串或凭据管理服务；钥匙串不可用时直接报错，不会退回到文件。"
+zh_basis = "a7d156b52e08f75d"
+
+["config:forced_chatgpt_workspace_id"]
+en = "When set, restricts ChatGPT login to one or more workspace identifiers."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7e6fa7ad9eeb3e48"
+zh_name = "限定 ChatGPT 工作区"
+zh = "设置后只允许登录指定的 ChatGPT 工作区，可写单个 ID 或 ID 数组（不支持逗号分隔的字符串）。当前 ChatGPT 类凭据（含个人访问令牌 PAT）属于其他工作区时 Codex 会自动登出；单独设置此项时 API key 登录不受影响。"
+zh_basis = "7e6fa7ad9eeb3e48"
+
+["config:forced_login_method"]
+en = "When set, restricts the login mechanism users may use."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "84b85ab057f841ef"
+zh_name = "限定登录方式"
+zh = "限制可用的登录方式：`chatgpt` 只允许 ChatGPT 账号类登录（含个人访问令牌 PAT），`api` 只允许 API key。若当前凭据与要求不符，Codex 会直接登出。"
+zh_basis = "84b85ab057f841ef"
+
+["config:model_provider"]
+en = "Provider to use from the model_providers map."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "da025bc92845f3c5"
+zh_name = "当前模型供应商"
+zh = "使用 `model_providers` 中的哪个模型供应商 ID，默认 `openai`。内置 ID 有 `openai`、`ollama`、`lmstudio`、`amazon-bedrock` 和 `amazon-bedrock-runtime`，其他 ID 需在 `[model_providers.<ID>]` 中自定义；项目内的 `.codex/config.toml` 不能设置此项。"
+zh_basis = "da025bc92845f3c5"
+
+["config:model_providers"]
+en = "User-defined provider entries that extend the built-in list. Built-in IDs cannot be overridden."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "49066c85ddff19de"
+zh_name = "自定义模型供应商"
+zh = "用户自定义的模型供应商表，用来扩展内置列表。与内置 ID 同名的条目会被忽略（只有 `amazon-bedrock` 两个内置供应商允许改 `base_url`、`auth`、`http_headers` 和 `aws`）；项目内的 `.codex/config.toml` 不能设置此项。"
+zh_basis = "49066c85ddff19de"
+
+["config:model_providers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个模型供应商"
+zh = "一个自定义模型供应商，表名就是供 `model_provider` 引用的 ID，例如 `[model_providers.mysite]`。通常需要设置 `base_url` 和一种凭据来源（`env_key`、`experimental_bearer_token`、`auth` 等）。"
+zh_basis = ""
+
+["config:model_providers.<name>.auth"]
+en = "Command-backed bearer-token configuration for this provider."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "69072aaed8cb3523"
+zh_name = "命令获取令牌"
+zh = "通过运行本地命令获取 Bearer 令牌：命令标准输出去掉首尾空白后作为 `Authorization: Bearer` 的值，并缓存复用。不能与 `env_key`、`experimental_bearer_token`、`requires_openai_auth` 同时使用。"
+zh_basis = "69072aaed8cb3523"
+
+["config:model_providers.<name>.auth.args"]
+en = "Command arguments."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c89b2f6a2e28464f"
+zh_name = "令牌命令参数"
+zh = "传给令牌命令的参数列表（字符串数组），直接传给程序，不经过 shell 解析。"
+zh_basis = "c89b2f6a2e28464f"
+
+["config:model_providers.<name>.auth.command"]
+en = "Command to execute. Bare names are resolved via `PATH`; paths are resolved against `cwd`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c2a6afd4195af758"
+zh_name = "令牌命令"
+zh = "要执行的程序，必填且不能为空。只写程序名时从 `PATH` 中查找，写路径时相对 `cwd` 解析；不经过 shell 执行。"
+zh_basis = "c2a6afd4195af758"
+
+["config:model_providers.<name>.auth.cwd"]
+en = "Working directory used when running the token command."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d165300353ea913a"
+zh_name = "令牌命令工作目录"
+zh = "运行令牌命令时的工作目录，写成相对路径的 `command` 也据此解析。默认是 `.`，按配置文件所在目录解析（依据源码推断）。"
+zh_basis = "d165300353ea913a"
+
+["config:model_providers.<name>.auth.refresh_interval_ms"]
+en = "Maximum age for the cached token before rerunning the command. Set to `0` to disable proactive refresh and only rerun after a 401 retry path."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "df114df2b872f005"
+zh_name = "令牌刷新间隔"
+zh = "缓存令牌的最长使用时间（毫秒），到期后重新运行命令，默认 300000（5 分钟）。设为 `0` 表示不主动刷新，只在请求返回 401 后重新获取。"
+zh_basis = "df114df2b872f005"
+
+["config:model_providers.<name>.auth.timeout_ms"]
+en = "Maximum time to wait for the token command to exit successfully."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d3d692fd473495ac"
+zh_name = "令牌命令超时"
+zh = "等待令牌命令成功退出的最长时间（毫秒），默认 5000；超时即视为获取令牌失败。"
+zh_basis = "d3d692fd473495ac"
+
+["config:model_providers.<name>.aws"]
+en = "AWS SigV4 auth configuration for this provider."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4127ab5fd4c1541e"
+zh_name = "AWS SigV4 认证"
+zh = "用 AWS SigV4 签名来认证发往该模型供应商的请求，主要用于内置的 `amazon-bedrock` 供应商。设置后不能再使用 `env_key`、`experimental_bearer_token`、`auth`、`requires_openai_auth`，也不能开启 `supports_websockets`。"
+zh_basis = "4127ab5fd4c1541e"
+
+["config:model_providers.<name>.aws.auth_refresh"]
+en = "Optional command used to reauthenticate after a refreshable AWS auth failure."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f69ddb420687c1bf"
+zh_name = "AWS 重新认证命令"
+zh = "AWS 认证失败且可以刷新（如 SSO 会话过期）时运行的重新登录命令，例如 `aws sso login`。`command` 只能是 `aws`，在终端中运行时可交互输入。"
+zh_basis = "f69ddb420687c1bf"
+
+["config:model_providers.<name>.aws.auth_refresh.args"]
+en = "Arguments passed to the refresh command."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d62df1c1b52d5a97"
+zh_name = "重新认证参数"
+zh = '传给 `aws` 的参数列表，例如 `["sso", "login"]`。'
+zh_basis = "d62df1c1b52d5a97"
+
+["config:model_providers.<name>.aws.auth_refresh.command"]
+en = "Executable to invoke directly, without a shell."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c1830668c666e6c6"
+zh_name = "重新认证程序"
+zh = "直接执行的程序（不经过 shell），目前只允许填 `aws`。"
+zh_basis = "c1830668c666e6c6"
+
+["config:model_providers.<name>.aws.auth_refresh.timeout_ms"]
+en = "Maximum time to wait for the refresh command to complete."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1b98fa8e328b45a4"
+zh_name = "重新认证超时"
+zh = "等待重新认证命令完成的最长时间（毫秒），默认 300000（5 分钟）。"
+zh_basis = "1b98fa8e328b45a4"
+
+["config:model_providers.<name>.aws.credential_export"]
+en = "Optional command whose exported credentials replace the AWS SDK credential chain."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "027c4a4ccc4b00ed"
+zh_name = "AWS 凭据导出命令"
+zh = '运行一条命令获取 AWS 临时凭据，取代 AWS SDK 默认的凭据链。命令需在标准输出打印 JSON（`{"Credentials": {…}}` 或 `credential_process` 格式），凭据会在过期前约 5 分钟重新获取；不能与 `aws.profile` 同时设置。'
+zh_basis = "027c4a4ccc4b00ed"
+
+["config:model_providers.<name>.aws.credential_export.args"]
+en = "Arguments passed to the credential export command."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3a4a69643a7edcb5"
+zh_name = "导出命令参数"
+zh = "传给凭据导出命令的参数列表，直接传给程序，不经过 shell。"
+zh_basis = "3a4a69643a7edcb5"
+
+["config:model_providers.<name>.aws.credential_export.command"]
+en = "Executable to invoke directly, without a shell."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c1830668c666e6c6"
+zh_name = "导出命令程序"
+zh = "直接执行的程序（不经过 shell），必须是绝对路径或不带目录的程序名。"
+zh_basis = "c1830668c666e6c6"
+
+["config:model_providers.<name>.aws.credential_export.timeout_ms"]
+en = "Maximum time to wait for the credential export command to complete."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c5aed7271a748a56"
+zh_name = "导出命令超时"
+zh = "等待凭据导出命令完成的最长时间（毫秒），默认 30000（30 秒）。"
+zh_basis = "c5aed7271a748a56"
+
+["config:model_providers.<name>.aws.profile"]
+en = "AWS profile name to use. When unset, the AWS SDK default chain decides."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3ca60b7285fd9b53"
+zh_name = "AWS 配置档"
+zh = "要使用的 AWS profile 名称（AWS CLI 配置中的配置档）；不设置时由 AWS SDK 的默认凭据链决定。"
+zh_basis = "3ca60b7285fd9b53"
+
+["config:model_providers.<name>.aws.region"]
+en = "AWS region to use for provider-specific endpoints."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "da36c6c9ca8dd266"
+zh_name = "AWS 区域"
+zh = "用于确定供应商区域端点（如 Bedrock 的区域地址）的 AWS 区域，例如 `us-east-1`。不设置时按 AWS 的常规来源（如 `AWS_REGION`、`AWS_DEFAULT_REGION` 环境变量）确定。"
+zh_basis = "da36c6c9ca8dd266"
+
+["config:model_providers.<name>.base_url"]
+en = "Base URL for the provider's OpenAI-compatible API."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4f050e28d05a6695"
+zh_name = "API 基础地址"
+zh = "该模型供应商 OpenAI 兼容 API 的基础地址，例如 `https://example.com/v1`；Codex 会请求 `<base_url>/responses`、`<base_url>/models` 等路径。不设置时回落到 OpenAI 官方地址（API key 登录为 `https://api.openai.com/v1`）。"
+zh_basis = "4f050e28d05a6695"
+
+["config:model_providers.<name>.capabilities"]
+en = "Optional API capability overrides for a custom Responses-compatible provider. Unspecified capabilities retain their existing provider defaults."
+en_source = "openai/codex rust-v0.162.0-alpha.17.2: codex-rs/core/config.schema.json"
+en_hash = "e6f532a8a348208a"
+zh_name = "供应商能力覆盖"
+zh = "为自定义的 Responses 兼容模型供应商声明可选的 API 能力：联网搜索能否访问实时网络、远程压缩协议。没写的能力保持该供应商原有的默认值，模型和轮次设置还可能进一步收紧。"
+zh_basis = "e6f532a8a348208a"
+
+["config:model_providers.<name>.capabilities.external_web_access"]
+en = "Whether hosted web search may access the live web."
+en_source = "openai/codex rust-v0.162.0-alpha.17.2: codex-rs/core/config.schema.json"
+en_hash = "37bf094fe39ba8fb"
+zh_name = "搜索访问实时网络"
+zh = "托管的联网搜索能否访问实时网络，默认 `true`。设为 `false` 时 `live`、`indexed` 联网搜索模式不可用，Codex 会退回到 `cached`（只用缓存结果）。"
+zh_basis = "37bf094fe39ba8fb"
+
+["config:model_providers.<name>.capabilities.remote_compaction"]
+en = "Remote context-compaction protocol; omission preserves provider defaults."
+en_source = "openai/codex rust-v0.162.0-alpha.17.2: codex-rs/core/config.schema.json"
+en_hash = "5cae8a5c31d35d4b"
+zh_name = "远程压缩协议"
+zh = "自动压缩上下文时使用的远程压缩协议。不写时保持默认：OpenAI 和 Azure Responses 供应商为 `v2`，其他自定义模型供应商为 `unsupported`（本地压缩）。"
+zh_basis = "5cae8a5c31d35d4b"
+
+["config:model_providers.<name>.capabilities.remote_compaction=unsupported"]
+en = "Use local compaction instead of a provider compaction protocol."
+en_source = "openai/codex rust-v0.162.0-alpha.17.2: codex-rs/core/config.schema.json"
+en_hash = "42f4dee91468395b"
+zh_name = "不支持（本地压缩）"
+zh = "该模型供应商没有远程压缩协议，改用本地压缩：由 Codex 自己请求模型生成摘要来缩短上下文。"
+zh_basis = "42f4dee91468395b"
+
+["config:model_providers.<name>.capabilities.remote_compaction=v2"]
+en = "Send `compaction_trigger` items over the Responses endpoint."
+en_source = "openai/codex rust-v0.162.0-alpha.17.2: codex-rs/core/config.schema.json"
+en_hash = "2354ce3210d2d9f3"
+zh_name = "v2 协议"
+zh = "通过 Responses 接口发送 `compaction_trigger` 项，由服务端完成上下文压缩。"
+zh_basis = "2354ce3210d2d9f3"
+
+["config:model_providers.<name>.env_http_headers"]
+en = "Optional HTTP headers to include in requests to this provider where the (key, value) pairs are the header name and _environment variable_ whose value should be used. If the environment variable is not set, or the value is empty, the header will not be included in the request."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a95bc3db144ff93c"
+zh_name = "环境变量请求头"
+zh = "从环境变量取值的额外请求头：键是请求头名称，值是环境变量的名字（不是值本身）。变量未设置或为空时不发送该请求头；内置 `openai` 供应商就用它发送 `OpenAI-Organization` 和 `OpenAI-Project`。"
+zh_basis = "a95bc3db144ff93c"
+
+["config:model_providers.<name>.env_http_headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个环境变量请求头"
+zh = "一条映射：键为请求头名称，值为提供该请求头内容的环境变量名。"
+zh_basis = ""
+
+["config:model_providers.<name>.env_key"]
+en = "Environment variable that stores the user's API key for this provider."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "732f12c8355c4dd6"
+zh_name = "API key 环境变量"
+zh = "存放该模型供应商 API key 的环境变量名，例如 `MY_SITE_API_KEY`。Codex 从该变量读取 key 作为 Bearer 令牌；变量不存在或为空时请求会报错，并显示 `env_key_instructions` 中的说明。"
+zh_basis = "732f12c8355c4dd6"
+
+["config:model_providers.<name>.env_key_instructions"]
+en = "Optional instructions to help the user get a valid value for the variable and set it."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "758d6fe2e7fd7414"
+zh_name = "获取 key 的说明"
+zh = "`env_key` 指定的环境变量缺失时显示给用户的提示文本，用来说明如何获取并设置这个 key。"
+zh_basis = "758d6fe2e7fd7414"
+
+["config:model_providers.<name>.experimental_bearer_token"]
+en = "Value to use with `Authorization: Bearer <token>` header. Use of this config is discouraged in favor of `env_key` for security reasons, but this may be necessary when using this programmatically."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a596e9a5158615bd"
+zh_name = "明文 Bearer 令牌"
+zh = "直接写在配置文件里、用于 `Authorization: Bearer <token>` 请求头的令牌。出于安全考虑官方建议改用 `env_key`，此项主要用于程序化生成配置的场景。"
+zh_basis = "a596e9a5158615bd"
+
+["config:model_providers.<name>.gateway_oauth"]
+en = "Secondary OAuth credentials required by the provider's gateway."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "d4b95f28e4219114"
+zh_name = "网关 OAuth 凭据"
+zh = "模型供应商前置网关要求的第二套 OAuth 凭据，与主认证一起发送。Codex 通过浏览器授权码流程（PKCE）登录并自动刷新令牌，再按 `delivery` 以请求头或 Cookie 附加；必须设置 `base_url`，不能与 AWS 认证同时使用。"
+zh_basis = "d4b95f28e4219114"
+
+["config:model_providers.<name>.gateway_oauth.authorization_url"]
+en = ""
+en_hash = ""
+zh_name = "网关授权地址"
+zh = "OAuth 授权端点，用于在浏览器中发起登录。必须是 HTTPS（本机回环地址可用 HTTP），且不能包含用户名、密码或片段（`#`）。"
+zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.client_id"]
+en = ""
+en_hash = ""
+zh_name = "网关客户端 ID"
+zh = "在网关的 OAuth 服务中注册的客户端 ID，不能为空。"
+zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.delivery"]
+en = ""
+en_hash = ""
+zh_name = "网关令牌附加方式"
+zh = '网关令牌如何附加到请求上：`kind = "header"` 时放进指定的请求头，`kind = "cookie"` 时放进指定名称的 Cookie。'
+zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.delivery.kind"]
+en = ""
+en_hash = ""
+zh_name = "附加位置"
+zh = "`header`（请求头）或 `cookie`（Cookie）。"
+zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.delivery.name"]
+en = ""
+en_hash = ""
+zh_name = "请求头或 Cookie 名"
+zh = "承载网关令牌的请求头名称或 Cookie 名称。不能使用 `Authorization`、`Cookie`、`Host` 等保留请求头或 `x-codex-`、`x-openai-` 前缀，也不能与 `http_headers`、`env_http_headers` 中已有的请求头重名。"
+zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.delivery.scheme"]
+en = ""
+en_hash = ""
+zh_name = "认证方案前缀"
+zh = '仅 `kind = "header"` 时使用：写在令牌前面的认证方案，默认 `Bearer`，即发送 `Bearer <token>`。'
+zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.redirect_port"]
+en = ""
+en_hash = ""
+zh_name = "登录回调端口"
+zh = "登录回调使用的本机端口，Codex 在 `127.0.0.1` 上监听它接收授权结果；不设置时随机选择空闲端口，不能设为 `0`。"
+zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.resource"]
+en = ""
+en_hash = ""
+zh_name = "资源标识"
+zh = "可选的 OAuth `resource` 参数（资源指示符），在授权、换取令牌和刷新令牌时一并发送。"
+zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.scopes"]
+en = ""
+en_hash = ""
+zh_name = "授权范围"
+zh = "申请的 OAuth scope 列表，发送时以空格连接。"
+zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.token_url"]
+en = ""
+en_hash = ""
+zh_name = "网关令牌地址"
+zh = "OAuth 令牌端点，用于以授权码换取令牌和刷新令牌。要求与 `authorization_url` 相同：HTTPS（本机回环地址可用 HTTP）。"
+zh_basis = ""
+
+["config:model_providers.<name>.http_headers"]
+en = "Additional HTTP headers to include in requests to this provider where the (key, value) pairs are the header name and value."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6ebe8db70345e5ed"
+zh_name = "固定请求头"
+zh = "发往该模型供应商的每个请求都附带的固定请求头，键是名称，值是内容。"
+zh_basis = "6ebe8db70345e5ed"
+
+["config:model_providers.<name>.http_headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个固定请求头"
+zh = "一条请求头：键为请求头名称，值为发送的内容。"
+zh_basis = ""
+
+["config:model_providers.<name>.model_catalog_url"]
+en = "Optional full URL for a Codex-native model catalog. When unset, OpenAI discovery uses the Codex backend unless `base_url` overrides the inference endpoint."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "e977b1a10d0efe8a"
+zh_name = "模型目录地址"
+zh = "Codex 原生格式模型目录的完整 URL。不设置时模型列表从 `<base_url>/models` 获取（OpenAI 内置供应商未改 `base_url` 时走 Codex 后端）；设置后改从此地址获取，且不跟随重定向。"
+zh_basis = "e977b1a10d0efe8a"
+
+["config:model_providers.<name>.name"]
+en = "Friendly display name."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7c17f14ef3edc623"
+zh_name = "显示名称"
+zh = "该模型供应商在界面中显示的友好名称。注意：名称恰好是 `OpenAI` 时，Codex 会把它当作 OpenAI 供应商对待（依据源码）。"
+zh_basis = "7c17f14ef3edc623"
+
+["config:model_providers.<name>.query_params"]
+en = "Optional query parameters to append to the base URL."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "dfd4d0196b8fba74"
+zh_name = "URL 查询参数"
+zh = "追加到基础地址后的 URL 查询参数（键值对），对发往该模型供应商的每个请求生效。"
+zh_basis = "dfd4d0196b8fba74"
+
+["config:model_providers.<name>.query_params.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个查询参数"
+zh = "一条查询参数：键为参数名，值为参数值。"
+zh_basis = ""
+
+["config:model_providers.<name>.request_max_retries"]
+en = "Maximum number of times to retry a failed HTTP request to this provider."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "38f5bb22e646f891"
+zh_name = "请求最大重试次数"
+zh = "发往该模型供应商的 HTTP 请求失败后的最大重试次数，默认 4，上限 100。只重试 5xx 和网络传输错误，不重试 429。"
+zh_basis = "38f5bb22e646f891"
+
+["config:model_providers.<name>.requires_openai_auth"]
+en = "Does this provider require an OpenAI API key or ChatGPT login token? If true, the user is presented with a login screen on first run, and credentials are stored using the backend selected by `cli_auth_credentials_store`. If false (the default), the login screen is skipped, and the API key (if needed) comes from the environment variable specified by `env_key`."
+en_source = "openai/codex rust-v0.160.0: codex-rs/core/config.schema.json"
+en_hash = "34e08393c97bdef6"
+zh_name = "需要 OpenAI 登录"
+zh = "该模型供应商是否使用 OpenAI 的登录凭据（API key 或 ChatGPT 令牌）。为 `true` 时首次运行会显示登录界面，凭据按 `cli_auth_credentials_store` 保存；为 `false`（默认）时跳过登录，key 从 `env_key` 指定的环境变量读取。不能与 `auth`、`aws` 同时使用。"
+zh_basis = "34e08393c97bdef6"
+
+["config:model_providers.<name>.stream_idle_timeout_ms"]
+en = "Idle timeout (in milliseconds) to wait for activity on a streaming response before treating the connection as lost."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b03348af8677e39a"
+zh_name = "流式空闲超时"
+zh = "流式响应多久（毫秒）没有任何数据就视为连接已断开，默认 300000（5 分钟）。"
+zh_basis = "b03348af8677e39a"
+
+["config:model_providers.<name>.stream_max_retries"]
+en = "Number of times to retry reconnecting a dropped streaming response before failing."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5ea5d4c422e1e6b1"
+zh_name = "流式重连次数"
+zh = "流式响应中途断开后重新连接的最大次数，用完后本次请求失败；默认 5，上限 100。"
+zh_basis = "5ea5d4c422e1e6b1"
+
+["config:model_providers.<name>.supports_standalone_web_search"]
+en = "Whether this provider supports the standalone web-search endpoint."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1a36c9e9c185d18a"
+zh_name = "支持独立搜索接口"
+zh = "该模型供应商是否提供独立的联网搜索接口（`POST <base_url>/alpha/search`）。自定义模型供应商默认 `false`，OpenAI 内置供应商默认支持。"
+zh_basis = "1a36c9e9c185d18a"
+
+["config:model_providers.<name>.supports_websockets"]
+en = "Whether this provider supports the Responses API WebSocket transport."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7080e8bf114b69c2"
+zh_name = "支持 WebSocket 传输"
+zh = "该模型供应商是否支持通过 WebSocket 传输 Responses API。为 `true` 时 Codex 可以经 WebSocket 发送请求；自定义模型供应商默认 `false`，OpenAI 内置供应商默认支持。不能与 `aws` 同时使用。"
+zh_basis = "7080e8bf114b69c2"
+
+["config:model_providers.<name>.websocket_connect_timeout_ms"]
+en = "Maximum time (in milliseconds) to wait for a websocket connection attempt before treating it as failed."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "507cc7ef92023fae"
+zh_name = "WebSocket 连接超时"
+zh = "建立 WebSocket 连接的最长等待时间（毫秒），超时视为连接失败，默认 15000（15 秒）。"
+zh_basis = "507cc7ef92023fae"
+
+["config:model_providers.<name>.wire_api"]
+en = "Which wire protocol this provider expects."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a609e3b7e29da7c2"
+zh_name = "接口协议"
+zh = "该模型供应商使用的接口协议。目前只支持 `responses`（默认）；旧的 `chat`（Chat Completions）已移除，配置后会报错。"
+zh_basis = "a609e3b7e29da7c2"
+
+["config:model_providers.<name>.wire_api=responses"]
+en = "The Responses API exposed by OpenAI at `/v1/responses`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "63abe3be1d8a4299"
+zh_name = "Responses API"
+zh = "OpenAI 在 `/v1/responses` 提供的 Responses API，请求发往 `<base_url>/responses`。"
+zh_basis = "63abe3be1d8a4299"
+
+["config:openai_base_url"]
+en = "Base URL override for the built-in `openai` model provider."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5c61263fb39b5afc"
+zh_name = "OpenAI 接口地址"
+zh = "覆盖内置 `openai` 模型供应商的基础地址，`model_provider` 仍保持 `openai`。不设置时按登录方式选择：ChatGPT 账号类登录（含 PAT）用 `https://chatgpt.com/backend-api/codex`，API key 用 `https://api.openai.com/v1`；项目内的 `.codex/config.toml` 不能设置此项。"
+zh_basis = "5c61263fb39b5afc"
+
+["config:profile"]
+en = "Profile to use from the `profiles` map."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "491bc9f23a4727f3"
+zh_name = "默认配置档（旧版）"
+zh = '旧版写法：在 `config.toml` 中用 `profile = "名称"` 选择 `profiles` 里的配置档。Codex 已不再支持，写了会报错，并提示改用 `--profile 名称` 加 `$CODEX_HOME/名称.config.toml`。'
+zh_basis = "491bc9f23a4727f3"
+
+["config:profiles"]
+en = "Named profiles to facilitate switching between different configurations."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "195d283aa5b5d169"
+zh_name = "配置档表（旧版）"
+zh = "旧版写法：在 `[profiles.名称]` 下定义一组可切换的设置。当前 Codex 仍能解析该表但不再应用其中的设置；新写法是把差异项放进 `$CODEX_HOME/名称.config.toml`，再用 `--profile 名称` 启动（同名旧表仍存在时会报错）。"
+zh_basis = "195d283aa5b5d169"

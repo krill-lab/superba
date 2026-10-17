@@ -1,0 +1,155 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:allow_symlinked_codex_home"]
+en = "Allow macOS sandbox writable roots at or beneath CODEX_HOME to traverse symlinks. Read only from the host's user config at startup; defaults to false. This grants no write access by itself, but trusts symlink targets even if they change between commands or lie outside CODEX_HOME. This setting has no effect on Linux or Windows."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c7edebfd462c0b64"
+zh_name = "允许 CODEX_HOME 符号链接"
+zh = "仅 macOS 有效：允许沙箱信任 `CODEX_HOME`（通常是 `~/.codex`）之内或之下可写目录中的符号链接，并按链接当前指向的目标授予写权限；默认 `false`，遇到这类路径时沙箱直接报错。只读取本机 `~/.codex/config.toml` 顶层的值（配置档和项目配置中的同名项无效），需重启 Codex 生效；开启后即使链接指向 `CODEX_HOME` 之外或在两次命令之间被改动也会被信任。"
+zh_basis = "c7edebfd462c0b64"
+
+["config:experimental_thread_store"]
+en = "Experimental / do not use. Selects the thread store implementation."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b0487c5e5bb470f5"
+zh_name = "会话存储后端（实验）"
+zh = "实验性，官方注明请勿使用：选择会话的持久化实现。不设置时就是本地存储（会话记录写入 rollout JSONL 文件，元数据写入 SQLite）；旧的 `experimental_thread_store_endpoint` 已移除，写了会直接报错。"
+zh_basis = "b0487c5e5bb470f5"
+
+["config:experimental_thread_store.type"]
+en = ""
+en_hash = ""
+zh_name = "会话存储类型"
+zh = "会话存储的实现类型，配置中唯一可用的取值是 `local`（本地 rollout 文件 + SQLite 元数据，与不设置时相同）。源码里另有仅供测试使用的内存存储，不对外开放。"
+zh_basis = ""
+
+["config:ghost_snapshot"]
+en = "Compatibility-only settings retained so legacy `ghost_snapshot` config still loads."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8b2fcd9d09ebc62a"
+zh_name = "幽灵快照（旧版兼容）"
+zh = "已弃用，仅为兼容保留：旧版 Codex 会在轮次开始前用 Git 给工作区拍“幽灵快照”以便撤销改动，现在已不再生成快照。保留这个表只是为了让含 `[ghost_snapshot]` 的旧配置仍能正常加载，其中各项都不再起作用。"
+zh_basis = "8b2fcd9d09ebc62a"
+
+["config:ghost_snapshot.disable_warnings"]
+en = "Legacy no-op setting retained for compatibility."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a1fb91565b07ce6a"
+zh_name = "关闭快照警告（已失效）"
+zh = "旧版用于关闭幽灵快照相关的警告提示。快照功能已移除，此项现在不起任何作用，仅为兼容旧配置保留。"
+zh_basis = "a1fb91565b07ce6a"
+
+["config:ghost_snapshot.ignore_large_untracked_dirs"]
+en = "Legacy no-op setting retained for compatibility."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a1fb91565b07ce6a"
+zh_name = "忽略大型未跟踪目录（已失效）"
+zh = "旧版幽灵快照的阈值：含大量未跟踪文件的目录不纳入快照（旧名 `large_untracked_dir_warning_threshold`，默认 200）。快照功能已移除，此项现在不起作用，仅为兼容旧配置保留。"
+zh_basis = "a1fb91565b07ce6a"
+
+["config:ghost_snapshot.ignore_large_untracked_files"]
+en = "Legacy no-op setting retained for compatibility."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a1fb91565b07ce6a"
+zh_name = "忽略大型未跟踪文件（已失效）"
+zh = "旧版幽灵快照的阈值：超过该字节数的未跟踪文件不纳入快照（旧名 `ignore_untracked_files_over_bytes`，默认 10 MiB）。快照功能已移除，此项现在不起作用，仅为兼容旧配置保留。"
+zh_basis = "a1fb91565b07ce6a"
+
+["config:history"]
+en = "Settings that govern if and what will be written to `~/.codex/history.jsonl`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "789f8835afb26d75"
+zh_name = "输入历史记录"
+zh = "控制是否以及如何把提交过的消息写入 `$CODEX_HOME/history.jsonl`（默认 `~/.codex/history.jsonl`），每行记录会话 ID、时间戳和消息文本，供终端界面（TUI）在输入框里翻找和搜索历史输入。子项 `persistence` 决定是否落盘，`max_bytes` 限制文件大小。"
+zh_basis = "789f8835afb26d75"
+
+["config:history.max_bytes"]
+en = "If set, the maximum size of the history file in bytes. The oldest entries are dropped once the file exceeds this limit."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e60b142111f94031"
+zh_name = "历史文件大小上限"
+zh = "`history.jsonl` 的最大字节数；超过后删除最旧的记录，把文件裁剪到该上限的约 80%。不设置或设为 `0` 表示不限制。"
+zh_basis = "e60b142111f94031"
+
+["config:history.persistence"]
+en = "If true, history entries will not be written to disk."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "88c71c947e502f90"
+zh_name = "历史保存方式"
+zh = "是否把输入历史写入磁盘：`save-all`（默认）保存全部记录，`none` 不写入。官方英文说明写成了布尔值，实际取值是这两个字符串。"
+zh_basis = "88c71c947e502f90"
+
+["config:history.persistence=none"]
+en = "Do not write history to disk."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bb9c57c459690219"
+zh_name = "不保存"
+zh = "不把输入历史写入磁盘，`history.jsonl` 不再追加新记录。"
+zh_basis = "bb9c57c459690219"
+
+["config:history.persistence=save-all"]
+en = "Save all history entries to disk."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d70a8cdd8701040e"
+zh_name = "全部保存"
+zh = "把每条提交的消息都追加到 `history.jsonl`，这是默认值。"
+zh_basis = "d70a8cdd8701040e"
+
+["config:log_dir"]
+en = "Directory where Codex writes log files. Setting this value explicitly also enables the TUI text log in this directory. Defaults to `$CODEX_HOME/log`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c86c9b95394c1dc5"
+zh_name = "日志目录"
+zh = "Codex 写日志文件的目录，默认 `$CODEX_HOME/log`（通常是 `~/.codex/log`）。在 `config.toml` 中显式设置后，终端界面（TUI）还会在该目录额外写一份文本日志 `codex-tui.log`。"
+zh_basis = "c86c9b95394c1dc5"
+
+["config:projects"]
+en = ""
+en_hash = ""
+zh_name = "项目信任列表"
+zh = "按项目目录记录的设置，目前只有信任级别 `trust_level`。键是项目目录或 Git 仓库根目录的绝对路径，通常在首次进入某个目录、确认是否信任后由 Codex 自动写入。"
+zh_basis = ""
+
+["config:projects.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个项目设置"
+zh = '某一个项目的设置，表名是该项目目录的绝对路径，例如 `[projects."/home/me/repo"]`。查找时依次匹配当前目录、项目根目录（含 `.git` 等标记的目录）和 Git 仓库根目录。'
+zh_basis = ""
+
+["config:projects.<name>.trust_level"]
+en = ""
+en_hash = ""
+zh_name = "项目信任级别"
+zh = "`trusted` 或 `untrusted`。只有 `trusted` 的项目才会加载项目内的 `.codex/config.toml`、钩子和执行策略，且默认审批策略为 `on-request`；`untrusted` 时使用内部的 `untrusted` 审批策略（命令都需审批，除非执行策略规则明确放行）。两者在未设置 `sandbox_mode` 时都默认使用工作区可写（`workspace-write`）沙箱。"
+zh_basis = ""
+
+["config:sqlite_home"]
+en = "Directory where Codex stores the SQLite state DB. Defaults to `$CODEX_SQLITE_HOME` when set. Otherwise uses `$CODEX_HOME`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "610e27a605066aff"
+zh_name = "SQLite 数据目录"
+zh = "Codex 存放 SQLite 状态数据库（如保存会话索引的 `state_5.sqlite`、保存日志的 `logs_2.sqlite`）的目录。优先级为：此配置 > 环境变量 `CODEX_SQLITE_HOME` > `$CODEX_HOME`。"
+zh_basis = "610e27a605066aff"
+
+["config:thread_unload_delay_secs"]
+en = "Seconds a thread must have no subscribers and no activity before app-server unloads it. Defaults to 1800 (30 minutes); zero unloads immediately. Changes require a server restart."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "c4730accf20de33f"
+zh_name = "空闲会话卸载延迟"
+zh = "一个会话既没有订阅者也没有任何活动多少秒后，app-server 把它从内存中卸载。默认 1800（30 分钟），`0` 表示立即卸载；修改后需重启 app-server 才生效。"
+zh_basis = "c4730accf20de33f"

@@ -1,0 +1,177 @@
+# superba-core 文案（简体中文）。键以 "." 展平。
+# 这里的每个键都必须在 en.toml 中存在（由测试保证）。
+
+[site]
+krill = "Krill"
+official = "官方 ChatGPT"
+compatible = "OpenAI 兼容站点"
+
+[line.krill]
+cn-fast = "国内极速"
+overseas = "海外线路"
+cdn = "三网优化 CDN"
+
+[auth_mode]
+pat = "PAT（个人访问令牌）"
+apikey = "API Key"
+chatgpt = "官方 ChatGPT 登录"
+
+[key_access]
+ok = "可用"
+invalid_key = "Key 无效"
+access_point_denied = "套餐不含此线路"
+quota_exhausted = "额度已用完"
+channel_denied = "未开通 Codex 渠道"
+edge_blocked = "被线路边缘节点拦截"
+unreachable = "线路不可达"
+unknown = "意外的响应（{status}）：{message}"
+
+[restart.reason]
+no_cdp = "ChatGPT 不是从 Superba 打开的，无法热切。"
+no_bridge = "当前 ChatGPT 版本没有提供重启接口。"
+authapi_missing = "ChatGPT 启动时没有认证地址，热切后会失去登录状态。"
+authapi_unhealthy = "ChatGPT 启动时所用线路的认证地址不可用，热切后会失去登录状态。"
+cross_auth_family = "要在官方登录和 API Key 之间切换。"
+session_migration = "需要先迁移旧会话，迁移时要关闭所有 Codex 进程。"
+platform_no_hot = "此平台暂不支持热切。"
+requested = "你要求通过 Superba 重新打开 ChatGPT。"
+
+[block]
+version_too_old = "{consumer} 的 Codex 版本为 {found}，需要 {required} 或更高。"
+line_unavailable = "线路 {line} 不可用。"
+auth_mode_unavailable = "线路 {line} 不支持「{mode}」。"
+key_rejected = "该 Key 不能在线路 {line} 上使用：{reason}"
+missing_key = "请先为此配置填写 Key。"
+journal_pending = "上一次切换被中断，请先恢复。"
+file_not_writable = "无法写入 {path}。"
+unparseable = "无法解析 {path}：{message}"
+elevated = "请不要用 sudo 或管理员身份运行 Superba。"
+locked = "忙：{what} 被另一个进程锁定。"
+no_baseline = "尚未记录原配置。"
+unsupported_target = "不支持的目标：{detail}"
+router_unavailable = "已开启路由模式，但本地路由不可用（{detail}）。请重新安装路由，或关闭路由模式。"
+model_catalog = "无法为 Codex 生成模型目录文件：{reason}"
+
+[error]
+not_implemented = "尚未实现：{detail}"
+unsupported = "不支持：{detail}"
+io = "文件错误：{detail}"
+parse = "无法解析：{detail}"
+invalid = "输入无效：{detail}"
+not_found = "未找到：{detail}"
+conflict = "已被其他程序修改：{detail}"
+blocked = "已阻止：{detail}"
+locked = "忙：{detail}"
+network = "网络错误：{detail}"
+http = "服务器错误：{detail}"
+cdp = "无法与 ChatGPT 通信：{detail}"
+process = "进程错误：{detail}"
+ssh = "SSH 错误：{detail}"
+secret = "Key 存储错误：{detail}"
+cancelled = "已取消"
+timeout = "超时：{detail}"
+other = "{detail}"
+
+[latency]
+excellent = "极快"
+good = "良好"
+fair = "一般"
+poor = "较慢"
+unknown = "无响应"
+
+[probe]
+pat_needs_https = "PAT 需要 https 线路：Codex 不接受明文 http 的 ChatGPT 后端地址。API Key 仍可使用。"
+ok = "体检全部通过。"
+unreachable = "线路不可达：{detail}"
+no_codex_path = "这条线路上没有可用的 Codex 路径：{detail}"
+pat_edge_blocked = "这条线路暂不支持 PAT：线路边缘节点拦截了 {endpoint}。API Key 仍可使用。"
+pat_unavailable = "这条线路暂不支持 PAT：{endpoint} 返回了 {status}。"
+codex_v1_fallback = "这条线路拦截了 /backend-api/codex，API Key 模式改用 /codex/v1。"
+
+[remote.warn]
+no_host_id = "ChatGPT 中没有 {host} 的主机 ID：需要在 ChatGPT 里断开并重新连接这台主机，改动才会生效。"
+pkill = "ChatGPT 重启 {host} 上的内核时，会结束这台主机上所有的 `codex app-server --listen` 进程，包括你自己启动的。"
+login_shell = "无法在 {host} 上运行登录 shell；CODEX_HOME 和环境变量是从普通 shell 读取的，可能和 ChatGPT 看到的不一致。"
+codex_missing = "在 {host} 登录 shell 的 PATH 中没有找到 codex。"
+version_unknown = "无法确定 {host} 上的 Codex 版本；PAT 需要较新的 Codex。"
+shared_home = "{host} 上的 Codex 目录最近一次是由另一台机器（{other}）写入的，可能是共享目录（例如 NFS）；这次改动会影响所有使用它的机器。"
+legacy_provider = "{host} 使用的是旧的 \"krill\" provider；迁移之前，它已有的会话在 ChatGPT 中不会显示。"
+foreign_env = "{path} 第 {line} 行把 CODEX_AUTHAPI_BASE_URL 设为 {value}，可能会覆盖 Superba 写入的值。"
+
+[remote.env]
+scope = "对新的 SSH 会话和 ChatGPT 在这台主机上启动的内核生效。"
+
+[usage.cost_source]
+costs = "费用接口"
+usage_api = "按用量记录汇总"
+
+[usage.notice]
+rate_limited_retry = "站点限制了用量查询频率，当前显示的是已保存的数据。请在 {minutes} 分钟后重试。"
+rate_limited = "站点限制了用量查询频率，当前显示的是已保存的数据。"
+refresh_failed = "刷新失败（{reason}），当前显示的是已保存的数据。"
+
+[auth_choice]
+auto = "自动"
+pat = "个人访问令牌（PAT）"
+apikey = "API Key"
+
+[auth_reason]
+decision = "{mode}：{reason}"
+manual = "手动选择。"
+pat_available = "这条线路支持 PAT。"
+not_probed = "线路尚未检测，先尝试 PAT。"
+site_apikey_only = "这个站点使用 API Key。"
+custom_base_url = "已设置自定义 Base URL；PAT 需要使用站点自己的线路。"
+router_mode = "流量经过 Superba 本地路由，由它使用你的 API Key。"
+codex_too_old = "读取这份配置的 Codex 版本过旧，不支持 PAT。"
+pat_needs_https = "PAT 需要 https 线路。"
+pat_edge_blocked = "线路边缘节点拦截了 PAT 登录。"
+pat_unavailable = "这条线路不支持 PAT。"
+line_unavailable = "线路不可用。"
+no_key_mode = "这个站点不使用密钥。"
+manual_unavailable_detail = "这里无法使用{mode}：{detail}"
+manual_unavailable = "这里无法使用{mode}。"
+
+[feature_stage]
+under_development = "开发中"
+experimental = "实验性"
+stable = "稳定"
+deprecated = "已弃用"
+removed = "已移除"
+
+[settings.support]
+supported = "支持"
+deprecated = "已弃用"
+removed = "无效果"
+legacy = "旧名称"
+missing = "此版本没有"
+unknown = "未知"
+
+[settings.skip]
+invalid_path = "不是有效的 config.toml 键路径。"
+reserved_connection = "由配置的站点、线路和认证方式决定。"
+reserved_model = "由配置的模型设置决定。"
+reserved_superba = "Superba 管理这个键会破坏切换功能。"
+not_supported = "{consumers} 不认识这个键。"
+removed = "Codex 已移除这个功能，设置后没有效果。"
+invalid_value = "值无效，应为 {expected}。"
+shape_conflict = "config.toml 中 {parent} 处的值类型不同，请先在那里修改。"
+overlap = "与已管理的键 {other} 重叠。"
+
+[settings.migration]
+rename = "{legacy} → {canonical}"
+remove = "Codex 已忽略 {legacy}，可以删除"
+
+[settings.change]
+connection = "站点、线路和认证"
+model = "配置的模型"
+setting = "配置的设置项"
+reset = "恢复为 Codex 默认值"
+released = "不再管理：恢复原值"
+migration = "替换旧键 {legacy}"
+restore = "还原"
+
+[router.line]
+healthy = "正常"
+open = "已跳过（连续失败）"
+half_open = "重试中"

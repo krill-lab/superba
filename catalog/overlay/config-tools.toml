@@ -1,0 +1,464 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:background_terminal_max_timeout"]
+en = "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "06937e8338c032e8"
+zh_name = "后台终端最长等待"
+zh = "模型用 `write_stdin` 以空输入轮询后台终端输出时，单次最多等待的毫秒数。默认 `300000`（5 分钟），小于 `5000` 时按 `5000` 处理；向终端写入内容的调用不受此值影响。"
+zh_basis = "06937e8338c032e8"
+
+["config:browser_use"]
+en = ""
+en_hash = ""
+zh_name = "浏览器操作权限"
+zh = "桌面 app 浏览器操作（Browser Use）的用户级权限：是否允许读取浏览历史，以及按网站设置的访问、下载、上传和完整 CDP 权限。Codex 只读取并转交这些值，由桌面 app 执行；管理员下发的 requirements 可以进一步收紧。"
+zh_basis = ""
+
+["config:browser_use.allow_history_access"]
+en = ""
+en_hash = ""
+zh_name = "允许读取浏览历史"
+zh = "是否允许浏览器操作读取浏览器的历史记录。未设置时视为允许，设为 `false` 则禁止；桌面 app 的浏览器设置页会写入此项。"
+zh_basis = ""
+
+["config:browser_use.default_origin_policy"]
+en = ""
+en_hash = ""
+zh_name = "默认网站权限"
+zh = "未在 `browser_use.origins` 中单独设置的网站所用的默认权限，包含 `access`、`downloads`、`uploads`、`full_cdp_access` 四项，每项取 `allow` 或 `deny`；未设置的项视为允许。"
+zh_basis = ""
+
+["config:browser_use.default_origin_policy.access"]
+en = ""
+en_hash = ""
+zh_name = "默认允许访问网站"
+zh = "是否默认允许浏览器操作打开并操作网站，取 `allow` 或 `deny`，未设置视为允许。设为 `deny` 后，只有在 `browser_use.origins` 中明确允许的网站才能访问。"
+zh_basis = ""
+
+["config:browser_use.default_origin_policy.downloads"]
+en = ""
+en_hash = ""
+zh_name = "默认允许下载"
+zh = "是否默认允许浏览器操作在网站上下载文件，取 `allow` 或 `deny`，未设置视为允许；可被 `browser_use.origins` 中的单站设置覆盖。"
+zh_basis = ""
+
+["config:browser_use.default_origin_policy.full_cdp_access"]
+en = ""
+en_hash = ""
+zh_name = "默认完整 CDP 权限"
+zh = "是否默认允许浏览器操作使用完整的 Chrome DevTools Protocol（CDP）能力，取 `allow` 或 `deny`，未设置视为允许。功能开关 `browser_use_full_cdp_access` 关闭时始终不允许。"
+zh_basis = ""
+
+["config:browser_use.default_origin_policy.uploads"]
+en = ""
+en_hash = ""
+zh_name = "默认允许上传"
+zh = "是否默认允许浏览器操作向网站上传文件，取 `allow` 或 `deny`，未设置视为允许；可被 `browser_use.origins` 中的单站设置覆盖。"
+zh_basis = ""
+
+["config:browser_use.origins"]
+en = ""
+en_hash = ""
+zh_name = "按网站设置权限"
+zh = "按网站来源单独设置浏览器操作权限的表，键为来源模式（如 `https://example.com`），值的字段与 `default_origin_policy` 相同。匹配到的单站 `deny` 总是生效，单站 `allow` 可以覆盖默认的禁止。"
+zh_basis = ""
+
+["config:browser_use.origins.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个网站权限"
+zh = "某个网站来源（键名，如 `https://example.com`）的浏览器操作权限，可设置 `access`、`downloads`、`uploads`、`full_cdp_access`；未设置的字段沿用 `default_origin_policy`。"
+zh_basis = ""
+
+["config:browser_use.origins.<name>.access"]
+en = ""
+en_hash = ""
+zh_name = "允许访问此网站"
+zh = "是否允许浏览器操作打开并操作该网站，取 `allow` 或 `deny`。`deny` 时即使默认允许也会拦截，`allow` 时即使默认禁止也会放行。"
+zh_basis = ""
+
+["config:browser_use.origins.<name>.downloads"]
+en = ""
+en_hash = ""
+zh_name = "允许在此网站下载"
+zh = "是否允许浏览器操作在该网站下载文件，取 `allow` 或 `deny`；未设置时使用 `default_origin_policy.downloads`。"
+zh_basis = ""
+
+["config:browser_use.origins.<name>.full_cdp_access"]
+en = ""
+en_hash = ""
+zh_name = "此网站完整 CDP 权限"
+zh = "是否允许浏览器操作在该网站使用完整的 Chrome DevTools Protocol（CDP）能力，取 `allow` 或 `deny`；未设置时使用 `default_origin_policy.full_cdp_access`。"
+zh_basis = ""
+
+["config:browser_use.origins.<name>.uploads"]
+en = ""
+en_hash = ""
+zh_name = "允许向此网站上传"
+zh = "是否允许浏览器操作向该网站上传文件，取 `allow` 或 `deny`；未设置时使用 `default_origin_policy.uploads`。"
+zh_basis = ""
+
+["config:computer_use"]
+en = ""
+en_hash = ""
+zh_name = "电脑操作权限"
+zh = "桌面 app 电脑操作（Computer Use）可以控制哪些本机应用的用户级设置，可按 macOS bundle ID 或 Windows 应用标识逐个允许或禁止。Codex 只读取并转交这些值，由桌面 app（macOS / Windows）执行。"
+zh_basis = ""
+
+["config:computer_use.default_app_access"]
+en = ""
+en_hash = ""
+zh_name = "默认应用访问权限"
+zh = "未单独列出的应用是否默认允许被电脑操作控制，取 `allow` 或 `deny`。未设置时由桌面 app 的默认行为决定。"
+zh_basis = ""
+
+["config:computer_use.macos"]
+en = ""
+en_hash = ""
+zh_name = "macOS 应用权限"
+zh = "电脑操作在 macOS 上的按应用权限设置，目前只有 `bundle_ids` 一项。"
+zh_basis = ""
+
+["config:computer_use.macos.bundle_ids"]
+en = ""
+en_hash = ""
+zh_name = "按 bundle ID 设置"
+zh = "以 macOS 应用的 bundle ID（如 `com.apple.Safari`）为键、`allow` 或 `deny` 为值的表，用来单独允许或禁止电脑操作控制该应用。"
+zh_basis = ""
+
+["config:computer_use.macos.bundle_ids.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个 macOS 应用"
+zh = "该 bundle ID 对应应用的电脑操作权限：`allow` 允许控制，`deny` 禁止控制。"
+zh_basis = ""
+
+["config:computer_use.windows"]
+en = ""
+en_hash = ""
+zh_name = "Windows 应用权限"
+zh = "电脑操作在 Windows 上的按应用权限设置，可按应用用户模型 ID（`aumids`）或可执行文件（`exes`）指定。"
+zh_basis = ""
+
+["config:computer_use.windows.aumids"]
+en = ""
+en_hash = ""
+zh_name = "按 AUMID 设置"
+zh = "以 Windows 应用用户模型 ID（AppUserModelID，常见于商店应用）为键、`allow` 或 `deny` 为值的表，用来单独允许或禁止电脑操作控制该应用。"
+zh_basis = ""
+
+["config:computer_use.windows.aumids.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个 AUMID 应用"
+zh = "该 AppUserModelID 对应应用的电脑操作权限：`allow` 允许控制，`deny` 禁止控制。"
+zh_basis = ""
+
+["config:computer_use.windows.exes"]
+en = ""
+en_hash = ""
+zh_name = "按可执行文件设置"
+zh = "按可执行文件识别 Windows 应用的权限列表，每项包含 `publisher_name`（发布者）、`product_name`（产品名）、可选的 `binary_name`（文件名）和 `access`（`allow` 或 `deny`）。"
+zh_basis = ""
+
+["config:hooks"]
+en = "Lifecycle hooks configured inline in TOML plus user-level overrides."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e65a54b465ce981a"
+zh_name = "生命周期钩子"
+zh = "直接写在 `config.toml` 中的钩子：按事件名（如 `PreToolUse`、`Stop`）列出匹配组，在对应时机运行命令（`type` 为 `command`）或调用 MCP 工具（`type` 为 `mcp_tool`）。`hooks.state` 记录每个钩子的启用与信任状态，非托管钩子要经用户确认信任后才会运行。"
+zh_basis = "e65a54b465ce981a"
+
+["config:hooks.Interrupt"]
+en = ""
+en_hash = ""
+zh_name = "中断钩子"
+zh = "用户中断正在进行的轮次时运行的钩子，不支持 `matcher`。超时默认 1 秒、最多 3 秒，只用于通知或记录，不能改变中断结果。"
+zh_basis = ""
+
+["config:hooks.PermissionRequest"]
+en = ""
+en_hash = ""
+zh_name = "审批请求钩子"
+zh = "Codex 即将向用户请求审批时运行的钩子，`matcher` 按工具名匹配。钩子可以直接返回允许或拒绝，代替弹出审批提示。"
+zh_basis = ""
+
+["config:hooks.PostCompact"]
+en = ""
+en_hash = ""
+zh_name = "压缩后钩子"
+zh = "上下文压缩完成后运行的钩子，`matcher` 匹配触发方式 `manual`（手动压缩）或 `auto`（自动压缩）。钩子要求停止时，当前轮次会被中止。"
+zh_basis = ""
+
+["config:hooks.PostToolUse"]
+en = ""
+en_hash = ""
+zh_name = "工具调用后钩子"
+zh = "工具执行完成后运行的钩子，`matcher` 按工具名做正则匹配（如 `apply_patch|Edit`）。钩子可以向模型追加上下文，或返回阻止结果把反馈交给模型。"
+zh_basis = ""
+
+["config:hooks.PreCompact"]
+en = ""
+en_hash = ""
+zh_name = "压缩前钩子"
+zh = "即将压缩上下文时运行的钩子，`matcher` 匹配 `manual` 或 `auto`。钩子要求停止时不进行本次压缩，并中止当前轮次。"
+zh_basis = ""
+
+["config:hooks.PreToolUse"]
+en = ""
+en_hash = ""
+zh_name = "工具调用前钩子"
+zh = "工具执行前运行的钩子，`matcher` 按工具名做正则匹配。钩子可以阻止本次调用并给出原因、改写工具输入，或向模型追加上下文。"
+zh_basis = ""
+
+["config:hooks.SessionEnd"]
+en = ""
+en_hash = ""
+zh_name = "会话结束钩子"
+zh = "会话结束时运行的钩子，适合做清理或记录。超时默认 1 秒、最多 3 秒。"
+zh_basis = ""
+
+["config:hooks.SessionStart"]
+en = ""
+en_hash = ""
+zh_name = "会话开始钩子"
+zh = "会话开始时运行的钩子，`matcher` 匹配来源：`startup`、`resume`、`clear`、`compact` 或 `fork`。钩子可以向模型追加初始上下文，或要求停止。"
+zh_basis = ""
+
+["config:hooks.Stop"]
+en = ""
+en_hash = ""
+zh_name = "轮次结束钩子"
+zh = "主代理即将结束一个轮次时运行的钩子，不支持 `matcher`。钩子可以阻止结束并给出继续工作的提示，让代理接着完成任务。"
+zh_basis = ""
+
+["config:hooks.SubagentStart"]
+en = ""
+en_hash = ""
+zh_name = "子代理启动钩子"
+zh = "子代理启动时运行的钩子，`matcher` 匹配子代理类型（角色名，如 `explorer`）。钩子可以向子代理追加上下文。"
+zh_basis = ""
+
+["config:hooks.SubagentStop"]
+en = ""
+en_hash = ""
+zh_name = "子代理结束钩子"
+zh = "子代理即将结束一个轮次时运行的钩子，`matcher` 匹配子代理类型。与 `Stop` 类似，钩子可以阻止其结束并要求继续。"
+zh_basis = ""
+
+["config:hooks.UserPromptSubmit"]
+en = ""
+en_hash = ""
+zh_name = "提交提示词钩子"
+zh = "用户提交提示词后、模型处理前运行的钩子，不支持 `matcher`。钩子可以拦截这条提示词，或向模型追加上下文。"
+zh_basis = ""
+
+["config:hooks.state"]
+en = ""
+en_hash = ""
+zh_name = "钩子状态"
+zh = "按钩子键记录每个钩子的启用与信任状态，键形如 `<来源文件路径>:pre_tool_use:0:0`（事件、匹配组序号、处理器序号）。只从用户级配置读取，通常由 TUI 或桌面 app 的钩子管理界面写入。"
+zh_basis = ""
+
+["config:hooks.state.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个钩子状态"
+zh = "某个钩子的状态记录，包含 `enabled` 和 `trusted_hash` 两项。"
+zh_basis = ""
+
+["config:hooks.state.<name>.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用此钩子"
+zh = "设为 `false` 可停用该钩子，未设置时视为启用。管理员托管的钩子和内置钩子不受此项影响。"
+zh_basis = ""
+
+["config:hooks.state.<name>.trusted_hash"]
+en = ""
+en_hash = ""
+zh_name = "已信任的钩子哈希"
+zh = "用户确认信任该钩子时记录的定义哈希。只有与当前钩子定义的哈希一致时钩子才会运行；钩子内容改动后哈希不再匹配，需要重新确认。"
+zh_basis = ""
+
+["config:skills"]
+en = "User-level skill config entries keyed by SKILL.md path."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5b3cd978cdd0a3f7"
+zh_name = "技能设置"
+zh = "技能（skills）的用户级设置：是否加载内置技能、是否向模型注入可用技能清单及其 token 预算，以及按 SKILL.md 路径或名称启用、停用单个技能。"
+zh_basis = "5b3cd978cdd0a3f7"
+
+["config:skills.bundled"]
+en = ""
+en_hash = ""
+zh_name = "内置技能"
+zh = "Codex 自带的系统技能的设置，目前只有 `enabled` 一项。"
+zh_basis = ""
+
+["config:skills.bundled.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用内置技能"
+zh = "是否安装并加载 Codex 自带的系统技能，默认 `true`。设为 `false` 后不再加载系统技能，只保留用户、项目和插件提供的技能。"
+zh_basis = ""
+
+["config:skills.config"]
+en = ""
+en_hash = ""
+zh_name = "单个技能开关"
+zh = "按顺序排列的技能开关规则，每项用 `path`（SKILL.md 的绝对路径）或 `name` 选中技能，再用 `enabled` 启用或停用，后面的规则覆盖前面的。在界面中开关技能时由 Codex 写入。"
+zh_basis = ""
+
+["config:skills.include_instructions"]
+en = "Whether turns receive the automatic skills instructions block."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "cfca81a41b7a97ba"
+zh_name = "注入技能清单"
+zh = "是否在每个轮次向模型注入可用技能清单及其使用说明，默认 `true`。设为 `false` 后不再注入。"
+zh_basis = "cfca81a41b7a97ba"
+
+["config:skills.max_context_tokens"]
+en = "Maximum tokens used by the available-skills catalog. Defaults to 2% of the model context window and is capped at 10,000 tokens when set."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1185f695b2067cd5"
+zh_name = "技能清单 token 上限"
+zh = "可用技能清单最多占用的 token 数。未设置时取模型上下文窗口的 2%（窗口未知时按 8,000 字符计）；手动设置时最大按 10,000 计。超出预算时会缩短技能描述或省略部分技能。"
+zh_basis = "1185f695b2067cd5"
+
+["config:tool_suggest"]
+en = "Additional discoverable tools that can be suggested for installation."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "58783e098d03849e"
+zh_name = "工具安装建议"
+zh = "工具建议功能的设置：模型可以在需要时建议用户安装尚未启用的应用连接器或插件。`discoverables` 增加可被建议的项目，`disabled_tools` 记录不再建议的项目；功能本身由功能开关 `tool_suggest` 控制（默认开启）。"
+zh_basis = "58783e098d03849e"
+
+["config:tool_suggest.disabled_tools"]
+en = ""
+en_hash = ""
+zh_name = "不再建议的工具"
+zh = "不再建议安装的应用连接器或插件列表，每项包含 `type`（`connector` 或 `plugin`）和 `id`。用户在建议提示中选择不再提示时由 Codex 追加，各配置层的列表会合并。"
+zh_basis = ""
+
+["config:tool_suggest.discoverables"]
+en = ""
+en_hash = ""
+zh_name = "额外可建议的工具"
+zh = "额外允许模型建议安装的应用连接器或插件列表，每项包含 `type`（`connector` 或 `plugin`）和 `id`；同时出现在 `disabled_tools` 中的项目不会被建议。"
+zh_basis = ""
+
+["config:tools"]
+en = "Nested tools section for feature toggles"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "59ee1c2298648b51"
+zh_name = "工具设置"
+zh = "内置工具的细项设置：联网搜索参数（`tools.web_search`）、向用户提问工具 `request_user_input` 和计划工具 `update_plan` 的开关。"
+zh_basis = "59ee1c2298648b51"
+
+["config:tools.experimental_request_user_input"]
+en = ""
+en_hash = ""
+zh_name = "向用户提问工具"
+zh = "`request_user_input` 工具的设置。该工具让模型在执行中向用户提出带选项的问题并等待回答，主要在计划（Plan）模式下可用。"
+zh_basis = ""
+
+["config:tools.experimental_request_user_input.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用提问工具"
+zh = "是否向模型提供 `request_user_input` 提问工具，默认 `true`。设为 `false` 后模型无法在轮次中途向用户提问。"
+zh_basis = ""
+
+["config:tools.update_plan"]
+en = ""
+en_hash = ""
+zh_name = "计划工具"
+zh = "`update_plan` 工具的设置。该工具让模型维护一份分步骤的任务计划（待办清单），并在界面中显示进度。"
+zh_basis = ""
+
+["config:tools.update_plan.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用计划工具"
+zh = "是否向模型提供 `update_plan` 计划工具，默认 `false`。未启用时，Codex 还会从模型指令中去掉与该工具相关的说明。"
+zh_basis = ""
+
+["config:tools.web_search"]
+en = ""
+en_hash = ""
+zh_name = "联网搜索参数"
+zh = "联网搜索请求的附加参数：搜索上下文大小、限定域名和大致位置。是否启用联网搜索由顶层 `web_search` 决定；旧写法 `tools.web_search = true` 或 `false` 仍能解析，但会被忽略。"
+zh_basis = ""
+
+["config:tools.web_search.allowed_domains"]
+en = ""
+en_hash = ""
+zh_name = "限定搜索域名"
+zh = "只在这些域名内搜索的域名列表（如 `docs.python.org`），作为过滤条件随搜索请求发送；未设置时不限制。"
+zh_basis = ""
+
+["config:tools.web_search.context_size"]
+en = ""
+en_hash = ""
+zh_name = "搜索上下文大小"
+zh = "联网搜索为模型取回的上下文量，取 `low`、`medium` 或 `high`，对应 API 参数 `search_context_size`；越大结果越充分，通常耗时和费用也更高。未设置时由服务端决定。"
+zh_basis = ""
+
+["config:tools.web_search.location"]
+en = ""
+en_hash = ""
+zh_name = "搜索大致位置"
+zh = "提供给联网搜索的用户大致位置，用于让结果更贴近当地，包含 `country`、`region`、`city`、`timezone` 四个可选字段。"
+zh_basis = ""
+
+["config:tools.web_search.location.city"]
+en = ""
+en_hash = ""
+zh_name = "城市"
+zh = "大致位置中的城市名称，自由文本（如 `Shanghai`）。"
+zh_basis = ""
+
+["config:tools.web_search.location.country"]
+en = ""
+en_hash = ""
+zh_name = "国家"
+zh = "大致位置中的国家，使用两位 ISO 国家代码（如 `CN`、`US`）。"
+zh_basis = ""
+
+["config:tools.web_search.location.region"]
+en = ""
+en_hash = ""
+zh_name = "地区"
+zh = "大致位置中的省、州等地区名称，自由文本。"
+zh_basis = ""
+
+["config:tools.web_search.location.timezone"]
+en = ""
+en_hash = ""
+zh_name = "时区"
+zh = "大致位置中的时区，使用 IANA 时区名（如 `Asia/Shanghai`）。"
+zh_basis = ""
+
+["config:web_search"]
+en = "Controls the web search tool mode: disabled, cached, indexed, or live."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "22dbb092c006fc76"
+zh_name = "联网搜索模式"
+zh = "联网搜索工具的模式：`cached`（默认，只用 OpenAI 缓存的结果，不实时访问网页）、`indexed`（只用搜索索引中的结果）、`live`（可实时访问网页）或 `disabled`（关闭）。使用完全访问权限（不使用沙箱）时，除 `disabled` 和 `indexed` 外会优先改用 `live`；当前服务商不支持外部网页访问时，`live` 和 `indexed` 会退回 `cached`。"
+zh_basis = "22dbb092c006fc76"

@@ -1,0 +1,177 @@
+# superba-core message catalog (English). Keys are flattened with ".".
+# Every key here must also exist in zh-CN.toml (enforced by tests).
+
+[site]
+krill = "Krill"
+official = "Official ChatGPT"
+compatible = "OpenAI-compatible site"
+
+[line.krill]
+cn-fast = "China Express"
+overseas = "Overseas"
+cdn = "Multi-carrier CDN"
+
+[auth_mode]
+pat = "PAT (personal access token)"
+apikey = "API key"
+chatgpt = "Official ChatGPT login"
+
+[key_access]
+ok = "Available"
+invalid_key = "Invalid key"
+access_point_denied = "Your plan does not include this line"
+quota_exhausted = "Quota used up"
+channel_denied = "Codex channel not enabled for this key"
+edge_blocked = "Blocked by the line's edge"
+unreachable = "Line unreachable"
+unknown = "Unexpected answer ({status}): {message}"
+
+[restart.reason]
+no_cdp = "ChatGPT was not opened from Superba, so it cannot be hot-switched."
+no_bridge = "This ChatGPT version does not expose the restart bridge."
+authapi_missing = "ChatGPT was started without the auth API address; a hot switch would lose the login."
+authapi_unhealthy = "The auth address of the line ChatGPT was started with is unavailable; a hot switch would lose the login."
+cross_auth_family = "Switching between the official login and an API key."
+session_migration = "Old sessions must be migrated first, which requires closing every Codex process."
+platform_no_hot = "Hot switching is not supported on this platform yet."
+requested = "You asked to reopen ChatGPT through Superba."
+
+[block]
+version_too_old = "{consumer} runs Codex {found}; {required} or newer is required."
+line_unavailable = "Line {line} is unavailable."
+auth_mode_unavailable = "{mode} is not available on line {line}."
+key_rejected = "The key cannot be used on line {line}: {reason}"
+missing_key = "Enter a key for this profile first."
+journal_pending = "A previous switch was interrupted; recover it first."
+file_not_writable = "Cannot write {path}."
+unparseable = "Cannot parse {path}: {message}"
+elevated = "Do not run Superba with sudo or as administrator."
+locked = "Busy: {what} is locked by another process."
+no_baseline = "No original configuration has been recorded."
+unsupported_target = "Unsupported target: {detail}"
+router_unavailable = "Router mode is on but the local router is not available ({detail}). Install it again or turn router mode off."
+model_catalog = "No model catalog file could be made for Codex: {reason}"
+
+[error]
+not_implemented = "Not implemented yet: {detail}"
+unsupported = "Not supported: {detail}"
+io = "File error: {detail}"
+parse = "Cannot parse: {detail}"
+invalid = "Invalid input: {detail}"
+not_found = "Not found: {detail}"
+conflict = "Changed by another program: {detail}"
+blocked = "Blocked: {detail}"
+locked = "Busy: {detail}"
+network = "Network error: {detail}"
+http = "Server error: {detail}"
+cdp = "Cannot talk to ChatGPT: {detail}"
+process = "Process error: {detail}"
+ssh = "SSH error: {detail}"
+secret = "Key storage error: {detail}"
+cancelled = "Cancelled"
+timeout = "Timed out: {detail}"
+other = "{detail}"
+
+[latency]
+excellent = "Fast"
+good = "Good"
+fair = "Fair"
+poor = "Slow"
+unknown = "No answer"
+
+[probe]
+pat_needs_https = "PAT needs an https line: Codex refuses a plain-http ChatGPT backend. An API key still works."
+ok = "All checks passed."
+unreachable = "Line unreachable: {detail}"
+no_codex_path = "No Codex path works on this line: {detail}"
+pat_edge_blocked = "PAT is unavailable on this line: the line's edge intercepts {endpoint}. An API key still works."
+pat_unavailable = "PAT is unavailable on this line: {endpoint} answered {status}."
+codex_v1_fallback = "/backend-api/codex is blocked on this line; API key mode uses /codex/v1 instead."
+
+[remote.warn]
+no_host_id = "ChatGPT has no host id for {host}: the change applies after you disconnect and reconnect the host in ChatGPT."
+pkill = "ChatGPT stops every `codex app-server --listen` process on {host} when it restarts it, including ones you started yourself."
+login_shell = "The login shell on {host} could not be run; CODEX_HOME and the environment were read from a plain shell and may differ from what ChatGPT sees."
+codex_missing = "No codex binary was found on the PATH of {host}'s login shell."
+version_unknown = "The Codex version on {host} is unknown; PAT needs a recent Codex."
+shared_home = "The Codex home on {host} was last written from another machine ({other}); it is probably shared (e.g. NFS), so this change affects every machine using it."
+legacy_provider = "{host} uses the old \"krill\" provider; its existing sessions stay hidden in ChatGPT until they are migrated."
+foreign_env = "{path} line {line} sets CODEX_AUTHAPI_BASE_URL to {value}; it may override Superba's value."
+
+[remote.env]
+scope = "Applies to new SSH sessions and to the app-server ChatGPT starts on this host."
+
+[usage.cost_source]
+costs = "Costs API"
+usage_api = "Summed from usage records"
+
+[usage.notice]
+rate_limited_retry = "The site limits usage queries; showing saved data. Try again in {minutes} min."
+rate_limited = "The site limits usage queries; showing saved data."
+refresh_failed = "Could not refresh ({reason}); showing saved data."
+
+[auth_choice]
+auto = "Automatic"
+pat = "Personal access token (PAT)"
+apikey = "API key"
+
+[auth_reason]
+decision = "{mode}: {reason}"
+manual = "Chosen manually."
+pat_available = "This line supports PAT."
+not_probed = "The line has not been checked yet; PAT is tried first."
+site_apikey_only = "This site uses API keys."
+custom_base_url = "A custom base URL is set; PAT needs one of the site's lines."
+router_mode = "Traffic goes through Superba's local router, which uses your API key."
+codex_too_old = "A Codex that reads this configuration is too old for PAT."
+pat_needs_https = "PAT needs an https line."
+pat_edge_blocked = "The line's edge blocks PAT sign-in."
+pat_unavailable = "PAT does not work on this line."
+line_unavailable = "The line is unavailable."
+no_key_mode = "This site does not use keys."
+manual_unavailable_detail = "{mode} cannot be used here: {detail}"
+manual_unavailable = "{mode} cannot be used here."
+
+[feature_stage]
+under_development = "Under development"
+experimental = "Experimental"
+stable = "Stable"
+deprecated = "Deprecated"
+removed = "Removed"
+
+[settings.support]
+supported = "Supported"
+deprecated = "Deprecated"
+removed = "No effect"
+legacy = "Old name"
+missing = "Not in this version"
+unknown = "Unknown"
+
+[settings.skip]
+invalid_path = "Not a valid config.toml key path."
+reserved_connection = "Set from the profile's site, line and auth instead."
+reserved_model = "Set from the profile's model instead."
+reserved_superba = "Superba cannot manage this key without breaking switching."
+not_supported = "Not known to {consumers}."
+removed = "Removed from Codex; it has no effect."
+invalid_value = "Invalid value; expected {expected}."
+shape_conflict = "config.toml has a different kind of value at {parent}; change it there first."
+overlap = "Overlaps with the managed key {other}."
+
+[settings.migration]
+rename = "{legacy} -> {canonical}"
+remove = "{legacy} is ignored by Codex and can be removed"
+
+[settings.change]
+connection = "Site, line and auth"
+model = "Profile model"
+setting = "Profile setting"
+reset = "Reset to Codex default"
+released = "No longer managed: original value restored"
+migration = "Replaces old key {legacy}"
+restore = "Restore"
+
+[router.line]
+healthy = "Healthy"
+open = "Skipped (failing)"
+half_open = "Retrying"

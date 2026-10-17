@@ -1,0 +1,99 @@
+# superba-gui UI texts (English), area "updates". Flat dotted keys under their tables.
+# Every key must exist in updates.zh-CN.toml with the same {placeholders} and must not be
+# defined in another area file (tests/i18n_tests.rs).
+
+[updates]
+check = "Check for updates"
+checked = "Last checked {age}"
+loading = "Reading installed versions…"
+load_failed = "Versions could not be read"
+command = "Command"
+copy = "Copy"
+downloading = "Downloading and verifying…"
+installed = "Codex {version} installed and verified"
+
+[updates.app]
+title = "ChatGPT desktop app"
+installed_label = "Installed"
+latest_label = "Latest"
+released = "released {date}"
+bundled = "bundled codex {codex}"
+latest_unknown = "Unknown (online checks are off or no version list was reachable)"
+not_installed = "The ChatGPT desktop app was not found on this computer."
+up_to_date = "Up to date"
+download = "Download .{kind} ({size})"
+file = "Downloaded"
+open_installer = "Open installer"
+linux_note = "The Linux app doesn't update itself: install the download with your package installer (needs administrator rights; Superba never uses sudo). The file was checked against the published checksum."
+mac_note = "ChatGPT updates itself (Sparkle) and installs when you quit it."
+mac_download = "Download the full package"
+store = "Open in Microsoft Store"
+reopen = "ChatGPT was updated. Reopen it through Superba to keep hot switching."
+reopen_button = "Reopen ChatGPT"
+reopen_tip = "Plans a full restart of ChatGPT through Superba (previewed first)."
+
+[updates.pin]
+title = "Codex used by the desktop app"
+effective = "In use now"
+bundled = "Bundled with the app {version}"
+bundled_hint = "Recommended: the app is built against this version"
+version = "Fixed version"
+pick = "Choose a version…"
+version_hint = "Downloaded and verified by Superba, kept in its data folder"
+path = "Custom path"
+browse = "Browse…"
+path_empty = "Enter the path of a codex program"
+not_native = "Choose the native program, not npm's codex.js launcher"
+persist = "Also when ChatGPT is opened elsewhere (sets CODEX_CLI_PATH)"
+note = "A pinned Codex is no longer updated with the app; versions far apart may break. Changing it needs a full restart of ChatGPT."
+no_daemon = "With a pinned Codex the app no longer uses the shared local daemon."
+apply = "Apply…"
+apply_tip = "Plans a full restart of ChatGPT with this Codex (previewed first)."
+unsupported = "Choosing the app's Codex is not offered on this system in this version."
+no_app = "Install the ChatGPT desktop app to choose which Codex it uses."
+bundled_unknown = "Bundled with the app"
+copy_paths = "Copy paths"
+running_path = "Running: {path}"
+expected_path = "Expected: {path}"
+
+[updates.compat]
+match = "Matches the app"
+older = "Older than the app's"
+newer = "Newer than the app's"
+below_floor = "Below the app's minimum"
+older_tip = "May lack app-server methods the app calls"
+newer_tip = "The app-server protocol may have changed"
+below_floor_tip = "The app refuses a Codex below its minimum version"
+
+[updates.cli]
+title = "Codex CLI · this computer"
+update_to = "Update to {version}"
+switch_to = "Switch to {version}"
+copy_cmd = "Copy update command"
+install = "Install Codex CLI"
+rollback = "Roll back to {version}"
+path_pos = "PATH #{n}"
+none = "No codex command found on this computer."
+
+[updates.remote]
+title = "Codex · remote hosts"
+note = "Installs go into the host's ~/.local/bin (the app's SSH launcher puts it first on PATH); the host's Codex core restarts afterwards. Terminals on the host keep the codex first on their own PATH."
+install = "Install {version}"
+install_tip = "Upload the verified release over SSH and install it for this host's user (no sudo)."
+current = "Up to date"
+unreachable = "Not connected"
+app_command = "Decided by the app's command for this host"
+
+[updates.picker]
+prerelease = "Include pre-releases"
+empty = "No versions to choose from"
+
+[updates.tag]
+prerelease = "Pre-release"
+current = "Current"
+bundled = "Bundled"
+stored = "Downloaded"
+
+[updates.palette]
+check = "Check for updates"
+update_cli = "Update Codex CLI"

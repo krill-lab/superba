@@ -1,0 +1,33 @@
+[package]
+name = "superba-versions"
+description = "Superba versions: Codex release lists, verified Codex package downloads and the local store, desktop app latest versions and package downloads"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[dependencies]
+superba-core.workspace = true
+async-trait.workspace = true
+flate2.workspace = true
+hex.workspace = true
+quick-xml.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

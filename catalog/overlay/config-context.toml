@@ -1,0 +1,373 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:compact_prompt"]
+en = "Compact prompt used for history compaction."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6b74fb297ac4f8cd"
+zh_name = "压缩提示词"
+zh = "压缩上下文（生成历史摘要）时发给模型的提示词，替换内置的摘要提示词，优先于 `experimental_compact_prompt_file`。只在本地压缩时使用：内置 `openai` 供应商和 Azure Responses 默认走服务端远程压缩，此时不会用到它。"
+zh_basis = "6b74fb297ac4f8cd"
+
+["config:developer_instructions"]
+en = "Developer instructions inserted as a `developer` role message."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c25649f016bd2d8e"
+zh_name = "开发者指令"
+zh = "以 `developer` 角色消息加入上下文的额外指令。与 `instructions` 不同，它不会替换模型的内置指令。"
+zh_basis = "c25649f016bd2d8e"
+
+["config:experimental_compact_prompt_file"]
+en = ""
+en_hash = ""
+zh_name = "压缩提示词文件（实验性）"
+zh = "实验性：从该文件读取压缩提示词，文件无法读取或内容为空时配置加载会报错。已设置 `compact_prompt` 时以后者为准；同样只在本地压缩时使用。"
+zh_basis = ""
+
+["config:features.context_management.experimental_mode"]
+en = "Enables experimental context management."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "9e848f29208bf70b"
+zh_name = "实验性上下文管理"
+zh = "开发中：开启实验性上下文管理（`context_management` 功能）。仅在 ChatGPT 登录且为 Plus 或 Pro 订阅、使用内置 OpenAI 供应商和支持该能力的模型时生效，生效后会自动启用 `token_budget` 及其历史与笔记扩展。"
+zh_basis = "9e848f29208bf70b"
+
+["config:features.token_budget.auto_compact_fallback_buffer_tokens"]
+en = "Additional tokens available after the compaction threshold for fallback note-taking."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "312f4f35de21db7a"
+zh_name = "兜底缓冲 token 数"
+zh = "在自动压缩阈值之后额外预留的 token 数，供模型在压缩前按兜底提示词记笔记。只有设置了 `auto_compact_fallback_prompt` 时才生效，且此时必须填写正整数。"
+zh_basis = "312f4f35de21db7a"
+
+["config:features.token_budget.auto_compact_fallback_prompt"]
+en = "Developer message sampled before an automatic context-window rollover."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "91ed8d9c0e7512bf"
+zh_name = "压缩前兜底提示词"
+zh = "上下文窗口即将自动轮换（压缩）前插入的一条开发者消息，让模型先整理要保留的信息。最长 2000 字节，需同时设置 `auto_compact_fallback_buffer_tokens`。"
+zh_basis = "91ed8d9c0e7512bf"
+
+["config:features.token_budget.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用上下文预算"
+zh = "开发中：开启 `token_budget` 功能，把当前上下文窗口的用量信息加入模型可见的上下文。本节其他设置只在开启后生效；部分模型的目录信息会自带默认值。"
+zh_basis = ""
+
+["config:features.token_budget.guidance_message"]
+en = "Guidance appended to the context-window metadata in a developer message."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7852475da89cee59"
+zh_name = "上下文用量说明"
+zh = "附加在上下文窗口用量信息之后的说明文字（以开发者消息发送），用来指导模型如何对待剩余预算。最长 2000 字节，留空表示不附加。"
+zh_basis = "7852475da89cee59"
+
+["config:features.token_budget.reminder_message_template"]
+en = "Reminder template. `{n_remaining}` is replaced with the tokens remaining before auto-compaction."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0cef2cfe043d398a"
+zh_name = "收尾提醒模板"
+zh = "收尾提醒的文字模板，其中 `{n_remaining}` 会替换为距离自动压缩还剩的 token 数。不能为空，最长 2000 字节；未设置时使用内置模板。"
+zh_basis = "0cef2cfe043d398a"
+
+["config:features.token_budget.reminder_threshold_tokens"]
+en = "Number of tokens remaining before auto-compaction when the wrap-up reminder is emitted."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "858ef4f6813f576f"
+zh_name = "收尾提醒阈值"
+zh = "距离自动压缩还剩多少 token 时向模型发出一次收尾提醒（正整数）。未设置时不发提醒，除非模型目录提供了默认值。"
+zh_basis = "858ef4f6813f576f"
+
+["config:features.token_budget.use_history_notes_extension"]
+en = "Whether to expose the built-in history and notes extension."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ec27fef4489b9192"
+zh_name = "历史与笔记扩展"
+zh = "是否向模型提供内置的历史与笔记扩展：可浏览、搜索压缩前的历史窗口，并读写笔记文件。仅在使用 OpenAI 供应商并通过 Codex 后端认证（ChatGPT 登录）时可用；开启实验性上下文管理时会被自动打开。"
+zh_basis = "ec27fef4489b9192"
+
+["config:goals"]
+en = "Goal-related settings."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d4692997e6c9454f"
+zh_name = "目标设置"
+zh = "`[goals]` 表：会话目标相关设置。目标功能（`features.goals`，默认开启）可以为会话保存目标并自动继续推进。"
+zh_basis = "d4692997e6c9454f"
+
+["config:goals.max_goal_token_budget"]
+en = "Maximum token budget allowed for a goal and default budget for new goals."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8843d4fffb051335"
+zh_name = "目标 token 预算上限"
+zh = "单个目标允许的最大 token 预算，同时作为新建目标的默认预算（正整数）；超过上限的预算会被拒绝。未设置时不限制。"
+zh_basis = "8843d4fffb051335"
+
+["config:include_apps_instructions"]
+en = "Whether to inject the `<apps_instructions>` developer block."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b8212201246f397e"
+zh_name = "注入应用指令块"
+zh = "是否在开发者消息中加入 `<apps_instructions>` 块，向模型说明可用的应用连接器（Apps）。默认 `true`；只有启用了 Apps 且存在可用连接器时才会加入。"
+zh_basis = "b8212201246f397e"
+
+["config:include_collaboration_mode_instructions"]
+en = "Whether to inject the `<collaboration_mode>` developer block."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b256a1d20db9a149"
+zh_name = "注入协作模式指令块"
+zh = "是否在开发者消息中加入 `<collaboration_mode>` 块，告诉模型当前的协作模式（如 Plan 计划模式或默认模式）及其要求。默认 `true`。"
+zh_basis = "b256a1d20db9a149"
+
+["config:include_environment_context"]
+en = "Whether to inject the `<environment_context>` user block."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "0a540fa34060f1cd"
+zh_name = "注入环境信息块"
+zh = "是否以用户消息加入 `<environment_context>` 块，向模型提供工作目录、Shell、日期等运行环境信息。默认 `true`。"
+zh_basis = "0a540fa34060f1cd"
+
+["config:include_environment_context_time"]
+en = "Whether environment context includes the current date and timezone."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "bf983e24fd3bcfaa"
+zh_name = "环境信息含日期"
+zh = "环境信息块中是否包含当前日期和时区。默认 `true`；关闭后模型无法从该块得知今天的日期。"
+zh_basis = "bf983e24fd3bcfaa"
+
+["config:include_permissions_instructions"]
+en = "Whether to inject the `<permissions instructions>` developer block."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c2049eab5e699454"
+zh_name = "注入权限说明块"
+zh = "是否在开发者消息中加入 `<permissions instructions>` 块，向模型说明当前的沙箱权限、审批策略和命令执行规则。默认 `true`；关闭后只保留精简的命令规则信息。"
+zh_basis = "c2049eab5e699454"
+
+["config:instructions"]
+en = "System instructions."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f946ad02bb799aa0"
+zh_name = "系统指令"
+zh = "替换模型内置的基础系统指令（system prompt）。`model_instructions_file` 指定的文件优先于此值；偏离内置指令通常会降低模型表现。"
+zh_basis = "f946ad02bb799aa0"
+
+["config:memories"]
+en = "Memories subsystem settings."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "852ccbfcb66caea3"
+zh_name = "记忆设置"
+zh = "`[memories]` 表：记忆功能的设置。需先开启 `[features].memories`（默认关闭）；开启后 Codex 会在启动时从过往会话中提炼记忆，并在新会话中提供给模型。"
+zh_basis = "852ccbfcb66caea3"
+
+["config:memories.consolidation_model"]
+en = "Model used for memory consolidation."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "90d7572a600a06e9"
+zh_name = "记忆整合模型"
+zh = "第二阶段把零散记忆整合为全局记忆时使用的模型。未设置时使用当前模型供应商推荐的模型。"
+zh_basis = "90d7572a600a06e9"
+
+["config:memories.dedicated_tools"]
+en = "When `true`, expose dedicated memory tools through the extension tool surface."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3c93434068ec634a"
+zh_name = "专用记忆工具"
+zh = "设为 `true` 时，通过扩展工具向模型提供专用的记忆工具。默认 `false`。"
+zh_basis = "3c93434068ec634a"
+
+["config:memories.disable_on_external_context"]
+en = 'When `true`, external context sources mark the thread `memory_mode` as `"polluted"`.'
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "09ca57e709a71cbe"
+zh_name = "外部内容不生成记忆"
+zh = "设为 `true` 时，会话一旦用到外部上下文来源（如 MCP 工具、联网搜索、工具搜索），就被标记为 `memory_mode = polluted`，不再用于生成记忆。默认 `false`；旧名称 `no_memories_if_mcp_or_web_search` 仍可用。"
+zh_basis = "09ca57e709a71cbe"
+
+["config:memories.dual_write"]
+en = "Generate both versions while the selected version supplies context."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "039f8b493e501f8a"
+zh_name = "双版本同时生成"
+zh = "同时运行 `v1` 和 `v2` 两套记忆生成流程，但只有 `memories.version` 选中的版本提供给模型。默认 `false`。"
+zh_basis = "039f8b493e501f8a"
+
+["config:memories.extract_model"]
+en = "Model used for thread summarisation."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d462ab59ba144f50"
+zh_name = "记忆提炼模型"
+zh = "第一阶段从单个会话中提炼记忆（会话摘要）时使用的模型。未设置时使用当前模型供应商推荐的模型。"
+zh_basis = "d462ab59ba144f50"
+
+["config:memories.generate_memories"]
+en = 'When `false`, newly created threads are stored with `memory_mode = "disabled"` in the state DB.'
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d72feb8d1fbe367d"
+zh_name = "从新会话生成记忆"
+zh = "设为 `false` 时，新建会话在状态数据库中记为 `memory_mode = disabled`，不会被用来生成记忆；已有记忆仍可使用。默认 `true`。"
+zh_basis = "d72feb8d1fbe367d"
+
+["config:memories.max_raw_memories_for_consolidation"]
+en = "Maximum number of recent raw memories retained for global consolidation."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6d9ee20a9d57723b"
+zh_name = "整合用原始记忆上限"
+zh = "全局整合时最多保留的近期原始记忆条数，范围 1–4096，默认 256。"
+zh_basis = "6d9ee20a9d57723b"
+
+["config:memories.max_rollout_age_days"]
+en = "Maximum age of the threads used for memories."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "046ea6587a9401f9"
+zh_name = "参与记忆的会话天数"
+zh = "只有最近多少天内的会话会被用来生成记忆，范围 0–90，默认 10 天。"
+zh_basis = "046ea6587a9401f9"
+
+["config:memories.max_rollouts_per_startup"]
+en = "Maximum number of rollout candidates processed per pass."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "221bbaee2284a00f"
+zh_name = "每次处理的会话数"
+zh = "每轮最多处理多少个候选会话记录（rollout 文件），范围 1–128，默认 2。"
+zh_basis = "221bbaee2284a00f"
+
+["config:memories.max_unused_days"]
+en = "Maximum number of days since a memory was last used before it becomes ineligible for phase 2 selection."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "04fa360febf2eb59"
+zh_name = "记忆闲置天数上限"
+zh = "一条记忆最近一次被使用后超过多少天，就不再参与第二阶段（整合）的筛选，范围 0–365，默认 30 天。"
+zh_basis = "04fa360febf2eb59"
+
+["config:memories.min_rate_limit_remaining_percent"]
+en = "Minimum remaining percentage required in Codex rate-limit windows before memory startup runs."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c065181ddcdf36aa"
+zh_name = "运行所需剩余额度"
+zh = "只有 Codex 用量限额窗口的剩余百分比不低于该值时，启动时才会运行记忆流程，范围 0–100，默认 25。"
+zh_basis = "c065181ddcdf36aa"
+
+["config:memories.min_rollout_idle_hours"]
+en = "Minimum idle time between last thread activity and memory creation (hours). > 12h recommended."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b5bd92bd8d69195e"
+zh_name = "会话最短闲置时长"
+zh = "会话最后一次活动后至少闲置多少小时才会被用来生成记忆，范围 1–48，默认 6；官方建议大于 12 小时。"
+zh_basis = "b5bd92bd8d69195e"
+
+["config:memories.use_memories"]
+en = "When `false`, skip injecting memory usage instructions into developer prompts."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "49eec7ec464a8a04"
+zh_name = "在会话中使用记忆"
+zh = "设为 `false` 时不在开发者提示词中注入记忆使用说明，模型不会使用已有记忆；记忆仍会照常生成。默认 `true`。"
+zh_basis = "49eec7ec464a8a04"
+
+["config:memories.version"]
+en = "Selects the memory pipeline; v1 remains the default."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "816eb8a1b85020ef"
+zh_name = "记忆流程版本"
+zh = "选择记忆流程版本：`v1`（默认）或 `v2`。两者分别存放在 Codex 主目录下的 `memories` 和 `memories_v2` 目录。"
+zh_basis = "816eb8a1b85020ef"
+
+["config:model_auto_compact_token_limit"]
+en = "Token usage threshold triggering auto-compaction of conversation history."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7b60e991e1272b10"
+zh_name = "自动压缩阈值"
+zh = "上下文用量达到该 token 数时自动压缩会话历史。未设置时为模型上下文窗口的 90%；按 `total` 方式统计时，设置值也不会超过这个 90% 上限。"
+zh_basis = "7b60e991e1272b10"
+
+["config:model_auto_compact_token_limit_scope"]
+en = "Controls whether the auto-compaction limit applies to the full context or only to tokens after the carried prefix in the current compaction window."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a10a5961010e137e"
+zh_name = "自动压缩计数范围"
+zh = "决定自动压缩阈值按哪部分 token 计算：`total`（默认）统计全部活动上下文，`body_after_prefix` 只统计当前压缩窗口中沿用前缀之后新增的部分。无论哪种方式，用量达到模型完整上下文窗口时都会强制压缩。"
+zh_basis = "a10a5961010e137e"
+
+["config:model_auto_compact_token_limit_scope=body_after_prefix"]
+en = "Count sampled output and later growth after the carried window prefix."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c8f3b5324fe2c6ce"
+zh_name = "仅计前缀之后的增长"
+zh = "只把沿用的窗口前缀（上次压缩后带入的内容）之后的模型输出和后续增长计入阈值。"
+zh_basis = "c8f3b5324fe2c6ce"
+
+["config:model_auto_compact_token_limit_scope=total"]
+en = "Count the full active context against the limit."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "343be2168ca44220"
+zh_name = "计入全部上下文"
+zh = "把当前全部活动上下文计入自动压缩阈值（默认）。"
+zh_basis = "343be2168ca44220"
+
+["config:model_context_window"]
+en = "Size of the context window for the model, in tokens."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "815fcdfb296c1e6c"
+zh_name = "上下文窗口大小"
+zh = "模型的上下文窗口大小（token 数），覆盖模型目录中的值；若目录声明了最大窗口，则不会超过该上限。Codex 实际可用的通常是窗口的 95%，自动压缩阈值默认按窗口的 90% 计算。"
+zh_basis = "815fcdfb296c1e6c"
+
+["config:model_instructions_file"]
+en = "Optional path to a file containing model instructions that will override the built-in instructions for the selected model. Users are STRONGLY DISCOURAGED from using this field, as deviating from the instructions sanctioned by Codex will likely degrade model performance."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e8acc244d201f202"
+zh_name = "模型指令文件"
+zh = "指定一个文件，用其内容替换所选模型的内置指令，优先于 `instructions`；文件无法读取或为空时配置加载会报错。官方强烈不建议使用：偏离 Codex 认可的指令很可能降低模型表现。"
+zh_basis = "e8acc244d201f202"
+
+["config:model_post_turn_compact_threshold_percent"]
+en = "Percentage of the usable context window that triggers compaction after a final response. Existing auto-compaction limits still apply. Omitted or zero disables turn-end compaction; valid values are 0–100."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "c63453f799d9b024"
+zh_name = "轮次结束压缩阈值"
+zh = "一轮最终回复结束后，若上下文用量达到可用上下文窗口的该百分比，就在轮次结束时压缩。原有的自动压缩阈值仍然有效；未设置或为 0 时关闭，取值 0–100。"
+zh_basis = "c63453f799d9b024"
+
+["config:project_doc_fallback_filenames"]
+en = "Ordered list of fallback filenames to look for when AGENTS.md is missing."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "69fbdb9bb699b10e"
+zh_name = "备用项目说明文件名"
+zh = "目录中没有 `AGENTS.override.md` 或 `AGENTS.md` 时，按顺序尝试的备用文件名。只能写文件名，不能包含路径；默认为空列表。"
+zh_basis = "69fbdb9bb699b10e"
+
+["config:project_doc_max_bytes"]
+en = "Maximum total bytes of project instruction content across all selected environments."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "75da3ed241506d25"
+zh_name = "项目说明最大字节数"
+zh = "所有 `AGENTS.md` 等项目说明合计最多读入的字节数，默认 32768（32 KiB），超出部分会被直接截断；设为 0 则不读入项目说明。"
+zh_basis = "75da3ed241506d25"
+
+["config:project_root_markers"]
+en = 'Markers used to detect the project root when searching parent directories for `.codex` folders. Defaults to [".git"] when unset.'
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "18f275ddb763f33c"
+zh_name = "项目根目录标记"
+zh = "向上查找父目录时用来识别项目根目录的标记，未设置时为 `.git`。项目根决定从哪一级开始读取 `.codex` 配置目录和 `AGENTS.md`；设为空列表则不再向上查找。"
+zh_basis = "18f275ddb763f33c"
+
+["config:tool_output_token_limit"]
+en = "Token budget applied when storing tool/function outputs in the context manager."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "423ad224ca4647e3"
+zh_name = "工具输出 token 上限"
+zh = "工具或函数调用的输出写入上下文时的截断预算（token 数），覆盖模型目录中的默认截断设置；对按字节截断的模型会换算成大致等量的字节数。"
+zh_basis = "423ad224ca4647e3"

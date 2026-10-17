@@ -1,0 +1,263 @@
+//! Per-user service lifecycle of the router (install, uninstall, status, restart).
+//!
+//! The router runs as a supervised per-user background service so it survives
+//! crashes and logins without Superba being open:
+//!
+//! | Platform | Backend | Supervision |
+//! |---|---|---|
+//! | Linux with a user systemd | [`ServiceKind::SystemdUser`]: `~/.config/systemd/user/superba-router.service` | `Restart=always` |
+//! | Linux without one (WSL, containers, no session bus) | [`ServiceKind::XdgAutostart`]: `~/.config/autostart/superba-router.desktop` + a detached `superba-router supervise` | the supervisor restarts `run` |
+//! | macOS | [`ServiceKind::LaunchAgent`]: `~/Library/LaunchAgents/com.krill.superba.router.plist` | `KeepAlive` |
+//! | Windows | [`ServiceKind::WindowsRunKey`]: `HKCU\…\Run` value `SuperbaRouter` + a detached `superba-router supervise` | the supervisor restarts `run` |
+//!
+//! Every backend is plain logic over three injected seams — the home directory
+//! ([`ServiceHost`]), a [`CommandRunner`] (systemctl, launchctl, detached spawns,
+//! signals) and a [`RunKeyStore`] (the Windows Run key) — so all of them are unit
+//! tested on Linux with fakes and never touch the real user's service manager,
+//! registry or processes. Only [`SystemRunner`] and the registry store talk to the
+//! OS.
+//!
+//! Contract shared by every backend:
+//! - `install` is idempotent: it (re)writes the definition and (re)starts the
+//!   service so a new binary or data dir takes effect.
+//! - `uninstall` is idempotent: it stops the service, removes the definition and
+//!   succeeds when nothing was installed. Superba writes the direct-mode Codex
+//!   configuration *before* calling it (see [`crate::watchdog`]).
+//! - No secret ever appears in a service definition, command line or environment:
+//!   the router reads its keys from its own 0600 file at start.
+
+use std::ffi::OsString;
+use std::fmt;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
+use superba_core::Result;
+
+mod autostart;
+mod launchd;
+mod runkey;
+pub mod supervise;
+mod system;
+mod systemd;
+
+pub use system::SystemRunner;
+#[cfg(windows)]
+pub use system::WindowsRunKey;
+
+/// launchd label (also the plist file stem).
+pub const LAUNCHD_LABEL: &str = "com.krill.superba.router";
+/// systemd user unit name.
+pub const SYSTEMD_UNIT: &str = "superba-router.service";
+/// XDG autostart desktop entry file name.
+pub const AUTOSTART_FILE: &str = "superba-router.desktop";
+/// Value name under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+pub const RUN_VALUE_NAME: &str = "SuperbaRouter";
+
+/// What to run as the service.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServiceSpec {
+    /// Absolute path of the `superba-router` executable.
+    pub exe: PathBuf,
+    /// Superba data dir, passed as `--data-dir <dir>`.
+    pub data_dir: PathBuf,
+    /// File receiving stdout/stderr where the backend needs one (launchd, the
+    /// detached supervisor). systemd uses the journal instead.
+    pub log_file: PathBuf,
+    /// File holding the pid of the detached supervisor (XDG autostart and Windows
+    /// backends only).
+    pub pid_file: PathBuf,
+    /// Extra environment for the service, e.g. `RUST_LOG`. Never secrets.
+    pub env: Vec<(String, String)>,
+}
+
+impl ServiceSpec {
+    /// Arguments of the router process itself: `run --data-dir <dir>`.
+    pub fn run_args(&self) -> Vec<OsString> {
+        vec![
+            "run".into(),
+            "--data-dir".into(),
+            self.data_dir.clone().into_os_string(),
+        ]
+    }
+
+    /// Arguments of the self-supervisor: `supervise --data-dir <dir>`.
+    pub fn supervise_args(&self) -> Vec<OsString> {
+        vec![
+            "supervise".into(),
+            "--data-dir".into(),
+            self.data_dir.clone().into_os_string(),
+        ]
+    }
+}
+
+/// Which service backend is in use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceKind {
+    /// Linux user systemd unit.
+    SystemdUser,
+    /// Linux fallback: XDG autostart entry plus a detached self-supervisor.
+    XdgAutostart,
+    /// macOS LaunchAgent.
+    LaunchAgent,
+    /// Windows per-user Run key plus a detached self-supervisor.
+    WindowsRunKey,
+}
+
+/// Observed state of the service.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceStatus {
+    /// Backend.
+    pub kind: ServiceKind,
+    /// The definition (unit, plist, desktop entry, Run value) exists.
+    pub installed: bool,
+    /// The service manager reports it running; `None` when it cannot tell.
+    pub running: Option<bool>,
+    /// Main pid (or the supervisor's pid) when known.
+    pub pid: Option<u32>,
+    /// Short diagnostic (e.g. `systemctl is-active` output). Never secrets.
+    pub detail: Option<String>,
+}
+
+/// Captured output of a finished command.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CommandOutput {
+    /// Exit code; `None` when killed by a signal.
+    pub code: Option<i32>,
+    /// Standard output (lossy UTF-8).
+    pub stdout: String,
+    /// Standard error (lossy UTF-8).
+    pub stderr: String,
+}
+
+impl CommandOutput {
+    /// True when the exit code is 0.
+    pub fn success(&self) -> bool {
+        self.code == Some(0)
+    }
+}
+
+/// Runs external commands and manages detached processes. The real one is
+/// [`SystemRunner`]; tests record calls.
+pub trait CommandRunner: Send + Sync + fmt::Debug {
+    /// Run `program args` to completion and capture its output (no shell).
+    fn run(&self, program: &str, args: &[OsString]) -> std::io::Result<CommandOutput>;
+
+    /// Start `exe args` detached from the caller (own session / process group, no
+    /// console window, stdin null, stdout+stderr appended to `log_file`), with
+    /// `env` added to the inherited environment. Returns its pid.
+    fn spawn_detached(
+        &self,
+        exe: &Path,
+        args: &[OsString],
+        env: &[(String, String)],
+        log_file: &Path,
+    ) -> std::io::Result<u32>;
+
+    /// True if a process with this pid exists and its executable file name is
+    /// `superba-router` (`superba-router.exe`): pids are reused, and only our own
+    /// process may ever be signalled.
+    fn is_router_process(&self, pid: u32) -> bool;
+
+    /// Ask the process to stop (SIGTERM on Unix; terminate the process tree on
+    /// Windows). Callers check [`CommandRunner::is_router_process`] first.
+    fn terminate(&self, pid: u32) -> std::io::Result<()>;
+}
+
+/// Access to the per-user Run key (Windows). Faked in tests.
+pub trait RunKeyStore: Send + Sync + fmt::Debug {
+    /// Read a value.
+    fn get(&self, name: &str) -> std::io::Result<Option<String>>;
+    /// Create or replace a value (REG_SZ).
+    fn set(&self, name: &str, value: &str) -> std::io::Result<()>;
+    /// Delete a value; succeeds when it does not exist.
+    fn delete(&self, name: &str) -> std::io::Result<()>;
+}
+
+/// Where and how service definitions are written.
+#[derive(Clone)]
+pub struct ServiceHost {
+    /// The user's home directory.
+    pub home: PathBuf,
+    /// `XDG_CONFIG_HOME` when set (Linux); defaults to `<home>/.config`.
+    pub xdg_config_home: Option<PathBuf>,
+    /// Numeric user id for `launchctl` domains (`gui/<uid>`); `None` off macOS.
+    pub uid: Option<u32>,
+    /// Command runner.
+    pub runner: Arc<dyn CommandRunner>,
+    /// Run key access (Windows backend); `None` makes that backend fail with
+    /// `Error::Unsupported`.
+    pub run_key: Option<Arc<dyn RunKeyStore>>,
+}
+
+impl fmt::Debug for ServiceHost {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ServiceHost")
+            .field("home", &self.home)
+            .field("xdg_config_home", &self.xdg_config_home)
+            .field("uid", &self.uid)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ServiceHost {
+    /// The real host: process home / `XDG_CONFIG_HOME`, current uid, [`SystemRunner`]
+    /// and (on Windows) the real Run key.
+    pub fn system(home: PathBuf) -> Self {
+        system::system_host(home)
+    }
+
+    /// `XDG_CONFIG_HOME` or `<home>/.config`.
+    pub fn config_home(&self) -> PathBuf {
+        self.xdg_config_home
+            .clone()
+            .unwrap_or_else(|| self.home.join(".config"))
+    }
+}
+
+/// A service backend.
+pub trait ServiceManager: Send + Sync + fmt::Debug {
+    /// Backend kind.
+    fn kind(&self) -> ServiceKind;
+    /// Write the definition and (re)start the service. Idempotent.
+    fn install(&self, spec: &ServiceSpec) -> Result<ServiceStatus>;
+    /// Stop the service and remove its definition. Idempotent. `spec` gives the
+    /// pid file and paths of a detached supervisor.
+    fn uninstall(&self, spec: &ServiceSpec) -> Result<()>;
+    /// Observe the service.
+    fn status(&self, spec: &ServiceSpec) -> Result<ServiceStatus>;
+    /// Restart a running service (e.g. after a binary update).
+    fn restart(&self, spec: &ServiceSpec) -> Result<()>;
+}
+
+/// Backend `kind` on `host`.
+pub fn manager(host: ServiceHost, kind: ServiceKind) -> Box<dyn ServiceManager> {
+    match kind {
+        ServiceKind::SystemdUser => Box::new(systemd::SystemdUser::new(host)),
+        ServiceKind::XdgAutostart => Box::new(autostart::XdgAutostart::new(host)),
+        ServiceKind::LaunchAgent => Box::new(launchd::LaunchAgent::new(host)),
+        ServiceKind::WindowsRunKey => Box::new(runkey::WindowsRunKeyService::new(host)),
+    }
+}
+
+/// The backend this platform uses: macOS → LaunchAgent, Windows → Run key, Linux
+/// and other Unix → systemd user unit when `systemctl --user show-environment`
+/// succeeds through `host.runner`, else XDG autostart.
+pub fn detect(host: &ServiceHost) -> ServiceKind {
+    if cfg!(target_os = "macos") {
+        ServiceKind::LaunchAgent
+    } else if cfg!(windows) {
+        ServiceKind::WindowsRunKey
+    } else if systemd::user_manager_available(host) {
+        ServiceKind::SystemdUser
+    } else {
+        ServiceKind::XdgAutostart
+    }
+}
+
+/// [`detect`] + [`manager`].
+pub fn for_platform(host: ServiceHost) -> Box<dyn ServiceManager> {
+    let kind = detect(&host);
+    manager(host, kind)
+}

@@ -1,0 +1,490 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example v0.1.0)
+        required: true
+        type: string
+
+# Least privilege: only the final job can write the release. Third-party actions
+# are pinned to full commit SHAs (version in a comment); update them deliberately.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      commit: ${{ steps.source.outputs.commit }}
+    steps:
+      - name: Validate the requested tag
+        id: tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            printf '::error::The release tag must be vX.Y.Z or vX.Y.Z-alpha.N / -beta.N / -rc.N.\n'
+            exit 1
+          fi
+          printf 'tag=%s\nversion=%s\n' "$REQUESTED_TAG" "${REQUESTED_TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+      - name: Check the workspace version and required documents
+        id: source
+        env:
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          with open("Cargo.toml", "rb") as manifest:
+              version = tomllib.load(manifest)["workspace"]["package"]["version"]
+          if version != os.environ["RELEASE_VERSION"]:
+              raise SystemExit("Tag version does not match [workspace.package].version")
+          for name in ("README.md", "LICENSE-MIT", "LICENSE-APACHE"):
+              if not pathlib.Path(name).is_file():
+                  raise SystemExit(f"Missing release document: {name}")
+          PY
+          printf 'commit=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  notices:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - name: Generate third-party notices
+        run: |
+          cargo install --locked cargo-about --version 0.9.2 --features cli
+          cargo about generate --workspace -c about.toml \
+            scripts/release/third-party-notices.hbs -o THIRD-PARTY-NOTICES.txt
+          test -s THIRD-PARTY-NOTICES.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: third-party-notices
+          path: THIRD-PARTY-NOTICES.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  # Builds never see signing secrets: no environment, no secrets, no build cache.
+  # macOS and Windows outputs are handed to the gated signing jobs as artifacts.
+  build:
+    needs: [prepare, notices]
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+            platform: linux
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+          - name: linux-aarch64
+            runner: ubuntu-22.04-arm
+            platform: linux
+            target: aarch64-unknown-linux-gnu
+            arch: aarch64
+          - name: linux-x86_64-musl
+            runner: ubuntu-22.04
+            platform: musl
+            target: x86_64-unknown-linux-musl
+            arch: x86_64
+          - name: macos-universal
+            runner: macos-14
+            platform: macos
+            target: aarch64-apple-darwin
+            arch: universal
+          - name: windows-x86_64
+            runner: windows-latest
+            platform: windows
+            target: x86_64-pc-windows-msvc
+            arch: x86_64
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_TARGET: ${{ matrix.target }}
+      BUILD_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: third-party-notices
+          path: ${{ runner.temp }}/notices
+      - name: Install Linux GUI dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libgl1-mesa-dev pkg-config
+      - name: Build GNU Linux or Windows binaries
+        if: matrix.platform == 'linux' || matrix.platform == 'windows'
+        run: |
+          rustup target add "$BUILD_TARGET"
+          cargo build --release --locked -p superba-gui -p superba-cli -p superba-router \
+            --target "$BUILD_TARGET"
+      - name: Build the headless musl binaries
+        if: matrix.platform == 'musl'
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          cargo build --release --locked -p superba-cli -p superba-router \
+            --target x86_64-unknown-linux-musl
+      - name: Package GNU Linux binaries
+        if: matrix.platform == 'linux'
+        run: |
+          scripts/release/package-linux.sh --target-dir "target/$BUILD_TARGET/release" \
+            --version "$RELEASE_VERSION" --arch "$BUILD_ARCH" \
+            --notices "$RUNNER_TEMP/notices/THIRD-PARTY-NOTICES.txt" --out dist
+      - name: Package the headless musl binaries
+        if: matrix.platform == 'musl'
+        run: |
+          scripts/release/package-linux.sh --target-dir "target/$BUILD_TARGET/release" \
+            --version "$RELEASE_VERSION" --arch x86_64 --headless \
+            --notices "$RUNNER_TEMP/notices/THIRD-PARTY-NOTICES.txt" --out dist
+
+      - name: Build universal macOS binaries and app bundle
+        if: matrix.platform == 'macos'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          cargo build --release --locked -p superba-gui -p superba-cli -p superba-router \
+            --target aarch64-apple-darwin
+          cargo build --release --locked -p superba-gui -p superba-cli -p superba-router \
+            --target x86_64-apple-darwin
+          universal="$RUNNER_TEMP/superba-universal"
+          staging="$RUNNER_TEMP/superba-$RELEASE_VERSION-macos-universal"
+          mkdir -p "$universal" "$staging"
+          for binary in superba spb superba-router; do
+            lipo -create "target/aarch64-apple-darwin/release/$binary" \
+              "target/x86_64-apple-darwin/release/$binary" -output "$universal/$binary"
+            lipo "$universal/$binary" -verify_arch arm64 x86_64
+          done
+          # The router ships inside the bundle; spb (beside the bundle) finds it there.
+          scripts/release/macos-bundle.sh --binary "$universal/superba" \
+            --helper "$universal/superba-router" \
+            --version "$RELEASE_VERSION" --out "$staging" \
+            --notices "$RUNNER_TEMP/notices/THIRD-PARTY-NOTICES.txt"
+          install -m 755 "$universal/spb" "$staging/spb"
+          cp README.md LICENSE-MIT LICENSE-APACHE "$RUNNER_TEMP/notices/THIRD-PARTY-NOTICES.txt" \
+            crates/superba-gui/assets/fonts/LICENSE-Geist-OFL.txt "$staging/"
+          # tar keeps the bundle's permissions for the signing job.
+          mkdir -p unsigned
+          tar -czf "unsigned/macos-universal.tar.gz" -C "$RUNNER_TEMP" "superba-$RELEASE_VERSION-macos-universal"
+      - name: Stage unsigned Windows binaries
+        if: matrix.platform == 'windows'
+        run: |
+          mkdir -p unsigned/windows
+          for binary in superba spb superba-router; do
+            cp "target/$BUILD_TARGET/release/$binary.exe" unsigned/windows/
+          done
+          cp README.md LICENSE-MIT LICENSE-APACHE "$RUNNER_TEMP/notices/THIRD-PARTY-NOTICES.txt" \
+            crates/superba-gui/assets/fonts/LICENSE-Geist-OFL.txt unsigned/windows/
+      - name: Upload unsigned macOS / Windows output
+        if: matrix.platform == 'macos' || matrix.platform == 'windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-${{ matrix.name }}
+          path: unsigned/*
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload release archives
+        if: matrix.platform == 'linux' || matrix.platform == 'musl'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # Signing runs in the protected `release-signing` environment: configure it with
+  # required reviewers and keep the signing secrets there (not as repository
+  # secrets). Only first-party actions and this repository's scripts run here.
+  sign-macos:
+    needs: [prepare, build]
+    runs-on: macos-14
+    environment: release-signing
+    permissions:
+      contents: read
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-macos-universal
+          path: unsigned
+      # The archive was made by a job that ran third-party build code. Before any
+      # signing material exists, accept only regular files and directories under
+      # the expected top directory (no links, no paths leaving it), unpack into a
+      # fresh directory, and check the top level against the release layout.
+      - name: Unpack and check the unsigned app
+        run: |
+          set -euo pipefail
+          top="superba-$RELEASE_VERSION-macos-universal"
+          archive=unsigned/macos-universal.tar.gz
+          fail() { printf '::error::unsigned macOS archive: %s\n' "$1"; exit 1; }
+          listing=$(tar -tvzf "$archive")
+          if grep -v '^[-d]' <<<"$listing" | grep -q .; then fail "links or special files"; fi
+          if grep -Eq ' link to | -> ' <<<"$listing"; then fail "hard or symbolic links"; fi
+          names=$(tar -tzf "$archive")
+          if grep -Ev "^$top(/|\$)" <<<"$names" | grep -q .; then fail "entries outside $top/"; fi
+          if grep -Eq '(^|/)\.\.(/|$)' <<<"$names"; then fail "'..' path components"; fi
+          unpack=$(mktemp -d "$RUNNER_TEMP/unsigned.XXXXXXXX")
+          tar -xzf "$archive" -C "$unpack"
+          staging="$unpack/$top"
+          allowed=" Superba.app spb README.md LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES.txt LICENSE-Geist-OFL.txt "
+          for entry in "$staging"/* "$staging"/.[!.]*; do
+            [[ -e "$entry" || -L "$entry" ]] || continue
+            name=$(basename -- "$entry")
+            [[ "$allowed" == *" $name "* ]] || fail "unexpected top-level entry $name"
+          done
+          if find "$unpack" -type l -print -quit | grep -q .; then fail "symbolic links"; fi
+          echo "SUPERBA_STAGING=$staging" >> "$GITHUB_ENV"
+      - name: Sign, notarize, and package macOS artifacts
+        env:
+          MACOS_SIGNING_P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: |
+          set +x
+          staging="$SUPERBA_STAGING"
+          signing_enabled=false
+          if [[ -z "$MACOS_SIGNING_P12_BASE64" ]]; then
+            printf '::warning::MACOS_SIGNING_P12_BASE64 is empty; macOS artifacts will be unsigned and not notarized.\n'
+          else
+            : "${MACOS_SIGNING_IDENTITY:?Set MACOS_SIGNING_IDENTITY}"
+            : "${APPLE_API_KEY_ID:?Set APPLE_API_KEY_ID}"
+            : "${APPLE_API_ISSUER_ID:?Set APPLE_API_ISSUER_ID}"
+            : "${APPLE_API_KEY_P8_BASE64:?Set APPLE_API_KEY_P8_BASE64}"
+            umask 077
+            # A fresh directory no artifact path can point into (never a fixed
+            # name that a planted link could redirect).
+            signing_dir=$(mktemp -d "$RUNNER_TEMP/signing.XXXXXXXX")
+            echo "SUPERBA_SIGNING_DIR=$signing_dir" >> "$GITHUB_ENV"
+            security list-keychains -d user > "$signing_dir/keychains.before"
+            printf '%s' "$MACOS_SIGNING_P12_BASE64" | /usr/bin/base64 -D > "$signing_dir/certificate.p12"
+            printf '%s' "$APPLE_API_KEY_P8_BASE64" | /usr/bin/base64 -D > "$signing_dir/AuthKey.p8"
+            export MACOS_SIGNING_P12="$signing_dir/certificate.p12"
+            export APPLE_API_KEY_P8="$signing_dir/AuthKey.p8"
+            export TMPDIR="$signing_dir"
+            export SUPERBA_SIGNING_ENV=/dev/null
+            unset MACOS_SIGNING_P12_BASE64 APPLE_API_KEY_P8_BASE64
+            scripts/release/macos-sign.sh --require-notarize "$staging/Superba.app" "$staging/spb"
+            signing_enabled=true
+          fi
+          umask 022
+          # Nothing but the release layout goes into the ZIP / DMG.
+          if find "$staging" -type l -print -quit | grep -q . \
+            || find "$staging" -name '*.p12' -o -name '*.p8' -o -name '*.keychain*' | grep -q .; then
+            printf '::error::the staging directory changed during signing\n'
+            exit 1
+          fi
+          mkdir -p dist
+          # Bundle tickets must be stapled before making the distribution ZIP/DMG.
+          ditto -c -k --keepParent "$staging" "dist/superba-$RELEASE_VERSION-macos-universal.zip"
+          hdiutil create -volname "Superba $RELEASE_VERSION" -srcfolder "$staging" \
+            -ov -format UDZO "dist/superba-$RELEASE_VERSION-macos-universal.dmg"
+          if [[ "$signing_enabled" == true ]]; then
+            scripts/release/macos-sign.sh --require-notarize "dist/superba-$RELEASE_VERSION-macos-universal.dmg"
+          fi
+      - name: Clean up macOS signing material
+        if: ${{ always() }}
+        run: |
+          signing_dir="${SUPERBA_SIGNING_DIR:-}"
+          if [[ -n "$signing_dir" && -d "$signing_dir" && ! -L "$signing_dir" ]]; then
+            cleanup_status=0
+            if [[ -f "$signing_dir/keychains.before" ]]; then
+              original_keychains=()
+              while IFS= read -r keychain; do
+                keychain=${keychain#*\"}
+                keychain=${keychain%\"*}
+                [[ -z "$keychain" ]] || original_keychains+=("$keychain")
+              done < "$signing_dir/keychains.before"
+              if ((${#original_keychains[@]} > 0)); then
+                security list-keychains -d user -s "${original_keychains[@]}" || cleanup_status=1
+              else
+                security list-keychains -d user -s || cleanup_status=1
+              fi
+            fi
+            while IFS= read -r -d '' keychain; do
+              security delete-keychain "$keychain" || cleanup_status=1
+            done < <(find "$signing_dir" -type f -name '*.keychain-db' -print0)
+            rm -rf -- "$signing_dir"
+            exit "$cleanup_status"
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-macos-universal
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  sign-windows:
+    needs: [prepare, build]
+    runs-on: windows-latest
+    environment: release-signing
+    permissions:
+      contents: read
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-windows-x86_64
+          path: unsigned
+      # Optional Authenticode signing hook: configure both Windows secrets to
+      # enable this step. No Windows signing certificate is required to release.
+      - name: Detect optional Windows signing configuration
+        id: windows-signing
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+        run: |
+          $enabled = -not [string]::IsNullOrEmpty($env:WINDOWS_SIGNING_PFX_BASE64)
+          "enabled=$($enabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Sign Windows binaries (optional Authenticode)
+        if: steps.windows-signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfx = Join-Path $env:RUNNER_TEMP 'superba-signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64))
+          $sdkTools = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe"
+          $signtool = $sdkTools | Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (-not $signtool) { throw 'Windows SDK signtool.exe was not found' }
+          foreach ($binary in @('superba.exe', 'spb.exe', 'superba-router.exe')) {
+            $binaryPath = Join-Path "unsigned/windows" $binary
+            $signArgs = @('sign', '/fd', 'SHA256', '/f', $pfx, '/p', $env:WINDOWS_SIGNING_PFX_PASSWORD,
+                          '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', $binaryPath)
+            & $signtool.FullName @signArgs
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $binary" }
+            & $signtool.FullName verify /pa /all $binaryPath
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $binary" }
+          }
+      - name: Clean up Windows signing material
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'superba-signing.pfx'
+          if (Test-Path -LiteralPath $pfx) { Remove-Item -LiteralPath $pfx -Force }
+      - name: Package Windows binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $staging = Join-Path $env:RUNNER_TEMP "superba-$env:RELEASE_VERSION-windows-x86_64"
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item "unsigned/windows/*" -Destination $staging
+          Compress-Archive -Path "$staging/*" -DestinationPath "dist/superba-$env:RELEASE_VERSION-windows-x86_64.zip" -Force
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-windows-x86_64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [prepare, build, sign-macos, sign-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Create checksums and create or update the release
+        working-directory: dist
+        run: |
+          archives=(
+            "superba-$RELEASE_VERSION-linux-x86_64.tar.gz"
+            "superba-$RELEASE_VERSION-linux-aarch64.tar.gz"
+            "spb-$RELEASE_VERSION-linux-x86_64-musl.tar.gz"
+            "superba-$RELEASE_VERSION-macos-universal.zip"
+            "superba-$RELEASE_VERSION-macos-universal.dmg"
+            "superba-$RELEASE_VERSION-windows-x86_64.zip"
+          )
+          for archive in "${archives[@]}"; do
+            test -s "$archive"
+          done
+          sha256sum "${archives[@]}" > SHA256SUMS.txt
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            # Never replace the assets of a published release; re-runs may only
+            # refresh a draft.
+            if [[ "$(gh release view "$RELEASE_TAG" --json isDraft -q .isDraft)" != true ]]; then
+              printf '::error::Release %s is already published; refusing to replace its assets.\n' "$RELEASE_TAG"
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" "${archives[@]}" SHA256SUMS.txt --clobber
+          else
+            prerelease=()
+            [[ "$RELEASE_VERSION" == *-* ]] && prerelease=(--prerelease)
+            gh release create "$RELEASE_TAG" --draft "${prerelease[@]}" --generate-notes --verify-tag \
+              "${archives[@]}" SHA256SUMS.txt
+          fi

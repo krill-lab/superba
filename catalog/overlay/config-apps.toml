@@ -1,0 +1,427 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:apps"]
+en = "Settings for app-specific controls."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ec02d432dca3314f"
+zh_name = "应用连接器设置"
+zh = "ChatGPT 应用连接器（Apps，如 Google Drive、GitHub）在 Codex 中的启用、工具筛选和审批设置。`[apps._default]` 设置默认值，`[apps.<应用 ID>]` 单独设置某个应用。"
+zh_basis = "ec02d432dca3314f"
+
+["config:apps.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个应用"
+zh = "某个应用连接器的设置，表名为应用 ID（如 `google_drive`）。"
+zh_basis = ""
+
+["config:apps.<name>.approvals_reviewer"]
+en = "Reviewer for approval prompts from this app, overriding the thread default."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b38bbf79ba0eb844"
+zh_name = "审批审核者"
+zh = "该应用发起的审批请求交给谁审核，覆盖会话默认值：`user`（用户）或 `auto_review`（自动审核子代理）；旧值 `guardian_subagent` 等同于 `auto_review`。"
+zh_basis = "b38bbf79ba0eb844"
+
+["config:apps.<name>.default_tools_approval_mode"]
+en = "Approval mode for tools in this app unless a tool override exists."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "66f2f8fb8edf55e2"
+zh_name = "工具默认审批模式"
+zh = "该应用工具的默认审批模式，账号级和单个工具的设置优先：`auto` 按工具注解判断，`prompt` 每次都询问，`writes` 除标为只读的工具外都询问，`approve` 直接批准。"
+zh_basis = "66f2f8fb8edf55e2"
+
+["config:apps.<name>.default_tools_enabled"]
+en = "Whether tools are enabled by default for this app."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "e5747ecff9d60d6b"
+zh_name = "默认启用工具"
+zh = "该应用的工具是否默认启用。设置后会取代 `destructive_enabled` 和 `open_world_enabled` 的筛选；单个工具的 `enabled` 仍然优先。"
+zh_basis = "e5747ecff9d60d6b"
+
+["config:apps.<name>.destructive_enabled"]
+en = "Whether tools with `destructive_hint = true` are allowed for this app."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a0811be1525a7d9a"
+zh_name = "允许破坏性工具"
+zh = "是否允许使用该应用中可能有破坏性的工具（`destructive_hint = true`，未标注的也按破坏性处理）。未设置时沿用 `apps._default.destructive_enabled`。"
+zh_basis = "a0811be1525a7d9a"
+
+["config:apps.<name>.enabled"]
+en = "When `false`, Codex does not surface this app."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "af00155456eaa16d"
+zh_name = "启用此应用"
+zh = "设为 `false` 时 Codex 不再提供该应用及其工具；默认 `true`。"
+zh_basis = "af00155456eaa16d"
+
+["config:apps.<name>.links"]
+en = "Per-account approval settings keyed by link ID."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "bab0a1f72e116617"
+zh_name = "按账号设置"
+zh = "以已连接账号的 link ID 为键的审批设置，用于同一应用连接了多个账号时分别设置。"
+zh_basis = "bab0a1f72e116617"
+
+["config:apps.<name>.links.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个连接账号"
+zh = "该应用某个已连接账号的审批设置，表名为 link ID。"
+zh_basis = ""
+
+["config:apps.<name>.links.<name>.approvals_reviewer"]
+en = "Reviewer for approval prompts from this account, overriding the app default."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c314d3334a7f6fc3"
+zh_name = "审批审核者"
+zh = "来自该账号的审批请求交给谁审核（`user` 或 `auto_review`），覆盖应用级设置。"
+zh_basis = "c314d3334a7f6fc3"
+
+["config:apps.<name>.links.<name>.default_tools_approval_mode"]
+en = "Approval mode for this account unless a tool override exists."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "159a20ae54895e2a"
+zh_name = "工具默认审批模式"
+zh = "通过该账号调用工具时的默认审批模式（`auto`、`prompt`、`writes` 或 `approve`），覆盖应用级设置；单个工具的设置仍然优先。"
+zh_basis = "159a20ae54895e2a"
+
+["config:apps.<name>.omit_tools_from"]
+en = "Model-facing surfaces from which this connector's tools must be omitted, in addition to any server-level omissions. `None` leaves lower-priority configuration unchanged; an empty list clears connector-level omissions."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "b3b57397a8629177"
+zh_name = "隐藏工具的位置"
+zh = "该应用的工具不出现在哪些面向模型的位置（`direct`、`deferred`、`code_mode`），在服务器级设置之外额外生效。未设置时沿用较低优先级的配置，空列表表示清除应用级的隐藏设置。"
+zh_basis = "b3b57397a8629177"
+
+["config:apps.<name>.open_world_enabled"]
+en = "Whether tools with `open_world_hint = true` are allowed for this app."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3adc83c7ea178186"
+zh_name = "允许开放世界工具"
+zh = "是否允许使用该应用中会与外部世界交互的工具（`open_world_hint = true`，未标注的也按此处理）。未设置时沿用 `apps._default.open_world_enabled`。"
+zh_basis = "3adc83c7ea178186"
+
+["config:apps.<name>.tools"]
+en = "Per-tool settings for this app."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5ea3afdb7d150f1f"
+zh_name = "按工具设置"
+zh = "该应用中以工具名（如 `repos/list`）为键的单个工具设置。"
+zh_basis = "5ea3afdb7d150f1f"
+
+["config:apps.<name>.tools.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个工具"
+zh = "应用中某个工具的设置，表名为工具名或工具标题，可设置 `enabled` 和 `approval_mode`。"
+zh_basis = ""
+
+["config:apps.<name>.tools.<name>.approval_mode"]
+en = "Approval mode for this tool."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fd322b11a5de8d57"
+zh_name = "审批模式"
+zh = "该工具的审批模式（`auto`、`prompt`、`writes` 或 `approve`），优先于账号级和应用级默认值；管理员下发的设置除外。"
+zh_basis = "fd322b11a5de8d57"
+
+["config:apps.<name>.tools.<name>.enabled"]
+en = "Whether this tool is enabled. `Some(true)` explicitly allows this tool."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d7c0e6929d66b051"
+zh_name = "启用此工具"
+zh = "是否启用该工具；`true` 表示明确放行，即使应用默认值或破坏性筛选本会禁用它。应用本身被禁用时此项不起作用。"
+zh_basis = "d7c0e6929d66b051"
+
+["config:apps._default"]
+en = "Default settings for all apps."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "cbb1c47261f6e2e4"
+zh_name = "应用默认设置"
+zh = "对所有应用生效的默认设置，可被单个应用的设置覆盖。"
+zh_basis = "cbb1c47261f6e2e4"
+
+["config:apps._default.approvals_reviewer"]
+en = "Reviewer for approval prompts unless overridden by per-app settings."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1f63c01f252bcc7d"
+zh_name = "默认审批审核者"
+zh = "应用审批请求默认交给谁审核（`user` 或 `auto_review`），可被单个应用的设置覆盖。"
+zh_basis = "1f63c01f252bcc7d"
+
+["config:apps._default.default_tools_approval_mode"]
+en = "Approval mode for tools unless overridden by per-app or per-tool settings."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2a7c1755271bab0e"
+zh_name = "默认工具审批模式"
+zh = "所有应用工具的默认审批模式（`auto`、`prompt`、`writes` 或 `approve`），可被单个应用或工具的设置覆盖；未设置时为 `auto`。"
+zh_basis = "2a7c1755271bab0e"
+
+["config:apps._default.destructive_enabled"]
+en = "Whether tools with `destructive_hint = true` are allowed by default."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c7a173fe3486234c"
+zh_name = "默认允许破坏性工具"
+zh = "是否默认允许可能有破坏性的应用工具（`destructive_hint = true` 或未标注），默认 `true`。"
+zh_basis = "c7a173fe3486234c"
+
+["config:apps._default.enabled"]
+en = "When `false`, apps are disabled unless overridden by per-app settings."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b930631f941b5160"
+zh_name = "默认启用应用"
+zh = "设为 `false` 时所有应用默认禁用，只有单独设置了 `enabled = true` 的应用可用；默认 `true`。"
+zh_basis = "b930631f941b5160"
+
+["config:apps._default.open_world_enabled"]
+en = "Whether tools with `open_world_hint = true` are allowed by default."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "8ba1042697ee4bbb"
+zh_name = "默认允许开放世界工具"
+zh = "是否默认允许会与外部世界交互的应用工具（`open_world_hint = true` 或未标注），默认 `true`。"
+zh_basis = "8ba1042697ee4bbb"
+
+["config:apps_mcp_product_sku"]
+en = "Optional product SKU forwarded on host-owned Codex Apps MCP requests."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "516171c408c4f84f"
+zh_name = "应用 MCP 产品 SKU"
+zh = "访问内置 Codex Apps MCP 服务器时通过 `X-OpenAI-Product-Sku` 请求头发送的产品标识，默认 `codex`，一般由宿主程序设置。项目内 `.codex/config.toml` 中的此项会被忽略。"
+zh_basis = "516171c408c4f84f"
+
+["config:marketplaces"]
+en = "User-level marketplace entries keyed by marketplace name."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "9c1ff30e09088daa"
+zh_name = "插件市场"
+zh = "已添加的插件市场，以市场名称为键。条目通常由 Codex 在添加或刷新市场时写入，记录来源和最近一次同步的状态。"
+zh_basis = "9c1ff30e09088daa"
+
+["config:marketplaces.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个插件市场"
+zh = "某个插件市场的记录，表名为市场名称，包含来源类型、来源地址、Git 引用和同步状态。"
+zh_basis = ""
+
+["config:marketplaces.<name>.last_revision"]
+en = "Git revision Codex last successfully activated for this marketplace."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d67b7f7c43d4ca4c"
+zh_name = "最近同步版本"
+zh = "Codex 最近一次成功启用的该市场 Git 提交版本，由 Codex 自动维护。"
+zh_basis = "d67b7f7c43d4ca4c"
+
+["config:marketplaces.<name>.last_updated"]
+en = "Last time Codex successfully added or refreshed this marketplace."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "39e18419925dede0"
+zh_name = "最近更新时间"
+zh = "Codex 最近一次成功添加或刷新该市场的时间，由 Codex 自动维护。"
+zh_basis = "39e18419925dede0"
+
+["config:marketplaces.<name>.ref"]
+en = "Git ref to check out when `source_type` is `git`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3e8f22461df82d87"
+zh_name = "Git 引用"
+zh = "`source_type` 为 `git` 时要检出的分支、标签或提交。"
+zh_basis = "3e8f22461df82d87"
+
+["config:marketplaces.<name>.source"]
+en = "Source location used when the marketplace was added."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7adf058654aefb9b"
+zh_name = "市场来源"
+zh = "添加该市场时使用的来源位置，例如 Git 仓库地址或本地目录路径。"
+zh_basis = "7adf058654aefb9b"
+
+["config:marketplaces.<name>.source_type"]
+en = "Source kind used to install this marketplace."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "18e8d45d42e72572"
+zh_name = "来源类型"
+zh = "安装该市场时使用的来源类型：`git`（Git 仓库）或 `local`（本地目录）。"
+zh_basis = "18e8d45d42e72572"
+
+["config:marketplaces.<name>.sparse_paths"]
+en = "Sparse checkout paths used when `source_type` is `git`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6623530930f037ad"
+zh_name = "稀疏检出路径"
+zh = "`source_type` 为 `git` 时只检出的仓库子路径列表（稀疏检出）。"
+zh_basis = "6623530930f037ad"
+
+["config:plugins"]
+en = "Default and per-plugin settings keyed by exact `<plugin>@<marketplace>` IDs."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "e19e257acd82d8d5"
+zh_name = "插件设置"
+zh = "插件的启用设置和插件自带 MCP 服务器的策略，以 `<插件>@<市场>` 形式的完整插件 ID 为键；`[plugins._default]` 设置已安装插件的默认启用状态。"
+zh_basis = "e19e257acd82d8d5"
+
+["config:plugins.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个插件"
+zh = "某个插件的设置，表名为完整的 `<插件>@<市场>` ID。"
+zh_basis = ""
+
+["config:plugins.<name>.enabled"]
+en = "Explicit activation override. Omission inherits the installed-plugin default."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "55847dafe4b55856"
+zh_name = "启用此插件"
+zh = "明确启用或停用该插件；未设置时沿用 `plugins._default` 或插件安装来源的默认状态。"
+zh_basis = "55847dafe4b55856"
+
+["config:plugins.<name>.mcp_servers"]
+en = "Per-MCP-server policy overlays for MCP servers contributed by this plugin."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "211c6dd00dc76240"
+zh_name = "插件的 MCP 服务器"
+zh = "针对该插件自带 MCP 服务器的策略覆盖，以服务器名为键。只能调整启用、审批和工具筛选，启动方式仍由插件清单决定。"
+zh_basis = "211c6dd00dc76240"
+
+["config:plugins.<name>.mcp_servers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个插件 MCP 服务器"
+zh = "插件中某个 MCP 服务器的策略设置，表名为服务器名。"
+zh_basis = ""
+
+["config:plugins.<name>.mcp_servers.<name>.default_tools_approval_mode"]
+en = "Approval mode for tools in this server unless a tool override exists."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "35a859024c7db938"
+zh_name = "工具默认审批模式"
+zh = "该服务器工具的默认审批模式（`auto`、`prompt`、`writes` 或 `approve`），单个工具的设置优先。"
+zh_basis = "35a859024c7db938"
+
+["config:plugins.<name>.mcp_servers.<name>.disabled_tools"]
+en = "Explicit deny-list of tools. These tools are removed after applying `enabled_tools`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "34d4255b8f13a7d7"
+zh_name = "禁用的工具"
+zh = "不向模型提供的工具名列表（黑名单），在 `enabled_tools` 筛选之后再移除。"
+zh_basis = "34d4255b8f13a7d7"
+
+["config:plugins.<name>.mcp_servers.<name>.ema_auth"]
+en = "Host-configured EMA registration; the plugin still owns its endpoint."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "71c70ddfc2968ace"
+zh_name = "企业托管授权（旧）"
+zh = "Codex 0.156–0.160 中由宿主为插件 MCP 服务器配置的企业托管授权（EMA）注册信息，服务地址仍由插件声明。之后的版本已移除此项，配置中保留它会导致该插件 MCP 服务器被停用。"
+zh_basis = "71c70ddfc2968ace"
+
+["config:plugins.<name>.mcp_servers.<name>.ema_auth.authorization_server_issuer"]
+en = ""
+en_hash = ""
+zh_name = "授权服务器签发方"
+zh = "仅 Codex 0.156–0.160：企业托管授权中资源授权服务器的 issuer。"
+zh_basis = ""
+
+["config:plugins.<name>.mcp_servers.<name>.ema_auth.client_id"]
+en = ""
+en_hash = ""
+zh_name = "客户端 ID"
+zh = "仅 Codex 0.156–0.160：企业托管授权使用的 OAuth 客户端 ID。"
+zh_basis = ""
+
+["config:plugins.<name>.mcp_servers.<name>.ema_auth.resource"]
+en = ""
+en_hash = ""
+zh_name = "资源标识"
+zh = "仅 Codex 0.156–0.160：企业托管授权换取令牌时的 `resource` 参数，不能为空。"
+zh_basis = ""
+
+["config:plugins.<name>.mcp_servers.<name>.ema_auth.scopes"]
+en = ""
+en_hash = ""
+zh_name = "权限范围"
+zh = "仅 Codex 0.156–0.160：企业托管授权请求的 OAuth scope 列表，默认为空。"
+zh_basis = ""
+
+["config:plugins.<name>.mcp_servers.<name>.ema_auth.url"]
+en = "Exact plugin endpoint approved by the host; never overrides the declaration."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "a918e20e2aa9ed8b"
+zh_name = "服务地址"
+zh = "仅 Codex 0.156–0.160：宿主批准的插件 MCP 服务精确地址，必须与插件声明一致，不会覆盖插件的声明。"
+zh_basis = "a918e20e2aa9ed8b"
+
+["config:plugins.<name>.mcp_servers.<name>.enabled"]
+en = "When `false`, Codex skips initializing this plugin MCP server."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "5e1aa97d01b51ac2"
+zh_name = "启用此服务器"
+zh = "设为 `false` 时 Codex 不初始化该插件 MCP 服务器；默认 `true`。"
+zh_basis = "5e1aa97d01b51ac2"
+
+["config:plugins.<name>.mcp_servers.<name>.enabled_tools"]
+en = "Explicit allow-list of tools exposed from this server."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "3fe016dac8f2ec1c"
+zh_name = "允许的工具"
+zh = "只向模型提供这些工具（白名单）；未设置时提供该服务器的全部工具。"
+zh_basis = "3fe016dac8f2ec1c"
+
+["config:plugins.<name>.mcp_servers.<name>.tools"]
+en = "Per-tool policy settings keyed by tool name."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "138dff9e52ca48d5"
+zh_name = "按工具设置"
+zh = "以工具名为键的单个工具策略设置。"
+zh_basis = "138dff9e52ca48d5"
+
+["config:plugins.<name>.mcp_servers.<name>.tools.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个工具"
+zh = "插件 MCP 服务器中某个工具的设置，可指定 `approval_mode` 和 `output_token_limit`。"
+zh_basis = ""
+
+["config:plugins.<name>.mcp_servers.<name>.tools.<name>.approval_mode"]
+en = "Approval mode for this tool."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fd322b11a5de8d57"
+zh_name = "审批模式"
+zh = "该工具的审批模式（`auto`、`prompt`、`writes` 或 `approve`），优先于服务器的默认审批模式。"
+zh_basis = "fd322b11a5de8d57"
+
+["config:plugins.<name>.mcp_servers.<name>.tools.<name>.output_token_limit"]
+en = "Token budget for this tool's output, before the standard 20% serialization allowance."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6a30a34a860639a0"
+zh_name = "输出 token 上限"
+zh = "该工具输出最多保留给模型的 token 数，超出部分会被截断；实际允许量另加约 20% 的序列化余量。"
+zh_basis = "6a30a34a860639a0"
+
+["config:plugins._default"]
+en = "Defaults for installed plugin activation. Omission preserves source enablement. Explicit plugin enablement settings override this default, but cannot enable an installation disabled by its source."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "17438b79ee4b653c"
+zh_name = "插件默认启用状态"
+zh = "已安装插件的默认启用设置（Codex 0.163 起）。未设置时保持插件来源和账号原有的启用状态；单个插件的 `enabled` 优先，但不能启用被安装来源停用的插件。"
+zh_basis = "17438b79ee4b653c"
+
+["config:plugins._default.enabled"]
+en = ""
+en_hash = ""
+zh_name = "默认启用插件"
+zh = "已安装插件是否默认启用，默认 `true`；设为 `false` 时只有单独设置了 `enabled = true` 的插件才会生效。"
+zh_basis = ""

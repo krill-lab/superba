@@ -1,0 +1,584 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:analytics"]
+en = "When `enabled` is `false`, disables OpenAI analytics across Codex product surfaces on this machine. Custom OTLP metrics exporters are controlled by `otel.metrics_exporter`. When unset, the default depends on the client."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "dbcd80aeac12f979"
+zh_name = "使用统计"
+zh = "控制 OpenAI 的使用统计（analytics）：`enabled = false` 时在本机所有 Codex 产品界面关闭。自定义 OTLP 指标导出器不受影响，由 `otel.metrics_exporter` 单独控制；未设置时默认值取决于客户端（终端界面（TUI）和 `codex exec` 默认开启，`codex app-server` 默认关闭，除非以 `--analytics-default-enabled` 启动）。"
+zh_basis = "dbcd80aeac12f979"
+
+["config:analytics.enabled"]
+en = 'When `false`, disables OpenAI analytics across Codex product surfaces in this profile. Custom OTLP metrics exporters remain enabled; set `otel.metrics_exporter = "none"` to disable them.'
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "c171fd8fa654ad1c"
+zh_name = "启用使用统计"
+zh = '设为 `false` 时关闭 OpenAI 使用统计，包括发往 ChatGPT 后端的使用事件和内置 `statsig` 通道的指标。自定义 OTLP 指标导出器仍会工作，要一并关闭需设置 `otel.metrics_exporter = "none"`；未设置时按客户端的默认值。'
+zh_basis = "c171fd8fa654ad1c"
+
+["config:feedback"]
+en = "When `false`, disables feedback collection across Codex product surfaces. Defaults to `true`."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c47180f0bebe3290"
+zh_name = "反馈功能"
+zh = "控制各 Codex 产品界面的反馈功能，例如终端界面（TUI）的 `/feedback` 命令和 app-server 的反馈上传。默认开启，`enabled = false` 时关闭。"
+zh_basis = "c47180f0bebe3290"
+
+["config:feedback.enabled"]
+en = "When `false`, disables the feedback flow across Codex product surfaces."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "30fd5956b603d945"
+zh_name = "启用反馈"
+zh = "设为 `false` 时关闭反馈流程：终端界面（TUI）的 `/feedback` 只提示已禁用，app-server 拒绝反馈上传请求。默认 `true`。"
+zh_basis = "30fd5956b603d945"
+
+["config:otel"]
+en = "OTEL configuration."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6e6bc996518cb2c1"
+zh_name = "OpenTelemetry 遥测"
+zh = "OpenTelemetry（OTEL）遥测设置：日志、追踪和指标分别由 `exporter`、`trace_exporter`、`metrics_exporter` 决定导出到哪里。默认不导出日志和追踪，指标走内置的 `statsig` 通道（受 `analytics.enabled` 控制）；项目内的 `.codex/config.toml` 不能设置此表。"
+zh_basis = "6e6bc996518cb2c1"
+
+["config:otel.environment"]
+en = "Mark traces with environment (dev, staging, prod, test). Defaults to dev."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c5367b1afc9fb63d"
+zh_name = "遥测环境标签"
+zh = "写入导出数据的环境标签（如 `dev`、`staging`、`prod`、`test`），用于在收集端区分数据来源。默认 `dev`。"
+zh_basis = "c5367b1afc9fb63d"
+
+["config:otel.exporter"]
+en = "Optional log exporter"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fac88862a425ec43"
+zh_name = "日志导出器"
+zh = "OTEL 日志事件（如用户提示、工具结果、API 请求）的导出方式：`none`（默认，不导出）、`statsig`（发往 OpenAI 内置的收集端点），或用 `{ otlp-http = { … } }`、`{ otlp-grpc = { … } }` 指向自己的 OTLP 收集器。"
+zh_basis = "fac88862a425ec43"
+
+["config:otel.exporter.otlp-grpc"]
+en = ""
+en_hash = ""
+zh_name = "日志 OTLP gRPC 导出"
+zh = "通过 OTLP/gRPC 把日志事件发送到自己的收集器。必填 `endpoint`，可选 `headers` 和 `tls`。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-grpc.endpoint"]
+en = ""
+en_hash = ""
+zh_name = "日志 gRPC 端点"
+zh = "接收日志的 OTLP gRPC 收集器地址，例如 `https://otel.example.com:4317`。必填。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-grpc.headers"]
+en = ""
+en_hash = ""
+zh_name = "日志 gRPC 请求头"
+zh = "导出日志时附带的额外请求头（gRPC 元数据），常用于向收集器认证。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-grpc.headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "日志 gRPC 请求头项"
+zh = "一条请求头：键为名称，值为发送的内容。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-grpc.tls"]
+en = ""
+en_hash = ""
+zh_name = "日志 gRPC TLS"
+zh = "连接日志收集器时的 TLS 设置：可以指定自定义 CA 证书，或同时提供客户端证书和私钥启用双向 TLS（mTLS）。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-grpc.tls.ca-certificate"]
+en = ""
+en_hash = ""
+zh_name = "日志 gRPC CA 证书"
+zh = "用于校验日志收集器服务端证书的 CA 证书文件路径（PEM 格式）。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-grpc.tls.client-certificate"]
+en = ""
+en_hash = ""
+zh_name = "日志 gRPC 客户端证书"
+zh = "双向 TLS 使用的客户端证书文件路径（PEM 格式），必须与 `client-private-key` 一起设置。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-grpc.tls.client-private-key"]
+en = ""
+en_hash = ""
+zh_name = "日志 gRPC 客户端私钥"
+zh = "双向 TLS 使用的客户端私钥文件路径（PEM 格式），必须与 `client-certificate` 一起设置。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-http"]
+en = ""
+en_hash = ""
+zh_name = "日志 OTLP HTTP 导出"
+zh = "通过 OTLP/HTTP 把日志事件发送到自己的收集器。必填 `endpoint` 和 `protocol`，可选 `headers` 和 `tls`。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-http.endpoint"]
+en = ""
+en_hash = ""
+zh_name = "日志 HTTP 端点"
+zh = "接收日志的完整 URL，例如 `https://otel.example.com/v1/logs`。Codex 的 OTLP HTTP 端点按信号区分，不会自动补路径，日志、追踪、指标要分别填写；必填。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-http.headers"]
+en = ""
+en_hash = ""
+zh_name = "日志 HTTP 请求头"
+zh = "导出日志时附带的额外 HTTP 请求头，常用于向收集器认证。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-http.headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "日志 HTTP 请求头项"
+zh = "一条请求头：键为名称，值为发送的内容。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-http.protocol"]
+en = ""
+en_hash = ""
+zh_name = "日志 HTTP 编码格式"
+zh = "导出日志时 OTLP/HTTP 请求体的编码：`binary`（Protobuf 二进制）或 `json`。必填。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-http.protocol=binary"]
+en = "Binary payload"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1cf35f10c3223c67"
+zh_name = "二进制（Protobuf）"
+zh = "日志请求体以 Protobuf 二进制格式编码。"
+zh_basis = "1cf35f10c3223c67"
+
+["config:otel.exporter.otlp-http.protocol=json"]
+en = "JSON payload"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "90e460a2633cb0db"
+zh_name = "JSON"
+zh = "日志请求体以 JSON 格式编码。"
+zh_basis = "90e460a2633cb0db"
+
+["config:otel.exporter.otlp-http.tls"]
+en = ""
+en_hash = ""
+zh_name = "日志 HTTP TLS"
+zh = "连接日志收集器时的 TLS 设置：可以指定自定义 CA 证书，或同时提供客户端证书和私钥启用双向 TLS（mTLS）。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-http.tls.ca-certificate"]
+en = ""
+en_hash = ""
+zh_name = "日志 HTTP CA 证书"
+zh = "用于校验日志收集器服务端证书的 CA 证书文件路径（PEM 格式）。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-http.tls.client-certificate"]
+en = ""
+en_hash = ""
+zh_name = "日志 HTTP 客户端证书"
+zh = "双向 TLS 使用的客户端证书文件路径（PEM 格式），必须与 `client-private-key` 一起设置；设置后只允许 HTTPS 连接。"
+zh_basis = ""
+
+["config:otel.exporter.otlp-http.tls.client-private-key"]
+en = ""
+en_hash = ""
+zh_name = "日志 HTTP 客户端私钥"
+zh = "双向 TLS 使用的客户端私钥文件路径（PEM 格式），必须与 `client-certificate` 一起设置。"
+zh_basis = ""
+
+["config:otel.log_agent_responses"]
+en = "Opt in to logging final main-agent and spawned-subagent responses to an OTLP log exporter. Defaults to false. Response text can be sensitive and is capped at 64 KiB."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "3d4e6546ef71ad55"
+zh_name = "记录代理最终回复"
+zh = "是否把主代理和子代理的最终回复文本写入 OTLP 日志。默认 `false`，且只有 `otel.exporter` 设为 `otlp-http` 或 `otlp-grpc` 时才生效；回复可能包含敏感内容，每条最多记录 64 KiB。"
+zh_basis = "3d4e6546ef71ad55"
+
+["config:otel.log_guardian_assessments"]
+en = "Opt in to logging completed Guardian assessments to an OTLP log exporter. Defaults to false. Rationales can be sensitive and are capped at 64 KiB."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "f8bfbe35b29c6daa"
+zh_name = "记录 Guardian 评估"
+zh = "是否把已完成的 Guardian（自动审批审查）评估写入 OTLP 日志。默认 `false`，且只有 `otel.exporter` 设为 `otlp-http` 或 `otlp-grpc` 时才生效；评估理由可能包含敏感内容，每条最多记录 64 KiB。"
+zh_basis = "f8bfbe35b29c6daa"
+
+["config:otel.log_user_prompt"]
+en = "Log user prompt in traces"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a7ed9c9e51fa7613"
+zh_name = "记录用户提示词"
+zh = "是否在 OTEL 日志的 `codex.user_prompt` 事件里记录用户提示词原文。默认 `false`，此时正文以 `[REDACTED]` 代替，只保留长度；追踪数据始终只含长度和输入数量（依据 0.163 源码，官方英文写的是“traces”）。"
+zh_basis = "a7ed9c9e51fa7613"
+
+["config:otel.metrics_exporter"]
+en = "Metrics exporter. Defaults to `statsig`, which follows `analytics.enabled`. Custom OTLP exporters are independent of `analytics.enabled`; `none` disables metrics export."
+en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
+en_hash = "411558644ad477c9"
+zh_name = "指标导出器"
+zh = "指标的导出方式。默认 `statsig`，即 OpenAI 内置通道，是否发送跟随 `analytics.enabled`；自定义的 `otlp-http`、`otlp-grpc` 导出器不受 `analytics.enabled` 影响；设为 `none` 关闭指标导出。"
+zh_basis = "411558644ad477c9"
+
+["config:otel.metrics_exporter.otlp-grpc"]
+en = ""
+en_hash = ""
+zh_name = "指标 OTLP gRPC 导出"
+zh = "通过 OTLP/gRPC 把指标发送到自己的收集器，不受 `analytics.enabled` 影响。必填 `endpoint`，可选 `headers` 和 `tls`。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-grpc.endpoint"]
+en = ""
+en_hash = ""
+zh_name = "指标 gRPC 端点"
+zh = "接收指标的 OTLP gRPC 收集器地址，例如 `https://otel.example.com:4317`。必填。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-grpc.headers"]
+en = ""
+en_hash = ""
+zh_name = "指标 gRPC 请求头"
+zh = "导出指标时附带的额外请求头（gRPC 元数据），常用于向收集器认证。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-grpc.headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "指标 gRPC 请求头项"
+zh = "一条请求头：键为名称，值为发送的内容。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-grpc.tls"]
+en = ""
+en_hash = ""
+zh_name = "指标 gRPC TLS"
+zh = "连接指标收集器时的 TLS 设置：可以指定自定义 CA 证书，或同时提供客户端证书和私钥启用双向 TLS（mTLS）。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-grpc.tls.ca-certificate"]
+en = ""
+en_hash = ""
+zh_name = "指标 gRPC CA 证书"
+zh = "用于校验指标收集器服务端证书的 CA 证书文件路径（PEM 格式）。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-grpc.tls.client-certificate"]
+en = ""
+en_hash = ""
+zh_name = "指标 gRPC 客户端证书"
+zh = "双向 TLS 使用的客户端证书文件路径（PEM 格式），必须与 `client-private-key` 一起设置。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-grpc.tls.client-private-key"]
+en = ""
+en_hash = ""
+zh_name = "指标 gRPC 客户端私钥"
+zh = "双向 TLS 使用的客户端私钥文件路径（PEM 格式），必须与 `client-certificate` 一起设置。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-http"]
+en = ""
+en_hash = ""
+zh_name = "指标 OTLP HTTP 导出"
+zh = "通过 OTLP/HTTP 把指标发送到自己的收集器，不受 `analytics.enabled` 影响。必填 `endpoint` 和 `protocol`，可选 `headers` 和 `tls`。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-http.endpoint"]
+en = ""
+en_hash = ""
+zh_name = "指标 HTTP 端点"
+zh = "接收指标的完整 URL，例如 `https://otel.example.com/v1/metrics`。不会自动补路径，需与日志、追踪的地址分别填写；必填。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-http.headers"]
+en = ""
+en_hash = ""
+zh_name = "指标 HTTP 请求头"
+zh = "导出指标时附带的额外 HTTP 请求头，常用于向收集器认证。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-http.headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "指标 HTTP 请求头项"
+zh = "一条请求头：键为名称，值为发送的内容。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-http.protocol"]
+en = ""
+en_hash = ""
+zh_name = "指标 HTTP 编码格式"
+zh = "导出指标时 OTLP/HTTP 请求体的编码：`binary`（Protobuf 二进制）或 `json`。必填。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-http.protocol=binary"]
+en = "Binary payload"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1cf35f10c3223c67"
+zh_name = "二进制（Protobuf）"
+zh = "指标请求体以 Protobuf 二进制格式编码。"
+zh_basis = "1cf35f10c3223c67"
+
+["config:otel.metrics_exporter.otlp-http.protocol=json"]
+en = "JSON payload"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "90e460a2633cb0db"
+zh_name = "JSON"
+zh = "指标请求体以 JSON 格式编码；内置的 `statsig` 通道也使用这种格式。"
+zh_basis = "90e460a2633cb0db"
+
+["config:otel.metrics_exporter.otlp-http.tls"]
+en = ""
+en_hash = ""
+zh_name = "指标 HTTP TLS"
+zh = "连接指标收集器时的 TLS 设置：可以指定自定义 CA 证书，或同时提供客户端证书和私钥启用双向 TLS（mTLS）。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-http.tls.ca-certificate"]
+en = ""
+en_hash = ""
+zh_name = "指标 HTTP CA 证书"
+zh = "用于校验指标收集器服务端证书的 CA 证书文件路径（PEM 格式）。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-http.tls.client-certificate"]
+en = ""
+en_hash = ""
+zh_name = "指标 HTTP 客户端证书"
+zh = "双向 TLS 使用的客户端证书文件路径（PEM 格式），必须与 `client-private-key` 一起设置；设置后只允许 HTTPS 连接。"
+zh_basis = ""
+
+["config:otel.metrics_exporter.otlp-http.tls.client-private-key"]
+en = ""
+en_hash = ""
+zh_name = "指标 HTTP 客户端私钥"
+zh = "双向 TLS 使用的客户端私钥文件路径（PEM 格式），必须与 `client-certificate` 一起设置。"
+zh_basis = ""
+
+["config:otel.span_attributes"]
+en = "Attributes to add to every exported trace span."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2fc916ea15026b76"
+zh_name = "追踪附加属性"
+zh = '附加到每个导出的追踪 span 上的键值属性，例如 `{ team = "infra" }`。只在配置了追踪导出器时使用；键不能为空，无效的项会在启动时给出警告并被忽略。'
+zh_basis = "2fc916ea15026b76"
+
+["config:otel.span_attributes.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个追踪属性"
+zh = "一条 span 属性：键是属性名（不能为空），值是字符串。"
+zh_basis = ""
+
+["config:otel.tool_result"]
+en = "Byte limit for tool-result log output; independent of model-visible output."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fafd3cabd3d4aa0b"
+zh_name = "工具结果日志限制"
+zh = "控制遥测日志的 `codex.tool_result` 事件里最多记录多少工具输出；只影响日志，不影响模型看到的内容。"
+zh_basis = "fafd3cabd3d4aa0b"
+
+["config:otel.tool_result.max_bytes"]
+en = "Maximum UTF-8 bytes before the truncation notice. Defaults to 2048."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "159e0f92b6924026"
+zh_name = "工具结果日志上限"
+zh = "工具输出写入日志前允许的最大 UTF-8 字节数，超出部分截断并附上截断提示。默认 2048；调大会让更多工具数据进入日志。"
+zh_basis = "159e0f92b6924026"
+
+["config:otel.trace_exporter"]
+en = "Optional trace exporter"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "895d903f376e918f"
+zh_name = "追踪导出器"
+zh = "追踪（trace span）的导出方式：`none`（默认，不导出）、`statsig`（发往 OpenAI 内置的收集端点），或 `otlp-http`、`otlp-grpc` 自己的收集器。它与日志导出器相互独立，开启日志导出不会顺带导出追踪。"
+zh_basis = "895d903f376e918f"
+
+["config:otel.trace_exporter.otlp-grpc"]
+en = ""
+en_hash = ""
+zh_name = "追踪 OTLP gRPC 导出"
+zh = "通过 OTLP/gRPC 把追踪 span 发送到自己的收集器。必填 `endpoint`，可选 `headers` 和 `tls`。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-grpc.endpoint"]
+en = ""
+en_hash = ""
+zh_name = "追踪 gRPC 端点"
+zh = "接收追踪的 OTLP gRPC 收集器地址，例如 `https://otel.example.com:4317`。必填。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-grpc.headers"]
+en = ""
+en_hash = ""
+zh_name = "追踪 gRPC 请求头"
+zh = "导出追踪时附带的额外请求头（gRPC 元数据），常用于向收集器认证。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-grpc.headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "追踪 gRPC 请求头项"
+zh = "一条请求头：键为名称，值为发送的内容。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-grpc.tls"]
+en = ""
+en_hash = ""
+zh_name = "追踪 gRPC TLS"
+zh = "连接追踪收集器时的 TLS 设置：可以指定自定义 CA 证书，或同时提供客户端证书和私钥启用双向 TLS（mTLS）。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-grpc.tls.ca-certificate"]
+en = ""
+en_hash = ""
+zh_name = "追踪 gRPC CA 证书"
+zh = "用于校验追踪收集器服务端证书的 CA 证书文件路径（PEM 格式）。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-grpc.tls.client-certificate"]
+en = ""
+en_hash = ""
+zh_name = "追踪 gRPC 客户端证书"
+zh = "双向 TLS 使用的客户端证书文件路径（PEM 格式），必须与 `client-private-key` 一起设置。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-grpc.tls.client-private-key"]
+en = ""
+en_hash = ""
+zh_name = "追踪 gRPC 客户端私钥"
+zh = "双向 TLS 使用的客户端私钥文件路径（PEM 格式），必须与 `client-certificate` 一起设置。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-http"]
+en = ""
+en_hash = ""
+zh_name = "追踪 OTLP HTTP 导出"
+zh = "通过 OTLP/HTTP 把追踪 span 发送到自己的收集器。必填 `endpoint` 和 `protocol`，可选 `headers` 和 `tls`。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-http.endpoint"]
+en = ""
+en_hash = ""
+zh_name = "追踪 HTTP 端点"
+zh = "接收追踪的完整 URL，例如 `https://otel.example.com/v1/traces`。不会自动补路径，需与日志、指标的地址分别填写；必填。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-http.headers"]
+en = ""
+en_hash = ""
+zh_name = "追踪 HTTP 请求头"
+zh = "导出追踪时附带的额外 HTTP 请求头，常用于向收集器认证。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-http.headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "追踪 HTTP 请求头项"
+zh = "一条请求头：键为名称，值为发送的内容。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-http.protocol"]
+en = ""
+en_hash = ""
+zh_name = "追踪 HTTP 编码格式"
+zh = "导出追踪时 OTLP/HTTP 请求体的编码：`binary`（Protobuf 二进制）或 `json`。必填。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-http.protocol=binary"]
+en = "Binary payload"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "1cf35f10c3223c67"
+zh_name = "二进制（Protobuf）"
+zh = "追踪请求体以 Protobuf 二进制格式编码。"
+zh_basis = "1cf35f10c3223c67"
+
+["config:otel.trace_exporter.otlp-http.protocol=json"]
+en = "JSON payload"
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "90e460a2633cb0db"
+zh_name = "JSON"
+zh = "追踪请求体以 JSON 格式编码。"
+zh_basis = "90e460a2633cb0db"
+
+["config:otel.trace_exporter.otlp-http.tls"]
+en = ""
+en_hash = ""
+zh_name = "追踪 HTTP TLS"
+zh = "连接追踪收集器时的 TLS 设置：可以指定自定义 CA 证书，或同时提供客户端证书和私钥启用双向 TLS（mTLS）。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-http.tls.ca-certificate"]
+en = ""
+en_hash = ""
+zh_name = "追踪 HTTP CA 证书"
+zh = "用于校验追踪收集器服务端证书的 CA 证书文件路径（PEM 格式）。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-http.tls.client-certificate"]
+en = ""
+en_hash = ""
+zh_name = "追踪 HTTP 客户端证书"
+zh = "双向 TLS 使用的客户端证书文件路径（PEM 格式），必须与 `client-private-key` 一起设置；设置后只允许 HTTPS 连接。"
+zh_basis = ""
+
+["config:otel.trace_exporter.otlp-http.tls.client-private-key"]
+en = ""
+en_hash = ""
+zh_name = "追踪 HTTP 客户端私钥"
+zh = "双向 TLS 使用的客户端私钥文件路径（PEM 格式），必须与 `client-certificate` 一起设置。"
+zh_basis = ""
+
+["config:otel.tracestate"]
+en = "Semicolon-separated `key:value` fields to upsert into W3C tracestate members."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "2941b7f21d665a4b"
+zh_name = "W3C tracestate 字段"
+zh = '写入向外传播的 W3C `tracestate` 请求头的字段，写法为 `[otel.tracestate.<成员>]` 下的 `字段 = "值"`。Codex 把它编码成 `成员=字段:值;字段:值`，只更新这些字段、保留同一成员中的其他字段；格式无效的项会在启动时警告并忽略。'
+zh_basis = "2941b7f21d665a4b"
+
+["config:otel.tracestate.<name>"]
+en = ""
+en_hash = ""
+zh_name = "tracestate 成员"
+zh = "一个 tracestate 成员（列表项的键），其下的字段会以分号分隔的 `字段:值` 形式合并成该成员的值。"
+zh_basis = ""
+
+["config:otel.tracestate.<name>.<name>"]
+en = ""
+en_hash = ""
+zh_name = "tracestate 字段"
+zh = "成员中的一个字段：字段名不能含 `:`、`;`、`,`、`=`，值不能含 `,`、`=`、`;`。同名字段会覆盖上游传来的旧值。"
+zh_basis = ""
+
+["config:responses_api_metadata"]
+en = "Bounded, product-owned metadata attached to every Responses API request."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "30e2501c1bf4be1b"
+zh_name = "Responses 请求元数据"
+zh = "随每个 Responses API 请求一起发送的自定义元数据（写入请求的 `client_metadata`）。最多 16 项；键须以字母开头、只含字母数字和 `_`、`.`、`-`、不超过 64 字节，值不超过 128 字节，Codex 保留的键会被拒绝；项目内的 `.codex/config.toml` 不能设置此项。"
+zh_basis = "30e2501c1bf4be1b"
+
+["config:responses_api_metadata.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个元数据项"
+zh = "一条元数据：键以字母开头，只含字母、数字、`_`、`.`、`-`（最长 64 字节），值为不超过 128 字节的字符串。"
+zh_basis = ""

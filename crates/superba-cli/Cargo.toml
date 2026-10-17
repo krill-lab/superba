@@ -1,0 +1,36 @@
+[package]
+name = "superba-cli"
+description = "Superba headless CLI (spb): status, switch, restore, doctor; also the subcommand engine of the GUI binary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[lib]
+name = "superba_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "spb"
+path = "src/bin/spb.rs"
+
+[dependencies]
+superba-core.workspace = true
+superba-switch.workspace = true
+async-trait.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sys-locale.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

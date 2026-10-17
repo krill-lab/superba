@@ -1,0 +1,47 @@
+{
+  "slug": "acme-coder",
+  "display_name": "acme-coder",
+  "description": "",
+  "default_reasoning_level": "high",
+  "supported_reasoning_levels": [
+    {
+      "effort": "low",
+      "description": "low"
+    },
+    {
+      "effort": "high",
+      "description": "Deeper"
+    }
+  ],
+  "shell_type": "shell_command",
+  "visibility": "list",
+  "supported_in_api": true,
+  "priority": 100,
+  "additional_speed_tiers": [],
+  "service_tiers": [],
+  "availability_nux": null,
+  "upgrade": null,
+  "base_instructions": "You are a coding agent (generic instructions for tests).",
+  "supports_reasoning_summaries": false,
+  "default_reasoning_summary": "auto",
+  "support_verbosity": false,
+  "default_verbosity": null,
+  "apply_patch_tool_type": null,
+  "web_search_tool_type": "text",
+  "truncation_policy": {
+    "mode": "bytes",
+    "limit": 10000
+  },
+  "supports_parallel_tool_calls": false,
+  "supports_image_detail_original": false,
+  "context_window": 128000,
+  "max_context_window": 128000,
+  "effective_context_window_percent": 95,
+  "experimental_supported_tools": [],
+  "input_modalities": [
+    "text",
+    "image"
+  ],
+  "supports_search_tool": false,
+  "use_responses_lite": false
+}

@@ -1,0 +1,2084 @@
+//! Window chrome: sidebar navigation, the fixed switch banner (countdown, waiting,
+//! progress, blocked, questions), the full-restart confirmation and the dialogs for
+//! mid-execution questions (plan 7.3 copy).
+
+use std::time::Duration;
+
+use egui::{Align, Color32, Layout, Panel, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
+use superba_core::{
+    ConsumerKind, Decision, DecisionRequest, KeyResolution, LegacySessionChoice, MigrationPlan,
+    PlanChoice, ProviderRestore, RestartKind, Severity, StepStatus, SwitchIntent, SwitchPhase,
+    SwitchPlan, SwitchStep, TargetId,
+};
+
+use crate::design::fonts::{Weight, font, mono_font};
+use crate::design::icons::{self, Icon};
+use crate::design::tokens::{Palette, radius, text};
+use crate::design::widgets::{
+    Button, CountdownBar, Dropdown, Status, StatusDot, Text, dialog, link_button,
+};
+use crate::flow::{Flow, Run, Stage};
+use crate::pages::{Action, Cx, Page, error_text};
+use crate::pages::{NavBadge, PageStatus};
+
+/// The Superba mark: an opened bascule bridge in a rounded square.
+pub fn brand_mark(ui: &mut Ui, pal: &Palette, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(rect, (size * 0.28) as u8, pal.primary);
+    let s = size / 24.0;
+    let at = |x: f32, y: f32| pos2(rect.min.x + x * s, rect.min.y + y * s);
+    let stroke = Stroke::new((2.0 * s).max(1.4), pal.on_primary);
+    p.line_segment([at(5.0, 17.5), at(10.5, 8.5)], stroke);
+    p.line_segment([at(19.0, 17.5), at(13.5, 8.5)], stroke);
+    p.line_segment([at(4.0, 17.5), at(20.0, 17.5)], stroke);
+}
+
+/// The sidebar panel's frame (margins around the navigation).
+pub fn sidebar_frame() -> egui::Frame {
+    egui::Frame::new().inner_margin(egui::Margin {
+        left: 12,
+        right: 12,
+        top: 16,
+        bottom: 12,
+    })
+}
+
+/// Left navigation after Surge (user request 24), on the window background:
+/// brand, the command-palette button, pages under small gray section headings
+/// with their badges and unsaved-edit dots (`status` per page), and Superba's
+/// own pages (Diagnostics, Preferences) pinned at the bottom with the version.
+/// The current state lives on the overview, not in the sidebar.
+///
+/// When the window is too short for comfortable 40 px rows (the 960x640
+/// minimum) the rows and headings are compacted, and the main list scrolls
+/// above the pinned pages rather than running under them (review ux-visual #2).
+pub fn sidebar(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    page: &mut Page,
+    status: &dyn Fn(Page) -> PageStatus,
+    out: &mut Vec<Action>,
+) {
+    ui.spacing_mut().item_spacing.y = NAV_GAP;
+    ui.add_space(2.0);
+    ui.horizontal(|ui| {
+        ui.add_space(6.0);
+        brand_mark(ui, cx.pal, 22.0);
+        ui.add_space(2.0);
+        ui.label(
+            RichText::new("Superba")
+                .font(font(15.0, Weight::Semibold))
+                .color(cx.pal.text)
+                .extra_letter_spacing(-0.2),
+        );
+    });
+    ui.add_space(14.0);
+    if search_button(ui, cx).clicked() {
+        out.push(Action::OpenPalette);
+    }
+    ui.add_space(8.0);
+
+    // Superba's own pages sit at the bottom (Surge's 更多 / 面板).
+    let pinned = |p: Page| p.group() == crate::pages::NavGroup::Superba;
+    let main: Vec<Page> = Page::ALL.into_iter().filter(|p| !pinned(*p)).collect();
+    let footer: Vec<Page> = Page::ALL.into_iter().filter(|p| pinned(*p)).collect();
+    let metrics = if ui.available_height() >= NavMetrics::FULL.needed(&main, footer.len()) {
+        NavMetrics::FULL
+    } else {
+        NavMetrics::COMPACT
+    };
+    Panel::bottom("sidebar-footer")
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(egui::Frame::NONE)
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = NAV_GAP;
+            ui.add_space(6.0);
+            for p in footer.iter().copied() {
+                if nav_item(ui, cx, p, *page == p, &status(p), metrics.row) {
+                    *page = p;
+                }
+            }
+            ui.add_space(4.0);
+            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+            ui.painter().hline(
+                r.x_range().shrink(6.0),
+                r.center().y,
+                Stroke::new(1.0, cx.pal.border.gamma_multiply(0.8)),
+            );
+            ui.add_space(2.0);
+            // Version only: providers are reached through Providers (UX §2.1).
+            ui.horizontal(|ui| {
+                ui.add_space(10.0);
+                ui.label(Text::mono_muted(
+                    format!("v{}", env!("CARGO_PKG_VERSION")),
+                    cx.pal,
+                ));
+            });
+            ui.add_space(2.0);
+        });
+
+    // Never under the pinned pages: the rest of the height, scrolling if even
+    // the compact rows do not fit.
+    egui::ScrollArea::vertical()
+        .id_salt("sidebar-nav")
+        .auto_shrink([false, true])
+        .max_height(ui.available_height())
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = NAV_GAP;
+            let mut group = None;
+            for p in main.iter().copied() {
+                if group != Some(p.group()) {
+                    if let Some(key) = p.group().caption_key() {
+                        ui.add_space(metrics.caption_gap);
+                        let (r, _) = ui.allocate_exact_size(
+                            vec2(ui.available_width(), metrics.caption),
+                            Sense::hover(),
+                        );
+                        ui.painter().text(
+                            pos2(r.min.x + 10.0, r.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            cx.tr.t(key),
+                            font(text::SMALL, Weight::Medium),
+                            cx.pal.text_subtle,
+                        );
+                    }
+                    group = Some(p.group());
+                }
+                if nav_item(ui, cx, p, *page == p, &status(p), metrics.row) {
+                    *page = p;
+                }
+            }
+        });
+}
+
+/// Row and heading sizes of the sidebar: comfortable, or compact when the
+/// window is short.
+#[derive(Clone, Copy)]
+struct NavMetrics {
+    row: f32,
+    caption: f32,
+    caption_gap: f32,
+}
+
+impl NavMetrics {
+    const FULL: Self = Self {
+        row: NAV_ROW,
+        caption: 20.0,
+        caption_gap: 10.0,
+    };
+    const COMPACT: Self = Self {
+        row: 34.0,
+        caption: 18.0,
+        caption_gap: 6.0,
+    };
+
+    /// Height of the main list plus the pinned footer (rows, headings, the
+    /// footer's separator and version line) with these sizes.
+    fn needed(self, main: &[Page], footer_rows: usize) -> f32 {
+        let mut groups: Vec<_> = main.iter().map(|p| p.group()).collect();
+        groups.dedup();
+        let captions = groups.iter().filter(|g| g.caption_key().is_some()).count();
+        let items = main.len() + captions;
+        let list = main.len() as f32 * self.row
+            + captions as f32 * (self.caption + self.caption_gap)
+            + items as f32 * NAV_GAP;
+        // Rows, then 6 above, 4 + separator (1) + 2 + version line (18) + 2
+        // below, with the gaps between them.
+        let foot = footer_rows as f32 * (self.row + NAV_GAP) + 33.0 + 3.0 * NAV_GAP;
+        list + foot
+    }
+}
+
+/// Height of a sidebar row (Surge-like, comfortable).
+const NAV_ROW: f32 = crate::design::tokens::size::NAV_ROW;
+
+/// Space between sidebar rows.
+const NAV_GAP: f32 = 2.0;
+
+/// The shortcut label shown next to search affordances.
+pub fn palette_shortcut_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Cmd K"
+    } else {
+        "Ctrl K"
+    }
+}
+
+fn search_button(ui: &mut Ui, cx: &Cx<'_>) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let label = cx.tr.t("shell.search");
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+    let t = crate::design::widgets::hover_t(ui, &response);
+    let b = crate::design::backdrop::Backdrop::of(ui.ctx());
+    let p = ui.painter();
+    // A translucent field on the window background.
+    let fill = if cx.pal.dark {
+        Color32::from_white_alpha(12)
+    } else {
+        Color32::from_white_alpha(150)
+    };
+    p.rect(
+        rect,
+        radius::ROW,
+        fill.lerp_to_gamma(b.selected, t * 0.6),
+        Stroke::new(1.0, b.hover),
+        egui::StrokeKind::Inside,
+    );
+    icons::paint(
+        p,
+        Rect::from_center_size(pos2(rect.min.x + 16.0, rect.center().y), vec2(14.0, 14.0)),
+        Icon::Search,
+        cx.pal.text_subtle,
+    );
+    p.text(
+        pos2(rect.min.x + 30.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        font(text::SMALL, Weight::Regular),
+        cx.pal.text_subtle,
+    );
+    let key = palette_shortcut_label();
+    let galley = p.layout_no_wrap(
+        key.to_owned(),
+        mono_font(text::CAPTION - 1.0, Weight::Medium),
+        cx.pal.text_muted,
+    );
+    let kr = Rect::from_min_size(
+        pos2(rect.max.x - galley.size().x - 16.0, rect.center().y - 9.0),
+        vec2(galley.size().x + 10.0, 18.0),
+    );
+    p.rect(
+        kr,
+        4,
+        cx.pal.hover,
+        Stroke::new(1.0, cx.pal.border),
+        egui::StrokeKind::Inside,
+    );
+    p.galley(
+        pos2(kr.min.x + 5.0, kr.center().y - galley.size().y / 2.0),
+        galley,
+        cx.pal.text_muted,
+    );
+    if crate::design::widgets::show_focus(&response) {
+        crate::design::widgets::focus_ring(p, rect, radius::CONTROL, cx.pal);
+    }
+    response
+}
+
+fn nav_item(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    page: Page,
+    selected: bool,
+    status: &PageStatus,
+    height: f32,
+) -> bool {
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let label = cx.tr.t(page.title_key());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, &label));
+    let t = crate::design::widgets::hover_t(ui, &response);
+    // Selected: a soft gray rounded rectangle on the window background.
+    let b = crate::design::backdrop::Backdrop::of(ui.ctx());
+    let fill = if selected {
+        b.selected
+    } else {
+        Color32::TRANSPARENT.lerp_to_gamma(b.hover, t)
+    };
+    let p = ui.painter();
+    p.rect_filled(rect, radius::ROW, fill);
+    let color = cx.pal.text;
+    let icon_color = if selected {
+        cx.pal.text
+    } else {
+        cx.pal.text_muted.lerp_to_gamma(cx.pal.text, t)
+    };
+    let side = crate::design::tokens::size::NAV_ICON;
+    let icon_rect = Rect::from_min_size(
+        pos2(rect.min.x + 11.0, rect.center().y - side / 2.0),
+        vec2(side, side),
+    );
+    icons::paint(p, icon_rect, page.icon(), icon_color);
+    p.text(
+        pos2(rect.min.x + 40.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        font(
+            text::BODY + 1.0,
+            if selected {
+                Weight::Semibold
+            } else {
+                Weight::Medium
+            },
+        ),
+        color,
+    );
+    // Right edge: the page's badge, then (further left) the amber dot of unsaved
+    // edits.
+    let mut x = rect.max.x - 12.0;
+    let mut tip: Option<String> = None;
+    match status.badge {
+        NavBadge::None => {}
+        NavBadge::Dot(s) => {
+            p.circle_filled(pos2(x - 3.0, rect.center().y), 3.0, cx.pal.status(s));
+            x -= 14.0;
+            tip.clone_from(&status.badge_tip);
+        }
+        NavBadge::Count(n) => {
+            let g = p.layout_no_wrap(
+                n.to_string(),
+                mono_font(text::CAPTION, Weight::Medium),
+                cx.pal.text_subtle,
+            );
+            let w = g.size().x;
+            p.galley(
+                pos2(x - w, rect.center().y - g.size().y / 2.0),
+                g,
+                cx.pal.text_subtle,
+            );
+            x -= w + 10.0;
+            tip.clone_from(&status.badge_tip);
+        }
+    }
+    if status.pending > 0 {
+        p.circle_filled(
+            pos2(x - 3.0, rect.center().y),
+            3.0,
+            cx.pal.status(Status::Warn),
+        );
+        tip = Some(match tip {
+            Some(t) => format!("{t}\n{}", cx.tr.t("shell.pending_dot")),
+            None => cx.tr.t("shell.pending_dot"),
+        });
+    }
+    if crate::design::widgets::show_focus(&response) {
+        crate::design::widgets::focus_ring(p, rect, radius::CONTROL, cx.pal);
+    }
+    let response = match tip {
+        Some(t) => response.on_hover_text(t),
+        None => response,
+    };
+    response.clicked()
+}
+
+// ---------------------------------------------------------------------------
+// Banner
+// ---------------------------------------------------------------------------
+
+/// Extra UI state of the banner.
+#[derive(Debug, Default)]
+pub struct BannerState {
+    /// Replacement model picked in the banner.
+    pub model: Option<String>,
+    /// Show the key diff in the banner.
+    pub show_changes: bool,
+    /// Whether the risk disclosure is open after its first completed switch.
+    pub show_risks: bool,
+    risk_shown_for: Option<String>,
+}
+
+const HOT_RISK_SEEN: &str = "superba-hot-risk-seen-v1";
+
+impl BannerState {
+    /// Restore the remembered disclosure state without marking any pending switch.
+    pub fn restore_risk_memory(ctx: &egui::Context, seen: bool) {
+        ctx.data_mut(|data| data.insert_persisted(egui::Id::unique(HOT_RISK_SEEN), seen));
+    }
+
+    /// Whether the full risk list was shown during a previously completed switch.
+    pub fn risks_seen(ctx: &egui::Context) -> bool {
+        ctx.data_mut(|data| data.get_persisted(egui::Id::unique(HOT_RISK_SEEN)))
+            .unwrap_or(false)
+    }
+
+    /// Remember a successful switch only if its risk list was actually displayed.
+    /// Returns true when the app should persist the newly learned preference.
+    pub fn complete_switch(&mut self, ctx: &egui::Context, plan_id: &str) -> bool {
+        if self.risk_shown_for.as_deref() != Some(plan_id) || Self::risks_seen(ctx) {
+            return false;
+        }
+        Self::restore_risk_memory(ctx, true);
+        self.show_risks = false;
+        true
+    }
+}
+
+enum HeaderAside {
+    Buttons(Vec<Button>),
+    Text(String),
+}
+
+impl HeaderAside {
+    fn width(&self, ui: &Ui) -> f32 {
+        match self {
+            Self::Buttons(buttons) => {
+                buttons.iter().map(|b| b.desired_size(ui).x).sum::<f32>()
+                    + 8.0 * buttons.len().saturating_sub(1) as f32
+            }
+            Self::Text(text) => {
+                ui.painter()
+                    .layout_no_wrap(
+                        text.clone(),
+                        mono_font(text::SMALL, Weight::Regular),
+                        Color32::PLACEHOLDER,
+                    )
+                    .size()
+                    .x
+            }
+        }
+    }
+
+    fn show(self, ui: &mut Ui, pal: &Palette) -> Vec<egui::Response> {
+        match self {
+            Self::Buttons(buttons) => {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    buttons.into_iter().map(|b| ui.add(b)).collect()
+                })
+                .inner
+            }
+            Self::Text(text) => {
+                ui.label(Text::mono_muted(text, pal));
+                Vec::new()
+            }
+        }
+    }
+}
+
+/// Reserve measured action space before laying out the wrapping title. At narrow
+/// widths the buttons use their own row; neither child can paint over the other.
+fn banner_header(
+    ui: &mut Ui,
+    pal: &Palette,
+    icon: Option<(Icon, Color32)>,
+    title: String,
+    aside: HeaderAside,
+) -> (egui::Response, Vec<egui::Response>) {
+    let width = ui.available_width();
+    let aside_width = aside.width(ui);
+    let inline = width - aside_width >= 260.0
+        && (!matches!(aside, HeaderAside::Buttons(_)) || width >= 480.0);
+    let title_width = if inline {
+        width - aside_width - 16.0
+    } else {
+        width
+    };
+    let mut aside = Some(aside);
+    let (title, mut buttons) = ui
+        .horizontal_top(|ui| {
+            let title = ui
+                .allocate_ui_with_layout(
+                    vec2(title_width, 0.0),
+                    Layout::left_to_right(Align::Min),
+                    |ui| {
+                        let (r, _) = ui.allocate_exact_size(vec2(18.0, 20.0), Sense::hover());
+                        let r = Rect::from_center_size(r.center(), vec2(18.0, 18.0));
+                        if let Some((icon, color)) = icon {
+                            icons::paint(ui.painter(), r, icon, color);
+                        } else {
+                            icons::spinner(ui.painter(), r, pal.text, ui.input(|i| i.time));
+                        }
+                        ui.add(egui::Label::new(Text::title(title, pal)).wrap())
+                    },
+                )
+                .inner;
+            let buttons = if inline {
+                ui.add_space((16.0 - ui.spacing().item_spacing.x).max(0.0));
+                aside.take().map(|a| a.show(ui, pal)).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            (title, buttons)
+        })
+        .inner;
+    if let Some(aside) = aside {
+        buttons = aside.show(ui, pal);
+    }
+    (title, buttons)
+}
+
+/// What the banner shows this frame (owned, so the flow can be mutated while
+/// drawing).
+enum BannerView {
+    Planning,
+    Armed {
+        plan: Box<SwitchPlan>,
+        secs: u64,
+        progress: f32,
+    },
+    TurnsAtPlan {
+        plan: Box<SwitchPlan>,
+        busy: Vec<superba_core::ThreadActivity>,
+        progress: f32,
+    },
+    Blocked(Box<SwitchPlan>),
+    Choose(Box<SwitchPlan>),
+    WaitingRun,
+    Running {
+        label: String,
+        steps: Vec<(String, StepStatus)>,
+        elapsed: Duration,
+        failed: bool,
+        /// Re-applying the provider in use (user bug 25): "applying the
+        /// changes", not "switching".
+        reapply: bool,
+    },
+}
+
+/// Whether the flow stage has a switch overlay (planning, armed, waiting, blocked,
+/// questions, running).
+pub fn overlay_visible(flow: &Flow) -> bool {
+    !matches!(flow.stage(), Stage::Idle | Stage::ConfirmFull { .. })
+}
+
+/// Draw the floating switch overlay for the current flow stage (nothing when idle).
+/// Its body scrolls beyond `max_h`. Returns whether it was drawn.
+pub fn banner(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    flow: &mut Flow,
+    st: &mut BannerState,
+    now: Duration,
+    max_h: f32,
+) -> bool {
+    let tr = cx.tr;
+    let pal = cx.pal;
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(egui::Id::unique("superba-overlay-max-h"), max_h));
+    let view = match flow.stage() {
+        Stage::Idle | Stage::ConfirmFull { .. } => return false,
+        Stage::Planning => BannerView::Planning,
+        Stage::Armed { plan, countdown } => BannerView::Armed {
+            plan: Box::new(plan.clone()),
+            secs: countdown.remaining(now).as_millis().div_ceil(1000) as u64,
+            progress: countdown.progress(now),
+        },
+        Stage::WaitingBeforeSwitch {
+            plan,
+            countdown,
+            busy,
+        } => BannerView::TurnsAtPlan {
+            plan: Box::new(plan.clone()),
+            busy: busy.to_vec(),
+            progress: countdown.progress(now),
+        },
+        Stage::Blocked { plan } => BannerView::Blocked(Box::new(plan.clone())),
+        Stage::Choose { plan } => BannerView::Choose(Box::new(plan.clone())),
+        Stage::Running(run) if run.waiting_for_turns() && run.phase != SwitchPhase::Done => {
+            BannerView::WaitingRun
+        }
+        Stage::Running(run) => BannerView::Running {
+            label: cx.dest(&run.plan.to),
+            steps: progress_steps(run)
+                .into_iter()
+                .map(|(s, st)| {
+                    let st = if run.recovering() && st == StepStatus::Running {
+                        StepStatus::Pending
+                    } else {
+                        st
+                    };
+                    (step_label(tr, &s), st)
+                })
+                .collect(),
+            elapsed: now.saturating_sub(run.started),
+            failed: run.recovering(),
+            reapply: is_reapply(&run.plan),
+        },
+    };
+    match view {
+        BannerView::Planning => {
+            let mut cancel = false;
+            banner_card(ui, pal, None, |ui| {
+                let (_, buttons) = banner_header(
+                    ui,
+                    pal,
+                    None,
+                    tr.t("banner.planning"),
+                    HeaderAside::Buttons(vec![Button::ghost(tr.t("action.cancel")).small()]),
+                );
+                cancel = buttons.iter().any(egui::Response::clicked);
+                ui.ctx().request_repaint();
+            });
+            if cancel {
+                flow.cancel(now);
+            }
+        }
+        BannerView::Armed {
+            plan,
+            secs,
+            progress,
+        } => {
+            let mut clicked_now = false;
+            let mut clicked_cancel = false;
+            banner_card(ui, pal, Some((progress, false)), |ui| {
+                // Re-applying the provider in use (its connection or settings
+                // changed) says so, and why Codex restarts, instead of "Switching".
+                let reapply = reapply_reason(cx, &plan);
+                let title_key = if reapply.is_some() {
+                    "banner.reapply.title"
+                } else {
+                    "banner.armed.title"
+                };
+                let (_, buttons) = banner_header(
+                    ui,
+                    pal,
+                    Some((Icon::Bolt, pal.text)),
+                    tr.f(title_key, &[("secs", &secs), ("dest", &cx.dest(&plan.to))]),
+                    HeaderAside::Buttons(vec![
+                        Button::primary(tr.t(if reapply.is_some() {
+                            "banner.reapply.now"
+                        } else {
+                            "banner.switch_now"
+                        }))
+                        .small()
+                        .kbd("Enter"),
+                        Button::new(tr.t("action.cancel")).small().kbd("Esc"),
+                    ]),
+                );
+                clicked_now = buttons[0].clicked();
+                clicked_cancel = buttons[1].clicked();
+                if let Some(reason) = &reapply {
+                    ui.add(egui::Label::new(Text::small(reason, pal)).wrap());
+                }
+                ui.add_space(2.0);
+                if BannerState::risks_seen(ui.ctx()) {
+                    let icon = if st.show_risks {
+                        Icon::ChevronDown
+                    } else {
+                        Icon::ChevronRight
+                    };
+                    if ui
+                        .add(
+                            Button::ghost(tr.t("shell.what_restarts"))
+                                .small()
+                                .icon(icon),
+                        )
+                        .clicked()
+                    {
+                        st.show_risks = !st.show_risks;
+                    }
+                    if st.show_risks {
+                        hot_risk_copy(ui, cx, &plan);
+                        plan_notes(ui, cx, &plan, st);
+                    } else {
+                        // Routine restart details live in the disclosure. New
+                        // issues (cross-site changes, drift, unsupported versions,
+                        // etc.) must still be visible on every affected switch.
+                        for warning in &plan.warnings {
+                            if !routine_restart_note(&warning.text.key) {
+                                note(ui, pal, warning.severity, &cx.localize(&warning.text));
+                            }
+                        }
+                    }
+                } else {
+                    hot_risk_copy(ui, cx, &plan);
+                    plan_notes(ui, cx, &plan, st);
+                    st.risk_shown_for = Some(plan.id.clone());
+                }
+            });
+            if clicked_now {
+                flow.switch_now(now);
+            } else if clicked_cancel {
+                flow.cancel(now);
+            }
+            ui.ctx().request_repaint();
+        }
+        BannerView::TurnsAtPlan {
+            plan,
+            busy,
+            progress,
+        } => {
+            let mut action = None;
+            banner_card(ui, pal, Some((progress, true)), |ui| {
+                ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
+                    icons::paint(ui.painter(), r, Icon::Pause, pal.amber);
+                    ui.add(
+                        egui::Label::new(Text::title(
+                            tr.f("banner.waiting.title", &[("n", &busy.len())]),
+                            pal,
+                        ))
+                        .wrap(),
+                    );
+                });
+                ui.label(Text::small(
+                    tr.f("banner.destination", &[("dest", &cx.dest(&plan.to))]),
+                    pal,
+                ));
+                for t in &busy {
+                    busy_line(ui, cx, t);
+                }
+                ui.label(Text::muted(tr.t("banner.waiting.body"), pal));
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .add(Button::primary(tr.t("banner.waiting.wait")).small())
+                        .clicked()
+                    {
+                        action = Some(0);
+                    }
+                    if ui
+                        .add(Button::danger(tr.t("banner.waiting.force")).small())
+                        .clicked()
+                    {
+                        action = Some(1);
+                    }
+                    if ui
+                        .add(Button::new(tr.t("action.cancel")).small().kbd("Esc"))
+                        .clicked()
+                    {
+                        action = Some(2);
+                    }
+                });
+            });
+            match action {
+                Some(0) => flow.acknowledge_wait(now),
+                Some(1) => flow.switch_now(now),
+                Some(2) => {
+                    flow.cancel(now);
+                }
+                _ => {}
+            }
+        }
+        BannerView::Blocked(plan) => {
+            let mut close = false;
+            let mut alternative = None;
+            banner_card(ui, pal, None, |ui| {
+                let mut actions: Vec<Button> = plan
+                    .alternatives
+                    .iter()
+                    .map(|alt| Button::primary(tr.text(&alt.label)).small())
+                    .collect();
+                actions.push(Button::new(tr.t("action.close")).small().kbd("Esc"));
+                let (_, buttons) = banner_header(
+                    ui,
+                    pal,
+                    Some((Icon::Close, pal.red)),
+                    tr.t("banner.blocked.title"),
+                    HeaderAside::Buttons(actions),
+                );
+                for (i, button) in buttons.iter().enumerate() {
+                    if button.clicked() {
+                        if i == plan.alternatives.len() {
+                            close = true;
+                        } else {
+                            alternative = Some(i);
+                        }
+                    }
+                }
+                ui.add_space(2.0);
+                ui.label(Text::small(
+                    tr.f("banner.destination", &[("dest", &cx.dest(&plan.to))]),
+                    pal,
+                ));
+                if let RestartKind::Blocked { reasons } = &plan.primary {
+                    for r in reasons {
+                        bullet(ui, pal, &block_text(cx, r));
+                    }
+                }
+                for w in &plan.warnings {
+                    note(ui, pal, w.severity, &cx.localize(&w.text));
+                }
+            });
+            if let Some(i) = alternative {
+                flow.take_alternative(i, now);
+            } else if close {
+                flow.cancel(now);
+            }
+        }
+        BannerView::Choose(plan) => {
+            banner_card(ui, pal, None, |ui| choices(ui, cx, flow, &plan, st, now));
+        }
+        BannerView::WaitingRun => waiting_banner(ui, cx, flow, now),
+        BannerView::Running {
+            label,
+            steps,
+            elapsed,
+            failed,
+            reapply,
+        } => {
+            banner_card(ui, pal, None, |ui| {
+                banner_header(
+                    ui,
+                    pal,
+                    failed.then_some((Icon::Close, pal.red)),
+                    tr.f(
+                        match (failed, reapply) {
+                            (true, false) => "shell.failed_title",
+                            (true, true) => "banner.reapply.failed",
+                            (false, false) => "banner.running.title",
+                            (false, true) => "banner.reapply.running",
+                        },
+                        &[("dest", &label)],
+                    ),
+                    HeaderAside::Text(if failed {
+                        String::new()
+                    } else {
+                        format!("{:.1} s", elapsed.as_secs_f32())
+                    }),
+                );
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    for (i, (label, status)) in steps.iter().enumerate() {
+                        if i > 0 {
+                            ui.label(Text::small("·", pal));
+                        }
+                        step_chip(ui, pal, label, status);
+                    }
+                });
+            });
+            if !failed {
+                ui.ctx().request_repaint();
+            }
+        }
+    }
+    true
+}
+
+/// One busy thread line ("This computer · “title” is generating a reply").
+fn busy_line(ui: &mut Ui, cx: &Cx<'_>, t: &superba_core::ThreadActivity) {
+    let local = t.target_id.is_local();
+    let host = if local {
+        cx.tr.t("banner.waiting.this_computer")
+    } else {
+        cx.data
+            .overview
+            .value
+            .as_ref()
+            .and_then(|o| o.remotes.iter().find(|r| r.host.target_id == t.target_id))
+            .map(|r| r.host.label.clone())
+            .unwrap_or_else(|| t.target_id.to_string())
+    };
+    let title = t
+        .title
+        .clone()
+        .or(t.thread_id.clone())
+        .unwrap_or_else(|| cx.tr.t("banner.waiting.untitled"));
+    let key = if local {
+        "banner.waiting.thread_local"
+    } else {
+        "banner.waiting.thread_remote"
+    };
+    ui.horizontal(|ui| {
+        ui.add_space(2.0);
+        ui.add(StatusDot::new(Status::Warn).pulse(true).size(7.0));
+        ui.label(Text::body(
+            cx.tr.f(key, &[("host", &host), ("title", &title)]),
+            cx.pal,
+        ));
+    });
+}
+
+/// A block reason with line ids replaced by their display names.
+pub fn block_text(cx: &Cx<'_>, reason: &superba_core::BlockReason) -> String {
+    let mut text = reason.text();
+    if let Some((_, id)) = text.args.iter().find(|(n, _)| n == "line") {
+        let name = cx.line_name(&superba_core::LineId::new(id.clone()));
+        text = text.arg("line", name);
+    }
+    cx.tr.text(&text)
+}
+
+/// The risk copy of plan 7.3 for a hot restart.
+fn hot_risk_copy(ui: &mut Ui, cx: &Cx<'_>, plan: &SwitchPlan) {
+    let pal = cx.pal;
+    let tr = cx.tr;
+    ui.label(Text::muted(tr.t("banner.armed.body"), pal));
+    if plan.primary.interrupts_turns() {
+        bullet(ui, pal, &tr.t("banner.risk.replies"));
+        bullet(ui, pal, &tr.t("banner.risk.mcp"));
+        bullet(ui, pal, &tr.t("banner.risk.terminal"));
+    }
+}
+
+fn remote_labels(cx: &Cx<'_>, plan: &SwitchPlan) -> Vec<String> {
+    let remotes: Vec<&TargetId> = plan
+        .restarts
+        .iter()
+        .filter_map(|r| match &r.consumer {
+            ConsumerKind::Remote { target_id } => Some(target_id),
+            _ => None,
+        })
+        .collect();
+    let overview = cx.data.overview.value.as_ref();
+    remotes
+        .into_iter()
+        .map(|id| {
+            overview
+                .and_then(|o| o.remotes.iter().find(|r| &r.host.target_id == id))
+                .map(|r| r.host.label.clone())
+                .unwrap_or_else(|| id.to_string())
+        })
+        .collect()
+}
+
+fn cli_restart_note(key: &str) -> bool {
+    key == "switch.warn.cli_processes"
+}
+
+fn remote_restart_note(key: &str) -> bool {
+    key == "switch.warn.remotes"
+}
+
+fn routine_restart_note(key: &str) -> bool {
+    cli_restart_note(key) || remote_restart_note(key) || key == "switch.warn.authapi_line"
+}
+
+/// Situational notes: CLI processes, remote hosts, warnings, key changes.
+fn plan_notes(ui: &mut Ui, cx: &Cx<'_>, plan: &SwitchPlan, st: &mut BannerState) {
+    let pal = cx.pal;
+    let tr = cx.tr;
+    let mut any = false;
+    let cli = plan
+        .restarts
+        .iter()
+        .find(|r| r.consumer == ConsumerKind::CliProcesses && !r.pids.is_empty());
+    let remotes = remote_labels(cx, plan);
+    if cli.is_some() || !remotes.is_empty() || !plan.warnings.is_empty() {
+        ui.add_space(6.0);
+        any = true;
+    }
+    if let Some(c) = cli {
+        note(
+            ui,
+            pal,
+            Severity::Info,
+            &tr.f("banner.note.cli", &[("n", &c.pids.len())]),
+        );
+    }
+    if !remotes.is_empty() {
+        note(
+            ui,
+            pal,
+            Severity::Warning,
+            &tr.f("banner.note.remotes", &[("hosts", &remotes.join(", "))]),
+        );
+    }
+    for w in &plan.warnings {
+        if (cli.is_some() && cli_restart_note(&w.text.key))
+            || (!remotes.is_empty() && remote_restart_note(&w.text.key))
+        {
+            continue;
+        }
+        note(ui, pal, w.severity, &cx.localize(&w.text));
+    }
+    let count = change_count(cx, plan);
+    if count > 0 {
+        ui.add_space(if any { 2.0 } else { 6.0 });
+        let label = if st.show_changes {
+            tr.t("banner.hide_changes")
+        } else {
+            tr.f("banner.show_changes", &[("n", &count)])
+        };
+        if link_button(ui, &label, false).clicked() {
+            st.show_changes = !st.show_changes;
+        }
+        if st.show_changes {
+            key_changes(ui, cx, plan);
+        }
+    }
+}
+
+/// Number of rows [`key_changes`] shows.
+pub fn change_count(cx: &Cx<'_>, plan: &SwitchPlan) -> usize {
+    match cx.data.plan_settings_for(&plan.id) {
+        Some(ps) if !ps.changes.is_empty() => {
+            ps.changes.len()
+                + usize::from(
+                    plan.config
+                        .as_ref()
+                        .is_some_and(|c| c.auth_change.is_some()),
+                )
+        }
+        _ => plan.config.as_ref().map_or(0, |c| {
+            c.key_changes.len() + usize::from(c.auth_change.is_some())
+        }),
+    }
+}
+
+/// Keys named in the reason line of a re-apply countdown (the rest are counted).
+const REAPPLY_KEYS: usize = 4;
+
+/// The reason line of a countdown that re-applies the provider Codex already
+/// uses (its connection or settings changed): "Why: “My relay” is in use and its
+/// settings changed: model, service_tier". `None` when the plan is not a provider switch
+/// or switches to another provider (its title names the destination).
+pub fn reapply_reason(cx: &Cx<'_>, plan: &SwitchPlan) -> Option<String> {
+    if !matches!(plan.request.intent, SwitchIntent::Profile { .. }) {
+        return None;
+    }
+    let from = plan.from.as_ref()?.profile_id.as_ref()?;
+    if plan.to.profile_id.as_ref() != Some(from) {
+        return None;
+    }
+    let dest = cx.dest(&plan.to);
+    let mut keys: Vec<String> = match cx
+        .data
+        .plan_settings_for(&plan.id)
+        .filter(|ps| !ps.changes.is_empty())
+    {
+        Some(ps) => ps
+            .changes
+            .iter()
+            .filter(|c| c.target.is_local())
+            .map(|c| c.path.clone())
+            .collect(),
+        None => plan
+            .config
+            .as_ref()
+            .map(|c| c.key_changes.iter().map(|k| k.path.clone()).collect())
+            .unwrap_or_default(),
+    };
+    if plan
+        .config
+        .as_ref()
+        .is_some_and(|c| c.auth_change.is_some())
+    {
+        keys.push("auth.json".into());
+    }
+    keys.dedup();
+    if keys.is_empty() {
+        return Some(cx.tr.f("banner.reapply.reason_other", &[("dest", &dest)]));
+    }
+    let shown = keys[..keys.len().min(REAPPLY_KEYS)].join(", ");
+    let keys = if keys.len() > REAPPLY_KEYS {
+        cx.tr.f(
+            "banner.reapply.more",
+            &[("keys", &shown), ("n", &(keys.len() - REAPPLY_KEYS))],
+        )
+    } else {
+        shown
+    };
+    Some(
+        cx.tr
+            .f("banner.reapply.reason", &[("dest", &dest), ("keys", &keys)]),
+    )
+}
+
+/// The diff preview: `path  before → after`, in monospace. With the switch
+/// service's settings preview (`plan_settings`) every row also names its Codex
+/// home (this computer or a remote host) and why it changes; otherwise the owned
+/// keys of the local `config.toml`.
+pub fn key_changes(ui: &mut Ui, cx: &Cx<'_>, plan: &SwitchPlan) {
+    let pal = cx.pal;
+    let preview = cx
+        .data
+        .plan_settings_for(&plan.id)
+        .filter(|ps| !ps.changes.is_empty());
+    let config = plan.config.as_ref();
+    egui::Frame::new()
+        .fill(pal.bg_subtle)
+        .stroke(Stroke::new(1.0, pal.border))
+        .corner_radius(radius::CONTROL)
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 4.0;
+            // An unset value shows as an em dash (Geist has no empty-set sign).
+            // Rows in fixed columns: long values are cut (middle for paths and
+            // URLs) and open into the full change below their row (user bug 15).
+            let unset = "—";
+            match preview {
+                Some(ps) => {
+                    let multi = ps.changes.iter().any(|c| c.target != ps.changes[0].target);
+                    for c in &ps.changes {
+                        let reason = cx.tr.text(&c.reason.text());
+                        crate::pages::shared::values::change_row(
+                            ui,
+                            cx,
+                            egui::Id::unique(("key-change", &plan.id, &c.target, &c.path)),
+                            multi.then_some(c.target_label.as_str()),
+                            &c.path,
+                            c.from.as_deref(),
+                            c.to.as_deref(),
+                            Some(&reason),
+                            unset,
+                        );
+                    }
+                }
+                None => {
+                    for c in config.map(|c| c.key_changes.as_slice()).unwrap_or_default() {
+                        crate::pages::shared::values::change_row(
+                            ui,
+                            cx,
+                            egui::Id::unique(("key-change", &plan.id, &c.path)),
+                            None,
+                            &c.path,
+                            c.before.as_deref(),
+                            c.after.as_deref(),
+                            None,
+                            unset,
+                        );
+                    }
+                }
+            }
+            if let Some(a) = config.and_then(|c| c.auth_change.as_ref()) {
+                // The router's local token is not one of the user's keys: name it.
+                let router_after = plan.to.label.key == "switch.destination.router";
+                let router_before = crate::pages::router::model::Mode::from_base_url(
+                    cx.data
+                        .overview
+                        .value
+                        .as_ref()
+                        .and_then(|o| o.config.as_ref())
+                        .and_then(|c| c.openai_base_url.as_deref()),
+                )
+                .is_router();
+                let name = |shape: &superba_core::AuthShape, router: bool| {
+                    if router && matches!(shape, superba_core::AuthShape::ApiKey { .. }) {
+                        cx.tr.t("banner.router_token")
+                    } else {
+                        shape_name(shape)
+                    }
+                };
+                ui.horizontal(|ui| {
+                    ui.label(Text::mono("auth.json", pal));
+                    ui.label(Text::mono_muted(name(&a.before, router_before), pal));
+                    ui.label(Text::mono_muted("→", pal));
+                    ui.label(Text::mono(name(&a.after, router_after), pal));
+                });
+            }
+        });
+}
+
+fn shape_name(s: &superba_core::AuthShape) -> String {
+    match s {
+        superba_core::AuthShape::Missing => "none".into(),
+        superba_core::AuthShape::ChatGpt { .. } => "chatgpt".into(),
+        superba_core::AuthShape::ApiKey { key_last4 } => format!("apikey ••••{key_last4}"),
+        superba_core::AuthShape::Pat { key_last4 } => format!("pat ••••{key_last4}"),
+        _ => "unknown".into(),
+    }
+}
+
+fn bullet(ui: &mut Ui, pal: &Palette, text: &str) {
+    ui.horizontal_top(|ui| {
+        ui.add_space(4.0);
+        let (r, _) = ui.allocate_exact_size(vec2(10.0, 18.0), Sense::hover());
+        ui.painter()
+            .circle_filled(pos2(r.center().x, r.min.y + 9.0), 2.0, pal.text_subtle);
+        ui.add(egui::Label::new(Text::muted(text, pal)).wrap());
+    });
+}
+
+fn note(ui: &mut Ui, pal: &Palette, severity: Severity, text: &str) {
+    ui.horizontal_top(|ui| {
+        let (r, _) = ui.allocate_exact_size(vec2(16.0, 18.0), Sense::hover());
+        let (icon, color) = match severity {
+            Severity::Info => (Icon::Info, pal.text_subtle),
+            Severity::Warning => (Icon::Warning, pal.amber),
+            Severity::Danger => (Icon::Warning, pal.red),
+        };
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(r.center(), vec2(14.0, 14.0)),
+            icon,
+            color,
+        );
+        ui.add(egui::Label::new(Text::small(text, pal)).wrap());
+    });
+}
+
+/// The floating overlay surface; `bar` adds the countdown bar (elapsed fraction,
+/// paused) as a hairline along the top edge.
+fn banner_card(
+    ui: &mut Ui,
+    pal: &Palette,
+    bar: Option<(f32, bool)>,
+    add: impl FnOnce(&mut Ui),
+) -> egui::Response {
+    let max_h: f32 = ui
+        .ctx()
+        .data(|d| d.get_temp(egui::Id::unique("superba-overlay-max-h")))
+        .unwrap_or(f32::INFINITY);
+    let r = egui::Frame::new()
+        .fill(pal.surface)
+        .stroke(Stroke::new(1.0, pal.border_strong))
+        .corner_radius(radius::CARD)
+        .shadow(egui::Shadow {
+            offset: [0, 12],
+            blur: 36,
+            spread: 0,
+            color: pal.shadow,
+        })
+        .inner_margin(egui::Margin {
+            left: 18,
+            right: 18,
+            top: 14,
+            bottom: 14,
+        })
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 6.0;
+            egui::ScrollArea::vertical()
+                .id_salt("switch-overlay-body")
+                .max_height(max_h)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    add(ui);
+                });
+        })
+        .response;
+    if let Some((progress, paused)) = bar {
+        // A 2 px progress line inside the top border.
+        let line = Rect::from_min_max(
+            pos2(r.rect.min.x + radius::CARD as f32, r.rect.min.y),
+            pos2(r.rect.max.x - radius::CARD as f32, r.rect.min.y + 2.0),
+        );
+        let mut fill = line;
+        fill.set_width(line.width() * progress.clamp(0.0, 1.0));
+        ui.painter().rect_filled(line, 1, pal.active);
+        ui.painter()
+            .rect_filled(fill, 1, if paused { pal.amber } else { pal.text });
+    }
+    ui.interact(r.rect, ui.scope_id().with("banner-hover"), Sense::hover())
+}
+
+fn waiting_banner(ui: &mut Ui, cx: &Cx<'_>, flow: &mut Flow, now: Duration) {
+    let pal = cx.pal;
+    let tr = cx.tr;
+    let Some(run) = flow.run() else {
+        return;
+    };
+    let busy: Vec<superba_core::ThreadActivity> = run
+        .turns
+        .iter()
+        .flat_map(|t| t.busy.iter().cloned())
+        .collect();
+    let count = busy.len();
+    let waited = Duration::from_millis(run.waited_ms);
+    let can_decide = run.decision.is_some();
+    let acknowledged = run.wait_acknowledged;
+    let mut decision = None;
+    let mut ack = false;
+    banner_card(ui, pal, Some((0.55, true)), |ui| {
+        banner_header(
+            ui,
+            pal,
+            Some((Icon::Pause, pal.amber)),
+            tr.f("banner.waiting.title", &[("n", &count)]),
+            HeaderAside::Text(tr.f(
+                "banner.waiting.waited",
+                &[(
+                    "t",
+                    &format!("{}:{:02}", waited.as_secs() / 60, waited.as_secs() % 60),
+                )],
+            )),
+        );
+        for t in &busy {
+            busy_line(ui, cx, t);
+        }
+        ui.label(Text::muted(tr.t("banner.waiting.body"), pal));
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            let primary = if acknowledged {
+                Button::primary(tr.t("banner.waiting.will_switch"))
+                    .small()
+                    .enabled(false)
+            } else {
+                Button::primary(tr.t("banner.waiting.wait"))
+                    .small()
+                    .enabled(can_decide)
+            };
+            if ui.add(primary).clicked() {
+                ack = true;
+            }
+            if ui
+                .add(
+                    Button::danger(tr.t("banner.waiting.force"))
+                        .small()
+                        .enabled(can_decide),
+                )
+                .clicked()
+            {
+                decision = Some(Decision::Force);
+            }
+            if ui
+                .add(
+                    Button::new(tr.t("action.cancel"))
+                        .small()
+                        .kbd("Esc")
+                        .enabled(can_decide),
+                )
+                .clicked()
+            {
+                decision = Some(Decision::Cancel);
+            }
+        });
+    });
+    if ack {
+        flow.acknowledge_wait(now);
+    }
+    if let Some(d) = decision {
+        flow.decide(d);
+    }
+    ui.ctx().request_repaint_after(Duration::from_millis(250));
+}
+
+fn step_label(cx_tr: &crate::i18n::Tr, step: &SwitchStep) -> String {
+    let key = match step {
+        SwitchStep::WriteConfig => "step.write_config",
+        SwitchStep::WriteEnv => "step.write_env",
+        SwitchStep::MigrateSessions => "step.migrate",
+        SwitchStep::QuitApp => "step.quit",
+        SwitchStep::RestartCore => "step.restart_core",
+        SwitchStep::LaunchApp => "step.launch",
+        SwitchStep::VerifyProcess => "step.verify_process",
+        SwitchStep::VerifyFiles => "step.verify_files",
+        SwitchStep::VerifyAuth => "step.verify_auth",
+        SwitchStep::VerifyLine => "step.verify_line",
+        SwitchStep::VerifyRenderer => "step.verify_renderer",
+        SwitchStep::Remote { target_id } => {
+            return cx_tr.f(
+                "step.remote",
+                &[("host", &target_id.as_str().trim_start_matches("ssh:"))],
+            );
+        }
+        _ => "step.other",
+    };
+    cx_tr.t(key)
+}
+
+/// The compact chain shown while executing: config, core, auth, line (+ remotes).
+fn progress_steps(run: &Run) -> Vec<(SwitchStep, StepStatus)> {
+    let full = matches!(run.plan.primary, RestartKind::FullAppRestart { .. });
+    let mut chain: Vec<SwitchStep> = Vec::new();
+    if full {
+        chain.push(SwitchStep::QuitApp);
+    }
+    chain.push(SwitchStep::WriteConfig);
+    if run.plan.migration.is_some() {
+        chain.push(SwitchStep::MigrateSessions);
+    }
+    chain.push(if full {
+        SwitchStep::LaunchApp
+    } else {
+        SwitchStep::RestartCore
+    });
+    chain.push(SwitchStep::VerifyAuth);
+    chain.push(SwitchStep::VerifyLine);
+    for (s, _) in &run.steps {
+        if matches!(s, SwitchStep::Remote { .. }) && !chain.contains(s) {
+            chain.push(s.clone());
+        }
+    }
+    chain
+        .into_iter()
+        .map(|s| {
+            let st = run.step(&s).cloned().unwrap_or(StepStatus::Pending);
+            (s, st)
+        })
+        .collect()
+}
+
+fn step_chip(ui: &mut Ui, pal: &Palette, label: &str, status: &StepStatus) {
+    let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+    let color = match status {
+        StepStatus::Done => {
+            icons::paint(ui.painter(), r, Icon::Check, pal.text);
+            pal.text
+        }
+        StepStatus::Running => {
+            icons::spinner(ui.painter(), r, pal.text, ui.input(|i| i.time));
+            pal.text
+        }
+        StepStatus::Failed { .. } => {
+            icons::paint(ui.painter(), r.shrink(1.0), Icon::Close, pal.red);
+            pal.text
+        }
+        StepStatus::Skipped => {
+            ui.painter().hline(
+                r.x_range().shrink(3.0),
+                r.center().y,
+                Stroke::new(1.5, pal.text_subtle),
+            );
+            pal.text_subtle
+        }
+        StepStatus::Pending => {
+            ui.painter()
+                .circle_stroke(r.center(), 3.0, Stroke::new(1.0, pal.text_subtle));
+            pal.text_subtle
+        }
+    };
+    ui.label(
+        RichText::new(label)
+            .font(font(text::SMALL, Weight::Medium))
+            .color(color),
+    );
+}
+
+fn choices(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    flow: &mut Flow,
+    plan: &SwitchPlan,
+    st: &mut BannerState,
+    now: Duration,
+) {
+    let pal = cx.pal;
+    let tr = cx.tr;
+    let (_, buttons) = banner_header(
+        ui,
+        pal,
+        Some((Icon::Warning, pal.amber)),
+        tr.f("banner.choose.title", &[("dest", &cx.dest(&plan.to))]),
+        HeaderAside::Buttons(vec![Button::new(tr.t("action.cancel")).small().kbd("Esc")]),
+    );
+    if buttons.iter().any(egui::Response::clicked) {
+        flow.cancel(now);
+    }
+    let mut accept = Vec::new();
+    for choice in &plan.choices {
+        ui.add_space(6.0);
+        match choice {
+            PlanChoice::LegacySessions { providers } => {
+                let (provider, count) = providers
+                    .iter()
+                    .max_by_key(|(_, c)| **c)
+                    .map(|(p, c)| (p.clone(), *c))
+                    .unwrap_or_default();
+                ui.label(Text::strong(
+                    tr.f(
+                        "wizard.legacy.title",
+                        &[("count", &count), ("provider", &provider)],
+                    ),
+                    pal,
+                ));
+                ui.label(Text::small(tr.t("wizard.legacy.migrate_body"), pal));
+                ui.label(Text::small(
+                    tr.f("wizard.legacy.skip_body", &[("count", &count)]),
+                    pal,
+                ));
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(Button::primary(tr.t("wizard.legacy.migrate")).small())
+                        .clicked()
+                    {
+                        flow.answer_legacy_sessions(LegacySessionChoice::Migrate, now);
+                    }
+                    if ui
+                        .add(Button::new(tr.t("wizard.legacy.skip")).small())
+                        .clicked()
+                    {
+                        flow.answer_legacy_sessions(LegacySessionChoice::Skip, now);
+                    }
+                });
+            }
+            PlanChoice::RestoreProvider {
+                baseline_provider,
+                created_during,
+                migrated_in,
+            } => {
+                ui.label(Text::body(
+                    tr.f(
+                        "banner.restore.body",
+                        &[
+                            ("provider", baseline_provider),
+                            ("created", created_during),
+                            ("migrated", migrated_in),
+                        ],
+                    ),
+                    pal,
+                ));
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .add(Button::primary(tr.t("banner.restore.keep")).small())
+                        .clicked()
+                    {
+                        flow.answer_restore_provider(ProviderRestore::KeepOpenai, now);
+                    }
+                    if ui
+                        .add(Button::new(tr.t("banner.restore.reverse")).small())
+                        .clicked()
+                    {
+                        flow.answer_restore_provider(
+                            ProviderRestore::Baseline {
+                                reverse_migrate: true,
+                            },
+                            now,
+                        );
+                    }
+                    if ui
+                        .add(Button::new(tr.t("banner.restore.exact")).small())
+                        .clicked()
+                    {
+                        flow.answer_restore_provider(
+                            ProviderRestore::Baseline {
+                                reverse_migrate: false,
+                            },
+                            now,
+                        );
+                    }
+                });
+            }
+            PlanChoice::ReplacementModel {
+                current,
+                suggestions,
+            } => {
+                if st.model.is_none() {
+                    st.model = suggestions.first().cloned();
+                }
+                let site = plan
+                    .to
+                    .site_id
+                    .as_ref()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(Text::body(
+                        tr.f("banner.model.body", &[("site", &site), ("model", current)]),
+                        pal,
+                    ));
+                    let selected = st.model.clone().unwrap_or_default();
+                    Dropdown::new("replacement-model")
+                        .selected_text(
+                            RichText::new(&selected).font(mono_font(text::SMALL, Weight::Regular)),
+                        )
+                        .show_ui(ui, |ui| {
+                            for s in suggestions {
+                                ui.selectable_value(&mut st.model, Some(s.clone()), s);
+                            }
+                        });
+                    if ui
+                        .add(Button::primary(tr.t("wizard.continue")).small())
+                        .clicked()
+                        && let Some(m) = st.model.clone()
+                    {
+                        flow.answer_model(m, now);
+                    }
+                });
+            }
+            PlanChoice::OwnedKeyConflict { conflicts } => {
+                ui.label(Text::body(tr.t("banner.conflict.body"), pal));
+                for c in conflicts {
+                    crate::pages::shared::values::change_row(
+                        ui,
+                        cx,
+                        egui::Id::unique(("key-conflict", &plan.id, &c.path)),
+                        None,
+                        &c.path,
+                        c.before.as_deref(),
+                        c.after.as_deref(),
+                        None,
+                        "—",
+                    );
+                }
+                ui.horizontal(|ui| {
+                    let mut answer = None;
+                    if ui
+                        .add(Button::new(tr.t("banner.conflict.keep")).small())
+                        .clicked()
+                    {
+                        answer = Some(KeyResolution::KeepCurrent);
+                    }
+                    if ui
+                        .add(Button::primary(tr.t("banner.conflict.overwrite")).small())
+                        .clicked()
+                    {
+                        answer = Some(KeyResolution::Overwrite);
+                    }
+                    if let Some(a) = answer {
+                        let mut request = plan.request.clone();
+                        for c in conflicts {
+                            request.key_resolutions.insert(c.path.clone(), a);
+                        }
+                        flow.request(request, now);
+                    }
+                });
+            }
+            PlanChoice::ForeignEnv { lines } => {
+                ui.label(Text::body(
+                    tr.f("banner.foreign_env", &[("n", &lines.len())]),
+                    pal,
+                ));
+                accept.push(choice.clone());
+            }
+            PlanChoice::UnknownVersion { consumer } => {
+                ui.label(Text::body(
+                    tr.f("banner.unknown_version", &[("consumer", consumer)]),
+                    pal,
+                ));
+                accept.push(choice.clone());
+            }
+            PlanChoice::SharedHome { targets } => {
+                let names: Vec<&str> = targets.iter().map(|t| t.as_str()).collect();
+                ui.label(Text::body(
+                    tr.f("banner.shared_home", &[("hosts", &names.join(", "))]),
+                    pal,
+                ));
+                accept.push(choice.clone());
+            }
+            _ => {}
+        }
+    }
+    if !accept.is_empty() {
+        ui.add_space(4.0);
+        if ui
+            .add(Button::primary(tr.t("banner.accept")).small())
+            .clicked()
+        {
+            flow.accept_risks(&accept, now);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dialogs
+// ---------------------------------------------------------------------------
+
+/// Number of sessions in a migration, whose thread count may include several
+/// database rows for each session.
+pub fn migration_sessions(m: &MigrationPlan) -> u32 {
+    if m.items.is_empty() {
+        m.thread_count.max(m.rollout_count)
+    } else {
+        u32::try_from(m.items.len()).unwrap_or(u32::MAX)
+    }
+}
+
+/// The full-restart confirmation (plan 7.3 ConfirmFull).
+pub fn confirm_full(
+    ctx: &egui::Context,
+    cx: &Cx<'_>,
+    flow: &mut Flow,
+    st: &mut BannerState,
+    now: Duration,
+) {
+    let Stage::ConfirmFull { plan } = flow.stage() else {
+        return;
+    };
+    let plan = plan.clone();
+    let pal = cx.pal;
+    let tr = cx.tr;
+    let mut action: Option<u8> = None;
+    let resp = dialog(ctx, egui::Id::unique("confirm-full"), 560.0, |ui| {
+        ui.label(Text::h2(tr.t("confirm.title"), pal));
+        ui.label(Text::small(
+            tr.f("banner.destination", &[("dest", &cx.dest(&plan.to))]),
+            pal,
+        ));
+        if let Some(reason) = reapply_reason(cx, &plan) {
+            ui.add(egui::Label::new(Text::small(reason, pal)).wrap());
+        }
+        ui.add_space(8.0);
+        if let RestartKind::FullAppRestart { reason } = &plan.primary {
+            ui.horizontal_top(|ui| {
+                ui.label(Text::strong(tr.t("confirm.reason"), pal));
+                ui.add(egui::Label::new(Text::body(tr.text(&reason.text()), pal)).wrap());
+            });
+        }
+        if let Some(m) = &plan.migration {
+            note(
+                ui,
+                pal,
+                Severity::Warning,
+                &tr.f("confirm.migration", &[("n", &migration_sessions(m))]),
+            );
+        }
+        ui.add(egui::Label::new(Text::muted(tr.t("confirm.body"), pal)).wrap());
+        for w in &plan.warnings {
+            note(ui, pal, w.severity, &cx.localize(&w.text));
+        }
+        if !plan.cleanup.is_empty() {
+            ui.add_space(4.0);
+            ui.label(Text::strong(tr.t("confirm.cleanup"), pal));
+            for c in &plan.cleanup {
+                bullet(ui, pal, &tr.text(c));
+            }
+        }
+        if change_count(cx, &plan) > 0 {
+            ui.add_space(4.0);
+            key_changes(ui, cx, &plan);
+        }
+        ui.add_space(12.0);
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add(Button::primary(tr.t("confirm.full_restart")))
+                .clicked()
+            {
+                action = Some(0);
+            }
+            if plan.migration.is_none() && ui.add(Button::new(tr.t("confirm.write_only"))).clicked()
+            {
+                action = Some(1);
+            }
+            for (i, alt) in plan.alternatives.iter().enumerate() {
+                if ui.add(Button::new(tr.text(&alt.label))).clicked() {
+                    action = Some(10 + i as u8);
+                }
+            }
+            if ui
+                .add(Button::ghost(tr.t("action.cancel")).kbd("Esc"))
+                .clicked()
+            {
+                action = Some(2);
+            }
+        });
+    });
+    if resp.should_close() && action.is_none() {
+        action = Some(2);
+    }
+    let _ = st;
+    match action {
+        Some(0) => flow.confirm_full(false, now),
+        Some(1) => flow.confirm_full(true, now),
+        Some(2) => {
+            flow.cancel(now);
+        }
+        Some(n) if n >= 10 => flow.take_alternative(usize::from(n - 10), now),
+        _ => {}
+    }
+}
+
+/// Dialogs for questions other than "wait for turns" (that one lives in the banner).
+pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: Duration) {
+    let Some(run) = flow.run_mut() else {
+        return;
+    };
+    let Some(pending) = run.decision.as_ref() else {
+        return;
+    };
+    if matches!(pending.request, DecisionRequest::WaitForTurns { .. }) {
+        return;
+    }
+    let request = pending.request.clone();
+    let recovery = matches!(request, DecisionRequest::VerificationFailed { .. });
+    let remaining = run.rollback_remaining(now);
+    let pal = cx.pal;
+    let tr = cx.tr;
+    let mut answer = None;
+    dialog(ctx, egui::Id::unique("decision"), 520.0, |ui| {
+        let (title, body) = match &request {
+            DecisionRequest::ForceQuit { .. } => {
+                ("decide.force_quit.title", "decide.force_quit.body")
+            }
+            DecisionRequest::IpcFailed { .. } => ("decide.ipc.title", "decide.ipc.body"),
+            DecisionRequest::VerificationFailed { .. } => {
+                ("decide.verify.title", "decide.verify.body")
+            }
+            DecisionRequest::UnknownRemoteActivity { .. } => {
+                ("decide.remote.title", "decide.remote.body")
+            }
+            DecisionRequest::CloseConsumers { .. } => {
+                ("decide.consumers.title", "decide.consumers.body")
+            }
+            _ => ("decide.other.title", "decide.other.body"),
+        };
+        ui.label(Text::h2(tr.t(title), pal));
+        ui.add(egui::Label::new(Text::muted(tr.t(body), pal)).wrap());
+        match &request {
+            DecisionRequest::IpcFailed { error } => {
+                ui.label(Text::mono_muted(error_text(tr, error), pal));
+            }
+            DecisionRequest::VerificationFailed { verification } => {
+                let rows = [
+                    ("verify.process", &verification.process),
+                    ("verify.files", &verification.files),
+                    ("verify.auth", &verification.auth),
+                    ("verify.line", &verification.line),
+                    ("verify.renderer", &verification.renderer),
+                ];
+                for (key, r) in rows {
+                    ui.horizontal_wrapped(|ui| {
+                        let (st, detail) = match r {
+                            superba_core::CheckResult::Passed => (Status::Ok, String::new()),
+                            superba_core::CheckResult::Failed { detail } => {
+                                (Status::Error, detail.clone())
+                            }
+                            superba_core::CheckResult::Skipped { reason } => {
+                                (Status::Idle, reason.clone())
+                            }
+                            superba_core::CheckResult::Pending => (Status::Idle, String::new()),
+                        };
+                        ui.add(StatusDot::new(st));
+                        ui.label(Text::body(tr.t(key), pal));
+                        if !detail.is_empty() {
+                            ui.label(Text::small(detail, pal));
+                        }
+                    });
+                }
+            }
+            DecisionRequest::ForceQuit { pids } => {
+                ui.label(Text::mono_muted(
+                    pids.iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    pal,
+                ));
+            }
+            DecisionRequest::CloseConsumers { processes } => {
+                for p in processes {
+                    ui.label(Text::mono_muted(
+                        format!("{}  {}", p.pid, p.cmdline.join(" ")),
+                        pal,
+                    ));
+                }
+            }
+            DecisionRequest::UnknownRemoteActivity { targets } => {
+                let names: Vec<&str> = targets.iter().map(|t| t.as_str()).collect();
+                ui.label(Text::mono_muted(names.join(", "), pal));
+            }
+            _ => {}
+        }
+        if recovery {
+            ui.add_space(4.0);
+            if let Some(remaining) = remaining {
+                let secs = remaining.as_millis().div_ceil(1000);
+                ui.label(Text::strong(
+                    tr.f("shell.rollback_in", &[("secs", &secs)]),
+                    pal,
+                ));
+                ui.add(CountdownBar::new(1.0 - remaining.as_secs_f32() / 10.0));
+                ctx.request_repaint_after(Duration::from_millis(100));
+            } else {
+                ui.label(Text::strong(tr.t("shell.rollback_stopped"), pal));
+            }
+            ui.label(Text::small(tr.t("shell.rollback_shortcuts"), pal));
+        }
+        ui.add_space(12.0);
+        ui.horizontal_wrapped(|ui| {
+            for d in request.allowed() {
+                let (label, kind) = match d {
+                    Decision::Force => (tr.t("decide.force"), 2),
+                    Decision::Cancel => (tr.t("action.cancel"), 0),
+                    Decision::FullRestart => (tr.t("decide.full_restart"), 1),
+                    Decision::Undo => (tr.t("decide.undo"), 1),
+                    Decision::KeepWritten => (
+                        tr.t(if recovery {
+                            "shell.keep_new"
+                        } else {
+                            "decide.keep"
+                        }),
+                        0,
+                    ),
+                    Decision::Rollback => (tr.t("decide.rollback"), 1),
+                    Decision::Continue => (tr.t("decide.continue"), 1),
+                    Decision::Wait => (tr.t("banner.waiting.wait"), 1),
+                };
+                let safe = *d == request.safe_default();
+                let mut b = match kind {
+                    2 => Button::danger(label),
+                    _ if safe => Button::primary(label),
+                    _ => Button::new(label),
+                };
+                if recovery && *d == Decision::Rollback {
+                    b = b.kbd("Enter");
+                }
+                if ui.add(b).clicked() {
+                    answer = Some(*d);
+                }
+            }
+        });
+    });
+    if let Some(d) = answer {
+        flow.decide(d);
+    }
+}
+
+/// What a finished switch applied, for its toast and log line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Applied {
+    /// Codex now uses another provider or line: its name.
+    Switched(String),
+    /// The provider (and line) Codex already used was applied again because its
+    /// settings, key or models changed: "Provider · Line · PAT".
+    Reapplied(String),
+    /// Router mode turned on or off.
+    Router(bool),
+    /// Settings pushed to a remote host: its name.
+    HostSynced(String),
+}
+
+/// Re-applying the provider Codex already uses (same profile and line): its
+/// settings, key, models or authentication changed, nothing was switched.
+pub fn is_reapply(plan: &SwitchPlan) -> bool {
+    matches!(plan.request.intent, SwitchIntent::Profile { .. })
+        && plan.from.as_ref().is_some_and(|from| {
+            from.profile_id.is_some()
+                && from.profile_id == plan.to.profile_id
+                && (plan.to.line_id.is_none() || from.line_id == plan.to.line_id)
+        })
+}
+
+/// What `plan` applied (user bug 25: a re-apply said "Switched to <line>").
+/// `host` names a remote host.
+pub fn applied(
+    tr: &crate::i18n::Tr,
+    data: &crate::pages::Data,
+    plan: &SwitchPlan,
+    host: &dyn Fn(&TargetId) -> String,
+) -> Applied {
+    match &plan.request.intent {
+        SwitchIntent::Router { enable } => return Applied::Router(*enable),
+        SwitchIntent::HostSync { target_id, .. } => return Applied::HostSynced(host(target_id)),
+        _ => {}
+    }
+    if is_reapply(plan) {
+        return Applied::Reapplied(crate::pages::dest_text(tr, data, &plan.to));
+    }
+    // A line switch on a provider with several lines names the line; anything
+    // else names the destination.
+    let line = plan.to.line_id.as_ref().filter(|_| {
+        plan.to
+            .site_id
+            .as_ref()
+            .and_then(|s| data.site(s))
+            .is_some_and(|s| s.lines.len() > 1)
+            && plan.to.site_id.as_ref() == data.active_site_id()
+    });
+    Applied::Switched(match line {
+        Some(l) => data.line_label(tr, plan.to.site_id.as_ref(), l),
+        None => crate::pages::dest_text(tr, data, &plan.to),
+    })
+}
+
+impl Applied {
+    /// The toast title: "已切换到 线路", "已把改动应用到「供应商 · 线路 · PAT」".
+    pub fn title(&self, tr: &crate::i18n::Tr) -> String {
+        match self {
+            Applied::Switched(line) => tr.f("shell.switched", &[("line", line)]),
+            Applied::Reapplied(dest) => tr.f("shell.reapplied", &[("dest", dest)]),
+            Applied::Router(true) => tr.t("shell.router_on"),
+            Applied::Router(false) => tr.t("shell.router_off"),
+            Applied::HostSynced(host) => tr.f("shell.host_synced", &[("host", host)]),
+        }
+    }
+
+    /// The activity-log line, with the time it took.
+    pub fn log_text(&self, tr: &crate::i18n::Tr, elapsed_ms: u64) -> String {
+        match self {
+            Applied::Switched(line) => switched_text(tr, line, elapsed_ms),
+            other => tr.f(
+                "toast.timed",
+                &[
+                    ("title", &other.title(tr)),
+                    ("secs", &format!("{:.1}", elapsed_ms as f64 / 1000.0)),
+                ],
+            ),
+        }
+    }
+}
+
+/// Title for the toast after a hot switch: "Switched to Overseas · 1.2 s".
+pub fn switched_text(tr: &crate::i18n::Tr, line: &str, elapsed_ms: u64) -> String {
+    tr.f(
+        "toast.switched",
+        &[
+            ("line", &line),
+            ("secs", &format!("{:.1}", elapsed_ms as f64 / 1000.0)),
+        ],
+    )
+}
+
+/// Draws a thin divider.
+pub fn divider(ui: &mut Ui, pal: &Palette) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter()
+        .hline(r.x_range(), r.center().y, Stroke::new(1.0, pal.border));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::design::{fonts, style, tokens::size};
+    use crate::i18n::Tr;
+    use superba_core::Locale;
+
+    #[test]
+    fn banner_titles_and_controls_never_overlap_at_minimum_or_default_width() {
+        for width in [size::MIN_WINDOW[0], 1180.0] {
+            for locale in [Locale::En, Locale::ZhCn] {
+                for kind in ["armed", "running", "blocked"] {
+                    let ctx = egui::Context::default();
+                    ctx.set_fonts(fonts::definitions(&fonts::FontReport::default()));
+                    style::install(&ctx, Some(egui::Theme::Dark));
+                    let tr = Tr::new(locale);
+                    let destination = "Destination ".repeat(5);
+                    assert_eq!(destination.chars().count(), 60);
+                    let title = match kind {
+                        "armed" => tr.f(
+                            "banner.armed.title",
+                            &[("dest", &destination), ("secs", &2)],
+                        ),
+                        "running" => tr.f("banner.running.title", &[("dest", &destination)]),
+                        _ => format!("{}: {destination}", tr.t("banner.blocked.title")),
+                    };
+                    let mut button_rects = Vec::new();
+                    let mut title_rect = Rect::NOTHING;
+                    let input = egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            pos2(0.0, 0.0),
+                            vec2(width, size::MIN_WINDOW[1]),
+                        )),
+                        ..Default::default()
+                    };
+                    let output = ctx.run_ui(input, |ui| {
+                        // Same sidebar, page margins and card padding as the app.
+                        ui.set_width(width - size::SIDEBAR - 64.0 - 42.0);
+                        let available = ui.available_rect_before_wrap();
+                        let aside = match kind {
+                            "armed" => HeaderAside::Buttons(vec![
+                                Button::primary(tr.t("banner.switch_now"))
+                                    .small()
+                                    .kbd("Enter"),
+                                Button::new(tr.t("action.cancel")).small().kbd("Esc"),
+                            ]),
+                            "running" => HeaderAside::Text("3.3 s".into()),
+                            _ => HeaderAside::Buttons(vec![
+                                Button::primary(tr.t("action.retry")).small(),
+                                Button::new(tr.t("action.close")).small().kbd("Esc"),
+                            ]),
+                        };
+                        let (label, buttons) = banner_header(
+                            ui,
+                            Palette::of(ui.ctx()),
+                            Some((Icon::Bolt, Color32::WHITE)),
+                            title.clone(),
+                            aside,
+                        );
+                        title_rect = label.rect;
+                        button_rects = buttons.into_iter().map(|b| b.rect).collect();
+                        assert!(
+                            ui.min_rect().right() <= available.right() + 1.0,
+                            "{kind}: header overflow at {width}"
+                        );
+                    });
+                    let mut title_galley = None;
+                    let mut elapsed = None;
+                    for shape in &output.shapes {
+                        if let egui::Shape::Text(text) = &shape.shape {
+                            let rect = text.galley.rect.translate(text.pos.to_vec2());
+                            if text.galley.text() == title {
+                                title_galley = Some(rect);
+                            }
+                            if text.galley.text() == "3.3 s" {
+                                elapsed = Some(rect);
+                            }
+                        }
+                    }
+                    let galley = title_galley.expect("the title must be painted");
+                    assert!(title_rect.expand(1.0).contains_rect(galley));
+                    for button in button_rects {
+                        assert!(
+                            !galley.intersects(button),
+                            "{kind} title overlaps button at {width}: {galley:?}, {button:?}"
+                        );
+                    }
+                    if let Some(elapsed) = elapsed {
+                        assert!(
+                            !galley.intersects(elapsed),
+                            "running title overlaps elapsed time"
+                        );
+                    }
+                    output.drop_without_applying_deltas();
+                }
+            }
+        }
+    }
+}

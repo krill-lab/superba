@@ -1,0 +1,45 @@
+# superba-core 请求记录相关文案（经路由的请求、状态、客户端）。拼接在 zh-CN.toml
+# 之后组成 core 文案，所以本文件必须以表头开头，且不能重复其他 core 文件中的键
+# （由测试保证）。每个键都必须在 core.requests.en.toml 中存在。
+
+[request_client]
+desktop = "桌面 app"
+tui = "终端"
+exec = "codex exec"
+other = "其他"
+
+# 请求记录的来源（用量页、CSV、spb usage）。
+[request_source]
+router = "本地路由"
+rollout = "Codex 会话记录"
+
+[request_status]
+ok = "完成"
+http = "HTTP {status} {code}"
+failed = "失败 {code}"
+incomplete = "未完成 {reason}"
+broken = "中断"
+cancelled = "取消"
+
+# 默认回复统计行的各个片段（路由 → 统计行）。占位符由本地路由填写，请保持不变。
+[stats_template]
+tps = "{tps} tok/s"
+ttft = "首字 {ttft}"
+turn_tokens = "本轮 {input} in / {output} out"
+cached = "缓存 {cached}"
+cost = "≈ {cost}"
+requests = "{requests} 次请求"
+separator = " · "
+
+# 请求体以何种方式发往上游（请求详情、CSV、spb）。
+[request_compression]
+none = "未压缩"
+client_zstd = "zstd（Codex 已压缩）"
+router_zstd = "zstd（路由器压缩）"
+zstd_refused = "未压缩（上游拒绝 zstd，已重发）"
+
+# 线路的传输方式检查（供应商 → 连接、spb）。
+[transport_support]
+supported = "支持"
+unsupported = "不支持"
+unknown = "未知"

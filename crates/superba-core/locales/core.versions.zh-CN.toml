@@ -1,0 +1,18 @@
+# superba-core 版本相关文案（Codex 安装方式、与桌面 app 的兼容性、app 更新）。
+# 拼接在 zh-CN.toml 之后组成 core 文案，所以本文件必须以表头开头，且不能重复其他
+# core 文件中的键（由测试保证）。每个键都必须在 core.versions.en.toml 中存在。
+
+[install_kind]
+standalone = "独立安装"
+npm = "npm"
+homebrew = "Homebrew"
+app_bundled = "app 自带"
+superba_store = "由 Superba 管理"
+other = "其他"
+
+[compat_tier]
+same = "与 app 相同"
+compatible = "兼容"
+older = "较旧：基本对话可用，可能缺少新功能"
+below_floor = "低于 app 要求的最低版本"
+newer = "比 app 自带的 Codex 新很多（未经测试）"

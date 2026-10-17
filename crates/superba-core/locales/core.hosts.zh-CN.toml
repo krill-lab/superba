@@ -1,0 +1,18 @@
+# superba-core 远程主机相关文案（设置同步、在主机上安装 Codex）。拼接在 zh-CN.toml
+# 之后组成 core 文案，所以本文件必须以表头开头，且不能重复其他 core 文件中的键
+# （由测试保证）。每个键都必须在 core.hosts.en.toml 中存在。
+
+[host_sync]
+write = "写入"
+skip = "跳过：{reason}"
+remove = "删除"
+conflict = "上次同步后主机上的值已被修改"
+
+[host_scope]
+connection = "只修改 {host} 的连接（供应商、线路、Key 和模型），它自己的 Codex 设置保持不变。"
+settings = "只修改 {host} 上的 Codex 设置，它的连接、Key 和模型保持不变。"
+
+[host_sessions]
+truncated = "该主机有 {count} 个会话文件，只统计了前 {max} 个。"
+no_zstd = "有 {count} 个压缩的会话文件没有统计：该主机上没有 zstd。"
+no_meta = "有 {count} 个会话文件读不到会话头信息，没有统计。"

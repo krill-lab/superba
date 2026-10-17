@@ -1,0 +1,32 @@
+# superba-core 模型相关文案（速度档位、模型列表、模型目录文件）。拼接在 zh-CN.toml
+# 之后组成 core 文案，所以本文件必须以表头开头，且不能重复其他 core 文件中的键
+# （由测试保证）。每个键都必须在 core.models.en.toml 中存在。
+
+[speed_tier]
+standard = "标准"
+fast = "Fast"
+ultrafast = "Ultrafast"
+
+[speed_effect]
+applies = "生效"
+via_model_name = "通过模型名 {model} 生效"
+app_forces_standard = "API Key 模式下桌面 app 强制使用标准档"
+not_offered = "该模型不提供这个档位，按标准档运行"
+app_menu = "在 app 自己的速度菜单中设置"
+
+[catalog_file]
+not_needed = "不需要模型目录文件"
+written = "已为 Codex {version} 写入模型目录文件"
+failed = "未写入模型目录文件：{reason}"
+
+[models_note]
+generic_template = "{model}：没有已知的目录条目，使用 Codex 对未知模型的通用设置"
+generic_without_prompt = "{model}：缺少此 Codex 版本的通用指令，暂用另一个模型的指令"
+filled_fields = "{model}：Codex {version} 必需的字段取自它的内置目录（{fields}）"
+compact_clamped = "{model}：自动压缩阈值 {limit} 超过上下文窗口的 90%，Codex 实际在 {effective} 时压缩"
+max_raised = "{model}：最大上下文窗口已提高到 {window}，上游可能拒绝更长的提示"
+override_unknown_model = "{model} 的设置已保留但未生效：列表中没有这个模型"
+duplicate = "{model} 在列表中出现多次，使用第一项"
+model_added = "默认模型 {model} 不在列表中，已自动加入"
+tier_not_offered = "列表中没有模型提供 {tier}，Codex 按标准档运行"
+tier_not_offered_by_model = "{model} 不提供 {tier}，按标准档运行"

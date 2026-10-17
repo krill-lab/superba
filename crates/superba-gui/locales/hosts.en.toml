@@ -1,0 +1,85 @@
+# superba-gui UI texts (English), area "hosts". Flat dotted keys under their tables.
+# Every key must exist in hosts.zh-CN.toml with the same {placeholders} and must not be
+# defined in another area file (tests/i18n_tests.rs).
+
+[hosts]
+refresh = "Check again"
+loading = "Looking for the hosts the ChatGPT app knows…"
+load_failed = "Remote hosts could not be read"
+connected = "Connected"
+not_connected = "Not connected"
+app_record = "App record"
+probed = "Checked {age}"
+probe = "Check now"
+probe_failed = "The last check failed: {detail}"
+not_probed = "Not checked yet"
+connection = "Connection"
+connection_unknown = "No connection configured"
+follow = "Switch with this computer"
+follow_tip = "Every switch on this computer also switches this host's connection (direct, never routed). Settings are not changed; use Sync settings for those."
+codex = "Codex"
+codex_missing = "Not found"
+update_hint = "Update {version} available →"
+sessions_label = "Sessions"
+hot_label = "Hot restart"
+disk_low = "Only {mb} MB free in the home folder; installing Codex needs about 600 MB."
+shared_home = "This home folder seems to be shared with another machine (network home); a write there affects both."
+
+[hosts.kind]
+standalone = "Standalone"
+npm = "npm"
+
+[hosts.list]
+synced = "Settings synced"
+unsynced = "{n} {n|setting|settings} not synced"
+probe_failed = "Check failed"
+more = "{n} more…"
+
+[hosts.sync]
+title = "Settings sync"
+last = "Last synced {time} · {n} local {n|change|changes} since"
+never = "Never synced"
+fit = "{local} local settings → this host can take {ok}, {skip} need a newer Codex"
+checking = "Checking which settings this host's Codex can take…"
+not_checked = "Not compared yet"
+button = "Sync settings…"
+needs_probe = "Check this host first (its Codex version decides what can be synced)"
+
+[hosts.sessions]
+open = "View sessions →"
+
+[hosts.hot]
+ok = "Possible (the app recorded a hostId)"
+reconnect = "Reconnect this host in the app for changes to take effect"
+
+[hosts.empty]
+title = "No remote hosts"
+body = "The ChatGPT desktop app doesn't know any remote host yet. Hosts you add in the app appear here."
+
+[hosts.palette]
+sync = "Sync settings to {host}"
+sync_detail = "Push this computer's Codex settings, filtered by the host's Codex version"
+
+[hosts.syncdlg]
+title = "Sync settings to {host} · codex {version}"
+title_plain = "Sync settings to {host}"
+body = "Pushes this computer's Codex settings of provider “{provider}” to {host}. Connection (provider, line, key) and model overrides are not included."
+body_plain = "Pushes this computer's Codex settings to {host}. Connection (provider, line, key) and model overrides are not included."
+unreachable = "Can't connect to {host}. Check that the host is online and SSH can log in, then retry."
+loading = "Comparing settings with the host…"
+nothing = "Nothing to sync: the host already has these settings."
+write = "Will write ({n})"
+skip = "Skipped ({n})"
+remove = "Will restore the host's value ({n})"
+remove_reason = "Written by the last sync, no longer set here; the host's earlier value returns"
+conflict = "Changed on the host since the last sync"
+conflict_badge = "Conflict"
+keep_host = "Leave it unticked to keep the host's value"
+unset = "not set"
+restart = "Codex on {host} hot-restarts afterwards (about 1 s; a reply being generated is interrupted — Superba waits for it first)."
+confirm = "Sync {n} {n|setting|settings}"
+
+[hosts.syncdlg.col]
+setting = "Setting"
+local = "This computer"
+host = "{host} now"

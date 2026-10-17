@@ -1,0 +1,98 @@
+# superba-gui UI texts (Simplified Chinese), area "updates". Every key must exist in
+# updates.en.toml with the same {placeholders} (tests/i18n_tests.rs).
+
+[updates]
+check = "检查更新"
+checked = "上次检查 {age}"
+loading = "正在读取已安装的版本…"
+load_failed = "无法读取版本信息"
+command = "命令"
+copy = "复制"
+downloading = "正在下载并校验…"
+installed = "已安装并校验 Codex {version}"
+
+[updates.app]
+title = "ChatGPT 桌面 app"
+installed_label = "已安装"
+latest_label = "最新"
+released = "{date} 发布"
+bundled = "自带 codex {codex}"
+latest_unknown = "未知（已关闭在线检查，或无法获取版本列表）"
+not_installed = "这台电脑上没有找到 ChatGPT 桌面 app。"
+up_to_date = "已是最新版本"
+download = "下载 .{kind}（{size}）"
+file = "已下载"
+open_installer = "打开安装器"
+linux_note = "Linux 版没有自动更新：下载后用系统软件安装器安装（需要管理员权限，Superba 不会使用 sudo）。下载的文件已按发布的校验值核对。"
+mac_note = "ChatGPT 会自行更新（Sparkle），退出 app 时安装。"
+mac_download = "下载完整安装包"
+store = "在 Microsoft Store 中打开"
+reopen = "ChatGPT 已更新，通过 Superba 重新打开以便热切。"
+reopen_button = "重新打开 ChatGPT"
+reopen_tip = "计划通过 Superba 完全重启 ChatGPT（会先预览）。"
+
+[updates.pin]
+title = "桌面 app 使用的 Codex"
+effective = "当前使用"
+bundled = "随 app 自带 {version}"
+bundled_hint = "推荐：app 按这个版本开发"
+version = "固定版本"
+pick = "选择版本…"
+version_hint = "由 Superba 下载并校验，保存在数据目录"
+path = "自定义路径"
+browse = "浏览…"
+path_empty = "请输入 codex 程序的路径"
+not_native = "请选择原生程序，不要选 npm 的 codex.js 启动脚本"
+persist = "从其他地方打开 ChatGPT 时也使用它（写入环境变量 CODEX_CLI_PATH）"
+note = "固定后 app 升级不会再更新 Codex；版本差太多可能出问题。更改需要完全重启 ChatGPT。"
+no_daemon = "设置后 app 不再使用本机常驻 daemon。"
+apply = "应用…"
+apply_tip = "计划用这个 Codex 完全重启 ChatGPT（会先预览）。"
+unsupported = "此版本在这个系统上不提供选择 app 使用的 Codex。"
+no_app = "安装 ChatGPT 桌面 app 后，才能选择它使用的 Codex。"
+bundled_unknown = "随 app 自带"
+copy_paths = "复制路径"
+running_path = "正在运行：{path}"
+expected_path = "应当运行：{path}"
+
+[updates.compat]
+match = "与 app 匹配"
+older = "较旧"
+newer = "较新"
+below_floor = "低于 app 最低版本"
+older_tip = "可能缺少 app 要调用的方法"
+newer_tip = "app-server 协议可能已改变"
+below_floor_tip = "app 会拒绝低于其最低版本的 Codex"
+
+[updates.cli]
+title = "Codex CLI · 本机"
+update_to = "更新到 {version}"
+switch_to = "改用 {version}"
+copy_cmd = "复制更新命令"
+install = "安装 Codex CLI"
+rollback = "回退到 {version}"
+path_pos = "PATH 第 {n}"
+none = "这台电脑上没有找到 codex 命令。"
+
+[updates.remote]
+title = "Codex · 远程主机"
+note = "安装到主机的 ~/.local/bin（app 的 SSH 启动器会把它放在 PATH 最前面），之后会重启该主机上的 Codex 内核。主机上的终端仍使用它们自己 PATH 里的第一个 codex。"
+install = "安装 {version}"
+install_tip = "通过 SSH 上传已校验的版本，为该主机的用户安装（不使用 sudo）。"
+current = "已是最新"
+unreachable = "未连接"
+app_command = "由 app 中该主机的命令决定"
+
+[updates.picker]
+prerelease = "包含预发布版本"
+empty = "没有可选的版本"
+
+[updates.tag]
+prerelease = "预发布"
+current = "当前"
+bundled = "内置"
+stored = "已下载"
+
+[updates.palette]
+check = "检查更新"
+update_cli = "更新 Codex CLI"

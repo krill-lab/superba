@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "releaseDate": "2026-10-16T09:00:39Z",
+  "packageVersion": "26.1013.3656.0",
+  "packages": [
+    {
+      "architecture": "x64",
+      "downloadUrl": "https://persistent.oaistatic.com/codex-app-prod/releases/26.1013.3656.0/ChatGPT-x64.msix"
+    },
+    {
+      "architecture": "arm64",
+      "downloadUrl": "https://persistent.oaistatic.com/codex-app-prod/releases/26.1013.3656.0/ChatGPT-arm64.msix"
+    }
+  ]
+}

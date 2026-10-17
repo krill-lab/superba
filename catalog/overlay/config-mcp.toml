@@ -1,0 +1,451 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:mcp_enterprise_managed_auth"]
+en = "Trusted enterprise IdP shared by EMA-enabled MCP servers and plugins."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "17e3b8f968264b91"
+zh_name = "MCP 企业托管授权"
+zh = "为启用企业托管授权（EMA）的 MCP 服务器和插件统一指定可信的企业身份提供方（IdP）。Codex 用该 IdP 的刷新令牌为各服务器换取专用授权，与 Codex 账号本身的登录无关。"
+zh_basis = "17e3b8f968264b91"
+
+["config:mcp_enterprise_managed_auth.idp"]
+en = "Shared enterprise authorization, independent of Codex account credentials."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "f26b16a197c72bb3"
+zh_name = "企业身份提供方"
+zh = "企业 IdP 的 OAuth 设置，包含 `issuer` 和 `client_id`。它是共享的企业授权来源，与 Codex 账号凭据相互独立。"
+zh_basis = "f26b16a197c72bb3"
+
+["config:mcp_enterprise_managed_auth.idp.client_id"]
+en = "Public OAuth client registered with that enterprise IdP."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "879523309ec7c240"
+zh_name = "IdP 客户端 ID"
+zh = "在该企业 IdP 中注册的公开 OAuth 客户端 ID，Codex 以此身份向 IdP 发起授权。"
+zh_basis = "879523309ec7c240"
+
+["config:mcp_enterprise_managed_auth.idp.issuer"]
+en = "Issuer used for enterprise OAuth discovery and identity validation."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "8eb87c124e5bdbd7"
+zh_name = "IdP 签发方"
+zh = "企业 IdP 的 issuer 地址，用于 OAuth 元数据发现和校验身份令牌的签发方。"
+zh_basis = "8eb87c124e5bdbd7"
+
+["config:mcp_oauth_callback_port"]
+en = "Optional fixed port for the local HTTP callback server used during MCP OAuth login. When unset, Codex will bind to an ephemeral port chosen by the OS."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c03af45daa37191e"
+zh_name = "MCP 登录回调端口"
+zh = "MCP OAuth 登录时本地回调服务器监听的固定端口；未设置时由操作系统随机分配。单个服务器的 `oauth.callback_port` 优先于此项。"
+zh_basis = "c03af45daa37191e"
+
+["config:mcp_oauth_callback_url"]
+en = "Optional redirect URI to use during MCP OAuth login. When set, this URI is used in the OAuth authorization request instead of the local listener address. The local callback listener still binds to 127.0.0.1 (using `mcp_oauth_callback_port` when provided)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "503e3fe83df4cdef"
+zh_name = "MCP 登录回调地址"
+zh = "MCP OAuth 登录时写入授权请求的重定向 URI，用来代替本地监听地址（例如经过端口转发时）。本地回调服务器仍监听 `127.0.0.1`（端口见 `mcp_oauth_callback_port`）；单个服务器的 `oauth.callback_url` 优先于此项。"
+zh_basis = "503e3fe83df4cdef"
+
+["config:mcp_oauth_credentials_store"]
+en = "Preferred backend for storing MCP OAuth credentials. keyring: Use an OS-specific keyring service. https://github.com/openai/codex/blob/main/codex-rs/rmcp-client/src/oauth.rs#L2 file: Use a file in the Codex home directory. auto (default): Use the OS-specific keyring service if available, otherwise use a file."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "522bd33807d2a424"
+zh_name = "MCP 凭据存储位置"
+zh = "MCP OAuth 凭据的保存方式：`auto`（默认，优先系统密钥链，不可用时用文件）、`keyring`（只用系统密钥链）或 `file`（保存到 Codex 主目录下的文件）。"
+zh_basis = "522bd33807d2a424"
+
+["config:mcp_oauth_credentials_store=auto"]
+en = "Prefer `Keyring` and use `File` when keyring storage is unavailable. Once an MCP client loads credentials from one store, that client keeps the resolved store for its lifetime so refreshes cannot switch to a possibly stale credential source. Credentials stored in the keyring will only be readable by Codex unless the user explicitly grants access via OS-level keyring access."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "54d70b72b4e88cd2"
+zh_name = "自动选择"
+zh = "优先使用系统密钥链，不可用时改用文件。某个 MCP 客户端一旦从某处读到凭据，就在其生命周期内固定使用该存储，避免刷新时切换到可能过期的另一份凭据。密钥链中的凭据默认只有 Codex 能读取，除非用户在系统层面另行授权。"
+zh_basis = "54d70b72b4e88cd2"
+
+["config:mcp_oauth_credentials_store=file"]
+en = "CODEX_HOME/.credentials.json This file will be readable to Codex and other applications running as the same user."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f06114f3040ad11a"
+zh_name = "本地文件"
+zh = "保存到 `CODEX_HOME/.credentials.json`（默认即 `~/.codex/.credentials.json`）。以同一用户身份运行的其他程序也能读取这个文件。"
+zh_basis = "f06114f3040ad11a"
+
+["config:mcp_oauth_credentials_store=keyring"]
+en = "Keyring when available, otherwise fail."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "c90352a3612a8345"
+zh_name = "仅系统密钥链"
+zh = "只使用操作系统提供的密钥链服务；密钥链不可用时直接失败，不会退回到文件。"
+zh_basis = "c90352a3612a8345"
+
+["config:mcp_optional_startup_grace_ms"]
+en = """
+Milliseconds to wait for optional MCP servers while building the initial tool catalog.
+
+Defaults to 1000. Set to 0 to disable the shared grace and wait for each server's configured `startup_timeout_sec` instead."""
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "97b3858f7ea36138"
+zh_name = "可选 MCP 启动宽限"
+zh = "构建初始工具列表时，等待非必需 MCP 服务器启动的毫秒数，默认 `1000`。到时仍未就绪的服务器暂不提供工具；设为 `0` 则不使用共享宽限，改为按各服务器的 `startup_timeout_sec` 等待。"
+zh_basis = "97b3858f7ea36138"
+
+["config:mcp_servers"]
+en = "Definition for MCP servers that Codex can reach out to for tool calls."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "02ecd2a9fa06a896"
+zh_name = "MCP 服务器"
+zh = "Codex 可以调用其工具的 MCP 服务器，每个以 `[mcp_servers.<名称>]` 表定义：设置 `command` 时启动本地 stdio 进程，设置 `url` 时连接 Streamable HTTP 服务。"
+zh_basis = "02ecd2a9fa06a896"
+
+["config:mcp_servers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个 MCP 服务器"
+zh = "一个 MCP 服务器的定义，表名即服务器名称。设置 `command` 时为 stdio 服务器，设置 `url` 时为 HTTP 服务器；两类只接受各自的字段，混用会导致配置报错。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.args"]
+en = ""
+en_hash = ""
+zh_name = "启动参数"
+zh = "启动 stdio MCP 服务器时传给 `command` 的参数列表；仅 stdio 服务器可用。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.auth"]
+en = ""
+en_hash = ""
+zh_name = "认证方式"
+zh = "HTTP MCP 服务器的认证流程：`oauth`（默认，使用已保存的 OAuth 凭据）、`chatgpt`（对受信任的 ChatGPT 官方来源使用当前 ChatGPT 登录）或 `ema_auth`（企业托管授权）。stdio 服务器不能设置此项。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.auth=chatgpt"]
+en = "Use the current ChatGPT session for servers on the trusted first-party ChatGPT origin. If no ChatGPT session provider is available, startup can still fall back to stored OAuth credentials."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "ae114f18218e51e8"
+zh_name = "使用 ChatGPT 登录"
+zh = "对位于受信任的 ChatGPT 官方来源上的服务器，直接使用当前 ChatGPT 会话授权。没有可用的 ChatGPT 会话时，启动仍可退回到已保存的 OAuth 凭据。"
+zh_basis = "ae114f18218e51e8"
+
+["config:mcp_servers.<name>.auth=ema_auth"]
+en = "Exchange an enterprise IdP refresh token for resource-specific authorization. Alternate credentials and ordinary OAuth fallback are not permitted."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "4572145bb844b6bc"
+zh_name = "企业托管授权"
+zh = "用企业 IdP（见 `mcp_enterprise_managed_auth`）的刷新令牌换取该服务器专用的授权。此模式下不允许使用其他凭据，也不会退回普通 OAuth。"
+zh_basis = "4572145bb844b6bc"
+
+["config:mcp_servers.<name>.auth=oauth"]
+en = "Use stored MCP OAuth credentials when available. Starting an OAuth login is a separate operation."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "d3ec162519a9cd5b"
+zh_name = "OAuth 凭据"
+zh = "有已保存的 MCP OAuth 凭据时使用它们（默认）。发起 OAuth 登录是单独的操作，例如运行 `codex mcp login <名称>`。"
+zh_basis = "d3ec162519a9cd5b"
+
+["config:mcp_servers.<name>.bearer_token_env_var"]
+en = ""
+en_hash = ""
+zh_name = "Bearer 令牌环境变量"
+zh = "存放 HTTP 访问令牌的环境变量名。设置后请求会带上 `Authorization: Bearer <令牌>`，令牌本身必须由该环境变量提供，不写在配置中；仅 HTTP 服务器可用。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.command"]
+en = ""
+en_hash = ""
+zh_name = "启动命令"
+zh = "启动 stdio MCP 服务器的程序或命令（如 `npx`），Codex 以子进程方式运行它，并通过标准输入输出通信。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.cwd"]
+en = ""
+en_hash = ""
+zh_name = "工作目录"
+zh = "启动 stdio MCP 服务器进程时使用的工作目录；仅 stdio 服务器可用。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.default_tools_approval_mode"]
+en = ""
+en_hash = ""
+zh_name = "工具默认审批模式"
+zh = "该服务器所有工具的默认审批模式，单个工具的 `tools.<工具名>.approval_mode` 优先：`auto` 按工具注解判断（标为只读的不询问，可能有破坏性或访问外部的会询问），`prompt` 每次都询问，`writes` 除标为只读的工具外都询问，`approve` 直接批准不询问。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.disabled_tools"]
+en = ""
+en_hash = ""
+zh_name = "禁用的工具"
+zh = "不向模型提供的工具名列表（黑名单），在 `enabled_tools` 筛选之后再移除。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.enabled"]
+en = ""
+en_hash = ""
+zh_name = "启用此服务器"
+zh = "设为 `false` 时 Codex 跳过该 MCP 服务器，不启动它也不提供其工具；默认 `true`。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.enabled_tools"]
+en = ""
+en_hash = ""
+zh_name = "允许的工具"
+zh = "只向模型提供这些工具（白名单）；未设置时提供该服务器的全部工具。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.env"]
+en = ""
+en_hash = ""
+zh_name = "环境变量"
+zh = "启动 stdio MCP 服务器时额外设置的环境变量表。服务器进程默认只继承 `HOME`、`PATH`、`USER`、`LANG` 等少数基础变量，其他变量需要在这里写明或用 `env_vars` 转发。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.env.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个环境变量"
+zh = "传给 MCP 服务器进程的一个环境变量，键为变量名，值为字符串。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.env_http_headers"]
+en = ""
+en_hash = ""
+zh_name = "环境变量请求头"
+zh = "值从环境变量读取的 HTTP 请求头表，键为请求头名，值为环境变量名；变量不存在或为空时不发送该请求头。仅 HTTP 服务器可用。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.env_http_headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个环境变量请求头"
+zh = "一个请求头：键为请求头名称，值为提供其内容的环境变量名。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.env_vars"]
+en = ""
+en_hash = ""
+zh_name = "转发的环境变量"
+zh = "从 Codex 自身环境转发给 stdio MCP 服务器的环境变量名列表。每项可以是变量名，也可以是带 `name` 和 `source` 的表，`source` 为 `local`（默认，从本机读取）或 `remote`（在远程执行环境中读取，仅远程 stdio 服务器可用）。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.environment_id"]
+en = ""
+en_hash = ""
+zh_name = "运行环境"
+zh = "在哪个执行环境中启动该 MCP 服务器，默认 `local`（本机）；其他值表示在对应的远程执行环境中启动。`http_headers_helper` 只支持本机服务器。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.http_headers"]
+en = ""
+en_hash = ""
+zh_name = "固定请求头"
+zh = "每次请求 HTTP MCP 服务器时附加的固定请求头表；仅 HTTP 服务器可用。密钥类的值建议改用 `env_http_headers` 或 `bearer_token_env_var`。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.http_headers.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个固定请求头"
+zh = "一个固定请求头：键为请求头名称，值为请求头内容。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.http_headers_helper"]
+en = ""
+en_hash = ""
+zh_name = "动态请求头命令"
+zh = "仅本机 HTTP 服务器可用的 shell 命令，运行后应输出一个 JSON 对象作为动态请求头。请求被服务器以 401 或 403 拒绝时会重新运行一次以刷新请求头；命令行可能被本机其他进程看到，不要在其中写入凭据。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.name"]
+en = "Legacy display-name field accepted for backward compatibility."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "92dcb06bc6756a26"
+zh_name = "显示名称（旧）"
+zh = "旧版的显示名称字段，为兼容旧配置仍被接受，但不再起作用；服务器名称以表名为准。"
+zh_basis = "92dcb06bc6756a26"
+
+["config:mcp_servers.<name>.oauth"]
+en = ""
+en_hash = ""
+zh_name = "OAuth 客户端设置"
+zh = "该服务器 MCP 登录或企业令牌交换时使用的 OAuth 客户端设置：`client_id`、`client_secret`、`callback_url`、`callback_port`、`authorization_server_issuer`。仅 HTTP 服务器可用。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.oauth.authorization_server_issuer"]
+en = "Expected resource authorization server issuer for EMA token exchange."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "12fa20f992f47d63"
+zh_name = "授权服务器签发方"
+zh = "企业托管授权令牌交换时期望的资源授权服务器 issuer。只能在 `auth` 为 `ema_auth` 时使用，否则配置报错。"
+zh_basis = "12fa20f992f47d63"
+
+["config:mcp_servers.<name>.oauth.callback_port"]
+en = "Fixed callback port that takes precedence over Codex's global OAuth callback port."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "b4721585b446b717"
+zh_name = "回调端口"
+zh = "该服务器 OAuth 登录时本地回调使用的固定端口，优先于全局的 `mcp_oauth_callback_port`。"
+zh_basis = "b4721585b446b717"
+
+["config:mcp_servers.<name>.oauth.callback_url"]
+en = "Registered callback URL associated with this OAuth client."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "56d4304872c3b7a9"
+zh_name = "回调地址"
+zh = "为该 OAuth 客户端注册的回调地址，优先于全局的 `mcp_oauth_callback_url`。"
+zh_basis = "56d4304872c3b7a9"
+
+["config:mcp_servers.<name>.oauth.client_id"]
+en = "Explicit OAuth client identifier to present during authorization and token exchange."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "74c12f5d95a36b9e"
+zh_name = "客户端 ID"
+zh = "授权和令牌交换时使用的 OAuth 客户端 ID，用于服务器要求使用预先注册的客户端时。"
+zh_basis = "74c12f5d95a36b9e"
+
+["config:mcp_servers.<name>.oauth.client_secret"]
+en = "OAuth client secret used for token exchange with a pre-registered client."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "4ee7e15154c35517"
+zh_name = "客户端密钥"
+zh = "预注册 OAuth 客户端的密钥，用于令牌交换；设置时不能为空，且必须同时设置 `client_id`。该值以明文保存在配置文件中。"
+zh_basis = "4ee7e15154c35517"
+
+["config:mcp_servers.<name>.oauth_resource"]
+en = ""
+en_hash = ""
+zh_name = "OAuth 资源参数"
+zh = "MCP 登录或企业令牌交换时附带的 `resource` 参数（RFC 8707），指明令牌要访问的资源服务器。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.omit_tools_from"]
+en = ""
+en_hash = ""
+zh_name = "隐藏工具的位置"
+zh = "该服务器的工具不出现在哪些面向模型的位置：`direct`（初始工具列表）、`deferred`（通过工具搜索按需发现）、`code_mode`（Code Mode 脚本内可调用的工具）。空列表表示清除较低优先级配置中的此项设置。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.required"]
+en = ""
+en_hash = ""
+zh_name = "必须启动成功"
+zh = "设为 `true` 时，该服务器初始化失败会让 `codex exec` 报错退出，构建工具列表时也会等待它就绪。若同时设置 `startup_readiness` 为 `catalog`，有效的缓存工具列表也算启动成功，连接失败会在调用工具时才报告。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.scopes"]
+en = ""
+en_hash = ""
+zh_name = "OAuth 权限范围"
+zh = "MCP 登录或企业令牌交换时请求的 OAuth scope 列表。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.startup_readiness"]
+en = "Whether startup requires a live connection or can use a valid cached tool catalog."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "ddb19f7a95a64334"
+zh_name = "启动就绪条件"
+zh = "启动时是否必须建立实时连接才算就绪：`connection`（默认，需要实时连接）或 `catalog`（可以先使用有效的缓存工具列表）。"
+zh_basis = "ddb19f7a95a64334"
+
+["config:mcp_servers.<name>.startup_readiness=catalog"]
+en = "Allow a valid cached tool catalog while the live connection starts. Tool execution still requires the current connection."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "077da2df39998f94"
+zh_name = "允许缓存工具列表"
+zh = "实时连接仍在建立时，允许先使用有效的缓存工具列表，让模型尽早看到工具；真正调用工具时仍需要当前连接。"
+zh_basis = "077da2df39998f94"
+
+["config:mcp_servers.<name>.startup_readiness=connection"]
+en = "Use the live connection to determine startup readiness."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "d69c596adf09fd76"
+zh_name = "需要实时连接"
+zh = "以实时连接是否建立来判断服务器启动就绪（默认）。"
+zh_basis = "d69c596adf09fd76"
+
+["config:mcp_servers.<name>.startup_timeout_ms"]
+en = ""
+en_hash = ""
+zh_name = "启动超时（毫秒）"
+zh = "以毫秒表示的启动超时，即初始化服务器并首次列出工具的最长时间，默认 30 秒；同时设置 `startup_timeout_sec` 时以后者为准。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.startup_timeout_sec"]
+en = ""
+en_hash = ""
+zh_name = "启动超时（秒）"
+zh = "初始化 MCP 服务器并首次列出工具的最长等待秒数，可以是小数，默认 30 秒；优先于 `startup_timeout_ms`。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.supports_parallel_tool_calls"]
+en = ""
+en_hash = ""
+zh_name = "支持并行调用"
+zh = "设为 `true` 时把该服务器的全部工具标记为可安全并行调用，模型可以同时发起多个调用；默认 `false`。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.tool_input_schema_max_bytes"]
+en = "UTF-8 byte threshold for compacting each ordinary MCP tool input schema. Defaults to 5,000 bytes. Code Mode also uses an explicitly configured limit when rendering each tool's input type. Larger limits preserve more parameter descriptions."
+en_source = "openai/codex rust-v0.158.0: codex-rs/core/config.schema.json"
+en_hash = "53f27dbbb6e4ef5d"
+zh_name = "工具参数结构上限"
+zh = "单个工具输入参数结构（JSON Schema）的 UTF-8 字节阈值，超过时会被压缩以节省上下文，默认 5,000 字节；调大可以保留更多参数说明。显式设置时，Code Mode 渲染工具参数类型也使用该值。"
+zh_basis = "53f27dbbb6e4ef5d"
+
+["config:mcp_servers.<name>.tool_timeout_sec"]
+en = ""
+en_hash = ""
+zh_name = "工具调用超时"
+zh = "调用该服务器工具的默认超时秒数，可以是小数，默认 300 秒（5 分钟）。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.tools"]
+en = ""
+en_hash = ""
+zh_name = "按工具设置"
+zh = "以工具名为键的单个工具设置表，可为每个工具指定 `approval_mode` 和 `output_token_limit`。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.tools.<name>"]
+en = ""
+en_hash = ""
+zh_name = "单个工具"
+zh = "该服务器中某个工具的设置，表名为工具名。"
+zh_basis = ""
+
+["config:mcp_servers.<name>.tools.<name>.approval_mode"]
+en = "Approval mode for this tool."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "fd322b11a5de8d57"
+zh_name = "审批模式"
+zh = "该工具的审批模式，优先于服务器的 `default_tools_approval_mode`：`auto` 按工具注解判断（标为只读的不询问，可能有破坏性或访问外部的会询问），`prompt` 每次都询问，`writes` 除标为只读的工具外都询问，`approve` 直接批准不询问。"
+zh_basis = "fd322b11a5de8d57"
+
+["config:mcp_servers.<name>.tools.<name>.output_token_limit"]
+en = "Token budget for this tool's output, before the standard 20% serialization allowance."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "6a30a34a860639a0"
+zh_name = "输出 token 上限"
+zh = "该工具输出最多保留给模型的 token 数，超出部分会被截断；实际允许量另加约 20% 的序列化余量。"
+zh_basis = "6a30a34a860639a0"
+
+["config:mcp_servers.<name>.url"]
+en = ""
+en_hash = ""
+zh_name = "服务器地址"
+zh = "Streamable HTTP MCP 服务器的地址（如 `https://example.com/mcp`）。设置后按 HTTP 方式连接，不能与 `command` 同时设置。"
+zh_basis = ""

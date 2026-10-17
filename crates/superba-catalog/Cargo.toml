@@ -1,0 +1,46 @@
+[package]
+name = "superba-catalog"
+description = "Codex settings catalog for Superba: per-version config keys and features, curation, human-written overlays, integrity checks and optional signed remote updates"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[features]
+default = ["http"]
+# HTTP transport (reqwest) for the optional remote catalog fetch. The fetch itself
+# is always compiled and stays disabled unless `RemoteConfig::enabled` is set.
+http = ["dep:reqwest"]
+
+[dependencies]
+superba-core.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+ed25519-dalek.workspace = true
+hex.workspace = true
+reqwest = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+# feed mirror race (staggered requests, per-request timeouts)
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+url.workspace = true
+zstd.workspace = true
+
+[build-dependencies]
+zstd.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

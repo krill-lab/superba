@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xmlns="http://linux.duke.edu/metadata/common" xmlns:rpm="http://linux.duke.edu/metadata/rpm" packages="1">
+<package type="rpm">
+  <name>chatgpt</name>
+  <arch>x86_64</arch>
+  <version epoch="0" ver="26.1013.40934" rel="1"/>
+  <checksum type="sha256" pkgid="YES">4af029bbaab60a5220466d5b678b5a64ee3b1b63cada8f0002ee66062bc8395f</checksum>
+  <summary>ChatGPT by OpenAI</summary>
+  <description>ChatGPT is an AI assistant from OpenAI.</description>
+  <packager></packager>
+  <url>https://developers.openai.com/codex/app</url>
+  <time file="1792184616" build="1792183722"/>
+  <size package="559195437" installed="1691428303" archive="1692335156"/>
+  <location href="chatgpt-26.1013.40934-1.x86_64.rpm"/>
+  <format>
+    <rpm:license>Proprietary</rpm:license>
+    <rpm:vendor></rpm:vendor>
+    <rpm:group>Unspecified</rpm:group>
+    <rpm:buildhost>openai.com</rpm:buildhost>
+    <rpm:sourcerpm>chatgpt-26.1013.40934-1.src.rpm</rpm:sourcerpm>
+    <rpm:header-range start="4504" end="597073"/>
+    <rpm:recommends>
+      <rpm:entry name="git"/>
+    </rpm:recommends>
+    <file type="dir">/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/cua/bin/linux</file>
+    <file type="dir">/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux</file>
+  </format>
+</package>
+</metadata>

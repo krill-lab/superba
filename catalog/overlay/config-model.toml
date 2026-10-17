@@ -1,0 +1,100 @@
+# Superba Codex settings catalog: text overlay.
+#
+# Each table is one catalog entry: `feature:<key>`, `config:<path>` or
+# `config:<path>=<value>`. `superba-catalog-gen overlay-sync` maintains the
+# generator-owned fields and adds or retires entries:
+#   en, en_name  official upstream English, copied verbatim (empty = upstream has none)
+#   en_source    where that text comes from (first release with this wording)
+#   en_hash      fingerprint of en_name + en
+# Maintainers own the other fields (see catalog/CONTRIBUTING.md):
+#   zh, zh_name  Chinese name / explanation, written per entry from the codex source
+#   zh_basis     the en_hash the Chinese text was written against
+#   en_note      English note, only where upstream has no text
+# Comments in this file are not preserved; put remarks in the pull request.
+
+format = 1
+
+["config:model"]
+en = "Optional override of model selection."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "7fe703c53e305c43"
+zh_name = "模型"
+zh = "新会话默认使用的模型名称。未设置时使用当前模型供应商和内置模型目录给出的默认模型；会话中切换模型或命令行 `-m` 参数会覆盖此值。"
+zh_basis = "7fe703c53e305c43"
+
+["config:model_catalog_json"]
+en = "Optional path to a JSON model catalog (applied on startup only). Per-thread `config` overrides are accepted but do not reapply this (no-ops)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "4ed0f5721dad849e"
+zh_name = "自定义模型目录文件"
+zh = "指向一个 JSON 模型目录文件（绝对路径），启动时加载并替换本进程内置的模型目录，文件中至少要有一个模型。只在启动时生效：按会话下发的 `config` 覆盖虽然被接受，但不会重新加载它。"
+zh_basis = "4ed0f5721dad849e"
+
+["config:model_reasoning_effort"]
+en = ""
+en_hash = ""
+zh_name = "推理强度"
+zh = "发给模型的推理强度（Responses API `reasoning.effort`），常见取值为 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`，部分模型还支持 `max`、`ultra` 等由模型目录声明的值。未设置时使用模型的默认推理强度；强度越高通常越慢、消耗的 token 越多。"
+zh_basis = ""
+
+["config:model_reasoning_summary"]
+en = ""
+en_hash = ""
+zh_name = "推理摘要"
+zh = "请求模型返回推理摘要的方式（Responses API `reasoning.summary`）：`auto`、`concise`（简要）、`detailed`（详细）或 `none`（不要摘要）。未设置时使用模型目录中的默认值。"
+zh_basis = ""
+
+["config:model_reasoning_summary=none"]
+en = "Option to disable reasoning summaries."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a145eb61b4db12ac"
+zh_name = "关闭推理摘要"
+zh = "不向模型请求推理摘要，因此界面中不会出现思考过程的摘要。"
+zh_basis = "a145eb61b4db12ac"
+
+["config:model_verbosity"]
+en = "Optional verbosity control for GPT-5 models (Responses API `text.verbosity`)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "a2439ce42fdd8318"
+zh_name = "输出详细度"
+zh = "控制 GPT-5 系列模型回复的详细程度（Responses API `text.verbosity`），可选 `low`、`medium`、`high`。只对模型目录标明支持该参数的模型生效，其他模型会忽略它并在日志中警告；未设置时使用模型的默认值。"
+zh_basis = "a2439ce42fdd8318"
+
+["config:oss_provider"]
+en = 'Preferred OSS provider for local models, e.g. "lmstudio" or "ollama".'
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "f70e2b8a238995c3"
+zh_name = "本地模型供应商"
+zh = "用 `--oss` 运行本地开源模型时默认采用的供应商，只能是 `lmstudio` 或 `ollama`。仅影响 CLI（终端界面和 `codex exec`），命令行指定的 `--local-provider` 优先。"
+zh_basis = "f70e2b8a238995c3"
+
+["config:personality"]
+en = "Deprecated: `friendly` and `pragmatic` no longer select a style."
+en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
+en_hash = "70d523a0ca3c4ee7"
+zh_name = "回复风格（已弃用）"
+zh = "已弃用：`friendly` 和 `pragmatic` 不再切换回复风格。设为 `none` 时仍会从模型内置指令中去掉 `# Personality` 一节。"
+zh_basis = "70d523a0ca3c4ee7"
+
+["config:plan_mode_reasoning_effort"]
+en = ""
+en_hash = ""
+zh_name = "计划模式推理强度"
+zh = "终端界面（TUI）中计划（Plan）模式专用的推理强度。未设置时使用 Plan 预设的默认值（目前为 `medium`）；设置后（包括 `none`）覆盖该预设，其中 `none` 表示不推理，而不是沿用全局设置。"
+zh_basis = ""
+
+["config:review_model"]
+en = "Review model override used by the `/review` feature."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "acf435d66229f5db"
+zh_name = "代码审查模型"
+zh = "`/review` 代码审查使用的模型。未设置时使用当前会话正在用的模型。"
+zh_basis = "acf435d66229f5db"
+
+["config:service_tier"]
+en = "Optional explicit service tier request id for new turns (for example `default`, `priority`, or `flex`; legacy `fast` also works)."
+en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
+en_hash = "da73bd172a1ec566"
+zh_name = "服务档位"
+zh = "新轮次请求使用的服务档位（Responses API `service_tier`）：`default` 表示标准路由，`priority`（旧写法 `fast`）为快速档，`flex` 为弹性档，`ultrafast` 为超快档，其他值原样发送。`priority`/`fast` 需开启 `features.fast_mode`，`ultrafast` 需开启 `features.ultrafast_mode`（两者默认开启），否则该设置被忽略。"
+zh_basis = "da73bd172a1ec566"

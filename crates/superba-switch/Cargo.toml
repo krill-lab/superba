@@ -1,0 +1,48 @@
+[package]
+name = "superba-switch"
+description = "Superba switch service: planning (restart decision table, version gates), execution state machine, verification"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[dependencies]
+superba-core.workspace = true
+superba-appctl.workspace = true
+superba-catalog.workspace = true
+superba-config.workspace = true
+superba-models.workspace = true
+superba-net.workspace = true
+superba-remote.workspace = true
+superba-router.workspace = true
+superba-sessions.workspace = true
+superba-versions.workspace = true
+async-trait.workspace = true
+directories.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sys-locale.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
