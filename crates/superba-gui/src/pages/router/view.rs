@@ -285,12 +285,47 @@ fn service_and_status(
                     "router.live.sessions",
                     live.totals.sticky_sessions.to_string(),
                 );
+                if live.local.max_concurrent > 0 {
+                    stat(
+                        ui,
+                        cx,
+                        "router.live.capacity",
+                        format!("{} / {}", live.local.in_flight, live.local.max_concurrent),
+                    );
+                }
             });
+            local_shortage(ui, cx, &live.local);
         }
         Err(_) if mode.is_router() => {
             note(ui, cx, Status::Error, cx.tr.t("router.live.down_on"));
         }
         Err(_) => {}
+    }
+}
+
+/// A recent local shortage: requests got 503 `local_router_busy` because this
+/// computer ran out of open files or router places; no line was blamed.
+fn local_shortage(ui: &mut Ui, cx: &Cx<'_>, local: &superba_core::RouterLocalView) {
+    let now_ms = u64::try_from(superba_core::Timestamp::now().as_millis()).unwrap_or(0);
+    if !model::recent_shortage(local, now_ms) {
+        return;
+    }
+    let ago = model::duration_text(now_ms.saturating_sub(local.last_problem_ms.unwrap_or(now_ms)));
+    let limit = local
+        .open_files_limit
+        .map_or_else(|| cx.tr.t("router.local.unlimited"), |n| n.to_string());
+    let text = cx.tr.f(
+        "router.local.ran_short",
+        &[
+            ("time", &ago),
+            ("files", &local.file_limit_errors),
+            ("busy", &local.busy),
+            ("limit", &limit),
+        ],
+    );
+    note(ui, cx, Status::Warn, text);
+    if let Some(last) = &local.last_file_limit {
+        ui.label(Text::mono_muted(last, cx.pal));
     }
 }
 

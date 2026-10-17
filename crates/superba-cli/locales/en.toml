@@ -547,6 +547,11 @@ next_key = "  spb key set --profile {id} --stdin    (paste the API key, then pre
 next_auth = "  spb profile edit {id} --auth auto    (the router sends the key as an API key)"
 next_profile = "  spb profile add {site} --site {site} --stdin    (paste the API key, then press Enter)"
 doctor_hint = "Run spb router doctor for a full report."
+capacity = "Capacity"
+capacity_value = "{in_flight} / {max} requests in progress (open-file limit {limit})"
+unlimited = "unlimited"
+ran_short = "! This computer ran short while routing: {files} \"too many open files\" errors (open-file limit {limit}) and {busy} requests over the router's limit got 503 local_router_busy. No line was marked down. Run spb router doctor for details."
+last_file_limit = "Last \"too many open files\""
 
 [cli.models]
 profile = "Profile"

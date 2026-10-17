@@ -1545,9 +1545,28 @@ fn v3_settings_round_trip_with_every_field_set() {
             dropped: 0,
             db_bytes: None,
         }),
+        local: Some(RouterLocalView {
+            open_files_limit: Some(256),
+            max_concurrent: 64,
+            in_flight: 3,
+            busy: 2,
+            file_limit_errors: 1,
+            last_problem_ms: Some(1_760_000_000_000),
+            last_file_limit: Some(
+                "connecting to krill/cdn: Too many open files (os error 24)".into(),
+            ),
+        }),
         ..RouterView::default()
     };
+    assert!(view.local.as_ref().unwrap().ran_short());
     round_trip(&view);
+    // A view from before the local budget has none.
+    let old: RouterView = serde_json::from_value(serde_json::json!({
+        "settings": {}, "configured": true, "installed": true, "running": true,
+        "codex_routed": false
+    }))
+    .unwrap();
+    assert_eq!(old.local, None);
 }
 
 #[test]

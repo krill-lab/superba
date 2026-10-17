@@ -8,8 +8,9 @@
 //! out, or gets 502-504 / an edge interception. A peer that accepts the
 //! connection and then closes it without an answer is reachable; some relays
 //! drop unauthenticated requests that way (seen on a test relay), so that result
-//! is inconclusive and leaves the breaker alone. Real requests still feed the
-//! passive breaker.
+//! is inconclusive and leaves the breaker alone, as does a probe that could not
+//! open a socket because this process ran out of descriptors. Real requests
+//! still feed the passive breaker.
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -18,6 +19,7 @@ use std::time::{Duration, Instant};
 use futures_util::future::join_all;
 
 use crate::forward::{describe_error, failover_status};
+use crate::limits::{Place, file_limit_in};
 use crate::state::{Generation, Shared, lock};
 use crate::status::RouteEventKind;
 
@@ -42,6 +44,11 @@ pub(crate) async fn probe_line(
             None => Some(Ok(())),
             Some(reason) => Some(Err(format!("probe: {reason}"))),
         },
+        // Out of descriptors here says nothing about the line.
+        Err(e) if file_limit_in(&e).is_some() => {
+            shared.local_file_limit(Place::Probe(generation.label(member, line)), &e);
+            None
+        }
         Err(e) if e.is_connect() || e.is_timeout() => {
             Some(Err(format!("probe: {}", describe_error(&e))))
         }
@@ -98,6 +105,7 @@ pub(crate) async fn health_loop(shared: Arc<Shared>) {
             _ = tokio::time::sleep(TICK) => {}
             _ = stop.changed() => return,
         }
+        shared.retry_stats();
         let generation = shared.current();
         if !generation.config.tuning.active_probes {
             continue;

@@ -3,35 +3,44 @@
 use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use http::header::AUTHORIZATION;
-use http::{Request, Response, StatusCode};
+use http::header::{AUTHORIZATION, CONNECTION};
+use http::{HeaderValue, Request, Response, StatusCode};
+use http_body_util::BodyExt;
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use superba_core::{Error, Result, Secret};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tracing::Instrument;
 
 use crate::admin::{self, ADMIN_PREFIX, VERSION};
 use crate::config::{ROUTER_BASE_PATH, ROUTER_V1_PATH, RouterConfig, RouterSecrets};
-use crate::forward::router_error;
+use crate::forward::{local_busy, router_error};
+use crate::limits::{
+    Budget, Busy, ConnSlot, INBOUND_IDLE_TIMEOUT, LOCAL_BUSY_CODE, Limits, Place, file_limit_in,
+};
 use crate::paths::RouterPaths;
 use crate::probe::health_loop;
 use crate::runtime::RuntimeInfo;
 use crate::state::{Generation, RespBody, Shared, Totals, unix_ms};
-use crate::stats::hub::StatsHub;
+use crate::stats::hub::{End, StatsHub, now_ms};
+use crate::stats::meta;
 use crate::status::RouterStatus;
 use crate::token::{self, bearer, constant_time_eq};
 use crate::{proxy, ws};
 
 /// How long a shutdown waits for open connections to finish.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
+/// Pause after an accept that failed for want of descriptors.
+const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
+/// Longest time spent discarding the body of a request answered locally.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A bound, not yet serving router.
 pub struct RouterServer {
@@ -88,7 +97,8 @@ impl RouterServer {
         paths: Option<RouterPaths>,
     ) -> Result<Self> {
         let port = config.listen_port;
-        let generation = Generation::build(1, config, &secrets)?;
+        let budget = Budget::for_this_process(&config.tuning);
+        let generation = Generation::build(1, config, &secrets, &budget)?;
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
         let listener = TcpListener::bind(addr).await.map_err(|e| Error::Network {
             url: format!("http://{addr}"),
@@ -100,7 +110,6 @@ impl RouterServer {
         })?;
         let (shutdown, _) = watch::channel(false);
         let stats = Arc::new(StatsHub::new(paths.clone()));
-        stats.apply(generation.config.stats.as_ref());
         let shared = Arc::new(Shared {
             generation: RwLock::new(Arc::new(generation)),
             paths,
@@ -114,7 +123,10 @@ impl RouterServer {
             shutdown,
             stats,
             transports: crate::transport::TransportMemory::default(),
+            limits: Limits::new(budget),
+            stats_retry: Mutex::new(None),
         });
+        shared.apply_stats(shared.current().config.stats.as_ref());
         Ok(Self { shared, listener })
     }
 
@@ -178,11 +190,15 @@ impl RouterServer {
             .save(paths)?;
         }
         let generation = shared.current();
+        let budget = shared.limits.budget;
         tracing::info!(
             listen = %shared.listen,
             members = generation.members.len(),
             lines = generation.members.iter().map(|m| m.lines.len()).sum::<usize>(),
             version = VERSION,
+            open_files_limit = ?budget.open_files_limit,
+            max_concurrent = budget.max_concurrent,
+            max_connections = budget.max_connections,
             "superba-router listening"
         );
         drop(generation);
@@ -190,51 +206,40 @@ impl RouterServer {
         let mut stop = shared.shutdown.subscribe();
         let mut connections = tokio::task::JoinSet::new();
         loop {
-            tokio::select! {
-                accepted = listener.accept() => {
-                    let (stream, peer) = match accepted {
-                        Ok(a) => a,
-                        Err(e) => {
+            let (stream, peer) = tokio::select! {
+                accepted = listener.accept() => match accepted {
+                    Ok(a) => a,
+                    Err(e) => {
+                        if file_limit_in(&e).is_some() {
+                            // No descriptor for the connection: it stays in
+                            // the backlog until some close.
+                            shared.local_file_limit(Place::Accept, &e);
+                            tokio::time::sleep(ACCEPT_BACKOFF).await;
+                        } else {
                             tracing::warn!(error = %e, "accept failed");
                             tokio::time::sleep(Duration::from_millis(50)).await;
-                            continue;
                         }
-                    };
-                    if !peer.ip().is_loopback() {
                         continue;
                     }
-                    let _ = stream.set_nodelay(true);
-                    let s = shared.clone();
-                    let mut conn_stop = shared.shutdown.subscribe();
-                    connections.spawn(
-                        async move {
-                            let service = service_fn(move |req| {
-                                let s = s.clone();
-                                async move { Ok::<_, Infallible>(dispatch(s, req).await) }
-                            });
-                            let conn = http1::Builder::new()
-                                .keep_alive(true)
-                                .serve_connection(TokioIo::new(stream), service)
-                                .with_upgrades();
-                            tokio::pin!(conn);
-                            tokio::select! {
-                                r = conn.as_mut() => {
-                                    if let Err(e) = r {
-                                        tracing::debug!(error = %e, "connection ended");
-                                    }
-                                }
-                                _ = conn_stop.changed() => {
-                                    conn.as_mut().graceful_shutdown();
-                                    let _ = tokio::time::timeout(SHUTDOWN_GRACE, conn.as_mut()).await;
-                                }
-                            }
-                        }
-                        .instrument(tracing::debug_span!("conn", %peer)),
-                    );
-                    while connections.try_join_next().is_some() {}
-                }
+                },
                 _ = stop.changed() => break,
+            };
+            if !peer.ip().is_loopback() {
+                continue;
             }
+            // At the connection cap this one waits for a place (open
+            // connections stop keep-alive meanwhile) and later ones wait in
+            // the listen backlog (crate::limits).
+            let slot = tokio::select! {
+                slot = shared.limits.connection() => slot,
+                _ = stop.changed() => break,
+            };
+            let _ = stream.set_nodelay(true);
+            connections.spawn(
+                serve_connection(shared.clone(), stream, slot)
+                    .instrument(tracing::debug_span!("conn", %peer)),
+            );
+            while connections.try_join_next().is_some() {}
         }
         tracing::info!("superba-router stopping");
         drop(listener);
@@ -248,6 +253,80 @@ impl RouterServer {
             RuntimeInfo::remove_if_owned(paths, &shared.instance_id);
         }
         Ok(())
+    }
+}
+
+/// Per-connection state shared by its task and its requests.
+#[derive(Debug, Default)]
+struct ConnState {
+    /// Requests received on it.
+    requests: AtomicU64,
+    /// Its next response closes it: it was asked to give its place back
+    /// before its first request had been read.
+    close_after: AtomicBool,
+}
+
+/// Serve one inbound connection until it closes or the router stops.
+async fn serve_connection(shared: Arc<Shared>, stream: TcpStream, slot: ConnSlot) {
+    let mut conn_stop = shared.shutdown.subscribe();
+    let mut shed = shared.limits.shed_signal();
+    let state = Arc::new(ConnState::default());
+    let (s, st) = (shared.clone(), state.clone());
+    let service = service_fn(move |mut req: Request<Incoming>| {
+        let (s, st) = (s.clone(), st.clone());
+        // Requests carry the connection's place, so an upgraded WebSocket
+        // keeps it after this task ends.
+        req.extensions_mut().insert(slot.clone());
+        st.requests.fetch_add(1, Ordering::Relaxed);
+        async move {
+            let mut resp = dispatch(s, req).await;
+            if st.close_after.load(Ordering::Relaxed)
+                && resp.status() != StatusCode::SWITCHING_PROTOCOLS
+            {
+                resp.headers_mut()
+                    .insert(CONNECTION, HeaderValue::from_static("close"));
+            }
+            Ok::<_, Infallible>(resp)
+        }
+    });
+    let conn = http1::Builder::new()
+        .keep_alive(true)
+        // Idle keep-alive connections give their descriptor back.
+        .timer(TokioTimer::new())
+        .header_read_timeout(INBOUND_IDLE_TIMEOUT)
+        .serve_connection(TokioIo::new(stream), service)
+        .with_upgrades();
+    tokio::pin!(conn);
+    let mut shedding = false;
+    loop {
+        tokio::select! {
+            r = conn.as_mut() => {
+                if let Err(e) = r {
+                    tracing::debug!(error = %e, "connection ended");
+                }
+                return;
+            }
+            _ = conn_stop.changed() => {
+                conn.as_mut().graceful_shutdown();
+                let _ = tokio::time::timeout(SHUTDOWN_GRACE, conn.as_mut()).await;
+                return;
+            }
+            // The connection cap is reached: no more keep-alive. A connection
+            // that served a request closes now when idle, else after its
+            // response; one whose first request was not read yet (accepted
+            // from the backlog) closes after answering it. Nothing in flight is
+            // cut.
+            changed = shed.changed(), if !shedding => {
+                shedding = true;
+                if changed.is_ok() {
+                    if state.requests.load(Ordering::Relaxed) > 0 {
+                        conn.as_mut().graceful_shutdown();
+                    } else {
+                        state.close_after.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -282,11 +361,66 @@ async fn dispatch(shared: Arc<Shared>, req: Request<Incoming>) -> Response<RespB
             "missing or wrong router token (Codex's auth.json must hold the token Superba wrote)",
         );
     }
+    let wait = Duration::from_millis(shared.current().config.tuning.busy_wait_ms);
+    let t0 = Instant::now();
+    let started_ms = now_ms();
+    let admission = match shared.limits.admit(wait).await {
+        Ok(admission) => admission,
+        Err(Busy) => return busy(&shared, req, &rest, t0, started_ms).await,
+    };
     if ws::is_upgrade(&req) {
-        ws::proxy_ws(shared, req, rest).await
+        ws::proxy_ws(shared, req, rest, admission).await
     } else {
-        proxy::proxy_http(shared, req, rest).await
+        proxy::proxy_http(shared, req, rest, admission).await
     }
+}
+
+/// 503 `local_router_busy` for a request that got no admission: recorded like
+/// any Responses request, its body drained first (closing on an unread body
+/// would reset the connection before Codex reads the answer).
+async fn busy(
+    shared: &Arc<Shared>,
+    req: Request<Incoming>,
+    rest: &str,
+    t0: Instant,
+    started_ms: i64,
+) -> Response<RespBody> {
+    let message = shared.local_busy();
+    let generation = shared.current();
+    let (parts, body) = req.into_parts();
+    if generation.config.stats.is_some() && proxy::is_responses_path(&parts.method, rest) {
+        shared
+            .stats
+            .track(
+                generation.clone(),
+                meta::from_headers(&parts.headers),
+                t0,
+                started_ms,
+            )
+            .finish(End {
+                status: Some(superba_core::RequestStatus::Http {
+                    status: 503,
+                    code: Some(LOCAL_BUSY_CODE.into()),
+                }),
+                error: Some(message.clone()),
+                ..End::default()
+            });
+    }
+    drain(body, generation.config.tuning.max_body_bytes).await;
+    local_busy(&message)
+}
+
+/// Read and discard a request body (bounded in size and time).
+pub(crate) async fn drain<B>(body: B, limit: usize)
+where
+    B: http_body::Body + Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    let mut body = std::pin::pin!(http_body_util::Limited::new(body, limit));
+    let _ = tokio::time::timeout(DRAIN_TIMEOUT, async {
+        while let Some(Ok(_)) = body.frame().await {}
+    })
+    .await;
 }
 
 /// The remainder below a router prefix (`""` or `/...`), or `None`.

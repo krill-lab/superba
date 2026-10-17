@@ -328,6 +328,33 @@ async fn run_foreground(report: &RouterDoctorReport, rt: &Runtime, out: &mut Out
     })
 }
 
+/// The router's local capacity, and what happened when it ran short (user
+/// bug 35: those requests got a local 503; no line was blamed).
+fn render_local(local: &superba_core::RouterLocalView, out: &mut Output) -> Result<()> {
+    let limit = local
+        .open_files_limit
+        .map_or_else(|| out.label("cli.router.unlimited"), |n| n.to_string());
+    let capacity = out.render(
+        &text("cli.router.capacity_value")
+            .arg("in_flight", local.in_flight)
+            .arg("max", local.max_concurrent)
+            .arg("limit", &limit),
+    );
+    out.field("cli.router.capacity", capacity)?;
+    if local.ran_short() {
+        out.line(
+            text("cli.router.ran_short")
+                .arg("files", local.file_limit_errors)
+                .arg("busy", local.busy)
+                .arg("limit", &limit),
+        )?;
+        if let Some(last) = &local.last_file_limit {
+            out.field("cli.router.last_file_limit", last)?;
+        }
+    }
+    Ok(())
+}
+
 /// `program args` as a POSIX shell would read it.
 fn superba_router_command_line(program: &str, args: &[std::ffi::OsString]) -> String {
     superba_switch::router_doctor::command_line(program, args)
@@ -377,6 +404,9 @@ fn render(view: &RouterView, out: &mut Output) -> Result<()> {
     if view.running {
         out.field("cli.router.requests", view.requests)?;
         out.field("cli.router.failovers", view.failovers)?;
+        if let Some(local) = &view.local {
+            render_local(local, out)?;
+        }
     }
     if let Some(d) = &view.detail
         && !view.running

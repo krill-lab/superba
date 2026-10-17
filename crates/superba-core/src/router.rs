@@ -366,12 +366,47 @@ pub struct RouterView {
     /// Request recording state (`None` when the router does not report it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stats: Option<RouterStatsStatus>,
+    /// The router's local budget and shortages (`None` when it is not running
+    /// or does not report them).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<RouterLocalView>,
 }
 
 impl RouterView {
     /// The router is on and Codex goes through it.
     pub fn active(&self) -> bool {
         self.settings.enabled && self.running && self.codex_routed
+    }
+}
+
+/// The router's side on this computer: how many requests it serves at once
+/// (sized from its open-file limit) and how often it ran short. A shortage is
+/// answered 503 `local_router_busy` and never counted against a line.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RouterLocalView {
+    /// The router's soft open-file limit (`None`: unlimited, as on Windows).
+    pub open_files_limit: Option<u64>,
+    /// Requests and WebSocket sessions it serves at once.
+    pub max_concurrent: u64,
+    /// Requests and WebSocket sessions in progress.
+    pub in_flight: u64,
+    /// Requests answered `local_router_busy` because all places were taken.
+    pub busy: u64,
+    /// "Too many open files" errors it met (accepting, connecting upstream,
+    /// the request log).
+    pub file_limit_errors: u64,
+    /// Unix milliseconds of the last shortage of either kind.
+    pub last_problem_ms: Option<u64>,
+    /// The last "too many open files": what the router was doing and the OS
+    /// error (English, no secret).
+    pub last_file_limit: Option<String>,
+}
+
+impl RouterLocalView {
+    /// The router ran short at least once since it started.
+    pub fn ran_short(&self) -> bool {
+        self.busy > 0 || self.file_limit_errors > 0
     }
 }
 

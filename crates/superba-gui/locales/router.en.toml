@@ -67,6 +67,11 @@ active = "active"
 failovers = "failovers"
 unavailable = "unavailable"
 sessions = "conversations"
+capacity = "in progress / capacity"
+
+[router.local]
+ran_short = "This computer ran short {time} ago: {files} \"too many open files\" errors (open-file limit {limit}) and {busy} requests over the router's capacity got 503 local_router_busy. No line was marked down. Quit programs you do not need, or restart the router so it can raise its limit."
+unlimited = "unlimited"
 
 [router.members]
 title = "Members (by priority)"
@@ -111,6 +116,7 @@ unavailable = "No member could answer"
 stream_broken = "Stream broken"
 member_changed = "Conversation moved"
 reloaded = "Configuration reloaded"
+local_limit = "This computer ran short (no line blamed)"
 
 [router.palette]
 setup = "Set up the local router"

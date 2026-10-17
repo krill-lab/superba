@@ -164,6 +164,20 @@ pub struct Live {
     pub totals: Totals,
     /// Newest last.
     pub events: Vec<EventView>,
+    /// Local capacity and shortages (user bug 35).
+    pub local: superba_core::RouterLocalView,
+}
+
+/// How long the router page warns about a local shortage after the last one.
+pub const LOCAL_SHORTAGE_WINDOW_MS: u64 = 15 * 60 * 1000;
+
+/// The router ran short locally within [`LOCAL_SHORTAGE_WINDOW_MS`] before
+/// `now_ms`.
+pub fn recent_shortage(local: &superba_core::RouterLocalView, now_ms: u64) -> bool {
+    local.ran_short()
+        && local
+            .last_problem_ms
+            .is_some_and(|at| now_ms.saturating_sub(at) <= LOCAL_SHORTAGE_WINDOW_MS)
 }
 
 /// Where Codex sends its requests.

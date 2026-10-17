@@ -66,6 +66,11 @@ active = "进行中"
 failovers = "故障转移"
 unavailable = "不可用"
 sessions = "会话"
+capacity = "进行中 / 容量"
+
+[router.local]
+ran_short = "本机资源在 {time} 前吃紧：出现 {files} 次「打开的文件太多」（打开文件上限 {limit}），{busy} 个请求超出路由容量，都收到了 503 local_router_busy。没有线路因此被标为故障。请退出不需要的程序，或重启路由让它提高上限。"
+unlimited = "不限"
 
 [router.members]
 title = "成员（按优先级）"
@@ -110,6 +115,7 @@ unavailable = "没有成员能应答"
 stream_broken = "流中断"
 member_changed = "会话换了成员"
 reloaded = "配置已重新加载"
+local_limit = "本机资源吃紧（未归咎于线路）"
 
 [router.palette]
 setup = "设置本地路由"

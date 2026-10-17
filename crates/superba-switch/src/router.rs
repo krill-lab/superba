@@ -658,6 +658,7 @@ impl Switcher {
             members,
             requests: status.as_ref().map_or(0, |s| s.totals.requests),
             failovers: status.as_ref().map_or(0, |s| s.totals.failovers),
+            local: status.as_ref().map(|s| s.local.view()),
             // Nothing configured is not a failure worth a detail.
             detail: if service.configured {
                 detail.or(service.detail)

@@ -250,6 +250,7 @@ fn event_key(kind: RouteEventKind) -> (&'static str, bool) {
         RouteEventKind::StreamBroken => ("router.event.stream_broken", true),
         RouteEventKind::MemberChanged => ("router.event.member_changed", false),
         RouteEventKind::Reloaded => ("router.event.reloaded", false),
+        RouteEventKind::LocalLimit => ("router.event.local_limit", true),
     }
 }
 
@@ -292,6 +293,7 @@ pub fn live(status: &RouterStatus, members: &[MemberView]) -> Live {
                 }
             })
             .collect(),
+        local: status.local.view(),
     }
 }
 

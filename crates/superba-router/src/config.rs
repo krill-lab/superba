@@ -189,6 +189,25 @@ pub struct Tuning {
     /// Probe every line at start and open lines when their backoff ends. When
     /// off, breakers recover only through real requests.
     pub active_probes: bool,
+    /// Proxied requests and WebSocket sessions served at once (each holds two
+    /// sockets). `None`: a quarter of the soft open-file limit found at start,
+    /// 4 to 512 (512 without a limit). Read at start. See [`crate::limits`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_concurrent: Option<usize>,
+    /// Inbound connections open at once (more wait in the listen backlog).
+    /// `None`: half the soft open-file limit, at most four per admission. Read
+    /// at start.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_connections: Option<usize>,
+    /// How long a request waits for an admission before the router answers 503
+    /// `local_router_busy`.
+    pub busy_wait_ms: u64,
+    /// Idle upstream connections kept per host. `None`: one per 16 admissions,
+    /// 2 to 16.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pool_max_idle_per_host: Option<usize>,
+    /// Idle upstream connections are closed after this long.
+    pub pool_idle_timeout_secs: u64,
 }
 
 impl Default for Tuning {
@@ -203,6 +222,11 @@ impl Default for Tuning {
             breaker_max_ms: 60_000,
             probe_timeout_ms: 5_000,
             active_probes: true,
+            max_concurrent: None,
+            max_connections: None,
+            busy_wait_ms: 2_000,
+            pool_max_idle_per_host: None,
+            pool_idle_timeout_secs: 90,
         }
     }
 }
@@ -270,7 +294,11 @@ impl RouterConfig {
             }
         }
         let t = &self.tuning;
-        if t.connect_timeout_ms == 0 || t.breaker_base_ms == 0 || t.probe_timeout_ms == 0 {
+        if t.connect_timeout_ms == 0
+            || t.breaker_base_ms == 0
+            || t.probe_timeout_ms == 0
+            || t.pool_idle_timeout_secs == 0
+        {
             return Err(Error::invalid("router timeouts must be positive"));
         }
         if t.breaker_max_ms < t.breaker_base_ms || t.breaker_threshold == 0 {

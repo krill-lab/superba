@@ -53,6 +53,77 @@ pub struct RouterStatus {
     /// Request recording (`None` without a `stats` configuration).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stats: Option<RouterStatsStatus>,
+    /// This computer's side: the descriptor budget and how often it ran short
+    /// (default from a router that does not report it).
+    #[serde(default)]
+    pub local: LocalStatus,
+}
+
+/// The router's local budget ([`crate::limits`]) and the local shortages it
+/// met. These are never counted against a line.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LocalStatus {
+    /// Soft open-file limit found at start (`None`: unlimited or not
+    /// applicable, as on Windows).
+    pub open_files_limit: Option<u64>,
+    /// Soft open-file limit now.
+    pub open_files_limit_now: Option<u64>,
+    /// Proxied requests and WebSocket sessions allowed at once.
+    pub max_concurrent: u64,
+    /// Requests and WebSocket sessions admitted now.
+    pub in_flight: u64,
+    /// Inbound connections allowed at once.
+    pub max_connections: u64,
+    /// Inbound connections open now.
+    pub connections: u64,
+    /// Requests answered `local_router_busy` because every admission was in use.
+    pub busy: u64,
+    /// Unix milliseconds of the last such answer.
+    pub last_busy_ms: Option<u64>,
+    /// "Too many open files" errors met locally (accept, upstream connect,
+    /// probe, request log).
+    pub file_limit_errors: u64,
+    /// The last of them.
+    pub last_file_limit: Option<LocalProblem>,
+}
+
+impl LocalStatus {
+    /// The view the switch service, the GUI and `spb` show.
+    pub fn view(&self) -> superba_core::RouterLocalView {
+        superba_core::RouterLocalView {
+            open_files_limit: self.open_files_limit_now.or(self.open_files_limit),
+            max_concurrent: self.max_concurrent,
+            in_flight: self.in_flight,
+            busy: self.busy,
+            file_limit_errors: self.file_limit_errors,
+            last_problem_ms: self.last_problem_ms(),
+            last_file_limit: self
+                .last_file_limit
+                .as_ref()
+                .map(|p| format!("{}: {}", p.place, p.detail)),
+        }
+    }
+
+    /// Unix milliseconds of the last local shortage (busy answer or file
+    /// limit), if any.
+    pub fn last_problem_ms(&self) -> Option<u64> {
+        self.last_busy_ms
+            .into_iter()
+            .chain(self.last_file_limit.as_ref().map(|p| p.at_ms))
+            .max()
+    }
+}
+
+/// A local "too many open files" error.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalProblem {
+    /// Unix milliseconds.
+    pub at_ms: u64,
+    /// What the router was doing (`connecting to krill/cdn`, ...).
+    pub place: String,
+    /// The OS error (no secret, URL or body).
+    pub detail: String,
 }
 
 /// One member.
@@ -152,6 +223,10 @@ pub enum RouteEventKind {
     MemberChanged,
     /// The configuration was reloaded.
     Reloaded,
+    /// This computer ran short (too many open files, or every admission in
+    /// use): requests got 503 `local_router_busy`; no line was blamed. Shown at
+    /// most once a minute.
+    LocalLimit,
 }
 
 /// One routing event.

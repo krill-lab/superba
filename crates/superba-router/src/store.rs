@@ -204,16 +204,17 @@ pub(crate) fn open_write(path: &Path, schema: &str) -> Result<Connection> {
     if let Some(dir) = path.parent() {
         crate::config::create_private_dir(dir)?;
     }
-    if !path.exists() {
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).create(true).truncate(false);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
-        opts.open(path).map_err(|e| Error::io(path, &e))?;
+    // Created with mode 0600 when missing. Opening it here first also reports
+    // the OS error behind a failure ("too many open files" included), where
+    // SQLite would only say it cannot open the file.
+    let mut opts = std::fs::OpenOptions::new();
+    opts.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
     }
+    drop(opts.open(path).map_err(|e| Error::io(path, &e))?);
     let conn = Connection::open(path).map_err(sql_err)?;
     conn.busy_timeout(Duration::from_secs(5)).map_err(sql_err)?;
     // auto_vacuum must be chosen before the first table exists.

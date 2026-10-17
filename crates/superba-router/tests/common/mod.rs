@@ -75,6 +75,8 @@ pub enum Mode {
     WsRaw(Arc<Vec<u8>>),
     /// Status + JSON body chosen from the request headers and body.
     Reply(Reply),
+    /// 200 + JSON body after a delay (a slow answer holding both sockets).
+    Slow(Duration, &'static str),
 }
 
 /// Answer of [`Mode::Reply`].
@@ -199,6 +201,10 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
     });
     match mode {
         Mode::Json(status, body) => full(status, body),
+        Mode::Slow(delay, body) => {
+            tokio::time::sleep(delay).await;
+            full(200, body)
+        }
         Mode::Reply(reply) => {
             let (status, json) = reply(&parts.headers, &body);
             full(status, json)

@@ -25,9 +25,10 @@ use superba_core::RequestCompression;
 
 use crate::config::join_path;
 use crate::forward::{
-    Observed, describe_error, empty_responses_answer, failover_status, request_headers,
+    Observed, describe_error, empty_responses_answer, failover_status, local_busy, request_headers,
     response_headers, router_error, set_route,
 };
+use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_in};
 use crate::model_map::map_model;
 use crate::select::{Candidate, candidates};
 use crate::state::{GaugeGuard, Generation, RespBody, Shared, View, lock};
@@ -91,6 +92,7 @@ pub(crate) async fn proxy_http(
     shared: Arc<Shared>,
     req: Request<Incoming>,
     rest: String,
+    admission: Admission,
 ) -> Response<RespBody> {
     let t0 = Instant::now();
     let started_ms = now_ms();
@@ -230,6 +232,22 @@ pub(crate) async fn proxy_http(
             t.set_compression(compression);
         }
         let (reason, status) = match result {
+            // This computer is out of descriptors: no other line would do
+            // better, and the line is not to blame.
+            Err(e) if file_limit_in(&e).is_some() => {
+                let message = shared.local_file_limit(Place::Upstream(label.clone()), &e);
+                if let Some(t) = tracker {
+                    t.finish(End {
+                        status: Some(superba_core::RequestStatus::Http {
+                            status: 503,
+                            code: Some(LOCAL_BUSY_CODE.into()),
+                        }),
+                        error: Some(message.chars().take(300).collect()),
+                        ..End::default()
+                    });
+                }
+                return local_busy(&message);
+            }
             Err(e) => {
                 let reason = describe_error(&e);
                 let opened = lock(&line.health).on_hard_failure(Instant::now(), reason.clone());
@@ -277,7 +295,7 @@ pub(crate) async fn proxy_http(
                         c,
                         &label,
                         resp,
-                        active,
+                        (active, admission),
                         tracker,
                     );
                 }
@@ -474,7 +492,7 @@ fn downstream(
     c: Candidate,
     label: &str,
     resp: reqwest::Response,
-    active: GaugeGuard,
+    (active, admission): (GaugeGuard, Admission),
     tracker: Option<Tracker>,
 ) -> Response<RespBody> {
     let status = resp.status();
@@ -489,7 +507,9 @@ fn downstream(
     let upstream: http::Response<reqwest::Body> = resp.into();
     let inner = upstream.into_body();
     let body = match tracker {
-        None => Observed::new(inner, shared, generation, c.member, c.line, active).boxed_unsync(),
+        None => Observed::new(inner, shared, generation, c.member, c.line, active)
+            .holding(admission)
+            .boxed_unsync(),
         Some(t) => {
             let ct = content_type
                 .as_deref()
@@ -511,7 +531,9 @@ fn downstream(
                     }
                 };
             let tapped = TapBody::new(inner, mode, t);
-            Observed::new(tapped, shared, generation, c.member, c.line, active).boxed_unsync()
+            Observed::new(tapped, shared, generation, c.member, c.line, active)
+                .holding(admission)
+                .boxed_unsync()
         }
     };
     let mut out = Response::new(body);

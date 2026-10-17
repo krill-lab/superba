@@ -29,6 +29,7 @@ use crate::service::{
     CommandRecord, CommandRunner, ServiceDiagnosis, ServiceKind, ServiceManager, ServiceSpec,
     ServiceStatus,
 };
+use crate::status::LocalStatus;
 use crate::watchdog::{self, Liveness};
 
 /// Lines of `router.log` a report keeps.
@@ -174,6 +175,9 @@ pub struct LiveFacts {
     pub members: Option<usize>,
     /// Uptime in milliseconds.
     pub uptime_ms: Option<u64>,
+    /// Its local budget and shortages (`None` when it does not answer).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<LocalStatus>,
 }
 
 /// `router.log`.
@@ -319,6 +323,19 @@ pub enum Finding {
         /// The log line.
         line: String,
     },
+    /// The running router ran short locally since it started: requests were
+    /// answered 503 `local_router_busy` (too many open files, or every
+    /// admission in use). No line was blamed.
+    LocalLimits {
+        /// Its soft open-file limit (`None`: unlimited).
+        open_files_limit: Option<u64>,
+        /// "Too many open files" errors.
+        file_limit_errors: u64,
+        /// Requests that found every admission in use.
+        busy: u64,
+        /// The last "too many open files" (what it was doing and the OS error).
+        last: Option<String>,
+    },
 }
 
 impl Finding {
@@ -332,6 +349,7 @@ impl Finding {
                 | Finding::StaleDefinition { .. }
                 | Finding::LogError { .. }
                 | Finding::RouterDown { .. }
+                | Finding::LocalLimits { .. }
         )
     }
 
@@ -404,6 +422,18 @@ impl Finding {
             ),
             Finding::RouterDown { detail } => format!("The router does not answer: {detail}"),
             Finding::LogError { line } => format!("Last error in the router log: {line}"),
+            Finding::LocalLimits {
+                open_files_limit,
+                file_limit_errors,
+                busy,
+                last,
+            } => {
+                let limit = open_files_limit.map_or_else(|| "unlimited".to_owned(), |n| n.to_string());
+                let last = last.as_deref().map(|l| format!(" Last: {l}.")).unwrap_or_default();
+                format!(
+                    "This computer ran short while routing: {file_limit_errors} \"too many open files\" errors (open-file limit {limit}) and {busy} requests over the router's concurrency limit were answered 503 local_router_busy; no line was marked down.{last} Quit programs you do not need, or restart the router so it can raise its limit."
+                )
+            }
         }
     }
 }
@@ -662,6 +692,7 @@ pub async fn collect(input: DoctorInput<'_>) -> RouterFacts {
             version: Some(s.version.clone()),
             members: Some(s.members.len()),
             uptime_ms: Some(s.uptime_ms),
+            local: Some(s.local.clone()),
         },
         Liveness::Down { detail } => LiveFacts {
             up: false,
@@ -669,6 +700,7 @@ pub async fn collect(input: DoctorInput<'_>) -> RouterFacts {
             version: None,
             members: None,
             uptime_ms: None,
+            local: None,
         },
     };
     let os_version = if input.macos {
@@ -845,6 +877,19 @@ pub fn findings(facts: &RouterFacts, macos: bool, home: Option<&Path>) -> Vec<Fi
         && let Some(line) = facts.log.tail.iter().rev().find(|l| l.contains(" ERROR "))
     {
         out.push(Finding::LogError { line: line.clone() });
+    }
+    if let Some(local) = facts.live.local.as_ref().filter(|_| facts.live.up)
+        && (local.file_limit_errors > 0 || local.busy > 0)
+    {
+        out.push(Finding::LocalLimits {
+            open_files_limit: local.open_files_limit_now.or(local.open_files_limit),
+            file_limit_errors: local.file_limit_errors,
+            busy: local.busy,
+            last: local
+                .last_file_limit
+                .as_ref()
+                .map(|p| format!("{}: {}", p.place, p.detail)),
+        });
     }
     out
 }

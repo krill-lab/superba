@@ -547,6 +547,11 @@ next_key = "  spb key set --profile {id} --stdin    （粘贴 API key 后按回�
 next_auth = "  spb profile edit {id} --auth auto    （路由会把这个 Key 当作 API key 发送）"
 next_profile = "  spb profile add {site} --site {site} --stdin    （粘贴 API key 后按回车）"
 doctor_hint = "运行 spb router doctor 查看完整报告。"
+capacity = "容量"
+capacity_value = "进行中 {in_flight} / {max} 个请求（打开文件上限 {limit}）"
+unlimited = "不限"
+ran_short = "! 路由在本机资源上吃紧：出现 {files} 次「打开的文件太多」（打开文件上限 {limit}），{busy} 个请求超出路由的并发上限，都收到了 503 local_router_busy。没有线路因此被标为故障。运行 spb router doctor 查看详情。"
+last_file_limit = "最近一次「打开的文件太多」"
 
 [cli.models]
 profile = "配置档"

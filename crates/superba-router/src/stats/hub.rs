@@ -143,9 +143,10 @@ impl StatsHub {
     }
 
     /// Apply a (re)loaded configuration: start the recorder when recording is
-    /// on and a data dir exists, or pass it the new retention.
-    pub fn apply(&self, cfg: Option<&StatsConfig>) {
-        let Some(cfg) = cfg else { return };
+    /// on and a data dir exists, or pass it the new retention. Fails when the
+    /// request log cannot be opened (nothing is recorded then).
+    pub fn apply(&self, cfg: Option<&StatsConfig>) -> superba_core::Result<()> {
+        let Some(cfg) = cfg else { return Ok(()) };
         let retention = Retention {
             usage_days: cfg.usage_days,
             max_rows: cfg.max_rows,
@@ -153,19 +154,18 @@ impl StatsHub {
         let mut rec = lock(&self.recorder);
         if let Some(r) = rec.as_ref() {
             r.set_retention(retention);
-            return;
+            return Ok(());
         }
         if !cfg.record {
-            return;
+            return Ok(());
         }
-        let Some(paths) = &self.paths else { return };
-        match Recorder::start(paths, retention, self.written.clone()) {
-            Ok((r, max_id)) => {
-                self.next_row.fetch_max(max_id, Ordering::SeqCst);
-                *rec = Some(r);
-            }
-            Err(e) => tracing::warn!(error = %e, "request log unavailable; not recording"),
-        }
+        let Some(paths) = &self.paths else {
+            return Ok(());
+        };
+        let (r, max_id) = Recorder::start(paths, retention, self.written.clone())?;
+        self.next_row.fetch_max(max_id, Ordering::SeqCst);
+        *rec = Some(r);
+        Ok(())
     }
 
     /// Stop the recorder after writing what is queued.

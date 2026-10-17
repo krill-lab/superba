@@ -6,7 +6,10 @@ use std::path::PathBuf;
 use superba_core::Result;
 
 use super::system::{atomic_write, checked_command, path_text, remove_file, validate};
-use super::{SYSTEMD_UNIT, ServiceHost, ServiceKind, ServiceManager, ServiceSpec, ServiceStatus};
+use super::{
+    NOFILE_HARD, NOFILE_SOFT, SYSTEMD_UNIT, ServiceHost, ServiceKind, ServiceManager, ServiceSpec,
+    ServiceStatus,
+};
 
 #[derive(Debug)]
 pub(super) struct SystemdUser {
@@ -66,7 +69,8 @@ impl ServiceManager for SystemdUser {
         let mut unit = format!(
             "# Managed by Superba: the local router service. Removed when the router is disabled.\n\
             [Unit]\nDescription=Superba local router\nAfter=network.target\nStartLimitIntervalSec=0\n\n\
-            [Service]\nType=simple\nExecStart={command}\nRestart=always\nRestartSec=2\nRestartPreventExitStatus=78\n"
+            [Service]\nType=simple\nExecStart={command}\nRestart=always\nRestartSec=2\nRestartPreventExitStatus=78\n\
+            LimitNOFILE={NOFILE_SOFT}:{NOFILE_HARD}\n"
         );
         for (key, value) in &spec.env {
             unit.push_str(&format!(

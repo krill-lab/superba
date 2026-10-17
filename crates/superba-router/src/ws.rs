@@ -34,9 +34,10 @@ use tracing::Instrument;
 
 use crate::config::join_path;
 use crate::forward::{
-    Observed, describe_error, empty, failover_status, request_headers, response_headers,
-    router_error, set_route,
+    Observed, describe_error, empty, failover_status, local_busy, request_headers,
+    response_headers, router_error, set_route,
 };
+use crate::limits::{Admission, ConnSlot, Place, file_limit_in};
 use crate::proxy::{note_line_down, on_answer};
 use crate::select::{Candidate, candidates};
 use crate::state::{GaugeGuard, RespBody, Shared, View, lock};
@@ -63,10 +64,13 @@ pub(crate) async fn proxy_ws(
     shared: Arc<Shared>,
     mut req: Request<Incoming>,
     rest: String,
+    admission: Admission,
 ) -> Response<RespBody> {
     let generation = shared.current();
     let on_upgrade = hyper::upgrade::on(&mut req);
     let (parts, _body) = req.into_parts();
+    // The inbound connection's place: an upgraded socket keeps it.
+    let conn_slot = parts.extensions.get::<ConnSlot>().cloned();
     let key = session_key(&parts.headers);
     let now = Instant::now();
     let pin = key
@@ -127,6 +131,12 @@ pub(crate) async fn proxy_ws(
         let started = Instant::now();
         let result = generation.ws.get(url).headers(headers).send().await;
         let resp = match result {
+            // Out of descriptors here: not the line's fault, and no other
+            // line would do better.
+            Err(e) if file_limit_in(&e).is_some() => {
+                let message = shared.local_file_limit(Place::Upstream(label.clone()), &e);
+                return local_busy(&message);
+            }
             Err(e) => {
                 let reason = describe_error(&e);
                 let opened = lock(&line.health).on_hard_failure(Instant::now(), reason.clone());
@@ -179,7 +189,9 @@ pub(crate) async fn proxy_ws(
                 c.line,
                 active,
             );
-            let mut out = Response::new(http_body_util::BodyExt::boxed_unsync(body));
+            let mut out = Response::new(http_body_util::BodyExt::boxed_unsync(
+                body.holding(admission),
+            ));
             *out.status_mut() = status;
             *out.headers_mut() = headers;
             return out;
@@ -209,6 +221,9 @@ pub(crate) async fn proxy_ws(
         let span = tracing::info_span!("ws", route = %label);
         tokio::spawn(
             async move {
+                // Both sockets stay open for the session: it keeps its
+                // admission and the inbound connection's place to the end.
+                let _held = (admission, conn_slot);
                 let _gauge = GaugeGuard::new(tunnel_shared.clone(), |t| &t.active_websockets);
                 let counters = &tunnel_gen.members[m].lines[l].counters;
                 counters.active_websockets.fetch_add(1, Ordering::Relaxed);

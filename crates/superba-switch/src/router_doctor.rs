@@ -262,7 +262,28 @@ fn finding_text(f: &Finding) -> LocalizedText {
         }
         Finding::RouterDown { detail } => key("router_down").arg("detail", detail),
         Finding::LogError { line } => key("log_error").arg("line", line),
+        Finding::LocalLimits {
+            open_files_limit,
+            file_limit_errors,
+            busy,
+            last,
+        } => {
+            let text = match last {
+                Some(last) => key("local_limits_last").arg("last", last),
+                None => key("local_limits"),
+            }
+            .arg("files", file_limit_errors)
+            .arg("busy", busy);
+            match open_files_limit {
+                Some(n) => text.arg("limit", n),
+                None => text.arg_text("limit", unlimited()),
+            }
+        }
     }
+}
+
+fn unlimited() -> LocalizedText {
+    text("switch.router_doctor.value.unlimited")
 }
 
 fn command_lines(record: &superba_router::service::CommandRecord) -> Vec<String> {
@@ -575,6 +596,20 @@ fn health_section(facts: &RouterFacts) -> RouterDoctorSection {
                 .arg("detail", live.detail.clone().unwrap_or_default())
         },
     ));
+    if let Some(local) = live.local.as_ref().filter(|_| live.up) {
+        let value = text("switch.router_doctor.value.local")
+            .arg("in_flight", local.in_flight)
+            .arg("max", local.max_concurrent)
+            .arg("connections", local.connections)
+            .arg("max_connections", local.max_connections);
+        rows.push(row(
+            "local",
+            match local.open_files_limit_now.or(local.open_files_limit) {
+                Some(n) => value.arg("limit", n),
+                None => value.arg_text("limit", unlimited()),
+            },
+        ));
+    }
     rows.push(row(
         "runtime",
         match &facts.runtime {

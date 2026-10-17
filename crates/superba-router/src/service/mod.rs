@@ -56,6 +56,17 @@ pub const AUTOSTART_FILE: &str = "superba-router.desktop";
 /// Value name under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 pub const RUN_VALUE_NAME: &str = "SuperbaRouter";
 
+/// Soft open-file limit the LaunchAgent and the systemd unit start the router
+/// with (launchd's default for agents is 256; each proxied request holds two
+/// sockets). The router also raises its own soft limit at start; the
+/// XDG-autostart and Windows backends rely on that alone.
+pub const NOFILE_SOFT: u64 = superba_core::fdlimit::OPEN_FILES_TARGET;
+/// Hard open-file limit in the same definitions: systemd's default hard limit.
+/// It never asks for more than the system allows: macOS lowers a larger hard
+/// limit to `kern.maxfilesperproc`, and systemd sets the closest value a user
+/// manager with a lower hard limit permits.
+pub const NOFILE_HARD: u64 = 524_288;
+
 /// What to run as the service.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServiceSpec {

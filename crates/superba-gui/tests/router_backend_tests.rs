@@ -170,6 +170,53 @@ fn live_status_names_members_and_maps_event_kinds() {
     assert_eq!(l.events[0].member.as_deref(), Some("Acme Inc"));
 }
 
+/// A status from a router without a local budget still maps (all zero); a
+/// router that ran short of open files shows it, and the page warns while the
+/// last shortage is recent (user bug 35).
+#[test]
+fn live_status_carries_the_local_capacity_and_shortages() {
+    use superba_gui::pages::router::model::{LOCAL_SHORTAGE_WINDOW_MS, recent_shortage};
+
+    let l = live(&status_json("healthy"), &[]);
+    assert_eq!(l.local, superba_core::RouterLocalView::default());
+    assert!(!recent_shortage(&l.local, 10_000));
+
+    let mut status = status_json("healthy");
+    status.local = serde_json::from_value(serde_json::json!({
+        "open_files_limit": 256, "open_files_limit_now": 256,
+        "max_concurrent": 64, "in_flight": 64, "max_connections": 128,
+        "connections": 128, "busy": 9, "last_busy_ms": 5_000,
+        "file_limit_errors": 2,
+        "last_file_limit": {"at_ms": 7_000, "place": "connecting to acme/default",
+                            "detail": "Too many open files (os error 24)"}
+    }))
+    .unwrap();
+    status.recent.push(superba_router::RouteEvent {
+        at_ms: 7_000,
+        kind: superba_router::RouteEventKind::LocalLimit,
+        member: None,
+        line: None,
+        detail: Some("too many open files".into()),
+    });
+    let l = live(&status, &[]);
+    assert_eq!(l.local.open_files_limit, Some(256));
+    assert_eq!((l.local.in_flight, l.local.max_concurrent), (64, 64));
+    assert_eq!((l.local.busy, l.local.file_limit_errors), (9, 2));
+    assert_eq!(l.local.last_problem_ms, Some(7_000));
+    assert_eq!(
+        l.local.last_file_limit.as_deref(),
+        Some("connecting to acme/default: Too many open files (os error 24)")
+    );
+    assert!(recent_shortage(&l.local, 8_000));
+    assert!(!recent_shortage(
+        &l.local,
+        7_000 + LOCAL_SHORTAGE_WINDOW_MS + 1
+    ));
+    let e = l.events.last().unwrap();
+    assert_eq!(e.kind_key, "router.event.local_limit");
+    assert!(e.severe);
+}
+
 #[test]
 fn member_edits_and_mode_go_through_the_switch_service() {
     assert_eq!(

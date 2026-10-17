@@ -35,8 +35,8 @@ use superba_core::{Error, Result};
 
 use super::system::{atomic_write, path_text, remove_file, validate};
 use super::{
-    CommandOutput, CommandRecord, LAUNCHD_LABEL, ServiceDiagnosis, ServiceHost, ServiceKind,
-    ServiceManager, ServiceSpec, ServiceStatus, command_line,
+    CommandOutput, CommandRecord, LAUNCHD_LABEL, NOFILE_HARD, NOFILE_SOFT, ServiceDiagnosis,
+    ServiceHost, ServiceKind, ServiceManager, ServiceSpec, ServiceStatus, command_line,
 };
 
 /// `launchctl` by absolute path: an app started from the Finder or a login item
@@ -189,6 +189,18 @@ impl LaunchAgent {
             "  <string>Interactive</string>".to_owned(),
             "  <key>ThrottleInterval</key>".to_owned(),
             "  <integer>5</integer>".to_owned(),
+            // launchd starts agents with a soft limit of 256 open files, which
+            // ~110 concurrent requests exhaust (user bug 35).
+            "  <key>SoftResourceLimits</key>".to_owned(),
+            "  <dict>".to_owned(),
+            "    <key>NumberOfFiles</key>".to_owned(),
+            format!("    <integer>{NOFILE_SOFT}</integer>"),
+            "  </dict>".to_owned(),
+            "  <key>HardResourceLimits</key>".to_owned(),
+            "  <dict>".to_owned(),
+            "    <key>NumberOfFiles</key>".to_owned(),
+            format!("    <integer>{NOFILE_HARD}</integer>"),
+            "  </dict>".to_owned(),
             "  <key>StandardOutPath</key>".to_owned(),
             format!("  <string>{log}</string>"),
             "  <key>StandardErrorPath</key>".to_owned(),

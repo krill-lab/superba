@@ -14,6 +14,7 @@ use http_body::{Body, Frame, SizeHint};
 use http_body_util::{BodyExt, Full};
 use superba_core::codex::EDGE_BLOCK_HEADER;
 
+use crate::limits::Admission;
 use crate::state::{BoxError, GaugeGuard, Generation, RespBody, Shared, lock};
 use crate::status::RouteEventKind;
 
@@ -176,6 +177,24 @@ pub(crate) fn router_error(status: StatusCode, kind: &str, message: &str) -> Res
     resp
 }
 
+/// The router's 503 for a local shortage ([`crate::limits`]): every admission
+/// in use, or too many open files on this computer. `Connection: close` gives
+/// the descriptor back at once; Codex retries after `Retry-After`.
+pub(crate) fn local_busy(message: &str) -> Response<RespBody> {
+    let mut resp = router_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        crate::limits::LOCAL_BUSY_CODE,
+        message,
+    );
+    let headers = resp.headers_mut();
+    headers.insert(http::header::CONNECTION, HeaderValue::from_static("close"));
+    headers.insert(
+        http::header::RETRY_AFTER,
+        HeaderValue::from(crate::limits::RETRY_AFTER_SECS),
+    );
+    resp
+}
+
 /// A complete body.
 pub(crate) fn full(bytes: Bytes) -> RespBody {
     Full::new(bytes)
@@ -205,6 +224,8 @@ pub(crate) struct Observed<B> {
     member: usize,
     line: usize,
     _active: GaugeGuard,
+    /// The request's admission: its place is held until the body ends.
+    _admission: Option<Admission>,
 }
 
 impl<B> Observed<B> {
@@ -223,7 +244,14 @@ impl<B> Observed<B> {
             member,
             line,
             _active: active,
+            _admission: None,
         }
+    }
+
+    /// Keep `admission` until the body ends or is dropped.
+    pub(crate) fn holding(mut self, admission: Admission) -> Self {
+        self._admission = Some(admission);
+        self
     }
 
     fn broken(&self, detail: String) {

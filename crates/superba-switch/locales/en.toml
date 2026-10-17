@@ -359,6 +359,7 @@ router = "Router"
 runtime = "runtime.json"
 log_file = "Log file"
 command = "Command"
+local = "Local capacity"
 
 [switch.router_doctor.value]
 size = "{mb} MB"
@@ -380,6 +381,8 @@ router_up = "answering: version {version}, {members} member(s), up {uptime} s"
 router_down = "not answering: {detail}"
 runtime = "pid {pid}, port {port}, version {version}"
 log = "{path} ({kb} KB)"
+local = "{in_flight} / {max} requests in progress, {connections} / {max_connections} connections, open-file limit {limit}"
+unlimited = "unlimited"
 
 [switch.router_doctor.finding]
 can_add = "{name} can be added as a member: spb router enable --member {id}"
@@ -403,3 +406,5 @@ not_started = "The service manager could not start the program (exit 78 without 
 port_busy = "Port {port} on 127.0.0.1 is used by another program ({detail}). Find it with: lsof -nP -iTCP:{port} -sTCP:LISTEN"
 router_down = "The router does not answer: {detail}"
 log_error = "Last error in the router log: {line}"
+local_limits = "This computer ran short while routing: {files} \"too many open files\" errors (open-file limit {limit}) and {busy} requests over the router's limit got 503 local_router_busy; no line was marked down. Quit programs you do not need, or restart the router so it can raise its limit."
+local_limits_last = "This computer ran short while routing: {files} \"too many open files\" errors (open-file limit {limit}) and {busy} requests over the router's limit got 503 local_router_busy; no line was marked down. Last: {last}. Quit programs you do not need, or restart the router so it can raise its limit."

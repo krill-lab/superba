@@ -380,6 +380,26 @@ fn first_install_writes_a_plist_with_spaces_and_bootstraps_it() {
     }
     assert!(plist.contains("<key>ProcessType</key>\n  <string>Interactive</string>"));
     assert!(plist.contains("<key>RUST_LOG</key>\n    <string>info</string>"));
+    // launchd's default soft limit of 256 open files is too low for the
+    // router (user bug 35); the hard limit asks for no more than macOS allows.
+    for (key, value) in [
+        ("SoftResourceLimits", superba_router::service::NOFILE_SOFT),
+        ("HardResourceLimits", superba_router::service::NOFILE_HARD),
+    ] {
+        assert!(
+            plist.contains(&format!(
+                "<key>{key}</key>\n  <dict>\n    <key>NumberOfFiles</key>\n    <integer>{value}</integer>\n  </dict>"
+            )),
+            "{key}: {plist}"
+        );
+    }
+    assert_eq!(
+        (
+            superba_router::service::NOFILE_SOFT,
+            superba_router::service::NOFILE_HARD
+        ),
+        (8192, 524_288)
+    );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

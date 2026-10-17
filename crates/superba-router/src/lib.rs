@@ -42,6 +42,11 @@
 //!   handshake; 426 locally for members without WebSocket.
 //! - **Health** ([`health`]): passive breakers with exponential backoff plus
 //!   unauthenticated probes of half-open lines.
+//! - **Local budget** ([`limits`]): bounded concurrent requests / WebSocket
+//!   sessions and inbound connections sized from the open-file limit, a capped
+//!   upstream pool; a local shortage (every admission in use, or "too many open
+//!   files") is answered 503 `local_router_busy` and never counted against a
+//!   line.
 //! - **Admin API** (`/_superba/v1/*`, per-instance token in `runtime.json`):
 //!   status and metrics ([`status`]), reload, probe, shutdown; [`client`] calls it.
 //! - **Request log and stats line** ([`stats`], [`store`]; only while the
@@ -69,6 +74,7 @@ pub mod client;
 pub mod config;
 pub mod doctor;
 pub mod health;
+pub mod limits;
 pub mod manager;
 pub mod members;
 pub mod model_map;
@@ -103,5 +109,7 @@ pub use paths::RouterPaths;
 pub use runtime::RuntimeInfo;
 pub use server::{RouterServer, ShutdownHandle};
 pub use stats::{PriceConfig, StatsConfig, StatsLineConfig};
-pub use status::{HealthReply, RouteEvent, RouteEventKind, RouterStatus};
+pub use status::{
+    HealthReply, LocalProblem, LocalStatus, RouteEvent, RouteEventKind, RouterStatus,
+};
 pub use store::Reader;

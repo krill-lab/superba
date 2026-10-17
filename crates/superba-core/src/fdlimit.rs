@@ -18,7 +18,7 @@ use std::io;
 pub const OPEN_FILES_TARGET: u64 = 8192;
 
 /// Kind string of [`crate::Error::Io`] for "too many open files" (`EMFILE`,
-/// `ENFILE`, Windows `ERROR_TOO_MANY_OPEN_FILES`). Set explicitly because the
+/// `ENFILE`, Windows `ERROR_TOO_MANY_OPEN_FILES` / `WSAEMFILE`). Set explicitly because the
 /// matching `std::io::ErrorKind` variant is not stable.
 pub const IO_KIND_TOO_MANY_OPEN_FILES: &str = "TooManyOpenFiles";
 
@@ -52,9 +52,11 @@ pub fn file_limit_hit(err: &io::Error) -> Option<FileLimitHit> {
     }
     #[cfg(windows)]
     {
-        // `ERROR_TOO_MANY_OPEN_FILES` (winerror.h).
+        // `ERROR_TOO_MANY_OPEN_FILES` (winerror.h), and Winsock's `WSAEMFILE`
+        // for sockets (the router's accept and connect).
         const ERROR_TOO_MANY_OPEN_FILES: i32 = 4;
-        if code == ERROR_TOO_MANY_OPEN_FILES {
+        const WSAEMFILE: i32 = 10_024;
+        if code == ERROR_TOO_MANY_OPEN_FILES || code == WSAEMFILE {
             return Some(FileLimitHit::Process);
         }
     }
@@ -184,10 +186,12 @@ mod tests {
             assert_eq!(file_limit_hit(&again), None);
         }
         #[cfg(windows)]
-        assert_eq!(
-            file_limit_hit(&io::Error::from_raw_os_error(4)),
-            Some(FileLimitHit::Process)
-        );
+        for code in [4, 10_024] {
+            assert_eq!(
+                file_limit_hit(&io::Error::from_raw_os_error(code)),
+                Some(FileLimitHit::Process)
+            );
+        }
         assert_eq!(file_limit_hit(&io::Error::other("no os code")), None);
         let denied = io::Error::from(io::ErrorKind::PermissionDenied);
         assert_eq!(file_limit_hit(&denied), None);

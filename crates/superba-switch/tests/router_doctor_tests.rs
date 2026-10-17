@@ -277,6 +277,7 @@ fn mac_facts() -> RouterFacts {
             version: None,
             members: None,
             uptime_ms: None,
+            local: None,
         },
         log: LogFacts {
             path: data.join("router/router.log"),
@@ -377,4 +378,102 @@ async fn doctor_report_from_mac_facts_renders_every_part_in_both_languages() {
         );
         assert!(!text.contains(KEY), "never a key");
     }
+}
+
+/// A running router that ran short of descriptors: the report says so (a
+/// warning, no line blamed) and shows its capacity, in both languages.
+#[tokio::test]
+async fn doctor_reports_local_shortages_of_a_running_router() {
+    let mut facts = mac_facts();
+    facts.live = LiveFacts {
+        up: true,
+        detail: None,
+        version: Some("0.1.0".into()),
+        members: Some(1),
+        uptime_ms: Some(90_000),
+        local: Some(superba_router::LocalStatus {
+            open_files_limit: Some(256),
+            open_files_limit_now: Some(256),
+            max_concurrent: 64,
+            in_flight: 64,
+            max_connections: 128,
+            connections: 128,
+            busy: 17,
+            last_busy_ms: Some(1_760_000_000_000),
+            file_limit_errors: 3,
+            last_file_limit: Some(superba_router::LocalProblem {
+                at_ms: 1_760_000_000_000,
+                place: "connecting to work/cdn".into(),
+                detail: "tcp open error: Too many open files (os error 24)".into(),
+            }),
+        }),
+    };
+    facts.findings = superba_router::doctor::findings(&facts, true, None);
+    let local = facts
+        .findings
+        .iter()
+        .find(|f| matches!(f, Finding::LocalLimits { .. }))
+        .expect("a local-limits finding");
+    assert!(!local.is_error(), "a warning: the router runs");
+    assert!(local.english().contains("no line was marked down"));
+    let w = World::new();
+    let set = w.profiles.set.lock().unwrap().clone();
+    let doc = report(
+        Ok(&facts),
+        &router_candidates(&set, &catalog::builtin_sites()),
+    );
+    let finding = doc
+        .findings
+        .iter()
+        .find(|f| f.text.key == "switch.router_doctor.finding.local_limits_last")
+        .expect("the finding is in the report");
+    assert_eq!(finding.severity, Severity::Warning);
+    for (locale, needles) in [
+        (
+            Locale::En,
+            vec![
+                "3 \"too many open files\" errors (open-file limit 256) and 17 requests",
+                "Last: connecting to work/cdn: tcp open error: Too many open files (os error 24).",
+                "Local capacity: 64 / 64 requests in progress, 128 / 128 connections, open-file limit 256",
+            ],
+        ),
+        (
+            Locale::ZhCn,
+            vec![
+                "出现 3 次「打开的文件太多」（打开文件上限 256），17 个请求",
+                "没有线路因此被标为故障",
+                "进行中 64 / 64 个请求，连接 128 / 128，打开文件上限 256",
+            ],
+        ),
+    ] {
+        let text = doc.render_text(&render(locale));
+        for needle in needles {
+            assert!(
+                text.contains(needle),
+                "{locale:?}: {needle:?} missing in\n{text}"
+            );
+        }
+        assert!(
+            !text.contains("{limit}") && !text.contains("{last}"),
+            "{text}"
+        );
+        assert!(!text.contains(KEY), "never a key");
+    }
+    // Without a limit (Windows) the text says so.
+    if let Some(l) = facts.live.local.as_mut() {
+        l.open_files_limit = None;
+        l.open_files_limit_now = None;
+        l.last_file_limit = None;
+    }
+    facts.findings = superba_router::doctor::findings(&facts, false, None);
+    let doc = report(
+        Ok(&facts),
+        &router_candidates(&set, &catalog::builtin_sites()),
+    );
+    let text = doc.render_text(&render(Locale::En));
+    assert!(text.contains("(open-file limit unlimited)"), "{text}");
+    assert!(
+        text.contains("connections, open-file limit unlimited"),
+        "{text}"
+    );
 }

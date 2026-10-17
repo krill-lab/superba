@@ -170,6 +170,51 @@ async fn router_install_status_and_uninstall() {
     assert_eq!(one_json(&stdout)["state"]["kind"], "healthy");
 }
 
+/// `spb router status` shows the router's capacity and, when it ran short of
+/// open files or places, that those requests got a local 503 (user bug 35).
+#[tokio::test]
+async fn router_status_shows_local_capacity_and_shortages() {
+    let service = FakeService::new();
+    {
+        let mut v2 = service.v2.lock().unwrap();
+        v2.router.installed = true;
+        v2.router.running = true;
+        v2.router.local = Some(superba_core::RouterLocalView {
+            open_files_limit: Some(256),
+            max_concurrent: 64,
+            in_flight: 12,
+            ..Default::default()
+        });
+    }
+    let (code, stdout, stderr) = invoke(service.clone(), &["router", "status"]).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stdout.contains("Capacity: 12 / 64 requests in progress (open-file limit 256)"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("ran short"), "{stdout}");
+    {
+        let mut v2 = service.v2.lock().unwrap();
+        let local = v2.router.local.as_mut().unwrap();
+        local.busy = 5;
+        local.file_limit_errors = 2;
+        local.last_file_limit =
+            Some("connecting to krill/cdn: Too many open files (os error 24)".into());
+    }
+    let (_, stdout, _) = invoke(service.clone(), &["router", "status"]).await;
+    assert!(
+        stdout.contains("2 \"too many open files\" errors (open-file limit 256) and 5 requests"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("No line was marked down"), "{stdout}");
+    assert!(
+        stdout.contains("connecting to krill/cdn: Too many open files (os error 24)"),
+        "{stdout}"
+    );
+    let (_, stdout, _) = invoke(service.clone(), &["--json", "router", "status"]).await;
+    assert_eq!(one_json(&stdout)["local"]["file_limit_errors"], 2);
+}
+
 /// Give `work` a stored key: router members need one (an API key the router
 /// can send), and `spb router enable` checks that before installing.
 fn work_with_key(service: &FakeService) {

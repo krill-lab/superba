@@ -26,6 +26,7 @@ use superba_core::{ClearRequest, Result};
 use crate::config::{ROUTER_BASE_PATH, RouterConfig, RouterSecrets};
 use crate::forward::{full, router_error};
 use crate::health::LineState;
+use crate::limits::{Budget, Place};
 use crate::probe::probe_all;
 use crate::state::{Generation, RespBody, Shared, lock};
 use crate::stats::hub::LIVE_RING;
@@ -148,7 +149,7 @@ pub(crate) fn reload(shared: &Shared) -> Result<u64> {
     let paths = shared.paths.as_ref().ok_or_else(|| {
         superba_core::Error::invalid("this router was started without a data dir")
     })?;
-    let config = RouterConfig::load(paths)?;
+    let config = RouterConfig::load(paths).inspect_err(|e| note_file_limit(shared, e))?;
     if config.listen_port != 0 && config.listen_port != shared.listen.port() {
         return Err(superba_core::Error::invalid(format!(
             "the listen port changed ({} -> {}); restart the router",
@@ -156,9 +157,12 @@ pub(crate) fn reload(shared: &Shared) -> Result<u64> {
             config.listen_port
         )));
     }
-    let secrets = RouterSecrets::load(paths)?;
+    let secrets = RouterSecrets::load(paths).inspect_err(|e| note_file_limit(shared, e))?;
     let number = shared.current().number + 1;
-    let generation = Generation::build(number, config, &secrets)?;
+    // The admission and connection caps stay as started; the pool follows the
+    // new settings.
+    let budget = Budget::new(shared.limits.budget.open_files_limit, &config.tuning);
+    let generation = Generation::build(number, config, &secrets, &budget)?;
     shared.install(generation);
     shared.event(
         RouteEventKind::Reloaded,
@@ -167,6 +171,13 @@ pub(crate) fn reload(shared: &Shared) -> Result<u64> {
         Some(format!("generation {number}")),
     );
     Ok(number)
+}
+
+/// A configuration file that could not be read for want of descriptors.
+fn note_file_limit(shared: &Shared, e: &superba_core::Error) {
+    if crate::limits::is_file_limit_error(e) {
+        shared.local_file_limit(Place::Config, &e.detail());
+    }
 }
 
 /// Snapshot of the router's state.
@@ -254,6 +265,7 @@ pub(crate) fn status(shared: &Shared) -> RouterStatus {
         sticky_sessions,
         recent: lock(&shared.events).iter().cloned().collect(),
         stats: shared.stats.status(generation.config.stats.as_ref()),
+        local: shared.limits.status(),
     }
 }
 
