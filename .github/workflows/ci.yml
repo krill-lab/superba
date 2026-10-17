@@ -40,9 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS minutes cost 10x and Windows 2x on private repositories: pushes and
-        # pull requests run Linux only; run the workflow by hand for all three.
-        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]') }}
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -73,9 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS minutes cost 10x and Windows 2x on private repositories: pushes and
-        # pull requests run Linux only; run the workflow by hand for all three.
-        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]') }}
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
