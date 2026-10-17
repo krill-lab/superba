@@ -79,6 +79,11 @@ impl Output {
         self
     }
 
+    /// Both streams are terminals: a person can be asked a question.
+    pub(crate) fn interactive(&self) -> bool {
+        self.stdout_terminal && self.stderr_terminal
+    }
+
     /// Capture both streams; `run` selects the invocation's JSON mode and locale.
     pub fn capture() -> (Self, Capture, Capture) {
         let stdout = Capture::default();

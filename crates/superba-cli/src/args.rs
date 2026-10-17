@@ -104,6 +104,11 @@ pub enum Command {
         #[command(subcommand)]
         command: AppCommand,
     },
+    #[command(name = "self-update", about = english("cli.help.self_update_group"))]
+    SelfUpdate {
+        #[command(subcommand)]
+        command: SelfUpdateCommand,
+    },
     #[command(about = english("cli.help.feeds_group"))]
     Feeds {
         #[command(subcommand)]
@@ -783,6 +788,21 @@ pub enum AppCommand {
         #[arg(long, help = english("cli.help.app_download_open"))]
         open: bool,
     },
+}
+
+/// `spb self-update`.
+#[derive(Debug, Subcommand)]
+pub enum SelfUpdateCommand {
+    #[command(about = english("cli.help.self_update_check"))]
+    Check,
+    #[command(about = english("cli.help.self_update_install"))]
+    Install {
+        #[arg(short = 'y', long, help = english("cli.help.self_update_yes"))]
+        yes: bool,
+    },
+    /// Restart the router service onto the new binary (the Windows hand-off runs it).
+    #[command(hide = true)]
+    RestartRouter,
 }
 
 /// `spb feeds`.

@@ -11,6 +11,7 @@ mod remote;
 mod requests;
 mod restore;
 mod router;
+mod selfupdate;
 mod sessions;
 mod settings;
 mod site;
@@ -123,6 +124,7 @@ pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) 
         Command::Speed(args) => models::speed(args, rt, out).await,
         Command::Codex { command } => versions::codex(command, rt, out).await,
         Command::App { command } => versions::app(command, rt, out).await,
+        Command::SelfUpdate { command } => selfupdate::run(command, rt, out).await,
         Command::Feeds { command } => versions::feeds(command, rt, out).await,
         Command::Site { command } => site::run(command, rt, out).await,
         Command::Account(args) => account::run(args, rt, out).await,

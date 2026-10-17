@@ -119,6 +119,15 @@ fn record_key(key: KeyInput) -> RecordedKey {
 
 type Planner = dyn Fn(SwitchRequest) -> Result<SwitchPlan> + Send + Sync;
 
+#[derive(Default)]
+pub struct FakeSelfUpdate {
+    pub view: superba_core::SelfUpdateView,
+    pub report: Option<superba_core::SelfUpdateReport>,
+    pub checks: Vec<superba_core::SelfUpdateCheckRequest>,
+    pub installs: Vec<superba_core::SelfUpdateInstallRequest>,
+    pub router_restarts: usize,
+}
+
 pub struct FakeService {
     pub profiles: Mutex<ProfileSet>,
     pub overview: Mutex<Overview>,
@@ -136,6 +145,8 @@ pub struct FakeService {
     pub recovery: Mutex<RecoveryReport>,
     pub v2: Mutex<FakeV2>,
     pub v3: Mutex<v3::FakeV3>,
+    /// `spb self-update`: the view every check returns, the install report and the calls.
+    pub self_update: Mutex<FakeSelfUpdate>,
 }
 
 impl FakeService {
@@ -214,6 +225,7 @@ impl FakeService {
             )),
             findings: Mutex::new(Vec::new()),
             v2: Mutex::new(fake_v2()),
+            self_update: Mutex::new(FakeSelfUpdate::default()),
             v3: Mutex::new(v3::fake_v3()),
             recovery: Mutex::new(RecoveryReport {
                 entries: vec![RecoveredJournal {
@@ -440,6 +452,34 @@ pub fn one_json(stdout: &str) -> Value {
 
 #[async_trait]
 impl SwitchService for FakeService {
+    async fn self_update_view(&self) -> Result<superba_core::SelfUpdateView> {
+        Ok(self.self_update.lock().unwrap().view.clone())
+    }
+    async fn self_update_check(
+        &self,
+        request: superba_core::SelfUpdateCheckRequest,
+    ) -> Result<superba_core::SelfUpdateView> {
+        self.record("self_update_check")?;
+        let mut s = self.self_update.lock().unwrap();
+        s.checks.push(request);
+        Ok(s.view.clone())
+    }
+    async fn self_update_install(
+        &self,
+        request: superba_core::SelfUpdateInstallRequest,
+    ) -> Result<superba_core::SelfUpdateReport> {
+        self.record("self_update_install")?;
+        let mut s = self.self_update.lock().unwrap();
+        s.installs.push(request);
+        s.report
+            .clone()
+            .ok_or_else(|| Error::not_implemented("self update install"))
+    }
+    async fn self_update_restart_router(&self) -> Result<bool> {
+        self.self_update.lock().unwrap().router_restarts += 1;
+        Ok(true)
+    }
+
     async fn overview(&self) -> Result<Overview> {
         self.record("overview")?;
         Ok(self.overview.lock().unwrap().clone())
