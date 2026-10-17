@@ -45,8 +45,12 @@ use url::Url;
 use crate::Switcher;
 use crate::planner::{all_sites, compatible_base_url};
 
-/// How long `install` waits for a new router to answer.
-pub const ROUTER_START_WAIT: Duration = Duration::from_secs(15);
+/// How long `install` waits for a new router to answer. A healthy router binds
+/// in well under a second, but macOS checks a program the first time it runs
+/// (longer for a large universal binary on a busy Mac) and launchd waits 5 s
+/// before restarting a job that exited; a crash loop is reported sooner (see
+/// `RouterManager::enable`).
+pub const ROUTER_START_WAIT: Duration = Duration::from_secs(30);
 
 /// Where Codex sends requests in router mode.
 #[derive(Clone, Debug)]
@@ -162,6 +166,12 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
     /// Recorder state of the running router.
     async fn stats_status(&self) -> Option<RouterStatsStatus> {
         None
+    }
+
+    /// Diagnostic facts for `spb router doctor` (program, service, files,
+    /// port, log; never a secret).
+    async fn doctor(&self) -> Result<superba_router::doctor::RouterFacts> {
+        Err(Error::not_implemented("router doctor"))
     }
 }
 
@@ -338,6 +348,10 @@ impl RouterControl for SystemRouterControl {
         let client =
             superba_router::client::AdminClient::from_runtime(self.manager.paths()).ok()?;
         client.status().await.ok()?.stats
+    }
+
+    async fn doctor(&self) -> Result<superba_router::doctor::RouterFacts> {
+        Ok(self.manager.doctor().await)
     }
 }
 
@@ -558,11 +572,8 @@ impl Switcher {
         let d = &self.deps;
         let mut set = d.profiles.load().await?;
         if enabled {
-            if set.settings.router.members.is_empty() {
-                return Err(Error::invalid(
-                    "the router has no members yet: install it with member profiles first",
-                ));
-            }
+            let sites = all_sites(&set, self.deps.ctx.env.as_ref());
+            Self::require_eligible_member(&set, &sites)?;
             if !d.router.liveness().await.is_up() {
                 // Start (or repair) it with the stored members first.
                 let built = self

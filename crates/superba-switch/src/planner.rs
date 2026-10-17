@@ -1410,17 +1410,20 @@ impl Switcher {
             }
             SwitchIntent::Router { enable } => {
                 let router = &set.settings.router;
-                if *enable && router.members.is_empty() {
-                    return Err(Error::invalid(
-                        "the router has no members yet: install it with member profiles first",
-                    ));
+                if *enable {
+                    Self::require_eligible_member(set, sites)?;
                 }
+                // Turning the router on applies a profile whose key the router
+                // can send as an API key (the applied one when it can be a
+                // member); turning it off, any key-based profile.
                 let usable = |id: &ProfileId| {
                     set.profile(id).is_some_and(|p| {
-                        !p.is_builtin()
-                            && sites
-                                .iter()
-                                .any(|s| s.id == p.site_id && s.kind != SiteKind::Official)
+                        let site = sites.iter().find(|s| s.id == p.site_id);
+                        if *enable {
+                            crate::router_doctor::eligibility(p, site).is_eligible()
+                        } else {
+                            !p.is_builtin() && site.is_some_and(|s| s.kind != SiteKind::Official)
+                        }
                     })
                 };
                 let profile_id = state

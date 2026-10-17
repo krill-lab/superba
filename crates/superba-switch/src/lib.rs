@@ -31,6 +31,7 @@ pub mod messages;
 pub mod models;
 pub mod planner;
 pub mod router;
+pub mod router_doctor;
 pub mod rules;
 mod selfupdate;
 pub mod service;
@@ -573,6 +574,10 @@ impl SwitchService for Switcher {
     async fn router_uninstall(&self) -> Result<superba_core::RouterView> {
         self.refuse_elevated()?;
         self.router_uninstall_impl().await
+    }
+
+    async fn router_doctor(&self) -> Result<superba_core::RouterDoctorReport> {
+        self.router_doctor_impl().await
     }
 
     async fn router_fall_back(&self, reason: String) -> Result<Option<SwitchOutcome>> {

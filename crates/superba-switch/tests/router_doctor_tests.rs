@@ -1,0 +1,380 @@
+//! Router member eligibility (user bug 28: the router could not be turned on and
+//! nothing said that no member could carry traffic) and the router doctor
+//! report built from `superba-router`'s facts.
+
+mod fakes;
+
+use std::path::PathBuf;
+
+use fakes::*;
+use superba_core::{
+    AuthChoice, AuthMode, Error, Locale, ProfileId, RouterInstallRequest, Severity, SiteKind,
+    SwitchService, catalog,
+};
+use superba_router::doctor::{
+    ConfigFacts, ExeFacts, Finding, LiveFacts, LogFacts, MemberFacts, PortFacts, PortState,
+    RouterFacts, ServiceFacts,
+};
+use superba_router::service::{
+    CommandRecord, CommandRecordOutput, ServiceDiagnosis, ServiceKind, ServiceStatus,
+};
+use superba_switch::messages;
+use superba_switch::router_doctor::{Eligibility, has_eligible_member, report, router_candidates};
+
+fn set_work(w: &World, f: impl FnOnce(&mut superba_core::Profile)) {
+    let mut set = w.profiles.set.lock().unwrap();
+    f(set
+        .profiles
+        .iter_mut()
+        .find(|p| p.id.as_str() == "work")
+        .unwrap());
+}
+
+fn render(locale: Locale) -> impl Fn(&superba_core::LocalizedText) -> String {
+    let catalog = messages::catalog(locale);
+    move |t| catalog.text(t)
+}
+
+#[test]
+fn every_kind_of_provider_gets_its_eligibility() {
+    let w = World::new();
+    let mut set = w.profiles.set.lock().unwrap().clone();
+    let mut pat = krill_profile("pat", None, AuthMode::Pat);
+    pat.set_auth(AuthChoice::Pat);
+    let mut keyless = krill_profile("keyless", None, AuthMode::ApiKey);
+    keyless.key_ref = None;
+    let mut lost = krill_profile("lost", None, AuthMode::ApiKey);
+    lost.site_id = "deleted-site".into();
+    let mut official = catalog::builtin_profiles().remove(1);
+    official.id = ProfileId::new("official");
+    set.profiles.extend([pat, keyless, lost, official]);
+    set.settings.router.members = vec![ProfileId::new("pat")];
+    let sites = catalog::builtin_sites();
+    let c = router_candidates(&set, &sites);
+    let of = |id: &str| {
+        c.iter()
+            .find(|c| c.profile_id.as_ref().is_some_and(|p| p.as_str() == id))
+            .unwrap_or_else(|| panic!("{id} listed"))
+    };
+    assert_eq!(
+        c[0].profile_id.as_ref().unwrap().as_str(),
+        "pat",
+        "members first"
+    );
+    assert!(of("pat").member);
+    assert_eq!(of("pat").eligibility, Eligibility::PatOnly);
+    assert_eq!(
+        of("work").eligibility,
+        Eligibility::Eligible,
+        "Auto falls back to an API key"
+    );
+    assert!(of("work").addable());
+    assert_eq!(of("keyless").eligibility, Eligibility::NoKey);
+    assert_eq!(of("lost").eligibility, Eligibility::UnknownSite);
+    // The official login is never routed: not listed unless it is a member.
+    assert!(!c.iter().any(|c| {
+        c.profile_id
+            .as_ref()
+            .is_some_and(|p| p.as_str() == "official")
+    }));
+    let official = set.profile(&ProfileId::new("official")).unwrap();
+    let official_site = sites.iter().find(|s| s.id == official.site_id);
+    assert_eq!(
+        superba_switch::router_doctor::eligibility(official, official_site),
+        Eligibility::OfficialLogin
+    );
+    assert!(!has_eligible_member(&c), "the only member is PAT-only");
+    for e in [Eligibility::PatOnly, Eligibility::NoKey] {
+        assert!(e.needs_key());
+    }
+    // Every reason renders in both languages.
+    for e in [
+        Eligibility::Eligible,
+        Eligibility::OfficialLogin,
+        Eligibility::NoKey,
+        Eligibility::PatOnly,
+        Eligibility::NoApiKeyMode,
+        Eligibility::UnknownSite,
+    ] {
+        assert!(messages::has_key(&e.text().key), "{e:?}");
+        assert!(
+            render(Locale::ZhCn)(&e.text())
+                .chars()
+                .any(|c| c > '\u{2e80}')
+        );
+    }
+    // A Krill site nobody entered a key for is listed too (to point at the
+    // Providers page key field).
+    set.profiles.clear();
+    set.settings.router.members.clear();
+    let c = router_candidates(&set, &sites);
+    let krill = c
+        .iter()
+        .find(|c| c.site_kind == Some(SiteKind::Krill))
+        .unwrap();
+    assert_eq!(
+        (krill.profile_id.as_ref(), krill.eligibility),
+        (None, Eligibility::NoKey)
+    );
+    assert!(!krill.addable());
+}
+
+#[tokio::test]
+async fn turning_the_router_on_without_an_eligible_member_says_why_and_what_to_do() {
+    let w = World::new();
+    let sw = w.switcher();
+    sw.router_install(RouterInstallRequest {
+        members: vec![ProfileId::new("work")],
+    })
+    .await
+    .unwrap();
+    // The user's only member uses a PAT only.
+    set_work(&w, |p| p.set_auth(AuthChoice::Pat));
+    let e = sw.router_set_enabled(true).await.unwrap_err();
+    let Error::Invalid { message } = &e else {
+        panic!("expected Invalid, got {e:?}");
+    };
+    assert!(
+        message.contains("needs at least one member that uses an API key"),
+        "{message}"
+    );
+    assert!(message.contains("Need an API key: work"), "{message}");
+    // Planning router mode says the same (the GUI shows the plan error).
+    let mut request = superba_core::SwitchRequest::profile(ProfileId::new(""));
+    request.intent = superba_core::SwitchIntent::Router { enable: true };
+    let e = sw.plan(request).await.unwrap_err();
+    assert!(e.to_string().contains("uses an API key"), "{e}");
+    // Back to Auto: it works again.
+    set_work(&w, |p| p.set_auth(AuthChoice::Auto));
+    sw.router_set_enabled(true).await.unwrap();
+}
+
+#[tokio::test]
+async fn doctor_without_router_facts_still_explains_the_members() {
+    let w = World::new();
+    let sw = w.switcher();
+    // No members at all (the user's case): "work" could be one.
+    let report = sw.router_doctor().await.unwrap();
+    assert_eq!(report.findings[0].severity, Severity::Danger);
+    assert_eq!(
+        report.findings[0].text.key,
+        "switch.router_eligibility.none_eligible"
+    );
+    let text = report.render_text(&render(Locale::ZhCn));
+    assert!(
+        text.contains("开启路由需要至少一个用 API key 的成员。"),
+        "{text}"
+    );
+    assert!(text.contains("spb router enable --member work"), "{text}");
+    assert!(text.contains("[供应商]"), "{text}");
+    assert!(
+        text.contains("不是成员 · 可以作为成员（使用 API key）"),
+        "{text}"
+    );
+    // The fake router has no facts: said so, not hidden.
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|f| f.text.key == "switch.router_doctor.finding.no_facts")
+    );
+}
+
+fn record(command: &str, code: i32, stdout: &str, stderr: &str) -> CommandRecord {
+    CommandRecord {
+        command: command.into(),
+        result: Ok(CommandRecordOutput {
+            code: Some(code),
+            stdout: stdout.into(),
+            stderr: stderr.into(),
+        }),
+    }
+}
+
+fn mac_facts() -> RouterFacts {
+    let exe = PathBuf::from("/Applications/Superba.app/Contents/MacOS/superba-router");
+    let data = PathBuf::from("/Users/Jane Doe/Library/Application Support/com.krill-code.Superba");
+    RouterFacts {
+        superba_version: "0.1.0".into(),
+        platform: "macos aarch64".into(),
+        os_version: Some("14.6.1".into()),
+        data_dir: data.clone(),
+        exe: ExeFacts {
+            path: exe.clone(),
+            exists: true,
+            executable: Some(true),
+            size: Some(31_457_280),
+            version: Some(record(
+                "/Applications/Superba.app/Contents/MacOS/superba-router --version",
+                0,
+                "superba-router 0.1.0\n",
+                "",
+            )),
+            quarantine: Some("0083;66f0a1b2;Safari;".into()),
+            bundle: Some((PathBuf::from("/Applications/Superba.app"), None)),
+            codesign: Some(record(
+                "/usr/bin/codesign -dv --verbose=2 x",
+                0,
+                "",
+                "Format=Mach-O universal (x86_64 arm64)\nCodeDirectory v=20400 flags=0x20002(adhoc,linker-signed)\nSignature=adhoc\n",
+            )),
+            candidates: vec![(exe.clone(), true)],
+            ..ExeFacts::default()
+        },
+        service: ServiceFacts {
+            kind: ServiceKind::LaunchAgent,
+            status: Ok(ServiceStatus {
+                kind: ServiceKind::LaunchAgent,
+                installed: true,
+                running: Some(false),
+                pid: None,
+                detail: Some("not running".into()),
+            }),
+            diagnosis: ServiceDiagnosis {
+                definition_path: Some(PathBuf::from(
+                    "/Users/Jane Doe/Library/LaunchAgents/com.krill.superba.router.plist",
+                )),
+                definition: Some("<plist>…</plist>".into()),
+                program: Some(exe.clone()),
+                query: Some(record(
+                    "/bin/launchctl print gui/501/com.krill.superba.router",
+                    0,
+                    "",
+                    "",
+                )),
+                fields: vec![
+                    ("state".into(), "not running".into()),
+                    ("runs".into(), "3".into()),
+                    ("last exit code".into(), "78: EX_CONFIG".into()),
+                ],
+                loaded: Some(true),
+                crash_looping: true,
+                last_exit_code: Some(78),
+                last_signal: None,
+            },
+        },
+        config: ConfigFacts {
+            config_exists: true,
+            port: Some(54_321),
+            members: vec![MemberFacts {
+                id: "work".into(),
+                name: "Work".into(),
+                lines: 3,
+                has_key: true,
+            }],
+            secrets_exists: true,
+            secrets_mode: Some(0o600),
+            ..ConfigFacts::default()
+        },
+        runtime: None,
+        port: Some(PortFacts {
+            port: 54_321,
+            state: PortState::Free,
+        }),
+        live: LiveFacts {
+            up: false,
+            detail: Some("the router is not running (no runtime.json)".into()),
+            version: None,
+            members: None,
+            uptime_ms: None,
+        },
+        log: LogFacts {
+            path: data.join("router/router.log"),
+            exists: true,
+            size: Some(2048),
+            tail: vec!["2026-10-17T03:12:44Z ERROR superba_router: cannot start error=…".into()],
+        },
+        foreground: vec![
+            exe.to_string_lossy().into_owned(),
+            "run".into(),
+            "--data-dir".into(),
+            data.to_string_lossy().into_owned(),
+        ],
+        findings: vec![
+            Finding::Quarantined {
+                path: PathBuf::from("/Applications/Superba.app"),
+            },
+            Finding::CrashLoop {
+                exit: Some(78),
+                signal: None,
+            },
+            Finding::RouterDown {
+                detail: "the router is not running (no runtime.json)".into(),
+            },
+        ],
+    }
+}
+
+#[tokio::test]
+async fn doctor_report_from_mac_facts_renders_every_part_in_both_languages() {
+    let w = World::new();
+    let sw = w.switcher();
+    sw.router_install(RouterInstallRequest {
+        members: vec![ProfileId::new("work")],
+    })
+    .await
+    .unwrap();
+    let set = w.profiles.set.lock().unwrap().clone();
+    let candidates = router_candidates(&set, &catalog::builtin_sites());
+    let facts = mac_facts();
+    let report = report(Ok(&facts), &candidates);
+    assert_eq!(report.foreground, facts.foreground);
+    assert!(
+        !report
+            .findings
+            .iter()
+            .any(|f| f.text.key == "switch.router_eligibility.none_eligible"),
+        "work is an eligible member"
+    );
+    assert_eq!(
+        report.findings[0].text.key,
+        "switch.router_doctor.finding.quarantined"
+    );
+    for (locale, needles) in [
+        (
+            Locale::En,
+            vec![
+                "Superba 0.1.0 · local router diagnostics · macos aarch64 14.6.1",
+                "! macOS marks /Applications/Superba.app as downloaded (quarantine)",
+                "xattr -dr com.apple.quarantine \"/Applications/Superba.app\"",
+                "(last exit: 78)",
+                "[Router program]",
+                "--version: superba-router 0.1.0 (exit 0)",
+                "Quarantine (program): 0083;66f0a1b2;Safari;",
+                "Code signature: Format=Mach-O universal (x86_64 arm64) | CodeDirectory v=20400 flags=0x20002(adhoc,linker-signed) | Signature=adhoc",
+                "$ /bin/launchctl print gui/501/com.krill.superba.router",
+                "  last exit code = 78: EX_CONFIG",
+                "Work (work): 3 line(s), key present",
+                "member · can be a member (uses an API key)",
+                "On the port: free (nothing listens)",
+                "[Log (last 1 lines)]",
+                "'/Users/Jane Doe/Library/Application Support/com.krill-code.Superba'",
+            ],
+        ),
+        (
+            Locale::ZhCn,
+            vec![
+                "本地路由诊断",
+                "macOS 把 /Applications/Superba.app 标记为下载文件",
+                "[路由程序]",
+                "[后台服务]",
+                "成员 · 可以作为成员（使用 API key）",
+                "端口上: 空闲（没有程序监听）",
+                "[在终端里运行（日志直接显示，Ctrl-C 停止）]",
+            ],
+        ),
+    ] {
+        let text = report.render_text(&render(locale));
+        for needle in needles {
+            assert!(
+                text.contains(needle),
+                "{locale:?}: {needle:?} missing in\n{text}"
+            );
+        }
+        assert!(
+            !text.contains("{value}") && !text.contains("{path}"),
+            "{text}"
+        );
+        assert!(!text.contains(KEY), "never a key");
+    }
+}
