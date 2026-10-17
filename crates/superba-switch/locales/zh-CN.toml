@@ -407,3 +407,19 @@ router_down = "路由没有应答：{detail}"
 log_error = "路由日志里最后一条错误：{line}"
 local_limits = "路由在本机资源上吃紧：出现 {files} 次「打开的文件太多」（打开文件上限 {limit}），{busy} 个请求超出路由的并发上限，都收到了 503 local_router_busy；没有线路因此被标为故障。请退出不需要的程序，或重启路由让它提高上限。"
 local_limits_last = "路由在本机资源上吃紧：出现 {files} 次「打开的文件太多」（打开文件上限 {limit}），{busy} 个请求超出路由的并发上限，都收到了 503 local_router_busy；没有线路因此被标为故障。最近一次：{last}。请退出不需要的程序，或重启路由让它提高上限。"
+
+[switch.sessions]
+migrated = "已迁移 {done} / {total} 个会话"
+restored = "已恢复 {done} / {total} 个会话"
+stopped = "已停止迁移会话；所有会话都已放回原处，没有任何改动"
+line = "{count} · {percent}% · {stage}"
+line_current = "{count} · {percent}% · {stage} · {current}"
+
+[switch.sessions.stage]
+reading = "正在读取会话"
+backing_up = "正在备份会话"
+moving = "正在迁移会话"
+restoring = "正在把会话放回原处"
+databases = "正在更新会话索引"
+verifying = "正在检查结果"
+done = "完成"

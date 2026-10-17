@@ -35,6 +35,7 @@ pub mod router_doctor;
 pub mod rules;
 mod selfupdate;
 pub mod service;
+pub mod session_events;
 mod settings;
 mod sites;
 mod transports;

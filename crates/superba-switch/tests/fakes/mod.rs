@@ -1131,6 +1131,69 @@ impl SessionMigrator for FakeSessions {
     async fn recover(&self, _home: &CodexHome) -> Result<RollbackReport> {
         Ok(RollbackReport::default())
     }
+
+    /// Reports three steps; a stop request while moving undoes (reported as a
+    /// restore) and fails with `Cancelled`, like `CodexSessionMigrator`.
+    async fn migrate_stopped_with_progress(
+        &self,
+        home: &CodexHome,
+        plan: &MigrationPlan,
+        stopped: &superba_core::ConsumersStopped,
+        progress: Arc<dyn superba_core::SessionProgressSink>,
+    ) -> Result<MigrationReceipt> {
+        use superba_core::{SessionDirection, SessionProgress, SessionStage};
+        let total = plan.thread_count;
+        let report = |direction, stage, done, can_stop| {
+            progress.report(SessionProgress {
+                direction,
+                stage,
+                done,
+                total,
+                step_done: done,
+                step_total: total,
+                current: None,
+                can_stop,
+            })
+        };
+        report(SessionDirection::Migrate, SessionStage::Reading, 0, true);
+        report(
+            SessionDirection::Migrate,
+            SessionStage::Moving,
+            total / 2,
+            true,
+        );
+        if progress.stop_requested() {
+            push(&self.log, "sessions.stopped");
+            report(SessionDirection::Restore, SessionStage::Moving, 0, false);
+            report(SessionDirection::Restore, SessionStage::Done, total, false);
+            return Err(Error::Cancelled);
+        }
+        let receipt = self.migrate_stopped(home, plan, stopped).await?;
+        report(SessionDirection::Migrate, SessionStage::Done, total, false);
+        Ok(receipt)
+    }
+
+    async fn rollback_stopped_with_progress(
+        &self,
+        home: &CodexHome,
+        migration_id: &str,
+        stopped: &superba_core::ConsumersStopped,
+        progress: Arc<dyn superba_core::SessionProgressSink>,
+    ) -> Result<RollbackReport> {
+        use superba_core::{SessionDirection, SessionProgress, SessionStage};
+        let r = self.rollback_stopped(home, migration_id, stopped).await?;
+        progress.report(SessionProgress {
+            direction: SessionDirection::Restore,
+            stage: SessionStage::Done,
+            done: 1,
+            total: 1,
+            step_done: 1,
+            step_total: 1,
+            current: None,
+            can_stop: false,
+        });
+        Ok(r)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1741,6 +1804,8 @@ impl SwitchDecider for ScriptedDecider {
 #[derive(Debug, Default)]
 pub struct RecordingEvents {
     pub events: Mutex<Vec<SwitchEvent>>,
+    /// Answer `stop_requested` with true (the user stopped the migration).
+    pub stop: std::sync::atomic::AtomicBool,
 }
 
 impl RecordingEvents {
@@ -1760,6 +1825,10 @@ impl RecordingEvents {
 impl SwitchEvents for RecordingEvents {
     fn emit(&self, event: SwitchEvent) {
         self.events.lock().unwrap().push(event);
+    }
+
+    fn stop_requested(&self) -> bool {
+        self.stop.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 

@@ -408,3 +408,19 @@ router_down = "The router does not answer: {detail}"
 log_error = "Last error in the router log: {line}"
 local_limits = "This computer ran short while routing: {files} \"too many open files\" errors (open-file limit {limit}) and {busy} requests over the router's limit got 503 local_router_busy; no line was marked down. Quit programs you do not need, or restart the router so it can raise its limit."
 local_limits_last = "This computer ran short while routing: {files} \"too many open files\" errors (open-file limit {limit}) and {busy} requests over the router's limit got 503 local_router_busy; no line was marked down. Last: {last}. Quit programs you do not need, or restart the router so it can raise its limit."
+
+[switch.sessions]
+migrated = "Migrated {done} of {total} sessions"
+restored = "Restored {done} of {total} sessions"
+stopped = "Session migration stopped; every session was put back and nothing was changed"
+line = "{count} · {percent}% · {stage}"
+line_current = "{count} · {percent}% · {stage} · {current}"
+
+[switch.sessions.stage]
+reading = "Reading the sessions"
+backing_up = "Backing up the sessions"
+moving = "Moving the sessions"
+restoring = "Putting the sessions back"
+databases = "Updating the session index"
+verifying = "Checking the result"
+done = "Done"

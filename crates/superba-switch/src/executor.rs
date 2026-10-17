@@ -30,6 +30,7 @@ use crate::journal::{JournalEntry, JournalStatus, RemoteReceipt, StateLock, Swit
 use crate::messages::{self, text};
 use crate::planner::{PlanContext, effective_root, launch_cdp_mode};
 use crate::rules;
+use crate::session_events::SessionEvents;
 
 pub use crate::rules::PROCESS_START_SLACK_MS;
 
@@ -113,6 +114,8 @@ struct Run<'a> {
     opts: ExecuteOptions,
     decider: Arc<dyn SwitchDecider>,
     ev: Emitter<'a>,
+    /// The execution's events, for the session migrator's progress reports.
+    events: Arc<dyn SwitchEvents>,
     journal: SwitchJournal,
     entry: JournalEntry,
     written: Written,
@@ -194,6 +197,7 @@ impl Switcher {
                 events: events.as_ref(),
                 clock: self.deps.clock.as_ref(),
             },
+            events: events.clone(),
             journal,
             entry,
             written: Written::default(),
@@ -412,6 +416,10 @@ impl Run<'_> {
         // Applying.
         self.ev.phase(SwitchPhase::Applying);
         if let Err(e) = self.apply_local(full).await {
+            if matches!(e, Error::Cancelled) {
+                // The user stopped the session migration: it undid itself.
+                return Ok(self.roll_back_after_stop().await);
+            }
             self.ev.log(Severity::Danger, e.to_text());
             return Ok(self.roll_back_after_failure(&e).await);
         }
@@ -819,7 +827,12 @@ impl Run<'_> {
             if let Some(mp) = &plan.migration {
                 self.ev
                     .step(SwitchStep::MigrateSessions, StepStatus::Running);
-                match d.sessions.migrate_stopped(&home, mp, &stopped).await {
+                let progress = SessionEvents::sink(self.events.clone());
+                match d
+                    .sessions
+                    .migrate_stopped_with_progress(&home, mp, &stopped, progress)
+                    .await
+                {
                     Ok(receipt) => {
                         self.entry.migration = Some(receipt.clone());
                         self.written.migration = Some(receipt);
@@ -827,19 +840,26 @@ impl Run<'_> {
                         self.ev.step(SwitchStep::MigrateSessions, StepStatus::Done);
                     }
                     Err(e) => {
-                        self.ev.step(
-                            SwitchStep::MigrateSessions,
+                        let status = if matches!(e, Error::Cancelled) {
+                            StepStatus::Skipped
+                        } else {
                             StepStatus::Failed {
                                 message: e.to_string(),
-                            },
-                        );
+                            }
+                        };
+                        self.ev.step(SwitchStep::MigrateSessions, status);
                         return Err(e);
                     }
                 }
             } else if let Some(id) = self.pc.rollback_migration.clone() {
                 self.ev
                     .step(SwitchStep::MigrateSessions, StepStatus::Running);
-                if let Err(e) = d.sessions.rollback_stopped(&home, &id, &stopped).await {
+                let progress = SessionEvents::sink(self.events.clone());
+                if let Err(e) = d
+                    .sessions
+                    .rollback_stopped_with_progress(&home, &id, &stopped, progress)
+                    .await
+                {
                     self.ev.step(
                         SwitchStep::MigrateSessions,
                         StepStatus::Failed {
@@ -868,9 +888,10 @@ impl Run<'_> {
         }
         if let Some(receipt) = self.written.migration.take() {
             let stopped = ConsumersStopped::new(&home, d.clock.now());
+            let progress = SessionEvents::sink(self.events.clone());
             if let Err(e) = d
                 .sessions
-                .rollback_stopped(&home, &receipt.id, &stopped)
+                .rollback_stopped_with_progress(&home, &receipt.id, &stopped, progress)
                 .await
             {
                 self.written.migration = Some(receipt);
@@ -942,6 +963,33 @@ impl Run<'_> {
                 verification: None,
                 returned_to: None,
             }
+        }
+    }
+
+    /// The user stopped the session migration (it restored every session
+    /// itself): undo the config / env written before it, reopen the app.
+    async fn roll_back_after_stop(&mut self) -> LocalResult {
+        self.ev.phase(SwitchPhase::RollingBack);
+        let errors = self.undo_local().await;
+        self.reopen_after_cancel().await;
+        if errors.is_empty() {
+            self.notices
+                .push(Notice::info(text("switch.sessions.stopped")));
+            return self.cancelled(RestartKind::None);
+        }
+        let detail = errors
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+        self.notices.push(Notice::danger(
+            text("switch.failed.rollback").arg("detail", detail),
+        ));
+        LocalResult {
+            status: OutcomeStatus::Failed,
+            restart: RestartKind::None,
+            verification: None,
+            returned_to: None,
         }
     }
 

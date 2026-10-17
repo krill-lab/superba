@@ -1217,6 +1217,71 @@ async fn migration_failure_rolls_everything_back_and_reopens_the_app() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn migration_progress_reaches_the_events_and_ends_done() {
+    let w = legacy_world();
+    let (o, ev) = run(&w, migrate_req(), allow_full(), ScriptedDecider::with(&[])).await;
+    assert_eq!(o.status, OutcomeStatus::Switched, "{:?}", o.notices);
+    let reports: Vec<superba_core::SessionProgress> = ev
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match e {
+            SwitchEvent::Sessions { progress } => Some(progress.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reports.len(), 3);
+    assert!(reports.windows(2).all(|p| p[1].done >= p[0].done));
+    let last = reports.last().unwrap();
+    assert_eq!(last.stage, superba_core::SessionStage::Done);
+    assert_eq!((last.done, last.total), (12, 12));
+}
+
+#[tokio::test(start_paused = true)]
+async fn stopping_the_migration_undoes_the_switch_and_reopens_the_app() {
+    let w = legacy_world();
+    let sw = w.switcher();
+    let plan = plan_with(&sw, migrate_req()).await;
+    let events = Arc::new(RecordingEvents::default());
+    events.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+    let o = sw
+        .execute(
+            plan,
+            allow_full(),
+            ScriptedDecider::with(&[]),
+            events.clone(),
+        )
+        .await
+        .expect("execute");
+    assert_eq!(o.status, OutcomeStatus::Cancelled, "{:?}", o.notices);
+    assert!(notice_keys(&o).contains(&"switch.sessions.stopped".to_owned()));
+    let calls = w.calls();
+    let pos = |s: &str| calls.iter().position(|c| c == s).unwrap();
+    assert!(calls.contains(&"sessions.stopped".to_owned()));
+    assert!(pos("env.revert") < pos("config.rollback"), "reverse order");
+    assert!(calls.iter().any(|c| c.starts_with("app.launch")));
+    // No receipt to roll back: the migration undid itself.
+    assert!(!calls.iter().any(|c| c.starts_with("sessions.rollback")));
+    let steps: Vec<_> = events
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match e {
+            SwitchEvent::Step {
+                step: superba_core::SwitchStep::MigrateSessions,
+                status,
+                ..
+            } => Some(status.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(steps.last(), Some(&superba_core::StepStatus::Skipped));
+    assert_eq!(journal_status(&w), vec![JournalStatus::RolledBack]);
+}
+
+#[tokio::test(start_paused = true)]
 async fn write_only_does_not_migrate_sessions() {
     let w = legacy_world();
     let opts = ExecuteOptions {
