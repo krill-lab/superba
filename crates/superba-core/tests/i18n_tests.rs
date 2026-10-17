@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use pretty_assertions::assert_eq;
 use superba_core::codex::VersionCapability;
+use superba_core::fdlimit;
 use superba_core::i18n::{core_catalog_source, flatten_toml, interpolate};
 use superba_core::{
     AuthMode, BlockReason, Catalog, CodexVersion, CostSource, Error, FullRestartReason, KeyAccess,
@@ -323,8 +324,9 @@ fn every_error_code_has_complete_translations_and_detail_argument() {
         (
             Error::Io {
                 path: "/fixtures/config.toml".into(),
-                kind: "PermissionDenied".into(),
-                message: "denied".into(),
+                kind: "InvalidData".into(),
+                message: "stream did not contain valid UTF-8".into(),
+                open_files_limit: None,
             },
             "io",
         ),
@@ -431,6 +433,96 @@ fn every_error_code_has_complete_translations_and_detail_argument() {
         })
         .collect();
     assert_catalog_contract("error.", &texts);
+}
+
+#[test]
+fn actionable_io_errors_have_their_own_complete_translations() {
+    let io = |kind: &str, limit: Option<u64>| Error::Io {
+        path: "/fixtures/.codex/thread-writer-locks/x.lock".into(),
+        kind: kind.into(),
+        message: "OS text (os error 24)".into(),
+        open_files_limit: limit,
+    };
+    let cases = [
+        (
+            io(fdlimit::IO_KIND_TOO_MANY_OPEN_FILES, Some(256)),
+            "error_io.too_many_open_files",
+        ),
+        (
+            io(fdlimit::IO_KIND_TOO_MANY_OPEN_FILES, None),
+            "error_io.too_many_open_files_no_limit",
+        ),
+        (io("PermissionDenied", None), "error_io.permission_denied"),
+        (io("NotFound", None), "error_io.not_found"),
+    ];
+    let texts: Vec<_> = cases
+        .iter()
+        .map(|(error, key)| {
+            assert_eq!(error.code(), "io");
+            let text = error.to_text();
+            assert_eq!(text.key, *key);
+            text
+        })
+        .collect();
+    assert_catalog_contract("error_io.", &texts);
+    let zh = Catalog::new(Locale::ZhCn).text(&cases[0].0.to_text());
+    assert!(zh.starts_with("打开的文件太多（系统上限 256）"), "{zh}");
+    assert!(zh.contains("x.lock") && zh.contains("os error 24"), "{zh}");
+    let en = Catalog::new(Locale::En).text(&cases[0].0.to_text());
+    assert!(
+        en.starts_with("Too many open files (system limit 256)"),
+        "{en}"
+    );
+}
+
+#[test]
+fn io_errors_keep_the_os_code_and_name_the_open_file_limit() {
+    let other = Error::io(
+        "/fixtures/a",
+        &std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+    );
+    match &other {
+        Error::Io {
+            kind,
+            open_files_limit,
+            ..
+        } => {
+            assert_eq!(kind, "PermissionDenied");
+            assert_eq!(*open_files_limit, None);
+        }
+        e => panic!("{e:?}"),
+    }
+    #[cfg(unix)]
+    {
+        let emfile = std::io::Error::from_raw_os_error(rustix::io::Errno::MFILE.raw_os_error());
+        let error = Error::io("/fixtures/b", &emfile);
+        let Error::Io {
+            kind,
+            message,
+            open_files_limit,
+            ..
+        } = &error
+        else {
+            panic!("{error:?}");
+        };
+        assert_eq!(kind, fdlimit::IO_KIND_TOO_MANY_OPEN_FILES);
+        assert!(message.contains(&format!(
+            "os error {}",
+            rustix::io::Errno::MFILE.raw_os_error()
+        )));
+        assert_eq!(*open_files_limit, fdlimit::open_files_limit());
+        // The system-wide table being full is not this process's limit.
+        let enfile = std::io::Error::from_raw_os_error(rustix::io::Errno::NFILE.raw_os_error());
+        let error = Error::io("/fixtures/c", &enfile);
+        assert!(matches!(
+            &error,
+            Error::Io { kind, open_files_limit: None, .. } if kind == fdlimit::IO_KIND_TOO_MANY_OPEN_FILES
+        ));
+    }
+    // Old serialized errors (without the field) still parse.
+    let json = r#"{"code":"io","path":"/x","kind":"NotFound","message":"gone"}"#;
+    let parsed: Error = serde_json::from_str(json).unwrap();
+    assert_eq!(parsed.to_text().key, "error_io.not_found");
 }
 
 #[test]

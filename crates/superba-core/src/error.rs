@@ -40,10 +40,16 @@ pub enum Error {
     Io {
         /// Path involved in the failing operation.
         path: PathBuf,
-        /// `std::io::ErrorKind` rendered with `Debug`, e.g. `PermissionDenied`.
+        /// `std::io::ErrorKind` rendered with `Debug`, e.g. `PermissionDenied`
+        /// ([`crate::fdlimit::IO_KIND_TOO_MANY_OPEN_FILES`] for "too many open
+        /// files").
         kind: String,
-        /// The OS error message.
+        /// The OS error message, with the OS error code (`... (os error 24)`).
         message: String,
+        /// For "too many open files" in this process: its soft open-file limit
+        /// when the error happened. `None` for every other error or when unknown.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        open_files_limit: Option<u64>,
     },
     /// A file or response could not be parsed. Writers must refuse to write in this
     /// case rather than overwrite a file they do not understand.
@@ -174,9 +180,54 @@ impl Error {
     /// Localizable summary: key `error.<code>` with the English `Display` text as the
     /// fallback and [`Error::detail`] as the only argument (the catalog template adds
     /// its own localized category prefix, so the detail must not repeat it).
+    ///
+    /// I/O errors whose cause the user can act on get their own message
+    /// (`error_io.*`: too many open files with the limit, permission denied, file
+    /// not found) with `path`, `message` (the OS text and code) and `detail`.
     pub fn to_text(&self) -> LocalizedText {
+        if let Some(text) = self.io_text() {
+            return text;
+        }
         LocalizedText::new(format!("error.{}", self.code()), self.to_string())
             .arg("detail", self.detail())
+    }
+
+    fn io_text(&self) -> Option<LocalizedText> {
+        let Error::Io {
+            path,
+            kind,
+            message,
+            open_files_limit,
+        } = self
+        else {
+            return None;
+        };
+        let (key, fallback) = match (kind.as_str(), open_files_limit) {
+            (crate::fdlimit::IO_KIND_TOO_MANY_OPEN_FILES, Some(_)) => (
+                "error_io.too_many_open_files",
+                "Too many open files (system limit {limit}): cannot open {path}. Quit programs \
+                 you do not need and try again; if it keeps happening, restart Superba. ({message})",
+            ),
+            (crate::fdlimit::IO_KIND_TOO_MANY_OPEN_FILES, None) => (
+                "error_io.too_many_open_files_no_limit",
+                "Too many open files: cannot open {path}. Quit programs you do not need and \
+                 try again; if it keeps happening, restart Superba. ({message})",
+            ),
+            ("PermissionDenied", _) => (
+                "error_io.permission_denied",
+                "Permission denied: {path} ({message})",
+            ),
+            ("NotFound", _) => ("error_io.not_found", "File not found: {path} ({message})"),
+            _ => return None,
+        };
+        let mut text = LocalizedText::new(key, fallback)
+            .arg("path", path.display())
+            .arg("message", message)
+            .arg("detail", self.detail());
+        if let Some(limit) = open_files_limit {
+            text = text.arg("limit", limit);
+        }
+        Some(text)
     }
 
     /// The variant's payload without the English category prefix of `Display`
@@ -213,12 +264,38 @@ impl Error {
         Error::NotImplemented { what: what.into() }
     }
 
-    /// Wrap a `std::io::Error` together with the path it concerns.
+    /// Wrap a `std::io::Error` together with the path it concerns. The kind and
+    /// the OS message (with the OS error code) are kept; "too many open files"
+    /// gets the kind [`crate::fdlimit::IO_KIND_TOO_MANY_OPEN_FILES`] and, when the
+    /// process limit was hit, that limit.
     pub fn io(path: impl AsRef<Path>, err: &std::io::Error) -> Self {
+        use crate::fdlimit::{FileLimitHit, IO_KIND_TOO_MANY_OPEN_FILES, file_limit_hit};
+        let hit = file_limit_hit(err);
         Error::Io {
             path: path.as_ref().to_path_buf(),
-            kind: format!("{:?}", err.kind()),
+            kind: match hit {
+                Some(_) => IO_KIND_TOO_MANY_OPEN_FILES.to_owned(),
+                None => format!("{:?}", err.kind()),
+            },
             message: err.to_string(),
+            open_files_limit: match hit {
+                Some(FileLimitHit::Process) => crate::fdlimit::open_files_limit(),
+                _ => None,
+            },
+        }
+    }
+
+    /// `Io` from an already rendered kind and message (errors that crossed a crate
+    /// boundary as text). A "too many open files" kind gets the current limit.
+    pub fn io_parts(path: impl Into<PathBuf>, kind: String, message: String) -> Self {
+        let open_files_limit = (kind == crate::fdlimit::IO_KIND_TOO_MANY_OPEN_FILES)
+            .then(crate::fdlimit::open_files_limit)
+            .flatten();
+        Error::Io {
+            path: path.into(),
+            kind,
+            message,
+            open_files_limit,
         }
     }
 

@@ -607,6 +607,7 @@ async fn env_write_failure_rolls_the_config_back_and_restarts_nothing() {
         path: "/fake/.zshenv".into(),
         kind: "PermissionDenied".into(),
         message: "denied".into(),
+        open_files_limit: None,
     });
     let (o, ev) = run(
         &w,

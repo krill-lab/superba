@@ -72,6 +72,12 @@ cancelled = "Cancelled"
 timeout = "Timed out: {detail}"
 other = "{detail}"
 
+[error_io]
+too_many_open_files = "Too many open files (system limit {limit}): cannot open {path}. Quit programs you do not need and try again; if it keeps happening, restart Superba. ({message})"
+too_many_open_files_no_limit = "Too many open files: cannot open {path}. Quit programs you do not need and try again; if it keeps happening, restart Superba. ({message})"
+permission_denied = "Permission denied: {path} ({message})"
+not_found = "File not found: {path} ({message})"
+
 [latency]
 excellent = "Fast"
 good = "Good"

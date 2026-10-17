@@ -40,6 +40,7 @@ pub mod codex;
 pub mod config;
 pub mod env;
 pub mod error;
+pub mod fdlimit;
 pub mod feeds;
 pub mod i18n;
 pub mod ids;

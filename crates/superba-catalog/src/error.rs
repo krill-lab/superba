@@ -106,11 +106,7 @@ impl From<CatalogError> for superba_core::Error {
                 path,
                 kind,
                 message,
-            } => superba_core::Error::Io {
-                path,
-                kind,
-                message,
-            },
+            } => superba_core::Error::io_parts(path, kind, message),
             CatalogError::Parse { what, message } => superba_core::Error::parse(what, message),
             CatalogError::Network { url, message } => superba_core::Error::Network { url, message },
             CatalogError::Invalid(m) => superba_core::Error::invalid(m),

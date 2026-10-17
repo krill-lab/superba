@@ -72,6 +72,12 @@ cancelled = "已取消"
 timeout = "超时：{detail}"
 other = "{detail}"
 
+[error_io]
+too_many_open_files = "打开的文件太多（系统上限 {limit}）：无法打开 {path}。请退出不需要的程序后重试；如果仍然出现，请重启 Superba。（{message}）"
+too_many_open_files_no_limit = "打开的文件太多：无法打开 {path}。请退出不需要的程序后重试；如果仍然出现，请重启 Superba。（{message}）"
+permission_denied = "没有权限访问 {path}（{message}）"
+not_found = "找不到文件 {path}（{message}）"
+
 [latency]
 excellent = "极快"
 good = "良好"

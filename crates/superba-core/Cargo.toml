@@ -18,6 +18,9 @@ toml.workspace = true
 url.workspace = true
 zeroize.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
 [dev-dependencies]
 pretty_assertions.workspace = true
 tokio.workspace = true

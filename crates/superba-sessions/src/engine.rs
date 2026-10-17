@@ -385,6 +385,7 @@ impl Engine<'_> {
                 message: format!(
                     "the session backup needs {needed} bytes but only {available} are free"
                 ),
+                open_files_limit: None,
             });
         }
         Ok(())
