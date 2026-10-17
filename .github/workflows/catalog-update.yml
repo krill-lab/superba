@@ -28,7 +28,7 @@ name: Codex catalog update
 
 on:
   schedule:
-    - cron: "23 */6 * * *"
+    - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
       rebuild:
