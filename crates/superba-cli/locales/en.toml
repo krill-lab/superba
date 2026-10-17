@@ -755,6 +755,7 @@ sessions_command = "On the host, run:"
 sessions_read_only = "Remote sessions can only be listed; run the migration on the host."
 
 [cli.hosts.col]
+kind = "Kind"
 follow = "Follows"
 codex = "Codex"
 probed = "Last probe"

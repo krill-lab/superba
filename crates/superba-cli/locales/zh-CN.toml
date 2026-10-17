@@ -755,6 +755,7 @@ sessions_command = "在主机上运行："
 sessions_read_only = "远程会话只能查看；请在主机上运行迁移。"
 
 [cli.hosts.col]
+kind = "类型"
 follow = "跟随"
 codex = "Codex"
 probed = "上次探测"

@@ -82,6 +82,9 @@ back to the official ChatGPT login.
 - **Remote hosts** connected to the app over SSH are switched together with the
   local machine (system `ssh`, `BatchMode`, secrets only through stdin), with
   their own settings plan; their sessions and Codex versions are listed per host.
+  The ChatGPT remote-control devices and WSL distributions the app also reports
+  are listed read-only under the app's name for them (`spb remote list` shows each
+  host's kind) and are never probed, synced, switched or scanned over SSH.
 
 ### Models and speed
 

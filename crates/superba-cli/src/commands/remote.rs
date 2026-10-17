@@ -1,7 +1,9 @@
 //! `spb remote`: the SSH hosts the ChatGPT app is connected to (hosts only in
 //! `~/.ssh/config` are never listed). A switch changes a host only when it
 //! follows this computer, and then only its connection; settings reach a host
-//! through `spb remote sync`, filtered by the host's Codex version.
+//! through `spb remote sync`, filtered by the host's Codex version. The
+//! remote-control devices and WSL distributions the app reports are listed with
+//! their kind (user bug 36); every SSH command refuses them.
 
 use superba_core::{
     CodexVersion, HostSource, HostSyncAction, HostSyncSelection, HostView, InstallRequest,
@@ -45,7 +47,7 @@ pub(super) async fn run(command: &RemoteCommand, rt: &Runtime, out: &mut Output)
                     OnOff::On => "cli.hosts.follow_on",
                     OnOff::Off => "cli.hosts.follow_off",
                 })
-                .arg("host", &view.host.label),
+                .arg("host", out.render(&view.host.title())),
             )?;
             out.value(&view)?;
             Ok(exit::OK)
@@ -170,7 +172,8 @@ pub(super) fn render(remotes: &[RemoteOverview], out: &mut Output) -> superba_co
         .map(|remote| {
             vec![
                 remote.host.target_id.to_string(),
-                remote.host.label.clone(),
+                out.render(&remote.host.title()),
+                out.render(&remote.host.kind.text()),
                 out.optional(remote.host.host_id.as_ref()),
                 remote
                     .host
@@ -205,6 +208,7 @@ pub(super) fn render(remotes: &[RemoteOverview], out: &mut Output) -> superba_co
         &[
             "cli.label.target",
             "cli.label.name",
+            "cli.hosts.col.kind",
             "cli.label.host_id",
             "cli.label.connected",
             "cli.label.sources",
@@ -223,7 +227,8 @@ fn render_hosts(hosts: &[HostView], out: &mut Output) -> superba_core::Result<()
         .map(|h| {
             vec![
                 h.host.target_id.to_string(),
-                h.host.label.clone(),
+                out.render(&h.host.title()),
+                out.render(&h.host.kind.text()),
                 out.optional(h.host.host_id.as_ref()),
                 h.host
                     .connected
@@ -251,6 +256,7 @@ fn render_hosts(hosts: &[HostView], out: &mut Output) -> superba_core::Result<()
         &[
             "cli.label.target",
             "cli.label.name",
+            "cli.hosts.col.kind",
             "cli.label.host_id",
             "cli.label.connected",
             "cli.hosts.col.follow",
@@ -264,7 +270,8 @@ fn render_hosts(hosts: &[HostView], out: &mut Output) -> superba_core::Result<()
 
 fn render_host(h: &HostView, out: &mut Output) -> superba_core::Result<()> {
     out.field("cli.label.target", &h.host.target_id)?;
-    out.field("cli.label.name", &h.host.label)?;
+    out.field("cli.label.name", out.render(&h.host.title()))?;
+    out.field("cli.hosts.col.kind", out.render(&h.host.kind.text()))?;
     if let Some(s) = &h.state {
         out.field(
             "cli.hosts.os",
