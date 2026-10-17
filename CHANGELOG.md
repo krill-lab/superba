@@ -90,6 +90,31 @@ back to the official ChatGPT login.
   system. Downloads are verified and the install command is shown, never run with
   elevated rights.
 
+### Superba updates
+
+- **Check.** `releases/latest` of `krill-lab/superba` (and, with "Include
+  pre-releases" in Preferences, the newest pre-release of `releases`), ETag cached,
+  8 s deadline, at start-up, every 24 hours and on demand (Updates page, Cmd/Ctrl+K
+  "Check for Superba updates", `spb self-update check [--json]`). Compared by
+  semantic version with the running build. A release page that answers 404 / 401 is
+  shown as a calm "can't check right now" state, not an error. Preferences:
+  "Check for Superba updates automatically" (on) and "Include pre-releases" (off).
+- **UI.** A "Superba" section at the top of the Updates page (installed and latest
+  version, release notes as plain text, Update now / Later / Skip this version,
+  last checked), an Overview to-do item and a dot on the sidebar's Updates entry.
+- **Install** (after a click, or `spb self-update install` with confirmation /
+  `--yes`): the package for this OS and architecture is downloaded from the
+  release's download path (GitHub, a mirror of exactly that path, or an opted-in
+  third-party proxy), verified for size and SHA-256 against the same release's
+  `SHA256SUMS.txt`, extracted with the Codex-package path and link rules, smoke
+  tested (`spb --version`) and swapped in place: macOS replaces `Superba.app`
+  (the old bundle stays as a backup until the new one has started), Linux replaces
+  the binaries; on Windows the verified MSI is run (`msiexec /i ... /passive`) by
+  a copy of `superba.exe --finish-update` after Superba has exited. A folder that is not writable ends in the verified package plus short
+  manual steps. A running local router service is restarted onto the new binary.
+- Tests-only overrides `SUPERBA_SELF_UPDATE_API` and `SUPERBA_SELF_UPDATE_DOWNLOADS`
+  accept only https or loopback http.
+
 ### Codex settings
 
 - **Codex settings catalog** (`catalog/`): which `config.toml` keys and

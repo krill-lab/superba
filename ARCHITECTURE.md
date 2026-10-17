@@ -321,6 +321,7 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 | `cache/transports.json` (WebSocket / zstd checks per site, line, base URL and key fingerprint, with the time of the check; no keys) | switch |
 | `router/` (`config.json`, 0600 `secrets.json` and `runtime.json`, log) | router |
 | `catalog/` (a downloaded, signature-checked settings catalog; unused while remote updates are off) | catalog |
+| `selfupdate.json` (ETags and answers of the release check, last check time, skipped version, macOS backup to remove; no secrets), `downloads/superba-update/` (verified Superba packages and staging) | versions |
 
 Shell rc marker blocks (`# >>> superba >>>` … `# <<< superba <<<`) and legacy-line
 comments (`# [superba] export …`) are rendered by `superba_core::env` for both local
@@ -610,7 +611,7 @@ mode; tests use an in-memory `SwitchService` under
   unprivileged user + PID namespace (same uid) and refuses to shoot while an app
   of another HOME is visible.
 
-## 12. Packaging
+## 12. Packaging and self-update
 
 `superba`, `spb` and `superba-router` ship together in every release archive
 (`.github/workflows/release.yml`, `scripts/release/`): next to each other in the
@@ -618,3 +619,47 @@ Linux tarballs and the Windows zip, `superba-router` inside
 `Superba.app/Contents/MacOS` on macOS (with `spb` beside the bundle), and `spb` +
 `superba-router` in the headless static musl archive. CI builds `spb` and
 `superba-router` without GUI packages. Details: `scripts/release/README.md`.
+
+### Self-update (`superba_versions::selfupdate`)
+
+- **Check.** `SelfUpdater::check` asks `<api>/releases/latest` and, when the user
+  opted into pre-releases, `<api>/releases?per_page=30` (newest pre-release; drafts
+  and tags the release workflow would not make are ignored), conditional on the
+  stored ETag, with an 8 s deadline and no credentials, through the shared
+  `http::client`. 404 / 401 / 403 are `PageUnavailable` (the repository is
+  private), network errors, 5xx and rate limits are `CheckFailed`; neither is
+  retried before 24 h / 1 h. The cached answer is compared with
+  `CARGO_PKG_VERSION` on every read (`semver` precedence: a pre-release is older
+  than its release), so a finished update never shows itself as available. The
+  link to the release page is built from the tag, never taken from the API.
+- **Assets** (`release::asset_name`): macOS `superba-<v>-macos-universal.zip`,
+  Windows `superba-<v>-windows-x86_64.msi`, Linux `superba-<v>-linux-{x86_64,aarch64}.tar.gz`,
+  the static build `spb-<v>-linux-x86_64-musl.tar.gz`. An asset counts only when the
+  release lists it together with `SHA256SUMS.txt`.
+- **Install** (`SelfUpdater::install`): download from
+  `<downloads>/<tag>/<asset>` (override > GitHub; third-party proxies only when
+  enabled and never for `SHA256SUMS.txt`), resumable, size from the release listing
+  and SHA-256 from the same release's `SHA256SUMS.txt` verified **before**
+  extraction (`http::download`), extraction with `extract::extract` (tar.gz) or
+  `selfupdate::zipx` (macOS zip: no links, no traversal, `\` is a separator, CRC and
+  size checked; the Windows MSI is not unpacked), a smoke test of the new `spb --version`, then the swap
+  (`selfupdate::apply`): copies next to the targets, rename over them with the old
+  file kept until all swaps worked (all or nothing); macOS renames the bundle
+  aside as `.Superba.app.previous` (removed by the next start that runs the new
+  version) and replaces the `spb` beside it; Windows downloads and verifies the
+  MSI and hands it over (`SelfUpdater::windows_msi_handoff`): a copy of
+  `superba.exe` outside the install folder runs `superba.exe --finish-update
+  --wait-pid N --msi M ...` (`selfupdate::finish`), which waits for the old
+  process, runs `msiexec /i M /passive` (per-user install, fixed UpgradeCode),
+  runs `spb self-update restart-router` and starts the new Superba. If the
+  location is not writable the verified package is kept and
+  `SelfInstallOutcome::Manual` carries short steps.
+- **Wiring.** `SwitchService::self_update_{view,check,skip,install}` and
+  `self_update_restart_router` (defaults: not implemented) are implemented by
+  `superba-switch` (`selfupdate.rs`), which adds Preferences (`Settings::
+  auto_update_check`, `include_prereleases`), the network settings and the router
+  (`RouterControl::restart`, only when the service is installed and running).
+  `spb self-update check|install` and the GUI call only the service; `superba
+  --finish-update` is handled in `main.rs` before any other argument parsing.
+- **Overrides** (tests): `SUPERBA_SELF_UPDATE_API`, `SUPERBA_SELF_UPDATE_DOWNLOADS`,
+  https or loopback only (`sources::override_base`).

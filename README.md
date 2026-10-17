@@ -57,6 +57,14 @@ Geist look).
   the Codex the app, the CLI and each remote host run, installs verified Codex
   releases, can pin the desktop app to one Codex version, and checks for a newer
   ChatGPT desktop app build (the install command is shown, never run for you).
+- **Superba updates itself, when you say so.** The Updates page, the Overview to-do,
+  a dot in the sidebar and `spb self-update check` tell you when a newer Superba is
+  published; `Update now` / `spb self-update install --yes` downloads the package
+  for your system, verifies its size and SHA-256 against the release's
+  `SHA256SUMS.txt`, replaces Superba in place (macOS bundle, Windows MSI,
+  Linux binaries; manual steps if the folder is not writable) and restarts the
+  local router service if it runs. Automatic checks (start-up and every 24 hours)
+  and pre-releases are Preferences; nothing is installed without your click.
 - **Account and usage.** Balance, plan and expiry from the standard billing
   endpoints of any key-based site; Krill also shows the account e-mail, daily
   cost and per-model usage (fetched on demand: Krill allows 10 usage requests an

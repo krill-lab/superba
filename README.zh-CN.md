@@ -44,6 +44,12 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 - **Codex 与 app 版本。** 更新页（以及 `spb codex`、`spb app`）显示 app、CLI 和每台
   远程主机运行的 Codex，安装经校验的 Codex 版本，可把桌面 app 固定在某个 Codex 版本，
   并检查 ChatGPT 桌面 app 是否有新版本（只显示安装命令，不会替你执行）。
+- **Superba 自身更新，由你点头。** 更新页、概览待办、侧栏小圆点和 `spb self-update check`
+  会告诉你有新版 Superba；点“立即更新”或运行 `spb self-update install --yes` 会下载适合
+  本系统的安装包，对照该版本的 `SHA256SUMS.txt` 校验大小和 SHA-256，原地替换 Superba
+  （macOS 替换应用包，Windows 运行新版 MSI，Linux 替换二进制；目录不可写时给出手动
+  步骤），并在本地路由器服务运行时重启它。自动检查（启动时及每 24 小时）和预发布版本
+  都在偏好设置里；没有你的点击不会安装任何东西。
 - **账户与用量。** 任何用 Key 的站点都通过标准计费接口显示余额、套餐和到期时间；
   Krill 还会显示账户邮箱、每日费用和按模型的用量（按需获取：Krill 每小时只允许
   10 次用量查询）。
