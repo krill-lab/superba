@@ -30,8 +30,14 @@ const ORIGIN: &str = "https://api.krill-code.net";
 const KEY: &str = "sk-test-0000000000000000wxyz";
 const CHATGPT_AUTH: &str = "{\n  \"tokens\": {\"id_token\": \"x\", \"access_token\": \"y\"},\n  \"last_refresh\": \"2026-10-01T00:00:00Z\"\n}\n";
 const CONFIG: &str = "model = \"gpt-5\"\n\n[mcp_servers.docs]\ncommand = \"npx\"\n";
-const PROFILE: &str =
-    "if [ -n \"$BASH_VERSION\" ] && [ -f \"$HOME/.bashrc\" ]; then . \"$HOME/.bashrc\"; fi\n";
+/// The host's `~/.profile`. Its first line puts this machine's programs without
+/// any `codex` on `PATH` ([`programs_without_codex`], `$HOME/../bin`): a login
+/// shell reads the system profile first, which sets `PATH` itself (Debian's
+/// `/etc/profile`, macOS's `path_helper`) and may list a Codex installed on the
+/// machine running the tests. A Codex is then found only where a test puts one
+/// (`~/.local/bin`, which the scripts put first).
+const PROFILE: &str = "PATH=\"$HOME/../bin\"; export PATH\n\
+    if [ -n \"$BASH_VERSION\" ] && [ -f \"$HOME/.bashrc\" ]; then . \"$HOME/.bashrc\"; fi\n";
 
 fn legacy_line() -> String {
     format!("export {ENV_AUTHAPI_BASE_URL}=\"https://api-slb.krill-code.net\"")
@@ -62,11 +68,30 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
+/// `dir` with a link to every program of the scripts' `PATH` (`/usr/local/bin`,
+/// `/usr/bin`, `/bin`; the first of a name wins) except `codex`.
+fn programs_without_codex(dir: &Path) {
+    std::fs::create_dir_all(dir).unwrap();
+    for src in ["/usr/local/bin", "/usr/bin", "/bin"] {
+        let Ok(entries) = std::fs::read_dir(src) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let link = dir.join(e.file_name());
+            if e.file_name() != "codex" && link.symlink_metadata().is_err() {
+                std::os::unix::fs::symlink(e.path(), &link).unwrap();
+            }
+        }
+    }
+}
+
 /// A host home with a ChatGPT login, a config with an MCP server and a bash setup
-/// carrying a legacy tutorial line. `shell = None` = no login shell.
+/// carrying a legacy tutorial line, and no Codex on its login shell's `PATH`.
+/// `shell = None` = no login shell.
 fn setup(shell: Option<&str>) -> Env {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
+    programs_without_codex(&tmp.path().join("bin"));
     write(&home.join(".codex/config.toml"), CONFIG, 0o644);
     write(&home.join(".codex/auth.json"), CHATGPT_AUTH, 0o600);
     write(&home.join(".bashrc"), &bashrc(), 0o644);
@@ -177,6 +202,7 @@ async fn pat_apply_writes_files_env_marker_and_backups_then_rolls_back() {
     assert!(!env_plan.edits.is_empty());
     let keys: Vec<&str> = plan.warnings.iter().map(|w| w.text.key.as_str()).collect();
     assert!(keys.contains(&"remote.warn.pkill"), "{keys:?}");
+    // No Codex on the host's login PATH (see PROFILE).
     assert!(keys.contains(&"remote.warn.codex_missing"), "{keys:?}");
     // Plans serialize without contents or keys.
     let json = serde_json::to_string(&plan).unwrap();
@@ -275,6 +301,32 @@ async fn pat_apply_writes_files_env_marker_and_backups_then_rolls_back() {
     assert!(st.last_written.is_empty());
     // A second rollback finds everything as before and does nothing.
     env.hosts.rollback(&h, &report).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_codex_on_the_login_path_is_not_reported_missing() {
+    let env = setup(Some("/bin/bash"));
+    let h = devbox();
+    let desired = token_profile(ORIGIN, AuthMode::Pat, KEY);
+    let keys = |plan: &superba_core::RemotePlan| -> Vec<String> {
+        plan.warnings.iter().map(|w| w.text.key.clone()).collect()
+    };
+    let plan = env.hosts.plan_apply(&h, &desired).await.unwrap();
+    assert!(keys(&plan).contains(&"remote.warn.codex_missing".to_owned()));
+    // A Codex in `~/.local/bin` (the app's PATH prefix) is found, with its version.
+    write(
+        &env.home.join(".local/bin/codex"),
+        "#!/bin/sh\necho 'codex-cli 0.162.0'\n",
+        0o755,
+    );
+    let plan = env.hosts.plan_apply(&h, &desired).await.unwrap();
+    let keys = keys(&plan);
+    assert!(
+        !keys
+            .iter()
+            .any(|k| k == "remote.warn.codex_missing" || k == "remote.warn.version_unknown"),
+        "{keys:?}"
+    );
 }
 
 #[tokio::test]
