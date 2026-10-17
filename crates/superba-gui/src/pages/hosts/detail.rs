@@ -1,16 +1,21 @@
 //! Detail of one host: endpoint, OS / architecture and probe age; its
 //! connection with the "switch with this computer" toggle; its Codex (version,
 //! path, install kind, update hint); the settings sync summary; sessions; and
-//! whether a hot restart is possible.
+//! whether a hot restart is possible. A host Superba does not manage (a
+//! remote-control device, a WSL distribution; user bug 36) gets a read-only
+//! pane instead: its kind, why nothing can be done here, and a copy button for
+//! the app's host id.
 
 use egui::{Align, Layout, Ui};
 use superba_core::{
-    AuthShape, CodexInstallKind, CodexVersion, HostSyncAction, HostSyncPlan, HostView, RemoteOs,
-    RemoteState, Site,
+    AuthShape, CodexInstallKind, CodexVersion, HostKind, HostSyncAction, HostSyncPlan, HostView,
+    RemoteOs, RemoteState, Site,
 };
 
 use super::State;
+use crate::design::icons::Icon;
 use crate::design::widgets::{Badge, Button, FormRow, Status, Text, Toggle, link_button};
+use crate::pages::shared::hosts as names;
 use crate::pages::{Action, Cx, Page, divider, error_text, kv, note};
 
 /// Counts of a sync preview: (local settings, the host takes, need a newer
@@ -109,12 +114,16 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     let Some(h) = state.current().cloned() else {
         return;
     };
+    if !h.host.is_managed() {
+        read_only(ui, cx, &h, out);
+        return;
+    }
     let id = h.host.target_id.clone();
     let connected = h.host.connected == Some(true);
     let probed = h.state.is_some();
     // Title.
     ui.horizontal(|ui| {
-        ui.label(Text::title(&h.host.label, cx.pal));
+        ui.label(Text::title(names::title(cx.tr, &h.host), cx.pal));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let mut sources = Vec::new();
             if h.host.is_app_known() {
@@ -339,6 +348,59 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     {
         note(ui, cx, Status::Warn, cx.tr.t("hosts.shared_home"));
     }
+}
+
+/// Why Superba cannot manage a host of this kind.
+pub fn read_only_text(cx: &Cx<'_>, kind: HostKind) -> String {
+    cx.tr.t(match kind {
+        HostKind::RemoteControl => "hosts.read_only.remote_control",
+        HostKind::Wsl => "hosts.read_only.wsl",
+        _ => "hosts.read_only.other",
+    })
+}
+
+/// A host Superba does not manage: its name and kind, why nothing can be done
+/// here, and the app's host id behind a copy button (no probe, follow, sync,
+/// install or sessions).
+fn read_only(ui: &mut Ui, cx: &Cx<'_>, h: &HostView, out: &mut Vec<Action>) {
+    let kind = names::kind(cx.tr, h.host.kind);
+    let tip = names::id_tip(cx.tr, &h.host);
+    ui.horizontal(|ui| {
+        let title = ui.label(Text::title(names::title(cx.tr, &h.host), cx.pal));
+        if let Some(tip) = &tip {
+            title.on_hover_text(tip);
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let text = format!("{kind} · {}", cx.tr.t("hosts.app_record"));
+            ui.add(Badge::new(text).status(Status::Idle));
+        });
+    });
+    ui.add_space(4.0);
+    note(ui, cx, Status::Idle, read_only_text(cx, h.host.kind));
+    ui.add_space(4.0);
+    divider(ui, cx);
+    ui.add_space(4.0);
+    kv(ui, cx, &cx.tr.t("hosts.kind_label"), |ui| {
+        ui.label(
+            Text::small(cx.tr.f("hosts.read_only.label", &[("kind", &kind)]), cx.pal)
+                .color(cx.pal.text),
+        );
+        if let Some(id) = &h.host.host_id {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let mut r = ui.add(
+                    Button::ghost(cx.tr.t("hosts.copy_id"))
+                        .icon(Icon::Copy)
+                        .small(),
+                );
+                if let Some(tip) = &tip {
+                    r = r.on_hover_text(tip);
+                }
+                if r.clicked() {
+                    out.push(Action::Copy(id.clone()));
+                }
+            });
+        }
+    });
 }
 
 /// `alias` or `user@host:port`.

@@ -8,6 +8,11 @@
 //! settings… opens a dialog (`sync.rs`) with the version-filtered rows (write /
 //! skip / remove / conflict); confirming plans `SwitchIntent::HostSync`, which
 //! pushes settings only and hot-restarts that host's Codex core.
+//!
+//! Remote-control devices and WSL distributions the app reports (user bug 36)
+//! are listed read-only: titled with the app's display name or their kind, the
+//! app's host id only in a tooltip and a copy button, and never probed,
+//! followed, synced or offered any other SSH action.
 
 mod detail;
 mod list;
@@ -20,6 +25,7 @@ use egui::Ui;
 use superba_core::{HostSyncPlan, HostView, TargetId, VersionsView};
 
 use super::router::db::Loader;
+use super::shared::hosts as names;
 use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, page_header};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
@@ -52,7 +58,8 @@ pub struct State {
 }
 
 impl State {
-    /// Hosts in display order: connected first, then by label.
+    /// Hosts in display order: SSH hosts before read-only ones, connected
+    /// first, then by name.
     pub fn sorted(&self) -> Vec<&HostView> {
         // Only hosts the desktop app knows; a host known only from ~/.ssh/config
         // is never listed (the service filters too).
@@ -64,17 +71,27 @@ impl State {
             .iter()
             .filter(|h| h.host.is_app_known())
             .collect();
+        let name = |h: &HostView| h.host.display_name().unwrap_or_default().to_lowercase();
         v.sort_by(|a, b| {
             let ca = a.host.connected == Some(true);
             let cb = b.host.connected == Some(true);
-            cb.cmp(&ca).then_with(|| {
-                a.host
-                    .label
-                    .to_lowercase()
-                    .cmp(&b.host.label.to_lowercase())
-            })
+            b.host
+                .is_managed()
+                .cmp(&a.host.is_managed())
+                .then(cb.cmp(&ca))
+                .then_with(|| name(a).cmp(&name(b)))
         });
         v
+    }
+
+    /// The listed host with this id, when Superba manages it (SSH).
+    fn managed(&self, id: &TargetId) -> bool {
+        self.hosts
+            .value
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .any(|h| &h.host.target_id == id && h.host.is_managed())
     }
 
     /// The selected host (or the first).
@@ -162,7 +179,9 @@ impl State {
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .filter(|h| h.host.is_app_known() && h.host.connected == Some(true))
+            .filter(|h| {
+                h.host.is_app_known() && h.host.is_managed() && h.host.connected == Some(true)
+            })
             .filter(|h| {
                 h.state.as_ref().is_none_or(|s| {
                     cx.now
@@ -177,6 +196,7 @@ impl State {
             self.probe(cx, id);
         }
         if let Some(h) = self.current()
+            && h.host.is_managed()
             && h.state.is_some()
             && h.host.connected == Some(true)
         {
@@ -189,9 +209,9 @@ impl State {
         }
     }
 
-    /// Probe one host now.
+    /// Probe one host now (SSH hosts only).
     pub fn probe(&mut self, cx: &Cx<'_>, id: TargetId) {
-        if self.probes.contains_key(&id) {
+        if self.probes.contains_key(&id) || !self.managed(&id) {
             return;
         }
         self.probed.insert(id.clone());
@@ -208,9 +228,9 @@ impl State {
         self.probes.contains_key(id)
     }
 
-    /// Turn "switch with this computer" on or off (stored only).
+    /// Turn "switch with this computer" on or off (stored only; SSH hosts).
     pub fn set_follow(&mut self, cx: &Cx<'_>, id: TargetId, on: bool) {
-        if self.follow.is_some() {
+        if self.follow.is_some() || !self.managed(&id) {
             return;
         }
         // Show the new value at once; the service's answer replaces it.
@@ -227,7 +247,7 @@ impl State {
         ));
     }
 
-    /// Open the sync dialog for `id`.
+    /// Open the sync dialog for `id` (SSH hosts only).
     pub fn open_sync(&mut self, cx: &Cx<'_>, id: TargetId) {
         let view = self
             .hosts
@@ -236,7 +256,13 @@ impl State {
             .unwrap_or_default()
             .iter()
             .find(|h| h.host.target_id == id);
-        let label = view.map_or_else(|| id.to_string(), |h| h.host.label.clone());
+        if view.is_some_and(|h| !h.host.is_managed()) {
+            return;
+        }
+        let label = view.map_or_else(
+            || names::target_name(cx, &id),
+            |h| names::title(cx.tr, &h.host),
+        );
         // The last probe's version titles the dialog while the preview loads or
         // when the host cannot be reached now.
         let version = view
@@ -253,7 +279,11 @@ impl State {
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .filter(|h| h.host.is_app_known() && h.pending_sync.is_some_and(|n| n > 0))
+            .filter(|h| {
+                h.host.is_app_known()
+                    && h.host.is_managed()
+                    && h.pending_sync.is_some_and(|n| n > 0)
+            })
             .count() as u32
     }
 }
@@ -308,13 +338,13 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     }
 }
 
-/// Command palette entries: sync settings to each host.
+/// Command palette entries: sync settings to each SSH host.
 pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
     let hosts: Vec<(TargetId, String)> = match &state.hosts.value {
         Some(list) => list
             .iter()
-            .filter(|h| h.host.is_app_known())
-            .map(|h| (h.host.target_id.clone(), h.host.label.clone()))
+            .filter(|h| h.host.is_app_known() && h.host.is_managed())
+            .map(|h| (h.host.target_id.clone(), names::title(cx.tr, &h.host)))
             .collect(),
         None => cx
             .data
@@ -324,8 +354,8 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
             .map(|o| {
                 o.remotes
                     .iter()
-                    .filter(|r| r.host.is_app_known())
-                    .map(|r| (r.host.target_id.clone(), r.host.label.clone()))
+                    .filter(|r| r.host.is_app_known() && r.host.is_managed())
+                    .map(|r| (r.host.target_id.clone(), names::title(cx.tr, &r.host)))
                     .collect()
             })
             .unwrap_or_default(),

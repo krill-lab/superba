@@ -478,8 +478,13 @@ fn targets(store: &CatalogStore, overview: Option<&Overview>) -> Result<Targets>
         if let Some(b) = cli {
             local.push((TargetKey::Cli, "CLI".into(), b.version.clone()));
         }
-        // Only hosts the desktop app is connected to (never ssh-config entries).
-        for r in o.remotes.iter().filter(|r| r.host.is_app_known()) {
+        // Only SSH hosts the desktop app is connected to (never ssh-config
+        // entries, never hosts Superba does not manage).
+        for r in o
+            .remotes
+            .iter()
+            .filter(|r| r.host.is_app_known() && r.host.is_managed())
+        {
             remote.push((
                 TargetKey::Remote(r.host.target_id.to_string()),
                 r.host.label.clone(),

@@ -7,7 +7,10 @@
 //!
 //! The hosts are the fake world's remote hosts (`devbox`, `gpu-01`, both known
 //! to the app) plus `old-box`, a host known only from `~/.ssh/config`. The fake
-//! returns it unfiltered on purpose: the page must never show it.
+//! returns it unfiltered on purpose: the page must never show it. With
+//! [`FakeService::with_device_hosts`] the app also reports two ChatGPT
+//! remote-control devices (one named "Studio Mac", one known only by its raw
+//! id, as 0.1.0 showed it) and a WSL distribution (user bug 36).
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -19,6 +22,13 @@ use super::FakeService;
 /// Target id of the ssh-config-only host.
 const SSH_CONFIG_ONLY: &str = "old-box";
 
+/// App host id of the named remote-control device.
+const DEVICE: &str = "remote-control:env_e_6a1b8b37df48832d9f0";
+/// App host id of the remote-control device without a display name.
+const DEVICE_UNNAMED: &str = "remote-control:env_e_00f1c2";
+/// App host id of the WSL distribution.
+const WSL: &str = "remote-wsl:Ubuntu";
+
 /// Fake state of the area (kept for the life of the fake world).
 #[derive(Debug, Default)]
 pub(super) struct State {
@@ -27,6 +37,7 @@ pub(super) struct State {
     follow_calls: Vec<(TargetId, bool)>,
     plan: Option<HostSyncPlan>,
     hide_all: bool,
+    devices: bool,
 }
 
 impl FakeService {
@@ -56,6 +67,38 @@ impl FakeService {
     /// Pretend the app knows no remote host (empty state).
     pub fn without_hosts(&self) {
         self.areas.hosts.lock().unwrap().hide_all = true;
+    }
+
+    /// App host id of the remote-control device named "Studio Mac".
+    pub const DEVICE_HOST_ID: &str = DEVICE;
+    /// App host id of the remote-control device the app has no name for.
+    pub const UNNAMED_DEVICE_HOST_ID: &str = DEVICE_UNNAMED;
+    /// App host id of the WSL distribution.
+    pub const WSL_HOST_ID: &str = WSL;
+
+    /// The app also reports two remote-control devices and a WSL distribution.
+    pub fn with_device_hosts(&self) {
+        self.areas.hosts.lock().unwrap().devices = true;
+    }
+}
+
+/// A host the app reports that Superba does not manage.
+fn device(id: &str, label: &str, kind: HostKind) -> HostView {
+    HostView {
+        host: RemoteHost {
+            target_id: TargetId::remote(id),
+            label: label.into(),
+            host_id: Some(id.into()),
+            kind,
+            ssh: SshEndpoint::default(),
+            sources: vec![HostSource::Cdp],
+            connected: None,
+        },
+        state: None,
+        probe_error: None,
+        settings: HostSettings::default(),
+        pending_sync: None,
+        hot_restart: false,
     }
 }
 
@@ -192,6 +235,16 @@ fn views(fake: &FakeService) -> Vec<HostView> {
         pending_sync: None,
         hot_restart: false,
     });
+    if area.devices {
+        out.push(device(DEVICE, "Studio Mac", HostKind::RemoteControl));
+        // Labelled with its raw id, as 0.1.0 did: the page must not show it.
+        out.push(device(
+            DEVICE_UNNAMED,
+            DEVICE_UNNAMED,
+            HostKind::RemoteControl,
+        ));
+        out.push(device(WSL, "WSL: Ubuntu", HostKind::Wsl));
+    }
     out
 }
 

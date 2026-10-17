@@ -4,6 +4,9 @@
 //! version on the right of the name.
 //! Connected hosts first. The rows are rounded tiles separated by spacing,
 //! without divider lines. The empty state never suggests ssh-config hosts.
+//! Hosts Superba does not manage (remote-control devices, WSL distributions;
+//! user bug 36) come last, with their own icon, no status dot or version, and
+//! "<kind> · read-only" as the hint; the app's host id is in the row's tooltip.
 
 use egui::{CursorIcon, Rect, Sense, Ui, pos2, vec2};
 use superba_core::HostView;
@@ -13,6 +16,7 @@ use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
 use crate::design::tokens::{radius, size, space, text};
 use crate::design::widgets::{RowContent, Status, paint_row};
+use crate::pages::shared::hosts as names;
 use crate::pages::{Cx, empty_state};
 
 /// Height of one host row.
@@ -22,6 +26,12 @@ const GAP: f32 = space::XS;
 
 /// The hint line of a host.
 pub fn hint(cx: &Cx<'_>, h: &HostView) -> String {
+    if !h.host.is_managed() {
+        return cx.tr.f(
+            "hosts.read_only.label",
+            &[("kind", &names::kind(cx.tr, h.host.kind))],
+        );
+    }
     if h.host.connected != Some(true) {
         let sync = if h.settings.last_sync.is_some() {
             cx.tr.t("hosts.list.synced")
@@ -41,8 +51,12 @@ pub fn hint(cx: &Cx<'_>, h: &HostView) -> String {
     }
 }
 
-/// Status of a host's dot.
-pub fn dot(h: &HostView) -> Status {
+/// Status of a host's dot (hosts Superba does not manage have none).
+pub fn dot(h: &HostView) -> Option<Status> {
+    h.host.is_managed().then(|| managed_dot(h))
+}
+
+fn managed_dot(h: &HostView) -> Status {
     match (h.host.connected, &h.probe_error) {
         (Some(true), Some(_)) => Status::Warn,
         (Some(true), None) => Status::Ok,
@@ -61,13 +75,18 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             break;
         }
         let r = Rect::from_min_size(pos2(rect.min.x, y), vec2(rect.width(), ROW));
-        let resp = ui
+        let mut resp = ui
             .interact(
                 r,
                 ui.scope_id().with(("host", h.host.target_id.as_str())),
                 Sense::click(),
             )
             .on_hover_cursor(CursorIcon::PointingHand);
+        if !h.host.is_managed()
+            && let Some(tip) = names::id_tip(cx.tr, &h.host)
+        {
+            resp = resp.on_hover_text(tip);
+        }
         let selected = current.as_ref() == Some(&h.host.target_id);
         if selected {
             ui.painter().rect_filled(r, radius::ROW, cx.pal.active);
@@ -78,10 +97,11 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         let version = h
             .state
             .as_ref()
+            .filter(|_| h.host.is_managed())
             .and_then(|s| s.codex_version.as_ref())
             .map(|v| v.to_string());
-        let mut row = RowContent::new(Icon::Server, h.host.label.clone());
-        row.dot = Some(cx.pal.status(dot(h)));
+        let mut row = RowContent::new(names::icon(h.host.kind), names::title(cx.tr, &h.host));
+        row.dot = dot(h).map(|status| cx.pal.status(status));
         // The Codex version on the name's line; the status line under the name
         // gets the whole width (no "Codex" caption beside it).
         row.subtitle = Some(hint(cx, h));

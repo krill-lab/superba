@@ -23,6 +23,15 @@ sessions_label = "会话"
 hot_label = "热切"
 disk_low = "主目录只剩 {mb} MB；安装 Codex 大约需要 600 MB。"
 shared_home = "这个主目录好像和另一台机器共用（网络主目录）；写入会同时影响两边。"
+host_id_tip = "App 主机 ID：{id}"
+copy_id = "复制主机 ID"
+kind_label = "类型"
+
+[hosts.read_only]
+label = "{kind} · 只读"
+remote_control = "这台设备通过 ChatGPT 远程控制连接，不走 SSH。Superba 无法检测它、向它同步设置、让它随本机切换、在上面安装 Codex 或读取它的会话。要管理它，请在那台设备上运行 Superba。"
+wsl = "这是本机上的 WSL 发行版，ChatGPT app 不通过 SSH 连接它。Superba 无法检测它、向它同步设置、让它随本机切换、在上面安装 Codex 或读取它的会话。要管理它，请在该发行版里运行 spb。"
+other = "ChatGPT app 不通过 SSH 连接这台主机，所以 Superba 无法检测它、向它同步设置、让它随本机切换、在上面安装 Codex 或读取它的会话。"
 
 [hosts.kind]
 standalone = "独立安装"

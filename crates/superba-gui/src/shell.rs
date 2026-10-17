@@ -872,13 +872,8 @@ fn busy_line(ui: &mut Ui, cx: &Cx<'_>, t: &superba_core::ThreadActivity) {
     let host = if local {
         cx.tr.t("banner.waiting.this_computer")
     } else {
-        cx.data
-            .overview
-            .value
-            .as_ref()
-            .and_then(|o| o.remotes.iter().find(|r| r.host.target_id == t.target_id))
-            .map(|r| r.host.label.clone())
-            .unwrap_or_else(|| t.target_id.to_string())
+        // Never the raw app host id (a remote-control device's thread, user bug 36).
+        crate::pages::shared::hosts::target_name(cx, &t.target_id)
     };
     let title = t
         .title
@@ -931,15 +926,9 @@ fn remote_labels(cx: &Cx<'_>, plan: &SwitchPlan) -> Vec<String> {
             _ => None,
         })
         .collect();
-    let overview = cx.data.overview.value.as_ref();
     remotes
         .into_iter()
-        .map(|id| {
-            overview
-                .and_then(|o| o.remotes.iter().find(|r| &r.host.target_id == id))
-                .map(|r| r.host.label.clone())
-                .unwrap_or_else(|| id.to_string())
-        })
+        .map(|id| crate::pages::shared::hosts::target_name(cx, id))
         .collect()
 }
 

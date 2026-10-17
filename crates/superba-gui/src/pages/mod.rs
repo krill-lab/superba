@@ -576,7 +576,7 @@ impl Data {
         self.hosts.value.as_ref().map_or(0, |hosts| {
             hosts
                 .iter()
-                .filter(|h| h.pending_sync.is_some_and(|n| n > 0))
+                .filter(|h| h.host.is_managed() && h.pending_sync.is_some_and(|n| n > 0))
                 .count() as u32
         })
     }

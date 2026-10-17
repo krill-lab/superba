@@ -6,7 +6,9 @@
 //! (scan, migrate = full restart, rollback). Remote hosts are scanned read-only
 //! over SSH (`host_sessions`); migrating them is offered as a command to run on
 //! the host. A host that cannot be reached keeps its last numbers, greyed, with
-//! the error and a retry.
+//! the error and a retry. A remote-control device or WSL distribution the app
+//! reports (user bug 36) has a segment under its own name, but is never
+//! scanned: its view says why and where its sessions can be seen.
 //!
 //! Commands: `host:<target id>` (show a remote host), `host:local`, `rescan`.
 
@@ -14,8 +16,11 @@ use std::collections::HashMap;
 
 use egui::{Align, Layout, RichText, Sense, Ui, vec2};
 use superba_core::codex::PROVIDER_OPENAI;
-use superba_core::{Error, HostSessions, MigrationReceipt, SessionReport, TargetId, Timestamp};
+use superba_core::{
+    Error, HostKind, HostSessions, MigrationReceipt, SessionReport, TargetId, Timestamp,
+};
 
+use super::shared::hosts as names;
 use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, empty_state, error_text};
 use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::Icon;
@@ -75,51 +80,79 @@ impl std::fmt::Debug for State {
 pub struct HostEntry {
     /// Target.
     pub id: TargetId,
-    /// Label.
+    /// Name ([`names::title`]: never the app's raw host id).
     pub label: String,
+    /// How the app reaches it; only SSH hosts are scanned.
+    pub kind: HostKind,
+    /// Hover text naming the app's host id (hosts that are not scanned).
+    pub tip: Option<String>,
     /// The app reports the host as connected (`None` = unknown).
     pub connected: Option<bool>,
     /// The host's current `model_provider` (last probe).
     pub provider: Option<String>,
 }
 
-/// Remote hosts the desktop app is connected to (the Remote hosts page's list,
-/// else the overview's app-known hosts).
-pub fn hosts(cx: &Cx<'_>) -> Vec<HostEntry> {
-    if let Some(list) = &cx.data.hosts.value {
-        return list
-            .iter()
-            .filter(|h| h.host.is_app_known())
-            .map(|h| HostEntry {
-                id: h.host.target_id.clone(),
-                label: h.host.label.clone(),
-                connected: h.host.connected,
-                provider: h.state.as_ref().and_then(|s| s.model_provider.clone()),
-            })
-            .collect();
+fn entry(cx: &Cx<'_>, host: &superba_core::RemoteHost, provider: Option<String>) -> HostEntry {
+    let managed = host.is_managed();
+    HostEntry {
+        id: host.target_id.clone(),
+        label: names::title(cx.tr, host),
+        kind: host.kind,
+        tip: (!managed).then(|| names::id_tip(cx.tr, host)).flatten(),
+        connected: host.connected.filter(|_| managed),
+        provider: provider.filter(|_| managed),
     }
-    cx.data
-        .overview
-        .value
-        .as_ref()
-        .map(|o| {
-            o.remotes
-                .iter()
-                .filter(|r| r.host.is_app_known())
-                .map(|r| HostEntry {
-                    id: r.host.target_id.clone(),
-                    label: r.host.label.clone(),
-                    connected: r.host.connected,
-                    provider: r.state.as_ref().and_then(|s| s.model_provider.clone()),
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+}
+
+/// Remote hosts the desktop app is connected to (the Remote hosts page's list,
+/// else the overview's app-known hosts): SSH hosts first.
+pub fn hosts(cx: &Cx<'_>) -> Vec<HostEntry> {
+    let mut out: Vec<HostEntry> = if let Some(list) = &cx.data.hosts.value {
+        list.iter()
+            .filter(|h| h.host.is_app_known() && h.host.is_listed())
+            .map(|h| {
+                entry(
+                    cx,
+                    &h.host,
+                    h.state.as_ref().and_then(|s| s.model_provider.clone()),
+                )
+            })
+            .collect()
+    } else {
+        cx.data
+            .overview
+            .value
+            .as_ref()
+            .map(|o| {
+                o.remotes
+                    .iter()
+                    .filter(|r| r.host.is_app_known() && r.host.is_listed())
+                    .map(|r| {
+                        entry(
+                            cx,
+                            &r.host,
+                            r.state.as_ref().and_then(|s| s.model_provider.clone()),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    // Stable: the app's order within each group.
+    out.sort_by_key(|h| !h.kind.is_managed());
+    out
 }
 
 impl State {
-    /// Scan `host` over SSH unless a scan runs.
+    /// Scan `host` over SSH unless a scan runs; a host Superba does not manage
+    /// is never scanned.
     pub fn scan(&mut self, cx: &Cx<'_>, host: &TargetId) {
+        if hosts(cx)
+            .iter()
+            .any(|h| &h.id == host && !h.kind.is_managed())
+        {
+            return;
+        }
         let scan = self.remote.entry(host.clone()).or_default();
         if scan.task.is_some() {
             return;
@@ -274,6 +307,10 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
                 }
             }
         }
+        Some(host) if !host.kind.is_managed() => {
+            let rest = rows[1].union(rows[5]);
+            layout::fixed(ui, rest, |ui| read_only(ui, cx, host));
+        }
         Some(host) => {
             let scan = state.remote.entry(host.id.clone()).or_default();
             let value = scan.value.clone();
@@ -332,6 +369,7 @@ fn header(
         Some(h) => state.remote.get(&h.id).is_some_and(|s| s.task.is_some()),
         None => cx.data.sessions.loading,
     };
+    let can_scan = selected.as_ref().is_none_or(|h| h.kind.is_managed());
     let mut rescan = false;
     let subtitle = cx
         .tr
@@ -343,7 +381,7 @@ fn header(
                     .icon(Icon::Refresh)
                     .small()
                     .loading(scanning)
-                    .enabled(!scanning),
+                    .enabled(!scanning && can_scan),
             )
             .clicked();
     });
@@ -373,7 +411,10 @@ fn switcher(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, hosts: &[HostEntry]) {
             .max_segment(longest)
             .option(None, cx.tr.t("sessions.host.local"));
         for h in hosts.iter().take(SEGMENTS) {
-            seg = seg.option(Some(h.id.clone()), h.label.clone());
+            seg = match &h.tip {
+                Some(tip) => seg.option_with_tooltip(Some(h.id.clone()), h.label.clone(), tip),
+                None => seg.option(Some(h.id.clone()), h.label.clone()),
+            };
             match h.connected {
                 Some(true) => seg = seg.dot(Status::Ok),
                 Some(false) => seg = seg.dot(Status::Idle),
@@ -711,6 +752,22 @@ fn remote_note(
     });
 }
 
+/// A host Superba does not scan (a remote-control device, a WSL distribution).
+fn read_only(ui: &mut Ui, cx: &Cx<'_>, host: &HostEntry) {
+    let body = match host.kind {
+        HostKind::RemoteControl => "sessions.read_only_body.remote_control",
+        HostKind::Wsl => "sessions.read_only_body.wsl",
+        _ => "sessions.read_only_body.other",
+    };
+    empty_state(
+        ui,
+        cx,
+        names::icon(host.kind),
+        &cx.tr.f("sessions.read_only", &[("host", &host.label)]),
+        &cx.tr.t(body),
+    );
+}
+
 /// A host that could not be scanned (no earlier numbers).
 fn unreachable(ui: &mut Ui, cx: &Cx<'_>, host: &HostEntry, e: &Error) {
     empty_state(
@@ -725,11 +782,12 @@ fn unreachable(ui: &mut Ui, cx: &Cx<'_>, host: &HostEntry, e: &Error) {
     );
 }
 
-/// Command palette entries: show the sessions of each remote host.
+/// Command palette entries: show the sessions of each remote SSH host.
 pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
     let _ = state;
     hosts(cx)
         .into_iter()
+        .filter(|h| h.kind.is_managed())
         .map(|h| PaletteItem {
             title: cx.tr.f("sessions.palette.host", &[("host", &h.label)]),
             detail: None,

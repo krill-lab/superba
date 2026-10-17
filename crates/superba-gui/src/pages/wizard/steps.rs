@@ -565,19 +565,23 @@ pub(super) fn detect(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Act
             });
             ui.add_space(8.0);
         }
-        // Hosts the app knows (app records only); green only when one of them
-        // is connected now (review ux-visual #15).
-        let hosts: Vec<(String, bool)> = match cx.data.hosts.value.as_ref() {
-            Some(h) => h
-                .iter()
-                .map(|h| (h.host.label.clone(), h.host.connected == Some(true)))
-                .collect(),
-            None => o
-                .remotes
-                .iter()
-                .map(|r| (r.host.label.clone(), r.host.connected == Some(true)))
-                .collect(),
+        // SSH hosts the app knows (app records only; the remote-control devices
+        // and WSL distributions it reports are not configured, user bug 36);
+        // green only when one of them is connected now (review ux-visual #15).
+        let known: Vec<&superba_core::RemoteHost> = match cx.data.hosts.value.as_ref() {
+            Some(h) => h.iter().map(|h| &h.host).collect(),
+            None => o.remotes.iter().map(|r| &r.host).collect(),
         };
+        let hosts: Vec<(String, bool)> = known
+            .into_iter()
+            .filter(|h| h.is_managed())
+            .map(|h| {
+                (
+                    crate::pages::shared::hosts::title(cx.tr, h),
+                    h.connected == Some(true),
+                )
+            })
+            .collect();
         let live = hosts.iter().filter(|(_, on)| *on).count();
         check_row(
             ui,

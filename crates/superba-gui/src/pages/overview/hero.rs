@@ -166,24 +166,27 @@ pub fn model(
         (None, Some(c)) => tr.f("overview.hero.cli_only", &[("cli", c)]),
         (None, None) => tr.t("overview.hero.no_codex"),
     };
-    // The remote hosts the desktop app knows, and how many are connected now.
-    let (remotes, live) = match data.hosts.value.as_ref() {
-        Some(hosts) => (
-            hosts.len(),
-            hosts
-                .iter()
-                .filter(|h| h.host.connected == Some(true))
-                .count(),
-        ),
-        None => (
-            overview.remotes.len(),
-            overview
-                .remotes
-                .iter()
-                .filter(|r| r.host.connected == Some(true))
-                .count(),
-        ),
+    // The remote SSH hosts the desktop app knows, and how many are connected
+    // now; hosts Superba does not manage (remote-control devices, WSL
+    // distributions; user bug 36) are named apart and not stacked on the tile.
+    let hosts: Vec<&superba_core::RemoteHost> = match data.hosts.value.as_ref() {
+        Some(hosts) => hosts.iter().map(|h| &h.host).collect(),
+        None => overview.remotes.iter().map(|r| &r.host).collect(),
     };
+    let hosts: Vec<&superba_core::RemoteHost> = hosts
+        .into_iter()
+        .filter(|h| h.is_app_known() && h.is_listed())
+        .collect();
+    let remotes = hosts.iter().filter(|h| h.is_managed()).count();
+    let live = hosts
+        .iter()
+        .filter(|h| h.is_managed() && h.connected == Some(true))
+        .count();
+    let read_only: Vec<String> = hosts
+        .iter()
+        .filter(|h| !h.is_managed())
+        .map(|h| crate::pages::shared::hosts::title(tr, h))
+        .collect();
     let (_, hot) = cx.hot_status(&overview.app.hot_switch);
     let mut tip = vec![tr.f("overview.hero.this_tip", &[("app", &hot)])];
     if remotes > 0 {
@@ -192,6 +195,12 @@ pub fn model(
         if unsynced > 0 {
             tip.push(tr.f("overview.hero.unsynced", &[("n", &unsynced)]));
         }
+    }
+    if !read_only.is_empty() {
+        tip.push(tr.f(
+            "overview.hero.read_only",
+            &[("hosts", &read_only.join(", "))],
+        ));
     }
     tip.push(tr.t("overview.hero.open_updates"));
     this.tip = tip.join("\n");

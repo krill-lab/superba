@@ -1039,8 +1039,8 @@ impl SuperbaApp {
             .value
             .as_ref()
             .and_then(|o| o.remotes.iter().find(|r| &r.host.target_id == id))
-            .map(|r| r.host.label.clone())
-            .unwrap_or_else(|| id.as_str().trim_start_matches("ssh:").to_owned())
+            .map(|r| crate::pages::shared::hosts::title(&self.tr, &r.host))
+            .unwrap_or_else(|| self.tr.text(&superba_core::target_title(id)))
     }
 
     // -------------------------------------------------------------------

@@ -413,6 +413,38 @@ pub fn bundled_definitions() -> FontDefinitions {
     definitions(&FontReport::default())
 }
 
+/// Characters the system CJK fallback face draws (as the glyph coverage test
+/// assumes): CJK symbols and punctuation, the unified ideographs, half-width and
+/// full-width forms.
+pub fn is_cjk(c: char) -> bool {
+    matches!(c as u32, 0x3000..=0x303F | 0x4E00..=0x9FFF | 0xFF00..=0xFFEF)
+}
+
+/// `text` without the characters Superba cannot draw: anything neither in the
+/// bundled Geist faces nor CJK (emoji, pictographs, private-use symbols, ...)
+/// is dropped and whitespace runs collapse to one space. For text Superba did
+/// not write, such as the name a user gave a device in the desktop app (user
+/// bug 36): a missing glyph would render as a box.
+pub fn drawable(text: &str) -> String {
+    static COVERAGE: std::sync::OnceLock<egui::Context> = std::sync::OnceLock::new();
+    let ctx = COVERAGE.get_or_init(|| {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(bundled_definitions());
+        // The fonts are built on the first pass.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .drop_without_applying_deltas();
+        ctx
+    });
+    let id = FontId::new(14.0, FontFamily::Proportional);
+    let kept: String = ctx.fonts_mut(|f| {
+        text.chars()
+            .map(|c| if c.is_whitespace() { ' ' } else { c })
+            .filter(|&c| c == ' ' || is_cjk(c) || (!c.is_control() && f.has_glyph(&id, c)))
+            .collect()
+    });
+    kept.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Discover fonts and install them into `ctx`. Returns what was found.
 pub fn install(ctx: &egui::Context) -> FontReport {
     let report = discover_cjk();
