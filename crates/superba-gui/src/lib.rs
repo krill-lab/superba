@@ -30,6 +30,7 @@ pub mod args;
 pub mod design;
 pub mod flow;
 pub mod i18n;
+mod migration;
 pub mod pages;
 pub mod palette;
 pub mod runtime;

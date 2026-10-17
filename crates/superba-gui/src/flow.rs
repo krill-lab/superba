@@ -45,14 +45,23 @@ pub struct Run {
     pub wait_acknowledged: bool,
     /// Monotonic start time.
     pub started: Duration,
+    /// Whether this execution actually includes session migration (not write-only).
+    migrating: bool,
     /// Automatic rollback deadline, present only while a verification decision is open.
     recovery_deadline: Option<Duration>,
 }
 
 impl Run {
-    fn new(plan: Box<SwitchPlan>, now: Duration) -> Self {
+    fn new(plan: Box<SwitchPlan>, now: Duration, write_only: bool) -> Self {
+        let migrating = !write_only
+            && (plan.migration.is_some()
+                || matches!(
+                    plan.request.intent,
+                    SwitchIntent::MigrateSessions { .. } | SwitchIntent::RollbackMigration { .. }
+                ));
         Self {
             plan,
+            migrating,
             phase: SwitchPhase::TurnCheck,
             steps: Vec::new(),
             turns: Vec::new(),
@@ -258,6 +267,11 @@ impl Flow {
         self.run.as_ref()
     }
 
+    /// Session migration owns the whole window until execution finishes.
+    pub fn is_migrating(&self) -> bool {
+        self.is_running() && self.run.as_ref().is_some_and(|run| run.migrating)
+    }
+
     /// The request of the latest plan (for re-planning with answers).
     pub fn last_request(&self) -> Option<&SwitchRequest> {
         self.last_request.as_ref()
@@ -351,7 +365,7 @@ impl Flow {
                         plan: plan.clone(),
                         options,
                     });
-                    self.run = Some(Run::new(plan, now));
+                    self.run = Some(Run::new(plan, now, write_only));
                 }
                 Effect::Discard { plan_id } => {
                     if self.run.as_ref().is_none_or(|r| r.plan.id != plan_id) {
