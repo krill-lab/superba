@@ -5,10 +5,13 @@
 //! and the signed feeds Superba reads model lists, prices and versions from.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
 use superba_core::{
-    AppCodexPin, AppUpdateAction, CliUpdateAction, CodexVersion, InstallRequest, InstallTarget,
-    SwitchIntent, VersionsView,
+    AppCodexPin, AppDownloadReport, AppDownloadRequest, AppUpdateAction, CliUpdateAction,
+    CodexVersion, DownloadProgress, DownloadProgressSink, DownloadStage, Error, InstallRequest,
+    InstallTarget, SharedDownloadProgress, SwitchIntent, VersionsView, WindowsAppDownload,
 };
 
 use super::{Result, execute, request, usage};
@@ -297,6 +300,17 @@ pub(super) async fn app(command: &AppCommand, rt: &Runtime, out: &mut Output) ->
                     out.line(text("cli.versions.windows_action").arg("url", store_url))?;
                     out.data_line(command)?;
                 }
+                Some(AppUpdateAction::WindowsPackage {
+                    store_url, command, ..
+                }) => {
+                    out.line(text("cli.versions.windows_package_action"))?;
+                    if let Some(url) = store_url {
+                        out.line(text("cli.versions.windows_store_alt").arg("url", url))?;
+                    }
+                    if let Some(c) = command {
+                        out.data_line(c)?;
+                    }
+                }
                 _ => {}
             }
             for n in &view.notes {
@@ -305,25 +319,159 @@ pub(super) async fn app(command: &AppCommand, rt: &Runtime, out: &mut Output) ->
             out.value(&view.app)?;
             Ok(exit::OK)
         }
-        AppCommand::Download { open } => {
+        AppCommand::Download { open, source } => {
             out.progress(text("cli.versions.downloading"))?;
-            let report = rt.service.download_app_update().await?;
+            let request = AppDownloadRequest {
+                source: source.map(Into::into),
+            };
+            let report = download_with_progress(rt, request, out).await?;
             out.line(
                 text("cli.versions.downloaded")
                     .arg("path", report.path.display())
                     .arg("sha256", &report.sha256),
             )?;
+            if let Some(w) = &report.windows {
+                render_windows_download(w, out)?;
+            }
             if let Some(c) = &report.command {
                 out.line(text("cli.versions.install_with"))?;
                 out.data_line(c)?;
             }
             if *open {
-                open_installer(&report.path, out)?;
+                match &report.windows {
+                    Some(w) => open_windows_packages(rt, w, out).await?,
+                    None => open_installer(&report.path, out)?,
+                }
             }
             out.value(&report)?;
             Ok(exit::OK)
         }
     }
+}
+
+/// Run the download, showing its progress on stderr (rewritten in place on a
+/// terminal) and cancelling it on Ctrl-C (the partial file is kept, so the
+/// next run resumes).
+async fn download_with_progress(
+    rt: &Runtime,
+    request: AppDownloadRequest,
+    out: &mut Output,
+) -> superba_core::Result<AppDownloadReport> {
+    let shared = Arc::new(SharedDownloadProgress::default());
+    let sink: Arc<dyn DownloadProgressSink> = shared.clone();
+    let work = rt.service.download_app_package(request, sink);
+    tokio::pin!(work);
+    let cancel = tokio::signal::ctrl_c();
+    tokio::pin!(cancel);
+    let mut cancelled = false;
+    let mut last: Option<(DownloadStage, usize)> = None;
+    let mut tick = tokio::time::interval(Duration::from_millis(250));
+    let result = loop {
+        tokio::select! {
+            biased;
+            r = &mut work => break r,
+            signal = &mut cancel, if !cancelled => {
+                signal.map_err(|e| Error::io("signal", &e))?;
+                cancelled = true;
+                shared.cancel();
+            }
+            _ = tick.tick() => {
+                if let Some(p) = shared.latest() {
+                    let milestone = last != Some((p.stage, p.index));
+                    last = Some((p.stage, p.index));
+                    out.live_progress(progress_text(&p), milestone)?;
+                }
+            }
+        }
+    };
+    out.finish_progress()?;
+    if cancelled && matches!(result, Err(Error::Cancelled)) {
+        out.line(text("cli.versions.download_cancelled"))?;
+    }
+    result
+}
+
+fn mib(bytes: u64) -> String {
+    format!("{:.1}", bytes as f64 / (1024.0 * 1024.0))
+}
+
+/// One progress line.
+fn progress_text(p: &DownloadProgress) -> superba_core::LocalizedText {
+    let source = p
+        .source
+        .map(|s| s.text())
+        .unwrap_or_else(|| text("cli.versions.source_unknown"));
+    match p.stage {
+        DownloadStage::Resolving => text("cli.versions.resolving").arg_text("source", source),
+        DownloadStage::Verifying => text("cli.versions.verifying").arg("file", &p.file),
+        _ => {
+            let pct = p
+                .fraction()
+                .map(|f| format!("{:.0}%", f * 100.0))
+                .unwrap_or_else(|| "?".into());
+            text("cli.versions.transfer")
+                .arg("file", &p.file)
+                .arg("index", p.index.max(1))
+                .arg("count", p.count.max(1))
+                .arg("done", mib(p.done))
+                .arg("total", p.total.map(mib).unwrap_or_else(|| "?".into()))
+                .arg("percent", pct)
+        }
+    }
+}
+
+/// Source, identity, signer and the dependencies of a Windows download.
+fn render_windows_download(w: &WindowsAppDownload, out: &mut Output) -> superba_core::Result<()> {
+    out.line(text("cli.versions.win_source").arg_text("source", w.source.text()))?;
+    for reason in &w.fallback_reasons {
+        out.line(text("cli.versions.win_fallback").arg("reason", reason))?;
+    }
+    let id = &w.package.identity;
+    out.line(
+        text("cli.versions.win_package")
+            .arg("name", &id.name)
+            .arg("version", &id.version)
+            .arg("arch", &id.arch)
+            .arg("release", out.optional(w.release_version.as_ref())),
+    )?;
+    if let Some(s) = &w.package.signer {
+        out.line(
+            text("cli.versions.win_signer")
+                .arg("subject", &s.subject)
+                .arg("issuer", s.issuer.as_deref().unwrap_or("?")),
+        )?;
+    }
+    for d in &w.dependencies {
+        out.line(
+            text("cli.versions.win_dependency")
+                .arg("name", &d.identity.name)
+                .arg("version", &d.identity.version)
+                .arg("path", d.path.display()),
+        )?;
+    }
+    for d in &w.unresolved {
+        out.line(
+            text("cli.versions.win_unresolved")
+                .arg("name", &d.name)
+                .arg("version", &d.min_version),
+        )?;
+    }
+    Ok(())
+}
+
+/// Windows: open the dependencies, then the app, with App Installer (the user
+/// installs each one there).
+async fn open_windows_packages(
+    rt: &Runtime,
+    w: &WindowsAppDownload,
+    out: &mut Output,
+) -> superba_core::Result<()> {
+    for d in &w.dependencies {
+        rt.service.open_app_package(d.path.clone()).await?;
+        out.line(text("cli.versions.win_opened_dependency").arg("name", &d.identity.name))?;
+    }
+    rt.service.open_app_package(w.package.path.clone()).await?;
+    out.line(text("cli.versions.win_opened"))
 }
 
 /// Open the package with the desktop's handler (the system installer); never

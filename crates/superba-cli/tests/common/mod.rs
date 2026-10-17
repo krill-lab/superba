@@ -617,6 +617,35 @@ impl SwitchService for FakeService {
             .filter_map(|k| titles.get(&k).cloned().map(|t| (k, t)))
             .collect())
     }
+    async fn download_app_package(
+        &self,
+        request: AppDownloadRequest,
+        progress: std::sync::Arc<dyn DownloadProgressSink>,
+    ) -> Result<AppDownloadReport> {
+        self.record("download_app_package")?;
+        let windows = {
+            let mut v3 = self.v3.lock().unwrap();
+            v3.app_downloads.push(request);
+            v3.windows_download.clone()
+        };
+        let Some(report) = windows else {
+            return self.download_app_update().await;
+        };
+        progress.report(DownloadProgress {
+            file: "ChatGPT-26.1013.4894.0-x64.msix".into(),
+            done: 474_000_000,
+            total: Some(948_993_815),
+            index: 1,
+            count: 1,
+            ..DownloadProgress::stage(DownloadStage::Downloading, Some(AppPackageSource::Official))
+        });
+        Ok(report)
+    }
+    async fn open_app_package(&self, path: std::path::PathBuf) -> Result<()> {
+        self.record("open_app_package")?;
+        self.v3.lock().unwrap().opened_packages.push(path);
+        Ok(())
+    }
     async fn download_app_update(&self) -> Result<AppDownloadReport> {
         self.record("download_app_update")?;
         Ok(AppDownloadReport {

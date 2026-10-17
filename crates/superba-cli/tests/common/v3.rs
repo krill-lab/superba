@@ -25,6 +25,12 @@ pub struct FakeV3 {
     pub titles: BTreeMap<String, SessionTitle>,
     pub feeds: FeedsStatus,
     pub feed_refreshes: u32,
+    /// Windows: the report `download_app_package` returns (else the Linux one).
+    pub windows_download: Option<AppDownloadReport>,
+    /// `download_app_package` requests.
+    pub app_downloads: Vec<AppDownloadRequest>,
+    /// Packages `open_app_package` opened.
+    pub opened_packages: Vec<std::path::PathBuf>,
 }
 
 fn spec(slug: &str, tiers: &[&str]) -> ModelSpec {
@@ -257,5 +263,8 @@ pub fn fake_v3() -> FakeV3 {
             ..FeedsStatus::default()
         },
         feed_refreshes: 0,
+        windows_download: None,
+        app_downloads: Vec::new(),
+        opened_packages: Vec::new(),
     }
 }

@@ -802,7 +802,27 @@ pub enum AppCommand {
     Download {
         #[arg(long, help = english("cli.help.app_download_open"))]
         open: bool,
+        #[arg(long, value_enum, help = english("cli.help.app_download_source"))]
+        source: Option<AppSourceArg>,
     },
+}
+
+/// `spb app download --source`: where the Windows package comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum AppSourceArg {
+    /// OpenAI's download server only.
+    Official,
+    /// The Microsoft Store CDN only (links resolved by store.rg-adguard.net).
+    Store,
+}
+
+impl From<AppSourceArg> for superba_core::WindowsAppSource {
+    fn from(value: AppSourceArg) -> Self {
+        match value {
+            AppSourceArg::Official => Self::OfficialOnly,
+            AppSourceArg::Store => Self::StoreMirrorOnly,
+        }
+    }
 }
 
 /// `spb import`: providers from another tool.
