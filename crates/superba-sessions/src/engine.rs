@@ -21,6 +21,7 @@ use superba_core::{
     Clock, CodexHome, ConsumersStopped, DataDir, Error, MigrationItem, MigrationPlan,
     MigrationReceipt, MigrationRequest, Result, RollbackReport, SessionReport, Timestamp,
 };
+use superba_core::{SessionDirection, SessionStage};
 
 use crate::guard::{self, MigrateLock, WriterGate};
 use crate::inventory::{Inventory, Selected, validate_provider_id};
@@ -41,6 +42,8 @@ pub(crate) struct Engine<'a> {
     pub home_dir: Option<&'a Path>,
     pub clock: &'a dyn Clock,
     pub faults: &'a FaultPlan,
+    /// Progress reports and stop requests (`crate::progress`).
+    pub progress: &'a crate::progress::Progress,
 }
 
 /// `home` with absolute paths, so ledgers stay valid from any working directory.
@@ -291,8 +294,13 @@ impl Engine<'_> {
     /// The writing phase of `migrate` (after the pending ledger exists).
     fn apply(&self, work: &Work, stored: &mut Stored) -> Result<()> {
         self.fault(FaultPoint::AfterLedger)?;
+        let p = self.progress;
+        p.expect_files(stored.ledger.rollouts.iter().map(|r| r.thread_id.as_str()));
+        p.stage(SessionStage::Moving, work.rollouts.len());
         for (i, (file, rw)) in work.rollouts.iter().enumerate() {
             let entry = &stored.ledger.rollouts[i];
+            p.item(i, Some(&entry.thread_id), Some(&file.path));
+            p.checkpoint()?;
             rollout::replace_guarded(
                 &file.path,
                 &rw.raw_after,
@@ -301,9 +309,12 @@ impl Engine<'_> {
                 &rw.meta,
                 entry.mtime,
             )?;
+            p.file_done(&entry.thread_id);
             self.fault(FaultPoint::AfterRollout(i))?;
         }
+        p.stage(SessionStage::Databases, work.dbs.len());
         for (j, db) in work.dbs.iter().enumerate() {
+            p.item(j, None, Some(&db.path));
             let mut conn = sqlite::open_rw(&db.path)?;
             let db_work = DbWork {
                 providers: &work.providers,
@@ -321,7 +332,9 @@ impl Engine<'_> {
         stored.ledger.by_source_provider = actual_sources(&stored.ledger);
         stored.ledger.state = LedgerState::Completed;
         stored.ledger.completed_at = Some(self.now());
-        stored.save()
+        stored.save()?;
+        p.finish();
+        Ok(())
     }
 
     fn compute_work(
@@ -334,11 +347,24 @@ impl Engine<'_> {
         let threads = inv.threads();
         let mut rollouts = Vec::new();
         let mut offsets = BTreeMap::new();
-        for s in selected {
+        let p = self.progress;
+        p.begin(
+            SessionDirection::Migrate,
+            selected.iter().map(|s| s.thread_id.as_str()),
+        );
+        p.stage(SessionStage::Reading, selected.len());
+        for (n, s) in selected.iter().enumerate() {
+            p.title(&s.thread_id, s.title.as_deref());
             let Some(view) = threads.get(&s.thread_id) else {
                 continue;
             };
             let files: Vec<&RolloutFile> = view.files.iter().map(|i| &inv.rollouts[*i]).collect();
+            p.item(
+                n,
+                Some(&s.thread_id),
+                files.first().map(|f| f.path.as_path()),
+            );
+            p.checkpoint()?;
             let projected = projected_rollout(&files, view.rollout_path(inv));
             for file in files {
                 if file.archived && !include_archived {
@@ -439,7 +465,15 @@ impl Engine<'_> {
                 }
             }
             let mut rollouts = Vec::new();
+            let p = self.progress;
+            p.stage(
+                SessionStage::BackingUp,
+                work.rollouts.len() + work.dbs.len(),
+            );
             for (i, (file, rw)) in work.rollouts.iter().enumerate() {
+                let thread = file.head.as_ref().and_then(|h| h.thread_id.as_deref());
+                p.item(i, thread, Some(&file.path));
+                p.checkpoint()?;
                 let name = file
                     .path
                     .file_name()
@@ -471,6 +505,7 @@ impl Engine<'_> {
             }
             let mut databases = Vec::new();
             for (j, db) in work.dbs.iter().enumerate() {
+                p.item(work.rollouts.len() + j, None, Some(&db.path));
                 let name = db
                     .path
                     .file_name()
@@ -515,7 +550,10 @@ impl Engine<'_> {
 
     /// Every recorded change is in place.
     fn verify(&self, l: &Ledger) -> Result<()> {
-        for r in &l.rollouts {
+        self.progress
+            .stage(SessionStage::Verifying, l.rollouts.len());
+        for (i, r) in l.rollouts.iter().enumerate() {
+            self.progress.item(i, Some(&r.thread_id), Some(&r.path));
             let raw = fs::read(&r.path).map_err(|e| Error::io(&r.path, &e))?;
             if sha256_hex(&raw) != r.raw_after_sha256 {
                 return Err(Error::Conflict {
@@ -662,7 +700,18 @@ impl Engine<'_> {
         let backup_dir = self.data_dir.migrate_backup_dir(&l.id);
         let mut state: BTreeMap<&str, bool> = BTreeMap::new(); // thread -> restorable
         let mut rollout_after: Vec<(usize, Fingerprint)> = Vec::new();
+        let p = self.progress;
+        p.begin(
+            SessionDirection::Restore,
+            l.rollouts.iter().map(|r| r.thread_id.as_str()).chain(
+                l.databases
+                    .iter()
+                    .flat_map(|d| d.changes.iter().map(|c| c.thread_id.as_str())),
+            ),
+        );
+        p.stage(SessionStage::Reading, l.rollouts.len());
         for (i, r) in l.rollouts.iter().enumerate() {
+            p.item(i, Some(&r.thread_id), Some(&r.path));
             let status = rollout_status(r)?;
             let ok = state.entry(r.thread_id.as_str()).or_insert(true);
             match status {
@@ -701,7 +750,9 @@ impl Engine<'_> {
             skipped_changed: state.values().filter(|ok| !**ok).count() as u32,
             ..RollbackReport::default()
         };
-        for (d, after) in l.databases.iter().zip(&cells_after) {
+        p.stage(SessionStage::Databases, l.databases.len());
+        for (k, (d, after)) in l.databases.iter().zip(&cells_after).enumerate() {
+            p.item(k, None, Some(&d.path));
             let todo: Vec<&CellChange> = after
                 .iter()
                 .map(|k| &d.changes[*k])
@@ -714,14 +765,21 @@ impl Engine<'_> {
             sqlite::restore(&mut conn, &d.path, &todo)?;
             report.restored_threads += todo.iter().filter(|c| c.is_provider()).count() as u32;
         }
-        for (i, fp) in rollout_after {
+        rollout_after.retain(|(i, _)| restorable(&l.rollouts[*i].thread_id));
+        p.expect_files(
+            rollout_after
+                .iter()
+                .map(|(i, _)| l.rollouts[*i].thread_id.as_str()),
+        );
+        p.stage(SessionStage::Moving, rollout_after.len());
+        for (n, (i, fp)) in rollout_after.into_iter().enumerate() {
             let r = &l.rollouts[i];
-            if !restorable(&r.thread_id) {
-                continue;
-            }
+            p.item(n, Some(&r.thread_id), Some(&r.path));
             restore_rollout(r, &backup_dir, &fp)?;
+            p.file_done(&r.thread_id);
             report.restored_rollouts += 1;
         }
+        p.finish();
         Ok(report)
     }
 }

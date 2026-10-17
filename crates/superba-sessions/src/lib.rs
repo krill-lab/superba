@@ -42,6 +42,7 @@ mod guard;
 mod inventory;
 mod jsonscan;
 mod ledger;
+mod progress;
 mod rollout;
 mod sqlite;
 mod text;
@@ -53,6 +54,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use superba_core::SessionProgressSink;
 use superba_core::codex::{LEGACY_KRILL_PROVIDER, PROVIDER_OPENAI};
 use superba_core::{
     Clock, CodexHome, ConsumersStopped, DataDir, Error, Locale, MigrationPlan, MigrationReceipt,
@@ -175,6 +177,7 @@ impl CodexSessionMigrator {
             home_dir: self.home_dir.as_deref(),
             clock: self.clock.as_ref(),
             faults: &self.faults,
+            progress: &progress::NONE,
         }
     }
 
@@ -257,5 +260,36 @@ impl SessionMigrator for CodexSessionMigrator {
         let (home, token) = (home.clone(), stopped.clone());
         self.blocking(move |m| m.engine().recover(&home, Some(&token)))
             .await
+    }
+
+    async fn migrate_stopped_with_progress(
+        &self,
+        home: &CodexHome,
+        plan: &MigrationPlan,
+        stopped: &ConsumersStopped,
+        sink: Arc<dyn SessionProgressSink>,
+    ) -> Result<MigrationReceipt> {
+        let (home, plan, token) = (home.clone(), plan.clone(), stopped.clone());
+        self.blocking(move |m| {
+            let progress = progress::Progress::new(sink, Default::default());
+            m.engine_with(&progress).migrate(&home, &plan, Some(&token))
+        })
+        .await
+    }
+
+    async fn rollback_stopped_with_progress(
+        &self,
+        home: &CodexHome,
+        migration_id: &str,
+        stopped: &ConsumersStopped,
+        sink: Arc<dyn SessionProgressSink>,
+    ) -> Result<RollbackReport> {
+        let (home, id, token) = (home.clone(), migration_id.to_owned(), stopped.clone());
+        self.blocking(move |m| {
+            let titles = progress::ledger_titles(&m.data_dir, m.home_dir.as_deref(), &home, &id);
+            let progress = progress::Progress::new(sink, titles);
+            m.engine_with(&progress).rollback(&home, &id, Some(&token))
+        })
+        .await
     }
 }
