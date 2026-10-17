@@ -39,7 +39,7 @@ try {
   $outDir = Split-Path -Parent $Out
   if ($outDir) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
   & wix build $wxs -arch x64 -d "ProductVersion=$ProductVersion" -d "DisplayVersion=$Version" `
-    -d "StageDir=$work" -o $Out
+    -d "StageDir=$work" -o $Out 2>&1 | Out-Host
   if ($LASTEXITCODE -ne 0) { throw "wix build failed ($LASTEXITCODE)" }
 } finally {
   Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

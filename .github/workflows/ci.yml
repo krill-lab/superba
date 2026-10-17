@@ -135,6 +135,22 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - name: Install WiX
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { throw 'wix install failed' }
+          "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
+      - name: WiX smoke build (placeholder files; fails fast on a broken installer definition)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path smoke | Out-Null
+          foreach ($f in 'superba.exe','spb.exe','superba-router.exe','LICENSE-MIT','LICENSE-APACHE','THIRD-PARTY-NOTICES.txt','LICENSE-Geist-OFL.txt') {
+            'x' | Set-Content "smoke/$f"
+          }
+          ./scripts/release/build-msi.ps1 -StageDir smoke -Version 0.1.0-alpha.1 -Out "$env:RUNNER_TEMP/smoke.msi"
       - name: Install Rust
         shell: bash
         run: |
@@ -143,6 +159,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: package-test-msi
+          cache-on-failure: true
       - name: Build the Windows programs
         shell: bash
         env:
@@ -157,13 +174,6 @@ jobs:
           Copy-Item LICENSE-MIT, LICENSE-APACHE, crates/superba-gui/assets/fonts/LICENSE-Geist-OFL.txt stage
           # The real notices come from cargo-about in the release workflow.
           'Third-party notices placeholder for the package test.' | Set-Content stage/THIRD-PARTY-NOTICES.txt
-      - name: Install WiX
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          dotnet tool install --global wix --version 5.0.2
-          if ($LASTEXITCODE -ne 0) { throw 'wix install failed' }
-          "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
       - name: Install, upgrade and uninstall the MSI
         shell: pwsh
         env:
