@@ -1158,7 +1158,10 @@ async fn installs_go_to_the_store_locally_or_to_a_host_with_a_hot_restart() {
         })
         .await
         .unwrap();
-    assert!(Path::new(&report.executable.unwrap()).ends_with(Path::new("bin").join(CODEX_EXE)));
+    assert!(
+        // The fake store names its executable `codex` on every platform.
+        Path::new(&report.executable.unwrap()).ends_with("bin/codex")
+    );
 
     let mut host = remote_host("dev", Some("h-dev"));
     host.sources = vec![superba_core::HostSource::GlobalState];
