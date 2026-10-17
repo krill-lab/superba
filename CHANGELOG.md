@@ -152,6 +152,17 @@ back to the official ChatGPT login.
   20 s. The official ChatGPT login is never routed; remote hosts stay direct.
   `spb router status | install | enable | disable | uninstall | watch` and the
   Router page.
+- **Router capacity and "too many open files"**: the router serves a bounded
+  number of requests and WebSocket sessions at once (a quarter of its soft
+  open-file limit, at most 512) and of inbound connections, keeps a capped
+  upstream connection pool, and starts with a soft limit of 8192 open files
+  (LaunchAgent `SoftResourceLimits`, systemd `LimitNOFILE`, and its own raise at
+  startup). A request over the limit, or one that meets "too many open files"
+  on this computer, gets a 503 `local_router_busy` that Codex retries; it is
+  never a failover and never marks a line down (under macOS's 256 limit about
+  110 concurrent requests used to make every line look down). `spb router
+  status`, `spb router doctor` and the Router page show the capacity and recent
+  shortages.
 - **Request log and usage statistics** (Router and Usage pages, `spb usage`):
   recent requests with session names, provider, model, tokens, cache and cost,
   filters (provider, model, errors, failover, client), statistics by model,

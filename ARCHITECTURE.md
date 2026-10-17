@@ -463,6 +463,25 @@ the router, zstd refused and resent; the answering attempt's value is shown in
 the request detail); the transport (`RequestRow::transport`) is the same on both
 legs.
 
+**Local budget** (user bug 35; `superba_router::limits`). Each proxied request
+holds two sockets and a WebSocket session two for its life, and launchd starts
+agents with a soft limit of 256 open files. The router sizes its budget from the
+soft limit `L` it finds at start (after raising it towards 8192; the LaunchAgent
+plist sets `SoftResourceLimits` / `HardResourceLimits` `NumberOfFiles` and the
+systemd unit `LimitNOFILE` as well): `L/4` admissions (4 to 512) for proxied
+requests (until the response body ends) and WebSocket sessions, at most `L/2`
+inbound connections (at the cap the accepted connection waits for a place, open
+connections stop keep-alive, idle ones close after 30 s anyway), and a capped
+idle pool per upstream host. A request that gets no admission within
+`Tuning::busy_wait_ms` (2 s) is answered 503 `local_router_busy` with
+`Connection: close` and `Retry-After`. `EMFILE` / `ENFILE` met while accepting,
+connecting upstream, probing or opening the request log is local: the request
+gets the same 503 naming the limit, no breaker counts it, nothing fails over,
+and it is logged at most once a minute. `RouterStatus::local` (budget, in
+flight, busy answers, file-limit errors, the last one) feeds
+`RouterView::local`, `spb router status`, the doctor's capacity row and finding,
+and the Router page.
+
 Lifecycle, the same in `spb` and the GUI (both only through `SwitchService`):
 
 | Step | `spb` | GUI | Service |
