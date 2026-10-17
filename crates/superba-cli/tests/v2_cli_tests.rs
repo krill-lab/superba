@@ -170,9 +170,25 @@ async fn router_install_status_and_uninstall() {
     assert_eq!(one_json(&stdout)["state"]["kind"], "healthy");
 }
 
+/// Give `work` a stored key: router members need one (an API key the router
+/// can send), and `spb router enable` checks that before installing.
+fn work_with_key(service: &FakeService) {
+    let mut set = service.profiles.lock().unwrap();
+    let work = set
+        .profiles
+        .iter_mut()
+        .find(|p| p.id.as_str() == "work")
+        .unwrap();
+    work.key_ref = Some(superba_core::KeyRef::Keyring {
+        service: "superba".into(),
+        account: "profile:work".into(),
+    });
+}
+
 #[tokio::test]
 async fn router_enable_dry_run_installs_nothing() {
     let service = FakeService::new();
+    work_with_key(&service);
     let (code, stdout, stderr) = invoke(
         service.clone(),
         &["router", "enable", "--member", "work", "--dry-run"],
@@ -221,6 +237,7 @@ async fn router_enable_dry_run_installs_nothing() {
 #[tokio::test]
 async fn router_enable_installs_then_switches_with_the_router_intent() {
     let service = FakeService::new();
+    work_with_key(&service);
     let (_, _, stderr) = invoke(
         service.clone(),
         &["router", "enable", "--member", "work", "--yes"],

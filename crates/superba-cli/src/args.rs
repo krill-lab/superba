@@ -513,6 +513,11 @@ pub enum RouterCommand {
         #[arg(long, hide = true, requires = "quiet")]
         keep_service: bool,
     },
+    #[command(about = english("cli.help.router_doctor"))]
+    Doctor {
+        #[arg(long, help = english("cli.help.router_doctor_foreground"))]
+        foreground: bool,
+    },
     #[command(about = english("cli.help.router_watch"))]
     Watch {
         #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..=600), help = english("cli.help.router_interval"))]
