@@ -61,11 +61,13 @@ pinned to a full commit SHA (its version in a comment); update pins deliberately
 Only the final job has `contents: write`.
 
 The final job requires all six archives, generates `SHA256SUMS.txt`, and uses
-`GITHUB_TOKEN` to create a draft release with generated notes and tag
-verification. If a draft release for the tag already exists, it replaces its
-archives and checksums (`--clobber`); if the release is already published it
-fails instead of replacing published assets. Inspect the draft and artifacts
-before publishing. Download all assets into one directory to verify them with
+`GITHUB_TOKEN` to create the release with generated notes and tag
+verification. It is created as a draft with every asset attached and then
+published: `vX.Y.Z` becomes the latest release, `-alpha.N` / `-beta.N` / `-rc.N`
+tags become pre-releases. If a draft release for the tag already exists (an
+interrupted run), it replaces its archives and checksums (`--clobber`) and
+publishes it; if the release is already published it fails instead of
+replacing published assets. Download all assets into one directory to verify them with
 `sha256sum -c SHA256SUMS.txt` (or `shasum -a 256 -c SHA256SUMS.txt` on macOS).
 
 ## macOS signing configuration
