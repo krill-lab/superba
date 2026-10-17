@@ -1,0 +1,35 @@
+# superba-gui UI texts (English), area "movers": the session migration dialog and
+# the texts of its scene (assets/scenes/superba-session-movers.svg, whose own
+# copy is Chinese). Every key must exist in movers.zh-CN.toml with the same
+# {placeholders} and must not be defined in another area file.
+
+[movers]
+title.migrate = "Migrating sessions"
+title.restore = "Putting sessions back"
+title.stopping = "Stopping the migration"
+preparing = "Preparing…"
+elapsed = "Elapsed {time}"
+now = "Now: {name}"
+stop = "Stop and undo"
+stop_hint = "Stopping puts every session back where it was; nothing is changed."
+stopping = "Stopping: every session migrated so far is being put back…"
+no_stop.restore = "This cannot be stopped safely half-way; it finishes on its own."
+no_stop.finishing = "Almost done: the session index is written and checked now; this cannot be stopped safely."
+keep_open = "Keep Superba open until it finishes."
+
+[movers.scene]
+title = "Sessions move slowly, coffee goes slowly."
+subtitle = "One minds the progress, one minds the calm."
+low_concurrency = "LOW CONCURRENCY"
+thread_01 = "THREAD 01"
+thread_02 = "THREAD 02"
+carrying = "carrying"
+resting = "resting"
+to_move = "to move"
+delivered = "in place"
+crate = "Session"
+note_1 = "Sip first,"
+note_2 = "talk later"
+workers = "1 worker · no rush"
+status = "Moving sessions, slowly…"
+coffee = "Coffee thread: still running"

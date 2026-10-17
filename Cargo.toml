@@ -118,6 +118,9 @@ egui = "0.37"
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
 fontdb = "0.24"
 open = "5"
+# the session migration scene: SVG parts rasterized once (no text, fonts or raster images)
+resvg = { version = "0.45", default-features = false }
+roxmltree = "0.20"
 
 # --- platform specific (declare under [target.'cfg(...)'.dependencies] in crates)
 winresource = { version = "0.1", default-features = false }

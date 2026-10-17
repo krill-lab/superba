@@ -4,7 +4,7 @@
 //! by a repaint request, so an idle window costs no CPU.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 
 use superba_core::{
@@ -173,6 +173,9 @@ pub enum Command {
         /// Options.
         options: ExecuteOptions,
     },
+    /// Stop the session migration of the running switch where that is safe
+    /// (`SwitchEvents::stop_requested`; the migration then undoes itself).
+    StopSessions,
     /// Save settings.
     SaveSettings(Settings),
     /// Save a profile (and its key).
@@ -395,12 +398,19 @@ impl Outbox {
     }
 }
 
-/// Forwards switch events to the UI.
-struct GuiEvents(Outbox);
+/// Forwards switch events to the UI; `stop` is set by [`Command::StopSessions`].
+struct GuiEvents {
+    out: Outbox,
+    stop: Arc<AtomicBool>,
+}
 
 impl SwitchEvents for GuiEvents {
     fn emit(&self, event: SwitchEvent) {
-        self.0.send(Reply::Event(event));
+        self.out.send(Reply::Event(event));
+    }
+
+    fn stop_requested(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
     }
 }
 
@@ -454,11 +464,25 @@ impl Backend {
             .spawn(move || {
                 runtime.block_on(async move {
                     let switches = Arc::new(AtomicU64::new(0));
+                    // The stop request of the running switch's session migration.
+                    let stop = Arc::new(AtomicBool::new(false));
                     while let Some(command) = cmd_rx.recv().await {
+                        match &command {
+                            // In order with the commands, before any task runs.
+                            Command::Execute { .. } => stop.store(false, Ordering::SeqCst),
+                            Command::StopSessions => {
+                                stop.store(true, Ordering::SeqCst);
+                                continue;
+                            }
+                            _ => {}
+                        }
                         let service = service.clone();
                         let out = outbox.clone();
                         let switches = switches.clone();
-                        tokio::spawn(async move { handle(service, out, command, &switches).await });
+                        let stop = stop.clone();
+                        tokio::spawn(async move {
+                            handle(service, out, command, &switches, stop).await
+                        });
                     }
                 });
                 // Dropping the runtime cancels in-flight tasks when the window closes.
@@ -522,6 +546,7 @@ async fn handle(
     out: Outbox,
     command: Command,
     switches: &AtomicU64,
+    stop: Arc<AtomicBool>,
 ) {
     match command {
         Command::Refresh => {
@@ -569,7 +594,10 @@ async fn handle(
         }
         Command::Execute { plan, options } => {
             let decider: Arc<dyn SwitchDecider> = Arc::new(GuiDecider(out.clone()));
-            let events: Arc<dyn SwitchEvents> = Arc::new(GuiEvents(out.clone()));
+            let events: Arc<dyn SwitchEvents> = Arc::new(GuiEvents {
+                out: out.clone(),
+                stop,
+            });
             let result = service.execute(*plan, options, decider, events).await;
             switches.fetch_add(1, Ordering::SeqCst);
             out.send(Reply::Executed(result));
@@ -681,6 +709,8 @@ async fn handle(
                 tracing::warn!(error = %e, "the router did not get the stats line language");
             }
         }
+        // Handled by the command loop (it sets the stop flag in order).
+        Command::StopSessions => {}
     }
 }
 

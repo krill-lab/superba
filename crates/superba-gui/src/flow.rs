@@ -17,9 +17,9 @@ use std::time::Duration;
 
 use superba_core::{
     Countdown, Decision, DecisionRequest, Error, ExecuteOptions, LegacySessionChoice,
-    LocalizedText, PlanChoice, PlanDestination, ProviderRestore, RestoreTarget, StepStatus,
-    SwitchEvent, SwitchIntent, SwitchOutcome, SwitchPhase, SwitchPlan, SwitchRequest, SwitchStep,
-    ThreadActivity, TurnActivity,
+    LocalizedText, PlanChoice, PlanDestination, ProviderRestore, RestoreTarget, SessionProgress,
+    SessionStage, StepStatus, SwitchEvent, SwitchIntent, SwitchOutcome, SwitchPhase, SwitchPlan,
+    SwitchRequest, SwitchStep, ThreadActivity, TurnActivity,
 };
 use superba_switch::{Effect, Input, MachineState, PlanTicket, SwitchMachine};
 
@@ -45,8 +45,30 @@ pub struct Run {
     pub wait_acknowledged: bool,
     /// Monotonic start time.
     pub started: Duration,
+    /// Sessions being migrated or put back (the migration dialog).
+    pub sessions: Option<SessionsRun>,
     /// Automatic rollback deadline, present only while a verification decision is open.
     recovery_deadline: Option<Duration>,
+}
+
+/// Sessions moving during a switch, from its [`SwitchEvent::Sessions`] reports.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SessionsRun {
+    /// The latest report.
+    pub progress: SessionProgress,
+    /// Monotonic time of the first report.
+    pub started: Duration,
+    /// The user asked to stop (and undo) the migration.
+    pub stop_requested: bool,
+    /// The sessions are still moving (the dialog is shown).
+    pub active: bool,
+}
+
+impl SessionsRun {
+    /// Whether the dialog may offer to stop now.
+    pub fn can_stop(&self) -> bool {
+        self.active && self.progress.can_stop && !self.stop_requested
+    }
 }
 
 impl Run {
@@ -60,8 +82,14 @@ impl Run {
             decision: None,
             wait_acknowledged: false,
             started: now,
+            sessions: None,
             recovery_deadline: None,
         }
+    }
+
+    /// Sessions are moving now (migration dialog).
+    pub fn sessions_active(&self) -> Option<&SessionsRun> {
+        self.sessions.as_ref().filter(|s| s.active)
     }
 
     /// Status of a step, if reported.
@@ -549,6 +577,37 @@ impl Flow {
                     } else {
                         run.steps.push((step.clone(), status.clone()));
                     }
+                    // The migration step ended (also when a last report was lost).
+                    if *step == SwitchStep::MigrateSessions
+                        && !matches!(status, StepStatus::Running | StepStatus::Pending)
+                        && let Some(s) = &mut run.sessions
+                    {
+                        s.active = false;
+                    }
+                }
+                SwitchEvent::Sessions { progress } => {
+                    let active = progress.stage != SessionStage::Done;
+                    match &mut run.sessions {
+                        // A new operation (the undo after a stop, a restore after
+                        // a later failure) keeps the clock of the dialog it follows
+                        // while that one is still open.
+                        Some(s) if s.active || active => {
+                            if !s.active {
+                                s.started = now;
+                                s.stop_requested = false;
+                            }
+                            s.progress = progress.clone();
+                            s.active = active;
+                        }
+                        _ => {
+                            run.sessions = active.then(|| SessionsRun {
+                                progress: progress.clone(),
+                                started: now,
+                                stop_requested: false,
+                                active,
+                            });
+                        }
+                    }
                 }
                 SwitchEvent::Turns {
                     activity,
@@ -602,6 +661,21 @@ impl Flow {
             }
             d.answer(decision);
         }
+    }
+
+    /// "Stop and undo" in the migration dialog: honoured only while the latest
+    /// report says the migration can stop (it then puts every session back and
+    /// the switch ends as cancelled). Returns whether a stop was requested.
+    pub fn stop_sessions(&mut self) -> bool {
+        let Some(s) = self.run.as_mut().and_then(|r| r.sessions.as_mut()) else {
+            return false;
+        };
+        if !s.can_stop() {
+            return false;
+        }
+        s.stop_requested = true;
+        self.commands.push(Command::StopSessions);
+        true
     }
 
     /// Enter in the recovery dialog rolls back immediately, including after Esc.

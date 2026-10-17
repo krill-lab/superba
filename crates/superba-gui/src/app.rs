@@ -244,6 +244,8 @@ pub struct SuperbaApp {
     pages: PageStates,
     palette: CommandPalette,
     banner: BannerState,
+    /// The session migration dialog (scene textures and clock).
+    movers: crate::movers::dialog::MoversDialog,
     risk_memory: Option<PathBuf>,
     wizard: Option<Wizard>,
     wizard_dismissed: bool,
@@ -319,6 +321,7 @@ impl SuperbaApp {
             pages: PageStates::default(),
             palette: CommandPalette::default(),
             banner: BannerState::default(),
+            movers: Default::default(),
             risk_memory,
             wizard: None,
             wizard_dismissed: false,
@@ -1490,6 +1493,14 @@ impl eframe::App for SuperbaApp {
             let cx = cx!(self, pal, self.flow.is_running() || self.flow.is_planning());
             shell::confirm_full(&ctx, &cx, &mut self.flow, &mut self.banner, now);
             shell::decision_dialog(&ctx, &cx, &mut self.flow, now);
+            crate::movers::dialog::show(
+                &ctx,
+                &cx,
+                &mut self.flow,
+                &mut self.movers,
+                now,
+                self.settings.reduce_motion,
+            );
             if let Some(w) = self.wizard.as_mut() {
                 match pages::wizard::show(&ctx, &cx, w, &mut actions) {
                     WizardOutcome::Continue => {}

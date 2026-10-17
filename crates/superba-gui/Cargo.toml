@@ -38,6 +38,8 @@ eframe.workspace = true
 egui.workspace = true
 fontdb.workspace = true
 open.workspace = true
+resvg.workspace = true
+roxmltree.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 rfd = { workspace = true, optional = true }

@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+<title id="title">superba · 会话搬运小队</title>
+<desc id="desc">一只珊瑚色小虾慢慢把会话箱子从左侧搬到右侧，放下后返回；另一只虾坐在椅子里喝咖啡、晃脚休息。十八秒无缝循环。</desc>
+<defs>
+ <linearGradient id="paper" x2="0" y2="1"><stop stop-color="#FCFAF6"/><stop offset="1" stop-color="#F3F0EA"/></linearGradient>
+ <linearGradient id="shell" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#FF956D"/><stop offset=".5" stop-color="#FF697E"/><stop offset="1" stop-color="#E94382"/></linearGradient>
+ <linearGradient id="boxFront" x2=".15" y2="1"><stop stop-color="#F2C798"/><stop offset="1" stop-color="#E4AE79"/></linearGradient>
+ <linearGradient id="chair" x2=".7" y2="1"><stop stop-color="#8BBEB6"/><stop offset="1" stop-color="#55958E"/></linearGradient>
+ <filter id="soft" x="-.3" y="-.5" width="1.6" height="2"><feGaussianBlur stdDeviation="6"/></filter>
+ <g id="shrimp" fill="url(#shell)"><path d="M237 122L728 113C802 110 861 162 857 230L826 232C829 178 784 140 728 140L387 133Z"/>
+<path d="M354 167L696 160C752 158 800 187 823 229L790 236C771 203 738 187 693 187Z"/>
+<path d="M527 218H857C852 402 734 557 527 547Z"/>
+<path d="M500 218C418 221 343 253 281 309L500 527Z"/>
+<path d="M259 330C203 389 171 467 168 550H479Z"/>
+<path d="M168 580H477L278 779C211 728 174 655 168 580Z"/>
+<path d="M499 603V834C427 834 363 818 304 793Z"/>
+<path d="M530 603L736 809C670 830 596 841 530 834Z"/><circle cx="668" cy="350" r="95" fill="#FFFDF8"/><circle cx="680" cy="353" r="66" fill="#273548"/><circle cx="700" cy="331" r="20" fill="#FFFDF8"/></g>
+ <g id="crate">
+  <path d="M0 12L25 0H164L142 12Z" fill="#F8DAB2"/>
+  <path d="M142 12L164 0V106L142 124Z" fill="#C99364"/>
+  <rect y="12" width="142" height="112" rx="5" fill="url(#boxFront)"/>
+  <path d="M61 12L82 0H102L82 12V41L72 35L61 41Z" fill="#FDF0D5" opacity=".85"/>
+  <rect x="23" y="56" width="96" height="42" rx="9" fill="#FFF8EC"/>
+  <path d="M36 66H51V78H43L38 82V78H36Z" fill="none" stroke="#9B7555" stroke-width="2" stroke-linejoin="round"/>
+  <text x="83" y="83" text-anchor="middle" font-size="16" font-weight="600" fill="#906849">会话</text>
+  <path d="M12 108H30M12 113H22" stroke="#B38459" stroke-width="2" stroke-linecap="round"/>
+ </g>
+ <g id="coffee">
+  <ellipse cx="3" cy="37" rx="31" ry="7" fill="#2B5958" opacity=".12"/>
+  <path d="M22 3H31C49 3 49 26 31 26H24" fill="none" stroke="#FFF9EC" stroke-width="8"/>
+  <path d="M-24 0H25L21 29Q1 41-20 29Z" fill="#FFF9EC"/>
+  <ellipse cy="0" rx="24" ry="7" fill="#E6C6AA"/><ellipse cy="0" rx="19" ry="4" fill="#735045"/>
+  <path d="M-12 12H-3" stroke="#EBCDB8" stroke-width="3" stroke-linecap="round"/>
+ </g>
+</defs>
+<style>
+ text{font-family:ui-rounded,"SF Pro Rounded","PingFang SC","Microsoft YaHei",sans-serif}
+ .mono{font-family:ui-monospace,"SFMono-Regular",Menlo,monospace}
+ .travel{animation:travel 18s infinite linear}
+ .facing{animation:facing 18s infinite steps(1,end)}
+ .body-bob{animation:bob 1.2s infinite ease-in-out}
+ .walk-legs{animation:walking 18s infinite steps(1,end)}
+ .still-legs{animation:standing 18s infinite steps(1,end)}
+ .leg-a{animation:legA 1.2s infinite ease-in-out;transform-origin:0px 26px}
+ .leg-b{animation:legB 1.2s infinite ease-in-out;transform-origin:0px 26px}
+ .cargo{animation:cargo 18s infinite linear}
+ .delivered{opacity:0;animation:delivered 18s infinite steps(1,end)}
+ .working-arm{animation:cargo 18s infinite linear}
+ .return-arm{opacity:0;animation:returnArm 18s infinite steps(1,end)}
+ .rest-body{animation:breathe 4.8s infinite ease-in-out;transform-origin:0px 0px}
+ .idle-foot{animation:foot 3.6s infinite ease-in-out;transform-origin:18px 40px}
+ .sip{animation:sip 7s infinite ease-in-out;transform-origin:38px -15px}
+ .steam{animation:steam 3.8s infinite ease-out;opacity:0}
+ .steam.two{animation-delay:1.3s}.steam.three{animation-delay:2.6s}
+ .dot{animation:pulse 2s infinite ease-in-out}
+ .progress{animation:progress 18s infinite linear;transform-origin:108px 780px}
+ @keyframes travel{0%,8%{transform:translateX(0)}46%,59%{transform:translateX(370px)}92%,100%{transform:translateX(0)}}
+ @keyframes facing{0%{transform:scaleX(1)}59%{transform:scaleX(-1)}96%{transform:scaleX(1)}100%{transform:scaleX(1)}}
+ @keyframes bob{0%,50%,100%{transform:translateY(0)}25%,75%{transform:translateY(-3px)}}
+ @keyframes walking{0%{opacity:0}8%{opacity:1}46%{opacity:0}59%{opacity:1}92%,100%{opacity:0}}
+ @keyframes standing{0%{opacity:1}8%{opacity:0}46%{opacity:1}59%{opacity:0}92%,100%{opacity:1}}
+ @keyframes legA{0%,100%{transform:rotate(14deg)}50%{transform:rotate(-14deg)}}
+ @keyframes legB{0%,100%{transform:rotate(-14deg)}50%{transform:rotate(14deg)}}
+ @keyframes cargo{0%,8%{opacity:1;transform:translateY(0)}12%,46%{opacity:1;transform:translateY(-16px)}49.999%{opacity:1;transform:translateY(0)}50%,95.999%{opacity:0;transform:translateY(0)}96%,100%{opacity:1;transform:translateY(0)}}
+ @keyframes delivered{0%{opacity:0}50%{opacity:1}96%{opacity:0}100%{opacity:0}}
+ @keyframes returnArm{0%{opacity:0}50%{opacity:1}96%{opacity:0}100%{opacity:0}}
+ @keyframes breathe{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-3px) rotate(-1deg)}}
+ @keyframes foot{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(9deg)}}
+ @keyframes sip{0%,30%,75%,100%{transform:translate(0,0) rotate(0deg)}43%,60%{transform:translate(-21px,-28px) rotate(-12deg)}}
+ @keyframes steam{0%{opacity:0;transform:translateY(3px)}20%{opacity:.55}100%{opacity:0;transform:translateY(-43px)}}
+ @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+ @keyframes progress{0%,8%{transform:scaleX(.06)}46%,94%{transform:scaleX(1)}96%,100%{transform:scaleX(.06)}}
+ @media(prefers-reduced-motion:reduce){*{animation:none!important}.cargo{opacity:1}.delivered,.return-arm,.steam,.walk-legs{opacity:0}.still-legs{opacity:1}}
+</style>
+<rect width="1440" height="900" rx="38" fill="url(#paper)"/>
+<!-- Editorial header. -->
+<g transform="translate(84 66)"><rect width="30" height="30" rx="9" fill="#F16D83"/><path d="M9 10H22C22 18 17 23 10 22V17H17L9 10Z" fill="#FFF8F1"/><text x="43" y="23" font-size="27" font-weight="750" letter-spacing="-.8" fill="#293B43">superba</text></g>
+<text x="84" y="177" font-size="46" font-weight="650" letter-spacing="-1.3" fill="#293B43">会话慢慢搬，咖啡慢慢喝。</text>
+<text x="87" y="218" font-size="18" fill="#88928F">一只负责进度，一只负责松弛。</text>
+<g transform="translate(1196 66)"><rect width="160" height="34" rx="17" fill="#E8EDE5"/><circle cx="20" cy="17" r="4" fill="#6A9C86" class="dot"/><text x="35" y="22" class="mono" font-size="12" fill="#688473">LOW CONCURRENCY</text></g>
+<!-- A quiet office backdrop. -->
+<rect x="86" y="302" width="846" height="389" rx="28" fill="#EEEAE2" opacity=".42"/>
+<path d="M113 690H1329" stroke="#D7DAD1" stroke-width="2"/>
+<path d="M925 347V636" stroke="#DDDED6" stroke-width="2" stroke-dasharray="3 10"/>
+<g transform="translate(113 329)"><rect width="114" height="28" rx="14" fill="#F9E4DC"/><circle cx="16" cy="14" r="4" fill="#EC8879" class="dot"/><text x="29" y="19" font-size="12" fill="#AA7565" class="mono">THREAD 01</text><text x="128" y="19" font-size="13" fill="#9A9D92">搬运中</text></g>
+<g transform="translate(992 329)"><rect width="114" height="28" rx="14" fill="#E0EBE2"/><circle cx="16" cy="14" r="4" fill="#81A590"/><text x="29" y="19" font-size="12" fill="#6C8B7A" class="mono">THREAD 02</text><text x="128" y="19" font-size="13" fill="#9A9D92">休息中</text></g>
+<!-- Source parcels. -->
+<ellipse cx="159" cy="685" rx="75" ry="9" fill="#D4C8B9" opacity=".35"/>
+<g transform="translate(102 586) scale(.73)"><use xlink:href="#crate"/></g>
+<g transform="translate(113 515) scale(.62)"><use xlink:href="#crate"/></g>
+<text x="146" y="716" text-anchor="middle" font-size="12" fill="#A2A399">待搬运</text>
+<!-- Destination shelf and completed parcel. -->
+<rect x="698" y="682" width="198" height="8" rx="4" fill="#D2C4B0"/>
+<path d="M718 676H879" stroke="#CBBCA8" stroke-width="2" stroke-dasharray="5 6"/>
+<text x="797" y="716" text-anchor="middle" font-size="12" fill="#A2A399">会话归位</text>
+<g class="delivered"><g transform="translate(710 555)"><use xlink:href="#crate"/></g><g transform="translate(830 532)"><circle r="16" fill="#DEEDDC"/><path d="M-7 0L-2 5L7-5" fill="none" stroke="#7EA685" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+<!-- Worker. All motion stays within the scene, with a pause for unloading. -->
+<g transform="translate(235 582)"><g class="travel">
+ <ellipse cx="18" cy="101" rx="84" ry="9" fill="#C3B6AA" opacity=".28"/>
+ <g class="facing"><g class="walk-legs" stroke="#B65569" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none">
+  <path class="leg-a" d="M-12 25L-23 67L-39 93H-23"/><path class="leg-b" d="M24 28L39 66L56 94H72"/>
+ </g>
+ <g class="still-legs" stroke="#B65569" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-12 25L-18 68L-21 94H-6M24 28L31 66L38 94H54"/></g>
+ <g class="body-bob">
+  <g transform="translate(-95 -167) scale(.24)"><use xlink:href="#shrimp"/></g>
+  <path d="M67-57Q77-50 84-57" stroke="#A94458" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <g class="working-arm"><path d="M46-17Q61 9 109 10" fill="none" stroke="#D85572" stroke-width="11" stroke-linecap="round"/></g>
+  <g class="return-arm"><path d="M49-17Q74 11 63 34" fill="none" stroke="#D85572" stroke-width="11" stroke-linecap="round"/></g>
+ </g>
+ </g><g class="cargo"><g transform="translate(105 -27)"><use xlink:href="#crate"/></g><path d="M81 11Q92 22 111 20" fill="none" stroke="#FF8391" stroke-width="11" stroke-linecap="round"/></g>
+</g></g>
+<!-- A very comfortable second thread. -->
+<ellipse cx="1127" cy="684" rx="127" ry="12" fill="#B7C6BC" opacity=".28"/>
+<path d="M1052 627L1042 680M1180 625L1191 680" stroke="#80988D" stroke-width="10" stroke-linecap="round"/>
+<path d="M1023 570Q1019 523 1064 521H1168Q1215 524 1212 568L1204 624Q1199 645 1176 645H1052Q1031 645 1028 623Z" fill="url(#chair)"/>
+<path d="M1039 595Q1122 617 1195 594" fill="none" stroke="#AED3C3" stroke-width="4" opacity=".5"/>
+<g transform="translate(1100 571)">
+ <g stroke="#BA5569" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-7 29L-16 64L13 72"/><g class="idle-foot"><path d="M18 35L58 59L88 49"/></g></g>
+ <g class="rest-body"><g transform="translate(-91 -165) scale(.225)"><use xlink:href="#shrimp"/></g>
+  <!-- A relaxed eyelid and smile. -->
+  <path d="M44-88Q60-98 75-87" fill="none" stroke="#293B43" stroke-width="4" stroke-linecap="round"/>
+  <path d="M61-56Q72-48 81-57" fill="none" stroke="#A94458" stroke-width="3" stroke-linecap="round"/>
+  <g class="sip"><path d="M52-12Q81 9 91-18" fill="none" stroke="#E76B82" stroke-width="11" stroke-linecap="round"/>
+   <g transform="translate(101 -36)"><use xlink:href="#coffee"/><g stroke="#B6B4A8" stroke-width="3" stroke-linecap="round" fill="none"><path class="steam" d="M-10-15Q-20-26-10-37"/><path class="steam two" d="M3-15Q14-27 3-40"/><path class="steam three" d="M13-14Q4-25 13-36"/></g></g>
+  </g>
+ </g>
+</g>
+<!-- Side table, plant, and a little reminder. -->
+<path d="M1259 615V678M1302 615V678" stroke="#BCA68C" stroke-width="7" stroke-linecap="round"/><rect x="1239" y="606" width="81" height="12" rx="6" fill="#D8C7AD"/>
+<rect x="1263" y="574" width="31" height="32" rx="6" fill="#D8DFCD"/><path d="M1278 576V532" stroke="#7E9D80" stroke-width="3"/><path d="M1278 558Q1249 553 1256 534Q1278 535 1278 558M1279 548Q1304 545 1303 526Q1281 528 1279 548" fill="#8EAD8E"/>
+<g transform="translate(1195 397) rotate(6)"><rect width="96" height="54" rx="10" fill="#FFFDF7" stroke="#E4E4D9"/><text x="48" y="24" text-anchor="middle" font-size="13" fill="#7E9386">先喝一口</text><text x="48" y="42" text-anchor="middle" font-size="11" fill="#A9ADA1">再说 ☕</text></g>
+<!-- Quiet status line. -->
+<rect x="85" y="758" width="1270" height="73" rx="20" fill="#FFFFFF" opacity=".64"/>
+<rect x="108" y="780" width="182" height="5" rx="2.5" fill="#EBE5DC"/><rect x="108" y="780" width="182" height="5" rx="2.5" fill="#E99085" class="progress"/>
+<text x="108" y="810" font-size="12" fill="#9C9D94" class="mono">1 worker · no rush</text>
+<text x="341" y="800" font-size="16" fill="#7C8980">正在慢慢搬会话…</text>
+<text x="1328" y="800" text-anchor="end" font-size="14" fill="#9CA397">咖啡线程：持续运行中</text>
+</svg>

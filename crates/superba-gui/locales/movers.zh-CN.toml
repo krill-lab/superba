@@ -1,0 +1,33 @@
+# superba-gui UI texts (Simplified Chinese), area "movers". Keys mirror movers.en.toml.
+# The scene texts are the artwork's own copy.
+
+[movers]
+title.migrate = "正在迁移会话"
+title.restore = "正在把会话放回原处"
+title.stopping = "正在停止迁移"
+preparing = "正在准备…"
+elapsed = "已用时 {time}"
+now = "当前：{name}"
+stop = "停止并撤销"
+stop_hint = "停止后，已迁移的会话会全部放回原处，不做任何改动。"
+stopping = "正在停止：已迁移的会话正在全部放回原处…"
+no_stop.restore = "这一步无法安全地中途停止，会自行完成。"
+no_stop.finishing = "马上就好：正在写入并检查会话索引，这一步无法安全停止。"
+keep_open = "完成前请不要关闭 Superba。"
+
+[movers.scene]
+title = "会话慢慢搬，咖啡慢慢喝。"
+subtitle = "一只负责进度，一只负责松弛。"
+low_concurrency = "LOW CONCURRENCY"
+thread_01 = "THREAD 01"
+thread_02 = "THREAD 02"
+carrying = "搬运中"
+resting = "休息中"
+to_move = "待搬运"
+delivered = "会话归位"
+crate = "会话"
+note_1 = "先喝一口"
+note_2 = "再说"
+workers = "1 worker · no rush"
+status = "正在慢慢搬会话…"
+coffee = "咖啡线程：持续运行中"

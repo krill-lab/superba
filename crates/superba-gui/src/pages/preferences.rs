@@ -231,8 +231,21 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
             cx,
             &cx.tr.t("settings.background.title"),
             &cx.tr.t("settings.background.desc"),
-            true,
+            false,
             |ui| background_swatches(ui, cx, &mut settings.background),
+        );
+        row(
+            ui,
+            cx,
+            &cx.tr.t("prefs.motion.title"),
+            &cx.tr.t("prefs.motion.desc"),
+            true,
+            |ui| {
+                ui.add(Toggle::new(
+                    &mut settings.reduce_motion,
+                    cx.tr.t("prefs.motion.title"),
+                ));
+            },
         );
     });
 
