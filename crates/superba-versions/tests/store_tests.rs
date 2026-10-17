@@ -35,6 +35,8 @@ fn endpoints(mock: &Mock) -> Endpoints {
         packages_only_from_releases: false,
         app: mock.url("/app"),
         appcast: mock.url("/appcast"),
+        store_mirror: mock.url("/store-mirror"),
+        store_cdn_extra: None,
     }
 }
 

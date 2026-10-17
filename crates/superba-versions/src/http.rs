@@ -89,6 +89,25 @@ pub(crate) async fn get_text(
         .map_err(|_| Error::parse(url, "not UTF-8"))
 }
 
+/// `Content-Length` of a `HEAD` answer, best effort.
+pub(crate) async fn content_length(
+    client: &reqwest::Client,
+    url: &str,
+    timeout: Duration,
+) -> Option<u64> {
+    let resp = tokio::time::timeout(timeout, client.head(url).send())
+        .await
+        .ok()?
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    resp.headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse().ok())
+}
+
 /// The `Location` of a redirect answer (client built without redirects).
 pub(crate) async fn redirect_target(
     client: &reqwest::Client,

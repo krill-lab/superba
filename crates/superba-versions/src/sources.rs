@@ -43,6 +43,11 @@ pub struct Endpoints {
     pub app: String,
     /// Sparkle appcast (macOS).
     pub appcast: String,
+    /// The Microsoft Store link resolver (store.rg-adguard.net), the Windows
+    /// app's alternative source.
+    pub store_mirror: String,
+    /// Tests: a base whose links are accepted like the Microsoft Store CDN's.
+    pub store_cdn_extra: Option<String>,
 }
 
 impl Default for Endpoints {
@@ -56,6 +61,8 @@ impl Default for Endpoints {
             packages_only_from_releases: false,
             app: "https://persistent.oaistatic.com/codex-app-prod".into(),
             appcast: "https://updates.oaistatic.com/codex/app/appcast".into(),
+            store_mirror: crate::winapp::mirror::STORE_MIRROR_BASE.into(),
+            store_cdn_extra: None,
         }
     }
 }

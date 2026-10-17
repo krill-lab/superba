@@ -23,6 +23,11 @@
 //!   sha256), Sparkle appcast (macOS), Windows Store JSON; verified Linux
 //!   package downloads into `<data dir>/downloads/`. Never runs privileged
 //!   commands.
+//! - **Windows app package** ([`winapp`]): the MSIX from OpenAI's server or,
+//!   as the alternative, from the Microsoft Store CDN through the
+//!   store.rg-adguard.net resolver; resumable with progress and cancel, size /
+//!   SHA-1 / manifest identity checked, framework dependencies that are not
+//!   installed fetched too. Opening it (App Installer) is the caller's.
 //! - **Local standalone installs** ([`standalone`]) for the CLI on `PATH`.
 //!
 //! Compatibility tiers: [`compat_tier`] ([`CompatTier::of`], spike B6).
@@ -37,6 +42,7 @@ pub mod selfupdate;
 pub mod sources;
 pub mod standalone;
 pub mod store;
+pub mod winapp;
 mod xml;
 
 use std::path::{Path, PathBuf};
@@ -47,8 +53,9 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use superba_core::{
     AppDownloadReport, AppOs, AppPackage, AppPackageKind, AppRelease, CodexRelease, CodexVersion,
-    CompatTier, DataDir, Error, FeedSource, InstallReport, InstallTarget, NetworkSettings, Result,
-    StandaloneLayout, StoredCodex, Timestamp, VersionStore, local_codex_package_target,
+    CompatTier, DataDir, DownloadProgressSink, Error, FeedSource, InstallReport, InstallTarget,
+    NetworkSettings, Result, StandaloneLayout, StoredCodex, Timestamp, VersionStore,
+    WindowsAppRequest, local_codex_package_target,
 };
 
 use crate::http::Checksum;
@@ -596,7 +603,19 @@ impl HttpVersionStore {
                 )
                 .await
                 .ok();
-                app::parse_windows(&store, release.as_deref()).map(Some)
+                let mut r = app::parse_windows(&store, release.as_deref())?;
+                r.packages.retain(|p| self.official_app_url(&p.url));
+                // The size of this machine's package (for the download button):
+                // windows-release.json does not list it.
+                let arch = winapp::msix_arch(&self.arch);
+                for p in r
+                    .packages
+                    .iter_mut()
+                    .filter(|p| Some(p.arch.to_ascii_lowercase().as_str()) == arch)
+                {
+                    p.size = http::content_length(&client, &p.url, METADATA_TIMEOUT).await;
+                }
+                Ok(Some(r))
             }
         }
     }
@@ -845,6 +864,14 @@ impl VersionStore for HttpVersionStore {
         )
         .await?;
         Ok(report(package, dest, got))
+    }
+
+    async fn download_windows_app(
+        &self,
+        request: WindowsAppRequest,
+        progress: Arc<dyn DownloadProgressSink>,
+    ) -> Result<AppDownloadReport> {
+        self.windows_app_impl(request, progress).await
     }
 
     async fn install_standalone(

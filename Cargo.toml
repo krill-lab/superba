@@ -76,6 +76,9 @@ semver = "1"
 
 # --- crypto, ids
 sha2 = "0.11"
+# SHA-1 of Windows Store packages (the checksum the Store CDN and its resolver
+# publish); already in the lock file through tungstenite
+sha1 = "0.11"
 chacha20poly1305 = { version = "0.11", features = ["zeroize"] }
 zeroize = { version = "1.9", features = ["derive", "std"] }
 uuid = { version = "1", features = ["v4", "serde"] }

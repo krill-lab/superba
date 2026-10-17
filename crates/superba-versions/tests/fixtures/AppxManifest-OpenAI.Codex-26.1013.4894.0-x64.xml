@@ -1,0 +1,123 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3" xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5" xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10" xmlns:uap11="http://schemas.microsoft.com/appx/manifest/uap/windows10/11" xmlns:uap15="http://schemas.microsoft.com/appx/manifest/uap/windows10/15" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10" xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2" xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4" xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5" xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6" xmlns:virtualization="http://schemas.microsoft.com/appx/manifest/virtualization/windows10" IgnorableNamespaces="uap uap3 uap5 desktop uap11 uap15 rescap com desktop2 desktop4 desktop5 desktop6 virtualization" xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest">
+  <Identity Name="OpenAI.Codex" ProcessorArchitecture="x64" Version="26.1013.4894.0" Publisher="CN=50BDFD77-8903-4850-9FFE-6E8522F64D5B" />
+  <Properties>
+    <DisplayName>ChatGPT</DisplayName>
+    <PublisherDisplayName>OpenAI</PublisherDisplayName>
+    <Logo>assets/icon.png</Logo>
+    <uap15:DependencyTarget>true</uap15:DependencyTarget>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <virtualization:FileSystemWriteVirtualization>
+      <virtualization:ExcludedDirectories>
+        <virtualization:ExcludedDirectory>$(KnownFolder:LocalAppData)\OpenAI</virtualization:ExcludedDirectory>
+      </virtualization:ExcludedDirectories>
+    </virtualization:FileSystemWriteVirtualization>
+    <virtualization:RegistryWriteVirtualization>
+      <virtualization:ExcludedKeys>
+        <virtualization:ExcludedKey>HKEY_CURRENT_USER\Software\Google\Chrome\NativeMessagingHosts</virtualization:ExcludedKey>
+      </virtualization:ExcludedKeys>
+    </virtualization:RegistryWriteVirtualization>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-US" />
+  </Resources>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+    <rescap:Capability Name="packagedServices" />
+    <rescap:Capability Name="localSystemServices" />
+    <Capability Name="internetClient" />
+    <uap11:Capability Name="graphicsCaptureProgrammatic" />
+    <uap11:Capability Name="graphicsCaptureWithoutBorder" />
+  </Capabilities>
+  <Extensions>
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="app/ChatGPT.exe">
+        <desktop2:Rule Direction="in" IPProtocol="TCP" LocalPortMin="1455" LocalPortMax="1455" Profile="all" />
+        <desktop2:Rule Direction="in" IPProtocol="TCP" LocalPortMin="1457" LocalPortMax="1457" Profile="all" />
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="app/resources/codex.exe">
+        <desktop2:Rule Direction="in" IPProtocol="TCP" LocalPortMin="1455" LocalPortMax="1455" Profile="all" />
+        <desktop2:Rule Direction="in" IPProtocol="TCP" LocalPortMin="1457" LocalPortMax="1457" Profile="all" />
+        <!-- Keep proxy ranges aligned with https://github.com/openai/codex-internal/pull/4267 -->
+        <desktop2:Rule Direction="in" IPProtocol="TCP" LocalPortMin="3128" LocalPortMax="3159" Profile="all" />
+        <desktop2:Rule Direction="in" IPProtocol="TCP" LocalPortMin="8081" LocalPortMax="8112" Profile="all" />
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+  </Extensions>
+  <Applications>
+    <Application Id="App" Executable="app/ChatGPT.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ChatGPT" Description="ChatGPT" Square44x44Logo="assets/Square44x44Logo.png" Square150x150Logo="assets/Square150x150Logo.png" BackgroundColor="#3143FF"></uap:VisualElements>
+      <Extensions>
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="app\resources\plugins\openai-bundled\plugins\chrome\extension-host\windows\x64\extension-host.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="codex-chrome-native-host.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+        <desktop6:Extension Category="windows.service" Executable="app/resources/codex-windows-sandbox-service.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop6:Service Name="CodexSandboxService.OpenAI.Codex" StartupType="auto" StartAccount="localSystem" />
+        </desktop6:Extension>
+        <uap5:Extension Category="windows.startupTask" Executable="app/ChatGPT.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:StartupTask TaskId="App" Enabled="true" DisplayName="ChatGPT" />
+        </uap5:Extension>
+        <uap3:Extension Category="windows.appExtension">
+          <uap3:AppExtension Name="com.microsoft.windows.copilotkeyprovider" Id="App" PublicFolder="assets" DisplayName="ChatGPT" Description="ChatGPT" />
+        </uap3:Extension>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:SurrogateServer DisplayName="ChatGPT">
+              <com:Class Id="d28d30e7-17f3-41d9-93f0-9bae6dc4884b" Path="app/resources/native/windows-account.node" ThreadingModel="STA" />
+            </com:SurrogateServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop4:Extension Category="windows.fileExplorerContextMenus">
+          <desktop4:FileExplorerContextMenus>
+            <desktop5:ItemType Type="Directory">
+              <desktop5:Verb Id="OpenProjectInCodex" Clsid="d28d30e7-17f3-41d9-93f0-9bae6dc4884b" />
+            </desktop5:ItemType>
+          </desktop4:FileExplorerContextMenus>
+        </desktop4:Extension>
+        <uap3:Extension Category="windows.protocol">
+          <uap3:Protocol Name="codex" Parameters="--single-argument %1" />
+        </uap3:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="spreadsheet" desktop2:AllowSilentDefaultTakeOver="true">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.csv</uap:FileType>
+              <uap:FileType>.docx</uap:FileType>
+              <uap:FileType>.pptx</uap:FileType>
+              <uap:FileType>.tsv</uap:FileType>
+              <uap:FileType>.xls</uap:FileType>
+              <uap:FileType>.xlsm</uap:FileType>
+              <uap:FileType>.xlsx</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="codex-file">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.skill</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="CodexCoreCommandRunner" Executable="app/resources/codex-command-runner.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ChatGPT Core command runner" Description="ChatGPT" Square44x44Logo="assets/Square44x44Logo.png" Square150x150Logo="assets/Square150x150Logo.png" BackgroundColor="#3143FF" AppListEntry="none" />
+      <Extensions>
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="app/resources/codex-command-runner.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="codex-core-command-runner.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <mp:PhoneIdentity PhoneProductId="53bf120e-f20a-474e-892d-d87c803a0e39" PhonePublisherId="7d1e4745-d434-4fde-a9ef-c9c97f199413" />
+</Package>
