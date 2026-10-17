@@ -28,6 +28,7 @@ pub mod install;
 pub mod launch;
 pub mod launcher;
 pub mod owner;
+pub mod package;
 pub mod procs;
 pub mod quit;
 pub mod renderer;
@@ -1039,6 +1040,26 @@ impl AppController for DesktopAppController {
         tokio::task::spawn_blocking(move || codexbin::install_kind(&binary, &store, &installs))
             .await
             .map_err(blocking_err)
+    }
+
+    async fn installed_packages(&self) -> Result<Vec<superba_core::InstalledPackage>> {
+        tokio::task::spawn_blocking(package::installed_packages)
+            .await
+            .map_err(blocking_err)
+    }
+
+    async fn verify_package_signature(&self, path: &Path) -> Result<superba_core::PackageSigner> {
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || package::verify_signature(&path))
+            .await
+            .map_err(blocking_err)?
+    }
+
+    async fn open_package_installer(&self, path: &Path) -> Result<()> {
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || package::open_with_default_handler(&path))
+            .await
+            .map_err(blocking_err)?
     }
 }
 

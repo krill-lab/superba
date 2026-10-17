@@ -836,7 +836,7 @@ pub fn candidate_paths(env: &dyn EnvSource, home_dir: &Path) -> Vec<PathBuf> {
 /// Registry key (under `HKCU` and `HKLM\\SOFTWARE\\Classes`) that lists the registered
 /// MSIX packages by full name, each with a `PackageRootFolder` value.
 #[cfg(target_os = "windows")]
-const APPX_REPOSITORY_KEY: &str =
+pub(crate) const APPX_REPOSITORY_KEY: &str =
     "Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\Repository\\Packages";
 
 /// Split an MSIX package full name (`Name_Version_Arch_ResourceId_PublisherId`) into
