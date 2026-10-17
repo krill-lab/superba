@@ -34,11 +34,30 @@ function Msi($verb, $msi, $log) {
     Fail "msiexec $verb exited with $($p.ExitCode)"
   }
 }
+# Superba's entries in Apps & features: the products Windows Installer has for
+# the UpgradeCode of packaging/windows/superba.wxs. A per-user MSI is listed from
+# the installer's own registration (no HKCU ...\Uninstall key is written for it).
+$upgradeCode = '{669520BE-07D0-496D-8173-085AA3DEE133}'
+function ComGet($obj, $name, [object[]]$params) {
+  $obj.GetType().InvokeMember($name, [Reflection.BindingFlags]::GetProperty, $null, $obj, $params)
+}
 function ArpEntries {
-  Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
-    ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'Superba *' }
+  $wi = New-Object -ComObject WindowsInstaller.Installer
+  # The pipeline enumerates the returned StringList: one product code each.
+  foreach ($code in @(ComGet $wi 'RelatedProducts' @($upgradeCode))) {
+    [pscustomobject]@{
+      ProductCode    = $code
+      DisplayName    = ComGet $wi 'ProductInfo' @($code, 'ProductName')
+      DisplayVersion = ComGet $wi 'ProductInfo' @($code, 'VersionString')
+    }
+  }
 }
 function UserPath { [Environment]::GetEnvironmentVariable('Path', 'User') }
+# The user PATH folders without a trailing '\': the MSI writes [INSTALLFOLDER],
+# which always ends in one (Windows finds programs either way).
+function UserPathDirs {
+  @((UserPath) -split ';' | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') })
+}
 function RouterProcs {
   Get-Process -Name superba-router -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -and $_.Path.StartsWith($installDir, [StringComparison]::OrdinalIgnoreCase) }
@@ -53,9 +72,9 @@ Msi '/i' $msi1 (Join-Path $work 'install.log')
 foreach ($f in $files) { Check (Test-Path (Join-Path $installDir $f)) "installed $f" }
 $v = & (Join-Path $installDir 'spb.exe') --version
 Check ($LASTEXITCODE -eq 0 -and "$v" -match '\d+\.\d+\.\d+') "spb --version ($v)"
-Check ((UserPath) -split ';' -contains $installDir) 'install folder is on the user PATH'
+Check ((UserPathDirs) -contains $installDir) 'install folder is on the user PATH'
 $arp = @(ArpEntries)
-Check ($arp.Count -eq 1) 'one Add/Remove Programs entry'
+Check ($arp.Count -eq 1) "one Add/Remove Programs entry ($($arp | ForEach-Object { "$($_.DisplayName) $($_.ProductCode)" }))"
 Check ($arp[0].DisplayName -eq "Superba $BaseVersion") "ARP name ($($arp[0].DisplayName))"
 Check ($arp[0].DisplayVersion -eq $BaseVersion.Split('-')[0]) "ARP version ($($arp[0].DisplayVersion))"
 $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Superba.lnk'
@@ -80,7 +99,7 @@ $arp = @(ArpEntries)
 Check ($arp.Count -eq 1) 'upgrade leaves one ARP entry'
 Check ($arp[0].DisplayName -eq "Superba $UpgradeVersion") "ARP name after the upgrade ($($arp[0].DisplayName))"
 foreach ($f in $files) { Check (Test-Path (Join-Path $installDir $f)) "after the upgrade: $f" }
-Check (@((UserPath) -split ';' | Where-Object { $_ -eq $installDir }).Count -eq 1) 'PATH has the folder exactly once'
+Check (@(UserPathDirs | Where-Object { $_ -eq $installDir }).Count -eq 1) 'PATH has the folder exactly once'
 Check ($null -ne (Get-ItemProperty $runKey).SuperbaRouter) 'upgrade keeps the login-startup entry'
 Check (@(RouterProcs).Count -eq 0) 'upgrade stopped the router of the install'
 & (Join-Path $installDir 'spb.exe') --version | Out-Null
@@ -96,7 +115,7 @@ Start-Sleep -Seconds 3
 Msi '/x' $msi3 (Join-Path $work 'uninstall.log')
 Check (-not (Test-Path (Join-Path $installDir 'spb.exe'))) 'spb.exe removed'
 Check ((-not (Test-Path $installDir)) -or @(Get-ChildItem $installDir -Force).Count -eq 0) 'install folder is gone'
-Check (-not ((UserPath) -split ';' -contains $installDir)) 'PATH entry removed'
+Check (-not ((UserPathDirs) -contains $installDir)) 'PATH entry removed'
 Check (@(ArpEntries).Count -eq 0) 'ARP entry removed'
 Check (-not (Test-Path $lnk)) 'Start menu shortcut removed'
 Check ($null -eq (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).SuperbaRouter) 'login-startup entry removed'
