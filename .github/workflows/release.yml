@@ -483,8 +483,15 @@ jobs:
             fi
             gh release upload "$RELEASE_TAG" "${archives[@]}" SHA256SUMS.txt --clobber
           else
-            prerelease=()
-            [[ "$RELEASE_VERSION" == *-* ]] && prerelease=(--prerelease)
-            gh release create "$RELEASE_TAG" --draft "${prerelease[@]}" --generate-notes --verify-tag \
+            # Created as a draft first so the release only becomes visible with
+            # every asset attached.
+            gh release create "$RELEASE_TAG" --draft --generate-notes --verify-tag \
               "${archives[@]}" SHA256SUMS.txt
+          fi
+          # Publish: vX.Y.Z becomes the latest release; -alpha/-beta/-rc tags
+          # become pre-releases (never "latest").
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --latest
           fi
