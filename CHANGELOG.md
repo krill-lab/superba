@@ -241,6 +241,14 @@ back to the official ChatGPT login.
   environment is configured; the router inside `Superba.app`), Windows x86_64;
   `superba-router` ships next to `superba` and `spb` everywhere; third-party
   license notices in every archive.
+- **Windows without extras**: the programs link the C runtime statically (no
+  VC++ redistributable; the release checks their imports), and the GUI draws with
+  Direct3D 12, on WARP, the software rasterizer, where there is no 3D driver (VMs,
+  remote desktops; Linux and macOS keep OpenGL). A window that cannot open or a
+  crash is explained in a message box and in `logs/superba-gui.log` /
+  `logs/superba-crash.log` in the data directory, never a silent exit. Paths are
+  shown without the `\\?\` prefix, and the ChatGPT version as release version
+  with the package version labeled (`26.1013.40934 (package 26.1013.4894.0)`).
 
 ### Security
 
