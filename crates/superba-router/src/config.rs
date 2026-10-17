@@ -208,6 +208,14 @@ pub struct Tuning {
     pub pool_max_idle_per_host: Option<usize>,
     /// Idle upstream connections are closed after this long.
     pub pool_idle_timeout_secs: u64,
+    /// An idle keep-alive connection from Codex is closed after this long (also
+    /// the time a client gets to send a request's headers). Longer than HTTP
+    /// clients keep idle connections (reqwest / hyper: 90 s), so Codex never
+    /// reuses a connection the router has just closed.
+    pub inbound_idle_timeout_secs: u64,
+    /// While the inbound connection budget is nearly full, a connection idle
+    /// this long is closed (see [`crate::limits`]).
+    pub pressure_idle_timeout_ms: u64,
 }
 
 impl Default for Tuning {
@@ -227,6 +235,8 @@ impl Default for Tuning {
             busy_wait_ms: 2_000,
             pool_max_idle_per_host: None,
             pool_idle_timeout_secs: 90,
+            inbound_idle_timeout_secs: 150,
+            pressure_idle_timeout_ms: 5_000,
         }
     }
 }
@@ -298,6 +308,8 @@ impl RouterConfig {
             || t.breaker_base_ms == 0
             || t.probe_timeout_ms == 0
             || t.pool_idle_timeout_secs == 0
+            || t.inbound_idle_timeout_secs == 0
+            || t.pressure_idle_timeout_ms == 0
         {
             return Err(Error::invalid("router timeouts must be positive"));
         }

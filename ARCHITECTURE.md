@@ -470,9 +470,14 @@ soft limit `L` it finds at start (after raising it towards 8192; the LaunchAgent
 plist sets `SoftResourceLimits` / `HardResourceLimits` `NumberOfFiles` and the
 systemd unit `LimitNOFILE` as well): `L/4` admissions (4 to 512) for proxied
 requests (until the response body ends) and WebSocket sessions, at most `L/2`
-inbound connections (at the cap the accepted connection waits for a place, open
-connections stop keep-alive, idle ones close after 30 s anyway), and a capped
-idle pool per upstream host. A request that gets no admission within
+inbound connections (at the cap the accepted connection waits for a place and
+open connections stop keep-alive), and a capped idle pool per upstream host. An
+idle keep-alive connection closes after `Tuning::inbound_idle_timeout_secs`
+(150 s, longer than HTTP clients such as Codex's keep idle connections, so a
+client never reuses one the router has just closed); only while 90 % of the
+connection budget is in use do idle connections close after
+`Tuning::pressure_idle_timeout_ms` (5 s), one at a time until the pressure is
+gone, never one with a response in flight. A request that gets no admission within
 `Tuning::busy_wait_ms` (2 s) is answered 503 `local_router_busy` with
 `Connection: close` and `Retry-After`. `EMFILE` / `ENFILE` met while accepting,
 connecting upstream, probing or opening the request log is local: the request

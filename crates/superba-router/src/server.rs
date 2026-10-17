@@ -22,9 +22,7 @@ use tracing::Instrument;
 use crate::admin::{self, ADMIN_PREFIX, VERSION};
 use crate::config::{ROUTER_BASE_PATH, ROUTER_V1_PATH, RouterConfig, RouterSecrets};
 use crate::forward::{local_busy, router_error};
-use crate::limits::{
-    Budget, Busy, ConnSlot, INBOUND_IDLE_TIMEOUT, LOCAL_BUSY_CODE, Limits, Place, file_limit_in,
-};
+use crate::limits::{Budget, Busy, ConnSlot, LOCAL_BUSY_CODE, Limits, Place, file_limit_in};
 use crate::paths::RouterPaths;
 use crate::probe::health_loop;
 use crate::runtime::RuntimeInfo;
@@ -257,20 +255,111 @@ impl RouterServer {
 }
 
 /// Per-connection state shared by its task and its requests.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct ConnState {
+    /// When the connection was accepted (the base of `idle_since_ms`).
+    opened: Instant,
     /// Requests received on it.
     requests: AtomicU64,
+    /// Responses not finished yet (their body still streams).
+    in_flight: AtomicU64,
+    /// Milliseconds after `opened` when the last response finished.
+    idle_since_ms: AtomicU64,
     /// Its next response closes it: it was asked to give its place back
     /// before its first request had been read.
     close_after: AtomicBool,
+}
+
+impl ConnState {
+    fn new() -> Self {
+        Self {
+            opened: Instant::now(),
+            requests: AtomicU64::new(0),
+            in_flight: AtomicU64::new(0),
+            idle_since_ms: AtomicU64::new(0),
+            close_after: AtomicBool::new(false),
+        }
+    }
+
+    /// How long the connection has had no response in flight (zero while
+    /// one is).
+    fn idle_for(&self) -> Duration {
+        if self.in_flight.load(Ordering::Acquire) > 0 {
+            return Duration::ZERO;
+        }
+        let since = Duration::from_millis(self.idle_since_ms.load(Ordering::Acquire));
+        self.opened.elapsed().saturating_sub(since)
+    }
+
+    fn response_done(&self) {
+        let ms = u64::try_from(self.opened.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.idle_since_ms.store(ms, Ordering::Release);
+        self.in_flight.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// A response body that tells its connection when it is finished.
+struct DoneBody {
+    inner: RespBody,
+    state: Option<Arc<ConnState>>,
+}
+
+impl DoneBody {
+    fn finish(&mut self) {
+        if let Some(state) = self.state.take() {
+            state.response_done();
+        }
+    }
+}
+
+impl Drop for DoneBody {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
+impl http_body::Body for DoneBody {
+    type Data = bytes::Bytes;
+    type Error = crate::state::BoxError;
+
+    fn poll_frame(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<std::result::Result<http_body::Frame<Self::Data>, Self::Error>>>
+    {
+        let polled = std::pin::Pin::new(&mut self.inner).poll_frame(cx);
+        if matches!(polled, std::task::Poll::Ready(None | Some(Err(_)))) {
+            self.finish();
+        }
+        polled
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+/// How often a connection in short-idle mode checks whether to close.
+fn pressure_tick(idle: Duration) -> Duration {
+    (idle / 2).clamp(Duration::from_millis(50), Duration::from_secs(1))
 }
 
 /// Serve one inbound connection until it closes or the router stops.
 async fn serve_connection(shared: Arc<Shared>, stream: TcpStream, slot: ConnSlot) {
     let mut conn_stop = shared.shutdown.subscribe();
     let mut shed = shared.limits.shed_signal();
-    let state = Arc::new(ConnState::default());
+    let mut pressure = shared.limits.pressure_signal();
+    let tuning = shared.current().config.tuning.clone();
+    let idle_timeout = Duration::from_secs(tuning.inbound_idle_timeout_secs);
+    let pressure_idle = Duration::from_millis(tuning.pressure_idle_timeout_ms);
+    let state = Arc::new(ConnState::new());
+    // Declared before the connection so it is released after the connection
+    // (and its place) is gone.
+    let mut _pressure_close = None;
     let (s, st) = (shared.clone(), state.clone());
     let service = service_fn(move |mut req: Request<Incoming>| {
         let (s, st) = (s.clone(), st.clone());
@@ -278,6 +367,7 @@ async fn serve_connection(shared: Arc<Shared>, stream: TcpStream, slot: ConnSlot
         // keeps it after this task ends.
         req.extensions_mut().insert(slot.clone());
         st.requests.fetch_add(1, Ordering::Relaxed);
+        st.in_flight.fetch_add(1, Ordering::AcqRel);
         async move {
             let mut resp = dispatch(s, req).await;
             if st.close_after.load(Ordering::Relaxed)
@@ -286,18 +376,27 @@ async fn serve_connection(shared: Arc<Shared>, stream: TcpStream, slot: ConnSlot
                 resp.headers_mut()
                     .insert(CONNECTION, HeaderValue::from_static("close"));
             }
+            let resp = resp.map(|inner| {
+                DoneBody {
+                    inner,
+                    state: Some(st),
+                }
+                .boxed_unsync()
+            });
             Ok::<_, Infallible>(resp)
         }
     });
     let conn = http1::Builder::new()
         .keep_alive(true)
-        // Idle keep-alive connections give their descriptor back.
+        // Idle keep-alive connections give their descriptor back, later than
+        // HTTP clients drop idle connections themselves (crate::limits).
         .timer(TokioTimer::new())
-        .header_read_timeout(INBOUND_IDLE_TIMEOUT)
+        .header_read_timeout(idle_timeout)
         .serve_connection(TokioIo::new(stream), service)
         .with_upgrades();
     tokio::pin!(conn);
     let mut shedding = false;
+    let mut short_idle = false;
     loop {
         tokio::select! {
             r = conn.as_mut() => {
@@ -318,15 +417,43 @@ async fn serve_connection(shared: Arc<Shared>, stream: TcpStream, slot: ConnSlot
             // cut.
             changed = shed.changed(), if !shedding => {
                 shedding = true;
-                if changed.is_ok() {
-                    if state.requests.load(Ordering::Relaxed) > 0 {
+                if changed.is_ok() && close_now(&state) {
+                    conn.as_mut().graceful_shutdown();
+                }
+            }
+            // The budget is nearly full: the short idle timeout applies while
+            // the pressure lasts.
+            changed = pressure.changed(), if !shedding && !short_idle => {
+                short_idle = changed.is_ok();
+            }
+            () = tokio::time::sleep(pressure_tick(pressure_idle)), if short_idle && !shedding => {
+                if !shared.limits.under_pressure() {
+                    short_idle = false;
+                } else if state.idle_for() >= pressure_idle
+                    && let Some(claim) = shared.limits.claim_pressure_close()
+                {
+                    tracing::debug!("closing an idle connection: the inbound budget is nearly full");
+                    _pressure_close = Some(claim);
+                    shedding = true;
+                    if close_now(&state) {
                         conn.as_mut().graceful_shutdown();
-                    } else {
-                        state.close_after.store(true, Ordering::Relaxed);
                     }
                 }
             }
         }
+    }
+}
+
+/// Whether a connection asked to give its place back can be shut down
+/// gracefully now (an idle one then closes at once, a busy one after its
+/// response). One whose first request was not read yet is instead closed
+/// after answering it: a graceful shutdown would drop that request.
+fn close_now(state: &ConnState) -> bool {
+    if state.requests.load(Ordering::Relaxed) > 0 {
+        true
+    } else {
+        state.close_after.store(true, Ordering::Relaxed);
+        false
     }
 }
 

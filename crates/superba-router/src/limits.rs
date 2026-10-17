@@ -18,8 +18,15 @@
 //!   connection just accepted waits for a place (further ones wait in the
 //!   listen backlog) and the open connections are asked to stop keep-alive:
 //!   idle ones close at once, busy ones after their response, nothing in
-//!   flight is cut. An upgraded WebSocket keeps its connection's place. Idle
-//!   keep-alive connections are also closed after [`INBOUND_IDLE_TIMEOUT`].
+//!   flight is cut. An upgraded WebSocket keeps its connection's place.
+//! - **Idle keep-alive**: an idle connection from Codex is closed after
+//!   `Tuning::inbound_idle_timeout_secs` (150 s), longer than HTTP clients keep
+//!   idle connections (reqwest / hyper: 90 s), so Codex never sends a request
+//!   on a connection the router has just closed. Only while the inbound budget
+//!   is nearly full ([`Budget::pressure_connections`], 90 %) is a connection
+//!   idle for `Tuning::pressure_idle_timeout_ms` (5 s) closed, one at a time
+//!   until the pressure is gone; a connection with a response in flight is
+//!   never closed for being idle.
 //! - **Upstream pool**: idle connections per upstream host are capped
 //!   ([`Budget::pool_max_idle_per_host`]; none for WebSocket handshakes) and
 //!   closed after `Tuning::pool_idle_timeout_secs`.
@@ -57,9 +64,6 @@ pub const MAX_CONCURRENT_CAP: usize = 512;
 pub const MIN_CONCURRENT: usize = 4;
 /// Most idle upstream connections kept per host by default.
 pub const POOL_IDLE_CAP: usize = 16;
-/// Idle keep-alive connections from Codex are closed after this long (also the
-/// time a client gets to send a request's headers).
-pub const INBOUND_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// At most one warning per kind of local problem in this period.
 pub const WARN_EVERY: Duration = Duration::from_secs(60);
 /// `Retry-After` of a `local_router_busy` answer, in seconds.
@@ -79,6 +83,9 @@ pub struct Budget {
     pub max_concurrent: usize,
     /// Inbound connections open at once.
     pub max_connections: usize,
+    /// Open inbound connections from which idle ones are closed early (90 %
+    /// of [`Budget::max_connections`]).
+    pub pressure_connections: usize,
     /// Idle upstream connections kept per host (HTTP client).
     pub pool_max_idle_per_host: usize,
     /// How long a request waits for an admission.
@@ -114,10 +121,14 @@ impl Budget {
         let pool_max_idle_per_host = tuning
             .pool_max_idle_per_host
             .unwrap_or_else(|| (max_concurrent / 16).clamp(2, POOL_IDLE_CAP));
+        let max_connections = max_connections.max(1);
+        // 90 % of the cap, at least one place below it.
+        let below_cap = (max_connections / 10).max(1).min(max_connections - 1);
         Self {
             open_files_limit,
             max_concurrent,
             max_connections,
+            pressure_connections: max_connections - below_cap,
             pool_max_idle_per_host,
             busy_wait_ms: tuning.busy_wait_ms,
         }
@@ -208,6 +219,18 @@ pub(crate) struct ConnSlot {
     _permit: Arc<OwnedSemaphorePermit>,
 }
 
+/// A connection closing for the pressure ([`Limits::claim_pressure_close`]).
+#[derive(Debug)]
+pub(crate) struct PressureClose {
+    closing: Arc<AtomicU64>,
+}
+
+impl Drop for PressureClose {
+    fn drop(&mut self) {
+        self.closing.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
 /// No admission within the wait.
 #[derive(Debug)]
 pub(crate) struct Busy;
@@ -245,6 +268,11 @@ pub(crate) struct Limits {
     /// Bumped when an accepted connection waits for a place: open connections
     /// stop keep-alive (idle ones close now, busy ones after their response).
     shed: tokio::sync::watch::Sender<u64>,
+    /// Bumped when a connection opens with the budget nearly full: idle
+    /// connections switch to the short idle timeout while the pressure lasts.
+    pressure: tokio::sync::watch::Sender<u64>,
+    /// Connections closing for the pressure (not yet gone).
+    pressure_closing: Arc<AtomicU64>,
     busy: AtomicU64,
     file_limit: AtomicU64,
     last_busy_ms: AtomicU64,
@@ -260,6 +288,8 @@ impl Limits {
             admissions: Arc::new(Semaphore::new(budget.max_concurrent.max(1))),
             connections: Arc::new(Semaphore::new(budget.max_connections.max(1))),
             shed: tokio::sync::watch::channel(0).0,
+            pressure: tokio::sync::watch::channel(0).0,
+            pressure_closing: Arc::new(AtomicU64::new(0)),
             busy: AtomicU64::new(0),
             file_limit: AtomicU64::new(0),
             last_busy_ms: AtomicU64::new(0),
@@ -299,8 +329,41 @@ impl Limits {
                     .expect("the connection semaphore is never closed")
             }
         };
-        ConnSlot {
+        let slot = ConnSlot {
             _permit: Arc::new(permit),
+        };
+        if self.under_pressure() {
+            self.pressure.send_modify(|n| *n = n.wrapping_add(1));
+        }
+        slot
+    }
+
+    /// The inbound budget is nearly full ([`Budget::pressure_connections`]).
+    pub fn under_pressure(&self) -> bool {
+        self.open_connections() >= self.budget.pressure_connections
+    }
+
+    /// Signals that the inbound budget became nearly full (see
+    /// [`Limits::under_pressure`]).
+    pub fn pressure_signal(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.pressure.subscribe()
+    }
+
+    /// Permission to close one idle connection for the pressure: given only
+    /// while the connections not already closing for it still reach
+    /// [`Budget::pressure_connections`], so idle connections close one at a
+    /// time until the pressure is gone. Hold it until the connection is gone.
+    pub fn claim_pressure_close(&self) -> Option<PressureClose> {
+        let closing = self.pressure_closing.fetch_add(1, Ordering::AcqRel);
+        let open = u64::try_from(self.open_connections()).unwrap_or(u64::MAX);
+        let threshold = u64::try_from(self.budget.pressure_connections).unwrap_or(u64::MAX);
+        if open.saturating_sub(closing) >= threshold {
+            Some(PressureClose {
+                closing: self.pressure_closing.clone(),
+            })
+        } else {
+            self.pressure_closing.fetch_sub(1, Ordering::AcqRel);
+            None
         }
     }
 

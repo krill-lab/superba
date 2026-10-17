@@ -51,6 +51,16 @@ fn the_budget_follows_the_open_file_limit() {
     assert_eq!(n(Budget::new(Some(256), &custom)), (10, 15, 0, 50));
     custom.max_connections = None;
     assert_eq!(Budget::new(Some(256), &custom).max_connections, 40);
+    // Idle connections close early from 90 % of the connection budget.
+    assert_eq!(Budget::new(Some(256), &t).pressure_connections, 116);
+    assert_eq!(Budget::new(Some(8), &t).pressure_connections, 7);
+    custom.max_connections = Some(1);
+    assert_eq!(Budget::new(Some(256), &custom).pressure_connections, 1);
+    // Otherwise an idle connection stays open longer than HTTP clients keep
+    // idle connections (reqwest / hyper: 90 s), so Codex never reuses one the
+    // router has just closed.
+    assert!(t.inbound_idle_timeout_secs >= 120, "{t:?}");
+    assert!(t.pressure_idle_timeout_ms < 90_000, "{t:?}");
     // Every inbound connection, an upstream socket per admission and the idle
     // pools of four hosts leave room for the rest of the process.
     for limit in [256u64, 512, 1024, 4096, 8192, 65_536] {
@@ -356,6 +366,119 @@ async fn a_websocket_session_holds_an_admission_until_it_closes() {
     assert_eq!(st.local.busy, 2);
     up.set(Mode::Json(200, OK));
     assert_eq!(r.post(None, BODY).await.status(), 200);
+}
+
+/// One request on a raw keep-alive connection; returns the status.
+async fn raw_post(stream: &mut tokio::net::TcpStream, addr: std::net::SocketAddr) -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let request = format!(
+        "POST /backend-api/codex/responses HTTP/1.1\r\nHost: {addr}\r\n\
+         Authorization: Bearer {ROUTER_TOKEN}\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\n\r\n{BODY}",
+        BODY.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let n = stream.read(&mut chunk).await.unwrap();
+            assert!(
+                n > 0,
+                "closed before the answer: {:?}",
+                String::from_utf8_lossy(&buf)
+            );
+            buf.extend_from_slice(&chunk[..n]);
+            let text = String::from_utf8_lossy(&buf).to_ascii_lowercase();
+            let chunked = text.contains("transfer-encoding: chunked");
+            if text.contains(r#""ok":true}"#) && (!chunked || text.ends_with("0\r\n\r\n")) {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("an answer");
+    let text = String::from_utf8_lossy(&buf);
+    text.split_whitespace().nth(1).unwrap().parse().unwrap()
+}
+
+/// The router closed this idle connection.
+async fn closed(stream: &mut tokio::net::TcpStream) -> bool {
+    use tokio::io::AsyncReadExt;
+    let mut b = [0u8; 64];
+    match tokio::time::timeout(Duration::from_millis(20), stream.read(&mut b)).await {
+        Err(_) => false,
+        Ok(Ok(0) | Err(_)) => true,
+        Ok(Ok(n)) => panic!("unexpected bytes on an idle connection: {:?}", &b[..n]),
+    }
+}
+
+/// Idle keep-alive connections stay open well past the short pressure
+/// timeout while the inbound budget has room. Once it is nearly full (7 of
+/// 8), idle connections close after the short timeout, one at a time until
+/// the pressure is gone, and a connection whose response is still in flight
+/// is never closed for being idle.
+#[tokio::test]
+async fn idle_connections_close_early_only_while_the_inbound_budget_is_nearly_full() {
+    let up = upstream(Mode::Json(200, OK)).await;
+    let mut cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![line("a", up.base("/backend-api/codex"))],
+    )]);
+    cfg.tuning.max_connections = Some(8);
+    cfg.tuning.pressure_idle_timeout_ms = 200;
+    let r = Endpoint::of(&start(cfg).await);
+    let mut idle = Vec::new();
+    for _ in 0..6 {
+        let mut c = tokio::net::TcpStream::connect(r.addr).await.unwrap();
+        assert_eq!(raw_post(&mut c, r.addr).await, 200);
+        idle.push(c);
+    }
+    // 6 of 8 open: no pressure, so far past the short timeout nothing closes.
+    tokio::time::sleep(Duration::from_millis(900)).await;
+    for c in &mut idle {
+        assert!(
+            !closed(c).await,
+            "an idle connection closed without pressure"
+        );
+    }
+    // The 7th connection makes the budget nearly full; its answer is slow
+    // (longer than the short idle timeout) and must arrive.
+    up.set(Mode::Slow(Duration::from_millis(1_200), OK));
+    let mut busy = tokio::net::TcpStream::connect(r.addr).await.unwrap();
+    let addr = r.addr;
+    let slow = tokio::spawn(async move {
+        let status = raw_post(&mut busy, addr).await;
+        (status, busy)
+    });
+    let mut gone = vec![false; idle.len()];
+    let deadline = std::time::Instant::now() + Duration::from_millis(2_000);
+    while std::time::Instant::now() < deadline {
+        for (i, c) in idle.iter_mut().enumerate() {
+            if !gone[i] && closed(c).await {
+                gone[i] = true;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let n = gone.iter().filter(|g| **g).count();
+    assert_eq!(
+        n, 1,
+        "one idle connection closes, then the pressure is gone: {gone:?}"
+    );
+    let (status, mut busy) = slow.await.unwrap();
+    assert_eq!(status, 200, "a response in flight is not cut");
+    assert!(!closed(&mut busy).await, "and its connection stays");
+    // Back to 6 of 8: the rest stay open.
+    for (i, c) in idle.iter_mut().enumerate() {
+        if !gone[i] {
+            assert!(!closed(c).await);
+        }
+    }
+    let st = r.status().await;
+    healthy_and_unblamed(&st);
 }
 
 #[cfg(unix)]
