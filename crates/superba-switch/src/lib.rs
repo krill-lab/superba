@@ -64,11 +64,11 @@ use superba_core::{
 
 pub use machine::{Effect, Input, MachineState, PlanTicket, SwitchMachine};
 pub use planner::ENV_SUPERBA_TEST_SITES;
-/// Stopping the router processes of an install (the Windows MSI's removal step).
-pub use superba_versions::selfupdate::msi as installer;
 /// Build a user-defined OpenAI-compatible site from its Responses base URL (for the
 /// GUI and `spb site add`; validated with the prober's key-safety rules).
 pub use superba_net::new_compatible_site;
+/// Stopping the router processes of an install (the Windows MSI's removal step).
+pub use superba_versions::selfupdate::msi as installer;
 
 /// Resolve the real [`LocalContext`]: home from the OS, data dir from
 /// `SUPERBA_DATA_DIR` or the platform data directory
