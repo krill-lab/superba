@@ -101,17 +101,30 @@ impl SessionProgress {
         }
     }
 
+    /// What the counter of the current stage shows, `(n, of)`: sessions moved
+    /// while rewriting (or restoring) and once done, else the stage's own units
+    /// (sessions read, files backed up or checked, databases updated). UIs
+    /// name the stage with the numbers, and [`Self::fraction`] advances the
+    /// stage's share by exactly this ratio, so the two never disagree.
+    pub fn counter(&self) -> (u32, u32) {
+        match self.stage {
+            SessionStage::Moving | SessionStage::Done => (self.done, self.total),
+            _ => (self.step_done, self.step_total),
+        }
+    }
+
     /// Overall completion in `0.0..=1.0`: the finished stages' shares plus the
-    /// finished part of the current one. Never decreases while the stages
-    /// advance in order.
+    /// current stage's share times its [`Self::counter`] ratio. Never decreases
+    /// while the stages advance in order.
     pub fn fraction(&self) -> f32 {
         if self.stage == SessionStage::Done {
             return 1.0;
         }
-        let step = if self.step_total == 0 {
+        let (n, of) = self.counter();
+        let step = if of == 0 {
             0.0
         } else {
-            (self.step_done.min(self.step_total) as f32) / (self.step_total as f32)
+            (n.min(of) as f32) / (of as f32)
         };
         let mut before = 0.0;
         for (stage, weight) in Self::weights(self.direction) {

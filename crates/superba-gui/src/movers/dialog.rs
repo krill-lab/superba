@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use egui::{Align, Color32, Layout, Rect, Sense, Stroke, StrokeKind, Ui, vec2};
 use superba_core::{SessionDirection, SessionProgress, SessionStage};
-use superba_switch::session_events::{session_count, session_stage};
+use superba_switch::session_events::{session_count, session_percent, session_stage};
 
 use super::pose::Pose;
 use super::render::{self, SceneCache, View};
@@ -161,23 +161,21 @@ fn scene_card(
     );
 }
 
-/// "Migrated 120 of 600 sessions · 35%", the elapsed time, the bar, the stage
-/// and the session being worked on.
+/// The stage with its counter ("Reading 200 of 600 sessions", "Migrated 120
+/// of 600 sessions") and the overall percentage of the same weighting, the
+/// elapsed time, the bar, and the session being worked on.
 fn progress(ui: &mut Ui, cx: &Cx<'_>, p: &SessionProgress, elapsed: Duration) {
     let pal = cx.pal;
     let tr = cx.tr;
     let fraction = p.fraction();
     ui.horizontal(|ui| {
-        let count = if p.total == 0 && p.stage == SessionStage::Reading {
+        let count = if p.counter().1 == 0 && p.stage == SessionStage::Reading {
             tr.t("movers.preparing")
         } else {
             tr.text(&session_count(p))
         };
         ui.label(Text::strong(count, pal));
-        ui.label(Text::muted(
-            format!("· {}%", (fraction * 100.0).floor() as u32),
-            pal,
-        ));
+        ui.label(Text::muted(format!("· {}%", session_percent(p)), pal));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(Text::mono_muted(
                 tr.f("movers.elapsed", &[("time", &clock(elapsed))]),
@@ -186,10 +184,10 @@ fn progress(ui: &mut Ui, cx: &Cx<'_>, p: &SessionProgress, elapsed: Duration) {
         });
     });
     bar(ui, pal, fraction);
-    let stage = tr.text(&session_stage(p));
+    // The counter names the stage already.
     let line = match current(p) {
-        Some(name) => format!("{stage} · {}", tr.f("movers.now", &[("name", &name)])),
-        None => stage,
+        Some(name) => tr.f("movers.now", &[("name", &name)]),
+        None => tr.text(&session_stage(p)),
     };
     ui.add(egui::Label::new(Text::small(line, pal)).truncate());
 }

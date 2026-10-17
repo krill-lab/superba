@@ -36,13 +36,29 @@ impl SessionProgressSink for SessionEvents {
     }
 }
 
-/// "Migrated 120 of 600 sessions" / "Restored 3 of 12 sessions".
+/// The stage with its counter ([`SessionProgress::counter`]): "Reading 200 of
+/// 600 sessions", "Backed up 312 of 601 files", "Migrated 120 of 600
+/// sessions", "Updating databases: 1 of 2", "Checked 90 of 600 files";
+/// restores: "Checking ... files", "Restored 3 of 12 sessions".
 pub fn session_count(p: &SessionProgress) -> LocalizedText {
-    let key = match p.direction {
-        SessionDirection::Migrate => "switch.sessions.migrated",
-        SessionDirection::Restore => "switch.sessions.restored",
+    let key = match (p.stage, p.direction) {
+        (SessionStage::Reading, SessionDirection::Migrate) => "switch.sessions.count.reading",
+        (SessionStage::Reading, SessionDirection::Restore) => "switch.sessions.count.checking",
+        (SessionStage::BackingUp, _) => "switch.sessions.count.backing_up",
+        (SessionStage::Databases, _) => "switch.sessions.count.databases",
+        (SessionStage::Verifying, _) => "switch.sessions.count.verifying",
+        (_, SessionDirection::Migrate) => "switch.sessions.migrated",
+        (_, SessionDirection::Restore) => "switch.sessions.restored",
     };
-    text(key).arg("done", p.done).arg("total", p.total)
+    let (n, of) = p.counter();
+    text(key).arg("done", n).arg("total", of)
+}
+
+/// The overall percentage, from the same weighting as the counter's stage
+/// (rounded down; the epsilon keeps 75 % from showing as 74 % after the f32
+/// sum of the stage shares).
+pub fn session_percent(p: &SessionProgress) -> u32 {
+    (f64::from(p.fraction()) * 100.0 + 1e-3).floor().min(100.0) as u32
 }
 
 /// What the stage is doing ("Backing up the sessions").
@@ -75,17 +91,15 @@ pub fn session_current(p: &SessionProgress) -> Option<String> {
         })
 }
 
-/// One progress line: "Migrated 120 of 600 sessions · 35% · Backing up the
-/// sessions · Fix the login flow".
+/// One progress line: "Migrated 120 of 600 sessions · 75% · Fix the login
+/// flow" (the counter names the stage).
 pub fn session_progress_line(p: &SessionProgress) -> LocalizedText {
-    let percent = (p.fraction() * 100.0).floor() as u32;
     let line = match session_current(p) {
         Some(current) => text("switch.sessions.line_current").arg("current", shorten(&current)),
         None => text("switch.sessions.line"),
     };
     line.arg_text("count", session_count(p))
-        .arg("percent", percent)
-        .arg_text("stage", session_stage(p))
+        .arg("percent", session_percent(p))
 }
 
 /// Longest session title in a progress line (characters).

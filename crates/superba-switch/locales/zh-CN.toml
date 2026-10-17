@@ -414,8 +414,8 @@ local_limits_last = "路由在本机资源上吃紧：出现 {files} 次「打�
 migrated = "已迁移 {done} / {total} 个会话"
 restored = "已恢复 {done} / {total} 个会话"
 stopped = "已停止迁移会话；所有会话都已放回原处，没有任何改动"
-line = "{count} · {percent}% · {stage}"
-line_current = "{count} · {percent}% · {stage} · {current}"
+line = "{count} · {percent}%"
+line_current = "{count} · {percent}% · {current}"
 
 [switch.sessions.stage]
 reading = "正在读取会话"
@@ -425,3 +425,10 @@ restoring = "正在把会话放回原处"
 databases = "正在更新会话索引"
 verifying = "正在检查结果"
 done = "完成"
+
+[switch.sessions.count]
+reading = "读取中 {done} / {total} 个会话"
+checking = "检查中 {done} / {total} 个文件"
+backing_up = "已备份 {done} / {total} 个文件"
+databases = "写入数据库 {done} / {total}"
+verifying = "已校验 {done} / {total} 个文件"

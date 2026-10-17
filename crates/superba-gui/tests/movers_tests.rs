@@ -166,7 +166,11 @@ fn easings_match_css() {
     );
     assert!(close(Easing::Linear.apply(0.3), 0.3));
     // ease-out = cubic-bezier(0, 0, .58, 1): 0.684 at half time.
-    assert!((EASE_OUT.apply(0.5) - 0.684).abs() < 2e-3, "{}", EASE_OUT.apply(0.5));
+    assert!(
+        (EASE_OUT.apply(0.5) - 0.684).abs() < 2e-3,
+        "{}",
+        EASE_OUT.apply(0.5)
+    );
     for e in [Easing::Linear, EASE_IN_OUT, EASE_OUT, Easing::StepEnd] {
         assert_eq!((e.apply(0.0), e.apply(1.0)), (0.0, 1.0));
     }
@@ -478,6 +482,20 @@ fn dialog_frame(
     visible: bool,
     reduce_motion: bool,
 ) -> (Duration, Vec<egui::Pos2>, bool) {
+    let (delay, points, shown, _) =
+        dialog_frame_texts(ctx, flow, state, time, visible, reduce_motion);
+    (delay, points, shown)
+}
+
+/// [`dialog_frame`] plus the texts the frame drew.
+fn dialog_frame_texts(
+    ctx: &egui::Context,
+    flow: &mut Flow,
+    state: &mut MoversDialog,
+    time: f64,
+    visible: bool,
+    reduce_motion: bool,
+) -> (Duration, Vec<egui::Pos2>, bool, Vec<String>) {
     let mut viewports = egui::ViewportIdMap::default();
     viewports.insert(
         ViewportId::ROOT,
@@ -519,15 +537,61 @@ fn dialog_frame(
     );
     let delay = output.viewport_output[&ViewportId::ROOT].repaint_delay;
     let mut points = Vec::new();
+    let mut texts = Vec::new();
     for s in &output.shapes {
-        if let egui::Shape::Mesh(m) = &s.shape
-            && m.texture_id != egui::TextureId::default()
-        {
-            points.extend(m.vertices.iter().map(|v| v.pos));
+        match &s.shape {
+            egui::Shape::Mesh(m) if m.texture_id != egui::TextureId::default() => {
+                points.extend(m.vertices.iter().map(|v| v.pos));
+            }
+            egui::Shape::Text(t) => texts.push(t.galley.text().to_owned()),
+            _ => {}
         }
     }
     output.drop_without_applying_deltas();
-    (delay, points, shown)
+    (delay, points, shown, texts)
+}
+
+#[test]
+fn the_dialogs_counter_names_the_stage_and_matches_the_percentage() {
+    let ctx = context();
+    let mut state = MoversDialog::default();
+    for (stage, done, counter, percent) in [
+        (
+            SessionStage::Reading,
+            200,
+            "Reading 200 of 600 sessions",
+            "· 11%",
+        ),
+        (
+            SessionStage::BackingUp,
+            40,
+            "Backed up 40 of 600 files",
+            "· 36%",
+        ),
+        (
+            SessionStage::Moving,
+            300,
+            "Migrated 300 of 600 sessions",
+            "· 75%",
+        ),
+    ] {
+        let mut flow = running();
+        flow.on_event(
+            &report(SessionDirection::Migrate, stage, done),
+            Duration::from_secs(1),
+        );
+        dialog_frame(&ctx, &mut flow, &mut state, 1.0, true, true);
+        let (_, _, _, texts) = dialog_frame_texts(&ctx, &mut flow, &mut state, 2.0, true, true);
+        assert!(texts.iter().any(|t| t == counter), "{counter} in {texts:?}");
+        assert!(texts.iter().any(|t| t == percent), "{percent} in {texts:?}");
+        // The stage is not repeated on the line below.
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.starts_with("Now: Fix the login flow")),
+            "{texts:?}"
+        );
+    }
 }
 
 #[test]

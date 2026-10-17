@@ -415,8 +415,8 @@ local_limits_last = "This computer ran short while routing: {files} \"too many o
 migrated = "Migrated {done} of {total} sessions"
 restored = "Restored {done} of {total} sessions"
 stopped = "Session migration stopped; every session was put back and nothing was changed"
-line = "{count} · {percent}% · {stage}"
-line_current = "{count} · {percent}% · {stage} · {current}"
+line = "{count} · {percent}%"
+line_current = "{count} · {percent}% · {current}"
 
 [switch.sessions.stage]
 reading = "Reading the sessions"
@@ -426,3 +426,10 @@ restoring = "Putting the sessions back"
 databases = "Updating the session index"
 verifying = "Checking the result"
 done = "Done"
+
+[switch.sessions.count]
+reading = "Reading {done} of {total} sessions"
+checking = "Checking {done} of {total} files"
+backing_up = "Backed up {done} of {total} files"
+databases = "Updating databases: {done} of {total}"
+verifying = "Checked {done} of {total} files"
