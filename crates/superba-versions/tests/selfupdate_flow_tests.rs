@@ -578,6 +578,12 @@ async fn a_package_that_is_checksum_valid_but_unsafe_is_refused_without_touching
 
 #[tokio::test]
 async fn a_new_spb_that_reports_another_version_is_refused() {
+    // The new spb is only started when the package is for the running machine
+    // (a Linux package cannot run on macOS or Windows), so this Linux fixture
+    // exercises the version check only on Linux x86_64.
+    if Platform::current() != LINUX {
+        return;
+    }
     let f = Fixture::new().await;
     let version = "0.2.0";
     let top = format!("superba-{version}-linux-x86_64");
