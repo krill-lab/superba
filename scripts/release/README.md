@@ -259,7 +259,8 @@ the full version in the product name and the ARP comments.
 
 Before the files are removed, a custom action runs `spb router uninstall --quiet`: it
 switches Codex back to direct if it still goes through the router (configuration only),
-removes the router's login startup entry and stops every `superba-router.exe` started
+removes the router's login startup entry (also when the uninstaller runs as administrator,
+where the rest of that step is refused) and stops every `superba-router.exe` started
 from the install folder. During an upgrade it runs with `--keep-service` (it only stops
 the process; the update restarts the router).
 

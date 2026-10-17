@@ -3,6 +3,8 @@
 //! Run values cannot carry an environment. `ServiceSpec::env` is passed only to
 //! supervisors started immediately by install or restart, not at the next login.
 
+use std::path::Path;
+
 use superba_core::{Error, Result};
 
 use super::autostart::{spawn_supervisor, stop_supervisor, supervisor_status};
@@ -30,6 +32,47 @@ impl WindowsRunKeyService {
                 what: "Windows login startup requires a per-user Run key store".into(),
             })
     }
+}
+
+/// Remove the login-startup entry when it starts the `superba-router` in `dir`
+/// (the Windows installer removing that install); an entry that starts another
+/// copy is left alone. Registry only, no file is written: it runs even where
+/// the full router removal is refused (an uninstaller run as administrator).
+/// Returns whether an entry was removed.
+pub fn remove_run_entry_of(store: &dyn RunKeyStore, dir: &Path) -> std::io::Result<bool> {
+    let Some(command) = store.get(RUN_VALUE_NAME)? else {
+        return Ok(false);
+    };
+    if !starts_router_in(&command, dir) {
+        return Ok(false);
+    }
+    store.delete(RUN_VALUE_NAME)?;
+    Ok(true)
+}
+
+/// The program of a Run command (quoted by [`quote`], or bare) is
+/// `superba-router[.exe]` in `dir`.
+fn starts_router_in(command: &str, dir: &Path) -> bool {
+    let command = command.trim_start();
+    let program = match command.strip_prefix('"') {
+        Some(rest) => rest.split('"').next(),
+        None => command.split_whitespace().next(),
+    };
+    let program = Path::new(program.unwrap_or_default());
+    let is_router = program
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .is_some_and(|s| s.eq_ignore_ascii_case("superba-router"));
+    let canonical = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_owned());
+    is_router
+        && program.parent().is_some_and(|parent| {
+            let (a, b) = (canonical(parent), canonical(dir));
+            if cfg!(windows) {
+                a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+            } else {
+                a == b
+            }
+        })
 }
 
 // CommandLineToArgvW: double each run of backslashes before a quote or the end.

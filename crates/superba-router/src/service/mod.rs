@@ -43,6 +43,7 @@ mod system;
 mod systemd;
 
 pub use launchd::{LAUNCHCTL, launchctl_print_fields};
+pub use runkey::remove_run_entry_of;
 pub use system::SystemRunner;
 #[cfg(windows)]
 pub use system::WindowsRunKey;

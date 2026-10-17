@@ -69,6 +69,9 @@ pub(super) async fn run(command: &RouterCommand, rt: &Runtime, out: &mut Output)
 /// so their file can be replaced. Every step is best effort and the exit code is always OK:
 /// an installer must never fail because of the router.
 async fn installer_teardown(keep_service: bool, rt: &Runtime, out: &mut Output) -> Result {
+    let dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(ToOwned::to_owned));
     if !keep_service {
         if let Ok(view) = rt.service.router_status().await
             && view.codex_routed
@@ -82,12 +85,15 @@ async fn installer_teardown(keep_service: bool, rt: &Runtime, out: &mut Output) 
             let _ = execute::run(router_switch(false, &exec), &exec, rt, out).await;
         }
         let _ = rt.service.router_uninstall().await;
+        // That is refused when the uninstaller runs as administrator (an
+        // elevated terminal, UAC off), but the program goes away all the same:
+        // its login startup must not outlive it.
+        if let Some(dir) = &dir {
+            superba_switch::router::remove_login_startup(dir);
+        }
     }
-    if let Some(dir) = std::env::current_exe()
-        .ok()
-        .and_then(|e| e.parent().map(ToOwned::to_owned))
-    {
-        superba_switch::installer::stop_router_processes(&dir);
+    if let Some(dir) = &dir {
+        superba_switch::installer::stop_router_processes(dir);
     }
     Ok(exit::OK)
 }
