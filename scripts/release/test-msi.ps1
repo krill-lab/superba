@@ -66,6 +66,8 @@ function RouterProcs {
 $msi1 = Build $BaseVersion 'base.msi'
 $msi2 = Build $UpgradeVersion 'upgrade1.msi'
 $msi3 = Build $UpgradeVersion2 'upgrade2.msi'
+# Not installed here: a far newer release for trying the self-update by hand.
+$null = Build '9.0.0' 'superba-9.0.0-windows-x86_64.msi'
 
 # --- install ---------------------------------------------------------------
 Msi '/i' $msi1 (Join-Path $work 'install.log')
