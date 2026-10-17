@@ -5,7 +5,8 @@
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use superba_core::{DataDir, Error, Result, Secret};
@@ -486,6 +487,7 @@ impl RouterManager {
     ) -> Result<RouterEndpoint> {
         check_router_exe(&self.spec.exe)?;
         let endpoint = self.write_config(config, member_keys)?;
+        lifecycle_changed();
         self.service.install(&self.spec)?;
         self.wait_until_up(wait).await?;
         Ok(endpoint)
@@ -495,6 +497,7 @@ impl RouterManager {
     /// update) and wait until the router answers, at most `wait`. Keeps the
     /// configuration, port and token.
     pub async fn restart(&self, wait: Duration) -> Result<()> {
+        lifecycle_changed();
         self.service.restart(&self.spec)?;
         self.wait_until_up(wait).await
     }
@@ -512,6 +515,7 @@ impl RouterManager {
         // `write_config` keeps the port Codex is pointed at when it is 0.
         let endpoint = self.write_config(config, member_keys)?;
         if old_port.is_some_and(|p| p != endpoint.port) {
+            lifecycle_changed();
             self.service.restart(&self.spec)?;
             self.wait_until_up(wait).await?;
             return Ok(endpoint);
@@ -521,6 +525,7 @@ impl RouterManager {
                 client.reload().await?;
             }
             Err(_) => {
+                lifecycle_changed();
                 self.service.restart(&self.spec)?;
                 self.wait_until_up(wait).await?;
             }
@@ -585,6 +590,7 @@ impl RouterManager {
         fallback
             .fall_back_to_direct(&FallbackReason::Disabled)
             .await?;
+        lifecycle_changed();
         self.service.uninstall(&self.spec)?;
         for path in [self.paths.secrets_json(), self.paths.runtime_json()] {
             match std::fs::remove_file(&path) {
@@ -599,16 +605,57 @@ impl RouterManager {
     /// Stop and remove the service only, without touching Codex's configuration
     /// (manual clean-up; [`RouterManager::disable`] is the normal path).
     pub fn uninstall_service(&self) -> Result<()> {
+        lifecycle_changed();
         self.service.uninstall(&self.spec)
     }
 
-    /// Router state for the UI.
+    /// Router state for the UI (polled every few seconds by the Router page).
+    ///
+    /// The liveness is asked every time (HTTP on loopback, no process). Asking
+    /// the service manager starts a process (`systemctl`, `launchctl`,
+    /// `tasklist`), so its answer is reused while nothing can have changed it:
+    /// no lifecycle call (enable, restart, update, disable, uninstall) of any
+    /// manager of this data directory in this process since, and the same
+    /// liveness (down, or up with the same router instance). A router that
+    /// stops, starts or is replaced asks again; diagnostics
+    /// ([`RouterManager::doctor`]) always ask.
     pub async fn overview(&self) -> RouterOverview {
+        let liveness = watchdog::check(&self.paths).await;
         RouterOverview {
             configured: RouterConfig::load(&self.paths).is_ok(),
-            service: self.service.status(&self.spec),
-            liveness: watchdog::check(&self.paths).await,
+            service: self.polled_status(&liveness),
+            liveness,
         }
+    }
+
+    fn polled_status(&self, liveness: &Liveness) -> Result<ServiceStatus> {
+        let key = self.paths.dir().to_path_buf();
+        let live = live_key(liveness);
+        let lifecycle = LIFECYCLE.load(Ordering::SeqCst);
+        if let Some(memo) = status_memos()
+            .iter()
+            .find(|m| m.dir == key && m.lifecycle == lifecycle && m.live == live)
+        {
+            return memo.status.clone();
+        }
+        let status = self.service.status(&self.spec);
+        self.remember_status(live, &status);
+        status
+    }
+
+    fn remember_status(&self, live: LiveKey, status: &Result<ServiceStatus>) {
+        let dir = self.paths.dir().to_path_buf();
+        let mut memos = status_memos();
+        memos.retain(|m| m.dir != dir);
+        if memos.len() >= 8 {
+            memos.clear();
+        }
+        memos.push(StatusMemo {
+            dir,
+            lifecycle: LIFECYCLE.load(Ordering::SeqCst),
+            live,
+            status: status.clone(),
+        });
     }
 
     async fn wait_until_up(&self, wait: Duration) -> Result<()> {
@@ -656,4 +703,42 @@ impl RouterManager {
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
     }
+}
+
+/// Bumped by every lifecycle call of a [`RouterManager`] in this process: the
+/// service-manager answers remembered before are not reused.
+static LIFECYCLE: AtomicU64 = AtomicU64::new(0);
+
+fn lifecycle_changed() {
+    LIFECYCLE.fetch_add(1, Ordering::SeqCst);
+}
+
+/// The router as the liveness check saw it: down, or up as one instance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum LiveKey {
+    Down,
+    Up(String),
+}
+
+fn live_key(liveness: &Liveness) -> LiveKey {
+    match liveness {
+        Liveness::Up(status) => LiveKey::Up(status.instance_id.clone()),
+        Liveness::Down { .. } => LiveKey::Down,
+    }
+}
+
+/// A remembered service-manager answer for one data directory.
+struct StatusMemo {
+    dir: PathBuf,
+    lifecycle: u64,
+    /// The liveness it was asked with.
+    live: LiveKey,
+    status: Result<ServiceStatus>,
+}
+
+fn status_memos() -> std::sync::MutexGuard<'static, Vec<StatusMemo>> {
+    static MEMOS: Mutex<Vec<StatusMemo>> = Mutex::new(Vec::new());
+    MEMOS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
