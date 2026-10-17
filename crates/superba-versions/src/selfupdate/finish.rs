@@ -1,9 +1,9 @@
 //! `superba --finish-update`: the tiny second stage that runs after the process
 //! that downloaded the update has exited.
 //!
-//! It waits for the old process (`--wait-pid`), optionally swaps staged files
-//! into the install directory (Windows: a running `.exe` is replaced from the
-//! *new* `superba.exe`, started from the staging directory), restarts the
+//! It waits for the old process (`--wait-pid`), optionally runs the verified MSI
+//! (`--msi`, Windows: `msiexec /i <msi> /passive`, started from a copy of
+//! `superba.exe` outside the install folder), restarts the
 //! router service through the new `spb` (`--restart-router`), and starts the new
 //! Superba (`--relaunch` a path, or `--open-app` a macOS bundle). It does
 //! nothing else and every path it touches is named on its command line.
@@ -29,11 +29,10 @@ pub const WAIT: Duration = Duration::from_secs(60);
 pub struct FinishArgs {
     /// Wait until this process has exited.
     pub wait_pid: Option<u32>,
-    /// Swap the binaries found in this directory...
-    pub swap_from: Option<PathBuf>,
-    /// ...into this one.
-    pub swap_to: Option<PathBuf>,
-    /// Restart the router service with `<swap-to>/spb self-update restart-router`.
+    /// Install this MSI (`msiexec /i <msi> /passive`, Windows) once the old
+    /// process has exited.
+    pub msi: Option<PathBuf>,
+    /// Restart the router service with `<dir of --relaunch>/spb self-update restart-router`.
     pub restart_router: bool,
     /// Start this executable at the end.
     pub relaunch: Option<PathBuf>,
@@ -62,8 +61,7 @@ impl FinishArgs {
                 a.push(p.clone().into_os_string());
             }
         };
-        path("--swap-from", &self.swap_from);
-        path("--swap-to", &self.swap_to);
+        path("--msi", &self.msi);
         path("--relaunch", &self.relaunch);
         path("--open-app", &self.open_app);
         path("--log", &self.log);
@@ -104,16 +102,12 @@ impl FinishArgs {
                             .map_err(|_| bad("--wait-pid needs a number".into()))?,
                     );
                 }
-                "--swap-from" => out.swap_from = Some(path),
-                "--swap-to" => out.swap_to = Some(path),
+                "--msi" => out.msi = Some(path),
                 "--relaunch" => out.relaunch = Some(path),
                 "--open-app" => out.open_app = Some(path),
                 "--log" => out.log = Some(path),
                 other => return Err(bad(format!("unknown argument {other}"))),
             }
-        }
-        if out.swap_from.is_some() != out.swap_to.is_some() {
-            return Err(bad("--swap-from and --swap-to go together".into()));
         }
         Ok(out)
     }
@@ -193,31 +187,15 @@ pub fn run(args: &FinishArgs) -> Result<()> {
         }
     }
     let platform = Platform::current();
-    if let (Some(from), Some(to)) = (&args.swap_from, &args.swap_to) {
-        let pairs: Vec<(PathBuf, PathBuf)> = apply::BINARIES
-            .iter()
-            .map(|b| apply::bin_name(b, platform.os))
-            .filter(|n| from.join(n).is_file() && to.join(n).is_file())
-            .map(|n| (from.join(&n), to.join(&n)))
-            .collect();
-        match apply::replace_files(&pairs) {
-            Ok(names) => log_line(args, &format!("finish-update: replaced {names:?}")),
-            Err(e) => {
-                log_line(args, &format!("finish-update: swap failed: {e}"));
-                // The old version is back in place: start it again.
-                relaunch(args);
-                return Err(e);
-            }
-        }
-        apply::remove_leftovers(to);
+    if let Some(msi) = &args.msi {
+        install_msi(args, msi);
     }
     if args.restart_router {
-        let dir = args.swap_to.clone().or_else(|| {
-            args.relaunch
-                .as_deref()
-                .and_then(Path::parent)
-                .map(Path::to_owned)
-        });
+        let dir = args
+            .relaunch
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_owned);
         if let Some(dir) = dir {
             let spb = dir.join(apply::bin_name("spb", platform.os));
             let status = superba_core::process::command(&spb)
@@ -253,4 +231,17 @@ fn relaunch(args: &FinishArgs) {
         Ok(_) => log_line(args, "finish-update: started the new version"),
         Err(e) => log_line(args, &format!("finish-update: could not start it: {e}")),
     }
+}
+
+/// Windows: run the verified MSI (per-user install, fixed UpgradeCode, so it
+/// upgrades in place) with `msiexec /i <msi> /passive` and wait for it. The one
+/// place the MSI installer is started; the old process has exited by now.
+fn install_msi(args: &FinishArgs, msi: &Path) {
+    let status = superba_core::process::command("msiexec")
+        .arg("/i")
+        .arg(msi)
+        .arg("/passive")
+        .stdin(Stdio::null())
+        .status();
+    log_line(args, &format!("finish-update: msiexec {status:?}"));
 }

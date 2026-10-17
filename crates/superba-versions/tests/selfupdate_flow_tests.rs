@@ -676,3 +676,54 @@ async fn cleanup_removes_the_backup_once_the_new_version_runs() {
         .await;
     assert!(!backup.exists());
 }
+
+#[tokio::test]
+async fn windows_installs_through_the_msi_handoff_and_never_swaps_files() {
+    const WINDOWS: Platform = Platform {
+        os: Os::Windows,
+        arch: "x86_64",
+        musl: false,
+    };
+    let f = Fixture::new().await;
+    let msi = b"not really an msi".to_vec();
+    let asset = "superba-0.2.0-windows-x86_64.msi";
+    let json = format!(
+        r#"{{"tag_name":"v0.2.0","draft":false,"prerelease":false,"body":"n","assets":[{{"name":"{SUMS_FILE}","size":9}},{{"name":"{asset}","size":{}}}]}}"#,
+        msi.len()
+    );
+    f.mock.route("/api/releases/latest", Route::ok(json));
+    f.mock
+        .route(&format!("/dl/v0.2.0/{asset}"), Route::ok(msi.clone()));
+    f.mock.route(
+        &format!("/dl/v0.2.0/{SUMS_FILE}"),
+        Route::ok(format!("{}  {asset}\n", sha256_hex(&msi))),
+    );
+    let dir = f.data.path().join("Programs/Superba");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("superba.exe"), b"old gui").unwrap();
+    let u = f
+        .updater()
+        .with_platform(WINDOWS)
+        .with_exe(dir.join("superba.exe"));
+    let result = u.install(true).await.unwrap();
+    assert_eq!(result.outcome, SelfInstallOutcome::Handoff);
+    let plan = result.finish.expect("the second stage runs msiexec");
+    assert_eq!(std::fs::read(plan.args.msi.as_ref().unwrap()).unwrap(), msi);
+    assert_eq!(
+        plan.args.relaunch.as_deref(),
+        Some(
+            std::fs::canonicalize(dir.join("superba.exe"))
+                .unwrap()
+                .as_path()
+        )
+    );
+    assert!(
+        plan.exe.is_file() && !plan.exe.starts_with(&dir),
+        "the helper lives outside the install folder"
+    );
+    assert_eq!(
+        std::fs::read(dir.join("superba.exe")).unwrap(),
+        b"old gui",
+        "nothing is swapped here"
+    );
+}

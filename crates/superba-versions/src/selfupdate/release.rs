@@ -59,7 +59,7 @@ impl Platform {
 pub fn asset_name(version: &str, platform: &Platform) -> Option<String> {
     Some(match (platform.os, platform.arch, platform.musl) {
         (Os::Macos, _, _) => format!("superba-{version}-macos-universal.zip"),
-        (Os::Windows, "x86_64", _) => format!("superba-{version}-windows-x86_64.zip"),
+        (Os::Windows, "x86_64", _) => format!("superba-{version}-windows-x86_64.msi"),
         (Os::Linux, "x86_64", true) => format!("spb-{version}-linux-x86_64-musl.tar.gz"),
         (Os::Linux, "x86_64", false) => format!("superba-{version}-linux-x86_64.tar.gz"),
         (Os::Linux, "aarch64", false) => format!("superba-{version}-linux-aarch64.tar.gz"),

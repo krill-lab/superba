@@ -235,6 +235,56 @@ impl SelfUpdater {
             .map_err(|e| Error::other(format!("background task failed: {e}")))?
     }
 
+    /// Windows: the release ships an MSI (per-user install with a fixed
+    /// UpgradeCode, so it upgrades in place). The verified MSI is not run while
+    /// Superba is running: a copy of `superba.exe` outside the install folder
+    /// waits for this process to exit, runs `msiexec /i <msi> /passive`
+    /// (`finish::install_msi`), restarts the router and starts the new Superba.
+    /// The one place the Windows install is decided.
+    fn windows_msi_handoff(
+        &self,
+        release: &SelfRelease,
+        msi: &Path,
+        relaunch: bool,
+        exe: &Path,
+    ) -> Result<InstallResult> {
+        let dir = exe.parent();
+        let gui = dir.map(|d| d.join("superba.exe")).filter(|g| g.is_file());
+        let manual = |steps| InstallResult {
+            version: release.version.clone(),
+            outcome: SelfInstallOutcome::Manual,
+            package: Some(msi.to_owned()),
+            steps,
+            replaced: Vec::new(),
+            finish: None,
+        };
+        let Some(gui) = gui else {
+            return Ok(manual(manual_steps(Os::Windows, msi, dir)));
+        };
+        // The finisher must not live in the folder the MSI replaces.
+        let helper = msi.with_file_name(format!("finish-update-{}.exe", crate::store::nonce()));
+        if std::fs::copy(&gui, &helper).is_err() {
+            return Ok(manual(manual_steps(Os::Windows, msi, dir)));
+        }
+        Ok(InstallResult {
+            version: release.version.clone(),
+            outcome: SelfInstallOutcome::Handoff,
+            package: Some(msi.to_owned()),
+            steps: Vec::new(),
+            replaced: vec!["Superba".into()],
+            finish: Some(FinishPlan {
+                exe: helper,
+                args: FinishArgs {
+                    wait_pid: Some(std::process::id()),
+                    msi: Some(msi.to_owned()),
+                    relaunch: relaunch.then_some(gui),
+                    log: Some(self.data_dir.root().join("selfupdate.log")),
+                    ..FinishArgs::default()
+                },
+            }),
+        })
+    }
+
     fn apply_blocking(
         &self,
         release: &SelfRelease,
@@ -251,6 +301,9 @@ impl SelfUpdater {
             replaced: Vec::new(),
             finish: None,
         };
+        if os == Os::Windows {
+            return self.windows_msi_handoff(release, archive, relaunch, &exe);
+        }
         let Some(layout) = apply::detect_layout(&exe, os) else {
             return Ok(manual(manual_steps(os, archive, exe.parent())));
         };
@@ -325,15 +378,10 @@ impl SelfUpdater {
                             message: "the package holds none of the installed programs".into(),
                         });
                     }
-                    if os == Os::Windows {
-                        // A running .exe is swapped by the new superba.exe once
-                        // this process has exited; keep the staged files.
-                        return Ok((root, Vec::new(), true));
-                    }
                     let replaced = apply::replace_files(&pairs)?;
-                    Ok((root, replaced, false))
+                    Ok(replaced)
                 })();
-                let (root, replaced, handoff) = match result {
+                let replaced = match result {
                     Ok(x) => x,
                     Err(e) => {
                         let _ = std::fs::remove_dir_all(&stage);
@@ -342,33 +390,6 @@ impl SelfUpdater {
                 };
                 let gui = dir.join(apply::bin_name("superba", os));
                 let log = Some(self.data_dir.root().join("selfupdate.log"));
-                if handoff {
-                    let exe = root.join("superba.exe");
-                    if !exe.is_file() {
-                        let _ = std::fs::remove_dir_all(&stage);
-                        return Err(Error::Invalid {
-                            message: "the package holds no superba.exe".into(),
-                        });
-                    }
-                    return Ok(InstallResult {
-                        version: release.version.clone(),
-                        outcome: SelfInstallOutcome::Handoff,
-                        package: None,
-                        steps: Vec::new(),
-                        replaced: names,
-                        finish: Some(FinishPlan {
-                            exe,
-                            args: FinishArgs {
-                                wait_pid: Some(pid),
-                                swap_from: Some(root),
-                                swap_to: Some(dir),
-                                relaunch: (relaunch && gui.is_file()).then_some(gui),
-                                log,
-                                ..FinishArgs::default()
-                            },
-                        }),
-                    });
-                }
                 let _ = std::fs::remove_dir_all(&stage);
                 let _ = std::fs::remove_file(archive);
                 let finish = (relaunch && gui.is_file()).then(|| FinishPlan {
@@ -449,7 +470,7 @@ pub fn manual_steps(os: Os, package: &Path, dir: Option<&Path>) -> Vec<Localized
         ),
         Os::Windows => (
             "selfupdate.manual.windows",
-            "Quit Superba and extract the zip into {dir}, overwriting the old files.",
+            "Quit Superba and run the installer {path}.",
         ),
         Os::Linux => (
             "selfupdate.manual.linux",

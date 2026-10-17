@@ -98,7 +98,7 @@ fn asset_selection_per_os_and_architecture() {
     );
     assert_eq!(
         a(plat(Os::Windows, "x86_64", false)).as_deref(),
-        Some("superba-0.2.0-windows-x86_64.zip")
+        Some("superba-0.2.0-windows-x86_64.msi")
     );
     assert_eq!(
         a(plat(Os::Linux, "x86_64", false)).as_deref(),
@@ -419,8 +419,7 @@ fn install_layouts_are_detected() {
 fn finish_arguments_round_trip() {
     let args = FinishArgs {
         wait_pid: Some(4242),
-        swap_from: Some("/tmp/stage".into()),
-        swap_to: Some("/opt/superba".into()),
+        msi: Some("/tmp/superba-0.2.0-windows-x86_64.msi".into()),
         restart_router: true,
         relaunch: Some("/opt/superba/superba".into()),
         open_app: None,
@@ -432,15 +431,6 @@ fn finish_arguments_round_trip() {
         &argv
     ));
     assert_eq!(FinishArgs::parse(&argv).unwrap(), args);
-    argv.push("--swap-to".into());
-    argv.push("/x".into());
-    let half = [
-        std::ffi::OsString::from("superba"),
-        "--finish-update".into(),
-        "--swap-to".into(),
-        "/x".into(),
-    ];
-    assert!(FinishArgs::parse(&half).is_err(), "swap needs both ends");
     assert!(
         FinishArgs::parse(&[
             "superba".into(),
