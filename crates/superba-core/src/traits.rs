@@ -585,6 +585,35 @@ pub trait AppController: Send + Sync {
     /// How a Codex binary was installed (npm, Homebrew, standalone, app-bundled,
     /// Superba's store, other), from its resolved path.
     async fn cli_install_kind(&self, binary: &Path) -> Result<CodexInstallKind>;
+
+    /// [`Self::running_session`] and [`Self::processes`] from one look at the
+    /// process table: the overview's fast facts, read every few seconds. Spawns
+    /// no process. Default: the two calls.
+    async fn session_and_processes(
+        &self,
+        home: &CodexHome,
+    ) -> (Result<Option<AppSession>>, Result<Vec<ProcessInfo>>) {
+        (self.running_session().await, self.processes(home).await)
+    }
+
+    /// A cheap fingerprint of what [`Self::detect_installs`] and
+    /// [`Self::codex_binaries`] found and where they look: existence, size and
+    /// modification time of the install locations and the directories installs
+    /// are discovered in, the PATH directories, the standalone Codex layout in
+    /// the Codex home, and `installs` / `binaries` themselves (on Windows also
+    /// the MSIX package registry). Reads metadata
+    /// only: no process, no directory listing. The environment monitor of the
+    /// switch service detects again when it changes. Default: `None` (no cheap
+    /// check; the monitor relies on its events and long interval).
+    fn environment_stamp(&self, installs: &[AppInstall], binaries: &[CodexBinary]) -> Option<u64> {
+        let _ = (installs, binaries);
+        None
+    }
+
+    /// Forget cached probe results (Codex `--version` answers, package queries,
+    /// CDP listener checks) so the next detection asks again. Called on an
+    /// explicit refresh, never on a timer. Default: nothing is cached.
+    fn forget_cached_probes(&self) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -995,6 +1024,20 @@ pub trait SwitchService: Send + Sync {
     async fn set_ui_locale(&self, locale: crate::i18n::Locale) -> Result<()> {
         let _ = locale;
         Ok(())
+    }
+
+    /// Tell the environment monitor about the window or an explicit refresh
+    /// ([`crate::EnvironmentEvent`]). Cheap and non-blocking: the monitor acts
+    /// on its own thread. Default: nothing (no monitor).
+    fn environment_event(&self, event: crate::app::EnvironmentEvent) {
+        let _ = event;
+    }
+
+    /// Bumped each time the environment monitor's facts (installs, Codex
+    /// binaries, versions) change; a UI reloads the views built from them when
+    /// it sees a new value. Default: 0.
+    fn environment_generation(&self) -> u64 {
+        0
     }
 
     /// Session names for request log keys (`prompt_cache_key` or thread id), from

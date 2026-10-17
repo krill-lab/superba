@@ -9,9 +9,24 @@
 //!
 //! For tokio use `tokio::process::Command::from(command(program))`; the
 //! creation flags are carried over by the conversion.
+//!
+//! Every command built here is counted ([`commands_built`]): tests use the count
+//! to prove that periodic paths (the GUI's overview poll, the environment
+//! monitor's checks) start no process at all.
 
 use std::ffi::OsStr;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Commands built through this module since the process started.
+static BUILT: AtomicU64 = AtomicU64::new(0);
+
+/// How many child-process commands were built through [`command`] and
+/// [`detached_command`] since the process started (each is built right before
+/// it is spawned). Monotonic; compare two readings.
+pub fn commands_built() -> u64 {
+    BUILT.load(Ordering::Relaxed)
+}
 
 /// `CREATE_NO_WINDOW`: a console program gets no console window.
 #[cfg(windows)]
@@ -26,6 +41,7 @@ const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 /// A command for a short-lived child (a probe, a helper, a supervised service)
 /// that never shows a console window. Nothing is changed outside Windows.
 pub fn command(program: impl AsRef<OsStr>) -> Command {
+    BUILT.fetch_add(1, Ordering::Relaxed);
     let mut command = Command::new(program);
     no_window(&mut command);
     command
@@ -51,6 +67,7 @@ pub fn no_window(command: &mut Command) -> &mut Command {
 /// (`CREATE_NO_WINDOW` is ignored when `DETACHED_PROCESS` is set), and a detached
 /// child has no console to show in the first place. Nothing is changed outside Windows.
 pub fn detached_command(program: impl AsRef<OsStr>) -> Command {
+    BUILT.fetch_add(1, Ordering::Relaxed);
     let mut command = Command::new(program);
     detach(&mut command);
     command

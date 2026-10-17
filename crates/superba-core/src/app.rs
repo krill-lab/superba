@@ -449,3 +449,24 @@ pub struct RendererState {
     #[serde(default)]
     pub current_thread: Option<ThreadRef>,
 }
+
+/// Something the environment monitor of the switch service should know about
+/// ([`crate::SwitchService::environment_event`]). The monitor owns the slow
+/// facts (desktop app installs, Codex binaries and their versions); it looks at
+/// the disk again only on these events, on a cheap change check of the watched
+/// paths, and on a long interval, never because a view was read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum EnvironmentEvent {
+    /// The window is shown (start-up, restored from the taskbar/dock): watch.
+    Shown,
+    /// The window is hidden or minimised: stop watching until it is shown.
+    Hidden,
+    /// The window got the focus back: check the watched paths now (the user
+    /// may have installed or updated something meanwhile).
+    FocusGained,
+    /// The user asked to refresh: detect everything again and ask every Codex
+    /// binary for its version again.
+    Refresh,
+}
