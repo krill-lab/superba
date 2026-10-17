@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use futures_util::future::join_all;
 
 use crate::forward::{describe_error, failover_status};
-use crate::limits::{Place, file_limit_in};
+use crate::limits::{Place, file_limit_detail, file_limit_in};
 use crate::state::{Generation, Shared, lock};
 use crate::status::RouteEventKind;
 
@@ -46,7 +46,10 @@ pub(crate) async fn probe_line(
         },
         // Out of descriptors here says nothing about the line.
         Err(e) if file_limit_in(&e).is_some() => {
-            shared.local_file_limit(Place::Probe(generation.label(member, line)), &e);
+            shared.local_file_limit(
+                Place::Probe(generation.label(member, line)),
+                &file_limit_detail(&e),
+            );
             None
         }
         Err(e) if e.is_connect() || e.is_timeout() => {

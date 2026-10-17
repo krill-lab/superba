@@ -14,7 +14,9 @@ use std::time::Duration;
 
 use common::*;
 use superba_core::fdlimit::FileLimitHit;
-use superba_router::limits::{Budget, LOCAL_BUSY_CODE, file_limit_in, is_file_limit_error};
+use superba_router::limits::{
+    Budget, LOCAL_BUSY_CODE, file_limit_detail, file_limit_in, is_file_limit_error,
+};
 use superba_router::{LineState, MemberKind, RouteEventKind, RouterStatus, Tuning};
 use tokio::sync::Notify;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -104,6 +106,9 @@ fn too_many_open_files_is_found_anywhere_in_an_error_chain() {
     // reqwest → hyper-util → io::Error, as for a failed socket().
     let chain = Wrapped(Box::new(Wrapped(Box::new(emfile()))));
     assert_eq!(file_limit_in(&chain), Some(FileLimitHit::Process));
+    // Its text is the OS error's, not the outer error's (reqwest's says only
+    // "error sending request for url (...)").
+    assert_eq!(file_limit_detail(&chain), emfile().to_string());
     // A custom error inside an io::Error (its `source` skips the custom one).
     let nested = io::Error::other(Wrapped(Box::new(emfile())));
     assert_eq!(file_limit_in(&nested), Some(FileLimitHit::Process));
@@ -121,6 +126,7 @@ fn too_many_open_files_is_found_anywhere_in_an_error_chain() {
     // Everything else is a line's business.
     let refused = Wrapped(Box::new(io::Error::from(io::ErrorKind::ConnectionRefused)));
     assert_eq!(file_limit_in(&refused), None);
+    assert_eq!(file_limit_detail(&refused), "connect error");
     let text = Wrapped(Box::new(io::Error::other("too many open files")));
     assert_eq!(file_limit_in(&text), None);
     let denied = superba_core::Error::io("/x", &io::Error::from(io::ErrorKind::PermissionDenied));
@@ -640,12 +646,31 @@ async fn burst_child(unbounded: bool) {
     .await;
 }
 
+/// How a request of a burst ended.
+#[cfg(unix)]
+enum Answer {
+    /// 200 from the line.
+    Ok,
+    /// 503 `local_router_busy`.
+    Busy,
+    /// The connection was closed without an answer (only allowed where
+    /// `accept` drops connections, see [`burst`]).
+    Dropped,
+}
+
 /// Parent side of a burst: [`BURST`] concurrent slow requests (2.5 s each)
 /// against the child router `name`. Every one must be answered 200 or 503
-/// `local_router_busy` and no line may be blamed. Returns the answered and
-/// busy counts and the final status.
+/// `local_router_busy` and no line may be blamed. Returns the answered, busy
+/// and dropped counts and the final status.
+///
+/// With `accept_may_drop`, a request may also end with its connection closed
+/// before any answer: macOS's `accept` takes a connection off the listen queue
+/// before it looks for a descriptor and drops it when there is none (XNU
+/// `accept_nocancel`, rdar 8554930), while Linux leaves it in the backlog until
+/// a descriptor is free. Each such connection is one failed accept, which the
+/// router counts as a file-limit error.
 #[cfg(unix)]
-async fn burst(name: &str) -> (u64, u64, RouterStatus) {
+async fn burst(name: &str, accept_may_drop: bool) -> (u64, u64, u64, RouterStatus) {
     // The parent holds a client and an upstream socket per request.
     superba_core::fdlimit::raise_open_files_limit(superba_core::fdlimit::OPEN_FILES_TARGET);
     let up = upstream(Mode::Slow(Duration::from_millis(2_500), OK)).await;
@@ -670,43 +695,56 @@ async fn burst(name: &str) -> (u64, u64, RouterStatus) {
                     .header("content-type", "application/json")
                     .body(BODY)
                     .send()
-                    .await
-                    .unwrap_or_else(|e| panic!("request {i}: {e:?}"));
+                    .await;
+                let resp = match resp {
+                    Ok(resp) => resp,
+                    Err(e) if accept_may_drop && (e.is_request() || e.is_connect()) => {
+                        assert!(!e.is_timeout(), "request {i}: {e:?}");
+                        return Answer::Dropped;
+                    }
+                    Err(e) => panic!("request {i}: {e:?}"),
+                };
                 match resp.status().as_u16() {
                     200 => {
                         assert_eq!(resp.text().await.unwrap(), OK);
-                        true
+                        Answer::Ok
                     }
                     503 => {
                         let v: serde_json::Value = resp.json().await.unwrap();
                         assert_eq!(v["error"]["code"], LOCAL_BUSY_CODE, "request {i}: {v}");
-                        false
+                        Answer::Busy
                     }
                     other => panic!("request {i}: HTTP {other}"),
                 }
             })
         })
         .collect();
-    let (mut ok, mut busy) = (0u64, 0u64);
+    let (mut ok, mut busy, mut dropped) = (0u64, 0u64, 0u64);
     for job in jobs {
-        if job.await.unwrap() {
-            ok += 1;
-        } else {
-            busy += 1;
+        match job.await.unwrap() {
+            Answer::Ok => ok += 1,
+            Answer::Busy => busy += 1,
+            Answer::Dropped => dropped += 1,
         }
     }
     let st = r.status().await;
     println!(
         "{name}: {BURST} requests under a 256 limit: {ok} answered, {busy} local 503s \
-         ({} for want of an admission, {} too many open files), {:.1} s",
+         ({} for want of an admission, {} too many open files), {dropped} dropped by \
+         accept, {:.1} s",
         st.local.busy,
         st.local.file_limit_errors,
         started.elapsed().as_secs_f64()
     );
     assert_eq!(ok as usize, up.hits(), "nothing was sent twice");
+    assert!(
+        dropped <= st.local.file_limit_errors,
+        "every dropped connection is a failed accept: {dropped} dropped, {:?}",
+        st.local
+    );
     healthy_and_unblamed(&st);
     child.stop().await;
-    (ok, busy, st)
+    (ok, busy, dropped, st)
 }
 
 /// ~300 concurrent slow requests against a router whose soft open-file limit
@@ -721,7 +759,8 @@ async fn three_hundred_slow_requests_under_a_256_open_file_limit() {
     if child::scenario().is_some() {
         return burst_child(false).await;
     }
-    let (ok, busy, st) = burst(NAME).await;
+    // The budget keeps the router from running out at accept: nothing dropped.
+    let (ok, busy, _, st) = burst(NAME, false).await;
     assert_eq!(
         (st.local.max_concurrent, st.local.max_connections),
         (64, 128)
@@ -738,7 +777,9 @@ async fn three_hundred_slow_requests_under_a_256_open_file_limit() {
 
 /// The same burst with the budget configured far above the limit: the router
 /// now does run out of descriptors (accepting and connecting upstream), and
-/// still every request is answered 200 or 503 and no line is blamed.
+/// still every request is answered 200 or 503 and no line is blamed. On macOS
+/// a connection whose accept found no descriptor is dropped by the system
+/// before the router sees it (see [`burst`]).
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn running_out_of_descriptors_never_marks_a_line_down() {
@@ -746,7 +787,7 @@ async fn running_out_of_descriptors_never_marks_a_line_down() {
     if child::scenario().is_some() {
         return burst_child(true).await;
     }
-    let (ok, busy, st) = burst(NAME).await;
+    let (ok, busy, _, st) = burst(NAME, cfg!(target_os = "macos")).await;
     assert_eq!(st.local.max_concurrent, 10_000);
     assert!(ok > 0, "some requests got through");
     assert!(

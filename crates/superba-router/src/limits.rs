@@ -35,7 +35,15 @@
 //!   or opening the request log is this computer's problem, never a line's: no
 //!   breaker, no failover, no "line down". The request gets 503
 //!   `local_router_busy` naming the limit, a warning is logged at most once a
-//!   minute, and [`crate::status::LocalStatus`] counts it.
+//!   minute, and [`crate::status::LocalStatus`] counts it. Errors are recognised
+//!   by their OS error code anywhere in the source chain, never by their text,
+//!   and the status shows the OS error itself (the outer errors' text, e.g.
+//!   reqwest's "error sending request for url (...)", does not name it).
+//!   A connection whose `accept` finds no descriptor waits in the listen backlog
+//!   on Linux; macOS drops it (its `accept` takes the connection off the queue
+//!   before it finds no descriptor), so there Codex sees the connection closed
+//!   without an answer. The inbound connection budget is what keeps the router
+//!   from getting there.
 //!
 //! With the soft open-file limit `L` found at start the defaults keep the
 //! descriptors in use below `L`: `L/4` admissions (4 to 512; 512 without a
@@ -144,25 +152,33 @@ impl Budget {
 /// (reqwest → hyper-util → the `io::Error` of `socket()`, `connect()` or the
 /// DNS lookup) and the custom errors wrapped in an `io::Error`.
 pub fn file_limit_in(err: &(dyn std::error::Error + 'static)) -> Option<FileLimitHit> {
+    file_limit_error_in(err).map(|(hit, _)| hit)
+}
+
+/// As [`file_limit_in`], with the error of the chain that carries the OS error
+/// code (`EMFILE`, `ENFILE`, ...), or Superba's own I/O error of that kind.
+pub fn file_limit_error_in<'a>(
+    err: &'a (dyn std::error::Error + 'static),
+) -> Option<(FileLimitHit, &'a (dyn std::error::Error + 'static))> {
     let mut current = Some(err);
     let mut depth = 0;
     while let Some(e) = current {
         if let Some(io) = e.downcast_ref::<std::io::Error>() {
             if let Some(hit) = fdlimit::file_limit_hit(io) {
-                return Some(hit);
+                return Some((hit, e));
             }
             // `io::Error::source` skips the wrapped error itself.
             if let Some(inner) = io.get_ref()
                 && depth < 16
-                && let Some(hit) = file_limit_in(inner)
+                && let Some(found) = file_limit_error_in(inner)
             {
-                return Some(hit);
+                return Some(found);
             }
         }
         if let Some(superba_core::Error::Io { kind, .. }) = e.downcast_ref::<superba_core::Error>()
             && kind == fdlimit::IO_KIND_TOO_MANY_OPEN_FILES
         {
-            return Some(FileLimitHit::Process);
+            return Some((FileLimitHit::Process, e));
         }
         depth += 1;
         if depth > 16 {
@@ -171,6 +187,12 @@ pub fn file_limit_in(err: &(dyn std::error::Error + 'static)) -> Option<FileLimi
         current = e.source();
     }
     None
+}
+
+/// Text for a local file-limit error: the OS error found in `err`'s chain
+/// ("Too many open files (os error 24)"), else `err` itself.
+pub fn file_limit_detail(err: &(dyn std::error::Error + 'static)) -> String {
+    file_limit_error_in(err).map_or_else(|| err.to_string(), |(_, e)| e.to_string())
 }
 
 /// True for a Superba error that is "too many open files".

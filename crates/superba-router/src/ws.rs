@@ -37,7 +37,7 @@ use crate::forward::{
     Observed, describe_error, empty, failover_status, local_busy, request_headers,
     response_headers, router_error, set_route,
 };
-use crate::limits::{Admission, ConnSlot, Place, file_limit_in};
+use crate::limits::{Admission, ConnSlot, Place, file_limit_detail, file_limit_in};
 use crate::proxy::{note_line_down, on_answer};
 use crate::select::{Candidate, candidates};
 use crate::state::{GaugeGuard, RespBody, Shared, View, lock};
@@ -134,7 +134,8 @@ pub(crate) async fn proxy_ws(
             // Out of descriptors here: not the line's fault, and no other
             // line would do better.
             Err(e) if file_limit_in(&e).is_some() => {
-                let message = shared.local_file_limit(Place::Upstream(label.clone()), &e);
+                let message =
+                    shared.local_file_limit(Place::Upstream(label.clone()), &file_limit_detail(&e));
                 return local_busy(&message);
             }
             Err(e) => {

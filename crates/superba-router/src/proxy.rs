@@ -28,7 +28,7 @@ use crate::forward::{
     Observed, describe_error, empty_responses_answer, failover_status, local_busy, request_headers,
     response_headers, router_error, set_route,
 };
-use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_in};
+use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_detail, file_limit_in};
 use crate::model_map::map_model;
 use crate::select::{Candidate, candidates};
 use crate::state::{GaugeGuard, Generation, RespBody, Shared, View, lock};
@@ -235,7 +235,8 @@ pub(crate) async fn proxy_http(
             // This computer is out of descriptors: no other line would do
             // better, and the line is not to blame.
             Err(e) if file_limit_in(&e).is_some() => {
-                let message = shared.local_file_limit(Place::Upstream(label.clone()), &e);
+                let message =
+                    shared.local_file_limit(Place::Upstream(label.clone()), &file_limit_detail(&e));
                 if let Some(t) = tracker {
                     t.finish(End {
                         status: Some(superba_core::RequestStatus::Http {
