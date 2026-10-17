@@ -20,6 +20,19 @@ pub(super) struct State {
     install_error: Option<Error>,
     download_error: Option<Error>,
     refreshes: usize,
+    windows: WindowsFake,
+}
+
+/// The Windows installer download of the fake: what it reports, whether it is
+/// held (until released or cancelled), what it opened.
+#[derive(Debug, Default)]
+struct WindowsFake {
+    report: Option<AppDownloadReport>,
+    hold: bool,
+    error: Option<Error>,
+    opened: Vec<std::path::PathBuf>,
+    open_error: Option<Error>,
+    requests: Vec<AppDownloadRequest>,
 }
 
 impl FakeService {
@@ -57,6 +70,92 @@ impl FakeService {
     pub fn version_refreshes(&self) -> usize {
         self.areas.versions.lock().unwrap().refreshes
     }
+
+    /// Windows: `download_app_package` returns `report` (after reporting
+    /// progress); `hold` keeps it running until [`FakeService::release_download`]
+    /// or a cancel.
+    pub fn set_windows_download(&self, report: AppDownloadReport, hold: bool) {
+        let mut a = self.areas.versions.lock().unwrap();
+        a.windows.report = Some(report);
+        a.windows.hold = hold;
+    }
+
+    /// Let a held Windows download finish.
+    pub fn release_download(&self) {
+        self.areas.versions.lock().unwrap().windows.hold = false;
+    }
+
+    /// Make the Windows download fail with `error`.
+    pub fn fail_windows_download(&self, error: Error) {
+        self.areas.versions.lock().unwrap().windows.error = Some(error);
+    }
+
+    /// Make opening a package fail with `error`.
+    pub fn fail_open_package(&self, error: Error) {
+        self.areas.versions.lock().unwrap().windows.open_error = Some(error);
+    }
+
+    /// Packages opened with App Installer, in order.
+    pub fn opened_packages(&self) -> Vec<std::path::PathBuf> {
+        self.areas.versions.lock().unwrap().windows.opened.clone()
+    }
+
+    /// `download_app_package` requests.
+    pub fn app_download_requests(&self) -> Vec<AppDownloadRequest> {
+        self.areas.versions.lock().unwrap().windows.requests.clone()
+    }
+}
+
+/// Body of `SwitchService::download_app_package`.
+pub(super) async fn download_app_package(
+    fake: &FakeService,
+    request: AppDownloadRequest,
+    progress: std::sync::Arc<dyn DownloadProgressSink>,
+) -> Result<AppDownloadReport> {
+    let report = {
+        let mut a = fake.areas.versions.lock().unwrap();
+        a.windows.requests.push(request);
+        if let Some(e) = a.windows.error.clone() {
+            return Err(e);
+        }
+        a.windows.report.clone()
+    };
+    let Some(report) = report else {
+        return download_app_update(fake).await;
+    };
+    progress.report(DownloadProgress::stage(
+        DownloadStage::Resolving,
+        Some(AppPackageSource::Official),
+    ));
+    let total = report.windows.as_ref().map_or(1, |w| w.package.size);
+    progress.report(DownloadProgress {
+        file: "ChatGPT-26.1013.4894.0-x64.msix".into(),
+        done: total / 2,
+        total: Some(total),
+        resumed_from: 0,
+        index: 1,
+        count: 1,
+        ..DownloadProgress::stage(DownloadStage::Downloading, Some(AppPackageSource::Official))
+    });
+    loop {
+        if progress.cancel_requested() {
+            return Err(Error::Cancelled);
+        }
+        if !fake.areas.versions.lock().unwrap().windows.hold {
+            return Ok(report);
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// Body of `SwitchService::open_app_package`.
+pub(super) async fn open_app_package(fake: &FakeService, path: std::path::PathBuf) -> Result<()> {
+    let mut a = fake.areas.versions.lock().unwrap();
+    if let Some(e) = a.windows.open_error.clone() {
+        return Err(e);
+    }
+    a.windows.opened.push(path);
+    Ok(())
 }
 
 fn v(s: &str) -> CodexVersion {

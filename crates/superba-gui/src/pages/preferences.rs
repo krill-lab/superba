@@ -5,7 +5,7 @@
 use egui::{Sense, Stroke, Ui, vec2};
 use superba_core::{
     Background, DownloadSource, FeedSourceChoice, Locale, ProviderRestore, RestoreTarget, Settings,
-    Theme,
+    Theme, WindowsAppSource,
 };
 
 use super::{Action, Cx, Page, page_header, section};
@@ -53,6 +53,35 @@ fn row(
             egui::Stroke::new(1.0, cx.pal.border),
         );
     }
+}
+
+/// Windows: where the ChatGPT app installer package comes from (shown on
+/// Windows only; public for tests).
+pub fn windows_app_source_row(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings) {
+    row(
+        ui,
+        cx,
+        &cx.tr.t("prefs.network.app_source"),
+        &cx.tr.t("prefs.network.app_source_desc"),
+        false,
+        |ui| {
+            Segmented::new("app-source", &mut settings.network.windows_app_source)
+                .option(
+                    WindowsAppSource::OfficialFirst,
+                    cx.tr.t("prefs.network.app_source_official_first"),
+                )
+                .option(
+                    WindowsAppSource::OfficialOnly,
+                    cx.tr.t("prefs.network.app_source_official_only"),
+                )
+                .option(
+                    WindowsAppSource::StoreMirrorOnly,
+                    cx.tr.t("prefs.network.app_source_store_only"),
+                )
+                .small()
+                .show(ui);
+        },
+    );
 }
 
 /// Side of a background swatch.
@@ -281,6 +310,9 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
                     .show(ui);
             },
         );
+        if cfg!(windows) {
+            windows_app_source_row(ui, cx, settings);
+        }
         row(
             ui,
             cx,

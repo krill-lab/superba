@@ -4,13 +4,17 @@
 //!
 //! - App: Linux downloads and verifies the package, then opens the system
 //!   installer or shows the `apt` / `dnf` command (Superba never uses sudo);
-//!   macOS updates itself (Sparkle); Windows opens the Microsoft Store.
+//!   macOS updates itself (Sparkle); Windows downloads and verifies the MSIX
+//!   (OpenAI's server, else the Microsoft Store CDN) and opens App Installer,
+//!   where the user clicks Install ([`windows_app`]); the Store stays offered.
 //! - Pin: bundled / a fixed version from Superba's verified store / a custom
 //!   path, with a compatibility badge; applying is a full app restart planned as
 //!   `SwitchIntent::AppCodexPin`. Not offered on Windows in 0.3.
 //! - CLI rows by install kind: standalone installs are updated in place (the
 //!   previous release is kept for rollback), npm / Homebrew only get the command.
 //! - Remote rows install the verified release into the host's `~/.local/bin`.
+
+pub mod windows_app;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -358,6 +362,8 @@ pub struct State {
     pub first_app_version: Option<String>,
     /// Superba's own update (the first section).
     pub superba: super::updates_self::SelfState,
+    /// The Windows installer package of the app.
+    pub windows: windows_app::WinState,
     toasts: Vec<(Status, String)>,
     /// The page's view was fetched online or an install finished: the shell
     /// reloads its own copy (the sidebar badge and the Overview read it).
@@ -398,6 +404,7 @@ impl State {
             || !self.installs.is_empty()
             || self.download.is_some()
             || self.superba.busy()
+            || self.windows.busy()
     }
 
     /// An install for `target` is running.
@@ -776,6 +783,21 @@ fn app_section(
             }
             command_row(ui, cx, command, out);
         }
+        AppUpdateAction::WindowsPackage {
+            package,
+            source,
+            store_url,
+            command,
+        } => windows_app::show(
+            ui,
+            cx,
+            &mut state.windows,
+            package.as_ref(),
+            *source,
+            store_url.as_deref(),
+            command.as_deref(),
+            out,
+        ),
         _ => {}
     }
 }

@@ -1897,6 +1897,18 @@ impl SwitchService for FakeService {
         versions::rollback_codex(self, target).await
     }
 
+    async fn download_app_package(
+        &self,
+        request: AppDownloadRequest,
+        progress: Arc<dyn DownloadProgressSink>,
+    ) -> Result<AppDownloadReport> {
+        versions::download_app_package(self, request, progress).await
+    }
+
+    async fn open_app_package(&self, path: std::path::PathBuf) -> Result<()> {
+        versions::open_app_package(self, path).await
+    }
+
     async fn download_app_update(&self) -> Result<AppDownloadReport> {
         versions::download_app_update(self).await
     }
