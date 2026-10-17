@@ -43,7 +43,7 @@ after `windowfocus` on the Superba window. Ad-hoc driver scripts load this file
 
 Every child gets an environment built from scratch (no inherited CODEX_*, XDG_*,
 proxy or DBus variables), `SUPERBA_SECRET_BACKEND=file` and its own HOME under
-/tmp, so the real ~/.codex, keyring and running apps are never touched. Processes
+/tmp (or $SUPERBA_SHOTS_WORKDIR), so the real ~/.codex, keyring and running apps are never touched. Processes
 are stopped by PID. The key is a fixed fake value known only to the mock relay.
 
 The desktop app given with --app-dir is copied into the work directory first,
@@ -216,7 +216,8 @@ class Input:
 class Session:
     def __init__(self, args):
         self.args = args
-        self.work = Path(tempfile.mkdtemp(prefix="sbshots-", dir="/tmp"))
+        self.work = Path(tempfile.mkdtemp(prefix="sbshots-",
+                                         dir=os.environ.get("SUPERBA_SHOTS_WORKDIR", "/tmp")))
         self.home = self.work / "home"
         self.bin = self.work / "bin"
         self.tls = self.work / "tls"
@@ -279,8 +280,10 @@ class Session:
         spb = str(self.args.bin_dir / "spb")
         p = self.run([spb, "--json", "status"], check=False)
         real_home = os.path.expanduser("~")
+        # An explicit SUPERBA_SHOTS_WORKDIR may itself sit under /data/ or ~.
+        shown = p.stdout.replace(str(self.work), "")
         for bad in ("/data/", real_home + "/"):
-            if bad in p.stdout:
+            if bad in shown:
                 raise SystemExit(f"spb status names a path under {bad}; it would be in the pictures")
 
     # ---- infrastructure ------------------------------------------------------

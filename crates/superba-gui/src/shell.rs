@@ -21,17 +21,44 @@ use crate::flow::{Flow, Run, Stage};
 use crate::pages::{Action, Cx, Page, error_text};
 use crate::pages::{NavBadge, PageStatus};
 
-/// The Superba mark: an opened bascule bridge in a rounded square.
-pub fn brand_mark(ui: &mut Ui, pal: &Palette, size: f32) {
+/// The Superba mark: the application icon (a coral mark on a pearl tile), drawn
+/// from the pre-rendered PNG closest above the physical size so it stays crisp on
+/// HiDPI. The tile fills 928 of the icon's 1024 units; the rest is its soft shadow.
+pub fn brand_mark(ui: &mut Ui, _pal: &Palette, size: f32) {
+    const SMALL: &[u8] = include_bytes!("../../../assets/icon/png/superba-64.png");
+    const MEDIUM: &[u8] = include_bytes!("../../../assets/icon/png/superba-128.png");
+    const LARGE: &[u8] = include_bytes!("../../../assets/icon/png/superba-256.png");
+    let physical = size * ui.ctx().pixels_per_point();
+    let (name, bytes) = if physical <= 64.0 {
+        ("brand-mark-64", SMALL)
+    } else if physical <= 128.0 {
+        ("brand-mark-128", MEDIUM)
+    } else {
+        ("brand-mark-256", LARGE)
+    };
     let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
-    let p = ui.painter();
-    p.rect_filled(rect, (size * 0.28) as u8, pal.primary);
-    let s = size / 24.0;
-    let at = |x: f32, y: f32| pos2(rect.min.x + x * s, rect.min.y + y * s);
-    let stroke = Stroke::new((2.0 * s).max(1.4), pal.on_primary);
-    p.line_segment([at(5.0, 17.5), at(10.5, 8.5)], stroke);
-    p.line_segment([at(19.0, 17.5), at(13.5, 8.5)], stroke);
-    p.line_segment([at(4.0, 17.5), at(20.0, 17.5)], stroke);
+    let id = egui::Id::unique(name);
+    let cached = ui.ctx().data(|d| d.get_temp::<egui::TextureHandle>(id));
+    let texture = match cached {
+        Some(texture) => texture,
+        None => {
+            let Ok(icon) = eframe::icon_data::from_png_bytes(bytes) else {
+                return;
+            };
+            let image = egui::ColorImage::from_rgba_unmultiplied(
+                [icon.width as usize, icon.height as usize],
+                &icon.rgba,
+            );
+            let texture = ui
+                .ctx()
+                .load_texture(name, image, egui::TextureOptions::LINEAR);
+            ui.ctx().data_mut(|d| d.insert_temp(id, texture.clone()));
+            texture
+        }
+    };
+    let paint = rect.expand(size * (1024.0 / 928.0 - 1.0) / 2.0);
+    let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+    ui.painter().image(texture.id(), paint, uv, Color32::WHITE);
 }
 
 /// The sidebar panel's frame (margins around the navigation).

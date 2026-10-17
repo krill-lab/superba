@@ -1917,44 +1917,11 @@ fn local_hm(t: Timestamp) -> String {
     crate::pages::clock_time(t, false)
 }
 
-/// The window icon: the bascule mark on a dark rounded square, rasterized in code.
+/// The window, taskbar and dock icon: Superba's pearl-tile mark, the 256 px
+/// render of `assets/icon/superba.svg`.
 pub fn window_icon() -> egui::IconData {
-    let n = 64usize;
-    let mut rgba = vec![0u8; n * n * 4];
-    let seg = |px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32| -> f32 {
-        let (dx, dy) = (bx - ax, by - ay);
-        let t = (((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
-        let (cx, cy) = (ax + t * dx, ay + t * dy);
-        ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
-    };
-    for y in 0..n {
-        for x in 0..n {
-            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-            // Rounded square mask (radius 14).
-            let r = 14.0;
-            let qx = (fx - 32.0).abs() - (32.0 - r);
-            let qy = (fy - 32.0).abs() - (32.0 - r);
-            let outside =
-                (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt() + qx.max(qy).min(0.0) - r;
-            let alpha = (0.5 - outside).clamp(0.0, 1.0);
-            let s = 64.0 / 24.0;
-            let d = seg(fx, fy, 5.0 * s, 17.5 * s, 10.5 * s, 8.5 * s)
-                .min(seg(fx, fy, 19.0 * s, 17.5 * s, 13.5 * s, 8.5 * s))
-                .min(seg(fx, fy, 4.0 * s, 17.5 * s, 20.0 * s, 17.5 * s));
-            let line = (2.6 - d).clamp(0.0, 1.0);
-            let v = (10.0 + line * 227.0) as u8;
-            let i = (y * n + x) * 4;
-            rgba[i] = v;
-            rgba[i + 1] = v;
-            rgba[i + 2] = v;
-            rgba[i + 3] = (alpha * 255.0) as u8;
-        }
-    }
-    egui::IconData {
-        rgba,
-        width: n as u32,
-        height: n as u32,
-    }
+    eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon/png/superba-256.png"))
+        .expect("the embedded 256 px icon is a valid PNG")
 }
 
 #[cfg(test)]
