@@ -7,12 +7,13 @@ use std::time::{Duration, Instant};
 
 use egui::{Align, Frame, Layout, Panel, ScrollArea, UiBuilder, pos2};
 use superba_core::{
-    KeyInput, LineCaps, Locale, MigrationRequest, MigrationSelector, OutcomeStatus, ProfileId,
-    ProviderRestore, RestartKind, RestoreTarget, Settings, Severity, SiteId, StepStatus,
-    SwitchEvent, SwitchIntent, SwitchPhase, SwitchRequest, SwitchService, TargetId,
-    TargetSelection, Theme, Timestamp, catalog, codex::PROVIDER_OPENAI,
+    EnvironmentEvent, KeyInput, LineCaps, Locale, MigrationRequest, MigrationSelector,
+    OutcomeStatus, ProfileId, ProviderRestore, RestartKind, RestoreTarget, Settings, Severity,
+    SiteId, StepStatus, SwitchEvent, SwitchIntent, SwitchPhase, SwitchRequest, SwitchService,
+    TargetId, TargetSelection, Theme, Timestamp, catalog, codex::PROVIDER_OPENAI,
 };
 
+use crate::cadence::{self, Cadence, Due};
 use crate::design::backdrop::{self, Backdrop};
 use crate::design::fonts::{self, FontReport};
 use crate::design::layout;
@@ -256,7 +257,9 @@ pub struct SuperbaApp {
     log: Vec<LogLine>,
     fonts: FontReport,
     started: Instant,
-    last_poll: Instant,
+    /// The shell's own reads (overview, watchdog, hosts, update check) and the
+    /// window events for the environment monitor.
+    cadence: Cadence,
     /// Always empty: remote hosts follow switches through their own toggle
     /// (`Settings.hosts`), not a per-switch selection ([`Cx`] keeps the field
     /// for the Phase 1 page tests).
@@ -264,12 +267,8 @@ pub struct SuperbaApp {
     entered: bool,
     router_watch_supported: bool,
     router_watch_busy: bool,
-    last_router_watch: Instant,
     account_loaded_for: Option<(Option<superba_core::ProfileId>, u64)>,
     models_loaded_for: Option<(superba_core::ProfileId, u64)>,
-    last_hosts: Instant,
-    /// The last automatic Superba update check (every 24 h while running).
-    last_selfupdate: Instant,
     /// Preferences choices about updates as last sent to the backend.
     selfupdate_prefs: (bool, bool),
     had_providers: bool,
@@ -332,16 +331,13 @@ impl SuperbaApp {
             log: Vec::new(),
             fonts,
             started: Instant::now(),
-            last_poll: Instant::now(),
+            cadence: Cadence::new(Instant::now()),
             probed_once: false,
             entered: false,
             router_watch_supported: true,
             router_watch_busy: false,
-            last_router_watch: Instant::now(),
             account_loaded_for: None,
             models_loaded_for: None,
-            last_hosts: Instant::now(),
-            last_selfupdate: Instant::now(),
             selfupdate_prefs: (true, false),
             had_providers: false,
             pending_key_save: false,
@@ -419,7 +415,7 @@ impl SuperbaApp {
     /// Ask the backend for Superba's own update state. An automatic check does
     /// nothing while the preference is off or the answer is fresh.
     fn check_self_update(&mut self, manual: bool) {
-        self.last_selfupdate = Instant::now();
+        self.cadence.selfupdate_checked(Instant::now());
         self.data.selfupdate.start();
         self.backend.send(Command::SelfUpdateCheck { manual });
     }
@@ -500,24 +496,62 @@ impl SuperbaApp {
         self.data.router_watch = Some(watch.state);
     }
 
-    /// One watchdog tick about every 5 s while router mode is on and no switch
-    /// runs.
-    fn maybe_watch_router(&mut self) {
-        if !self.router_watch_supported
-            || self.router_watch_busy
-            || !self.data.router_enabled()
-            || self.flow.is_running()
-            || self.flow.is_planning()
-            || self.last_router_watch.elapsed() < Duration::from_secs(5)
-        {
-            if !self.data.router_enabled() {
-                self.data.router_watch = None;
-            }
-            return;
+    /// The router watchdog has work: router mode on and no switch planned or
+    /// running (one tick every 5 s, also while the window is hidden).
+    fn router_watch_wanted(&self) -> bool {
+        self.router_watch_supported
+            && !self.router_watch_busy
+            && self.data.router_enabled()
+            && !self.flow.is_running()
+            && !self.flow.is_planning()
+    }
+
+    fn cadence_inputs(&self, ctx: &egui::Context, visible: bool) -> cadence::Inputs {
+        cadence::Inputs {
+            visible,
+            focused: ctx.input(|i| i.focused),
+            entered: self.entered,
+            switching: self.flow.is_running(),
+            router_watch: self.router_watch_wanted(),
+            overview_loading: self.data.overview.loading,
+            hosts_loading: self.data.hosts.loading,
+            selfupdate_loading: self.data.selfupdate.loading,
+            environment_generation: self.service.environment_generation(),
         }
-        self.last_router_watch = Instant::now();
-        self.router_watch_busy = true;
-        self.backend.send(Command::RouterWatch);
+    }
+
+    /// Run what the shell's cadence says is due, tell the environment monitor
+    /// about the window, and sleep until the next timer (user request 34).
+    fn run_cadence(&mut self, ctx: &egui::Context, visible: bool) {
+        if !self.data.router_enabled() {
+            self.data.router_watch = None;
+        }
+        let now = Instant::now();
+        let inputs = self.cadence_inputs(ctx, visible);
+        for due in self.cadence.tick(now, inputs) {
+            match due {
+                Due::Environment(event) => self.service.environment_event(event),
+                Due::Overview => self.backend.send(Command::Overview),
+                Due::RouterWatch => {
+                    self.router_watch_busy = true;
+                    self.backend.send(Command::RouterWatch);
+                }
+                Due::Hosts => self.handle_action(ctx, Action::LoadHosts),
+                Due::SelfUpdate => self.check_self_update(false),
+                Due::EnvironmentChanged => {
+                    // Installs or Codex versions changed: the views built from them.
+                    if self.data.versions.value.is_some() && !self.data.versions.loading {
+                        self.data.versions.start();
+                        self.backend.send(Command::Versions { refresh: false });
+                    }
+                    self.models_loaded_for = None;
+                }
+            }
+        }
+        let inputs = self.cadence_inputs(ctx, visible);
+        if let Some(wait) = self.cadence.next_wake(now, inputs) {
+            ctx.request_repaint_after(wait.max(Duration::from_millis(100)));
+        }
     }
 
     fn now(&self) -> Duration {
@@ -1108,6 +1142,9 @@ impl SuperbaApp {
             | Action::Uninstall => {}
             Action::Go(p) => self.go(p),
             Action::Refresh => {
+                // Also look at the machine again (installs, Codex versions).
+                self.service.environment_event(EnvironmentEvent::Refresh);
+                self.cadence.overview_read(Instant::now());
                 self.data.overview.start();
                 self.backend.send(Command::Refresh);
                 self.load_account(true);
@@ -1151,7 +1188,7 @@ impl SuperbaApp {
                 if prefs != self.selfupdate_prefs {
                     // A changed update choice is acted on at once: check again.
                     self.selfupdate_prefs = prefs;
-                    self.last_selfupdate = Instant::now();
+                    self.cadence.selfupdate_checked(Instant::now());
                     self.data.selfupdate.start();
                     self.backend
                         .send(Command::SaveSettingsThenSelfUpdate(self.settings.clone()));
@@ -1191,6 +1228,7 @@ impl SuperbaApp {
             }
             Action::SetSpeed { profile, tier } => self.set_speed(profile, tier),
             Action::CheckUpdates => {
+                self.service.environment_event(EnvironmentEvent::Refresh);
                 self.data.versions.start();
                 self.backend.send(Command::Versions { refresh: true });
                 self.data.feeds.start();
@@ -1201,7 +1239,7 @@ impl SuperbaApp {
                 self.backend.send(Command::Versions { refresh: false });
             }
             Action::LoadHosts => {
-                self.last_hosts = Instant::now();
+                self.cadence.hosts_loaded(Instant::now());
                 self.data.hosts.start();
                 self.backend.send(Command::Hosts);
             }
@@ -1547,30 +1585,27 @@ impl eframe::App for SuperbaApp {
         self.process_flow_notices(&ctx);
         self.request_attention(&ctx);
 
-        self.maybe_watch_router();
-        // Remote hosts (their sync state) every minute while idle.
-        if self.entered
-            && !self.flow.is_running()
-            && !self.data.hosts.loading
-            && self.last_hosts.elapsed() > Duration::from_secs(60)
-        {
-            self.handle_action(&ctx, Action::LoadHosts);
+        // The shell's own reads and the window's next wake-up.
+        self.run_cadence(&ctx, true);
+    }
+
+    /// Runs before every `ui` and alone while the window is hidden or
+    /// minimised (eframe calls no `ui` then): the backend's answers keep being
+    /// handled and the router watchdog keeps ticking; nothing else is read and
+    /// the window is not woken up for anything else.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let visible = ctx.input(|i| i.viewport().visible()).unwrap_or(true);
+        if visible {
+            // `ui` follows in this pass and does all of it.
+            return;
         }
-        // Superba's own update: at start (see `load_shell_data`) and every 24 h.
-        if self.entered
-            && !self.data.selfupdate.loading
-            && self.last_selfupdate.elapsed() > Duration::from_secs(24 * 3600)
-        {
-            self.check_self_update(false);
+        self.handle_replies(ctx);
+        for command in self.flow.take_commands() {
+            self.backend.send(command);
         }
-        // Poll the overview every few seconds while idle.
-        if self.last_poll.elapsed() > Duration::from_secs(5) && !self.data.overview.loading {
-            self.last_poll = Instant::now();
-            if !self.flow.is_running() {
-                self.backend.send(Command::Overview);
-            }
-        }
-        ctx.request_repaint_after(Duration::from_secs(5));
+        self.process_flow_notices(ctx);
+        self.request_attention(ctx);
+        self.run_cadence(ctx, false);
     }
 
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {

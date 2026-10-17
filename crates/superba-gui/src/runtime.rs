@@ -396,6 +396,23 @@ impl Outbox {
             (self.repaint)();
         }
     }
+
+    /// Queue a reply without waking the UI: it is taken at the next frame the
+    /// UI draws anyway (an unchanged periodic overview).
+    fn send_quiet(&self, reply: Reply) {
+        let _ = self.tx.send(reply);
+    }
+}
+
+/// The last overview the periodic poll delivered (compared without its
+/// timestamp: an unchanged one does not wake the UI).
+type LastOverview = Arc<std::sync::Mutex<Option<Overview>>>;
+
+/// Whether `new` shows nothing `old` did not (at most the read time differs).
+fn same_overview(old: &Overview, new: &Overview) -> bool {
+    let mut new = new.clone();
+    new.generated_at = old.generated_at;
+    &new == old
 }
 
 /// Forwards switch events to the UI; `stop` is set by [`Command::StopSessions`].
@@ -466,6 +483,7 @@ impl Backend {
                     let switches = Arc::new(AtomicU64::new(0));
                     // The stop request of the running switch's session migration.
                     let stop = Arc::new(AtomicBool::new(false));
+                    let last: LastOverview = Arc::default();
                     while let Some(command) = cmd_rx.recv().await {
                         match &command {
                             // In order with the commands, before any task runs.
@@ -480,8 +498,9 @@ impl Backend {
                         let out = outbox.clone();
                         let switches = switches.clone();
                         let stop = stop.clone();
+                        let last = last.clone();
                         tokio::spawn(async move {
-                            handle(service, out, command, &switches, stop).await
+                            handle(service, out, command, &switches, stop, &last).await
                         });
                     }
                 });
@@ -547,6 +566,7 @@ async fn handle(
     command: Command,
     switches: &AtomicU64,
     stop: Arc<AtomicBool>,
+    last: &LastOverview,
 ) {
     match command {
         Command::Refresh => {
@@ -560,7 +580,20 @@ async fn handle(
         }
         Command::Overview => {
             let o = after_switches(switches, || service.overview()).await;
-            out.send(Reply::Overview(o));
+            // The 5 s poll: an unchanged overview needs no frame of its own.
+            let unchanged = match (&o, last.lock()) {
+                (Ok(new), Ok(mut last)) => {
+                    let same = last.as_ref().is_some_and(|old| same_overview(old, new));
+                    *last = Some(new.clone());
+                    same
+                }
+                _ => false,
+            };
+            if unchanged {
+                out.send_quiet(Reply::Overview(o));
+            } else {
+                out.send(Reply::Overview(o));
+            }
         }
         Command::ProbeLines(site) => {
             let result = service.probe_lines(&site).await;

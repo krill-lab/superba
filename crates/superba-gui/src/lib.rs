@@ -27,6 +27,7 @@
 
 pub mod app;
 pub mod args;
+pub mod cadence;
 pub mod design;
 pub mod flow;
 pub mod i18n;
