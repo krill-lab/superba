@@ -2,6 +2,14 @@
 # Every key must exist in shell.zh-CN.toml with the same {placeholders} and must not be
 # defined in another area file (tests/i18n_tests.rs).
 
+[migration]
+title = "Making room for your conversations"
+rollback = "Restoring your conversations"
+subtitle = "Please keep this window open while we take care of the move."
+old_home = "The old place"
+new_home = "A fresh start"
+progress = "{n} {n|step|steps} completed · {time} elapsed"
+
 [action]
 cancel = "Cancel"
 close = "Close"
@@ -187,7 +195,6 @@ watch.suspect = "The local router is not answering ({detail}). Codex waits for i
 [shell]
 badge.routed = "Codex is routed through the local router"
 badge.unsynced = "{n} {n|host has|hosts have} unsynced settings"
-badge.superba_update = "Superba {version} is available"
 badge.update = "An update is available"
 # Page state and responsive layouts (fixgui2).
 failed_title = "Switching to “{dest}” failed"

@@ -305,6 +305,76 @@ fn full_restart_can_write_only_without_permission_to_restart() {
 }
 
 #[test]
+fn migration_cover_spans_execution_but_not_confirmation_or_write_only() {
+    let mut plan = full_plan();
+    plan.migration = Some(superba_core::MigrationPlan {
+        id: "move-sessions".into(),
+        codex_home: "fixture-home".into(),
+        request: superba_core::MigrationRequest {
+            to_provider: "openai".into(),
+            selectors: vec![],
+            include_archived: true,
+            exclude: vec![],
+        },
+        thread_count: 7,
+        rollout_count: 7,
+        by_source_provider: BTreeMap::new(),
+        backup_dir: "fixture-backup".into(),
+        backup_bytes: 0,
+        items: vec![],
+    });
+    let mut flow = planned_flow(0, plan.clone());
+    assert!(!flow.is_migrating(), "confirmation must remain interactive");
+    flow.confirm_full(false, Duration::ZERO);
+    take_execute(&mut flow);
+    for phase in [
+        SwitchPhase::Applying,
+        SwitchPhase::Verifying,
+        SwitchPhase::RollingBack,
+    ] {
+        flow.on_event(
+            &SwitchEvent::Phase {
+                phase,
+                at: Timestamp::EPOCH,
+            },
+            Duration::ZERO,
+        );
+        assert!(
+            flow.is_migrating(),
+            "the cover must stay up through {phase:?}"
+        );
+    }
+    flow.on_executed(Ok(outcome(&plan)), Duration::from_secs(5));
+    assert!(!flow.is_migrating());
+
+    let mut write_only = planned_flow(0, plan);
+    write_only.confirm_full(true, Duration::ZERO);
+    take_execute(&mut write_only);
+    assert!(!write_only.is_migrating(), "write-only skips migration");
+    assert!(
+        !running_flow().is_migrating(),
+        "ordinary hot switches keep their banner"
+    );
+}
+
+#[test]
+fn rollback_migration_cover_releases_after_error() {
+    let mut plan = full_plan();
+    plan.request.intent = SwitchIntent::RollbackMigration {
+        migration_id: "previous".into(),
+    };
+    let mut flow = planned_flow(0, plan);
+    flow.confirm_full(false, Duration::ZERO);
+    take_execute(&mut flow);
+    assert!(flow.is_migrating());
+    flow.on_executed(
+        Err(Error::other("migration failed")),
+        Duration::from_secs(2),
+    );
+    assert!(!flow.is_migrating(), "failure must release the cover");
+}
+
+#[test]
 fn blocked_plan_replans_the_selected_alternative() {
     let alternative = SwitchRequest::profile("official".into());
     let plan = SwitchPlan {

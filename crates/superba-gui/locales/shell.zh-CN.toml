@@ -1,6 +1,14 @@
 # superba-gui UI texts (Simplified Chinese), area "shell". Every key must exist in
 # shell.en.toml with the same {placeholders} (tests/i18n_tests.rs).
 
+[migration]
+title = "正在为你的会话搬新家"
+rollback = "正在恢复你的会话"
+subtitle = "搬家正在进行，请保持窗口打开。"
+old_home = "旧居"
+new_home = "新家"
+progress = "已完成 {n} 个步骤 · 已用时 {time}"
+
 [action]
 cancel = "取消"
 close = "关闭"
@@ -186,7 +194,6 @@ watch.suspect = "本地路由没有响应（{detail}）。Codex 会等待它；�
 [shell]
 badge.routed = "Codex 正经由本地路由"
 badge.unsynced = "{n} 台主机有未同步的设置"
-badge.superba_update = "Superba {version} 可更新"
 badge.update = "有可用更新"
 # Page state and responsive layouts (fixgui2).
 failed_title = "切换到「{dest}」失败"

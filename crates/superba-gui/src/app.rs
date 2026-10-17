@@ -1264,6 +1264,23 @@ impl SuperbaApp {
     // -------------------------------------------------------------------
 
     fn keyboard(&mut self, ctx: &egui::Context) {
+        if self.flow.is_migrating() {
+            // Only the active execution decision owns keys during a migration.
+            // In particular, Escape cannot dismiss the cover while writing.
+            if self.flow.run().is_some_and(|run| {
+                run.decision
+                    .as_ref()
+                    .is_some_and(|decision| !decision.is_stale())
+            }) {
+                if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    self.flow.rollback_now();
+                }
+                if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.flow.cancel(self.now());
+                }
+            }
+            return;
+        }
         // Dialogs own Enter / Escape; the flow must not react to them.
         let modal = self.wizard.is_some() || self.pages.any_modal();
         if !modal && ctx.input_mut(|i| i.consume_shortcut(&palette::SHORTCUT)) {
@@ -1450,6 +1467,19 @@ impl eframe::App for SuperbaApp {
         // The window background (user request 24): a soft tinted gradient behind
         // the sidebar and the content; the panels draw no fill of their own.
         backdrop::paint(ui.painter(), ui.max_rect(), &Backdrop::of(&ctx));
+        if self.flow.is_migrating() {
+            self.palette.close();
+            let cx = cx!(self, pal, true);
+            crate::migration::show(&ctx, &cx, &mut self.flow, &mut self.banner, now);
+            // Keep force-quit and recovery choices above the blocking cover.
+            shell::decision_dialog(&ctx, &cx, &mut self.flow, now);
+            for command in self.flow.take_commands() {
+                self.backend.send(command);
+            }
+            self.process_flow_notices(&ctx);
+            self.request_attention(&ctx);
+            return;
+        }
 
         Panel::left("nav")
             .exact_size(size::SIDEBAR)
