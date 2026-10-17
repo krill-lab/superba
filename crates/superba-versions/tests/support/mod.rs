@@ -40,6 +40,20 @@ impl Route {
         }
     }
 
+    /// The `ETag` header this route sends, if any.
+    pub fn etag(&self) -> Option<String> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("etag"))
+            .map(|(_, v)| v.clone())
+    }
+
+    /// With an extra header.
+    pub fn header(mut self, k: &str, v: &str) -> Self {
+        self.headers.push((k.into(), v.into()));
+        self
+    }
+
     pub fn redirect(location: &str) -> Self {
         Self {
             status: 302,
@@ -55,6 +69,7 @@ impl Route {
 pub struct Seen {
     pub path: String,
     pub range: Option<String>,
+    pub if_none_match: Option<String>,
 }
 
 #[derive(Default)]
@@ -116,16 +131,28 @@ impl Mock {
                             .eq_ignore_ascii_case("range")
                             .then(|| v.trim().to_owned())
                     });
+                    let if_none_match = head.lines().find_map(|l| {
+                        let (k, v) = l.split_once(':')?;
+                        k.trim()
+                            .eq_ignore_ascii_case("if-none-match")
+                            .then(|| v.trim().to_owned())
+                    });
                     let route = {
                         let mut s = st.lock().unwrap();
                         s.log.push(Seen {
                             path: path.clone(),
                             range: range.clone(),
+                            if_none_match: if_none_match.clone(),
                         });
                         let key = path.split('?').next().unwrap_or("").to_owned();
                         s.routes.get(&key).cloned()
                     };
                     let route = route.unwrap_or_else(|| Route::status(404));
+                    // A matching ETag answers 304 with no body.
+                    let route = match (&if_none_match, route.etag()) {
+                        (Some(a), Some(b)) if a == &b => Route::status(304),
+                        _ => route,
+                    };
                     let (status, body, mut headers) = match (&range, route.ranges, route.status) {
                         (Some(r), true, 200) => {
                             let from: usize = r
@@ -282,4 +309,95 @@ pub fn integrity(bytes: &[u8]) -> String {
 pub fn write(path: &Path, data: &[u8]) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, data).unwrap();
+}
+
+/// One entry of [`zip_bytes`].
+pub struct ZipFile<'a> {
+    pub name: &'a str,
+    pub data: &'a [u8],
+    /// Unix mode including the file type bits (`0o100755`, `0o120777` for a
+    /// link, `0o040755` for a directory); 0 = written by a non-Unix host.
+    pub mode: u32,
+    pub deflate: bool,
+}
+
+impl<'a> ZipFile<'a> {
+    pub fn file(name: &'a str, data: &'a [u8], perm: u32) -> Self {
+        Self {
+            name,
+            data,
+            mode: 0o100_000 | perm,
+            deflate: true,
+        }
+    }
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut crc = !0_u32;
+    for &b in data {
+        crc ^= u32::from(b);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                0xEDB8_8320 ^ (crc >> 1)
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
+
+/// A zip archive (central directory authoritative, like `ditto` / `zip`).
+pub fn zip_bytes(files: &[ZipFile<'_>]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for f in files {
+        let (method, body) = if f.deflate {
+            let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+            e.write_all(f.data).unwrap();
+            (8_u16, e.finish().unwrap())
+        } else {
+            (0_u16, f.data.to_vec())
+        };
+        let offset = out.len() as u32;
+        let crc = crc32(f.data);
+        out.extend_from_slice(&0x0403_4b50_u32.to_le_bytes());
+        out.extend_from_slice(&20_u16.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&method.to_le_bytes());
+        out.extend_from_slice(&[0; 4]);
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(f.data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(f.name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(f.name.as_bytes());
+        out.extend_from_slice(&body);
+        central.extend_from_slice(&0x0201_4b50_u32.to_le_bytes());
+        let host: u16 = if f.mode == 0 { 0 } else { 3 };
+        central.extend_from_slice(&((host << 8) | 20).to_le_bytes());
+        central.extend_from_slice(&20_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&method.to_le_bytes());
+        central.extend_from_slice(&[0; 4]);
+        central.extend_from_slice(&crc.to_le_bytes());
+        central.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        central.extend_from_slice(&(f.data.len() as u32).to_le_bytes());
+        central.extend_from_slice(&(f.name.len() as u16).to_le_bytes());
+        central.extend_from_slice(&[0; 6]);
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&(f.mode << 16).to_le_bytes());
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(f.name.as_bytes());
+    }
+    let cd_offset = out.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50_u32.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    out.extend_from_slice(&cd_offset.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    out
 }

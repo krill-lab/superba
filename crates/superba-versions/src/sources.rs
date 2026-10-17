@@ -85,7 +85,10 @@ pub fn override_base(value: &str) -> Option<String> {
 
 /// The accepted override in `var`, if any; logs a warning once per process
 /// while it is active, and when it is ignored.
-fn checked_override(lookup: &impl Fn(&str) -> Option<String>, var: &'static str) -> Option<String> {
+pub(crate) fn checked_override(
+    lookup: &impl Fn(&str) -> Option<String>,
+    var: &'static str,
+) -> Option<String> {
     static LOGGED: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
     let raw = lookup(var).filter(|v| !v.trim().is_empty())?;
     let base = override_base(&raw);

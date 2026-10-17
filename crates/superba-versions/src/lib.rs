@@ -33,6 +33,7 @@
 pub mod app;
 pub mod extract;
 pub mod http;
+pub mod selfupdate;
 pub mod sources;
 pub mod standalone;
 pub mod store;
@@ -458,7 +459,7 @@ impl HttpVersionStore {
     }
 }
 
-fn host_of(url: &str) -> String {
+pub(crate) fn host_of(url: &str) -> String {
     url.split("://")
         .nth(1)
         .unwrap_or(url)
