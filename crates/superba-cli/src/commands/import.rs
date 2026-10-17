@@ -261,7 +261,11 @@ fn row(c: &ImportCandidate, report: &ImportReport, out: &Output) -> Vec<String> 
         name = out.render(&text("cli.import.current").arg("name", name));
     }
     if c.app != superba_core::ForeignApp::Codex {
-        name = format!("{name} ({})", c.app.label());
+        name = out.render(
+            &text("cli.import.app")
+                .arg("name", name)
+                .arg("app", c.app.label()),
+        );
     }
     vec![
         name,

@@ -58,7 +58,13 @@ pub struct ImportDialog {
     pub report: Option<ImportReport>,
     /// Why the import failed as a whole.
     pub error: Option<String>,
+    /// Frames left to repaint after the content changed: the modal and its
+    /// list take a few frames to settle at the new size, also without input.
+    settle: u8,
 }
+
+/// Frames repainted after the content changed.
+const SETTLE_FRAMES: u8 = 30;
 
 impl std::fmt::Debug for ImportDialog {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -102,10 +108,12 @@ impl ImportDialog {
             apply_task: None,
             report: None,
             error: None,
+            settle: 0,
         }
     }
 
     fn set_scan(&mut self, scan: superba_core::Result<ImportScan>) {
+        self.settle = SETTLE_FRAMES;
         if let Ok(s) = &scan {
             self.ticked = s
                 .candidates()
@@ -174,6 +182,7 @@ impl ImportDialog {
 
     /// Set the import result (tests).
     pub fn set_report(&mut self, report: ImportReport) {
+        self.settle = SETTLE_FRAMES;
         self.report = Some(report);
     }
 
@@ -192,7 +201,7 @@ impl ImportDialog {
             match task.poll() {
                 Some(Ok(report)) => {
                     self.apply_task = None;
-                    self.report = Some(report);
+                    self.set_report(report);
                 }
                 Some(Err(e)) => {
                     self.apply_task = None;
@@ -291,12 +300,15 @@ pub fn body(
     list_height: f32,
 ) -> ImportOutcomeUi {
     let _ = out;
-    // Keep painting while work runs, and once more after it finished so the
-    // list lays out at its full size.
-    let was_busy = d.busy();
-    if d.poll(cx) || was_busy {
+    // Keep painting while work runs, and for a few frames after the content
+    // changed so the dialog settles at its new size.
+    if d.poll(cx) {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(60));
+    }
+    if d.settle > 0 {
+        d.settle -= 1;
+        ui.ctx().request_repaint();
     }
     ui.label(Text::h2(cx.tr.t("import_dialog.title"), cx.pal));
     ui.label(Text::small(cx.tr.t("import_dialog.intro"), cx.pal));
@@ -348,14 +360,21 @@ pub fn body(
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let importing = d.apply_task.is_some();
+            let can = n > 0 && !d.busy();
+            // Enter imports when no control has the keyboard (a focused
+            // checkbox or segment keeps Enter for itself).
+            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter))
+                && ui.ctx().memory(|m| m.focused().is_none());
             if ui
                 .add(
                     Button::primary(cx.tr.f("import_dialog.button", &[("n", &n)]))
                         .icon(Icon::Download)
+                        .kbd("Enter")
                         .loading(importing)
-                        .enabled(n > 0 && !d.busy()),
+                        .enabled(can),
                 )
                 .clicked()
+                || (enter && can)
             {
                 d.start_import(cx);
             }
@@ -470,6 +489,7 @@ fn source_section(ui: &mut Ui, cx: &Cx<'_>, d: &mut ImportDialog, source: &Sourc
             } else {
                 d.expanded.insert(source.source);
             }
+            d.settle = SETTLE_FRAMES;
         }
         if open {
             for c in others {
@@ -570,21 +590,23 @@ fn candidate_row(ui: &mut Ui, cx: &Cx<'_>, d: &mut ImportDialog, c: &ImportCandi
         detail.push(cx.tr.f("import_dialog.model", &[("model", model)]));
     }
     let (key, has_key) = key_text(cx, &c.key);
+    // The key first: the address and model take what is left and are cut
+    // there, so a long address never widens the dialog.
     ui.horizontal(|ui| {
         ui.add_space(indent);
-        if !detail.is_empty() {
-            ui.add(
-                egui::Label::new(Text::mono_muted(detail.join(" · "), cx.pal).size(11.5))
-                    .truncate(),
-            );
-            ui.label(Text::caption("·", cx.pal));
-        }
         let color = if has_key {
             cx.pal.text_muted
         } else {
             cx.pal.amber
         };
         ui.label(Text::small(key, cx.pal).color(color));
+        if !detail.is_empty() {
+            ui.label(Text::caption("·", cx.pal));
+            ui.add(
+                egui::Label::new(Text::mono_muted(detail.join(" · "), cx.pal).size(11.5))
+                    .truncate(),
+            );
+        }
     });
     if let Some(conflict) = &c.conflict {
         ui.horizontal(|ui| {

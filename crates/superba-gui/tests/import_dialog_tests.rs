@@ -440,5 +440,39 @@ async fn the_wizard_offers_import_and_closes_on_the_providers_page_after_importi
             .iter()
             .any(|a| matches!(a, Action::Switch { .. } | Action::Plan(_)))
     );
-    let _ = ImportOutcomeUi::Continue;
+}
+
+#[tokio::test]
+async fn enter_imports_the_selection_and_then_finishes() {
+    let service = fake();
+    let data = data_of(&service).await;
+    let svc: Arc<dyn SwitchService> = service.clone();
+    let tr = Tr::new(Locale::En);
+    let h = Harness::new([1280.0, 800.0], egui::Theme::Dark);
+    let mut d = ImportDialog::with_scan(Ok(service_scan(&svc).await));
+    let mut actions = Vec::new();
+    let outcome = std::cell::RefCell::new(ImportOutcomeUi::Continue);
+    let mut f = |ui: &mut egui::Ui| {
+        let cx = cx(ui, &tr, &data, &svc, &h.fonts);
+        let o = show_dialog(ui.ctx(), &cx, &mut d, &mut actions);
+        if o != ImportOutcomeUi::Continue {
+            *outcome.borrow_mut() = o;
+        }
+    };
+    h.settle(&mut f);
+    h.key(egui::Key::Enter, &mut f);
+    run_until(&h, &mut f, || !service.import_requests().is_empty());
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(3) && *outcome.borrow() == ImportOutcomeUi::Continue
+    {
+        h.frame(Vec::new(), &mut f);
+        h.key(egui::Key::Enter, &mut f);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(service.import_requests().len(), 1, "Enter imported once");
+    assert!(
+        matches!(*outcome.borrow(), ImportOutcomeUi::Done { imported: 3, .. }),
+        "{:?}",
+        outcome.borrow()
+    );
 }
