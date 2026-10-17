@@ -24,7 +24,11 @@ const ICNS_TYPES: [(u32, icns::IconType); 10] = [
 fn render(tree: &usvg::Tree, px: u32) -> tiny_skia::Pixmap {
     let mut pixmap = tiny_skia::Pixmap::new(px, px).expect("pixmap");
     let scale = px as f32 / tree.size().width();
-    resvg::render(tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    resvg::render(
+        tree,
+        tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
     pixmap
 }
 
@@ -66,13 +70,17 @@ fn main() {
         };
         dir.add_entry(entry.expect("ico entry"));
     }
-    dir.write(fs::File::create(ico_out).expect("ico file")).expect("write ico");
+    dir.write(fs::File::create(ico_out).expect("ico file"))
+        .expect("write ico");
 
     let mut family = icns::IconFamily::new();
     for (px, ty) in ICNS_TYPES {
-        let image = icns::Image::from_data(icns::PixelFormat::RGBA, px, px, rgba(&render(&tree, px)))
-            .expect("icns image");
+        let image =
+            icns::Image::from_data(icns::PixelFormat::RGBA, px, px, rgba(&render(&tree, px)))
+                .expect("icns image");
         family.add_icon_with_type(&image, ty).expect("icns icon");
     }
-    family.write(fs::File::create(icns_out).expect("icns file")).expect("write icns");
+    family
+        .write(fs::File::create(icns_out).expect("icns file"))
+        .expect("write icns");
 }
