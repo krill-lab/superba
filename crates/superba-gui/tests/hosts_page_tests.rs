@@ -91,14 +91,44 @@ fn the_follow_toggle_reaches_the_service() {
         |ui, cx, out| hosts::show(ui, cx, &mut state, out),
         |f| f.has("随本机切换"),
     );
-    // The switch sits right of its caption.
-    let caption = f.find("随本机切换").unwrap();
-    h.click_at(egui::pos2(caption.max.x + 26.0, caption.center().y));
-    let f = h.until(
-        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
-        |_| !service.follow_calls().is_empty(),
+    // The switch sits right of its caption. The first frames lay the page out
+    // (sizing passes, async host data), so click only once the caption holds
+    // still, and click again if the press landed on a frame that moved.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let mut caption = f.find("随本机切换").unwrap();
+    let mut reloaded = f.actions.iter().any(|a| matches!(a, Action::LoadHosts));
+    while service.follow_calls().is_empty() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the follow toggle never reached the service"
+        );
+        let mut stable = 0;
+        while stable < 3 {
+            let f = h.frame(|ui, cx, out| hosts::show(ui, cx, &mut state, out));
+            reloaded |= f.actions.iter().any(|a| matches!(a, Action::LoadHosts));
+            let now = f.find("随本机切换").unwrap();
+            stable = if now == caption { stable + 1 } else { 0 };
+            caption = now;
+        }
+        h.click_at(egui::pos2(caption.max.x + 26.0, caption.center().y));
+        // Hover, press, release, then the service call.
+        for _ in 0..6 {
+            let f = h.frame(|ui, cx, out| hosts::show(ui, cx, &mut state, out));
+            reloaded |= f.actions.iter().any(|a| matches!(a, Action::LoadHosts));
+        }
+        let waited = std::time::Instant::now() + std::time::Duration::from_millis(300);
+        while service.follow_calls().is_empty() && std::time::Instant::now() < waited {
+            let f = h.frame(|ui, cx, out| hosts::show(ui, cx, &mut state, out));
+            reloaded |= f.actions.iter().any(|a| matches!(a, Action::LoadHosts));
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+    assert_eq!(
+        service.follow_calls().len(),
+        1,
+        "{:?}",
+        service.follow_calls()
     );
-    let _ = f;
     assert_eq!(service.follow_calls(), vec![(devbox(), true)]);
     let shown = state
         .hosts
@@ -112,11 +142,12 @@ fn the_follow_toggle_reaches_the_service() {
         .follow_switches;
     assert!(shown);
     // The shell's host list (sidebar badge, Overview) is reloaded.
-    let f = h.until(
-        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
-        |f| f.actions.iter().any(|a| matches!(a, Action::LoadHosts)),
-    );
-    let _ = f;
+    if !reloaded {
+        h.until(
+            |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+            |f| f.actions.iter().any(|a| matches!(a, Action::LoadHosts)),
+        );
+    }
 }
 
 #[test]

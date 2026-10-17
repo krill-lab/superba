@@ -246,7 +246,10 @@ impl State {
             && self.view.is_some()
             && self.loaded_at.is_some()
             && switched > self.loaded_at;
+        // Only against the profiles a load saw: a view set directly (tests) has
+        // nothing to compare with, and a reload would race and replace it.
         let profiles_changed = self.view.is_some()
+            && self.loaded_at.is_some()
             && cx.data.profiles.value.is_some()
             && self.loaded_profiles.as_ref() != cx.data.profiles.value.as_ref();
         if (first || after_switch || profiles_changed) && self.saving.is_none() {
