@@ -302,6 +302,18 @@ impl DataDir {
     pub fn downloads_dir(&self) -> PathBuf {
         self.root.join("downloads")
     }
+
+    /// `selfupdate.json`: the self-update check cache and the skipped version
+    /// (owned by `superba-versions`).
+    pub fn selfupdate_file(&self) -> PathBuf {
+        self.root.join("selfupdate.json")
+    }
+
+    /// `downloads/superba-update/`: verified Superba packages and their staging
+    /// directories (owned by `superba-versions`).
+    pub fn selfupdate_downloads_dir(&self) -> PathBuf {
+        self.downloads_dir().join("superba-update")
+    }
 }
 
 /// Everything an implementation needs to know about "this machine".

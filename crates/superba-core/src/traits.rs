@@ -819,6 +819,51 @@ pub trait SwitchService: Send + Sync {
     /// never blocks or changes anything.
     async fn account(&self, request: AccountRequest) -> Result<AccountReport>;
 
+    // --- Superba's own update ----------------------------------------------
+
+    /// The cached self-update state (never touches the network).
+    async fn self_update_view(&self) -> Result<crate::SelfUpdateView> {
+        Err(crate::Error::not_implemented("self update"))
+    }
+
+    /// Check the release page (ETag cached, short timeout). Automatic checks
+    /// (`manual` false) do nothing while the preference is off or the cached
+    /// answer is under 24 h old. A private or missing release page ends in
+    /// [`crate::SelfUpdateStatus::PageUnavailable`], never in an error.
+    async fn self_update_check(
+        &self,
+        request: crate::SelfUpdateCheckRequest,
+    ) -> Result<crate::SelfUpdateView> {
+        let _ = request;
+        Err(crate::Error::not_implemented("self update check"))
+    }
+
+    /// Skip a version (`Some`) or clear the skip (`None`); persisted.
+    async fn self_update_skip(&self, version: Option<String>) -> Result<crate::SelfUpdateView> {
+        let _ = version;
+        Err(crate::Error::not_implemented("self update skip"))
+    }
+
+    /// Download the offered release for this OS and architecture, verify it
+    /// against the `SHA256SUMS.txt` of the same release and replace Superba in
+    /// place (macOS bundle, Windows hand-off, Linux binaries). Only ever called
+    /// after the user chose to install.
+    async fn self_update_install(
+        &self,
+        request: crate::SelfUpdateInstallRequest,
+    ) -> Result<crate::SelfUpdateReport> {
+        let _ = request;
+        Err(crate::Error::not_implemented("self update install"))
+    }
+
+    /// Restart the local router service when it is installed and running, so it
+    /// runs the binary on disk (the last step of an update; `spb self-update
+    /// restart-router` runs it for the Windows hand-off). `false` = nothing to
+    /// restart.
+    async fn self_update_restart_router(&self) -> Result<bool> {
+        Err(crate::Error::not_implemented("self update router restart"))
+    }
+
     // --- v0.3: models and speed ------------------------------------------------
 
     /// The Models page of a profile: model list (provider, feed or snapshot, with

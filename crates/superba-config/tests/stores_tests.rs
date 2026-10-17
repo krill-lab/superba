@@ -99,6 +99,8 @@ fn user_set() -> ProfileSet {
         tray: true,
         preferred_app_id: Some("test-app".into()),
         router: Default::default(),
+        auto_update_check: false,
+        include_prereleases: true,
     };
     set
 }

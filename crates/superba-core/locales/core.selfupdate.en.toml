@@ -1,0 +1,9 @@
+# superba-core messages of Superba's own update (manual install steps). Concatenated
+# into the core catalog like the other area files; every key must also exist in
+# core.selfupdate.zh-CN.toml.
+
+[selfupdate.manual]
+package = "The update was downloaded and verified: {path}"
+macos = "Quit Superba, unzip the package and drag Superba.app into {dir}, replacing the old one."
+windows = "Quit Superba and extract the zip into {dir}, overwriting the old files."
+linux = "Quit Superba and extract the archive over {dir} (use sudo if it belongs to root): tar -xzf {path} --strip-components=1 -C {dir}"

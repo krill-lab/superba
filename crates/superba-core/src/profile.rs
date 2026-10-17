@@ -238,6 +238,25 @@ pub struct Settings {
     /// Which Codex the desktop app runs.
     #[serde(skip_serializing_if = "AppCodexSettings::is_default")]
     pub app_codex: AppCodexSettings,
+    /// Check for a newer Superba at start-up and every 24 hours (installing
+    /// always needs a click). On by default.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub auto_update_check: bool,
+    /// Also offer pre-releases of Superba. Off by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub include_prereleases: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(v: &bool) -> bool {
+    *v
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 impl Default for Settings {
@@ -257,6 +276,8 @@ impl Default for Settings {
             hosts: BTreeMap::new(),
             network: NetworkSettings::default(),
             app_codex: AppCodexSettings::default(),
+            auto_update_check: true,
+            include_prereleases: false,
         }
     }
 }

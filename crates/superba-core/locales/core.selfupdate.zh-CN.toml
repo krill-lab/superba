@@ -1,0 +1,8 @@
+# Superba 自身更新的核心文案（手动安装步骤）。与其他区域文件一起拼接成核心目录；
+# 每个键都必须同时存在于 core.selfupdate.en.toml。
+
+[selfupdate.manual]
+package = "更新包已下载并校验通过：{path}"
+macos = "退出 Superba，解压更新包，把 Superba.app 拖进 {dir}，替换旧版本。"
+windows = "退出 Superba，把 zip 解压到 {dir}，覆盖旧文件。"
+linux = "退出 Superba，把压缩包解压覆盖到 {dir}（目录属于 root 时用 sudo）：tar -xzf {path} --strip-components=1 -C {dir}"
