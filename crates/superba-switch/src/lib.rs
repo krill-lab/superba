@@ -44,6 +44,7 @@ mod sites;
 mod transports;
 pub mod usage;
 pub mod versions;
+mod winapp;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -733,6 +734,20 @@ impl SwitchService for Switcher {
     async fn download_app_update(&self) -> Result<superba_core::AppDownloadReport> {
         self.refuse_elevated()?;
         self.download_app_update_impl().await
+    }
+
+    async fn download_app_package(
+        &self,
+        request: superba_core::AppDownloadRequest,
+        progress: Arc<dyn superba_core::DownloadProgressSink>,
+    ) -> Result<superba_core::AppDownloadReport> {
+        self.refuse_elevated()?;
+        self.download_app_package_impl(request, progress).await
+    }
+
+    async fn open_app_package(&self, path: std::path::PathBuf) -> Result<()> {
+        self.refuse_elevated()?;
+        self.open_app_package_impl(path).await
     }
 
     async fn router_requests(

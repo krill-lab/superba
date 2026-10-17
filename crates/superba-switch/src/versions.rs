@@ -263,8 +263,8 @@ pub fn install_command(package: &AppPackage, path: &Path) -> Option<String> {
     }
 }
 
-/// The per-OS update action.
-fn update_action(latest: &AppRelease) -> AppUpdateAction {
+/// The per-OS update action (`source`: where the Windows package comes from).
+fn update_action(latest: &AppRelease, source: superba_core::WindowsAppSource) -> AppUpdateAction {
     if cfg!(target_os = "linux") {
         match package_for_here(latest) {
             Some(p) => AppUpdateAction::LinuxPackage {
@@ -279,12 +279,14 @@ fn update_action(latest: &AppRelease) -> AppUpdateAction {
             package: package_for_here(latest).cloned(),
         }
     } else {
-        match &latest.store_product_id {
-            Some(id) => AppUpdateAction::WindowsStore {
-                store_url: format!("ms-windows-store://pdp/?ProductId={id}"),
-                command: format!("winget upgrade --id {id} --source msstore"),
-            },
-            None => AppUpdateAction::None,
+        // The package is downloaded and opened with App Installer; the Store
+        // page and winget stay as alternatives.
+        let id = latest.store_product_id.as_deref();
+        AppUpdateAction::WindowsPackage {
+            package: package_for_here(latest).cloned(),
+            source,
+            store_url: id.map(|id| format!("ms-windows-store://pdp/?ProductId={id}")),
+            command: id.map(|id| format!("winget upgrade --id {id} --source msstore")),
         }
     }
 }
@@ -589,11 +591,14 @@ impl Switcher {
             (Some(l), Some(v)) => app_version_newer(&l.version, v),
             _ => false,
         };
+        // Windows also offers the package when the app is not installed.
+        let offer = update_available || (cfg!(windows) && install.is_none());
+        let source = set.settings.network.windows_app_source;
         let app = AppVersionsSection {
             action: latest
                 .as_ref()
-                .filter(|_| update_available)
-                .map(update_action),
+                .filter(|_| offer)
+                .map(|l| update_action(l, source)),
             install: install.clone(),
             latest,
             update_available,
