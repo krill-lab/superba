@@ -330,6 +330,11 @@ impl FakeService {
     pub fn title_queries(&self) -> usize {
         self.areas.router.lock().unwrap().title_queries
     }
+
+    /// Change the stored profiles and settings (router member scenarios).
+    pub fn edit_profiles(&self, f: impl FnOnce(&mut ProfileSet)) {
+        f(&mut self.state().profiles);
+    }
 }
 
 fn rows(fake: &FakeService) -> Vec<RequestRow> {

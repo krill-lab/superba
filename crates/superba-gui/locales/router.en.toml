@@ -121,6 +121,26 @@ stats_on = "Turn the stats line on"
 stats_off = "Turn the stats line off"
 pause_recording = "Pause request recording"
 resume_recording = "Resume request recording"
+doctor = "Local router diagnostics"
+
+[router.eligibility]
+none = "Turning on the router needs at least one member that uses an API key."
+add = "Add {name} as a member"
+fill_key = "Enter an API key for {name}"
+add_provider = "Add a provider"
+reason = "{name}: {reason}"
+no_candidates = "No provider can be a member yet: add one that uses an API key on the Providers page."
+
+[router.doctor]
+open = "Diagnostics"
+why = "Show why"
+title = "Local router diagnostics"
+running = "Collecting diagnostics…"
+refresh = "Run again"
+copy = "Copy"
+copied = "Copied"
+close = "Close"
+hint = "Everything about the local router in one block: copy it into a support request (it contains no keys)."
 
 [requests]
 search = "Search sessions, models, cache keys…"

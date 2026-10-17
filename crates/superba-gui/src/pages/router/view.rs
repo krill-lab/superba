@@ -70,17 +70,21 @@ pub(super) fn router_column(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &m
                 Button::new(cx.tr.t(label))
             };
             // Turning it on installs / starts the service first when needed (like
-            // `spb router enable`).
+            // `spb router enable`); it needs a member with an API key.
             let starting = state.op.as_ref().is_some_and(|(op, _)| *op == Op::Start);
+            let eligible = super::eligibility::has_eligible_member(cx);
             let enabled = request.is_ok()
                 && !cx.busy
                 && state.op.is_none()
-                && (mode.is_router() || member_count > 0);
+                && (mode.is_router() || (member_count > 0 && eligible));
             let r = ui.add(button.small().loading(starting).enabled(enabled));
             let r = match &request {
                 Err(key) => r.on_disabled_hover_text(cx.tr.t(key)),
                 Ok(_) if member_count == 0 && !mode.is_router() => {
                     r.on_disabled_hover_text(cx.tr.t("router.needs_member"))
+                }
+                Ok(_) if !eligible && !mode.is_router() => {
+                    r.on_disabled_hover_text(cx.tr.t("router.eligibility.none"))
                 }
                 Ok(_) => r.on_hover_text(cx.tr.t("router.preview_hint")),
             };
@@ -94,8 +98,15 @@ pub(super) fn router_column(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &m
         note(ui, cx, Status::Warn, cx.tr.t("router.unavailable"));
         return;
     }
-    if let Some(error) = &state.op_error {
-        note(ui, cx, Status::Error, error.clone());
+    if let Some(error) = state.op_error.clone() {
+        note(ui, cx, Status::Error, error);
+        // The concrete reason (service manager, log, port) is one click away.
+        ui.horizontal(|ui| {
+            ui.add_space(18.0);
+            if link_button(ui, &cx.tr.t("router.doctor.why"), false).clicked() {
+                super::doctor::open(state, cx);
+            }
+        });
     }
     let Some(snapshot) = state.snapshot.clone() else {
         match &state.error {
@@ -185,6 +196,18 @@ fn service_and_status(
                     .clicked()
             {
                 state.start(cx, Op::Restart, |b| b.restart());
+            }
+            if ui
+                .add(
+                    Button::ghost(cx.tr.t("router.doctor.open"))
+                        .icon(Icon::Diagnostics)
+                        .small()
+                        .loading(state.doctor.loading()),
+                )
+                .on_hover_text(cx.tr.t("router.doctor.hint"))
+                .clicked()
+            {
+                super::doctor::open(state, cx);
             }
             if s.installed
                 && ui

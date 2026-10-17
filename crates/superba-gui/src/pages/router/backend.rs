@@ -180,7 +180,9 @@ pub fn members(view: &RouterView, sites: &[Site], profiles: &ProfileSet) -> Vec<
 }
 
 /// Profiles that can join: key-based, non-built-in profiles on Krill or custom
-/// sites that are not members yet, one per site (the official login never can).
+/// sites that are not members yet, one per site (the official login never can,
+/// nor a profile set to PAT only: the router sends an API key, and the Router
+/// page explains how to fix those).
 pub fn candidates(sites: &[Site], profiles: &ProfileSet, members: &[ProfileId]) -> Vec<Candidate> {
     let member_sites: Vec<_> = members
         .iter()
@@ -196,6 +198,9 @@ pub fn candidates(sites: &[Site], profiles: &ProfileSet, members: &[ProfileId]) 
         let Some(site) = sites.iter().find(|s| s.id == p.site_id) else {
             continue;
         };
+        if !superba_switch::router_doctor::eligibility(p, Some(site)).is_eligible() {
+            continue;
+        }
         let kind = match site.kind {
             SiteKind::Krill => MemberKind::Krill,
             SiteKind::Compatible => MemberKind::Compatible,

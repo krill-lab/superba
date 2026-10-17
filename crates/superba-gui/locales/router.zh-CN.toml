@@ -120,6 +120,26 @@ stats_on = "开启统计行"
 stats_off = "关闭统计行"
 pause_recording = "暂停记录请求"
 resume_recording = "继续记录请求"
+doctor = "本地路由诊断"
+
+[router.eligibility]
+none = "开启路由需要至少一个用 API key 的成员。"
+add = "添加 {name} 为成员"
+fill_key = "为 {name} 填写 API key"
+add_provider = "添加供应商"
+reason = "{name}：{reason}"
+no_candidates = "还没有可以作为成员的供应商：请在供应商页添加一个用 API key 的供应商。"
+
+[router.doctor]
+open = "诊断"
+why = "查看原因"
+title = "本地路由诊断"
+running = "正在收集诊断信息…"
+refresh = "重新诊断"
+copy = "复制"
+copied = "已复制"
+close = "关闭"
+hint = "本地路由的全部情况都在这一段里：复制后发给客服即可（不含任何 Key）。"
 
 [requests]
 search = "搜索会话、模型、缓存键…"

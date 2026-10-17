@@ -27,6 +27,8 @@ mod active;
 pub mod backend;
 pub mod db;
 mod detail;
+pub mod doctor;
+pub mod eligibility;
 pub mod model;
 pub mod prices;
 mod recent;
@@ -115,6 +117,8 @@ pub enum Dialog {
     Calibrate(prices::Calibration),
     /// The price table in use (Prices → View…).
     Prices,
+    /// 诊断: the router doctor report with Copy.
+    Doctor,
 }
 
 /// Page-local state, kept across navigation.
@@ -155,6 +159,8 @@ pub struct State {
     clear_task: Option<ReadTask<superba_core::ClearReport>>,
     /// Open dialog.
     pub dialog: Option<Dialog>,
+    /// 诊断 (the router doctor report).
+    pub doctor: doctor::DoctorState,
 }
 
 impl std::fmt::Debug for State {
@@ -223,6 +229,7 @@ impl State {
     }
 
     fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) {
+        self.doctor.poll();
         if let Some(task) = &self.task
             && let Some(result) = task.poll()
         {
@@ -413,6 +420,7 @@ fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: b
         || state.op.is_some()
         || state.stats_save.is_some()
         || state.clear_task.is_some()
+        || state.doctor.loading()
         || state.titles.loading()
         || state.recent.loading()
         || state.active.loading()
@@ -530,14 +538,20 @@ fn banner(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
             .value
             .as_ref()
             .is_some_and(|p| !p.settings.router.members.is_empty());
+    // Members alone are not enough: one must have a key the router can send
+    // as an API key (user bug 28); the panel below says why and how to fix it.
+    let eligible = eligibility::has_eligible_member(cx);
     let button = (!on).then(|| {
         (
             cx.tr.t("router.banner.turn_on"),
-            members && !cx.busy && state.op.is_none(),
+            members && eligible && !cx.busy && state.op.is_none(),
         )
     });
     if banner_line(ui, cx, status, &line, &cx.tr.t("router.banner.tip"), button) {
         state.switch_mode(cx, true, out);
+    }
+    if !on {
+        eligibility::panel(ui, cx, state, out);
     }
 }
 
@@ -599,7 +613,8 @@ fn dialogs(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     };
     let mut close = false;
     let id = egui::Id::unique("router-dialog");
-    let resp = dialog(ui.ctx(), id, 460.0, |ui| match &d {
+    let width = if d == Dialog::Doctor { 760.0 } else { 460.0 };
+    let resp = dialog(ui.ctx(), id, width, |ui| match &d {
         Dialog::Clear { rows } => {
             ui.label(crate::design::widgets::Text::title(
                 cx.tr.t("requests.clear.title"),
@@ -640,6 +655,7 @@ fn dialogs(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
             prices::calibrate_dialog(ui, cx, state, c, &mut close, out);
         }
         Dialog::Prices => prices::table_dialog(ui, cx, state, &mut close),
+        Dialog::Doctor => doctor::dialog(ui, cx, state, &mut close),
     });
     if resp.should_close() || close {
         state.dialog = None;
@@ -701,6 +717,18 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
             action: page_command(Page::Router, command),
         });
     }
+    items.push(PaletteItem {
+        title: cx.tr.t("router.palette.doctor"),
+        detail: Some(cx.tr.t("router.doctor.hint")),
+        keywords: vec![
+            "router".into(),
+            "doctor".into(),
+            "diagnostics".into(),
+            "诊断".into(),
+        ],
+        group: PaletteGroup::Router,
+        action: page_command(Page::Router, "doctor"),
+    });
     let stats = state.stats_settings(cx);
     let entries: [(Page, &str, &str, Vec<String>); 5] = [
         (
@@ -796,10 +824,11 @@ fn shared_command(state: &mut State, cx: &Cx<'_>, command: &str) -> bool {
 }
 
 /// Run a command addressed to the Router page: `on` / `off` plan the router
-/// mode switch, plus the shared commands.
+/// mode switch, `doctor` opens 诊断, plus the shared commands.
 pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     match command {
         "on" | "off" => state.switch_mode(cx, command == "on", out),
+        "doctor" => doctor::open(state, cx),
         _ => {
             if !shared_command(state, cx, command) {
                 tracing::debug!(%command, "router page: unknown command");
