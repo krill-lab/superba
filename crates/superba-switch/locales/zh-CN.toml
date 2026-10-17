@@ -260,6 +260,7 @@ follow_missing = "{host} 设置为跟随本机，但 ChatGPT app 已不再记录
 no_hot_restart = "app 现在无法重启 {host} 上的 Codex；在 app 里重新连接该主机后生效。"
 nothing_to_sync = "{host} 已有本机可同步的全部设置。"
 version_unknown = "{host} 上的 Codex 版本未知，不会为它过滤任何设置。"
+not_ssh = "{host} 是{kind}：ChatGPT app 不通过 SSH 连接它，Superba 无法切换它，已跳过。"
 
 [switch.models]
 service_tier_old_codex = "{consumer} 的 Codex 版本为 {version}，只认 service_tier = \"fast\" 或 \"flex\"；为了让它仍能读取 config.toml，Superba 不写入 service_tier = \"{tier}\"。"

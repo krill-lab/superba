@@ -724,11 +724,14 @@ impl Switcher {
             });
         }
 
-        // Remote hosts (last probe; the Remote hosts page probes).
+        // Remote SSH hosts (last probe; the Remote hosts page probes).
         let mut remote = Vec::new();
         if let Ok(hosts) = self.app_hosts(session.as_ref(), None).await {
             let cache = self.cached_hosts();
-            for h in hosts {
+            for h in hosts
+                .into_iter()
+                .filter(superba_core::RemoteHost::is_managed)
+            {
                 let c = cache.get(&h.target_id);
                 let state = c.and_then(|c| c.state.as_ref());
                 let version = state.and_then(|s| s.codex_version.clone());

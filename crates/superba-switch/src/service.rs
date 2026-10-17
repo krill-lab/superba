@@ -525,9 +525,9 @@ impl Switcher {
                 .await
                 .unwrap_or_default()
                 .into_iter()
-                .filter(superba_core::RemoteHost::is_app_known)
+                .filter(|h| h.is_app_known() && h.is_listed())
                 .map(|host| {
-                    let cached = cache.get(&host.target_id);
+                    let cached = cache.get(&host.target_id).filter(|_| host.is_managed());
                     RemoteOverview {
                         state: cached.and_then(|c| c.state.clone()),
                         error: cached.and_then(|c| c.error.clone()),

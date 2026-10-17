@@ -2455,7 +2455,7 @@ impl Switcher {
         )
         .unwrap_or_default()
         .into_iter()
-        .filter(RemoteHost::is_app_known)
+        .filter(|h| h.is_app_known() && h.is_listed())
         .collect();
 
         let mut plans = Vec::new();
@@ -2471,19 +2471,34 @@ impl Switcher {
                     // A followed host the app no longer knows is skipped quietly.
                     draft.info(
                         text("switch.hosts.follow_missing")
-                            .arg("host", crate::messages::target_label(tid.as_str())),
+                            .arg_text("host", superba_core::target_title(&tid)),
                     );
                     continue;
                 }
                 let detail = "host not found".to_owned();
                 draft.warn(
                     text("switch.warn.remote_unavailable")
-                        .arg("host", crate::messages::target_label(tid.as_str()))
+                        .arg_text("host", superba_core::target_title(&tid))
                         .arg("detail", &detail),
                 );
                 restarts.push((tid, unavailable(detail)));
                 continue;
             };
+            if !host.is_managed() {
+                // A remote-control device or a WSL distribution: never reached over
+                // SSH (user bug 36). A 0.1.0 Superba let it be followed.
+                let note = text("switch.hosts.not_ssh")
+                    .arg_text("host", host.title())
+                    .arg_text("kind", host.kind.text());
+                if followed.contains(&tid) {
+                    draft.info(note);
+                } else {
+                    let detail = note.render_fallback();
+                    draft.warn(note);
+                    restarts.push((tid, unavailable(detail)));
+                }
+                continue;
+            }
             used_hosts.push(host.clone());
             if dest.rollback_remote.as_ref() == Some(&tid) {
                 restarts.push((tid, decide_remote(host.host_id.as_deref(), &[])));

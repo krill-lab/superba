@@ -10,6 +10,10 @@
 //!   and executed with [`superba_core::SwitchIntent::HostSync`] (settings scope,
 //!   hot restart of the host's app-server, verify, roll back on failure).
 //! - Sessions of a host are scanned read-only.
+//! - Only SSH hosts are managed (user bug 36): the app's remote-control devices
+//!   and WSL distributions are listed read-only (no probe, follow, sync, Codex
+//!   install, session scan or hot restart: [`Switcher::app_host`] refuses them),
+//!   hosts run by ChatGPT and unknown ids are not listed at all.
 //!
 //! The last probe of each host is cached in memory and in
 //! `<data dir>/cache/hosts.json` (without the config bytes), so lists show it
@@ -309,7 +313,8 @@ impl Switcher {
     }
 
     /// Hosts the desktop app knows (its global state, the renderer through CDP,
-    /// live app-server links); ssh config entries alone are left out.
+    /// live app-server links) and lists among its connections; ssh config entries
+    /// alone, ChatGPT-hosted and unknown hosts are left out.
     pub(crate) async fn app_hosts(
         &self,
         session: Option<&AppSession>,
@@ -335,9 +340,14 @@ impl Switcher {
             None => Vec::new(),
         };
         let hosts = d.remote.discover(&home, &from_app, &live).await?;
-        Ok(hosts.into_iter().filter(RemoteHost::is_app_known).collect())
+        Ok(hosts
+            .into_iter()
+            .filter(|h| h.is_app_known() && h.is_listed())
+            .collect())
     }
 
+    /// An SSH host the app knows, for an SSH operation (probe, follow, sync,
+    /// Codex install, session scan): other kinds are refused.
     pub(crate) async fn app_host(&self, id: &TargetId) -> Result<(RemoteHost, Option<AppSession>)> {
         let session = self.deps.app.running_session().await.ok().flatten();
         let hosts = self.app_hosts(session.as_ref(), None).await?;
@@ -347,6 +357,15 @@ impl Switcher {
             .ok_or_else(|| Error::NotFound {
                 what: format!("remote host {id} (only hosts the ChatGPT app connects to)"),
             })?;
+        if !host.is_managed() {
+            return Err(Error::Unsupported {
+                what: format!(
+                    "{} ({}): the ChatGPT app does not reach it over SSH, so Superba cannot probe, sync, switch, install Codex on or scan it",
+                    host.title(),
+                    host.kind.text()
+                ),
+            });
+        }
         Ok((host, session))
     }
 
@@ -358,12 +377,16 @@ impl Switcher {
         session: Option<&AppSession>,
         pending_sync: Option<u32>,
     ) -> HostView {
-        let hot_restart = host.host_id.is_some() && session.is_some_and(|s| s.cdp.is_some());
+        let hot_restart =
+            host.is_managed() && host.host_id.is_some() && session.is_some_and(|s| s.cdp.is_some());
+        // A host Superba does not manage has no probe (a 0.1.0 cache may hold one).
+        let cached = cached.filter(|_| host.is_managed());
         HostView {
             settings: set
                 .settings
                 .hosts
                 .get(&host.target_id)
+                .filter(|_| host.is_managed())
                 .cloned()
                 .unwrap_or_default(),
             state: cached.and_then(|c| c.state.clone()),
@@ -387,7 +410,7 @@ impl Switcher {
         let cache = self.cached_hosts();
         let mut out = Vec::new();
         for host in hosts {
-            let cached = cache.get(&host.target_id);
+            let cached = cache.get(&host.target_id).filter(|_| host.is_managed());
             let pending = match cached.and_then(|c| c.state.as_ref()) {
                 // Only an in-memory probe has the config bytes needed for rows.
                 Some(state) if state.config_toml.is_some() => self
@@ -434,7 +457,22 @@ impl Switcher {
         id: &TargetId,
         follow: bool,
     ) -> Result<HostView> {
-        let (host, session) = self.app_host(id).await?;
+        let (host, session) = if follow {
+            self.app_host(id).await?
+        } else {
+            // Turning it off also clears a follow a 0.1.0 Superba let the user set
+            // on a host it does not manage.
+            let session = self.deps.app.running_session().await.ok().flatten();
+            let host = self
+                .app_hosts(session.as_ref(), None)
+                .await?
+                .into_iter()
+                .find(|h| &h.target_id == id);
+            match host {
+                Some(host) => (host, session),
+                None => self.app_host(id).await?,
+            }
+        };
         let mut set = self.deps.profiles.load().await?;
         let entry = set.settings.hosts.entry(id.clone()).or_default();
         entry.follow_switches = follow;

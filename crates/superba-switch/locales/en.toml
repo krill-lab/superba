@@ -261,6 +261,7 @@ follow_missing = "{host} follows this computer but the ChatGPT app no longer kno
 no_hot_restart = "The app cannot restart {host}'s Codex right now; the change applies when you reconnect the host in the app."
 nothing_to_sync = "{host} already has every setting this computer can sync."
 version_unknown = "The Codex version on {host} is unknown: nothing is filtered out for it."
+not_ssh = "{host} ({kind}): the ChatGPT app does not reach it over SSH, so Superba cannot switch it; skipped."
 
 [switch.models]
 service_tier_old_codex = "{consumer} runs Codex {version}, which reads only service_tier = \"fast\" or \"flex\"; Superba leaves out service_tier = \"{tier}\" so that this Codex can still load config.toml."

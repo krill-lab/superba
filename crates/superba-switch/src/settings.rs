@@ -108,6 +108,7 @@ impl Switcher {
             .await
             .unwrap_or_default()
             .into_iter()
+            .filter(superba_core::RemoteHost::is_managed)
             .filter_map(|h| {
                 let state = cache.get(&h.target_id)?.state.clone()?;
                 Some((
