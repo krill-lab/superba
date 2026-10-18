@@ -2141,6 +2141,21 @@ impl Run<'_> {
         {
             tracing::warn!(error = %e, "cannot record the kept model");
         }
+        // User bug 63: the model kept in each WSL distribution this switch wrote.
+        for k in self.pc.kept_host_models.iter().filter(|k| {
+            remotes
+                .iter()
+                .any(|r| r.target_id == k.target_id && r.status != OutcomeStatus::Failed)
+        }) {
+            if let Err(e) = crate::model_keep::commit_kept_host(
+                &d.ctx.data_dir,
+                &k.target_id,
+                &k.codex_home,
+                k.model.as_deref(),
+            ) {
+                tracing::warn!(error = %e, host = %k.target_id, "cannot record the kept model");
+            }
+        }
         if let Some(enabled) = self.pc.router_enabled_after {
             match d.profiles.load().await {
                 Ok(mut set) => {

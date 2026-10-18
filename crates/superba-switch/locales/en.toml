@@ -330,6 +330,7 @@ keep_pat_default = "Codex keeps {model}, the model it runs with now; with the pe
 pat_default = "With the personal access token Codex runs {model}, the default model of “{site}”. To use another model, set one on the profile (Models page, or spb profile edit --model)."
 keep_unknown = "Superba cannot tell which model Codex runs with now (the model list of “{site}” did not load: {reason}). With an API key (also through the router) Codex and the ChatGPT app may choose another model; set one on the profile to keep yours."
 keep_unread = "Codex keeps {model}, the model it runs with now: the model list of “{site}” did not load ({reason}), so Superba cannot tell which model the personal access token would give. To use another model, set one on the profile (Models page, or spb profile edit --model)."
+keep_legacy_wsl = "The ChatGPT app runs this Codex inside WSL ({distro}, \"Run Codex in WSL\") with the configuration written here, so it keeps {model} there too."
 
 [switch.pin]
 catalog_check = "config.toml names a model catalog file; before the app restarts, Superba checks it with Codex {version} and rebuilds it for that version if it is refused."

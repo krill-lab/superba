@@ -32,6 +32,13 @@
 //! remembers that it was kept (not a profile's model the user has removed since),
 //! so a later switch keeps it again while it is still needed and drops it, back
 //! to the user's own value, once the destination runs the same model by itself.
+//!
+//! WSL distributions that follow this computer (user bug 63) get the same rule
+//! for their own Codex ([`Switcher::plan_host_model_keep`]: their `config.toml`,
+//! auth, line and Codex version; [`kept_host_model`]), named per distribution in
+//! the plan. With the app's "Run Codex in WSL" the app's Codex inside the
+//! default distribution reads this computer's `config.toml`, so the local
+//! decision is its decision; the plan names that distribution.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -39,8 +46,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use superba_core::{
     AuthMode, CodexHome, CodexVersion, ConfigState, DataDir, Error, LocalizedText,
-    ModelListRequest, ModelListSource, ModelSpec, ModelVisibility, Notice, ResolvedMode, Result,
-    Secret, Site,
+    ModelListRequest, ModelListSource, ModelSpec, ModelVisibility, Notice, RemoteState,
+    ResolvedMode, Result, Secret, Site, TargetId,
 };
 
 use crate::Switcher;
@@ -123,19 +130,49 @@ pub struct ScopeInput<'a> {
 /// `config.toml`, and either the way Codex chooses changes or a kept model would
 /// be dropped.
 pub fn keep_scope(i: ScopeInput<'_>) -> Option<KeepScope> {
-    if i.dest_sets_model || i.left.is_some() || i.state.handed_off.is_some() {
-        return None;
-    }
     let active = i.state.active.as_ref()?;
-    if active.site_id.as_ref() != Some(i.dest_site) {
+    scope_of(ScopeFacts {
+        same_site: i.state.handed_off.is_none() && active.site_id.as_ref() == Some(i.dest_site),
+        auth: active.auth_mode,
+        dest_auth: i.dest_auth,
+        model: i.state.model.as_deref(),
+        kept: i.kept,
+        dest_sets_model: i.dest_sets_model,
+        left: i.left,
+    })
+}
+
+/// What [`scope_of`] decides on: how one Codex home (this computer's or a WSL
+/// distribution's) chooses its model now and after the switch.
+#[derive(Clone, Copy, Debug)]
+pub struct ScopeFacts<'a> {
+    /// The home is on the destination's site now (never after a hand-off).
+    pub same_site: bool,
+    /// Its auth mode now (`None` = not known).
+    pub auth: Option<AuthMode>,
+    /// Its auth mode after the switch (API key when routed).
+    pub dest_auth: AuthMode,
+    /// The `model` its `config.toml` names now.
+    pub model: Option<&'a str>,
+    /// The model Superba kept there ([`kept_model`], [`kept_host_model`]).
+    pub kept: Option<&'a str>,
+    /// The destination sets a model itself (profile, mapped or replacement name).
+    pub dest_sets_model: bool,
+    /// The `model` value `config.toml` keeps when the destination sets none.
+    pub left: Option<&'a str>,
+}
+
+/// The rule of [`keep_scope`] on plain facts (pure).
+pub fn scope_of(f: ScopeFacts<'_>) -> Option<KeepScope> {
+    if f.dest_sets_model || f.left.is_some() || !f.same_site {
         return None;
     }
-    let from = ModelForm::of(active.auth_mode?)?;
-    let to = ModelForm::of(i.dest_auth)?;
-    let kept = i.kept.map(str::to_owned);
-    // A model in config.toml that Superba did not keep: the profile's own,
-    // since removed from the profile (the user chose Codex's default).
-    if i.state.model.is_some() && kept.is_none() {
+    let from = ModelForm::of(f.auth?)?;
+    let to = ModelForm::of(f.dest_auth)?;
+    let kept = f.kept.map(str::to_owned);
+    // A model in config.toml that Superba did not keep: the user's own, or the
+    // profile's, since removed from the profile (the user chose Codex's default).
+    if f.model.is_some() && kept.is_none() {
         return None;
     }
     (from != to || kept.is_some()).then_some(KeepScope { from, to, kept })
@@ -244,10 +281,22 @@ pub struct KeptRecord {
     pub generation: u64,
 }
 
+/// The model Superba kept in a WSL distribution's Codex home (user bug 63).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeptHostRecord {
+    /// The `model` value written.
+    pub model: String,
+    /// The distribution's `CODEX_HOME` it was written to.
+    pub codex_home: String,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct KeptState {
     #[serde(default)]
     homes: BTreeMap<String, KeptRecord>,
+    /// By target id (`remote-wsl:<distro>`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    hosts: BTreeMap<String, KeptHostRecord>,
 }
 
 fn kept_path(data_dir: &DataDir) -> PathBuf {
@@ -295,18 +344,67 @@ pub fn commit_kept(
         }
         None => state.homes.remove(&key).is_some(),
     };
+    save_if(data_dir, &state, changed)
+}
+
+fn save_if(data_dir: &DataDir, state: &KeptState, changed: bool) -> Result<()> {
     if !changed {
         return Ok(());
     }
-    let bytes = serde_json::to_vec_pretty(&state).map_err(|e| Error::other(e.to_string()))?;
+    let bytes = serde_json::to_vec_pretty(state).map_err(|e| Error::other(e.to_string()))?;
     crate::models::write_atomic(&kept_path(data_dir), &bytes)
+}
+
+/// The model Superba kept in a WSL distribution (user bug 63), while its
+/// `config.toml` (`model`, as inspected) still holds that value as a key
+/// Superba wrote, in the same Codex home. A later switch records again (or
+/// forgets); a restore, a rollback or an edit ends it.
+pub fn kept_host_model(
+    data_dir: &DataDir,
+    target: &TargetId,
+    state: &RemoteState,
+    model: Option<&str>,
+) -> Option<String> {
+    let record = load(data_dir).hosts.remove(target.as_str())?;
+    let owned = state
+        .owned_paths
+        .iter()
+        .any(|p| p == superba_core::codex::config_keys::MODEL);
+    (owned && record.codex_home == state.codex_home && model == Some(record.model.as_str()))
+        .then_some(record.model)
+}
+
+/// Record (or, with `None`, forget) the model a switch kept in a distribution.
+pub fn commit_kept_host(
+    data_dir: &DataDir,
+    target: &TargetId,
+    codex_home: &str,
+    model: Option<&str>,
+) -> Result<()> {
+    let mut state = load(data_dir);
+    let key = target.as_str().to_owned();
+    let changed = match model {
+        Some(m) => {
+            let record = KeptHostRecord {
+                model: m.to_owned(),
+                codex_home: codex_home.to_owned(),
+            };
+            state.hosts.insert(key, record.clone()) != Some(record)
+        }
+        None => state.hosts.remove(&key).is_some(),
+    };
+    save_if(data_dir, &state, changed)
 }
 
 /// The diff preview row of the kept model says why it is written.
 pub fn mark_kept(changes: &mut [superba_core::SettingChange]) {
-    let local = superba_core::TargetId::local();
+    mark_kept_on(changes, &TargetId::local());
+}
+
+/// [`mark_kept`] for the rows of one target (a WSL distribution, user bug 63).
+pub fn mark_kept_on(changes: &mut [superba_core::SettingChange], target: &TargetId) {
     for c in changes.iter_mut().filter(|c| {
-        c.target == local && c.path == superba_core::codex::config_keys::MODEL && c.to.is_some()
+        &c.target == target && c.path == superba_core::codex::config_keys::MODEL && c.to.is_some()
     }) {
         c.reason = superba_core::ChangeReason::KeptModel;
     }
@@ -352,9 +450,7 @@ impl Switcher {
             return KeepDecision::Nothing;
         };
         let mut facts = KeepFacts::default();
-        let needs_list = scope.to == ModelForm::ProviderList
-            || (scope.from == ModelForm::ProviderList && scope.kept.is_none());
-        if needs_list {
+        if needs_list(&scope) {
             let source = match (scope.to, i.direct) {
                 (ModelForm::ProviderList, Some((base, key))) => Some((base.clone(), key.clone())),
                 _ => self.applied_list_source(i.state, i.set).await,
@@ -384,6 +480,15 @@ impl Switcher {
         set: &superba_core::ProfileSet,
     ) -> Option<(url::Url, Secret)> {
         let base = url::Url::parse(state.openai_base_url.as_deref()?).ok()?;
+        Some((base, self.applied_key(state, set).await?))
+    }
+
+    /// The key of the profile applied to this computer.
+    async fn applied_key(
+        &self,
+        state: &ConfigState,
+        set: &superba_core::ProfileSet,
+    ) -> Option<Secret> {
         let profile = set.profile(state.active.as_ref()?.profile_id.as_ref()?)?;
         let key = self
             .deps
@@ -391,7 +496,7 @@ impl Switcher {
             .get(profile.key_ref.as_ref()?)
             .await
             .ok()?;
-        (!key.is_empty()).then_some((base, key))
+        (!key.is_empty()).then_some(key)
     }
 
     /// [`provider_default`] of the provider's own list (`Err` = why it could not
@@ -422,5 +527,170 @@ impl Switcher {
                 .unwrap_or_else(|| "the site lists no models".into()));
         }
         Ok(provider_default(&list.models))
+    }
+}
+
+/// The provider's list is needed: one side chooses from it (the side before only
+/// when no kept model says what runs now).
+fn needs_list(scope: &KeepScope) -> bool {
+    scope.to == ModelForm::ProviderList
+        || (scope.from == ModelForm::ProviderList && scope.kept.is_none())
+}
+
+// ---------------------------------------------------------------------------
+// WSL distributions following this computer (user bug 63)
+// ---------------------------------------------------------------------------
+//
+// A distribution's Codex chooses its model by the same rules (its own
+// `config.toml`, auth and Codex version), and router mode puts it in API-key
+// mode too. Each distribution that follows a switch gets its own decision:
+// what its Codex runs now (the model kept there, else the provider's default
+// for the personal access token it holds) against what the destination would
+// give it. The local home's kept model is never copied to a distribution.
+
+/// Whether a distribution's Codex is on `site` now: its `openai_base_url` is at
+/// a line of that site, or at the local router (loopback or the WSL listener)
+/// while this computer's applied site is `site`.
+pub fn host_on_site(
+    base_url: Option<&str>,
+    site: &Site,
+    applied_site: Option<&superba_core::SiteId>,
+) -> bool {
+    let Some(url) = base_url.and_then(|u| url::Url::parse(u).ok()) else {
+        return false;
+    };
+    if crate::rules::line_for_origin(site, &url.origin().ascii_serialization()).is_some() {
+        return true;
+    }
+    let router_host = match url.host() {
+        Some(url::Host::Ipv4(a)) => a.is_loopback() || a.is_private(),
+        _ => false,
+    };
+    url.scheme() == "http"
+        && router_host
+        && url.path().trim_end_matches('/') == superba_router::config::ROUTER_BASE_PATH
+        && applied_site == Some(&site.id)
+}
+
+/// The line and key a distribution's personal access token reads the
+/// provider's list with: the line its `config.toml` names, the one of `keys`
+/// its `auth.json` holds (compared by the last four characters).
+fn host_list_source(
+    state: &RemoteState,
+    keys: &[Secret],
+) -> std::result::Result<(url::Url, Secret), String> {
+    let base = state
+        .openai_base_url
+        .as_deref()
+        .and_then(|u| url::Url::parse(u).ok())
+        .ok_or_else(|| "no line in the distribution's config.toml".to_owned())?;
+    let superba_core::AuthShape::Pat { key_last4 } = &state.auth else {
+        return Err("no personal access token in the distribution".into());
+    };
+    keys.iter()
+        .find(|k| !k.is_empty() && &k.last4() == key_last4)
+        .map(|k| (base, k.clone()))
+        .ok_or_else(|| "the distribution holds a key of no profile".into())
+}
+
+/// What the planner hands to [`Switcher::plan_host_model_keep`].
+pub(crate) struct HostKeepInput<'a> {
+    pub host: &'a superba_core::RemoteHost,
+    /// The distribution as probed now.
+    pub state: &'a RemoteState,
+    /// The destination's site.
+    pub site: &'a Site,
+    /// This computer's home now (applied site and profile).
+    pub local: &'a ConfigState,
+    pub set: &'a superba_core::ProfileSet,
+    /// What the distribution gets (its `model` as the destination sets it).
+    pub resolved: &'a superba_core::ResolvedProfile,
+    /// The destination's key for a direct connection.
+    pub direct_key: Option<&'a Secret>,
+}
+
+impl Switcher {
+    /// [`decide`] for one WSL distribution following a switch, reading the
+    /// provider's list (with the distribution's Codex version) when one side
+    /// chooses from it.
+    pub(crate) async fn plan_host_model_keep(&self, i: HostKeepInput<'_>) -> KeepDecision {
+        let ResolvedMode::Token {
+            auth,
+            endpoints,
+            key,
+            ..
+        } = &i.resolved.mode
+        else {
+            return KeepDecision::Nothing;
+        };
+        let files = superba_core::CodexFiles {
+            config_toml: i.state.config_toml.clone(),
+            auth_json: None,
+        };
+        let model = match self
+            .deps
+            .config
+            .inspect_files(Path::new(&i.state.codex_home), &files)
+        {
+            Ok(cs) if cs.parse_error.is_none() => cs.model,
+            _ => return KeepDecision::Nothing,
+        };
+        let kept = kept_host_model(
+            &self.deps.ctx.data_dir,
+            &i.host.target_id,
+            i.state,
+            model.as_deref(),
+        );
+        let applied_site = i.local.active.as_ref().and_then(|a| a.site_id.as_ref());
+        let Some(scope) = scope_of(ScopeFacts {
+            same_site: host_on_site(i.state.openai_base_url.as_deref(), i.site, applied_site),
+            auth: i.state.auth.mode(),
+            dest_auth: *auth,
+            model: model.as_deref(),
+            kept: kept.as_deref(),
+            dest_sets_model: i.resolved.model.model.is_some(),
+            left: None,
+        }) else {
+            return KeepDecision::Nothing;
+        };
+        let mut facts = KeepFacts::default();
+        if needs_list(&scope) {
+            let source = if scope.to == ModelForm::ProviderList {
+                Ok((endpoints.openai_base_url.clone(), key.clone()))
+            } else {
+                // The token the distribution holds: the destination's key or
+                // the one applied here (a distribution left out while stopped).
+                let mut keys: Vec<Secret> = i.direct_key.cloned().into_iter().collect();
+                keys.extend(self.applied_key(i.local, i.set).await);
+                host_list_source(i.state, &keys)
+            };
+            let read = match source {
+                Ok((base, key)) => {
+                    self.provider_list_default(i.site, &base, &key, i.state.codex_version.as_ref())
+                        .await
+                }
+                Err(e) => Err(e),
+            };
+            match read {
+                Ok(m) => facts.provider_default = m,
+                Err(e) => facts.list_error = Some(e),
+            }
+        }
+        let mut decision = decide(&scope, &facts, &i.site.name);
+        if let KeepDecision::Keep { model, .. } = &mut decision {
+            *model = kept_base(i.site, model);
+        }
+        decision
+    }
+}
+
+/// A distribution's notice: `note` prefixed with the distribution's name.
+pub fn on_host(host: &superba_core::RemoteHost, note: Notice) -> Notice {
+    let Notice { severity, text: t } = note;
+    Notice {
+        severity,
+        text: text("switch.warn.on_host")
+            .arg_text("host", host.title())
+            .arg_text("text", t),
     }
 }

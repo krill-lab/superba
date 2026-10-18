@@ -336,7 +336,7 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 | `cache/usage/` (usage reports per site, key fingerprint and range; no keys) | net |
 | `cache/transports.json` (WebSocket / zstd checks per site, line, base URL and key fingerprint, with the time of the check; no keys) | switch |
 | `cache/compaction.json` (remote compaction checks per site, base URL and key fingerprint, with the time and model of the check; no keys) | switch |
-| `kept-model.json` (per Codex home: the `model` value a switch kept across a change of authentication and the generation that wrote it, user bug 58) | switch |
+| `kept-model.json` (per Codex home: the `model` value a switch kept across a change of authentication and the generation that wrote it, user bug 58; per WSL distribution: the value and the distribution's `CODEX_HOME`, user bug 63) | switch |
 | `imported-usage.sqlite3` (usage history imported from cc-switch / AI Toolbox: requests by the tool's own id, daily totals; numbers, model and provider names only) | switch |
 | `cache/import/import-<uuid>/` (a private 0700 copy of another tool's database with pending `-wal` / `-journal` changes, removed right after reading) | import |
 | `router/` (`config.json`, 0600 `secrets.json` and `runtime.json`, log, `compactions.json`: which member made each compaction item, by fingerprint) | router |
@@ -485,7 +485,20 @@ authentication (PAT <-> API key, direct <-> router) writes the model Codex runs
 with now and names it in the plan (`superba_switch::model_keep`, user bug 58;
 preview reason "Keeps the model in use"); the value is Superba's
 (`ConfigState::model_owned`, `kept-model.json`) and a later switch drops it
-again when the PAT's own default is the same model. A relay without capacity
+again when the PAT's own default is the same model. A WSL distribution that
+follows the switch gets its own decision by the same rule (user bug 63): what
+its Codex runs now (the model kept there, else the default its PAT gets from the
+line its `config.toml` names, read with its own Codex version) against what its
+destination gives it (routed = API key; a distribution that cannot reach the
+router stays direct and keeps nothing); it is on the destination's site when its
+line is one of the site's or it is routed while this computer runs that site.
+This computer's kept model is never copied to a distribution, and a model of the
+distribution's own is left alone. The plan names it per distribution
+(`switch.warn.on_host`) and marks its preview row; `kept-model.json` records it
+while the distribution's `config.toml` holds that value as a key Superba wrote
+(`RemoteState::owned_paths`). With "Run Codex in WSL" the app's Codex in the
+default distribution reads this computer's `config.toml`, so the local decision
+is that Codex's, and the plan says so (`switch.models.keep_legacy_wsl`). A relay without capacity
 for a model answers with a stream that ends in a retryable `server_busy`; that
 stream has started, so the router passes it to Codex from its line and never
 tries the member's other lines with it. The GUI shell runs a tick every 5 s while router
@@ -636,7 +649,8 @@ every distribution with a Codex as a managed host of kind `HostKind::Wsl`
   files and the user's shell rc).
 - Switching: WSL hosts follow this computer by default (`HostSettings::follows`),
   scope both (connection + settings filtered by the distribution's Codex
-  version, no model catalog file); a distribution without Codex, or never
+  version, no model catalog file; the model its Codex runs with kept by its own
+  decision, user bug 63, see the router section); a distribution without Codex, or never
   written and without a baseline, is skipped with a note. Restore (original
   configuration) and uninstall also reach a distribution Superba wrote that no
   longer follows (its baseline is kept locally: `RemoteHosts::written`). Hot

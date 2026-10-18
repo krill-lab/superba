@@ -671,6 +671,8 @@ pub struct FakeProber {
     pub model_list: Mutex<Option<std::result::Result<superba_core::ModelList, Error>>>,
     /// Base URLs `model_list` was called with.
     pub model_list_calls: Mutex<Vec<String>>,
+    /// The Codex version of each `model_list` call.
+    pub model_list_versions: Mutex<Vec<Option<String>>>,
 }
 
 pub fn good_caps(site: &str, line: &str) -> LineCaps {
@@ -795,6 +797,10 @@ impl LineProber for FakeProber {
             .lock()
             .unwrap()
             .push(request.base_url.to_string());
+        self.model_list_versions
+            .lock()
+            .unwrap()
+            .push(request.client_version.map(ToString::to_string));
         match self.model_list.lock().unwrap().clone() {
             Some(answer) => answer,
             None => Err(superba_core::Error::not_implemented(
@@ -1786,6 +1792,82 @@ pub struct FakeRemote {
     pub probes: Mutex<Vec<String>>,
     /// `wsl_running` calls.
     pub running_calls: Mutex<u32>,
+    /// The host's `auth.json` as the probe reads it (`None` = missing).
+    pub auth: Mutex<Option<AuthShape>>,
+    /// `openai_base_url` as the probe reads it.
+    pub openai_base_url: Mutex<Option<String>>,
+    /// Plans list the host's `model` change and applies change the host like
+    /// the real one (auth, line, `model` and its ownership; user bug 63).
+    pub mirror: Mutex<bool>,
+}
+
+/// The top-level `model` of a fake host's `config.toml`.
+pub fn toml_model(config: Option<&str>) -> Option<String> {
+    config?
+        .lines()
+        .take_while(|l| !l.trim_start().starts_with('['))
+        .find_map(|l| l.trim().strip_prefix("model = "))
+        .map(|v| v.trim_matches('"').to_owned())
+}
+
+impl FakeRemote {
+    /// The `model` value `desired` leaves on the host (`None` = absent).
+    fn model_after(&self, desired: &ResolvedProfile) -> Option<String> {
+        let config = self.config_toml.lock().unwrap().clone();
+        let now = toml_model(config.as_deref());
+        let owned = self
+            .owned_paths
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|p| p == "model");
+        match (&desired.mode, &desired.model.model) {
+            (superba_core::ResolvedMode::Token { .. }, Some(m)) => Some(m.clone()),
+            // Released: the host had no model of its own.
+            _ if owned => None,
+            _ => now,
+        }
+    }
+
+    fn mirror_apply(&self, desired: &ResolvedProfile) {
+        let after = self.model_after(desired);
+        let mut config = self.config_toml.lock().unwrap();
+        let rest: Vec<String> = config
+            .as_deref()
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("model = "))
+            .map(str::to_owned)
+            .collect();
+        let mut lines = Vec::new();
+        if let Some(m) = &after {
+            lines.push(format!("model = \"{m}\""));
+        }
+        lines.extend(rest);
+        *config = Some(lines.join("\n") + "\n");
+        let mut owned = self.owned_paths.lock().unwrap();
+        owned.retain(|p| p != "model");
+        if let superba_core::ResolvedMode::Token {
+            auth,
+            endpoints,
+            key,
+            ..
+        } = &desired.mode
+        {
+            if desired.model.model.is_some() {
+                owned.push("model".into());
+            }
+            *self.auth.lock().unwrap() = Some(match auth {
+                AuthMode::Pat => AuthShape::Pat {
+                    key_last4: key.last4(),
+                },
+                _ => AuthShape::ApiKey {
+                    key_last4: key.last4(),
+                },
+            });
+            *self.openai_base_url.lock().unwrap() = Some(endpoints.openai_base_url.to_string());
+        }
+    }
 }
 
 pub fn remote_host(key: &str, host_id: Option<&str>) -> RemoteHost {
@@ -1859,6 +1941,10 @@ impl RemoteHosts for FakeRemote {
             .clone()
             .map(|t| SecretBytes::new(t.into_bytes()));
         state.owned_paths = self.owned_paths.lock().unwrap().clone();
+        if let Some(a) = self.auth.lock().unwrap().clone() {
+            state.auth = a;
+        }
+        state.openai_base_url = self.openai_base_url.lock().unwrap().clone();
         if *self.idle.lock().unwrap() {
             state.app_server_pids.clear();
         }
@@ -1874,11 +1960,24 @@ impl RemoteHosts for FakeRemote {
     }
 
     async fn plan_apply(&self, host: &RemoteHost, desired: &ResolvedProfile) -> Result<RemotePlan> {
+        let mut key_changes = Vec::new();
+        if *self.mirror.lock().unwrap() {
+            let before = toml_model(self.config_toml.lock().unwrap().as_deref());
+            let after = self.model_after(desired);
+            if before != after {
+                let quoted = |m: Option<String>| m.map(|m| format!("\"{m}\""));
+                key_changes.push(KeyChange {
+                    path: "model".into(),
+                    before: quoted(before),
+                    after: quoted(after),
+                });
+            }
+        }
         Ok(RemotePlan {
             target_id: host.target_id.clone(),
             state: self.probe(host).await?,
             files: Vec::new(),
-            key_changes: Vec::new(),
+            key_changes,
             auth_change: None,
             env: None,
             blocked: self
@@ -1894,10 +1993,15 @@ impl RemoteHosts for FakeRemote {
         })
     }
 
-    async fn apply(&self, host: &RemoteHost, _plan: &RemotePlan) -> Result<RemoteApplyReport> {
+    async fn apply(&self, host: &RemoteHost, plan: &RemotePlan) -> Result<RemoteApplyReport> {
         push(&self.log, format!("remote.apply {}", host.label));
         if let Some(e) = self.fail_apply.lock().unwrap().get(&host.label) {
             return Err(e.clone());
+        }
+        if *self.mirror.lock().unwrap()
+            && let Some(desired) = &plan.desired
+        {
+            self.mirror_apply(desired);
         }
         Ok(RemoteApplyReport {
             target_id: host.target_id.clone(),
@@ -2320,6 +2424,7 @@ impl World {
                 authapi_checks: Mutex::new(Vec::new()),
                 model_list: Mutex::new(None),
                 model_list_calls: Mutex::new(Vec::new()),
+                model_list_versions: Mutex::new(Vec::new()),
             }),
             sessions: Arc::new(FakeSessions {
                 log: log.clone(),
@@ -2356,6 +2461,9 @@ impl World {
                 written: Mutex::new(Vec::new()),
                 probes: Mutex::new(Vec::new()),
                 running_calls: Mutex::new(0),
+                auth: Mutex::new(None),
+                openai_base_url: Mutex::new(None),
+                mirror: Mutex::new(false),
             }),
             router: Arc::new(FakeRouter::new(log.clone())),
             v3: v3::V3 {

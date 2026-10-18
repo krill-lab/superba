@@ -170,14 +170,19 @@ impl Switcher {
     }
 
     /// Plan notes and blocks of "Run Codex in WSL" for a local switch: router
-    /// mode needs `127.0.0.1` to reach Windows from that distribution.
+    /// mode needs `127.0.0.1` to reach Windows from that distribution. The third
+    /// value names that distribution.
     pub(crate) async fn legacy_wsl_check(
         &self,
         home: &CodexHome,
         routed: bool,
-    ) -> (Vec<Notice>, Option<superba_core::BlockReason>) {
+    ) -> (
+        Vec<Notice>,
+        Option<superba_core::BlockReason>,
+        Option<String>,
+    ) {
         let Some(distro) = self.legacy_wsl(home).await else {
-            return (Vec::new(), None);
+            return (Vec::new(), None, None);
         };
         let notes = vec![Notice::info(
             text("switch.wsl.legacy_mode").arg("distro", &distro.name),
@@ -187,7 +192,7 @@ impl Switcher {
                 distro: distro.name.clone(),
             }
         });
-        (notes, block)
+        (notes, block, Some(distro.name))
     }
 
     /// A stopped distribution a switch comes back to (pending): the user turned

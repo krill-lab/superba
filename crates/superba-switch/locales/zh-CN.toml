@@ -329,6 +329,7 @@ keep_pat_default = "Codex 继续使用当前的模型 {model}；改用个人访�
 pat_default = "使用个人访问令牌时，Codex 运行「{site}」的默认模型 {model}。如需换用其他模型，请在配置档中设置模型（模型页面，或 spb profile edit --model）。"
 keep_unknown = "Superba 无法确定 Codex 当前使用的模型（「{site}」的模型列表未能读取：{reason}）。改用 API key（包括经由路由器）后，Codex 和 ChatGPT app 可能会选择其他模型；如需保持当前模型，请在配置档中设置模型。"
 keep_unread = "Codex 继续使用当前的模型 {model}：「{site}」的模型列表未能读取（{reason}），Superba 无法确定使用个人访问令牌时会得到哪个模型。如需换用其他模型，请在配置档中设置模型（模型页面，或 spb profile edit --model）。"
+keep_legacy_wsl = "ChatGPT app 在 WSL 中运行本机的 Codex（{distro}，“在 WSL 中运行 Codex”），读取这里写入的配置，因此那里也继续使用 {model}。"
 
 [switch.pin]
 catalog_check = "config.toml 引用了模型目录文件；app 重启前 Superba 会用 Codex {version} 检查它，若被拒绝则为该版本重建。"

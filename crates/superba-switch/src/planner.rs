@@ -88,6 +88,21 @@ pub(crate) struct PlanContext {
     /// the apply (`Some(None)` = none kept; `None` = the local home is not
     /// written).
     pub kept_model: Option<Option<String>>,
+    /// User bug 63: the model kept in each WSL distribution the plan writes
+    /// (target, its `CODEX_HOME`, the model or `None`), recorded after that
+    /// distribution's apply.
+    pub kept_host_models: Vec<KeptHostModel>,
+}
+
+/// The model a plan keeps in one WSL distribution (user bug 63).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeptHostModel {
+    /// The distribution.
+    pub target_id: TargetId,
+    /// Its `CODEX_HOME`.
+    pub codex_home: String,
+    /// The model written to keep what its Codex runs now (`None` = none).
+    pub model: Option<String>,
 }
 
 impl PlanContext {
@@ -123,6 +138,7 @@ impl PlanContext {
             kept_foreign_auth: false,
             wsl_pending: Vec::new(),
             kept_model: None,
+            kept_host_models: Vec::new(),
         }
     }
 }
@@ -219,6 +235,9 @@ struct Dest {
     /// The local `model` is the one Codex runs with now, kept across an auth
     /// change (user bug 58).
     kept_model: bool,
+    /// The app runs this computer's Codex inside this WSL distribution ("Run
+    /// Codex in WSL", user bug 54 (b)).
+    legacy_wsl: Option<String>,
 }
 
 /// One line judged for a switch (auth decision, Codex path, blocks).
@@ -813,7 +832,8 @@ impl Switcher {
         // default distribution reads this home; router mode needs 127.0.0.1
         // to reach Windows from there.
         if local {
-            let (notes, block) = self.legacy_wsl_check(&home, dest.routed).await;
+            let (notes, block, distro) = self.legacy_wsl_check(&home, dest.routed).await;
+            dest.legacy_wsl = distro;
             draft.warnings.extend(notes);
             if let Some(b) = block {
                 draft.block(b);
@@ -1148,18 +1168,23 @@ impl Switcher {
 
         // --- remote hosts (plan 8) ---------------------------------------------
         let mut wsl_pending = Vec::new();
+        let mut kept_host_models = Vec::new();
         let (hosts, remote_plans, remote_restarts) = self
             .plan_remotes(
-                &request,
-                &followed,
-                &set,
-                &dest,
-                &home,
-                session.as_ref(),
-                &processes,
-                caps.as_slice(),
+                RemotesInput {
+                    request: &request,
+                    followed: &followed,
+                    set: &set,
+                    local: &state,
+                    dest: &dest,
+                    home: &home,
+                    session: session.as_ref(),
+                    processes: &processes,
+                    caps: caps.as_slice(),
+                },
                 &mut active_threads,
                 &mut wsl_pending,
+                &mut kept_host_models,
                 &mut draft,
             )
             .await;
@@ -1261,6 +1286,9 @@ impl Switcher {
         if dest.kept_model {
             crate::model_keep::mark_kept(&mut changes);
         }
+        for k in kept_host_models.iter().filter(|k| k.model.is_some()) {
+            crate::model_keep::mark_kept_on(&mut changes, &k.target_id);
+        }
         let kept_model = plan.config.is_some().then(|| {
             dest.resolved
                 .as_ref()
@@ -1303,6 +1331,7 @@ impl Switcher {
                 kept_foreign_auth,
                 wsl_pending,
                 kept_model,
+                kept_host_models,
             },
         );
         Ok(plan)
@@ -1354,10 +1383,19 @@ impl Switcher {
                 if dest.remote_resolved.is_none() {
                     dest.remote_resolved = dest.resolved.clone();
                 }
+                draft.warnings.push(notice);
+                // "Run Codex in WSL": the app's Codex inside that distribution
+                // reads this config.toml (user bug 63).
+                if let Some(distro) = &dest.legacy_wsl {
+                    draft.info(
+                        text("switch.models.keep_legacy_wsl")
+                            .arg("distro", distro)
+                            .arg("model", &model),
+                    );
+                }
                 if let Some(r) = dest.resolved.as_mut() {
                     r.model.model = Some(model);
                 }
-                draft.warnings.push(notice);
                 dest.kept_model = true;
             }
         }
@@ -2600,25 +2638,29 @@ impl Switcher {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn plan_remotes(
         &self,
-        request: &SwitchRequest,
-        followed: &[TargetId],
-        set: &ProfileSet,
-        dest: &Dest,
-        home: &CodexHome,
-        session: Option<&AppSession>,
-        processes: &[ProcessInfo],
-        caps: &[VersionCapability],
+        i: RemotesInput<'_>,
         active_threads: &mut Vec<ThreadActivity>,
         wsl_pending: &mut Vec<TargetId>,
+        kept_host_models: &mut Vec<KeptHostModel>,
         draft: &mut Draft,
     ) -> (
         Vec<RemoteHost>,
         Vec<RemotePlan>,
         Vec<(TargetId, RestartKind)>,
     ) {
+        let RemotesInput {
+            request,
+            followed,
+            set,
+            local,
+            dest,
+            home,
+            session,
+            processes,
+            caps,
+        } = i;
         let d = &self.deps;
         let mut wanted = request.targets.remotes.clone();
         if let Some(t) = &dest.rollback_remote
@@ -2766,11 +2808,12 @@ impl Switcher {
                 restarts.push((tid, unavailable("nothing to apply".into())));
                 continue;
             };
-            let (resolved, scope) = if wsl {
-                self.wsl_resolution(set, base, dest, &host, &state, draft)
+            let (resolved, scope, kept) = if wsl {
+                self.wsl_resolution(set, local, base, dest, &host, &state, draft)
                     .await
             } else {
-                remote_resolution(base, followed.contains(&tid))
+                let (r, s) = remote_resolution(base, followed.contains(&tid));
+                (r, s, None)
             };
             match d.remote.plan_apply_scoped(&host, &resolved, scope).await {
                 Ok(p) if by_default && p.blocked == [BlockReason::NoBaseline] => {
@@ -2794,6 +2837,13 @@ impl Switcher {
                         d.remote.turn_activity(&host).await,
                     ) {
                         active_threads.extend(a.busy);
+                    }
+                    if wsl {
+                        kept_host_models.push(KeptHostModel {
+                            target_id: tid.clone(),
+                            codex_home: state.codex_home.clone(),
+                            model: kept,
+                        });
                     }
                     restarts.push((
                         tid,
@@ -2958,17 +3008,28 @@ impl Switcher {
     /// connection and settings, like this computer. Router mode routes it when
     /// it reaches the router (else direct, with the reason); the settings are
     /// the profile's, filtered for the distribution's Codex; a restore restores
-    /// both key families. A local model catalog file is not written there.
+    /// both key families. A local model catalog file is not written there. The
+    /// model its Codex runs with stays across a change of authentication by
+    /// its own decision (user bug 63); the third value is the model kept.
+    #[allow(clippy::too_many_arguments)]
     async fn wsl_resolution(
         &self,
         set: &ProfileSet,
+        local_state: &ConfigState,
         base: &ResolvedProfile,
         dest: &Dest,
         host: &RemoteHost,
         state: &superba_core::RemoteState,
         draft: &mut Draft,
-    ) -> (ResolvedProfile, superba_core::RemoteApplyScope) {
+    ) -> (
+        ResolvedProfile,
+        superba_core::RemoteApplyScope,
+        Option<String>,
+    ) {
         let mut resolved = base.clone();
+        // This computer's model value when the distribution is routed like it
+        // and that value is the model kept here.
+        let mut local_kept = None;
         if let ResolvedMode::Token { .. } = resolved.mode {
             if dest.routed
                 && let Some(local) = dest.resolved.as_ref()
@@ -2976,6 +3037,10 @@ impl Switcher {
                 match self.wsl_route(host, state).await {
                     crate::wsl::WslRoute::Routed { origin, token } => {
                         resolved = crate::wsl::routed(local, &origin, &token);
+                        if dest.kept_model {
+                            local_kept = resolved.model.model.take();
+                            resolved.model.model = base.model.model.clone();
+                        }
                         draft.info(
                             text("switch.wsl.routed")
                                 .arg_text("host", host.title())
@@ -2994,8 +3059,88 @@ impl Switcher {
         if resolved.model_catalog.take().is_some() {
             draft.info(text("switch.wsl.no_model_catalog").arg_text("host", host.title()));
         }
-        (resolved, superba_core::RemoteApplyScope::Both)
+        let kept = self
+            .keep_host_model(
+                set,
+                local_state,
+                base,
+                dest,
+                host,
+                state,
+                local_kept,
+                &mut resolved,
+                draft,
+            )
+            .await;
+        (resolved, superba_core::RemoteApplyScope::Both, kept)
     }
+
+    /// Keep the model a distribution's Codex runs with ([`crate::model_keep`],
+    /// user bug 63): written to `resolved` and named in the plan for that
+    /// distribution. `local_kept` is this computer's kept value when the
+    /// distribution is routed like it (a tier-suffixed name stays as it is).
+    #[allow(clippy::too_many_arguments)]
+    async fn keep_host_model(
+        &self,
+        set: &ProfileSet,
+        local_state: &ConfigState,
+        base: &ResolvedProfile,
+        dest: &Dest,
+        host: &RemoteHost,
+        state: &superba_core::RemoteState,
+        local_kept: Option<String>,
+        resolved: &mut ResolvedProfile,
+        draft: &mut Draft,
+    ) -> Option<String> {
+        let site = dest.site.as_ref()?;
+        let direct_key = match &base.mode {
+            ResolvedMode::Token { key, .. } => Some(key),
+            _ => None,
+        };
+        let decision = self
+            .plan_host_model_keep(crate::model_keep::HostKeepInput {
+                host,
+                state,
+                site,
+                local: local_state,
+                set,
+                resolved,
+                direct_key,
+            })
+            .await;
+        match decision {
+            crate::model_keep::KeepDecision::Nothing => None,
+            crate::model_keep::KeepDecision::Note(n) => {
+                draft.warnings.push(crate::model_keep::on_host(host, n));
+                None
+            }
+            crate::model_keep::KeepDecision::Keep { model, notice } => {
+                let value = match local_kept {
+                    Some(l) if crate::model_keep::kept_base(site, &l) == model => l,
+                    _ => model,
+                };
+                resolved.model.model = Some(value.clone());
+                draft
+                    .warnings
+                    .push(crate::model_keep::on_host(host, notice));
+                Some(value)
+            }
+        }
+    }
+}
+
+/// What [`Switcher::plan_remotes`] plans from.
+struct RemotesInput<'a> {
+    request: &'a SwitchRequest,
+    followed: &'a [TargetId],
+    set: &'a ProfileSet,
+    /// This computer's home now.
+    local: &'a ConfigState,
+    dest: &'a Dest,
+    home: &'a CodexHome,
+    session: Option<&'a AppSession>,
+    processes: &'a [ProcessInfo],
+    caps: &'a [VersionCapability],
 }
 
 /// What a remote host gets from a local destination (v0.3): a token or official

@@ -118,7 +118,11 @@ back to the official ChatGPT login.
   writes the model Codex runs with now, because with an API key Codex and the
   desktop app choose a default of their own (often `gpt-5.5`). The plan shows it
   ("Keeps the model in use") and says how to choose another; turning the router
-  off drops it again when the PAT's own default is the same model.
+  off drops it again when the PAT's own default is the same model. WSL
+  distributions that follow this computer get the same rule for their own
+  Codex (their own `config.toml`, line and Codex version), named per
+  distribution in the plan, and with the app's "Run Codex in WSL" the plan says
+  the app's Codex inside that distribution keeps the model too.
 - **Signed feeds** (`spb feeds`): model, price and version lists signed with an
   Ed25519 key, fetched through configurable mirrors with the built-in lists as
   fallback; GitHub proxies are off unless enabled under Preferences → Network,
