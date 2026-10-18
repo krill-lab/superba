@@ -20,7 +20,12 @@
 //!   profile in direct mode. The service keeps running until `router uninstall`.
 //! - Watchdog ([`Switcher::router_watch_impl`]): while Codex goes through the
 //!   router, a router that stays down past the grace period makes Superba turn
-//!   router mode off and switch the applied profile back to direct mode.
+//!   router mode off and switch the applied profile back to direct mode, unless
+//!   it is down because another program holds its port (user bug 65): then the
+//!   router moves to a free stable port and a router-on switch points Codex
+//!   at it. A router that answers on another port than Codex uses (moved by a
+//!   reinstall, or a repair that failed before) gets Codex pointed at it at
+//!   once.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -110,6 +115,13 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
     async fn restart(&self) -> Result<()> {
         Err(Error::not_implemented("router restart"))
     }
+    /// Move a router that is down because another program holds its port to
+    /// a free stable port, restart it and wait until it answers (user bug 65).
+    /// Codex is not touched. `Ok(None)` when nothing had to move (the router
+    /// answers, or its port is free or held by a router).
+    async fn move_off_taken_port(&self) -> Result<Option<RouterEndpointInfo>> {
+        Ok(None)
+    }
     /// Listen also on these WSL adapter addresses (user bug 45; the stored
     /// configuration, reloaded by a running router). Returns whether a running
     /// router reloaded.
@@ -122,7 +134,9 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
         Vec::new()
     }
     /// Add or update the Windows Firewall rule that lets WSL reach the router at
-    /// `address:port` (asks for administrator approval).
+    /// `address:port` (asks for administrator approval). The rule covers the
+    /// router program on `address` whatever its port, so a later move of the
+    /// port (user bug 65) needs no new approval.
     async fn allow_wsl_firewall(
         &self,
         address: std::net::Ipv4Addr,
@@ -244,6 +258,13 @@ impl RouterControl for SystemRouterControl {
         self.manager.restart(ROUTER_START_WAIT).await
     }
 
+    async fn move_off_taken_port(&self) -> Result<Option<RouterEndpointInfo>> {
+        self.manager
+            .move_off_taken_port(ROUTER_START_WAIT)
+            .await
+            .map(|e| e.map(info))
+    }
+
     async fn set_wsl_listen(&self, addresses: Vec<std::net::Ipv4Addr>) -> Result<bool> {
         self.manager.set_wsl_listen(addresses).await
     }
@@ -257,9 +278,9 @@ impl RouterControl for SystemRouterControl {
     async fn allow_wsl_firewall(
         &self,
         address: std::net::Ipv4Addr,
-        port: u16,
+        _port: u16,
     ) -> Result<superba_router::firewall::FirewallChange> {
-        superba_router::firewall::allow_wsl(address, port, &self.manager.spec().exe).await
+        superba_router::firewall::allow_wsl(address, &self.manager.spec().exe).await
     }
 
     fn endpoint(&self) -> Result<RouterEndpointInfo> {
@@ -572,6 +593,9 @@ impl Switcher {
         // The stored recording / stats line / price settings (v0.3) reach a new
         // router too; a router without stats support keeps running unchanged.
         self.push_stats(&set).await?;
+        // A reinstall moves a router off a port another program took (user bug
+        // 65): Codex, when it goes through the router, follows at once.
+        self.follow_moved_router().await;
         self.router_status_impl().await
     }
 
@@ -738,12 +762,7 @@ impl Switcher {
         // GH#5: another tool took Codex over (its own credential or provider):
         // Codex does not go through the router any more, and its configuration
         // is not Superba's to change. Only the stored mode is turned off.
-        if state.auth_drift.is_some()
-            || state
-                .drift
-                .iter()
-                .any(|k| k.path == superba_core::codex::config_keys::MODEL_PROVIDER)
-        {
+        if taken_over(&state) {
             tracing::warn!("router fallback: Codex was changed by another tool; nothing written");
             let mut set = d.profiles.load().await?;
             if set.settings.router.enabled {
@@ -761,39 +780,44 @@ impl Switcher {
         // A router-off switch: router mode is stored as off only after it
         // succeeded, so a failed attempt keeps the watchdog running and is
         // retried at a later tick.
-        let mut request = SwitchRequest {
-            intent: SwitchIntent::Router { enable: false },
-            ..SwitchRequest::profile(target)
-        };
-        request.targets.remotes.clear();
-        // Nothing may wait for an answer: keep the user's foreign environment
-        // lines and legacy sessions as they are, and keep values the app, the
-        // user or another tool changed in keys Superba owns (GH#5), except a
-        // routing key that still points at a local router, which must leave the
-        // dead router.
-        request.take_over_foreign_env = Some(false);
-        request.legacy_sessions = Some(superba_core::LegacySessionChoice::Skip);
-        for k in &state.drift {
-            let routing = [
-                superba_core::codex::config_keys::OPENAI_BASE_URL,
-                superba_core::codex::config_keys::CHATGPT_BASE_URL,
-            ]
-            .contains(&k.path.as_str());
-            let to_router = k
-                .after
-                .as_deref()
-                .and_then(superba_config::toml_keys::parse_repr)
-                .and_then(|v| v.as_str().map(is_router_url))
-                .unwrap_or(false);
-            request.key_resolutions.insert(
-                k.path.clone(),
-                if routing && to_router {
-                    KeyResolution::Overwrite
-                } else {
-                    KeyResolution::KeepCurrent
-                },
-            );
+        let request = watchdog_request(&state, target, false);
+        self.run_watchdog_switch(request, "the switch back to direct mode")
+            .await
+            .map(Some)
+    }
+
+    /// Point Codex at the router's current port (user bug 65): a router-on
+    /// switch to the applied profile, run like the fallback (nothing waits for
+    /// an answer; of the keys the app, the user or another tool changed, only
+    /// routing keys that still point at a local router are overwritten). Router
+    /// mode stays on.
+    pub(crate) async fn router_repoint_impl(&self, state: &ConfigState) -> Result<SwitchOutcome> {
+        if taken_over(state) {
+            return Err(Error::Conflict {
+                message: "Codex was changed by another tool; it is not pointed at the local \
+                          router's new port"
+                    .into(),
+            });
         }
+        let set = self.deps.profiles.load().await?;
+        let target =
+            fallback_profile(state.active.as_ref(), &set).ok_or_else(|| Error::NotFound {
+                what: "a router member profile to point Codex at the router with".into(),
+            })?;
+        let request = watchdog_request(state, target, true);
+        self.run_watchdog_switch(request, "the switch to the local router's new port")
+            .await
+    }
+
+    /// Plan and run a watchdog repair without asking anything: turns in flight
+    /// are not waited for (Codex cannot reach the router anyway), and a change
+    /// that needs a full app restart is only written (the app is never quit on
+    /// the user's behalf; its next start picks it up).
+    async fn run_watchdog_switch(
+        &self,
+        request: SwitchRequest,
+        what: &str,
+    ) -> Result<SwitchOutcome> {
         let plan = self.plan(request).await?;
         let full = matches!(
             plan.primary,
@@ -801,8 +825,6 @@ impl Switcher {
         ) || plan.migration.is_some();
         let opts = ExecuteOptions {
             force_turns: true,
-            // Never quit the app on the user's behalf: write the configuration and
-            // let the next start pick it up.
             write_only: full,
             ..ExecuteOptions::default()
         };
@@ -819,11 +841,53 @@ impl Switcher {
             OutcomeStatus::Switched | OutcomeStatus::WrittenOnly | OutcomeStatus::Partial
         ) {
             return Err(Error::other(format!(
-                "the switch back to direct mode did not finish ({:?})",
+                "{what} did not finish ({:?})",
                 outcome.status
             )));
         }
-        Ok(Some(outcome))
+        Ok(outcome)
+    }
+
+    /// Codex goes through the router, but at another port than the router's
+    /// configuration names (the router moved, user bug 65): Codex's port and
+    /// the router's.
+    pub(crate) fn stale_router_port(&self, state: &ConfigState) -> Option<(u16, u16)> {
+        if !self.codex_routed(state) {
+            return None;
+        }
+        let endpoint = self.deps.router.endpoint().ok()?;
+        let from = Url::parse(state.openai_base_url.as_deref()?)
+            .ok()?
+            .port_or_known_default()?;
+        (from != endpoint.port).then_some((from, endpoint.port))
+    }
+
+    /// After a reinstall: when Codex goes through the router at another port
+    /// than the running router's (it moved off a port another program took),
+    /// point Codex at it now. A failure is left to the watchdog, which retries.
+    pub(crate) async fn follow_moved_router(&self) {
+        let d = &self.deps;
+        let Ok(state) = d.config.read_state(&d.ctx.codex_home()).await else {
+            return;
+        };
+        let Some((from, to)) = self.stale_router_port(&state) else {
+            return;
+        };
+        if !d.router.liveness().await.is_up() {
+            return;
+        }
+        match self.router_repoint_impl(&state).await {
+            Ok(_) => {
+                tracing::warn!(from, to, "Codex now uses the local router's new port");
+                self.reset_router_watchdog();
+            }
+            Err(e) => tracing::warn!(
+                error = %e,
+                from,
+                to,
+                "Codex was not pointed at the local router's new port; the watchdog retries"
+            ),
+        }
     }
 
     pub(crate) async fn router_watch_impl(&self) -> Result<RouterWatch> {
@@ -841,7 +905,28 @@ impl Switcher {
                 error: None,
             });
         }
-        let liveness = d.router.liveness().await;
+        let mut liveness = d.router.liveness().await;
+        let mut error = None;
+        // The router answers on another port than Codex uses (it moved off a
+        // port another program took, user bug 65): point Codex at it now. Until
+        // that works Codex cannot reach it: an outage like a dead router, which
+        // falls back to direct mode after the grace period.
+        let stale = self.stale_router_port(&state);
+        if liveness.is_up()
+            && let Some((from, to)) = stale
+        {
+            match self.router_repoint_impl(&state).await {
+                Ok(outcome) => return Ok(self.moved(from, to, outcome)),
+                Err(e) => {
+                    liveness = Liveness::Down {
+                        detail: format!(
+                            "Codex is pointed at port {from}, the local router listens on port {to}"
+                        ),
+                    };
+                    error = Some(e);
+                }
+            }
+        }
         let now = self.watch_base + d.clock.monotonic();
         let verdict = match self.watchdog.lock() {
             Ok(mut w) => w.observe(now, &liveness),
@@ -856,13 +941,21 @@ impl Switcher {
             Verdict::Suspect { detail, .. } => RouterWatch {
                 state: RouterWatchState::Suspect { detail },
                 outcome: None,
-                error: None,
+                error,
             },
             Verdict::FallBack { reason } => {
                 let detail = match reason {
                     superba_router::watchdog::FallbackReason::Dead { detail } => detail,
                     other => format!("{other:?}"),
                 };
+                // The router stayed down. When another program holds its port,
+                // it moves to a free one and Codex follows; otherwise (or when
+                // that fails) Codex goes back to direct mode.
+                if error.is_none()
+                    && let Some(watch) = self.move_router(&state, &detail).await
+                {
+                    return Ok(watch);
+                }
                 match self.router_fall_back_impl(detail.clone()).await {
                     Ok(outcome) => RouterWatch {
                         state: RouterWatchState::FellBack { detail },
@@ -890,10 +983,105 @@ impl Switcher {
                     },
                 },
                 outcome: None,
-                error: None,
+                error,
             },
         })
     }
+
+    /// A router that stayed down because another program holds its port:
+    /// move it to a free port and point Codex at it (user bug 65). `None` when
+    /// it did not move (nothing held the port, or the move failed): the caller
+    /// falls back to direct mode.
+    async fn move_router(&self, state: &ConfigState, detail: &str) -> Option<RouterWatch> {
+        let endpoint = match self.deps.router.move_off_taken_port().await {
+            Ok(Some(endpoint)) => endpoint,
+            Ok(None) => return None,
+            Err(e) => {
+                tracing::warn!(error = %e, "the local router could not move to a free port");
+                return None;
+            }
+        };
+        let from = state
+            .openai_base_url
+            .as_deref()
+            .and_then(|u| Url::parse(u).ok())
+            .and_then(|u| u.port_or_known_default())
+            .unwrap_or(0);
+        Some(match self.router_repoint_impl(state).await {
+            Ok(outcome) => self.moved(from, endpoint.port, outcome),
+            Err(e) => {
+                // The router runs on its new port; the next tick points Codex
+                // at it again (and falls back after the grace period).
+                self.reset_router_watchdog();
+                RouterWatch {
+                    state: RouterWatchState::Suspect {
+                        detail: detail.to_owned(),
+                    },
+                    outcome: None,
+                    error: Some(e),
+                }
+            }
+        })
+    }
+
+    /// The tick result after Codex was pointed at the router's new port.
+    fn moved(&self, from: u16, to: u16, outcome: SwitchOutcome) -> RouterWatch {
+        tracing::warn!(from, to, "Codex now uses the local router's new port");
+        self.reset_router_watchdog();
+        RouterWatch {
+            state: RouterWatchState::Moved { from, to },
+            outcome: Some(outcome),
+            error: None,
+        }
+    }
+}
+
+/// GH#5: another tool took Codex over (its own credential or provider).
+fn taken_over(state: &ConfigState) -> bool {
+    state.auth_drift.is_some()
+        || state
+            .drift
+            .iter()
+            .any(|k| k.path == superba_core::codex::config_keys::MODEL_PROVIDER)
+}
+
+/// The switch a watchdog repair runs for `target` (router mode `enable`):
+/// nothing may wait for an answer, so the user's foreign environment lines and
+/// legacy sessions stay as they are, and values the app, the user or another
+/// tool changed in keys Superba owns are kept (GH#5), except a routing key that
+/// still points at a local router, which must leave it (a dead router, or the
+/// port the router moved away from). WSL distributions follow as in any
+/// router switch; SSH hosts are never routed.
+fn watchdog_request(state: &ConfigState, target: ProfileId, enable: bool) -> SwitchRequest {
+    let mut request = SwitchRequest {
+        intent: SwitchIntent::Router { enable },
+        ..SwitchRequest::profile(target)
+    };
+    request.targets.remotes.clear();
+    request.take_over_foreign_env = Some(false);
+    request.legacy_sessions = Some(superba_core::LegacySessionChoice::Skip);
+    for k in &state.drift {
+        let routing = [
+            superba_core::codex::config_keys::OPENAI_BASE_URL,
+            superba_core::codex::config_keys::CHATGPT_BASE_URL,
+        ]
+        .contains(&k.path.as_str());
+        let to_router = k
+            .after
+            .as_deref()
+            .and_then(superba_config::toml_keys::parse_repr)
+            .and_then(|v| v.as_str().map(is_router_url))
+            .unwrap_or(false);
+        request.key_resolutions.insert(
+            k.path.clone(),
+            if routing && to_router {
+                KeyResolution::Overwrite
+            } else {
+                KeyResolution::KeepCurrent
+            },
+        );
+    }
+    request
 }
 
 /// `http://127.0.0.1:<port>/backend-api/codex` (any port): the shape of a

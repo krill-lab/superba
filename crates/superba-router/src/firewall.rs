@@ -6,9 +6,12 @@
 //! Superba asks once, when the user turns on router access for WSL: `netsh
 //! advfirewall firewall add rule` (or `set rule … new` when Superba's rule
 //! exists) runs through `ShellExecuteExW` with the `runas` verb (the UAC
-//! prompt). The rule is as narrow as netsh allows: inbound TCP, the router's
-//! port, the WSL adapter address only (`localip`), peers on that adapter's
-//! subnet only (`remoteip=LocalSubnet`) and the router program only.
+//! prompt). The rule is narrow: inbound TCP, the WSL adapter address only
+//! (`localip`), peers on that adapter's subnet only (`remoteip=LocalSubnet`)
+//! and the router program only. It names no port: the router program listens
+//! on one port there, and that port can move when another program takes it
+//! (user bug 65); a rule bound to the old port would block the WSL listener
+//! after the move and need another administrator approval.
 
 use std::net::Ipv4Addr;
 use std::path::Path;
@@ -29,12 +32,13 @@ fn quoted(value: &str) -> Result<String> {
 }
 
 /// The `netsh` arguments that create (`exists = false`) or update Superba's
-/// rule for `address:port` and the router program `exe` (pure).
-pub fn rule_args(exists: bool, address: Ipv4Addr, port: u16, exe: &Path) -> Result<String> {
+/// rule for the WSL adapter `address` and the router program `exe` (pure), on
+/// any local port (see the module docs).
+pub fn rule_args(exists: bool, address: Ipv4Addr, exe: &Path) -> Result<String> {
     let name = quoted(WSL_RULE_NAME)?;
     let program = quoted(&exe.to_string_lossy())?;
     let fields = format!(
-        "dir=in action=allow enable=yes profile=any protocol=TCP localport={port} \
+        "dir=in action=allow enable=yes profile=any protocol=TCP localport=any \
          localip={address} remoteip=LocalSubnet program={program}"
     );
     Ok(if exists {
@@ -56,9 +60,9 @@ pub enum FirewallChange {
 /// Create or update Superba's rule (Windows; asks for administrator approval).
 /// [`Error::Cancelled`] when the user declines the prompt.
 #[cfg(windows)]
-pub async fn allow_wsl(address: Ipv4Addr, port: u16, exe: &Path) -> Result<FirewallChange> {
+pub async fn allow_wsl(address: Ipv4Addr, exe: &Path) -> Result<FirewallChange> {
     let exists = rule_exists().await;
-    let args = rule_args(exists, address, port, exe)?;
+    let args = rule_args(exists, address, exe)?;
     let code = tokio::task::spawn_blocking(move || elevated::run_netsh(&args))
         .await
         .map_err(|e| Error::other(format!("firewall task failed: {e}")))??;
@@ -76,8 +80,8 @@ pub async fn allow_wsl(address: Ipv4Addr, port: u16, exe: &Path) -> Result<Firew
 
 /// Not available outside Windows.
 #[cfg(not(windows))]
-pub async fn allow_wsl(address: Ipv4Addr, port: u16, exe: &Path) -> Result<FirewallChange> {
-    let _ = (address, port, exe);
+pub async fn allow_wsl(address: Ipv4Addr, exe: &Path) -> Result<FirewallChange> {
+    let _ = (address, exe);
     Err(Error::Unsupported {
         what: "Windows Firewall rules on this platform".into(),
     })

@@ -490,7 +490,10 @@ impl SuperbaApp {
             } else {
                 key
             };
-            let text = self.tr.f(key, &[("detail", &detail)]);
+            let text = match &watch.state {
+                W::Moved { from, to } => self.tr.f(key, &[("from", from), ("to", to)]),
+                _ => self.tr.f(key, &[("detail", &detail)]),
+            };
             self.log(status, text.clone());
             let toast = if matches!(watch.state, W::FellBack { .. }) {
                 let mut t = Toast::new(status, self.tr.t("router.watch.fell_back_title"))
@@ -2099,6 +2102,8 @@ pub fn router_watch_notice(
     match next {
         W::Suspect { .. } if changed => Some((Status::Warn, "router.watch.suspect")),
         W::FellBack { .. } if changed => Some((Status::Error, "router.watch.fell_back")),
+        // Each move is news (the port changed again).
+        W::Moved { .. } => Some((Status::Ok, "router.watch.moved")),
         W::Healthy if matches!(previous, Some(W::Suspect { .. })) => {
             Some((Status::Ok, "router.watch.recovered"))
         }

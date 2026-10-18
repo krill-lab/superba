@@ -434,7 +434,7 @@ impl Finding {
                 "The service manager could not start the program (exit 78 without any router output): the program or its log file cannot be used by background services.".into()
             }
             Finding::PortBusy { port, detail } => format!(
-                "Port {port} on 127.0.0.1 is used by another program ({detail}); find it with  lsof -nP -iTCP:{port} -sTCP:LISTEN"
+                "Port {port} on 127.0.0.1 is used by another program ({detail}); restart the router in Superba to move it to a free port (Codex follows), or find the program with  lsof -nP -iTCP:{port} -sTCP:LISTEN"
             ),
             Finding::RouterDown { detail } => format!("The router does not answer: {detail}"),
             Finding::LogError { line } => format!("Last error in the router log: {line}"),

@@ -849,6 +849,13 @@ pub struct FakeRouter {
     /// Firewall rules asked for (`address:port`); `Some(error)` fails them.
     pub firewall: Mutex<Vec<String>>,
     pub firewall_error: Mutex<Option<Error>>,
+    /// Another program holds this port (user bug 65): a router that is down
+    /// on it moves to `move_to` when asked, and on install.
+    pub taken: Mutex<Option<u16>>,
+    /// The port a move picks.
+    pub move_to: Mutex<u16>,
+    /// A move fails with this error.
+    pub fail_move: Mutex<Option<Error>>,
 }
 
 impl FakeRouter {
@@ -869,7 +876,24 @@ impl FakeRouter {
             wsl_listen: Mutex::new(Vec::new()),
             firewall: Mutex::new(Vec::new()),
             firewall_error: Mutex::new(None),
+            taken: Mutex::new(None),
+            move_to: Mutex::new(19_440),
+            fail_move: Mutex::new(None),
         }
+    }
+
+    /// The router is down and another program holds its stored port: the new
+    /// port, logged and stored (`RouterManager::port_to_leave` + the move).
+    fn leave_taken_port(&self) -> Option<u16> {
+        let mut port = self.port.lock().unwrap();
+        let old = (*port)?;
+        if *self.up.lock().unwrap() || *self.taken.lock().unwrap() != Some(old) {
+            return None;
+        }
+        let new = *self.move_to.lock().unwrap();
+        push(&self.log, format!("router.move {old}->{new}"));
+        *port = Some(new);
+        Some(new)
     }
 
     pub fn base_url(port: u16) -> String {
@@ -913,6 +937,7 @@ impl RouterControl for FakeRouter {
             return Err(e);
         }
         self.record("install", &config, &keys);
+        self.leave_taken_port();
         let mut port = self.port.lock().unwrap();
         if port.is_none() {
             *port = Some(if config.listen_port == 0 {
@@ -952,6 +977,17 @@ impl RouterControl for FakeRouter {
         Ok(())
     }
 
+    async fn move_off_taken_port(&self) -> Result<Option<RouterEndpointInfo>> {
+        if let Some(e) = self.fail_move.lock().unwrap().clone() {
+            return Err(e);
+        }
+        if self.leave_taken_port().is_none() {
+            return Ok(None);
+        }
+        *self.up.lock().unwrap() = true;
+        self.info().map(Some)
+    }
+
     async fn overview(&self) -> (RouterServiceInfo, Liveness) {
         let port = *self.port.lock().unwrap();
         let installed = *self.installed.lock().unwrap();
@@ -968,18 +1004,19 @@ impl RouterControl for FakeRouter {
     }
 
     async fn liveness(&self) -> Liveness {
+        let port = self.port.lock().unwrap().unwrap_or(18_431);
         if *self.up.lock().unwrap() {
             Liveness::Up(Box::new(
                 serde_json::from_value(serde_json::json!({
                     "service": "superba-router", "version": "test", "instance_id": "i",
-                    "pid": 1, "listen": "127.0.0.1:18431", "base_url": Self::base_url(18_431),
+                    "pid": 1, "listen": format!("127.0.0.1:{port}"), "base_url": Self::base_url(port),
                     "started_at_ms": 0, "uptime_ms": 0, "config_generation": 1,
                     "members": [], "totals": {"requests": 0, "active_requests": 0,
                     "websockets": 0, "active_websockets": 0, "failovers": 0,
                     "unavailable": 0, "rejected": 0, "ws_refused": 0},
                     "sticky_sessions": 0, "recent": [],
                     "wsl_listen": self.wsl_listen.lock().unwrap().iter()
-                        .map(|ip| format!("{ip}:18431")).collect::<Vec<_>>()
+                        .map(|ip| format!("{ip}:{port}")).collect::<Vec<_>>()
                 }))
                 .expect("router status fixture"),
             ))

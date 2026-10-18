@@ -43,7 +43,10 @@ pub struct RouterConfig {
     /// File format ([`CONFIG_FORMAT`]).
     pub format: u32,
     /// Loopback port (always bound on `127.0.0.1`). Persisted because Codex's
-    /// `openai_base_url` names it; `0` picks an ephemeral port (tests only).
+    /// `openai_base_url` names it. Handed to [`crate::manager::RouterManager`],
+    /// `0` keeps the stored port (a first configuration gets the stable port of
+    /// its data directory, [`crate::port`]); bound directly
+    /// ([`crate::RouterServer::bind`]), `0` picks an ephemeral port (tests only).
     pub listen_port: u16,
     /// Members in priority order (first = preferred).
     pub members: Vec<MemberConfig>,

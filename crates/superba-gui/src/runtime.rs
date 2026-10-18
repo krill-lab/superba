@@ -677,13 +677,18 @@ async fn handle(
         Command::Recover => out.send(Reply::Recovered(service.recover().await)),
         Command::RouterWatch => {
             let result = service.router_watch().await;
-            let fell_back = matches!(
+            let switched = matches!(
                 &result,
-                Ok(w) if matches!(w.state, superba_core::RouterWatchState::FellBack { .. })
+                Ok(w) if matches!(
+                    w.state,
+                    superba_core::RouterWatchState::FellBack { .. }
+                        | superba_core::RouterWatchState::Moved { .. }
+                )
             );
             out.send(Reply::RouterWatch(result));
-            if fell_back {
-                // The fallback switch changed the configuration.
+            if switched {
+                // The fallback switch, or the switch to the router's new port,
+                // changed the configuration.
                 switches.fetch_add(1, Ordering::SeqCst);
                 let (o, p) = tokio::join!(service.overview(), service.profile_set());
                 out.send(Reply::Profiles(p));

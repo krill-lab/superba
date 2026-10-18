@@ -200,6 +200,7 @@ original_desc = "What you had before Superba's first change"
 watch.fell_back = "The local router stayed down ({detail}), so router mode was turned off and Codex now connects directly."
 watch.fell_back_written = "The local router stayed down ({detail}), so router mode was turned off and the direct configuration was written. ChatGPT keeps waiting for the router until it is restarted."
 watch.fell_back_title = "Switched back to direct mode"
+watch.moved = "Another program took port {from}, so the local router moved to port {to} and Codex now uses it."
 watch.recovered = "The local router answers again."
 watch.suspect = "The local router is not answering ({detail}). Codex waits for it; Superba switches back to direct mode if it stays down."
 

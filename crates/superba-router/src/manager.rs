@@ -3,7 +3,7 @@
 //! router mode (fallback first, then uninstall).
 
 use std::collections::BTreeMap;
-use std::net::{Ipv4Addr, SocketAddr, TcpListener};
+use std::net::Ipv4Addr;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -310,13 +310,26 @@ pub fn check_router_exe(exe: &Path) -> Result<()> {
     Ok(())
 }
 
-/// A free port on `127.0.0.1`, for a new configuration's `listen_port`.
-pub fn free_loopback_port() -> Result<u16> {
-    let l = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
-        .map_err(|e| Error::other(format!("no free loopback port: {e}")))?;
-    l.local_addr()
-        .map(|a| a.port())
-        .map_err(|e| Error::other(format!("no free loopback port: {e}")))
+/// A stable port for the router of `data_dir` that is free now on
+/// `127.0.0.1` and on the WSL addresses `wsl`, not one of `avoid`
+/// ([`crate::port`]: per user and data directory, outside the OS ephemeral
+/// ranges).
+pub fn stable_port(data_dir: &Path, avoid: &[u16], wsl: &[Ipv4Addr]) -> Result<u16> {
+    crate::port::pick(&port_seed(data_dir), avoid, wsl).ok_or_else(|| {
+        Error::other(format!(
+            "no free port for the local router in {}-{}",
+            crate::port::STABLE_PORTS.start(),
+            crate::port::STABLE_PORTS.end()
+        ))
+    })
+}
+
+/// What a data directory's first port choice is derived from: its absolute
+/// path (per user, and per Superba data directory of that user).
+pub fn port_seed(data_dir: &Path) -> String {
+    absolute(data_dir.to_path_buf())
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// The service definition for `data_dir` running `exe`. Relative paths are
@@ -440,7 +453,8 @@ impl RouterManager {
     /// token is kept (Codex's `auth.json` holds it); a new one is generated only
     /// when none exists. A `listen_port` of 0 keeps the port of the stored
     /// configuration (Codex's `config.toml` points at it, also while the router
-    /// is down); only a first configuration gets a free port.
+    /// is down); only a first configuration gets a new one, the stable port of
+    /// this data directory ([`stable_port`]).
     ///
     /// A `config` without `stats` keeps the stored `stats` section (member
     /// rewrites never change recording or the stats line), or gets the defaults
@@ -453,18 +467,18 @@ impl RouterManager {
     ) -> Result<RouterEndpoint> {
         let mut config = config.clone();
         let stored = RouterConfig::load(&self.paths).ok();
-        if config.listen_port == 0 {
-            config.listen_port = match &stored {
-                Some(stored) if stored.listen_port != 0 => stored.listen_port,
-                _ => free_loopback_port()?,
-            };
-        }
         // The WSL listeners are set on their own (`set_wsl_listen`); a members
         // rewrite keeps them.
         if config.wsl_listen.is_empty()
             && let Some(stored) = &stored
         {
             config.wsl_listen = stored.wsl_listen.clone();
+        }
+        if config.listen_port == 0 {
+            config.listen_port = match &stored {
+                Some(stored) if stored.listen_port != 0 => stored.listen_port,
+                _ => stable_port(&self.spec.data_dir, &[], &config.wsl_listen)?,
+            };
         }
         if config.stats.is_none() {
             config.stats = Some(stored.and_then(|s| s.stats).unwrap_or_default());
@@ -486,7 +500,10 @@ impl RouterManager {
     /// Enter router mode: write the configuration, install and start the
     /// service, and wait until the router answers (at most `wait`). Superba
     /// writes Codex's router-mode configuration only after this succeeds. A
-    /// reinstall (`listen_port` 0) keeps the stored port and token.
+    /// reinstall (`listen_port` 0) keeps the stored port and token, unless
+    /// another program holds that port while the router is down: then the
+    /// router moves to a free one ([`RouterManager::port_to_leave`]) and Codex
+    /// has to follow (the switch service points it at the new endpoint).
     pub async fn enable(
         &self,
         config: &RouterConfig,
@@ -494,11 +511,69 @@ impl RouterManager {
         wait: Duration,
     ) -> Result<RouterEndpoint> {
         check_router_exe(&self.spec.exe)?;
-        let endpoint = self.write_config(config, member_keys)?;
+        let mut config = config.clone();
+        if config.listen_port == 0
+            && let Some((old, new)) = self.port_to_leave().await?
+        {
+            tracing::warn!(
+                old,
+                new,
+                "another program holds the local router's port; the router moves"
+            );
+            config.listen_port = new;
+        }
+        let endpoint = self.write_config(&config, member_keys)?;
         lifecycle_changed();
         self.service.install(&self.spec)?;
         self.wait_until_up(wait).await?;
         Ok(endpoint)
+    }
+
+    /// Whether the stored port has to be left, and for which one: the router
+    /// is down and another program (not a Superba router) listens on its port.
+    /// `None` when there is no stored port, the router answers, or the port is
+    /// free or held by a router (perhaps this one, still starting). The new port
+    /// is free now on `127.0.0.1` and the WSL addresses of the configuration.
+    pub async fn port_to_leave(&self) -> Result<Option<(u16, u16)>> {
+        let Ok(stored) = RouterConfig::load(&self.paths) else {
+            return Ok(None);
+        };
+        let old = stored.listen_port;
+        if old == 0 || watchdog::check(&self.paths).await.is_up() {
+            return Ok(None);
+        }
+        if !matches!(
+            doctor::port_state(old).await,
+            doctor::PortState::Busy { .. }
+        ) {
+            return Ok(None);
+        }
+        let new = stable_port(&self.spec.data_dir, &[old], &stored.wsl_listen)?;
+        Ok(Some((old, new)))
+    }
+
+    /// Move a router that is down because another program holds its port
+    /// (user bug 65): store a free stable port, restart the service and wait
+    /// until it answers (at most `wait`). Codex's configuration is not touched:
+    /// the caller points it at the returned endpoint through a normal switch.
+    /// `Ok(None)` when nothing had to move (see [`RouterManager::port_to_leave`]).
+    pub async fn move_off_taken_port(&self, wait: Duration) -> Result<Option<RouterEndpoint>> {
+        let Some((old, new)) = self.port_to_leave().await? else {
+            return Ok(None);
+        };
+        tracing::warn!(
+            old,
+            new,
+            "another program holds the local router's port; the router moves"
+        );
+        let mut config = RouterConfig::load(&self.paths)?;
+        config.listen_port = new;
+        config.validate()?;
+        config.save(&self.paths)?;
+        lifecycle_changed();
+        self.service.restart(&self.spec)?;
+        self.wait_until_up(wait).await?;
+        self.endpoint().map(Some)
     }
 
     /// Restart the installed service (after its binary was replaced by an

@@ -430,6 +430,15 @@ pub enum RouterWatchState {
         /// What the last check saw (no secrets).
         detail: String,
     },
+    /// The router listens on another port than Codex was pointed at (another
+    /// program held the old one, user bug 65): a switch pointed Codex at the
+    /// new port; router mode stays on.
+    Moved {
+        /// The port Codex used.
+        from: u16,
+        /// The port the router listens on now.
+        to: u16,
+    },
 }
 
 /// Result of one watchdog tick.
@@ -437,10 +446,12 @@ pub enum RouterWatchState {
 pub struct RouterWatch {
     /// State.
     pub state: RouterWatchState,
-    /// The fallback switch, when one ran (`None` also when it was not needed).
+    /// The fallback switch, or the switch to the router's new port, when one
+    /// ran (`None` also when it was not needed).
     #[serde(default)]
     pub outcome: Option<crate::plan::SwitchOutcome>,
-    /// Why the fallback failed, if it did (it is retried at the next tick).
+    /// Why the fallback or the move to a new port failed, if it did (it is
+    /// retried at the next tick).
     #[serde(default)]
     pub error: Option<crate::Error>,
 }

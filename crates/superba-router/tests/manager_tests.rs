@@ -17,13 +17,12 @@ use superba_router::watchdog::{self, DirectModeFallback, FallbackReason, Livenes
 use superba_router::{MemberKind, ShutdownHandle};
 
 /// The tests of this file run one at a time (each holds this lock). A first
-/// configuration's port comes from `free_loopback_port` (bind port 0, let it
-/// go) and the router binds it a moment later; on Windows, listeners and
-/// outgoing connections draw from one dynamic port range, so a parallel test's
-/// socket could take the port in between ("cannot listen ... os error 10048",
-/// CI run 39106144381). The real services restart a router that cannot bind
-/// (systemd `Restart=always`, launchd `KeepAlive`, the supervisor) until the
-/// port is free again; [`InProcess`] starts it once.
+/// configuration's port is the stable port of its (temporary) data directory,
+/// outside the OS ephemeral ranges since user bug 65, so a parallel test's
+/// outgoing socket no longer takes it between the choice and the router's bind
+/// (before, it came from bind port 0: "cannot listen ... os error 10048", CI run
+/// 39106144381); two data directories can still meet on one port, and
+/// [`InProcess`] starts the router once, where the real services restart it.
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Runs `superba-router run` in a thread of this process.
@@ -260,6 +259,184 @@ async fn reinstalling_a_stopped_router_keeps_its_port_and_token() {
         panic!("router not up after the reinstall");
     };
     assert!(status.members[0].websocket);
+    manager.uninstall_service().unwrap();
+}
+
+/// Another program listening on a port: it answers every request with a 404
+/// (not a Superba router), until dropped.
+struct ForeignProgram {
+    port: u16,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl ForeignProgram {
+    async fn on(port: u16) -> Self {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+            .await
+            .unwrap();
+        let task = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    let _ = stream.read(&mut buf).await;
+                    let _ = stream
+                        .write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                        .await;
+                });
+            }
+        });
+        Self { port, task }
+    }
+}
+
+impl Drop for ForeignProgram {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+fn stored_port(manager: &RouterManager) -> u16 {
+    superba_router::RouterConfig::load(manager.paths())
+        .unwrap()
+        .listen_port
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_first_configuration_gets_the_stable_port_of_its_data_directory() {
+    use superba_router::manager::port_seed;
+    use superba_router::port::{STABLE_PORTS, ephemeral_ranges, pick};
+    let _serial = SERIAL.lock().await;
+    let up = upstream(Mode::Json(200, r#"{"ok":true}"#)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let data = DataDir::new(dir.path());
+    let manager = RouterManager::new(&data, fake_exe(dir.path()), Box::new(InProcess::default()));
+    let cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![line("a", up.base("/backend-api/codex"))],
+    )]);
+    let expected = pick(&port_seed(dir.path()), &[], &[]).unwrap();
+    let endpoint = manager
+        .enable(&cfg, keys(), Duration::from_secs(10))
+        .await
+        .unwrap();
+    assert_eq!(endpoint.port, expected, "the data directory's port");
+    assert!(STABLE_PORTS.contains(&endpoint.port));
+    assert!(
+        !ephemeral_ranges()
+            .iter()
+            .any(|r| r.contains(&endpoint.port)),
+        "outside the OS ephemeral range"
+    );
+    assert_eq!(stored_port(&manager), endpoint.port, "persisted");
+    manager.uninstall_service().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_router_whose_port_another_program_took_moves_and_keeps_the_new_port() {
+    use superba_router::port::STABLE_PORTS;
+    let _serial = SERIAL.lock().await;
+    let up = upstream(Mode::Json(200, r#"{"ok":true}"#)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let data = DataDir::new(dir.path());
+    let service = InProcess::default();
+    let log = service.log.clone();
+    let manager = RouterManager::new(&data, fake_exe(dir.path()), Box::new(service));
+    let cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![line("a", up.base("/backend-api/codex"))],
+    )]);
+    let first = manager
+        .enable(&cfg, keys(), Duration::from_secs(10))
+        .await
+        .unwrap();
+
+    // Nothing to move while the router serves its port, or while the port is
+    // free after it stopped (the service manager brings it back).
+    assert_eq!(manager.port_to_leave().await.unwrap(), None);
+    manager.uninstall_service().unwrap();
+    assert_eq!(manager.port_to_leave().await.unwrap(), None);
+    assert_eq!(
+        manager
+            .move_off_taken_port(Duration::from_secs(10))
+            .await
+            .unwrap()
+            .map(|e| e.port),
+        None
+    );
+
+    // The computer restarts and another program gets the port first.
+    let foreign = ForeignProgram::on(first.port).await;
+    let (old, new) = manager.port_to_leave().await.unwrap().expect("a move");
+    assert_eq!(old, first.port);
+    assert_ne!(new, first.port);
+    assert!(STABLE_PORTS.contains(&new));
+    let moved = manager
+        .move_off_taken_port(Duration::from_secs(10))
+        .await
+        .unwrap()
+        .expect("moved");
+    assert_eq!(moved.port, new);
+    assert_eq!(moved.token, first.token, "Codex keeps its router token");
+    assert_eq!(
+        moved.base_url.as_str(),
+        format!("http://127.0.0.1:{new}/backend-api/codex")
+    );
+    assert_eq!(stored_port(&manager), new, "persisted");
+    let Liveness::Up(status) = watchdog::check(manager.paths()).await else {
+        panic!("router not up on its new port");
+    };
+    assert_eq!(status.listen, format!("127.0.0.1:{new}"));
+    assert_eq!(*log.lock().unwrap(), ["install", "uninstall", "restart"]);
+
+    // The other program goes away: the router stays on its new port across
+    // restarts and reinstalls (Codex now points there).
+    drop(foreign);
+    manager.uninstall_service().unwrap();
+    let again = manager
+        .enable(&cfg, keys(), Duration::from_secs(10))
+        .await
+        .unwrap();
+    assert_eq!(again.port, new, "not back to {}", first.port);
+    manager.uninstall_service().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn install_or_restart_moves_off_a_port_another_program_took() {
+    let _serial = SERIAL.lock().await;
+    let up = upstream(Mode::Json(200, r#"{"ok":true}"#)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let data = DataDir::new(dir.path());
+    let manager = RouterManager::new(&data, fake_exe(dir.path()), Box::new(InProcess::default()));
+    let cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![line("a", up.base("/backend-api/codex"))],
+    )]);
+    let first = manager
+        .enable(&cfg, keys(), Duration::from_secs(10))
+        .await
+        .unwrap();
+    manager.uninstall_service().unwrap();
+    let foreign = ForeignProgram::on(first.port).await;
+    // Install / Restart (listen_port 0): a router that could not bind its
+    // port would only crash-loop; it moves instead, keeping its token.
+    let again = manager
+        .enable(&cfg, keys(), Duration::from_secs(10))
+        .await
+        .unwrap();
+    assert_ne!(again.port, foreign.port);
+    assert_eq!(again.token, first.token);
+    assert_eq!(stored_port(&manager), again.port);
+    assert!(watchdog::check(manager.paths()).await.is_up());
+    // A members rewrite keeps the new port.
+    let rewritten = manager.rewrite(&cfg, keys()).await.unwrap();
+    assert_eq!(rewritten.port, again.port);
     manager.uninstall_service().unwrap();
 }
 

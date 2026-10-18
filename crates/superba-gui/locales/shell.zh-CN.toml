@@ -199,6 +199,7 @@ original_desc = "Superba 第一次改动之前的配置"
 watch.fell_back = "本地路由一直没有恢复（{detail}），已关闭路由模式，Codex 现在直连。"
 watch.fell_back_written = "本地路由一直没有恢复（{detail}），已关闭路由模式并写入直连配置。ChatGPT 需要重启才会改用直连，在此之前仍会等待本地路由。"
 watch.fell_back_title = "已切回直连"
+watch.moved = "端口 {from} 被其他程序占用，本地路由已改用端口 {to}，Codex 已随之切换。"
 watch.recovered = "本地路由已恢复响应。"
 watch.suspect = "本地路由没有响应（{detail}）。Codex 会等待它；如果一直没有恢复，Superba 会切回直连。"
 

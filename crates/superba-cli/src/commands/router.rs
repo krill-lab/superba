@@ -383,6 +383,9 @@ async fn watch(interval: u64, once: bool, rt: &Runtime, out: &mut Output) -> Res
                 RouterWatchState::FellBack { detail } => {
                     text("cli.router.watch_fell_back").arg("detail", detail)
                 }
+                RouterWatchState::Moved { from, to } => text("cli.router.watch_moved")
+                    .arg("from", *from)
+                    .arg("to", *to),
                 _ => text("cli.router.watch_inactive"),
             };
             out.progress(line)?;

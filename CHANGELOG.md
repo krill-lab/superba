@@ -226,6 +226,15 @@ back to the official ChatGPT login.
   20 s. The official ChatGPT login is never routed; remote hosts stay direct.
   `spb router status | install | enable | disable | uninstall | watch` and the
   Router page.
+- **A stable router port**: the router listens on a per-user port in
+  17000–19999, below every OS ephemeral range (Windows and macOS 49152–65535,
+  Linux's configured `ip_local_port_range`), chosen once and kept across
+  restarts, so another program's outgoing connections no longer take it after a
+  reboot. When another program does hold it while the router is down, the
+  watchdog (after its 20 s grace) and Install / Restart move the router to the
+  next free port and point Codex — and WSL distributions behind NAT — at it
+  through a normal router-on switch instead of leaving router mode; the WSL
+  firewall rule names no port, so the move needs no new approval.
 - **Router capacity and "too many open files"**: the router serves a bounded
   number of requests and WebSocket sessions at once (a quarter of its soft
   open-file limit, at most 512) and of inbound connections, keeps a capped

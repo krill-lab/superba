@@ -370,13 +370,26 @@ fn router_watch_toasts_only_on_changes_that_matter() {
         Some((Status::Error, "router.watch.fell_back"))
     );
     assert_eq!(router_watch_notice(Some(&fell), &W::Inactive), None);
+    // User bug 65: the router moved off a taken port and Codex followed.
+    let moved = W::Moved {
+        from: 18_431,
+        to: 19_440,
+    };
+    assert_eq!(
+        router_watch_notice(Some(&suspect), &moved),
+        Some((Status::Ok, "router.watch.moved"))
+    );
+    assert_eq!(router_watch_notice(Some(&moved), &W::Healthy), None);
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
+        let text = tr.f("router.watch.moved", &[("from", &18_431), ("to", &19_440)]);
+        assert!(text.contains("18431") && text.contains("19440"), "{text}");
         for key in [
             "router.watch.suspect",
             "router.watch.fell_back",
             "router.watch.fell_back_title",
             "router.watch.recovered",
+            "router.watch.moved",
         ] {
             assert_ne!(tr.t(key), key);
         }

@@ -446,6 +446,34 @@ Superba run a router-off switch to the applied profile (`router_fall_back`:
 `SwitchIntent::Router { enable: false }`, write-only when it would need a full
 restart, drifted keys kept except the routing keys). Router mode is stored as off
 only when that switch succeeds, so a failed attempt is retried at a later tick.
+
+**The router's port** (user bug 65; `superba_router::port`). A first
+configuration gets a stable per-user port: the candidates are every port of
+17000–19999 in a fixed order derived from the data directory's path (SHA-256;
+stride 1009, so neighbours are far apart), those inside an OS ephemeral range
+last (Linux reads `/proc/sys/net/ipv4/ip_local_port_range`, macOS the
+`net.inet.ip.portrange.first/last` sysctls, Windows uses its documented
+49152–65535), and the first one the router could bind now on `127.0.0.1` and
+its WSL addresses is taken (Hyper-V's excluded port ranges refuse the bind).
+It is stored in `config.json` and kept by every rewrite, reinstall and restart:
+a port from `bind(:0)` is drawn from the ephemeral range every program's
+outgoing connections use, and after a reboot another program could hold it
+while the service manager kept restarting a router that could not listen. The
+port moves only when another program (not a Superba router, `doctor::port_state`)
+listens on it while the router is down (`RouterManager::port_to_leave`): the
+watchdog, at the end of its grace period, asks `RouterControl::move_off_taken_port`
+(store the next free candidate, restart the service, wait for it) and then
+runs a router-on switch (`Switcher::router_repoint_impl`: `SwitchIntent::Router { enable: true }`
+to the applied profile with the fallback's rules) that points Codex, and the
+WSL distributions that follow this computer, at the new port; the tick reports
+`RouterWatchState::Moved { from, to }`. Install / Restart (`RouterManager::enable`)
+moves off a taken port the same way and `router_install` then points a routed
+Codex at it at once. A tick that finds the router answering on another port
+than Codex uses repeats that switch; until it succeeds the tick counts as an
+outage, so the usual fallback follows after the grace period. Only when the
+move fails does the watchdog fall back to direct mode. The WSL 2 NAT listener
+binds the gateway on the router's current port, and the firewall rule names
+no port, so it follows without another administrator approval.
 In router mode `config.toml` keeps Codex's model name: the router maps names per
 member. Codex chooses a model itself only when `config.toml` names none, and the
 choice depends on the authentication: with a PAT it is the default of the
@@ -549,7 +577,7 @@ Lifecycle, the same in `spb` and the GUI (both only through `SwitchService`):
 
 | Step | `spb` | GUI | Service |
 |---|---|---|---|
-| members, install / repair | `router install [--member P]...` | Router page: add, reorder, remove (only saved while the router is not installed), Install / Restart | `router_install` (members = profiles; keys copied into the router's 0600 key file; nothing written when the program is missing; a reinstall keeps the stored port and token) |
+| members, install / repair | `router install [--member P]...` | Router page: add, reorder, remove (only saved while the router is not installed), Install / Restart | `router_install` (members = profiles; keys copied into the router's 0600 key file; nothing written when the program is missing; a reinstall keeps the stored port and token, unless another program holds the port: then the router moves and a routed Codex follows) |
 | member profile deleted or re-keyed | `profile remove`, `key set --profile P` | Connection / Sites | `delete_profile` / `save_profile` rewrite the router's members and key file (`RouterControl::rewrite`, never starts the service); the last member cannot be deleted while Codex is routed, deleting it otherwise uninstalls the router |
 | on | `router enable` (starts a stopped router first) | Turn on / palette "on" (starts a stopped router first) | `SwitchIntent::Router { enable: true }` through the normal plan / preview / execute |
 | watch | `router watch` | shell, every 5 s | `router_watch` -> `router_fall_back` |
@@ -640,7 +668,8 @@ every distribution with a Codex as a managed host of kind `HostKind::Wsl`
   `/dev/tcp` GET of `/_superba/v1/health`, instance id must match). When the
   Windows firewall blocks it, `spb wsl router-access <distro>` / the host page
   add one rule with an elevated `netsh` (UAC, per machine):
-  `localip=<gateway> remoteip=LocalSubnet program=<superba-router.exe>`.
+  `localip=<gateway> remoteip=LocalSubnet program=<superba-router.exe>`, on any
+  local port (the router's port can move, user bug 65).
   Unreachable distributions stay direct with a note. An in-distribution router
   was rejected: it duplicates the members' secrets and state into every
   distribution, keeps the WSL VM alive, and splits the request log.
