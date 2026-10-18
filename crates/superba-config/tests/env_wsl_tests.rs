@@ -177,3 +177,44 @@ async fn the_entry_goes_when_the_app_stops_running_codex_in_wsl() {
     assert_eq!(e.value().as_deref(), Some(VALUE));
     assert_eq!(e.wslenv().as_deref(), Some("USERPROFILE/p"));
 }
+
+#[tokio::test]
+async fn a_launch_adds_only_the_missing_forwarding_and_a_restore_removes_it() {
+    // User bug 69a: the value was persisted before the mode was turned on (no
+    // WSLENV entry); opening the app adds the entry, nothing else.
+    let e = env(EnvPlatform::Windows, Some("USERPROFILE/p"));
+    e.persister.apply(&e.plan(set()).await).await.unwrap();
+    assert_eq!(e.wslenv().as_deref(), Some("USERPROFILE/p"));
+    e.run_in_wsl(true);
+    let plan = e.persister.plan_launch(VAR, VALUE).await.unwrap();
+    assert_eq!(plan.edits.len(), 1, "{:?}", plan.edits);
+    assert!(forwards(&plan));
+    e.persister.apply(&plan).await.unwrap();
+    assert_eq!(
+        e.wslenv().as_deref(),
+        Some("USERPROFILE/p:CODEX_AUTHAPI_BASE_URL")
+    );
+    assert!(e.persister.plan_launch(VAR, VALUE).await.unwrap().is_noop());
+    // Superba owns the entry it added: clearing the value (a restore) removes it.
+    e.persister
+        .apply(&e.plan(EnvOp::Clear).await)
+        .await
+        .unwrap();
+    assert_eq!(e.value(), None);
+    assert_eq!(e.wslenv().as_deref(), Some("USERPROFILE/p"));
+
+    // A missing value is written as well (the packaged app reads it at start).
+    let e = env(EnvPlatform::Windows, None);
+    e.run_in_wsl(true);
+    let plan = e.persister.plan_launch(VAR, VALUE).await.unwrap();
+    e.persister.apply(&plan).await.unwrap();
+    assert_eq!(e.value().as_deref(), Some(VALUE));
+    assert_eq!(e.wslenv().as_deref(), Some(VAR));
+
+    // Linux / macOS: the launch passes the value; nothing is written for it.
+    for platform in [EnvPlatform::Linux, EnvPlatform::MacOs] {
+        let e = env(platform, None);
+        e.run_in_wsl(true);
+        assert!(e.persister.plan_launch(VAR, VALUE).await.unwrap().is_noop());
+    }
+}

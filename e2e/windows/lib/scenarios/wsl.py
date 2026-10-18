@@ -326,22 +326,42 @@ def w81(t):
     flows.wsl_keepalive(run)
     with t.step("Turn the mode on in config.toml (ChatGPT closed) and open ChatGPT through Superba") as s:
         legacy_mode_on(run, s, a)
+        if run.state.get("auth_mode") == "pat":
+            # User bug 69a: spb launch forwards the auth address into WSL before the app starts.
+            env = run.user_env()
+            s.save("hkcu-env-after-launch.json", {k: v for k, v in env.items()
+                                                  if k in ("WSLENV", "CODEX_AUTHAPI_BASE_URL")})
+            s.check("CODEX_AUTHAPI_BASE_URL" in (env.get("WSLENV") or ""),
+                    f"WSLENV names CODEX_AUTHAPI_BASE_URL before ChatGPT starts: {env.get('WSLENV')!r}")
+            seen = flows.wsl(run, "for p in $(pgrep -f 'codex.*app-serve[r]'); do"
+                                  " tr '\\0' '\\n' < /proc/$p/environ 2>/dev/null | grep -c '^CODEX_AUTHAPI_BASE_URL='; done"
+                             )["stdout"].split()
+            s.check(any(n.strip() not in ("", "0") for n in seen),
+                    f"the app's Codex in {D} has CODEX_AUTHAPI_BASE_URL (per app-server: {seen})")
     with t.step("First switch with the mode on") as s:
         main0, sv0 = wsl_app_servers(run, a)
         other = "b" if run.state.get("line", "a") == "a" else "a"
         r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", "--force",
                     timeout=300, label="switch-legacy-wsl")
         s.save("switch.txt", r["stdout"] + r["stderr"])
-        s.check(r["code"] == 0, f"switch exit {r['code']} [{r['transcript']}]")
-        if "Full restart" in r["stdout"]:
-            # PAT: the app was opened before WSLENV forwarded CODEX_AUTHAPI_BASE_URL, so its WSL Codex lacks
-            # the auth address; Superba says so and restarts the app once (it writes WSLENV first).
-            s.info("planned as a full restart: " + next((l for l in r["stdout"].splitlines() if "auth API" in l), "")[:160])
-            s.check(run.state.get("auth_mode") == "pat", "a full restart only in PAT mode (the auth address)")
+        out = r["stdout"]
+        if "Full restart" in out:
+            # Before user bug 69a was fixed: the app was opened before WSLENV forwarded CODEX_AUTHAPI_BASE_URL,
+            # so its WSL Codex lacked the auth address and the first PAT switch was a full restart.
+            s.info("planned as a full restart: " + next((l for l in out.splitlines() if "auth API" in l), "")[:160])
+        bad = [l for l in out.splitlines()
+               if "did not pass verification" in l or "did not pass the check" in l or "Restart ChatGPT yourself" in l]
+        if bad:
+            # User bug 69b: a failed check never exits 0, and Superba never says "restart ChatGPT yourself"
+            # right after it reopened ChatGPT.
+            s.check(r["code"] != 0, f"a failed verification exits non-zero: exit {r['code']} [{r['transcript']}]")
+            s.check(not ("Full restart" in out and any("Restart ChatGPT yourself" in l for l in bad)),
+                    "no 'Restart ChatGPT yourself' after Superba reopened ChatGPT")
         else:
-            s.check("Hot restart" in r["stdout"], "planned as a hot restart")
-        bad = [l for l in r["stdout"].splitlines() if "did not pass verification" in l or "Restart ChatGPT yourself" in l]
+            s.check(r["code"] == 0, f"switch exit {r['code']} [{r['transcript']}]")
         s.check(not bad, f"no verification failure reported: {bad}", soft=True)
+        # spb launch wrote WSLENV first (user bug 69a): the first switch is hot in API-key and PAT mode.
+        s.check("Hot restart" in out, "planned as a hot restart (the app's WSL Codex has the auth address)")
         m = a.wait_main(150, not_pid=None)
         end = time.time() + 150
         sv1 = []
@@ -385,11 +405,12 @@ def w81(t):
             run.state.pop(k, None)
 
 
-@scenario("W88", "WSL: a stopped distribution is not started by a switch; 'update pending' until spb wsl update",
-          area="wsl", on=SNAP, needs=("configured",), bugs=(45, 54))
+@scenario("W88", "WSL: a stopped distribution is not started by a switch; 'update pending' in spb wsl list and the "
+                 "GUI until Update now / spb wsl update", area="wsl", on=SNAP, needs=("configured",), bugs=(45, 54, 68))
 def w88(t):
     run = t.run
     other = "b" if run.state.get("line", "a") == "a" else "a"
+    pending_rx = r"(?i)update pending|not updated by the switch"
     with t.step("Stop the distribution, then switch") as s:
         s.check(flows.wsl_stop(run), f"{D} stopped (wsl --terminate)")
         r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", timeout=300,

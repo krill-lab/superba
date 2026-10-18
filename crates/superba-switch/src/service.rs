@@ -444,9 +444,10 @@ impl Switcher {
         );
         let origin = rules::launch_authapi_origin(&krill, None, false, active_line.as_ref());
         let mut env = BTreeMap::new();
-        if let Some(o) = origin {
+        if let Some(o) = &origin {
             env.insert(ENV_AUTHAPI_BASE_URL.to_owned(), o.as_str());
         }
+        self.prepare_launch_env(origin.as_ref()).await;
         let options = self
             .with_pin(LaunchOptions {
                 install_id: set.settings.preferred_app_id.clone(),
@@ -456,6 +457,57 @@ impl Switcher {
             })
             .await;
         d.app.launch(&options).await
+    }
+
+    /// Before Superba opens the desktop app: the auth address a PAT profile
+    /// needs, where the app takes it from at start-up (user bug 69a). On
+    /// Windows the packaged app reads `HKCU\Environment` when it is activated
+    /// (no per-launch environment), and with "Run Codex in WSL" its Codex sees
+    /// the variable only when `WSLENV` forwards it; both are written here like
+    /// a switch writes them (same ownership records, so a restore removes them),
+    /// so the first PAT switch after the mode was turned on can be hot. The
+    /// value is the one Superba persisted for the applied profile, else
+    /// `origin`. Elsewhere nothing is written (the launch passes the value).
+    /// Failures are logged: the app opens anyway.
+    pub(crate) async fn prepare_launch_env(&self, origin: Option<&superba_core::Origin>) {
+        let d = &self.deps;
+        let Some(origin) = origin else {
+            return;
+        };
+        let pat = d
+            .config
+            .read_state(&d.ctx.codex_home())
+            .await
+            .ok()
+            .and_then(|s| s.active)
+            .and_then(|a| a.auth_mode)
+            .is_some_and(AuthMode::needs_authapi_env);
+        if !pat {
+            return;
+        }
+        let value = match d.env.inspect(ENV_AUTHAPI_BASE_URL).await {
+            Ok(r) => r.superba_value.unwrap_or_else(|| origin.as_str()),
+            Err(e) if e.is_not_implemented() => return,
+            Err(_) => origin.as_str(),
+        };
+        let plan = match d.env.plan_launch(ENV_AUTHAPI_BASE_URL, &value).await {
+            Ok(p) if p.is_noop() => return,
+            Ok(p) => p,
+            Err(e) if e.is_not_implemented() => return,
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot plan the auth address for the app's start");
+                return;
+            }
+        };
+        match d.env.apply(&plan).await {
+            Ok(applied) => tracing::info!(
+                locations = ?applied.edits.iter().map(|e| &e.location).collect::<Vec<_>>(),
+                "auth address persisted for the app's start"
+            ),
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot persist the auth address for the app's start")
+            }
+        }
     }
 
     pub(crate) async fn overview_impl(&self) -> Result<Overview> {

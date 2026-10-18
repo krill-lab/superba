@@ -293,6 +293,7 @@ timed = "{title} · {secs} s"
 written_launch_failed = "Config written, but ChatGPT did not open again"
 written_not_running = "Config written. ChatGPT isn't running; it takes effect the next time it opens."
 written_only = "Config written. Restart ChatGPT yourself to apply it."
+reopened_unverified = "ChatGPT reopened, but its new Codex core did not pass the check"
 
 [verify]
 auth = "Auth (whoami)"

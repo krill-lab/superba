@@ -216,6 +216,14 @@ async fn a_relaunch_waits_for_a_slow_app_and_then_names_what_it_saw() {
         ),
         "{detail}"
     );
+    // Superba has just reopened ChatGPT: the summary does not tell the user to
+    // restart it themselves (user bug 69b).
+    let keys: Vec<&str> = o.notices.iter().map(|n| n.text.key.as_str()).collect();
+    assert!(
+        keys.contains(&"switch.done.reopened_unverified"),
+        "{keys:?}"
+    );
+    assert!(!keys.contains(&"switch.done.written_only"), "{keys:?}");
 }
 
 #[tokio::test(start_paused = true)]

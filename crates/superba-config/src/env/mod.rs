@@ -540,6 +540,26 @@ impl ShellEnvPersister {
 
     // ---------------------------------------------------------------- plan
 
+    /// [`EnvPersister::plan_launch`]: on Windows the edits of persisting the
+    /// value (`HKCU\Environment`, and the `WSLENV` entry while the app runs
+    /// Codex in WSL); elsewhere none (the launch passes the value, and the rc
+    /// files are a switch's business).
+    pub fn plan_launch_sync(&self, var: &str, value: &str) -> Result<EnvPlan> {
+        let op = EnvOp::Set {
+            value: value.to_owned(),
+            take_over_foreign: false,
+        };
+        if self.platform != EnvPlatform::Windows {
+            return Ok(EnvPlan {
+                var: var.to_owned(),
+                op,
+                edits: Vec::new(),
+                scope_notes: Vec::new(),
+            });
+        }
+        self.plan_sync(var, &op)
+    }
+
     fn plan_sync(&self, var: &str, op: &EnvOp) -> Result<EnvPlan> {
         validate_name(var)?;
         if let EnvOp::Set { value, .. } = op {
@@ -1441,5 +1461,12 @@ impl EnvPersister for ShellEnvPersister {
         let this = self.clone();
         let applied = applied.clone();
         blocking(move || this.revert_sync(&applied)).await
+    }
+
+    async fn plan_launch(&self, var: &str, value: &str) -> Result<EnvPlan> {
+        let this = self.clone();
+        let var = var.to_owned();
+        let value = value.to_owned();
+        blocking(move || this.plan_launch_sync(&var, &value)).await
     }
 }

@@ -177,7 +177,11 @@ pub(super) async fn run(
     }
     render_outcome(&outcome, &destination, &rendered, out)?;
     out.value(&serde_json::json!({ "status": outcome.status, "outcome": outcome }))?;
+    // Written, but the check of the restarted Codex core failed: not a
+    // success for scripts either (user bug 69b).
+    let unverified = outcome.verification.as_ref().is_some_and(|v| !v.passed());
     Ok(match outcome.status {
+        OutcomeStatus::WrittenOnly if unverified => exit::ERROR,
         OutcomeStatus::Switched | OutcomeStatus::WrittenOnly => exit::OK,
         OutcomeStatus::Cancelled => exit::CANCELLED,
         OutcomeStatus::RolledBack | OutcomeStatus::Failed | OutcomeStatus::Partial => exit::ERROR,
@@ -555,6 +559,7 @@ fn render_outcome(
             "switch.done.switched"
                 | "switch.done.restored"
                 | "switch.done.written_only"
+                | "switch.done.reopened_unverified"
                 | "switch.done.launch_failed"
         )
     });

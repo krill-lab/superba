@@ -486,10 +486,37 @@ pub struct FakeEnv {
     pub applied: Mutex<Vec<(String, EnvOp)>>,
     pub hang_on_revert: Mutex<bool>,
     pub revert_started: tokio::sync::Notify,
+    /// `plan_launch` answers like Windows with something missing (one
+    /// `HKCU\Environment` edit); `None` = not implemented (other platforms).
+    pub launch_edit: Mutex<Option<EnvLocation>>,
+    /// Values `plan_launch` was asked for.
+    pub launch_plans: Mutex<Vec<String>>,
 }
 
 #[async_trait]
 impl EnvPersister for FakeEnv {
+    async fn plan_launch(&self, var: &str, value: &str) -> Result<EnvPlan> {
+        self.launch_plans.lock().unwrap().push(value.to_owned());
+        let Some(location) = self.launch_edit.lock().unwrap().clone() else {
+            return Err(Error::not_implemented("plan_launch"));
+        };
+        Ok(EnvPlan {
+            var: var.into(),
+            op: EnvOp::Set {
+                value: value.into(),
+                take_over_foreign: false,
+            },
+            edits: vec![EnvEdit {
+                location,
+                action: EnvEditAction::SetValue { value: var.into() },
+                preview: var.into(),
+                before: None,
+                after: Some(var.into()),
+            }],
+            scope_notes: Vec::new(),
+        })
+    }
+
     async fn inspect(&self, _var: &str) -> Result<EnvReport> {
         Ok(self.report.lock().unwrap().clone())
     }
@@ -2469,6 +2496,8 @@ impl World {
                 applied: Mutex::new(Vec::new()),
                 hang_on_revert: Mutex::new(false),
                 revert_started: tokio::sync::Notify::new(),
+                launch_edit: Mutex::new(None),
+                launch_plans: Mutex::new(Vec::new()),
             }),
             secrets: Arc::new(secrets),
             profiles: Arc::new(FakeProfiles {

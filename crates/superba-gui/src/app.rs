@@ -1184,6 +1184,42 @@ impl SuperbaApp {
                                     .sticky(),
                             );
                         }
+                        OutcomeStatus::WrittenOnly
+                            if outcome
+                                .notices
+                                .iter()
+                                .any(|n| n.text.key == "switch.done.reopened_unverified") =>
+                        {
+                            // Superba reopened ChatGPT, but the check of its new
+                            // Codex core failed (user bug 69b): not "restart it
+                            // yourself".
+                            let notice = |key: &str| {
+                                outcome
+                                    .notices
+                                    .iter()
+                                    .find(|n| n.text.key == key)
+                                    .map(|n| pages::localize_text(&self.tr, &self.data, &n.text))
+                                    .unwrap_or_default()
+                            };
+                            let detail = notice("switch.question.verification_failed");
+                            let next = notice("switch.done.reopened_unverified");
+                            let body = if detail.is_empty() {
+                                next
+                            } else {
+                                format!("{detail}\n{next}")
+                            };
+                            self.log(Status::Warn, body.replace('\n', " "));
+                            self.toasts.push(
+                                Toast::new(Status::Warn, self.tr.t("toast.reopened_unverified"))
+                                    .body(body)
+                                    .action(
+                                        self.tr.t("action.full_restart_app"),
+                                        ToastAction::FullRestart,
+                                    )
+                                    .action(self.tr.t("action.view_log"), ToastAction::ViewLog)
+                                    .sticky(),
+                            );
+                        }
                         OutcomeStatus::WrittenOnly => {
                             if plan.primary == RestartKind::None {
                                 self.toasts.push(

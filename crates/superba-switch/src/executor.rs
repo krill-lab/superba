@@ -285,6 +285,7 @@ impl Switcher {
             &remotes,
             &stale,
             local.returned_to.as_ref(),
+            local.verification.as_ref(),
         );
         run.ev.phase(SwitchPhase::Done);
         Ok(SwitchOutcome {
@@ -1469,6 +1470,20 @@ impl Run<'_> {
                 .or(self.pc.launch_authapi.as_ref())
                 .map(|o| o.as_str()),
         };
+        if !reopen
+            && self
+                .plan
+                .env
+                .as_ref()
+                .is_none_or(superba_core::EnvPlan::is_noop)
+        {
+            // A switch that wrote no environment (`spb launch --restart`, an
+            // unchanged line): what the app needs at start-up (user bug 69a).
+            let origin = origin
+                .as_deref()
+                .and_then(|o| superba_core::Origin::parse(o).ok());
+            self.sw.prepare_launch_env(origin.as_ref()).await;
+        }
         if let Some(o) = origin {
             env.insert(ENV_AUTHAPI_BASE_URL.to_owned(), o);
         }
@@ -2319,6 +2334,7 @@ impl Run<'_> {
         remotes: &[RemoteOutcome],
         stale: &[ProcessInfo],
         returned_to: Option<&ThreadRef>,
+        verification: Option<&Verification>,
     ) {
         let secs = messages::seconds_1dp(elapsed.as_millis() as u64);
         let restore = matches!(self.plan.request.intent, SwitchIntent::Restore { .. });
@@ -2342,8 +2358,16 @@ impl Run<'_> {
                     .notices
                     .iter()
                     .any(|n| n.text.key == "switch.failed.launch");
+                // Superba has just reopened ChatGPT, but the check of its new
+                // Codex core failed: "restart it yourself" would contradict
+                // that (user bug 69b).
+                let reopened_unverified = self.launched_at.is_some()
+                    && self.session.is_some()
+                    && verification.is_some_and(|v| !v.passed());
                 self.notices.push(if launch_failed {
                     Notice::warning(text("switch.done.launch_failed"))
+                } else if reopened_unverified {
+                    Notice::warning(text("switch.done.reopened_unverified"))
                 } else {
                     Notice::info(text("switch.done.written_only"))
                 });

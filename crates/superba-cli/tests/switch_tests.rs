@@ -412,6 +412,52 @@ async fn every_outcome_status_maps_to_its_exit_code_and_one_json_value() {
 }
 
 #[tokio::test]
+async fn a_written_switch_whose_check_failed_after_superba_reopened_chatgpt_is_no_success() {
+    // User bug 69b: the full restart reopened ChatGPT, the core check failed.
+    // Not exit 0, and no "restart ChatGPT yourself".
+    let failed = superba_core::Verification {
+        process: superba_core::plan::CheckResult::Failed {
+            detail: "no new Codex core process started".into(),
+        },
+        files: superba_core::plan::CheckResult::Passed,
+        auth: superba_core::plan::CheckResult::Passed,
+        line: superba_core::plan::CheckResult::Passed,
+        renderer: superba_core::plan::CheckResult::Skipped {
+            reason: "CDP".into(),
+        },
+    };
+    let mut o = outcome(OutcomeStatus::WrittenOnly);
+    o.verification = Some(failed.clone());
+    o.notices = vec![superba_core::Notice::warning(LocalizedText::new(
+        "switch.done.reopened_unverified",
+        "Configuration written and ChatGPT reopened, but its new Codex core did not pass the check.",
+    ))];
+    let service = FakeService::new();
+    *service.outcome.lock().unwrap() = Ok(o);
+    let (code, stdout, _) = invoke(service, &["switch"]).await;
+    assert_eq!(code, 1, "{stdout}");
+    assert!(stdout.contains("ChatGPT reopened"), "{stdout}");
+    assert!(!stdout.contains("Restart ChatGPT yourself"), "{stdout}");
+    assert!(
+        stdout.contains("no new Codex core process started"),
+        "{stdout}"
+    );
+
+    // Written without a failed check (the app is not running, a write-only
+    // switch): still a success.
+    let mut o = outcome(OutcomeStatus::WrittenOnly);
+    o.verification = Some(superba_core::Verification {
+        process: superba_core::plan::CheckResult::Skipped {
+            reason: "not applicable".into(),
+        },
+        ..failed
+    });
+    let service = FakeService::new();
+    *service.outcome.lock().unwrap() = Ok(o);
+    assert_eq!(invoke(service, &["switch"]).await.0, 0);
+}
+
+#[tokio::test]
 async fn planning_execution_and_read_errors_use_shared_exit_mapping() {
     for (error, expected) in [
         (

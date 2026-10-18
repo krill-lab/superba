@@ -211,6 +211,17 @@ pub trait EnvPersister: Send + Sync {
     /// Undo an apply.
     async fn revert(&self, applied: &EnvApplied) -> Result<()>;
 
+    /// What makes `var` = `value` reach the desktop app Superba is about to
+    /// open (user bug 69): where the app gets no per-launch environment
+    /// (Windows: the packaged app takes `HKCU\Environment` at activation, and
+    /// with "Run Codex in WSL" its Codex sees the variable only when `WSLENV`
+    /// names it), the edits of persisting it; empty where the launch passes the
+    /// value itself. Applied with [`EnvPersister::apply`].
+    async fn plan_launch(&self, var: &str, value: &str) -> Result<EnvPlan> {
+        let _ = (var, value);
+        Err(Error::not_implemented("EnvPersister::plan_launch"))
+    }
+
     /// Convenience: persist `CODEX_AUTHAPI_BASE_URL=<origin>` (legacy Krill lines are
     /// taken over, foreign lines left alone).
     async fn set_authapi_base_url(&self, origin: &Origin) -> Result<EnvApplied> {
