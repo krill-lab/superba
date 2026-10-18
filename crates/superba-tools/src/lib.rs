@@ -175,7 +175,7 @@ impl Ctx {
             .var_non_empty(var)
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
-            .unwrap_or_else(|| self.home.join(default))
+            .unwrap_or_else(|| default.split('/').fold(self.home.clone(), |p, c| p.join(c)))
     }
 
     /// `~/.local/bin`.

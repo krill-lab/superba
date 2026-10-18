@@ -938,16 +938,13 @@ pub fn backup(cx: &Ctx, file: &Path, label: &str) -> Result<Option<PathBuf>> {
 pub fn write_settings(path: &Path, obj: &serde_json::Map<String, Value>) -> Result<()> {
     let existing = std::fs::metadata(path).ok().map(|m| m.permissions());
     fsx::write_atomic(path, &jsonedit::print_object(obj))?;
-    match existing {
-        Some(perm) => {
-            let _ = std::fs::set_permissions(path, perm);
-        }
-        None => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-            }
+    if let Some(perm) = existing {
+        let _ = std::fs::set_permissions(path, perm);
+    } else {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
         }
     }
     Ok(())

@@ -13,7 +13,7 @@
 //!   release asset with its sha256 digest (the npm platform package when the
 //!   GitHub API is unavailable). The running program is renamed aside on
 //!   Windows. After an OpenCode 2 update a running background service is
-//!   restarted.
+//!   stopped (the next opencode command starts the new one).
 //! - **Removal**: only the program (and Superba's `PATH` entry). opencode's
 //!   own `uninstall` is never run: OpenCode 1's deletes config and data. Its
 //!   folders go only when the user asks (`remove_data`).
@@ -491,7 +491,7 @@ async fn install_archive(op: &Op<'_>) -> Result<ToolReport> {
     }
     let mut notes = Vec::new();
     if maj >= 2 && op.req.op == ToolOp::Update {
-        restart_service(op, &target).await;
+        stop_service(op, &target).await;
     }
     common::add_user_path(op, &bin_dir(cx), &mut notes)?;
     if let Some(h) = cx.path_hint(&bin_dir(cx)) {
@@ -519,9 +519,11 @@ pub fn service_running(success: bool, text: &str) -> bool {
         && (t.contains("http://") || t.contains("https://") || t.contains("running"))
 }
 
-/// OpenCode 2 runs a background service; restart it onto the new program
-/// when one runs (best effort).
-async fn restart_service(op: &Op<'_>, program: &Path) {
+/// OpenCode 2 runs a background service that keeps the old program: stop it
+/// (best effort); the next opencode command starts it again with the new
+/// version. Superba does not start it itself, so no long-lived process
+/// inherits its handles.
+async fn stop_service(op: &Op<'_>, program: &Path) {
     let cx = op.cx;
     let status = cx
         .cmd(program)
@@ -530,14 +532,14 @@ async fn restart_service(op: &Op<'_>, program: &Path) {
     let Ok(out) = crate::run::output(&status).await else {
         return;
     };
-    let text = format!("{}\n{}", out.stdout, out.stderr).to_ascii_lowercase();
+    let text = format!("{}\n{}", out.stdout, out.stderr);
     op.log.line(format!("service status: {}", text.trim()));
     if service_running(out.success(), &text) {
-        let restart = cx
+        let stop = cx
             .cmd(program)
-            .args(["service", "restart"])
+            .args(["service", "stop"])
             .timeout(Duration::from_secs(30));
-        let _ = op.run(&restart, ToolStage::Checking).await;
+        let _ = op.run(&stop, ToolStage::Checking).await;
     }
 }
 

@@ -209,3 +209,31 @@ pub fn quiet_uninstall(entry: &UninstallEntry) -> Option<Vec<String>> {
     }
     Some(parts)
 }
+
+/// After a quiet uninstaller returned (an NSIS uninstaller hands the work to
+/// a copy of itself in the temp folder and exits at once): wait up to
+/// `limit` for `program` to go and for `dir` to empty, then remove `dir` if
+/// nothing is left in it. Returns whether `dir` is gone.
+pub async fn wait_removed(
+    op: &Op<'_>,
+    dir: &Path,
+    program: &Path,
+    limit: Duration,
+) -> Result<bool> {
+    let end = Instant::now() + limit;
+    loop {
+        let empty = std::fs::read_dir(dir).map_or(true, |mut d| d.next().is_none());
+        if !program.exists() && empty {
+            if dir.exists() {
+                let _ = std::fs::remove_dir(dir);
+            }
+            return Ok(!dir.exists());
+        }
+        if Instant::now() >= end {
+            op.log.line(format!("{} still holds files", dir.display()));
+            return Ok(false);
+        }
+        op.check_cancel()?;
+        tokio::time::sleep(Duration::from_millis(700)).await;
+    }
+}

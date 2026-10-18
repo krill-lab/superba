@@ -95,7 +95,7 @@ fn desktop_apps_install_on_windows_and_link_elsewhere() {
         d_win(ToolId::Zcode).method,
         Method::WindowsInstaller {
             args: &["/S", "/currentuser"],
-            signer: ""
+            signer: "北京智谱华章科技股份有限公司"
         }
     );
     for tool in [ToolId::Workbuddy, ToolId::WorkbuddyAi] {

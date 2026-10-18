@@ -181,8 +181,10 @@ async fn run_inner(cmd: &Cmd, live: Option<Live<'_>>) -> Result<Outcome> {
         message: format!("cannot start {}: {e}", cmd.program.display()),
     })?;
     let pid = child.id();
-    let stdout = child.stdout.take().map(|s| BufReader::new(s).lines());
-    let stderr = child.stderr.take().map(|s| BufReader::new(s).lines());
+    // Split at `\n` and decode each line lossily: a tool that prints in the
+    // console's code page must not end the reading early.
+    let stdout = child.stdout.take().map(|s| BufReader::new(s).split(b'\n'));
+    let stderr = child.stderr.take().map(|s| BufReader::new(s).split(b'\n'));
     let (mut out_lines, mut err_lines) = (stdout, stderr);
     let (mut out, mut err) = (String::new(), String::new());
     let deadline = tokio::time::Instant::now() + cmd.timeout;
@@ -237,10 +239,15 @@ async fn run_inner(cmd: &Cmd, live: Option<Live<'_>>) -> Result<Outcome> {
 }
 
 async fn next<R: tokio::io::AsyncBufRead + Unpin>(
-    lines: &mut Option<tokio::io::Lines<R>>,
+    lines: &mut Option<tokio::io::Split<R>>,
 ) -> Option<String> {
     match lines {
-        Some(l) => l.next_line().await.ok().flatten(),
+        Some(l) => l
+            .next_segment()
+            .await
+            .ok()
+            .flatten()
+            .map(|b| String::from_utf8_lossy(&b).trim_end_matches('\r').to_owned()),
         None => std::future::pending().await,
     }
 }

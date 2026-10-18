@@ -137,7 +137,14 @@ fn entry(b: &Build) -> Option<UninstallEntry> {
 }
 
 fn install_dir(cx: &Ctx, b: &Build, e: Option<&UninstallEntry>) -> PathBuf {
-    e.and_then(|e| e.location.clone()).unwrap_or_else(|| {
+    let from_entry = e.and_then(|e| {
+        e.location.clone().or_else(|| {
+            let cmd = e.quiet_uninstall.as_deref().or(e.uninstall.as_deref())?;
+            let exe = winapps::split_command_line(cmd).into_iter().next()?;
+            PathBuf::from(exe).parent().map(PathBuf::from)
+        })
+    });
+    from_entry.unwrap_or_else(|| {
         cx.env
             .var_non_empty("LOCALAPPDATA")
             .map(PathBuf::from)
@@ -238,7 +245,7 @@ pub async fn run(op: &Op<'_>) -> Result<ToolReport> {
 async fn install_windows(op: &Op<'_>, args: &[&str], signer: &str) -> Result<ToolReport> {
     let cx = op.cx;
     let b = build(op.tool());
-    op.stage(ToolStage::Resolving, None);
+    op.stage(ToolStage::Resolving, Some(op.channel.clone()));
     let up = latest(cx, op.tool()).await?;
     op.log.line(format!(
         "update API: {} {} sha256 {}",
@@ -260,8 +267,37 @@ async fn install_windows(op: &Op<'_>, args: &[&str], signer: &str) -> Result<Too
     op.log.line(format!("start: {}", cmd.display()));
     let mut child = crate::run::spawn(&cmd)?;
     let want = up.version.clone();
-    let exe_dir = install_dir(cx, &b, None);
-    let waited = apps::wait_for(op, Duration::from_secs(20 * 60), || {
+    let dir = install_dir(cx, &b, None);
+    // The installer opens the app as its last step (and the international
+    // build's setup stays as the app's parent), so "done" is the setup
+    // exiting or the app starting, never the Uninstall entry alone (it is
+    // written before the files are all there).
+    let end = std::time::Instant::now() + Duration::from_secs(25 * 60);
+    let opened = loop {
+        if op.sink.cancel_requested() {
+            crate::run::end(&mut child).await;
+            op.log.line("cancelled: installer ended");
+            return Err(Error::Cancelled);
+        }
+        if let Ok(Some(status)) = child.try_wait() {
+            op.log.line(format!("installer exited: {status}"));
+            break false;
+        }
+        if !apps::app_processes(&dir, began).is_empty() {
+            op.log
+                .line("the installer opened the app: installation finished");
+            break true;
+        }
+        if std::time::Instant::now() >= end {
+            crate::run::end(&mut child).await;
+            return Err(Error::Timeout {
+                what: format!("{} installer", b.name),
+            });
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+    op.stage(ToolStage::Checking, None);
+    let found = apps::wait_for(op, Duration::from_secs(90), || {
         entry(&b).filter(|e| {
             e.version
                 .as_deref()
@@ -269,32 +305,34 @@ async fn install_windows(op: &Op<'_>, args: &[&str], signer: &str) -> Result<Too
                 && install_dir(cx, &b, Some(e)).join(b.exe).is_file()
         })
     })
-    .await;
-    let found = match waited {
-        Ok(Some(e)) => e,
-        Ok(None) => {
-            crate::run::end(&mut child).await;
-            return Err(Error::Timeout {
-                what: format!("{} installer", b.name),
-            });
-        }
-        Err(e) => {
-            crate::run::end(&mut child).await;
-            return Err(e);
-        }
-    };
+    .await?
+    .ok_or_else(|| Error::Process {
+        message: format!(
+            "the {} installer finished but {} {want} is not registered",
+            b.name, b.name
+        ),
+    })?;
     op.log.line(format!(
         "registered: {} {}",
         found.name,
         found.version.as_deref().unwrap_or("?")
     ));
-    // The installer opens the app when it is done; give it a moment, then
-    // close what it opened (and the installer, which may stay as its parent).
-    tokio::time::sleep(Duration::from_secs(4)).await;
     let mut notes = Vec::new();
+    if opened {
+        // Let it settle, then close what the installer opened; the setup
+        // that stays as its parent exits with it (else it is ended).
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    }
     let closed = apps::close_app(op, &app_dirs(cx, &b, Some(&found)), began).await?;
+    for _ in 0..30 {
+        if !matches!(child.try_wait(), Ok(None)) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
     if let Ok(None) = child.try_wait() {
-        op.log.line("the installer is still running; ending it");
+        op.log
+            .line("the installer is still running after the app closed; ending it");
         crate::run::end(&mut child).await;
     }
     if closed > 0 {
@@ -317,7 +355,6 @@ async fn install_windows(op: &Op<'_>, args: &[&str], signer: &str) -> Result<Too
     }
     let _ = std::fs::remove_file(&setup);
     let path = install_dir(cx, &b, Some(&found)).join(b.exe);
-    let _ = exe_dir;
     op.record(|s| {
         s.installed = Some(InstalledRecord {
             kind: ToolInstallKind::App,
@@ -381,7 +418,10 @@ async fn uninstall_windows(op: &Op<'_>) -> Result<ToolReport> {
                 .line(format!("removed launch-at-login value {}", b.run_value));
         }
     }
-    if dir.exists() && dir.ends_with(b.folder) {
+    // The uninstaller's copy keeps deleting after it returned.
+    if !apps::wait_removed(op, &dir, &dir.join(b.exe), Duration::from_secs(180)).await?
+        && dir.ends_with(b.folder)
+    {
         match crate::fsx::remove_dir(&dir) {
             Ok(_) => op.log.line(format!("removed leftover {}", dir.display())),
             Err(e) => op

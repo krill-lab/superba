@@ -211,7 +211,8 @@ pub fn descriptor(tool: ToolId, p: &Platform) -> Descriptor {
                 // electron-builder NSIS, per user without elevation.
                 Os::Windows => Method::WindowsInstaller {
                     args: &["/S", "/currentuser"],
-                    signer: "",
+                    // Its EV certificate (seen on 3.15.3).
+                    signer: "北京智谱华章科技股份有限公司",
                 },
                 _ => Method::Link,
             },

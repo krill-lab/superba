@@ -128,8 +128,10 @@ pub mod user {
             Ok(v) => {
                 let text: Vec<u16> = v
                     .bytes
-                    .chunks_exact(2)
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|c| u16::from_le_bytes(*c))
                     .take_while(|c| *c != 0)
                     .collect();
                 Ok((String::from_utf16_lossy(&text), v.vtype))
@@ -153,8 +155,14 @@ pub mod user {
         } else {
             RegType::REG_EXPAND_SZ
         };
-        key.set_raw_value("Path", &RegValue { bytes, vtype })
-            .map_err(io)?;
+        key.set_raw_value(
+            "Path",
+            &RegValue {
+                bytes: bytes.into(),
+                vtype,
+            },
+        )
+        .map_err(io)?;
         broadcast();
         Ok(())
     }

@@ -132,12 +132,26 @@ fn entry(cx: &Ctx) -> Option<UninstallEntry> {
         .next()
 }
 
+/// The app's folder: `InstallLocation`, else the folder of its uninstaller
+/// (ZCode's per-user entry leaves `InstallLocation` empty).
+fn install_dir(e: &UninstallEntry) -> Option<PathBuf> {
+    e.location.clone().or_else(|| {
+        let cmd = e.quiet_uninstall.as_deref().or(e.uninstall.as_deref())?;
+        let exe = winapps::split_command_line(cmd).into_iter().next()?;
+        PathBuf::from(exe).parent().map(PathBuf::from)
+    })
+}
+
 fn program_of(e: &UninstallEntry) -> Option<PathBuf> {
-    e.location
-        .as_ref()
+    install_dir(e)
         .map(|l| l.join("ZCode.exe"))
         .filter(|p| p.is_file())
-        .or_else(|| e.icon.as_deref().map(winapps::icon_path))
+        .or_else(|| {
+            e.icon
+                .as_deref()
+                .map(winapps::icon_path)
+                .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe")))
+        })
 }
 
 /// What is installed.
@@ -147,7 +161,7 @@ pub async fn detect(cx: &Ctx, desc: &Descriptor) -> Detected {
         Os::Windows => {
             if let Some(e) = entry(cx) {
                 let path = program_of(&e)
-                    .or_else(|| e.location.clone())
+                    .or_else(|| install_dir(&e))
                     .unwrap_or_default();
                 det.can_update = e.per_user;
                 det.can_uninstall = e.per_user;
@@ -157,8 +171,8 @@ pub async fn detect(cx: &Ctx, desc: &Descriptor) -> Detected {
                         "This copy is installed for all users: changing it needs administrator rights, so Superba leaves it to its own installer.",
                     )));
                 }
-                if let Some(loc) = &e.location
-                    && !apps::app_processes(loc, 0).is_empty()
+                if let Some(loc) = install_dir(&e)
+                    && !apps::app_processes(&loc, 0).is_empty()
                 {
                     let c = text(
                         "tools.app.caution_close",
@@ -272,9 +286,9 @@ async fn install_windows(op: &Op<'_>, args: &[&str], signer: &str) -> Result<Too
     )
     .await?;
     if let Some(e) = entry(cx)
-        && let Some(loc) = &e.location
+        && let Some(loc) = install_dir(&e)
     {
-        apps::close_app(op, std::slice::from_ref(loc), 0).await?;
+        apps::close_app(op, &[loc], 0).await?;
     }
     let began = apps::now_secs();
     let cmd = cx
@@ -296,8 +310,8 @@ async fn install_windows(op: &Op<'_>, args: &[&str], signer: &str) -> Result<Too
         message: format!("the ZCode installer finished but ZCode {want} is not registered"),
     })?;
     let mut notes = Vec::new();
-    if let Some(loc) = &found.location
-        && apps::close_app(op, std::slice::from_ref(loc), began).await? > 0
+    if let Some(loc) = install_dir(&found)
+        && apps::close_app(op, &[loc], began).await? > 0
     {
         notes.push(Notice::info(text(
             "tools.app.closed_after_install",
@@ -326,8 +340,8 @@ async fn uninstall_windows(op: &Op<'_>) -> Result<ToolReport> {
         });
     }
     op.stage(ToolStage::Removing, None);
-    if let Some(loc) = &e.location {
-        apps::close_app(op, std::slice::from_ref(loc), 0).await?;
+    if let Some(loc) = install_dir(&e) {
+        apps::close_app(op, &[loc], 0).await?;
     }
     let parts = apps::quiet_uninstall(&e).ok_or_else(|| Error::NotFound {
         what: "ZCode's uninstaller".into(),
@@ -346,6 +360,9 @@ async fn uninstall_windows(op: &Op<'_>) -> Result<ToolReport> {
         return Err(Error::Process {
             message: "ZCode's uninstaller finished but ZCode is still registered".into(),
         });
+    }
+    if let Some(dir) = install_dir(&e) {
+        apps::wait_removed(op, &dir, &dir.join("ZCode.exe"), Duration::from_secs(120)).await?;
     }
     op.record(|s| s.installed = None)?;
     Ok(op.report(
