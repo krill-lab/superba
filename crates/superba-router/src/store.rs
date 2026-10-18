@@ -2,7 +2,8 @@
 //! the running router's recorder thread, read read-only by Superba (GUI, `spb`)
 //! through [`Reader`], so history stays visible while the router is stopped.
 //!
-//! Schema (version 2): one row per proxied Responses request, the columns of
+//! Schema (version 3): one row per proxied model request (Codex Responses,
+//! Claude Code Messages), the columns of
 //! [`RequestRow`] plus the detail fields (timing marks, attempts, log lines).
 //! Never stored: prompts, outputs, request or response headers and bodies, keys,
 //! tokens.
@@ -20,16 +21,18 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use superba_core::{
     ClearReport, ClearRequest, Error, ProfileId, RequestAttempt, RequestClient, RequestDetail,
-    RequestGroup, RequestGrouping, RequestPage, RequestQuery, RequestRow, RequestSortKey,
-    RequestStats, RequestStatus, RequestStatusFilter, RequestTiming, RequestTotals,
+    RequestGroup, RequestGrouping, RequestHarness, RequestPage, RequestQuery, RequestRow,
+    RequestSortKey, RequestStats, RequestStatus, RequestStatusFilter, RequestTiming, RequestTotals,
     RequestTransport, Result, StatsBucket, StatsGroupBy, StatsQuery, Timestamp, Usd,
     provider_line_key, split_provider_key,
 };
 
 use crate::paths::RouterPaths;
 
-/// Schema version written to `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i64 = 2;
+/// Schema version written to `PRAGMA user_version`. A log of another version
+/// (an earlier build's) is not read and is recreated when the router opens it
+/// for writing: nothing has been released, so there is no migration.
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// Rows a query returns at most (a larger `limit` is clamped).
 pub const MAX_QUERY_ROWS: u32 = 10_000;
@@ -54,7 +57,10 @@ CREATE TABLE IF NOT EXISTS requests (
   tps_milli INTEGER, cost_micros INTEGER, price_rev TEXT,
   injected INTEGER NOT NULL DEFAULT 0, stripped INTEGER NOT NULL DEFAULT 0,
   upstream_request_id TEXT, attempts TEXT, log TEXT,
-  sent_ms INTEGER, last_delta_ms INTEGER, codex_host TEXT
+  sent_ms INTEGER, last_delta_ms INTEGER, codex_host TEXT,
+  harness TEXT NOT NULL DEFAULT 'codex', harness_version TEXT,
+  protocol TEXT NOT NULL DEFAULT 'responses',
+  requested_model TEXT, session_id TEXT, agent_kind TEXT, response_id TEXT
 );
 CREATE INDEX IF NOT EXISTS requests_time ON requests(started_ms);
 CREATE INDEX IF NOT EXISTS requests_member_time ON requests(member_id, started_ms);
@@ -71,22 +77,23 @@ pub(crate) const ROW_COLUMNS: &str = "id, started_ms, prompt_cache_key, thread_i
      response_service_tier, status_kind, status_code, status_http, http_status, error, \
      input_tokens, cached_tokens, cache_write_tokens, output_tokens, reasoning_tokens, ttfb_ms, \
      first_token_ms, duration_ms, tps_milli, cost_micros, price_rev, injected, stripped, \
-     upstream_request_id";
+     upstream_request_id, codex_host, harness, harness_version, protocol, requested_model, \
+     session_id, agent_kind, response_id";
 
-/// Whether the request log has a `codex_host` column (logs written before
-/// user bug 45 do not until the router opens them for writing).
-fn has_codex_host(conn: &Connection) -> bool {
-    conn.prepare("SELECT codex_host FROM requests LIMIT 0")
-        .is_ok()
+/// Number of [`ROW_COLUMNS`] (the detail fields follow them).
+fn row_column_count() -> usize {
+    ROW_COLUMNS.split(',').count()
 }
 
-/// [`ROW_COLUMNS`] plus the Codex host (column 40; `NULL` in an old log).
-pub(crate) fn row_columns(conn: &Connection) -> String {
-    if has_codex_host(conn) {
-        format!("{ROW_COLUMNS}, codex_host")
-    } else {
-        format!("{ROW_COLUMNS}, NULL")
-    }
+/// [`ROW_COLUMNS`] (kept as a function for the readers).
+pub(crate) fn row_columns(_conn: &Connection) -> String {
+    ROW_COLUMNS.to_owned()
+}
+
+/// The schema version of an open log.
+fn schema_version(conn: &Connection) -> i64 {
+    conn.query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0)
 }
 
 /// The session key of a row (SQL).
@@ -152,6 +159,9 @@ pub(crate) fn row_from_sql(r: &Row<'_>) -> rusqlite::Result<RequestRow> {
     let transport: String = r.get(11)?;
     let client: String = r.get(13)?;
     let request_kind: Option<String> = r.get(14)?;
+    let harness: String = r.get(41)?;
+    let protocol: String = r.get(43)?;
+    let agent_kind: Option<String> = r.get(46)?;
     Ok(RequestRow {
         id: r.get(0)?,
         started_at: Timestamp::from_millis(r.get(1)?),
@@ -199,6 +209,13 @@ pub(crate) fn row_from_sql(r: &Row<'_>) -> rusqlite::Result<RequestRow> {
         upstream_request_id: r.get(39)?,
         source: superba_core::RequestSource::Router,
         codex_host: r.get(40)?,
+        harness: enum_parse(&harness).unwrap_or(RequestHarness::Unknown),
+        harness_version: r.get(42)?,
+        protocol: enum_parse(&protocol).unwrap_or_default(),
+        requested_model: r.get(44)?,
+        session_id: r.get(45)?,
+        agent_kind: agent_kind.as_deref().and_then(enum_parse),
+        response_id: r.get(47)?,
     })
 }
 
@@ -213,6 +230,11 @@ fn open_read_only(path: &Path) -> Result<Option<Connection>> {
     )
     .map_err(sql_err)?;
     conn.busy_timeout(Duration::from_secs(3)).map_err(sql_err)?;
+    // A log of an earlier build's format holds nothing this build reads (the
+    // router starts it again when it next records).
+    if schema_version(&conn) != SCHEMA_VERSION {
+        return Ok(None);
+    }
     Ok(Some(conn))
 }
 
@@ -242,12 +264,18 @@ pub(crate) fn open_write(path: &Path, schema: &str) -> Result<Connection> {
         .map_err(sql_err)?;
     conn.execute_batch("PRAGMA synchronous = NORMAL;")
         .map_err(sql_err)?;
-    conn.execute_batch(schema).map_err(sql_err)?;
-    // A log created before the Codex host was recorded gets the column.
-    if schema == USAGE_SCHEMA && !has_codex_host(&conn) {
-        conn.execute_batch("ALTER TABLE requests ADD COLUMN codex_host TEXT;")
+    // A log of an earlier build's format starts again (no migrations before
+    // the first release).
+    let version = schema_version(&conn);
+    if version != 0 && version != SCHEMA_VERSION {
+        tracing::info!(
+            version,
+            "request log of an earlier format; starting a new one"
+        );
+        conn.execute_batch("DROP TABLE IF EXISTS requests;")
             .map_err(sql_err)?;
     }
+    conn.execute_batch(schema).map_err(sql_err)?;
     conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))
         .map_err(sql_err)?;
     Ok(conn)
@@ -660,11 +688,12 @@ impl Reader {
                 [id],
                 |r| {
                     let row = row_from_sql(r)?;
-                    let first_event: Option<i64> = r.get(41)?;
-                    let attempts: Option<String> = r.get(42)?;
-                    let log: Option<String> = r.get(43)?;
-                    let sent: Option<i64> = r.get(44)?;
-                    let last_delta: Option<i64> = r.get(45)?;
+                    let n = row_column_count();
+                    let first_event: Option<i64> = r.get(n)?;
+                    let attempts: Option<String> = r.get(n + 1)?;
+                    let log: Option<String> = r.get(n + 2)?;
+                    let sent: Option<i64> = r.get(n + 3)?;
+                    let last_delta: Option<i64> = r.get(n + 4)?;
                     Ok((row, [first_event, sent, last_delta], attempts, log))
                 },
             )

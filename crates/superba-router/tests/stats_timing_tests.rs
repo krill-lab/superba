@@ -187,6 +187,7 @@ fn stats() -> StatsConfig {
             template: TEMPLATE.into(),
             style: StatsLineStyle::Quote,
             originators: vec!["Codex Desktop".into()],
+            harnesses: superba_router::stats::default_line_harnesses(),
         }),
         ..StatsConfig::default()
     }

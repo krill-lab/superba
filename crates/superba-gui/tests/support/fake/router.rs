@@ -132,6 +132,13 @@ fn row(
         upstream_request_id: Some(format!("req_{id:08x}")),
         source: superba_core::RequestSource::Router,
         codex_host: None,
+        harness: superba_core::RequestHarness::Codex,
+        harness_version: None,
+        response_id: None,
+        protocol: superba_core::RequestProtocol::Responses,
+        requested_model: None,
+        session_id: None,
+        agent_kind: None,
     }
 }
 

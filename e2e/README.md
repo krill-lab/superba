@@ -84,6 +84,23 @@ SUPERBA_E2E_ENV=... e2e/run.sh step exec CMD...  # any command in the run's name
 SUPERBA_E2E_ENV=... e2e/run.sh step teardown     # also ends the namespace (and everything left in it)
 ```
 
+### Claude Code through the router
+
+`claude_router.py` runs a real `claude` (a temporary `HOME` and
+`CLAUDE_CONFIG_DIR`; the real `~/.claude*` are never used) against a
+`superba-router` started from a temporary data directory, through the router's
+Claude Code ingress to the test relay's Anthropic endpoint (`--anthropic-path`,
+default `/codex`), with an unreachable first member so the first request fails
+over: a plain prompt, a continued conversation, a prompt that uses the Read
+tool, a long streamed answer, `/claude/v1/models`, `count_tokens`, and the
+request log (harness, version, ids, usage, stats line injected and stripped).
+About a minute; it needs Python 3 only.
+
+```sh
+SUPERBA_E2E_ENV=/path/to/e2e.env python3 -I e2e/claude_router.py \
+    --router target/debug/superba-router [--claude /path/to/claude] OUT_DIR
+```
+
 ## How it is wired
 
 - **Namespace.** The driver runs itself, the desktop app, `superba`, `spb`, the

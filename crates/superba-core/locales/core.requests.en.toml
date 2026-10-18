@@ -51,3 +51,21 @@ unknown = "Unknown"
 # The Codex host of a request that is not this computer (user bug 45).
 [request_host]
 client_on_host = "{client} · {host}"
+
+# The tool (harness) that sent a request (Usage page, request detail, spb usage).
+[request_harness]
+codex = "Codex"
+claude_code = "Claude Code"
+unknown = "Other tool"
+
+# The API protocol of a request (what the tool spoke, what went upstream).
+[request_protocol]
+responses = "Responses API"
+chat_completions = "Chat Completions"
+messages = "Anthropic Messages"
+
+# Which agent of a session sent a request.
+[agent_kind]
+main = "Main"
+subagent = "Subagent"
+background = "Background"

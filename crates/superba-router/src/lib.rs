@@ -65,6 +65,9 @@
 //!   optional reply stats line, and the strip of earlier stats lines from every
 //!   outgoing request. WebSockets are then relayed frame by frame (no
 //!   per-message deflate) so `response.create` frames and events can be read.
+//! - **Claude Code** ([`claude`]): Anthropic Messages under `/claude/v1/*` on
+//!   the same port, passed through to members with an Anthropic endpoint, with
+//!   the same failover, stickiness, health, limits, request log and stats line.
 //! - **Logging**: never keys, tokens, bodies, thread ids or query strings.
 //!
 //! ## Files
@@ -81,6 +84,7 @@
 #![warn(missing_docs)]
 
 pub mod cipher;
+pub mod claude;
 pub mod client;
 pub mod compaction;
 pub mod config;
@@ -114,6 +118,7 @@ mod ws;
 mod ws_relay;
 
 pub use admin::{ADMIN_PREFIX, VERSION};
+pub use claude::ClaudeConfig;
 pub use config::{
     LineConfig, MemberConfig, MemberKind, ROUTER_BASE_PATH, RouterConfig, RouterSecrets, Tuning,
 };

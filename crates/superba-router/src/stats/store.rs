@@ -244,10 +244,13 @@ fn insert_rows(conn: &mut Connection, rows: &[StoredRow]) -> rusqlite::Result<()
              response_model, service_tier, response_service_tier, status_kind, status_code, \
              status_http, http_status, error, input_tokens, cached_tokens, cache_write_tokens, \
              output_tokens, reasoning_tokens, tps_milli, cost_micros, price_rev, injected, \
-             stripped, upstream_request_id, attempts, log, sent_ms, last_delta_ms, codex_host) \
+             stripped, upstream_request_id, attempts, log, sent_ms, last_delta_ms, codex_host, \
+             harness, harness_version, protocol, requested_model, session_id, agent_kind, \
+             response_id) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
              ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, \
-             ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46)",
+             ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, \
+             ?52, ?53)",
         )?;
         for s in rows {
             let r = &s.row;
@@ -301,6 +304,13 @@ fn insert_rows(conn: &mut Connection, rows: &[StoredRow]) -> rusqlite::Result<()
                 opt_i64(s.timing.sent_ms),
                 opt_i64(s.timing.last_delta_ms),
                 r.codex_host,
+                enum_name(&r.harness),
+                r.harness_version,
+                enum_name(&r.protocol),
+                r.requested_model,
+                r.session_id,
+                r.agent_kind.as_ref().map(enum_name),
+                r.response_id,
             ])?;
         }
     }

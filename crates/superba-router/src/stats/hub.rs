@@ -334,6 +334,7 @@ impl StatsHub {
             upstream_request_id: None,
             compression: superba_core::RequestCompression::None,
             ciphers_sent: Vec::new(),
+            upstream_name: None,
             done: false,
         }
     }
@@ -370,6 +371,8 @@ pub(crate) struct End {
     pub error: Option<String>,
     /// Usage read from a JSON (non-streaming) answer.
     pub json_usage: Option<super::usage::Usage>,
+    /// The id of a JSON answer (`resp_…`, `msg_…`).
+    pub json_id: Option<String>,
 }
 
 /// One request from receipt to its row.
@@ -395,6 +398,9 @@ pub(crate) struct Tracker {
     /// Fingerprints of the ciphertexts the answering attempt carried
     /// ([`crate::cipher`]): read by its member when the request ends well.
     ciphers_sent: Vec<crate::compaction::Fingerprint>,
+    /// The model name sent upstream when the caller chose it (Claude Code
+    /// routes), instead of the member's model mapping.
+    upstream_name: Option<String>,
     done: bool,
 }
 
@@ -486,6 +492,7 @@ impl Tracker {
         self.upstream_request_id = headers
             .get("x-request-id")
             .or_else(|| headers.get("x-oai-request-id"))
+            .or_else(|| headers.get("request-id"))
             .and_then(|v| v.to_str().ok())
             .map(|v| v.chars().take(128).collect());
         self.attempts.push(RequestAttempt {
@@ -500,6 +507,12 @@ impl Tracker {
         let label = self.generation.label(c.member, c.line);
         self.note(format!("{label}: HTTP {status} after {} ms", ms(ttfb)));
         self.inflight.update(InflightPhase::Streaming, 0, None);
+    }
+
+    /// The model name of the next attempt as sent upstream (Claude Code
+    /// routes choose it per target; the answering attempt's is recorded).
+    pub fn set_upstream_model(&mut self, model: Option<String>) {
+        self.upstream_name = model;
     }
 
     /// How the request body goes to the line of the next attempt (the proxy
@@ -605,9 +618,22 @@ impl Tracker {
     /// The stats line setup when this request may get the line (gating of RS
     /// 3.3 rules 1-4; the caller checks the transport).
     pub fn line_setup(&self) -> Option<LineSetup> {
+        self.line_setup_if(|line, meta| {
+            line.harnesses
+                .contains(&superba_core::RequestHarness::Codex)
+                && line_allowed(line, meta)
+        })
+    }
+
+    /// The stats line setup when `allowed` admits this request (Claude Code
+    /// applies its own rules, [`crate::claude`]).
+    pub fn line_setup_if(
+        &self,
+        allowed: impl FnOnce(&super::StatsLineConfig, &RequestMeta) -> bool,
+    ) -> Option<LineSetup> {
         let cfg = self.generation.config.stats.as_ref()?;
         let line = cfg.line.as_ref()?;
-        if !line_allowed(line, &self.meta) {
+        if !allowed(line, &self.meta) {
             return None;
         }
         let member = self
@@ -628,6 +654,9 @@ impl Tracker {
     fn upstream_model(&self) -> Option<String> {
         let c = self.answered?;
         let model = self.meta.model.as_deref()?;
+        if let Some(name) = &self.upstream_name {
+            return (name != model).then(|| name.clone());
+        }
         self.generation.members[c.member]
             .cfg
             .model_map
@@ -744,9 +773,11 @@ impl Tracker {
             )
         });
         let timing = self.timing(&summary, summary.end.unwrap_or_else(|| self.t0.elapsed()));
-        if self.meta.request_kind == Some(RequestKind::Turn)
-            && let (Some(turn), Some(u)) = (self.meta.turn_id.as_deref(), usage)
-        {
+        // Codex: the requests of a user turn; Claude Code: every request of
+        // the same prompt id.
+        let turn_member = self.meta.request_kind == Some(RequestKind::Turn)
+            || self.meta.protocol == superba_core::RequestProtocol::Messages;
+        if turn_member && let (Some(turn), Some(u)) = (self.meta.turn_id.as_deref(), usage) {
             self.hub.add_to_turn(
                 turn,
                 u.input,
@@ -812,8 +843,15 @@ impl Tracker {
             injected: summary.injected,
             stripped: self.meta.stripped,
             upstream_request_id: self.upstream_request_id.take(),
+            response_id: summary.response_id.clone().or(end.json_id),
             source: superba_core::RequestSource::Router,
             codex_host: self.meta.codex_host.clone(),
+            harness: self.meta.harness,
+            harness_version: self.meta.harness_version.clone(),
+            protocol: self.meta.protocol,
+            requested_model: self.meta.requested_model.clone(),
+            session_id: self.meta.session_id.clone(),
+            agent_kind: self.meta.agent_kind,
         };
         let stored = StoredRow {
             row,

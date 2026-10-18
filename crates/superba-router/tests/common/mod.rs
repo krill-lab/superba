@@ -32,6 +32,8 @@ use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::Role;
 use url::Url;
 
+pub mod anthropic;
+pub mod claude;
 pub mod ciphers;
 pub mod responses;
 
@@ -161,7 +163,7 @@ fn full(status: u16, body: &'static str) -> Response<FakeBody> {
     r
 }
 
-struct ChanBody(mpsc::Receiver<Result<Bytes, std::io::Error>>);
+pub struct ChanBody(pub mpsc::Receiver<Result<Bytes, std::io::Error>>);
 
 impl Body for ChanBody {
     type Data = Bytes;

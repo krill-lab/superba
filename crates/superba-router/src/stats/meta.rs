@@ -14,7 +14,9 @@ use std::borrow::Cow;
 
 use http::HeaderMap;
 use serde::Deserialize;
-use superba_core::{RequestClient, RequestKind, RequestTransport};
+use superba_core::{
+    AgentKind, RequestClient, RequestHarness, RequestKind, RequestProtocol, RequestTransport,
+};
 
 /// Header carrying Codex's turn metadata (also in `client_metadata`).
 pub const TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
@@ -59,6 +61,52 @@ pub struct RequestMeta {
     /// Compaction trigger and compaction items of the input
     /// ([`crate::compaction`]).
     pub compaction: crate::compaction::CompactionInput,
+    /// The tool that sent the request ([`crate::forward::HARNESS_HEADER`], else
+    /// the `User-Agent`, else the ingress's own harness).
+    pub harness: RequestHarness,
+    /// The tool's version (`User-Agent`).
+    pub harness_version: Option<String>,
+    /// The protocol the tool spoke.
+    pub protocol: RequestProtocol,
+    /// The model the tool asked for (for Codex the same as `model`).
+    pub requested_model: Option<String>,
+    /// The tool's session id.
+    pub session_id: Option<String>,
+    /// Main conversation, subagent or background work.
+    pub agent_kind: Option<AgentKind>,
+}
+
+/// The harness of a request and its version: the harness the router token
+/// named (internal header set by the server), else the one its `User-Agent`
+/// names, else `ingress` (the harness the ingress serves). The version comes
+/// from the `User-Agent` when it names the same harness.
+pub fn attribution(
+    headers: &HeaderMap,
+    ingress: RequestHarness,
+) -> (RequestHarness, Option<String>) {
+    let by_token =
+        header(headers, crate::forward::HARNESS_HEADER).and_then(RequestHarness::from_id);
+    let by_agent = header(headers, "user-agent").and_then(RequestHarness::from_user_agent);
+    match (by_token, by_agent) {
+        (Some(h), Some((a, version))) if a == h => (h, version),
+        (Some(h), _) => (h, None),
+        (None, Some((a, version))) => (a, version),
+        (None, None) => (ingress, None),
+    }
+}
+
+/// Codex's agent kind from its turn metadata.
+fn codex_agent_kind(kind: Option<RequestKind>, source: Option<&str>) -> Option<AgentKind> {
+    match kind {
+        Some(RequestKind::Compaction | RequestKind::Memory) => return Some(AgentKind::Background),
+        None => return None,
+        _ => {}
+    }
+    Some(match source {
+        None | Some("user") => AgentKind::Main,
+        Some(s) if s.contains("subagent") => AgentKind::Subagent,
+        Some(_) => AgentKind::Background,
+    })
 }
 
 #[derive(Deserialize, Default)]
@@ -159,6 +207,19 @@ fn peek_with(headers: &HeaderMap, body: &[u8], transport: RequestTransport) -> R
         .and_then(|t| short(t.thread_id.as_deref()).or_else(|| short(t.session_id.as_deref())))
         .or_else(|| short(header(headers, "thread-id")))
         .or_else(|| short(header(headers, "session-id")));
+    let (harness, harness_version) = attribution(headers, RequestHarness::Codex);
+    let request_kind = turn
+        .as_ref()
+        .and_then(|t| t.request_kind.as_deref().map(request_kind));
+    let thread_source = turn
+        .as_ref()
+        .and_then(|t| short(t.thread_source.as_ref().and_then(serde_json::Value::as_str)));
+    let session_id = turn
+        .as_ref()
+        .and_then(|t| short(t.session_id.as_deref()))
+        .or_else(|| short(header(headers, "session-id")))
+        .or_else(|| thread_id.clone());
+    let model = short(peek.model.as_deref());
     let structured_output = peek
         .text
         .as_ref()
@@ -170,13 +231,15 @@ fn peek_with(headers: &HeaderMap, body: &[u8], transport: RequestTransport) -> R
         originator,
         thread_id,
         turn_id: turn.as_ref().and_then(|t| short(t.turn_id.as_deref())),
-        request_kind: turn
-            .as_ref()
-            .and_then(|t| t.request_kind.as_deref().map(request_kind)),
-        thread_source: turn
-            .as_ref()
-            .and_then(|t| short(t.thread_source.as_ref().and_then(serde_json::Value::as_str))),
-        model: short(peek.model.as_deref()),
+        agent_kind: codex_agent_kind(request_kind, thread_source.as_deref()),
+        request_kind,
+        thread_source,
+        requested_model: model.clone(),
+        model,
+        harness,
+        harness_version,
+        protocol: RequestProtocol::Responses,
+        session_id,
         service_tier: short(peek.service_tier.as_deref()),
         prompt_cache_key: short(peek.prompt_cache_key.as_deref()),
         continuation: peek.previous_response_id.is_some_and(|p| !p.is_empty()),

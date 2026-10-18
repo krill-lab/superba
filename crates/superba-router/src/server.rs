@@ -21,7 +21,7 @@ use tracing::Instrument;
 
 use crate::admin::{self, ADMIN_PREFIX, VERSION};
 use crate::config::{ROUTER_BASE_PATH, ROUTER_V1_PATH, RouterConfig, RouterSecrets};
-use crate::forward::{CODEX_HOST_HEADER, local_busy, router_error};
+use crate::forward::{CODEX_HOST_HEADER, HARNESS_HEADER, local_busy, router_error};
 use crate::limits::{Budget, Busy, ConnSlot, LOCAL_BUSY_CODE, Limits, Place, file_limit_in};
 use crate::paths::RouterPaths;
 use crate::probe::health_loop;
@@ -30,7 +30,7 @@ use crate::state::{Generation, RespBody, Shared, Totals, unix_ms};
 use crate::stats::hub::{End, StatsHub, now_ms};
 use crate::stats::meta;
 use crate::status::RouterStatus;
-use crate::token::{self, bearer, constant_time_eq, verify_source_token};
+use crate::token::{self, Presenter, bearer, constant_time_eq, verify_source_token};
 use crate::{proxy, ws};
 
 /// How long a shutdown waits for open connections to finish.
@@ -136,6 +136,7 @@ impl RouterServer {
             limits: Limits::new(budget),
             stats_retry: Mutex::new(None),
             wsl_bound: Mutex::new(Vec::new()),
+            claude: crate::claude::ClaudeState::default(),
         });
         shared.apply_stats(shared.current().config.stats.as_ref());
         Ok(Self { shared, listener })
@@ -560,16 +561,20 @@ fn close_now(state: &ConnState) -> bool {
     }
 }
 
-/// Which Codex host a bearer token belongs to: `Some(None)` for this
-/// computer's router token (loopback only), `Some(Some(source))` for a source
-/// token (a WSL listener accepts only `wsl:` sources), `None` when it is
-/// neither.
-fn authenticate(router_token: &[u8], presented: &[u8], entry: Entry) -> Option<Option<String>> {
+/// Who a presented token belongs to: this computer's router token (loopback
+/// only) names neither host nor harness; a source token names its host
+/// and/or harness ([`token::presenter_of`]; a WSL listener accepts only
+/// tokens of a `wsl:` host). `None` when it is neither.
+fn authenticate(router_token: &[u8], presented: &[u8], entry: Entry) -> Option<Presenter> {
     if entry == Entry::Loopback && constant_time_eq(presented, router_token) {
-        return Some(None);
+        return Some(Presenter::default());
     }
-    let source = verify_source_token(router_token, presented)?;
-    (entry == Entry::Loopback || source.starts_with("wsl:")).then_some(Some(source))
+    let presenter = token::presenter_of(&verify_source_token(router_token, presented)?);
+    let wsl = presenter
+        .host
+        .as_deref()
+        .is_some_and(|h| h.starts_with("wsl:"));
+    (entry == Entry::Loopback || wsl).then_some(presenter)
 }
 
 /// Route one request.
@@ -590,7 +595,8 @@ async fn dispatch(
         }
         return admin::handle(shared, req).await;
     }
-    let Some(rest) = strip_prefix(path) else {
+    let claude = crate::claude::ingress_rest(path);
+    let Some(rest) = claude.clone().or_else(|| strip_prefix(path)) else {
         return router_error(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -601,21 +607,49 @@ async fn dispatch(
         );
     };
     let generation = shared.current();
-    let host = req
+    let router_token = generation.router_token.expose().as_bytes();
+    let bearer_token = req
         .headers()
         .get(AUTHORIZATION)
-        .and_then(|v| bearer(v.as_bytes()))
-        .and_then(|t| authenticate(generation.router_token.expose().as_bytes(), t, entry));
+        .and_then(|v| bearer(v.as_bytes()));
+    // Claude Code sends its token as a bearer (`ANTHROPIC_AUTH_TOKEN`) or as
+    // `x-api-key` (`ANTHROPIC_API_KEY`).
+    let api_key = claude
+        .is_some()
+        .then(|| req.headers().get(crate::claude::API_KEY_HEADER))
+        .flatten()
+        .map(|v| v.as_bytes().trim_ascii())
+        .filter(|v| !v.is_empty());
+    let presenter = bearer_token
+        .or(api_key)
+        .and_then(|t| authenticate(router_token, t, entry));
     drop(generation);
-    // The Codex host is ours to say: a client's own header is dropped (and the
-    // header is never forwarded upstream).
+    // The host and harness are ours to say: a client's own headers are
+    // dropped (and the headers are never forwarded upstream).
     req.headers_mut().remove(CODEX_HOST_HEADER);
-    if let Some(Some(source)) = &host
-        && let Ok(v) = HeaderValue::from_str(source)
-    {
-        req.headers_mut().insert(CODEX_HOST_HEADER, v);
+    req.headers_mut().remove(HARNESS_HEADER);
+    if let Some(p) = &presenter {
+        if let Some(v) = p
+            .host
+            .as_deref()
+            .and_then(|h| HeaderValue::from_str(h).ok())
+        {
+            req.headers_mut().insert(CODEX_HOST_HEADER, v);
+        }
+        if let Some(h) = p.harness {
+            req.headers_mut()
+                .insert(HARNESS_HEADER, HeaderValue::from_static(h.id()));
+        }
     }
-    if host.is_none() {
+    if presenter.is_none() {
+        if claude.is_some() {
+            shared.totals.rejected.fetch_add(1, Ordering::Relaxed);
+            return crate::claude::error::local(
+                StatusCode::UNAUTHORIZED,
+                crate::claude::error::Kind::Authentication,
+                "missing or wrong router token (Claude Code's ANTHROPIC_AUTH_TOKEN must be the token Superba wrote)",
+            );
+        }
         shared.totals.rejected.fetch_add(1, Ordering::Relaxed);
         return router_error(
             StatusCode::UNAUTHORIZED,
@@ -628,9 +662,17 @@ async fn dispatch(
     let started_ms = now_ms();
     let admission = match shared.limits.admit(wait).await {
         Ok(admission) => admission,
+        Err(Busy) if claude.is_some() => {
+            let message = shared.local_busy();
+            let limit = shared.current().config.tuning.max_body_bytes;
+            drain(req.into_body(), limit).await;
+            return crate::claude::error::local_busy(&message);
+        }
         Err(Busy) => return busy(&shared, req, &rest, t0, started_ms).await,
     };
-    if ws::is_upgrade(&req) {
+    if claude.is_some() {
+        crate::claude::handle(shared, req, rest, admission).await
+    } else if ws::is_upgrade(&req) {
         ws::proxy_ws(shared, req, rest, admission).await
     } else {
         proxy::proxy_http(shared, req, rest, admission).await

@@ -205,6 +205,143 @@ impl RequestClient {
     }
 }
 
+/// The tool (harness) that sent a request. Decided by the router token it
+/// presented (Superba gives each harness its own derived token), else by its
+/// `User-Agent` ([`RequestHarness::from_user_agent`]).
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum RequestHarness {
+    /// OpenAI Codex (desktop app, terminal, `codex exec`).
+    #[default]
+    Codex,
+    /// Claude Code.
+    ClaudeCode,
+    /// A client that could not be identified.
+    Unknown,
+}
+
+impl RequestHarness {
+    /// Every harness, in display order.
+    pub const ALL: [RequestHarness; 3] = [
+        RequestHarness::Codex,
+        RequestHarness::ClaudeCode,
+        RequestHarness::Unknown,
+    ];
+
+    /// Stable id (`codex`, `claude-code`, `unknown`), as tokens and `spb` name it.
+    pub fn id(self) -> &'static str {
+        match self {
+            RequestHarness::Codex => "codex",
+            RequestHarness::ClaudeCode => "claude-code",
+            RequestHarness::Unknown => "unknown",
+        }
+    }
+
+    /// The harness of an [`id`](Self::id).
+    pub fn from_id(id: &str) -> Option<RequestHarness> {
+        Self::ALL.into_iter().find(|h| h.id() == id)
+    }
+
+    /// Display text.
+    pub fn text(self) -> LocalizedText {
+        match self {
+            RequestHarness::Codex => LocalizedText::new("request_harness.codex", "Codex"),
+            RequestHarness::ClaudeCode => {
+                LocalizedText::new("request_harness.claude_code", "Claude Code")
+            }
+            RequestHarness::Unknown => LocalizedText::new("request_harness.unknown", "Other tool"),
+        }
+    }
+
+    /// The harness and its version named by a `User-Agent` value (the
+    /// fallback when the router token does not say): `claude-cli/2.1.302
+    /// (external, cli)` is Claude Code 2.1.302, `codex_cli_rs/0.162.0 (…)` and
+    /// `Codex Desktop/…` are Codex.
+    pub fn from_user_agent(user_agent: &str) -> Option<(RequestHarness, Option<String>)> {
+        let product = user_agent.trim().split([' ', '(']).next()?;
+        let (name, version) = match product.split_once('/') {
+            Some((n, v)) => (n, Some(v)),
+            None => (product, None),
+        };
+        let name = name.to_ascii_lowercase();
+        let harness = if name == "claude-cli" || name == "claude-code" {
+            RequestHarness::ClaudeCode
+        } else if name.starts_with("codex") {
+            RequestHarness::Codex
+        } else {
+            return None;
+        };
+        let version = version
+            .map(str::trim)
+            .filter(|v| !v.is_empty() && v.len() <= 64)
+            .map(str::to_owned);
+        Some((harness, version))
+    }
+}
+
+/// The API protocol a tool spoke to the router.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum RequestProtocol {
+    /// OpenAI Responses (`/responses`, HTTP or WebSocket).
+    #[default]
+    Responses,
+    /// OpenAI Chat Completions (`/chat/completions`).
+    ChatCompletions,
+    /// Anthropic Messages (`/v1/messages`).
+    Messages,
+}
+
+impl RequestProtocol {
+    /// Display text.
+    pub fn text(self) -> LocalizedText {
+        match self {
+            RequestProtocol::Responses => {
+                LocalizedText::new("request_protocol.responses", "Responses API")
+            }
+            RequestProtocol::ChatCompletions => {
+                LocalizedText::new("request_protocol.chat_completions", "Chat Completions")
+            }
+            RequestProtocol::Messages => {
+                LocalizedText::new("request_protocol.messages", "Anthropic Messages")
+            }
+        }
+    }
+}
+
+/// Which agent of a session sent a request.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum AgentKind {
+    /// The main conversation.
+    #[default]
+    Main,
+    /// A subagent (Codex sub-agent thread, Claude Code Task agent).
+    Subagent,
+    /// Background work: titles, memory, compaction, side questions.
+    Background,
+}
+
+impl AgentKind {
+    /// Display text.
+    pub fn text(self) -> LocalizedText {
+        match self {
+            AgentKind::Main => LocalizedText::new("agent_kind.main", "Main"),
+            AgentKind::Subagent => LocalizedText::new("agent_kind.subagent", "Subagent"),
+            AgentKind::Background => LocalizedText::new("agent_kind.background", "Background"),
+        }
+    }
+}
+
 /// `request_kind` of Codex's turn metadata.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -404,32 +541,64 @@ pub struct RequestRow {
     /// Stats lines removed from the request.
     #[serde(default)]
     pub stripped: u32,
-    /// Upstream `x-request-id`.
+    /// Upstream request id (`x-request-id`, Anthropic `request-id`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream_request_id: Option<String>,
+    /// The upstream's id of the answer (`resp_…`, Anthropic `msg_…`): with
+    /// the request id what tools' own transcripts keep, so imported rows can
+    /// be matched with the router's. Ids only, never content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_id: Option<String>,
     /// Where the row comes from (router log or Codex rollout).
     #[serde(default)]
     pub source: RequestSource,
     /// The Codex host that sent the request: `None` = this computer,
     /// `wsl:<distro>` = a WSL distribution (router rows, user bug 45; rollout
-    /// rows of a distribution name it the same way).
+    /// rows of a distribution name it the same way). The host of every
+    /// harness, not only Codex.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex_host: Option<String>,
+    /// The tool that sent the request.
+    #[serde(default)]
+    pub harness: RequestHarness,
+    /// Its version (from its `User-Agent`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_version: Option<String>,
+    /// The protocol the tool spoke to the router.
+    #[serde(default)]
+    pub protocol: RequestProtocol,
+    /// The model the tool asked for. [`RequestRow::model`] is the model the
+    /// router served it with: they differ when the router maps a tool's own
+    /// model id (Claude Code's `claude-haiku-4-5` served by `gpt-5.4-mini`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_model: Option<String>,
+    /// The tool's session id (Codex `session-id`, Claude Code
+    /// `X-Claude-Code-Session-Id`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Main conversation, subagent or background work, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_kind: Option<AgentKind>,
 }
 
 impl RequestRow {
     /// The client, with the Codex host it ran on when that is not this computer
-    /// ("Terminal · WSL: Ubuntu", user bug 45).
+    /// ("Terminal · WSL: Ubuntu", user bug 45). Rows of another harness name
+    /// that harness ("Claude Code").
     pub fn client_text(&self) -> LocalizedText {
+        let client = match self.harness {
+            RequestHarness::Codex => self.client.text(),
+            other => other.text(),
+        };
         match self
             .codex_host
             .as_deref()
             .and_then(crate::wsl::distro_of_router_source)
         {
             Some(distro) => LocalizedText::new("request_host.client_on_host", "{client} · {host}")
-                .arg_text("client", self.client.text())
+                .arg_text("client", client)
                 .arg_text("host", crate::target::wsl_title(distro)),
-            None => self.client.text(),
+            None => client,
         }
     }
 

@@ -305,6 +305,12 @@ fn every_usage_text_has_complete_translations_and_arguments() {
 }
 
 #[test]
+fn claude_routing_reasons_have_complete_translations() {
+    let texts = vec![superba_core::ClaudeIneligible::NoAnthropicEndpoint.text()];
+    assert_catalog_contract("claude_routing.", &texts);
+}
+
+#[test]
 fn every_router_line_health_has_complete_translations() {
     let texts: Vec<_> = [
         RouterLineHealth::Healthy,
@@ -725,6 +731,29 @@ fn every_requests_area_text_has_complete_translations() {
     .map(|c| c.text())
     .collect();
     assert_catalog_contract("request_client.", &clients);
+    let harnesses: Vec<_> = superba_core::RequestHarness::ALL
+        .iter()
+        .map(|h| h.text())
+        .collect();
+    assert_catalog_contract("request_harness.", &harnesses);
+    let protocols: Vec<_> = [
+        superba_core::RequestProtocol::Responses,
+        superba_core::RequestProtocol::ChatCompletions,
+        superba_core::RequestProtocol::Messages,
+    ]
+    .iter()
+    .map(|p| p.text())
+    .collect();
+    assert_catalog_contract("request_protocol.", &protocols);
+    let agents: Vec<_> = [
+        superba_core::AgentKind::Main,
+        superba_core::AgentKind::Subagent,
+        superba_core::AgentKind::Background,
+    ]
+    .iter()
+    .map(|a| a.text())
+    .collect();
+    assert_catalog_contract("agent_kind.", &agents);
     let statuses: Vec<_> = [
         RequestStatus::Ok,
         RequestStatus::Http {

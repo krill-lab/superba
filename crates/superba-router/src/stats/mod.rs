@@ -31,8 +31,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use superba_core::{
-    Catalog, Error, Locale, Multiplier, PriceEntry, PriceTable, Result, RouterStatsSettings,
-    StatsLineStyle,
+    Catalog, Error, Locale, Multiplier, PriceEntry, PriceTable, RequestHarness, Result,
+    RouterStatsSettings, StatsLineStyle,
 };
 
 use crate::members::router_id;
@@ -94,6 +94,15 @@ pub struct StatsLineConfig {
     /// `originator` header values that get the line (`codex_exec` never does,
     /// even when listed).
     pub originators: Vec<String>,
+    /// Harnesses that get the line (Codex also by `originators`; Claude Code
+    /// on the final answer of its main conversation).
+    #[serde(default = "default_line_harnesses")]
+    pub harnesses: Vec<RequestHarness>,
+}
+
+/// Codex and Claude Code: the harnesses that get the line by default.
+pub fn default_line_harnesses() -> Vec<RequestHarness> {
+    vec![RequestHarness::Codex, RequestHarness::ClaudeCode]
 }
 
 /// Prices of the cost estimates: the table plus per-member adjustments (member
@@ -132,6 +141,7 @@ impl StatsConfig {
                 .iter()
                 .map(|c| c.originator().to_owned())
                 .collect(),
+            harnesses: settings.line.harnesses.clone(),
         });
         StatsConfig {
             record: settings.record,

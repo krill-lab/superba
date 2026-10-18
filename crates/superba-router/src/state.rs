@@ -94,6 +94,8 @@ pub(crate) struct Generation {
     /// Client for unauthenticated health probes (with a total timeout).
     pub probe: reqwest::Client,
     pub sticky: Mutex<StickyTable>,
+    /// The Claude Code ingress of this configuration.
+    pub claude: Option<crate::claude::rt::ClaudeRt>,
 }
 
 impl Generation {
@@ -143,6 +145,11 @@ impl Generation {
                     .collect(),
             });
         }
+        let claude = config
+            .claude
+            .as_ref()
+            .map(|c| crate::claude::rt::ClaudeRt::build(c, &config.members, secrets))
+            .transpose()?;
         let http = build_client(&config, ClientKind::Http, budget)?;
         let ws = build_client(&config, ClientKind::WebSocket, budget)?;
         let probe = build_client(&config, ClientKind::Probe, budget)?;
@@ -155,6 +162,7 @@ impl Generation {
             router_token: secrets.router_token.clone(),
             config,
             members,
+            claude,
             http,
             ws,
             probe,
@@ -249,8 +257,10 @@ impl Topology for View<'_> {
         self.generation.members[member].lines.len()
     }
     fn eligible(&self, member: usize) -> bool {
-        (!self.websocket_only || self.generation.members[member].cfg.websocket)
+        let m = &self.generation.members[member];
+        (!self.websocket_only || m.cfg.websocket)
             && self.route.allows(member)
+            && self.generation.config.serves_codex(&m.cfg.id)
     }
     fn available(&self, member: usize, line: usize, now: Instant) -> bool {
         lock(&self.generation.members[member].lines[line].health).is_available(now)
@@ -296,6 +306,9 @@ pub(crate) struct Shared {
     pub stats_retry: Mutex<Option<Instant>>,
     /// WSL listeners currently bound (user bug 45).
     pub wsl_bound: Mutex<Vec<SocketAddr>>,
+    /// Claude Code ingress state kept across reloads (model lists,
+    /// `count_tokens` support).
+    pub claude: crate::claude::ClaudeState,
 }
 
 impl Shared {

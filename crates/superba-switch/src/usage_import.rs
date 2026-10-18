@@ -465,6 +465,13 @@ fn request_row(source: ImportSource, r: &rusqlite::Row<'_>) -> rusqlite::Result<
         upstream_request_id: None,
         source: RequestSource::of_import(source),
         codex_host: None,
+        harness: superba_core::RequestHarness::Codex,
+        harness_version: None,
+        response_id: None,
+        protocol: superba_core::RequestProtocol::Responses,
+        requested_model: None,
+        session_id: None,
+        agent_kind: None,
     })
 }
 

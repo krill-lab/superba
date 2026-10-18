@@ -189,3 +189,7 @@ restore = "还原"
 healthy = "正常"
 open = "已跳过（连续失败）"
 half_open = "重试中"
+
+# 供应商不能用于 Claude Code 的原因（Claude Code 页面、路由）。
+[claude_routing]
+no_anthropic_endpoint = "该供应商没有 Anthropic 端点；协议转换将在 0.1.2 提供"

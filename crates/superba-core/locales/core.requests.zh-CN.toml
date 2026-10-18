@@ -49,3 +49,21 @@ unknown = "未知"
 # The Codex host of a request that is not this computer (user bug 45).
 [request_host]
 client_on_host = "{client} · {host}"
+
+# 发出请求的工具（用量页、请求详情、spb usage）。
+[request_harness]
+codex = "Codex"
+claude_code = "Claude Code"
+unknown = "其他工具"
+
+# 请求的 API 协议（工具使用的协议、发往上游的协议）。
+[request_protocol]
+responses = "Responses API"
+chat_completions = "Chat Completions"
+messages = "Anthropic Messages"
+
+# 会话中发出请求的代理。
+[agent_kind]
+main = "主对话"
+subagent = "子代理"
+background = "后台任务"

@@ -619,6 +619,7 @@ async fn configure_sets_the_stats_section_and_member_rewrites_keep_it() {
             template: "⚡ {tps} tok/s".into(),
             style: Default::default(),
             originators: vec!["Codex Desktop".into()],
+            harnesses: superba_router::stats::default_line_harnesses(),
         }),
         ..StatsConfig::default()
     };

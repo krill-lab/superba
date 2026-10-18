@@ -64,6 +64,7 @@ async fn router_with(
             template: "⚡ {tps} tok/s · 首字 {ttft} · 本轮 {input} in / {output} out".into(),
             style: Default::default(),
             originators: vec!["Codex Desktop".into()],
+            harnesses: superba_router::stats::default_line_harnesses(),
         }),
         ..StatsConfig::default()
     });

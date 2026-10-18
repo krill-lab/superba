@@ -23,6 +23,8 @@ const JSON_CAP: usize = 4 * 1024 * 1024;
 pub(crate) enum Mode {
     /// An SSE stream through the tap.
     Sse(Box<SseTap>),
+    /// An Anthropic Messages stream through its tap (Claude Code ingress).
+    Anthropic(Box<crate::claude::tap::AnthropicSse>),
     /// A JSON answer, copied (capped) for its usage or error code.
     Json {
         /// The copy.
@@ -67,7 +69,11 @@ pub(crate) struct TapBody<B: Body> {
 impl<B: Body> TapBody<B> {
     /// Wrap `inner`.
     pub fn new(inner: B, mode: Mode, tracker: Tracker) -> Self {
-        let rewrites = matches!(&mode, Mode::Sse(t) if t.tap().may_inject());
+        let rewrites = match &mode {
+            Mode::Sse(t) => t.tap().may_inject(),
+            Mode::Anthropic(t) => t.may_inject(),
+            _ => false,
+        };
         let expected = inner.size_hint().exact();
         Self {
             inner,
@@ -98,6 +104,19 @@ impl<B: Body> TapBody<B> {
                         InflightPhase::Streaming
                     };
                     let tap = tap.tap();
+                    t.inflight().update(phase, tap.deltas(), tap.first_token());
+                }
+            }
+            Mode::Anthropic(tap) => {
+                let mut out = Vec::new();
+                tap.push_at(data, &mut Instant::now, &mut out);
+                self.queue.extend(out);
+                if let Some(t) = &self.tracker {
+                    let phase = if tap.holding() {
+                        InflightPhase::Holding
+                    } else {
+                        InflightPhase::Streaming
+                    };
                     t.inflight().update(phase, tap.deltas(), tap.first_token());
                 }
             }
@@ -132,11 +151,28 @@ impl<B: Body> TapBody<B> {
                     summary: Some(summary),
                     status,
                     json_usage: None,
+                    json_id: None,
+                }
+            }
+            Mode::Anthropic(tap) => {
+                let mut out = Vec::new();
+                tap.finish(&mut out);
+                self.queue.extend(out);
+                let summary = tap.summary();
+                let status = summary.outcome.is_none().then_some(RequestStatus::Broken);
+                End {
+                    error: status
+                        .as_ref()
+                        .map(|_| "the stream ended before message_stop".to_owned()),
+                    summary: Some(summary),
+                    status,
+                    json_usage: None,
+                    json_id: None,
                 }
             }
             Mode::Json { buf, over, status } => {
-                let (usage, code) = if *over {
-                    (None, None)
+                let (usage, code, id) = if *over {
+                    (None, None, None)
                 } else {
                     json_answer(buf)
                 };
@@ -145,6 +181,7 @@ impl<B: Body> TapBody<B> {
                     status: (!(200..300).contains(&status))
                         .then_some(RequestStatus::Http { status, code }),
                     json_usage: usage,
+                    json_id: id,
                     ..End::default()
                 }
             }
@@ -165,6 +202,7 @@ impl<B: Body> TapBody<B> {
     fn on_error(&mut self, detail: String) {
         let summary = match &self.mode {
             Mode::Sse(tap) => Some(tap.tap().summary()),
+            Mode::Anthropic(tap) => Some(tap.summary()),
             _ => None,
         };
         if let Some(t) = self.tracker.take() {
@@ -173,6 +211,7 @@ impl<B: Body> TapBody<B> {
                 status: Some(RequestStatus::Broken),
                 error: Some(detail),
                 json_usage: None,
+                json_id: None,
             });
         }
     }
@@ -181,6 +220,7 @@ impl<B: Body> TapBody<B> {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct JsonAnswer {
+    id: Option<String>,
     usage: Option<UsageWire>,
     response: Option<JsonResponse>,
     error: Option<JsonError>,
@@ -189,6 +229,7 @@ struct JsonAnswer {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct JsonResponse {
+    id: Option<String>,
     usage: Option<UsageWire>,
 }
 
@@ -200,15 +241,17 @@ struct JsonError {
     kind: Option<serde_json::Value>,
 }
 
-/// Usage and error code of a JSON answer.
-fn json_answer(buf: &[u8]) -> (Option<Usage>, Option<String>) {
+/// Usage, error code and the answer's id of a JSON answer.
+fn json_answer(buf: &[u8]) -> (Option<Usage>, Option<String>, Option<String>) {
     let Ok(a) = serde_json::from_slice::<JsonAnswer>(buf) else {
-        return (None, None);
+        return (None, None, None);
     };
-    let usage = a
-        .usage
-        .or(a.response.and_then(|r| r.usage))
-        .and_then(Usage::from_wire);
+    let (rid, rusage) = a.response.map(|r| (r.id, r.usage)).unwrap_or_default();
+    let id =
+        a.id.or(rid)
+            .filter(|i| !i.is_empty())
+            .map(|i| super::tap::clip_id(&i));
+    let usage = a.usage.or(rusage).and_then(Usage::from_wire);
     let code = a.error.and_then(|e| {
         [e.code, e.kind]
             .into_iter()
@@ -219,7 +262,7 @@ fn json_answer(buf: &[u8]) -> (Option<Usage>, Option<String>) {
                 _ => None,
             })
     });
-    (usage, code)
+    (usage, code, id)
 }
 
 impl<B> Body for TapBody<B>
@@ -266,7 +309,9 @@ where
         }
         // The SSE tap may still release held bytes at the end; other answers
         // pass unchanged, so the inner body knows.
-        self.ended || (!matches!(self.mode, Mode::Sse(_)) && self.inner.is_end_stream())
+        self.ended
+            || (!matches!(self.mode, Mode::Sse(_) | Mode::Anthropic(_))
+                && self.inner.is_end_stream())
     }
 
     fn size_hint(&self) -> SizeHint {
@@ -294,6 +339,7 @@ impl<B: Body> Drop for TapBody<B> {
         if let Some(t) = self.tracker.take() {
             let summary = match &self.mode {
                 Mode::Sse(tap) => Some(tap.tap().summary()),
+                Mode::Anthropic(tap) => Some(tap.summary()),
                 _ => None,
             };
             t.finish(End {

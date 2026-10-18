@@ -133,6 +133,13 @@ fn row() -> RequestRow {
         upstream_request_id: Some("req_123".into()),
         source: superba_core::RequestSource::Router,
         codex_host: None,
+        harness: superba_core::RequestHarness::Codex,
+        harness_version: None,
+        response_id: None,
+        protocol: superba_core::RequestProtocol::Responses,
+        requested_model: None,
+        session_id: None,
+        agent_kind: None,
     }
 }
 
@@ -586,6 +593,32 @@ fn request_clients_come_from_the_originator() {
         RequestClient::Other
     );
     assert_eq!(RequestClient::from_originator(None), RequestClient::Other);
+}
+
+#[test]
+fn harnesses_come_from_the_user_agent_and_round_trip_their_ids() {
+    use superba_core::RequestHarness as H;
+    assert_eq!(
+        H::from_user_agent("claude-cli/2.1.302 (external, sdk-cli)"),
+        Some((H::ClaudeCode, Some("2.1.302".into())))
+    );
+    assert_eq!(
+        H::from_user_agent("codex_cli_rs/0.162.0 (Ubuntu 24.4.0; x86_64) xterm"),
+        Some((H::Codex, Some("0.162.0".into())))
+    );
+    assert_eq!(H::from_user_agent("Codex Desktop"), Some((H::Codex, None)));
+    assert_eq!(H::from_user_agent("curl/8.5.0"), None);
+    assert_eq!(H::from_user_agent(""), None);
+    for h in H::ALL {
+        assert_eq!(H::from_id(h.id()), Some(h));
+    }
+    let row = row();
+    assert_eq!(row.harness, H::Codex);
+    let mut claude = row.clone();
+    claude.harness = H::ClaudeCode;
+    let back: RequestRow = serde_json::from_value(serde_json::to_value(&claude).unwrap()).unwrap();
+    assert_eq!(back.harness, H::ClaudeCode);
+    assert_eq!(claude.client_text().key, "request_harness.claude_code");
 }
 
 #[test]
@@ -1515,6 +1548,7 @@ fn v3_settings_round_trip_with_every_field_set() {
         line: StatsLineSettings {
             enabled: true,
             clients: vec![StatsLineClient::Desktop, StatsLineClient::Tui],
+            harnesses: vec![superba_core::RequestHarness::Codex],
             metrics: vec![
                 StatsMetric::Cost,
                 StatsMetric::Requests,

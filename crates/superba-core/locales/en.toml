@@ -189,3 +189,7 @@ restore = "Restore"
 healthy = "Healthy"
 open = "Skipped (failing)"
 half_open = "Retrying"
+
+# Why a provider cannot serve Claude Code (Claude Code pages, router).
+[claude_routing]
+no_anthropic_endpoint = "This provider has no Anthropic endpoint; protocol conversion comes in 0.1.2"

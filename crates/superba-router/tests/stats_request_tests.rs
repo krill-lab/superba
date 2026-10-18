@@ -173,6 +173,7 @@ fn the_gating_matrix_follows_the_spike_rules() {
         template: "⚡ {tps}".into(),
         style: StatsLineStyle::Quote,
         originators: vec!["Codex Desktop".into()],
+        harnesses: superba_router::stats::default_line_harnesses(),
     };
     let with_tui = StatsLineConfig {
         originators: vec![

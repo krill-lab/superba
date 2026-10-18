@@ -146,6 +146,8 @@ pub struct TapSummary {
     pub usage: Option<Usage>,
     /// `response.model`.
     pub response_model: Option<String>,
+    /// The upstream's id of the answer (`resp_…`; Anthropic `msg_…`).
+    pub response_id: Option<String>,
     /// `response.service_tier`.
     pub response_tier: Option<String>,
     /// How it ended (`None`: no terminal event seen).
@@ -202,6 +204,7 @@ pub struct ResponseTap {
     items: Vec<Item>,
     usage: Option<Usage>,
     response_model: Option<String>,
+    response_id: Option<String>,
     response_tier: Option<String>,
     outcome: Option<Outcome>,
     candidate: Option<Candidate>,
@@ -275,6 +278,8 @@ struct IncompletePeek {
 struct ResponsePeek<'a> {
     usage: Option<UsageWire>,
     #[serde(borrow)]
+    id: Option<Cow<'a, str>>,
+    #[serde(borrow)]
     model: Option<Cow<'a, str>>,
     #[serde(borrow)]
     service_tier: Option<Cow<'a, str>>,
@@ -296,6 +301,11 @@ fn clip(s: &str) -> String {
     s.chars().take(64).collect()
 }
 
+/// Ids are kept whole up to 128 characters.
+pub(crate) fn clip_id(s: &str) -> String {
+    s.chars().take(128).collect()
+}
+
 impl ResponseTap {
     /// A tap for a request received at `t0`; `line` is `Some` only when the
     /// request may get the stats line.
@@ -311,6 +321,7 @@ impl ResponseTap {
             items: Vec::new(),
             usage: None,
             response_model: None,
+            response_id: None,
             response_tier: None,
             outcome: None,
             candidate: None,
@@ -412,6 +423,10 @@ impl ResponseTap {
                     id: item.id.map(Cow::into_owned),
                 });
             }
+            EventKind::Created if self.response_id.is_none() => {
+                let peek: TerminalPeek<'_> = serde_json::from_slice(json).unwrap_or_default();
+                self.response_id = peek.response.and_then(|r| r.id).as_deref().map(clip_id);
+            }
             _ => {}
         }
         if kind.is_terminal() {
@@ -481,6 +496,9 @@ impl ResponseTap {
         if let Some(r) = &peek.response {
             self.response_model = r.model.as_deref().map(clip);
             self.response_tier = r.service_tier.as_deref().map(clip);
+            if let Some(id) = r.id.as_deref() {
+                self.response_id = Some(clip_id(id));
+            }
         }
         let response = peek.response;
         self.outcome = Some(match kind {
@@ -514,33 +532,12 @@ impl ResponseTap {
     fn line_suffix(&self) -> Option<String> {
         let line = self.line.as_ref()?;
         self.candidate.as_ref()?;
-        let usage = self.usage.unwrap_or_default();
-        let summary = self.summary();
-        let tps = summary.tps_milli().map(|m| group_digits((m + 500) / 1000));
-        let ttft = summary
-            .first_token_ms()
-            .map(|ms| format!("{:.2}s", ms as f64 / 1000.0));
-        let own_cost = line
-            .price
-            .as_ref()
-            .filter(|_| self.usage.is_some())
-            .and_then(|p| price::cost(p, &usage, self.response_tier.as_deref(), line.ratio));
-        let cost = match (line.turn.cost, own_cost) {
-            (None, None) => None,
-            (a, b) => Some(Usd::from_micros(
-                a.map_or(0, Usd::micros) + b.map_or(0, Usd::micros),
-            )),
-        };
-        let values = inject::LineValues {
-            tps,
-            ttft,
-            input: line.turn.input.saturating_add(usage.input),
-            output: line.turn.output.saturating_add(usage.output),
-            cached: line.turn.cached.saturating_add(usage.cached.unwrap_or(0)),
-            cost,
-            requests: line.turn.requests.saturating_add(1),
-        };
-        Some(inject::render_suffix(&line.template, line.style, &values))
+        Some(render_line(
+            line,
+            &self.summary(),
+            self.usage,
+            self.response_tier.as_deref(),
+        ))
     }
 
     /// The measurements so far.
@@ -553,6 +550,7 @@ impl ResponseTap {
             end: since(self.end),
             usage: self.usage,
             response_model: self.response_model.clone(),
+            response_id: self.response_id.clone(),
             response_tier: self.response_tier.clone(),
             outcome: self.outcome.clone(),
             deltas: self.deltas,
@@ -808,6 +806,43 @@ impl SseTap {
     pub fn into_tap(self) -> ResponseTap {
         self.tap
     }
+}
+
+/// The stats line suffix (`"\n\n> ⚡ …"`) of an answer measured as `summary`
+/// with `usage` (tier `tier`), added to the turn so far in `line`. Shared by
+/// the Responses tap and the Claude Code ingress.
+pub(crate) fn render_line(
+    line: &LineSetup,
+    summary: &TapSummary,
+    usage: Option<Usage>,
+    tier: Option<&str>,
+) -> String {
+    let own = usage.unwrap_or_default();
+    let tps = summary.tps_milli().map(|m| group_digits((m + 500) / 1000));
+    let ttft = summary
+        .first_token_ms()
+        .map(|ms| format!("{:.2}s", ms as f64 / 1000.0));
+    let own_cost = line
+        .price
+        .as_ref()
+        .filter(|_| usage.is_some())
+        .and_then(|p| price::cost(p, &own, tier, line.ratio));
+    let cost = match (line.turn.cost, own_cost) {
+        (None, None) => None,
+        (a, b) => Some(Usd::from_micros(
+            a.map_or(0, Usd::micros) + b.map_or(0, Usd::micros),
+        )),
+    };
+    let values = inject::LineValues {
+        tps,
+        ttft,
+        input: line.turn.input.saturating_add(own.input),
+        output: line.turn.output.saturating_add(own.output),
+        cached: line.turn.cached.saturating_add(own.cached.unwrap_or(0)),
+        cost,
+        requests: line.turn.requests.saturating_add(1),
+    };
+    inject::render_suffix(&line.template, line.style, &values)
 }
 
 #[cfg(test)]

@@ -45,6 +45,7 @@ fn stats(line: bool) -> StatsConfig {
             template: LINE_TEMPLATE.into(),
             style: StatsLineStyle::Quote,
             originators: vec!["Codex Desktop".into()],
+            harnesses: superba_router::stats::default_line_harnesses(),
         }),
         prices: PriceConfig {
             table: PriceTable {

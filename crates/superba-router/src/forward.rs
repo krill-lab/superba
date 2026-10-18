@@ -22,7 +22,7 @@ use crate::status::RouteEventKind;
 pub const ROUTE_HEADER: &str = "x-superba-route";
 
 /// Hop-by-hop headers (RFC 9110 7.6.1) plus the legacy proxy ones.
-const HOP_BY_HOP: &[&str] = &[
+pub(crate) const HOP_BY_HOP: &[&str] = &[
     "connection",
     "keep-alive",
     "proxy-connection",
@@ -39,14 +39,19 @@ const HOP_BY_HOP: &[&str] = &[
 /// read into the request log; never forwarded.
 pub const CODEX_HOST_HEADER: &str = "x-superba-codex-host";
 
+/// The harness a request's router token named (`claude-code`; absent for the
+/// plain router token), set by the router after checking the token and read
+/// into the request log; never forwarded.
+pub const HARNESS_HEADER: &str = "x-superba-harness";
+
 /// Request headers never forwarded to a member: codex's credential is replaced
 /// by the member's own key, and ChatGPT account routing belongs to PAT mode.
-const DROPPED_REQUEST: &[&str] = &["chatgpt-account-id", CODEX_HOST_HEADER];
+const DROPPED_REQUEST: &[&str] = &["chatgpt-account-id", CODEX_HOST_HEADER, HARNESS_HEADER];
 
 /// Turn routing token issued by one provider; meaningless to another.
 pub const TURN_STATE_HEADER: &str = "x-codex-turn-state";
 
-fn connection_tokens(headers: &HeaderMap) -> Vec<String> {
+pub(crate) fn connection_tokens(headers: &HeaderMap) -> Vec<String> {
     headers
         .get_all(http::header::CONNECTION)
         .iter()

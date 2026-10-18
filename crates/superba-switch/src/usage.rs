@@ -181,6 +181,13 @@ impl Attribution {
             upstream_request_id: None,
             source: RequestSource::Rollout,
             codex_host: None,
+            harness: superba_core::RequestHarness::Codex,
+            harness_version: None,
+            response_id: None,
+            protocol: superba_core::RequestProtocol::Responses,
+            requested_model: r.model.clone(),
+            session_id: Some(r.thread_id.clone()),
+            agent_kind: None,
         }
     }
 }

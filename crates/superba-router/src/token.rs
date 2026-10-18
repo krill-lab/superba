@@ -7,8 +7,15 @@
 //! derived from the router token. The router needs no list of sources: it
 //! recomputes the MAC of the source the token names, and request-log rows carry
 //! that source. Replacing the router token invalidates every source token.
+//!
+//! Harness tokens (multi-harness §1) are source tokens whose source names the
+//! tool they are written for: `h:<harness id>` on this computer,
+//! `h:<harness id>@wsl:<distro>` in a WSL distribution. Superba writes one into
+//! each harness's own configuration, so the token, not a guess from headers,
+//! decides which tool a request-log row belongs to.
 
 use sha2::{Digest, Sha256};
+use superba_core::RequestHarness;
 use uuid::Uuid;
 
 /// Prefix of a per-consumer source token.
@@ -38,14 +45,62 @@ fn hmac_sha256(key: &[u8], message: &[&[u8]]) -> [u8; 32] {
     outer.finalize().into()
 }
 
-/// A source id usable in a token: 1 to 80 characters of ASCII letters, digits
-/// and `: . _ -` (`wsl:Ubuntu-24.04`).
+/// A source id usable in a token: 1 to 120 characters of ASCII letters, digits
+/// and `: . _ - @` (`wsl:Ubuntu-24.04`, `h:claude-code@wsl:Debian`).
 pub fn valid_source(source: &str) -> bool {
     !source.is_empty()
-        && source.len() <= 80
+        && source.len() <= 120
         && source
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b':' | b'.' | b'_' | b'-'))
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b':' | b'.' | b'_' | b'-' | b'@'))
+}
+
+/// Source prefix of a harness token.
+const HARNESS_SOURCE_PREFIX: &str = "h:";
+
+/// The token of `harness` on `host` (`None` = this computer, else
+/// `wsl:<distro>`); see the module docs. `None` for an invalid host id.
+pub fn harness_token(
+    router_token: &[u8],
+    harness: RequestHarness,
+    host: Option<&str>,
+) -> Option<String> {
+    let source = match host {
+        None => format!("{HARNESS_SOURCE_PREFIX}{}", harness.id()),
+        Some(h) => format!("{HARNESS_SOURCE_PREFIX}{}@{h}", harness.id()),
+    };
+    source_token(router_token, &source)
+}
+
+/// What a verified source token says about its presenter.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Presenter {
+    /// The host (`wsl:<distro>`); `None` = this computer.
+    pub host: Option<String>,
+    /// The harness a harness token names.
+    pub harness: Option<RequestHarness>,
+}
+
+/// Split a verified source into its host and harness (`wsl:Debian` → host;
+/// `h:claude-code` → harness; `h:claude-code@wsl:Debian` → both). An unknown
+/// harness id names no harness.
+pub fn presenter_of(source: &str) -> Presenter {
+    match source.strip_prefix(HARNESS_SOURCE_PREFIX) {
+        Some(rest) => {
+            let (id, host) = match rest.split_once('@') {
+                Some((id, host)) => (id, Some(host.to_owned())),
+                None => (rest, None),
+            };
+            Presenter {
+                host,
+                harness: RequestHarness::from_id(id),
+            }
+        }
+        None => Presenter {
+            host: Some(source.to_owned()),
+            harness: None,
+        },
+    }
 }
 
 /// The token a Codex host `source` presents (see the module docs). `None` for an

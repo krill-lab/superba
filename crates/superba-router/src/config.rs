@@ -72,6 +72,11 @@ pub struct RouterConfig {
     /// address exists (WSL creates the adapter when its VM starts).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wsl_listen: Vec<std::net::Ipv4Addr>,
+    /// The Claude Code ingress (`/claude/v1/*`): how members serve Anthropic
+    /// Messages and which models go where. `None`: the ingress answers 404
+    /// for every model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<crate::claude::ClaudeConfig>,
 }
 
 /// An address the router may listen on for WSL: a private (RFC 1918) or
@@ -283,7 +288,13 @@ impl RouterConfig {
             extra_ca_file: None,
             stats: None,
             wsl_listen: Vec::new(),
+            claude: None,
         }
+    }
+
+    /// The member serves Codex requests (not reserved for Claude Code).
+    pub fn serves_codex(&self, id: &str) -> bool {
+        !self.claude.as_ref().is_some_and(|c| c.claude_only(id))
     }
 
     /// Look up a member.
@@ -359,6 +370,9 @@ impl RouterConfig {
         }
         if let Some(stats) = &self.stats {
             stats.validate()?;
+        }
+        if let Some(claude) = &self.claude {
+            claude.validate(self)?;
         }
         Ok(())
     }

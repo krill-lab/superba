@@ -141,6 +141,7 @@ async fn logs_stay_clean_while_recording() {
             template: "⚡ {tps} tok/s".into(),
             style: Default::default(),
             originators: vec!["Codex Desktop".into()],
+            harnesses: superba_router::stats::default_line_harnesses(),
         }),
         ..StatsConfig::default()
     });

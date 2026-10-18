@@ -131,8 +131,12 @@ pub enum StatsLineStyle {
 pub struct StatsLineSettings {
     /// Off by default.
     pub enabled: bool,
-    /// Clients that get it (default: the desktop app only).
+    /// Codex clients that get it (default: the desktop app only).
     pub clients: Vec<StatsLineClient>,
+    /// Harnesses that get it while it is on (default: Codex and Claude Code).
+    /// Codex follows [`StatsLineSettings::clients`] as well; Claude Code gets
+    /// it on the final answer of its main conversation.
+    pub harnesses: Vec<crate::requests::RequestHarness>,
     /// Metrics of the default template.
     pub metrics: Vec<StatsMetric>,
     /// Custom template (`{tps}`, `{ttft}`, `{input}`, `{output}`, `{cached}`,
@@ -243,6 +247,10 @@ impl Default for StatsLineSettings {
         Self {
             enabled: false,
             clients: vec![StatsLineClient::Desktop],
+            harnesses: vec![
+                crate::requests::RequestHarness::Codex,
+                crate::requests::RequestHarness::ClaudeCode,
+            ],
             metrics: vec![
                 StatsMetric::Tps,
                 StatsMetric::FirstToken,
@@ -274,6 +282,29 @@ pub struct RouterInstallRequest {
     /// Member profiles in priority order; empty = keep the current members.
     #[serde(default)]
     pub members: Vec<ProfileId>,
+}
+
+/// Why a provider cannot serve Claude Code (directly or through the local
+/// router). Until protocol conversion exists, Claude Code reaches only
+/// upstreams that speak Anthropic Messages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ClaudeIneligible {
+    /// The provider has no Anthropic Messages endpoint.
+    NoAnthropicEndpoint,
+}
+
+impl ClaudeIneligible {
+    /// Display text.
+    pub fn text(self) -> LocalizedText {
+        match self {
+            ClaudeIneligible::NoAnthropicEndpoint => LocalizedText::new(
+                "claude_routing.no_anthropic_endpoint",
+                "This provider has no Anthropic endpoint; protocol conversion comes in 0.1.2",
+            ),
+        }
+    }
 }
 
 /// Health of one router line.

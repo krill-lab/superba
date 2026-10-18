@@ -632,6 +632,68 @@ flight, busy answers, file-limit errors, the last one) feeds
 `RouterView::local`, `spb router status`, the doctor's capacity row and finding,
 and the Router page.
 
+**Claude Code ingress** (user request 79; `superba_router::claude`). The same
+process and port serve Anthropic Messages under `/claude`
+(`ANTHROPIC_BASE_URL = http://127.0.0.1:<port>/claude`,
+`superba_router::claude::base_url`): `POST /claude/v1/messages` (streamed or
+not), `POST /claude/v1/messages/count_tokens`, `GET /claude/v1/models[/<id>]`.
+Codex's prefixes are unchanged. The token comes as a bearer
+(`ANTHROPIC_AUTH_TOKEN`) or as `x-api-key`; errors are Anthropic-shaped
+(`authentication_error`, `not_found_error`, 529 `overloaded_error` for a local
+shortage, 502 `api_error` when no line answered).
+
+- **Members and eligibility.** `RouterConfig::claude` names which router
+  members serve Claude Code (same lines, keys, breakers, sticky table, budget
+  and request log) and each one's Anthropic endpoint: a path below every line's
+  origin (Krill's test relay `/codex`, DeepSeek `/anthropic`, GLM
+  `/api/anthropic`; empty for Krill's `/v1/messages`) or full URLs per line;
+  `/v1/messages` is appended. Requests are passed through; there is no protocol
+  conversion in this release, so a member without an Anthropic endpoint is not
+  eligible (`ClaudeMember::eligibility` → `superba_core::ClaudeIneligible::
+  NoAnthropicEndpoint`, "protocol conversion comes in 0.1.2"). A member can be
+  reserved for Claude Code (`claude_only`): Codex requests skip it.
+- **Routing.** Aliases first (`claude-haiku-*` → the model that serves
+  Claude Code's own background ids), then the first matching route (exact or
+  `*` pattern → targets in failover order, each with its upstream model name),
+  else the eligible members whose model list names the model (the list Superba
+  wrote, else the member's own `GET <base>/v1/models`, Anthropic or OpenAI
+  shape, pages followed, kept 10 minutes), then members whose list could not be
+  read. Stickiness by `X-Claude-Code-Session-Id` × model; failover before the
+  first byte on connect errors, 502/503/504, 529 and edge interceptions; 4xx
+  (429 included) and 500 pass through.
+- **Per-provider adjustments.** `x-api-key` or bearer auth; `anthropic-beta`
+  values passed, dropped, allow- or deny-listed; top-level `drop_fields`;
+  `role: "system"` messages folded into user text for endpoints without
+  mid-conversation system messages. The client's credential, `Accept-Encoding`
+  and the router's internal headers are never forwarded; an unchanged body
+  keeps its bytes.
+- **count_tokens** passes through; a member answering 404/405/501 is estimated
+  locally for a day (`claude::estimate`, about four ASCII characters or one
+  CJK character per token).
+- **Request log.** Every row carries `harness` (by the router token: Superba
+  writes each harness its own derived token `sbs_…` for source `h:<harness>`
+  or `h:<harness>@wsl:<distro>`, `superba_router::token::harness_token`; the
+  `User-Agent` only as the fallback), `harness_version` (`claude-cli/<v>`),
+  `protocol`, `requested_model` next to `model` (alias applied) and
+  `upstream_model`, `session_id`, `turn_id` (`x-claude-code-prompt-id`),
+  `agent_kind` (main / subagent / background from
+  `x-claude-code-request-class`, `x-claude-code-agent-id`, `x-app: cli-bg`,
+  else main when the request offers tools) and the host (`codex_host`).
+  Claude Code sends the prompt id and request class only with
+  `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` in its environment. Anthropic usage is
+  normalised to the log's semantics (input = `input_tokens` + cache reads +
+  cache writes). The log's schema is version 3; a log of an earlier build's
+  format is not read and starts again (no migration before the first release).
+- **Stats line.** Per-harness switch `StatsLineSettings::harnesses` (default
+  Codex and Claude Code; the line itself stays off by default). Claude Code's
+  main conversation only, on the final message of a turn (`stop_reason`
+  `end_turn`, never `tool_use`): a `text_delta` appended to its last text block
+  (the block's stop is held until `message_delta` shows the stop reason), a new
+  text block when it ends without one, appended to the last text block of a
+  whole answer. Later requests have it stripped from assistant text blocks (the
+  `⚡` + U+2060 marker); thinking, redacted_thinking and tool_use are never
+  touched. Turn totals: every request with the same prompt id.
+
 Lifecycle, the same in `spb` and the GUI (both only through `SwitchService`):
 
 | Step | `spb` | GUI | Service |
