@@ -335,9 +335,15 @@ fn the_hero_reopen_is_confirmed_first_without_write_only() {
             "{}",
             t.dump()
         );
-        assert!(
-            t.find(Some(Role::Button), &tr.t("confirm.reopen"))
-                .is_some()
+        // One button of that name: the To-do's "Reopen" behind the dialog is
+        // another one (UI Automation finds controls by name).
+        assert_ne!(tr.t("confirm.reopen"), tr.t("overview.todo.fix.reopen"));
+        assert_eq!(
+            t.find_all(Some(Role::Button), &tr.t("confirm.reopen"))
+                .len(),
+            1,
+            "{}",
+            t.dump()
         );
         // Reopening writes nothing: no "write config only".
         assert!(
