@@ -484,6 +484,95 @@ pub fn default_gateway(proc_net_route: &str) -> Option<Ipv4Addr> {
     None
 }
 
+/// The desktop app's own "Run Codex in WSL" setting (user bug 54 (b)): the key
+/// in the `[desktop]` table of the Windows `config.toml`, also the top-level key
+/// of `.codex-global-state.json` it was stored under before the app moved it.
+pub const RUN_CODEX_IN_WSL_KEY: &str = "runCodexInWindowsSubsystemForLinux";
+
+/// Whether the desktop app runs this computer's Codex inside WSL ("Run Codex in
+/// WSL", app 26.1013): the `[desktop]` value of `config_toml` wins, else the
+/// not yet migrated global-state value; only `true` turns it on. Unparseable
+/// files count as not set (the app ignores them too).
+///
+/// In this mode the app starts its local app-server as `wsl.exe -d <default
+/// distribution> --cd <dir> --exec /usr/bin/bash -lc '… exec "$(wslpath -u
+/// '<CODEX_HOME>\bin\wsl\codex')" … app-server …'` with `CODEX_HOME` set to
+/// the Windows Codex home and forwarded by `WSLENV` (`CODEX_HOME/p`, so
+/// `/mnt/c/Users/<u>/.codex`): that Codex reads **this computer's**
+/// `config.toml` and `auth.json`; only its SQLite state (`CODEX_SQLITE_HOME =
+/// $HOME/.codex/sqlite`) and plugin caches live in the distribution. It sees
+/// another Windows variable only when `WSLENV` names it (the app adds its own
+/// list, not `CODEX_AUTHAPI_BASE_URL`), and it reaches Windows on `127.0.0.1`
+/// only on WSL 1 or with mirrored networking.
+pub fn runs_codex_in_wsl(
+    config_toml: Option<&str>,
+    global_state: Option<&serde_json::Value>,
+) -> bool {
+    let from_config = config_toml
+        .and_then(|t| t.parse::<toml::Table>().ok())
+        .and_then(|t| {
+            t.get("desktop")?
+                .as_table()?
+                .get(RUN_CODEX_IN_WSL_KEY)
+                .and_then(toml::Value::as_bool)
+        });
+    match from_config {
+        Some(on) => on,
+        None => global_state
+            .and_then(|g| g.get(RUN_CODEX_IN_WSL_KEY))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+    }
+}
+
+/// The distribution the app runs Codex in for "Run Codex in WSL": the default
+/// distribution, else the first one whose name starts with `ubuntu` (the app's
+/// fallback when Windows names no default).
+pub fn legacy_distro(distros: &[WslDistro]) -> Option<&WslDistro> {
+    distros.iter().find(|d| d.default).or_else(|| {
+        distros
+            .iter()
+            .find(|d| d.name.to_ascii_lowercase().starts_with("ubuntu"))
+    })
+}
+
+/// `WSLENV` with `var` added (no flags: the value is copied as is) unless an
+/// entry names it already; `None` when nothing changes.
+pub fn wslenv_with(current: Option<&str>, var: &str) -> Option<String> {
+    let current = current.unwrap_or_default();
+    if wslenv_names(current, var) {
+        return None;
+    }
+    let trimmed = current.trim_end_matches(':');
+    Some(if trimmed.trim().is_empty() {
+        var.to_owned()
+    } else {
+        format!("{trimmed}:{var}")
+    })
+}
+
+/// `WSLENV` without the entries that name `var` (`None` = nothing left).
+pub fn wslenv_without(current: &str, var: &str) -> Option<String> {
+    let kept: Vec<&str> = current
+        .split(':')
+        .filter(|e| !e.trim().is_empty() && !wslenv_entry_is(e, var))
+        .collect();
+    (!kept.is_empty()).then(|| kept.join(":"))
+}
+
+/// An entry of `WSLENV` names `var` (`NAME` or `NAME/flags`, any case).
+pub fn wslenv_names(wslenv: &str, var: &str) -> bool {
+    wslenv.split(':').any(|e| wslenv_entry_is(e, var))
+}
+
+fn wslenv_entry_is(entry: &str, var: &str) -> bool {
+    entry
+        .trim()
+        .split('/')
+        .next()
+        .is_some_and(|n| n.eq_ignore_ascii_case(var))
+}
+
 /// Router source id of a distribution (`wsl:<distro>`), the label request-log
 /// rows carry for it.
 pub fn router_source(distro: &str) -> String {
@@ -510,6 +599,10 @@ pub struct WslOverview {
     /// The router's WSL listeners currently bound (`<address>:<port>`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub router_wsl_listen: Vec<String>,
+    /// The desktop app runs this computer's Codex inside this distribution
+    /// ("Run Codex in WSL", [`runs_codex_in_wsl`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_runs_codex_in: Option<String>,
 }
 
 /// Result of turning on router access for a WSL distribution

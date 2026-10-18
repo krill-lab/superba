@@ -52,6 +52,7 @@ locked = "忙：{what} 被另一个进程锁定。"
 no_baseline = "尚未记录原配置。"
 unsupported_target = "不支持的目标：{detail}"
 router_unavailable = "已开启路由模式，但本地路由不可用（{detail}）。请重新安装路由，或关闭路由模式。"
+router_wsl_nat = "ChatGPT app 在 WSL 中运行 Codex（{distro}，NAT 模式的 WSL 2：“在 WSL 中运行 Codex”），那里的 127.0.0.1 是发行版自己而不是本机，所以它无法使用本机路由。请开启 WSL 的镜像网络模式（在 %USERPROFILE%\\.wslconfig 中设置 networkingMode=mirrored，然后运行 wsl --shutdown），或在 app 中关闭“在 WSL 中运行 Codex”。"
 model_catalog = "无法为 Codex 生成模型目录文件：{reason}"
 
 [error]

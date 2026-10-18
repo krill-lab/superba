@@ -30,6 +30,7 @@ pub(crate) fn location_key(location: &EnvLocation) -> String {
         | EnvLocation::LaunchAgent { path } => path.to_string_lossy().into_owned(),
         EnvLocation::Launchctl => "launchctl".into(),
         EnvLocation::WindowsUserEnv => "hkcu_environment".into(),
+        EnvLocation::WslEnvForward => "hkcu_environment_wslenv".into(),
         other => format!("{other:?}"),
     }
 }

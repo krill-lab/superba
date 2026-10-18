@@ -52,6 +52,7 @@ locked = "Busy: {what} is locked by another process."
 no_baseline = "No original configuration has been recorded."
 unsupported_target = "Unsupported target: {detail}"
 router_unavailable = "Router mode is on but the local router is not available ({detail}). Install it again or turn router mode off."
+router_wsl_nat = "The ChatGPT app runs Codex inside WSL ({distro}, WSL 2 behind NAT: \"Run Codex in WSL\"), where 127.0.0.1 is the distribution and not this computer, so it cannot use the local router. Turn on WSL's mirrored networking (networkingMode=mirrored in %USERPROFILE%\\.wslconfig, then wsl --shutdown) or turn off \"Run Codex in WSL\" in the app."
 model_catalog = "No model catalog file could be made for Codex: {reason}"
 
 [error]

@@ -72,6 +72,7 @@ fn location(location: &EnvLocation, home: Option<&Path>, out: &Output) -> String
         }
         EnvLocation::Launchctl => "launchctl".into(),
         EnvLocation::WindowsUserEnv => "HKCU\\Environment".into(),
+        EnvLocation::WslEnvForward => "HKCU\\Environment WSLENV".into(),
         _ => out.label("cli.value.unknown"),
     }
 }

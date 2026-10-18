@@ -95,6 +95,9 @@ pub(super) async fn run(command: &WslCommand, rt: &Runtime, out: &mut Output) ->
             if !o.router_wsl_listen.is_empty() {
                 out.field("cli.wsl.listening", o.router_wsl_listen.join(", "))?;
             }
+            if let Some(distro) = &o.app_runs_codex_in {
+                out.line(text("cli.wsl.app_runs_codex_in").arg("distro", distro))?;
+            }
             for h in o.distros.iter().filter(|h| h.pending.is_some()) {
                 let name = h.host.wsl_distro().unwrap_or_default();
                 out.line(text("cli.wsl.pending_hint").arg("distro", &name))?;

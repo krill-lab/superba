@@ -29,9 +29,9 @@ use superba_config::settings::{HomeInput, plan_settings};
 use superba_core::wsl::{RouterPath, router_source};
 use superba_core::wsl::{WslAccessReport, WslOverview};
 use superba_core::{
-    CodexSettings, ConsumerKind, Error, HostKind, LocalizedText, Notice, Origin, ProfileSet,
-    RemoteHost, RemoteState, ResolvedEndpoints, ResolvedMode, ResolvedProfile, RestoreTarget,
-    Result, Secret, SettingsConsumer, SwitchIntent, TargetId,
+    CodexHome, CodexSettings, ConsumerKind, Error, HostKind, LocalizedText, Notice, Origin,
+    ProfileSet, RemoteHost, RemoteState, ResolvedEndpoints, ResolvedMode, ResolvedProfile,
+    RestoreTarget, Result, Secret, SettingsConsumer, SwitchIntent, TargetId, WslDistro,
 };
 use superba_router::config::ROUTER_BASE_PATH;
 use superba_router::watchdog::Liveness;
@@ -142,6 +142,54 @@ pub(crate) fn routed(base: &ResolvedProfile, origin: &Origin, token: &Secret) ->
 }
 
 impl Switcher {
+    /// The distribution the desktop app runs this computer's Codex in ("Run
+    /// Codex in WSL", user bug 54 (b)): the app's setting in this Codex home is
+    /// on and Windows lists the distribution it uses (the default). That Codex
+    /// reads this computer's `config.toml` and `auth.json`. Reads two files and
+    /// the WSL inventory; starts no process.
+    pub(crate) async fn legacy_wsl(&self, home: &CodexHome) -> Option<WslDistro> {
+        let config = tokio::fs::read_to_string(home.config_toml()).await.ok();
+        let global = tokio::fs::read(home.global_state_json())
+            .await
+            .ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
+        if !superba_core::wsl::runs_codex_in_wsl(config.as_deref(), global.as_ref()) {
+            return None;
+        }
+        let distros: Vec<WslDistro> = self
+            .deps
+            .remote
+            .discover(home, &[], &[])
+            .await
+            .ok()?
+            .into_iter()
+            .filter(|h| h.kind == HostKind::Wsl)
+            .filter_map(|h| h.wsl)
+            .collect();
+        superba_core::wsl::legacy_distro(&distros).cloned()
+    }
+
+    /// Plan notes and blocks of "Run Codex in WSL" for a local switch: router
+    /// mode needs `127.0.0.1` to reach Windows from that distribution.
+    pub(crate) async fn legacy_wsl_check(
+        &self,
+        home: &CodexHome,
+        routed: bool,
+    ) -> (Vec<Notice>, Option<superba_core::BlockReason>) {
+        let Some(distro) = self.legacy_wsl(home).await else {
+            return (Vec::new(), None);
+        };
+        let notes = vec![Notice::info(
+            text("switch.wsl.legacy_mode").arg("distro", &distro.name),
+        )];
+        let block = (routed && distro.router_path() != RouterPath::Loopback).then(|| {
+            superba_core::BlockReason::RouterFromWslNat {
+                distro: distro.name.clone(),
+            }
+        });
+        (notes, block)
+    }
+
     /// A stopped distribution a switch comes back to (pending): the user turned
     /// following on, Superba wrote it, or its last check found a Codex. Read
     /// locally; the distribution is not started.
@@ -310,11 +358,16 @@ impl Switcher {
             Liveness::Up(status) => status.wsl_listen.clone(),
             Liveness::Down { .. } => Vec::new(),
         };
+        let app_runs_codex_in = self
+            .legacy_wsl(&d.ctx.codex_home())
+            .await
+            .map(|distro| distro.name);
         Ok(WslOverview {
             networking,
             error,
             distros,
             router_wsl_listen,
+            app_runs_codex_in,
         })
     }
 

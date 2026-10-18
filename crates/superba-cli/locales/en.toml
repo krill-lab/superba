@@ -892,6 +892,7 @@ pending = "update pending"
 pending_hint = "{distro} was stopped during the last switch. It is updated by the next switch while it runs, or now with: spb wsl update {distro}"
 nothing_pending = "{distro} has nothing pending: no switch left it out."
 unknown = "No WSL distribution named {distro} on this computer."
+app_runs_codex_in = "The ChatGPT app runs this computer's Codex in {distro} (\"Run Codex in WSL\"): it reads this computer's configuration."
 
 [cli.wsl.col]
 version = "WSL"

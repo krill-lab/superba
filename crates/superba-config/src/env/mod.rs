@@ -5,7 +5,7 @@
 //! |---|---|
 //! | Linux | marker blocks in `~/.profile`, `~/.bashrc` (top), `~/.bash_profile` (if present), `~/.zshenv`, fish `conf.d/superba.fish`; `~/.config/environment.d/60-superba.conf` (systemd user session, after re-login) |
 //! | macOS | `~/.zshenv` (+ bash files when used), a LaunchAgent re-running `launchctl setenv` at login, and `launchctl setenv` now |
-//! | Windows | `HKCU\Environment` + `WM_SETTINGCHANGE` broadcast |
+//! | Windows | `HKCU\Environment` + `WM_SETTINGCHANGE` broadcast; with the desktop app's "Run Codex in WSL" also `WSLENV` naming `CODEX_AUTHAPI_BASE_URL` |
 //!
 //! Legacy Krill tutorial lines (`export CODEX_AUTHAPI_BASE_URL=<krill origin>`,
 //! appended to `~/.bashrc` / `~/.zshrc` after Superba's block and therefore
@@ -384,6 +384,53 @@ impl ShellEnvPersister {
         v
     }
 
+    /// The value at a native location: `WSLENV` for
+    /// [`EnvLocation::WslEnvForward`], else the variable itself.
+    fn native_get(&self, loc: &EnvLocation, var: &str) -> Result<Option<String>> {
+        match loc {
+            EnvLocation::WslEnvForward => self
+                .native
+                .get(&EnvLocation::WindowsUserEnv, superba_core::wsl::ENV_WSLENV),
+            _ => self.native.get(loc, var),
+        }
+    }
+
+    fn native_set(&self, loc: &EnvLocation, var: &str, value: &str) -> Result<()> {
+        match loc {
+            EnvLocation::WslEnvForward => self.native.set(
+                &EnvLocation::WindowsUserEnv,
+                superba_core::wsl::ENV_WSLENV,
+                value,
+            ),
+            _ => self.native.set(loc, var, value),
+        }
+    }
+
+    fn native_delete(&self, loc: &EnvLocation, var: &str) -> Result<()> {
+        match loc {
+            EnvLocation::WslEnvForward => self
+                .native
+                .delete(&EnvLocation::WindowsUserEnv, superba_core::wsl::ENV_WSLENV),
+            _ => self.native.delete(loc, var),
+        }
+    }
+
+    /// The desktop app runs this computer's Codex inside WSL ("Run Codex in
+    /// WSL", user bug 54 (b)): its `[desktop]` setting in this Codex home (or
+    /// the global state it migrates from). That Codex sees a Windows variable
+    /// only when `WSLENV` names it.
+    fn app_runs_codex_in_wsl(&self) -> bool {
+        if self.platform != EnvPlatform::Windows {
+            return false;
+        }
+        let home = self.ctx.codex_home();
+        let config = std::fs::read_to_string(home.config_toml()).ok();
+        let global = std::fs::read(home.global_state_json())
+            .ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
+        superba_core::wsl::runs_codex_in_wsl(config.as_deref(), global.as_ref())
+    }
+
     fn native_locations(&self) -> Vec<EnvLocation> {
         match self.platform {
             EnvPlatform::Linux => Vec::new(),
@@ -651,7 +698,7 @@ impl ShellEnvPersister {
 
         // 3. Native stores.
         for loc in self.native_locations() {
-            let cur = self.native.get(&loc, var)?;
+            let cur = self.native_get(&loc, var)?;
             let key = location_key(&loc);
             let managed = vs.native_originals.get(&key);
             let want: Option<String> = match op {
@@ -685,8 +732,50 @@ impl ShellEnvPersister {
             });
         }
 
+        // 4. "Run Codex in WSL": `WSLENV` forwards the variable into WSL while
+        //    Superba persists it; the entry goes again with the value.
+        let mut wsl_forward = false;
+        if self.platform == EnvPlatform::Windows && var == superba_core::codex::ENV_AUTHAPI_BASE_URL
+        {
+            let loc = EnvLocation::WslEnvForward;
+            let managed = vs.native_originals.contains_key(&location_key(&loc));
+            let cur = self.native_get(&loc, var)?;
+            let forward = matches!(op, EnvOp::Set { .. }) && self.app_runs_codex_in_wsl();
+            let want = if forward {
+                superba_core::wsl::wslenv_with(cur.as_deref(), var).or_else(|| cur.clone())
+            } else if managed {
+                match cur.as_deref() {
+                    Some(c) if superba_core::wsl::wslenv_names(c, var) => {
+                        superba_core::wsl::wslenv_without(c, var)
+                    }
+                    _ => cur.clone(),
+                }
+            } else {
+                cur.clone()
+            };
+            if want != cur {
+                wsl_forward = forward;
+                edits.push(EnvEdit {
+                    location: loc,
+                    action: match &want {
+                        Some(v) => EnvEditAction::SetValue { value: v.clone() },
+                        None => EnvEditAction::DeleteValue,
+                    },
+                    preview: want.clone().unwrap_or_default(),
+                    before: cur,
+                    after: want,
+                });
+            }
+        }
+
         let mut scope_notes = kept;
         scope_notes.extend(self.scope_notes());
+        if wsl_forward {
+            scope_notes.push(LocalizedText::new(
+                "env.scope.windows_wsl",
+                "The ChatGPT app runs Codex inside WSL (\"Run Codex in WSL\"): WSLENV now forwards the variable there too; the app's Codex gets it after the app restarts.",
+            ));
+        }
         scope_notes.extend(texts.notices());
         Ok(EnvPlan {
             var: var.to_owned(),
@@ -824,9 +913,9 @@ impl ShellEnvPersister {
             {
                 match &e.action {
                     EnvEditAction::SetValue { value } => {
-                        self.native.set(&e.location, &plan.var, value)?
+                        self.native_set(&e.location, &plan.var, value)?
                     }
-                    EnvEditAction::DeleteValue => self.native.delete(&e.location, &plan.var)?,
+                    EnvEditAction::DeleteValue => self.native_delete(&e.location, &plan.var)?,
                     _ => {}
                 }
             }
@@ -862,7 +951,7 @@ impl ShellEnvPersister {
                     first_before.entry(p).or_insert_with(|| e.before.clone());
                 }
                 None => {
-                    if self.native.get(&e.location, &plan.var)? != e.before {
+                    if self.native_get(&e.location, &plan.var)? != e.before {
                         return Ok(false);
                     }
                 }
@@ -918,6 +1007,20 @@ impl ShellEnvPersister {
         };
         for e in &plan.edits {
             match (&e.location, &e.action) {
+                (EnvLocation::WslEnvForward, _) => {
+                    // Ours while our entry is in it.
+                    let key = location_key(&e.location);
+                    if e.after
+                        .as_deref()
+                        .is_some_and(|a| superba_core::wsl::wslenv_names(a, &plan.var))
+                    {
+                        vs.native_originals
+                            .entry(key)
+                            .or_insert_with(|| e.before.clone());
+                    } else {
+                        vs.native_originals.remove(&key);
+                    }
+                }
                 (loc, EnvEditAction::SetValue { .. }) if edit_path(loc).is_none() => {
                     if matches!(plan.op, EnvOp::Set { .. }) {
                         vs.native_originals
@@ -1038,14 +1141,14 @@ impl ShellEnvPersister {
             .rev()
             .filter(|e| edit_path(&e.location).is_none())
         {
-            let cur = self.native.get(&e.location, &applied.var)?;
+            let cur = self.native_get(&e.location, &applied.var)?;
             if cur != e.after {
                 conflicts.push(format!("{:?}", e.location));
                 continue;
             }
             match &e.before {
-                Some(v) => self.native.set(&e.location, &applied.var, v)?,
-                None => self.native.delete(&e.location, &applied.var)?,
+                Some(v) => self.native_set(&e.location, &applied.var, v)?,
+                None => self.native_delete(&e.location, &applied.var)?,
             }
             let key = location_key(&e.location);
             match vs.native_originals.remove(&key) {

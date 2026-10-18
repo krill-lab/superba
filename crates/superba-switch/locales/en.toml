@@ -478,6 +478,7 @@ access_cancelled = "Administrator approval was declined; WSL 2 distributions beh
 access_needs_router = "Install and start the local router first."
 stopped_pending = "{host} is not running, so this switch leaves it as it is (Superba never starts a WSL distribution by itself). The next switch while it runs updates it, or “Update now” on its Remote hosts page."
 stopped_skipped = "{host} is not running and was not checked (Superba never starts a WSL distribution by itself)."
+legacy_mode = "The ChatGPT app runs this computer's Codex inside WSL ({distro}, \"Run Codex in WSL\"): it reads the configuration written here, and a hot restart restarts it there."
 
 [switch.ownership]
 kept = "Kept {count} changes made by {source} after Superba wrote them: {items}. Superba restores only what it still manages; take them over to restore them too."

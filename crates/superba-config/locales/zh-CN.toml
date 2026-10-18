@@ -22,6 +22,7 @@ linux_session = "从桌面菜单启动的程序需要注销并重新登录后才
 restart_running = "正在运行的 IDE 和终端要重启后才会用新值。"
 macos_launchd = "之后从 Dock 或访达打开的程序立即生效（launchctl），每次登录时会自动重设。"
 windows_broadcast = "之后从资源管理器打开的命令提示符 / PowerShell 立即生效。"
+windows_wsl = "ChatGPT app 在 WSL 中运行 Codex（“在 WSL 中运行 Codex”）：WSLENV 现在也会把该变量转给 WSL；app 重启后其中的 Codex 才能读到。"
 windows_terminal = "Windows Terminal 和 VS Code 需要完全重启才能看到新值。"
 kept_changed = "{location} 保持不变：Superba 设置之后它的值被改成了 {value}。"
 

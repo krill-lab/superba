@@ -801,6 +801,16 @@ impl Switcher {
             .await?;
         // An explicit install (RestartApp) wins over the running / preferred one.
         dest.install_id = dest.install_id.take().or(install_id);
+        // The app's "Run Codex in WSL" (user bug 54 (b)): a Codex inside the
+        // default distribution reads this home; router mode needs 127.0.0.1
+        // to reach Windows from there.
+        if local {
+            let (notes, block) = self.legacy_wsl_check(&home, dest.routed).await;
+            draft.warnings.extend(notes);
+            if let Some(b) = block {
+                draft.block(b);
+            }
+        }
 
         // GH#5: restores, uninstall and hand-offs put back only what Superba
         // still owns; what another tool (or the user) changed since is kept and

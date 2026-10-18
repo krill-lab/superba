@@ -14,6 +14,12 @@
 //!   subcommands = other.
 //! - `ssh ... <remote command containing app-server>` under the app main =
 //!   [`CodexProcessKind::RemoteLink`].
+//! - The app's "Run Codex in WSL" mode (user bug 54 (b)): `wsl.exe … --exec
+//!   /usr/bin/bash -lc '… "$(wslpath -u '…\bin\wsl\codex')" … app-server …'`
+//!   under the app main is its local [`CodexProcessKind::AppServer`]; it sees
+//!   `CODEX_AUTHAPI_BASE_URL` only when `WSLENV` names it
+//!   ([`ProcEntry::authapi_observation`]). Remote WSL connections (`wsl.exe -d
+//!   <distro> -- /usr/bin/bash -lc '… exec codex …'`) are not it.
 //!
 //! Environment: on Linux the app main process's `/proc/<pid>/environ` is
 //! overwritten by Chromium's process-title code, and the app merges the user's
@@ -53,6 +59,32 @@ pub struct ProcEntry {
 }
 
 impl ProcEntry {
+    /// `CODEX_AUTHAPI_BASE_URL` as the Codex of this process sees it: for the
+    /// app's app-server inside WSL ([`is_wsl_app_server`]) only when `WSLENV`
+    /// forwards it (else `Absent`), otherwise [`ProcEntry::env_observation`].
+    pub fn authapi_observation(&self) -> EnvObservation {
+        let key = superba_core::codex::ENV_AUTHAPI_BASE_URL;
+        if !is_wsl_app_server(&self.argv) {
+            return self.env_observation(key);
+        }
+        match &self.env {
+            None => EnvObservation::Unknown,
+            Some(m) => {
+                let get = |k: &str| {
+                    m.iter()
+                        .find(|(name, _)| name.eq_ignore_ascii_case(k))
+                        .map(|(_, v)| v.clone())
+                };
+                let forwarded = get(superba_core::wsl::ENV_WSLENV)
+                    .is_some_and(|w| superba_core::wsl::wslenv_names(&w, key));
+                match get(key) {
+                    Some(v) if forwarded => EnvObservation::Present(v),
+                    _ => EnvObservation::Absent,
+                }
+            }
+        }
+    }
+
     /// Environment variable lookup (`None` = env unknown).
     pub fn env_observation(&self, key: &str) -> EnvObservation {
         match &self.env {
@@ -123,6 +155,29 @@ pub fn is_electron_child(argv: &[String]) -> bool {
     // of NUL-separated words, so `--type=` can sit inside the first "word".
     argv.iter()
         .any(|a| a.starts_with("--type=") || a.contains(" --type="))
+}
+
+/// `argv` is the desktop app's local app-server in "Run Codex in WSL" mode:
+/// `wsl.exe` running `/usr/bin/bash -lc` (after `--exec`) with a script that
+/// starts the app's own Linux Codex (`…\bin\wsl\<16 hex>\codex` under the
+/// Windows Codex home, with `CODEX_SQLITE_HOME`) as `app-server`, inside a
+/// process-identity wrapper (seen with app 26.1013 in the test VM). The app's
+/// remote WSL connections run `wsl.exe -d <distro> -- … exec codex …` and are
+/// not it.
+pub fn is_wsl_app_server(argv: &[String]) -> bool {
+    let Some(first) = argv.first() else {
+        return false;
+    };
+    if !strip_exe(base_name(first)).eq_ignore_ascii_case("wsl") {
+        return false;
+    }
+    let Some(exec) = argv.iter().position(|a| a == "--exec") else {
+        return false;
+    };
+    let script = argv[exec + 1..].join(" ");
+    script.contains("app-server")
+        && (script.contains("CODEX_SQLITE_HOME=")
+            || script.to_ascii_lowercase().contains("\\bin\\wsl\\"))
 }
 
 /// The arguments after the `codex` program token, if `argv` invokes Codex
@@ -341,6 +396,10 @@ pub fn classify(input: ClassifyInput<'_>) -> Option<CodexProcessKind> {
     {
         return Some(CodexProcessKind::RemoteLink { host: dest });
     }
+    if input.parent_is_app_main && is_wsl_app_server(&p.argv) {
+        // "Run Codex in WSL": the app's local app-server, inside WSL.
+        return Some(CodexProcessKind::AppServer);
+    }
     None
 }
 
@@ -462,7 +521,7 @@ impl Snapshot {
     pub fn app_authapi_env(&self, main_pid: u32) -> EnvObservation {
         let key = superba_core::codex::ENV_AUTHAPI_BASE_URL;
         for c in self.app_servers_of(main_pid) {
-            let obs = c.env_observation(key);
+            let obs = c.authapi_observation();
             if obs != EnvObservation::Unknown {
                 return obs;
             }
@@ -531,7 +590,7 @@ impl Snapshot {
         let authapi_env = if kind == CodexProcessKind::AppMain {
             self.app_authapi_env(pid)
         } else {
-            e.env_observation(superba_core::codex::ENV_AUTHAPI_BASE_URL)
+            e.authapi_observation()
         };
         Some(ProcessInfo {
             pid,

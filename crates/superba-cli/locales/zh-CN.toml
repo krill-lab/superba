@@ -892,6 +892,7 @@ pending = "待更新"
 pending_hint = "{distro} 在最近一次切换时未运行。它运行时的下一次切换会更新它，也可以现在运行：spb wsl update {distro}"
 nothing_pending = "{distro} 没有待更新的改动：没有切换跳过它。"
 unknown = "本机没有名为 {distro} 的 WSL 发行版。"
+app_runs_codex_in = "ChatGPT app 在 {distro} 中运行本机的 Codex（“在 WSL 中运行 Codex”）：它读取本机的配置。"
 
 [cli.wsl.col]
 version = "WSL"

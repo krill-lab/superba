@@ -251,6 +251,13 @@ pub enum BlockReason {
         /// Why (no secrets).
         detail: String,
     },
+    /// The desktop app runs this computer's Codex inside a WSL distribution that
+    /// does not reach Windows on `127.0.0.1` (WSL 2 behind NAT, "Run Codex in
+    /// WSL"): router mode would cut the app off (user bug 54 (b)).
+    RouterFromWslNat {
+        /// The distribution.
+        distro: String,
+    },
     /// The model catalog file the profile needs (per-model overrides, the
     /// provider's model list, Ultrafast or tier-suffix model names) could not be
     /// built, or a local Codex refused it in the preflight. Nothing is written.
@@ -345,6 +352,11 @@ impl BlockReason {
                 "Router mode is on but the local router is not available ({detail}). Install it again or turn router mode off.",
             )
             .arg("detail", detail),
+            BlockReason::RouterFromWslNat { distro } => LocalizedText::new(
+                "block.router_wsl_nat",
+                "The ChatGPT app runs Codex inside WSL ({distro}, WSL 2 behind NAT: \"Run Codex in WSL\"), where 127.0.0.1 is the distribution and not this computer, so it cannot use the local router. Turn on WSL's mirrored networking (networkingMode=mirrored in %USERPROFILE%\\.wslconfig, then wsl --shutdown) or turn off \"Run Codex in WSL\" in the app.",
+            )
+            .arg("distro", distro),
             BlockReason::ModelCatalog { reason } => LocalizedText::new(
                 "block.model_catalog",
                 "No model catalog file could be made for Codex: {reason}",

@@ -243,6 +243,11 @@ pub enum EnvLocation {
     Launchctl,
     /// Windows `HKCU\Environment` (+ `WM_SETTINGCHANGE` broadcast).
     WindowsUserEnv,
+    /// `WSLENV` in `HKCU\Environment` names the variable, so `wsl.exe` forwards
+    /// it into WSL: the desktop app's "Run Codex in WSL" mode runs this
+    /// computer's Codex there (user bug 54 (b)). The edit's values are the whole
+    /// `WSLENV`.
+    WslEnvForward,
 }
 
 /// What an [`EnvEdit`] does at its location.

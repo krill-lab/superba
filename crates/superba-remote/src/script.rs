@@ -184,7 +184,11 @@ fn host_funcs(flavor: Flavor) -> String {
 ///   (the CLI's view) is used instead.
 /// - `sb_pids`: the app's stdio app-server (`app-server` with
 ///   `features.code_mode_host`, which the app always passes; IDE app-servers of
-///   the same user are not the app's).
+///   the same user are not the app's). The app's "Run Codex in WSL" app-server
+///   runs the app's own Linux Codex from the Windows Codex home
+///   (`/mnt/c/Users/<u>/.codex/bin/wsl/<16 hex>/codex`, under a `bash` wrapper
+///   that sets `CODEX_SQLITE_HOME`; user bug 54 (b), seen in the test VM): it
+///   reads that home, not this distribution's, so neither is counted.
 const WSL_FUNCS: &str = r#"sb_user_login() {
   sb_ls=$(sb_shell)
   if [ -z "$sb_ls" ] || [ ! -x "$sb_ls" ]; then return 127; fi
@@ -210,7 +214,7 @@ sb_pids() {
   sb_u=$(id -u 2>/dev/null)
   if sb_ps=$(ps -A -o pid= -o uid= -o args= 2>/dev/null) && [ -n "$sb_ps" ]; then
     printf '%s
-' "$sb_ps" | awk -v u="$sb_u" '$2 == u && /[a]pp-server/ && /code_mode_host/ { printf "%s ", $1 }'
+' "$sb_ps" | awk -v u="$sb_u" '$2 == u && /[a]pp-server/ && /code_mode_host/ && !/\/bin\/wsl\/([^ \/]+\/)?codex / && !/CODEX_SQLITE_HOME=/ { printf "%s ", $1 }'
     return 0
   fi
   for sb_d in /proc/[0-9]*; do
@@ -218,7 +222,7 @@ sb_pids() {
     sb_pu=$(awk '/^Uid:/ { print $2; exit }' "$sb_d/status" 2>/dev/null)
     [ "$sb_pu" = "$sb_u" ] || continue
     sb_a=$(tr '\000' ' ' < "$sb_d/cmdline" 2>/dev/null)
-    case "$sb_a" in *code_mode_host*app-server*) printf '%s ' "${sb_d#/proc/}" ;; esac
+    case "$sb_a" in */bin/wsl/codex\ *|*/bin/wsl/*/codex\ *|*CODEX_SQLITE_HOME=*) ;; *code_mode_host*app-server*) printf '%s ' "${sb_d#/proc/}" ;; esac
   done
 }
 "#;

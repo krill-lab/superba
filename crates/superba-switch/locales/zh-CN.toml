@@ -477,6 +477,7 @@ access_cancelled = "没有获得管理员授权；NAT 模式的 WSL 2 发行版�
 access_needs_router = "请先安装并启动本机路由。"
 stopped_pending = "{host} 未运行，本次切换不改动它（Superba 不会自行启动 WSL 发行版）。它运行时的下一次切换会更新它，也可以在“远程主机”页对它点“立即更新”。"
 stopped_skipped = "{host} 未运行，未检查它（Superba 不会自行启动 WSL 发行版）。"
+legacy_mode = "ChatGPT app 在 WSL 中运行本机的 Codex（{distro}，“在 WSL 中运行 Codex”）：它读取这里写入的配置，热切会在那里重启它。"
 
 [switch.ownership]
 kept = "已保留 {source} 在 Superba 写入之后做的 {count} 项修改：{items}。Superba 只还原它仍在管理的内容；如需一并还原，请选择接管。"

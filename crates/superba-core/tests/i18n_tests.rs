@@ -252,6 +252,9 @@ fn every_block_reason_has_complete_translations_and_arguments() {
         BlockReason::RouterUnavailable {
             detail: "connection refused".into(),
         },
+        BlockReason::RouterFromWslNat {
+            distro: "Ubuntu".into(),
+        },
         BlockReason::ModelCatalog {
             reason: superba_core::LocalizedText::new("x", "missing field `shell_type`"),
         },

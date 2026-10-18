@@ -571,9 +571,9 @@ image or App Translocation path (the service would lose its program).
 
 ### Codex inside WSL (user bug 45)
 
-The Windows app can run the Codex of a WSL distribution in two ways: the old
-"run Codex in WSL" desktop setting (the local host inside the default
-distribution, not handled) and WSL connections, host ids
+The Windows app can run the Codex of a WSL distribution in two ways: the
+"Run Codex in WSL" desktop setting (the local host inside the default
+distribution, below) and WSL connections, host ids
 `remote-wsl:<encodeURIComponent(distro)>`, which start the distribution's own
 `codex app-server` (`/usr/bin/bash -lc`, stdio, Codex 0.141+). Superba treats
 every distribution with a Codex as a managed host of kind `HostKind::Wsl`
@@ -595,9 +595,25 @@ every distribution with a Codex as a managed host of kind `HostKind::Wsl`
 - Switching: WSL hosts follow this computer by default (`HostSettings::follows`),
   scope both (connection + settings filtered by the distribution's Codex
   version, no model catalog file); a distribution without Codex, or never
-  written and without a baseline, is skipped with a note. Restore and
-  uninstall include them. Hot restart is the app's own: closing the stdio
-  app-server makes the app respawn it with the new files.
+  written and without a baseline, is skipped with a note. Restore (original
+  configuration) and uninstall also reach a distribution Superba wrote that no
+  longer follows (its baseline is kept locally: `RemoteHosts::written`). Hot
+  restart is the app's own: closing the stdio app-server makes the app respawn
+  it with the new files.
+- Stopped distributions (user bug 54): a switch never starts one (`wsl.exe -d`
+  boots a stopped WSL 2 VM). The planner asks `wsl.exe --list --running
+  --quiet` (`RemoteHosts::wsl_running`, starts no distribution) and probes only
+  running distributions; discovery stays registry-only (cached 30 s, read again
+  on an explicit refresh) and carries the last answer, a probe marks the
+  distribution running. A stopped distribution worth coming back to (Superba
+  wrote it, its last check found a Codex, or the user turned following on) is
+  noted and, after a successful switch, recorded as pending in the host cache
+  (`HostView::pending`: when, and the switch's intent); others get a short note.
+  The next switch that finds it running updates it and clears the record; "Update
+  now" on its page (`spb wsl update <distro>`) plans the intent for that
+  distribution alone (`HostPending::request`), which starts it. Uninstall starts
+  the stopped distributions Superba wrote. An unknown running state (WSL could
+  not tell) keeps probing.
 - Router mode from WSL: each consumer gets its own source token
   `sbs_<hex(source)>_<HMAC-SHA256(router token, "superba-router-source-v1\0" + source)>`
   (source `wsl:<distro>`), so the request log names the distribution
@@ -621,8 +637,41 @@ every distribution with a Codex as a managed host of kind `HostKind::Wsl`
   Codex's `flock` writer locks do not work over `\\wsl.localhost`. Backups and
   the migration history stay inside the distribution. The helper is
   `SUPERBA_WSL_HELPER` or `spb-linux-<arch>` next to the program.
-- CLI: `spb wsl list`, `spb wsl router-access <distro>`, and `wsl:<distro>` as a
-  host shorthand (`spb remote ...`, `spb sessions --host wsl:<distro> ...`).
+- CLI: `spb wsl list` (state, pending updates), `spb wsl router-access <distro>`,
+  `spb wsl update <distro>`, and `wsl:<distro>` as a host shorthand
+  (`spb remote ...`, `spb sessions --host wsl:<distro> ...`).
+
+"Run Codex in WSL" (`runCodexInWindowsSubsystemForLinux`, user bug 54 (b);
+`superba_core::wsl::runs_codex_in_wsl`): the `[desktop]` table of the Windows
+`config.toml` (else the not yet migrated top-level key of
+`.codex-global-state.json`) turns it on; the app then runs its local app-server
+as `wsl.exe -d <default distribution> --cd <dir> --exec /usr/bin/bash -lc 'set -m;
+/bin/bash -c '… CODEX_SQLITE_HOME="$HOME/.codex/sqlite" exec "$(wslpath -u
+'%CODEX_HOME%\bin\wsl\<16 hex>\codex')" … app-server …' <&0 & …; wait …'` (a
+process-identity wrapper around its own Linux Codex copied out of the package; seen
+in the test VM), with `CODEX_HOME` = the Windows Codex home forwarded by `WSLENV`
+(`CODEX_HOME/p` → `/mnt/c/Users/<u>/.codex`). So that Codex reads **this
+computer's** `config.toml` and `auth.json` (the local switch, restore and settings
+already write them; only its SQLite index and plugin caches live in the
+distribution), and:
+
+- the planner says so on local switches; router mode is refused
+  (`BlockReason::RouterFromWslNat`) when that distribution does not reach Windows
+  on `127.0.0.1` (WSL 2 behind NAT: use mirrored networking or turn the setting
+  off); WSL 1 and mirrored networking are routed like Windows;
+- the `wsl.exe` child of the app main running that command is the app's
+  `AppServer` (`superba_appctl::procs::is_wsl_app_server`), so hot restarts wait
+  for it and verification checks it; it sees `CODEX_AUTHAPI_BASE_URL` only when
+  `WSLENV` names it, which is what Superba reports for it;
+- PAT mode: while Superba persists `CODEX_AUTHAPI_BASE_URL` in `HKCU\Environment`
+  in this mode, `WSLENV` names it too (`EnvLocation::WslEnvForward`, added once,
+  removed with the value or when the setting is off, the user's own entries
+  kept; a full app restart passes it on, as for the variable itself);
+- the distribution's own probe does not count that app-server or its wrapper
+  (`…/bin/wsl/<hash>/codex` from the Windows home, `CODEX_SQLITE_HOME` in the
+  wrapper's command), so the distribution is a host only for its own CLI and the
+  app's WSL connection; `spb wsl list` names the distribution the app runs
+  Codex in.
 
 ### Account-display auth (not implemented)
 
@@ -873,7 +922,10 @@ except the router watchdog.
   bridge (CDP on loopback) and the account summary (cached 60 s by `superba-net`).
   The Router page's service status (`systemctl`, `launchctl print`, `tasklist`) is
   remembered by `RouterManager::overview` until a lifecycle call or a liveness
-  change; liveness itself is HTTP on loopback.
+  change; liveness itself is HTTP on loopback. WSL distributions come from the
+  registry (cached 30 s, read again on an explicit refresh); which of them run is
+  asked (`wsl.exe --list --running`) only by a switch plan and `spb wsl list`,
+  and nothing on a timer runs a script inside a distribution.
 - **GUI cadence** (`superba_gui::cadence`): overview every 5 s while shown (an
   unchanged answer does not wake the window), router watchdog every 5 s also
   while hidden (eframe calls only `App::logic` then), remote host list every

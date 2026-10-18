@@ -23,6 +23,7 @@ linux_session = "Apps started from the desktop menu see it after logging out and
 restart_running = "Running IDEs and terminals keep the old value until restarted."
 macos_launchd = "Apps opened from the Dock or Finder from now on get it immediately (launchctl); it is re-applied at every login."
 windows_broadcast = "New Command Prompt / PowerShell windows opened from Explorer get the new value right away."
+windows_wsl = "The ChatGPT app runs Codex inside WSL (\"Run Codex in WSL\"): WSLENV now forwards the variable there too; the app's Codex gets it after the app restarts."
 windows_terminal = "Windows Terminal and VS Code must be fully restarted to see it."
 kept_changed = "Left {location} as it is: its value was changed to {value} after Superba set it."
 
