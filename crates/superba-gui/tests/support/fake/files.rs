@@ -21,6 +21,12 @@ pub(super) struct State {
     pub saves: Vec<(CodexFileKind, SaveReason, bool)>,
     /// The schema handed out with config.toml.
     pub schema: Option<FileSchema>,
+    /// How long reading a home's files takes (a slow remote host).
+    pub delays: BTreeMap<TargetId, std::time::Duration>,
+    /// Reading a home's files fails with this SSH error.
+    pub failing: BTreeMap<TargetId, String>,
+    /// Homes whose reads do not answer until released (a slow host).
+    pub held: std::collections::BTreeSet<TargetId>,
 }
 
 fn sha(text: &str) -> String {
@@ -55,6 +61,36 @@ impl FakeService {
             .flatten()
     }
 
+    /// Reading `target`'s files takes `delay` (a slow remote host; real time,
+    /// also with `fast`).
+    pub fn set_codex_file_delay(&self, target: TargetId, delay: std::time::Duration) {
+        self.areas
+            .files
+            .lock()
+            .unwrap()
+            .delays
+            .insert(target, delay);
+    }
+
+    /// Hold the reads of `target`'s files until released (`false`).
+    pub fn hold_codex_file(&self, target: TargetId, hold: bool) {
+        let mut st = self.areas.files.lock().unwrap();
+        if hold {
+            st.held.insert(target);
+        } else {
+            st.held.remove(&target);
+        }
+    }
+
+    /// Reading `target`'s files fails with an SSH error (`None`: reads again).
+    pub fn fail_codex_file(&self, target: TargetId, message: Option<&str>) {
+        let mut st = self.areas.files.lock().unwrap();
+        match message {
+            Some(m) => st.failing.insert(target, m.to_owned()),
+            None => st.failing.remove(&target),
+        };
+    }
+
     /// Keys Superba manages in a home.
     pub fn set_owned(&self, target: TargetId, owned: Vec<OwnedKey>) {
         self.areas.files.lock().unwrap().owned.insert(target, owned);
@@ -76,7 +112,27 @@ pub(super) async fn codex_file(
     target: TargetId,
     kind: CodexFileKind,
 ) -> Result<CodexFileDoc> {
+    let delay = fake
+        .areas
+        .files
+        .lock()
+        .unwrap()
+        .delays
+        .get(&target)
+        .copied();
+    if let Some(d) = delay {
+        tokio::time::sleep(d).await;
+    }
+    while fake.areas.files.lock().unwrap().held.contains(&target) {
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
     let st = fake.areas.files.lock().unwrap();
+    if let Some(message) = st.failing.get(&target) {
+        return Err(Error::Ssh {
+            host: target.to_string(),
+            message: message.clone(),
+        });
+    }
     let text = st.files.get(&(target.clone(), kind)).cloned().flatten();
     let path = if target.is_local() {
         format!("/home/u/.codex/{}", kind.file_name())

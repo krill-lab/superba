@@ -16,6 +16,12 @@
 //! pre-images, the original) with a diff to the current file; restoring one
 //! loads it into the editor and saves it like an edit.
 //!
+//! Choosing another home or file shows the choice at once and a loading state
+//! instead of the previous file until the new one is read (user bug 83: a
+//! remote host or a WSL distribution answers in seconds); only the latest
+//! choice's answer is used, and a failure or a timeout is shown in place with
+//! Retry ([`crate::pages::shared::loading`]).
+//!
 //! This module holds the state and its logic; [`super::files_view`] draws it.
 
 use std::hash::{Hash, Hasher};
@@ -27,8 +33,13 @@ use superba_core::{
 use superba_switch::codex_files::{self, CheckContext, Masker};
 
 use crate::design::widgets::Status;
+use crate::pages::shared::loading::{Failure, Latest};
 use crate::pages::{Action, Cx};
 use crate::runtime::ReadTask;
+
+/// The longest a read of a file may take before the editor stops waiting
+/// (above the service's own SSH and WSL time limits).
+pub const READ_LIMIT: std::time::Duration = std::time::Duration::from_secs(90);
 
 /// A dialog of the editor.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,11 +74,11 @@ pub struct Editor {
     pub target: Option<TargetId>,
     /// The file.
     pub kind: Option<CodexFileKind>,
-    /// The file as opened.
+    /// The file as opened (only ever the chosen home's and file's: `None`
+    /// while another choice is read).
     pub doc: Option<CodexFileDoc>,
-    load: Option<ReadTask<CodexFileDoc>>,
-    /// Why it could not be opened.
-    pub load_error: Option<String>,
+    /// Reading the chosen home's file.
+    load: Latest<(TargetId, CodexFileKind), CodexFileDoc>,
     /// What the text field shows (placeholders while secrets are hidden).
     pub buffer: String,
     /// The real text when opened (or last saved).
@@ -170,7 +181,20 @@ impl Editor {
 
     /// A read or a save runs.
     pub fn busy(&self) -> bool {
-        self.load.is_some() || self.saving.is_some()
+        self.load.loading() || self.saving.is_some()
+    }
+
+    /// The file shown is not the chosen one's: another home or file is being
+    /// read (or could not be read).
+    pub fn switching(&self) -> bool {
+        self.doc
+            .as_ref()
+            .is_none_or(|d| d.target != self.target() || d.kind != self.kind())
+    }
+
+    /// Why the chosen file could not be read.
+    pub fn load_failure(&self) -> Option<&Failure> {
+        self.load.failure()
     }
 
     /// Saving is running.
@@ -182,26 +206,48 @@ impl Editor {
     /// lost).
     pub fn open_file(&mut self, cx: &Cx<'_>, target: TargetId, kind: CodexFileKind) {
         self.open = true;
-        let same = self.target() == target && self.kind() == kind && self.doc.is_some();
-        if same {
+        let same = self.target() == target && self.kind() == kind;
+        if same && (!self.switching() || self.load.loading()) {
             return;
         }
         if self.dirty() {
             self.dialog = Some(Dialog::Discard(Next::Open(target, kind)));
             return;
         }
-        self.target = Some(target);
-        self.kind = Some(kind);
+        self.show_choice(target, kind);
         self.reload(cx);
     }
 
-    /// Read the file again (discarding the buffer).
+    /// Show `target` / `kind` as the choice; the previous file is no longer
+    /// shown (never as the new choice's).
+    fn show_choice(&mut self, target: TargetId, kind: CodexFileKind) {
+        if self
+            .doc
+            .as_ref()
+            .is_some_and(|d| d.target != target || d.kind != kind)
+        {
+            self.doc = None;
+            self.buffer.clear();
+            self.original.clear();
+            self.problems.clear();
+            self.checked = None;
+            self.revealed = false;
+            self.format_error = None;
+        }
+        self.target = Some(target);
+        self.kind = Some(kind);
+    }
+
+    /// Read the file again (discarding the buffer); a read of an earlier
+    /// choice is dropped.
     pub fn reload(&mut self, cx: &Cx<'_>) {
         let (service, target, kind) = (cx.service.clone(), self.target(), self.kind());
-        self.load_error = None;
-        self.load = Some(crate::runtime::task(async move {
-            service.codex_file(target, kind).await
-        }));
+        let key = (target.clone(), kind);
+        self.load.start(
+            key,
+            crate::runtime::task(async move { service.codex_file(target, kind).await }),
+            READ_LIMIT,
+        );
     }
 
     /// Leave the editor (asks first when edits would be lost).
@@ -223,9 +269,7 @@ impl Editor {
         match next {
             Next::Close => self.open = false,
             Next::Open(target, kind) => {
-                self.target = Some(target);
-                self.kind = Some(kind);
-                self.doc = None;
+                self.show_choice(target, kind);
                 self.reload(cx);
             }
             Next::Reload => self.reload(cx),
@@ -430,17 +474,8 @@ impl Editor {
 
     /// Finish background work; true while any runs.
     pub fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) -> bool {
-        if let Some(t) = &self.load
-            && let Some(r) = t.poll()
-        {
-            self.load = None;
-            match r {
-                Ok(doc) => {
-                    self.load_error = None;
-                    self.loaded(doc);
-                }
-                Err(e) => self.load_error = Some(crate::pages::error_text(cx.tr, &e)),
-            }
+        if let Some((_, doc)) = self.load.poll() {
+            self.loaded(doc);
         }
         if let Some(t) = &self.saving
             && let Some(r) = t.poll()
@@ -495,7 +530,7 @@ impl Editor {
             }
         }
         self.recheck();
-        self.load.is_some()
+        self.load.loading()
             || self.saving.is_some()
             || self.backups_task.is_some()
             || self.backup_task.is_some()
@@ -508,6 +543,6 @@ impl Editor {
 
     /// The file is being read.
     pub fn loading(&self) -> bool {
-        self.load.is_some()
+        self.load.loading()
     }
 }

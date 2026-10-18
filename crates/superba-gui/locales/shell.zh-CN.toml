@@ -140,6 +140,9 @@ ready = "可热切"
 safe_mode = "安全模式"
 unavailable = "不可热切：{reason}"
 
+[load]
+timed_out = "{secs} 秒内没有回应。请检查连接后重试。"
+
 [log]
 phase = "→ {phase}"
 probed = "线路测速：{lines}"

@@ -17,7 +17,7 @@ use crate::design::widgets::{
     Badge, Button, Dropdown, PagedTable, Pager, PendingAction, PendingBar, PendingLabels, Status,
     StatusDot, Table, Text, Toggle, dialog,
 };
-use crate::pages::shared::{providers, values};
+use crate::pages::shared::{loading, providers, values};
 use crate::pages::{Action, Cx};
 
 /// Rail width.
@@ -37,13 +37,7 @@ const CHIP_W: f32 = 150.0;
 
 /// Placeholder while the first load runs.
 pub(super) fn loading(ui: &mut Ui, cx: &Cx<'_>) {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-        icons::spinner(ui.painter(), rect, cx.pal.text_muted, ui.input(|i| i.time));
-        ui.label(Text::muted(cx.tr.t("codex_settings.loading"), cx.pal));
-    });
-    ui.ctx()
-        .request_repaint_after(std::time::Duration::from_millis(60));
+    loading::spinner_row(ui, cx, &cx.tr.t("codex_settings.loading"));
 }
 
 /// What the page asks its state to do after drawing.
@@ -53,6 +47,55 @@ pub(super) struct Events {
     pub save: bool,
     /// Edit another profile.
     pub profile: Option<superba_core::ProfileId>,
+    /// Build the model again (Retry after a failure).
+    pub retry: bool,
+}
+
+/// No model to show yet (user bug 83): the first load, or another provider
+/// was chosen. With a chosen provider the picker shows it at once (busy while
+/// its model is built, and still usable), then the loading state or the
+/// failure with Retry in place of the panes; never the previous provider's
+/// settings.
+pub(super) fn waiting(ui: &mut Ui, cx: &Cx<'_>, state: &State) -> Events {
+    let mut events = Events::default();
+    let chosen = state.profile.as_ref();
+    let name = chosen.map(|id| {
+        cx.data
+            .profile(id)
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| id.to_string())
+    });
+    if chosen.is_some() {
+        ui.horizontal(|ui| {
+            ui.set_min_height(size::CONTROL);
+            ui.spacing_mut().item_spacing.x = 8.0;
+            // The strip as it will be, so the picker stays where it was.
+            scope_mark(ui, cx, false);
+            provider_picker(ui, cx, chosen, state.load.loading(), &mut events);
+        });
+        ui.add_space(6.0);
+    }
+    match (state.load.failure(), &name) {
+        (Some(f), Some(name)) => {
+            let title = cx
+                .tr
+                .f("codex_settings.load_failed_for", &[("provider", name)]);
+            events.retry = loading::failed_card(ui, cx, &title, &f.text(cx));
+        }
+        (Some(f), None) => {
+            let title = cx.tr.t("codex_settings.load_failed");
+            events.retry = loading::failed_card(ui, cx, &title, &f.text(cx));
+        }
+        (None, Some(name)) => {
+            loading::spinner_row(
+                ui,
+                cx,
+                &cx.tr.f("codex_settings.loading_for", &[("provider", name)]),
+            );
+        }
+        (None, None) => loading(ui, cx),
+    }
+    events
 }
 
 /// The loaded page in the fixed rectangle below the header.
@@ -186,7 +229,7 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, events: &mu
         ui.set_min_height(size::CONTROL);
         ui.spacing_mut().item_spacing.x = 8.0;
         scope_label(ui, cx, model);
-        provider_picker(ui, cx, model, events);
+        provider_picker(ui, cx, model.profile_id.as_ref(), false, events);
         let search = ui
             .add(
                 TextEdit::singleline(&mut state.filter.query)
@@ -285,24 +328,34 @@ fn scope_label(ui: &mut Ui, cx: &Cx<'_>, model: &Model) {
     if model.targets.is_empty() {
         tip.push(cx.tr.t("codex_settings.no_targets"));
     }
-    let r = ui
-        .horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            ui.label(Text::strong(cx.tr.t("codex_settings.scope.label"), cx.pal));
-            let (rect, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
-            let color = if warn {
-                cx.pal.status(Status::Warn)
-            } else {
-                cx.pal.text_subtle
-            };
-            icons::paint(ui.painter(), rect, Icon::Info, color);
-        })
-        .response;
-    r.on_hover_text(tip.join("\n"));
+    scope_mark(ui, cx, warn).on_hover_text(tip.join("\n"));
 }
 
-/// Provider picker (key-based providers; the applied one marked "in use").
-fn provider_picker(ui: &mut Ui, cx: &Cx<'_>, model: &Model, events: &mut Events) {
+/// "本机 ⓘ" (amber when `warn`).
+fn scope_mark(ui: &mut Ui, cx: &Cx<'_>, warn: bool) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.label(Text::strong(cx.tr.t("codex_settings.scope.label"), cx.pal));
+        let (rect, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+        let color = if warn {
+            cx.pal.status(Status::Warn)
+        } else {
+            cx.pal.text_subtle
+        };
+        icons::paint(ui.painter(), rect, Icon::Info, color);
+    })
+    .response
+}
+
+/// Provider picker (key-based providers; the applied one marked "in use")
+/// showing `current`, the chosen one; `busy` while its model is built.
+fn provider_picker(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    current: Option<&superba_core::ProfileId>,
+    busy: bool,
+    events: &mut Events,
+) {
     let list: Vec<providers::Provider> = providers::with_profiles(cx.data)
         .into_iter()
         .filter(|p| p.kind != providers::ProviderKind::Official)
@@ -323,7 +376,7 @@ fn provider_picker(ui: &mut Ui, cx: &Cx<'_>, model: &Model, events: &mut Events)
     };
     let selected = list
         .iter()
-        .find(|p| p.profile_id() == model.profile_id.as_ref())
+        .find(|p| p.profile_id() == current)
         .map(label)
         .unwrap_or_else(|| cx.tr.t("codex_settings.no_profile_short"));
     ui.add_enabled_ui(list.len() > 1, |ui| {
@@ -331,10 +384,11 @@ fn provider_picker(ui: &mut Ui, cx: &Cx<'_>, model: &Model, events: &mut Events)
             .label(cx.tr.t("codex_settings.provider"))
             .selected_text(selected)
             .width(150.0)
+            .loading(busy)
             .show_ui(ui, |ui| {
                 for p in &list {
                     let Some(id) = p.profile_id() else { continue };
-                    let on = model.profile_id.as_ref() == Some(id);
+                    let on = current == Some(id);
                     if ui.selectable_label(on, label(p)).clicked() && !on {
                         events.profile = Some(id.clone());
                     }
@@ -345,12 +399,14 @@ fn provider_picker(ui: &mut Ui, cx: &Cx<'_>, model: &Model, events: &mut Events)
     });
 }
 
-/// The one-line notice above the panes (read-only reason, config error,
-/// saved-but-unapplied settings, catalog notes).
+/// The one-line notice above the panes (read-only reason, config error, a
+/// failed reload, saved-but-unapplied settings, catalog notes).
 #[derive(Clone, Debug)]
 pub(super) enum Notice {
     /// config.toml cannot be parsed.
     ConfigError(String),
+    /// Reading the settings again failed (the shown ones stay).
+    ReloadFailed(String),
     /// No key-based profile.
     ReadOnly(&'static str),
     /// Saved settings no local Codex knows.
@@ -364,6 +420,9 @@ pub(super) enum Notice {
 fn notice(cx: &Cx<'_>, model: &Model, state: &State) -> Option<Notice> {
     if let Some(e) = &model.config_error {
         return Some(Notice::ConfigError(e.clone()));
+    }
+    if let Some(f) = state.load.failure() {
+        return Some(Notice::ReloadFailed(f.text(cx)));
     }
     if let Some(key) = model.read_only_reason {
         return Some(Notice::ReadOnly(key));
@@ -391,6 +450,12 @@ fn notice_line(ui: &mut Ui, cx: &Cx<'_>, model: &Model, n: Notice, out: &mut Vec
                 Status::Error,
                 cx.tr.f("codex_settings.config_error", &[("error", e)]),
                 None,
+            ),
+            Notice::ReloadFailed(reason) => (
+                Status::Error,
+                cx.tr
+                    .f("codex_settings.reload_failed", &[("reason", reason)]),
+                Some(reason.clone()),
             ),
             Notice::ReadOnly(key) => (Status::Idle, cx.tr.t(key), None),
             Notice::Blocked(n) => (

@@ -23,6 +23,8 @@ pub(super) struct State {
     failing: BTreeSet<TargetId>,
     /// Hosts scanned so far, in order.
     scans: Vec<TargetId>,
+    /// Hosts whose scan does not answer until released (a slow host).
+    held: BTreeSet<TargetId>,
     /// Hosts answering with these (provider, sessions) counts and no migrate
     /// command of the service's own.
     providers: BTreeMap<TargetId, Vec<(String, u32)>>,
@@ -53,6 +55,16 @@ impl FakeService {
             target.clone(),
             counts.iter().map(|(p, n)| ((*p).to_owned(), *n)).collect(),
         );
+    }
+
+    /// Hold the scans of `target` until released (`false`): a slow host.
+    pub fn hold_host_sessions(&self, target: &TargetId, hold: bool) {
+        let mut a = self.sessions_area();
+        if hold {
+            a.held.insert(target.clone());
+        } else {
+            a.held.remove(target);
+        }
     }
 
     /// Hosts scanned with `host_sessions`, in order.
@@ -94,6 +106,9 @@ pub(super) async fn host_sessions(
 ) -> Result<HostSessions> {
     fake.sessions_area().scans.push(target_id.clone());
     fake.delay(300).await;
+    while fake.sessions_area().held.contains(target_id) {
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
     if target_id.is_local() {
         let (report, history) = fake.sessions().await?;
         return Ok(HostSessions {

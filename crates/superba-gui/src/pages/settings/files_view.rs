@@ -19,6 +19,7 @@ use crate::design::fonts::{Weight, mono_font};
 use crate::design::icons::Icon;
 use crate::design::tokens::{radius, text};
 use crate::design::widgets::{Badge, Button, Status, StatusDot, Text, Toggle, dialog};
+use crate::pages::shared::loading;
 use crate::pages::{Action, Cx, Page, page_header_with};
 
 /// Id of the text field (cursor jumps, focus).
@@ -89,26 +90,33 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor, out: &mut Vec<Action>) {
     toolbar(ui, cx, ed);
     notes(ui, cx, ed, out);
     if ed.doc.is_none() {
-        match &ed.load_error {
-            Some(e) => {
+        // The chosen file is being read, or could not be: never the previous
+        // choice's text (user bug 83).
+        let target = ed.target();
+        let host = (!target.is_local()).then(|| target_label(cx, &target));
+        match ed.load_failure() {
+            Some(failure) => {
                 ui.add_space(12.0);
-                ui.label(Text::strong(cx.tr.t("codex_editor.load_failed"), cx.pal));
-                ui.add(egui::Label::new(Text::small(e, cx.pal)).wrap());
+                let title = match &host {
+                    Some(h) => cx.tr.f(
+                        "codex_editor.load_failed_at",
+                        &[("file", &file), ("host", h)],
+                    ),
+                    None => cx.tr.t("codex_editor.load_failed"),
+                };
+                if loading::failed_card(ui, cx, &title, &failure.text(cx)) {
+                    ed.reload(cx);
+                }
             }
             None => {
-                ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-                    crate::design::icons::spinner(
-                        ui.painter(),
-                        rect,
-                        cx.pal.text_muted,
-                        ui.input(|i| i.time),
-                    );
-                    ui.label(Text::muted(
-                        cx.tr.f("codex_editor.loading", &[("file", &file)]),
-                        cx.pal,
-                    ));
-                });
+                ui.add_space(8.0);
+                let text = match &host {
+                    Some(h) => cx
+                        .tr
+                        .f("codex_editor.loading_at", &[("file", &file), ("host", h)]),
+                    None => cx.tr.f("codex_editor.loading", &[("file", &file)]),
+                };
+                loading::spinner_row(ui, cx, &text);
             }
         }
         dialogs(ui.ctx(), cx, ed);
@@ -160,10 +168,12 @@ fn toolbar(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor) {
         if list.len() > 1 || !ed.target().is_local() {
             let current = target_label(cx, &ed.target());
             let mut pick = None;
+            // The choice at once, busy while it is read (user bug 83).
             crate::design::widgets::Dropdown::new("codex-files-target")
                 .label(cx.tr.t("codex_editor.where"))
                 .selected_text(current)
                 .width(180.0)
+                .loading(ed.loading() && ed.switching())
                 .show_ui(ui, |ui| {
                     for (id, label) in &list {
                         let on = *id == ed.target();
@@ -258,6 +268,20 @@ fn notes(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor, out: &mut Vec<Action>) {
     };
     if let Some(why) = &doc.read_only {
         line(ui, Status::Warn, cx.localize(why));
+    }
+    // Reading the shown file again failed: it stays, with the reason.
+    if let Some(failure) = ed.load_failure() {
+        line(
+            ui,
+            Status::Error,
+            cx.tr.f(
+                "codex_editor.reload_failed",
+                &[
+                    ("file", &doc.kind.file_name()),
+                    ("reason", &failure.text(cx)),
+                ],
+            ),
+        );
     }
     if let Some(e) = &ed.format_error {
         line(

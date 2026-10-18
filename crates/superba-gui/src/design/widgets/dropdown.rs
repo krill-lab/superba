@@ -13,7 +13,9 @@
 //! opens [`MENU_GAP`] below the field, so it covers neither the field's bottom
 //! border nor its focus ring. In the menu the selected option has the gray
 //! selected-row fill of lists and tables ([`Palette::active`]), not egui's blue
-//! text-selection colour (review ux-visual #16).
+//! text-selection colour (review ux-visual #16). While what the choice shows is
+//! loading ([`Dropdown::loading`]) a spinner replaces the chevron and the field
+//! is marked busy for screen readers (user bug 83).
 
 use egui::{
     AsIdSalt, CursorIcon, FontSelection, Id, IdSalt, InnerResponse, Popup, PopupCloseBehavior,
@@ -47,6 +49,7 @@ pub struct Dropdown {
     height: f32,
     menu_height: Option<f32>,
     label: Option<String>,
+    loading: bool,
 }
 
 impl Dropdown {
@@ -59,7 +62,16 @@ impl Dropdown {
             height: size::CONTROL_SM,
             menu_height: None,
             label: None,
+            loading: false,
         }
+    }
+
+    /// What the chosen value shows is loading: a spinner instead of the chevron,
+    /// and the field is busy for screen readers. The field stays usable (a new
+    /// choice replaces the one loading).
+    pub fn loading(mut self, loading: bool) -> Self {
+        self.loading = loading;
+        self
     }
 
     /// The accessible name (what the dropdown chooses, e.g. "Provider"): for a
@@ -179,6 +191,12 @@ impl Dropdown {
                     .inner
             })
             .map(|r| r.inner);
+        if self.loading {
+            ui.ctx()
+                .accesskit_node_builder(response.id, |node| node.set_busy());
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(60));
+        }
         if inner.is_some() {
             ui.ctx().accesskit_node_builder(popup_id, |node| {
                 node.set_role(egui::accesskit::Role::ListBox);
@@ -209,12 +227,16 @@ impl Dropdown {
             } else {
                 Rect::from_center_size(rect.center(), vec2(CHEVRON, CHEVRON))
             };
-            icons::paint(
-                painter,
-                chevron,
-                Icon::ChevronDown,
-                pal.text_muted.lerp_to_gamma(pal.text, t),
-            );
+            if self.loading {
+                icons::spinner(painter, chevron, pal.text_muted, ui.input(|i| i.time));
+            } else {
+                icons::paint(
+                    painter,
+                    chevron,
+                    Icon::ChevronDown,
+                    pal.text_muted.lerp_to_gamma(pal.text, t),
+                );
+            }
             if has_text {
                 let pos = pos2(rect.min.x + PAD, rect.center().y - galley.size().y / 2.0);
                 let room = Rect::from_min_max(

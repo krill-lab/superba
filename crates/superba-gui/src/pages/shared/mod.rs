@@ -2,12 +2,14 @@
 //! (plan §4 C2): automatic-auth decisions and line order (Overview, Providers,
 //! wizard, router), profile creation, number formatting and the provider list
 //! (Providers, Models, Settings) and setting values for display (Settings, the
-//! switch preview, Remote hosts).
+//! switch preview, Remote hosts), and loads that follow a choice of host, file
+//! or provider (Settings, Edit Codex files, Sessions; user bug 83).
 
 pub mod auth;
 pub mod format;
 pub mod hosts;
 pub mod lines;
+pub mod loading;
 pub mod profile;
 pub mod providers;
 pub mod values;

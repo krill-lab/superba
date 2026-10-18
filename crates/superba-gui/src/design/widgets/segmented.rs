@@ -7,9 +7,10 @@
 //! Only the track has a border. Segments share their edges ([`SegmentLayout`]),
 //! with one 1 px divider between two neighbours and none next to the selected
 //! segment (its indicator has its own border). Optional: a status dot before a
-//! label, a longest segment (longer labels are elided and shown in full on
-//! hover) and a trailing overflow segment ("More") that opens a menu of further
-//! options.
+//! label, a spinner instead of it while what the option shows is loading (the
+//! option is then busy for screen readers; user bug 83), a longest segment
+//! (longer labels are elided and shown in full on hover) and a trailing
+//! overflow segment ("More") that opens a menu of further options.
 
 use egui::{
     Color32, CursorIcon, EventFilter, Id, Key, Rect, Response, Sense, Stroke, StrokeKind, Ui,
@@ -42,6 +43,7 @@ struct Segment<T> {
     enabled: bool,
     tooltip: Option<String>,
     dot: Option<Status>,
+    busy: bool,
 }
 
 /// The trailing overflow segment of a [`Segmented`] control and its menu.
@@ -52,6 +54,8 @@ struct Overflow<T> {
 
 /// Width of a status dot and the space after it.
 const DOT_W: f32 = 12.0;
+/// Width of a busy option's spinner and the space after it.
+const SPIN_W: f32 = 16.0;
 /// Size of the overflow segment's chevron (as in a dropdown) and the space
 /// before it.
 const CHEVRON: f32 = 14.0;
@@ -105,6 +109,7 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             enabled: true,
             tooltip: None,
             dot: None,
+            busy: false,
         });
         self
     }
@@ -122,6 +127,7 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             enabled: true,
             tooltip: Some(tooltip.into()),
             dot: None,
+            busy: false,
         });
         self
     }
@@ -139,6 +145,7 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             enabled: false,
             tooltip: Some(why.into()),
             dot: None,
+            busy: false,
         });
         self
     }
@@ -172,6 +179,15 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
     pub fn dot(mut self, status: Status) -> Self {
         if let Some(seg) = self.segments.last_mut() {
             seg.dot = Some(status);
+        }
+        self
+    }
+
+    /// What the option added last shows is loading: a spinner before its label
+    /// (in place of its status dot), and it is busy for screen readers.
+    pub fn busy(mut self, busy: bool) -> Self {
+        if let Some(seg) = self.segments.last_mut() {
+            seg.busy = busy;
         }
         self
     }
@@ -220,7 +236,15 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
         let extras: Vec<f32> = self
             .segments
             .iter()
-            .map(|s| if s.dot.is_some() { DOT_W } else { 0.0 })
+            .map(|s| {
+                if s.busy {
+                    SPIN_W
+                } else if s.dot.is_some() {
+                    DOT_W
+                } else {
+                    0.0
+                }
+            })
             .chain(overflow_label.iter().map(|_| CHEVRON_GAP + CHEVRON))
             .collect();
         let mut galleys: Vec<_> = self
@@ -418,13 +442,23 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             } else {
                 pal.text_muted
             };
-            let dot = seg.dot.map(|s| pal.status(s));
-            paint_content(&painter, rect, dot, galley, color, false);
+            let lead = if seg.busy {
+                Lead::Spinner(color, ui.input(|i| i.time))
+            } else {
+                seg.dot.map_or(Lead::None, |s| Lead::Dot(pal.status(s)))
+            };
+            paint_content(&painter, rect, lead, galley, color, false);
             let label = seg.label.clone();
             let enabled = seg.enabled;
             r.widget_info(|| {
                 WidgetInfo::selected(egui::Role::RadioButton, enabled, is_sel, &label)
             });
+            if seg.busy {
+                ui.ctx()
+                    .accesskit_node_builder(r.id, |node| node.set_busy());
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(60));
+            }
         }
 
         if let (Some(o), Some(galley), Some(label)) =
@@ -451,7 +485,7 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             } else {
                 pal.text_muted
             };
-            paint_content(&painter, rect, None, galley, color, true);
+            paint_content(&painter, rect, Lead::None, galley, color, true);
             // Named by its own label ("More"), the chosen item as its value.
             let name = o.label.clone();
             let value = overflow_sel
@@ -526,23 +560,47 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
 /// The overflow menu's narrowest width.
 const MENU_MIN: f32 = 160.0;
 
-/// Paint a segment's content centred in `rect`: an optional status dot, the
-/// label and, for the overflow segment, a chevron.
+/// What a segment shows before its label.
+#[derive(Clone, Copy)]
+enum Lead {
+    None,
+    /// A status dot of this colour.
+    Dot(Color32),
+    /// A spinner in this colour, at this time (seconds).
+    Spinner(Color32, f64),
+}
+
+/// Paint a segment's content centred in `rect`: an optional status dot or
+/// spinner, the label and, for the overflow segment, a chevron.
 fn paint_content(
     painter: &egui::Painter,
     rect: Rect,
-    dot: Option<Color32>,
+    lead: Lead,
     galley: std::sync::Arc<egui::Galley>,
     color: Color32,
     chevron: bool,
 ) {
-    let lead = if dot.is_some() { DOT_W } else { 0.0 };
+    let lead_w = match lead {
+        Lead::None => 0.0,
+        Lead::Dot(_) => DOT_W,
+        Lead::Spinner(..) => SPIN_W,
+    };
     let trail = if chevron { CHEVRON_GAP + CHEVRON } else { 0.0 };
-    let x = rect.center().x - (lead + galley.size().x + trail) / 2.0;
+    let x = rect.center().x - (lead_w + galley.size().x + trail) / 2.0;
     let cy = rect.center().y;
-    if let Some(c) = dot {
-        painter.circle_filled(pos2(x + 3.0, cy), 3.0, c);
+    match lead {
+        Lead::None => {}
+        Lead::Dot(c) => {
+            painter.circle_filled(pos2(x + 3.0, cy), 3.0, c);
+        }
+        Lead::Spinner(c, time) => icons::spinner(
+            painter,
+            Rect::from_center_size(pos2(x + 6.0, cy), vec2(12.0, 12.0)),
+            c,
+            time,
+        ),
     }
+    let lead = lead_w;
     let end = x + lead + galley.size().x;
     painter.galley(pos2(x + lead, cy - galley.size().y / 2.0), galley, color);
     if chevron {

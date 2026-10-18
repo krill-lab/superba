@@ -141,6 +141,9 @@ ready = "Hot switch ready"
 safe_mode = "Safe mode"
 unavailable = "Full restart required: {reason}"
 
+[load]
+timed_out = "No answer within {secs} s. Check the connection, then retry."
+
 [log]
 phase = "→ {phase}"
 probed = "Line test: {lines}"

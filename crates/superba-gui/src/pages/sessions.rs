@@ -10,6 +10,11 @@
 //! reports (user bug 36) has a segment under its own name, but is never
 //! scanned: its view says why and where its sessions can be seen.
 //!
+//! Every host keeps its own scan, so a choice shows only that host's numbers:
+//! a host being scanned has a spinner in its segment, and until its first scan
+//! arrives its view is a loading state (user bug 83); a failed first scan
+//! offers Retry in place.
+//!
 //! Commands: `host:<target id>` (show a remote host), `host:local`, `rescan`.
 
 use std::collections::HashMap;
@@ -21,6 +26,7 @@ use superba_core::{
 };
 
 use super::shared::hosts as names;
+use super::shared::loading;
 use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, empty_state, error_text};
 use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::Icon;
@@ -326,16 +332,26 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
                 }
                 None => {
                     let rest = rows[1].union(rows[5]);
+                    let mut retry = false;
                     layout::fixed(ui, rest, |ui| match &cx.data.sessions.error {
-                        Some(e) => super::error_state(ui, cx, &cx.tr.t("sessions.load_failed"), e),
-                        None => empty_state(
+                        Some(e) if !cx.data.sessions.loading => {
+                            retry = loading::failed_card(
+                                ui,
+                                cx,
+                                &cx.tr.t("sessions.load_failed"),
+                                &error_text(cx.tr, e),
+                            );
+                        }
+                        _ => loading::loading_card(
                             ui,
                             cx,
-                            Icon::Sessions,
                             &cx.tr.t("sessions.scanning"),
                             &cx.tr.t("sessions.scanning_body"),
                         ),
                     });
+                    if retry {
+                        out.push(Action::LoadSessions);
+                    }
                 }
             }
         }
@@ -369,9 +385,9 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
                     let wsl = &mut state.wsl_migration;
                     let mut rescan = false;
                     layout::fixed(ui, rows[4].union(rows[5]), |ui| {
-                        remote_note(ui, cx, host, &v, &provider, error.as_ref(), out);
+                        rescan = remote_note(ui, cx, host, &v, &provider, error.as_ref(), out);
                         if host.kind == HostKind::Wsl {
-                            rescan = wsl_migrate(ui, cx, host, &v, &provider, wsl);
+                            rescan |= wsl_migrate(ui, cx, host, &v, &provider, wsl);
                         }
                     });
                     if rescan {
@@ -381,12 +397,12 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
                 }
                 None => {
                     let rest = rows[1].union(rows[5]);
+                    let mut retry = false;
                     layout::fixed(ui, rest, |ui| match (&error, scanning) {
-                        (Some(e), _) => unreachable(ui, cx, host, e),
-                        _ => empty_state(
+                        (Some(e), false) => retry = unreachable(ui, cx, host, e),
+                        _ => loading::loading_card(
                             ui,
                             cx,
-                            Icon::Sessions,
                             &cx.tr.f("sessions.scanning_host", &[("host", &host.label)]),
                             &cx.tr.t(if host.kind == HostKind::Wsl {
                                 "sessions.scanning_wsl"
@@ -395,6 +411,10 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
                             }),
                         ),
                     });
+                    if retry {
+                        let id = host.id.clone();
+                        state.scan(cx, &id);
+                    }
                 }
             }
         }
@@ -456,6 +476,7 @@ fn switcher(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, hosts: &[HostEntry]) {
             .small()
             .max_segment(longest)
             .option(None, cx.tr.t("sessions.host.local"));
+        seg = seg.busy(cx.data.sessions.loading && cx.data.sessions.value.is_none());
         for h in hosts.iter().take(SEGMENTS) {
             seg = match &h.tip {
                 Some(tip) => seg.option_with_tooltip(Some(h.id.clone()), h.label.clone(), tip),
@@ -466,6 +487,8 @@ fn switcher(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, hosts: &[HostEntry]) {
                 Some(false) => seg = seg.dot(Status::Idle),
                 None => {}
             }
+            // A spinner while the host is scanned (user bug 83).
+            seg = seg.busy(state.remote.get(&h.id).is_some_and(|s| s.task.is_some()));
         }
         if hosts.len() > SEGMENTS {
             seg = seg.overflow(
@@ -750,7 +773,8 @@ fn remote_note(
     provider: &str,
     error: Option<&Error>,
     out: &mut Vec<Action>,
-) {
+) -> bool {
+    let mut retry = false;
     if let Some(e) = error {
         ui.horizontal(|ui| {
             ui.add(StatusDot::new(Status::Error));
@@ -761,6 +785,13 @@ fn remote_note(
                 ),
                 cx.pal,
             ));
+            retry = ui
+                .add(
+                    Button::ghost(cx.tr.t("action.retry"))
+                        .icon(Icon::Refresh)
+                        .small(),
+                )
+                .clicked();
         });
         ui.add_space(6.0);
     }
@@ -776,7 +807,7 @@ fn remote_note(
     ui.add(egui::Label::new(Text::small(cx.tr.t(history), cx.pal)).wrap());
     if host.kind == HostKind::Wsl {
         // WSL distributions migrate from here (`wsl_migrate`).
-        return;
+        return retry;
     }
     let hidden: Vec<String> = v
         .report
@@ -786,7 +817,7 @@ fn remote_note(
         .map(|(p, _)| p.clone())
         .collect();
     if hidden.is_empty() {
-        return;
+        return retry;
     }
     ui.add_space(6.0);
     ui.add(egui::Label::new(Text::small(cx.tr.t("sessions.remote_readonly"), cx.pal)).wrap());
@@ -810,6 +841,7 @@ fn remote_note(
             out.push(Action::Copy(command.clone()));
         }
     });
+    retry
 }
 
 /// Start a migration of `from` sessions inside the WSL distribution `host`.
@@ -950,18 +982,18 @@ fn read_only(ui: &mut Ui, cx: &Cx<'_>, host: &HostEntry) {
     );
 }
 
-/// A host that could not be scanned (no earlier numbers).
-fn unreachable(ui: &mut Ui, cx: &Cx<'_>, host: &HostEntry, e: &Error) {
-    empty_state(
+/// A host that could not be scanned (no earlier numbers): the reason and
+/// Retry (true when clicked).
+fn unreachable(ui: &mut Ui, cx: &Cx<'_>, host: &HostEntry, e: &Error) -> bool {
+    loading::failed_card(
         ui,
         cx,
-        Icon::Warning,
         &cx.tr.f(
             "sessions.unreachable",
             &[("host", &host.label), ("detail", &error_text(cx.tr, e))],
         ),
         &cx.tr.t("sessions.unreachable_body"),
-    );
+    )
 }
 
 /// Command palette entries: show the sessions of each remote SSH host.

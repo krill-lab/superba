@@ -328,7 +328,11 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
                 ));
             }
             (None, Some((true, _))) => {
-                ui.label(Text::small(cx.tr.t("hosts.sync.checking"), cx.pal));
+                crate::pages::shared::loading::spinner_small(
+                    ui,
+                    cx,
+                    &cx.tr.t("hosts.sync.checking"),
+                );
             }
             (None, Some((_, Some(e)))) => {
                 ui.label(Text::small(e, cx.pal).color(cx.pal.red));

@@ -312,7 +312,11 @@ back to the official ChatGPT login.
   Models, Router, Usage, Settings, Sessions, Remote hosts, Updates, Diagnostics
   and Preferences pages, a floating switch overlay with the countdown and the
   settings diff, a Cmd/Ctrl+K command palette, a first-run wizard, keyboard
-  navigation, works down to 960 x 640. Every glyph comes from the bundled fonts
+  navigation, works down to 960 x 640. Choosing another remote host, WSL
+  distribution, file or provider shows the choice at once with a spinner and a
+  loading state instead of the previous choice's data until the new data
+  arrives; only the last choice counts, and a failure or a timeout is shown in
+  place with Retry (user bug 83). Every glyph comes from the bundled fonts
   or a CJK font. No demo mode: screenshots come from the real binaries against an
   isolated home and a local mock relay.
 - **CLI** (`spb`, also `superba <command>`): `status`, `lines --probe`,
