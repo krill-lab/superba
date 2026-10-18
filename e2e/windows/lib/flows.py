@@ -311,7 +311,8 @@ def wizard_krill(run, t, prefix="", line="a", lang="en"):
         s.check(sel.get("selected") is True, "Krill pre-selected")
         u.click(key="wizard.continue")
         s.check(u.exists(timeout=10, key_re="wizard.credentials.key.title"), "key step")
-        u.set_value(net.key, type="Edit")   # the key goes through the agent socket only, never logged
+        # By its name, the step's title (user bug 56); the key goes through the agent socket only, never logged.
+        u.set_value(net.key, key_re="wizard.credentials.key.title", type="Edit")
         u.click(key="wizard.continue")
         s.check(u.exists(timeout=60, key="wizard.line.title"), "line & model step")
         time.sleep(4)  # latency and key checks

@@ -336,23 +336,26 @@ def w32(t):
         s.manual("usage-router-on.png: banner 'Router on (127.0.0.1:<port>)…', rows with session names and "
                  "'Krill · <line>' provider, filter dropdown borders not clipped (bug 9)")
     with t.step("Open a request: General and Timing tabs") as s:
-        # The table's rows and the detail tabs carry no accessible names (user bug 56): by geometry.
+        # Rows are DataItems named by their summary (time, session, status, model, cost), invoked by
+        # name; the detail tabs are TabItems named General / Timing (user bug 56).
         tree = u.tree(patterns=False)
-        rows = [e for e in tree if e["type"] == "Custom" and e["rect"] and e["rect"][3] == 26 and e["rect"][2] > 600]
-        s.check(bool(rows), f"{len(rows)} table rows")
-        r0 = rows[0]["rect"]
-        run.agent.call("click", x=r0[0] + r0[2] // 2, y=r0[1] + r0[3] // 2, **u.win)
+        rows = [e for e in tree if e["type"] == "DataItem" and e["rect"] and e["rect"][3] == 26
+                and e["rect"][2] > 600 and e["name"]]
+        s.check(bool(rows), f"{len(rows)} named table rows: {[e['name'] for e in rows[:3]]}")
+        s.check(not [e for e in tree if e["type"] == "Custom" and not e["name"] and e["rect"]
+                     and e["rect"][3] == 26 and e["rect"][2] > 600],
+                "no unnamed row left (bug 56)")
+        if rows:
+            u.click(name=rows[0]["name"], type="DataItem")
         time.sleep(2)
         s.shot("usage-detail-general")
-        tree = u.tree(patterns=False)
-        hide = next((e for e in tree if e["name"] == u.L("requests.toolbar.collapse")), None)
-        tabs = [e for e in tree if e["type"] == "Custom" and e["rect"] and e["rect"][3] == 26 and e["rect"][2] < 90
-                and hide and e["rect"][1] > hide["rect"][1]]
-        s.check(len(tabs) >= 2, f"detail tabs below the table: {len(tabs)} (General and Timing)")
-        s.check(len(tabs) == 2, "exactly two detail tabs (bug 22: no content tabs)", soft=True)
-        if len(tabs) >= 2:
-            r1 = tabs[1]["rect"]
-            run.agent.call("click", x=r1[0] + r1[2] // 2, y=r1[1] + r1[3] // 2, **u.win)
+        s.ui_dump("usage-detail-general")
+        tabs = [e for e in u.tree(patterns=False) if e["type"] == "TabItem"
+                and e["name"] in (u.L("requests.detail.general"), u.L("requests.detail.timing"))]
+        s.check(len(tabs) == 2, f"detail tabs by name: {[e['name'] for e in tabs]} (General and Timing; "
+                "bug 22: no content tabs)")
+        if len(tabs) == 2:
+            u.click(key="requests.detail.timing", type="TabItem")
             time.sleep(1.5)
             s.shot("usage-detail-timing")
             s.ui_dump("usage-detail-timing")
