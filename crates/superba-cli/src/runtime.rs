@@ -91,11 +91,11 @@ pub fn run_editor(command: &str, path: &Path) -> std::io::Result<bool> {
         && !program.eq_ignore_ascii_case("notepad")
     {
         // `code`, `subl`: batch launchers only cmd.exe finds.
-        let mut c = std::process::Command::new("cmd");
+        let mut c = superba_core::process::terminal_command("cmd");
         c.arg("/C").arg(program);
         c
     } else {
-        std::process::Command::new(program)
+        superba_core::process::terminal_command(program)
     };
     let status = cmd.args(args).arg(path).status()?;
     Ok(status.success())

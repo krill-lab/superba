@@ -59,6 +59,15 @@ pub fn no_window(command: &mut Command) -> &mut Command {
     command
 }
 
+/// A command for a child that works in our terminal and that we wait for: the
+/// user's text editor of `spb config edit` (vi, nano, notepad). It keeps our
+/// console and standard streams (a hidden console would leave a terminal
+/// editor without one); nothing else is changed.
+pub fn terminal_command(program: impl AsRef<OsStr>) -> Command {
+    BUILT.fetch_add(1, Ordering::Relaxed);
+    Command::new(program)
+}
+
 /// A command for a child that must outlive us and stay out of our console and
 /// Ctrl+C group (the Codex desktop app, a background daemon).
 ///
