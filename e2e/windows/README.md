@@ -2,7 +2,7 @@
 
 Runs Superba's Windows user scenarios end to end in a local Windows 11 VM, driven from the
 Linux host: the real MSI, the real ChatGPT desktop app (MSIX), the real Codex, the GUI through
-UI Automation. The scenario matrix (ids W01–W86, what each one checks) lives with the VM notes
+UI Automation. The scenario matrix (ids W01–W88, what each one checks) lives with the VM notes
 (`.private/wintest/MATRIX.md`, not tracked); `run.py list` prints the ids.
 
 ```sh
@@ -11,7 +11,7 @@ e2e/windows/run.py run W01 W04 W10 W11 W30 W31 W32 W33 W40 W42      # the core p
 SUPERBA_E2E_ENV=/path/to/e2e.env e2e/windows/run.py run W12 W13 --net real
 e2e/windows/run.py run --all
 e2e/windows/run.py run W01 W04 W10 W11 W30 W40 W42 --base uacoff     # the UAC-off machine (snapshot `clean`)
-e2e/windows/run.py run W80 W82 W83 W84 W85 W86                       # Codex inside WSL 1 (snapshot `wintest-wsl1`)
+e2e/windows/run.py run W80 W82 W83 W84 W85 W88 W86 W81               # Codex inside WSL 1 (snapshot `wintest-wsl1`)
 e2e/windows/run.py prep-snapshot                                      # rebuild the `wintest` base snapshot
 ```
 
@@ -28,7 +28,9 @@ UI Automation dumps, saved files), `transcripts/` (every `spb` call) and `net/` 
 - Snapshot `wintest` = `clean` + `guest/prep-base.ps1` (UAC on with Windows' defaults, the old
   Superba MSI removed). Built automatically when missing. `--base uacoff` runs on `clean` instead (UAC
   off; its old MSI is removed after each restore). The WSL scenarios need `wintest-wsl1` (WSL 1 with a
-  distribution `Ubuntu-WSL1` and the app's Linux Codex; made by hand, see the VM notes).
+  distribution `Ubuntu-WSL1` and the app's Linux Codex; made by hand, see the VM notes). A WSL 1 distribution
+  stops ~30 s after it goes idle and a switch never starts one, so the install step starts a keep-alive
+  (`wsl.exe -d Ubuntu-WSL1 --exec sleep 3600`); W88 stops it on purpose to test the pending update.
 - Python 3.11 (stdlib only for the runner), ssh/scp, docker access for the snapshot scripts.
   `--net real` also needs `aiohttp` for `e2e/lib/linefwd.py` and the env file of `e2e/README.md`
   (`SUPERBA_E2E_UPSTREAM`, `SUPERBA_E2E_KEY`; values are never printed or written to tracked files).
