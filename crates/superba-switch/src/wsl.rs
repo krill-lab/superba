@@ -425,3 +425,135 @@ impl Switcher {
         Ok(report)
     }
 }
+
+/// Environment variable naming Superba's Linux helper (`spb` for Linux) to run
+/// inside WSL distributions (tests, development builds).
+pub const ENV_WSL_HELPER: &str = "SUPERBA_WSL_HELPER";
+
+/// File name of the helper the Windows package ships next to `superba.exe`.
+pub fn helper_file_name(arch: &str) -> Option<&'static str> {
+    match arch {
+        "x86_64" | "amd64" => Some("spb-linux-x86_64"),
+        "aarch64" | "arm64" => Some("spb-linux-aarch64"),
+        _ => None,
+    }
+}
+
+/// The `spb` arguments that migrate sessions as `request` says.
+pub fn migrate_args(request: &superba_core::MigrationRequest, locale: &str) -> Result<Vec<String>> {
+    let mut providers = request.selectors.iter().filter_map(|s| match s {
+        superba_core::MigrationSelector::Provider { provider } => Some(provider.clone()),
+        _ => None,
+    });
+    let from = providers
+        .next()
+        .ok_or_else(|| Error::invalid("a WSL session migration needs one source provider"))?;
+    if providers.next().is_some() || request.selectors.len() != 1 {
+        return Err(Error::invalid(
+            "a WSL session migration takes one source provider at a time",
+        ));
+    }
+    let mut args = vec![
+        "sessions".to_owned(),
+        "migrate".to_owned(),
+        "--from".to_owned(),
+        from,
+        "--to".to_owned(),
+        request.to_provider.clone(),
+        "--yes".to_owned(),
+        "--locale".to_owned(),
+        locale.to_owned(),
+    ];
+    if !request.include_archived {
+        args.push("--no-archived".to_owned());
+    }
+    for t in &request.exclude {
+        args.push("--exclude-thread".to_owned());
+        args.push(t.clone());
+    }
+    Ok(args)
+}
+
+impl Switcher {
+    /// The Linux helper for a distribution of `arch` (`SUPERBA_WSL_HELPER`, else
+    /// next to the running program); errors in `catalog`'s language.
+    fn wsl_helper(
+        &self,
+        arch: Option<&str>,
+        catalog: &superba_core::Catalog,
+    ) -> Result<std::path::PathBuf> {
+        if let Some(p) = self.deps.ctx.env.var_non_empty(ENV_WSL_HELPER) {
+            let p = std::path::PathBuf::from(p);
+            if p.is_file() {
+                return Ok(p);
+            }
+        }
+        let arch = arch.unwrap_or("x86_64");
+        let name = helper_file_name(arch).ok_or_else(|| Error::Unsupported {
+            what: format!("migrating sessions in a WSL distribution on {arch}"),
+        })?;
+        let exe = std::env::current_exe()
+            .and_then(std::fs::canonicalize)
+            .map_err(|e| Error::other(format!("cannot find this program: {e}")))?;
+        let p = exe.with_file_name(name);
+        if p.is_file() {
+            Ok(p)
+        } else {
+            Err(Error::NotFound {
+                what: catalog.text(&text("switch.wsl.no_helper").arg("file", name)),
+            })
+        }
+    }
+
+    pub(crate) async fn host_migrate_sessions_impl(
+        &self,
+        id: &TargetId,
+        request: &superba_core::MigrationRequest,
+        locale: superba_core::Locale,
+        events: std::sync::Arc<dyn superba_core::SwitchEvents>,
+    ) -> Result<superba_core::HostMigrationReport> {
+        let d = &self.deps;
+        let catalog = crate::messages::catalog(locale);
+        let (host, _) = self.app_host(id).await?;
+        if host.kind != HostKind::Wsl {
+            return Err(Error::Unsupported {
+                what: format!(
+                    "migrating sessions on {} from here (run spb sessions migrate on the host)",
+                    host.title().render_fallback()
+                ),
+            });
+        }
+        let state = d.remote.probe(&host).await?;
+        if !state.app_server_pids.is_empty() {
+            return Err(Error::Blocked {
+                reasons: vec![superba_core::BlockReason::UnsupportedTarget {
+                    detail: catalog.text(
+                        &text("switch.wsl.migrate_app_running").arg_text("host", host.title()),
+                    ),
+                }],
+            });
+        }
+        let helper = self.wsl_helper(state.arch.as_deref(), &catalog)?;
+        let args = migrate_args(request, locale.code())?;
+        events.emit(superba_core::SwitchEvent::Log {
+            level: superba_core::Severity::Info,
+            text: text("switch.wsl.migrating").arg_text("host", host.title()),
+        });
+        let sink_events = events.clone();
+        let sink: superba_core::LineSink = std::sync::Arc::new(move |line: &str| {
+            sink_events.emit(superba_core::SwitchEvent::Log {
+                level: superba_core::Severity::Info,
+                text: LocalizedText::new(String::new(), line),
+            });
+        });
+        let run = d.remote.run_helper(&host, &helper, &args, sink).await?;
+        let ok = run.exit_code == Some(0);
+        let report = d.remote.scan_sessions(&host).await.ok();
+        Ok(superba_core::HostMigrationReport {
+            target_id: id.clone(),
+            ok,
+            run,
+            report,
+        })
+    }
+}

@@ -53,6 +53,36 @@ pub struct RemoteScan {
     task: Option<ReadTask<HostSessions>>,
 }
 
+/// A session migration running inside a WSL distribution (user bug 45).
+pub struct WslMigration {
+    /// The distribution.
+    pub target: TargetId,
+    /// The source provider.
+    pub from: String,
+    /// The helper's progress lines so far.
+    pub lines: std::sync::Arc<std::sync::Mutex<Vec<superba_core::LocalizedText>>>,
+    task: Option<ReadTask<superba_core::HostMigrationReport>>,
+    /// The result, once finished.
+    pub result: Option<Result<superba_core::HostMigrationReport, Error>>,
+}
+
+/// Collects the helper's lines for the page.
+struct LineCollector(std::sync::Arc<std::sync::Mutex<Vec<superba_core::LocalizedText>>>);
+
+impl superba_core::SwitchEvents for LineCollector {
+    fn emit(&self, event: superba_core::SwitchEvent) {
+        if let superba_core::SwitchEvent::Log { text, .. } = event
+            && let Ok(mut lines) = self.0.lock()
+        {
+            lines.push(text);
+            let n = lines.len();
+            if n > 200 {
+                lines.drain(..n - 200);
+            }
+        }
+    }
+}
+
 /// Page-local state, kept across navigation.
 #[derive(Default)]
 pub struct State {
@@ -60,6 +90,8 @@ pub struct State {
     pub host: Option<TargetId>,
     /// Scans of remote hosts.
     pub remote: HashMap<TargetId, RemoteScan>,
+    /// A migration inside a WSL distribution.
+    pub wsl_migration: Option<WslMigration>,
     /// Paging of the provider table.
     pub providers: PagedState,
     /// Paging of the migration history.
@@ -334,9 +366,18 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
                             out,
                         )
                     });
+                    let wsl = &mut state.wsl_migration;
+                    let mut rescan = false;
                     layout::fixed(ui, rows[4].union(rows[5]), |ui| {
                         remote_note(ui, cx, host, &v, &provider, error.as_ref(), out);
+                        if host.kind == HostKind::Wsl {
+                            rescan = wsl_migrate(ui, cx, host, &v, &provider, wsl);
+                        }
                     });
+                    if rescan {
+                        let id = host.id.clone();
+                        state.scan(cx, &id);
+                    }
                 }
                 None => {
                     let rest = rows[1].union(rows[5]);
@@ -347,7 +388,11 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
                             cx,
                             Icon::Sessions,
                             &cx.tr.f("sessions.scanning_host", &[("host", &host.label)]),
-                            &cx.tr.t("sessions.scanning_ssh"),
+                            &cx.tr.t(if host.kind == HostKind::Wsl {
+                                "sessions.scanning_wsl"
+                            } else {
+                                "sessions.scanning_ssh"
+                            }),
                         ),
                     });
                 }
@@ -432,11 +477,14 @@ fn switcher(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, hosts: &[HostEntry]) {
         seg.show(ui);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let at = match &state.host {
-                Some(h) => state
-                    .remote
-                    .get(h)
-                    .and_then(|s| s.at)
-                    .map(|t| cx.tr.f("sessions.scanned_ssh", &[("age", &cx.ago(t))])),
+                Some(h) => state.remote.get(h).and_then(|s| s.at).map(|t| {
+                    let key = if HostKind::of_target(h) == HostKind::Wsl {
+                        "sessions.scanned_wsl"
+                    } else {
+                        "sessions.scanned_ssh"
+                    };
+                    cx.tr.f(key, &[("age", &cx.ago(t))])
+                }),
                 None => cx.data.sessions.value.as_ref().map(|(r, _)| {
                     cx.tr
                         .f("sessions.scanned", &[("age", &cx.ago(r.scanned_at))])
@@ -717,7 +765,16 @@ fn remote_note(
         cx.tr.f("sessions.history_for", &[("host", &host.label)]),
         cx.pal,
     ));
-    ui.add(egui::Label::new(Text::small(cx.tr.t("sessions.remote_history"), cx.pal)).wrap());
+    let history = if host.kind == HostKind::Wsl {
+        "sessions.wsl_history"
+    } else {
+        "sessions.remote_history"
+    };
+    ui.add(egui::Label::new(Text::small(cx.tr.t(history), cx.pal)).wrap());
+    if host.kind == HostKind::Wsl {
+        // WSL distributions migrate from here (`wsl_migrate`).
+        return;
+    }
     let hidden: Vec<String> = v
         .report
         .by_provider
@@ -752,11 +809,133 @@ fn remote_note(
     });
 }
 
+/// Start a migration of `from` sessions inside the WSL distribution `host`.
+fn start_wsl_migration(cx: &Cx<'_>, host: &HostEntry, from: &str, to: &str) -> WslMigration {
+    let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let events = std::sync::Arc::new(LineCollector(lines.clone()));
+    let request = superba_core::MigrationRequest {
+        to_provider: to.to_owned(),
+        selectors: vec![superba_core::MigrationSelector::Provider {
+            provider: from.to_owned(),
+        }],
+        include_archived: true,
+        exclude: Vec::new(),
+    };
+    let service = cx.service.clone();
+    let target = host.id.clone();
+    let locale = cx.tr.locale();
+    WslMigration {
+        target: host.id.clone(),
+        from: from.to_owned(),
+        lines,
+        task: Some(crate::runtime::task(async move {
+            service
+                .host_migrate_sessions(&target, &request, locale, events)
+                .await
+        })),
+        result: None,
+    }
+}
+
+/// WSL distributions migrate here (Superba's Linux helper runs inside the
+/// distribution): a button per provider whose sessions are hidden, the
+/// helper's latest line while it runs, and the result.
+fn wsl_migrate(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    host: &HostEntry,
+    v: &HostSessions,
+    provider: &str,
+    state: &mut Option<WslMigration>,
+) -> bool {
+    let mut finished = false;
+    if let Some(m) = state.as_mut()
+        && let Some(task) = &m.task
+        && let Some(result) = task.poll()
+    {
+        m.task = None;
+        m.result = Some(result);
+        finished = true;
+    }
+    let running = state
+        .as_ref()
+        .is_some_and(|m| m.target == host.id && m.task.is_some());
+    if running {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(200));
+    }
+    let hidden: Vec<String> = v
+        .report
+        .by_provider
+        .iter()
+        .filter(|(p, s)| p.as_str() != provider && s.distinct > 0)
+        .map(|(p, _)| p.clone())
+        .collect();
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        for from in &hidden {
+            let label = cx
+                .tr
+                .f("sessions.wsl_migrate", &[("from", from), ("to", &provider)]);
+            if ui
+                .add(
+                    Button::new(label)
+                        .small()
+                        .loading(running)
+                        .enabled(!running && !cx.busy),
+                )
+                .clicked()
+            {
+                *state = Some(start_wsl_migration(cx, host, from, provider));
+            }
+        }
+    });
+    let Some(m) = state.as_ref().filter(|m| m.target == host.id) else {
+        return finished;
+    };
+    let last = m
+        .lines
+        .lock()
+        .ok()
+        .and_then(|l| l.last().map(|t| cx.tr.text(t)))
+        .unwrap_or_default();
+    match &m.result {
+        None if !last.is_empty() => {
+            ui.label(Text::small(last, cx.pal));
+        }
+        Some(Ok(r)) if r.ok => {
+            ui.horizontal(|ui| {
+                ui.add(StatusDot::new(Status::Ok));
+                ui.label(Text::small(
+                    cx.tr.f("sessions.wsl_migrated", &[("from", &m.from)]),
+                    cx.pal,
+                ));
+            });
+        }
+        Some(Ok(r)) => {
+            ui.horizontal(|ui| {
+                ui.add(StatusDot::new(Status::Error));
+                ui.label(Text::small(cx.tr.t("sessions.wsl_migrate_failed"), cx.pal));
+            });
+            if let Some(line) = r.run.tail.last() {
+                ui.add(egui::Label::new(Text::small(line.clone(), cx.pal)).wrap());
+            }
+        }
+        Some(Err(e)) => {
+            ui.horizontal(|ui| {
+                ui.add(StatusDot::new(Status::Error));
+                ui.add(egui::Label::new(Text::small(error_text(cx.tr, e), cx.pal)).wrap());
+            });
+        }
+        None => {}
+    }
+    finished
+}
+
 /// A host Superba does not scan (a remote-control device, a WSL distribution).
 fn read_only(ui: &mut Ui, cx: &Cx<'_>, host: &HostEntry) {
     let body = match host.kind {
         HostKind::RemoteControl => "sessions.read_only_body.remote_control",
-        HostKind::Wsl => "sessions.read_only_body.wsl",
         _ => "sessions.read_only_body.other",
     };
     empty_state(

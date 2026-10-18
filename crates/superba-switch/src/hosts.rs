@@ -597,12 +597,27 @@ impl Switcher {
         }
         let (host, _) = self.app_host(id).await?;
         let report = self.deps.remote.scan_sessions(&host).await?;
+        // A WSL distribution migrates from this computer (Superba's Linux
+        // helper runs inside it, user bug 45): the command is this computer's.
+        let wsl = host
+            .wsl_distro()
+            .filter(|_| host.kind == superba_core::HostKind::Wsl);
+        let migrate_command = match &wsl {
+            Some(distro) => migrate_command(&report).map(|c| {
+                c.replacen(
+                    "spb sessions migrate",
+                    &format!("spb sessions --host wsl:{distro} migrate"),
+                    1,
+                )
+            }),
+            None => migrate_command(&report),
+        };
         Ok(HostSessions {
             target_id: id.clone(),
-            migrate_command: migrate_command(&report),
+            migrate_command,
             report,
             history: Vec::new(),
-            read_only: true,
+            read_only: wsl.is_none(),
         })
     }
 }

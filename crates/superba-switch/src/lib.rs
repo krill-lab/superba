@@ -718,6 +718,18 @@ impl SwitchService for Switcher {
         self.host_sessions_impl(target_id).await
     }
 
+    async fn host_migrate_sessions(
+        &self,
+        target_id: &superba_core::TargetId,
+        request: &superba_core::MigrationRequest,
+        locale: superba_core::Locale,
+        events: Arc<dyn superba_core::SwitchEvents>,
+    ) -> Result<superba_core::HostMigrationReport> {
+        self.refuse_elevated()?;
+        self.host_migrate_sessions_impl(target_id, request, locale, events)
+            .await
+    }
+
     async fn wsl_overview(&self) -> Result<superba_core::wsl::WslOverview> {
         self.wsl_overview_impl().await
     }

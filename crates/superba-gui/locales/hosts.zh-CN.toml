@@ -30,7 +30,6 @@ kind_label = "类型"
 [hosts.read_only]
 label = "{kind} · 只读"
 remote_control = "这台设备通过 ChatGPT 远程控制连接，不走 SSH。Superba 无法检测它、向它同步设置、让它随本机切换、在上面安装 Codex 或读取它的会话。要管理它，请在那台设备上运行 Superba。"
-wsl = "这是本机上的 WSL 发行版，ChatGPT app 不通过 SSH 连接它。Superba 无法检测它、向它同步设置、让它随本机切换、在上面安装 Codex 或读取它的会话。要管理它，请在该发行版里运行 spb。"
 other = "ChatGPT app 不通过 SSH 连接这台主机，所以 Superba 无法检测它、向它同步设置、让它随本机切换、在上面安装 Codex 或读取它的会话。"
 
 [hosts.kind]

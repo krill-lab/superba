@@ -47,6 +47,7 @@
 
 pub mod discover;
 pub mod envrc;
+pub mod helper;
 mod hostops;
 pub mod install;
 pub mod probe;
@@ -1484,6 +1485,16 @@ impl RemoteHosts for SshRemoteHosts {
         kinded(host, self.http_get_impl(host, address, port, path).await)
     }
 
+    async fn run_helper(
+        &self,
+        host: &RemoteHost,
+        helper: &Path,
+        args: &[String],
+        sink: superba_core::LineSink,
+    ) -> Result<superba_core::HelperRun> {
+        kinded(host, self.run_helper_impl(host, helper, args, sink).await)
+    }
+
     async fn wsl_status(&self) -> Result<(superba_core::WslNetworking, Option<String>)> {
         let inv = self.wsl.list().await;
         Ok((inv.networking, inv.error))
@@ -1491,6 +1502,73 @@ impl RemoteHosts for SshRemoteHosts {
 }
 
 impl SshRemoteHosts {
+    /// [`RemoteHosts::run_helper`] (WSL distributions only).
+    async fn run_helper_impl(
+        &self,
+        host: &RemoteHost,
+        helper_file: &Path,
+        args: &[String],
+        sink: superba_core::LineSink,
+    ) -> Result<superba_core::HelperRun> {
+        if host.kind != superba_core::HostKind::Wsl {
+            return Err(Error::invalid(format!(
+                "{} is not a WSL distribution",
+                host.title().render_fallback()
+            )));
+        }
+        let (sha256, size) = hostops::file_digest(helper_file).await?;
+        let snap = self.snapshot(host, false).await?;
+        let nonce = new_nonce();
+        let recs = self
+            .run(
+                host,
+                &helper::check_script(&nonce, &sha256),
+                &nonce,
+                self.timeouts.write,
+            )
+            .await?;
+        let mut uploaded = false;
+        if !recs.has("present") {
+            let nonce = new_nonce();
+            let script = helper::upload_script(&nonce, &sha256, size);
+            ssh::require_reachable(host)?;
+            let out = self
+                .shells
+                .for_host(host)
+                .run_with_payload(host, &script, helper_file, self.timeouts.install)
+                .await?;
+            let recs = Records::parse(&out.stdout, &nonce)?;
+            if recs.get("result") != Some("ok") {
+                return Err(Error::Ssh {
+                    host: host.label.clone(),
+                    message: format!(
+                        "copying Superba's Linux helper failed: {}",
+                        recs.get("error").unwrap_or("no result")
+                    ),
+                });
+            }
+            uploaded = true;
+        }
+        let nonce = new_nonce();
+        let script = helper::run_script(&nonce, &sha256, args, &snap.state.codex_home);
+        let filtered: superba_core::LineSink = Arc::new(move |line: &str| {
+            if !line.starts_with(script::RECORD_PREFIX) && !line.trim().is_empty() {
+                sink(line);
+            }
+        });
+        let out = self
+            .shells
+            .for_host(host)
+            .run_streaming(host, &script, Duration::from_secs(3600), filtered)
+            .await?;
+        let recs = Records::parse(&out.stdout, &nonce)?;
+        Ok(superba_core::HelperRun {
+            exit_code: recs.get("exit").and_then(|v| v.trim().parse().ok()),
+            uploaded,
+            tail: helper::tail(&out.stdout),
+        })
+    }
+
     async fn http_get_impl(
         &self,
         host: &RemoteHost,

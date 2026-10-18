@@ -61,7 +61,7 @@ pub struct InstallSpec {
 }
 
 /// Helpers of the install and rollback scripts.
-const FUNCS: &str = r#"sb_fail() { sb_put error "$1"; sb_put result error; }
+pub(crate) const FUNCS: &str = r#"sb_fail() { sb_put error "$1"; sb_put result error; }
 sb_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{ print $1 }'
   elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{ print $1 }'

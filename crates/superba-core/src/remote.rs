@@ -350,3 +350,38 @@ pub struct HostSyncReport {
     #[serde(default)]
     pub notes: Vec<Notice>,
 }
+
+/// Receives the output lines of a long-running remote program as they arrive
+/// ([`crate::RemoteHosts::run_helper`]); must not block.
+pub type LineSink = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+/// Result of running Superba's Linux helper (`spb`) inside a WSL distribution
+/// ([`crate::RemoteHosts::run_helper`], user bug 45).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HelperRun {
+    /// Its exit code (`None` = it did not finish).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// The helper was copied into the distribution for this run (else the copy
+    /// from an earlier run with the same checksum was used).
+    #[serde(default)]
+    pub uploaded: bool,
+    /// Its last output lines (at most 40).
+    #[serde(default)]
+    pub tail: Vec<String>,
+}
+
+/// Result of migrating the sessions of a WSL distribution
+/// ([`crate::SwitchService::host_migrate_sessions`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostMigrationReport {
+    /// Host.
+    pub target_id: TargetId,
+    /// The migration finished.
+    pub ok: bool,
+    /// The helper's run.
+    pub run: HelperRun,
+    /// Sessions afterwards (a new scan), when it could be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<crate::sessions::SessionReport>,
+}

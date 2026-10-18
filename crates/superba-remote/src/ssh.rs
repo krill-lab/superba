@@ -111,7 +111,26 @@ pub trait RemoteShell: Send + Sync + fmt::Debug {
         let _ = (host, script, payload, timeout);
         Err(Error::not_implemented("RemoteShell::run_with_payload"))
     }
+
+    /// [`RemoteShell::run`], handing each stdout line to `sink` as it arrives
+    /// (long-running helpers report progress). The default runs the script and
+    /// hands the lines over at the end.
+    async fn run_streaming(
+        &self,
+        host: &RemoteHost,
+        script: &str,
+        timeout: Duration,
+        sink: LineSink,
+    ) -> Result<ScriptOutput> {
+        let out = self.run(host, script, timeout).await?;
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            sink(line);
+        }
+        Ok(out)
+    }
 }
+
+pub use superba_core::LineSink;
 
 /// Remote command of [`RemoteShell::run_with_payload`] (run with `sh -c`): read
 /// one line with the script's length, then exactly that many bytes with `dd
@@ -416,6 +435,11 @@ pub(crate) struct Input {
 }
 
 impl Input {
+    /// Just `prefix`.
+    pub(crate) fn new(prefix: Vec<u8>) -> Self {
+        Self { prefix, file: None }
+    }
+
     /// `prefix` followed by the bytes of `file`.
     pub(crate) fn with_file(prefix: Vec<u8>, file: PathBuf) -> Self {
         Self {
@@ -443,10 +467,22 @@ pub(crate) async fn run_with_stdin(
 /// [`run_with_stdin`] with a streamed file after the prefix. A file that cannot be
 /// opened fails the run before anything starts.
 pub(crate) async fn run_with_input(
+    cmd: tokio::process::Command,
+    input: Input,
+    timeout: Duration,
+    label: &str,
+) -> Result<ScriptOutput> {
+    run_with_input_streaming(cmd, input, timeout, label, None).await
+}
+
+/// [`run_with_input`] handing each complete stdout line to `sink` as it
+/// arrives.
+pub(crate) async fn run_with_input_streaming(
     mut cmd: tokio::process::Command,
     input: Input,
     timeout: Duration,
     label: &str,
+    sink: Option<LineSink>,
 ) -> Result<ScriptOutput> {
     let file = match &input.file {
         Some(p) => Some(
@@ -492,7 +528,35 @@ pub(crate) async fn run_with_input(
         let read_out = async {
             let mut buf = Vec::new();
             if let Some(s) = stdout.as_mut() {
-                let _ = s.take(MAX_STDOUT_BYTES + 1).read_to_end(&mut buf).await;
+                let mut limited = s.take(MAX_STDOUT_BYTES + 1);
+                match &sink {
+                    None => {
+                        let _ = limited.read_to_end(&mut buf).await;
+                    }
+                    Some(sink) => {
+                        let mut chunk = vec![0_u8; 16 * 1024];
+                        let mut line_start = 0;
+                        loop {
+                            let n = match limited.read(&mut chunk).await {
+                                Ok(0) | Err(_) => break,
+                                Ok(n) => n,
+                            };
+                            buf.extend_from_slice(&chunk[..n]);
+                            while let Some(pos) = buf[line_start..].iter().position(|b| *b == b'\n')
+                            {
+                                let end = line_start + pos;
+                                let line = String::from_utf8_lossy(&buf[line_start..end]);
+                                sink(line.trim_end_matches('\r'));
+                                line_start = end + 1;
+                            }
+                        }
+                        if line_start < buf.len() {
+                            sink(
+                                String::from_utf8_lossy(&buf[line_start..]).trim_end_matches('\r'),
+                            );
+                        }
+                    }
+                }
             }
             if buf.len() as u64 > MAX_STDOUT_BYTES {
                 return Err(too_much("stdout", MAX_STDOUT_BYTES));
@@ -583,6 +647,16 @@ impl RemoteShell for LocalShell {
         run_with_stdin(cmd, script.as_bytes(), timeout, &host.label).await
     }
 
+    async fn run_streaming(
+        &self,
+        host: &RemoteHost,
+        script: &str,
+        timeout: Duration,
+        sink: LineSink,
+    ) -> Result<ScriptOutput> {
+        self.run_lines(host, script, timeout, sink).await
+    }
+
     async fn run_with_payload(
         &self,
         host: &RemoteHost,
@@ -601,6 +675,26 @@ impl RemoteShell for LocalShell {
 }
 
 impl LocalShell {
+    /// [`RemoteShell::run_streaming`] for tests.
+    async fn run_lines(
+        &self,
+        host: &RemoteHost,
+        script: &str,
+        timeout: Duration,
+        sink: LineSink,
+    ) -> Result<ScriptOutput> {
+        let mut cmd = self.command();
+        cmd.arg("-s");
+        run_with_input_streaming(
+            cmd,
+            Input::new(script.as_bytes().to_vec()),
+            timeout,
+            &host.label,
+            Some(sink),
+        )
+        .await
+    }
+
     fn command(&self) -> tokio::process::Command {
         let mut cmd = tokio::process::Command::from(superba_core::process::command("/bin/sh"));
         cmd.env_clear();

@@ -1592,6 +1592,8 @@ pub struct FakeRemote {
     pub http_calls: Mutex<Vec<String>>,
     /// WSL: blocked plans per host label (e.g. no baseline).
     pub blocked: Mutex<BTreeMap<String, Vec<BlockReason>>>,
+    /// WSL: helper runs (`host label`, arguments).
+    pub helper_runs: Mutex<Vec<(String, Vec<String>)>>,
 }
 
 pub fn remote_host(key: &str, host_id: Option<&str>) -> RemoteHost {
@@ -1826,6 +1828,27 @@ impl RemoteHosts for FakeRemote {
             .unwrap()
             .get(&format!("{address}:{port}"))
             .cloned())
+    }
+
+    async fn run_helper(
+        &self,
+        host: &RemoteHost,
+        _helper: &Path,
+        args: &[String],
+        sink: superba_core::LineSink,
+    ) -> Result<superba_core::HelperRun> {
+        self.helper_runs
+            .lock()
+            .unwrap()
+            .push((host.label.clone(), args.to_vec()));
+        for line in ["Migrated 1 of 2 sessions", "Migrated 2 of 2 sessions"] {
+            sink(line);
+        }
+        Ok(superba_core::HelperRun {
+            exit_code: Some(0),
+            uploaded: true,
+            tail: vec!["Migrated 2 of 2 sessions".into()],
+        })
     }
 
     async fn wsl_status(&self) -> Result<(superba_core::WslNetworking, Option<String>)> {
@@ -2114,6 +2137,7 @@ impl World {
                 http: Mutex::new(BTreeMap::new()),
                 http_calls: Mutex::new(Vec::new()),
                 blocked: Mutex::new(BTreeMap::new()),
+                helper_runs: Mutex::new(Vec::new()),
             }),
             router: Arc::new(FakeRouter::new(log.clone())),
             v3: v3::V3 {

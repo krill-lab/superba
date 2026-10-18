@@ -1,4 +1,6 @@
-use superba_core::{MigrationRequest, MigrationSelector, SwitchIntent};
+use std::sync::Arc;
+
+use superba_core::{MigrationRequest, MigrationSelector, SwitchEvent, SwitchEvents, SwitchIntent};
 
 use super::{Result, execute, request};
 use crate::{Output, Runtime, SessionsCommand, exit};
@@ -10,13 +12,53 @@ pub(super) async fn run(
     out: &mut Output,
 ) -> Result {
     if let Some(h) = host.filter(|h| *h != "local") {
+        let id = super::remote::target(h);
+        // A WSL distribution migrates with Superba's Linux helper inside it
+        // (user bug 45).
+        if let Some(SessionsCommand::Migrate {
+            from,
+            to,
+            no_archived,
+            exclude_thread,
+            exec,
+        }) = command
+            && superba_core::HostKind::of_target(&id) == superba_core::HostKind::Wsl
+        {
+            let request = MigrationRequest {
+                to_provider: to.clone(),
+                selectors: vec![MigrationSelector::Provider {
+                    provider: from.clone(),
+                }],
+                include_archived: !no_archived,
+                exclude: exclude_thread.clone(),
+            };
+            if exec.dry_run {
+                let sessions = rt.service.host_sessions(&id).await?;
+                out.value(&sessions)?;
+                return Ok(exit::OK);
+            }
+            let events = Arc::new(PrintLines {
+                quiet: out.json,
+                catalog: superba_switch::messages::catalog(out.locale()),
+            });
+            let report = rt
+                .service
+                .host_migrate_sessions(&id, &request, out.locale(), events)
+                .await?;
+            out.line(crate::text::text(if report.ok {
+                "cli.hosts.migrated_wsl"
+            } else {
+                "cli.hosts.migrate_wsl_failed"
+            }))?;
+            out.value(&report)?;
+            return Ok(if report.ok { exit::OK } else { exit::ERROR });
+        }
         if command.is_some_and(|c| !matches!(c, SessionsCommand::Scan)) {
             return Err(super::usage(
                 out,
                 crate::text::text("cli.hosts.sessions_read_only"),
             ));
         }
-        let id = super::remote::target(h);
         let sessions = rt.service.host_sessions(&id).await?;
         let rows = sessions
             .report
@@ -40,9 +82,15 @@ pub(super) async fn run(
             ],
             rows,
         )?;
-        out.line(crate::text::text("cli.hosts.sessions_note"))?;
+        if sessions.read_only {
+            out.line(crate::text::text("cli.hosts.sessions_note"))?;
+        }
         if let Some(cmd) = &sessions.migrate_command {
-            out.line(crate::text::text("cli.hosts.sessions_command"))?;
+            out.line(crate::text::text(if sessions.read_only {
+                "cli.hosts.sessions_command"
+            } else {
+                "cli.hosts.sessions_command_here"
+            }))?;
             out.data_line(cmd)?;
         }
         out.value(&sessions)?;
@@ -146,6 +194,23 @@ pub(super) async fn run(
                 out,
             )
             .await
+        }
+    }
+}
+
+/// Prints the progress lines of a migration inside WSL as they arrive.
+struct PrintLines {
+    quiet: bool,
+    catalog: superba_core::Catalog,
+}
+
+impl SwitchEvents for PrintLines {
+    fn emit(&self, event: SwitchEvent) {
+        if self.quiet {
+            return;
+        }
+        if let SwitchEvent::Log { text, .. } = event {
+            eprintln!("{}", self.catalog.text(&text));
         }
     }
 }

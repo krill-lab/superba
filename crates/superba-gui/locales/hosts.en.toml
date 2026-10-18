@@ -31,7 +31,6 @@ kind_label = "Kind"
 [hosts.read_only]
 label = "{kind} · read-only"
 remote_control = "This device is reached through ChatGPT remote control, not SSH. Superba cannot check it, sync settings to it, switch it with this computer, install Codex on it or read its sessions. Run Superba on that device to manage it."
-wsl = "This is a WSL distribution on this computer, and the ChatGPT app does not reach it over SSH. Superba cannot check it, sync settings to it, switch it with this computer, install Codex on it or read its sessions. Run spb inside the distribution to manage it."
 other = "The ChatGPT app does not reach this host over SSH, so Superba cannot check it, sync settings to it, switch it with this computer, install Codex on it or read its sessions."
 
 [hosts.kind]

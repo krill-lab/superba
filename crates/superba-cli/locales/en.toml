@@ -759,7 +759,10 @@ installing = "Installing Codex {version} on the host…"
 rolling_back = "Going back to the previous Codex on the host…"
 sessions_note = "Remote sessions are read-only in this version; migrate them on the host."
 sessions_command = "On the host, run:"
+sessions_command_here = "To migrate them (inside the distribution, from this computer), run:"
 sessions_read_only = "Remote sessions can only be listed; run the migration on the host."
+migrated_wsl = "The sessions in the WSL distribution were migrated."
+migrate_wsl_failed = "The migration in the WSL distribution did not finish; its output is above."
 
 [cli.hosts.col]
 kind = "Kind"

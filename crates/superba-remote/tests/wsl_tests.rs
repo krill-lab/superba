@@ -552,3 +552,70 @@ fn registry_entries_give_installed_distributions_with_the_default_first() {
         [("Ubuntu", Some(2), true), ("Debian", Some(1), false)]
     );
 }
+
+#[tokio::test]
+async fn the_linux_helper_is_copied_once_and_its_lines_stream() {
+    let env = setup("/bin/sh");
+    let dir = tempfile::tempdir().unwrap();
+    // A stand-in for spb: prints its arguments, CODEX_HOME and progress lines.
+    let helper = dir.path().join("spb-linux-x86_64");
+    write(
+        &helper,
+        "#!/bin/sh\necho \"args: $*\"\necho \"home: $CODEX_HOME\"\necho 'Migrated 1 of 2 sessions'\necho 'Migrated 2 of 2 sessions'\nexit 3\n",
+        0o755,
+    );
+    let lines = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let seen = lines.clone();
+    let sink: superba_core::LineSink =
+        Arc::new(move |l: &str| seen.lock().unwrap().push(l.to_owned()));
+    let args: Vec<String> = ["sessions", "migrate", "--from", "it's krill"]
+        .map(str::to_owned)
+        .to_vec();
+    let run = env
+        .hosts
+        .run_helper(&distro("Ubuntu"), &helper, &args, sink.clone())
+        .await
+        .unwrap();
+    assert!(run.uploaded);
+    assert_eq!(run.exit_code, Some(3));
+    let home = format!("{}/.codex", env.home.display());
+    assert_eq!(
+        *lines.lock().unwrap(),
+        vec![
+            "args: sessions migrate --from it's krill".to_owned(),
+            format!("home: {home}"),
+            "Migrated 1 of 2 sessions".to_owned(),
+            "Migrated 2 of 2 sessions".to_owned(),
+        ]
+    );
+    assert_eq!(
+        run.tail.last().map(String::as_str),
+        Some("Migrated 2 of 2 sessions")
+    );
+    // The copy is checksum-addressed, private to the user and reused.
+    let sha = {
+        use sha2::Digest;
+        hex::encode(sha2::Sha256::digest(std::fs::read(&helper).unwrap()))
+    };
+    let copy = env
+        .home
+        .join(format!(".local/share/superba/wsl-helper/{sha}/spb"));
+    assert_eq!(
+        std::fs::metadata(&copy).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    let again = env
+        .hosts
+        .run_helper(&distro("Ubuntu"), &helper, &args, sink)
+        .await
+        .unwrap();
+    assert!(!again.uploaded);
+    // Only WSL hosts run it.
+    let ssh = common::host("devbox", None);
+    assert!(
+        env.hosts
+            .run_helper(&ssh, &helper, &args, Arc::new(|_: &str| {}))
+            .await
+            .is_err()
+    );
+}

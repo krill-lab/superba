@@ -437,6 +437,9 @@ databases = "写入数据库 {done} / {total}"
 verifying = "已校验 {done} / {total} 个文件"
 
 [switch.wsl]
+no_helper = "此程序旁边没有安装 Superba 的 Linux 辅助程序（{file}），无法从这里迁移 WSL 中的会话。请改为在发行版中运行 spb sessions migrate。"
+migrate_app_running = "ChatGPT app 正连接着 {host}（其中的 Codex 会占用会话）。请先在 app 里断开它（设置 → 连接）或退出 app，再迁移。"
+migrating = "正在迁移 {host} 中的会话…"
 routed = "{host} 经本机路由（{address}）访问。"
 route_unknown = "{host} 保持直连：无法确定它能否访问本机路由。"
 route_router_down = "{host} 保持直连：本机路由没有运行。"

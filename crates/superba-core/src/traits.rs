@@ -719,6 +719,22 @@ pub trait RemoteHosts: Send + Sync {
     /// rollout under `sessions/` and `archived_sessions/`; bounded output).
     async fn scan_sessions(&self, host: &RemoteHost) -> Result<SessionReport>;
 
+    /// Run Superba's Linux helper `helper` (a local file) inside a WSL
+    /// distribution with `args`: copied into the distribution once per checksum
+    /// (`~/.local/share/superba/wsl-helper/<sha256>/spb`, verified there), run as
+    /// the distribution's user with the host's `CODEX_HOME`, its output lines
+    /// handed to `sink` as they arrive.
+    async fn run_helper(
+        &self,
+        host: &RemoteHost,
+        helper: &Path,
+        args: &[String],
+        sink: crate::remote::LineSink,
+    ) -> Result<crate::remote::HelperRun> {
+        let _ = (host, helper, args, sink);
+        Err(Error::not_implemented("RemoteHosts::run_helper"))
+    }
+
     /// WSL on this computer: the configured networking mode and why WSL could
     /// not be listed, if it could not (user bug 45).
     async fn wsl_status(&self) -> Result<(crate::wsl::WslNetworking, Option<String>)> {
@@ -1057,6 +1073,24 @@ pub trait SwitchService: Send + Sync {
     /// Windows.
     async fn wsl_overview(&self) -> Result<crate::wsl::WslOverview> {
         Err(Error::not_implemented("SwitchService::wsl_overview"))
+    }
+
+    /// Migrate the sessions of a WSL distribution (`request` like
+    /// [`crate::SwitchIntent::MigrateSessions`]) with Superba's Linux helper
+    /// inside the distribution, which takes the same backups, locks and process
+    /// checks as on this computer; `events` gets its progress lines as
+    /// [`crate::SwitchEvent::Log`], in `locale` like its errors.
+    async fn host_migrate_sessions(
+        &self,
+        target_id: &TargetId,
+        request: &crate::sessions::MigrationRequest,
+        locale: crate::Locale,
+        events: Arc<dyn SwitchEvents>,
+    ) -> Result<crate::remote::HostMigrationReport> {
+        let _ = (target_id, request, locale, events);
+        Err(Error::not_implemented(
+            "SwitchService::host_migrate_sessions",
+        ))
     }
 
     /// Let a WSL distribution reach the local router: on WSL 1 / mirrored

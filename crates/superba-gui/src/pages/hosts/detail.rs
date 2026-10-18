@@ -422,7 +422,6 @@ fn router_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, h: &HostView) {
 pub fn read_only_text(cx: &Cx<'_>, kind: HostKind) -> String {
     cx.tr.t(match kind {
         HostKind::RemoteControl => "hosts.read_only.remote_control",
-        HostKind::Wsl => "hosts.read_only.wsl",
         _ => "hosts.read_only.other",
     })
 }

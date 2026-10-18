@@ -314,3 +314,101 @@ async fn the_wsl_overview_lists_distributions_and_router_listeners() {
     assert!(o.distros[0].settings.follows(HostKind::Wsl));
     assert!(o.router_wsl_listen.is_empty());
 }
+
+#[derive(Default)]
+struct Lines(std::sync::Mutex<Vec<String>>);
+
+impl superba_core::SwitchEvents for Lines {
+    fn emit(&self, event: superba_core::SwitchEvent) {
+        if let superba_core::SwitchEvent::Log { text, .. } = event {
+            self.0.lock().unwrap().push(text.render_fallback());
+        }
+    }
+}
+
+#[tokio::test]
+async fn sessions_in_a_distribution_migrate_with_the_linux_helper_inside_it() {
+    let mut w = ubuntu(2, WslNetworking::Nat);
+    let dir = tempfile::tempdir().unwrap();
+    let helper = dir.path().join("spb-linux-x86_64");
+    std::fs::write(&helper, b"#!/bin/sh\n").unwrap();
+    w.ctx.env = Arc::new(
+        superba_core::MapEnv::new().with(superba_switch_wsl_helper_env(), helper.as_os_str()),
+    );
+    let request = superba_core::MigrationRequest {
+        to_provider: "openai".into(),
+        selectors: vec![superba_core::MigrationSelector::Provider {
+            provider: "krill".into(),
+        }],
+        include_archived: false,
+        exclude: vec!["t-1".into()],
+    };
+    // While the app's WSL app-server runs (the fake host has one), it waits.
+    let lines = Arc::new(Lines::default());
+    let e = w
+        .switcher()
+        .host_migrate_sessions(
+            &wsl_target(),
+            &request,
+            superba_core::Locale::ZhCn,
+            lines.clone(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(e, superba_core::Error::Blocked { .. }), "{e}");
+    assert!(
+        e.to_string().contains("ChatGPT app 正连接着 WSL: Ubuntu"),
+        "{e}"
+    );
+    *w.remote.idle.lock().unwrap() = true;
+    let report = w
+        .switcher()
+        .host_migrate_sessions(
+            &wsl_target(),
+            &request,
+            superba_core::Locale::En,
+            lines.clone(),
+        )
+        .await
+        .unwrap();
+    assert!(report.ok && report.report.is_some());
+    assert_eq!(
+        *w.remote.helper_runs.lock().unwrap(),
+        vec![(
+            "WSL: Ubuntu".to_owned(),
+            [
+                "sessions",
+                "migrate",
+                "--from",
+                "krill",
+                "--to",
+                "openai",
+                "--yes",
+                "--locale",
+                "en",
+                "--no-archived",
+                "--exclude-thread",
+                "t-1"
+            ]
+            .map(str::to_owned)
+            .to_vec()
+        )]
+    );
+    let seen = lines.0.lock().unwrap().clone();
+    assert!(seen[0].contains("WSL: Ubuntu"), "{seen:?}");
+    assert_eq!(
+        seen.last().map(String::as_str),
+        Some("Migrated 2 of 2 sessions")
+    );
+    // The sessions view offers the command for this computer.
+    let sessions = w.switcher().host_sessions(&wsl_target()).await.unwrap();
+    assert!(!sessions.read_only);
+    assert_eq!(
+        sessions.migrate_command.as_deref(),
+        Some("spb sessions --host wsl:Ubuntu migrate --from krill")
+    );
+}
+
+fn superba_switch_wsl_helper_env() -> &'static str {
+    "SUPERBA_WSL_HELPER"
+}

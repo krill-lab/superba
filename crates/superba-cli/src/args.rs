@@ -56,7 +56,7 @@ pub enum Command {
     Sessions {
         #[command(subcommand)]
         command: Option<SessionsCommand>,
-        #[arg(long, value_name = "TARGET", help = english("cli.help.sessions_host"))]
+        #[arg(long, global = true, value_name = "TARGET", help = english("cli.help.sessions_host"))]
         host: Option<String>,
     },
     #[command(about = english("cli.help.site_group"))]

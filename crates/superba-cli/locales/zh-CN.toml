@@ -759,7 +759,10 @@ installing = "正在主机上安装 Codex {version}…"
 rolling_back = "正在把主机上的 Codex 切回之前的版本…"
 sessions_note = "此版本中远程会话只读，请在主机上迁移。"
 sessions_command = "在主机上运行："
+sessions_command_here = "要迁移它们（在发行版内进行，从本机发起），请运行："
 sessions_read_only = "远程会话只能查看；请在主机上运行迁移。"
+migrated_wsl = "WSL 发行版中的会话已迁移。"
+migrate_wsl_failed = "WSL 发行版中的迁移没有完成，输出见上方。"
 
 [cli.hosts.col]
 kind = "类型"

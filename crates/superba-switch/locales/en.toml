@@ -438,6 +438,9 @@ databases = "Updating databases: {done} of {total}"
 verifying = "Checked {done} of {total} files"
 
 [switch.wsl]
+no_helper = "Superba's Linux helper ({file}) is not installed next to this program, so the sessions in WSL cannot be migrated from here. Run spb sessions migrate inside the distribution instead."
+migrate_app_running = "The ChatGPT app is connected to {host} (its Codex keeps the sessions open). Disconnect it in the app (Settings → Connections) or quit the app, then migrate."
+migrating = "Migrating the sessions in {host}…"
 routed = "{host} goes through the local router at {address}."
 route_unknown = "{host} stays direct: Superba could not tell whether it reaches the local router."
 route_router_down = "{host} stays direct: the local router is not running."

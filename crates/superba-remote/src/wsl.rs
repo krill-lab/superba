@@ -370,6 +370,24 @@ impl RemoteShell for WslShell {
         }
     }
 
+    async fn run_streaming(
+        &self,
+        host: &RemoteHost,
+        script: &str,
+        timeout: Duration,
+        sink: crate::ssh::LineSink,
+    ) -> Result<ScriptOutput> {
+        let distro = require_distro(host)?;
+        let cmd = self.command(&wsl_args(&distro, &["/bin/sh", "-s"]));
+        let input = Input::new(script.as_bytes().to_vec());
+        let out =
+            crate::ssh::run_with_input_streaming(cmd, input, timeout, &distro, Some(sink)).await?;
+        match wsl_failure(&distro, &out) {
+            Some(e) => Err(e),
+            None => Ok(out),
+        }
+    }
+
     async fn run_with_payload(
         &self,
         host: &RemoteHost,
