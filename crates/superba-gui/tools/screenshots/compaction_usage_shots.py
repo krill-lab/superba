@@ -84,7 +84,7 @@ def source_filter(option):
         s.input.click(1166, 232)
         time.sleep(0.8)
         if option:
-            s.input.click(1166, 232 + 30 * option)
+            s.input.click(1166, 238 + 30 * option)
             time.sleep(2.5)
         s.input.park()
     return act
