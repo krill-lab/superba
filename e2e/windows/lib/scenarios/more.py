@@ -316,6 +316,16 @@ def w16(t):
         s.save(f"{label}.txt", r["stdout"] + r["stderr"])
         return r["stdout"]
 
+    def ready_status(s, label, timeout=150):
+        """`spb status` once ChatGPT opened through Superba is ready: Superba records the
+        launch when the app's renderer answers, which a slow VM takes tens of seconds for."""
+        end = time.time() + timeout
+        while True:
+            out = status(s, label)
+            if ("Launched by Superba: yes" in out and "Hot switch: Ready" in out) or time.time() >= end:
+                return out
+            time.sleep(10)
+
     def foreground(pid):
         return any(w.get("foreground") for w in run.agent.windows(pid=pid))
 
@@ -410,8 +420,7 @@ def w16(t):
         # The reopen goes on verifying the new Codex core and window: status after it ends.
         phases, _ = flows.wait_switch_done(run, s, u, timeout=240)
         s.info(f"phases: {phases}")
-        time.sleep(5)
-        out = status(s, "status-reopened")
+        out = ready_status(s, "status-reopened")
         s.check("Launched by Superba: yes" in out and "Hot switch: Ready" in out,
                 "spb status: launched by Superba, hot switch ready")
         run.state["main_pid"] = m1 and m1["pid"]
@@ -425,8 +434,7 @@ def w16(t):
         u.click(key="action.open_app")
         m = a.wait_main(120)
         s.check(m is not None, f"ChatGPT running with a debugging port (pid {m and m['pid']})")
-        time.sleep(10)
-        out = status(s, "status-open-button")
+        out = ready_status(s, "status-open-button")
         s.check("Launched by Superba: yes" in out and "Hot switch: Ready" in out,
                 "spb status: launched by Superba, hot switch ready")
         s.check(not u.exists(timeout=20, key="action.open_app"), "the action is gone once hot switching works",
