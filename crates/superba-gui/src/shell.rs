@@ -1793,6 +1793,32 @@ pub fn confirm_full(
     }
 }
 
+/// The processes of the app still running after a quit (pid, image,
+/// architecture, parent, start) and what was tried (user bug 53).
+fn quit_report(ui: &mut egui::Ui, cx: &Cx<'_>, report: &superba_core::QuitReport) {
+    let pal = cx.pal;
+    for p in &report.left {
+        ui.add(egui::Label::new(Text::mono_muted(p.describe(), pal)).wrap());
+    }
+    let tried = cx
+        .tr
+        .text(&superba_switch::messages::quit_steps(&report.steps));
+    ui.label(Text::small(
+        cx.tr.f("decide.quit_tried", &[("steps", &tried)]),
+        pal,
+    ));
+    if superba_switch::messages::quit_access_denied(report) {
+        ui.add(
+            egui::Label::new(Text::small(
+                cx.tr
+                    .text(&superba_switch::messages::text("switch.quit.access_denied")),
+                pal,
+            ))
+            .wrap(),
+        );
+    }
+}
+
 /// Dialogs for questions other than "wait for turns" (that one lives in the banner).
 pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: Duration) {
     let Some(run) = flow.run_mut() else {
@@ -1825,6 +1851,9 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
             ),
             DecisionRequest::ForceQuit { .. } => {
                 ("decide.force_quit.title", "decide.force_quit.body")
+            }
+            DecisionRequest::AppStillRunning { .. } => {
+                ("decide.still_running.title", "decide.still_running.body")
             }
             DecisionRequest::IpcFailed { .. } => ("decide.ipc.title", "decide.ipc.body"),
             DecisionRequest::VerificationFailed { .. } => {
@@ -1879,7 +1908,7 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
                     });
                 }
             }
-            DecisionRequest::ForceQuit { pids } => {
+            DecisionRequest::ForceQuit { pids, report } if report.left.is_empty() => {
                 ui.label(Text::mono_muted(
                     pids.iter()
                         .map(|p| p.to_string())
@@ -1887,6 +1916,11 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
                         .join(", "),
                     pal,
                 ));
+            }
+            // User bug 53: which of the app's processes still run, what was tried.
+            DecisionRequest::ForceQuit { report, .. }
+            | DecisionRequest::AppStillRunning { report } => {
+                quit_report(ui, cx, report);
             }
             DecisionRequest::CloseConsumers { processes, busy }
             | DecisionRequest::ForceStop { processes, busy } => {
@@ -1915,8 +1949,11 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
         }
         ui.add_space(12.0);
         ui.horizontal_wrapped(|ui| {
+            let still_running = matches!(request, DecisionRequest::AppStillRunning { .. });
             for d in request.allowed() {
                 let (label, kind) = match d {
+                    Decision::Force if still_running => (tr.t("decide.still_running.end"), 2),
+                    Decision::Continue if still_running => (tr.t("decide.still_running.retry"), 1),
                     Decision::Force => (tr.t("decide.force"), 2),
                     Decision::Cancel => (tr.t("action.cancel"), 0),
                     Decision::FullRestart => (tr.t("decide.full_restart"), 1),

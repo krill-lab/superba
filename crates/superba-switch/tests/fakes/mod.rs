@@ -1279,6 +1279,10 @@ pub struct FakeApp {
     /// A hot restart spawns a new app-server (else verification sees none).
     pub restart_spawns: Mutex<bool>,
     pub quit_outcomes: Mutex<VecDeque<QuitOutcome>>,
+    /// Successive `quit_report` answers (then: the main process still listed).
+    pub quit_reports: Mutex<VecDeque<superba_core::QuitReport>>,
+    /// Successive `end_app_processes` answers (then: nothing left).
+    pub end_reports: Mutex<VecDeque<superba_core::QuitReport>>,
     pub fail_launch: Mutex<Option<Error>>,
     pub launches: Mutex<Vec<LaunchOptions>>,
     pub renderer: Mutex<RendererState>,
@@ -1378,6 +1382,17 @@ pub fn busy(target: &str, title: &str) -> ThreadActivity {
 }
 
 impl FakeApp {
+    /// The app quit: no session, no app main / app-server processes.
+    fn app_gone(&self) {
+        *self.session.lock().unwrap() = None;
+        self.processes.lock().unwrap().retain(|p| {
+            !matches!(
+                p.kind,
+                CodexProcessKind::AppServer | CodexProcessKind::AppMain
+            )
+        });
+    }
+
     fn spawn_app_server(&self) {
         let mut pid = self.next_pid.lock().unwrap();
         let now = self.clock.now().as_millis();
@@ -1505,15 +1520,48 @@ impl AppController for FakeApp {
             .pop_front()
             .unwrap_or(QuitOutcome::Exited);
         if outcome != QuitOutcome::TimedOut {
-            *self.session.lock().unwrap() = None;
-            self.processes.lock().unwrap().retain(|p| {
-                !matches!(
-                    p.kind,
-                    CodexProcessKind::AppServer | CodexProcessKind::AppMain
-                )
-            });
+            self.app_gone();
         }
         Ok(outcome)
+    }
+
+    async fn quit_report(&self, session: &AppSession) -> Result<superba_core::QuitReport> {
+        push(&self.log, "app.quit_report");
+        Ok(self
+            .quit_reports
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| superba_core::QuitReport {
+                steps: vec![superba_core::QuitStep::ClosedWindows],
+                left: vec![superba_core::LingeringProcess {
+                    pid: session.main_pid,
+                    role: "main".into(),
+                    ..Default::default()
+                }],
+            }))
+    }
+
+    async fn end_app_processes(
+        &self,
+        _session: &AppSession,
+        processes: &[superba_core::LingeringProcess],
+    ) -> Result<superba_core::QuitReport> {
+        let pids: Vec<String> = processes.iter().map(|p| p.pid.to_string()).collect();
+        push(
+            &self.log,
+            format!("app.end_app_processes {}", pids.join(",")),
+        );
+        let after = self
+            .end_reports
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_default();
+        if after.left.is_empty() {
+            self.app_gone();
+        }
+        Ok(after)
     }
 
     async fn processes(&self, _home: &CodexHome) -> Result<Vec<ProcessInfo>> {
@@ -2014,6 +2062,7 @@ pub fn request_kind(r: &DecisionRequest) -> &'static str {
     match r {
         DecisionRequest::WaitForTurns { .. } => "wait_for_turns",
         DecisionRequest::ForceQuit { .. } => "force_quit",
+        DecisionRequest::AppStillRunning { .. } => "app_still_running",
         DecisionRequest::IpcFailed { .. } => "ipc_failed",
         DecisionRequest::VerificationFailed { .. } => "verification_failed",
         DecisionRequest::UnknownRemoteActivity { .. } => "unknown_remote_activity",
@@ -2174,6 +2223,8 @@ impl World {
             fail_hot_restart: Mutex::new(0),
             restart_spawns: Mutex::new(true),
             quit_outcomes: Mutex::new(VecDeque::new()),
+            quit_reports: Mutex::new(VecDeque::new()),
+            end_reports: Mutex::new(VecDeque::new()),
             fail_launch: Mutex::new(None),
             launches: Mutex::new(Vec::new()),
             renderer: Mutex::new(RendererState {

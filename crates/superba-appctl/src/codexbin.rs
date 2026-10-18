@@ -221,6 +221,9 @@ pub struct Caches {
     /// The change-check path list of the last detection result: (identity of
     /// the result, paths) ([`crate::watch`]).
     pub(crate) watch: Mutex<Option<(u64, Vec<PathBuf>)>>,
+    /// The last quit of each app main process (pid -> what it did), for the
+    /// report after a timeout (user bug 53).
+    pub(crate) quits: Mutex<HashMap<u32, crate::quit::QuitAttempt>>,
 }
 
 /// Entries kept in the `debug models` cache (outputs are up to a few MB).

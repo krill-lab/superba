@@ -701,7 +701,10 @@ fn decisions_outside_execution_receive_the_safe_default_immediately() {
     for (question, expected) in [
         (wait_question(), Decision::Wait),
         (
-            DecisionRequest::ForceQuit { pids: vec![42] },
+            DecisionRequest::ForceQuit {
+                pids: vec![42],
+                report: Default::default(),
+            },
             Decision::Cancel,
         ),
         (

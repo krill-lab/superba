@@ -530,6 +530,38 @@ pub trait AppController: Send + Sync {
     /// Quit the app gracefully; force only when `options.force`.
     async fn quit(&self, session: &AppSession, options: &QuitOptions) -> Result<QuitOutcome>;
 
+    /// After a quit of `session` that timed out: what that quit did and which
+    /// of the app's processes still run (user bug 53). Default: nothing
+    /// recorded, the main process listed while it runs.
+    async fn quit_report(&self, session: &AppSession) -> Result<crate::QuitReport> {
+        Ok(crate::QuitReport {
+            steps: Vec::new(),
+            left: vec![crate::LingeringProcess {
+                pid: session.main_pid,
+                image: session.executable.clone(),
+                role: "main".into(),
+                started_at: session.started_at,
+                ..crate::LingeringProcess::default()
+            }],
+        })
+    }
+
+    /// End exactly the listed processes of the app (the user's "end these
+    /// processes" after [`Self::quit_report`]): each only while it is still
+    /// the process listed (same pid and start time), its child processes
+    /// with it. Returns the report afterwards (what still runs, with why it
+    /// could not be ended). Default: not implemented.
+    async fn end_app_processes(
+        &self,
+        session: &AppSession,
+        processes: &[crate::LingeringProcess],
+    ) -> Result<crate::QuitReport> {
+        let _ = (session, processes);
+        Err(crate::Error::NotImplemented {
+            what: "ending the desktop app's processes".into(),
+        })
+    }
+
     /// Quit then launch. The switch service normally calls `quit` and `launch`
     /// separately so it can write files in between.
     async fn full_restart(

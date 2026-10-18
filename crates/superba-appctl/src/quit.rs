@@ -10,15 +10,30 @@
 //!   without it `WM_CLOSE` closes the windows and the wait is short
 //!   ([`WINDOWS_CLOSE_ONLY_WAIT`]) before the caller is told it timed out.
 //!   Force-kill only when the caller allows it, and then of the whole process
-//!   tree (`TerminateProcess` on the main process and every descendant).
+//!   tree: the main process and every descendant (recorded when the quit
+//!   began and found again right before ending them, so a helper started in
+//!   between goes too), each ended with `TerminateProcess` only while it is
+//!   still the process recorded ([`crate::osproc`]); what is still alive after
+//!   [`KILL_WAIT`] is ended once more. A forced quit without CDP does not wait
+//!   for windows to close again.
 //!
 //! Exit is "real" when the pid is gone, a zombie, or reused (start time differs).
+//!
+//! Every quit records what it did ([`QuitAttempt`]); after a timeout
+//! [`report`] lists the app's processes still running (pid, image,
+//! architecture, parent, start, why ending it failed) so no timeout is ever
+//! reported without naming them (user bug 53).
 
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::time::Duration;
 
-use superba_core::{AppSession, QuitOptions, QuitOutcome};
+use superba_core::{
+    AppSession, LingeringProcess, QuitOptions, QuitOutcome, QuitReport, QuitStep, Timestamp,
+};
 
-use crate::procs::{self, Liveness};
+use crate::osproc::{self, EndResult};
+use crate::procs::{self, Liveness, ProcEntry};
 
 /// JavaScript for the main renderer that asks the app to quit through its own
 /// `quit-app` message (`app.quit()` in the main process, which runs the app's
@@ -30,6 +45,10 @@ pub const QUIT_APP_JS: &str = "(() => { const b = window.electronBridge; \
 /// On Windows without CDP only the windows can be closed and the app stays
 /// running; waiting the whole graceful timeout for it is pointless.
 pub const WINDOWS_CLOSE_ONLY_WAIT: Duration = Duration::from_secs(5);
+
+/// How long a forced quit waits for the main process after ending the tree,
+/// per round (two rounds: what is still alive after the first is ended again).
+pub const KILL_WAIT: Duration = Duration::from_secs(5);
 
 /// Ask the process to quit (platform specific; best effort).
 pub fn request_quit(session: &AppSession) -> bool {
@@ -104,6 +123,22 @@ pub fn descendants(
     out
 }
 
+/// `recorded` plus the descendants of `main_pid` in `entries` that are not in
+/// it yet (pid and start time).
+pub fn merge_tree(
+    recorded: &[(u32, Option<Timestamp>)],
+    entries: &[ProcEntry],
+    main_pid: u32,
+) -> Vec<(u32, Option<Timestamp>)> {
+    let mut out = recorded.to_vec();
+    for (pid, started) in descendants(entries, main_pid) {
+        if !out.iter().any(|(p, _)| *p == pid) {
+            out.push((pid, started));
+        }
+    }
+    out
+}
+
 /// Poll until every process in `children` is gone or `timeout` passes. Returns
 /// true if they all exited (a reused pid counts as gone).
 pub async fn wait_children_exit(
@@ -139,19 +174,123 @@ pub async fn quit_after(
     options: &QuitOptions,
     requested: Option<QuitRequest>,
 ) -> QuitOutcome {
+    attempt(session, options, requested, Vec::new())
+        .await
+        .outcome
+}
+
+/// What one quit did (user bug 53).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuitAttempt {
+    /// Outcome.
+    pub outcome: QuitOutcome,
+    /// What was tried, in order.
+    pub steps: Vec<QuitStep>,
+    /// The main process's descendants (pid, start) recorded during the quit.
+    pub tree: Vec<(u32, Option<Timestamp>)>,
+    /// pid -> why it could not be ended.
+    pub end_errors: BTreeMap<u32, String>,
+    /// Processes `TerminateProcess` / SIGKILL was sent to successfully.
+    pub terminated: Vec<u32>,
+}
+
+impl QuitAttempt {
+    /// An attempt with an outcome and steps only.
+    pub fn new(outcome: QuitOutcome, steps: Vec<QuitStep>) -> Self {
+        Self {
+            outcome,
+            steps,
+            tree: Vec::new(),
+            end_errors: BTreeMap::new(),
+            terminated: Vec::new(),
+        }
+    }
+
+    /// Append a later attempt on the same session (a forced quit after a
+    /// graceful one): steps in order, trees and errors merged.
+    pub fn merge(mut self, later: QuitAttempt) -> QuitAttempt {
+        self.outcome = later.outcome;
+        self.steps.extend(later.steps);
+        for t in later.tree {
+            if !self.tree.iter().any(|(p, _)| *p == t.0) {
+                self.tree.push(t);
+            }
+        }
+        self.end_errors.extend(later.end_errors);
+        for pid in later.terminated {
+            if !self.terminated.contains(&pid) {
+                self.terminated.push(pid);
+            }
+        }
+        self
+    }
+}
+
+/// What a report says about a process Superba ended but that still runs.
+pub const TERMINATING: &str = "ended by Superba, but Windows has not finished ending it (a driver or pending I/O may hold it)";
+
+fn waited(since: tokio::time::Instant) -> QuitStep {
+    QuitStep::Waited {
+        ms: u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX),
+    }
+}
+
+/// End every process of `targets` that is still the one recorded, without
+/// waiting; returns the pids ended and pid -> error for the others.
+async fn end_all(targets: Vec<(u32, Option<Timestamp>)>) -> (Vec<u32>, BTreeMap<u32, String>) {
+    tokio::task::spawn_blocking(move || {
+        let mut ended = Vec::new();
+        let mut errors = BTreeMap::new();
+        for (pid, started) in targets {
+            let t = std::time::Instant::now();
+            let r = osproc::end(pid, started, Duration::ZERO);
+            tracing::debug!(
+                pid,
+                result = %r.describe(),
+                ms = u64::try_from(t.elapsed().as_millis()).unwrap_or(u64::MAX),
+                "ending an app process"
+            );
+            match r {
+                EndResult::Failed { stage, error } => {
+                    errors.insert(pid, format!("{stage}: {error}"));
+                }
+                EndResult::Reused | EndResult::AlreadyGone => {}
+                EndResult::Ended | EndResult::StillRunning => ended.push(pid),
+            }
+        }
+        (ended, errors)
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// [`quit_after`] with what it did; `steps` are steps the caller already took
+/// (e.g. [`QuitStep::AskedApp`] over CDP).
+pub async fn attempt(
+    session: &AppSession,
+    options: &QuitOptions,
+    requested: Option<QuitRequest>,
+    mut steps: Vec<QuitStep>,
+) -> QuitAttempt {
     if procs::liveness(session.main_pid, session.started_at) == Liveness::Gone {
-        return QuitOutcome::NotRunning;
+        return QuitAttempt::new(QuitOutcome::NotRunning, steps);
     }
     let entries = procs::snapshot_os(procs::ReadOpts { environ: false });
     let children = descendants(&entries, session.main_pid);
     let request = match requested {
         Some(r) => r,
+        // A forced quit without CDP goes straight to ending the tree: closing
+        // the windows again cannot quit the app.
+        None if cfg!(windows) && options.force => QuitRequest::WindowsOnly,
         None if cfg!(windows) => {
-            request_quit(session);
+            if request_quit(session) {
+                steps.push(QuitStep::ClosedWindows);
+            }
             QuitRequest::WindowsOnly
         }
         None => {
             request_quit(session);
+            steps.push(QuitStep::Signalled);
             QuitRequest::App
         }
     };
@@ -161,48 +300,252 @@ pub async fn quit_after(
         options.graceful_timeout_ms
     });
     if request == QuitRequest::WindowsOnly {
-        graceful = graceful.min(WINDOWS_CLOSE_ONLY_WAIT);
+        graceful = if options.force && requested.is_none() {
+            Duration::ZERO
+        } else {
+            graceful.min(WINDOWS_CLOSE_ONLY_WAIT)
+        };
         tracing::info!(
             main = session.main_pid,
             "only the app's windows can be closed (no CDP); it keeps running in the \
              notification area until it is asked through the app or ended"
         );
     }
+    let since = tokio::time::Instant::now();
     if wait_exit(session, graceful).await {
+        steps.push(waited(since));
         if !wait_children_exit(&children, CHILD_EXIT_GRACE).await {
             tracing::warn!(
                 main = session.main_pid,
                 "app child processes still running after quit"
             );
         }
-        return QuitOutcome::Exited;
+        let mut done = QuitAttempt::new(QuitOutcome::Exited, steps);
+        done.tree = children;
+        return done;
+    }
+    if !graceful.is_zero() {
+        steps.push(waited(since));
     }
     if !options.force {
-        return QuitOutcome::TimedOut;
+        let mut done = QuitAttempt::new(QuitOutcome::TimedOut, steps);
+        done.tree = children;
+        return done;
     }
-    if cfg!(windows) {
-        // Windows: end the whole tree (renderers, GPU and utility processes, the
-        // Codex app-server), main process first so it starts nothing new.
-        let targets = kill_targets(session.main_pid, session.started_at, &children, &|p, s| {
-            procs::liveness(p, s) == Liveness::Alive
+    forced(session, steps, children).await
+}
+
+/// The forced part of [`attempt`].
+async fn forced(
+    session: &AppSession,
+    mut steps: Vec<QuitStep>,
+    children: Vec<(u32, Option<Timestamp>)>,
+) -> QuitAttempt {
+    let mut tree = children;
+    let mut end_errors = BTreeMap::new();
+    let mut terminated: Vec<u32> = Vec::new();
+    // Windows: end the whole tree (renderers, GPU and utility processes, the
+    // Codex app-server), main process first so it starts nothing new.
+    // Elsewhere the main process only (Chromium's helpers follow it).
+    for round in 0..2 {
+        let targets: Vec<(u32, Option<Timestamp>)> = if cfg!(windows) {
+            let entries = procs::snapshot_os(procs::ReadOpts { environ: false });
+            tree = merge_tree(&tree, &entries, session.main_pid);
+            let alive = |p, s| procs::liveness(p, s) == Liveness::Alive;
+            let mut out = Vec::new();
+            for pid in kill_targets(session.main_pid, session.started_at, &tree, &alive) {
+                let started = if pid == session.main_pid {
+                    session.started_at
+                } else {
+                    tree.iter().find(|(p, _)| *p == pid).and_then(|(_, s)| *s)
+                };
+                out.push((pid, started));
+            }
+            out
+        } else {
+            vec![(session.main_pid, session.started_at)]
+        };
+        let count = targets.len();
+        let (ended, errors) = end_all(targets).await;
+        tracing::info!(
+            main = session.main_pid,
+            round,
+            targets = count,
+            ended = ended.len(),
+            failed = errors.len(),
+            "ended the app's processes"
+        );
+        steps.push(QuitStep::Ended {
+            ended: u32::try_from(ended.len()).unwrap_or(u32::MAX),
+            failed: u32::try_from(errors.len()).unwrap_or(u32::MAX),
         });
-        for pid in targets {
-            procs::kill(pid);
+        for pid in ended {
+            end_errors.remove(&pid);
+            if !terminated.contains(&pid) {
+                terminated.push(pid);
+            }
         }
-    } else {
-        procs::kill(session.main_pid);
-    }
-    if wait_exit(session, Duration::from_secs(5)).await {
-        if !wait_children_exit(&children, CHILD_EXIT_GRACE).await {
-            tracing::warn!(
-                main = session.main_pid,
-                "app child processes still running after kill"
-            );
+        end_errors.extend(errors);
+        let since = tokio::time::Instant::now();
+        if wait_exit(session, KILL_WAIT).await {
+            steps.push(waited(since));
+            if !wait_children_exit(&tree, CHILD_EXIT_GRACE).await {
+                tracing::warn!(
+                    main = session.main_pid,
+                    "app child processes still running after kill"
+                );
+            }
+            return QuitAttempt {
+                outcome: QuitOutcome::Killed,
+                steps,
+                tree,
+                end_errors,
+                terminated,
+            };
         }
-        QuitOutcome::Killed
-    } else {
-        QuitOutcome::TimedOut
+        steps.push(waited(since));
     }
+    QuitAttempt {
+        outcome: QuitOutcome::TimedOut,
+        steps,
+        tree,
+        end_errors,
+        terminated,
+    }
+}
+
+/// What a process of the app is: `main`, its Electron process type
+/// (`renderer`, `gpu-process`, ...), `codex <subcommand>`, or its image name.
+pub fn role_of(entry: &ProcEntry, main_pid: u32) -> String {
+    if entry.pid == main_pid {
+        return "main".into();
+    }
+    if let Some(t) = entry.argv.iter().find_map(|a| {
+        a.strip_prefix("--type=")
+            .or_else(|| a.split(" --type=").nth(1))
+    }) {
+        return t.split_whitespace().next().unwrap_or(t).to_owned();
+    }
+    if let Some(args) = procs::codex_args(&entry.argv, entry.exe.as_deref()) {
+        let (words, _) = procs::codex_words(&args);
+        return words
+            .first()
+            .map_or_else(|| "codex".to_owned(), |w| format!("codex {w}"));
+    }
+    entry
+        .exe
+        .as_deref()
+        .or_else(|| entry.argv.first().map(Path::new))
+        .and_then(|x| x.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "?".into())
+}
+
+/// The app's processes still running: the main process, its descendants now
+/// and those recorded in `tree` (an orphaned child keeps its parent's pid on
+/// Windows), with what the OS says about each (pure part of [`report`]).
+pub fn lingering(
+    session: &AppSession,
+    entries: &[ProcEntry],
+    tree: &[(u32, Option<Timestamp>)],
+    alive: &dyn Fn(u32, Option<Timestamp>) -> bool,
+) -> Vec<(ProcEntry, Option<Timestamp>)> {
+    let mut wanted: Vec<(u32, Option<Timestamp>)> = vec![(session.main_pid, session.started_at)];
+    for (pid, started) in merge_tree(tree, entries, session.main_pid) {
+        if !wanted.iter().any(|(p, _)| *p == pid) {
+            wanted.push((pid, started));
+        }
+    }
+    wanted
+        .into_iter()
+        .filter(|(pid, started)| alive(*pid, *started))
+        .filter_map(|(pid, started)| {
+            entries
+                .iter()
+                .find(|e| e.pid == pid)
+                .map(|e| (e.clone(), started.or(e.started_at)))
+        })
+        .collect()
+}
+
+/// The report after a quit (see the module docs): steps and errors from the
+/// attempt, the processes from a fresh snapshot.
+pub fn report(session: &AppSession, attempt: &QuitAttempt) -> QuitReport {
+    let entries = procs::snapshot_os(procs::ReadOpts { environ: false });
+    let alive = |p, s| procs::liveness(p, s) == Liveness::Alive;
+    let end_error = |pid: u32| {
+        attempt.end_errors.get(&pid).cloned().or_else(|| {
+            attempt
+                .terminated
+                .contains(&pid)
+                .then(|| TERMINATING.to_owned())
+        })
+    };
+    let left = lingering(session, &entries, &attempt.tree, &alive)
+        .into_iter()
+        .filter_map(|(e, started)| {
+            let facts = osproc::facts(e.pid);
+            // Exited since the snapshot (short-lived helpers such as git).
+            if facts.gone {
+                return None;
+            }
+            Some(LingeringProcess {
+                pid: e.pid,
+                ppid: e.ppid,
+                image: facts.image.or_else(|| e.exe.clone()),
+                role: role_of(&e, session.main_pid),
+                arch: facts.arch.map(str::to_owned),
+                started_at: facts.created.or(started),
+                end_error: end_error(e.pid).or(facts.open_error),
+            })
+        })
+        .collect();
+    QuitReport {
+        steps: attempt.steps.clone(),
+        left,
+    }
+}
+
+/// End the listed processes (the user's "end these processes"): each, with
+/// its descendants, only while it is still the process listed. Returns what
+/// it did as an attempt to merge into the session's record.
+pub async fn end_listed(listed: &[LingeringProcess]) -> QuitAttempt {
+    let entries = procs::snapshot_os(procs::ReadOpts { environ: false });
+    let mut targets: Vec<(u32, Option<Timestamp>)> = Vec::new();
+    for p in listed {
+        let Some(e) = entries.iter().find(|e| e.pid == p.pid) else {
+            continue;
+        };
+        if !osproc::same_process(p.started_at, e.started_at) {
+            continue;
+        }
+        if !targets.iter().any(|(pid, _)| *pid == p.pid) {
+            targets.push((p.pid, p.started_at));
+        }
+        for d in descendants(&entries, p.pid) {
+            if !targets.iter().any(|(pid, _)| *pid == d.0) {
+                targets.push(d);
+            }
+        }
+    }
+    let all = targets.clone();
+    let (ended, errors) = end_all(targets).await;
+    let gone = wait_children_exit(&all, KILL_WAIT).await;
+    let mut done = QuitAttempt::new(
+        if gone {
+            QuitOutcome::Killed
+        } else {
+            QuitOutcome::TimedOut
+        },
+        vec![QuitStep::Ended {
+            ended: u32::try_from(ended.len()).unwrap_or(u32::MAX),
+            failed: u32::try_from(errors.len()).unwrap_or(u32::MAX),
+        }],
+    );
+    done.tree = all;
+    done.end_errors = errors;
+    done.terminated = ended;
+    done
 }
 
 #[cfg(target_os = "linux")]

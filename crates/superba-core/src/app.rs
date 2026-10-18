@@ -282,6 +282,148 @@ pub enum QuitOutcome {
     NotRunning,
 }
 
+/// A process of the desktop app still running after Superba tried to quit
+/// it (user bug 53): named in the log, in the question to the user and in the
+/// error, never left unnamed.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LingeringProcess {
+    /// pid.
+    pub pid: u32,
+    /// Parent pid.
+    #[serde(default)]
+    pub ppid: Option<u32>,
+    /// Image path.
+    #[serde(default)]
+    pub image: Option<PathBuf>,
+    /// What it is: `main` (the app's main process), an Electron process type
+    /// (`renderer`, `gpu-process`, `utility`, `crashpad-handler`),
+    /// `app-server` (its Codex), or the image name.
+    pub role: String,
+    /// Architecture it runs as (`x64`, `arm64`, `x86`), when known.
+    #[serde(default)]
+    pub arch: Option<String>,
+    /// Start time.
+    #[serde(default)]
+    pub started_at: Option<Timestamp>,
+    /// Why Superba could not end it, when it tried (OS error text).
+    #[serde(default)]
+    pub end_error: Option<String>,
+}
+
+impl LingeringProcess {
+    /// The image's file name (`ChatGPT.exe`), else the role.
+    pub fn name(&self) -> String {
+        // Either separator: a report from Windows may be read anywhere.
+        self.image
+            .as_deref()
+            .map(|p| p.to_string_lossy())
+            .and_then(|p| p.rsplit(['/', '\\']).next().map(str::to_owned))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| self.role.clone())
+    }
+
+    /// One line for logs and errors: `pid 812 ChatGPT.exe (main, arm64,
+    /// parent 640, started 2026-10-18T05:20:11Z) C:\...\ChatGPT.exe`.
+    pub fn describe(&self) -> String {
+        let mut facts = vec![self.role.clone()];
+        if let Some(a) = &self.arch {
+            facts.push(a.clone());
+        }
+        if let Some(pp) = self.ppid {
+            facts.push(format!("parent {pp}"));
+        }
+        if let Some(at) = self.started_at {
+            facts.push(format!("started {}", at.to_rfc3339()));
+        }
+        if let Some(e) = &self.end_error {
+            facts.push(format!("cannot end it: {e}"));
+        }
+        let mut line = format!("pid {} {} ({})", self.pid, self.name(), facts.join(", "));
+        if let Some(image) = &self.image {
+            line.push(' ');
+            line.push_str(&crate::paths::display_path(image));
+        }
+        line
+    }
+}
+
+/// One thing Superba did to quit the app.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum QuitStep {
+    /// Asked the app to quit through its own menu command (CDP).
+    AskedApp,
+    /// Closed its windows (Windows without CDP: the app stays in the
+    /// notification area).
+    ClosedWindows,
+    /// Sent the platform's quit request (SIGTERM, `terminate`).
+    Signalled,
+    /// Waited this long for the main process to exit.
+    Waited {
+        /// Milliseconds.
+        ms: u64,
+    },
+    /// Ended processes by force (`TerminateProcess` / SIGKILL).
+    Ended {
+        /// Processes ended.
+        ended: u32,
+        /// Processes that could not be ended.
+        failed: u32,
+    },
+}
+
+impl QuitStep {
+    /// English description for logs and errors.
+    pub fn describe(&self) -> String {
+        match self {
+            QuitStep::AskedApp => "asked the app to quit".into(),
+            QuitStep::ClosedWindows => "closed its windows".into(),
+            QuitStep::Signalled => "sent a quit request".into(),
+            QuitStep::Waited { ms } => format!("waited {:.1} s", *ms as f64 / 1000.0),
+            QuitStep::Ended { ended, failed } => {
+                format!("ended {ended} process(es) by force, {failed} could not be ended")
+            }
+        }
+    }
+}
+
+/// What the last quit of a session did and which of the app's processes still
+/// run (user bug 53).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuitReport {
+    /// What was tried, in order.
+    #[serde(default)]
+    pub steps: Vec<QuitStep>,
+    /// Processes of the app still running.
+    #[serde(default)]
+    pub left: Vec<LingeringProcess>,
+}
+
+impl QuitReport {
+    /// English summary for logs and errors.
+    pub fn describe(&self) -> String {
+        let left = if self.left.is_empty() {
+            "none".to_owned()
+        } else {
+            self.left
+                .iter()
+                .map(LingeringProcess::describe)
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+        let tried = if self.steps.is_empty() {
+            "nothing recorded".to_owned()
+        } else {
+            self.steps
+                .iter()
+                .map(QuitStep::describe)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        format!("still running: {left}; tried: {tried}")
+    }
+}
+
 /// Kind of a Codex-related process.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

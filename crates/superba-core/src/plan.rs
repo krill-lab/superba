@@ -952,6 +952,17 @@ pub enum DecisionRequest {
     ForceQuit {
         /// Processes still alive.
         pids: Vec<u32>,
+        /// What the quit did and which of the app's processes still run.
+        #[serde(default)]
+        report: crate::QuitReport,
+    },
+    /// The app did not quit even by force (user bug 53): `report` names its
+    /// processes still running and what was tried. Allowed: Force (end
+    /// exactly these processes), Continue (try the forced quit again),
+    /// Cancel (stop the switch; nothing was written yet).
+    AppStillRunning {
+        /// What was tried and what still runs.
+        report: crate::QuitReport,
     },
     /// The hot restart IPC failed (`FullRestartOffer`). Allowed: FullRestart, Undo,
     /// KeepWritten.
@@ -1004,6 +1015,9 @@ impl DecisionRequest {
                 &[Decision::Wait, Decision::Force, Decision::Cancel]
             }
             DecisionRequest::ForceQuit { .. } => &[Decision::Force, Decision::Cancel],
+            DecisionRequest::AppStillRunning { .. } => {
+                &[Decision::Force, Decision::Continue, Decision::Cancel]
+            }
             DecisionRequest::IpcFailed { .. } => {
                 &[Decision::FullRestart, Decision::Undo, Decision::KeepWritten]
             }
@@ -1031,6 +1045,7 @@ impl DecisionRequest {
         match self {
             DecisionRequest::WaitForTurns { .. } => Decision::Wait,
             DecisionRequest::ForceQuit { .. }
+            | DecisionRequest::AppStillRunning { .. }
             | DecisionRequest::UnknownRemoteActivity { .. }
             | DecisionRequest::CloseConsumers { .. }
             | DecisionRequest::ForceStop { .. } => Decision::Cancel,

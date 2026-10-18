@@ -32,7 +32,7 @@ fn all_component_traits_support_shared_send_sync_trait_objects() {
     assert_shared_trait::<dyn EnvSource>();
 }
 
-fn decision_cases() -> [(DecisionRequest, Decision, &'static [Decision]); 5] {
+fn decision_cases() -> [(DecisionRequest, Decision, &'static [Decision]); 6] {
     [
         (
             DecisionRequest::WaitForTurns {
@@ -45,9 +45,17 @@ fn decision_cases() -> [(DecisionRequest, Decision, &'static [Decision]); 5] {
         (
             DecisionRequest::ForceQuit {
                 pids: vec![123, 456],
+                report: Default::default(),
             },
             Decision::Cancel,
             &[Decision::Force, Decision::Cancel],
+        ),
+        (
+            DecisionRequest::AppStillRunning {
+                report: Default::default(),
+            },
+            Decision::Cancel,
+            &[Decision::Force, Decision::Continue, Decision::Cancel],
         ),
         (
             DecisionRequest::IpcFailed {

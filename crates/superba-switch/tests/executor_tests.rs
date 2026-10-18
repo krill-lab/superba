@@ -1102,6 +1102,190 @@ async fn quit_timeout_force_kills_then_continues() {
     assert!(w.calls().contains(&"app.quit force=true".to_owned()));
 }
 
+fn left(pid: u32, role: &str) -> superba_core::LingeringProcess {
+    superba_core::LingeringProcess {
+        pid,
+        ppid: Some(1),
+        image: Some(std::path::PathBuf::from(format!("C:/app/{role}.exe"))),
+        role: role.into(),
+        arch: Some("arm64".into()),
+        started_at: Some(superba_core::Timestamp::from_millis(T0 - 60_000)),
+        end_error: None,
+    }
+}
+
+fn still_running(pids: &[(u32, &str)]) -> superba_core::QuitReport {
+    superba_core::QuitReport {
+        steps: vec![
+            superba_core::QuitStep::ClosedWindows,
+            superba_core::QuitStep::Waited { ms: 5_000 },
+            superba_core::QuitStep::Ended {
+                ended: 14,
+                failed: 1,
+            },
+        ],
+        left: pids.iter().map(|(p, r)| left(*p, r)).collect(),
+    }
+}
+
+fn logged(ev: &RecordingEvents, key: &str) -> Vec<superba_core::LocalizedText> {
+    ev.events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match e {
+            SwitchEvent::Log { text, .. } if text.key == key => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// User bug 53: the graceful quit timed out; the question names the app's
+/// processes still running and what was tried, and so does the log.
+#[tokio::test(start_paused = true)]
+async fn quit_timeout_names_the_processes_still_running() {
+    let w = no_cdp_world();
+    w.app
+        .quit_outcomes
+        .lock()
+        .unwrap()
+        .push_back(QuitOutcome::TimedOut);
+    w.app
+        .quit_reports
+        .lock()
+        .unwrap()
+        .push_back(still_running(&[(100, "main"), (101, "renderer")]));
+    let d = ScriptedDecider::with(&[("force_quit", Decision::Cancel)]);
+    let (o, ev) = run(&w, req("work"), allow_full(), d.clone()).await;
+    assert_eq!(o.status, OutcomeStatus::Cancelled);
+    let asked = d.asked.lock().unwrap().clone();
+    let superba_core::DecisionRequest::ForceQuit { pids, report } = &asked[0] else {
+        panic!("{asked:?}");
+    };
+    assert_eq!(pids, &vec![100, 101]);
+    assert_eq!(report.left.len(), 2);
+    let lines = logged(&ev, "switch.quit.still_running");
+    assert_eq!(lines.len(), 1);
+    let line = lines[0].render_fallback();
+    assert!(
+        line.contains("pid 100 main.exe (main, arm64, parent 1"),
+        "{line}"
+    );
+    assert!(line.contains("pid 101 renderer.exe"), "{line}");
+    assert!(line.contains("closed its windows"), "{line}");
+}
+
+/// User bug 53: the forced quit timed out too; "end these processes" ends
+/// exactly the listed ones and the switch goes on.
+#[tokio::test(start_paused = true)]
+async fn forced_quit_timeout_ends_the_listed_processes_when_the_user_asks() {
+    let w = no_cdp_world();
+    w.app
+        .quit_outcomes
+        .lock()
+        .unwrap()
+        .extend([QuitOutcome::TimedOut, QuitOutcome::TimedOut]);
+    w.app.quit_reports.lock().unwrap().extend([
+        still_running(&[(100, "main")]),
+        still_running(&[(100, "main"), (102, "gpu-process")]),
+    ]);
+    let d = ScriptedDecider::with(&[
+        ("force_quit", Decision::Force),
+        ("app_still_running", Decision::Force),
+    ]);
+    let (o, ev) = run(&w, req("work"), allow_full(), d.clone()).await;
+    assert_eq!(o.status, OutcomeStatus::Switched);
+    assert_eq!(d.asked_kinds(), vec!["force_quit", "app_still_running"]);
+    assert!(
+        w.calls()
+            .contains(&"app.end_app_processes 100,102".to_owned()),
+        "{:?}",
+        w.calls()
+    );
+    assert_eq!(logged(&ev, "switch.quit.still_running").len(), 2);
+}
+
+/// "Try again" runs the forced quit once more.
+#[tokio::test(start_paused = true)]
+async fn forced_quit_timeout_can_be_retried() {
+    let w = no_cdp_world();
+    w.app.quit_outcomes.lock().unwrap().extend([
+        QuitOutcome::TimedOut,
+        QuitOutcome::TimedOut,
+        QuitOutcome::Killed,
+    ]);
+    let d = ScriptedDecider::with(&[
+        ("force_quit", Decision::Force),
+        ("app_still_running", Decision::Continue),
+    ]);
+    let (o, _) = run(&w, req("work"), allow_full(), d.clone()).await;
+    assert_eq!(o.status, OutcomeStatus::Switched);
+    let quits: Vec<String> = w
+        .calls()
+        .into_iter()
+        .filter(|c| c.starts_with("app.quit force="))
+        .collect();
+    assert_eq!(
+        quits,
+        vec![
+            "app.quit force=false",
+            "app.quit force=true",
+            "app.quit force=true"
+        ]
+    );
+}
+
+/// Stopping at "still running" cancels the switch before anything is written.
+#[tokio::test(start_paused = true)]
+async fn forced_quit_timeout_cancelled_writes_nothing() {
+    let w = no_cdp_world();
+    w.app
+        .quit_outcomes
+        .lock()
+        .unwrap()
+        .extend([QuitOutcome::TimedOut, QuitOutcome::TimedOut]);
+    let d = ScriptedDecider::with(&[("force_quit", Decision::Force)]);
+    let (o, _) = run(&w, req("work"), allow_full(), d.clone()).await;
+    assert_eq!(o.status, OutcomeStatus::Cancelled);
+    assert_eq!(d.asked_kinds(), vec!["force_quit", "app_still_running"]);
+    assert!(!w.calls().contains(&"config.apply".to_owned()));
+}
+
+/// Processes that cannot be ended: after the last round the switch fails
+/// with an error that names them (never a bare "timed out").
+#[tokio::test(start_paused = true)]
+async fn processes_that_cannot_be_ended_fail_the_switch_naming_them() {
+    let w = no_cdp_world();
+    w.app
+        .quit_outcomes
+        .lock()
+        .unwrap()
+        .extend([QuitOutcome::TimedOut, QuitOutcome::TimedOut]);
+    let mut stuck = still_running(&[(100, "main")]);
+    stuck.left[0].end_error = Some("terminate: Access is denied. (os error 5)".into());
+    for _ in 0..6 {
+        w.app.quit_reports.lock().unwrap().push_back(stuck.clone());
+        w.app.end_reports.lock().unwrap().push_back(stuck.clone());
+    }
+    let d = ScriptedDecider::with(&[
+        ("force_quit", Decision::Force),
+        ("app_still_running", Decision::Force),
+        ("app_still_running", Decision::Force),
+        ("app_still_running", Decision::Force),
+    ]);
+    let sw = w.switcher();
+    let plan = plan_with(&sw, req("work")).await;
+    let events = Arc::new(RecordingEvents::default());
+    let error = sw
+        .execute(plan, allow_full(), d.clone(), events)
+        .await
+        .expect_err("the switch fails")
+        .to_string();
+    assert!(error.contains("pid 100 main.exe"), "{error}");
+    assert!(error.contains("Access is denied"), "{error}");
+    assert!(!w.calls().contains(&"config.apply".to_owned()));
+}
+
 #[tokio::test(start_paused = true)]
 async fn write_only_skips_quit_and_launch() {
     let w = no_cdp_world();

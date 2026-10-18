@@ -30,6 +30,17 @@ async fn all_requests_and_all_flag_combinations_follow_the_decision_table() {
                     (
                         DecisionRequest::ForceQuit {
                             pids: vec![424_242],
+                            report: Default::default(),
+                        },
+                        if force {
+                            Decision::Force
+                        } else {
+                            Decision::Cancel
+                        },
+                    ),
+                    (
+                        DecisionRequest::AppStillRunning {
+                            report: Default::default(),
                         },
                         if force {
                             Decision::Force

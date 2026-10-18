@@ -124,6 +124,22 @@ unknown_remote_activity = "无法确认 {hosts} 上是否有对话在运行；�
 close_consumers = "这些 Codex 进程正在使用此 Codex 目录，需要先关闭：{processes}。你可以自己关闭后继续，也可以让 Superba 代为停止（强制结束前会再次询问）。"
 force_stop = "{processes} 没有退出。要强制结束吗？正在运行的回合会丢失输出。"
 
+# A quit that timed out (user bug 53): what still runs and what was tried.
+[switch.quit]
+still_running = "ChatGPT 还有 {count} 个进程在运行：{processes}。已尝试：{tried}。"
+question = "Superba 强制结束后 ChatGPT 仍在运行。可以让 Superba 结束下面这些进程，或者再试一次强制退出。"
+end_these = "结束这些进程"
+retry = "再试一次"
+nothing_tried = "还没有"
+join = "{a}，{b}"
+step_asked_app = "请 ChatGPT 自行退出"
+step_closed_windows = "关闭了它的窗口"
+step_signalled = "发送了退出请求"
+step_waited = "等待了 {seconds} 秒"
+step_ended = "强制结束了 {ended} 个进程（{failed} 个无法结束）"
+with_hint = "{line}{hint}"
+access_denied = "Windows 拒绝结束其中的进程（拒绝访问）：它们以管理员或其他用户身份运行。请在通知区域的 ChatGPT 图标上右键选择“退出”，或者用与 ChatGPT 相同的方式（例如同样以管理员身份）启动 Superba，然后再试一次。"
+
 [switch.choice]
 legacy_sessions = "你有 {count} 个会话属于 provider「{provider}」。切换后如果不迁移，它们会暂时看不见。"
 legacy_sessions_migrate = "迁移到新配置（推荐；需要完全重启，约 10 秒）"

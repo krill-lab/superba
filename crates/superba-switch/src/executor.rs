@@ -35,6 +35,10 @@ use crate::session_events::SessionEvents;
 
 pub use crate::rules::PROCESS_START_SLACK_MS;
 
+/// How often the user is asked about an app that did not quit even by force
+/// before the switch fails naming its processes (user bug 53).
+const STILL_RUNNING_ROUNDS: usize = 3;
+
 /// A relaunched renderer can need several seconds to leave its startup screen.
 /// Bound the wait for navigation readiness so a switch can still finish.
 const NAV_RESTORE_WAIT: Duration = Duration::from_secs(15);
@@ -607,14 +611,22 @@ impl Run<'_> {
             let mut outcome = d.app.quit(&session, &graceful).await;
             if let Ok(QuitOutcome::TimedOut) = outcome {
                 self.ev.phase(SwitchPhase::ForceQuitConfirm);
+                // Name what still runs and what was tried (user bug 53).
+                let report = d.app.quit_report(&session).await.unwrap_or_default();
+                if !report.left.is_empty() {
+                    self.ev
+                        .log(Severity::Info, messages::app_still_running(&report));
+                }
                 let decision = if self.opts.force_turns {
                     Decision::Force
                 } else {
+                    let mut pids: Vec<u32> = report.left.iter().map(|p| p.pid).collect();
+                    if pids.is_empty() {
+                        pids.push(session.main_pid);
+                    }
                     ask(
                         self.decider.as_ref(),
-                        DecisionRequest::ForceQuit {
-                            pids: vec![session.main_pid],
-                        },
+                        DecisionRequest::ForceQuit { pids, report },
                     )
                     .await
                 };
@@ -633,22 +645,18 @@ impl Run<'_> {
                     )
                     .await;
             }
+            let outcome = match outcome {
+                Ok(QuitOutcome::TimedOut) => self.app_still_running(&session).await,
+                other => other.map(|_| true),
+            };
             match outcome {
-                Ok(QuitOutcome::TimedOut) => {
-                    let e = Error::Timeout {
-                        what: "app quit".into(),
-                    };
-                    self.ev.step(
-                        SwitchStep::QuitApp,
-                        StepStatus::Failed {
-                            message: e.to_string(),
-                        },
-                    );
-                    return Err(e);
-                }
-                Ok(_) => {
+                Ok(true) => {
                     self.app_was_quit = true;
                     self.ev.step(SwitchStep::QuitApp, StepStatus::Done);
+                }
+                Ok(false) => {
+                    self.ev.step(SwitchStep::QuitApp, StepStatus::Skipped);
+                    return Ok(Some(self.cancelled(self.plan.primary.clone())));
                 }
                 Err(e) => {
                     self.ev.step(
@@ -823,6 +831,58 @@ impl Run<'_> {
                 false
             }
         }
+    }
+
+    /// The forced quit timed out (user bug 53): log which of the app's
+    /// processes still run and what was tried, then ask the user to end
+    /// exactly these processes, try the forced quit again, or stop. `Ok(true)`
+    /// once the app is gone, `Ok(false)` when the user stopped (nothing was
+    /// written yet), an error naming the processes when they cannot be ended.
+    async fn app_still_running(&mut self, session: &AppSession) -> Result<bool> {
+        let d = self.deps().clone();
+        let mut last = superba_core::QuitReport::default();
+        for _ in 0..STILL_RUNNING_ROUNDS {
+            let report = d.app.quit_report(session).await?;
+            if report.left.is_empty() {
+                return Ok(true);
+            }
+            self.ev
+                .log(Severity::Warning, messages::app_still_running(&report));
+            last = report.clone();
+            let decision = ask(
+                self.decider.as_ref(),
+                DecisionRequest::AppStillRunning {
+                    report: report.clone(),
+                },
+            )
+            .await;
+            match decision {
+                Decision::Force => {
+                    let after = d.app.end_app_processes(session, &report.left).await?;
+                    if after.left.is_empty() {
+                        return Ok(true);
+                    }
+                }
+                Decision::Continue => {
+                    let options = QuitOptions {
+                        graceful_timeout_ms: self.opts.quit_timeout_ms,
+                        force: true,
+                    };
+                    if d.app.quit(session, &options).await? != QuitOutcome::TimedOut {
+                        return Ok(true);
+                    }
+                }
+                Decision::Cancel => return Ok(false),
+                _ => break,
+            }
+        }
+        let report = d.app.quit_report(session).await.unwrap_or(last);
+        if report.left.is_empty() {
+            return Ok(true);
+        }
+        Err(Error::Timeout {
+            what: format!("app quit; {}", report.describe()),
+        })
     }
 
     /// Reopen the app the way it was after a cancelled full restart (plan 7.2

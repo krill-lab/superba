@@ -125,6 +125,22 @@ unknown_remote_activity = "Could not tell whether conversations are running on {
 close_consumers = "These Codex processes use this Codex home and must be closed first: {processes}. Close them yourself and continue, or let Superba stop them (it asks again before ending any by force)."
 force_stop = "{processes} did not exit. End them by force? A running turn loses its output."
 
+# A quit that timed out (user bug 53): what still runs and what was tried.
+[switch.quit]
+still_running = "ChatGPT has not quit. Still running ({count}): {processes}. Tried: {tried}."
+question = "ChatGPT is still running after Superba ended it by force. Superba can end exactly these processes, or try the forced quit again."
+end_these = "End these processes"
+retry = "Try again"
+nothing_tried = "nothing yet"
+join = "{a}, {b}"
+step_asked_app = "asked ChatGPT to quit"
+step_closed_windows = "closed its windows"
+step_signalled = "sent a quit request"
+step_waited = "waited {seconds} s"
+step_ended = "ended processes by force: {ended} ended, {failed} could not be ended"
+with_hint = "{line} {hint}"
+access_denied = "Windows refused to end some of them (access denied): they run as administrator or as another user. Quit ChatGPT from its icon in the notification area (right-click, Quit), or start Superba the same way ChatGPT was started, then try again."
+
 [switch.choice]
 legacy_sessions = "You have {count} sessions under provider “{provider}”. They will be hidden after the switch unless they are migrated."
 legacy_sessions_migrate = "Migrate them to the new configuration (recommended; needs a full restart, about 10 s)"

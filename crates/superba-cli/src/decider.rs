@@ -296,7 +296,8 @@ impl SwitchDecider for FlagDecider {
                     Decision::Cancel
                 }
             }
-            DecisionRequest::ForceQuit { .. } => {
+            // --force: end exactly the processes the report names (user bug 53).
+            DecisionRequest::ForceQuit { .. } | DecisionRequest::AppStillRunning { .. } => {
                 if self.force {
                     Decision::Force
                 } else {

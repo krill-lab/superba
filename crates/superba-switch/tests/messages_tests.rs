@@ -525,8 +525,18 @@ fn every_execution_question_supplies_its_specific_context() {
             vec![("count", "2")],
         ),
         (
-            DecisionRequest::ForceQuit { pids: vec![41, 42] },
+            DecisionRequest::ForceQuit {
+                pids: vec![41, 42],
+                report: Default::default(),
+            },
             "switch.question.force_quit",
+            vec![],
+        ),
+        (
+            DecisionRequest::AppStillRunning {
+                report: Default::default(),
+            },
+            "switch.quit.question",
             vec![],
         ),
         (
@@ -976,4 +986,74 @@ fn the_shared_catalog_layers_the_config_sessions_and_settings_catalog_texts() {
             }
         }
     }
+}
+
+/// User bug 53: a quit that timed out names every process still running
+/// (pid, image, role, architecture, parent, start) and what was tried, in
+/// the reader's language.
+#[test]
+fn a_quit_report_names_the_processes_and_the_steps() {
+    use superba_core::{LingeringProcess, Locale, QuitReport, QuitStep, Timestamp};
+    let report = QuitReport {
+        steps: vec![
+            QuitStep::ClosedWindows,
+            QuitStep::Waited { ms: 5_000 },
+            QuitStep::Ended {
+                ended: 14,
+                failed: 1,
+            },
+        ],
+        left: vec![LingeringProcess {
+            pid: 812,
+            ppid: Some(640),
+            image: Some(
+                r"C:\Program Files\WindowsApps\OpenAI.Codex_1_arm64__x\app\ChatGPT.exe".into(),
+            ),
+            role: "main".into(),
+            arch: Some("arm64".into()),
+            started_at: Some(Timestamp::from_millis(1_792_303_091_000)),
+            end_error: Some("terminate: Access is denied. (os error 5)".into()),
+        }],
+    };
+    let text = messages::app_still_running(&report);
+    let en = messages::catalog(Locale::En).text(&text);
+    assert!(
+        en.contains("pid 812 ChatGPT.exe (main, arm64, parent 640, started 2026-"),
+        "{en}"
+    );
+    assert!(
+        en.contains("cannot end it: terminate: Access is denied"),
+        "{en}"
+    );
+    assert!(
+        en.contains(
+            "Tried: closed its windows, waited 5.0 s, ended processes by force: 14 ended, \
+             1 could not be ended."
+        ),
+        "{en}"
+    );
+    let zh = messages::catalog(Locale::ZhCn).text(&text);
+    assert!(
+        zh.starts_with("ChatGPT 还有 1 个进程在运行：pid 812 ChatGPT.exe"),
+        "{zh}"
+    );
+    assert!(
+        zh.contains(
+            "已尝试：关闭了它的窗口，等待了 5.0 秒，强制结束了 14 个进程（1 个无法结束）。"
+        ),
+        "{zh}"
+    );
+    assert!(!zh.contains(['{', '}']), "{zh}");
+    // Access denied: the hint says why and what to do.
+    let zh_hint = messages::catalog(Locale::ZhCn).text(&messages::app_still_running(&report));
+    assert!(messages::quit_access_denied(&report));
+    assert!(zh_hint.contains("拒绝访问"), "{zh_hint}");
+    let mut other = report.clone();
+    other.left[0].end_error = None;
+    assert!(!messages::quit_access_denied(&other));
+    let en = messages::catalog(Locale::En).text(&messages::app_still_running(&other));
+    assert!(!en.contains("access denied"), "{en}");
+    // Nothing recorded yet.
+    let none = messages::catalog(Locale::En).text(&messages::quit_steps(&[]));
+    assert_eq!(none, "nothing yet");
 }

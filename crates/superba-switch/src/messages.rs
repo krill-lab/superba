@@ -216,6 +216,7 @@ pub fn question(request: &DecisionRequest) -> LocalizedText {
             text("switch.waiting.title").arg("count", busy.len())
         }
         DecisionRequest::ForceQuit { .. } => text("switch.question.force_quit"),
+        DecisionRequest::AppStillRunning { .. } => text("switch.quit.question"),
         DecisionRequest::IpcFailed { error } => {
             text("switch.question.ipc_failed").arg_text("error", error.to_text())
         }
@@ -385,4 +386,62 @@ pub fn target_label(target_id: &str) -> String {
 /// Seconds with one decimal for toasts (`1.2`).
 pub fn seconds_1dp(ms: u64) -> String {
     format!("{}.{}", ms / 1000, (ms % 1000) / 100)
+}
+
+/// One step of a quit, localized (user bug 53).
+pub fn quit_step(step: &superba_core::QuitStep) -> LocalizedText {
+    use superba_core::QuitStep;
+    match step {
+        QuitStep::AskedApp => text("switch.quit.step_asked_app"),
+        QuitStep::ClosedWindows => text("switch.quit.step_closed_windows"),
+        QuitStep::Signalled => text("switch.quit.step_signalled"),
+        QuitStep::Waited { ms } => {
+            text("switch.quit.step_waited").arg("seconds", format!("{:.1}", *ms as f64 / 1000.0))
+        }
+        QuitStep::Ended { ended, failed } => text("switch.quit.step_ended")
+            .arg("ended", ended)
+            .arg("failed", failed),
+    }
+}
+
+/// The steps of a quit as one localized list.
+pub fn quit_steps(steps: &[superba_core::QuitStep]) -> LocalizedText {
+    let mut it = steps.iter().rev();
+    let Some(last) = it.next() else {
+        return text("switch.quit.nothing_tried");
+    };
+    it.fold(quit_step(last), |tail, s| {
+        text("switch.quit.join")
+            .arg_text("a", quit_step(s))
+            .arg_text("b", tail)
+    })
+}
+
+/// "ChatGPT is still running (N processes): pid … ; tried: …" (user bug 53).
+pub fn app_still_running(report: &superba_core::QuitReport) -> LocalizedText {
+    let processes: Vec<String> = report
+        .left
+        .iter()
+        .map(superba_core::LingeringProcess::describe)
+        .collect();
+    let line = text("switch.quit.still_running")
+        .arg("count", report.left.len())
+        .arg("processes", processes.join("; "))
+        .arg_text("tried", quit_steps(&report.steps));
+    if quit_access_denied(report) {
+        return text("switch.quit.with_hint")
+            .arg_text("line", line)
+            .arg_text("hint", text("switch.quit.access_denied"));
+    }
+    line
+}
+
+/// True when Windows refused to end one of the processes (access denied,
+/// os error 5): it runs as administrator or as another user.
+pub fn quit_access_denied(report: &superba_core::QuitReport) -> bool {
+    report
+        .left
+        .iter()
+        .filter_map(|p| p.end_error.as_deref())
+        .any(|e| e.contains("(os error 5)"))
 }

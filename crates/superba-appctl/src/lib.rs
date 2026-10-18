@@ -30,6 +30,7 @@ pub mod daemon;
 pub mod install;
 pub mod launch;
 pub mod launcher;
+pub mod osproc;
 pub mod owner;
 pub mod package;
 pub mod procs;
@@ -849,9 +850,13 @@ impl AppController for DesktopAppController {
     async fn quit(&self, session: &AppSession, options: &QuitOptions) -> Result<QuitOutcome> {
         // Windows: closing the windows leaves the app running in the notification
         // area; with CDP the app is asked to quit the way its own menu does.
+        let mut steps = Vec::new();
         let requested = if cfg!(windows) && session.cdp.is_some() {
             match self.eval_main(session, quit::QUIT_APP_JS).await {
-                Ok((_, Value::Bool(true))) => Some(quit::QuitRequest::App),
+                Ok((_, Value::Bool(true))) => {
+                    steps.push(superba_core::QuitStep::AskedApp);
+                    Some(quit::QuitRequest::App)
+                }
                 other => {
                     tracing::info!(?other, "cannot ask the app to quit over CDP");
                     None
@@ -860,7 +865,26 @@ impl AppController for DesktopAppController {
         } else {
             None
         };
-        let outcome = quit::quit_after(session, options, requested).await;
+        let attempt = quit::attempt(session, options, requested, steps).await;
+        let outcome = attempt.outcome;
+        tracing::info!(
+            main = session.main_pid,
+            ?outcome,
+            force = options.force,
+            steps = ?attempt.steps,
+            "quit"
+        );
+        {
+            let mut quits = codexbin::lock(&self.caches.quits);
+            // A forced quit after a graceful one keeps the earlier steps.
+            let record = match quits.remove(&session.main_pid) {
+                Some(prev) => prev.merge(attempt),
+                None => attempt,
+            };
+            if outcome == QuitOutcome::TimedOut {
+                quits.insert(session.main_pid, record);
+            }
+        }
         if matches!(
             outcome,
             QuitOutcome::Exited | QuitOutcome::Killed | QuitOutcome::NotRunning
@@ -885,6 +909,55 @@ impl AppController for DesktopAppController {
         timeout_ms: u64,
     ) -> Result<superba_core::StopOutcome> {
         stop::stop(process, force, Duration::from_millis(timeout_ms)).await
+    }
+
+    async fn quit_report(&self, session: &AppSession) -> Result<superba_core::QuitReport> {
+        let record = codexbin::lock(&self.caches.quits)
+            .get(&session.main_pid)
+            .cloned()
+            .unwrap_or_else(|| quit::QuitAttempt::new(QuitOutcome::TimedOut, Vec::new()));
+        let session = session.clone();
+        let report = tokio::task::spawn_blocking(move || quit::report(&session, &record))
+            .await
+            .map_err(blocking_err)?;
+        if !report.left.is_empty() {
+            tracing::warn!("the desktop app is still running: {}", report.describe());
+        }
+        Ok(report)
+    }
+
+    async fn end_app_processes(
+        &self,
+        session: &AppSession,
+        processes: &[superba_core::LingeringProcess],
+    ) -> Result<superba_core::QuitReport> {
+        tracing::info!(
+            pids = ?processes.iter().map(|p| p.pid).collect::<Vec<_>>(),
+            "ending the app processes the user listed"
+        );
+        let done = quit::end_listed(processes).await;
+        {
+            let mut quits = codexbin::lock(&self.caches.quits);
+            let record = match quits.remove(&session.main_pid) {
+                Some(prev) => prev.merge(done),
+                None => done,
+            };
+            quits.insert(session.main_pid, record);
+        }
+        let report = self.quit_report(session).await?;
+        if report.left.is_empty() {
+            codexbin::lock(&self.caches.quits).remove(&session.main_pid);
+            let path = self.sessions_path();
+            let pid = session.main_pid;
+            tokio::task::spawn_blocking(move || {
+                store::forget(&path, pid, &|r| {
+                    procs::liveness(r.main_pid, r.process_started_at) == procs::Liveness::Alive
+                })
+            })
+            .await
+            .map_err(blocking_err)??;
+        }
+        Ok(report)
     }
 
     async fn processes(&self, home: &CodexHome) -> Result<Vec<ProcessInfo>> {

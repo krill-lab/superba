@@ -89,3 +89,176 @@ fn the_quit_message_is_the_apps_own() {
     assert!(QUIT_APP_JS.contains("sendMessageFromView({type:'quit-app'})"));
     assert!(!QUIT_APP_JS.contains("relaunch"));
 }
+
+fn at(s: i64) -> Option<superba_core::Timestamp> {
+    Some(superba_core::Timestamp::from_millis(s * 1000))
+}
+
+fn proc_with(pid: u32, ppid: u32, argv: &[&str]) -> ProcEntry {
+    ProcEntry {
+        pid,
+        ppid: Some(ppid),
+        argv: argv.iter().map(|a| (*a).to_owned()).collect(),
+        exe: argv.first().map(std::path::PathBuf::from),
+        started_at: at(i64::from(pid)),
+        ..Default::default()
+    }
+}
+
+fn session(main: u32) -> superba_core::AppSession {
+    superba_core::AppSession {
+        install_id: None,
+        main_pid: main,
+        started_at: at(i64::from(main)),
+        executable: None,
+        cdp: None,
+        launched_by_us: false,
+        authapi_env: superba_core::EnvObservation::Unknown,
+        home_override: None,
+        codex_home: None,
+        app_server_exe: None,
+    }
+}
+
+/// User bug 53: a report says what each left-over process is.
+#[test]
+fn roles_name_the_main_process_electron_helpers_and_codex() {
+    use superba_appctl::quit::role_of;
+    let app = "/opt/ChatGPT/ChatGPT";
+    assert_eq!(role_of(&proc_with(10, 1, &[app]), 10), "main");
+    assert_eq!(
+        role_of(
+            &proc_with(11, 10, &[app, "--type=renderer", "--lang=en"]),
+            10
+        ),
+        "renderer"
+    );
+    // Chromium's rewritten Linux command line: one word.
+    assert_eq!(
+        role_of(
+            &proc_with(12, 10, &[&format!("{app} --type=gpu-process --x")]),
+            10
+        ),
+        "gpu-process"
+    );
+    assert_eq!(
+        role_of(
+            &proc_with(13, 10, &["/home/u/.local/bin/codex", "app-server"]),
+            10
+        ),
+        "codex app-server"
+    );
+    assert_eq!(
+        role_of(&proc_with(14, 13, &["/usr/bin/conhost.exe"]), 10),
+        "conhost.exe"
+    );
+}
+
+/// The left-over processes: the main process, the tree recorded when the
+/// quit began (orphans keep their parent pid on Windows) and helpers started
+/// since, only while they are still the same process.
+#[test]
+fn lingering_lists_the_live_part_of_the_tree() {
+    use superba_appctl::quit::{lingering, merge_tree};
+    let entries = vec![
+        proc_with(10, 1, &["/app/ChatGPT"]),
+        proc_with(11, 10, &["/app/ChatGPT", "--type=renderer"]),
+        proc_with(12, 10, &["/app/ChatGPT", "--type=gpu-process"]),
+        proc_with(13, 11, &["/app/helper"]),
+        proc_with(20, 1, &["/usr/bin/other"]),
+    ];
+    // Recorded at the start: 11 (alive), 12 (alive), 15 (gone since).
+    let recorded = vec![(11, at(11)), (12, at(12)), (15, at(15))];
+    let mut tree: Vec<u32> = merge_tree(&recorded, &entries, 10)
+        .into_iter()
+        .map(|(p, _)| p)
+        .collect();
+    tree.sort_unstable();
+    assert_eq!(tree, vec![11, 12, 13, 15]);
+    // 12's pid was reused by another program (another start time).
+    let alive = |pid: u32, started: Option<superba_core::Timestamp>| match pid {
+        10 | 11 | 13 => true,
+        12 => started == at(99),
+        _ => false,
+    };
+    let left: Vec<u32> = lingering(&session(10), &entries, &recorded, &alive)
+        .into_iter()
+        .map(|(e, _)| e.pid)
+        .collect();
+    assert_eq!(left, vec![10, 11, 13]);
+    // The main process gone: what is left of its tree.
+    let alive = |pid: u32, _| pid == 13;
+    let left: Vec<u32> = lingering(&session(10), &entries, &recorded, &alive)
+        .into_iter()
+        .map(|(e, _)| e.pid)
+        .collect();
+    assert_eq!(left, vec![13]);
+}
+
+/// A forced quit after a graceful one keeps both in the record.
+#[test]
+fn attempts_merge_in_order() {
+    use superba_appctl::quit::QuitAttempt;
+    use superba_core::{QuitOutcome, QuitStep};
+    let mut first = QuitAttempt::new(
+        QuitOutcome::TimedOut,
+        vec![QuitStep::ClosedWindows, QuitStep::Waited { ms: 5000 }],
+    );
+    first.tree = vec![(11, at(11))];
+    let mut second = QuitAttempt::new(
+        QuitOutcome::TimedOut,
+        vec![QuitStep::Ended {
+            ended: 2,
+            failed: 1,
+        }],
+    );
+    second.tree = vec![(11, at(11)), (12, at(12))];
+    second
+        .end_errors
+        .insert(10, "terminate: Access is denied.".into());
+    second.terminated = vec![11, 12];
+    let merged = first.merge(second);
+    assert_eq!(merged.steps.len(), 3);
+    assert_eq!(merged.steps[0], QuitStep::ClosedWindows);
+    assert_eq!(merged.tree, vec![(11, at(11)), (12, at(12))]);
+    assert_eq!(merged.terminated, vec![11, 12]);
+    assert_eq!(merged.end_errors.len(), 1);
+}
+
+/// Ending one process: only while it is the process recorded, and the
+/// result says what happened (Unix: SIGKILL).
+#[cfg(unix)]
+#[test]
+fn ending_a_process_checks_its_start_and_reports_the_result() {
+    use std::process::Command;
+    use std::time::Duration;
+
+    use superba_appctl::osproc::{self, EndResult};
+    use superba_appctl::procs;
+
+    let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+    let pid = child.id();
+    let started = procs::snapshot_os(procs::ReadOpts::default())
+        .into_iter()
+        .find(|e| e.pid == pid)
+        .and_then(|e| e.started_at);
+    assert!(started.is_some());
+    let facts = osproc::facts(pid);
+    assert_eq!(facts.running, Some(true));
+    // Another start time: a reused pid is left alone.
+    let other = started.map(|t| superba_core::Timestamp::from_millis(t.as_millis() - 3_600_000));
+    assert_eq!(
+        osproc::end(pid, other, Duration::from_secs(1)),
+        EndResult::Reused
+    );
+    assert!(child.try_wait().unwrap().is_none(), "still running");
+    // Reap it from another thread so the pid is really gone after the kill.
+    let reaper = std::thread::spawn(move || child.wait());
+    let r = osproc::end(pid, started, Duration::from_secs(5));
+    assert_eq!(r, EndResult::Ended, "{}", r.describe());
+    reaper.join().unwrap().unwrap();
+    assert_eq!(
+        osproc::end(pid, started, Duration::from_millis(100)),
+        EndResult::AlreadyGone
+    );
+}
