@@ -240,12 +240,24 @@ def w13(t):
 
 
 # --------------------------------------------------------------------------- router
+def same_model(t, first, later, how):
+    """User bug 58: a turn after turning the router on or off runs the model the
+    first turn ran (the forwarders log each request's model; real network only)."""
+    models = t.run.state.get("turn_models") or {}
+    if first not in models or later not in models:
+        return
+    with t.step(f"Turn {later} runs the model of {first} ({how})") as s:
+        s.check(models[later] == models[first],
+                f"{later}: {models[later]!r}, {first}: {models[first]!r} (user bug 58)")
+
+
 @scenario("W30", "Router: member gate, add member, turn on, requests through the router", area="router",
-          needs=("turn",), bugs=(28, 39, 35), tags=("core",))
+          needs=("turn",), bugs=(28, 39, 35, 58), tags=("core",))
 def w30(t):
     run = t.run
     flows.router_on(run, t)
     flows.turn(run, t, "E2E-R1", new_chat=True)
+    same_model(t, "E2E-T1", "E2E-R1", "through the router")
     with t.step("The router recorded the request") as s:
         r = run.spb_json("usage", "log", timeout=120, label="usage-log")
         rows = (r.get("json") or {}).get("rows") or []
@@ -355,7 +367,8 @@ def w32(t):
             s.manual("usage-stats.png: grouping by provider ('Providers', bug 11), cost estimate labelled (bug 13)")
 
 
-@scenario("W33", "Router off: Codex back to the direct line", area="router", needs=("router_on",), tags=("core",))
+@scenario("W33", "Router off: Codex back to the direct line", area="router", needs=("router_on",), bugs=(58,),
+          tags=("core",))
 def w33(t):
     run = t.run
     u = U(t)
@@ -374,6 +387,7 @@ def w33(t):
         s.shot("router-off")
         run.state.pop("router_on", None)
     flows.turn(run, t, "E2E-D1", new_chat=True)
+    same_model(t, "E2E-T1", "E2E-D1", "direct again")
     with t.step("Usage page without the router reads Codex's session files") as s:
         r = run.spb_json("usage", "log", timeout=120, label="usage-log-off")
         rows = (r.get("json") or {}).get("rows") or []

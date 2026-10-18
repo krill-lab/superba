@@ -447,8 +447,9 @@ def turn(run, t, marker, prefix="", expect_line=None, new_chat=False):
             s.check(line == expect_line, f"answered on line {line} (expected {expect_line})")
         if run.net.mode == "real" and posts:
             e = posts[-1]
-            s.info(f"auth on the wire: {e.get('auth_kind')}, input items {e.get('n_input')}")
+            s.info(f"auth on the wire: {e.get('auth_kind')}, input items {e.get('n_input')}, model {e.get('model')}")
             run.state.setdefault("turn_inputs", {})[marker] = e.get("n_input")
+            run.state.setdefault("turn_models", {})[marker] = e.get("model")
         s.check(bool(p["conversation"]) or bool(p["rows"]), f"thread {p['conversation']} in the sidebar")
         run.state["thread"] = p["conversation"]
         a.shot(t.evdir / f"{t.seq():02d}-turn-{marker}.png")
@@ -476,6 +477,10 @@ def router_on(run, t, prefix=""):
         u.click(key="router.banner.turn_on")
         time.sleep(2)
         s.ui_dump("router-plan")
+        if not getattr(run.opts, "model", None) and run.state.get("turn_models"):
+            # User bug 58: a profile without a model keeps the model the PAT gave.
+            s.check(bool(u.has_text(u.R("switch.models.keep_api_key"))),
+                    "the plan says Codex keeps the model the PAT gave (user bug 58)", soft=True)
         u.try_click(key="banner.switch_now")  # else the countdown runs out by itself
         phases, names = wait_switch_done(run, s, u)
         s.info(f"phases: {phases}")
@@ -484,6 +489,10 @@ def router_on(run, t, prefix=""):
         m = re.search(r'openai_base_url = "http://127\.0\.0\.1:(\d+)/backend-api/codex"', cfg)
         s.check(bool(m), "config.toml points Codex at http://127.0.0.1:<port>/backend-api/codex")
         run.state["router_port"] = int(m.group(1)) if m else None
+        direct = (run.state.get("turn_models") or {}).get("E2E-T1")
+        if direct and not getattr(run.opts, "model", None):
+            s.check(f'model = "{direct}"' in cfg,
+                    f"config.toml keeps the model the PAT gave ({direct}; user bug 58)")
         inv = inventory(run)
         s.check(ROUTER_RUN_VALUE in inv["run_key"], f"HKCU Run value {ROUTER_RUN_VALUE}: {inv['run_key'].get(ROUTER_RUN_VALUE, '')[:120]!r}")
         s.check(any(p.startswith("superba-router.exe") for p in inv["processes"]), f"superba-router.exe running: {inv['processes']}")
