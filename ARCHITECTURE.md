@@ -46,6 +46,7 @@ Windows installer's folder check, embedded in the MSI and never installed;
 | `superba-remote` | `RemoteHosts` | `SshRemoteHosts` | remote agent |
 | `superba-catalog` | `CatalogSource` (`SnapshotSource`) | `CatalogStore` | catalog agent |
 | `superba-router` | the `superba-router` binary; `RouterManager`, watchdog, admin client | `RouterServer` | router agent |
+| `superba-notify` | — (notifications, GH#12: channel payloads and signatures, policy, hook payload parsing, Codex `config.toml` hook edits, rollout enrichment and the failed-turn watcher; depends on `superba-core` only and is used by `superba-switch`'s `notify_*` methods) | `Notifier`, `channels::build`, `policy::decide`, `hooks::parse` | notify agent |
 | `superba-import` | — (read-only scan of cc-switch / AI Toolbox stores, mapping, conflicts; used by `superba-switch`'s `import_scan` / `import_apply`) | `read_source`, `preview`, `plan` | import agent |
 | `superba-switch` | `SwitchService` (+ `detect_context`, `SwitcherDeps`, `RouterControl`, `settings_catalog`) | `Switcher` | switch agent |
 | `superba-cli` | `spb` binary + `superba_cli::main_with_args` | — | cli agent |
@@ -1269,3 +1270,41 @@ Linux tarballs and the Windows zip, `superba-router` inside
   --finish-update` is handled in `main.rs` before any other argument parsing.
 - **Overrides** (tests): `SUPERBA_SELF_UPDATE_API`, `SUPERBA_SELF_UPDATE_DOWNLOADS`,
   https or loopback only (`sources::override_base`).
+
+## 13. Notifications (GH#12)
+
+```
+Codex notify / lifecycle hook ─┐                                  ┌─ Telegram, Feishu, WeCom,
+Claude Code hooks ─────────────┼─ spb notify codex|hook ─┐        │  DingTalk, ServerChan,
+rollout watcher (GUI, 20 s) ───┤                         ├─ SwitchService::notify_* ─ Notifier ─┤  PushPlus, Bark, ntfy,
+switch / update (service) ─────┤                         │        │  webhook
+router outage (spb notify event, from superba-router) ───┘        └─ <data>/notify/{state,log}
+```
+
+- **Entry points.** Codex runs `notify = [spb, "notify", "codex", ("--", <the
+  user's program>...)]` after each finished turn (it does not wait; the JSON is
+  the last argument; a turn that ends with an error runs nothing, so failures
+  come from the rollout watcher). Codex's and Claude Code's lifecycle hooks run
+  `spb notify hook <harness>` with JSON on stdin. Hook entry points never write
+  to stdout (harnesses read it as the hook's answer) and always exit 0.
+- **Preferences** live in `Settings::notify` (`profiles.json`, no secret). A
+  channel's secret fields are one JSON object in the key store under the entry
+  `notify-<channel id>` (`SecretStore::put`), shown only as masked hints.
+- **Policy** (`superba_notify::policy`) runs under `<data>/notify/state.lock`
+  because hooks are separate processes: master switch, triggers, muted
+  harnesses, minimum task length, quiet hours (local time from
+  `localtime::offset_secs`), dedupe by turn id (an update by version), a
+  per-channel per-minute limit whose dropped count goes into the next message.
+- **Enrichment** reads the Codex rollout of the turn (duration, tokens as the
+  difference of `total_token_usage`, model; waiting up to 1.5 s for the
+  `task_complete` line) or the Claude Code transcript, the session title
+  (`superba_sessions::titles`) and the cost from the price table.
+- **Sending**: one request per channel, concurrently, 10 s timeout, no redirects,
+  https or loopback http; answers with an error code in a 200 body count as
+  failures; errors lose URLs and every secret value before they are shown or
+  logged. The log holds event kind, harness, channel id and outcome only.
+- **Codex hooks in `config.toml`** go through the file editor's save (state lock,
+  compare-and-swap, encrypted backup). Trust for the `PermissionRequest` hook is
+  recorded only on the user's request, with the hash Codex reports in
+  `hooks/list` over `codex app-server` (Superba never computes it).
+

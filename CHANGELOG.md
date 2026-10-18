@@ -348,6 +348,24 @@ back to the official ChatGPT login.
   environment is configured; the router inside `Superba.app`), Windows x86_64;
   `superba-router` ships next to `superba` and `spb` everywhere; third-party
   license notices in every archive.
+- **Notifications** (GH#12): Preferences > Notifications and `spb notify
+  status|channels|test|send|set|install|uninstall`. Channels: Telegram bot,
+  Feishu / Lark custom bot (signed), WeCom group bot, DingTalk bot (signed or
+  keyword), personal WeChat through ServerChan or PushPlus (third-party relays,
+  marked as such), Bark, ntfy and a generic webhook (HMAC-SHA256 signature);
+  https only (http on loopback), no redirects, secrets in the key store and
+  never in errors or the delivery log. Events: a task finished (Codex `notify`
+  in `config.toml`, chaining a program the user had there and putting it back
+  on removal), an approval is needed (Codex's `PermissionRequest` lifecycle
+  hook, trusted with the hash Codex computes; async on Codex 0.150+), a task
+  failed (Codex rollouts, scanned while Superba runs), Claude Code `Stop` /
+  `StopFailure` / `Notification` hooks (`spb notify hook claude-code`), a
+  switch finished or failed, a router provider down for two minutes, a Superba
+  update. Messages carry project, conversation title, computer, duration,
+  tokens and cost; the reply summary (and the command to approve) is opt-in.
+  Quiet hours (approvals optional), a per-channel rate limit that says how many
+  were dropped, a minimum task length, muted tools, deduplication per turn and
+  a test button.
 - **Tray icon and "close to tray"** (GH#10): a notification-area icon on
   Windows, a menu-bar item (template image) on macOS and a StatusNotifierItem
   on Linux (no GTK: KDE Plasma, GNOME with the AppIndicator extension, Xfce,

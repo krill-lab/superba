@@ -101,6 +101,13 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
   （Windows 和 Linux 第一次关闭时询问；macOS 默认留在菜单栏），以及“启动时隐藏到托盘”。
   再次启动 Superba 会打开已在运行的窗口。没有托盘的 Linux 桌面（未启用 AppIndicator 扩展的
   GNOME）上该设置不可用，关闭窗口即退出。
+- **通知到手机**（GH#12）。任务完成、需要你批准或出错时，Superba 发一条短消息到 Telegram、飞书 / Lark
+  群、企业微信群机器人、钉钉机器人、你的个人微信（经第三方转发服务 Server酱 或 PushPlus：个人微信没有
+  官方机器人接口）、Bark、ntfy 或你自己的 Webhook（带签名）。Codex 通过它的 `notify` 钩子报告完成的任务
+  （你原来配置的程序会保留），通过信任一次的生命周期钩子报告需要批准的操作；出错的 Codex 任务在
+  Superba 运行时发现；Claude Code 通过它的钩子报告（`spb notify hook claude-code`）。消息包含项目、
+  会话、电脑名称、用时、Token 和费用；回复开头只有在你打开后才会发送。支持免打扰、频率限制、最短任务
+  用时和测试按钮；Token 和 Webhook 地址保存在密钥库里。偏好设置 → 通知，以及 `spb notify`。
 - 中英文界面。
 
 ## 安装

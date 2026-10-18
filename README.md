@@ -140,6 +140,20 @@ Geist look).
   tray". Starting Superba again shows the running window. On a Linux desktop
   without a tray (GNOME without the AppIndicator extension) the setting is
   disabled and closing the window quits.
+- **Notifications to your phone** (GH#12). When a task finishes, needs your
+  approval or fails, Superba sends a short message to Telegram, a Feishu / Lark
+  group, a WeCom group bot, a DingTalk bot, your personal WeChat (through the
+  third-party relays ServerChan or PushPlus: personal WeChat has no official
+  bot API), Bark, ntfy or your own webhook (signed). Codex reports finished
+  tasks through its `notify` hook (Superba keeps a program you already had
+  there) and approvals through a lifecycle hook you trust once; failed Codex
+  tasks are found while Superba runs; Claude Code reports through its hooks
+  (`spb notify hook claude-code`). The message names the project, the
+  conversation, the computer, how long it ran and its tokens and cost; the
+  start of the reply is sent only when you turn it on. Quiet hours, a rate
+  limit, a minimum task length and a test button; tokens and webhook
+  addresses stay in the key store. Preferences > Notifications and `spb
+  notify`.
 - English and Simplified Chinese.
 
 ## Install
