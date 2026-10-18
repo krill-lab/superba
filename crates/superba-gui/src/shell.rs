@@ -868,6 +868,15 @@ pub fn banner(
 
 /// One busy thread line ("This computer · “title” is generating a reply").
 pub(crate) fn busy_line(ui: &mut Ui, cx: &Cx<'_>, t: &superba_core::ThreadActivity) {
+    if t.signal == superba_core::ActivitySignal::AppSetup {
+        // The app's own first-start setup, not a conversation (user bug 59).
+        ui.horizontal(|ui| {
+            ui.add_space(2.0);
+            ui.add(StatusDot::new(Status::Warn).pulse(true).size(7.0));
+            ui.label(Text::body(cx.tr.t("banner.waiting.app_setup"), cx.pal));
+        });
+        return;
+    }
     let local = t.target_id.is_local();
     let host = if local {
         cx.tr.t("banner.waiting.this_computer")

@@ -279,6 +279,10 @@ pub fn stop_failed(p: &superba_core::ProcessInfo, error: &str) -> LocalizedText 
 
 /// One line per busy thread for the WaitingTurn dialog.
 pub fn busy_thread(t: &ThreadActivity) -> LocalizedText {
+    if t.signal == superba_core::ActivitySignal::AppSetup {
+        // The app's own first-start setup, not a conversation (user bug 59).
+        return text("switch.waiting.app_setup");
+    }
     let base = if t.target_id.is_local() {
         text("switch.waiting.thread_local")
     } else {

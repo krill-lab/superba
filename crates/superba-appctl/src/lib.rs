@@ -91,7 +91,10 @@ impl Default for Tunables {
     fn default() -> Self {
         Self {
             cdp_timeout: cdp::DEFAULT_CDP_TIMEOUT,
-            restart_timeout: Duration::from_secs(10),
+            // The app ends the old app-server before it starts the new one; on
+            // a slow machine (Windows VMs with software rendering) that took
+            // over 10 s (user bug 62(a)).
+            restart_timeout: Duration::from_secs(30),
             old_exit_timeout: Duration::from_secs(5),
             ready_timeout: Duration::from_secs(15),
             app_server_wait: Duration::from_secs(10),
@@ -400,12 +403,15 @@ impl DesktopAppController {
     /// Wait until a new app-server child (pid not in `before`) of `main_pid` is
     /// running and the old ones exited (the latter bounded separately).
     async fn wait_new_app_server(&self, main_pid: u32, before: &[u32]) -> Result<u32> {
-        let deadline = tokio::time::Instant::now() + self.tunables.restart_timeout;
+        let started = tokio::time::Instant::now();
+        let deadline = started + self.tunables.restart_timeout;
         let new_pid = loop {
             let snap = snapshot_async(ReadOpts::default()).await?;
             if !snap.all.contains_key(&main_pid) {
                 return Err(Error::Process {
-                    message: format!("the app (pid {main_pid}) exited during the restart"),
+                    message: format!(
+                        "the app (pid {main_pid}) exited during the restart of its Codex core"
+                    ),
                 });
             }
             let now: Vec<u32> = snap
@@ -417,8 +423,10 @@ impl DesktopAppController {
                 break *p;
             }
             if tokio::time::Instant::now() >= deadline {
+                let old_alive: Vec<u32> =
+                    now.iter().copied().filter(|p| before.contains(p)).collect();
                 return Err(Error::Timeout {
-                    what: "a new app-server after codex-app-server-restart".into(),
+                    what: restart_timeout_detail(main_pid, before, &old_alive, started.elapsed()),
                 });
             }
             tokio::time::sleep(Duration::from_millis(150)).await;
@@ -498,6 +506,45 @@ impl DesktopAppController {
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
     }
+}
+
+/// What a hot restart that saw no new app-server checked and saw (user bug
+/// 62(a)): "a new Codex core (codex app-server child of ChatGPT, pid 4208)
+/// within 30 s of the restart request; the previous one (pid 3136) is still
+/// running".
+pub fn restart_timeout_detail(
+    main_pid: u32,
+    before: &[u32],
+    old_alive: &[u32],
+    waited: Duration,
+) -> String {
+    let list = |pids: &[u32]| {
+        pids.iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let gone: Vec<u32> = before
+        .iter()
+        .copied()
+        .filter(|p| !old_alive.contains(p))
+        .collect();
+    let previous = if old_alive.is_empty() {
+        format!(
+            "the previous one (pid {}) exited and none replaced it",
+            list(&gone)
+        )
+    } else {
+        format!(
+            "the previous one (pid {}) is still running, so the app did not act on the request",
+            list(old_alive)
+        )
+    };
+    format!(
+        "a new Codex core (codex app-server child of ChatGPT, pid {main_pid}) within {} s of \
+         the restart request; {previous}",
+        waited.as_secs_f64().round() as u64
+    )
 }
 
 /// Port from a `DevToolsActivePort` written at or after `since` (1 s slack).
@@ -857,7 +904,7 @@ impl AppController for DesktopAppController {
         let opts = activity::ScanOpts::at(now);
         let sessions_dir = home.sessions_dir();
         let home_c = home.clone();
-        let (findings, live_starts) = tokio::task::spawn_blocking(move || {
+        let (findings, live_starts, setup) = tokio::task::spawn_blocking(move || {
             let findings = activity::scan_rollouts(&sessions_dir, &opts);
             let snap = procs::snapshot(ReadOpts { environ: true });
             let live: Vec<Option<Timestamp>> = processes_for_home(&snap, &home_c)
@@ -865,7 +912,7 @@ impl AppController for DesktopAppController {
                 .filter(|p| is_consumer(&p.kind))
                 .map(|p| p.started_at)
                 .collect();
-            (findings, live)
+            (findings, live, procs::app_setup_pids(&snap))
         })
         .await
         .map_err(blocking_err)?;
@@ -877,6 +924,11 @@ impl AppController for DesktopAppController {
                 Vec::new()
             }
         };
+        if !setup.is_empty() {
+            // The app's first-start setup (user bug 59): wait like for a turn.
+            tracing::info!(pids = ?setup, "the desktop app is finishing its setup");
+            busy.push(activity::app_setup_activity());
+        }
         if let Some(s) = session.filter(|s| s.cdp.is_some()) {
             match self.dom_probe(s).await {
                 Ok(p) => {

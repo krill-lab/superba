@@ -1291,6 +1291,12 @@ pub struct FakeApp {
     /// What a graceful `stop_process` answers per pid (default `Exited`); a
     /// forced stop always ends the process. Gone processes leave `processes`.
     pub stop_answers: Mutex<BTreeMap<u32, superba_core::StopOutcome>>,
+    /// App-servers a launch or local hot restart starts, as (delay, lifetime)
+    /// after it on tokio's clock, instead of one at once: the desktop app's
+    /// short-lived first app-server before the real one (user bug 62).
+    pub spawn_script: Mutex<Vec<(Duration, Option<Duration>)>>,
+    /// Scheduled app-servers: (pid, from, until).
+    scheduled: Mutex<Vec<(u32, tokio::time::Instant, Option<tokio::time::Instant>)>>,
 }
 
 pub fn app_server(pid: u32, ppid: u32, started: i64) -> ProcessInfo {
@@ -1362,11 +1368,38 @@ pub fn busy(target: &str, title: &str) -> ThreadActivity {
 impl FakeApp {
     fn spawn_app_server(&self) {
         let mut pid = self.next_pid.lock().unwrap();
-        *pid += 1;
         let now = self.clock.now().as_millis();
         let mut procs = self.processes.lock().unwrap();
         procs.retain(|p| !matches!(p.kind, CodexProcessKind::AppServer));
-        procs.push(app_server(*pid, 100, now));
+        let script = self.spawn_script.lock().unwrap().clone();
+        let mut scheduled = self.scheduled.lock().unwrap();
+        scheduled.clear();
+        if script.is_empty() {
+            *pid += 1;
+            procs.push(app_server(*pid, 100, now));
+            return;
+        }
+        let at = tokio::time::Instant::now();
+        for (delay, life) in script {
+            *pid += 1;
+            scheduled.push((*pid, at + delay, life.map(|l| at + delay + l)));
+        }
+    }
+
+    /// The scheduled app-servers running now (none once the app is gone).
+    fn scheduled_now(&self) -> Vec<ProcessInfo> {
+        if self.session.lock().unwrap().is_none() {
+            return Vec::new();
+        }
+        let now = tokio::time::Instant::now();
+        let started = self.clock.now().as_millis();
+        self.scheduled
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, from, until)| *from <= now && until.is_none_or(|u| now < u))
+            .map(|(pid, _, _)| app_server(*pid, 100, started))
+            .collect()
     }
 }
 
@@ -1472,7 +1505,9 @@ impl AppController for FakeApp {
     }
 
     async fn processes(&self, _home: &CodexHome) -> Result<Vec<ProcessInfo>> {
-        Ok(self.processes.lock().unwrap().clone())
+        let mut out = self.processes.lock().unwrap().clone();
+        out.extend(self.scheduled_now());
+        Ok(out)
     }
 
     async fn turn_activity(
@@ -2149,6 +2184,8 @@ impl World {
             refusing_binaries: Mutex::new(Vec::new()),
             app_server_exe: Mutex::new(None),
             stop_answers: Mutex::new(BTreeMap::new()),
+            spawn_script: Mutex::new(Vec::new()),
+            scheduled: Mutex::new(Vec::new()),
         };
         Self {
             config: Arc::new(FakeConfig::new(log.clone(), home.root())),
@@ -2277,6 +2314,7 @@ impl World {
             Tuning {
                 poll: Duration::from_millis(10),
                 verify_timeout: Duration::from_millis(200),
+                launch_verify_timeout: Duration::from_millis(200),
                 stable: Duration::ZERO,
                 reask_after: Duration::from_secs(60),
                 plan_cache: 16,

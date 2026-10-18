@@ -235,7 +235,10 @@ fn crate_stoppable(kind: &CodexProcessKind) -> bool {
 /// Which kind of consumer runs a turn, from its session's `originator` (the
 /// renderer's own observations are the desktop app's).
 fn originator_role(t: &ThreadActivity) -> Option<fn(&ConsumerRole) -> bool> {
-    if t.signal == ActivitySignal::RendererDom {
+    if matches!(
+        t.signal,
+        ActivitySignal::RendererDom | ActivitySignal::AppSetup
+    ) {
         return Some(|r| matches!(r, ConsumerRole::DesktopApp));
     }
     match t.originator.as_deref().map(str::trim) {

@@ -375,3 +375,18 @@ pub fn busy_threads(
     }
     out
 }
+
+/// The busy entry for the desktop app's own first-start setup (see
+/// [`ActivitySignal::AppSetup`]): no thread, no title; the UI names it.
+pub fn app_setup_activity() -> ThreadActivity {
+    ThreadActivity {
+        target_id: TargetId::local(),
+        thread_id: None,
+        title: None,
+        rollout_path: None,
+        last_event_at: None,
+        signal: ActivitySignal::AppSetup,
+        originator: None,
+        cwd: None,
+    }
+}

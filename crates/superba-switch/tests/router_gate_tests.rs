@@ -44,6 +44,7 @@ fn switcher(w: &World) -> Switcher {
         Tuning {
             poll: Duration::from_millis(10),
             verify_timeout: Duration::from_millis(200),
+            launch_verify_timeout: Duration::from_millis(200),
             stable: Duration::ZERO,
             reask_after: Duration::from_secs(60),
             plan_cache: 16,

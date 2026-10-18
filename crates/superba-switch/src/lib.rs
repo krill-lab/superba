@@ -25,6 +25,7 @@
 
 mod account;
 pub mod compaction;
+pub mod core_watch;
 pub mod executor;
 pub mod hosts;
 mod import;
@@ -348,6 +349,10 @@ pub struct Tuning {
     pub poll: Duration,
     /// Wait for the new app-server process after the IPC or launch.
     pub verify_timeout: Duration,
+    /// After a relaunch: how long from the launch the app may take to start
+    /// its first app-server (a slow machine needs tens of seconds; the check
+    /// passes as soon as one runs, so this only bounds a failure).
+    pub launch_verify_timeout: Duration,
     /// The new app-server must stay alive this long ("no crash within 5 s").
     pub stable: Duration,
     /// Ask again whether to keep waiting for turns after this long (15 min).
@@ -361,6 +366,7 @@ impl Default for Tuning {
         Self {
             poll: Duration::from_millis(1_000),
             verify_timeout: Duration::from_secs(15),
+            launch_verify_timeout: Duration::from_secs(60),
             stable: Duration::from_secs(5),
             reask_after: Duration::from_secs(15 * 60),
             plan_cache: 16,

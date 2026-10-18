@@ -26,6 +26,7 @@ use superba_core::{
 use tokio::time::Instant;
 
 use crate::Switcher;
+use crate::core_watch::{CoreState, CoreWatch};
 use crate::journal::{JournalEntry, JournalStatus, RemoteReceipt, StateLock, SwitchJournal};
 use crate::messages::{self, text};
 use crate::planner::{PlanContext, effective_root, launch_cdp_mode};
@@ -128,6 +129,9 @@ struct Run<'a> {
     session: Option<AppSession>,
     /// The relaunched app-server runs the pinned Codex (`None` = not checked).
     pin_verified: Option<bool>,
+    /// When this execution last launched the app (the window of the core
+    /// check after a relaunch runs from here).
+    launched_at: Option<Instant>,
 }
 
 /// How the local part ended.
@@ -208,6 +212,7 @@ impl Switcher {
                 .cloned()
                 .collect(),
             app_was_quit: false,
+            launched_at: None,
             thread_before_quit: None,
             session,
             pin_verified: None,
@@ -1229,13 +1234,8 @@ impl Run<'_> {
         ));
         match ask(self.decider.as_ref(), DecisionRequest::IpcFailed { error }).await {
             Decision::FullRestart => {
-                if let Some(r) = self.quit_for_full_restart().await? {
-                    return Ok(r);
-                }
-                self.launch_path(RestartKind::FullAppRestart {
-                    reason: superba_core::FullRestartReason::NoBridge,
-                })
-                .await
+                self.full_restart_after_write(superba_core::FullRestartReason::NoBridge)
+                    .await
             }
             Decision::KeepWritten => Ok(LocalResult {
                 status: OutcomeStatus::WrittenOnly,
@@ -1245,6 +1245,40 @@ impl Run<'_> {
             }),
             _ => Ok(self.undo_written(false).await),
         }
+    }
+
+    /// A full restart chosen after the hot restart did not work: the new
+    /// configuration is written and journaled by now. When the quit is not
+    /// carried through (the app did not close and the user did not force it,
+    /// or kept other Codex processes open), the result says the configuration
+    /// is written but not in effect, never "nothing was changed" (user bug
+    /// 60); and an app that did close in the meantime is opened again instead
+    /// of being left closed.
+    async fn full_restart_after_write(
+        &mut self,
+        reason: superba_core::FullRestartReason,
+    ) -> Result<LocalResult> {
+        let restart = RestartKind::FullAppRestart { reason };
+        if self.quit_for_full_restart().await?.is_none() {
+            return self.launch_path(restart).await;
+        }
+        let running = self.deps().app.running_session().await.ok().flatten();
+        if running.is_none() && self.session.is_some() {
+            // The quit went through after all (a slow graceful quit): finish
+            // the full restart the user asked for.
+            self.ev
+                .log(Severity::Warning, text("switch.failed.app_closed_late"));
+            self.app_was_quit = true;
+            return self.launch_path(restart).await;
+        }
+        self.notices
+            .push(Notice::warning(text("switch.failed.full_restart_stopped")));
+        Ok(LocalResult {
+            status: OutcomeStatus::WrittenOnly,
+            restart: RestartKind::None,
+            verification: None,
+            returned_to: None,
+        })
     }
 
     /// Recovery after a failed verification (plan 7.6 #3).
@@ -1263,13 +1297,8 @@ impl Run<'_> {
         .await;
         match decision {
             Decision::FullRestart => {
-                if let Some(r) = self.quit_for_full_restart().await? {
-                    return Ok(r);
-                }
-                self.launch_path(RestartKind::FullAppRestart {
-                    reason: superba_core::FullRestartReason::AuthApiUnhealthy,
-                })
-                .await
+                self.full_restart_after_write(superba_core::FullRestartReason::AuthApiUnhealthy)
+                    .await
             }
             Decision::KeepWritten => {
                 self.notices.push(Notice::warning(
@@ -1406,6 +1435,7 @@ impl Run<'_> {
             }
             _ => self.sw.with_pin(options).await,
         };
+        self.launched_at = Some(Instant::now());
         match d.app.launch(&options).await {
             Ok(s) => {
                 self.ev.step(SwitchStep::LaunchApp, StepStatus::Done);
@@ -1525,20 +1555,22 @@ impl Run<'_> {
         session: Option<&AppSession>,
         restarted: Option<(Timestamp, &[u32])>,
     ) -> CheckResult {
-        let (Some(_), Some((t0, before))) = (session, restarted) else {
+        let (Some(session), Some((t0, before))) = (session, restarted) else {
             return skipped(text("switch.verify.not_applicable"));
         };
         let d = self.deps();
-        let deadline = Instant::now() + self.sw.tuning.verify_timeout;
-        let is_new = |p: &ProcessInfo| {
-            matches!(p.kind, CodexProcessKind::AppServer)
-                && !before.contains(&p.pid)
-                && p.started_at
-                    .is_none_or(|s| s.as_millis() + PROCESS_START_SLACK_MS >= t0.as_millis())
+        let tuning = &self.sw.tuning;
+        let started = Instant::now();
+        // A relaunched app needs its own start-up first (tens of seconds on a
+        // slow machine before its first app-server, seen on Windows VMs): the
+        // window then runs from the launch, not from this check.
+        let appear_by = match self.launched_at {
+            Some(at) if before.is_empty() => {
+                (at + tuning.launch_verify_timeout).max(started + tuning.verify_timeout)
+            }
+            _ => started + tuning.verify_timeout,
         };
-        // Whether app-server processes are observable at all on this system; if
-        // none was ever seen, a missing one is not evidence of a failed restart.
-        let mut seen_any = !before.is_empty();
+        let mut watch = CoreWatch::new(t0, before, tuning.stable);
         loop {
             let processes = match d.app.processes(&self.pc.home).await {
                 Ok(p) => p,
@@ -1552,44 +1584,36 @@ impl Run<'_> {
                     };
                 }
             };
-            seen_any |= processes
-                .iter()
-                .any(|p| matches!(p.kind, CodexProcessKind::AppServer));
-            let new: Vec<u32> = processes
-                .iter()
-                .filter(|p| is_new(p))
-                .map(|p| p.pid)
-                .collect();
-            let last_old_alive = processes
-                .iter()
-                .any(|p| matches!(p.kind, CodexProcessKind::AppServer) && before.contains(&p.pid));
-            if !new.is_empty() && !last_old_alive {
-                // Stable: still alive after the grace period (no crash loop).
-                if !self.sw.tuning.stable.is_zero() {
-                    tokio::time::sleep(self.sw.tuning.stable).await;
-                    let after = d.app.processes(&self.pc.home).await.unwrap_or_default();
-                    if !after.iter().any(|p| new.contains(&p.pid)) {
-                        return CheckResult::Failed {
-                            detail: text("switch.verify.no_new_app_server").render_fallback(),
-                        };
-                    }
-                }
+            let now = Instant::now();
+            let state = watch.observe(now - started, &processes);
+            if let CoreState::Passed { pid } = state {
+                tracing::info!(
+                    pid,
+                    waited_ms = (now - started).as_millis() as u64,
+                    "new Codex core verified"
+                );
                 return CheckResult::Passed;
             }
-            if Instant::now() >= deadline {
-                if !seen_any {
+            // Past the window only a new app-server that is still settling is
+            // waited for (at most the stability period more).
+            let settling = state == CoreState::Settling && now < appear_by + tuning.stable;
+            if now >= appear_by && !settling {
+                if !watch.seen_any() {
                     return skipped(text("switch.verify.not_supported"));
                 }
-                let key = if last_old_alive && !new.is_empty() {
-                    "switch.verify.old_app_server_alive"
-                } else {
-                    "switch.verify.no_new_app_server"
-                };
+                let detail = watch.failure(now - started, session.main_pid);
+                tracing::warn!(
+                    app = session.main_pid,
+                    ?before,
+                    exited = ?watch.exited_new(),
+                    alive = ?watch.alive_new(),
+                    "Codex core verification failed"
+                );
                 return CheckResult::Failed {
-                    detail: text(key).render_fallback(),
+                    detail: detail.render_fallback(),
                 };
             }
-            tokio::time::sleep(self.sw.tuning.poll.min(Duration::from_millis(250))).await;
+            tokio::time::sleep(tuning.poll.min(Duration::from_millis(250))).await;
         }
     }
 

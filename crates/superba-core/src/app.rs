@@ -441,6 +441,12 @@ pub enum ActivitySignal {
     RolloutMtime,
     /// Stop button visible in the renderer (auxiliary).
     RendererDom,
+    /// Not a conversation: the desktop app is finishing its own first-start
+    /// setup (on Windows `codex-windows-sandbox-setup` creating the sandbox,
+    /// "Finishing Windows setup"), after which it restarts its Codex core
+    /// itself. Restarting the core meanwhile left the app stuck on that screen
+    /// (user bug 59), so a switch waits for it like for a running turn.
+    AppSetup,
 }
 
 /// A thread with a turn in flight.

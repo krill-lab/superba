@@ -745,6 +745,31 @@ fn foreign_user(_p: &sysinfo::Process) -> bool {
     false
 }
 
+/// Executable name of the desktop app's Windows sandbox setup helper.
+pub const SANDBOX_SETUP_EXE: &str = "codex-windows-sandbox-setup";
+
+/// The desktop app's first-start sandbox setup processes of this user
+/// (`codex-windows-sandbox-setup.exe`, started by its app-server or by the
+/// app's sandbox service): while one runs, the app shows "Finishing Windows
+/// setup" and restarts its app-server when it is done (seen in the Windows
+/// VM: setup 45 s, app-server restart at its end). Pids in snapshot order.
+pub fn app_setup_pids(snap: &Snapshot) -> Vec<u32> {
+    snap.all
+        .values()
+        .filter(|e| !e.foreign_user && !e.zombie)
+        .filter(|e| {
+            let program = e
+                .exe
+                .as_deref()
+                .map(|x| x.to_string_lossy().into_owned())
+                .or_else(|| e.argv.first().cloned());
+            program
+                .is_some_and(|p| strip_exe(base_name(&p)).eq_ignore_ascii_case(SANDBOX_SETUP_EXE))
+        })
+        .map(|e| e.pid)
+        .collect()
+}
+
 /// Real app-main detection for OS snapshots: an Electron-style layout
 /// ([`is_app_main_exe`]) that is also a recognised ChatGPT / Codex install (other
 /// Electron apps ship `resources/app.asar` too), owned by the current user.

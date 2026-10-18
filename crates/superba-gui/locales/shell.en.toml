@@ -71,6 +71,7 @@ waiting.body = "Switching now loses these turns' output, and commands the agent 
 waiting.force = "Force switch"
 waiting.this_computer = "This computer"
 waiting.thread_local = "This computer · “{title}” is generating a reply"
+waiting.app_setup = "This computer · ChatGPT is finishing its Windows setup (creating its sandbox); it restarts its Codex core when done"
 waiting.thread_remote = "{host} · “{title}” is running a command"
 waiting.title = "{n} {n|conversation is|conversations are} running; switch paused"
 waiting.untitled = "Untitled conversation"

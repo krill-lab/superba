@@ -70,6 +70,7 @@ waiting.body = "现在切换会丢失这些回合的输出，Agent 正在运行�
 waiting.force = "强制切换"
 waiting.this_computer = "本机"
 waiting.thread_local = "本机「{title}」正在生成回复"
+waiting.app_setup = "本机 · ChatGPT 正在完成 Windows 设置（创建沙盒），完成后会自行重启 Codex 内核"
 waiting.thread_remote = "{host}「{title}」正在执行命令"
 waiting.title = "有 {n} 个对话正在运行，已暂停切换"
 waiting.untitled = "未命名对话"
