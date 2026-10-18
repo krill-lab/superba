@@ -36,7 +36,7 @@ pub enum Error {
         what: String,
     },
     /// File system error.
-    #[error("I/O error on {}: {message}", path.display())]
+    #[error("I/O error on {}: {message}", crate::paths::display_path(path))]
     Io {
         /// Path involved in the failing operation.
         path: PathBuf,
@@ -231,7 +231,7 @@ impl Error {
             _ => return None,
         };
         let mut text = LocalizedText::new(key, fallback)
-            .arg("path", path.display())
+            .arg("path", crate::paths::display_path(path))
             .arg("message", message)
             .arg("detail", self.detail());
         if let Some(limit) = open_files_limit {
@@ -249,7 +249,9 @@ impl Error {
             | Error::NotFound { what }
             | Error::Locked { what }
             | Error::Timeout { what } => what.clone(),
-            Error::Io { path, message, .. } => format!("{}: {message}", path.display()),
+            Error::Io { path, message, .. } => {
+                format!("{}: {message}", crate::paths::display_path(path))
+            }
             Error::Parse { what, message } => format!("{what}: {message}"),
             Error::Invalid { message }
             | Error::Conflict { message }

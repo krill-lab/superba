@@ -774,9 +774,12 @@ pub(crate) fn candidate_roots(_env: &dyn EnvSource, home: &Path) -> CandidateRoo
 #[cfg(target_os = "windows")]
 pub(crate) fn candidate_roots(env: &dyn EnvSource, home: &Path) -> CandidateRoots {
     // MSIX roots are obtained separately from PowerShell.
-    let local = env_path(env, "LOCALAPPDATA").unwrap_or_else(|| home.join("AppData/Local"));
+    let local = env_path(env, "LOCALAPPDATA").unwrap_or_else(|| home.join("AppData").join("Local"));
     CandidateRoots {
-        installs: vec![local.join("Programs/ChatGPT"), local.join("Programs/Codex")],
+        installs: vec![
+            local.join("Programs").join("ChatGPT"),
+            local.join("Programs").join("Codex"),
+        ],
         desktop_dirs: Vec::new(),
         scan_dirs: Vec::new(),
     }
@@ -1061,7 +1064,12 @@ async fn powershell_appx_packages(env: &dyn EnvSource, home_dir: &Path) -> Vec<A
     }
     // Resolve PowerShell from the supplied environment, never the process PATH.
     let powershell = env_path(env, "SystemRoot")
-        .map(|root| root.join("System32/WindowsPowerShell/v1.0/powershell.exe"))
+        .map(|root| {
+            root.join("System32")
+                .join("WindowsPowerShell")
+                .join("v1.0")
+                .join("powershell.exe")
+        })
         .filter(|path| path.is_file())
         .or_else(|| {
             std::env::split_paths(&env.var_os("PATH")?)

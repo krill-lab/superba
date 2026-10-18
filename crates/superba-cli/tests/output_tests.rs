@@ -550,3 +550,36 @@ async fn missing_resources_have_next_steps_and_json_errors_stay_unchanged() {
         assert!(stderr.contains("spb profile list"));
     }
 }
+
+#[tokio::test]
+async fn status_lists_the_apps_own_codex_apart_from_the_cli() {
+    // User bug 55: the app's runtime copy (not on PATH) is not a CLI.
+    let service = FakeService::new();
+    service
+        .overview
+        .lock()
+        .unwrap()
+        .cli
+        .binaries
+        .push(CodexBinary {
+            path: "/fake/app/OpenAI/Codex/bin/896a/codex".into(),
+            version: Some(CodexVersion::new(0, 163, 0)),
+            source: InstallSource::AppBundled,
+            path_rank: None,
+        });
+    let (code, stdout, _) = invoke(service, &["status"]).await;
+    assert_eq!(code, 0);
+    let cli = stdout.find("CLI binaries:").expect("CLI section");
+    let app = stdout
+        .find("The app's own Codex (not on PATH, not a CLI):")
+        .expect("app copies section");
+    assert!(cli < app, "{stdout}");
+    let copy = stdout
+        .find("/fake/app/OpenAI/Codex/bin/896a/codex")
+        .unwrap();
+    assert!(
+        copy > app,
+        "the copy is listed under the app's section: {stdout}"
+    );
+    assert!(stdout[cli..app].contains("/fake/bin/codex"), "{stdout}");
+}

@@ -1022,7 +1022,7 @@ impl Switcher {
         for binary in consumers {
             if let Err(e) = d.app.codex_debug_models(binary, Some(&scratch)).await {
                 result = Err(text("switch.models.preflight_failed")
-                    .arg("binary", binary.display())
+                    .arg("binary", superba_core::paths::display_path(binary))
                     .arg_text("reason", e.to_text()));
                 break;
             }
@@ -1527,8 +1527,11 @@ impl Switcher {
                 Err(_) => notes.push(Notice::danger(
                     text("switch.models.catalog_unrepaired")
                         .arg("now", &now)
-                        .arg("file", path.display())
-                        .arg("config", home.config_toml().display())
+                        .arg("file", superba_core::paths::display_path(&path))
+                        .arg(
+                            "config",
+                            superba_core::paths::display_path(&home.config_toml()),
+                        )
                         .arg_text("reason", first),
                 )),
             },
@@ -1773,7 +1776,7 @@ pub(crate) struct PinCatalogRewrite {
 fn ide_refusal(binary: &Path, reason: LocalizedText) -> Notice {
     Notice::warning(
         text("switch.models.ide_refuses")
-            .arg("binary", binary.display())
+            .arg("binary", superba_core::paths::display_path(binary))
             .arg_text("reason", reason),
     )
 }

@@ -527,7 +527,8 @@ pub(super) fn detect(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Act
                 cx.tr.t("wizard.detect.no_app_body"),
             ),
         }
-        match o.cli.binaries.first() {
+        // The app's own Codex copies are not a CLI (user bug 55).
+        match o.cli.terminal_cli() {
             Some(b) => check_row(
                 ui,
                 cx,
@@ -550,14 +551,14 @@ pub(super) fn detect(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Act
                 String::new(),
             ),
         }
-        if o.app.installs.is_empty() || o.cli.binaries.is_empty() {
+        if o.app.installs.is_empty() || o.cli.terminal_cli().is_none() {
             ui.horizontal_wrapped(|ui| {
                 if o.app.installs.is_empty()
                     && link_button(ui, &cx.tr.t("pages.detect.download"), true).clicked()
                 {
                     out.push(Action::OpenUrl("https://chatgpt.com/download".into()));
                 }
-                if o.cli.binaries.is_empty()
+                if o.cli.terminal_cli().is_none()
                     && link_button(ui, "npm i -g @openai/codex", false)
                         .on_hover_text(cx.tr.t("pages.detect.copy_install"))
                         .clicked()

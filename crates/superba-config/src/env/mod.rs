@@ -205,7 +205,7 @@ impl PlannedTexts {
             LocalizedText::new(
                 "env.scope.non_utf8_skipped",
                 "Skipped {path}: it contains non-UTF-8 bytes; convert it to UTF-8 so Superba can scan and edit it. Other locations are still planned.",
-            ).arg("path", path.display())
+            ).arg("path", superba_core::paths::display_path(path))
         })
     }
 }

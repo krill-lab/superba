@@ -30,22 +30,44 @@ pub trait EnvSource: Send + Sync + fmt::Debug {
 
 /// `path` as text for people to read: without the `\\?\` prefix that
 /// canonicalized Windows paths carry (`\\?\C:\Program Files\…` is shown as
-/// `C:\Program Files\…`, `\\?\UNC\server\share` as `\\server\share`).
-/// For display only: a long path may need its prefix to be opened.
+/// `C:\Program Files\…`, `\\?\UNC\server\share` as `\\server\share`), and
+/// on Windows with one separator throughout: a path joined from a
+/// `/`-separated piece (`C:\Users\me\AppData\Local` + `OpenAI/Codex/bin`)
+/// is shown as `C:\Users\me\AppData\Local\OpenAI\Codex\bin` (user bugs 55,
+/// 62(c)). Paths without a drive or UNC prefix (a WSL or remote host's
+/// `/home/me/.codex`, `~/…`) are left alone. For display only: a long path
+/// may need its prefix to be opened.
 pub fn display_path(path: &Path) -> String {
-    let text = path.display().to_string();
+    display_path_text(&path.display().to_string(), cfg!(windows))
+}
+
+/// [`display_path`] of a path's text, for a Windows system or not
+/// (testable on every platform).
+pub fn display_path_text(text: &str, windows: bool) -> String {
     const UNC: &str = r"\\?\UNC\";
-    if text
+    let plain = if text
         .get(..UNC.len())
         .is_some_and(|p| p.eq_ignore_ascii_case(UNC))
     {
-        return format!(r"\\{}", &text[UNC.len()..]);
+        format!(r"\\{}", &text[UNC.len()..])
+    } else {
+        match text.strip_prefix(r"\\?\") {
+            // Only drive paths (`C:\`): other verbatim forms (`\\?\Volume{…}`)
+            // have no shorter name.
+            Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_owned(),
+            _ => text.to_owned(),
+        }
+    };
+    if !windows {
+        return plain;
     }
-    match text.strip_prefix(r"\\?\") {
-        // Only drive paths (`C:\`): other verbatim forms (`\\?\Volume{…}`) have
-        // no shorter name.
-        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_owned(),
-        _ => text,
+    let b = plain.as_bytes();
+    let drive = b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':';
+    let unc = plain.starts_with(r"\\") || plain.starts_with("//");
+    if (drive || unc) && !plain.starts_with(r"\\?\") && !plain.starts_with(r"\\.\") {
+        plain.replace('/', "\\")
+    } else {
+        plain
     }
 }
 

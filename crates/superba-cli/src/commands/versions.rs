@@ -133,7 +133,9 @@ fn pin_text(pin: &AppCodexPin) -> superba_core::LocalizedText {
         AppCodexPin::Version { version } => {
             text("cli.versions.pin.version").arg("version", version)
         }
-        AppCodexPin::Path { path } => text("cli.versions.pin.path").arg("path", path.display()),
+        AppCodexPin::Path { path } => {
+            text("cli.versions.pin.path").arg("path", superba_core::paths::display_path(path))
+        }
         _ => text("cli.versions.pin.bundled"),
     }
 }
@@ -149,7 +151,7 @@ fn render_codex(view: &VersionsView, all: bool, out: &mut Output) -> superba_cor
         "cli.versions.app_runs",
         match (&ac.effective_version, &ac.effective_exe) {
             (Some(v), _) => v.to_string(),
-            (None, Some(p)) => p.display().to_string(),
+            (None, Some(p)) => superba_core::paths::display_path(p),
             _ => out.none(),
         },
     )?;
@@ -158,10 +160,16 @@ fn render_codex(view: &VersionsView, all: bool, out: &mut Output) -> superba_cor
         // The sentence names both sides briefly; the full paths follow.
         out.line(m.clone())?;
         if let Some(p) = &ac.effective_exe {
-            out.field("cli.versions.running_exe", p.display())?;
+            out.field(
+                "cli.versions.running_exe",
+                superba_core::paths::display_path(p),
+            )?;
         }
         if let Some(p) = view.expected_codex() {
-            out.field("cli.versions.expected_exe", p.display())?;
+            out.field(
+                "cli.versions.expected_exe",
+                superba_core::paths::display_path(&p),
+            )?;
         }
     }
     let candidates = ac
@@ -193,7 +201,7 @@ fn render_codex(view: &VersionsView, all: bool, out: &mut Output) -> superba_cor
         .iter()
         .map(|r| {
             vec![
-                r.binary.path.display().to_string(),
+                superba_core::paths::display_path(&r.binary.path),
                 out.optional(r.binary.version.as_ref()),
                 out.render(&r.kind.text()),
                 out.optional(r.latest.as_ref()),
@@ -336,7 +344,7 @@ pub(super) async fn app(command: &AppCommand, rt: &Runtime, out: &mut Output) ->
             let report = download_with_progress(rt, request, out).await?;
             out.line(
                 text("cli.versions.downloaded")
-                    .arg("path", report.path.display())
+                    .arg("path", superba_core::paths::display_path(&report.path))
                     .arg("sha256", &report.sha256),
             )?;
             if let Some(w) = &report.windows {
@@ -455,7 +463,7 @@ fn render_windows_download(w: &WindowsAppDownload, out: &mut Output) -> superba_
             text("cli.versions.win_dependency")
                 .arg("name", &d.identity.name)
                 .arg("version", &d.identity.version)
-                .arg("path", d.path.display()),
+                .arg("path", superba_core::paths::display_path(&d.path)),
         )?;
     }
     for d in &w.unresolved {

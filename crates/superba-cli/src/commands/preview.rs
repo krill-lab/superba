@@ -65,9 +65,9 @@ fn location(location: &EnvLocation, home: Option<&Path>, out: &Output) -> String
                 .filter(|home| home.is_absolute())
                 .and_then(|home| path.strip_prefix(home).ok())
             {
-                Path::new("~").join(relative).display().to_string()
+                superba_core::paths::display_path(&Path::new("~").join(relative))
             } else {
-                path.display().to_string()
+                superba_core::paths::display_path(path)
             }
         }
         EnvLocation::Launchctl => "launchctl".into(),

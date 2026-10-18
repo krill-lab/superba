@@ -28,7 +28,10 @@ pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
     } else {
         Vec::new()
     };
-    out.field("cli.label.codex_home", overview.codex_home.display())?;
+    out.field(
+        "cli.label.codex_home",
+        superba_core::paths::display_path(&overview.codex_home),
+    )?;
     if let Some(active) = &overview.active {
         out.field(
             "cli.label.profile",
@@ -100,18 +103,19 @@ pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
             .map(|id| out.render(&line_label(&sites, None, id)))
             .unwrap_or_else(|| out.none()),
     )?;
-    let rows = overview
-        .cli
-        .binaries
-        .iter()
-        .map(|binary| {
-            vec![
-                binary.path.display().to_string(),
-                out.optional(binary.version.as_ref()),
-                out.optional(binary.path_rank),
-            ]
-        })
-        .collect::<Vec<_>>();
+    // The app's own Codex copies (bundled, or the runtime copy it runs its
+    // app-server from) are listed apart: they are not a CLI (user bug 55).
+    let row = |binary: &superba_core::CodexBinary| {
+        vec![
+            superba_core::paths::display_path(&binary.path),
+            out.optional(binary.version.as_ref()),
+            out.optional(binary.path_rank),
+        ]
+    };
+    let (copies, clis): (Vec<_>, Vec<_>) =
+        overview.cli.binaries.iter().partition(|b| b.is_app_copy());
+    let rows = clis.iter().map(|b| row(b)).collect::<Vec<_>>();
+    let copy_rows: Vec<Vec<String>> = copies.iter().map(|b| row(b)[..2].to_vec()).collect();
     out.section_table(
         "cli.label.cli_binaries",
         &[
@@ -121,6 +125,13 @@ pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
         ],
         rows,
     )?;
+    if !copy_rows.is_empty() {
+        out.section_table(
+            "cli.label.app_codex_copies",
+            &["cli.label.path", "cli.label.codex_version"],
+            copy_rows,
+        )?;
+    }
     out.field("cli.label.processes", overview.cli.processes.len())?;
     out.field("cli.label.stale", overview.cli.stale_count())?;
     if let Some(view) = &overview.runtime {
@@ -261,7 +272,7 @@ pub(super) async fn recover(rt: &Runtime, out: &mut Output) -> Result {
                 entry
                     .files
                     .iter()
-                    .map(|p| p.display().to_string())
+                    .map(|p| superba_core::paths::display_path(p))
                     .collect::<Vec<_>>()
                     .join(", "),
             ]

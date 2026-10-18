@@ -134,12 +134,10 @@ pub fn codex_versions(cx: &Cx<'_>, overview: &Overview) -> (Option<String>, Opti
                     .map(ToString::to_string)
             }),
     };
+    // The app's own Codex copies are not a CLI (user bug 55).
     let cli = overview
         .cli
-        .binaries
-        .iter()
-        .find(|b| b.path_rank == Some(0))
-        .or(overview.cli.binaries.first())
+        .terminal_cli()
         .and_then(|b| b.version.as_ref())
         .map(ToString::to_string);
     (app, cli)

@@ -318,14 +318,11 @@ pub(crate) fn local_consumers(
             install.bundled_codex_version.clone(),
         ));
     }
-    if let Some(cli) = binaries
-        .iter()
-        .find(|b| b.path_rank == Some(0))
-        .or_else(|| binaries.first())
-    {
+    // The app's own Codex copies are the app's, not a CLI (user bug 55).
+    if let Some(cli) = superba_core::app::terminal_cli(binaries) {
         consumers.push(SettingsConsumer::new(
             ConsumerKind::CliProcesses,
-            cli.path.display().to_string(),
+            superba_core::paths::display_path(&cli.path),
             cli.version.clone(),
         ));
     }
@@ -361,7 +358,7 @@ fn old_service_tier_consumer(
         (v < SERVICE_TIER_STRING_SINCE).then(|| {
             let label = c
                 .binary
-                .map(|b| b.display().to_string())
+                .map(|b| superba_core::paths::display_path(&b))
                 .unwrap_or_else(|| "codex".to_owned());
             (label, v)
         })
@@ -761,10 +758,10 @@ impl Switcher {
                             "app_home",
                             s.codex_home
                                 .as_ref()
-                                .map(|h| h.display().to_string())
+                                .map(|h| superba_core::paths::display_path(h))
                                 .unwrap_or_default(),
                         )
-                        .arg("home", home.root().display()),
+                        .arg("home", superba_core::paths::display_path(home.root())),
                 );
                 None
             }
@@ -1389,7 +1386,10 @@ impl Switcher {
                     resolved.model.context_window = None;
                     resolved.model.auto_compact = None;
                 }
-                draft.info(text("switch.models.catalog_written").arg("file", w.path.display()));
+                draft.info(
+                    text("switch.models.catalog_written")
+                        .arg("file", superba_core::paths::display_path(&w.path)),
+                );
                 if site.kind == SiteKind::Krill {
                     draft.warn(text("switch.models.fingerprint"));
                 }

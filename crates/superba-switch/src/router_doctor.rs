@@ -255,13 +255,25 @@ fn section(title: &str, rows: Vec<RouterDoctorRow>, lines: Vec<String>) -> Route
 fn finding_text(f: &Finding) -> LocalizedText {
     let key = |id: &str| text(&format!("switch.router_doctor.finding.{id}"));
     match f {
-        Finding::ExeMissing { path } => key("exe_missing").arg("path", path.display()),
-        Finding::ExeNotExecutable { path } => key("exe_not_executable").arg("path", path.display()),
+        Finding::ExeMissing { path } => {
+            key("exe_missing").arg("path", superba_core::paths::display_path(path))
+        }
+        Finding::ExeNotExecutable { path } => {
+            key("exe_not_executable").arg("path", superba_core::paths::display_path(path))
+        }
         Finding::ExeDoesNotRun { detail } => key("exe_does_not_run").arg("detail", detail),
-        Finding::ExeTransient { path } => key("exe_transient").arg("path", path.display()),
-        Finding::ExeOnNetwork { path } => key("exe_on_network").arg("path", path.display()),
-        Finding::Quarantined { path } => key("quarantined").arg("path", path.display()),
-        Finding::ProtectedFolder { path } => key("protected_folder").arg("path", path.display()),
+        Finding::ExeTransient { path } => {
+            key("exe_transient").arg("path", superba_core::paths::display_path(path))
+        }
+        Finding::ExeOnNetwork { path } => {
+            key("exe_on_network").arg("path", superba_core::paths::display_path(path))
+        }
+        Finding::Quarantined { path } => {
+            key("quarantined").arg("path", superba_core::paths::display_path(path))
+        }
+        Finding::ProtectedFolder { path } => {
+            key("protected_folder").arg("path", superba_core::paths::display_path(path))
+        }
         Finding::NotConfigured => key("not_configured"),
         Finding::ConfigInvalid { detail } => key("config_invalid").arg("detail", detail),
         Finding::SecretsMissing => key("secrets_missing"),
@@ -270,8 +282,8 @@ fn finding_text(f: &Finding) -> LocalizedText {
         }
         Finding::ServiceNotInstalled => key("service_not_installed"),
         Finding::StaleDefinition { program, expected } => key("stale_definition")
-            .arg("program", program.display())
-            .arg("expected", expected.display()),
+            .arg("program", superba_core::paths::display_path(program))
+            .arg("expected", superba_core::paths::display_path(expected)),
         Finding::ServiceNotLoaded => key("service_not_loaded"),
         Finding::CrashLoop { exit, signal } => {
             let how = match (exit, signal) {
@@ -356,7 +368,7 @@ fn first_line(record: &superba_router::service::CommandRecord) -> String {
 fn program_section(facts: &RouterFacts) -> RouterDoctorSection {
     let exe = &facts.exe;
     let mut rows = vec![
-        row("path", plain(exe.path.display())),
+        row("path", plain(superba_core::paths::display_path(&exe.path))),
         row("exists", yes_no(exe.exists)),
     ];
     if let Some(x) = exe.executable {
@@ -392,7 +404,7 @@ fn program_section(facts: &RouterFacts) -> RouterDoctorSection {
             rows.push(row(
                 "quarantine_app",
                 text("switch.router_doctor.value.bundle")
-                    .arg("app", bundle.display())
+                    .arg("app", superba_core::paths::display_path(bundle))
                     .arg_text("value", quarantine(q)),
             ));
         }
@@ -428,7 +440,7 @@ fn program_section(facts: &RouterFacts) -> RouterDoctorSection {
             format!(
                 "{} {}",
                 if *found { "[found]" } else { "[-]" },
-                path.display()
+                superba_core::paths::display_path(path)
             )
         })
         .collect();
@@ -452,11 +464,14 @@ fn service_section(facts: &RouterFacts) -> RouterDoctorSection {
             } else {
                 "switch.router_doctor.value.file_missing"
             })
-            .arg("path", path.display()),
+            .arg("path", superba_core::paths::display_path(path)),
         ));
     }
     if let Some(program) = &d.program {
-        rows.push(row("program", plain(program.display())));
+        rows.push(row(
+            "program",
+            plain(superba_core::paths::display_path(program)),
+        ));
     }
     if let Some(loaded) = d.loaded {
         rows.push(row("loaded", yes_no(loaded)));
@@ -522,7 +537,10 @@ fn service_section(facts: &RouterFacts) -> RouterDoctorSection {
 
 fn config_section(facts: &RouterFacts) -> RouterDoctorSection {
     let c = &facts.config;
-    let mut rows = vec![row("data_dir", plain(facts.data_dir.display()))];
+    let mut rows = vec![row(
+        "data_dir",
+        plain(superba_core::paths::display_path(&facts.data_dir)),
+    )];
     rows.push(row(
         "config_json",
         if !c.config_exists {
@@ -656,10 +674,11 @@ fn log_section(facts: &RouterFacts) -> RouterDoctorSection {
         "log_file",
         if log.exists {
             text("switch.router_doctor.value.log")
-                .arg("path", log.path.display())
+                .arg("path", superba_core::paths::display_path(&log.path))
                 .arg("kb", log.size.unwrap_or(0).div_ceil(1024))
         } else {
-            text("switch.router_doctor.value.file_missing").arg("path", log.path.display())
+            text("switch.router_doctor.value.file_missing")
+                .arg("path", superba_core::paths::display_path(&log.path))
         },
     )];
     RouterDoctorSection {

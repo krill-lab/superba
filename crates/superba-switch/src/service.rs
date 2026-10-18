@@ -794,8 +794,8 @@ impl Switcher {
                     "codex_home_mismatch",
                     Severity::Warning,
                     text("switch.doctor.codex_home_mismatch")
-                        .arg("app_home", app_home.display())
-                        .arg("home", home.root().display()),
+                        .arg("app_home", superba_core::paths::display_path(app_home))
+                        .arg("home", superba_core::paths::display_path(home.root())),
                 ));
             }
             if s.cdp.is_none() {
@@ -848,7 +848,7 @@ impl Switcher {
                     "cli_too_old",
                     Severity::Warning,
                     text("switch.doctor.cli_too_old")
-                        .arg("consumer", cli.path.display())
+                        .arg("consumer", superba_core::paths::display_path(&cli.path))
                         .arg("found", v)
                         .arg("required", min),
                 ));

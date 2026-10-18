@@ -348,7 +348,7 @@ impl Candidate {
                             "marker_backup",
                             "cc-switch keeps a first-write backup of this config.toml ({path}).",
                         )
-                        .arg("path", path.display()),
+                        .arg("path", superba_core::paths::display_path(&path)),
                     );
                 }
             }

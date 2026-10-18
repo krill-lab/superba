@@ -170,3 +170,37 @@ fn display_paths_drop_the_windows_verbatim_prefix() {
         assert_eq!(display_path(Path::new(raw)), shown, "{raw}");
     }
 }
+
+#[test]
+fn display_paths_use_one_separator_on_windows() {
+    use superba_core::paths::display_path_text;
+    // User bugs 55 / 62(c): `LOCALAPPDATA` joined with "OpenAI/Codex/bin".
+    for (raw, shown) in [
+        (
+            r"C:\Users\superba\AppData\Local\OpenAI/Codex/bin\896a0166b774037a\codex.exe",
+            r"C:\Users\superba\AppData\Local\OpenAI\Codex\bin\896a0166b774037a\codex.exe",
+        ),
+        (r"c:/Users/me/.codex", r"c:\Users\me\.codex"),
+        (
+            r"\\?\C:\Program Files\App/resources\codex.exe",
+            r"C:\Program Files\App\resources\codex.exe",
+        ),
+        (r"\\?\UNC\server\share/dir", r"\\server\share\dir"),
+        (
+            r"\\wsl.localhost\Ubuntu/home/me/.codex",
+            r"\\wsl.localhost\Ubuntu\home\me\.codex",
+        ),
+        ("//server/share/x", r"\\server\share\x"),
+        // A WSL distribution's or remote host's own paths, home-relative text
+        // and verbatim forms without a shorter name stay as they are.
+        ("/home/me/.codex", "/home/me/.codex"),
+        ("~/.codex/config.toml", "~/.codex/config.toml"),
+        (r"\\?\Volume{0b1c}/dir", r"\\?\Volume{0b1c}/dir"),
+        (r"\\.\pipe/x", r"\\.\pipe/x"),
+    ] {
+        assert_eq!(display_path_text(raw, true), shown, "{raw}");
+    }
+    // Elsewhere a backslash is part of a file name.
+    assert_eq!(display_path_text(r"C:\x/y", false), r"C:\x/y");
+    assert_eq!(display_path_text("/home/a\\b", false), "/home/a\\b");
+}

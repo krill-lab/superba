@@ -138,11 +138,19 @@ fn subdirectories(root: &Path) -> Vec<PathBuf> {
     directories
 }
 
+/// `%LOCALAPPDATA%\OpenAI\Codex\bin`: where the desktop app copies its own
+/// Codex (one `<hash>` folder per version) and runs its app-server from. Built
+/// per component: a literal `OpenAI/Codex/bin` showed as
+/// `…\Local\OpenAI/Codex/bin\…` (user bug 55).
+pub fn app_codex_bin(local_app_data: &Path) -> PathBuf {
+    local_app_data.join("OpenAI").join("Codex").join("bin")
+}
+
 fn extra_directories(env: &dyn EnvSource, home: &Path) -> Vec<PathBuf> {
     let mut directories = vec![
-        home.join(".npm-global/bin"),
-        home.join(".local/bin"),
-        home.join(".cargo/bin"),
+        home.join(".npm-global").join("bin"),
+        home.join(".local").join("bin"),
+        home.join(".cargo").join("bin"),
     ];
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     directories.extend(
@@ -154,7 +162,7 @@ fn extra_directories(env: &dyn EnvSource, home: &Path) -> Vec<PathBuf> {
         .map(PathBuf::from),
     );
     directories.extend(
-        subdirectories(&home.join(".nvm/versions/node"))
+        subdirectories(&home.join(".nvm").join("versions").join("node"))
             .into_iter()
             .map(|dir| dir.join("bin")),
     );
@@ -164,9 +172,7 @@ fn extra_directories(env: &dyn EnvSource, home: &Path) -> Vec<PathBuf> {
             directories.push(PathBuf::from(appdata).join("npm"));
         }
         if let Some(local) = env.var_os("LOCALAPPDATA").filter(|value| !value.is_empty()) {
-            directories.extend(subdirectories(
-                &PathBuf::from(local).join("OpenAI/Codex/bin"),
-            ));
+            directories.extend(subdirectories(&app_codex_bin(&PathBuf::from(local))));
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -180,10 +186,10 @@ fn extra_directories(env: &dyn EnvSource, home: &Path) -> Vec<PathBuf> {
 /// changes when a child is added or removed). For change checks.
 pub(crate) fn watched_directories(env: &dyn EnvSource, home: &Path) -> Vec<PathBuf> {
     let mut directories = vec![
-        home.join(".npm-global/bin"),
-        home.join(".local/bin"),
-        home.join(".cargo/bin"),
-        home.join(".nvm/versions/node"),
+        home.join(".npm-global").join("bin"),
+        home.join(".local").join("bin"),
+        home.join(".cargo").join("bin"),
+        home.join(".nvm").join("versions").join("node"),
     ];
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     directories.extend(
@@ -200,7 +206,7 @@ pub(crate) fn watched_directories(env: &dyn EnvSource, home: &Path) -> Vec<PathB
             directories.push(PathBuf::from(appdata).join("npm"));
         }
         if let Some(local) = env.var_os("LOCALAPPDATA").filter(|value| !value.is_empty()) {
-            directories.push(PathBuf::from(local).join("OpenAI/Codex/bin"));
+            directories.push(app_codex_bin(&PathBuf::from(local)));
         }
     }
     #[cfg(not(target_os = "windows"))]

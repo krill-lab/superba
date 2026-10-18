@@ -271,3 +271,15 @@ mod unix {
         assert_eq!(found[0].path, home.join("bin/codex"));
     }
 }
+
+#[test]
+fn the_apps_codex_bin_is_built_per_component() {
+    // User bug 55: a literal "OpenAI/Codex/bin" showed as
+    // `…\Local\OpenAI/Codex/bin\…` on Windows.
+    let dir = superba_appctl::clibin::app_codex_bin(std::path::Path::new("local"));
+    let parts: Vec<_> = dir
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(parts, ["local", "OpenAI", "Codex", "bin"]);
+}

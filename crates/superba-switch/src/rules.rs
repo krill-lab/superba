@@ -162,7 +162,7 @@ pub fn local_versioned_consumers(
     }
     if let Some(cli) = binaries.iter().find(|b| b.path_rank == Some(0)) {
         consumers.push(VersionedConsumer {
-            label: cli.path.display().to_string(),
+            label: superba_core::paths::display_path(&cli.path),
             role: ConsumerRole::Cli,
             version: cli.version.clone(),
         });

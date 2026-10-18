@@ -147,7 +147,8 @@ impl ScanEnv<'_> {
             Ok(rest) if !rest.as_os_str().is_empty() => {
                 format!("~{}{}", std::path::MAIN_SEPARATOR, native(rest))
             }
-            _ => native(path),
+            // The shared display form (no `\\?\` prefix, one separator).
+            _ => superba_core::paths::display_path(Path::new(&native(path))),
         }
     }
 

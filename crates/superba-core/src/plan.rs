@@ -308,11 +308,11 @@ impl BlockReason {
             ),
             BlockReason::FileNotWritable { path } => {
                 LocalizedText::new("block.file_not_writable", "Cannot write {path}.")
-                    .arg("path", path.display())
+                    .arg("path", crate::paths::display_path(path))
             }
             BlockReason::Unparseable { path, message } => {
                 LocalizedText::new("block.unparseable", "Cannot parse {path}: {message}")
-                    .arg("path", path.display())
+                    .arg("path", crate::paths::display_path(path))
                     .arg("message", message)
             }
             BlockReason::Elevated => {
@@ -1250,6 +1250,12 @@ pub struct CliOverview {
 }
 
 impl CliOverview {
+    /// The Codex CLI a new terminal runs ([`crate::app::terminal_cli`]); the
+    /// desktop app's own copies are not a CLI (user bug 55).
+    pub fn terminal_cli(&self) -> Option<&CodexBinary> {
+        crate::app::terminal_cli(&self.binaries)
+    }
+
     /// Processes still on an old config.
     pub fn stale_count(&self) -> usize {
         self.processes.iter().filter(|p| p.stale).count()

@@ -431,6 +431,27 @@ pub struct CodexBinary {
     pub path_rank: Option<usize>,
 }
 
+impl CodexBinary {
+    /// A desktop app's own Codex that no terminal runs: bundled with (or
+    /// copied by) the app and not on PATH.
+    pub fn is_app_copy(&self) -> bool {
+        self.source == InstallSource::AppBundled && self.path_rank.is_none()
+    }
+}
+
+/// The Codex CLI a new terminal runs among `binaries`: the first `codex` on
+/// PATH, else the first one found that is not a desktop app's own copy
+/// ([`CodexBinary::is_app_copy`]: its bundled Codex, and on Windows the
+/// runtime copy in `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>` it runs its
+/// app-server from, which no terminal finds; user bug 55).
+pub fn terminal_cli(binaries: &[CodexBinary]) -> Option<&CodexBinary> {
+    binaries
+        .iter()
+        .filter(|b| b.path_rank.is_some())
+        .min_by_key(|b| b.path_rank)
+        .or_else(|| binaries.iter().find(|b| !b.is_app_copy()))
+}
+
 /// How an active turn was detected (plan 7.4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

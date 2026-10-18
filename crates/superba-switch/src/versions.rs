@@ -461,7 +461,8 @@ impl Switcher {
                     });
                 }
                 warnings.push(Notice::info(
-                    text("switch.pin.custom_path").arg("path", path.display()),
+                    text("switch.pin.custom_path")
+                        .arg("path", superba_core::paths::display_path(path)),
                 ));
                 Some(path.clone())
             }
@@ -510,9 +511,8 @@ impl Switcher {
             AppCodexPin::Version { version } => {
                 text("switch.destination.pin_version").arg("version", version)
             }
-            AppCodexPin::Path { path } => {
-                text("switch.destination.pin_path").arg("path", path.display())
-            }
+            AppCodexPin::Path { path } => text("switch.destination.pin_path")
+                .arg("path", superba_core::paths::display_path(path)),
             _ => text("switch.destination.pin_bundled"),
         };
         let mut request = request;
