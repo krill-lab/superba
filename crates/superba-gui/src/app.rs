@@ -1878,6 +1878,30 @@ pub fn shell_palette(tr: &Tr, data: &Data) -> Vec<PaletteItem> {
                 provider: ProviderRestore::KeepOpenai,
             }),
         });
+        // GH#5: let cc-switch, AI Toolbox, ... manage Codex (also before they
+        // changed anything), unless Superba already owns nothing.
+        let overview = data.overview.value.as_ref();
+        if !overview
+            .and_then(|o| o.config.as_ref())
+            .is_some_and(|c| c.handed_off.is_some())
+        {
+            let to = overview
+                .and_then(|o| o.external.as_ref())
+                .map(|x| x.source.clone())
+                .unwrap_or_default();
+            items.push(PaletteItem {
+                title: tr.t("palette.hand_off"),
+                detail: None,
+                keywords: vec![
+                    "cc-switch".into(),
+                    "ai toolbox".into(),
+                    "hand off".into(),
+                    "release".into(),
+                ],
+                group: PaletteGroup::Switch,
+                action: Action::Plan(Box::new(crate::external::hand_off_request(&to))),
+            });
+        }
     }
     for page in Page::ALL {
         items.push(PaletteItem {
