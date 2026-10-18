@@ -1,7 +1,9 @@
 //! A running Superba window takes requests from a second start of `superba`
 //! (GH#7): `superba --launch-chatgpt` (the "ChatGPT (Superba)" Start-menu
 //! shortcut, the Linux desktop action) hands its request to the window that is
-//! already open instead of opening another one.
+//! already open instead of opening another one, and a plain second start
+//! shows that window (single instance, item 70: also when it hides in the
+//! tray).
 //!
 //! The window listens on a loopback TCP port and writes [`FILE`] (its pid, the
 //! port and a random token) into Superba's data directory, which only its user
@@ -37,6 +39,9 @@ const MAX_LINE: u64 = 512;
 pub enum Request {
     /// Open ChatGPT through Superba (or reopen it, or bring it forward).
     LaunchChatGpt,
+    /// Show the window and bring it to the front: a plain second start of
+    /// `superba` while this one runs, e.g. hidden in the tray (item 70).
+    Show,
 }
 
 impl Request {
@@ -44,6 +49,7 @@ impl Request {
     pub fn as_str(self) -> &'static str {
         match self {
             Request::LaunchChatGpt => "launch-chatgpt",
+            Request::Show => "show",
         }
     }
 
@@ -51,6 +57,7 @@ impl Request {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "launch-chatgpt" => Some(Request::LaunchChatGpt),
+            "show" => Some(Request::Show),
             _ => None,
         }
     }
@@ -225,6 +232,16 @@ pub fn forward(data_dir: &Path, request: Request) -> Option<u32> {
         .read_line(&mut reply)
         .ok()?;
     (reply.trim() == "ok").then_some(endpoint.pid)
+}
+
+/// A plain second start of `superba` (item 70): show the window of the
+/// Superba that already runs for this user, also when it hides in the tray.
+/// `true` when one took the request (this start then ends).
+pub fn show_running() -> bool {
+    let Ok(context) = superba_switch::detect_context() else {
+        return false;
+    };
+    forward(context.data_dir.root(), Request::Show).is_some()
 }
 
 #[cfg(windows)]

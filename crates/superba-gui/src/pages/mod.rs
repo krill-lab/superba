@@ -512,6 +512,8 @@ pub struct Data {
     pub account: Load<superba_core::AccountReport>,
     /// Last router watchdog state (while router mode is on).
     pub router_watch: Option<superba_core::RouterWatchState>,
+    /// Whether the tray icon is shown (Preferences → Window; item 70).
+    pub tray: crate::tray::TrayStatus,
     /// Settings diff of the latest plan: (plan id, preview).
     pub plan_settings: Option<(String, superba_core::PlanSettings)>,
     /// Remote hosts the desktop app is connected to (app records only), with

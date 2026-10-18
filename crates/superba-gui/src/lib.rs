@@ -19,7 +19,9 @@
 //! - [`flow`]: the pure UI state machine (unit tested);
 //! - [`runtime`]: the background runtime bridge;
 //! - [`i18n`]: layered catalogs (`locales/*.toml`);
-//! - `pages` / `shell` / [`app`]: the views; [`palette`]: the Cmd/Ctrl+K palette.
+//! - `pages` / `shell` / [`app`]: the views; [`palette`]: the Cmd/Ctrl+K palette;
+//! - [`tray`]: the tray icon / menu-bar item and what closing the window does
+//!   (item 70); [`instance`]: one window per user (a second start shows it).
 //!
 //! There is no demo mode: screenshots come from this binary running against an
 //! isolated home and a local mock relay (`tools/screenshots.sh`).
@@ -43,6 +45,7 @@ pub mod palette;
 pub mod runtime;
 pub mod shell;
 pub mod startup;
+pub mod tray;
 
 use std::sync::Arc;
 
@@ -63,6 +66,21 @@ pub fn service() -> anyhow::Result<Arc<dyn SwitchService>> {
 /// any retry in [its GUI log](startup::Reporter::gui_log).
 pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
     let service = service()?;
+    // Item 70: the window choices are needed before the window opens (start
+    // hidden; on Wayland, a window that must hide opens through XWayland).
+    let saved = startup_settings(&service);
+    let start_in_tray = args.start_in_tray || saved.as_ref().is_some_and(|s| s.start_in_tray);
+    let keeps_in_tray = start_in_tray
+        || saved
+            .as_ref()
+            .is_some_and(|s| s.close_action == Some(superba_core::CloseAction::Tray));
+    let x11 = cfg!(target_os = "linux")
+        && tray::wants_x11(
+            std::env::var("WAYLAND_DISPLAY").ok().as_deref(),
+            std::env::var("DISPLAY").ok().as_deref(),
+            keeps_in_tray,
+        );
+    tray::set_forced_x11(x11);
     let size = args.size.unwrap_or(design::tokens::size::DEFAULT_WINDOW);
     let viewport = egui::ViewportBuilder::default()
         .with_title(APP_TITLE)
@@ -76,36 +94,105 @@ pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
         page: args.page,
         launch_chatgpt: args.launch_chatgpt,
         single_instance: true,
+        tray: tray::TrayOption::System,
+        start_in_tray,
     };
     let gpu = startup::Gpu::from_env_value(std::env::var(startup::ENV_SUPERBA_GPU).ok().as_deref());
-    let mut result = run_window(&viewport, gpu, &service, &opts, report);
+    let mut result = run_window(&viewport, gpu, x11, &service, &opts, report);
     if let Err(e) = &result
         && startup::retry_in_software(gpu, e)
     {
         // A GPU that is listed but cannot draw into the window (its driver refused
         // the device or the surface): once more on the software rasterizer.
         report.note(&format!("{e}; trying the software renderer"));
-        result = run_window(&viewport, startup::Gpu::Software, &service, &opts, report);
+        result = run_window(
+            &viewport,
+            startup::Gpu::Software,
+            x11,
+            &service,
+            &opts,
+            report,
+        );
     }
-    result.map_err(|e| {
+    let result = result.map_err(|e| {
         anyhow::Error::new(startup::WindowError {
             reason: e.to_string(),
         })
+    });
+    if result.is_ok() && tray::take_relaunch_hidden() {
+        relaunch_in_tray(&args);
+    }
+    result
+}
+
+/// The saved settings, read before the window opens (`None` when they cannot
+/// be read within two seconds; the app reads them again anyway).
+fn startup_settings(service: &Arc<dyn SwitchService>) -> Option<superba_core::Settings> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .ok()?;
+    runtime.block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(2), service.profile_set())
+            .await
+            .ok()?
+            .ok()
+            .map(|set| set.settings)
     })
+}
+
+/// A native Wayland window cannot hide: Superba starts again hidden in the
+/// tray, through XWayland ([`tray::HideSupport::Relaunch`]), once this
+/// window is gone (and with it this process's single-instance registration).
+fn relaunch_in_tray(args: &GuiArgs) {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    // It outlives this process (which ends right after).
+    let mut command = superba_core::process::detached_command(exe);
+    command.arg("--start-in-tray");
+    if let Some(locale) = args.locale {
+        command.arg("--lang").arg(locale.code());
+    }
+    if let Some(theme) = args.theme {
+        command.arg("--theme").arg(match theme {
+            egui::Theme::Dark => "dark",
+            egui::Theme::Light => "light",
+        });
+    }
+    if let Err(e) = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        tracing::warn!(error = %e, "Superba could not start again in the tray");
+    }
 }
 
 /// Open the window once, with the renderer options for `gpu`.
 fn run_window(
     viewport: &egui::ViewportBuilder,
     gpu: startup::Gpu,
+    x11: bool,
     service: &Arc<dyn SwitchService>,
     opts: &AppOptions,
     report: &startup::Reporter,
 ) -> Result<(), eframe::Error> {
-    let options = eframe::NativeOptions {
+    #[cfg_attr(not(target_os = "linux"), expect(unused_mut))]
+    let mut options = eframe::NativeOptions {
         viewport: viewport.clone(),
         ..startup::native_options(gpu)
     };
+    #[cfg(target_os = "linux")]
+    if x11 {
+        use winit::platform::x11::EventLoopBuilderExtX11 as _;
+        options.event_loop_builder = Some(Box::new(|builder| {
+            builder.with_x11();
+        }));
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = x11;
     let (service, opts, report) = (Arc::clone(service), opts.clone(), report.clone());
     eframe::run_native(
         APP_TITLE,

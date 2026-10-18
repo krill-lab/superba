@@ -263,6 +263,12 @@ pub struct AppHarness {
     pending: VecDeque<Vec<Event>>,
     /// The service the app talks to.
     pub service: Arc<FakeService>,
+    /// The window is on screen (eframe runs only `logic` while it is not).
+    visible: bool,
+    /// The next frame carries a close request (the title bar's close button).
+    close_next: bool,
+    /// Viewport commands the app sent (CancelClose, Visible, Close, ...).
+    commands: Vec<egui::ViewportCommand>,
 }
 
 impl AppHarness {
@@ -293,21 +299,70 @@ impl AppHarness {
             screen: Rect::from_min_max(pos2(0.0, 0.0), pos2(1280.0, 800.0)),
             pending: VecDeque::new(),
             service,
+            visible: true,
+            close_next: false,
+            commands: Vec::new(),
         }
+    }
+
+    /// The app (inspection).
+    pub fn app(&self) -> &SuperbaApp {
+        &self.app
+    }
+
+    /// The window is on screen.
+    pub fn visible(&self) -> bool {
+        self.visible
+    }
+
+    /// Viewport commands since the last call.
+    pub fn take_commands(&mut self) -> Vec<egui::ViewportCommand> {
+        std::mem::take(&mut self.commands)
+    }
+
+    /// Press the window's close button (the next frame carries the request,
+    /// as eframe passes it) and settle.
+    pub fn close_window(&mut self) -> Tree {
+        self.close_next = true;
+        self.frame();
+        self.settle()
     }
 
     /// Run one frame (with the next queued input); returns its tree.
     pub fn frame(&mut self) -> Tree {
         let events = self.pending.pop_front().unwrap_or_default();
+        // A hidden window reads as occluded (what eframe sees on X11 and
+        // macOS): only `logic` runs then.
+        let mut info = egui::ViewportInfo {
+            minimized: Some(false),
+            occluded: Some(!self.visible),
+            ..Default::default()
+        };
+        if std::mem::take(&mut self.close_next) {
+            info.events.push(egui::ViewportEvent::Close);
+        }
         let input = egui::RawInput {
             screen_rect: Some(self.screen),
             events,
+            viewports: std::iter::once((egui::ViewportId::ROOT, info)).collect(),
             ..Default::default()
         };
-        let (app, frame) = (&mut self.app, &mut self.frame);
+        let (app, frame, visible) = (&mut self.app, &mut self.frame, self.visible);
+        // Like eframe: `logic` every pass, `ui` only while the window shows.
         let output = self.ctx.run_ui(input, |ui| {
-            eframe::App::ui(app, ui, frame);
+            eframe::App::logic(app, ui.ctx(), frame);
+            if visible {
+                eframe::App::ui(app, ui, frame);
+            }
         });
+        if let Some(out) = output.viewport_output.get(&egui::ViewportId::ROOT) {
+            for command in &out.commands {
+                if let egui::ViewportCommand::Visible(v) = command {
+                    self.visible = *v;
+                }
+                self.commands.push(command.clone());
+            }
+        }
         let tree = Tree::from_update(
             output
                 .platform_output

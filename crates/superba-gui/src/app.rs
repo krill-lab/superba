@@ -31,6 +31,8 @@ use crate::palette::{self, CommandPalette};
 use crate::runtime::{Backend, Command, Reply};
 use crate::shell::{self, BannerState};
 
+mod tray_glue;
+
 /// Startup options of the app.
 #[derive(Clone, Debug, Default)]
 pub struct AppOptions {
@@ -46,6 +48,11 @@ pub struct AppOptions {
     /// Register this window so a second start hands its requests over
     /// ([`crate::instance`]); off in tests.
     pub single_instance: bool,
+    /// The tray icon (item 70); off in tests.
+    pub tray: crate::tray::TrayOption,
+    /// Start with the window hidden in the tray (`--start-in-tray` or the
+    /// preference, read before the window opened).
+    pub start_in_tray: bool,
 }
 
 /// Build a [`Cx`] from the app's fields without borrowing the whole app (page
@@ -303,6 +310,12 @@ pub struct SuperbaApp {
     instance_requests: Arc<std::sync::Mutex<Vec<crate::instance::Request>>>,
     /// The start-up preference "Open ChatGPT through Superba" was looked at.
     startup_launch_checked: bool,
+    /// The tray icon (item 70).
+    tray: crate::tray::Tray,
+    /// The window's life: shown, hidden in the tray, asking, quitting.
+    life: crate::tray::WindowLife,
+    /// "Start in the tray" was looked at.
+    start_hidden_checked: bool,
 }
 
 impl std::fmt::Debug for SuperbaApp {
@@ -380,6 +393,9 @@ impl SuperbaApp {
             instance: None,
             instance_requests: Arc::default(),
             startup_launch_checked: false,
+            tray: crate::tray::Tray::disabled(),
+            life: crate::tray::WindowLife::new(),
+            start_hidden_checked: false,
             opts,
         };
         app.data.sites = catalog::builtin_sites();
@@ -402,6 +418,7 @@ impl SuperbaApp {
         if app.opts.single_instance {
             app.listen_for_other_starts(&ctx);
         }
+        app.start_tray(&ctx);
         if app.opts.launch_chatgpt {
             // The start-up preference has nothing more to do.
             app.startup_launch_checked = true;
@@ -444,6 +461,7 @@ impl SuperbaApp {
                 crate::instance::Request::LaunchChatGpt => {
                     self.launch_app(crate::launch::LaunchOrigin::Shortcut);
                 }
+                crate::instance::Request::Show => self.life.show(),
             }
         }
     }
@@ -493,13 +511,13 @@ impl SuperbaApp {
                 // A full restart, planned and confirmed (running turns waited for).
                 self.request(SwitchIntent::RestartApp { install_id: None });
                 if origin.from_outside() {
-                    bring_to_front(ctx);
+                    self.show_window(ctx);
                 }
             }
             Err(e) => {
                 self.error_toast(self.tr.t("toast.app_open_failed"), &e);
                 if origin.from_outside() {
-                    bring_to_front(ctx);
+                    self.show_window(ctx);
                 }
             }
         }
@@ -960,6 +978,10 @@ impl SuperbaApp {
 
     fn request_attention(&mut self, ctx: &egui::Context) {
         if let Some(attention) = self.flow.take_attention() {
+            // A question while hidden in the tray: the window comes back.
+            if self.life.is_hidden() {
+                self.show_window(ctx);
+            }
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
                 egui::UserAttentionType::Critical,
             ));
@@ -1041,8 +1063,13 @@ impl SuperbaApp {
     fn process_flow_notices(&mut self, ctx: &egui::Context) {
         for notice in self.flow.take_notices() {
             match notice {
-                FlowNotice::PlanFailed(e) => self.error_toast(self.tr.t("toast.plan_failed"), &e),
+                FlowNotice::PlanFailed(e) => {
+                    // A switch started from the tray failed: say so on screen.
+                    self.show_window(ctx);
+                    self.error_toast(self.tr.t("toast.plan_failed"), &e);
+                }
                 FlowNotice::ExecuteFailed { plan, error } => {
+                    self.show_window(ctx);
                     let key = if shell::is_reapply(&plan) {
                         "banner.reapply.failed"
                     } else {
@@ -1452,7 +1479,7 @@ impl SuperbaApp {
                 self.backend.send(Command::SelfUpdateSkip(version));
             }
             Action::LaterSelfUpdate(version) => self.data.selfupdate_later = Some(version),
-            Action::QuitApp => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Action::QuitApp => self.life.quit(),
             Action::SetLocale(l) => self.set_locale(l),
             Action::OpenUrl(url) => {
                 let _ = open::that_detached(url);
@@ -1786,6 +1813,7 @@ impl eframe::App for SuperbaApp {
         let ctx = ui.ctx().clone();
         self.handle_instance_requests();
         self.handle_replies(&ctx);
+        self.tray_tick(&ctx);
         let now = self.now();
         // Let Escape/Enter win over a countdown expiring in this same frame.
         self.keyboard(&ctx);
@@ -1887,6 +1915,8 @@ impl eframe::App for SuperbaApp {
                 }
             }
         }
+        // The first-close question (item 70), above everything else.
+        self.tray_prompt(&ctx);
         if self.palette.is_open() {
             let busy = self.flow.is_running() || self.flow.is_planning();
             let cx = cx!(self, pal, busy);
@@ -1911,6 +1941,7 @@ impl eframe::App for SuperbaApp {
 
         // The shell's own reads and the window's next wake-up.
         self.run_cadence(&ctx, true);
+        self.tray_finish(&ctx);
     }
 
     /// Runs before every `ui` and alone while the window is hidden or
@@ -1925,12 +1956,24 @@ impl eframe::App for SuperbaApp {
         }
         self.handle_instance_requests();
         self.handle_replies(ctx);
+        self.tray_tick(ctx);
+        // A switch chosen in the tray while the window hides: nobody sees a
+        // countdown to cancel, so it starts at once (questions bring the
+        // window back, `tray_tick`).
+        let now = self.now();
+        self.flow.tick(now);
+        if self.flow.armed_destination().is_some()
+            && matches!(self.flow.stage(), Stage::Armed { .. })
+        {
+            self.flow.switch_now(now);
+        }
         for command in self.flow.take_commands() {
             self.backend.send(command);
         }
         self.process_flow_notices(ctx);
         self.request_attention(ctx);
         self.run_cadence(ctx, false);
+        self.tray_finish(ctx);
     }
 
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {

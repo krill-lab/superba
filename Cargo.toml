@@ -129,6 +129,19 @@ open = "5"
 # the session migration scene: SVG parts rasterized once (no text, fonts or raster images)
 resvg = { version = "0.45", default-features = false }
 roxmltree = "0.20"
+# The tray icon / menu-bar item (item 70): Shell_NotifyIcon on Windows and
+# NSStatusItem on macOS through tray-icon (its muda menus), without the GTK /
+# libappindicator default; on Linux a StatusNotifierItem over D-Bus through ksni
+# (pure Rust, zbus with async-io, which accesskit already brings), so the GUI
+# needs no GTK at run time.
+tray-icon = { version = "0.26.1", default-features = false }
+ksni = { version = "0.3.6", default-features = false, features = ["blocking", "async-io"] }
+# Linux: open the window through XWayland when it must be able to hide into the
+# tray (EventLoopBuilderExtX11); the same winit eframe uses.
+winit = { version = "0.30", default-features = false }
+# Linux tray tests only: a StatusNotifierWatcher on a private session bus
+# (already in the graph through accesskit and ksni).
+zbus = "5"
 
 # --- platform specific (declare under [target.'cfg(...)'.dependencies] in crates)
 winresource = { version = "0.1", default-features = false }

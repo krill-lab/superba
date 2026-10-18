@@ -56,6 +56,11 @@ fn main() -> ExitCode {
     {
         return ExitCode::SUCCESS;
     }
+    // Item 70: one Superba per user. Starting it again shows the window that
+    // runs (also when it hides in the tray) instead of opening a second one.
+    if !gui_args.launch_chatgpt && superba_gui::instance::show_running() {
+        return ExitCode::SUCCESS;
+    }
     // From here on the GUI never ends silently: a failed start or a panic is
     // logged and, on Windows (no console), shown in a message box (user bug 43).
     let report = superba_gui::startup::Reporter::new(

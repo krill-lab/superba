@@ -3,7 +3,7 @@
 //!
 //! ```text
 //! superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
-//!         [--launch-chatgpt]
+//!         [--launch-chatgpt] [--start-in-tray]
 //! ```
 
 use std::ffi::OsString;
@@ -27,12 +27,16 @@ pub struct GuiArgs {
     /// "ChatGPT (Superba)" shortcut). A running Superba window takes the
     /// request; otherwise no window opens unless it has to ask something.
     pub launch_chatgpt: bool,
+    /// `--start-in-tray`: open with the window hidden in the tray (the menu
+    /// bar on macOS) when there is one (item 70; Superba starts itself so
+    /// when a Wayland window has to be reopened through XWayland to hide).
+    pub start_in_tray: bool,
 }
 
 /// Usage text for `--gui-help`.
 pub const USAGE: &str = "\
 superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
-        [--launch-chatgpt]
+        [--launch-chatgpt] [--start-in-tray]
 
   --theme T     dark or light (default: preferences / system)
   --lang L      en or zh-CN (default: preferences / system)
@@ -43,6 +47,9 @@ superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
                 open ChatGPT through Superba (so it can be hot-switched); a
                 running Superba window does it, else no window opens unless
                 a reopen has to be confirmed (the \"ChatGPT (Superba)\" shortcut)
+  --start-in-tray
+                start with the window hidden in the tray (menu bar on macOS);
+                without a tray the window opens as usual
 
 Subcommands (status, switch, restore, ...) behave like `spb`; see `superba --help`.";
 
@@ -121,6 +128,7 @@ impl GuiArgs {
                     out.size = Some([w.max(320.0), h.max(240.0)]);
                 }
                 "--launch-chatgpt" if inline.is_none() => out.launch_chatgpt = true,
+                "--start-in-tray" if inline.is_none() => out.start_in_tray = true,
                 other => return Err(format!("unknown argument {other:?} (see --gui-help)")),
             }
         }

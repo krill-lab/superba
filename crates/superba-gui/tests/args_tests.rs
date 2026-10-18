@@ -24,6 +24,7 @@ fn defaults_leave_all_overrides_disabled() {
         size: None,
         page: None,
         launch_chatgpt: false,
+        start_in_tray: false,
     };
     assert_eq!(GuiArgs::default(), expected);
     assert_eq!(parse(&[]).unwrap(), expected);
@@ -213,6 +214,7 @@ fn flags_compose_and_later_values_override_earlier_ones() {
             size: Some([1280.0, 800.0]),
             page: Some(Page::Hosts),
             launch_chatgpt: false,
+            start_in_tray: false,
         }
     );
 }
@@ -238,6 +240,30 @@ fn launch_chatgpt_opens_chatgpt_through_superba() {
     assert!(USAGE.contains("--launch-chatgpt"));
     // Not a subcommand: `superba --launch-chatgpt` reaches the GUI's parser.
     let argv: Vec<OsString> = ["superba", "--launch-chatgpt"]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+    assert!(!superba_cli::is_cli_invocation(&argv));
+}
+
+#[test]
+fn start_in_tray_opens_hidden_in_the_tray() {
+    // Item 70: Superba starts itself so after a Wayland window was closed into
+    // the tray; also usable from an autostart entry.
+    assert_eq!(
+        parse(&["--start-in-tray"]).unwrap(),
+        GuiArgs {
+            start_in_tray: true,
+            ..GuiArgs::default()
+        }
+    );
+    let args = parse(&["--start-in-tray", "--lang", "en"]).unwrap();
+    assert!(args.start_in_tray);
+    assert_eq!(args.locale, Some(Locale::En));
+    let error = parse(&["--start-in-tray=1"]).unwrap_err();
+    assert!(error.contains("unknown argument"), "{error}");
+    assert!(USAGE.contains("--start-in-tray"));
+    let argv: Vec<OsString> = ["superba", "--start-in-tray"]
         .into_iter()
         .map(OsString::from)
         .collect();

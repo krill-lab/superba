@@ -89,13 +89,19 @@ pub fn default_backend(cx: &Cx<'_>) -> Option<Arc<dyn RouterBackend>> {
 /// blocked with a reason when the router is not installed.
 pub fn mode_request(cx: &Cx<'_>, on: bool) -> std::result::Result<SwitchRequest, &'static str> {
     let _ = cx;
+    Ok(router_request(on))
+}
+
+/// The switch request that turns router mode on or off on this computer
+/// (the Router page, the tray menu).
+pub fn router_request(on: bool) -> SwitchRequest {
     let mut request = SwitchRequest::profile(ProfileId::new(""));
     request.intent = SwitchIntent::Router { enable: on };
     request.targets = TargetSelection {
         local: true,
         remotes: Vec::new(),
     };
-    Ok(request)
+    request
 }
 
 fn kind_of(site: Option<&Site>) -> MemberKind {

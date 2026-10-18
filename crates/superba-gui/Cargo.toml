@@ -52,6 +52,19 @@ uuid.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
+# The tray icon (src/tray): tray-icon on Windows and macOS, ksni on Linux.
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+tray-icon.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni.workspace = true
+winit.workspace = true
+
+# macOS: a window hidden to the menu bar leaves the Dock (activation policy).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = ["NSApplication", "NSResponder", "NSRunningApplication"] }
+
 # Renderer: OpenGL (glow) on Linux and macOS (Linux CI and the screenshots run on
 # Xvfb + Mesa llvmpipe).
 [target.'cfg(not(windows))'.dependencies]
@@ -71,6 +84,10 @@ superba-import.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 toml.workspace = true
+
+# The Linux tray tests: a StatusNotifierItem host on a private session bus.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+zbus.workspace = true
 
 [build-dependencies]
 winresource.workspace = true

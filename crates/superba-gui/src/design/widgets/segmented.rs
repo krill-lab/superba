@@ -405,7 +405,11 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
                 response.request_focus();
             }
             let is_sel = Some(i) == selected;
-            let color = if !seg.enabled {
+            let color = if is_sel && !seg.enabled {
+                // A disabled choice that is still the value in effect (e.g. "Quit"
+                // without a tray) stays readable on the selected fill.
+                SELECTED_TEXT.gamma_multiply(0.75)
+            } else if !seg.enabled {
                 pal.text_disabled
             } else if is_sel {
                 SELECTED_TEXT

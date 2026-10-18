@@ -67,14 +67,16 @@ pub enum LaunchOrigin {
     /// The preference "Open ChatGPT through Superba when Superba starts": only
     /// opens a ChatGPT that is not running, never restarts one.
     Startup,
+    /// The tray icon's menu (item 70), also while the window is hidden.
+    Tray,
 }
 
 impl LaunchOrigin {
-    /// Asked from outside the window (a later start; a tray menu would be one
-    /// too): the window comes to the front when the user has to answer
-    /// (confirm a reopen) or read an error.
+    /// Asked from outside the window (a later start, the tray menu): the
+    /// window comes to the front when the user has to answer (confirm a
+    /// reopen) or read an error.
     pub fn from_outside(self) -> bool {
-        matches!(self, LaunchOrigin::Shortcut)
+        matches!(self, LaunchOrigin::Shortcut | LaunchOrigin::Tray)
     }
 }
 

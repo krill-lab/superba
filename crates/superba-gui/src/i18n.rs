@@ -13,7 +13,7 @@ use std::fmt::Display;
 use superba_core::{Catalog, Locale, LocalizedText};
 
 /// UI catalog areas, in loading order.
-pub const UI_AREAS: [&str; 14] = [
+pub const UI_AREAS: [&str; 15] = [
     "shell",
     "overview",
     "wizard",
@@ -28,10 +28,11 @@ pub const UI_AREAS: [&str; 14] = [
     "preferences",
     "palette",
     "movers",
+    "tray",
 ];
 
 /// English UI catalog files as `(area, TOML source)`.
-const UI_EN: [(&str, &str); 14] = [
+const UI_EN: [(&str, &str); 15] = [
     ("shell", include_str!("../locales/shell.en.toml")),
     ("overview", include_str!("../locales/overview.en.toml")),
     ("wizard", include_str!("../locales/wizard.en.toml")),
@@ -52,10 +53,11 @@ const UI_EN: [(&str, &str); 14] = [
     ),
     ("palette", include_str!("../locales/palette.en.toml")),
     ("movers", include_str!("../locales/movers.en.toml")),
+    ("tray", include_str!("../locales/tray.en.toml")),
 ];
 
 /// Simplified Chinese UI catalog files as `(area, TOML source)`.
-const UI_ZH_CN: [(&str, &str); 14] = [
+const UI_ZH_CN: [(&str, &str); 15] = [
     ("shell", include_str!("../locales/shell.zh-CN.toml")),
     ("overview", include_str!("../locales/overview.zh-CN.toml")),
     ("wizard", include_str!("../locales/wizard.zh-CN.toml")),
@@ -76,6 +78,7 @@ const UI_ZH_CN: [(&str, &str); 14] = [
     ),
     ("palette", include_str!("../locales/palette.zh-CN.toml")),
     ("movers", include_str!("../locales/movers.zh-CN.toml")),
+    ("tray", include_str!("../locales/tray.zh-CN.toml")),
 ];
 
 /// The UI catalog files of a locale as `(area, TOML source)`, in [`UI_AREAS`]
