@@ -31,6 +31,7 @@ class Scenario:
     fn: object
     area: str = ""
     snapshot: str = None      # restore this snapshot first; None = chain on the current VM state
+    on: str = None            # chain only on a session restored from this snapshot (else restore it)
     net: str = "any"          # any | mock | real | none
     needs: tuple = ()         # prerequisite flows (lib/flows.py), run when the state lacks them
     conflicts: tuple = ()     # state that must not be there yet (else the base snapshot is restored first)
@@ -137,6 +138,8 @@ class StepRec:
             except Exception:
                 pass
         self.t.steps.append(self)
+        if et is KeyboardInterrupt:
+            return False  # interrupted run (SIGINT/SIGTERM): stop everything, the runner tears down
         if self.status == FAIL and self.required:
             raise StopScenario(self.name)
         return True  # never propagate: the scenario decides via StopScenario

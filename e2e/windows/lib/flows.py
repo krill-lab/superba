@@ -185,6 +185,9 @@ def install(run, t, prefix="", passive=True):
             s.save("inventory-before.json", run.state["baseline"])
             if run.state["baseline_config"] is not None:
                 s.save("config-before.toml", run.state["baseline_config"])
+            if "wsl" in (run.session_snapshot or "") and "wsl_baseline" not in run.state:
+                run.state["wsl_baseline"] = wsl_hashes(run)
+                s.save("wsl-baseline.sha256", run.state["wsl_baseline"])
         run.state["msi_sha256"] = hashlib.sha256(run.msi.read_bytes()).hexdigest()
         s.info(f"MSI {run.msi.name} sha256 {run.state['msi_sha256'][:16]}…")
         run.vm.scp_to(run.msi, GUEST_MSI.replace("\\", "/"))
@@ -268,7 +271,8 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
     seen = []
     t0 = time.time()
     end = t0 + timeout
-    busy = [re.compile(u.R(k)) for k in ("banner.running.title", "banner.armed.title", "banner.reapply.title")]
+    busy = [re.compile(u.R(k)) for k in ("banner.running.title", "banner.armed.title", "banner.reapply.title",
+                                         "banner.planning")]
     while time.time() < end:
         names = u.texts()
         for n in names:
@@ -324,6 +328,16 @@ def wizard_krill(run, t, prefix="", line="a", lang="en"):
         u.click(key="wizard.apply")
         time.sleep(3)
     with t.step(prefix + "First switch: full restart of ChatGPT (not opened by Superba)") as s:
+        # Planning ("Checking lines, your key and running conversations…") can take a while
+        # (it also probes remote and WSL hosts): wait for the confirmation or the switch itself.
+        t0 = time.time()
+        planning = re.compile(u.R("banner.planning"))
+        while time.time() - t0 < 180:
+            names = u.texts()
+            if not any(planning.match(n) for n in names):
+                break
+            time.sleep(2)
+        s.info(f"planning took {round(time.time() - t0)} s")
         names = u.texts()
         if u.L("confirm.title") in names:
             s.shot("full-restart-confirm")
@@ -488,6 +502,15 @@ def wsl(run, script, user=None, timeout=120, distro=WSL_DISTRO):
         args += ["-u", user]
     args += ["--", "bash", "-lc", script]
     return run.agent.exec("wsl.exe", args, env={"WSL_UTF8": "1"}, timeout=timeout)
+
+
+WSL_FILES = "~/.codex/config.toml ~/.codex/auth.json ~/.profile ~/.bashrc ~/.zshenv ~/.bash_profile"
+
+
+def wsl_hashes(run, distro=WSL_DISTRO):
+    """sha256 of the distribution files Superba may touch (or `missing <f>`)."""
+    r = wsl(run, f"for f in {WSL_FILES}; do [ -f $f ] && sha256sum $f || echo missing $f; done", distro=distro)
+    return r["stdout"].strip()
 
 
 def wsl_tree_hashes(run, path="~/.codex ~/.bashrc ~/.profile", distro=WSL_DISTRO):

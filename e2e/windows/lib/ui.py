@@ -143,6 +143,13 @@ class Ui:
     def resize(self, w, h, x=40, y=40):
         return self.agent.call("window", x=x, y=y, w=w, h=h, restore=True, settle_ms=600, **self.win)
 
+    def hover(self, settle=1.5, **sel):
+        """Point at a widget (found like act()) so its tooltip shows; returns the texts then."""
+        el = self.wait(**sel)
+        r = el["rect"]
+        self.agent.call("hover", x=r[0] + r[2] // 2, y=r[1] + r[3] // 2, settle_ms=int(settle * 1000), **self.win)
+        return self.texts()
+
     def click_at(self, x, y, relative=True, **kw):
         return self.agent.call("click", x=x, y=y, relative=relative, **self.win, **kw)
 

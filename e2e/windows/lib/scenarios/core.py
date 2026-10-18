@@ -112,8 +112,11 @@ def w10(t):
         time.sleep(5)
         u.page("overview")
         time.sleep(2)
-        hot = u.has_text(r"(?i)not opened from Superba|full restart", timeout=15)
-        s.check(bool(hot), f"the GUI says hot switching needs a full restart: {hot!r}", soft=True)
+        time.sleep(8)  # the overview's next poll
+        tips = u.hover(key="overview.hero.this", type="Button")
+        hot = next((x for x in tips if re.search(r"(?i)not opened from Superba|full restart", x)), None)
+        s.check(bool(hot), f"the 'This computer' tooltip says hot switching needs a full restart: {hot!r} "
+                           "(the only place on the Overview)", soft=True)
         s.shot("app-not-from-superba")
         r = run.spb("status", timeout=120, label="status-outside")
         s.save("spb-status.txt", r["stdout"])
@@ -321,7 +324,7 @@ def w32(t):
         s.manual("usage-router-on.png: banner 'Router on (127.0.0.1:<port>)…', rows with session names and "
                  "'Krill · <line>' provider, filter dropdown borders not clipped (bug 9)")
     with t.step("Open a request: General and Timing tabs") as s:
-        # The table's rows and the detail tabs carry no accessible names (user bug 47): by geometry.
+        # The table's rows and the detail tabs carry no accessible names (user bug 56): by geometry.
         tree = u.tree(patterns=False)
         rows = [e for e in tree if e["type"] == "Custom" and e["rect"] and e["rect"][3] == 26 and e["rect"][2] > 600]
         s.check(bool(rows), f"{len(rows)} table rows")

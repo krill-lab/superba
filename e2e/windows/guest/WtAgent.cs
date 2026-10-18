@@ -213,6 +213,7 @@ public static class WtAgent
             case "uia.find": return UiaFind(a);
             case "uia.act": return UiaAct(a);
             case "click": return Click(a);
+            case "hover": return Hover(a);
             case "scroll": return Scroll(a);
             case "keys": TypeText(S(a, "text", "")); return true;
             case "key": return KeyCombo(S(a, "combo", ""), I(a, "repeat", 1));
@@ -667,6 +668,23 @@ public static class WtAgent
         }
         MouseClick(x, y, S(a, "button", "left") == "right", B(a, "double", false));
         Thread.Sleep(I(a, "settle_ms", 150));
+        return new int[] { x, y };
+    }
+
+    // Moves the pointer onto a point (tooltips), relative to the window when asked.
+    static object Hover(Dictionary<string, object> a)
+    {
+        IntPtr win = ResolveWindow(a, false);
+        int x = I(a, "x", 0), y = I(a, "y", 0);
+        if (win != IntPtr.Zero)
+        {
+            Foreground(win);
+            if (B(a, "relative", false)) { RECT r = Bounds(win); x += r.Left; y += r.Top; }
+        }
+        SetCursorPos(x - 3, y - 3);
+        Thread.Sleep(60);
+        SetCursorPos(x, y);
+        Thread.Sleep(I(a, "settle_ms", 1200));
         return new int[] { x, y };
     }
 

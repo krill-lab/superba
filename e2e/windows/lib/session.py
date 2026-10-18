@@ -173,13 +173,14 @@ class Run:
         except VmError as e:
             self.log(f"giving the VM back failed: {e}")
 
-    def acquire(self, owner=None, ttl="2h"):
+    def acquire(self, owner=None, ttl="2h", snapshot=None):
         """Take a VM from the pool (unless --held), restored to the base snapshot."""
         if getattr(self.opts, "held", False):
             self.log(f"using VM {self.vm.id}, held by the caller (--held)")
             return
-        vm_id = self.vm.acquire(self.base_snapshot, vm_id=self.opts.vm or None, owner=owner, ttl=ttl)
-        self.just_acquired = self.base_snapshot
+        snapshot = snapshot or self.base_snapshot
+        vm_id = self.vm.acquire(snapshot, vm_id=self.opts.vm or None, owner=owner, ttl=ttl)
+        self.just_acquired = snapshot
         self.log(f"pool: VM {vm_id} ({self.vm.name}) locked for this run")
 
     # ------------------------------------------------------------- attachable sessions (run.py session ...)
@@ -217,9 +218,9 @@ class Run:
     def close_session_file(self):
         session_file(self.vm.id).unlink(missing_ok=True)
 
-    def ensure_session(self, snapshot=None):
+    def ensure_session(self, snapshot=None, on=None):
         if snapshot or self.dirty or self.agent is None:
-            self.fresh(snapshot or self.base_snapshot)
+            self.fresh(snapshot or on or self.base_snapshot)
         elif not self.agent.alive():
             self.log("agent not answering; restarting it")
             self.start_agent()

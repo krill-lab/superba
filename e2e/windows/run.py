@@ -60,7 +60,7 @@ import flows  # noqa: E402
 ALL_ORDER = ["W01", "W03", "W04", "W05", "W10", "W11", "W12", "W13", "W14", "W15", "W20", "W21", "W22",
              "W23", "W08", "W60", "W61", "W62", "W63", "W36", "W30", "W31", "W32", "W33", "W34", "W35",
              "W37", "W50", "W51", "W40", "W42", "W02", "W06", "W07", "W41", "W43", "W53", "W52", "W74", "W73", "W71", "W70",
-             "W72", "W80", "W81", "W82", "W83", "W84", "W85", "W86"]
+             "W72", "W80", "W82", "W83", "W84", "W85", "W86", "W81", "W87"]
 
 
 def default_msi():
@@ -104,7 +104,9 @@ def run_one(run, sc):
         if any(run.state.get(c) for c in sc.conflicts):
             run.log(f"state has {[c for c in sc.conflicts if run.state.get(c)]}: starting from the base snapshot")
             run.dirty = True
-        run.ensure_session(sc.snapshot)
+        if sc.on and run.session_snapshot != sc.on:
+            run.dirty = True
+        run.ensure_session(sc.snapshot, on=sc.on)
         for need in sc.needs:
             flows.ensure(run, t, need)
         sc.fn(t)
@@ -152,7 +154,8 @@ def cmd_run(opts):
     run.log(f"run {run.root.name}: {', '.join(ids)}; MSI {opts.msi}; net {opts.net}")
     results = []
     try:
-        run.acquire()
+        first = REGISTRY[ids[0]]
+        run.acquire(snapshot=first.snapshot or first.on)  # the first scenario's snapshot: one restore less
         if not run.vm.snapshot_exists(BASE_SNAPSHOT):
             run.log(f"base snapshot {BASE_SNAPSHOT} missing: building it from clean")
             flows.prep_snapshot(run)
@@ -161,6 +164,12 @@ def cmd_run(opts):
             write_report(run, results)
     except KeyboardInterrupt:
         run.log("interrupted")
+    except VmError as e:  # no VM (pool) or the VM broke: report what ran, the rest as not run
+        run.log(f"VM error: {e}")
+        done = {r["id"] for r in results}
+        results += [{"id": i, "title": REGISTRY[i].title, "area": REGISTRY[i].area, "bugs": list(REGISTRY[i].bugs),
+                     "status": NOTRUN, "reason": f"VM error: {str(e)[-300:]}", "secs": 0, "steps": []}
+                    for i in ids if i not in done]
     finally:
         run.teardown(final=True)
         data = write_report(run, results)

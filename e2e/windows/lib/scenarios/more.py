@@ -281,8 +281,11 @@ def w14(t):
         flows.start_superba(run, s)
         time.sleep(4)
         u = U(t)
-        hot = u.has_text(re.escape(u.L("hot.ready")), timeout=20)
-        s.check(bool(hot), f"Overview says hot switching is ready: {hot!r}", soft=True)
+        u.page("overview")
+        time.sleep(3)
+        tips = u.hover(key="overview.hero.this", type="Button")
+        hot = next((x for x in tips if u.L("hot.ready") in x), None)
+        s.check(bool(hot), f"the 'This computer' tooltip says hot switching is ready: {hot!r}", soft=True)
         r = run.spb("status", timeout=120, label="status-after-reopen")
         s.save("spb-status.txt", r["stdout"])
         s.check(str(a.cdp_port() or "") in r["stdout"], "spb status shows the app's debugging port", soft=True)
@@ -838,7 +841,9 @@ def w73(t):
         run.dirty = True  # the next scenario starts from the base again
         info = run.agent.call("ping")
         s.check(info["admin_token"] is True, "elevated token")
-        flows.start_superba(run, s)
+        flows.stop_superba(run)
+        # Directly, not through the Start-menu shortcut: Explorer would start it unelevated.
+        flows.start_superba(run, s, via="exe")
         p = run.agent.procs(r"^superba\.exe$")[0]
         lvl = integrity(run, p["pid"])
         s.check(lvl["level"] == "high" and lvl["elevated"], f"superba.exe: {lvl}")
@@ -895,7 +900,7 @@ def w74(t):
              f" (Test-Path '{sysprof}\\.codex\\config.toml'), (Test-Path '{sysprof}\\.codex\\auth.json') -join ','")
     before = run.vm.ps(probe).stdout.strip()
     for exe, args, label in ((run.superba_exe, "", "gui"), (run.spb_exe, "status", "spb-status"),
-                             (run.spb_exe, "switch --line e2e-a --countdown 0 --yes", "spb-switch")):
+                             (run.spb_exe, "profile add wintest-system --site krill", "spb-profile-add")):
         with t.step(f"{label} as SYSTEM") as s:
             out = rf"C:\Users\Public\wintest\system-{label}.txt"
             script = SYSTEM_TASK_PS.replace("$args[0]", psq(exe)).replace("$args[1]", psq(args)).replace("$args[2]", psq(out))
@@ -966,6 +971,10 @@ def w53(t):
         with t.step("The failure is shown: toast, Updates page, spb self-update check") as s:
             w = u.wait_window(120)
             s.check(w is not None, "Superba running again (the old version)")
+            if u.exists(timeout=5, key="wizard.skip"):
+                # Notices wait for the main window: the setup wizard of an unconfigured install covers it.
+                s.info("the relaunched Superba shows the setup wizard (never configured): Skip setup")
+                u.click(key="wizard.skip")
             toast = u.has_text(u.R("updates.superba.problem_failed"), timeout=30)
             s.check(bool(toast), f"failure shown: {toast!r}")
             s.shot("failure-toast")
@@ -992,16 +1001,3 @@ def w72(t):
     t.skip("manual notes only: MATRIX.md W72")
 
 
-# --------------------------------------------------------------------------- WSL (pending)
-for _id, _title in (
-        ("W80", "WSL: distros and the WSL Codex detected"),
-        ("W81", "WSL: the app's Codex in WSL, hot restart of the WSL app-server"),
-        ("W82", "WSL: switch / restore the distro's ~/.codex and shell rc"),
-        ("W83", "WSL: sessions per distro, scan and migrate"),
-        ("W84", "WSL: settings sync filtered by the WSL Codex version"),
-        ("W85", "WSL: router mode from WSL or direct with a note"),
-        ("W86", "WSL: uninstall / restore leaves the distro clean")):
-    def _pending(t, _id=_id):
-        t.skip(f"pending: WSL support (user bug 45) is being implemented; run per MATRIX.md {_id} on "
-               "snapshot wintest-wsl1 once it lands")
-    scenario(_id, _title, area="wsl", snapshot="wintest-wsl1", manual_only=True, bugs=(45,))(_pending)
