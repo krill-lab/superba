@@ -628,6 +628,60 @@ async fn router_unavailable_and_broken_streams_are_recorded() {
     assert!(page.rows[0].error.as_deref().unwrap().contains("dead/x"));
 }
 
+/// Krill's answer when its pool has no account for the model (user bug 58:
+/// `gpt-5.5` on the test relay, after ~50 s): a stream with one `server_busy`
+/// error, a code Codex retries itself.
+const KRILL_BUSY: &str = "event: response.failed\ndata: {\"type\":\"error\",\"error\":{\"type\":\"service_unavailable_error\",\"code\":\"server_busy\",\"message\":\"Our servers are currently busy. Please try again in a moment.\",\"param\":null},\"sequence_number\":2}\n\n";
+
+/// User bug 58: a busy answer is a started stream, so the router passes the
+/// relay's own error to Codex from the line that answered and records it; it
+/// never walks the member's other lines with the same turn.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_busy_answer_reaches_codex_from_its_line_without_failover() {
+    let busy = upstream(Mode::Chunks(Arc::new(vec![Bytes::from_static(
+        KRILL_BUSY.as_bytes(),
+    )])))
+    .await;
+    let other = upstream(chunks(&text_answer())).await;
+    let cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![
+            line("a", busy.base("/backend-api/codex")),
+            line("b", other.base("/backend-api/codex")),
+        ],
+    )]);
+    let run = start_recording(cfg, stats(false)).await;
+    let body = request_body("gpt-5.5", "a", json!({}));
+    let resp = post(
+        &run.router,
+        Some("Codex Desktop"),
+        Some(turn_metadata("t", "turn", "user")),
+        &body,
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let text = String::from_utf8(resp.bytes().await.unwrap().to_vec()).unwrap();
+    assert_eq!(
+        text, KRILL_BUSY,
+        "the relay's error reaches Codex unchanged"
+    );
+    assert_eq!(busy.hits(), 1);
+    assert_eq!(other.hits(), 0, "no other line is tried");
+    let page = rows(&run.paths, 1).await;
+    let row = &page.rows[0];
+    assert_eq!(
+        row.status,
+        RequestStatus::Failed {
+            code: Some("server_busy".into())
+        }
+    );
+    assert_eq!(row.failovers, 0);
+    assert_eq!(row.line_name.as_deref(), Some("A"));
+    assert_eq!(row.model.as_deref(), Some("gpt-5.5"));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn only_numbers_are_recorded_and_a_clear_reaches_the_running_router() {
     let up = upstream(chunks(&text_answer())).await;

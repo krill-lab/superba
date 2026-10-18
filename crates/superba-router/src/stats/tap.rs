@@ -485,11 +485,14 @@ impl ResponseTap {
         let response = peek.response;
         self.outcome = Some(match kind {
             EventKind::Completed => Outcome::Completed,
+            // Krill's busy answer names the event `response.failed` but carries
+            // the error at the top level, as an `error` event does (user bug 58).
             EventKind::Failed => Outcome::Failed {
                 code: response
                     .as_ref()
                     .and_then(|r| r.error.as_ref())
-                    .and_then(ErrorPeek::code),
+                    .and_then(ErrorPeek::code)
+                    .or_else(|| peek.error.as_ref().and_then(ErrorPeek::code)),
             },
             EventKind::Incomplete => Outcome::Incomplete {
                 reason: response
