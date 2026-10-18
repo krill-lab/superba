@@ -3,6 +3,9 @@
      WixUI 页面的文字来自 WixToolset.UI.wixext 的 zh-CN 文化。与 superba.en-US.wxl 保持一致。 -->
 <WixLocalization Culture="zh-CN" Codepage="936" xmlns="http://wixtoolset.org/schemas/v4/wxl">
   <String Id="SuperbaLanguage" Value="2052" />
+  <!-- WixUI's zh-CN pages use 宋体 (SimSun), which an English or other non-Chinese Windows
+       lacks (the pages then mix fallback fonts); Microsoft YaHei UI is on every Windows 10/11. -->
+  <String Id="Advanced_Font_FaceName" Value="Microsoft YaHei UI" />
   <String Id="SuperbaNewerInstalled" Value="已安装更新版本的 Superba。" />
   <String Id="SuperbaFolderDlgDescription" Value="选择 Superba 的安装位置（仅为当前用户安装）。" />
   <String Id="SuperbaFolderDlgUpdateDescription" Value="Superba 将在当前安装位置更新。" />
