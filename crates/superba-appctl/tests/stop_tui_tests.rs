@@ -193,7 +193,7 @@ async fn a_stopped_tui_leaves_its_terminal_cooked_and_on_the_main_screen() {
         .await
         .unwrap();
     let status = child.wait().unwrap();
-    assert_eq!(outcome, StopOutcome::Exited);
+    assert_eq!(outcome.outcome, StopOutcome::Exited);
     // SIGINT first: it ends a TUI without a handler at once.
     assert_eq!(status.signal(), Some(libc::SIGINT));
     // Give the reader thread a moment for the last bytes.
@@ -209,7 +209,7 @@ async fn a_tui_that_stays_on_sigint_and_sighup_gets_sigterm() {
         .await
         .unwrap();
     let status = child.wait().unwrap();
-    assert_eq!(outcome, StopOutcome::Exited);
+    assert_eq!(outcome.outcome, StopOutcome::Exited);
     assert_eq!(status.signal(), Some(libc::SIGTERM));
     // SIGINT and SIGHUP each waited for before the next signal.
     assert!(
@@ -228,7 +228,7 @@ async fn a_forced_stop_also_restores_the_terminal_first() {
         .await
         .unwrap();
     let status = child.wait().unwrap();
-    assert_eq!(outcome, StopOutcome::Killed);
+    assert_eq!(outcome.outcome, StopOutcome::Killed);
     assert_eq!(status.signal(), Some(libc::SIGKILL));
     std::thread::sleep(Duration::from_millis(200));
     assert_restored(&pty, &out);

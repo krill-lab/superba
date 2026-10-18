@@ -236,8 +236,11 @@ fn waited(since: tokio::time::Instant) -> QuitStep {
 }
 
 /// End every process of `targets` that is still the one recorded, without
-/// waiting; returns the pids ended and pid -> error for the others.
-async fn end_all(targets: Vec<(u32, Option<Timestamp>)>) -> (Vec<u32>, BTreeMap<u32, String>) {
+/// waiting; returns the pids ended and pid -> error for the others. Also the
+/// forced stop of a Codex process the user asked for ([`crate::stop`]).
+pub(crate) async fn end_all(
+    targets: Vec<(u32, Option<Timestamp>)>,
+) -> (Vec<u32>, BTreeMap<u32, String>) {
     tokio::task::spawn_blocking(move || {
         let mut ended = Vec::new();
         let mut errors = BTreeMap::new();

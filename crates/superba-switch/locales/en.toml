@@ -528,6 +528,8 @@ asking = "Asking the Codex processes to exit ({count})"
 process = "{role} (pid {pid})"
 result = "{process}: {outcome}"
 failed = "{process}: could not be stopped ({error})"
+still_running = "{process}: still running after Superba ended it ({count}): {processes}."
+access_denied = "Windows refused to end some of them (access denied): they run as administrator or as another user. Close them where they run (the terminal or editor), or start Superba the same way they were started, then try again."
 
 [switch.codex_files]
 journal_pending = "A switch did not finish, so Superba does not save Codex's files now. Superba finishes it at start (or run spb recover), then open the file again."

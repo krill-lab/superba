@@ -914,7 +914,7 @@ impl AppController for DesktopAppController {
         process: &ProcessInfo,
         force: bool,
         timeout_ms: u64,
-    ) -> Result<superba_core::StopOutcome> {
+    ) -> Result<superba_core::StopReport> {
         stop::stop(process, force, Duration::from_millis(timeout_ms)).await
     }
 

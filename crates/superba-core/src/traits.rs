@@ -732,14 +732,15 @@ pub trait AppController: Send + Sync {
     /// `TerminateProcess`). Refuses the desktop app (use [`Self::quit`]) and a
     /// pid whose start time no longer matches `process.started_at` (reused by
     /// another program: [`crate::StopOutcome::NotRunning`]). Callers only pass
-    /// processes the user saw listed and agreed to stop. Default: not
+    /// processes the user saw listed and agreed to stop. A forced stop names
+    /// what still runs afterwards ([`crate::StopReport::left`]). Default: not
     /// implemented.
     async fn stop_process(
         &self,
         process: &ProcessInfo,
         force: bool,
         timeout_ms: u64,
-    ) -> Result<crate::runtime::StopOutcome> {
+    ) -> Result<crate::runtime::StopReport> {
         let _ = (process, force, timeout_ms);
         Err(Error::NotImplemented {
             what: "stopping Codex processes".into(),

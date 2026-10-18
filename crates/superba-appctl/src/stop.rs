@@ -27,13 +27,23 @@
 //!   without `force` nothing is sent there ([`StopOutcome::ForceOnly`]);
 //! - force only when the caller says so (after an explicit confirmation): the
 //!   process and its descendants (npm's `node …/codex.js` wrapper runs the
-//!   native codex as a child) get SIGKILL / `TerminateProcess`.
+//!   native codex as a child) are ended through [`crate::osproc::end`]
+//!   (`TerminateProcess` on a handle whose creation time is checked first, so
+//!   a reused pid is never ended, with the Windows error kept; SIGKILL
+//!   elsewhere) — no `taskkill.exe` (user bug 74). What still runs after the
+//!   wait is named in the report with why ([`StopReport::left`], like a quit
+//!   report, bug 53).
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use superba_core::{CodexProcessKind, Error, ProcessInfo, Result, StopOutcome, Timestamp};
+use superba_core::{
+    CodexProcessKind, Error, LingeringProcess, ProcessInfo, Result, StopOutcome, StopReport,
+    Timestamp,
+};
 
+use crate::osproc;
 use crate::procs::{self, Liveness, ProcEntry, START_TIME_SLACK_MS};
 
 /// Kinds Superba may stop for the user.
@@ -256,9 +266,56 @@ async fn wait_gone(targets: &[(u32, Option<Timestamp>)], timeout: Duration) -> b
     }
 }
 
+/// What a forced stop leaves running (pure part of [`stop`]): each of
+/// `targets` still alive, with what the OS says about it (`facts`) and why
+/// Superba could not end it — the error ending it gave, or [`ENDED_STILL_RUNNING`]
+/// when it was ended but has not exited yet.
+pub fn left_after_force(
+    targets: &[(u32, Option<Timestamp>)],
+    entries: &[ProcEntry],
+    errors: &BTreeMap<u32, String>,
+    ended: &[u32],
+    alive: &dyn Fn(u32, Option<Timestamp>) -> bool,
+    facts: &dyn Fn(u32) -> osproc::ProcFacts,
+) -> Vec<LingeringProcess> {
+    targets
+        .iter()
+        .filter(|(pid, started)| alive(*pid, *started))
+        .filter_map(|(pid, started)| {
+            let f = facts(*pid);
+            if f.gone {
+                return None;
+            }
+            let entry = entries.iter().find(|e| e.pid == *pid);
+            Some(LingeringProcess {
+                pid: *pid,
+                ppid: entry.and_then(|e| e.ppid),
+                image: f.image.or_else(|| entry.and_then(|e| e.exe.clone())),
+                // pid 0 is never one of them: no process is called "main".
+                role: entry.map_or_else(|| "?".to_owned(), |e| crate::quit::role_of(e, 0)),
+                arch: f.arch.map(str::to_owned),
+                started_at: f.created.or(*started),
+                end_error: errors
+                    .get(pid)
+                    .cloned()
+                    .or_else(|| ended.contains(pid).then(|| ENDED_STILL_RUNNING.to_owned()))
+                    .or(f.open_error),
+            })
+        })
+        .collect()
+}
+
+/// Why a process Superba ended still runs.
+pub const ENDED_STILL_RUNNING: &str = if cfg!(windows) {
+    crate::quit::TERMINATING
+} else {
+    "ended by Superba (SIGKILL), but it has not exited yet"
+};
+
 /// Stop `listed` (see the module docs). `timeout` bounds the wait for it to
 /// exit after the request.
-pub async fn stop(listed: &ProcessInfo, force: bool, timeout: Duration) -> Result<StopOutcome> {
+pub async fn stop(listed: &ProcessInfo, force: bool, timeout: Duration) -> Result<StopReport> {
+    let report = |outcome| StopReport::new(listed.clone(), outcome);
     if !stoppable(&listed.kind) {
         return Err(Error::Unsupported {
             what: "stopping the desktop app this way (Superba quits it instead)".into(),
@@ -269,7 +326,7 @@ pub async fn stop(listed: &ProcessInfo, force: bool, timeout: Duration) -> Resul
         .map_err(|e| Error::other(format!("background task failed: {e}")))?;
     let now = entries.iter().find(|e| e.pid == listed.pid);
     match identity(listed, now) {
-        Identity::Gone => return Ok(StopOutcome::NotRunning),
+        Identity::Gone => return Ok(report(StopOutcome::NotRunning)),
         Identity::ForeignUser => {
             return Err(Error::Process {
                 message: format!(
@@ -283,7 +340,7 @@ pub async fn stop(listed: &ProcessInfo, force: bool, timeout: Duration) -> Resul
     let started = now.and_then(|e| e.started_at).or(listed.started_at);
     let tui = listed.kind == CodexProcessKind::CliTui;
     if !force && !graceful_supported() {
-        return Ok(StopOutcome::ForceOnly);
+        return Ok(report(StopOutcome::ForceOnly));
     }
     let pid = listed.pid;
     let tty = if tui {
@@ -303,14 +360,34 @@ pub async fn stop(listed: &ProcessInfo, force: bool, timeout: Duration) -> Resul
         None => false,
     };
     let me = [(listed.pid, started)];
+    let mut left = Vec::new();
     let outcome = if force {
-        let targets = force_targets(&entries, listed.pid);
-        for (pid, at) in &targets {
-            if procs::liveness(*pid, *at) == Liveness::Alive {
-                procs::kill(*pid);
+        // Through osproc (pid-reuse safe, the OS error kept), never taskkill.
+        let mut targets = force_targets(&entries, listed.pid);
+        if let Some(first) = targets.first_mut() {
+            first.1 = started;
+        }
+        let (ended, errors) = crate::quit::end_all(targets.clone()).await;
+        tracing::info!(
+            pid = listed.pid,
+            targets = targets.len(),
+            ended = ended.len(),
+            failed = errors.len(),
+            "ended a Codex process and its descendants"
+        );
+        let gone = wait_gone(&targets, timeout.max(Duration::from_secs(3))).await;
+        if !gone {
+            let entries =
+                tokio::task::spawn_blocking(|| procs::snapshot_os(procs::ReadOpts::default()))
+                    .await
+                    .unwrap_or_default();
+            let alive = |p, s| procs::liveness(p, s) == Liveness::Alive;
+            left = left_after_force(&targets, &entries, &errors, &ended, &alive, &osproc::facts);
+            for l in &left {
+                tracing::warn!(process = %l.describe(), "still running after it was ended");
             }
         }
-        if wait_gone(&me, timeout.max(Duration::from_secs(3))).await {
+        if procs::liveness(listed.pid, started) == Liveness::Gone {
             StopOutcome::Killed
         } else {
             StopOutcome::StillRunning
@@ -332,5 +409,7 @@ pub async fn stop(listed: &ProcessInfo, force: bool, timeout: Duration) -> Resul
         // Could not be written before: at least leave the alternate screen now.
         let _ = tokio::task::spawn_blocking(move || restore_terminal(&tty)).await;
     }
-    Ok(outcome)
+    let mut done = report(outcome);
+    done.left = left;
+    Ok(done)
 }

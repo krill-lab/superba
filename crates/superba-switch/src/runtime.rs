@@ -480,26 +480,16 @@ impl Switcher {
                 .iter()
                 .find(|q| q.pid == p.pid && q.kind == p.kind && q.started_at == p.started_at);
             let report = match current {
-                None => StopReport {
-                    process: p,
-                    outcome: StopOutcome::NotRunning,
-                    error: None,
-                },
+                None => StopReport::new(p, StopOutcome::NotRunning),
                 Some(q) if !crate_stoppable(&q.kind) => StopReport {
-                    process: p,
-                    outcome: StopOutcome::StillRunning,
                     error: Some("the desktop app is not stopped this way".into()),
+                    ..StopReport::new(p, StopOutcome::StillRunning)
                 },
                 Some(q) => match d.app.stop_process(q, force, STOP_WAIT_MS).await {
-                    Ok(outcome) => StopReport {
-                        process: q.clone(),
-                        outcome,
-                        error: None,
-                    },
+                    Ok(report) => report,
                     Err(e) => StopReport {
-                        process: q.clone(),
-                        outcome: StopOutcome::StillRunning,
                         error: Some(e.to_string()),
+                        ..StopReport::new(q.clone(), StopOutcome::StillRunning)
                     },
                 },
             };
@@ -508,6 +498,7 @@ impl Switcher {
                 kind = ?report.process.kind,
                 force,
                 outcome = ?report.outcome,
+                left = ?report.left.iter().map(superba_core::LingeringProcess::describe).collect::<Vec<_>>(),
                 "stopped a Codex process at the user's request"
             );
             out.push(report);

@@ -1375,8 +1375,12 @@ pub struct FakeApp {
     /// Process image of the app-server (`None` = not observable).
     pub app_server_exe: Mutex<Option<PathBuf>>,
     /// What a graceful `stop_process` answers per pid (default `Exited`); a
-    /// forced stop always ends the process. Gone processes leave `processes`.
+    /// forced stop ends the process unless `force_left` names it. Gone
+    /// processes leave `processes`.
     pub stop_answers: Mutex<BTreeMap<u32, superba_core::StopOutcome>>,
+    /// What a forced stop of a pid leaves running (user bug 74): the stop
+    /// answers `StillRunning` with these processes.
+    pub force_left: Mutex<BTreeMap<u32, Vec<superba_core::LingeringProcess>>>,
     /// App-servers a launch or local hot restart starts, as (delay, lifetime)
     /// after it on tokio's clock, instead of one at once: the desktop app's
     /// short-lived first app-server before the real one (user bug 62).
@@ -1683,8 +1687,8 @@ impl AppController for FakeApp {
         process: &ProcessInfo,
         force: bool,
         _timeout_ms: u64,
-    ) -> Result<superba_core::StopOutcome> {
-        use superba_core::StopOutcome;
+    ) -> Result<superba_core::StopReport> {
+        use superba_core::{StopOutcome, StopReport};
         push(
             &self.log,
             format!("app.stop_process pid={} force={force}", process.pid),
@@ -1696,7 +1700,12 @@ impl AppController for FakeApp {
             .iter()
             .any(|p| p.pid == process.pid && p.started_at == process.started_at);
         if !alive {
-            return Ok(StopOutcome::NotRunning);
+            return Ok(StopReport::new(process.clone(), StopOutcome::NotRunning));
+        }
+        if force && let Some(left) = self.force_left.lock().unwrap().get(&process.pid) {
+            let mut report = StopReport::new(process.clone(), StopOutcome::StillRunning);
+            report.left = left.clone();
+            return Ok(report);
         }
         let outcome = if force {
             StopOutcome::Killed
@@ -1714,7 +1723,7 @@ impl AppController for FakeApp {
                 .unwrap()
                 .retain(|p| p.pid != process.pid);
         }
-        Ok(outcome)
+        Ok(StopReport::new(process.clone(), outcome))
     }
 
     async fn stop_daemon(&self, _home: &CodexHome) -> Result<()> {
@@ -2475,6 +2484,7 @@ impl World {
             refusing_binaries: Mutex::new(Vec::new()),
             app_server_exe: Mutex::new(None),
             stop_answers: Mutex::new(BTreeMap::new()),
+            force_left: Mutex::new(BTreeMap::new()),
             spawn_script: Mutex::new(Vec::new()),
             scheduled: Mutex::new(Vec::new()),
         };

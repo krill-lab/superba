@@ -527,6 +527,8 @@ asking = "正在请 Codex 进程退出（{count} 个）"
 process = "{role}（pid {pid}）"
 result = "{process}：{outcome}"
 failed = "{process}：无法停止（{error}）"
+still_running = "{process}：Superba 结束它之后仍在运行（{count} 个）：{processes}。"
+access_denied = "Windows 拒绝结束其中一些进程（拒绝访问）：它们以管理员或其他用户身份运行。请在它们所在的位置（终端或编辑器）关闭它们，或用启动它们的同样方式启动 Superba，然后重试。"
 
 [switch.codex_files]
 journal_pending = "有一次切换没有完成，所以 Superba 现在不保存 Codex 的文件。Superba 会在启动时完成它（或运行 spb recover），之后再重新打开文件。"

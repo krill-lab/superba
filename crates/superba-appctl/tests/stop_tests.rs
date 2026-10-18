@@ -124,7 +124,7 @@ async fn a_graceful_stop_asks_the_process_to_exit() {
     let outcome = stop::stop(&p, false, Duration::from_secs(5)).await.unwrap();
     // Reap it so the OS no longer lists a zombie.
     let status = child.wait().unwrap();
-    assert_eq!(outcome, StopOutcome::Exited);
+    assert_eq!(outcome.outcome, StopOutcome::Exited);
     use std::os::unix::process::ExitStatusExt;
     assert_eq!(status.signal(), Some(15), "ended by SIGTERM");
 }
@@ -152,21 +152,27 @@ async fn a_forced_stop_ends_the_process_and_a_stale_listing_touches_nothing() {
     assert_eq!(
         stop::stop(&stale, true, Duration::from_secs(2))
             .await
-            .unwrap(),
+            .unwrap()
+            .outcome,
         StopOutcome::NotRunning
     );
     assert!(child.try_wait().unwrap().is_none(), "still running");
     // Without force, Windows cannot ask a console program to exit.
     if cfg!(windows) {
         assert_eq!(
-            stop::stop(&p, false, Duration::from_secs(1)).await.unwrap(),
+            stop::stop(&p, false, Duration::from_secs(1))
+                .await
+                .unwrap()
+                .outcome,
             StopOutcome::ForceOnly
         );
         assert!(child.try_wait().unwrap().is_none(), "still running");
     }
-    let outcome = stop::stop(&p, true, Duration::from_secs(5)).await.unwrap();
+    // Ended through osproc (TerminateProcess / SIGKILL), not taskkill.
+    let report = stop::stop(&p, true, Duration::from_secs(5)).await.unwrap();
     child.wait().unwrap();
-    assert_eq!(outcome, StopOutcome::Killed);
+    assert_eq!(report.outcome, StopOutcome::Killed);
+    assert!(report.left.is_empty(), "{:?}", report.left);
     // The desktop app is never stopped this way.
     let app = ProcessInfo {
         kind: CodexProcessKind::AppMain,
@@ -177,4 +183,63 @@ async fn a_forced_stop_ends_the_process_and_a_stale_listing_touches_nothing() {
             .await
             .is_err()
     );
+}
+
+/// User bug 74: what a forced stop leaves running is named with what the OS
+/// says about it and why it could not be ended (as a quit report, bug 53).
+#[test]
+fn what_a_forced_stop_leaves_is_named_with_the_reason() {
+    use std::collections::BTreeMap;
+    use superba_appctl::osproc::ProcFacts;
+    use superba_appctl::procs::ProcEntry;
+    let entry = |pid: u32, ppid: u32, argv: &[&str]| ProcEntry {
+        pid,
+        ppid: Some(ppid),
+        argv: argv.iter().map(|a| a.to_string()).collect(),
+        exe: Some(format!("/usr/bin/{}", argv[0]).into()),
+        ..ProcEntry::default()
+    };
+    let entries = vec![
+        entry(
+            20,
+            1,
+            &["node", "/usr/lib/node_modules/@openai/codex/bin/codex.js"],
+        ),
+        entry(21, 20, &["codex", "exec", "hi"]),
+        entry(22, 20, &["rg", "x"]),
+    ];
+    let targets = vec![(20, None), (21, None), (22, None)];
+    let errors = BTreeMap::from([(21, "terminate: Access is denied. (os error 5)".to_owned())]);
+    let ended = vec![20, 22];
+    // 22 exited meanwhile; 20 was ended but still runs; 21 could not be ended.
+    let alive = |pid: u32, _| pid != 22;
+    let facts = |pid: u32| ProcFacts {
+        image: Some(format!("/opt/{pid}/bin").into()),
+        arch: Some("x64"),
+        ..ProcFacts::default()
+    };
+    let left = stop::left_after_force(&targets, &entries, &errors, &ended, &alive, &facts);
+    assert_eq!(left.iter().map(|l| l.pid).collect::<Vec<_>>(), vec![20, 21]);
+    assert_eq!(
+        left[0].end_error.as_deref(),
+        Some(stop::ENDED_STILL_RUNNING)
+    );
+    assert_eq!(
+        left[1].end_error.as_deref(),
+        Some("terminate: Access is denied. (os error 5)")
+    );
+    assert_eq!(left[1].ppid, Some(20));
+    assert_eq!(left[1].role, "codex exec");
+    assert_ne!(left[0].role, "main");
+    assert!(
+        left[1]
+            .describe()
+            .contains("pid 21 bin (codex exec, x64, parent 20")
+    );
+    // A process the OS no longer knows is not listed.
+    let gone = |_pid: u32| ProcFacts {
+        gone: true,
+        ..ProcFacts::default()
+    };
+    assert!(stop::left_after_force(&targets, &entries, &errors, &ended, &alive, &gone).is_empty());
 }

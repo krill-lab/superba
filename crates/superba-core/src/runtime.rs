@@ -465,6 +465,23 @@ pub struct StopReport {
     /// Error text when stopping failed.
     #[serde(default)]
     pub error: Option<String>,
+    /// What still runs after a forced stop: the process and the descendants
+    /// Superba ended with it, each with why it could not be ended (user bug 74,
+    /// the same facts as a quit report's, bug 53). Empty when all are gone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left: Vec<crate::app::LingeringProcess>,
+}
+
+impl StopReport {
+    /// A report without processes left.
+    pub fn new(process: ProcessInfo, outcome: StopOutcome) -> Self {
+        Self {
+            process,
+            outcome,
+            error: None,
+            left: Vec::new(),
+        }
+    }
 }
 
 /// A Codex process's display line: role, working directory and pid.

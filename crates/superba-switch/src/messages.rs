@@ -271,6 +271,33 @@ pub fn stop_result(
         .arg_text("outcome", outcome.text())
 }
 
+/// Log line after a forced stop: what still runs of `p` and the descendants
+/// ended with it, each with pid, image, architecture, parent, start and why
+/// it could not be ended (user bug 74).
+pub fn stop_still_running(
+    p: &superba_core::ProcessInfo,
+    left: &[superba_core::LingeringProcess],
+) -> LocalizedText {
+    let processes: Vec<String> = left
+        .iter()
+        .map(superba_core::LingeringProcess::describe)
+        .collect();
+    let line = text("switch.stop.still_running")
+        .arg_text("process", process_label(p))
+        .arg("count", left.len())
+        .arg("processes", processes.join("; "));
+    if left
+        .iter()
+        .filter_map(|l| l.end_error.as_deref())
+        .any(|e| e.contains("(os error 5)"))
+    {
+        return text("switch.quit.with_hint")
+            .arg_text("line", line)
+            .arg_text("hint", text("switch.stop.access_denied"));
+    }
+    line
+}
+
 /// Log line of a process that could not be stopped.
 pub fn stop_failed(p: &superba_core::ProcessInfo, error: &str) -> LocalizedText {
     text("switch.stop.failed")

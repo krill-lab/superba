@@ -1485,6 +1485,67 @@ async fn processes_that_do_not_exit_are_ended_only_after_a_second_answer() {
     assert!(pos("app.stop_process pid=300 force=true") < pos("config.apply"));
 }
 
+/// User bug 74: a forced stop that leaves processes running names each of
+/// them — pid, image, architecture, parent and why Windows refused — the way a
+/// quit report does (bug 53), and the hint for "access denied"; the processes
+/// are listed again, nothing is written while one still runs.
+#[tokio::test(start_paused = true)]
+async fn a_forced_stop_names_the_processes_still_running_and_why() {
+    let w = legacy_world();
+    w.app
+        .processes
+        .lock()
+        .unwrap()
+        .push(cli_process(300, CodexProcessKind::CliTui, T0 - 1));
+    w.app
+        .stop_answers
+        .lock()
+        .unwrap()
+        .insert(300, superba_core::StopOutcome::ForceOnly);
+    w.app.force_left.lock().unwrap().insert(
+        300,
+        vec![superba_core::LingeringProcess {
+            pid: 300,
+            ppid: Some(12),
+            image: Some(r"C:\Users\me\AppData\Roaming\npm\codex.exe".into()),
+            role: "codex".into(),
+            arch: Some("x64".into()),
+            started_at: None,
+            end_error: Some("open: Access is denied. (os error 5)".into()),
+        }],
+    );
+    let d = ScriptedDecider::with(&[
+        ("close_consumers", Decision::StopProcesses),
+        ("force_stop", Decision::Force),
+        ("close_consumers", Decision::Cancel),
+    ]);
+    let (o, ev) = run(&w, migrate_req(), allow_full(), d.clone()).await;
+    assert_eq!(o.status, OutcomeStatus::Cancelled);
+    assert!(!w.calls().contains(&"config.apply".to_owned()));
+    let logs: Vec<superba_core::LocalizedText> = ev
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match e {
+            SwitchEvent::Log { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    let line = logs
+        .iter()
+        .find(|t| t.key == "switch.quit.with_hint")
+        .map(|t| superba_switch::messages::catalog(superba_core::Locale::En).text(t))
+        .unwrap_or_else(|| panic!("no still-running line: {logs:?}"));
+    for needle in [
+        "codex in a terminal (pid 300): still running after Superba ended it (1)",
+        "pid 300 codex.exe (codex, x64, parent 12, cannot end it: open: Access is denied. (os error 5))",
+        "Windows refused to end some of them (access denied)",
+    ] {
+        assert!(line.contains(needle), "{needle:?} missing in {line}");
+    }
+}
+
 /// Cancelling the force question ends nothing and writes nothing.
 #[tokio::test(start_paused = true)]
 async fn cancelling_the_force_question_ends_nothing_and_reopens_the_app() {

@@ -766,16 +766,9 @@ impl Run<'_> {
         let mut left: Vec<ProcessInfo> = Vec::new();
         for (p, result) in results {
             match result {
-                Ok(outcome) => {
-                    self.ev.log(
-                        if outcome.is_gone() {
-                            Severity::Info
-                        } else {
-                            Severity::Warning
-                        },
-                        messages::stop_result(p, outcome),
-                    );
-                    if !outcome.is_gone() {
+                Ok(report) => {
+                    self.log_stop(p, &report);
+                    if !report.outcome.is_gone() {
                         left.push(p.clone());
                     }
                 }
@@ -808,16 +801,8 @@ impl Run<'_> {
         match decision {
             Decision::Force => {
                 for p in &left {
-                    let result = d.app.stop_process(p, true, wait).await;
-                    match result {
-                        Ok(outcome) => self.ev.log(
-                            if outcome.is_gone() {
-                                Severity::Info
-                            } else {
-                                Severity::Warning
-                            },
-                            messages::stop_result(p, outcome),
-                        ),
+                    match d.app.stop_process(p, true, wait).await {
+                        Ok(report) => self.log_stop(p, &report),
                         Err(e) => self
                             .ev
                             .log(Severity::Warning, messages::stop_failed(p, &e.to_string())),
@@ -835,6 +820,27 @@ impl Run<'_> {
                 self.ev.step(SwitchStep::StopProcesses, StepStatus::Skipped);
                 false
             }
+        }
+    }
+
+    /// Log how stopping `p` went and, after a forced stop, which of the
+    /// processes it ended still run and why (user bug 74, as bug 53 does for
+    /// the app).
+    fn log_stop(&self, p: &ProcessInfo, report: &superba_core::StopReport) {
+        let gone = report.outcome.is_gone();
+        self.ev.log(
+            if gone {
+                Severity::Info
+            } else {
+                Severity::Warning
+            },
+            messages::stop_result(p, report.outcome),
+        );
+        if !report.left.is_empty() {
+            self.ev.log(
+                Severity::Warning,
+                messages::stop_still_running(p, &report.left),
+            );
         }
     }
 

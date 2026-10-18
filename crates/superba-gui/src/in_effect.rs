@@ -22,9 +22,9 @@ use std::time::{Duration, Instant};
 
 use egui::{Align, Layout, ScrollArea, Ui};
 use superba_core::{
-    BusyState, ConsumerRole, ConsumerRuntime, Error, ProcessInfo, RestartAdvice, RunningGeneration,
-    RuntimeEffect, RuntimeView, SiteKind, StopOutcome, StopReport, SwitchService, ThreadActivity,
-    UnknownReason,
+    BusyState, ConsumerRole, ConsumerRuntime, Error, LingeringProcess, ProcessInfo, RestartAdvice,
+    RunningGeneration, RuntimeEffect, RuntimeView, SiteKind, StopOutcome, StopReport,
+    SwitchService, ThreadActivity, UnknownReason,
 };
 
 use crate::design::widgets::{Button, Status, StatusDot, Text, dialog};
@@ -54,8 +54,9 @@ pub struct InEffect {
     loaded_at: Option<Instant>,
     stop: Option<(ReadTask<Vec<StopReport>>, ConsumerRuntime, bool)>,
     confirm: Option<Confirm>,
-    /// Results of stops in this dialog session (pid, outcome or error).
-    results: Vec<(u32, Result<StopOutcome, String>)>,
+    /// Results of stops in this dialog session (pid, outcome or error, and
+    /// what still runs after a forced stop, user bug 74).
+    results: Vec<(u32, Result<StopOutcome, String>, Vec<LingeringProcess>)>,
     copied: Option<String>,
 }
 
@@ -119,9 +120,8 @@ impl InEffect {
             self.stop = None;
             match result {
                 Ok(reports) => {
-                    let outcome = reports
-                        .iter()
-                        .find(|r| r.process.pid == row.pid)
+                    let report = reports.iter().find(|r| r.process.pid == row.pid);
+                    let outcome = report
                         .map(|r| match &r.error {
                             Some(e) => Err(e.clone()),
                             None => Ok(r.outcome),
@@ -132,9 +132,12 @@ impl InEffect {
                     {
                         self.confirm = Some(Confirm::Force(row.clone(), o));
                     }
-                    self.results.push((row.pid, outcome));
+                    let left = report.map(|r| r.left.clone()).unwrap_or_default();
+                    self.results.push((row.pid, outcome, left));
                 }
-                Err(e) => self.results.push((row.pid, Err(cx.tr.text(&e.to_text())))),
+                Err(e) => self
+                    .results
+                    .push((row.pid, Err(cx.tr.text(&e.to_text())), Vec::new())),
             }
             self.loaded_at = None;
         }
@@ -547,7 +550,7 @@ fn row_ui(
             actions.push(RowAction::AskStop(row.clone()));
         }
     });
-    if let Some((_, result)) = state.results.iter().rev().find(|(p, _)| *p == row.pid) {
+    if let Some((_, result, left)) = state.results.iter().rev().find(|(p, ..)| *p == row.pid) {
         let text = match result {
             Ok(o) => cx.tr.text(&o.text()),
             Err(e) => e.clone(),
@@ -556,6 +559,10 @@ fn row_ui(
             cx.tr.f("in_effect.stop_result", &[("result", &text)]),
             cx.pal,
         ));
+        // What still runs after a forced stop, and why (user bug 74).
+        for p in left {
+            ui.add(egui::Label::new(Text::mono_muted(p.describe(), cx.pal)).wrap());
+        }
     }
     match &state.confirm {
         Some(Confirm::Stop(r)) if r.pid == row.pid => {
