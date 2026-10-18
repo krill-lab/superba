@@ -29,6 +29,23 @@ fn session(port: Option<u16>) -> AppSession {
     }
 }
 
+/// A loopback port nothing listens on, held until the returned socket is
+/// dropped: bound but never listening, so a connection is refused and no other
+/// socket can take the port meanwhile (a parallel test's fake renderer, an
+/// outgoing connection). Picking a free port and letting it go raced with
+/// those: the "dead" port could answer.
+fn dead_port() -> (tokio::net::TcpSocket, u16) {
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket
+        .bind(std::net::SocketAddr::from((
+            std::net::Ipv4Addr::LOCALHOST,
+            0,
+        )))
+        .unwrap();
+    let port = socket.local_addr().unwrap().port();
+    (socket, port)
+}
+
 fn controller(tmp: &tempfile::TempDir) -> DesktopAppController {
     DesktopAppController::new(LocalContext::for_tests(tmp.path()))
 }
@@ -108,7 +125,7 @@ async fn probe_bridge_states() {
 async fn probe_bridge_unreachable_port() {
     let tmp = tempfile::tempdir().unwrap();
     let c = controller(&tmp);
-    let port = superba_appctl::cdp::free_loopback_port().unwrap();
+    let (_held, port) = dead_port();
     let st = c.probe_bridge(&session(Some(port))).await.unwrap();
     assert!(matches!(st, BridgeStatus::CdpUnreachable { .. }), "{st:?}");
 }
@@ -243,7 +260,7 @@ async fn turn_activity_merges_renderer_and_rollouts() {
     assert_eq!(a.busy.len(), 2);
 
     // Renderer unreachable -> incomplete.
-    let port = superba_appctl::cdp::free_loopback_port().unwrap();
+    let (_held, port) = dead_port();
     let a = c
         .turn_activity(&home, Some(&session(Some(port))))
         .await
