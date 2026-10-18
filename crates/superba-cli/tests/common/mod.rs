@@ -57,7 +57,10 @@ pub fn fake_v2() -> FakeV2 {
     FakeV2 {
         router: RouterView::default(),
         view: SettingsView {
-            profile_id: ProfileId::new("work"),
+            scope: superba_core::SettingsScope::Computer,
+            profile_id: Some(ProfileId::new("work")),
+            builtin: None,
+            config_path: Some(std::path::PathBuf::from("/home/u/.codex/config.toml")),
             consumers: Vec::new(),
             catalog_version: Some(CodexVersion::new(0, 162, 0)),
             catalog_match: Some(CatalogMatch::Exact),

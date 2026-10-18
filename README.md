@@ -173,7 +173,7 @@ spb switch --profile krill        # plan, countdown, switch, verify
 spb launch                        # (re)open the desktop app through Superba
 spb switch --line cdn             # later: hot switch to another line
 spb account --usage               # balance, plan, expiry and recent usage of the key
-spb settings list                 # Codex settings of the profile (from Codex's own schema)
+spb settings list                 # this computer's Codex settings (config.toml, Codex's own schema)
 ```
 
 Another OpenAI-compatible site:
@@ -447,7 +447,7 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | `spb profile compaction ID [--check]` | the provider's remote compaction support (`--check` asks the provider: a few tokens) |
 | `spb site list \| add \| edit \| remove \| probe` | built-in and OpenAI-compatible sites, model mapping, line and key checks |
 | `spb switch [--profile P] [--line L] [--auth pat\|apikey]` | plan and execute a switch (the preview lists every changed key and why) |
-| `spb settings list \| get \| set \| reset \| forget \| migrate \| diff` | the Codex settings a profile manages, checked against the installed Codex |
+| `spb settings list \| get \| set \| reset \| forget \| migrate \| diff` | this computer's Codex settings (`config.toml`); edits are stored with the applied provider, `--profile` for one provider's own settings; checked against the installed Codex |
 | `spb router status \| install \| enable \| disable \| uninstall \| watch` | opt-in local router: failover across lines and sites, this computer only |
 | `spb usage [log] [--provider P] [--source router\|rollout\|ccs\|ai-toolbox]` / `spb usage stats [--by model\|provider\|day\|session] [--source …]` | this computer's Codex requests (the router's log merged with Codex's session files; works without the router); totals per provider (Krill, each custom site) with each of its lines |
 | `spb account [--usage] [--days N] [--refresh]` | balance, plan and expiry; daily cost and per-model usage (Krill) |

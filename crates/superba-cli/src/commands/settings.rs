@@ -1,13 +1,17 @@
-//! `spb settings`: the Codex settings a profile manages, driven by the settings
-//! catalog of the installed Codex. Changes are stored in the profile and written
-//! at its next switch (`spb settings diff` previews that switch).
+//! `spb settings`: Codex settings, driven by the settings catalog of the
+//! installed Codex. Without `--profile` they are this computer's `config.toml`
+//! (like the settings page; no profile needed to look) and edits go to the
+//! key-based profile applied on this computer; `--profile` shows or edits one
+//! profile's own settings. Changes are stored in the profile and written into
+//! `config.toml` when it is applied (`spb settings diff` previews that switch).
 
 use superba_core::{
-    Locale, ProfileId, SettingEntry, SettingRow, SettingValue, SettingsEdit, SettingsEditReport,
-    SettingsView, SettingsViewRequest, SwitchIntent,
+    BuiltinProfile, Locale, LocalizedText, Profile, ProfileId, ProfileSet, SettingEntry,
+    SettingRow, SettingValue, SettingsEdit, SettingsEditReport, SettingsScope, SettingsView,
+    SettingsViewRequest, SwitchIntent,
 };
 
-use super::{Result, request};
+use super::{Result, request, usage};
 use crate::{ExecArgs, Output, Runtime, SettingsCommand, exit, text::text};
 
 pub(super) async fn run(command: &SettingsCommand, rt: &Runtime, out: &mut Output) -> Result {
@@ -38,6 +42,10 @@ pub(super) async fn run(command: &SettingsCommand, rt: &Runtime, out: &mut Outpu
                     paths: vec![path.clone()],
                 })
                 .await?;
+            // A built-in profile: say why it has no settings of its own.
+            if view.builtin.is_some() {
+                render_scope(&view, out)?;
+            }
             let Some(row) = view.rows.iter().find(|r| &r.path == path) else {
                 return Err(
                     super::missing(out, text("cli.settings.unknown").arg("path", path)).into(),
@@ -113,7 +121,81 @@ fn parse_value(raw: &str) -> SettingValue {
     SettingValue::from_toml_repr(raw.trim()).unwrap_or_else(|| SettingValue::from(raw))
 }
 
-async fn edit(edit: SettingsEdit, rt: &Runtime, out: &mut Output) -> Result {
+/// The key-based profiles, for hints (`krill, work`).
+fn keyed_ids(set: &ProfileSet) -> String {
+    set.profiles
+        .iter()
+        .filter(|p| !p.is_builtin())
+        .map(|p| p.id.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Where a setting can be stored instead: `--profile <id>` with the key-based
+/// profiles, or "add one first".
+fn store_hint(set: &ProfileSet, out: &Output) -> LocalizedText {
+    let ids = keyed_ids(set);
+    if ids.is_empty() {
+        text("cli.settings.hint_add_profile").arg("binary", out.binary)
+    } else {
+        text("cli.settings.hint_profile").arg("profiles", ids)
+    }
+}
+
+/// What a built-in profile is, in one sentence.
+fn builtin_text(profile: &Profile) -> LocalizedText {
+    let key = match profile.builtin {
+        Some(BuiltinProfile::Original) => "cli.settings.builtin_original",
+        _ => "cli.settings.builtin_official",
+    };
+    text(key).arg("profile", &profile.id)
+}
+
+/// The profile an edit goes to. Without `--profile` it is the key-based
+/// profile applied on this computer; with the official login (or nothing)
+/// applied there is none, and a built-in profile has no settings of its own:
+/// both are explained, with the profiles that can hold the setting.
+async fn edit_target(edit: &mut SettingsEdit, rt: &Runtime, out: &Output) -> Result<()> {
+    let set = rt.service.profile_set().await?;
+    if let Some(id) = &edit.profile_id {
+        if let Some(p) = set.profile(id).filter(|p| p.is_builtin()) {
+            return Err(usage(
+                out,
+                text("cli.settings.not_here")
+                    .arg_text("reason", builtin_text(p))
+                    .arg_text("hint", store_hint(&set, out)),
+            ));
+        }
+        return Ok(());
+    }
+    let applied = rt
+        .service
+        .overview()
+        .await?
+        .active
+        .and_then(|a| a.profile_id)
+        .and_then(|id| set.profile(&id).cloned());
+    let reason = match &applied {
+        Some(p) if !p.is_builtin() => {
+            edit.profile_id = Some(p.id.clone());
+            return Ok(());
+        }
+        Some(p) if p.builtin == Some(BuiltinProfile::Original) => {
+            text("cli.settings.no_target_original")
+        }
+        Some(_) => text("cli.settings.no_target_official"),
+        None => text("cli.settings.no_target_none"),
+    };
+    Err(usage(
+        out,
+        text("cli.settings.not_here")
+            .arg_text("reason", reason)
+            .arg_text("hint", store_hint(&set, out)),
+    ))
+}
+
+async fn edit(mut edit: SettingsEdit, rt: &Runtime, out: &mut Output) -> Result {
+    edit_target(&mut edit, rt, out).await?;
     let report: SettingsEditReport = rt.service.edit_settings(edit).await?;
     out.line(text("cli.settings.saved").arg("profile", &report.profile.id))?;
     for note in &report.notes {
@@ -155,39 +237,82 @@ fn default_text(row: &SettingRow, out: &Output) -> String {
         .unwrap_or_else(|| out.none())
 }
 
-fn render_list(view: &SettingsView, advanced: bool, out: &mut Output) -> Result<()> {
-    out.field("cli.label.profile_used", &view.profile_id)?;
+/// Where the rows come from: this computer's `config.toml` (and the applied
+/// profile whose settings Superba writes into it) or one profile.
+fn render_scope(view: &SettingsView, out: &mut Output) -> Result<()> {
+    match (view.scope, &view.profile_id) {
+        (SettingsScope::Profile, Some(id)) => {
+            out.field("cli.label.profile_used", id)?;
+            if view.builtin.is_none() {
+                out.line(
+                    text("cli.settings.scope_profile")
+                        .arg("profile", id)
+                        .arg("binary", out.binary),
+                )?;
+            }
+        }
+        _ => {
+            out.field(
+                "cli.settings.scope_computer",
+                view.config_path
+                    .as_deref()
+                    .map(superba_core::paths::display_path)
+                    .unwrap_or_else(|| "config.toml".into()),
+            )?;
+            if let Some(id) = &view.profile_id {
+                out.line(text("cli.settings.scope_applied").arg("profile", id))?;
+            }
+        }
+    }
     if let Some(v) = &view.catalog_version {
         out.field("cli.label.catalog_version", v)?;
     }
     for note in &view.notes {
         out.notice(note)?;
     }
+    Ok(())
+}
+
+fn render_list(view: &SettingsView, advanced: bool, out: &mut Output) -> Result<()> {
+    render_scope(view, out)?;
+    let own = view.scope == SettingsScope::Profile;
+    // This computer: the value in config.toml first, the applied profile's
+    // value only when one is applied. A profile: its own value first.
+    let with_managed = own || view.profile_id.is_some();
     let rows = view
         .rows
         .iter()
         .map(|r| {
-            vec![
-                r.path.clone(),
-                managed_text(r.managed.as_ref(), out),
-                r.current.clone().unwrap_or_else(|| out.none()),
-                default_text(r, out),
-                stage_text(r, out),
-            ]
+            let current = r.current.clone().unwrap_or_else(|| out.none());
+            let managed = managed_text(r.managed.as_ref(), out);
+            let mut row = vec![r.path.clone()];
+            match (own, with_managed) {
+                (true, _) => row.extend([managed, current]),
+                (false, true) => row.extend([current, managed]),
+                (false, false) => row.push(current),
+            }
+            row.extend([default_text(r, out), stage_text(r, out)]);
+            row
         })
         .collect::<Vec<_>>();
-    out.section_table(
-        "cli.settings.title",
-        &[
-            "cli.settings.path",
-            "cli.settings.managed",
-            "cli.settings.current",
-            "cli.settings.default",
-            "cli.settings.stage",
-        ],
-        rows,
-    )?;
-    if !advanced {
+    let mut headers = vec!["cli.settings.path"];
+    match (own, with_managed) {
+        (true, _) => headers.extend(["cli.settings.managed", "cli.settings.current"]),
+        (false, true) => headers.extend(["cli.settings.current", "cli.settings.managed"]),
+        (false, false) => headers.push("cli.settings.current"),
+    }
+    headers.extend(["cli.settings.default", "cli.settings.stage"]);
+    let empty = rows.is_empty();
+    out.section_table("cli.settings.title", &headers, rows)?;
+    if own {
+        if let (true, None, Some(id)) = (empty, view.builtin, &view.profile_id) {
+            out.line(
+                text("cli.settings.profile_empty")
+                    .arg("profile", id)
+                    .arg("binary", out.binary),
+            )?;
+        }
+    } else if !advanced {
         out.line(text("cli.settings.advanced_hint").arg("binary", out.binary))?;
     }
     Ok(())

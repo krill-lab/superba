@@ -295,6 +295,11 @@ value_not_for_consumer = "{path} is stored, but {consumer} expects {expected}; i
 unknown_key = "{path} is not in the settings catalog; it is stored as is."
 not_supported = "{path} on {consumer}: {support}"
 not_managed = "{path} was not managed by this profile."
+computer_official = "The official login is applied on this computer: Superba writes no Codex settings for it, so these are config.toml's own values."
+computer_original = "Your original configuration is applied on this computer: Superba writes no Codex settings now, so these are config.toml's own values."
+computer_none = "No provider is applied on this computer: Superba writes no Codex settings now, so these are config.toml's own values."
+builtin_official = "{profile} is built into Superba: the official ChatGPT login. Superba writes no Codex settings for it, so it has no settings of its own; Codex keeps config.toml as it is."
+builtin_original = "{profile} is built into Superba: it restores the configuration you had before Superba changed it. It has no settings of its own; config.toml goes back to that state."
 
 [switch.hosts]
 follow_missing = "{host} follows this computer but the ChatGPT app no longer knows it; skipped."

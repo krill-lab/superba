@@ -1338,6 +1338,14 @@ async fn feeds_status_and_refresh_go_through_the_feed_source() {
     assert_eq!(*w.v3.feeds.refreshes.lock().unwrap(), 1);
 }
 
+/// The `work` profile's own settings (no profile is applied in `World`).
+fn work_settings() -> superba_core::SettingsViewRequest {
+    superba_core::SettingsViewRequest {
+        profile_id: Some(superba_core::ProfileId::new("work")),
+        ..superba_core::SettingsViewRequest::default()
+    }
+}
+
 #[tokio::test]
 async fn the_settings_view_marks_common_rows() {
     let mut w = World::new();
@@ -1346,10 +1354,7 @@ async fn the_settings_view_marks_common_rows() {
         p.codex_settings.set("model_verbosity", "high").unwrap();
     });
     let sw = w.switcher();
-    let view = sw
-        .settings_view(superba_core::SettingsViewRequest::default())
-        .await
-        .unwrap();
+    let view = sw.settings_view(work_settings()).await.unwrap();
     let row = view
         .rows
         .iter()
@@ -1622,16 +1627,10 @@ async fn the_settings_view_lists_what_each_host_supports() {
         .push(remote_host("dev", Some("h-dev")));
     let sw = w.switcher();
     // Without a probe nothing is known about the host.
-    let view = sw
-        .settings_view(superba_core::SettingsViewRequest::default())
-        .await
-        .unwrap();
+    let view = sw.settings_view(work_settings()).await.unwrap();
     assert!(view.rows.iter().all(|r| r.host_support.is_empty()));
     sw.host_probe(&TargetId::remote("dev")).await.unwrap();
-    let view = sw
-        .settings_view(superba_core::SettingsViewRequest::default())
-        .await
-        .unwrap();
+    let view = sw.settings_view(work_settings()).await.unwrap();
     let row = view
         .rows
         .iter()

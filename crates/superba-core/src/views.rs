@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::CodexVersion;
 use crate::i18n::Notice;
 use crate::ids::ProfileId;
-use crate::profile::Profile;
+use crate::profile::{BuiltinProfile, Profile};
 use crate::settings::{
     CatalogFeature, CatalogKey, CatalogMatch, ConsumerSupport, SettingChange, SettingEntry,
     SettingValue, SettingsConsumer, SettingsPlan,
@@ -24,11 +24,27 @@ pub struct PlanSettings {
     pub changes: Vec<SettingChange>,
 }
 
+/// Whose settings a [`SettingsView`] lists.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsScope {
+    /// This computer's `config.toml`, like the settings page: every catalog
+    /// row with its value there; the managed values are those of the
+    /// key-based profile applied on this computer (none for the official login).
+    #[default]
+    Computer,
+    /// One profile's own settings: the keys it manages, written into
+    /// `config.toml` when it is applied.
+    Profile,
+}
+
 /// What [`crate::SwitchService::settings_view`] lists.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettingsViewRequest {
-    /// Profile whose managed settings are shown (`None` = the applied profile,
-    /// else the last selected one).
+    /// `None`: this computer's `config.toml` ([`SettingsScope::Computer`]);
+    /// never needs a profile. `Some`: that profile's own settings
+    /// ([`SettingsScope::Profile`]); a built-in profile has none (explained in
+    /// [`SettingsView::notes`], not an error).
     #[serde(default)]
     pub profile_id: Option<ProfileId>,
     /// Also list keys of features under development, deprecated or removed.
@@ -75,11 +91,25 @@ pub struct SettingRow {
     pub host_support: Vec<ConsumerSupport>,
 }
 
-/// Rows of the settings page for one profile.
+/// Rows of the settings page: this computer's `config.toml` or one profile's
+/// own settings.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SettingsView {
-    /// Profile.
-    pub profile_id: ProfileId,
+    /// What the rows are.
+    #[serde(default)]
+    pub scope: SettingsScope,
+    /// [`SettingsScope::Computer`]: the key-based profile applied on this
+    /// computer, whose settings Superba writes into `config.toml` (`None`: it
+    /// writes none now). [`SettingsScope::Profile`]: the profile asked for.
+    #[serde(default)]
+    pub profile_id: Option<ProfileId>,
+    /// The profile is built in (the official login, the original
+    /// configuration): it has no Codex settings of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin: Option<BuiltinProfile>,
+    /// The `config.toml` the current values are read from.
+    #[serde(default)]
+    pub config_path: Option<std::path::PathBuf>,
     /// Local consumers the availability refers to.
     #[serde(default)]
     pub consumers: Vec<SettingsConsumer>,
@@ -100,7 +130,9 @@ pub struct SettingsView {
 /// An edit of a profile's managed settings ([`crate::SwitchService::edit_settings`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettingsEdit {
-    /// Profile (`None` = the applied profile, else the last selected one).
+    /// Profile (`None` = the key-based profile applied on this computer;
+    /// refused when none is, for example with the official login). A built-in
+    /// profile has no settings of its own and is refused.
     #[serde(default)]
     pub profile_id: Option<ProfileId>,
     /// Keys to manage with a value.

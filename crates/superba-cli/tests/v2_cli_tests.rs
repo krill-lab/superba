@@ -13,9 +13,9 @@ async fn settings_list_and_get_show_catalog_rows() {
     let (code, stdout, stderr) = invoke(service.clone(), &["settings", "list"]).await;
     assert_eq!(code, 0, "{stderr}");
     for expected in [
-        "Profile: work",
+        "Codex settings on this computer: /home/u/.codex/config.toml",
         "Catalog for Codex: 0.162.0",
-        "features.fast_mode | true | false | false | Stable",
+        "features.fast_mode | false | true | false | Stable",
         "settings list --advanced",
     ] {
         assert!(

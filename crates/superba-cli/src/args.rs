@@ -535,7 +535,7 @@ pub enum SettingsCommand {
     },
     #[command(about = english("cli.help.settings_diff"))]
     Diff {
-        #[arg(long, help = english("cli.help.settings_profile"))]
+        #[arg(long, help = english("cli.help.settings_diff_profile"))]
         profile: Option<String>,
         #[arg(long = "remote", value_name = "TARGET", help = english("cli.help.remote"))]
         remotes: Vec<String>,

@@ -135,7 +135,7 @@ spb switch --profile krill        # 计划、倒计时、切换、校验
 spb launch                        # 通过 Superba（重新）打开桌面 app
 spb switch --line cdn             # 之后：热切换到另一条线路
 spb account --usage               # Key 的余额、套餐、到期时间和近期用量
-spb settings list                 # 配置管理的 Codex 设置（来自 Codex 自己的 schema）
+spb settings list                 # 本机的 Codex 设置（config.toml，来自 Codex 自己的 schema）
 ```
 
 其他兼容 OpenAI 的站点：
@@ -351,7 +351,7 @@ ChaCha20-Poly1305 加密。
 | `spb profile compaction ID [--check]` | 服务商的远程压缩能力（`--check` 会向服务商检测，消耗少量 token） |
 | `spb site list \| add \| edit \| remove \| probe` | 内置站点和兼容 OpenAI 的站点、模型映射、线路和 Key 检测 |
 | `spb switch [--profile P] [--line L] [--auth pat\|apikey]` | 计划并执行切换（预览会列出每个改动的键及原因） |
-| `spb settings list \| get \| set \| reset \| forget \| migrate \| diff` | 配置管理的 Codex 设置，按已安装的 Codex 版本检查 |
+| `spb settings list \| get \| set \| reset \| forget \| migrate \| diff` | 本机的 Codex 设置（`config.toml`）；修改保存在当前应用的供应商中，`--profile` 查看或修改某个供应商自己的设置；按已安装的 Codex 版本检查 |
 | `spb router status \| install \| enable \| disable \| uninstall \| watch` | 可选的本地路由：在线路和站点之间故障切换，只作用于本机 |
 | `spb usage [log] [--provider P] [--source router\|rollout\|ccs\|ai-toolbox]` / `spb usage stats [--by model\|provider\|day\|session] [--source …]` | 这台电脑上的 Codex 请求（路由的请求记录合并 Codex 会话记录，不开路由也可用）；按供应商（Krill、每个自定义站点）汇总，并列出其各条线路 |
 | `spb account [--usage] [--days N] [--refresh]` | 余额、套餐和到期时间；每日费用和按模型的用量（Krill） |

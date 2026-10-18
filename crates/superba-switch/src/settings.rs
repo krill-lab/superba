@@ -1,6 +1,7 @@
-//! The settings page and `spb settings` through the service: catalog rows for a
-//! profile ([`superba_core::SwitchService::settings_view`]) and edits of the
-//! settings a profile manages ([`superba_core::SwitchService::edit_settings`]).
+//! The settings page and `spb settings` through the service: catalog rows of
+//! this computer's `config.toml` or of one profile's own settings
+//! ([`superba_core::SwitchService::settings_view`]) and edits of the settings a
+//! profile manages ([`superba_core::SwitchService::edit_settings`]).
 //! Filtering and validation rules are `superba-config`'s settings engine; this
 //! module only gathers the inputs (local Codex versions, `config.toml`, catalog).
 
@@ -10,9 +11,9 @@ use superba_config::settings::{
     HomeInput, apply_migrations, find_migrations, key_support, read_config_values, validate_value,
 };
 use superba_core::{
-    CatalogKey, CodexSettings, ConfigState, Error, Notice, Profile, ProfileId, ProfileSet, Result,
-    SettingKind, SettingRow, SettingsConsumer, SettingsEdit, SettingsEditReport, SettingsView,
-    SettingsViewRequest, TargetId,
+    BuiltinProfile, CatalogKey, CodexSettings, ConfigState, Error, Notice, Profile, ProfileId,
+    ProfileSet, Result, SettingKind, SettingRow, SettingsConsumer, SettingsEdit,
+    SettingsEditReport, SettingsScope, SettingsView, SettingsViewRequest, TargetId,
 };
 
 use crate::Switcher;
@@ -66,6 +67,62 @@ pub(crate) fn pick_profile<'a>(
     })
 }
 
+/// The profile applied on this computer, if any.
+fn applied<'a>(set: &'a ProfileSet, state: Option<&ConfigState>) -> Option<&'a Profile> {
+    state
+        .and_then(|s| s.active.as_ref())
+        .and_then(|a| a.profile_id.as_ref())
+        .and_then(|id| set.profile(id))
+}
+
+/// Why `profile` (built in) has no Codex settings of its own.
+fn builtin_note(profile: &Profile) -> Notice {
+    let key = match profile.builtin {
+        Some(BuiltinProfile::Original) => "switch.settings.builtin_original",
+        _ => "switch.settings.builtin_official",
+    };
+    Notice::info(text(key).arg("profile", &profile.id))
+}
+
+/// The profile an edit goes to: the one named (never a built-in one), else
+/// the key-based profile applied on this computer.
+fn edit_target<'a>(
+    set: &'a ProfileSet,
+    requested: Option<&ProfileId>,
+    state: Option<&ConfigState>,
+) -> Result<&'a Profile> {
+    if let Some(id) = requested {
+        let p = set.profile(id).ok_or_else(|| Error::NotFound {
+            what: format!("profile {id}"),
+        })?;
+        if p.is_builtin() {
+            return Err(Error::invalid(format!(
+                "{id} is a built-in profile ({}): Superba writes no Codex settings for it, so it \
+                 has none of its own; store the setting with a key-based profile (--profile)",
+                builtin_words(p.builtin)
+            )));
+        }
+        return Ok(p);
+    }
+    match applied(set, state) {
+        Some(p) if !p.is_builtin() => Ok(p),
+        other => Err(Error::invalid(format!(
+            "{} is applied on this computer, so Superba writes no Codex settings into config.toml \
+             now; store the setting with a key-based profile (--profile <id>), it is written when \
+             that profile is applied",
+            other.map_or("no provider", |p| builtin_words(p.builtin))
+        ))),
+    }
+}
+
+fn builtin_words(builtin: Option<BuiltinProfile>) -> &'static str {
+    match builtin {
+        Some(BuiltinProfile::Original) => "the original configuration",
+        Some(BuiltinProfile::Official) => "the official login",
+        None => "a profile",
+    }
+}
+
 impl Switcher {
     async fn local_settings_inputs(&self) -> (Vec<SettingsConsumer>, Option<Vec<u8>>) {
         let d = &self.deps;
@@ -89,13 +146,49 @@ impl Switcher {
         let d = &self.deps;
         let set = d.profiles.load().await?;
         let state = d.config.read_state(&d.ctx.codex_home()).await.ok();
-        let profile = pick_profile(&set, req.profile_id.as_ref(), state.as_ref())?;
-        let managed = profile.codex_settings.clone();
+        let mut notes = Vec::new();
+        // No profile asked for: this computer's config.toml, with what the
+        // applied key-based profile writes into it. A profile asked for: its
+        // own settings only.
+        let (scope, profile) = match &req.profile_id {
+            None => {
+                let applied = applied(&set, state.as_ref());
+                match applied {
+                    Some(p) if !p.is_builtin() => (SettingsScope::Computer, Some(p)),
+                    Some(p) => {
+                        let key = match p.builtin {
+                            Some(BuiltinProfile::Original) => "switch.settings.computer_original",
+                            _ => "switch.settings.computer_official",
+                        };
+                        notes.push(Notice::info(text(key)));
+                        (SettingsScope::Computer, None)
+                    }
+                    None => {
+                        notes.push(Notice::info(text("switch.settings.computer_none")));
+                        (SettingsScope::Computer, None)
+                    }
+                }
+            }
+            Some(id) => {
+                let p = set.profile(id).ok_or_else(|| Error::NotFound {
+                    what: format!("profile {id}"),
+                })?;
+                if p.is_builtin() {
+                    notes.push(builtin_note(p));
+                }
+                (SettingsScope::Profile, Some(p))
+            }
+        };
+        let builtin = profile.and_then(|p| p.builtin);
+        let managed = profile
+            .filter(|p| !p.is_builtin())
+            .map(|p| p.codex_settings.clone())
+            .unwrap_or_default();
+        let own_only = scope == SettingsScope::Profile;
         let (consumers, bytes) = self.local_settings_inputs().await;
         let version = consumers.iter().find_map(|c| c.version.clone());
         let snapshot = d.catalog.snapshot(version.as_ref());
         let current = read_config_values(bytes.as_deref()).unwrap_or_default();
-        let mut notes = Vec::new();
         let mut rows: BTreeMap<String, SettingRow> = BTreeMap::new();
         // Remote hosts the app knows, with the Codex version of their last probe
         // (what a settings sync would skip there).
@@ -156,6 +249,12 @@ impl Switcher {
                     }));
                 }
                 let shown = |path: &str, advanced: bool| {
+                    if own_only {
+                        // A profile's own settings, and a path asked for by name
+                        // (`spb settings get PATH --profile P`).
+                        return matches(path, &req.paths)
+                            && (managed.contains(path) || req.paths.iter().any(|p| p == path));
+                    }
                     matches(path, &req.paths)
                         && (req.advanced
                             || !advanced
@@ -197,7 +296,10 @@ impl Switcher {
             }
         }
         Ok(SettingsView {
-            profile_id: profile.id.clone(),
+            scope,
+            profile_id: profile.map(|p| p.id.clone()),
+            builtin,
+            config_path: Some(d.ctx.codex_home().config_toml()),
             catalog_version: snapshot.as_ref().map(|s| s.codex_version.clone()),
             catalog_match: snapshot.as_ref().map(|s| s.matched.clone()),
             consumers,
@@ -213,7 +315,7 @@ impl Switcher {
         let d = &self.deps;
         let mut set = d.profiles.load().await?;
         let state = d.config.read_state(&d.ctx.codex_home()).await.ok();
-        let id = pick_profile(&set, edit.profile_id.as_ref(), state.as_ref())?
+        let id = edit_target(&set, edit.profile_id.as_ref(), state.as_ref())?
             .id
             .clone();
         let (consumers, bytes) = self.local_settings_inputs().await;

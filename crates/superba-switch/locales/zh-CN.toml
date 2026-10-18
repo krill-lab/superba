@@ -294,6 +294,11 @@ value_not_for_consumer = "{path} 已保存，但 {consumer} 期望的是 {expect
 unknown_key = "{path} 不在设置目录中，按原样保存。"
 not_supported = "{path} 在 {consumer} 上：{support}"
 not_managed = "该配置原本没有管理 {path}。"
+computer_official = "本机当前使用官方登录：Superba 不为它写入任何 Codex 设置，所以这里显示的是 config.toml 自己的值。"
+computer_original = "本机当前使用你原来的配置：Superba 现在不写入任何 Codex 设置，所以这里显示的是 config.toml 自己的值。"
+computer_none = "本机当前没有应用任何供应商：Superba 现在不写入任何 Codex 设置，所以这里显示的是 config.toml 自己的值。"
+builtin_official = "{profile} 是 Superba 内置的配置：官方 ChatGPT 登录。Superba 不为它写入任何 Codex 设置，所以它没有自己的设置；Codex 按 config.toml 原样运行。"
+builtin_original = "{profile} 是 Superba 内置的配置：恢复 Superba 改动之前你原来的配置。它没有自己的设置；config.toml 会回到那时的状态。"
 
 [switch.hosts]
 follow_missing = "{host} 设置为跟随本机，但 ChatGPT app 已不再记录它，已跳过。"

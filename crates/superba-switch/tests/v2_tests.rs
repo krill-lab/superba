@@ -14,8 +14,8 @@ use superba_core::{
     AuthChoice, AuthMode, BlockReason, CatalogFeature, CatalogKey, CatalogSnapshot, ChangeReason,
     CodexVersion, Error, ExecuteOptions, FeatureStage, KeyAccess, NoEvents, ProfileId,
     ResolvedMode, RestartKind, RouterInstallRequest, RouterWatchState, SafeDefaults, SettingEntry,
-    SettingEnumValue, SettingKind, SettingValue, SettingsEdit, SettingsViewRequest, StaticCatalog,
-    SwitchIntent, SwitchPlan, SwitchRequest, SwitchService, TargetId,
+    SettingEnumValue, SettingKind, SettingValue, SettingsEdit, SettingsScope, SettingsViewRequest,
+    StaticCatalog, SwitchIntent, SwitchPlan, SwitchRequest, SwitchService, TargetId,
 };
 use superba_switch::{Switcher, Tuning};
 
@@ -429,12 +429,15 @@ async fn the_settings_view_lists_catalog_rows_with_values_and_hides_advanced_one
         p.codex_settings.set("features.fast_mode", true).unwrap();
         p.codex_settings.set("custom.thing", 1i64).unwrap();
     });
+    applied(&w, "work");
     let sw = switcher_with_catalog(&w);
     let view = sw
         .settings_view(SettingsViewRequest::default())
         .await
         .unwrap();
-    assert_eq!(view.profile_id.as_str(), "work");
+    assert_eq!(view.scope, SettingsScope::Computer);
+    assert_eq!(view.profile_id, Some(ProfileId::new("work")));
+    assert_eq!(view.config_path, Some(w.ctx.codex_home().config_toml()));
     let paths: Vec<_> = view.rows.iter().map(|r| r.path.as_str()).collect();
     assert_eq!(
         paths,
@@ -480,9 +483,191 @@ async fn the_settings_view_lists_catalog_rows_with_values_and_hides_advanced_one
     assert!(advanced.rows[1].advanced);
 }
 
+/// Mark `id` as the profile applied on this computer.
+fn applied(w: &World, id: &str) {
+    w.config.state.lock().unwrap().active = Some(superba_core::ActiveState {
+        profile_id: Some(ProfileId::new(id)),
+        site_id: None,
+        line_id: None,
+        auth_mode: None,
+        generation: 1,
+        applied_at: superba_core::Timestamp(T0),
+    });
+}
+
+fn note_keys(view: &superba_core::SettingsView) -> Vec<String> {
+    view.notes.iter().map(|n| n.text.key.clone()).collect()
+}
+
+fn with_builtins(w: &World) {
+    w.profiles
+        .set
+        .lock()
+        .unwrap()
+        .profiles
+        .extend(superba_core::catalog::builtin_profiles());
+}
+
+#[tokio::test]
+async fn the_computer_view_needs_no_profile_and_reads_config_toml() {
+    // User bug 72: `spb settings list` on a fresh install failed with "add a
+    // profile first"; the settings page shows config.toml without one.
+    let w = World::new();
+    std::fs::create_dir_all(w.ctx.codex_home().root()).unwrap();
+    std::fs::write(
+        w.ctx.codex_home().config_toml(),
+        "model_verbosity = \"high\"\n",
+    )
+    .unwrap();
+    set_profile(&w, |p| {
+        p.codex_settings.set("model_verbosity", "low").unwrap();
+    });
+    w.profiles.set.lock().unwrap().profiles.clear();
+    let sw = switcher_with_catalog(&w);
+    let view = sw
+        .settings_view(SettingsViewRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(view.scope, SettingsScope::Computer);
+    assert_eq!(view.profile_id, None);
+    assert_eq!(note_keys(&view), ["switch.settings.computer_none"]);
+    let verbosity = view
+        .rows
+        .iter()
+        .find(|r| r.path == "model_verbosity")
+        .unwrap();
+    assert_eq!(verbosity.current.as_deref(), Some("\"high\""));
+    assert!(view.rows.iter().all(|r| r.managed.is_none()));
+
+    // The official login applied: config.toml's own values, explained; a
+    // key-based profile that is not applied is not mixed in.
+    let w = World::new();
+    set_profile(&w, |p| {
+        p.codex_settings.set("model_verbosity", "low").unwrap();
+    });
+    with_builtins(&w);
+    applied(&w, "official");
+    let sw = switcher_with_catalog(&w);
+    let view = sw
+        .settings_view(SettingsViewRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(view.profile_id, None);
+    assert_eq!(note_keys(&view), ["switch.settings.computer_official"]);
+    assert!(view.rows.iter().all(|r| r.managed.is_none()));
+    applied(&w, "original");
+    let view = sw
+        .settings_view(SettingsViewRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(note_keys(&view), ["switch.settings.computer_original"]);
+}
+
+#[tokio::test]
+async fn a_profile_view_lists_its_own_settings_and_built_ins_explain_why_they_have_none() {
+    let w = World::new();
+    set_profile(&w, |p| {
+        p.codex_settings.set("model_verbosity", "low").unwrap();
+    });
+    with_builtins(&w);
+    let sw = switcher_with_catalog(&w);
+    let view = sw
+        .settings_view(SettingsViewRequest {
+            profile_id: Some(ProfileId::new("work")),
+            ..SettingsViewRequest::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(view.scope, SettingsScope::Profile);
+    assert_eq!(view.profile_id, Some(ProfileId::new("work")));
+    let paths: Vec<_> = view.rows.iter().map(|r| r.path.as_str()).collect();
+    assert_eq!(paths, ["model_verbosity"], "only its own settings");
+    // `spb settings get PATH --profile work` finds a key it does not keep.
+    let view = sw
+        .settings_view(SettingsViewRequest {
+            profile_id: Some(ProfileId::new("work")),
+            paths: vec!["features.fast_mode".into()],
+            advanced: true,
+        })
+        .await
+        .unwrap();
+    assert_eq!(view.rows.len(), 1);
+    assert_eq!(view.rows[0].managed, None);
+
+    for (id, key, kind) in [
+        (
+            "official",
+            "switch.settings.builtin_official",
+            superba_core::BuiltinProfile::Official,
+        ),
+        (
+            "original",
+            "switch.settings.builtin_original",
+            superba_core::BuiltinProfile::Original,
+        ),
+    ] {
+        let view = sw
+            .settings_view(SettingsViewRequest {
+                profile_id: Some(ProfileId::new(id)),
+                ..SettingsViewRequest::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(view.builtin, Some(kind));
+        assert!(view.rows.is_empty(), "{id}");
+        assert_eq!(note_keys(&view), [key]);
+    }
+    let e = sw
+        .settings_view(SettingsViewRequest {
+            profile_id: Some(ProfileId::new("nope")),
+            ..SettingsViewRequest::default()
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(e, Error::NotFound { .. }), "{e}");
+}
+
+#[tokio::test]
+async fn edits_go_to_the_applied_key_based_profile_never_to_a_built_in_one() {
+    let w = World::new();
+    with_builtins(&w);
+    let sw = switcher_with_catalog(&w);
+    let edit = |profile: Option<&str>| SettingsEdit {
+        profile_id: profile.map(ProfileId::new),
+        set: vec![("model_verbosity".into(), "medium".into())],
+        ..SettingsEdit::default()
+    };
+    // Nothing applied, then the official login: nowhere to store it.
+    let e = sw.edit_settings(edit(None)).await.unwrap_err();
+    assert!(matches!(e, Error::Invalid { .. }), "{e}");
+    applied(&w, "official");
+    let e = sw.edit_settings(edit(None)).await.unwrap_err();
+    assert!(e.to_string().contains("official login"), "{e}");
+    let e = sw.edit_settings(edit(Some("official"))).await.unwrap_err();
+    assert!(e.to_string().contains("built-in"), "{e}");
+    // Named explicitly, a key-based profile takes it while another is applied.
+    let report = sw.edit_settings(edit(Some("work"))).await.unwrap();
+    assert_eq!(report.profile.id.as_str(), "work");
+    // Applied: edits without --profile go there.
+    applied(&w, "work");
+    let report = sw
+        .edit_settings(SettingsEdit {
+            reset: vec!["model_verbosity".into()],
+            ..SettingsEdit::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(report.profile.id.as_str(), "work");
+    assert_eq!(
+        report.profile.codex_settings.get("model_verbosity"),
+        Some(&SettingEntry::Unset)
+    );
+}
+
 #[tokio::test]
 async fn edits_are_validated_against_the_catalog() {
     let w = World::new();
+    applied(&w, "work");
     let sw = switcher_with_catalog(&w);
     let report = sw
         .edit_settings(SettingsEdit {

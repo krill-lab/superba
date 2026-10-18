@@ -116,14 +116,16 @@ def s11(run):
     p = profile_of(run, "e2e")
     c.ok(r["rc"] == 0 and profile_lines(p) == ["a", "b"] and p.get("auth") == "auto",
          f"spb profile edit e2e --line a --line b --auth auto: lines {profile_lines(p)}, auth {p.get('auth')}")
-    view = json_of(run.spb("settings", "list", "--profile", "e2e", json_out=True, label="s11 settings list"))
+    # This computer's config.toml lists every catalog row; `--profile` only the
+    # profile's own settings (user bug 72).
+    view = json_of(run.spb("settings", "list", json_out=True, label="s11 settings list"))
     c.ok(view.get("catalog_version") == CATALOG_VERSION,
          f"settings catalog of the installed Codex: {view.get('catalog_version')} (match {json.dumps(view.get('catalog_match'))})")
     c.info("consumers of this home: " + json.dumps([(x.get("label"), x.get("version")) for x in view.get("consumers", [])]))
     rows = {r["path"]: r for r in view.get("rows", [])}
     c.ok("features.memories" in rows and "hide_agent_reasoning" in rows and NEWER_KEY not in rows,
          f"default view lists stable keys and features ({len(rows)} rows); {NEWER_KEY} (Codex 0.163+) is not offered")
-    text_list = run.spb("settings", "list", "--profile", "e2e", label="s11 settings list text")
+    text_list = run.spb("settings", "list", label="s11 settings list text")
     save(run, "s11-settings-list.txt", text_list["out"])
     c.info("spb settings list (text): evidence/s11-settings-list.txt")
 

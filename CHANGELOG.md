@@ -196,6 +196,12 @@ back to the official ChatGPT login.
   `codex features list`. Settings are filtered per Codex home by the versions
   that read it, and every switch previews each changed key (from, to, target,
   reason). Krill providers start with Krill's recommended settings.
+  `spb settings list|get` without `--profile` show this computer's `config.toml`
+  like the settings page, also on a fresh install or with the official login
+  (user bug 72); edits without `--profile` go to the key-based provider applied
+  on this computer, and with none applied the command says where a setting can
+  be stored instead. `--profile` shows or edits one provider's own settings; the
+  built-in `official` and `original` explain that they have none.
 
 ### Router, usage and account
 
