@@ -14,28 +14,12 @@ use superba_core::{
     ConflictAction, ImportApplyRequest, ImportOutcome, ImportScanRequest, ImportSelection,
     ImportSource, KeyRef, ProfileId, SiteKind, StoreStatus, SwitchService,
 };
-use superba_import::{Os, ScanEnv, aitoolbox};
 
 fn fixture(rel: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../superba-import/tests/fixtures")
         .join(rel);
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
-}
-
-/// Where the service looks for AI Toolbox's database in the world's home: the
-/// application data directory of this system ([`ScanEnv::app_data_dir`]:
-/// `~/.local/share`, `~/Library/Application Support`, `%APPDATA%`), as
-/// `import_scan` resolves it.
-fn toolbox_db(w: &World) -> PathBuf {
-    let scratch = w.tmp.path().join("scratch");
-    let env = ScanEnv {
-        home: &w.ctx.home_dir,
-        env: w.ctx.env.as_ref(),
-        os: Os::current(),
-        scratch: &scratch,
-    };
-    aitoolbox::default_dir(&env).join(aitoolbox::DB_FILE)
 }
 
 fn db(path: PathBuf, sql: &str, wal: bool) {
@@ -61,7 +45,11 @@ fn install_both(w: &World) {
         fixture("ccs/settings.json"),
     )
     .unwrap();
-    db(toolbox_db(w), &fixture("ai-toolbox/schema-v29.sql"), true);
+    db(
+        w.ai_toolbox_db(),
+        &fixture("ai-toolbox/schema-v29.sql"),
+        true,
+    );
 }
 
 #[tokio::test]
@@ -242,7 +230,7 @@ async fn a_keychain_key_is_imported_without_a_key_and_says_so() {
 INSERT INTO codex_provider (id, data, created_at, updated_at) VALUES ('kc01', jsonb('{"name":"Keychain Relay","category":"custom","settings_config":"{\"auth\":{},\"credential_ref\":\"keyring:ai-toolbox-codex-kc01\",\"config\":\"model = \\\"gpt-5.5\\\"\\nmodel_provider = \\\"custom\\\"\\n\\n[model_providers.custom]\\nbase_url = \\\"https://keychain-relay.example.com/v1\\\"\"}","sort_index":20,"is_applied":false,"is_disabled":false}'), 'x', 'x');
 "#,
     );
-    db(toolbox_db(&w), &sql, true);
+    db(w.ai_toolbox_db(), &sql, true);
     let sw = w.switcher();
     let scan = sw
         .import_scan(ImportScanRequest::source(ImportSource::AiToolbox))

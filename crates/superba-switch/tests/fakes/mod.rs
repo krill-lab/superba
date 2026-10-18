@@ -2358,4 +2358,21 @@ impl World {
     pub fn push_turns(&self, lists: Vec<Vec<ThreadActivity>>) {
         self.app.turns.lock().unwrap().extend(lists);
     }
+
+    /// Where the service looks for AI Toolbox's database in this world's home:
+    /// the application data directory of the system the tests run on
+    /// ([`superba_import::ScanEnv::app_data_dir`]: `~/.local/share`,
+    /// `~/Library/Application Support`, `%APPDATA%`), resolved as the import
+    /// scan and the usage import resolve it.
+    pub fn ai_toolbox_db(&self) -> PathBuf {
+        use superba_import::{Os, ScanEnv, aitoolbox};
+        let scratch = self.tmp.path().join("scratch");
+        let env = ScanEnv {
+            home: &self.ctx.home_dir,
+            env: self.ctx.env.as_ref(),
+            os: Os::current(),
+            scratch: &scratch,
+        };
+        aitoolbox::default_dir(&env).join(aitoolbox::DB_FILE)
+    }
 }

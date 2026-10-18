@@ -270,10 +270,9 @@ async fn ai_toolbox_imports_alike_and_a_missing_tool_imports_nothing() {
         .unwrap();
     assert!(!r.found());
     assert_eq!(r.requests, 0);
+    // Where AI Toolbox keeps it on this system (not only Linux's ~/.local/share).
     db(
-        w.ctx
-            .home_dir
-            .join(".local/share/com.ai-toolbox/ai-toolbox.db"),
+        w.ai_toolbox_db(),
         &(fixture("ai-toolbox/schema-v29.sql") + &fixture("usage/ai-toolbox-v29.sql")),
         true,
     );
