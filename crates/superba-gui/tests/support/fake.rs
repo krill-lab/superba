@@ -30,6 +30,7 @@ mod router;
 mod selfupdate;
 mod sessions;
 mod settings;
+pub mod tools;
 mod versions;
 
 const HOME: &str = "/home/user/.codex";
@@ -115,6 +116,7 @@ struct Areas {
     harness: Mutex<harness::State>,
     versions: Mutex<versions::State>,
     selfupdate: Mutex<selfupdate::State>,
+    tools: Mutex<tools::State>,
     import: Mutex<import::State>,
     notify: Mutex<notify::State>,
 }
@@ -2193,6 +2195,26 @@ impl SwitchService for FakeService {
 
     async fn notify_set_hook(&self, request: HookRequest) -> Result<NotifyHooks> {
         notify::set_hook(self, request).await
+    }
+
+    async fn tools(&self, refresh: bool) -> Result<superba_core::ToolsView> {
+        tools::tools(self, refresh).await
+    }
+
+    async fn tool_run(
+        &self,
+        request: superba_core::ToolRequest,
+        progress: Arc<dyn superba_core::ToolProgressSink>,
+    ) -> Result<superba_core::ToolReport> {
+        tools::tool_run(self, request, progress).await
+    }
+
+    async fn tool_settings(
+        &self,
+        tool: superba_core::ToolId,
+        change: superba_core::ToolSettingsChange,
+    ) -> Result<superba_core::ToolRow> {
+        tools::tool_settings(self, tool, change).await
     }
 
     async fn self_update_check(&self, request: SelfUpdateCheckRequest) -> Result<SelfUpdateView> {
