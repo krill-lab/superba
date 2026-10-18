@@ -153,10 +153,13 @@
          and its registry values are removed, so an update without UI keeps the folder. -->
     <InstallExecuteSequence>
       <RemoveExistingProducts After="AppSearch" />
+      <!-- Any REMOVE is the whole product (one feature): msiexec /x sets REMOVE=ALL,
+           but the installer's Remove page sets REMOVE=Main, which becomes ALL only at
+           InstallValidate, after these actions. -->
       <Custom Action="RouterRemove" Before="InstallValidate"
-              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+              Condition="REMOVE AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RouterStop" Before="InstallValidate"
-              Condition="REMOVE=&quot;ALL&quot; AND UPGRADINGPRODUCTCODE" />
+              Condition="REMOVE AND UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
   </Package>
 </Wix>
