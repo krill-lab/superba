@@ -195,11 +195,18 @@ where
         let queue = queue.clone();
         let oversize = oversize.clone();
         async move {
+            // Until the client side ends and drops its sender.
+            let mut replies_open = true;
             loop {
                 let msg = tokio::select! {
-                    msg = up_rx.next() => msg,
-                    reply = reply_rx.recv() => {
-                        let Some(reply) = reply else { continue };
+                    // The router's own frames first: a close that moves the
+                    // conversation must reach Codex before the member's close.
+                    biased;
+                    reply = reply_rx.recv(), if replies_open => {
+                        let Some(reply) = reply else {
+                            replies_open = false;
+                            continue;
+                        };
                         let closing = matches!(reply, Message::Close(_));
                         if down_tx.send(reply).await.is_err() || closing {
                             break;
@@ -210,6 +217,7 @@ where
                         let _ = down_tx.send(close_too_big()).await;
                         break;
                     }
+                    msg = up_rx.next() => msg,
                 };
                 let Some(msg) = msg else { break };
                 match msg {

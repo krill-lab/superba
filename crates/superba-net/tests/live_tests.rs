@@ -8,6 +8,12 @@
 //!   Costs one request of quota per key check and a few tokens for the Responses
 //!   probe when `SUPERBA_NET_LIVE_RESPONSES_MODEL` is set.
 //!
+//! - `live_compaction`: the remote compaction check (GitHub issue 3) of
+//!   `SUPERBA_NET_LIVE_COMPACTION_ORIGIN` with the key in the variable
+//!   `SUPERBA_NET_LIVE_KEY_ENV` names and the model
+//!   `SUPERBA_NET_LIVE_COMPACTION_MODEL` (default `gpt-5.5`), on both Codex
+//!   paths. Costs a few tokens per path.
+//!
 //! Run with `cargo test -p superba-net --test live_tests -- --nocapture`.
 
 use superba_core::catalog::krill_site;
@@ -191,4 +197,42 @@ async fn live_transports() {
     eprintln!("zstd: {:?}", probe.zstd);
     let text = format!("{probe:?}");
     assert!(!text.contains(key.expose()));
+}
+
+/// Remote compaction check of a live line on both Codex paths (a few tokens
+/// each); prints the verdicts (never the key or the compacted content).
+#[tokio::test(flavor = "multi_thread")]
+async fn live_compaction() {
+    if !live() {
+        eprintln!("skipped: set SUPERBA_NET_LIVE=1");
+        return;
+    }
+    let (Ok(origin), Ok(key_var)) = (
+        std::env::var("SUPERBA_NET_LIVE_COMPACTION_ORIGIN"),
+        std::env::var("SUPERBA_NET_LIVE_KEY_ENV"),
+    ) else {
+        eprintln!("skipped: set SUPERBA_NET_LIVE_COMPACTION_ORIGIN and SUPERBA_NET_LIVE_KEY_ENV");
+        return;
+    };
+    let key = Secret::new(std::env::var(&key_var).expect("key variable is set"));
+    let origin = Origin::parse(&origin).expect("origin");
+    let model =
+        std::env::var("SUPERBA_NET_LIVE_COMPACTION_MODEL").unwrap_or_else(|_| "gpt-5.5".into());
+    let prober = HttpLineProber::default();
+    let mut native = 0;
+    for path in [CodexPath::BackendApiCodex, CodexPath::CodexV1] {
+        let endpoints = ResolvedEndpoints::for_line(&origin, path, AuthMode::ApiKey).unwrap();
+        let check = prober
+            .probe_compaction(&endpoints, &key, &model)
+            .await
+            .expect("probe_compaction");
+        eprintln!(
+            "probe_compaction {path:?} {model}: support={:?} status={:?} detail={:?}",
+            check.support, check.status, check.detail
+        );
+        if check.support == superba_core::CompactionSupport::Native {
+            native += 1;
+        }
+    }
+    assert!(native > 0, "no path compacts natively");
 }
