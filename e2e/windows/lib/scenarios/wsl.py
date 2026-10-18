@@ -432,15 +432,16 @@ def w81(t):
 
 
 @scenario("W88", "WSL: a stopped distribution is not started by a switch; 'update pending' in spb wsl list and the "
-                 "GUI until Update now / spb wsl update", area="wsl", on=SNAP, needs=("configured",), bugs=(45, 54, 68))
+                 "GUI until Update now / spb wsl update, routed when the router went on", area="wsl", on=SNAP,
+          needs=("configured",), bugs=(45, 54, 68, 75))
 def w88(t):
     run = t.run
     other = "b" if run.state.get("line", "a") == "a" else "a"
     pending_rx = r"(?i)update pending|not updated by the switch"
     with t.step("Stop the distribution, then switch") as s:
         s.check(flows.wsl_stop(run), f"{D} stopped (wsl --terminate)")
-        r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", timeout=300,
-                    label="switch-stopped")
+        r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", "--wait-turn",
+                    timeout=600, label="switch-stopped")
         s.save("switch.txt", r["stdout"] + r["stderr"])
         s.check(r["code"] == 0, f"switch exit {r['code']} [{r['transcript']}]")
         s.check(not flows.wsl_running(run), "the switch did not start the distribution")
@@ -487,8 +488,8 @@ def w88(t):
     with t.step("spb wsl update applies a pending switch") as s:
         back = "b" if other == "a" else "a"
         s.check(flows.wsl_stop(run), f"{D} stopped again")
-        r = run.spb("switch", "--line", run.net.line_id(back), "--countdown", "0", "--yes", timeout=300,
-                    label="switch-stopped-2")
+        r = run.spb("switch", "--line", run.net.line_id(back), "--countdown", "0", "--yes", "--wait-turn",
+                    timeout=600, label="switch-stopped-2")
         s.check(r["code"] == 0, f"switch exit {r['code']} [{r['transcript']}]")
         run.state["line"] = back
         r = run.spb("wsl", "update", D, "--countdown", "0", "--yes", timeout=300, label="wsl-update")
@@ -500,7 +501,33 @@ def w88(t):
         r = run.spb("wsl", "update", D, "--countdown", "0", "--yes", timeout=300, label="wsl-update-again")
         s.check("nothing pending" in (r["stdout"] + r["stderr"]).lower() or r["code"] == 0,
                 f"a second update has nothing to do: exit {r['code']}", soft=True)
+    # User bug 75: the router turned on while the distribution was stopped; its update routes it.
+    with t.step("Stop the distribution, then turn the router on") as s:
+        s.check(flows.wsl_stop(run), f"{D} stopped again")
+    flows.router_on(run, t, prefix="(stopped distribution) ")
+    with t.step("spb wsl update routes the distribution like this computer (user bug 75)") as s:
+        s.check(not flows.wsl_running(run), "turning the router on did not start the distribution")
+        r = run.spb("wsl", "list", timeout=120, label="wsl-list-router-pending")
+        s.check(re.search(r"(?i)update pending", r["stdout"]) is not None, "spb wsl list: update pending")
+        r = run.spb("wsl", "update", D, "--countdown", "0", "--yes", timeout=300, label="wsl-update-router")
+        s.save("wsl-update-router.txt", r["stdout"] + r["stderr"])
+        s.check(r["code"] == 0, f"spb wsl update exit {r['code']} [{r['transcript']}]")
         flows.wsl_keepalive(run)
+        out = wsl_show(run)
+        s.save("wsl-routed-after-update.txt", out)
+        port = run.state.get("router_port")
+        s.check(f"http://127.0.0.1:{port}/" in out, f"distribution config.toml on the router 127.0.0.1:{port}")
+        tok = flows.wsl(run, "grep -o 'sbs_[a-z0-9]*_' ~/.codex/auth.json | head -1")["stdout"].strip()
+        s.check(tok.startswith("sbs_"), "auth.json holds a per-source router token (sbs_…, value not shown)")
+        r = run.spb("wsl", "list", timeout=120, label="wsl-list-after-router-update")
+        s.check(re.search(r"(?i)update pending", r["stdout"]) is None, "nothing pending any more")
+    with t.step("Router off: the distribution is back on the direct line") as s:
+        r = run.spb("router", "disable", "--yes", timeout=300, label="router-disable-w88")
+        s.check(r["code"] == 0, f"spb router disable exit {r['code']} [{r['transcript']}]")
+        cfg = wsl_config(run)
+        s.check("http://127.0.0.1" not in cfg and any(run.net.line_url(l) in cfg for l in run.net.ports),
+                "distribution config.toml back on a test line")
+        run.state.pop("router_on", None)
 
 
 @scenario("W87", "WSL 2 behind NAT: router access listener + firewall rule (UAC)", area="wsl", manual_only=True,

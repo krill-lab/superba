@@ -744,3 +744,97 @@ async fn a_distribution_whose_write_failed_records_nothing() {
         None
     );
 }
+
+// ---------------------------------------------------------------------------
+// A pending update (user bug 75)
+// ---------------------------------------------------------------------------
+
+fn set_running(w: &World, running: bool) {
+    for h in w.remote.hosts.lock().unwrap().iter_mut() {
+        if let Some(d) = h.wsl.as_mut() {
+            d.set_running(running);
+        }
+    }
+    // Superba wrote it (the fake keeps no baseline by itself).
+    let mut written = w.remote.written.lock().unwrap();
+    if !written.iter().any(|h| h == UBUNTU) {
+        written.push(UBUNTU.into());
+    }
+}
+
+fn router_enabled(w: &World) -> bool {
+    w.profiles.set.lock().unwrap().settings.router.enabled
+}
+
+/// The request "Update now" / `spb wsl update` plans for the distribution.
+async fn pending_request(sw: &Switcher) -> SwitchRequest {
+    sw.hosts()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|h| h.host.target_id == target())
+        .and_then(|h| h.pending)
+        .expect("an update pending for the distribution")
+        .request(&target())
+}
+
+#[tokio::test]
+async fn an_update_of_a_distribution_stopped_when_the_router_went_on_routes_it_and_keeps_its_model()
+{
+    let (w, sw) = pat_applied("gpt-6.1-sol").await;
+    set_running(&w, false);
+    let plan = sw.plan(router(true)).await.unwrap();
+    assert!(
+        plan.remotes.is_empty(),
+        "a stopped distribution is left out"
+    );
+    execute(&sw, plan).await;
+    assert!(router_enabled(&w));
+
+    // "Update now": the distribution alone, routed like this computer, its
+    // model kept (its own decision, bug 63).
+    set_running(&w, true);
+    let request = pending_request(&sw).await;
+    assert!(!request.targets.local);
+    let plan = sw.plan(request).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    assert_eq!(wsl_base_url(&plan), FakeRouter::base_url(18_431));
+    assert_eq!(planned_wsl_model(&plan).as_deref(), Some("gpt-6.1-sol"));
+    assert!(plan.config.is_none(), "this computer is not written");
+    let members = w
+        .profiles
+        .set
+        .lock()
+        .unwrap()
+        .settings
+        .router
+        .members
+        .clone();
+    execute(&sw, plan).await;
+    assert_eq!(wsl_model(&w).as_deref(), Some("gpt-6.1-sol"));
+    assert!(router_enabled(&w));
+    assert_eq!(
+        w.profiles.set.lock().unwrap().settings.router.members,
+        members
+    );
+}
+
+#[tokio::test]
+async fn an_update_applies_the_router_state_of_now() {
+    // Pending from "router on", but the router was turned off since (not by a
+    // switch): the update writes the direct line and leaves the router off.
+    let (w, sw) = pat_applied("gpt-6.1-sol").await;
+    set_running(&w, false);
+    execute(&sw, sw.plan(router(true)).await.unwrap()).await;
+    sw.router_set_enabled(false).await.unwrap();
+    set_running(&w, true);
+    let plan = sw.plan(pending_request(&sw).await).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    assert!(
+        wsl_base_url(&plan).starts_with(OVERSEAS),
+        "{}",
+        wsl_base_url(&plan)
+    );
+    execute(&sw, plan).await;
+    assert!(!router_enabled(&w));
+}

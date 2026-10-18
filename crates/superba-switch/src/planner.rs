@@ -1666,7 +1666,8 @@ impl Switcher {
                         draft,
                     )
                     .await?;
-                dest.router_enabled_after = Some(*enable);
+                // Only a switch of this computer turns the router on or off.
+                dest.router_enabled_after = request.targets.local.then_some(*enable);
                 // Router mode never changes the profile's stored line or auth.
                 if let Some(u) = dest.profile_update.as_mut() {
                     u.line_id = None;
@@ -1840,7 +1841,18 @@ impl Switcher {
             Ok(set) => set.settings.router,
             Err(_) => Default::default(),
         };
-        let router_on = router_override.unwrap_or(router_settings.enabled) && request.targets.local;
+        // A WSL distribution follows this computer's routing also when it is
+        // switched alone ("Update now", `spb wsl update`: user bug 75), with
+        // the router state of now (a pending router on / off is history); SSH
+        // hosts stay direct.
+        let router_override = router_override.filter(|_| request.targets.local);
+        let routes_wsl = request
+            .targets
+            .remotes
+            .iter()
+            .any(|t| superba_core::HostKind::of_target(t) == superba_core::HostKind::Wsl);
+        let router_on = router_override.unwrap_or(router_settings.enabled)
+            && (request.targets.local || routes_wsl);
 
         let mut dest = Dest {
             site: Some(site.clone()),
@@ -1991,6 +2003,10 @@ impl Switcher {
             }
             self.route_through_router(profile, &site, choice, &router_settings, &mut dest, draft)
                 .await;
+            if !request.targets.local {
+                // Only the distributions are written: the router's members stay.
+                dest.router_update = None;
+            }
             if let (Some(e), Some(token)) = (dest.endpoints.clone(), dest.key.clone()) {
                 dest.resolved = Some(resolved(&e, AuthMode::ApiKey, &token));
             }
