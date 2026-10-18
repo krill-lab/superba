@@ -38,7 +38,25 @@ const KEY: &str = "sk-test-0000000000000000wxyz";
 
 fn write(path: &Path, contents: &str, mode: u32) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, contents).unwrap();
+    if mode & 0o111 == 0 {
+        std::fs::write(path, contents).unwrap();
+    } else {
+        // A program this process wrote fails to start with ETXTBSY ("Text file
+        // busy") while another test thread's fork still holds the write
+        // descriptor; `cp` writes it from its own process instead.
+        let staged = path.with_file_name(format!(
+            "{}.staged",
+            path.file_name().unwrap().to_string_lossy()
+        ));
+        std::fs::write(&staged, contents).unwrap();
+        let copied = std::process::Command::new("cp")
+            .arg(&staged)
+            .arg(path)
+            .status()
+            .unwrap();
+        assert!(copied.success(), "cp {}", path.display());
+        std::fs::remove_file(&staged).unwrap();
+    }
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
 }
 
@@ -353,9 +371,20 @@ async fn the_router_is_checked_from_inside_the_distribution() {
     let server = tokio::spawn(async move {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let (mut s, _) = listener.accept().await.unwrap();
-        let mut buf = vec![0; 1024];
-        let n = s.read(&mut buf).await.unwrap();
-        let req = String::from_utf8_lossy(&buf[..n]).into_owned();
+        // Read the whole request head first, as the router (hyper) does: bash's
+        // printf sends it a line per write, and answering and closing after the
+        // first line resets the connection under the script's remaining writes
+        // (bash dies of SIGPIPE before it reads the answer).
+        let mut req = Vec::new();
+        let mut buf = [0; 1024];
+        while !req.ends_with(b"\r\n\r\n") {
+            let n = s.read(&mut buf).await.unwrap();
+            if n == 0 {
+                break;
+            }
+            req.extend_from_slice(&buf[..n]);
+        }
+        let req = String::from_utf8_lossy(&req).into_owned();
         s.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"service\":\"superba-router\",\"instance_id\":\"abc\"}")
             .await
             .unwrap();
