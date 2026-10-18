@@ -1,0 +1,18 @@
+# My Codex settings
+model = "kimi-k3"
+model_provider = "custom"
+chatgpt_base_url = "https://api.krill-code.net/backend-api/"
+service_tier = "priority"
+model_reasoning_effort = "high"
+disable_response_storage = true
+
+[mcp_servers.fetch]
+command = "uvx"
+args = ["mcp-server-fetch"]
+
+[model_providers.custom]
+name = "kimi"
+base_url = "https://api.moonshot.example/v1"
+wire_api = "responses"
+requires_openai_auth = false
+experimental_bearer_token = "sk-test-v20-kimi-000000000000000000"

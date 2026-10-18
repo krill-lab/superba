@@ -1,0 +1,17 @@
+#:schema none
+# My Codex settings
+model = "gpt-5.5"
+model_provider = "custom"
+openai_base_url = "https://api.krill-code.net/backend-api/codex"
+chatgpt_base_url = "https://api.krill-code.net/backend-api/"
+service_tier = "priority"
+
+[mcp_servers.fetch]
+command = "uvx"
+args = ["mcp-server-fetch"]
+
+[model_providers.custom]
+name = "OpenAI"
+wire_api = "responses"
+base_url = "https://relay.example.com/v1"
+requires_openai_auth = true

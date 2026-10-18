@@ -1,0 +1,10 @@
+# My Codex settings
+model = "gpt-5.5"
+model_provider = "openai"
+openai_base_url = "https://api.krill-code.net/backend-api/codex"
+chatgpt_base_url = "https://api.krill-code.net/backend-api/"
+service_tier = "priority"
+
+[mcp_servers.fetch]
+command = "uvx"
+args = ["mcp-server-fetch"]

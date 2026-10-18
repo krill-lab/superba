@@ -1008,3 +1008,70 @@ async fn stale_plan_does_not_overwrite_a_file_that_became_non_utf8() {
             .contains(VALUE)
     );
 }
+
+/// GH#5: a value someone else put where Superba had set its own is reported
+/// (`superba_value`) and left alone by a clear or a restore, with a note.
+#[tokio::test]
+async fn clear_and_restore_leave_values_changed_since_superba_set_them() {
+    // Windows: the user's environment store.
+    let tmp = tempfile::tempdir().unwrap();
+    let e = TestEnv::with(
+        tmp,
+        EnvPlatform::Windows,
+        MapEnv::new(),
+        MemoryNativeEnv::new().with(&EnvLocation::WindowsUserEnv, VAR, OLD),
+    );
+    e.apply(set(VALUE)).await;
+    let report = e.persister.inspect(VAR).await.unwrap();
+    assert_eq!(report.superba_value.as_deref(), Some(VALUE));
+    // Another program sets its own value.
+    e.native
+        .set(
+            &EnvLocation::WindowsUserEnv,
+            VAR,
+            "https://other.example.org",
+        )
+        .unwrap();
+    let plan = e.plan(EnvOp::Clear).await;
+    assert!(plan.is_noop(), "{:?}", plan.edits);
+    assert!(
+        plan.scope_notes
+            .iter()
+            .any(|n| n.key == "env.scope.kept_changed"),
+        "{:?}",
+        plan.scope_notes
+    );
+    e.persister.apply(&plan).await.unwrap();
+    assert_eq!(
+        e.native
+            .get(&EnvLocation::WindowsUserEnv, VAR)
+            .unwrap()
+            .as_deref(),
+        Some("https://other.example.org")
+    );
+
+    // Linux: a value edited inside Superba's own block stays too; an untouched
+    // block is removed.
+    let e = TestEnv::new(EnvPlatform::Linux, "/bin/zsh");
+    e.apply(set(VALUE)).await;
+    let zshenv = e.home().join(".zshenv");
+    let edited = fs::read_to_string(&zshenv).unwrap().replace(VALUE, NEXT);
+    write(&zshenv, &edited);
+    let restore = EnvOp::RestoreBaseline {
+        snapshots: Vec::new(),
+        legacy_lines: Vec::new(),
+    };
+    let plan = e.plan(restore).await;
+    assert!(
+        plan.edits.iter().all(|edit| !matches!(
+            &edit.location,
+            EnvLocation::ShellRc { path, .. } if path == &zshenv
+        )),
+        "{:?}",
+        plan.edits
+    );
+    e.persister.apply(&plan).await.unwrap();
+    assert_eq!(fs::read_to_string(&zshenv).unwrap(), edited);
+    let envd = e.home().join(".config/environment.d/60-superba.conf");
+    assert!(!fs::read_to_string(&envd).is_ok_and(|t| t.contains(VALUE)));
+}
