@@ -655,3 +655,81 @@ async fn configure_sets_the_stats_section_and_member_rewrites_keep_it() {
     );
     manager.uninstall_service().unwrap();
 }
+
+#[tokio::test]
+async fn a_members_rewrite_keeps_the_claude_code_section_of_the_members_left() {
+    use superba_router::claude::{ClaudeConfig, ClaudeMember, ClaudeRoute, ClaudeTarget, Endpoint};
+    let _serial = SERIAL.lock().await;
+    let dir = tempfile::tempdir().unwrap();
+    let data = DataDir::new(dir.path());
+    let manager = RouterManager::new(
+        &data,
+        "/opt/superba-router".into(),
+        Box::new(InProcess::default()),
+    );
+    let two = test_config(vec![
+        member(
+            "krill",
+            MemberKind::Krill,
+            false,
+            vec![line("a", dead_base())],
+        ),
+        member(
+            "ds",
+            MemberKind::Compatible,
+            false,
+            vec![line("a", dead_base())],
+        ),
+    ]);
+    let mut claude = ClaudeConfig::default();
+    for id in ["krill", "ds"] {
+        claude.members.insert(
+            id.into(),
+            ClaudeMember {
+                anthropic: Some(Endpoint::default()),
+                ..ClaudeMember::default()
+            },
+        );
+    }
+    claude.routes.push(ClaudeRoute {
+        model: "m".into(),
+        targets: vec![
+            ClaudeTarget {
+                member: "ds".into(),
+                model: None,
+            },
+            ClaudeTarget {
+                member: "krill".into(),
+                model: None,
+            },
+        ],
+    });
+    claude.order = vec!["ds".into(), "krill".into()];
+    let mut with = two.clone();
+    with.claude = Some(claude);
+    let mut k = keys();
+    k.insert("ds".into(), Secret::new(key_of("ds")));
+    manager.write_config(&with, k).unwrap();
+
+    // A rewrite without a section (members only) keeps it for the members left.
+    let one = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![line("a", dead_base())],
+    )]);
+    manager.write_config(&one, keys()).unwrap();
+    let stored = superba_router::RouterConfig::load(manager.paths()).unwrap();
+    let kept = stored.claude.unwrap();
+    assert_eq!(kept.members.keys().collect::<Vec<_>>(), ["krill"]);
+    assert_eq!(kept.order, ["krill"]);
+    assert_eq!(kept.routes[0].targets.len(), 1);
+    assert_eq!(kept.routes[0].targets[0].member, "krill");
+
+    // An explicit (empty) section replaces it.
+    let mut empty = one.clone();
+    empty.claude = Some(ClaudeConfig::default());
+    manager.write_config(&empty, keys()).unwrap();
+    let stored = superba_router::RouterConfig::load(manager.paths()).unwrap();
+    assert!(stored.claude.unwrap().members.is_empty());
+}

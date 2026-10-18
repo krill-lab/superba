@@ -10,7 +10,8 @@
 //!
 //! - **Routes**: requested model (exact or `*` glob) → targets in failover
 //!   order (member, upstream model name). Without a matching route a model
-//!   goes to the members whose model list names it, in member order (the list
+//!   goes to the members whose model list names it, in Claude Code's member
+//!   order ([`ClaudeConfig::order`], else the router's member order; the list
 //!   Superba wrote, else the member's own Anthropic `/v1/models`).
 //! - **Aliases**: Claude Code's own ids (`claude-haiku-*` for titles and
 //!   other background calls) → the model that serves them, applied first.
@@ -177,7 +178,7 @@ pub struct ModelAlias {
 #[serde(default)]
 pub struct ClaudeConfig {
     /// Members that serve Claude Code, by member id (each one of
-    /// [`RouterConfig::members`]; their priority is that order).
+    /// [`RouterConfig::members`]; their priority is [`ClaudeConfig::order`]).
     pub members: BTreeMap<String, ClaudeMember>,
     /// Model routes, first match wins.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -185,6 +186,10 @@ pub struct ClaudeConfig {
     /// Aliases, first match wins, applied before the routes.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<ModelAlias>,
+    /// Priority of the members for Claude Code (member ids; members left out
+    /// follow in [`RouterConfig::members`] order). Codex keeps that order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
 }
 
 /// `pattern` matches `model` (`*` = any characters, case-insensitive).
@@ -275,6 +280,18 @@ impl ClaudeConfig {
             }
         }
         Ok(())
+    }
+
+    /// Drop everything that names a member not in `ids` (members, route
+    /// targets and the order; routes left without a target go too).
+    pub fn retain_members(&mut self, ids: &[&str]) {
+        self.members.retain(|id, _| ids.contains(&id.as_str()));
+        let members = &self.members;
+        for r in &mut self.routes {
+            r.targets.retain(|t| members.contains_key(&t.member));
+        }
+        self.routes.retain(|r| !r.targets.is_empty());
+        self.order.retain(|id| members.contains_key(id));
     }
 
     /// The member is reserved for Claude Code.

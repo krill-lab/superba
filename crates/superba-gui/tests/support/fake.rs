@@ -151,6 +151,18 @@ impl FakeService {
         self
     }
 
+    /// Claude Code through the local router: the router's base URL Claude Code
+    /// gets (`None`: the router is not set up) and what the Router page shows.
+    pub fn set_claude_router(
+        &self,
+        base_url: Option<url::Url>,
+        view: Option<superba_core::RouterClaudeView>,
+    ) {
+        let mut c = self.areas.claude.lock().unwrap();
+        c.router_base_url = base_url;
+        c.router = view;
+    }
+
     /// GH#5: report a change another tool made in the overview.
     pub fn set_external(&self, external: Option<superba_core::ExternalChange>) {
         self.state().external = external;
@@ -1630,6 +1642,7 @@ impl SwitchService for FakeService {
             remotes: s.remotes.clone(),
             account: s.account.clone().filter(|_| s.account_summary_enabled),
             baseline_captured: s.baseline_captured,
+            claude_routed: false,
             baseline_at: s
                 .baseline_captured
                 .then(|| Timestamp::from_millis(1_760_572_800_000)),
@@ -1686,6 +1699,7 @@ impl SwitchService for FakeService {
                     lines: Vec::new(),
                 })
                 .collect(),
+            claude: self.areas.claude.lock().unwrap().router.clone(),
             ..RouterView::default()
         })
     }

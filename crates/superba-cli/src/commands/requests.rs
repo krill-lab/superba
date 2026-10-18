@@ -302,7 +302,7 @@ fn local_offset_minutes() -> i32 {
 /// language change); any other template is kept verbatim.
 pub(super) async fn stats_line(
     state: Option<OnOff>,
-    clients: &[StatsClientArg],
+    (clients, harnesses): (&[StatsClientArg], &[crate::args::HarnessArg]),
     template: Option<&str>,
     italic: bool,
     rt: &Runtime,
@@ -312,7 +312,12 @@ pub(super) async fn stats_line(
     // The language the service resolves the default template in.
     let ui = rt.service.profile_set().await.map(|p| p.settings);
     let locale = superba_switch::router::ui_locale(&ui.unwrap_or_default(), rt.env.as_ref());
-    if state.is_none() && clients.is_empty() && template.is_none() && !italic {
+    if state.is_none()
+        && clients.is_empty()
+        && harnesses.is_empty()
+        && template.is_none()
+        && !italic
+    {
         show_stats_line(&settings.line, locale, out)?;
         out.value(&StatsLineView::new(&settings.line, locale))?;
         return Ok(exit::OK);
@@ -326,6 +331,18 @@ pub(super) async fn stats_line(
             .map(|c| match c {
                 StatsClientArg::App => StatsLineClient::Desktop,
                 StatsClientArg::Tui => StatsLineClient::Tui,
+            })
+            .collect();
+    }
+    if !harnesses.is_empty() {
+        settings.line.harnesses = harnesses
+            .iter()
+            .filter_map(|h| match h {
+                crate::args::HarnessArg::Codex => Some(superba_core::RequestHarness::Codex),
+                crate::args::HarnessArg::ClaudeCode => {
+                    Some(superba_core::RequestHarness::ClaudeCode)
+                }
+                crate::args::HarnessArg::None => None,
             })
             .collect();
     }
@@ -354,6 +371,7 @@ pub(super) async fn stats_line(
 struct StatsLineView<'a> {
     enabled: bool,
     clients: &'a [StatsLineClient],
+    harnesses: &'a [superba_core::RequestHarness],
     style: StatsLineStyle,
     /// `default` while the default template is in use, else the custom one.
     template: &'a str,
@@ -369,6 +387,7 @@ impl<'a> StatsLineView<'a> {
         Self {
             enabled: line.enabled,
             clients: &line.clients,
+            harnesses: &line.harnesses,
             style: line.style,
             template: line
                 .custom_template()
@@ -403,6 +422,19 @@ fn show_stats_line(
         })
         .collect();
     out.field("cli.requests.line_clients", clients.join(", "))?;
+    let harnesses: Vec<String> = line
+        .harnesses
+        .iter()
+        .map(|h| out.render(&h.text()))
+        .collect();
+    out.field(
+        "cli.requests.line_harnesses",
+        if harnesses.is_empty() {
+            out.none()
+        } else {
+            harnesses.join(", ")
+        },
+    )?;
     out.field(
         "cli.requests.line_style",
         out.label(match line.style {

@@ -26,6 +26,7 @@
 mod account;
 pub mod ciphers;
 pub mod claude;
+mod claude_router;
 pub mod compaction;
 pub mod core_watch;
 pub mod executor;

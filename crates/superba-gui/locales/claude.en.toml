@@ -22,13 +22,13 @@ title = "Provider"
 follow = "Same as Codex"
 follows_named = "{name} (same as Codex)"
 none = "No provider with a key"
-no_anthropic = "This provider has no Anthropic endpoint; protocol translation comes in 0.1.2."
 
 [claude.route]
 title = "Route"
 direct = "Direct"
 router = "Local router"
-router_soon = "The router will serve Claude Code soon."
+router_soon = "Install the local router first (Router page); then Claude Code can go through it."
+via = "Through the local router: {url}"
 
 [claude.endpoint]
 title = "Anthropic endpoint"

@@ -28,6 +28,10 @@ pub const ENV_MODEL: &str = "ANTHROPIC_MODEL";
 pub const ENV_SMALL_FAST: &str = "ANTHROPIC_SMALL_FAST_MODEL";
 /// `CLAUDE_CODE_SUBAGENT_MODEL`.
 pub const ENV_SUBAGENT: &str = "CLAUDE_CODE_SUBAGENT_MODEL";
+/// `CLAUDE_CODE_GATEWAY_HINT_HEADERS`: Claude Code sends its prompt id, request
+/// class and agent type to a gateway (written while it goes through the local
+/// router, which records them).
+pub const ENV_GATEWAY_HINT_HEADERS: &str = "CLAUDE_CODE_GATEWAY_HINT_HEADERS";
 /// The default model.
 pub const KEY_MODEL: &str = "model";
 /// The `/model` picker rows.
@@ -54,6 +58,7 @@ pub fn managed_paths() -> Vec<String> {
         env_path(ENV_MODEL),
         env_path(ENV_SMALL_FAST),
         env_path(ENV_SUBAGENT),
+        env_path(ENV_GATEWAY_HINT_HEADERS),
     ];
     for slot in ClaudeSlot::ALL {
         out.extend(slot.env_vars().iter().map(|v| env_path(v)));

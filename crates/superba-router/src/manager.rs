@@ -459,7 +459,9 @@ impl RouterManager {
     /// A `config` without `stats` keeps the stored `stats` section (member
     /// rewrites never change recording or the stats line), or gets the defaults
     /// (recording on, stats line off, no prices) when none is stored; only
-    /// [`RouterManager::configure`] or a `config` with `stats` changes it.
+    /// [`RouterManager::configure`] or a `config` with `stats` changes it. A
+    /// `config` without `claude` keeps the stored Claude Code section for the
+    /// members it still has; `Some` (also an empty section) replaces it.
     pub fn write_config(
         &self,
         config: &RouterConfig,
@@ -479,6 +481,16 @@ impl RouterManager {
                 Some(stored) if stored.listen_port != 0 => stored.listen_port,
                 _ => stable_port(&self.spec.data_dir, &[], &config.wsl_listen)?,
             };
+        }
+        // The Claude Code section is written by whoever owns it; a members
+        // rewrite without one keeps the stored section for the members that
+        // are still there.
+        if config.claude.is_none()
+            && let Some(mut claude) = stored.as_ref().and_then(|s| s.claude.clone())
+        {
+            let ids: Vec<&str> = config.members.iter().map(|m| m.id.as_str()).collect();
+            claude.retain_members(&ids);
+            config.claude = Some(claude);
         }
         if config.stats.is_none() {
             config.stats = Some(stored.and_then(|s| s.stats).unwrap_or_default());

@@ -686,6 +686,7 @@ impl Switcher {
             runtime: Some(runtime),
             notices,
             external,
+            claude_routed: self.claude_routed(),
         })
     }
 

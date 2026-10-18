@@ -331,6 +331,7 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
             ..AccountSummary::default()
         }),
         baseline_captured: true,
+        claude_routed: false,
         baseline_at: Some(Timestamp::from_millis(1_760_000_000_000)),
         login_stash: Some(superba_core::LoginStashInfo {
             stashed_at: Timestamp::from_millis(1_760_000_000_000),

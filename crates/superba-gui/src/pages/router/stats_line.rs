@@ -131,6 +131,21 @@ pub fn with_client(
     next
 }
 
+/// `line` with `harness` (Claude Code, …) added or removed.
+pub fn with_harness(
+    line: &StatsLineSettings,
+    harness: superba_core::RequestHarness,
+    on: bool,
+) -> StatsLineSettings {
+    let mut next = line.clone();
+    next.harnesses.retain(|h| *h != harness);
+    if on {
+        next.harnesses.push(harness);
+    }
+    next.harnesses.sort();
+    next
+}
+
 /// Values for the preview.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sample {

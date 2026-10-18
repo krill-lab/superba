@@ -39,6 +39,10 @@ pub(super) async fn run(command: &RouterCommand, rt: &Runtime, out: &mut Output)
         RouterCommand::Uninstall { .. } => {
             let view = rt.service.router_uninstall().await?;
             out.line(text("cli.router.uninstalled"))?;
+            // Claude Code moved back to its provider, and the like.
+            for n in &view.notes {
+                out.line(n.text.clone())?;
+            }
             out.value(&view)?;
             Ok(exit::OK)
         }
@@ -47,11 +51,19 @@ pub(super) async fn run(command: &RouterCommand, rt: &Runtime, out: &mut Output)
         RouterCommand::StatsLine {
             state,
             clients,
+            harnesses,
             template,
             italic,
         } => {
-            super::requests::stats_line(*state, clients, template.as_deref(), *italic, rt, out)
-                .await
+            super::requests::stats_line(
+                *state,
+                (clients, harnesses),
+                template.as_deref(),
+                *italic,
+                rt,
+                out,
+            )
+            .await
         }
         RouterCommand::Record { state } => super::requests::record(*state, rt, out).await,
         RouterCommand::Clear { older_than, yes } => {
@@ -179,8 +191,11 @@ async fn disable(uninstall: bool, exec: &ExecArgs, rt: &Runtime, out: &mut Outpu
     if code == exit::OK && !exec.dry_run {
         out.line(text("cli.router.disabled"))?;
         if uninstall {
-            rt.service.router_uninstall().await?;
+            let view = rt.service.router_uninstall().await?;
             out.line(text("cli.router.uninstalled"))?;
+            for n in &view.notes {
+                out.line(n.text.clone())?;
+            }
         }
     }
     Ok(code)
@@ -459,6 +474,36 @@ fn render(view: &RouterView, out: &mut Output) -> Result<()> {
         ],
         rows,
     )?;
+    if let Some(claude) = &view.claude {
+        out.field("cli.router.claude_routed", out.boolean(claude.routed))?;
+        let rows = claude
+            .members
+            .iter()
+            .map(|m| {
+                vec![
+                    format!("{} ({})", m.name, m.profile_id),
+                    match (m.ineligible, &m.endpoint) {
+                        (Some(reason), _) => out.render(&reason.text()),
+                        (None, Some(e)) => e.clone(),
+                        (None, None) => out.none(),
+                    },
+                    out.boolean(m.claude_only),
+                ]
+            })
+            .collect::<Vec<_>>();
+        out.section_table(
+            "cli.router.claude_members",
+            &[
+                "cli.router.member",
+                "cli.claude.col.endpoint",
+                "cli.router.claude_only",
+            ],
+            rows,
+        )?;
+    }
+    for n in &view.notes {
+        out.line(n.text.clone())?;
+    }
     if view.settings.enabled {
         out.line(text("cli.router.traffic_note"))?;
     }

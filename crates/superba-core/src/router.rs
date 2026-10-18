@@ -401,6 +401,50 @@ pub struct RouterView {
     /// or does not report them).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local: Option<RouterLocalView>,
+    /// Claude Code on the router (its Anthropic ingress).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<RouterClaudeView>,
+    /// What an action on the router also did (Claude Code moved back to its
+    /// provider, ...).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<crate::i18n::Notice>,
+}
+
+/// Claude Code on the local router: whether it goes through it and which
+/// providers serve it there.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RouterClaudeView {
+    /// Claude Code's route is the local router.
+    pub route_router: bool,
+    /// Claude Code's `settings.json` points at the router now.
+    pub routed: bool,
+    /// The router's `ANTHROPIC_BASE_URL` (`http://127.0.0.1:<port>/claude`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// Providers for Claude Code in its order (its own provider first).
+    pub members: Vec<RouterClaudeMember>,
+}
+
+/// One provider for Claude Code on the router.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterClaudeMember {
+    /// The provider.
+    pub profile_id: ProfileId,
+    /// Display name.
+    pub name: String,
+    /// Its Anthropic endpoint (base URL), when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Why it cannot serve Claude Code (`None`: it serves it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ineligible: Option<ClaudeIneligible>,
+    /// It is Claude Code's own provider.
+    #[serde(default)]
+    pub preferred: bool,
+    /// It serves only Claude Code (not a Codex member of the router).
+    #[serde(default)]
+    pub claude_only: bool,
 }
 
 impl RouterView {
@@ -485,6 +529,9 @@ pub struct RouterWatch {
     /// retried at the next tick).
     #[serde(default)]
     pub error: Option<crate::Error>,
+    /// What else the tick did (Claude Code moved back to its provider).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<crate::i18n::Notice>,
 }
 
 /// `spb router doctor` and the Router page's Diagnostics: everything needed to

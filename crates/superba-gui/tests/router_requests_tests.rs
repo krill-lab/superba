@@ -506,6 +506,13 @@ fn a_custom_template_disables_the_metric_checkboxes_until_reset() {
         tui.clients,
         vec![StatsLineClient::Desktop, StatsLineClient::Tui]
     );
+    // Claude Code has its own switch (on by default).
+    let claude = superba_core::RequestHarness::ClaudeCode;
+    assert!(line.harnesses.contains(&claude));
+    let off = stats_line::with_harness(&line, claude, false);
+    assert_eq!(off.harnesses, vec![superba_core::RequestHarness::Codex]);
+    let on = stats_line::with_harness(&off, claude, true);
+    assert_eq!(on.harnesses, line.harnesses);
 }
 
 #[test]

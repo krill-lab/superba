@@ -442,6 +442,7 @@ preview_sample = "Preview · sample data"
 sample_reply = "Done — fetch_all is async now, and the tests cover the new path."
 
 [stats_line.client]
+claude_code = "Claude Code"
 app = "Desktop app"
 tui = "Terminal codex (TUI)"
 
@@ -510,3 +511,11 @@ source = "Source"
 # Request detail: how the request body went upstream (user request 14).
 [requests.compression]
 label = "Request body"
+
+[router.claude]
+title = "Claude Code"
+help = "Providers Claude Code uses through the router, its own provider first. Only a provider with an Anthropic endpoint can serve it."
+routed = "Claude Code goes through the router"
+pending = "Set to the router: apply it on Claude Code → Connection & models"
+preferred = "Claude Code's provider"
+claude_only = "Claude Code only"

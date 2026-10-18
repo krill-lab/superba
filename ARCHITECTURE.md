@@ -693,6 +693,30 @@ shortage, 502 `api_error` when no line answered).
   whole answer. Later requests have it stripped from assistant text blocks (the
   `⚡` + U+2060 marker); thinking, redacted_thinking and tool_use are never
   touched. Turn totals: every request with the same prompt id.
+- **Wiring** (`superba_switch::claude_router`). Claude Code's route (Claude Code
+  → 连接与模型, `spb claude route direct|router`) can be the router once the
+  router is set up; applying it writes `ANTHROPIC_BASE_URL =
+  http://127.0.0.1:<port>/claude`, Claude Code's own harness token as
+  `ANTHROPIC_AUTH_TOKEN` and `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` into
+  `settings.json` (`superba_switch::claude::claude_router_route`). Every router
+  configuration Superba writes carries the section, built from Claude Code's
+  provider (first) and the router's member profiles that have an Anthropic
+  endpoint; a provider that is not a router member joins as a Claude-only
+  member; every model the provider's configuration names gets a route (the
+  provider first, the others as failover); `claude-*haiku*` / `*sonnet*` /
+  `*opus*` / `*fable*` map to the slot models. An apply through the router writes
+  the section (and starts a stopped router) before `settings.json`; going direct
+  writes the provider's values again and empties the section.
+  `RouterManager::write_config` keeps a stored section for the members still
+  there when a writer passes none. The Router page and `spb claude status` /
+  `spb router status` list Claude Code's providers with
+  `ClaudeIneligible::NoAnthropicEndpoint` for those without an endpoint.
+  Uninstalling the router, removing its last member, or the watchdog (it also
+  runs while only Claude Code uses the router: `Overview::claude_routed`) moves
+  Claude Code back to its provider (route direct; `settings.json` rewritten, or
+  Superba's keys taken out when the provider has no Anthropic endpoint) and says
+  so (`RouterView::notes`, `RouterWatch::notes`); a router that moved to another
+  port gets `settings.json` pointed at it again.
 
 Lifecycle, the same in `spb` and the GUI (both only through `SwitchService`):
 

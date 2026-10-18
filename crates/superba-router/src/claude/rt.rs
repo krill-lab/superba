@@ -30,6 +30,8 @@ pub(crate) struct ClaudeRt {
     pub cfg: ClaudeConfig,
     /// By member index (`None`: the member does not serve Claude Code).
     pub members: Vec<Option<MemberClaude>>,
+    /// Indexes of the eligible members in Claude Code's priority order.
+    pub order: Vec<usize>,
 }
 
 /// `scheme://host[:port]/` of a base URL.
@@ -98,9 +100,21 @@ impl ClaudeRt {
                 base,
             }));
         }
+        let mut order: Vec<usize> = cfg
+            .order
+            .iter()
+            .filter_map(|id| members.iter().position(|m| &m.id == id))
+            .filter(|i| out[*i].is_some())
+            .collect();
+        for (i, m) in out.iter().enumerate() {
+            if m.is_some() && !order.contains(&i) {
+                order.push(i);
+            }
+        }
         Ok(Self {
             cfg: cfg.clone(),
             members: out,
+            order,
         })
     }
 

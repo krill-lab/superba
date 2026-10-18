@@ -30,9 +30,7 @@ async fn all(shared: &Arc<Shared>) -> Vec<(String, Option<String>)> {
             out.push((r.model.clone(), None));
         }
     }
-    let members: Vec<usize> = (0..generation.members.len())
-        .filter(|m| claude.member(*m).is_some())
-        .collect();
+    let members: Vec<usize> = claude.order.clone();
     let lists = futures_util::future::join_all(
         members
             .iter()

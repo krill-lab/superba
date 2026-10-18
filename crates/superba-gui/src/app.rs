@@ -671,6 +671,23 @@ impl SuperbaApp {
             let text = error_text(&self.tr, e);
             self.log(Status::Error, text);
         }
+        // Claude Code moved back to its provider (or followed the router):
+        // said once, as a sticky toast for a fallback.
+        for n in &watch.notes {
+            let text = pages::localize_text(&self.tr, &self.data, &n.text);
+            let status = if n.severity == Severity::Info {
+                Status::Ok
+            } else {
+                Status::Warn
+            };
+            self.log(status, text.clone());
+            let toast = Toast::new(status, text);
+            self.toasts.push(if n.severity == Severity::Info {
+                toast
+            } else {
+                toast.sticky()
+            });
+        }
         self.data.router_watch = Some(watch.state);
     }
 
@@ -679,7 +696,7 @@ impl SuperbaApp {
     fn router_watch_wanted(&self) -> bool {
         self.router_watch_supported
             && !self.router_watch_busy
-            && self.data.router_enabled()
+            && (self.data.router_enabled() || self.data.claude_routed())
             && !self.flow.is_running()
             && !self.flow.is_planning()
     }
@@ -701,7 +718,7 @@ impl SuperbaApp {
     /// Run what the shell's cadence says is due, tell the environment monitor
     /// about the window, and sleep until the next timer (user request 34).
     fn run_cadence(&mut self, ctx: &egui::Context, visible: bool) {
-        if !self.data.router_enabled() {
+        if !self.data.router_enabled() && !self.data.claude_routed() {
             self.data.router_watch = None;
         }
         let now = Instant::now();

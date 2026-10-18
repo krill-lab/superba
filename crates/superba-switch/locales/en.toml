@@ -540,6 +540,10 @@ unchanged = "Nothing changed; the file was not written."
 remote_restart = "Codex on {host} reads {file} only when its app-server starts: the next switch restarts it, or reconnect {host} in ChatGPT."
 
 [switch.claude]
+router.not_set_up = "Claude Code is set to go through the local router, but the router is not set up: install it on the Router page (or spb router install) first."
+router.fell_back = "The local router is gone ({detail}): Claude Code goes directly to {provider} again (new sessions)."
+router.fell_back_restored = "The local router is gone ({detail}) and Claude Code's provider has no Anthropic endpoint: Superba's keys were taken out of settings.json."
+router.moved = "The local router moved from port {from} to {to}: Claude Code's settings.json follows (new sessions)."
 file_invalid = "Claude Code's settings.json is not valid JSON: Superba writes nothing to it until it is fixed (Claude Code settings → file editor)."
 restart_needed = "Claude Code reads settings.json when a session starts: new sessions use the change, running sessions keep what they started with."
 diag.found = "Claude Code {version} found ({path})."

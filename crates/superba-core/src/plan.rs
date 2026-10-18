@@ -1366,6 +1366,10 @@ pub struct Overview {
     /// made them; `None` when nothing changed or Superba owns nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external: Option<crate::ownership::ExternalChange>,
+    /// Claude Code's `settings.json` points at the local router (the shell
+    /// keeps the router watchdog running for it too).
+    #[serde(default)]
+    pub claude_routed: bool,
 }
 
 /// One diagnostics item (plan 4 #21, 11.1 diagnostics page).

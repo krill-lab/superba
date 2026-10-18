@@ -120,6 +120,9 @@ pub(super) fn router_column(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &m
 
     service_and_status(ui, cx, state, &snapshot, &mode);
     members(ui, cx, state, &snapshot);
+    if let Some(claude) = &snapshot.claude {
+        claude_members(ui, cx, claude);
+    }
     if let Ok(live) = &snapshot.live
         && !live.events.is_empty()
     {
@@ -419,6 +422,53 @@ fn members(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, snapshot: &model::Snapsh
 }
 
 /// "Work · Krill", or just "Krill" when the profile is named after its kind.
+/// Claude Code's providers on the router (its own first), each with its
+/// Anthropic endpoint or why it cannot serve Claude Code.
+fn claude_members(ui: &mut Ui, cx: &Cx<'_>, claude: &superba_core::RouterClaudeView) {
+    ui.add_space(12.0);
+    heading(ui, cx, "router.claude.title");
+    ui.add(egui::Label::new(Text::small(cx.tr.t("router.claude.help"), cx.pal)).wrap());
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        let (status, key) = if claude.routed {
+            (Status::Ok, "router.claude.routed")
+        } else {
+            (Status::Warn, "router.claude.pending")
+        };
+        ui.add(Badge::new(cx.tr.t(key)).status(status));
+        if let Some(url) = &claude.base_url {
+            ui.add(egui::Label::new(Text::mono_muted(url.clone(), cx.pal)).truncate());
+        }
+    });
+    divider(ui, cx);
+    for m in &claude.members {
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            let ok = m.ineligible.is_none();
+            ui.add(StatusDot::new(if ok { Status::Ok } else { Status::Idle }));
+            ui.label(Text::strong(&m.name, cx.pal));
+            if m.preferred {
+                ui.add(Badge::new(cx.tr.t("router.claude.preferred")).outline());
+            }
+            if m.claude_only {
+                ui.add(Badge::new(cx.tr.t("router.claude.claude_only")).outline());
+            }
+        });
+        let detail = match (m.ineligible, &m.endpoint) {
+            (Some(reason), _) => Text::caption(cx.tr.text(&reason.text()), cx.pal),
+            (None, Some(e)) => Text::mono_muted(e.clone(), cx.pal),
+            (None, None) => Text::caption(String::new(), cx.pal),
+        };
+        ui.horizontal(|ui| {
+            ui.add_space(18.0);
+            ui.add(egui::Label::new(detail).wrap());
+        });
+        ui.add_space(6.0);
+        divider(ui, cx);
+    }
+}
+
 fn candidate_label(cx: &Cx<'_>, c: &model::Candidate) -> String {
     let kind = kind_text(cx, c.kind);
     if c.name.trim().eq_ignore_ascii_case(kind.trim()) {

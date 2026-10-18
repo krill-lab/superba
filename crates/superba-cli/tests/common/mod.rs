@@ -150,6 +150,8 @@ pub struct FakeService {
     pub v3: Mutex<v3::FakeV3>,
     /// `spb self-update`: the view every check returns, the install report and the calls.
     pub self_update: Mutex<FakeSelfUpdate>,
+    /// `spb claude`: the page state (`None`: not implemented).
+    pub claude: Mutex<Option<superba_core::ClaudeView>>,
 }
 
 impl FakeService {
@@ -228,6 +230,7 @@ impl FakeService {
             )),
             findings: Mutex::new(Vec::new()),
             v2: Mutex::new(fake_v2()),
+            claude: Mutex::new(None),
             self_update: Mutex::new(FakeSelfUpdate::default()),
             v3: Mutex::new(v3::fake_v3()),
             recovery: Mutex::new(RecoveryReport {
@@ -359,6 +362,7 @@ pub fn overview() -> Overview {
         }],
         account: None,
         baseline_captured: true,
+        claude_routed: false,
         baseline_at: None,
         login_stash: None,
         runtime: None,
@@ -768,6 +772,26 @@ impl SwitchService for FakeService {
         self.record("router_status")?;
         Ok(self.v2.lock().unwrap().router.clone())
     }
+    async fn claude_view(&self) -> Result<superba_core::ClaudeView> {
+        self.record("claude_view")?;
+        self.claude
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| Error::not_implemented("Claude Code"))
+    }
+    async fn save_claude_config(
+        &self,
+        config: superba_core::ClaudeConfig,
+    ) -> Result<superba_core::ClaudeView> {
+        self.record("save_claude_config")?;
+        let mut claude = self.claude.lock().unwrap();
+        let view = claude
+            .as_mut()
+            .ok_or_else(|| Error::not_implemented("Claude Code"))?;
+        view.config = config;
+        Ok(view.clone())
+    }
     async fn router_install(&self, request: RouterInstallRequest) -> Result<RouterView> {
         self.record("router_install")?;
         self.calls
@@ -804,6 +828,7 @@ impl SwitchService for FakeService {
             state: RouterWatchState::Healthy,
             outcome: None,
             error: None,
+            notes: Vec::new(),
         })
     }
     async fn probe_site(&self, request: SiteProbeRequest) -> Result<SiteProbeReport> {

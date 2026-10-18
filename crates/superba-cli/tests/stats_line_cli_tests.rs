@@ -96,3 +96,28 @@ async fn stats_line_keeps_an_edited_template_and_resets_with_default() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn stats_line_harnesses_pick_the_tools_that_get_the_line() {
+    let service = FakeService::new();
+    let (code, stdout, _) = invoke(service.clone(), &["router", "stats-line"]).await;
+    assert_eq!(code, 0);
+    // Codex and Claude Code by default.
+    assert!(stdout.contains("Tools: Codex, Claude Code"), "{stdout}");
+    let (code, _, stderr) = invoke(
+        service.clone(),
+        &["router", "stats-line", "--harnesses", "codex"],
+    )
+    .await;
+    assert_eq!(code, 0, "{stderr}");
+    let s = service.v3.lock().unwrap().stats_settings[0].clone();
+    assert_eq!(s.line.harnesses, vec![RequestHarness::Codex]);
+    let (code, _, _) = invoke(
+        service.clone(),
+        &["router", "stats-line", "--harnesses", "none"],
+    )
+    .await;
+    assert_eq!(code, 0);
+    let s = service.v3.lock().unwrap().stats_settings[1].clone();
+    assert!(s.line.harnesses.is_empty());
+}

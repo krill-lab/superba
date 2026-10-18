@@ -105,9 +105,7 @@ pub(crate) async fn resolve(
             .collect();
         return Ok(Resolution { model, targets });
     }
-    let members: Vec<usize> = (0..generation.members.len())
-        .filter(|m| claude.member(*m).is_some())
-        .collect();
+    let members: Vec<usize> = claude.order.clone();
     // Every member's list at once (a slow provider delays only itself).
     let lists =
         futures_util::future::join_all(members.iter().map(|m| lists_of(shared, generation, *m)))

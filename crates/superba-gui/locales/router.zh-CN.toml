@@ -441,6 +441,7 @@ preview_sample = "预览 · 示例数据"
 sample_reply = "好的，我已经把 fetch_all 改成了异步版本，并补上了测试。"
 
 [stats_line.client]
+claude_code = "Claude Code"
 app = "桌面 app"
 tui = "终端 codex（TUI）"
 
@@ -509,3 +510,11 @@ source = "来源"
 # 请求详情：请求体以何种方式发往上游（用户需求 14）。
 [requests.compression]
 label = "请求体"
+
+[router.claude]
+title = "Claude Code"
+help = "Claude Code 经由路由使用的供应商，它自己的供应商排在最前。只有带 Anthropic 端点的供应商能为它服务。"
+routed = "Claude Code 正经由路由"
+pending = "已设为经由路由：请在 Claude Code → 连接与模型 中应用"
+preferred = "Claude Code 的供应商"
+claude_only = "仅 Claude Code"

@@ -101,6 +101,19 @@ SUPERBA_E2E_ENV=/path/to/e2e.env python3 -I e2e/claude_router.py \
     --router target/debug/superba-router [--claude /path/to/claude] OUT_DIR
 ```
 
+`claude_harness.py` runs the whole Claude Code harness the same way, through
+`spb` in a temporary HOME (the router as an XDG autostart service there, keys in
+the file backend): providers and Anthropic endpoints, `spb router install`,
+slots mapped to GPT models, `spb claude route router` + `apply`, `claude -p` with
+`--model opus|sonnet|haiku` and the Read tool, the request log, then another
+provider, `spb router uninstall` (Claude Code goes back to its provider and spb
+says so), a direct run and `spb claude restore`. A few minutes.
+
+```sh
+SUPERBA_E2E_ENV=/path/to/e2e.env python3 -I e2e/claude_harness.py \
+    --bin target/debug [--claude /path/to/claude] OUT_DIR
+```
+
 ## How it is wired
 
 - **Namespace.** The driver runs itself, the desktop app, `superba`, `spb`, the

@@ -42,24 +42,55 @@ pub(crate) struct ClaudeCache {
     install: Mutex<Option<(PathBuf, Option<std::time::SystemTime>, ClaudeInstall)>>,
 }
 
-/// Claude Code's base URL and key through the local router (design §6). The
-/// router side (its Anthropic ingress) is added separately (agent cc2):
-/// until it is, this is `None` and the route "local router" stays off.
+/// Claude Code's base URL and key through the local router (design §6).
 #[derive(Clone, Debug)]
 pub struct ClaudeRouterRoute {
     /// `http://127.0.0.1:<port>/claude` (Claude Code adds `/v1/messages`).
     pub base_url: Url,
-    /// The router's token, sent as `ANTHROPIC_AUTH_TOKEN`.
+    /// Claude Code's own router token (derived from the router token, so the
+    /// router records its requests as Claude Code's), sent as
+    /// `ANTHROPIC_AUTH_TOKEN`.
     pub token: Secret,
 }
 
-/// The local router's Anthropic ingress for Claude Code, when the router
-/// serves it (boundary for the router side; `None` until it does).
+/// The local router's Anthropic ingress for Claude Code: its base URL and
+/// Claude Code's harness token. `None` while the router is not set up (no
+/// configuration and token yet: install it on the Router page first).
 pub async fn claude_router_route(
     router: &dyn crate::router::RouterControl,
 ) -> Option<ClaudeRouterRoute> {
-    let _ = router;
-    None
+    let e = router.endpoint().ok()?;
+    let addr = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, e.port));
+    let base_url = Url::parse(&superba_router::claude::base_url(addr)).ok()?;
+    let token = superba_router::token::harness_token(
+        e.token.expose().as_bytes(),
+        superba_core::RequestHarness::ClaudeCode,
+        None,
+    )?;
+    Some(ClaudeRouterRoute {
+        base_url,
+        token: Secret::new(token),
+    })
+}
+
+/// The values for `endpoint` / `key` / `models`, plus what the route needs:
+/// through the router, Claude Code sends its prompt id, request class and
+/// agent type (`CLAUDE_CODE_GATEWAY_HINT_HEADERS`), which the router records.
+pub(crate) fn desired_for(
+    config: &ClaudeConfig,
+    endpoint: &AnthropicEndpoint,
+    key: &Secret,
+    models: &claude::ClaudeModels,
+    spec: &dyn Fn(&str) -> Option<ModelSpec>,
+) -> claude::ClaudeDesired {
+    let mut d = claude::desired(endpoint, key, models, spec);
+    if config.route == ClaudeRoute::Router {
+        d.set(
+            claude::env_path(claude::ENV_GATEWAY_HINT_HEADERS),
+            Some(serde_json::Value::String("1".into())),
+        );
+    }
+    d
 }
 
 /// The provider Claude Code uses: the configured one (when it still exists
@@ -216,11 +247,11 @@ fn find_claude(env: &dyn superba_core::EnvSource, home: &Path) -> Option<PathBuf
 }
 
 impl Switcher {
-    fn claude_writer(&self) -> ClaudeWriter {
+    pub(crate) fn claude_writer(&self) -> ClaudeWriter {
         ClaudeWriter::new(self.deps.ctx.clone())
     }
 
-    fn claude_store(&self) -> ClaudeConfigStore {
+    pub(crate) fn claude_store(&self) -> ClaudeConfigStore {
         ClaudeConfigStore::new(&self.deps.ctx)
     }
 
@@ -272,7 +303,7 @@ impl Switcher {
 
     /// The profile set, the configuration and the provider Claude Code uses
     /// (`want` overrides it) with its site.
-    async fn claude_context(
+    pub(crate) async fn claude_context(
         &self,
         want: Option<&ProfileId>,
     ) -> Result<(ProfileSet, ClaudeConfig, Option<(Profile, Site)>, bool)> {
@@ -361,7 +392,7 @@ impl Switcher {
         {
             let models = config.models_of(&p.id);
             let spec = self.claude_spec_lookup(&p.id);
-            let desired = claude::desired(&e, &key, &models, &spec);
+            let desired = desired_for(&config, &e, &key, &models, &spec);
             let state = writer.state()?;
             pending = superba_config::claude::plan::plan_apply(current, &desired, state.as_ref())
                 .into_iter()
@@ -374,6 +405,9 @@ impl Switcher {
         let router_base_url = claude_router_route(self.deps.router.as_ref())
             .await
             .map(|r| r.base_url);
+        if config.route == ClaudeRoute::Router && router_base_url.is_none() {
+            notes.push(Notice::warning(text("switch.claude.router.not_set_up")));
+        }
         Ok(ClaudeView {
             config_dir: home.root().to_path_buf(),
             config_dir_from_env: home.from_env(),
@@ -419,6 +453,11 @@ impl Switcher {
             }
         }
         self.claude_store().save(&config)?;
+        // The router's Claude Code section follows the provider, its models
+        // and the route (a running router reloads; nothing is started).
+        if let Err(e) = self.sync_claude_router(false).await {
+            tracing::warn!(error = %e, "the local router's Claude Code section was not updated");
+        }
         self.claude_view_impl().await
     }
 
@@ -484,7 +523,7 @@ impl Switcher {
         let (endpoint, key) = self.claude_target(&config, &profile, &site).await?;
         let models = config.models_of(&profile.id);
         let spec = self.claude_spec_lookup(&profile.id);
-        let desired = claude::desired(&endpoint, &key, &models, &spec);
+        let desired = desired_for(&config, &endpoint, &key, &models, &spec);
         let provider = Some(profile.id.clone());
         let mut plan = tokio::task::spawn_blocking(move || {
             writer.plan(ClaudePlanKind::Apply, Some(desired), provider)
@@ -513,6 +552,23 @@ impl Switcher {
     ) -> Result<ClaudeApplyReport> {
         self.refuse_elevated()?;
         let d = &self.deps;
+        // Through the router: its Claude Code section first, and the router
+        // running, before settings.json points Claude Code at it; direct: the
+        // section goes (Claude-only members leave the router).
+        if plan.kind == ClaudePlanKind::Apply {
+            let router = plan
+                .desired
+                .as_ref()
+                .and_then(|d| d.get(&claude::env_path(ENV_BASE_URL)))
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(crate::claude_router::is_router_url);
+            if router {
+                self.sync_claude_router(true).await?;
+            } else if let Err(e) = self.sync_claude_router(false).await {
+                // Going direct never waits for the router.
+                tracing::warn!(error = %e, "the local router's Claude Code section was not removed");
+            }
+        }
         let _lock = StateLock::acquire(&d.ctx.data_dir)?;
         let writer = self.claude_writer();
         let now = d.clock.now();

@@ -585,6 +585,14 @@ pub struct DataPaths {
 }
 
 impl Data {
+    /// Claude Code's `settings.json` points at the local router.
+    pub fn claude_routed(&self) -> bool {
+        self.overview
+            .value
+            .as_ref()
+            .is_some_and(|o| o.claude_routed)
+    }
+
     /// Router mode is on in the saved settings.
     pub fn router_enabled(&self) -> bool {
         self.profiles

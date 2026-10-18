@@ -539,6 +539,10 @@ unchanged = "没有改动，文件未写入。"
 remote_restart = "{host} 上的 Codex 只在其 app-server 启动时读取 {file}：下一次切换会重启它，或在 ChatGPT 里重新连接 {host}。"
 
 [switch.claude]
+router.not_set_up = "Claude Code 设为经由本地路由，但路由还没有安装：请先在路由页面（或 spb router install）安装。"
+router.fell_back = "本地路由已不可用（{detail}）：Claude Code 改为直连 {provider}（新会话生效）。"
+router.fell_back_restored = "本地路由已不可用（{detail}），且 Claude Code 的供应商没有 Anthropic 端点：已从 settings.json 移除 Superba 写入的键。"
+router.moved = "本地路由已从端口 {from} 换到 {to}：Claude Code 的 settings.json 已跟着更新（新会话生效）。"
 file_invalid = "Claude Code 的 settings.json 不是有效的 JSON：修好之前 Superba 不会写它（Claude Code 设置 → 文件编辑器）。"
 restart_needed = "Claude Code 在会话启动时读取 settings.json：新开的会话会用新设置，正在运行的会话保持启动时的设置。"
 diag.found = "找到 Claude Code {version}（{path}）。"

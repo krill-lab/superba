@@ -433,7 +433,7 @@ pub struct BuiltMembers {
 }
 
 /// The path below each line origin a member serves.
-fn member_path(site: &Site, profile: &Profile) -> Result<MemberPath> {
+pub(crate) fn member_path(site: &Site, profile: &Profile) -> Result<MemberPath> {
     match site.kind {
         SiteKind::Krill => Ok(MemberPath::Codex(CodexPath::BackendApiCodex)),
         SiteKind::Compatible => {
@@ -482,17 +482,13 @@ pub(crate) fn member_lines(site: &Site, profile: &Profile) -> Vec<superba_core::
 
 impl Switcher {
     /// Router members for `members` (profile ids, in priority order) with their
-    /// keys. The member id is the profile id.
+    /// keys, and Claude Code's section with the providers only it uses
+    /// ([`Switcher::claude_router_section`]). The member id is the profile id.
     pub(crate) async fn build_router_members(
         &self,
         set: &ProfileSet,
         members: &[ProfileId],
     ) -> Result<BuiltMembers> {
-        if members.is_empty() {
-            return Err(Error::invalid(
-                "the router needs at least one member profile",
-            ));
-        }
         let sites = all_sites(set, self.deps.ctx.env.as_ref());
         let mut out = Vec::new();
         let mut keys = BTreeMap::new();
@@ -538,7 +534,20 @@ impl Switcher {
             keys.insert(member.id.clone(), key);
             out.push(member);
         }
-        let config = RouterConfig::new(0, out);
+        let claude = self.claude_router_section(set, &out).await?;
+        for m in claude.extra {
+            if !out.iter().any(|x| x.id == m.id) {
+                out.push(m);
+            }
+        }
+        keys.extend(claude.keys);
+        if out.is_empty() {
+            return Err(Error::invalid(
+                "the router needs at least one member profile",
+            ));
+        }
+        let mut config = RouterConfig::new(0, out);
+        config.claude = Some(claude.section);
         config.validate()?;
         Ok(BuiltMembers { config, keys })
     }
@@ -553,12 +562,23 @@ impl Switcher {
             return Ok(());
         }
         let members = &set.settings.router.members;
-        let result = if members.is_empty() {
-            d.router.uninstall().await
+        let built = if members.is_empty() {
+            // Claude Code may still use it (its own provider).
+            self.build_router_members(set, members).await.ok()
         } else {
-            match self.build_router_members(set, members).await {
-                Ok(built) => d.router.rewrite(built.config, built.keys).await.map(|_| ()),
-                Err(e) => Err(e),
+            Some(self.build_router_members(set, members).await?)
+        };
+        let result = match built {
+            Some(built) => d.router.rewrite(built.config, built.keys).await.map(|_| ()),
+            None => {
+                if self.claude_routed()
+                    && let Err(e) = self
+                        .claude_fall_back("the local router has no member left")
+                        .await
+                {
+                    tracing::warn!(error = %e, "Claude Code did not fall back to its provider");
+                }
+                d.router.uninstall().await
             }
         };
         result.map_err(|e| {
@@ -666,11 +686,21 @@ impl Switcher {
                     .into(),
             });
         }
+        // Claude Code goes back to its provider before the router goes.
+        let mut notes = Vec::new();
+        if self.claude_routed() {
+            notes.push(
+                self.claude_fall_back("the local router was uninstalled")
+                    .await?,
+            );
+        }
         d.router.uninstall().await?;
         let mut set = d.profiles.load().await?;
         set.settings.router.enabled = false;
         d.profiles.save(&set).await?;
-        self.router_status_impl().await
+        let mut view = self.router_status_impl().await?;
+        view.notes = notes;
+        Ok(view)
     }
 
     /// The local Codex home points at the router: its loopback endpoint, or an
@@ -722,8 +752,11 @@ impl Switcher {
         } else {
             None
         };
+        let claude = self.claude_router_view(&set).await;
         Ok(RouterView {
             stats,
+            claude,
+            notes: Vec::new(),
             settings: set.settings.router.clone(),
             configured: service.configured,
             installed: service.installed,
@@ -893,9 +926,12 @@ impl Switcher {
     pub(crate) async fn router_watch_impl(&self) -> Result<RouterWatch> {
         let d = &self.deps;
         let state = d.config.read_state(&d.ctx.codex_home()).await?;
-        // Gated on what Codex is pointed at, not on the stored flag: a Codex
-        // home left on the router is watched whatever the flag says.
-        if !self.codex_routed(&state) {
+        // Gated on what Codex and Claude Code are pointed at, not on the
+        // stored flag: a home left on the router is watched whatever the
+        // flag says.
+        let codex = self.codex_routed(&state);
+        let claude = self.claude_routed();
+        if !codex && !claude {
             if let Ok(mut w) = self.watchdog.lock() {
                 w.reset();
             }
@@ -903,10 +939,30 @@ impl Switcher {
                 state: RouterWatchState::Inactive,
                 outcome: None,
                 error: None,
+                notes: Vec::new(),
             });
         }
         let mut liveness = d.router.liveness().await;
         let mut error = None;
+        let mut notes = Vec::new();
+        // Claude Code names another port than the router listens on (it
+        // moved): write settings.json again (new sessions use it).
+        if claude
+            && liveness.is_up()
+            && let Some((from, to)) = self.claude_stale_port()
+        {
+            match self.claude_repoint().await {
+                Ok(()) => notes.push(superba_core::Notice::info(
+                    crate::messages::text("switch.claude.router.moved")
+                        .arg("from", from)
+                        .arg("to", to),
+                )),
+                Err(e) => error = Some(e),
+            }
+        }
+        if !codex {
+            return self.claude_watch(liveness, error, notes).await;
+        }
         // The router answers on another port than Codex uses (it moved off a
         // port another program took, user bug 65): point Codex at it now. Until
         // that works Codex cannot reach it: an outage like a dead router, which
@@ -932,16 +988,18 @@ impl Switcher {
             Ok(mut w) => w.observe(now, &liveness),
             Err(_) => return Err(Error::other("router watchdog state poisoned")),
         };
-        Ok(match verdict {
+        let mut watch = match verdict {
             Verdict::Healthy => RouterWatch {
                 state: RouterWatchState::Healthy,
                 outcome: None,
                 error: None,
+                notes: Vec::new(),
             },
             Verdict::Suspect { detail, .. } => RouterWatch {
                 state: RouterWatchState::Suspect { detail },
                 outcome: None,
                 error,
+                notes: Vec::new(),
             },
             Verdict::FallBack { reason } => {
                 let detail = match reason {
@@ -956,11 +1014,19 @@ impl Switcher {
                 {
                     return Ok(watch);
                 }
+                // Claude Code goes back to its provider too.
+                if claude {
+                    match self.claude_fall_back(&detail).await {
+                        Ok(n) => notes.push(n),
+                        Err(e) => tracing::warn!(error = %e, "Claude Code did not fall back"),
+                    }
+                }
                 match self.router_fall_back_impl(detail.clone()).await {
                     Ok(outcome) => RouterWatch {
                         state: RouterWatchState::FellBack { detail },
                         outcome,
                         error: None,
+                        notes: Vec::new(),
                     },
                     Err(e) => {
                         // Not done: try again at the next tick.
@@ -971,6 +1037,7 @@ impl Switcher {
                             state: RouterWatchState::Suspect { detail },
                             outcome: None,
                             error: Some(e),
+                            notes: Vec::new(),
                         }
                     }
                 }
@@ -984,7 +1051,62 @@ impl Switcher {
                 },
                 outcome: None,
                 error,
+                notes: Vec::new(),
             },
+        };
+        watch.notes.extend(notes);
+        Ok(watch)
+    }
+
+    /// One watchdog tick while only Claude Code goes through the router: the
+    /// router stays down past the grace period → Claude Code back to its
+    /// provider (Codex is not touched).
+    async fn claude_watch(
+        &self,
+        liveness: Liveness,
+        error: Option<Error>,
+        mut notes: Vec<superba_core::Notice>,
+    ) -> Result<RouterWatch> {
+        let now = self.watch_base + self.deps.clock.monotonic();
+        let verdict = match self.watchdog.lock() {
+            Ok(mut w) => w.observe(now, &liveness),
+            Err(_) => return Err(Error::other("router watchdog state poisoned")),
+        };
+        let detail = || match &liveness {
+            Liveness::Down { detail } => detail.clone(),
+            Liveness::Up(_) => String::new(),
+        };
+        let state = match verdict {
+            Verdict::Healthy => RouterWatchState::Healthy,
+            Verdict::Suspect { detail, .. } => RouterWatchState::Suspect { detail },
+            Verdict::FallBack { reason } => {
+                let detail = match reason {
+                    superba_router::watchdog::FallbackReason::Dead { detail } => detail,
+                    other => format!("{other:?}"),
+                };
+                match self.claude_fall_back(&detail).await {
+                    Ok(n) => notes.push(n),
+                    Err(e) => {
+                        if let Ok(mut w) = self.watchdog.lock() {
+                            w.reset();
+                        }
+                        return Ok(RouterWatch {
+                            state: RouterWatchState::Suspect { detail },
+                            outcome: None,
+                            error: Some(e),
+                            notes,
+                        });
+                    }
+                }
+                RouterWatchState::FellBack { detail }
+            }
+            Verdict::FellBack => RouterWatchState::FellBack { detail: detail() },
+        };
+        Ok(RouterWatch {
+            state,
+            outcome: None,
+            error,
+            notes,
         })
     }
 
@@ -1019,6 +1141,7 @@ impl Switcher {
                     },
                     outcome: None,
                     error: Some(e),
+                    notes: Vec::new(),
                 }
             }
         })
@@ -1032,6 +1155,7 @@ impl Switcher {
             state: RouterWatchState::Moved { from, to },
             outcome: Some(outcome),
             error: None,
+            notes: Vec::new(),
         }
     }
 }

@@ -17,6 +17,10 @@ use super::FakeService;
 #[derive(Debug, Default)]
 pub struct State {
     pub config: ClaudeConfig,
+    /// The local router's Claude Code ingress (`None`: not set up).
+    pub router_base_url: Option<url::Url>,
+    /// Claude Code on the router as the Router page shows it.
+    pub router: Option<superba_core::RouterClaudeView>,
 }
 
 fn endpoint() -> superba_core::AnthropicEndpoint {
@@ -29,6 +33,7 @@ fn endpoint() -> superba_core::AnthropicEndpoint {
 
 pub(super) fn view(fake: &FakeService) -> ClaudeView {
     let config = fake.areas.claude.lock().unwrap().config.clone();
+    let router_base_url = fake.areas.claude.lock().unwrap().router_base_url.clone();
     ClaudeView {
         config_dir: PathBuf::from("/home/u/.claude"),
         config_dir_from_env: false,
@@ -46,7 +51,7 @@ pub(super) fn view(fake: &FakeService) -> ClaudeView {
         key_available: true,
         applied: None,
         pending: Vec::new(),
-        router_base_url: None,
+        router_base_url,
         notes: Vec::new(),
     }
 }

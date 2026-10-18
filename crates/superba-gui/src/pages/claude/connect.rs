@@ -523,6 +523,17 @@ fn cards(
                     state.connect.edit(view, |c| c.route = route);
                 }
             });
+            if config.route == ClaudeRoute::Router
+                && let Some(url) = &view.router_base_url
+            {
+                ui.add(
+                    egui::Label::new(Text::caption(
+                        cx.tr.f("claude.route.via", &[("url", &url.as_str())]),
+                        cx.pal,
+                    ))
+                    .truncate(),
+                );
+            }
         });
     });
     layout::fixed(ui, cols[1], |ui| {
@@ -763,7 +774,10 @@ fn provider_picker(
                     }
                 } else {
                     ui.add_enabled(false, egui::Button::selectable(false, label))
-                        .on_disabled_hover_text(cx.tr.t("claude.provider.no_anthropic"));
+                        .on_disabled_hover_text(
+                            cx.tr
+                                .text(&superba_core::ClaudeIneligible::NoAnthropicEndpoint.text()),
+                        );
                 }
             }
         });
@@ -779,7 +793,8 @@ fn provider_picker(
     {
         ui.add(
             egui::Label::new(Text::caption(
-                cx.tr.t("claude.provider.no_anthropic"),
+                cx.tr
+                    .text(&superba_core::ClaudeIneligible::NoAnthropicEndpoint.text()),
                 cx.pal,
             ))
             .wrap(),

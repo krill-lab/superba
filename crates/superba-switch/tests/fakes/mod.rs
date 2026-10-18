@@ -869,6 +869,8 @@ pub struct FakeRouter {
     pub installed: Mutex<bool>,
     /// Configurations written by install / update (member ids in order).
     pub configs: Mutex<Vec<Vec<String>>>,
+    /// The whole configurations written, in order.
+    pub written: Mutex<Vec<RouterConfig>>,
     pub fail_install: Mutex<Option<Error>>,
     /// Request log rows served by `requests`.
     pub page: Mutex<superba_core::RequestPage>,
@@ -902,6 +904,7 @@ impl FakeRouter {
             up: Mutex::new(false),
             installed: Mutex::new(false),
             configs: Mutex::new(Vec::new()),
+            written: Mutex::new(Vec::new()),
             fail_install: Mutex::new(None),
             page: Mutex::new(superba_core::RequestPage::default()),
             stats_configured: Mutex::new(Vec::new()),
@@ -955,6 +958,7 @@ impl FakeRouter {
         );
         push(&self.log, format!("router.{what} {}", ids.join(",")));
         self.configs.lock().unwrap().push(ids);
+        self.written.lock().unwrap().push(config.clone());
     }
 }
 

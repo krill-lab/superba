@@ -609,3 +609,35 @@ async fn codex_is_unaffected_and_never_uses_claude_only_members() {
     .await;
     assert_eq!(route(&resp), "claude-only/main");
 }
+
+#[tokio::test]
+async fn claude_codes_own_member_order_comes_before_the_routers() {
+    let a = anthropic(streaming(&["from a"])).await;
+    let b = anthropic(streaming(&["from b"])).await;
+    let (ma, mut ca) = claude_member("a", &a);
+    let (mb, mut cb) = claude_member("b", &b);
+    ca.models = listed(&["m"]);
+    cb.models = listed(&["m"]);
+    let mut cfg = claude_config(vec![(ma, ca), (mb, cb)]);
+    cfg.claude.as_mut().unwrap().order = vec!["b".into()];
+    let r = start(cfg).await;
+    let resp = post(
+        &r,
+        "/claude/v1/messages",
+        claude_headers("s", None),
+        &body("m", true),
+    )
+    .await;
+    assert_eq!(route(&resp), "b/main");
+    let models: Value = r
+        .http
+        .get(r.url("/claude/v1/models"))
+        .bearer_auth(ROUTER_TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(models["data"].as_array().unwrap().len(), 1);
+}

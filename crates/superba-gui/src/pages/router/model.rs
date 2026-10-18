@@ -252,6 +252,8 @@ pub struct Snapshot {
     /// The router program, when it lives on a network share (a Windows UNC
     /// path or mapped network drive): the service may not start at login.
     pub network_exe: Option<String>,
+    /// Claude Code on the router (its providers), when it is set to use it.
+    pub claude: Option<superba_core::RouterClaudeView>,
 }
 
 /// Move the member at `from` one step up (`up = true`) or down; returns the new

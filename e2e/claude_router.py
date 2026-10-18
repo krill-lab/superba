@@ -73,7 +73,7 @@ def main():
     ap.add_argument("--claude", default=shutil.which("claude"))
     ap.add_argument("--anthropic-path", default="/codex")
     ap.add_argument("--model", default="gpt-5.6-sol")
-    ap.add_argument("--small-model", default="gpt-5.4-mini")
+    ap.add_argument("--small-model", default="gpt-5.6-luna")
     a = ap.parse_args()
     secrets = load_env(os.environ["SUPERBA_E2E_ENV"])
     upstream = secrets["SUPERBA_E2E_UPSTREAM"].rstrip("/")

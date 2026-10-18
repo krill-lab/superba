@@ -632,6 +632,11 @@ pub enum ClaudeCommand {
         #[arg(long, conflicts_with = "id", help = english("cli.claude.help.follow_codex"))]
         follow_codex: bool,
     },
+    #[command(about = english("cli.claude.help.route"))]
+    Route {
+        #[arg(value_parser = ["direct", "router"], help = english("cli.claude.help.route_value"))]
+        route: Option<String>,
+    },
     #[command(about = english("cli.claude.help.endpoint"))]
     Endpoint {
         #[arg(value_name = "URL|PRESET", help = english("cli.claude.help.endpoint_value"))]
@@ -796,6 +801,8 @@ pub enum RouterCommand {
         state: Option<OnOff>,
         #[arg(long, value_enum, value_delimiter = ',', help = english("cli.help.stats_line_clients"))]
         clients: Vec<StatsClientArg>,
+        #[arg(long, value_enum, value_delimiter = ',', help = english("cli.help.stats_line_harnesses"))]
+        harnesses: Vec<HarnessArg>,
         #[arg(long, help = english("cli.help.stats_line_template"))]
         template: Option<String>,
         #[arg(long, help = english("cli.help.stats_line_italic"))]
@@ -914,6 +921,15 @@ pub enum LogClientArg {
 pub enum StatsClientArg {
     App,
     Tui,
+}
+
+/// `spb router stats-line --harnesses`: the tools that get the line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum HarnessArg {
+    Codex,
+    ClaudeCode,
+    /// No tool (the line stays on but reaches none).
+    None,
 }
 
 /// `spb usage stats --by`.

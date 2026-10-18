@@ -25,6 +25,7 @@ pub(super) async fn run(command: &ClaudeCommand, rt: &Runtime, out: &mut Output)
         ClaudeCommand::Provider { id, follow_codex } => {
             provider(id.as_deref(), *follow_codex, rt, out).await
         }
+        ClaudeCommand::Route { route } => set_route(route.as_deref(), rt, out).await,
         ClaudeCommand::Endpoint {
             value,
             provider,
@@ -167,6 +168,71 @@ async fn status(rt: &Runtime, out: &mut Output) -> Result {
     let view = rt.service.claude_view().await?;
     let set = rt.service.profile_set().await?;
     print_status(&view, &set, out)?;
+    print_router(&view, rt, out).await?;
+    out.value(&view)?;
+    Ok(exit::OK)
+}
+
+/// The route, and through the router the providers it uses for Claude Code
+/// with why one cannot serve it.
+async fn print_router(
+    view: &ClaudeView,
+    rt: &Runtime,
+    out: &mut Output,
+) -> superba_core::Result<()> {
+    let route = match (view.config.route, &view.router_base_url) {
+        (superba_core::ClaudeRoute::Router, Some(url)) => {
+            out.render(&text("cli.claude.route.router_at").arg("url", url.as_str()))
+        }
+        (superba_core::ClaudeRoute::Router, None) => out.label("cli.claude.route.router_missing"),
+        _ => out.label("cli.claude.route.direct"),
+    };
+    out.field("cli.claude.field.route", route)?;
+    if view.config.route != superba_core::ClaudeRoute::Router {
+        return Ok(());
+    }
+    let Some(claude) = rt.service.router_status().await.ok().and_then(|r| r.claude) else {
+        return Ok(());
+    };
+    for m in &claude.members {
+        let state = match (m.ineligible, &m.endpoint) {
+            (Some(reason), _) => out.render(&reason.text()),
+            (None, Some(e)) => e.clone(),
+            (None, None) => String::new(),
+        };
+        let mark = if m.ineligible.is_some() { "✗" } else { "✓" };
+        let role = if m.preferred {
+            format!(" ({})", out.label("cli.claude.route.preferred"))
+        } else {
+            String::new()
+        };
+        out.data_line(&format!("  {mark} {}{role}  {state}", m.name))?;
+    }
+    Ok(())
+}
+
+async fn set_route(route: Option<&str>, rt: &Runtime, out: &mut Output) -> Result {
+    let view = rt.service.claude_view().await?;
+    let set = rt.service.profile_set().await?;
+    let Some(route) = route else {
+        print_router(&view, rt, out).await?;
+        out.value(&view)?;
+        return Ok(exit::OK);
+    };
+    let route = if route == "router" {
+        superba_core::ClaudeRoute::Router
+    } else {
+        superba_core::ClaudeRoute::Direct
+    };
+    if route == superba_core::ClaudeRoute::Router && view.router_base_url.is_none() {
+        return Err(usage(out, text("cli.claude.route.router_missing")));
+    }
+    let mut config = view.config.clone();
+    config.route = route;
+    let view = rt.service.save_claude_config(config).await?;
+    print_status(&view, &set, out)?;
+    print_router(&view, rt, out).await?;
+    out.line(text("cli.claude.saved_apply"))?;
     out.value(&view)?;
     Ok(exit::OK)
 }
@@ -208,6 +274,9 @@ fn print_status(
         None => out.label("cli.claude.no_provider_short"),
     };
     out.field("cli.claude.field.provider", provider)?;
+    if view.endpoint.is_none() && view.provider.is_some() {
+        out.line(superba_core::ClaudeIneligible::NoAnthropicEndpoint.text())?;
+    }
     match &view.endpoint {
         Some(e) => {
             let preset = e

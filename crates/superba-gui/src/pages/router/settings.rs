@@ -171,6 +171,17 @@ fn stats_line_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 state.save_stats(cx, next);
             }
         }
+        // Claude Code's final answers (its own switch, user request 79).
+        let claude = superba_core::RequestHarness::ClaudeCode;
+        let mut v = line.harnesses.contains(&claude);
+        if ui
+            .checkbox(&mut v, cx.tr.t("stats_line.client.claude_code"))
+            .changed()
+        {
+            let mut next = stats.clone();
+            next.line = stats_line::with_harness(&line, claude, v);
+            state.save_stats(cx, next);
+        }
     });
     ui.label(Text::caption(cx.tr.t("stats_line.exec_never"), cx.pal));
     // Metrics.

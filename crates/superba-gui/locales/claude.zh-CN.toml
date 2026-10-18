@@ -22,13 +22,13 @@ title = "供应商"
 follow = "与 Codex 相同"
 follows_named = "{name}（与 Codex 相同）"
 none = "没有带 Key 的供应商"
-no_anthropic = "这个供应商没有 Anthropic 接口，协议转换将在 0.1.2 支持"
 
 [claude.route]
 title = "路由"
 direct = "直连"
 router = "本地路由"
-router_soon = "路由即将支持 Claude Code"
+router_soon = "请先在路由页面安装本地路由，之后 Claude Code 才能经由它"
+via = "经由本地路由：{url}"
 
 [claude.endpoint]
 title = "Anthropic 接口"
