@@ -27,7 +27,7 @@ fn describe(view: &SelfUpdateView, out: &mut Output) -> Result<()> {
         out.optional(view.latest.as_ref().map(|l| l.version.clone())),
     )?;
     if let Some(t) = view.checked_at {
-        out.field("cli.selfupdate.checked", t.to_rfc3339())?;
+        out.field("cli.selfupdate.checked", out.time(t))?;
     }
     let version = view
         .latest

@@ -1276,7 +1276,8 @@ impl Switcher {
         };
         if !reasons.is_empty() {
             notes.push(Notice::info(match &record {
-                Some(r) => text("switch.models.frozen").arg("time", r.generated_at.to_rfc3339()),
+                Some(r) => text("switch.models.frozen")
+                    .arg("time", crate::localtime::local(r.generated_at).to_string()),
                 None => text("switch.models.catalog_next_switch"),
             }));
             if site.kind == SiteKind::Krill {

@@ -597,8 +597,7 @@ fn source_section(ui: &mut Ui, cx: &Cx<'_>, d: &mut ImportDialog, source: &Sourc
 fn range_text(r: &UsageImportReport) -> String {
     match (r.first, r.last) {
         (Some(a), Some(b)) => {
-            let day =
-                |t: superba_core::Timestamp| t.to_rfc3339().chars().take(10).collect::<String>();
+            let day = |t: superba_core::Timestamp| superba_switch::localtime::local(t).date();
             format!("{} – {}", day(a), day(b))
         }
         _ => String::new(),

@@ -523,7 +523,7 @@ pub(super) async fn feeds(command: &FeedsCommand, rt: &Runtime, out: &mut Output
         "cli.feeds.checked",
         status
             .checked_at
-            .map(|t| t.to_rfc3339())
+            .map(|t| out.time(t))
             .unwrap_or_else(|| out.none()),
     )?;
     out.field("cli.feeds.online", out.boolean(status.online_checks))?;

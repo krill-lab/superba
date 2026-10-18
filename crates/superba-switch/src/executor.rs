@@ -2277,7 +2277,7 @@ impl Run<'_> {
             let times: Vec<String> = stale
                 .iter()
                 .filter_map(|p| p.started_at)
-                .map(|t| t.to_rfc3339())
+                .map(|t| crate::localtime::local(t).to_string())
                 .collect();
             self.notices.push(Notice::info(
                 text("switch.banner.stale")

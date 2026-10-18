@@ -37,7 +37,7 @@ fn render_processes(
         let mut line = text("cli.stop.process")
             .arg_text("role", superba_core::process_role(p).text())
             .arg("pid", p.pid)
-            .arg("started", out.optional(p.started_at));
+            .arg("started", out.optional_time(p.started_at));
         line = match &p.cwd {
             Some(cwd) => line.arg("where", superba_core::paths::display_path(cwd)),
             None => line.arg("where", out.none()),

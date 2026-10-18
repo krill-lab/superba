@@ -344,8 +344,8 @@ pub(super) async fn usage_run(
     let range = match (r.first, r.last) {
         (Some(a), Some(b)) => out.render(
             &text("cli.import_usage.range")
-                .arg("from", a.to_rfc3339().chars().take(10).collect::<String>())
-                .arg("to", b.to_rfc3339().chars().take(10).collect::<String>()),
+                .arg("from", out.date(a))
+                .arg("to", out.date(b)),
         ),
         _ => String::new(),
     };

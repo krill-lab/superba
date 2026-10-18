@@ -317,20 +317,8 @@ pub fn cost_text(cost: Option<Usd>) -> String {
 }
 
 /// The local UTC offset at `t` in seconds (`None` = unknown, shown in UTC).
-#[cfg(unix)]
 pub fn local_offset_secs(t: Timestamp) -> Option<i64> {
-    let secs = t.as_millis().div_euclid(1000) as libc::time_t;
-    // SAFETY: `tm` is a plain C struct filled by localtime_r, the thread-safe
-    // variant; it only reads `secs`.
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    let r = unsafe { libc::localtime_r(&secs, &mut tm) };
-    (!r.is_null()).then_some(tm.tm_gmtoff as i64)
-}
-
-/// The local UTC offset at `t` in seconds (`None` = unknown, shown in UTC).
-#[cfg(not(unix))]
-pub fn local_offset_secs(_t: Timestamp) -> Option<i64> {
-    None
+    superba_switch::localtime::offset_secs(t)
 }
 
 /// `t` in local time as RFC 3339 without the zone (`2026-10-17T14:32:07`).

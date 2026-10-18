@@ -250,7 +250,7 @@ fn render_hosts(hosts: &[HostView], out: &mut Output) -> superba_core::Result<()
                     .unwrap_or_else(|| out.none()),
                 h.state
                     .as_ref()
-                    .map(|s| s.probed_at.to_rfc3339())
+                    .map(|s| out.time(s.probed_at))
                     .unwrap_or_else(|| out.none()),
                 h.probe_error
                     .as_ref()

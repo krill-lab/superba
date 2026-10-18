@@ -568,7 +568,15 @@ async fn unlimited_missing_billing_and_saved_usage_are_explained() {
     assert!(stdout.contains("Limit: Unlimited"), "{stdout}");
     assert!(!stdout.contains("Remaining:"));
     assert!(stdout.contains("Try again in 20 min."));
-    assert!(stdout.contains("Saved data from 2026-11-02T00:00:00.000Z"));
+    // Shown in local time (user bug 62(b)).
+    let saved = superba_switch::localtime::local(
+        superba_core::Timestamp::from_utc_date(2026, 11, 2).unwrap(),
+    );
+    assert!(
+        stdout.contains(&format!("Saved data from {saved}")),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("2026-11-02T00:00:00.000Z"), "{stdout}");
     assert!(stdout.contains("Per-model usage: not available from this site"));
 
     let mut report = full_report();

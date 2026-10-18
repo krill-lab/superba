@@ -133,7 +133,7 @@ pub(super) async fn run(
                 .map(|entry| {
                     vec![
                         entry.id.clone(),
-                        entry.migrated_at.to_string(),
+                        out.time(entry.migrated_at),
                         entry.to_provider.clone(),
                         entry
                             .by_source_provider

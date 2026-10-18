@@ -112,7 +112,7 @@ async fn render_log(
         .iter()
         .map(|r| {
             vec![
-                r.started_at.to_rfc3339(),
+                out.time(r.started_at),
                 session(r),
                 out.render(&r.status.text()),
                 match r.line_label() {
@@ -289,10 +289,10 @@ pub(super) async fn stats(
     Ok(exit::OK)
 }
 
-/// UTC offset of this machine's local time in minutes (from `TZ`-aware libc
-/// where available; UTC otherwise).
+/// UTC offset of this machine's local time in minutes (the system's time-zone
+/// rules, Windows included; 0 where unknown).
 fn local_offset_minutes() -> i32 {
-    0
+    superba_switch::localtime::offset_minutes(superba_core::Timestamp::now())
 }
 
 /// `spb router stats-line [on|off] [--clients ...] [--template T] [--italic]`.

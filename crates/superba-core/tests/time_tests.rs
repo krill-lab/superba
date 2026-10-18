@@ -247,3 +247,42 @@ fn utc_calendar_helpers_round_trip() {
     assert_eq!(before_epoch.utc_date_string(), "1969-12-31");
     assert_eq!(before_epoch.as_unix_secs(), -1);
 }
+
+// --- local time (user bug 55(b): times were shown in UTC on Windows) ---
+
+/// 2026-10-18T14:10:23.456Z
+const OCT18: i64 = 1_792_332_623_456;
+
+#[test]
+fn local_time_shows_the_wall_clock_of_the_offset() {
+    use superba_core::LocalTime;
+    let t = Timestamp(OCT18);
+    assert_eq!(t.to_rfc3339(), "2026-10-18T14:10:23.456Z");
+    // Pacific daylight time, the Windows test VMs' zone.
+    let pdt = LocalTime::with_offset(t, Some(-7 * 3600));
+    assert_eq!(pdt.to_string(), "2026-10-18 07:10:23");
+    assert_eq!(pdt.date(), "2026-10-18");
+    assert_eq!(pdt.time_of_day(false), "07:10");
+    assert_eq!(pdt.time_of_day(true), "07:10:23");
+    // East of UTC across midnight, with a half-hour zone.
+    let late = Timestamp(OCT18 + 10 * 3_600_000);
+    assert_eq!(
+        LocalTime::with_offset(late, Some(5 * 3600 + 1800)).to_string(),
+        "2026-10-19 05:40:23"
+    );
+    // West of UTC back across midnight.
+    let early = Timestamp(OCT18 - 12 * 3_600_000);
+    let ny = LocalTime::with_offset(early, Some(-4 * 3600));
+    assert_eq!(ny.to_string(), "2026-10-17 22:10:23");
+    assert_eq!(ny.date(), "2026-10-17");
+    // UTC itself has no suffix; an unknown offset says UTC.
+    assert_eq!(
+        LocalTime::with_offset(t, Some(0)).to_string(),
+        "2026-10-18 14:10:23"
+    );
+    let unknown = LocalTime::with_offset(t, None);
+    assert_eq!(unknown.to_string(), "2026-10-18 14:10:23 UTC");
+    assert_eq!(unknown.time_of_day(false), "14:10 UTC");
+    assert_eq!(unknown.offset_secs(), None);
+    assert_eq!(unknown.timestamp(), t);
+}

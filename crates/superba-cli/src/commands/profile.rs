@@ -209,7 +209,7 @@ async fn compaction(id: &str, check: bool, rt: &Runtime, out: &mut Output) -> Re
         (Some(c), Some(at)) => {
             out.line(
                 text("cli.compaction.checked")
-                    .arg("when", at.to_rfc3339())
+                    .arg("when", out.time(at))
                     .arg("model", r.model.clone().unwrap_or_default())
                     .arg_text("support", c.support.text())
                     .arg("detail", c.detail.clone().unwrap_or_default()),

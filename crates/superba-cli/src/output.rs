@@ -130,6 +130,24 @@ impl Output {
         value.map(|v| v.to_string()).unwrap_or_else(|| self.none())
     }
 
+    /// A time for people to read: local wall-clock time
+    /// (`2026-10-18 07:10:23`), with a ` UTC` suffix where the local offset
+    /// is unknown (user bug 62(b): times were shown as RFC 3339 UTC). JSON
+    /// output keeps the timestamps as they are.
+    pub(crate) fn time(&self, t: superba_core::Timestamp) -> String {
+        superba_switch::localtime::local(t).to_string()
+    }
+
+    /// [`Self::time`] or the "none" label.
+    pub(crate) fn optional_time(&self, t: Option<superba_core::Timestamp>) -> String {
+        t.map(|t| self.time(t)).unwrap_or_else(|| self.none())
+    }
+
+    /// The local calendar date of `t` (`2026-10-18`).
+    pub(crate) fn date(&self, t: superba_core::Timestamp) -> String {
+        superba_switch::localtime::local(t).date()
+    }
+
     pub(crate) fn boolean(&self, value: bool) -> String {
         self.label(if value {
             "cli.value.yes"

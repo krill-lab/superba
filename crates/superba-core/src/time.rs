@@ -170,6 +170,82 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
+/// A [`Timestamp`] shown as local wall-clock time for people to read:
+/// `YYYY-MM-DD HH:MM:SS`, or the UTC time with a ` UTC` suffix where the local
+/// offset is unknown. [`Display`](fmt::Display) of a `Timestamp` itself stays
+/// RFC 3339 UTC for logs and machine output. The offset comes from the
+/// system's time-zone rules (`superba_switch::localtime`, which may use FFI;
+/// this crate forbids `unsafe`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LocalTime {
+    at: Timestamp,
+    offset_secs: Option<i64>,
+}
+
+impl LocalTime {
+    /// `at` shown with a given UTC offset (`None` = unknown, shown in UTC).
+    pub const fn with_offset(at: Timestamp, offset_secs: Option<i64>) -> Self {
+        Self { at, offset_secs }
+    }
+
+    /// The instant.
+    pub const fn timestamp(&self) -> Timestamp {
+        self.at
+    }
+
+    /// The UTC offset used, in seconds east of UTC (`None` = unknown).
+    pub const fn offset_secs(&self) -> Option<i64> {
+        self.offset_secs
+    }
+
+    /// The wall-clock time as RFC 3339 digits without a zone
+    /// (`2026-10-18T07:10:23.000`; UTC where the offset is unknown).
+    fn wall(&self) -> String {
+        let shifted = Timestamp(
+            self.at
+                .0
+                .saturating_add(self.offset_secs.unwrap_or(0).saturating_mul(1000)),
+        );
+        let s = shifted.to_rfc3339();
+        s.strip_suffix('Z').unwrap_or(&s).to_owned()
+    }
+
+    /// The local calendar date, `YYYY-MM-DD` (UTC where the offset is unknown).
+    pub fn date(&self) -> String {
+        let s = self.wall();
+        s.get(..10).unwrap_or(&s).to_owned()
+    }
+
+    /// The local time of day, `HH:MM:SS` (or `HH:MM`), with ` UTC` where the
+    /// offset is unknown.
+    pub fn time_of_day(&self, seconds: bool) -> String {
+        let s = self.wall();
+        let end = if seconds { 19 } else { 16 };
+        format!("{}{}", s.get(11..end).unwrap_or(&s), self.suffix())
+    }
+
+    fn suffix(&self) -> &'static str {
+        if self.offset_secs.is_some() {
+            ""
+        } else {
+            " UTC"
+        }
+    }
+}
+
+impl fmt::Display for LocalTime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.wall();
+        write!(
+            f,
+            "{} {}{}",
+            s.get(..10).unwrap_or(&s),
+            s.get(11..19).unwrap_or(""),
+            self.suffix()
+        )
+    }
+}
+
 /// Source of time. Inject it wherever behaviour depends on "now" (countdowns, stash
 /// age, turn quiet periods, generation timestamps) so tests can control it.
 pub trait Clock: Send + Sync + fmt::Debug {

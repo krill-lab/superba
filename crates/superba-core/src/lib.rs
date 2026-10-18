@@ -110,7 +110,7 @@ pub use sessions::*;
 pub use settings::*;
 pub use site::*;
 pub use target::*;
-pub use time::{Clock, Countdown, ManualClock, SystemClock, Timestamp};
+pub use time::{Clock, Countdown, LocalTime, ManualClock, SystemClock, Timestamp};
 pub use traits::*;
 pub use transports::*;
 pub use usage::*;

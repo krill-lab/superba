@@ -477,30 +477,13 @@ impl<T> Load<T> {
 /// `HH:MM` (or `HH:MM:SS`) of `t` in the local time zone; in UTC with a
 /// "UTC" suffix where the local offset is unknown.
 pub fn clock_time(t: Timestamp, seconds: bool) -> String {
-    let (offset, suffix) = match local_offset_secs(t) {
-        Some(o) => (o, ""),
-        None => (0, " UTC"),
-    };
-    let s = Timestamp(t.as_millis() + offset * 1000).to_rfc3339();
-    let end = if seconds { 19 } else { 16 };
-    format!("{}{suffix}", s.get(11..end).unwrap_or(&s))
+    superba_switch::localtime::local(t).time_of_day(seconds)
 }
 
-/// The local UTC offset at `t` in seconds (time zone rules of the system).
-#[cfg(unix)]
+/// The local UTC offset at `t` in seconds (time-zone rules of the system, on
+/// Windows too: user bug 62(b) showed every time in UTC there).
 pub fn local_offset_secs(t: Timestamp) -> Option<i64> {
-    let secs = t.as_millis().div_euclid(1000) as libc::time_t;
-    // SAFETY: `tm` is a plain C struct that localtime_r fills in; localtime_r is
-    // the thread-safe variant and only reads `secs`.
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    let r = unsafe { libc::localtime_r(&secs, &mut tm) };
-    (!r.is_null()).then_some(tm.tm_gmtoff as i64)
-}
-
-/// The local UTC offset (unknown off Unix).
-#[cfg(not(unix))]
-pub fn local_offset_secs(_t: Timestamp) -> Option<i64> {
-    None
+    superba_switch::localtime::offset_secs(t)
 }
 
 /// Everything the backend told us.

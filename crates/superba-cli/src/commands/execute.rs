@@ -627,7 +627,7 @@ fn render_outcome(
         out.line(
             text("cli.format.process")
                 .arg("pid", process.pid)
-                .arg("started", out.optional(process.started_at)),
+                .arg("started", out.optional_time(process.started_at)),
         )?;
     }
     // What every running Codex consumer uses now (GH#4).

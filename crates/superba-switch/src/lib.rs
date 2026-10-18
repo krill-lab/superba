@@ -30,6 +30,7 @@ pub mod executor;
 pub mod hosts;
 mod import;
 pub mod journal;
+pub mod localtime;
 pub mod machine;
 pub mod messages;
 pub mod models;

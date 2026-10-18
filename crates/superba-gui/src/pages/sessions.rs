@@ -694,7 +694,7 @@ fn history(
             match col {
                 0 => {
                     ui.label(Text::small(cx.ago(m.migrated_at), cx.pal))
-                        .on_hover_text(m.migrated_at.to_rfc3339());
+                        .on_hover_text(superba_switch::localtime::local(m.migrated_at).to_string());
                 }
                 1 => {
                     let from: Vec<&str> = m.by_source_provider.keys().map(String::as_str).collect();

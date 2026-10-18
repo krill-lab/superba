@@ -230,7 +230,7 @@ fn usage_report(u: &UsageReport, out: &mut Output) -> Result<()> {
         out.notice(&superba_core::Notice::warning(notice.text()))?;
     }
     if u.from_cache || u.notice.is_some() {
-        out.line(text("cli.account.saved").arg("time", u.fetched_at.to_rfc3339()))?;
+        out.line(text("cli.account.saved").arg("time", out.time(u.fetched_at)))?;
     }
     Ok(())
 }

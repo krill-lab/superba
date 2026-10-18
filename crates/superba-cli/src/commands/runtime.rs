@@ -54,7 +54,7 @@ pub(super) fn render(view: &RuntimeView, out: &mut Output) -> superba_core::Resu
         Some(w) => out.line(
             text("cli.runtime.written")
                 .arg("generation", w.generation)
-                .arg("at", w.applied_at),
+                .arg("at", out.time(w.applied_at)),
         )?,
         None => out.line(text("cli.runtime.written_none"))?,
     }
@@ -65,7 +65,7 @@ pub(super) fn render(view: &RuntimeView, out: &mut Output) -> superba_core::Resu
             vec![
                 out.render(&c.role.text()),
                 c.pid.to_string(),
-                out.optional(c.started_at),
+                out.optional_time(c.started_at),
                 out.render(&effect_text(c)),
                 out.render(&busy_text(&c.busy)),
             ]
