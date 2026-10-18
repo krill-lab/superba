@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon/png/superba-256.png" width="128" height="128" alt="Superba"></p>
+
 # Superba
 
 **English** · [简体中文](README.zh-CN.md)
