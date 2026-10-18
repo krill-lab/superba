@@ -71,6 +71,18 @@ struct Index {
     backups: Vec<Entry>,
     #[serde(default)]
     edits: Vec<EditRecord>,
+    /// Copies of other harnesses' files (dsh, opencode, pi, ZCode, WorkBuddy).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    harness: Vec<HarnessEntry>,
+}
+
+/// One harness file copy in the index.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct HarnessEntry {
+    #[serde(flatten)]
+    backup: superba_core::harness::HarnessBackup,
+    /// The sealed copy, relative to the editor directory.
+    sealed: PathBuf,
 }
 
 /// Replace the local Codex file at `path` with `contents`, only when it still
@@ -415,5 +427,124 @@ impl EditorStore {
             });
         }
         Ok(CodexFileBackupContents { backup, contents })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Other harnesses' files: the same sealed copies and index, in their own
+// list (`harness/<id>/<copy>.enc`), the newest KEEP_PER_FILE per file kept and
+// the original (before Superba first wrote the file) never pruned.
+
+impl EditorStore {
+    /// Seal `bytes` (the file `file` of `harness` at `path`) and list it.
+    pub fn harness_backup(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        file: &str,
+        path: &Path,
+        bytes: &[u8],
+        source: BackupSource,
+        at: Timestamp,
+    ) -> Result<superba_core::harness::HarnessBackup> {
+        let rand = uuid::Uuid::new_v4().simple().to_string();
+        let id = format!("{}-{}-{}", stamp(at), harness.as_str(), &rand[..6]);
+        let rel = PathBuf::from("harness")
+            .join(harness.as_str())
+            .join(format!("{id}.enc"));
+        let sealed = self.dir().join(&rel);
+        self.vault.write_sealed(&sealed, bytes)?;
+        let backup = superba_core::harness::HarnessBackup {
+            id,
+            harness,
+            file: file.to_owned(),
+            path: path.to_path_buf(),
+            at,
+            source,
+            size: bytes.len() as u64,
+            sha256: Some(fsx::sha256_hex(bytes)),
+        };
+        let dir = self.dir();
+        let listed = backup.clone();
+        let result = self.with_index(move |index| {
+            index.harness.push(HarnessEntry {
+                backup: listed.clone(),
+                sealed: rel,
+            });
+            let mut same: Vec<(Timestamp, String)> = index
+                .harness
+                .iter()
+                .filter(|e| {
+                    e.backup.harness == listed.harness
+                        && e.backup.file == listed.file
+                        && e.backup.source != BackupSource::Original
+                })
+                .map(|e| (e.backup.at, e.backup.id.clone()))
+                .collect();
+            same.sort();
+            let excess = same.len().saturating_sub(KEEP_PER_FILE);
+            let drop: Vec<String> = same.into_iter().take(excess).map(|(_, id)| id).collect();
+            index.harness.retain(|e| {
+                if drop.contains(&e.backup.id) {
+                    let _ = std::fs::remove_file(dir.join(&e.sealed));
+                    false
+                } else {
+                    true
+                }
+            });
+            Ok(())
+        });
+        if let Err(e) = result {
+            let _ = std::fs::remove_file(&sealed);
+            return Err(e);
+        }
+        Ok(backup)
+    }
+
+    /// The copies of `harness`'s files, newest first.
+    pub fn harness_backups(
+        &self,
+        harness: superba_core::harness::HarnessId,
+    ) -> Result<Vec<superba_core::harness::HarnessBackup>> {
+        let mut out: Vec<_> = self
+            .load()?
+            .harness
+            .into_iter()
+            .map(|e| e.backup)
+            .filter(|b| b.harness == harness)
+            .collect();
+        out.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| b.id.cmp(&a.id)));
+        Ok(out)
+    }
+
+    /// Decrypt one harness file copy.
+    pub fn harness_backup_read(
+        &self,
+        id: &str,
+    ) -> Result<(
+        superba_core::harness::HarnessBackup,
+        superba_core::SecretBytes,
+    )> {
+        let entry = self
+            .load()?
+            .harness
+            .into_iter()
+            .find(|e| e.backup.id == id)
+            .ok_or_else(|| Error::NotFound {
+                what: format!("backup {id}"),
+            })?;
+        let contents = self
+            .vault
+            .read_sealed(&self.dir().join(&entry.sealed))?
+            .ok_or_else(|| Error::NotFound {
+                what: format!("the encrypted copy of backup {id}"),
+            })?;
+        if let Some(sha) = &entry.backup.sha256
+            && &fsx::sha256_hex(contents.expose()) != sha
+        {
+            return Err(Error::Conflict {
+                message: format!("backup {id} does not match its recorded hash"),
+            });
+        }
+        Ok((entry.backup, contents))
     }
 }

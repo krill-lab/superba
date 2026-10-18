@@ -343,6 +343,18 @@ impl DataDir {
         self.root.join("remote")
     }
 
+    /// `harnesses.json`: Superba's configuration of the other coding-agent
+    /// harnesses (dsh, opencode, pi, ZCode, WorkBuddy).
+    pub fn harness_config_json(&self) -> PathBuf {
+        self.root.join("harnesses.json")
+    }
+
+    /// `harness/<id>/`: what Superba applied to one harness's files
+    /// (encrypted: it holds the key it wrote and the values it replaced).
+    pub fn harness_dir(&self, harness: &str) -> PathBuf {
+        self.root.join("harness").join(harness)
+    }
+
     /// `logs/`.
     pub fn logs_dir(&self) -> PathBuf {
         self.root.join("logs")

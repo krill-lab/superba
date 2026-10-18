@@ -1,0 +1,19 @@
+- id: llm-pi-ai
+  config:
+    providers:
+      superba-resp:
+        apiKeyEnv: SUPERBA_ROUTER_TOKEN
+        api: openai-responses
+        baseURL: http://127.0.0.1:18731/v1
+        reasoning: high
+        models:
+          - id: fake-gpt
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              xhigh: xhigh
+- id: agent-default-model
+  config:
+    provider: superba-resp
+    model: fake-gpt

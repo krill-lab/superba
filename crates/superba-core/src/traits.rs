@@ -1678,4 +1678,100 @@ pub trait SwitchService: Send + Sync {
         decider: Arc<dyn SwitchDecider>,
         events: Arc<dyn SwitchEvents>,
     ) -> Result<SwitchOutcome>;
+
+    // -- other coding-agent harnesses (dsh, opencode, pi, ZCode, WorkBuddy) --
+
+    /// Every harness: found or not, what Superba applied there.
+    async fn harness_list(&self) -> Result<Vec<crate::harness::HarnessSummary>> {
+        Err(Error::not_implemented("harnesses"))
+    }
+
+    /// One harness: its files, Superba's settings, the endpoint an apply
+    /// would write, what Superba applied and what is not applied yet.
+    async fn harness_view(
+        &self,
+        harness: crate::harness::HarnessId,
+    ) -> Result<crate::harness::HarnessView> {
+        let _ = harness;
+        Err(Error::not_implemented("harnesses"))
+    }
+
+    /// Save Superba's settings for a harness (provider, protocol, models,
+    /// route). Writes no harness file: [`Self::harness_plan`] /
+    /// [`Self::harness_apply`] do.
+    async fn save_harness_settings(
+        &self,
+        harness: crate::harness::HarnessId,
+        settings: crate::harness::HarnessSettings,
+    ) -> Result<crate::harness::HarnessView> {
+        let _ = (harness, settings);
+        Err(Error::not_implemented("harnesses"))
+    }
+
+    /// Declare the Chat Completions / Anthropic endpoints of a provider that
+    /// does not have them built in (empty = forget them).
+    async fn save_provider_protocols(
+        &self,
+        provider: ProfileId,
+        protocols: crate::harness::ProviderProtocols,
+    ) -> Result<()> {
+        let _ = (provider, protocols);
+        Err(Error::not_implemented("harnesses"))
+    }
+
+    /// Store (or with `None` delete) a harness's router token in the key
+    /// store; routed mode writes it as the harness's key.
+    async fn set_harness_router_token(
+        &self,
+        harness: crate::harness::HarnessId,
+        token: Option<Secret>,
+    ) -> Result<crate::harness::HarnessView> {
+        let _ = (harness, token);
+        Err(Error::not_implemented("harnesses"))
+    }
+
+    /// Plan writing Superba's provider into a harness for its settings, or
+    /// restoring what the owned entries held before Superba. Never writes.
+    async fn harness_plan(
+        &self,
+        harness: crate::harness::HarnessId,
+        kind: crate::harness::HarnessPlanKind,
+    ) -> Result<crate::harness::HarnessPlan> {
+        let _ = (harness, kind);
+        Err(Error::not_implemented("harnesses"))
+    }
+
+    /// Execute a plan of [`Self::harness_plan`]: refused when a file changed
+    /// since it was planned; entries someone changed after Superba wrote them
+    /// are written only with `take_over` (else kept); every other entry and
+    /// comment of the files is kept; each replaced file is backed up first.
+    async fn harness_apply(
+        &self,
+        plan: crate::harness::HarnessPlan,
+        take_over: bool,
+    ) -> Result<crate::harness::HarnessApplyReport> {
+        let _ = (plan, take_over);
+        Err(Error::not_implemented("harnesses"))
+    }
+
+    /// The encrypted copies of a harness's files Superba took before writing
+    /// them, newest first.
+    async fn harness_backups(
+        &self,
+        harness: crate::harness::HarnessId,
+    ) -> Result<Vec<crate::harness::HarnessBackup>> {
+        let _ = harness;
+        Err(Error::not_implemented("harnesses"))
+    }
+
+    /// Put one backed-up file back as a whole (after backing up what is
+    /// there). Superba then owns nothing in that file any more.
+    async fn harness_restore_backup(
+        &self,
+        harness: crate::harness::HarnessId,
+        id: String,
+    ) -> Result<crate::harness::HarnessApplyReport> {
+        let _ = (harness, id);
+        Err(Error::not_implemented("harnesses"))
+    }
 }

@@ -168,6 +168,7 @@ fn source_keys(source: &str) -> BTreeSet<String> {
         if let Some(text) = literal(token)
             && [
                 "config.note.",
+                "config.harness.",
                 "config.settings.",
                 "config.claude.",
                 "env.scope.",

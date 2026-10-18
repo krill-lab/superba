@@ -1,0 +1,28 @@
+- id: llm-pi-ai
+  config:
+    providers:
+      superba-resp:
+        displayName: Superba (Responses)
+        apiKeyEnv: SUPERBA_ROUTER_TOKEN
+        api: openai-responses
+        baseURL: http://127.0.0.1:18731/v1
+        models:
+          - id: fake-gpt
+            name: Fake GPT
+            contextWindow: 272000
+      superba-chat:
+        apiKeyEnv: SUPERBA_ROUTER_TOKEN
+        api: openai-completions
+        baseURL: http://127.0.0.1:18731/v1
+        models:
+          - id: fake-gpt
+      superba-anth:
+        apiKeyEnv: SUPERBA_ROUTER_TOKEN
+        api: anthropic-messages
+        baseURL: http://127.0.0.1:18731
+        models:
+          - id: fake-claude
+- id: agent-default-model
+  config:
+    provider: superba-resp
+    model: fake-gpt

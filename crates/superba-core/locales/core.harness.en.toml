@@ -1,0 +1,9 @@
+# superba-core messages of the other harnesses (dsh, opencode, pi, ZCode,
+# WorkBuddy). Concatenated into the core catalog like the other area files;
+# every key must also exist in core.harness.zh-CN.toml.
+
+[harness.url]
+empty = "Enter a URL."
+http = "Plain http is accepted only for this computer (127.0.0.1, localhost)."
+query = "The URL must not have a query or fragment."
+invalid = "This is not an http(s) URL."

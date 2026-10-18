@@ -24,6 +24,9 @@
 //! - [`codex_files`]: the file editor (GitHub issue 9): checks, formatting
 //!   that keeps comments, masked `auth.json` secrets, line diffs, and the
 //!   encrypted backups taken before every save.
+//! - [`harness`]: the other coding-agent harnesses' files (dsh, opencode, pi,
+//!   ZCode, WorkBuddy): Superba's provider written, read back and restored
+//!   with editors that keep comments and every other entry.
 //! - [`toml_keys`], [`authjson`], [`version`]: reusable pure helpers.
 //!
 //! Everything is rooted in an injected [`superba_core::LocalContext`]; nothing here
@@ -40,6 +43,7 @@ pub mod codex_files;
 mod engine;
 mod env;
 mod fsx;
+pub mod harness;
 mod journal;
 mod keystore;
 mod profiles;

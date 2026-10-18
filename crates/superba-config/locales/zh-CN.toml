@@ -26,6 +26,42 @@ windows_wsl = "ChatGPT app 在 WSL 中运行 Codex（“在 WSL 中运行 Codex�
 windows_terminal = "Windows Terminal 和 VS Code 需要完全重启才能看到新值。"
 kept_changed = "{location} 保持不变：Superba 设置之后它的值被改成了 {value}。"
 
+[config.harness]
+nothing_owned = "Superba 没有管理这个 harness 文件里的任何条目，无需恢复。"
+backup_restored = "文件已恢复为该备份时的样子；Superba 不再管理其中的任何内容。"
+
+[config.harness.dsh]
+reload = "dsh 在启动时读取各配置档的补丁和 .env（正在运行的 dsh web 会读到补丁的变化，但读不到密钥）：重启 dsh 后生效。"
+plain_key = "密钥以明文保存在 $DSH_HOME/.env 的 {var} 中（文件权限 0600）。"
+telemetry_off = "已在每个配置档中关闭 dsh 的反馈上传（OpenTelemetry）和 DeepSeek 会话日志上传。"
+home_patch = "$DSH_HOME/cordis.patch.yml 里有 {entry} 条目：它会覆盖 Superba 写入各配置档的内容。"
+env_var = "环境变量里设置了 {var}：dsh 会用它，而不是 $DSH_HOME/.env 里的密钥。"
+credentials = "dsh 的 .credentials.yaml 保存了 {var}：读取它的配置档（web、desktop）会用那个值，而不是 .env 里的密钥。"
+
+[config.harness.opencode]
+v2_live = "OpenCode 2 会立即生效（它的后台服务会重新读取文件）。"
+v1_restart = "OpenCode 1 只在启动时读取配置：重启 opencode 后生效。"
+plain_key = "opencode 以明文在配置文件中保存密钥（文件权限 0600）。"
+project_override = "项目里的 opencode.json 会在该项目中覆盖这些设置。"
+env_override = "Superba 的环境里设置了 {var}：opencode 会在全局文件之后读取它，其中的模型或供应商可能优先。"
+managed = "{path} 中的 opencode 托管设置会覆盖 Superba 写入的全部内容。"
+both_files = "opencode.json 和 opencode.jsonc 同时存在；Superba 写入 opencode.jsonc，opencode 最后读取它。"
+
+[config.harness.pi]
+no_hot_reload = "pi 在启动和打开 /model 时读取 models.json：正在运行的会话会继续用旧的供应商，直到在 /model 中重新选择模型。"
+plain_key = "pi 以明文在 models.json 中保存密钥（文件权限 0600）。"
+auth_override = "pi 的 auth.json 里有供应商 \"{id}\" 的凭据：它优先于 Superba 写入的密钥。请在 pi 中用 /logout 删除。"
+
+[config.harness.workbuddy]
+hot_reload = "WorkBuddy 会在几秒内重新读取 models.json。"
+login = "WorkBuddy 只有在登录腾讯 CodeBuddy / WorkBuddy 账号后才显示自定义模型，并会把每个自定义模型的域名发送给腾讯。"
+plain_key = "WorkBuddy 以明文在 models.json 中保存密钥（文件权限 0600）。"
+
+[config.harness.zcode]
+hot_reload = "ZCode 约 8 秒内显示这些变化；已经打开的会话继续用原来的模型。"
+plain_key = "ZCode 以明文在 provider_config.json 中保存密钥（文件权限 0600）。"
+legacy = "存在 ZCode 旧的 v2/config.json；ZCode 已导入过一次，现在使用 Superba 写入的 provider_config.json。"
+
 [config.settings]
 partial_support = "{key} 对 {consumers} 无效；仍会为其他 Codex 写入。"
 no_catalog = "没有可用的设置目录，不检查 {consumer} 的设置项。"

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "share": "disabled",
+  "model": "mockchat/mock-gpt",
+  "small_model": "mockchat/mock-gpt",
+  "provider": {
+    "mockchat": {
+      "name": "Mock Chat",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:18471/v1",
+        "apiKey": "{env:MOCK_KEY}"
+      },
+      "models": {
+        "mock-gpt": {
+          "name": "Mock GPT",
+          "limit": {
+            "context": 400000,
+            "output": 128000
+          }
+        }
+      }
+    },
+    "mockresp": {
+      "name": "Mock Responses",
+      "npm": "@ai-sdk/openai",
+      "options": {
+        "baseURL": "http://127.0.0.1:18471/v1",
+        "apiKey": "{env:MOCK_KEY}"
+      },
+      "models": {
+        "gpt-5.4-mini": {
+          "name": "GPT-5.4 mini (mock)",
+          "reasoning": true,
+          "limit": {
+            "context": 400000,
+            "output": 128000
+          }
+        },
+        "gpt-6-luna": {
+          "name": "GPT-6 Luna",
+          "reasoning": true,
+          "reasoning_options": [
+            {
+              "type": "effort",
+              "values": [
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ]
+            }
+          ],
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          }
+        },
+        "gpt-6-plain": {
+          "name": "GPT-6 plain",
+          "reasoning": true,
+          "limit": {
+            "context": 272000,
+            "output": 128000
+          }
+        }
+      }
+    },
+    "mockanth": {
+      "name": "Mock Anthropic",
+      "npm": "@ai-sdk/anthropic",
+      "options": {
+        "baseURL": "http://127.0.0.1:18471/v1",
+        "apiKey": "{env:MOCK_KEY}"
+      },
+      "models": {
+        "mock-claude": {
+          "name": "Mock Claude",
+          "limit": {
+            "context": 200000,
+            "output": 64000
+          }
+        },
+        "mock-claude-think": {
+          "name": "Mock Claude think",
+          "reasoning": true,
+          "reasoning_options": [
+            {
+              "type": "budget_tokens",
+              "min": 1024,
+              "max": 32000
+            }
+          ],
+          "limit": {
+            "context": 200000,
+            "output": 64000
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "models": [
+    {
+      "id": "cap-base",
+      "name": "Cap base v1",
+      "vendor": "Custom",
+      "url": "http://127.0.0.1:18931/v1",
+      "apiKey": "sk-test-capture-123456",
+      "supportsToolCall": true
+    },
+    {
+      "id": "cap-root",
+      "name": "Cap root",
+      "vendor": "Custom",
+      "url": "http://127.0.0.1:18931",
+      "apiKey": "sk-test-capture-123456",
+      "supportsToolCall": true
+    },
+    {
+      "id": "cap-resp",
+      "name": "Cap responses",
+      "vendor": "Custom",
+      "api": "openai-responses",
+      "url": "http://127.0.0.1:18931/v1",
+      "apiKey": "sk-test-capture-123456",
+      "supportsToolCall": true
+    },
+    {
+      "id": "cap-cp",
+      "name": "Cap customproto",
+      "vendor": "Custom",
+      "useCustomProtocol": true,
+      "url": "http://127.0.0.1:18931/gw/any/path",
+      "apiKey": "sk-test-capture-123456",
+      "supportsToolCall": true
+    },
+    {
+      "id": "cap-reason",
+      "name": "Cap reasoning",
+      "vendor": "Custom",
+      "url": "http://127.0.0.1:18931/v1/chat/completions",
+      "apiKey": "sk-test-capture-123456",
+      "supportsToolCall": true,
+      "supportsReasoning": true,
+      "reasoning": {
+        "defaultEffort": "high",
+        "supportedEfforts": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
+      "maxInputTokens": 200000,
+      "maxOutputTokens": 32000,
+      "temperature": 0.3
+    }
+  ],
+  "availableModels": [
+    "cap-base",
+    "cap-root",
+    "cap-resp",
+    "cap-cp",
+    "cap-reason"
+  ]
+}

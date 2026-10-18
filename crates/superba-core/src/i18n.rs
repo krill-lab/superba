@@ -232,6 +232,10 @@ const CORE_EN_FILES: &[(&str, &str)] = &[
         include_str!("../locales/core.runtime.en.toml"),
     ),
     (
+        "core.harness.en.toml",
+        include_str!("../locales/core.harness.en.toml"),
+    ),
+    (
         "core.codexfiles.en.toml",
         include_str!("../locales/core.codexfiles.en.toml"),
     ),
@@ -287,6 +291,10 @@ const CORE_ZH_CN_FILES: &[(&str, &str)] = &[
         include_str!("../locales/core.runtime.zh-CN.toml"),
     ),
     (
+        "core.harness.zh-CN.toml",
+        include_str!("../locales/core.harness.zh-CN.toml"),
+    ),
+    (
         "core.codexfiles.zh-CN.toml",
         include_str!("../locales/core.codexfiles.zh-CN.toml"),
     ),
@@ -325,6 +333,8 @@ const CORE_EN: &str = concat!(
     "\n",
     include_str!("../locales/core.runtime.en.toml"),
     "\n",
+    include_str!("../locales/core.harness.en.toml"),
+    "\n",
     include_str!("../locales/core.codexfiles.en.toml"),
     "\n",
     include_str!("../locales/core.claude.en.toml"),
@@ -352,6 +362,8 @@ const CORE_ZH_CN: &str = concat!(
     include_str!("../locales/core.compaction.zh-CN.toml"),
     "\n",
     include_str!("../locales/core.runtime.zh-CN.toml"),
+    "\n",
+    include_str!("../locales/core.harness.zh-CN.toml"),
     "\n",
     include_str!("../locales/core.codexfiles.zh-CN.toml"),
     "\n",

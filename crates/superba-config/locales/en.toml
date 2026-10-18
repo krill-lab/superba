@@ -27,6 +27,42 @@ windows_wsl = "The ChatGPT app runs Codex inside WSL (\"Run Codex in WSL\"): WSL
 windows_terminal = "Windows Terminal and VS Code must be fully restarted to see it."
 kept_changed = "Left {location} as it is: its value was changed to {value} after Superba set it."
 
+[config.harness]
+nothing_owned = "Superba manages nothing in this harness's files: there is nothing to restore."
+backup_restored = "The file is back as it was in that backup; Superba no longer manages anything in it."
+
+[config.harness.dsh]
+reload = "dsh reads its profile patches and .env when it starts (a running dsh web picks up patch changes, but not the key): restart dsh to use this."
+plain_key = "The key is kept in plain text in $DSH_HOME/.env as {var} (file mode 0600)."
+telemetry_off = "dsh's feedback upload (OpenTelemetry) and DeepSeek session-log upload are switched off in every profile."
+home_patch = "$DSH_HOME/cordis.patch.yml has a {entry} entry: it replaces what Superba writes into the profiles."
+env_var = "{var} is set in the environment: dsh uses it instead of the key in $DSH_HOME/.env."
+credentials = "dsh's .credentials.yaml stores {var}: profiles that read it (web, desktop) use that value instead of the key in .env."
+
+[config.harness.opencode]
+v2_live = "OpenCode 2 picks this up at once (its background service reloads the file)."
+v1_restart = "OpenCode 1 reads its configuration once: restart opencode to use this."
+plain_key = "opencode keeps the key in plain text in its configuration file (file mode 0600)."
+project_override = "An opencode.json in a project overrides these settings while you work in that project."
+env_override = "{var} is set in Superba's environment: opencode loads it after the global file, so its model or provider may win."
+managed = "Managed opencode settings in {path} override everything Superba writes."
+both_files = "Both opencode.json and opencode.jsonc exist; Superba writes opencode.jsonc, which opencode reads last."
+
+[config.harness.pi]
+no_hot_reload = "pi reads models.json when it starts and when /model opens: running sessions keep the old provider until you pick the model again in /model."
+plain_key = "pi keeps the key in plain text in models.json (file mode 0600)."
+auth_override = "pi's auth.json holds a credential for the provider \"{id}\": it wins over the key Superba writes. Remove it with /logout in pi."
+
+[config.harness.workbuddy]
+hot_reload = "WorkBuddy reloads models.json within seconds."
+login = "WorkBuddy shows custom models only after you sign in with a Tencent CodeBuddy / WorkBuddy account, and it sends each custom model's domain to Tencent."
+plain_key = "WorkBuddy keeps the key in plain text in models.json (file mode 0600)."
+
+[config.harness.zcode]
+hot_reload = "ZCode shows the change within about 8 seconds; a session that is already open keeps its model."
+plain_key = "ZCode keeps the key in plain text in provider_config.json (file mode 0600)."
+legacy = "ZCode's legacy v2/config.json exists; ZCode imported it once and now uses provider_config.json, which is what Superba writes."
+
 [config.settings]
 partial_support = "{key} has no effect for {consumers}; it is written for the others."
 no_catalog = "No settings catalog is available; settings for {consumer} are not checked."

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "config": {
+    "providerOrder": [
+      "superba-resp",
+      "superba-anth",
+      "superba-chat"
+    ],
+    "providerConfigRules": {
+      "providerRules": [
+        {
+          "providerId": "superba-resp",
+          "providerName": "Superba Responses HOT",
+          "config": {
+            "group": "standard-personal",
+            "access": {
+              "type": "api-key",
+              "apiKey": "<router-token>"
+            },
+            "api": {
+              "type": "openai-responses",
+              "baseUrl": "http://127.0.0.1:18731/v1"
+            },
+            "personalModelIds": [
+              "fake-gpt",
+              "fake-gpt-hot"
+            ]
+          }
+        },
+        {
+          "providerId": "superba-chat",
+          "providerName": "Superba Chat",
+          "config": {
+            "group": "standard-personal",
+            "access": {
+              "type": "api-key",
+              "apiKey": "<router-token>"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "http://127.0.0.1:18731/v1"
+            },
+            "personalModelIds": [
+              "fake-gpt"
+            ]
+          }
+        },
+        {
+          "providerId": "superba-anth",
+          "providerName": "Superba Anthropic",
+          "config": {
+            "group": "standard-personal",
+            "access": {
+              "type": "api-key",
+              "apiKey": "<router-token>"
+            },
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "http://127.0.0.1:18731"
+            },
+            "personalModelIds": [
+              "fake-claude"
+            ]
+          }
+        }
+      ]
+    },
+    "modelConfigRules": {
+      "providerModelRules": [
+        {
+          "modelId": "fake-gpt",
+          "config": {
+            "properties": {
+              "contextWindow": 272000,
+              "inputFormat": {
+                "supportsImage": true
+              }
+            },
+            "optionSpecs": {
+              "maxOutputTokens": {
+                "max": 64000
+              }
+            }
+          },
+          "providerId": "superba-chat"
+        }
+      ],
+      "manualProviderModelRules": []
+    },
+    "defaultModelSelection": {
+      "providerId": "superba-anth",
+      "modelId": "fake-claude"
+    }
+  }
+}

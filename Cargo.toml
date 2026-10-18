@@ -50,6 +50,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 toml_edit = "0.25"
 toml = "1.1"
+# other harnesses' configuration files (superba-config::harness): JSONC edited in
+# place keeping comments (opencode, pi, ZCode, WorkBuddy) and YAML events with
+# byte spans for the comment-keeping dsh patch editor
+jsonc-parser = { version = "0.34", default-features = false, features = ["cst", "serde", "serde_json"] }
+saphyr-parser = "0.2"
 base64 = "0.23"
 hex = "0.4"
 

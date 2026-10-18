@@ -1,0 +1,19 @@
+- id: llm-pi-ai
+  config:
+    providers:
+      krill:
+        displayName: Krill
+        apiKeyEnv: KRILL_E2E_KEY
+        api: openai-responses
+        baseURL: !!js process.env.KRILL_BASE + '/codex/v1'
+        models:
+          - id: gpt-5.6-luna
+            contextWindow: 272000
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+- id: agent-default-model
+  config:
+    provider: krill
+    model: gpt-5.6-luna

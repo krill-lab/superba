@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "share": "disabled",
+  "model": "krill/gpt-5.6-luna",
+  "small_model": "krill/gpt-5.6-luna",
+  "provider": {
+    "krill": {
+      "name": "Krill",
+      "npm": "@ai-sdk/openai",
+      "options": { "baseURL": "{env:KRILL_BASE}/v1", "apiKey": "{env:KRILL_KEY}" },
+      "models": {
+        "gpt-5.6-luna": { "name": "GPT-5.6 Luna", "reasoning": true, "limit": { "context": 272000, "output": 128000 },
+                          "options": { "reasoningEffort": "low" } }
+      }
+    }
+  }
+}

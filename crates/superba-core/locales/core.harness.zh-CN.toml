@@ -1,0 +1,8 @@
+# superba-core 中其他 harness（dsh、opencode、pi、ZCode、WorkBuddy）的文案。
+# 与其他领域文件一样拼接进 core 目录；每个键也必须出现在 core.harness.en.toml。
+
+[harness.url]
+empty = "请输入 URL。"
+http = "只有本机地址（127.0.0.1、localhost）可以使用纯 http。"
+query = "URL 不能带查询参数或片段。"
+invalid = "这不是 http(s) URL。"

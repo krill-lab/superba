@@ -1,0 +1,18 @@
+{
+  "models": [
+    {
+      "id": "gpt-5.6-luna",
+      "name": "GPT-5.6 Luna (Krill)",
+      "vendor": "Custom",
+      "url": "${KRILL_URL}",
+      "apiKey": "${KRILL_KEY}",
+      "supportsToolCall": true,
+      "supportsImages": true,
+      "supportsReasoning": true,
+      "reasoning": {"defaultEffort": "low", "supportedEfforts": ["low", "medium", "high"]},
+      "maxInputTokens": 272000,
+      "maxOutputTokens": 32000
+    }
+  ],
+  "availableModels": ["gpt-5.6-luna"]
+}

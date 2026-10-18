@@ -1,0 +1,14 @@
+# Managed by Superba — whole file is regenerated.
+- insert:
+    - id: superba-llm
+      name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        providers:
+          superba-openai:
+            displayName: Superba router (Responses)
+            apiKeyEnv: SUPERBA_ROUTER_TOKEN
+            api: openai-responses
+            baseURL: http://127.0.0.1:18731/v1
+            models:
+              - id: fake-gpt
+                name: Fake GPT via Superba
