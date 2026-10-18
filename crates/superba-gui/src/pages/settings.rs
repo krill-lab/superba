@@ -10,10 +10,15 @@
 //!
 //! Commands: `focus:<config path>` (select a setting, widening the filter),
 //! `profile:<id>` (edit another provider's settings), `migrate` (queue every
-//! legacy migration), `search` (Ctrl/Cmd+F), `save` (Ctrl/Cmd+S).
+//! legacy migration), `search` (Ctrl/Cmd+F), `save` (Ctrl/Cmd+S), `files`,
+//! `files:config|auth[@<target>]` ("Edit Codex files", [`files`]: Codex's own
+//! `config.toml` / `auth.json` edited by hand, GitHub issue 9).
 
 mod detail;
 pub mod editor;
+pub mod files;
+pub mod files_highlight;
+pub mod files_view;
 pub mod model;
 mod rail;
 pub mod source;
@@ -73,6 +78,8 @@ pub struct State {
     rows: std::collections::HashMap<String, editor::Rows>,
     /// Path whose list / map rows are open in a dialog.
     pub rows_dialog: Option<String>,
+    /// "Edit Codex files" (GitHub issue 9): when open it replaces the list.
+    pub files: files::Editor,
 }
 
 impl Default for State {
@@ -103,6 +110,7 @@ impl Default for State {
             editor: None,
             rows: Default::default(),
             rows_dialog: None,
+            files: files::Editor::default(),
         }
     }
 }
@@ -337,12 +345,29 @@ impl State {
 /// Draw the page: header, then the strip, the three panes and the footer in the
 /// fixed page rectangle (no page-level scrolling).
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    if state.files.open {
+        files_view::show(ui, cx, &mut state.files, out);
+        return;
+    }
     let loading = state.poll(cx, out);
     if loading {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(60));
     }
     page_header(ui, cx, Page::Settings, |ui| {
+        if ui
+            .add(
+                crate::design::widgets::Button::ghost(cx.tr.t("codex_editor.open"))
+                    .icon(crate::design::icons::Icon::Terminal)
+                    .small(),
+            )
+            .on_hover_text(cx.tr.t("codex_editor.open_tip"))
+            .clicked()
+        {
+            let kind = state.files.kind();
+            let target = state.files.target();
+            state.files.open_file(cx, target, kind);
+        }
         if ui
             .add(
                 crate::design::widgets::Button::ghost(cx.tr.t("codex_settings.reload"))
@@ -375,22 +400,65 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
 
 /// Unsaved edits and dialogs of the page.
 pub fn status(state: &State) -> PageStatus {
+    if state.files.open {
+        return PageStatus {
+            modal: state.files.dialog.is_some(),
+            pending: usize::from(state.files.dirty()),
+            ..PageStatus::default()
+        };
+    }
     PageStatus {
         modal: state.diff_open
             || state.expanded.is_some()
             || state.editor.is_some()
             || state.rows_dialog.is_some(),
-        pending: state.pending.len(),
+        pending: state.pending.len() + usize::from(state.files.dirty()),
         ..PageStatus::default()
     }
+}
+
+/// The palette entries of the file editor (always listed).
+fn files_palette(cx: &Cx<'_>) -> Vec<PaletteItem> {
+    [
+        (
+            superba_core::CodexFileKind::ConfigToml,
+            "codex_editor.palette.config",
+            "config",
+        ),
+        (
+            superba_core::CodexFileKind::AuthJson,
+            "codex_editor.palette.auth",
+            "auth",
+        ),
+    ]
+    .into_iter()
+    .map(|(kind, key, short)| PaletteItem {
+        title: cx.tr.t(key),
+        detail: Some(cx.tr.t("codex_editor.palette.detail")),
+        keywords: vec![
+            kind.file_name().to_owned(),
+            "codex".into(),
+            "edit".into(),
+            "backup".into(),
+            "restore".into(),
+            "config".into(),
+        ],
+        group: PaletteGroup::Commands,
+        action: Action::PageCommand {
+            page: Page::Settings,
+            command: format!("files:{short}"),
+        },
+    })
+    .collect()
 }
 
 /// Command palette entries: one per listed setting (Chinese name first in
 /// Chinese, keywords include the path and the English name); choosing one
 /// selects it on this page.
 pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
+    let mut items = files_palette(cx);
     let Some(model) = &state.model else {
-        return Vec::new();
+        return items;
     };
     let zh = cx.tr.locale() == Locale::ZhCn;
     let everything = Filter::default();
@@ -423,13 +491,28 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
                 command: format!("focus:{}", e.path),
             },
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .for_each(|i| items.push(i));
+    items
 }
 
 /// Run a command addressed to this page (see the module docs).
 pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     let _ = out;
-    if let Some(path) = command.strip_prefix("focus:") {
+    if let Some(rest) = command.strip_prefix("files") {
+        // `files`, `files:config`, `files:auth`, `files:<file>@<target>`.
+        let rest = rest.trim_start_matches(':');
+        let (file, target) = match rest.split_once('@') {
+            Some((f, t)) => (f, Some(superba_core::TargetId::new(t))),
+            None => (rest, None),
+        };
+        let kind = superba_core::CodexFileKind::parse(file).unwrap_or(state.files.kind());
+        let target = target.unwrap_or_else(|| state.files.target());
+        state.files.open_file(cx, target, kind);
+    } else if state.files.open && command == "save" {
+        state.files.review();
+    } else if let Some(path) = command.strip_prefix("focus:") {
         state.focus(path);
     } else if let Some(id) = command.strip_prefix("profile:") {
         state.select_profile(cx, superba_core::ProfileId::new(id));

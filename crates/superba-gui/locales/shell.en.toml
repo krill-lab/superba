@@ -301,6 +301,7 @@ promise = "Superba does not overwrite these changes without asking: restoring, u
 take_over = "Take over again"
 take_over_tip = "Apply the current profile again over these changes (you see the plan first)."
 hand_off = "Let {tool} manage it"
+hand_off_mine = "Keep my edits, stop managing"
 hand_off_tip = "Superba puts back only what it still manages, keeps these changes and an encrypted copy of both files, and stops managing Codex. Switching to a profile later takes over again."
 later = "Not now"
 other_tool = "another tool"

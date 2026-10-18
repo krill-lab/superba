@@ -170,3 +170,97 @@ collapse = "收起完整差异"
 expand = "显示完整差异"
 more_items = "+{n} 项"
 more_lines = "+{n} 行"
+
+# “编辑 Codex 文件”（GitHub issue 9）：手动编辑 config.toml 和 auth.json。
+[codex_editor]
+open = "编辑 Codex 文件"
+open_tip = "手动编辑 config.toml 和 auth.json：输入时即检查，格式化不丢注释，保存前自动备份。"
+subtitle = "手动编辑 config.toml 和 auth.json：输入时即检查，保存前自动备份"
+back = "设置"
+this_computer = "这台电脑"
+where = "位置"
+reload = "重新读取"
+backups_button = "备份"
+format = "格式化"
+format_tip = "整理空格和空行；注释、值和顺序保持不变。"
+format_failed = "无法格式化：请先修正 {at} 处的语法错误。"
+show_secrets = "显示密钥"
+hide_secrets = "隐藏密钥"
+secrets_hidden = "密钥和令牌已隐藏。其他字段可以直接编辑；要修改密钥请先显示。"
+secrets_hidden_diff = "差异中的密钥和令牌已隐藏。"
+owned = "Superba 在这里管理 {keys}：你对它们的修改会保留；下一次切换在改动之前会先询问你。"
+owned_named = "Superba 在这里为 {provider} 管理 {keys}：你对它们的修改会保留；下一次切换在改动之前会先询问你。"
+owned_credential = "这个文件里的密钥是 Superba 写入的：换成新的密钥会保留；下一次切换在改动之前会先询问你。"
+loading = "正在读取 {file}…"
+load_failed = "无法读取这个文件"
+not_utf8 = "这份备份不是 UTF-8 文本。"
+unset = "（未设置）"
+review_save = "检查并保存…"
+review_tip = "查看差异和影响，然后保存（会先备份当前文件）。"
+review_blocked = "请先修正语法错误：Codex 无法读取这个文件。"
+discard = "放弃修改"
+close = "关闭"
+
+[codex_editor.status]
+lines = "{n} 行"
+errors = "{n} 个错误"
+warnings = "{n} 个警告"
+no_problems = "没有问题"
+unsaved = "未保存的修改"
+checks = "已检查"
+checked = "已按 {codex} 的设置项检查。"
+syntax_only = "只检查了语法：不知道读取这个位置的 Codex 版本。"
+
+[codex_editor.a11y]
+file = "文件"
+editor = "{file} 编辑器"
+
+[codex_editor.diff]
+stat = "+{added} −{removed} 行"
+none = "没有差异。"
+
+[codex_editor.review]
+title = "保存 {file}？"
+restore = "这会还原备份 {id}。"
+owned_title = "这次修改会改动 Superba 管理的这些键"
+errors = "{n} 个值与读取这个文件的 Codex 的设置项不符："
+force = "仍然保存（设置目录可能还不认识更新的 Codex）"
+warnings = "{n} 个警告：见编辑器下方的列表。"
+backup = "Superba 会先加密备份当前文件；随时可以在“备份”里还原。"
+restart = "Codex 只在启动时读取 {file}：正在运行的 Codex 会继续使用旧文件，直到重启。"
+restart_remote = "{host} 上的 Codex 只在其 app-server 启动时读取 {file}：下一次切换会重启它，或在 ChatGPT 里重新连接 {host}。"
+save = "保存"
+cancel = "取消"
+
+[codex_editor.backups]
+title = "{file} 的备份 · {where}"
+loading = "正在读取备份…"
+empty = "还没有备份。Superba 会在这个编辑器每次保存前和每次切换前各保留一份。"
+hint = "选择一份备份，查看它与编辑器内容的差异并还原。"
+size = "{n} 字节"
+diff_title = "{date} {time} 的备份 · {source}"
+diff_hint = "标 + 的行在备份里，标 − 的行是编辑器里现在的内容。"
+restore = "还原这份备份…"
+back = "全部备份"
+
+[codex_editor.discard_dialog]
+title = "放弃对 {file} 的修改？"
+body = "编辑器里的修改会丢失；文件保持原样。"
+confirm = "放弃"
+keep = "继续编辑"
+
+[codex_editor.saved]
+title = "已保存 {file}"
+previous = "重启之前仍在使用旧文件：{list}。"
+none_running = "目前没有运行中的 Codex：下次启动会读取已保存的文件。"
+in_effect = "Codex 生效情况…"
+dismiss = "关闭提示"
+
+[codex_editor.toast]
+saved = "已保存 {file}。"
+saved_backup = "已保存 {file}；之前的版本在“备份”里。"
+
+[codex_editor.palette]
+config = "编辑 config.toml"
+auth = "编辑 auth.json"
+detail = "Codex 文件 · 检查、格式化、备份"

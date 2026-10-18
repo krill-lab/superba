@@ -58,6 +58,7 @@ other = "Other"
 remote_link = "Remote link"
 
 [in_effect]
+before_edit = "Started before your edit of {file} at {time}: it still runs the file from before it."
 body = "Codex reads its configuration only when it starts. Each running Codex below either already uses what Superba wrote, or keeps the configuration it started with until it is restarted."
 busy_unknown = "Whether a turn runs in it could not be checked."
 busy_warning = "Stopping it now loses the output of the running turn."

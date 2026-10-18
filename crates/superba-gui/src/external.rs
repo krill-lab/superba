@@ -38,6 +38,11 @@ impl ExternalDialog {
             self.open = None;
             return;
         };
+        // The user's own edit in Superba's file editor (GitHub issue 9) was
+        // reviewed when it was saved: listed as a to-do, never offered by itself.
+        if matches!(change.source, ChangeSource::SuperbaEditor { .. }) {
+            return;
+        }
         if self.open.is_none() && allowed && !self.dismissed.contains(&change.fingerprint) {
             self.open = Some(change.fingerprint.clone());
         }
@@ -77,6 +82,17 @@ pub fn tool_name(cx: &Cx<'_>, source: &ChangeSource) -> String {
     match source.tool() {
         Some(t) => t.to_owned(),
         None => cx.tr.t("external.other_tool"),
+    }
+}
+
+/// The hand-off button: "Let <tool> manage it" (`key` with `{tool}`), or
+/// "Keep my edits, stop managing" for the user's own edit in Superba's file
+/// editor (GitHub issue 9).
+pub fn hand_off_label(cx: &Cx<'_>, source: &ChangeSource, key: &str) -> String {
+    if matches!(source, ChangeSource::SuperbaEditor { .. }) {
+        cx.tr.t("external.hand_off_mine")
+    } else {
+        cx.tr.f(key, &[("tool", &tool_name(cx, source))])
     }
 }
 
@@ -152,7 +168,6 @@ pub fn show(ctx: &egui::Context, cx: &Cx<'_>, state: &mut ExternalDialog, out: &
     let pal = cx.pal;
     let tr = cx.tr;
     let source = cx.localize(&change.source.text());
-    let tool = tool_name(cx, &change.source);
     let profile = cx
         .data
         .active_state()
@@ -189,8 +204,9 @@ pub fn show(ctx: &egui::Context, cx: &Cx<'_>, state: &mut ExternalDialog, out: &
                 out.push(Action::Plan(Box::new(take_over_request(p))));
                 close = true;
             }
+            let hand_off = hand_off_label(cx, &change.source, "external.hand_off");
             if ui
-                .add(Button::new(tr.f("external.hand_off", &[("tool", &tool)])).enabled(!cx.busy))
+                .add(Button::new(hand_off).enabled(!cx.busy))
                 .on_hover_text(tr.t("external.hand_off_tip"))
                 .clicked()
             {

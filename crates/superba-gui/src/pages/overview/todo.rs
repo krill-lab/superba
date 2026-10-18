@@ -226,14 +226,28 @@ pub fn todos(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Vec<Todo> {
         .as_ref()
         .and_then(|o| o.external.as_ref())
     {
+        // Saved in Superba's own file editor (GitHub issue 9): the user's
+        // change, flagged for the next switch but not a warning.
+        let editor = matches!(x.source, superba_core::ChangeSource::SuperbaEditor { .. });
         push(todo(
             TodoKind::ExternalChange,
-            Status::Warn,
-            tr.f(
-                "overview.todo.external",
-                &[("source", &cx.localize(&x.source.text()))],
-            ),
-            Some(tr.f("overview.todo.external_detail", &[("n", &x.count())])),
+            if editor { Status::Idle } else { Status::Warn },
+            if editor {
+                tr.t("overview.todo.external_editor")
+            } else {
+                tr.f(
+                    "overview.todo.external",
+                    &[("source", &cx.localize(&x.source.text()))],
+                )
+            },
+            Some(tr.f(
+                if editor {
+                    "overview.todo.external_editor_detail"
+                } else {
+                    "overview.todo.external_detail"
+                },
+                &[("n", &x.count())],
+            )),
             Some(Spot::ThisComputer),
         ));
     }

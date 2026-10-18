@@ -57,6 +57,7 @@ other = "其他"
 remote_link = "远程连接"
 
 [in_effect]
+before_edit = "在你 {time} 编辑 {file} 之前启动：仍在使用编辑前的文件。"
 body = "Codex 只在启动时读取配置。下面每个正在运行的 Codex，要么已经在使用 Superba 写入的配置，要么在重启之前一直使用它启动时的配置。"
 busy_unknown = "无法确认它是否正在运行回合。"
 busy_warning = "现在停止会丢失正在运行的回合的输出。"

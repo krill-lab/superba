@@ -187,6 +187,17 @@ fn row_process(row: &ConsumerRuntime) -> Option<ProcessInfo> {
     })
 }
 
+/// The hand edit (GitHub issue 9) a consumer on `running` started before:
+/// it runs the configuration Superba wrote last, but not the edit saved
+/// after it.
+pub fn before_edit(
+    view: &RuntimeView,
+    running: &RunningGeneration,
+) -> Option<superba_core::ManualEdit> {
+    let e = view.edited?;
+    (running.generation == view.written.as_ref().map(|w| w.generation)).then_some(e)
+}
+
 /// "Runs: generation 4 · Official ChatGPT login" for a consumer on an older
 /// configuration.
 pub fn running_text(cx: &Cx<'_>, running: &RunningGeneration) -> String {
@@ -441,7 +452,17 @@ fn row_ui(
         cx.pal,
     ));
     if let RuntimeEffect::Previous { running } = &row.effect {
-        ui.label(Text::small(running_text(cx, running), cx.pal));
+        let text = match state.view.as_ref().and_then(|v| before_edit(v, running)) {
+            Some(e) => cx.tr.f(
+                "in_effect.before_edit",
+                &[
+                    ("file", &e.kind.file_name()),
+                    ("time", &crate::pages::clock_time(e.at, false)),
+                ],
+            ),
+            None => running_text(cx, running),
+        };
+        ui.label(Text::small(text, cx.pal));
     }
     match &row.busy {
         BusyState::Running { threads } => {

@@ -171,3 +171,97 @@ collapse = "Hide the full change"
 expand = "Show the full change"
 more_items = "+{n} more"
 more_lines = "+{n} lines"
+
+# "Edit Codex files" (GitHub issue 9): config.toml and auth.json edited by hand.
+[codex_editor]
+open = "Edit Codex files"
+open_tip = "Edit config.toml and auth.json by hand: checked as you type, formatted without losing comments, saved after a backup."
+subtitle = "config.toml and auth.json, edited by hand: checked as you type and saved after a backup"
+back = "Settings"
+this_computer = "This computer"
+where = "Where"
+reload = "Reload"
+backups_button = "Backups"
+format = "Format"
+format_tip = "Tidy spacing and blank lines; comments, values and the order stay as they are."
+format_failed = "Cannot format: fix the syntax error at {at} first."
+show_secrets = "Show secrets"
+hide_secrets = "Hide secrets"
+secrets_hidden = "Keys and tokens are hidden. Edit other fields freely; show the secrets to change a key."
+secrets_hidden_diff = "Keys and tokens are hidden in this diff."
+owned = "Superba manages {keys} here: your changes to them stay yours; the next switch asks before it changes them."
+owned_named = "Superba manages {keys} here for {provider}: your changes to them stay yours; the next switch asks before it changes them."
+owned_credential = "Superba wrote the key in this file: a new key stays yours; the next switch asks before it changes it."
+loading = "Reading {file}…"
+load_failed = "The file could not be read"
+not_utf8 = "This backup is not UTF-8 text."
+unset = "(not set)"
+review_save = "Review & save…"
+review_tip = "See the diff and what it changes, then save (the current file is backed up first)."
+review_blocked = "Fix the syntax errors first: Codex could not read the file."
+discard = "Discard changes"
+close = "Close"
+
+[codex_editor.status]
+lines = "{n} {n|line|lines}"
+errors = "{n} {n|error|errors}"
+warnings = "{n} {n|warning|warnings}"
+no_problems = "No problems"
+unsaved = "Unsaved changes"
+checks = "Checked"
+checked = "Checked against the settings of {codex}."
+syntax_only = "Only the syntax is checked: no Codex version is known for this home."
+
+[codex_editor.a11y]
+file = "File"
+editor = "{file} editor"
+
+[codex_editor.diff]
+stat = "+{added} −{removed} lines"
+none = "No differences."
+
+[codex_editor.review]
+title = "Save {file}?"
+restore = "This puts back backup {id}."
+owned_title = "Keys Superba manages that this changes"
+errors = "{n} {n|value does|values do} not match the settings of the Codex reading this file:"
+force = "Save anyway (the catalog may not know a newer Codex)"
+warnings = "{n} {n|warning|warnings}: see the list under the editor."
+backup = "Superba first keeps an encrypted backup of the current file; restore it any time from Backups."
+restart = "Codex reads {file} only when it starts: running Codex keeps the old file until it restarts."
+restart_remote = "Codex on {host} reads {file} only when its app-server starts: the next switch restarts it, or reconnect {host} in ChatGPT."
+save = "Save"
+cancel = "Cancel"
+
+[codex_editor.backups]
+title = "Backups of {file} · {where}"
+loading = "Reading the backups…"
+empty = "No backups yet. Superba keeps one before every save in this editor and before every switch."
+hint = "Choose a backup to see what differs from the editor and put it back."
+size = "{n} bytes"
+diff_title = "Backup of {date} {time} · {source}"
+diff_hint = "Lines marked + are in the backup, − in the editor now."
+restore = "Restore this backup…"
+back = "All backups"
+
+[codex_editor.discard_dialog]
+title = "Discard your changes to {file}?"
+body = "The edits in the editor are lost; the file stays as it is."
+confirm = "Discard"
+keep = "Keep editing"
+
+[codex_editor.saved]
+title = "Saved {file}"
+previous = "Still on the old file until restarted: {list}."
+none_running = "No Codex runs now: the next start reads the saved file."
+in_effect = "Codex in effect…"
+dismiss = "Dismiss"
+
+[codex_editor.toast]
+saved = "Saved {file}."
+saved_backup = "Saved {file}; the previous version is in Backups."
+
+[codex_editor.palette]
+config = "Edit config.toml"
+auth = "Edit auth.json"
+detail = "Codex files · checked, formatted, backed up"

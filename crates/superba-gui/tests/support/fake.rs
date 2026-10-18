@@ -17,6 +17,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 
 // Per-area state and the bodies of the v0.3 service methods (plan §4 C2): each
 // area's owner edits only its file; `impl SwitchService` below delegates.
+mod files;
 mod hosts;
 mod import;
 mod models;
@@ -96,6 +97,7 @@ pub struct FakeService {
 /// Fake state per page area (`fake/<area>.rs`).
 #[derive(Debug, Default)]
 struct Areas {
+    files: Mutex<files::State>,
     providers: Mutex<providers::State>,
     models: Mutex<models::State>,
     settings: Mutex<settings::State>,
@@ -1876,6 +1878,25 @@ impl SwitchService for FakeService {
 
     async fn settings_view(&self, request: SettingsViewRequest) -> Result<SettingsView> {
         settings::settings_view(self, request).await
+    }
+
+    async fn codex_file(&self, target: TargetId, kind: CodexFileKind) -> Result<CodexFileDoc> {
+        files::codex_file(self, target, kind).await
+    }
+
+    async fn save_codex_file(&self, save: CodexFileSave) -> Result<CodexFileSaved> {
+        files::save_codex_file(self, save).await
+    }
+
+    async fn codex_file_backups(
+        &self,
+        query: CodexFileBackupQuery,
+    ) -> Result<Vec<CodexFileBackup>> {
+        files::codex_file_backups(self, query).await
+    }
+
+    async fn codex_file_backup(&self, id: &str) -> Result<CodexFileBackupContents> {
+        files::codex_file_backup(self, id).await
     }
 
     async fn edit_settings(&self, edit: SettingsEdit) -> Result<SettingsEditReport> {
