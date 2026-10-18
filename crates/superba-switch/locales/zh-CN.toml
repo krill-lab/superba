@@ -145,6 +145,7 @@ on_host = "{host}：{text}"
 setting_migration = "可以迁移一项旧设置：{migration}"
 root_no_hot_switch = "Superba 以 root 身份运行时会禁用热切换；打开 ChatGPT 时不会启用调试端口。"
 cli_processes = "终端里有 {count} 个 codex 进程不受影响，重新打开后才会走新线路。"
+ide_processes = "{count} 个编辑器窗口（VS Code、Cursor 等）里的 Codex 扩展会继续使用旧配置，直到编辑器重启它（“Developer: Restart Extension Host”或重新加载窗口）；编辑器本身保持打开。"
 remotes = "远程主机 {hosts} 也会切换；远端正在运行的回合和命令同样会中断。"
 cross_site = "切换站点后，继续之前的对话可能报 invalid_encrypted_content，建议新开对话。"
 model_missing = "「{site}」没有你当前用的模型 {model}，切换后改用 {replacement}。"
@@ -190,7 +191,7 @@ rollback = "撤销切换失败（{detail}），请查看日志里列出的文件
 launch = "无法打开 ChatGPT（{detail}）。"
 
 [switch.banner]
-stale = "终端里有 {count} 个 codex 进程仍在用切换前的配置（启动于 {times}），不会被打断，重新打开后生效。"
+stale = "有 {count} 个运行中的 Codex 进程（终端、编辑器扩展）仍在使用切换前的配置（启动于 {times}）；它们不会被打断，重启后使用新配置。"
 
 [switch.verify]
 no_new_app_server = "没有启动新的 Codex 内核进程"

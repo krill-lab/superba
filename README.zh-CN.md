@@ -77,10 +77,18 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
   （Superba 第一次替换它时已加密暂存），或回到任意一次之前的切换。
 - **会话 provider 迁移。** app 只显示 provider 与当前一致的会话。用过旧版 Krill
   教程（`model_provider = "krill"`）的用户可以把这些会话迁移到 `openai`（也可以
-  迁回去），带备份、迁移账本和精确回滚。
+  迁回去），带备份、迁移账本和精确回滚。迁移时终端和编辑器里的 Codex 需要关闭；
+  Superba 会列出它们，你同意后可以代为停止（先请求退出，强制结束前会再问一次；
+  命令行用 `spb … --stop-codex [--force]`）。
 - **远程主机。** app 已连接的 SSH 主机可以和本机一起切换（使用系统自带 `ssh`，
   Key 只通过 stdin 传输）。
 - **通用模式。** 任何兼容 OpenAI Responses API 的站点都可以用 base URL 添加。
+- **实际生效的配置。** Codex 只在启动时读取配置。Superba 会逐个列出正在运行的
+  Codex（桌面 app 的内核、每个终端里的 codex、`codex exec`、VS Code / Cursor 的
+  编辑器扩展）：它已经在用新写入的配置，还是仍在用之前的配置；里面是否有正在运行的
+  回合；以及怎样切过去——app 内核由 Superba 重启，终端和编辑器给出具体操作
+  （`codex resume --last`、“Developer: Restart Extension Host”，编辑器不会被关闭）。
+  显示在概览的待办、每次切换之后和 `spb status` 中。
 - **诊断。** 发现过期的 Codex 进程、外来的环境变量、无法解析的配置、钥匙串问题等。
 - 中英文界面。
 

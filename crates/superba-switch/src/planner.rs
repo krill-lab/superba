@@ -2691,11 +2691,13 @@ impl Switcher {
     ) {
         for r in restarts {
             match r.consumer {
-                superba_core::ConsumerKind::CliProcesses
-                | superba_core::ConsumerKind::IdeAppServers
-                    if !r.pids.is_empty() =>
-                {
+                superba_core::ConsumerKind::CliProcesses if !r.pids.is_empty() => {
                     draft.info(text("switch.warn.cli_processes").arg("count", r.pids.len()));
+                }
+                // GH#4: an editor's extension keeps its Codex (and so the
+                // previous configuration) until the editor restarts it.
+                superba_core::ConsumerKind::IdeAppServers if !r.pids.is_empty() => {
+                    draft.info(text("switch.warn.ide_processes").arg("count", r.pids.len()));
                 }
                 superba_core::ConsumerKind::CliDaemon => {
                     draft.info(text("switch.warn.daemon_running"));

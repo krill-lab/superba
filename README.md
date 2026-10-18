@@ -104,11 +104,22 @@ Geist look).
 - **Session provider migration.** The app only lists conversations whose
   provider matches the current one. Users of the old Krill tutorial
   (`model_provider = "krill"`) can migrate those sessions to `openai` (and back),
-  with backups, a ledger and exact rollback.
+  with backups, a ledger and exact rollback. Codex in terminals and editors must
+  be closed for that; Superba lists them and, if you ask, stops them for you
+  (each is asked to exit first; ending one by force needs a second yes;
+  `spb … --stop-codex [--force]` on the command line).
 - **Remote hosts.** SSH hosts the app is connected to can be switched together
   with the local machine (over your system `ssh`, keys only through stdin).
 - **Generic mode.** Any OpenAI-compatible Responses API site can be added by its
   base URL.
+- **Codex in effect.** Codex reads its configuration only when it starts, so
+  Superba shows, for every running Codex (the desktop app's core, codex in each
+  terminal, `codex exec`, the editor extensions of VS Code / Cursor), whether it
+  already uses what was written or still the previous configuration, whether a
+  turn is running in it, and how it switches: Superba restarts the app's core;
+  terminals and editors get the exact step (`codex resume --last`, "Developer:
+  Restart Extension Host"; the editor is never closed). On the Overview's to-do,
+  after every switch and in `spb status`.
 - **Doctor.** Finds stale Codex processes, foreign environment variables,
   unparseable configs, keyring problems and more.
 - English and Simplified Chinese.

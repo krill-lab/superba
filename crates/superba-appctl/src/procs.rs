@@ -527,6 +527,7 @@ impl Snapshot {
     pub fn process_info(&self, pid: u32) -> Option<ProcessInfo> {
         let e = self.all.get(&pid)?;
         let kind = self.kind_of(pid)?.clone();
+        let kind_for_cwd = kind.clone();
         let authapi_env = if kind == CodexProcessKind::AppMain {
             self.app_authapi_env(pid)
         } else {
@@ -543,7 +544,15 @@ impl Snapshot {
             codex_home: self.codex_home_of(pid),
             stale: false,
             ide: self.ide_of(pid),
-            cwd: e.cwd.clone(),
+            // The folder a terminal codex runs in tells two terminals apart; an
+            // editor's app-server runs in the editor's program folder (seen on
+            // Windows), which says nothing.
+            cwd: matches!(
+                kind_for_cwd,
+                CodexProcessKind::CliTui | CodexProcessKind::CliExec | CodexProcessKind::CliDaemon
+            )
+            .then(|| e.cwd.clone())
+            .flatten(),
         })
     }
 }

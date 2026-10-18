@@ -887,6 +887,26 @@ async fn cli_processes_and_daemon_get_their_own_restart_decisions() {
     assert!(keys.contains(&"switch.warn.daemon_running".to_owned()));
 }
 
+/// GH#4: the plan names an editor's extension apart from terminals (it keeps
+/// the previous configuration until the editor restarts it).
+#[tokio::test]
+async fn editor_extensions_get_their_own_note() {
+    let w = World::new();
+    let mut ide = cli_process(310, CodexProcessKind::IdeAppServer, T0 - 1);
+    ide.ide = Some(superba_core::IdeKind::VsCode);
+    w.app.processes.lock().unwrap().push(ide);
+    let p = plan(&w, req("work")).await;
+    let keys = warning_keys(&p);
+    assert!(
+        keys.contains(&"switch.warn.ide_processes".to_owned()),
+        "{keys:?}"
+    );
+    assert!(
+        !keys.contains(&"switch.warn.cli_processes".to_owned()),
+        "{keys:?}"
+    );
+}
+
 #[tokio::test]
 async fn remote_hosts_are_planned_with_their_own_decisions() {
     let w = World::new();

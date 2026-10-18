@@ -146,6 +146,7 @@ on_host = "{host}: {text}"
 setting_migration = "An old setting can be migrated: {migration}"
 root_no_hot_switch = "Hot switching is disabled while Superba runs as root; ChatGPT will open without a debugging port."
 cli_processes = "{count} codex processes in terminals are not affected; they use the new line after they are reopened."
+ide_processes = "The Codex extension of {count} editor windows (VS Code, Cursor, ...) keeps the previous configuration until the editor restarts it (“Developer: Restart Extension Host” or reloading the window); the editor stays open."
 remotes = "Remote hosts {hosts} switch too; turns and commands running there are interrupted as well."
 cross_site = "After switching sites, continuing an earlier conversation may fail with invalid_encrypted_content; start a new conversation."
 model_missing = "“{site}” does not offer your current model {model}; {replacement} is used after the switch."
@@ -191,7 +192,7 @@ rollback = "Undoing the switch failed ({detail}); check the files listed in the 
 launch = "ChatGPT could not be opened ({detail})."
 
 [switch.banner]
-stale = "{count} codex processes in terminals still use the previous configuration (started {times}); they are not interrupted and pick up the change when reopened."
+stale = "{count} running Codex processes (terminals, editor extensions) still use the previous configuration (started {times}); they are not interrupted and pick up the change when restarted."
 
 [switch.verify]
 no_new_app_server = "no new Codex core process started"

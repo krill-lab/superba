@@ -467,3 +467,16 @@ fn the_working_directory_reaches_the_process_info() {
         Some(PathBuf::from("/work/project"))
     );
 }
+
+#[test]
+fn an_editor_app_server_has_no_working_directory_to_show() {
+    // VS Code starts its extension's codex in the editor's program folder.
+    let mut ide = entry(
+        500,
+        450,
+        "/home/u/.vscode/extensions/openai.chatgpt/bin/codex app-server --analytics-default-enabled",
+    );
+    ide.cwd = Some(PathBuf::from("/usr/share/code"));
+    let snap = Snapshot::classify_entries(vec![ide], &|_| false);
+    assert_eq!(snap.process_info(500).unwrap().cwd, None);
+}

@@ -79,10 +79,10 @@ panics.
 | `ProfileStore` | `profiles.json` (`ProfileSet`: profiles, custom sites, settings) | `load`, `save` |
 | `LineProber` | Latency/health of lines, key validation, auth API health, models, Responses probe, WebSocket / zstd transport probe, remote compaction check, account and usage data | `probe`, `probe_all`, `check_key`, `check_authapi(site, origin, key)`, `list_models`, `probe_responses`, `probe_transports`, `probe_compaction`, `account_summary`, `usage_report` |
 | `SessionMigrator` | Session provider scan, migration with backup + ledger, rollback, crash recovery | `scan`, `plan`, `migrate`, `rollback`, `history`, `recover` |
-| `AppController` | Installs, CLI binaries, launch with CDP, bridge, hot restart, quit, processes, turn activity, renderer state, daemon, launcher entry | `detect_installs`, `codex_binaries`, `running_session`, `launch`, `probe_bridge`, `hot_restart`, `quit`, `full_restart`, `processes`, `session_and_processes`, `turn_activity`, `renderer_state`, `current_thread`, `return_to_thread`, `restart_daemon`, `stop_daemon`, `remote_connections`, `launcher_entry`, `set_launcher_entry`, `environment_stamp`, `forget_cached_probes` |
+| `AppController` | Installs, CLI binaries, launch with CDP, bridge, hot restart, quit, processes, turn activity, renderer state, daemon, launcher entry | `detect_installs`, `codex_binaries`, `running_session`, `launch`, `probe_bridge`, `hot_restart`, `quit`, `full_restart`, `processes`, `session_and_processes`, `turn_activity`, `renderer_state`, `current_thread`, `return_to_thread`, `restart_daemon`, `stop_daemon`, `remote_connections`, `launcher_entry`, `set_launcher_entry`, `environment_stamp`, `forget_cached_probes`, `stop_process` |
 | `RemoteHosts` | SSH hosts: discovery, probe, remote apply/rollback, turn activity, verification | `discover(home, from_app, live)`, `probe`, `plan_apply`, `apply`, `rollback`, `turn_activity`, `verify(RemoteVerifyRequest)` |
-| `SwitchService` | Application service for GUI and CLI | `overview`, `sites`, `profile_set`, `save_profile`, `delete_profile`, `save_settings`, `save_site`, `delete_site`, `probe_lines`, `probe_site`, `line_transports`, `provider_compaction`, `import_scan`, `import_apply`, `import_usage`, `check_key`, `account`, `sessions`, `doctor`, `open_app`, `recover`, `plan`, `plan_settings`, `execute`, `settings_view`, `edit_settings`, `router_status`, `router_install`, `router_set_enabled`, `router_uninstall`, `router_watch`, `router_fall_back`, `environment_event`, `environment_generation` |
-| `SwitchDecider` | Mid-execution questions (wait for turns, force quit, IPC failed, verification failed) | `decide(DecisionRequest) -> Decision` |
+| `SwitchService` | Application service for GUI and CLI | `overview`, `sites`, `profile_set`, `save_profile`, `delete_profile`, `save_settings`, `save_site`, `delete_site`, `probe_lines`, `probe_site`, `line_transports`, `provider_compaction`, `import_scan`, `import_apply`, `import_usage`, `check_key`, `account`, `sessions`, `doctor`, `runtime`, `stop_processes`, `open_app`, `recover`, `plan`, `plan_settings`, `execute`, `settings_view`, `edit_settings`, `router_status`, `router_install`, `router_set_enabled`, `router_uninstall`, `router_watch`, `router_fall_back`, `environment_event`, `environment_generation` |
+| `SwitchDecider` | Mid-execution questions (wait for turns, force quit, IPC failed, verification failed, close / stop Codex processes) | `decide(DecisionRequest) -> Decision` |
 | `SwitchEvents` | Progress events to the UI | `emit(SwitchEvent)` |
 | `Clock` | Injectable time (countdowns, ages) | `now`, `monotonic` |
 
@@ -279,7 +279,9 @@ UI selects a profile / line (auth: the profile's choice, Automatic by default)
  └─ SwitchService::execute(plan, options, decider, events)
      ├─ TurnCheck / WaitingTurn                              turn_activity; SwitchDecider on busy threads
      ├─ (full) Quitting                                      AppController::quit; ForceQuitConfirm via decider
-     ├─ (migration) CloseConsumers                           stop daemon; user closes TUI/IDE (decider)
+     ├─ (migration) CloseConsumers                           stop daemon; user closes TUI/IDE, or asks Superba
+     │                                                       to stop them (StopProcesses: graceful where the OS
+     │                                                       allows, then ForceStop only on a second answer)
      ├─ Applying (state.lock + switch journal)               snapshot_baseline (first time) -> ConfigEngine::apply
      │                                                       (auth.json then config.toml) -> EnvPersister::apply
      │                                                       -> SessionMigrator::migrate; any failure -> rollback
@@ -289,7 +291,7 @@ UI selects a profile / line (auth: the profile's choice, Automatic by default)
      ├─ remote hosts in parallel                             RemoteHosts::apply -> hot_restart(hostId, kill) -> verify
      ├─ Verifying                                            new app-server after T0, hashes, whoami/models, renderer
      ├─ NavRestore / Recovery / RollingBack                  return_to_thread; retry IPC once; rollback + restart
-     └─ SwitchOutcome (+ stale CLI processes, remote results, notices)
+     └─ SwitchOutcome (+ stale CLI processes, runtime view, remote results, notices)
 ```
 
 The restart decision (first match wins) is documented on
