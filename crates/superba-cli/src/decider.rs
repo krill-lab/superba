@@ -301,6 +301,9 @@ impl SwitchDecider for FlagDecider {
                 if self.force {
                     Decision::Force
                 } else {
+                    // Say how to go on (user bug 76: on Windows a ChatGPT Superba
+                    // did not open can only be ended by force).
+                    self.send(Progress::Hint(text("cli.hint.force_quit")));
                     Decision::Cancel
                 }
             }

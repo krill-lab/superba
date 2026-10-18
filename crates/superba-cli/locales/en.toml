@@ -163,6 +163,7 @@ passed = "passed"
 [cli.hint]
 stop_codex = "Close them, or run again with --stop-codex to let Superba stop them (add --force to end any that do not exit)."
 force_stop = "They did not exit; run again with --stop-codex --force to end them by force, or close them yourself."
+force_quit = "ChatGPT did not quit; run again with --force to let Superba end it (unsaved input in ChatGPT may be lost)."
 legacy_sessions = "Answer with --migrate-legacy-sessions or --skip-legacy-sessions."
 model = "Choose a replacement with --model <MODEL>."
 env = "Answer with --take-over-env or --keep-env."

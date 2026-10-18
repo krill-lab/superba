@@ -163,6 +163,7 @@ passed = "通过"
 [cli.hint]
 stop_codex = "请关闭它们，或加上 --stop-codex 重新运行，让 Superba 代为停止（再加 --force 会强制结束不肯退出的进程）。"
 force_stop = "它们没有退出；加上 --stop-codex --force 重新运行可强制结束，或者自己关闭它们。"
+force_quit = "ChatGPT 没有退出；加上 --force 重新运行，让 Superba 结束它（ChatGPT 中未保存的输入可能丢失）。"
 legacy_sessions = "使用 --migrate-legacy-sessions 或 --skip-legacy-sessions 回答。"
 model = "使用 --model <MODEL> 选择替代模型。"
 env = "使用 --take-over-env 或 --keep-env 回答。"
