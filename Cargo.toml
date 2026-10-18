@@ -40,6 +40,7 @@ superba-models = { path = "crates/superba-models", version = "0.1.0" }
 superba-versions = { path = "crates/superba-versions", version = "0.1.0" }
 superba-import = { path = "crates/superba-import", version = "0.1.0" }
 superba-notify = { path = "crates/superba-notify", version = "0.1.0" }
+superba-tools = { path = "crates/superba-tools", version = "0.1.0" }
 
 # --- async runtime and plumbing
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "process", "fs", "time", "sync", "net", "io-util", "signal"] }

@@ -5013,6 +5013,7 @@ dependencies = [
  "superba-router",
  "superba-sessions",
  "superba-storage",
+ "superba-tools",
  "superba-versions",
  "sys-locale",
  "tempfile",
@@ -5021,6 +5022,28 @@ dependencies = [
  "url",
  "uuid",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "superba-tools"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "flate2",
+ "hex",
+ "pretty_assertions",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "superba-core",
+ "sysinfo",
+ "tar",
+ "tempfile",
+ "tokio",
+ "windows-sys 0.61.2",
+ "winreg",
 ]
 
 [[package]]
