@@ -1,0 +1,45 @@
+# superba-core 运行状态相关文案（GH#2 代为停止 Codex 进程，GH#4 “已写入”与“已生效”）。
+# 拼接在 zh-CN.toml 之后组成核心目录，因此本文件必须以表头开头，且不得与其他核心文件
+# 的键重复（测试强制）。每个键都必须在 core.runtime.en.toml 中存在。
+
+[ide]
+vscode = "VS Code"
+vscode_insiders = "VS Code Insiders"
+cursor = "Cursor"
+windsurf = "Windsurf"
+vscodium = "VSCodium"
+other = "编辑器"
+
+[runtime.role]
+app = "ChatGPT 桌面应用"
+terminal = "终端里的 codex"
+exec = "codex exec"
+daemon = "codex 后台服务"
+ide = "{ide} · Codex 扩展"
+ide_unknown = "编辑器的 Codex 扩展"
+other = "其他 Codex app-server"
+
+[runtime.advice]
+none = "无需操作。"
+hot = "Superba 可以重启 ChatGPT 的 Codex 内核（约 1 秒；窗口和会话保留）。"
+full = "通过 Superba 重新打开 ChatGPT：它不是由 Superba 打开的，无法单独重启其 Codex 内核。"
+reopen = "在该终端退出 codex（/quit 或连按两次 Ctrl+C），再运行 `codex resume --last`，即可用新配置继续该会话。"
+rerun = "等它运行完；下一次运行 codex exec 时使用新配置。"
+ide = "在 {ide} 中运行 “Developer: Restart Extension Host”（Ctrl+Shift+P，Mac 上为 Cmd+Shift+P）或 “Developer: Reload Window”；编辑器保持打开，Codex 扩展会重新启动它的 Codex。"
+daemon = "重启 codex 后台服务（下次切换时会自动重启，或运行 `codex app-server-control restart`）。"
+owner = "重启启动这个 Codex 进程的程序。"
+
+[runtime.stop]
+exited = "已退出"
+killed = "已强制结束"
+still_running = "仍在运行"
+not_running = "已关闭"
+force_only = "此系统上无法请求它退出"
+
+[runtime.stop_effect]
+app = "ChatGPT 会退出；切换完成后 Superba 会重新打开它。"
+terminal = "该终端里的 codex 会话结束（对话会保留：`codex resume --last` 可继续）。"
+exec = "codex exec 的运行会在完成前结束。"
+daemon = "后台服务停止；codex 需要时会再启动它。"
+ide = "{ide} 里的 Codex 扩展会失去它的 Codex，直到你运行 “Developer: Restart Extension Host” 或重新加载窗口；{ide} 本身保持打开。"
+other = "启动它的程序会失去它的 Codex。"

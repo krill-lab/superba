@@ -1288,6 +1288,9 @@ pub struct FakeApp {
     pub refusing_binaries: Mutex<Vec<PathBuf>>,
     /// Process image of the app-server (`None` = not observable).
     pub app_server_exe: Mutex<Option<PathBuf>>,
+    /// What a graceful `stop_process` answers per pid (default `Exited`); a
+    /// forced stop always ends the process. Gone processes leave `processes`.
+    pub stop_answers: Mutex<BTreeMap<u32, superba_core::StopOutcome>>,
 }
 
 pub fn app_server(pid: u32, ppid: u32, started: i64) -> ProcessInfo {
@@ -1301,6 +1304,8 @@ pub fn app_server(pid: u32, ppid: u32, started: i64) -> ProcessInfo {
         authapi_env: EnvObservation::Unknown,
         codex_home: None,
         stale: false,
+        ide: None,
+        cwd: None,
     }
 }
 
@@ -1315,6 +1320,8 @@ pub fn cli_process(pid: u32, kind: CodexProcessKind, started: i64) -> ProcessInf
         authapi_env: EnvObservation::Present(OVERSEAS.into()),
         codex_home: None,
         stale: false,
+        ide: None,
+        cwd: None,
     }
 }
 
@@ -1347,6 +1354,8 @@ pub fn busy(target: &str, title: &str) -> ThreadActivity {
         rollout_path: None,
         last_event_at: None,
         signal: superba_core::ActivitySignal::RolloutTail,
+        originator: None,
+        cwd: None,
     }
 }
 
@@ -1497,6 +1506,45 @@ impl AppController for FakeApp {
 
     async fn restart_daemon(&self, _home: &CodexHome) -> Result<()> {
         Ok(())
+    }
+
+    async fn stop_process(
+        &self,
+        process: &ProcessInfo,
+        force: bool,
+        _timeout_ms: u64,
+    ) -> Result<superba_core::StopOutcome> {
+        use superba_core::StopOutcome;
+        push(
+            &self.log,
+            format!("app.stop_process pid={} force={force}", process.pid),
+        );
+        let alive = self
+            .processes
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|p| p.pid == process.pid && p.started_at == process.started_at);
+        if !alive {
+            return Ok(StopOutcome::NotRunning);
+        }
+        let outcome = if force {
+            StopOutcome::Killed
+        } else {
+            self.stop_answers
+                .lock()
+                .unwrap()
+                .get(&process.pid)
+                .copied()
+                .unwrap_or(StopOutcome::Exited)
+        };
+        if outcome.is_gone() {
+            self.processes
+                .lock()
+                .unwrap()
+                .retain(|p| p.pid != process.pid);
+        }
+        Ok(outcome)
     }
 
     async fn stop_daemon(&self, _home: &CodexHome) -> Result<()> {
@@ -1906,6 +1954,7 @@ pub fn request_kind(r: &DecisionRequest) -> &'static str {
         DecisionRequest::VerificationFailed { .. } => "verification_failed",
         DecisionRequest::UnknownRemoteActivity { .. } => "unknown_remote_activity",
         DecisionRequest::CloseConsumers { .. } => "close_consumers",
+        DecisionRequest::ForceStop { .. } => "force_stop",
         _ => "other",
     }
 }
@@ -2052,6 +2101,8 @@ impl World {
                     authapi_env: EnvObservation::Present(OVERSEAS.into()),
                     codex_home: None,
                     stale: false,
+                    ide: None,
+                    cwd: None,
                 },
                 app_server(150, 100, T0 - 3_000_000),
             ]),
@@ -2080,6 +2131,7 @@ impl World {
             refused_catalogs: Mutex::new(Vec::new()),
             refusing_binaries: Mutex::new(Vec::new()),
             app_server_exe: Mutex::new(None),
+            stop_answers: Mutex::new(BTreeMap::new()),
         };
         Self {
             config: Arc::new(FakeConfig::new(log.clone(), home.root())),

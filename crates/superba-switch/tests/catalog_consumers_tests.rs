@@ -314,6 +314,8 @@ async fn an_ide_codex_is_preflighted_and_a_refusal_is_reported() {
         authapi_env: Default::default(),
         codex_home: None,
         stale: false,
+        ide: None,
+        cwd: None,
     });
     w.app.refusing_binaries.lock().unwrap().push(ide.clone());
     work(&w, with_window);

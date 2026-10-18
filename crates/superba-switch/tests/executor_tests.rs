@@ -14,10 +14,11 @@ use std::time::Duration;
 use fakes::*;
 use pretty_assertions::assert_eq;
 use superba_core::{
-    AuthApiHealth, CodexProcessKind, Decision, Error, ExecuteOptions, FullRestartReason, KeyChange,
-    LegacySessionChoice, NoEvents, OutcomeStatus, ProfileId, QuitOutcome, RendererState,
-    RestartKind, RestoreTarget, SwitchEvent, SwitchIntent, SwitchOutcome, SwitchPhase, SwitchPlan,
-    SwitchRequest, SwitchService, TargetId, ThreadRef, plan::CheckResult,
+    AuthApiHealth, CodexProcessKind, Decision, DecisionRequest, Error, ExecuteOptions,
+    FullRestartReason, KeyChange, LegacySessionChoice, NoEvents, OutcomeStatus, ProfileId,
+    QuitOutcome, RendererState, RestartKind, RestoreTarget, SwitchEvent, SwitchIntent,
+    SwitchOutcome, SwitchPhase, SwitchPlan, SwitchRequest, SwitchService, TargetId, ThreadRef,
+    plan::CheckResult,
 };
 use superba_switch::Switcher;
 use superba_switch::journal::{JournalStatus, StateLock, SwitchJournal};
@@ -1200,6 +1201,195 @@ async fn open_terminals_must_be_closed_and_cancel_reopens_the_app() {
     assert!(!calls.contains(&"config.apply".to_owned()));
     // The app was quit already: it is reopened as it was (same auth address).
     assert!(calls.contains(&format!("app.launch authapi={OVERSEAS}")));
+}
+
+/// GH#2: "stop them for me" asks each process to exit, then the switch goes on.
+#[tokio::test(start_paused = true)]
+async fn stop_them_for_me_asks_each_process_to_exit_then_migrates() {
+    let w = legacy_world();
+    {
+        let mut ps = w.app.processes.lock().unwrap();
+        ps.push(cli_process(300, CodexProcessKind::CliTui, T0 - 1));
+        let mut ide = cli_process(301, CodexProcessKind::IdeAppServer, T0 - 1);
+        ide.ide = Some(superba_core::IdeKind::VsCode);
+        ps.push(ide);
+    }
+    let d = ScriptedDecider::with(&[("close_consumers", Decision::StopProcesses)]);
+    let (o, ev) = run(&w, migrate_req(), allow_full(), d.clone()).await;
+    assert_eq!(o.status, OutcomeStatus::Switched, "{:?}", o.notices);
+    assert_eq!(d.asked_kinds(), vec!["close_consumers"]);
+    let calls = w.calls();
+    let pos = |s: &str| {
+        calls
+            .iter()
+            .position(|c| c == s)
+            .unwrap_or_else(|| panic!("{s}: {calls:?}"))
+    };
+    assert!(pos("app.stop_process pid=300 force=false") < pos("config.apply"));
+    assert!(pos("app.stop_process pid=301 force=false") < pos("config.apply"));
+    assert!(
+        !calls.iter().any(|c| c.contains("force=true")),
+        "nothing ended by force: {calls:?}"
+    );
+    // The question listed both processes; every stop is in the log.
+    match &d.asked.lock().unwrap()[0] {
+        DecisionRequest::CloseConsumers { processes, .. } => {
+            let pids: Vec<u32> = processes.iter().map(|p| p.pid).collect();
+            assert_eq!(pids, vec![300, 301]);
+        }
+        other => panic!("{other:?}"),
+    }
+    let logs: Vec<String> = ev
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match e {
+            SwitchEvent::Log { text, .. } => Some(text.key.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(logs.contains(&"switch.stop.asking".to_owned()), "{logs:?}");
+    assert_eq!(
+        logs.iter().filter(|k| *k == "switch.stop.result").count(),
+        2,
+        "{logs:?}"
+    );
+}
+
+/// What does not exit is ended only after a second, explicit answer.
+#[tokio::test(start_paused = true)]
+async fn processes_that_do_not_exit_are_ended_only_after_a_second_answer() {
+    let w = legacy_world();
+    w.app
+        .processes
+        .lock()
+        .unwrap()
+        .push(cli_process(300, CodexProcessKind::CliTui, T0 - 1));
+    // Windows: a console program cannot be asked to exit.
+    w.app
+        .stop_answers
+        .lock()
+        .unwrap()
+        .insert(300, superba_core::StopOutcome::ForceOnly);
+    let d = ScriptedDecider::with(&[
+        ("close_consumers", Decision::StopProcesses),
+        ("force_stop", Decision::Force),
+    ]);
+    let (o, _) = run(&w, migrate_req(), allow_full(), d.clone()).await;
+    assert_eq!(o.status, OutcomeStatus::Switched, "{:?}", o.notices);
+    assert_eq!(d.asked_kinds(), vec!["close_consumers", "force_stop"]);
+    match &d.asked.lock().unwrap()[1] {
+        DecisionRequest::ForceStop { processes, .. } => {
+            assert_eq!(
+                processes.iter().map(|p| p.pid).collect::<Vec<_>>(),
+                vec![300]
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    let calls = w.calls();
+    let pos = |s: &str| {
+        calls
+            .iter()
+            .position(|c| c == s)
+            .unwrap_or_else(|| panic!("{s}: {calls:?}"))
+    };
+    assert!(
+        pos("app.stop_process pid=300 force=false") < pos("app.stop_process pid=300 force=true")
+    );
+    assert!(pos("app.stop_process pid=300 force=true") < pos("config.apply"));
+}
+
+/// Cancelling the force question ends nothing and writes nothing.
+#[tokio::test(start_paused = true)]
+async fn cancelling_the_force_question_ends_nothing_and_reopens_the_app() {
+    let w = legacy_world();
+    w.app
+        .processes
+        .lock()
+        .unwrap()
+        .push(cli_process(300, CodexProcessKind::CliTui, T0 - 1));
+    w.app
+        .stop_answers
+        .lock()
+        .unwrap()
+        .insert(300, superba_core::StopOutcome::StillRunning);
+    let d = ScriptedDecider::with(&[
+        ("close_consumers", Decision::StopProcesses),
+        ("force_stop", Decision::Cancel),
+    ]);
+    let (o, _) = run(&w, migrate_req(), allow_full(), d.clone()).await;
+    assert_eq!(o.status, OutcomeStatus::Cancelled);
+    let calls = w.calls();
+    assert!(!calls.iter().any(|c| c.contains("force=true")), "{calls:?}");
+    assert!(!calls.contains(&"config.apply".to_owned()));
+    assert!(calls.contains(&format!("app.launch authapi={OVERSEAS}")));
+    assert!(
+        w.app.processes.lock().unwrap().iter().any(|p| p.pid == 300),
+        "the terminal codex still runs"
+    );
+}
+
+/// "I closed them" after a failed stop lists again (the user closed it).
+#[tokio::test(start_paused = true)]
+async fn check_again_after_a_failed_stop_lists_the_processes_again() {
+    let w = legacy_world();
+    w.app
+        .processes
+        .lock()
+        .unwrap()
+        .push(cli_process(300, CodexProcessKind::CliTui, T0 - 1));
+    w.app
+        .stop_answers
+        .lock()
+        .unwrap()
+        .insert(300, superba_core::StopOutcome::StillRunning);
+    let d = ScriptedDecider::with(&[
+        ("close_consumers", Decision::StopProcesses),
+        ("force_stop", Decision::Continue),
+        ("close_consumers", Decision::Cancel),
+    ]);
+    let (o, _) = run(&w, migrate_req(), allow_full(), d.clone()).await;
+    assert_eq!(o.status, OutcomeStatus::Cancelled);
+    assert_eq!(
+        d.asked_kinds(),
+        vec!["close_consumers", "force_stop", "close_consumers"]
+    );
+}
+
+/// GH#4: after a local switch the outcome says what every consumer runs.
+#[tokio::test(start_paused = true)]
+async fn the_outcome_reports_which_consumers_still_run_the_previous_configuration() {
+    let w = World::new();
+    w.app.processes.lock().unwrap().push(cli_process(
+        300,
+        CodexProcessKind::CliTui,
+        T0 - 3_600_000,
+    ));
+    let (o, _) = run(
+        &w,
+        req("work"),
+        ExecuteOptions::default(),
+        ScriptedDecider::with(&[]),
+    )
+    .await;
+    assert_eq!(o.status, OutcomeStatus::Switched, "{:?}", o.notices);
+    let view = o.runtime.expect("runtime view after a local switch");
+    assert!(view.busy_checked);
+    let tui = view
+        .consumers
+        .iter()
+        .find(|c| c.pid == 300)
+        .expect("the terminal codex is listed");
+    assert!(tui.is_previous(), "{tui:?}");
+    assert_eq!(tui.advice, superba_core::RestartAdvice::Reopen);
+    let app = view
+        .consumers
+        .iter()
+        .find(|c| c.role == superba_core::ConsumerRole::DesktopApp)
+        .expect("the app is listed");
+    assert_eq!(app.effect, superba_core::RuntimeEffect::Current, "{app:?}");
 }
 
 #[tokio::test(start_paused = true)]

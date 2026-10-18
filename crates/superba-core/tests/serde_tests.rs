@@ -292,6 +292,8 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
                 authapi_env: EnvObservation::Absent,
                 codex_home: None,
                 stale: true,
+                ide: None,
+                cwd: None,
             }],
         },
         remotes: vec![RemoteOverview {
@@ -333,6 +335,36 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
             last_refresh: None,
             id_token_exp: None,
             email: Some("someone@example.com".into()),
+        }),
+        runtime: Some(RuntimeView {
+            checked_at: Timestamp(1_234),
+            written: None,
+            consumers: vec![ConsumerRuntime {
+                role: ConsumerRole::IdeExtension {
+                    ide: Some(IdeKind::VsCode),
+                },
+                pid: 77,
+                core_pid: None,
+                started_at: Some(Timestamp(900)),
+                codex_home: Some("/fixtures/codex".into()),
+                cwd: Some("/work".into()),
+                exe: None,
+                cmdline: vec!["codex".into(), "app-server".into()],
+                effect: RuntimeEffect::Previous {
+                    running: RunningGeneration {
+                        generation: Some(6),
+                        profile_id: Some("official".into()),
+                        site_kind: Some(SiteKind::Official),
+                        applied_at: Some(Timestamp(500)),
+                    },
+                },
+                busy: BusyState::Idle,
+                advice: RestartAdvice::ReloadIde {
+                    ide: Some(IdeKind::VsCode),
+                },
+                can_stop: true,
+            }],
+            busy_checked: true,
         }),
         notices: vec![Notice::warning(
             LocalizedText::new("test.stale", "{count} old process").arg("count", 1),

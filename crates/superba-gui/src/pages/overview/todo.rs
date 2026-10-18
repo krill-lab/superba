@@ -40,6 +40,8 @@ pub enum TodoKind {
     PinMismatch,
     /// Keys are stored in a plain file (no system keyring).
     PlainKeys,
+    /// Running Codex processes still use the previous configuration (GH#4).
+    OldConfig,
     /// Another diagnostics finding (its id).
     Finding(String),
     /// A notice of the overview.
@@ -80,6 +82,7 @@ impl Todo {
             }
             TodoKind::LineUnreachable => "overview.todo.fix.probe",
             TodoKind::Unpriced => "overview.todo.fix.prices",
+            TodoKind::OldConfig => "overview.todo.fix.details",
             TodoKind::RouterDown | TodoKind::RouterDirect | TodoKind::MemberDown => {
                 "overview.todo.fix.router"
             }
@@ -103,6 +106,7 @@ impl Todo {
             | TodoKind::AppUpdate
             | TodoKind::CliUpdate => Action::Go(Page::Updates),
             TodoKind::Unpriced => Action::Go(Page::Models),
+            TodoKind::OldConfig => Action::ShowRuntime,
             TodoKind::PlainKeys | TodoKind::Finding(_) | TodoKind::Notice => {
                 Action::Go(Page::Diagnostics)
             }
@@ -254,6 +258,33 @@ pub fn todos(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Vec<Todo> {
                 status,
                 cx.localize(&f.title),
                 f.detail.as_ref().map(|d| cx.localize(d)),
+                Some(Spot::ThisComputer),
+            ));
+        }
+    }
+    // Running Codex still on the previous configuration (GH#4): which ones.
+    if let Some(view) = data
+        .overview
+        .value
+        .as_ref()
+        .and_then(|o| o.runtime.as_ref())
+    {
+        let old: Vec<String> = view
+            .previous()
+            .map(|c| cx.tr.text(&c.role.text()))
+            .collect();
+        if !old.is_empty() {
+            let mut names = old.clone();
+            names.sort();
+            names.dedup();
+            push(todo(
+                TodoKind::OldConfig,
+                Status::Warn,
+                tr.f("overview.todo.old_config", &[("n", &old.len())]),
+                Some(tr.f(
+                    "overview.todo.old_config_detail",
+                    &[("who", &names.join(", "))],
+                )),
                 Some(Spot::ThisComputer),
             ));
         }

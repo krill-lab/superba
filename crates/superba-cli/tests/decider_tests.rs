@@ -66,6 +66,7 @@ async fn all_requests_and_all_flag_combinations_follow_the_decision_table() {
                     (
                         DecisionRequest::CloseConsumers {
                             processes: vec![process()],
+                            busy: vec![],
                         },
                         if wait {
                             Decision::Continue
@@ -172,7 +173,8 @@ async fn json_callbacks_emit_nothing_including_decision_hints() {
     assert_eq!(
         decider
             .decide(DecisionRequest::CloseConsumers {
-                processes: vec![process()]
+                processes: vec![process()],
+                busy: vec![]
             })
             .await,
         Decision::Cancel
@@ -196,6 +198,7 @@ async fn callbacks_do_not_wait_for_the_output_consumer() {
         decider
             .decide(DecisionRequest::CloseConsumers {
                 processes: vec![process()],
+                busy: vec![],
             })
             .await
     })
@@ -205,5 +208,6 @@ async fn callbacks_do_not_wait_for_the_output_consumer() {
     while receiver.try_recv().is_ok() {
         count += 1;
     }
-    assert_eq!(count, 1001);
+    // 1000 phases, the question and its `--stop-codex` hint.
+    assert_eq!(count, 1002);
 }

@@ -33,6 +33,7 @@ pub mod design;
 pub mod external;
 pub mod flow;
 pub mod i18n;
+pub mod in_effect;
 pub mod movers;
 pub mod notices;
 pub mod pages;

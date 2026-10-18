@@ -187,6 +187,8 @@ pub struct ExecArgs {
     pub wait_turn: bool,
     #[arg(long, help = english("cli.help.force"))]
     pub force: bool,
+    #[arg(long, help = english("cli.help.stop_codex"))]
+    pub stop_codex: bool,
     #[arg(long, help = english("cli.help.write_only"))]
     pub write_only: bool,
     #[arg(long = "remote", value_name = "TARGET", help = english("cli.help.remote"))]

@@ -269,6 +269,7 @@ impl Switcher {
         }
         let elapsed = self.deps.clock.monotonic().saturating_sub(started);
         let stale = run.stale_processes().await;
+        let runtime = run.runtime_after(status).await.map(Box::new);
         run.summary_notices(
             status,
             elapsed,
@@ -286,6 +287,7 @@ impl Switcher {
             verification: local.verification,
             remotes,
             stale_processes: stale,
+            runtime,
             returned_to: local.returned_to,
             notices: run.notices,
         })
@@ -688,14 +690,22 @@ impl Run<'_> {
                 if blockers.is_empty() {
                     break;
                 }
+                let busy = self.consumer_busy(&blockers).await;
                 let decision = ask(
                     self.decider.as_ref(),
                     DecisionRequest::CloseConsumers {
-                        processes: blockers,
+                        processes: blockers.clone(),
+                        busy,
                     },
                 )
                 .await;
-                if decision != Decision::Continue {
+                let go_on = match decision {
+                    Decision::Continue => true,
+                    // GH#2: the user asked Superba to stop them.
+                    Decision::StopProcesses => self.stop_consumers(&blockers).await,
+                    _ => false,
+                };
+                if !go_on {
                     self.reopen_after_cancel().await;
                     return Ok(Some(self.cancelled(self.plan.primary.clone())));
                 }
@@ -703,6 +713,111 @@ impl Run<'_> {
             }
         }
         Ok(None)
+    }
+
+    /// Running turns that may belong to `processes` (local rollouts; the app
+    /// is closed by now, so the renderer is not asked).
+    async fn consumer_busy(&self, processes: &[ProcessInfo]) -> Vec<ThreadActivity> {
+        match self.deps().app.turn_activity(&self.home(), None).await {
+            Ok(a) => crate::runtime::busy_of(processes, &a.busy),
+            Err(e) => {
+                tracing::debug!(error = %e, "turn activity of the processes to close");
+                Vec::new()
+            }
+        }
+    }
+
+    /// "Stop them for me" (GH#2): ask every listed process to exit where the
+    /// platform allows it, then list what is left and end it by force only
+    /// when the user says so again. Every step is logged; nothing is ended
+    /// without that second answer. Returns `false` when the user cancelled.
+    async fn stop_consumers(&mut self, blockers: &[ProcessInfo]) -> bool {
+        let d = self.deps().clone();
+        let home = self.home();
+        self.ev.step(SwitchStep::StopProcesses, StepStatus::Running);
+        self.ev.log(
+            Severity::Info,
+            text("switch.stop.asking").arg("count", blockers.len()),
+        );
+        let wait = crate::runtime::STOP_WAIT_MS;
+        let results = join_all(blockers.iter().map(|p| {
+            let d = d.clone();
+            async move { (p, d.app.stop_process(p, false, wait).await) }
+        }))
+        .await;
+        let mut left: Vec<ProcessInfo> = Vec::new();
+        for (p, result) in results {
+            match result {
+                Ok(outcome) => {
+                    self.ev.log(
+                        if outcome.is_gone() {
+                            Severity::Info
+                        } else {
+                            Severity::Warning
+                        },
+                        messages::stop_result(p, outcome),
+                    );
+                    if !outcome.is_gone() {
+                        left.push(p.clone());
+                    }
+                }
+                Err(e) => {
+                    self.ev
+                        .log(Severity::Warning, messages::stop_failed(p, &e.to_string()));
+                    left.push(p.clone());
+                }
+            }
+        }
+        // What exited meanwhile needs no second question.
+        let now = d.app.processes(&home).await.unwrap_or_default();
+        left.retain(|p| {
+            now.iter()
+                .any(|q| q.pid == p.pid && q.started_at == p.started_at)
+        });
+        if left.is_empty() {
+            self.ev.step(SwitchStep::StopProcesses, StepStatus::Done);
+            return true;
+        }
+        let busy = self.consumer_busy(&left).await;
+        let decision = ask(
+            self.decider.as_ref(),
+            DecisionRequest::ForceStop {
+                processes: left.clone(),
+                busy,
+            },
+        )
+        .await;
+        match decision {
+            Decision::Force => {
+                for p in &left {
+                    let result = d.app.stop_process(p, true, wait).await;
+                    match result {
+                        Ok(outcome) => self.ev.log(
+                            if outcome.is_gone() {
+                                Severity::Info
+                            } else {
+                                Severity::Warning
+                            },
+                            messages::stop_result(p, outcome),
+                        ),
+                        Err(e) => self
+                            .ev
+                            .log(Severity::Warning, messages::stop_failed(p, &e.to_string())),
+                    }
+                }
+                self.ev.step(SwitchStep::StopProcesses, StepStatus::Done);
+                true
+            }
+            // "I closed them": the caller lists again.
+            Decision::Continue => {
+                self.ev.step(SwitchStep::StopProcesses, StepStatus::Skipped);
+                true
+            }
+            _ => {
+                self.ev.step(SwitchStep::StopProcesses, StepStatus::Skipped);
+                false
+            }
+        }
     }
 
     /// Reopen the app the way it was after a cancelled full restart (plan 7.2
@@ -2002,6 +2117,45 @@ impl Run<'_> {
     }
 
     /// CLI processes still on the previous configuration (plan 7.7 banner).
+    /// After a local switch: what every running consumer of the home now
+    /// uses (GH#4 post-switch report), running turns checked.
+    async fn runtime_after(&self, status: OutcomeStatus) -> Option<superba_core::RuntimeView> {
+        if !self.plan.request.targets.local
+            || !matches!(
+                status,
+                OutcomeStatus::Switched | OutcomeStatus::WrittenOnly | OutcomeStatus::Partial
+            )
+        {
+            return None;
+        }
+        let d = self.deps();
+        let (session, processes) = d.app.session_and_processes(&self.pc.home).await;
+        let session = session.ok().flatten();
+        let processes = processes.ok()?;
+        let installs_empty = self.sw.monitor.facts().await.installs.is_empty();
+        let hot = self
+            .sw
+            .hot_switch_status(installs_empty, session.as_ref(), self.pc.safe_mode)
+            .await;
+        let active = d
+            .config
+            .read_state(&self.pc.home)
+            .await
+            .ok()
+            .and_then(|s| s.active);
+        Some(
+            self.sw
+                .runtime_view(
+                    &processes,
+                    session.as_ref(),
+                    Some(&hot),
+                    active.as_ref(),
+                    true,
+                )
+                .await,
+        )
+    }
+
     async fn stale_processes(&self) -> Vec<ProcessInfo> {
         let Some(report) = &self.written.config else {
             return Vec::new();

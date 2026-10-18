@@ -27,7 +27,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
 
     checks(ui, cx);
     ui.add_space(24.0);
-    processes(ui, cx);
+    processes(ui, cx, out);
     ui.add_space(24.0);
     environment(ui, cx);
     ui.add_space(24.0);
@@ -99,7 +99,7 @@ fn checks(ui: &mut Ui, cx: &Cx<'_>) {
 
 /// Codex processes of this computer (moved from the 0.2 Targets page): the
 /// configuration they started with and their auth address variable.
-fn processes(ui: &mut Ui, cx: &Cx<'_>) {
+fn processes(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<super::Action>) {
     section(
         ui,
         cx,
@@ -142,7 +142,12 @@ fn processes(ui: &mut Ui, cx: &Cx<'_>) {
                     ui.label(Text::mono(p.pid.to_string(), cx.pal));
                 }
                 1 => {
-                    ui.label(Text::small(kind_label(cx, &p.kind), cx.pal));
+                    // An editor's extension names its editor (GH#4).
+                    let label = match &p.ide {
+                        Some(_) => cx.tr.text(&superba_core::process_role(p).text()),
+                        None => kind_label(cx, &p.kind),
+                    };
+                    ui.label(Text::small(label, cx.pal));
                 }
                 2 => {
                     ui.label(Text::small(
@@ -165,6 +170,12 @@ fn processes(ui: &mut Ui, cx: &Cx<'_>) {
     });
     ui.add_space(6.0);
     ui.add(egui::Label::new(Text::small(cx.tr.t("diag.proc.hint"), cx.pal)).wrap());
+    if ui
+        .add(crate::design::widgets::Button::ghost(cx.tr.t("diag.proc.in_effect")).small())
+        .clicked()
+    {
+        out.push(super::Action::ShowRuntime);
+    }
 }
 
 fn environment(ui: &mut Ui, cx: &Cx<'_>) {

@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use superba_core::{
-    Clock, Decision, DecisionRequest, Result, SessionStage, StepStatus, SwitchDecider, SwitchEvent,
-    SwitchEvents,
+    Clock, Decision, DecisionRequest, LocalizedText, ProcessInfo, Result, SessionStage, StepStatus,
+    SwitchDecider, SwitchEvent, SwitchEvents, ThreadActivity,
 };
 use superba_switch::messages;
 use superba_switch::session_events::session_progress_line;
@@ -17,8 +17,41 @@ use crate::{Output, text::text};
 /// Messages queued by callbacks; the command loop owns and writes the output.
 pub enum Progress {
     Event(SwitchEvent),
+    /// The close / force-stop question with every process and running turn.
     CloseConsumers(DecisionRequest),
     WaitHint,
+    /// A hint line (which flag answers the question).
+    Hint(LocalizedText),
+    /// An interactive question; the decider reads the answer from stdin.
+    Prompt(LocalizedText),
+}
+
+/// One line per listed process: what it is, its pid, when it started, where it
+/// runs, and what stopping it does.
+fn render_processes(
+    processes: &[ProcessInfo],
+    busy: &[ThreadActivity],
+    out: &mut Output,
+) -> Result<()> {
+    for p in processes {
+        let mut line = text("cli.stop.process")
+            .arg_text("role", superba_core::process_role(p).text())
+            .arg("pid", p.pid)
+            .arg("started", out.optional(p.started_at));
+        line = match &p.cwd {
+            Some(cwd) => line.arg("where", superba_core::paths::display_path(cwd)),
+            None => line.arg("where", out.none()),
+        };
+        out.progress(line)?;
+        out.progress(text("cli.stop.effect").arg_text("effect", superba_core::stop_effect(p)))?;
+    }
+    for thread in busy {
+        out.progress(messages::busy_thread(thread))?;
+    }
+    if !busy.is_empty() {
+        out.progress(text("cli.stop.busy"))?;
+    }
+    Ok(())
 }
 
 impl Progress {
@@ -26,13 +59,24 @@ impl Progress {
     pub fn render(self, out: &mut Output) -> Result<()> {
         match self {
             Self::WaitHint => out.progress(text("cli.hint.turns")),
+            Self::Hint(value) => out.progress(value),
+            Self::Prompt(value) => out.progress(value),
             Self::CloseConsumers(mut request) => {
-                if let DecisionRequest::CloseConsumers { processes } = &mut request {
+                if let DecisionRequest::CloseConsumers { processes, .. }
+                | DecisionRequest::ForceStop { processes, .. } = &mut request
+                {
                     for process in processes {
                         process.cmdline = superba_core::app::redact_argv(&process.cmdline);
                     }
                 }
-                out.progress(messages::question(&request))
+                out.progress(messages::question(&request))?;
+                match &request {
+                    DecisionRequest::CloseConsumers { processes, busy }
+                    | DecisionRequest::ForceStop { processes, busy } => {
+                        render_processes(processes, busy, out)
+                    }
+                    _ => Ok(()),
+                }
             }
             Self::Event(event) => match event {
                 SwitchEvent::Phase { phase, .. } => {
@@ -170,12 +214,20 @@ impl CliEvents {
     }
 }
 
-/// Mid-execution answers. No interactive stdin reads occur while executing.
+/// Reads one answer line (stdin in production, injected in tests).
+pub type PromptReader = Arc<dyn Fn() -> std::io::Result<String> + Send + Sync>;
+
+/// Mid-execution answers from flags. The only stdin read while executing is the
+/// "stop the Codex processes for you?" question (and its force follow-up) when
+/// a prompt reader is attached (an interactive terminal without `--json`).
 pub struct FlagDecider {
     pub force: bool,
     pub wait_turn: bool,
     pub yes: bool,
+    /// `--stop-codex`: answer "stop them for me" without asking.
+    pub stop_codex: bool,
     events: Option<Arc<CliEvents>>,
+    prompt: Option<PromptReader>,
 }
 
 impl FlagDecider {
@@ -185,8 +237,40 @@ impl FlagDecider {
             force,
             wait_turn,
             yes,
+            stop_codex: false,
             events: None,
+            prompt: None,
         }
+    }
+
+    /// `--stop-codex`.
+    pub fn with_stop_codex(mut self, stop_codex: bool) -> Self {
+        self.stop_codex = stop_codex;
+        self
+    }
+
+    /// Ask the stop questions interactively, reading answers with `reader`.
+    pub fn with_prompt(mut self, reader: PromptReader) -> Self {
+        self.prompt = Some(reader);
+        self
+    }
+
+    fn send(&self, message: Progress) {
+        if let Some(events) = &self.events {
+            events.send(message);
+        }
+    }
+
+    /// Ask `question` and read one answer line (lower-cased, trimmed); `None`
+    /// without a prompt reader or when reading fails.
+    async fn ask(&self, question: LocalizedText) -> Option<String> {
+        let reader = self.prompt.clone()?;
+        self.send(Progress::Prompt(question));
+        let line = tokio::task::spawn_blocking(move || reader())
+            .await
+            .ok()?
+            .ok()?;
+        Some(line.trim().to_lowercase())
     }
 
     /// Attach the command's progress sink for cancellation and close-process hints.
@@ -235,14 +319,38 @@ impl SwitchDecider for FlagDecider {
                 }
             }
             DecisionRequest::CloseConsumers { .. } => {
-                if let Some(events) = &self.events {
-                    events.send(Progress::CloseConsumers(request));
+                self.send(Progress::CloseConsumers(request));
+                if self.stop_codex {
+                    return Decision::StopProcesses;
+                }
+                if let Some(answer) = self.ask(text("cli.stop.prompt")).await {
+                    return match answer.as_str() {
+                        "s" | "stop" | "y" | "yes" => Decision::StopProcesses,
+                        "c" | "continue" => Decision::Continue,
+                        _ => Decision::Cancel,
+                    };
                 }
                 if self.wait_turn {
                     Decision::Continue
                 } else {
+                    self.send(Progress::Hint(text("cli.hint.stop_codex")));
                     Decision::Cancel
                 }
+            }
+            DecisionRequest::ForceStop { .. } => {
+                self.send(Progress::CloseConsumers(request));
+                if self.force {
+                    return Decision::Force;
+                }
+                if let Some(answer) = self.ask(text("cli.stop.prompt_force")).await {
+                    return match answer.as_str() {
+                        "f" | "force" => Decision::Force,
+                        "c" | "continue" => Decision::Continue,
+                        _ => Decision::Cancel,
+                    };
+                }
+                self.send(Progress::Hint(text("cli.hint.force_stop")));
+                Decision::Cancel
             }
             _ => request.safe_default(),
         }

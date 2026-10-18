@@ -333,6 +333,9 @@ pub fn busy_threads(p: &DomProbe) -> Vec<ThreadActivity> {
             rollout_path: None,
             last_event_at: None,
             signal: superba_core::ActivitySignal::RendererDom,
+            // The renderer is the desktop app's.
+            originator: Some(superba_core::codex::ORIGINATOR_DESKTOP.to_owned()),
+            cwd: None,
         });
     }
     if p.stop
@@ -355,6 +358,9 @@ pub fn busy_threads(p: &DomProbe) -> Vec<ThreadActivity> {
             rollout_path: None,
             last_event_at: None,
             signal: superba_core::ActivitySignal::RendererDom,
+            // The renderer is the desktop app's.
+            originator: Some(superba_core::codex::ORIGINATOR_DESKTOP.to_owned()),
+            cwd: None,
         });
     }
     out

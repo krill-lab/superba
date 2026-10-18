@@ -93,6 +93,8 @@ fn rollout_busy_threads_get_sidebar_titles() {
         rollout_path: Some(format!("/h/.codex/sessions/rollout-{id}.jsonl")),
         last_event_at: None,
         signal: ActivitySignal::RolloutTail,
+        originator: None,
+        cwd: None,
     };
     let mut busy = vec![
         rollout("t-open", None),

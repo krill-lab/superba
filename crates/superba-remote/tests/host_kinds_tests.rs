@@ -51,6 +51,8 @@ fn link(host: &str, argv: &[&str]) -> ProcessInfo {
         authapi_env: EnvObservation::default(),
         codex_home: None,
         stale: false,
+        ide: None,
+        cwd: None,
     }
 }
 

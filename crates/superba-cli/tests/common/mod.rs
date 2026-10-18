@@ -356,6 +356,7 @@ pub fn overview() -> Overview {
         baseline_captured: true,
         baseline_at: None,
         login_stash: None,
+        runtime: None,
         notices: vec![Notice::warning(messages::text(
             "switch.warn.daemon_running",
         ))],
@@ -374,6 +375,8 @@ pub fn process() -> ProcessInfo {
         authapi_env: EnvObservation::Absent,
         codex_home: Some("/fake/codex".into()),
         stale: true,
+        ide: None,
+        cwd: None,
     }
 }
 
@@ -385,6 +388,8 @@ pub fn thread() -> ThreadActivity {
         rollout_path: None,
         last_event_at: Some(Timestamp::EPOCH),
         signal: ActivitySignal::RolloutTail,
+        originator: None,
+        cwd: None,
     }
 }
 
@@ -426,6 +431,7 @@ pub fn outcome(status: OutcomeStatus) -> SwitchOutcome {
         verification: None,
         remotes: Vec::new(),
         stale_processes: Vec::new(),
+        runtime: None,
         returned_to: None,
         notices: Vec::new(),
     }

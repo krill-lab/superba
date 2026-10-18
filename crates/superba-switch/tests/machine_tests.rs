@@ -67,6 +67,8 @@ fn busy_thread(id: &str) -> ThreadActivity {
         rollout_path: None,
         last_event_at: None,
         signal: ActivitySignal::RolloutTail,
+        originator: None,
+        cwd: None,
     }
 }
 
@@ -200,6 +202,7 @@ fn outcome(ticket: &PlanTicket, status: OutcomeStatus) -> SwitchOutcome {
         verification: None,
         remotes: vec![],
         stale_processes: vec![],
+        runtime: None,
         returned_to: None,
         notices: vec![],
     }

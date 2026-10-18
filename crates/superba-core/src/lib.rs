@@ -25,6 +25,8 @@
 //!   Superba owns, who made them, take-over and hand-off.
 //! - [`import`]: provider and usage import from other tools (cc-switch, AI Toolbox).
 //! - [`compaction`]: a provider's remote compaction support (check, choice, effect).
+//! - [`runtime`]: what the running Codex consumers actually use, and stopping
+//!   them for the user.
 //! - [`router`]: router mode settings and status; [`views`]: settings page rows,
 //!   settings edits and the settings part of a plan.
 //! - v0.3: [`models`] (model lists, overrides, speed tiers, the catalog file),
@@ -60,6 +62,7 @@ pub mod profile;
 pub mod remote;
 pub mod requests;
 pub mod router;
+pub mod runtime;
 pub mod secret;
 pub mod selfupdate;
 pub mod session_progress;
@@ -99,6 +102,7 @@ pub use profile::*;
 pub use remote::*;
 pub use requests::*;
 pub use router::*;
+pub use runtime::*;
 pub use secret::*;
 pub use selfupdate::*;
 pub use session_progress::*;

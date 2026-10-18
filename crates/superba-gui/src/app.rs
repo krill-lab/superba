@@ -74,6 +74,8 @@ pub enum ToastAction {
     Switch(ProfileId),
     /// Open a file (the self-update log).
     OpenPath(PathBuf),
+    /// Open "Codex in effect".
+    ShowRuntime,
 }
 
 /// How long the "added" toast with its "Switch to this provider" button stays
@@ -251,6 +253,8 @@ pub struct SuperbaApp {
     movers: crate::movers::dialog::MoversDialog,
     /// GH#5: the dialog about changes another tool made.
     external: crate::external::ExternalDialog,
+    /// "Codex in effect" (GH#4).
+    in_effect: crate::in_effect::InEffect,
     risk_memory: Option<PathBuf>,
     wizard: Option<Wizard>,
     wizard_dismissed: bool,
@@ -335,6 +339,7 @@ impl SuperbaApp {
             banner: BannerState::default(),
             movers: Default::default(),
             external: Default::default(),
+            in_effect: Default::default(),
             risk_memory,
             wizard: None,
             wizard_dismissed: false,
@@ -1078,7 +1083,54 @@ impl SuperbaApp {
                             self.toasts.push(toast);
                         }
                     }
-                    if !outcome.stale_processes.is_empty()
+                    // GH#4: which running Codex still uses the previous
+                    // configuration, with the details one click away.
+                    let old_consumers: Vec<String> = outcome
+                        .runtime
+                        .as_ref()
+                        .map(|v| {
+                            v.previous()
+                                .map(|c| {
+                                    format!(
+                                        "{} (pid {})",
+                                        self.tr.text(&c.role.text()),
+                                        c.core_pid.unwrap_or(c.pid)
+                                    )
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if let Some(view) = &outcome.runtime {
+                        self.in_effect.view = Some((**view).clone());
+                    }
+                    if !old_consumers.is_empty()
+                        && matches!(
+                            outcome.status,
+                            OutcomeStatus::Switched
+                                | OutcomeStatus::Partial
+                                | OutcomeStatus::WrittenOnly
+                        )
+                    {
+                        let busy = outcome
+                            .runtime
+                            .as_ref()
+                            .is_some_and(|v| v.previous().any(|c| c.busy.is_running()));
+                        let mut body = old_consumers.join("\n");
+                        if busy {
+                            body.push('\n');
+                            body.push_str(&self.tr.t("toast.in_effect_busy"));
+                        }
+                        self.toasts.push(
+                            Toast::new(
+                                Status::Warn,
+                                self.tr.f("toast.in_effect", &[("n", &old_consumers.len())]),
+                            )
+                            .body(body)
+                            .action(self.tr.t("action.details"), ToastAction::ShowRuntime)
+                            .sticky(),
+                        );
+                    } else if outcome.runtime.is_none()
+                        && !outcome.stale_processes.is_empty()
                         && matches!(
                             outcome.status,
                             OutcomeStatus::Switched | OutcomeStatus::Partial
@@ -1304,6 +1356,7 @@ impl SuperbaApp {
                     self.external.open(x);
                 }
             }
+            Action::ShowRuntime => self.in_effect.open(&self.service),
             Action::StartWizard => {
                 if self.wizard.is_none() {
                     self.wizard = Some(Wizard::start(&self.data));
@@ -1424,6 +1477,7 @@ impl SuperbaApp {
                 line_id: None,
                 auth_mode: None,
             }),
+            ToastAction::ShowRuntime => self.in_effect.open(&self.service),
         }
     }
 
@@ -1433,7 +1487,7 @@ impl SuperbaApp {
 
     fn keyboard(&mut self, ctx: &egui::Context) {
         // Dialogs own Enter / Escape; the flow must not react to them.
-        let modal = self.wizard.is_some() || self.pages.any_modal();
+        let modal = self.wizard.is_some() || self.pages.any_modal() || self.in_effect.is_open();
         if !modal && ctx.input_mut(|i| i.consume_shortcut(&palette::SHORTCUT)) {
             self.palette.toggle();
         }
@@ -1658,6 +1712,7 @@ impl eframe::App for SuperbaApp {
             let cx = cx!(self, pal, self.flow.is_running() || self.flow.is_planning());
             shell::confirm_full(&ctx, &cx, &mut self.flow, &mut self.banner, now);
             shell::decision_dialog(&ctx, &cx, &mut self.flow, now);
+            crate::in_effect::show(&ctx, &cx, &mut self.in_effect, &mut actions);
             let movers = crate::movers::dialog::show(
                 &ctx,
                 &cx,

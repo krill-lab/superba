@@ -867,7 +867,7 @@ pub fn banner(
 }
 
 /// One busy thread line ("This computer · “title” is generating a reply").
-fn busy_line(ui: &mut Ui, cx: &Cx<'_>, t: &superba_core::ThreadActivity) {
+pub(crate) fn busy_line(ui: &mut Ui, cx: &Cx<'_>, t: &superba_core::ThreadActivity) {
     let local = t.target_id.is_local();
     let host = if local {
         cx.tr.t("banner.waiting.this_computer")
@@ -1343,6 +1343,7 @@ fn step_label(cx_tr: &crate::i18n::Tr, step: &SwitchStep) -> String {
         SwitchStep::MigrateSessions => "step.migrate",
         SwitchStep::QuitApp => "step.quit",
         SwitchStep::RestartCore => "step.restart_core",
+        SwitchStep::StopProcesses => "step.stop_processes",
         SwitchStep::LaunchApp => "step.launch",
         SwitchStep::VerifyProcess => "step.verify_process",
         SwitchStep::VerifyFiles => "step.verify_files",
@@ -1796,6 +1797,11 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
     }
     let request = pending.request.clone();
     let recovery = matches!(request, DecisionRequest::VerificationFailed { .. });
+    let stop_question = matches!(
+        request,
+        DecisionRequest::CloseConsumers { .. } | DecisionRequest::ForceStop { .. }
+    );
+    let stop_offered = request.allowed().contains(&Decision::StopProcesses);
     let remaining = run.rollback_remaining(now);
     let pal = cx.pal;
     let tr = cx.tr;
@@ -1820,6 +1826,13 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
             }
             DecisionRequest::CloseConsumers { .. } => {
                 ("decide.consumers.title", "decide.consumers.body")
+            }
+            // Windows cannot ask terminal programs or pipe app-servers to exit.
+            DecisionRequest::ForceStop { .. } if cfg!(windows) => {
+                ("decide.force_stop.title", "decide.force_stop.body_windows")
+            }
+            DecisionRequest::ForceStop { .. } => {
+                ("decide.force_stop.title", "decide.force_stop.body")
             }
             _ => ("decide.other.title", "decide.other.body"),
         };
@@ -1866,13 +1879,9 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
                     pal,
                 ));
             }
-            DecisionRequest::CloseConsumers { processes } => {
-                for p in processes {
-                    ui.label(Text::mono_muted(
-                        format!("{}  {}", p.pid, p.cmdline.join(" ")),
-                        pal,
-                    ));
-                }
+            DecisionRequest::CloseConsumers { processes, busy }
+            | DecisionRequest::ForceStop { processes, busy } => {
+                crate::in_effect::process_list(ui, cx, processes, busy);
             }
             DecisionRequest::UnknownRemoteActivity { targets } => {
                 let names: Vec<&str> = targets.iter().map(|t| t.as_str()).collect();
@@ -1912,12 +1921,18 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
                         0,
                     ),
                     Decision::Rollback => (tr.t("decide.rollback"), 1),
+                    Decision::Continue if stop_question => (tr.t("decide.check_again"), 1),
                     Decision::Continue => (tr.t("decide.continue"), 1),
                     Decision::Wait => (tr.t("banner.waiting.wait"), 1),
+                    Decision::StopProcesses => (tr.t("decide.stop_processes"), 3),
                 };
-                let safe = *d == request.safe_default();
+                // "Stop them for me" leads (it only asks the processes to
+                // exit; ending one by force is a second, danger question).
+                let safe = *d == request.safe_default() && !stop_offered;
                 let mut b = match kind {
+                    2 if stop_question => Button::danger(tr.t("decide.end_by_force")),
                     2 => Button::danger(label),
+                    3 => Button::primary(label),
                     _ if safe => Button::primary(label),
                     _ => Button::new(label),
                 };

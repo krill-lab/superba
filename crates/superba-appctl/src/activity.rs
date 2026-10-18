@@ -73,6 +73,72 @@ pub struct RolloutFinding {
     pub mtime: Timestamp,
     /// Tail analysis.
     pub tail: TailAnalysis,
+    /// Session header facts (which client runs the session, where).
+    pub head: SessionHead,
+}
+
+/// Facts from a rollout's first line (`session_meta`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SessionHead {
+    /// `originator` (`Codex Desktop`, `codex_cli_rs`, `codex_exec`,
+    /// `codex_vscode`, ...).
+    pub originator: Option<String>,
+    /// `cwd`.
+    pub cwd: Option<String>,
+}
+
+/// Bytes read from the start of a rollout for its header. The header line
+/// carries the base instructions (tens of KiB) after `cwd` and `originator`,
+/// so only its beginning is needed.
+pub const HEAD_BYTES: usize = 16 * 1024;
+
+/// The JSON string value of the first `"<field>":"…"` in `text` (escapes
+/// decoded); `text` may end in the middle of the line.
+fn json_string_field(text: &str, field: &str) -> Option<String> {
+    let needle = format!("\"{field}\":");
+    let start = text.find(&needle)? + needle.len();
+    let rest = text[start..].trim_start();
+    if !rest.starts_with('"') {
+        return None;
+    }
+    let bytes = rest.as_bytes();
+    let mut i = 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'"' => return serde_json::from_str::<String>(&rest[..=i]).ok(),
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Parse the session header from the first bytes of a rollout.
+pub fn parse_session_head(head: &str) -> SessionHead {
+    let line = head.lines().next().unwrap_or_default();
+    if !line.contains("\"session_meta\"") {
+        return SessionHead::default();
+    }
+    SessionHead {
+        originator: json_string_field(line, "originator"),
+        cwd: json_string_field(line, "cwd"),
+    }
+}
+
+fn read_head(path: &Path) -> SessionHead {
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return SessionHead::default();
+    };
+    let mut buf = vec![0u8; HEAD_BYTES];
+    let mut n = 0;
+    while n < buf.len() {
+        match f.read(&mut buf[n..]) {
+            Ok(0) => break,
+            Ok(k) => n += k,
+            Err(_) => return SessionHead::default(),
+        }
+    }
+    parse_session_head(&String::from_utf8_lossy(&buf[..n]))
 }
 
 /// Parse an RFC 3339 timestamp (`2026-10-16T07:39:40.633Z`, offsets allowed).
@@ -247,11 +313,13 @@ pub fn scan_rollouts(sessions_dir: &Path, opts: &ScanOpts) -> std::io::Result<Ve
             Ok(t) => analyze_tail(&t),
             Err(_) => TailAnalysis::default(),
         };
+        let head = read_head(entry.path());
         out.push(RolloutFinding {
             path: entry.path().to_path_buf(),
             thread_id: thread_id_from_file_name(&name),
             mtime,
             tail,
+            head,
         });
     }
     out.sort_by_key(|f| std::cmp::Reverse(f.mtime));
@@ -301,6 +369,8 @@ pub fn busy_threads(
             rollout_path: Some(f.path.to_string_lossy().into_owned()),
             last_event_at: f.tail.last_event_at.or(Some(f.mtime)),
             signal,
+            originator: f.head.originator.clone(),
+            cwd: f.head.cwd.clone(),
         });
     }
     out

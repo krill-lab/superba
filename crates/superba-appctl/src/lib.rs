@@ -13,7 +13,9 @@
 //!   app-server child of the app main process; graceful quit ([`quit`]);
 //! - process catalog ([`procs`]), turn activity from rollouts ([`activity`]) and
 //!   the renderer ([`renderer`]), CLI daemon control ([`daemon`]) and the Linux
-//!   launcher entry ([`launcher`]).
+//!   launcher entry ([`launcher`]);
+//! - stopping Codex consumer processes the user asked Superba to stop
+//!   ([`stop`]).
 //!
 //! Platform code sits behind `cfg(target_os = ...)`; Linux is the reference and the
 //! only platform exercised end to end.
@@ -33,6 +35,7 @@ pub mod package;
 pub mod procs;
 pub mod quit;
 pub mod renderer;
+pub mod stop;
 pub mod store;
 pub mod watch;
 
@@ -826,6 +829,15 @@ impl AppController for DesktopAppController {
             .map_err(blocking_err)??;
         }
         Ok(outcome)
+    }
+
+    async fn stop_process(
+        &self,
+        process: &ProcessInfo,
+        force: bool,
+        timeout_ms: u64,
+    ) -> Result<superba_core::StopOutcome> {
+        stop::stop(process, force, Duration::from_millis(timeout_ms)).await
     }
 
     async fn processes(&self, home: &CodexHome) -> Result<Vec<ProcessInfo>> {

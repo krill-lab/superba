@@ -675,6 +675,8 @@ fn process(pid: u32, kind: CodexProcessKind, home: Option<&str>) -> ProcessInfo 
         started_at: None,
         authapi_env: EnvObservation::Unknown,
         stale: false,
+        ide: None,
+        cwd: None,
     }
 }
 

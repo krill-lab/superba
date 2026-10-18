@@ -420,6 +420,8 @@ impl FakeState {
                 codex_home: Some(HOME.into()),
                 stale,
                 kind,
+                ide: None,
+                cwd: None,
             }
         })
         .collect();
@@ -1431,6 +1433,8 @@ fn busy_threads() -> Vec<ThreadActivity> {
         rollout_path: None,
         last_event_at: Some(Timestamp::now()),
         signal,
+        originator: None,
+        cwd: None,
     })
     .collect()
 }
@@ -1602,6 +1606,7 @@ impl SwitchService for FakeService {
             }),
             notices: vec![],
             external: s.external.clone(),
+            runtime: None,
         })
     }
 
@@ -2080,6 +2085,7 @@ impl SwitchService for FakeService {
             verification: None,
             remotes: vec![],
             stale_processes: vec![],
+            runtime: None,
             returned_to: None,
             notices: vec![],
         };

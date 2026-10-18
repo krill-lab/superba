@@ -840,6 +840,8 @@ pub enum SwitchStep {
     QuitApp,
     /// Hot-restart the app-server.
     RestartCore,
+    /// Stop Codex processes the user asked Superba to stop.
+    StopProcesses,
     /// Launch the app.
     LaunchApp,
     /// Verify: new app-server process.
@@ -957,12 +959,28 @@ pub enum DecisionRequest {
         /// Hosts.
         targets: Vec<TargetId>,
     },
-    /// Session migration needs these processes closed by the user (TUI, IDE
-    /// app-servers; Superba never kills them, plan 10.2). Allowed: Continue
-    /// (re-check), Cancel.
+    /// Session migration needs these processes stopped (TUI, exec, IDE
+    /// app-servers, plan 10.2). The user closes them and continues (re-check),
+    /// or asks Superba to stop them ([`Decision::StopProcesses`]: each is asked
+    /// to exit where the platform allows; what does not exit is listed again in
+    /// [`DecisionRequest::ForceStop`]); Superba never stops one without that
+    /// answer. Allowed: StopProcesses, Continue, Cancel.
     CloseConsumers {
         /// Processes still using the Codex home.
         processes: Vec<ProcessInfo>,
+        /// Turns running in them (stopping one now interrupts its turn).
+        #[serde(default)]
+        busy: Vec<ThreadActivity>,
+    },
+    /// After [`Decision::StopProcesses`], these did not exit (or the platform
+    /// cannot ask them to: Windows console programs and pipe app-servers). End
+    /// them by force? Allowed: Force, Continue (re-check), Cancel.
+    ForceStop {
+        /// Processes still running.
+        processes: Vec<ProcessInfo>,
+        /// Turns running in them (their output is lost).
+        #[serde(default)]
+        busy: Vec<ThreadActivity>,
     },
 }
 
@@ -982,8 +1000,17 @@ impl DecisionRequest {
                 Decision::FullRestart,
                 Decision::KeepWritten,
             ],
-            DecisionRequest::UnknownRemoteActivity { .. }
-            | DecisionRequest::CloseConsumers { .. } => &[Decision::Continue, Decision::Cancel],
+            DecisionRequest::UnknownRemoteActivity { .. } => {
+                &[Decision::Continue, Decision::Cancel]
+            }
+            DecisionRequest::CloseConsumers { .. } => &[
+                Decision::StopProcesses,
+                Decision::Continue,
+                Decision::Cancel,
+            ],
+            DecisionRequest::ForceStop { .. } => {
+                &[Decision::Force, Decision::Continue, Decision::Cancel]
+            }
         }
     }
 
@@ -993,7 +1020,8 @@ impl DecisionRequest {
             DecisionRequest::WaitForTurns { .. } => Decision::Wait,
             DecisionRequest::ForceQuit { .. }
             | DecisionRequest::UnknownRemoteActivity { .. }
-            | DecisionRequest::CloseConsumers { .. } => Decision::Cancel,
+            | DecisionRequest::CloseConsumers { .. }
+            | DecisionRequest::ForceStop { .. } => Decision::Cancel,
             DecisionRequest::IpcFailed { .. } => Decision::Undo,
             DecisionRequest::VerificationFailed { .. } => Decision::Rollback,
         }
@@ -1020,6 +1048,9 @@ pub enum Decision {
     Rollback,
     /// Continue.
     Continue,
+    /// Stop the listed processes for the user: ask each to exit (graceful)
+    /// where the platform allows, then ask again before ending any by force.
+    StopProcesses,
 }
 
 /// Result of one verification check.
@@ -1134,6 +1165,11 @@ pub struct SwitchOutcome {
     /// CLI processes still on the old config.
     #[serde(default)]
     pub stale_processes: Vec<ProcessInfo>,
+    /// After the switch: every running Codex consumer of the local home, the
+    /// configuration it runs and how it picks the new one up (`None` when the
+    /// local home was not part of the switch).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<Box<crate::runtime::RuntimeView>>,
     /// Thread the UI was navigated back to.
     #[serde(default)]
     pub returned_to: Option<ThreadRef>,
@@ -1263,6 +1299,11 @@ pub struct Overview {
     /// the official login puts it back).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login_stash: Option<crate::config::LoginStashInfo>,
+    /// Written configuration versus what each running Codex consumer uses
+    /// (running turns not checked on this cheap path, see
+    /// [`crate::SwitchService::runtime`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<crate::runtime::RuntimeView>,
     /// Banners.
     #[serde(default)]
     pub notices: Vec<Notice>,

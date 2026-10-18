@@ -339,6 +339,13 @@ pub struct ProcessInfo {
     /// `AppController` implementations leave it `false`.
     #[serde(default)]
     pub stale: bool,
+    /// The editor whose Codex extension runs this app-server (from the
+    /// extension directory of its executable or its host process).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ide: Option<crate::runtime::IdeKind>,
+    /// Working directory, when readable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<PathBuf>,
 }
 
 /// Sanitize a foreign command line for display and logs: values of flags whose
@@ -455,6 +462,14 @@ pub struct ThreadActivity {
     pub last_event_at: Option<Timestamp>,
     /// Signal.
     pub signal: ActivitySignal,
+    /// `originator` of the session (`Codex Desktop`, `codex_cli_rs`,
+    /// `codex_exec`, `codex_vscode`, ...), from the rollout's session header:
+    /// which kind of client runs the turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub originator: Option<String>,
+    /// Working directory of the session (session header).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
 }
 
 /// Turn activity of one target at one moment.

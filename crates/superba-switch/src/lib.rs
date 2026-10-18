@@ -39,6 +39,7 @@ pub mod privilege;
 pub mod router;
 pub mod router_doctor;
 pub mod rules;
+pub mod runtime;
 mod selfupdate;
 pub mod service;
 pub mod session_events;
@@ -891,6 +892,18 @@ impl SwitchService for Switcher {
 
     async fn doctor(&self) -> Result<Vec<DoctorFinding>> {
         self.doctor_impl().await
+    }
+
+    async fn runtime(&self) -> Result<superba_core::RuntimeView> {
+        self.runtime_impl().await
+    }
+
+    async fn stop_processes(
+        &self,
+        processes: Vec<superba_core::ProcessInfo>,
+        force: bool,
+    ) -> Result<Vec<superba_core::StopReport>> {
+        self.stop_processes_impl(processes, force).await
     }
 
     async fn open_app(&self) -> Result<AppSession> {

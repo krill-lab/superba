@@ -122,9 +122,21 @@ pub fn status(_state: &State) -> PageStatus {
     PageStatus::default()
 }
 
-/// No palette entries of its own (the shell lists switching and restore).
-pub fn palette(_cx: &Cx<'_>, _state: &State) -> Vec<PaletteItem> {
-    Vec::new()
+/// "Codex in effect" (the shell lists switching and restore).
+pub fn palette(cx: &Cx<'_>, _state: &State) -> Vec<PaletteItem> {
+    vec![PaletteItem {
+        title: cx.tr.t("overview.palette.in_effect"),
+        detail: Some(cx.tr.t("overview.palette.in_effect_detail")),
+        keywords: vec![
+            "runtime".into(),
+            "processes".into(),
+            "restart".into(),
+            "stale".into(),
+            "vscode".into(),
+        ],
+        group: super::PaletteGroup::Commands,
+        action: Action::ShowRuntime,
+    }]
 }
 
 /// Commands: `wizard`, `restore:original`, `restore:official`, `refresh`.

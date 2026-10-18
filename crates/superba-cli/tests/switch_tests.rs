@@ -461,6 +461,7 @@ async fn waiting_and_close_consumers_hints_are_on_stderr() {
         },
         DecisionRequest::CloseConsumers {
             processes: vec![process()],
+            busy: vec![],
         },
     ];
     let (_, stdout, stderr) = invoke(service.clone(), &["switch"]).await;
@@ -637,4 +638,91 @@ async fn alternatives_are_runnable_commands_preserving_targets_and_answers() {
     }
     assert_eq!(calls.plans[1], expected);
     assert!(calls.executions.is_empty());
+}
+
+fn stop_questions() -> Vec<DecisionRequest> {
+    vec![
+        DecisionRequest::CloseConsumers {
+            processes: vec![process()],
+            busy: vec![thread()],
+        },
+        DecisionRequest::ForceStop {
+            processes: vec![process()],
+            busy: vec![],
+        },
+    ]
+}
+
+/// GH#2: `--stop-codex` lets Superba stop the processes; ending one by force
+/// needs `--force` too.
+#[tokio::test]
+async fn stop_codex_stops_the_processes_and_force_needs_its_own_flag() {
+    for (args, expected) in [
+        (
+            vec!["switch", "--stop-codex"],
+            [Decision::StopProcesses, Decision::Cancel],
+        ),
+        (
+            vec!["switch", "--stop-codex", "--force"],
+            [Decision::StopProcesses, Decision::Force],
+        ),
+        (vec!["switch"], [Decision::Cancel, Decision::Cancel]),
+    ] {
+        let service = FakeService::new();
+        *service.decisions.lock().unwrap() = stop_questions();
+        let (_, stdout, stderr) = invoke(service.clone(), &args).await;
+        assert_eq!(service.calls().answers, expected, "{args:?}");
+        // Every process is named with what stopping it does; the turn is
+        // named with its warning.
+        assert!(
+            stderr.contains("codex in a terminal · pid 424243"),
+            "{stderr}"
+        );
+        assert!(stderr.contains("codex resume --last"), "{stderr}");
+        assert!(stderr.contains("Example thread"), "{stderr}");
+        assert!(stderr.contains("loses its output"), "{stderr}");
+        assert!(!stdout.contains("pid 424243"));
+        if args == ["switch"] {
+            assert!(stderr.contains("--stop-codex"), "hint: {stderr}");
+        }
+    }
+}
+
+/// On a terminal the switch asks, and reads the answers from stdin.
+#[tokio::test]
+async fn a_terminal_is_asked_whether_to_stop_and_whether_to_force() {
+    for (answers, expected) in [
+        (["s", "f"], [Decision::StopProcesses, Decision::Force]),
+        (["stop", ""], [Decision::StopProcesses, Decision::Cancel]),
+        (["c", "c"], [Decision::Continue, Decision::Continue]),
+        (["", "x"], [Decision::Cancel, Decision::Cancel]),
+    ] {
+        let service = FakeService::new();
+        *service.decisions.lock().unwrap() = stop_questions();
+        let mut rt = runtime(service.clone());
+        rt.interactive = true;
+        let queue = std::sync::Arc::new(std::sync::Mutex::new(
+            answers
+                .iter()
+                .map(|a| (*a).to_owned())
+                .collect::<std::collections::VecDeque<_>>(),
+        ));
+        rt.read_stdin_line =
+            std::sync::Arc::new(move || Ok(queue.lock().unwrap().pop_front().unwrap_or_default()));
+        let (_, _, stderr) = invoke_runtime(&rt, &["switch"]).await;
+        assert_eq!(service.calls().answers, expected, "{answers:?}");
+        assert!(stderr.contains("[s] stop"), "{stderr}");
+        assert!(stderr.contains("[f] force"), "{stderr}");
+    }
+    // JSON output never asks.
+    let service = FakeService::new();
+    *service.decisions.lock().unwrap() = stop_questions();
+    let mut rt = runtime(service.clone());
+    rt.interactive = true;
+    rt.read_stdin_line = std::sync::Arc::new(|| panic!("no stdin read with --json"));
+    invoke_runtime(&rt, &["switch", "--json"]).await;
+    assert_eq!(
+        service.calls().answers,
+        [Decision::Cancel, Decision::Cancel]
+    );
 }

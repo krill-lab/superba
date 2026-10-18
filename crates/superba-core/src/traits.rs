@@ -660,6 +660,29 @@ pub trait AppController: Send + Sync {
     /// CDP listener checks) so the next detection asks again. Called on an
     /// explicit refresh, never on a timer. Default: nothing is cached.
     fn forget_cached_probes(&self) {}
+
+    /// Stop one Codex consumer process the user asked Superba to stop (a codex
+    /// CLI session, `codex exec`, an IDE extension's or another app-server):
+    /// without `force` ask it to exit (SIGTERM on Unix) and wait up to
+    /// `timeout_ms`; Windows cannot ask a console program or a pipe app-server
+    /// to exit, so it answers [`crate::StopOutcome::ForceOnly`] without
+    /// touching it. With `force` end it and its child processes (SIGKILL /
+    /// `TerminateProcess`). Refuses the desktop app (use [`Self::quit`]) and a
+    /// pid whose start time no longer matches `process.started_at` (reused by
+    /// another program: [`crate::StopOutcome::NotRunning`]). Callers only pass
+    /// processes the user saw listed and agreed to stop. Default: not
+    /// implemented.
+    async fn stop_process(
+        &self,
+        process: &ProcessInfo,
+        force: bool,
+        timeout_ms: u64,
+    ) -> Result<crate::runtime::StopOutcome> {
+        let _ = (process, force, timeout_ms);
+        Err(Error::NotImplemented {
+            what: "stopping Codex processes".into(),
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,6 +1286,31 @@ pub trait SwitchService: Send + Sync {
 
     /// Diagnostics.
     async fn doctor(&self) -> Result<Vec<DoctorFinding>>;
+
+    /// The configuration written last versus what every running Codex
+    /// consumer of the local home uses, with running turns checked (slower
+    /// than [`Self::overview`], which carries the same view without them).
+    async fn runtime(&self) -> Result<crate::runtime::RuntimeView> {
+        Err(Error::NotImplemented {
+            what: "runtime state".into(),
+        })
+    }
+
+    /// Stop Codex consumer processes the user picked (the runtime view's
+    /// "Stop" offer): only processes that are still listed for the local home
+    /// with the same pid, kind and start time are touched; without `force`
+    /// each is asked to exit ([`AppController::stop_process`]), with `force`
+    /// ended. The desktop app is never stopped here.
+    async fn stop_processes(
+        &self,
+        processes: Vec<ProcessInfo>,
+        force: bool,
+    ) -> Result<Vec<crate::runtime::StopReport>> {
+        let _ = (processes, force);
+        Err(Error::NotImplemented {
+            what: "stopping Codex processes".into(),
+        })
+    }
 
     /// Launch the desktop app through Superba (CDP + auth env), plan 4 #9.
     async fn open_app(&self) -> Result<AppSession>;

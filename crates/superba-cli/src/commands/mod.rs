@@ -13,6 +13,7 @@ mod remote;
 mod requests;
 mod restore;
 mod router;
+mod runtime;
 mod selfupdate;
 mod sessions;
 mod settings;

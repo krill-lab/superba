@@ -10,6 +10,10 @@ pub struct Runtime {
     pub env: Arc<dyn EnvSource>,
     /// Read one secret line, trimmed. Tests inject a reader without touching stdin.
     pub read_stdin_line: Arc<dyn Fn() -> std::io::Result<String> + Send + Sync>,
+    /// stdin and stderr are terminals: a switch may ask the "stop the Codex
+    /// processes for you?" question and read the answer with
+    /// [`Self::read_stdin_line`].
+    pub interactive: bool,
 }
 
 impl Runtime {
@@ -30,6 +34,10 @@ impl Runtime {
                 std::io::stdin().read_line(&mut line)?;
                 Ok(line.trim().to_owned())
             }),
+            interactive: {
+                use std::io::IsTerminal;
+                std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
+            },
         }
     }
 }

@@ -169,3 +169,48 @@ fn scan_and_busy_rules() {
             .is_empty()
     );
 }
+
+#[test]
+fn session_headers_say_which_client_runs_the_session() {
+    use superba_appctl::activity::parse_session_head;
+    let line = r#"{"timestamp":"2026-10-16T07:35:26.660Z","type":"session_meta","payload":{"id":"01a1","timestamp":"2026-10-16T07:35:26.266Z","cwd":"C:\\Users\\a\\work \"x\"","originator":"codex_vscode","cli_version":"0.163.0","source":"vscode","base_instructions":{"text":"say \"originator\":\"nope\""}}}"#;
+    let head = parse_session_head(&format!("{line}\n{{\"type\":\"event_msg\"}}\n"));
+    assert_eq!(head.originator.as_deref(), Some("codex_vscode"));
+    assert_eq!(head.cwd.as_deref(), Some("C:\\Users\\a\\work \"x\""));
+    // The header line may be cut off after the fields (instructions are long).
+    let cut = &line[..line.find("base_instructions").unwrap()];
+    assert_eq!(
+        parse_session_head(cut).originator.as_deref(),
+        Some("codex_vscode")
+    );
+    // Not a session header: nothing.
+    assert_eq!(
+        parse_session_head(r#"{"type":"event_msg","payload":{"originator":"x"}}"#),
+        Default::default()
+    );
+}
+
+#[test]
+fn busy_threads_carry_the_session_client_and_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sessions = tmp.path().join("sessions");
+    let now = Timestamp::now();
+    let started_at = now.saturating_sub(Duration::from_secs(30));
+    let id = "44444444-4444-4444-8444-444444444444";
+    let head = r#"{"timestamp":"2026-10-16T07:35:26.660Z","type":"session_meta","payload":{"id":"44444444-4444-4444-8444-444444444444","cwd":"/work/app","originator":"codex_cli_rs","cli_version":"0.163.0","source":"cli"}}"#;
+    let body = format!(
+        "{head}\n{}\n",
+        line(&started_at.to_rfc3339(), "task_started", "t9")
+    );
+    write_rollout(&sessions, id, &body, Duration::from_secs(1));
+    let opts = ScanOpts::at(now);
+    let findings = scan_rollouts(&sessions, &opts).unwrap();
+    let live = [Some(started_at.saturating_sub(Duration::from_secs(60)))];
+    let busy = busy_threads(&findings, &live, &opts);
+    let t = busy
+        .iter()
+        .find(|t| t.thread_id.as_deref() == Some(id))
+        .unwrap();
+    assert_eq!(t.originator.as_deref(), Some("codex_cli_rs"));
+    assert_eq!(t.cwd.as_deref(), Some("/work/app"));
+}

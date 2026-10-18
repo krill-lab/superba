@@ -5,10 +5,9 @@ use std::collections::BTreeMap;
 
 use superba_core::{
     AppSession, AuthMode, BuiltinProfile, CodexProcessKind, DoctorFinding, EnvObservation, Error,
-    HotSwitchStatus, JournalAction, KeyCheck, KeyInput, KeyRef, LaunchOptions, LineId, LineSource,
-    LocalizedText, Notice, Overview, Profile, ProfileId, RecoveredJournal, RecoveryReport,
-    RemoteOverview, Result, Secret, SecretBackend, Settings, Severity, Site, SiteId, SiteKind,
-    catalog,
+    JournalAction, KeyCheck, KeyInput, KeyRef, LaunchOptions, LineId, LineSource, LocalizedText,
+    Notice, Overview, Profile, ProfileId, RecoveredJournal, RecoveryReport, RemoteOverview, Result,
+    Secret, SecretBackend, Settings, Severity, Site, SiteId, SiteKind, catalog,
     codex::{ENV_AUTHAPI_BASE_URL, PROVIDER_OPENAI},
     plan::{AppOverview, CliOverview},
 };
@@ -484,22 +483,13 @@ impl Switcher {
         let installs = facts.installs.clone();
         let (session, processes) = d.app.session_and_processes(&home).await;
         let session = session.ok().flatten();
-        let hot_switch = match &session {
-            None if installs.is_empty() => HotSwitchStatus::NotInstalled,
-            None => HotSwitchStatus::NotRunning,
-            Some(_) if set.settings.safe_mode => HotSwitchStatus::SafeMode,
-            Some(s) => match s.cdp.as_ref().filter(|c| c.owner_verified) {
-                None => HotSwitchStatus::Unavailable {
-                    reason: superba_core::FullRestartReason::NoCdp,
-                },
-                Some(_) => match d.app.probe_bridge(s).await {
-                    Ok(b) if b.is_ready() => HotSwitchStatus::Ready,
-                    _ => HotSwitchStatus::Unavailable {
-                        reason: superba_core::FullRestartReason::NoBridge,
-                    },
-                },
-            },
-        };
+        let hot_switch = self
+            .hot_switch_status(
+                installs.is_empty(),
+                session.as_ref(),
+                set.settings.safe_mode,
+            )
+            .await;
         let authapi_line = session
             .as_ref()
             .and_then(|s| s.authapi_env.value())
@@ -579,6 +569,17 @@ impl Switcher {
                     .arg("pinned", version),
             ));
         }
+        // Written versus in effect, without the running-turn check (this path
+        // is polled; `runtime()` adds it).
+        let runtime = self
+            .runtime_view(
+                &processes,
+                session.as_ref(),
+                Some(&hot_switch),
+                active.as_ref(),
+                false,
+            )
+            .await;
         let cli = CliOverview {
             binaries,
             processes,
@@ -618,6 +619,7 @@ impl Switcher {
             baseline_captured,
             baseline_at,
             login_stash,
+            runtime: Some(runtime),
             notices,
             external,
         })

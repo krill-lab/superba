@@ -123,6 +123,7 @@ pub fn step(step: &SwitchStep) -> LocalizedText {
         SwitchStep::MigrateSessions => "migrate_sessions",
         SwitchStep::QuitApp => "quit_app",
         SwitchStep::RestartCore => "restart_core",
+        SwitchStep::StopProcesses => "stop_processes",
         SwitchStep::LaunchApp => "launch_app",
         SwitchStep::VerifyProcess => "verify_process",
         SwitchStep::VerifyFiles => "verify_files",
@@ -203,6 +204,7 @@ pub fn decision(d: Decision) -> LocalizedText {
         Decision::KeepWritten => "keep_written",
         Decision::Rollback => "rollback",
         Decision::Continue => "continue",
+        Decision::StopProcesses => "stop_processes",
     };
     text(&format!("switch.action.{key}"))
 }
@@ -225,22 +227,54 @@ pub fn question(request: &DecisionRequest) -> LocalizedText {
             let hosts: Vec<String> = targets.iter().map(|t| target_label(t.as_str())).collect();
             text("switch.question.unknown_remote_activity").arg("hosts", hosts.join(", "))
         }
-        DecisionRequest::CloseConsumers { processes } => {
-            let list: Vec<String> = processes
-                .iter()
-                .map(|p| {
-                    let name = p
-                        .cmdline
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| "codex".to_owned());
-                    format!("{name} (pid {})", p.pid)
-                })
-                .collect();
-            text("switch.question.close_consumers").arg("processes", list.join(", "))
+        DecisionRequest::CloseConsumers { processes, .. } => {
+            text("switch.question.close_consumers").arg("processes", program_list(processes))
+        }
+        DecisionRequest::ForceStop { processes, .. } => {
+            text("switch.question.force_stop").arg("processes", program_list(processes))
         }
         _ => text("switch.phase.recovery"),
     }
+}
+
+/// "codex (pid 1234), Code (pid 99)": program names from the command lines.
+fn program_list(processes: &[superba_core::ProcessInfo]) -> String {
+    processes
+        .iter()
+        .map(|p| {
+            let name = p
+                .cmdline
+                .first()
+                .map(|a| a.rsplit(['/', '\\']).next().unwrap_or(a).to_owned())
+                .unwrap_or_else(|| "codex".to_owned());
+            format!("{name} (pid {})", p.pid)
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// "codex in a terminal (pid 1234)".
+pub fn process_label(p: &superba_core::ProcessInfo) -> LocalizedText {
+    text("switch.stop.process")
+        .arg_text("role", superba_core::process_role(p).text())
+        .arg("pid", p.pid)
+}
+
+/// Log line of one stopped process.
+pub fn stop_result(
+    p: &superba_core::ProcessInfo,
+    outcome: superba_core::StopOutcome,
+) -> LocalizedText {
+    text("switch.stop.result")
+        .arg_text("process", process_label(p))
+        .arg_text("outcome", outcome.text())
+}
+
+/// Log line of a process that could not be stopped.
+pub fn stop_failed(p: &superba_core::ProcessInfo, error: &str) -> LocalizedText {
+    text("switch.stop.failed")
+        .arg_text("process", process_label(p))
+        .arg("error", error)
 }
 
 /// One line per busy thread for the WaitingTurn dialog.

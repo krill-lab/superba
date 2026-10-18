@@ -105,6 +105,7 @@ pub(super) async fn run(
             verification: None,
             remotes: Vec::new(),
             stale_processes: Vec::new(),
+            runtime: None,
             returned_to: None,
             notices: Vec::new(),
         };
@@ -129,9 +130,15 @@ pub(super) async fn run(
     }
     let (events, mut receiver) = CliEvents::channel(out.json, rt.clock.clone());
     let destination = destination_label(&plan);
-    let decider = Arc::new(
-        FlagDecider::new(args.force, args.wait_turn, args.yes).with_events(events.clone()),
-    );
+    let mut decider = FlagDecider::new(args.force, args.wait_turn, args.yes)
+        .with_stop_codex(args.stop_codex)
+        .with_events(events.clone());
+    // The one question a running switch asks on a terminal: stop the Codex
+    // processes it needs closed (GH#2).
+    if rt.interactive && !out.json && !args.stop_codex {
+        decider = decider.with_prompt(rt.read_stdin_line.clone());
+    }
+    let decider = Arc::new(decider);
     let execution = rt.service.execute(
         plan,
         ExecuteOptions {
@@ -622,6 +629,10 @@ fn render_outcome(
                 .arg("pid", process.pid)
                 .arg("started", out.optional(process.started_at)),
         )?;
+    }
+    // What every running Codex consumer uses now (GH#4).
+    if let Some(view) = outcome.runtime.as_ref().filter(|v| !v.consumers.is_empty()) {
+        super::runtime::render(view, out)?;
     }
     for notice in &outcome.notices {
         if summary.is_some_and(|summary| std::ptr::eq(summary, notice))

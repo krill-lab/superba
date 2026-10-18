@@ -65,6 +65,8 @@ fn busy_thread(target: &str, thread: &str) -> ThreadActivity {
         rollout_path: None,
         last_event_at: Some(Timestamp::from_millis(42)),
         signal: ActivitySignal::RolloutTail,
+        originator: None,
+        cwd: None,
     }
 }
 
@@ -125,6 +127,7 @@ fn outcome(plan: &SwitchPlan) -> SwitchOutcome {
         verification: None,
         remotes: vec![],
         stale_processes: vec![],
+        runtime: None,
         returned_to: None,
         notices: vec![],
     }
@@ -720,7 +723,10 @@ fn decisions_outside_execution_receive_the_safe_default_immediately() {
             Decision::Cancel,
         ),
         (
-            DecisionRequest::CloseConsumers { processes: vec![] },
+            DecisionRequest::CloseConsumers {
+                processes: vec![],
+                busy: vec![],
+            },
             Decision::Cancel,
         ),
     ] {

@@ -31,6 +31,7 @@ write_env = "Write environment"
 migrate_sessions = "Migrate sessions"
 quit_app = "Close ChatGPT"
 restart_core = "Restart core"
+stop_processes = "Stop Codex processes"
 launch_app = "Open ChatGPT"
 verify_process = "Verify core"
 verify_files = "Verify files"
@@ -90,6 +91,7 @@ view_log = "View log"
 copy_resume = "Copy codex resume"
 restart_daemon = "Restart the daemon…"
 force_quit = "Force quit"
+stop_processes = "Stop them for me"
 
 [switch.countdown]
 title = "Switching to “{destination}” in {seconds} s"
@@ -119,7 +121,8 @@ force_quit = "ChatGPT did not close within 15 s. Force it to quit? Unsaved work 
 ipc_failed = "The Codex core could not be restarted in place: {error}"
 verification_failed = "The new Codex core did not pass verification: {detail}"
 unknown_remote_activity = "Could not tell whether conversations are running on {hosts}. Switching interrupts them if they are."
-close_consumers = "Close these Codex processes first (Superba does not kill them): {processes}"
+close_consumers = "These Codex processes use this Codex home and must be closed first: {processes}. Close them yourself and continue, or let Superba stop them (it asks again before ending any by force)."
+force_stop = "{processes} did not exit. End them by force? A running turn loses its output."
 
 [switch.choice]
 legacy_sessions = "You have {count} sessions under provider “{provider}”. They will be hidden after the switch unless they are migrated."
@@ -476,3 +479,9 @@ access_needs_router = "Install and start the local router first."
 [switch.ownership]
 kept = "Kept {count} changes made by {source} after Superba wrote them: {items}. Superba restores only what it still manages; take them over to restore them too."
 hand_off_note = "Superba stops managing Codex's configuration: it puts back only the keys it still manages, keeps everything the other tool changed and an encrypted copy of both files. Switching to a profile later takes over again."
+
+[switch.stop]
+asking = "Asking the Codex processes to exit ({count})"
+process = "{role} (pid {pid})"
+result = "{process}: {outcome}"
+failed = "{process}: could not be stopped ({error})"

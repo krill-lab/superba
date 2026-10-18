@@ -74,6 +74,8 @@ pub fn busy_threads(target: &TargetId, recs: &Records, now: Timestamp) -> Vec<Th
                     .saturating_sub(age.max(0).saturating_mul(1000)),
             )),
             signal,
+            originator: None,
+            cwd: None,
         });
     }
     out

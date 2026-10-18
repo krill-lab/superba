@@ -30,6 +30,7 @@ write_env = "写入环境变量"
 migrate_sessions = "迁移会话"
 quit_app = "关闭 ChatGPT"
 restart_core = "重启内核"
+stop_processes = "停止 Codex 进程"
 launch_app = "打开 ChatGPT"
 verify_process = "验证内核"
 verify_files = "验证文件"
@@ -89,6 +90,7 @@ view_log = "查看日志"
 copy_resume = "复制 codex resume"
 restart_daemon = "重启守护进程…"
 force_quit = "强制退出"
+stop_processes = "帮我停止它们"
 
 [switch.countdown]
 title = "{seconds} 秒后切换到「{destination}」"
@@ -118,7 +120,8 @@ force_quit = "ChatGPT 在 15 秒内没有退出。要强制结束吗？app 里�
 ipc_failed = "无法热重启 Codex 内核：{error}"
 verification_failed = "新的 Codex 内核没有通过验证：{detail}"
 unknown_remote_activity = "无法确认 {hosts} 上是否有对话在运行；如果有，切换会中断它们。"
-close_consumers = "请先关闭这些 Codex 进程（Superba 不会代为结束）：{processes}"
+close_consumers = "这些 Codex 进程正在使用此 Codex 目录，需要先关闭：{processes}。你可以自己关闭后继续，也可以让 Superba 代为停止（强制结束前会再次询问）。"
+force_stop = "{processes} 没有退出。要强制结束吗？正在运行的回合会丢失输出。"
 
 [switch.choice]
 legacy_sessions = "你有 {count} 个会话属于 provider「{provider}」。切换后如果不迁移，它们会暂时看不见。"
@@ -475,3 +478,9 @@ access_needs_router = "请先安装并启动本机路由。"
 [switch.ownership]
 kept = "已保留 {source} 在 Superba 写入之后做的 {count} 项修改：{items}。Superba 只还原它仍在管理的内容；如需一并还原，请选择接管。"
 hand_off_note = "Superba 将不再管理 Codex 配置：只还原它仍在管理的键，保留另一个工具做的所有修改，并加密保存两份文件的副本。以后切换到任一配置方案时会重新接管。"
+
+[switch.stop]
+asking = "正在请 Codex 进程退出（{count} 个）"
+process = "{role}（pid {pid}）"
+result = "{process}：{outcome}"
+failed = "{process}：无法停止（{error}）"

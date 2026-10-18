@@ -409,6 +409,8 @@ fn process(
         authapi_env,
         codex_home: None,
         stale,
+        ide: None,
+        cwd: None,
     }
 }
 

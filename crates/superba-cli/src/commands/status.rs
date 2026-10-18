@@ -8,7 +8,12 @@ use crate::{
 };
 
 pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
-    let overview = rt.service.overview().await?;
+    let mut overview = rt.service.overview().await?;
+    // Written versus in effect with running turns checked (GH#4); the
+    // overview's cheaper copy when the service cannot.
+    if let Ok(view) = rt.service.runtime().await {
+        overview.runtime = Some(view);
+    }
     if out.json {
         out.value(&overview)?;
         return Ok(exit::OK);
@@ -118,6 +123,9 @@ pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
     )?;
     out.field("cli.label.processes", overview.cli.processes.len())?;
     out.field("cli.label.stale", overview.cli.stale_count())?;
+    if let Some(view) = &overview.runtime {
+        super::runtime::render(view, out)?;
+    }
     remote::render(&overview.remotes, out)?;
     for notice in &overview.notices {
         out.notice(notice)?;

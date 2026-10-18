@@ -41,7 +41,10 @@ fn redact_argv_hides_secret_flag_values_and_key_like_arguments() {
 
 #[test]
 fn close_consumers_decision_defaults_to_cancel_and_allows_continue() {
-    let request = DecisionRequest::CloseConsumers { processes: vec![] };
+    let request = DecisionRequest::CloseConsumers {
+        processes: vec![],
+        busy: vec![],
+    };
     assert_eq!(request.safe_default(), Decision::Cancel);
     assert!(request.allowed().contains(&Decision::Continue));
     assert!(request.allowed().contains(&request.safe_default()));

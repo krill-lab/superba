@@ -146,6 +146,8 @@ fn thread(target_id: &str, title: Option<&str>) -> ThreadActivity {
         rollout_path: None,
         last_event_at: None,
         signal: ActivitySignal::RolloutTail,
+        originator: None,
+        cwd: None,
     }
 }
 
@@ -160,6 +162,8 @@ fn process(pid: u32, cmdline: &[&str]) -> ProcessInfo {
         authapi_env: EnvObservation::Unknown,
         codex_home: None,
         stale: false,
+        ide: None,
+        cwd: None,
     }
 }
 
@@ -547,6 +551,7 @@ fn every_execution_question_supplies_its_specific_context() {
         (
             DecisionRequest::CloseConsumers {
                 processes: vec![process(41, &["runner", "exec"]), process(42, &[])],
+                busy: vec![],
             },
             "switch.question.close_consumers",
             vec![("processes", "runner (pid 41), codex (pid 42)")],
@@ -582,7 +587,10 @@ fn questions_with_empty_lists_still_supply_their_placeholders() {
             vec![("hosts", "")],
         ),
         (
-            DecisionRequest::CloseConsumers { processes: vec![] },
+            DecisionRequest::CloseConsumers {
+                processes: vec![],
+                busy: vec![],
+            },
             "switch.question.close_consumers",
             vec![("processes", "")],
         ),

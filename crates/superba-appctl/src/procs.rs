@@ -24,7 +24,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use superba_core::{CodexProcessKind, EnvObservation, ProcessInfo, Timestamp, redact_argv};
+use superba_core::{
+    CodexProcessKind, EnvObservation, IdeKind, ProcessInfo, Timestamp, redact_argv,
+};
 
 /// One process from the OS snapshot.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -46,6 +48,8 @@ pub struct ProcEntry {
     /// Owned by another OS user (Unix: a different uid than ours). Such a process
     /// is never taken for "the" desktop app: Superba cannot control it.
     pub foreign_user: bool,
+    /// Working directory, when readable (read together with the environment).
+    pub cwd: Option<PathBuf>,
 }
 
 impl ProcEntry {
@@ -469,6 +473,56 @@ impl Snapshot {
             .unwrap_or_default()
     }
 
+    /// The editor whose Codex extension runs `pid`: the extension directory of
+    /// its executable (`~/.vscode/extensions/openai.chatgpt-…/bin/…`), else the
+    /// first ancestor (up to eight levels) whose program is an editor
+    /// (`Code.exe`, `Code Helper (Plugin)`, `cursor`, ...). Only app-servers
+    /// outside the desktop app are looked at.
+    pub fn ide_of(&self, pid: u32) -> Option<IdeKind> {
+        let e = self.all.get(&pid)?;
+        if !matches!(
+            self.kind_of(pid),
+            Some(CodexProcessKind::IdeAppServer | CodexProcessKind::Other)
+        ) {
+            return None;
+        }
+        let exe = e.exe.clone().or_else(|| e.argv.first().map(PathBuf::from));
+        if let Some(ide) = exe.as_deref().and_then(IdeKind::from_extension_path) {
+            return Some(ide);
+        }
+        // The npm wrapper (`node …/codex.js`) carries the extension path in argv.
+        if let Some(ide) = e
+            .argv
+            .iter()
+            .take(2)
+            .find_map(|a| IdeKind::from_extension_path(Path::new(a)))
+        {
+            return Some(ide);
+        }
+        let mut seen = vec![pid];
+        let mut cur = e.ppid;
+        for _ in 0..8 {
+            let Some(pp) = cur.filter(|pp| !seen.contains(pp)) else {
+                break;
+            };
+            seen.push(pp);
+            let Some(parent) = self.all.get(&pp) else {
+                break;
+            };
+            let name = parent
+                .exe
+                .as_deref()
+                .and_then(|x| x.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .or_else(|| parent.argv.first().map(|a| base_name(a).to_owned()));
+            if let Some(ide) = name.as_deref().and_then(IdeKind::from_host_name) {
+                return Some(ide);
+            }
+            cur = parent.ppid;
+        }
+        None
+    }
+
     /// Build a [`ProcessInfo`] for a classified pid.
     pub fn process_info(&self, pid: u32) -> Option<ProcessInfo> {
         let e = self.all.get(&pid)?;
@@ -488,6 +542,8 @@ impl Snapshot {
             authapi_env,
             codex_home: self.codex_home_of(pid),
             stale: false,
+            ide: self.ide_of(pid),
+            cwd: e.cwd.clone(),
         })
     }
 }
@@ -565,7 +621,9 @@ pub fn snapshot_os(opts: ReadOpts) -> Vec<ProcEntry> {
         .with_cmd(UpdateKind::Always)
         .with_exe(UpdateKind::Always);
     if opts.environ {
-        kind = kind.with_environ(UpdateKind::Always);
+        kind = kind
+            .with_environ(UpdateKind::Always)
+            .with_cwd(UpdateKind::Always);
     }
     sys.refresh_processes_specifics(ProcessesToUpdate::All, true, kind);
     sys.processes()
@@ -593,6 +651,11 @@ pub fn snapshot_os(opts: ReadOpts) -> Vec<ProcEntry> {
                 env,
                 zombie: matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead),
                 foreign_user: foreign_user(p),
+                cwd: opts
+                    .environ
+                    .then(|| p.cwd().map(Path::to_path_buf))
+                    .flatten()
+                    .filter(|c| !c.as_os_str().is_empty()),
             }
         })
         .collect()

@@ -369,6 +369,8 @@ pub enum Action {
     RollbackMigration(String),
     /// Run diagnostics.
     RunDoctor,
+    /// Open "Codex in effect": what every running Codex uses (GH#4).
+    ShowRuntime,
     /// Open the first-run wizard.
     StartWizard,
     /// GH#5: show what another tool changed in what Superba manages.

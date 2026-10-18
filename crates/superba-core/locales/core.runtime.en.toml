@@ -1,0 +1,47 @@
+# superba-core messages of the runtime state area (GH#2 stopping Codex
+# processes, GH#4 "written" versus "in effect"). Concatenated after en.toml into
+# the core catalog, so this file must start with a table header and must not
+# repeat a key of another core file (enforced by tests). Every key must also
+# exist in core.runtime.zh-CN.toml.
+
+[ide]
+vscode = "VS Code"
+vscode_insiders = "VS Code Insiders"
+cursor = "Cursor"
+windsurf = "Windsurf"
+vscodium = "VSCodium"
+other = "an editor"
+
+[runtime.role]
+app = "ChatGPT desktop app"
+terminal = "codex in a terminal"
+exec = "codex exec"
+daemon = "codex background server"
+ide = "{ide} · Codex extension"
+ide_unknown = "Codex extension of an editor"
+other = "Other Codex app-server"
+
+[runtime.advice]
+none = "Nothing to do."
+hot = "Superba can restart ChatGPT's Codex core (about a second; the window and threads stay)."
+full = "Reopen ChatGPT through Superba: it was not opened by Superba, so its Codex core cannot be restarted on its own."
+reopen = "In that terminal leave codex (/quit or Ctrl+C twice) and run `codex resume --last` to continue the session with the new configuration."
+rerun = "Let it finish; the next run of codex exec uses the new configuration."
+ide = "In {ide} run “Developer: Restart Extension Host” (Ctrl+Shift+P, on a Mac Cmd+Shift+P) or “Developer: Reload Window”; the editor stays open and the Codex extension starts its Codex again."
+daemon = "Restart the codex background server (the next switch does it, or `codex app-server-control restart`)."
+owner = "Restart the program that started this Codex process."
+
+[runtime.stop]
+exited = "exited"
+killed = "ended by force"
+still_running = "still running"
+not_running = "already closed"
+force_only = "cannot be asked to exit on this system"
+
+[runtime.stop_effect]
+app = "ChatGPT quits; Superba opens it again after the switch."
+terminal = "The codex session in that terminal ends (the conversation is kept: `codex resume --last` continues it)."
+exec = "The codex exec run ends before it finishes."
+daemon = "The background server stops; codex starts it again when needed."
+ide = "The Codex extension in {ide} loses its Codex until you run “Developer: Restart Extension Host” or reload the window; {ide} itself stays open."
+other = "The program that started it loses its Codex."

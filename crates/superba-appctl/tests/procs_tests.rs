@@ -34,6 +34,7 @@ fn entry(pid: u32, ppid: u32, cmd: &str) -> ProcEntry {
         env: None,
         zombie: false,
         foreign_user: false,
+        cwd: None,
     }
 }
 
@@ -409,4 +410,60 @@ fn informational_invocations_are_not_consumers() {
             false
         });
     assert_eq!(snap.classified, vec![(202, CodexProcessKind::CliTui)]);
+}
+
+#[test]
+fn ide_app_servers_name_their_editor() {
+    use superba_core::IdeKind;
+    // Windows: VS Code's extension host is a `Code.exe --type=utility` child;
+    // the extension's own codex.exe sits in the extension directory.
+    let code = entry(40, 1, "C:\\Program Files\\Microsoft VS Code\\Code.exe");
+    let host = entry(
+        41,
+        40,
+        "C:\\Program Files\\Microsoft VS Code\\Code.exe --type=utility --utility-sub-type=node.mojom.NodeService",
+    );
+    let vscode = entry(
+        42,
+        41,
+        "C:\\Users\\u\\.vscode\\extensions\\openai.chatgpt-26.5.1-win32-x64\\bin\\windows-x86_64\\codex.exe app-server --analytics-default-enabled",
+    );
+    // A codex outside any extension directory, started by Cursor's helper.
+    let cursor_helper = entry(
+        50,
+        1,
+        "/Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin)",
+    );
+    let mut cursor = entry(51, 50, "/opt/tools/codex app-server");
+    cursor.exe = Some(PathBuf::from("/opt/tools/codex"));
+    let mut cursor_helper = cursor_helper;
+    cursor_helper.exe = Some(PathBuf::from(
+        "/Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app/Contents/MacOS/Cursor Helper (Plugin)",
+    ));
+    // An app-server some other tool started: no editor.
+    let other = entry(60, 59, "/usr/local/bin/codex app-server");
+    // The terminal codex is never an extension, even inside VS Code's terminal.
+    let tui = entry(70, 40, "/usr/local/bin/codex");
+    let snap = Snapshot::classify_entries(
+        vec![code, host, vscode, cursor_helper, cursor, other, tui],
+        &|_| false,
+    );
+    assert_eq!(snap.kind_of(42), Some(&CodexProcessKind::IdeAppServer));
+    assert_eq!(snap.ide_of(42), Some(IdeKind::VsCode));
+    assert_eq!(snap.process_info(42).unwrap().ide, Some(IdeKind::VsCode));
+    assert_eq!(snap.ide_of(51), Some(IdeKind::Cursor));
+    assert_eq!(snap.ide_of(60), None);
+    assert_eq!(snap.kind_of(70), Some(&CodexProcessKind::CliTui));
+    assert_eq!(snap.ide_of(70), None, "only app-servers are extensions");
+}
+
+#[test]
+fn the_working_directory_reaches_the_process_info() {
+    let mut tui = entry(200, 50, "/usr/local/bin/codex");
+    tui.cwd = Some(PathBuf::from("/work/project"));
+    let snap = Snapshot::classify_entries(vec![tui], &|_| false);
+    assert_eq!(
+        snap.process_info(200).unwrap().cwd,
+        Some(PathBuf::from("/work/project"))
+    );
 }
