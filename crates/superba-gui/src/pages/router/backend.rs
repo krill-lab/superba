@@ -195,9 +195,9 @@ pub fn members(view: &RouterView, sites: &[Site], profiles: &ProfileSet) -> Vec<
 }
 
 /// Profiles that can join: key-based, non-built-in profiles on Krill or custom
-/// sites that are not members yet, one per site (the official login never can,
-/// nor a profile set to PAT only: the router sends an API key, and the Router
-/// page explains how to fix those).
+/// sites that are not members yet, one per site (the official login never can).
+/// A profile set to PAT for direct switches can: the router sends its key as an
+/// API key (user bug 78).
 pub fn candidates(sites: &[Site], profiles: &ProfileSet, members: &[ProfileId]) -> Vec<Candidate> {
     let member_sites: Vec<_> = members
         .iter()

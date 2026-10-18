@@ -397,7 +397,7 @@ impl Finding {
                 path.display()
             ),
             Finding::NotConfigured => {
-                "The router is not set up yet: add at least one member that uses an API key.".into()
+                "The router is not set up yet: add at least one member with an API key.".into()
             }
             Finding::ConfigInvalid { detail } => {
                 format!("The router configuration cannot be used: {detail}")

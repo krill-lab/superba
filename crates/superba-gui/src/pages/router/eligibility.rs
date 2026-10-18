@@ -1,8 +1,9 @@
 //! "Can the router be turned on?" (user bug 28). Router members need a key the
-//! router can send as an API key; when no member has one, 开启 is disabled and
-//! this panel says why, right under the banner, with the direct fixes: add an
+//! router can send as an API key (whatever auth the provider uses when switched
+//! directly, user bug 78); when no member has one, 开启 is disabled and this
+//! panel says why, right under the banner, with the direct fixes: add an
 //! eligible provider as a member, or enter an API key for a provider that has
-//! none (or is set to PAT only), which opens the Providers page key field.
+//! none, which opens the Providers page key field.
 //! The rules are the switch service's ([`superba_switch::router_doctor`]), so
 //! the page, `spb router enable` and `spb router doctor` say the same thing.
 //!

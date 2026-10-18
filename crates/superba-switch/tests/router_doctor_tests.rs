@@ -62,7 +62,9 @@ fn every_kind_of_provider_gets_its_eligibility() {
         "members first"
     );
     assert!(of("pat").member);
-    assert_eq!(of("pat").eligibility, Eligibility::PatOnly);
+    // User bug 78: a profile set to PAT for direct switches still has its
+    // key, which the router sends as an API key.
+    assert_eq!(of("pat").eligibility, Eligibility::Eligible);
     assert_eq!(
         of("work").eligibility,
         Eligibility::Eligible,
@@ -83,16 +85,14 @@ fn every_kind_of_provider_gets_its_eligibility() {
         superba_switch::router_doctor::eligibility(official, official_site),
         Eligibility::OfficialLogin
     );
-    assert!(!has_eligible_member(&c), "the only member is PAT-only");
-    for e in [Eligibility::PatOnly, Eligibility::NoKey] {
-        assert!(e.needs_key());
-    }
+    assert!(has_eligible_member(&c), "the PAT member carries traffic");
+    assert!(Eligibility::NoKey.needs_key());
+    assert!(!Eligibility::Eligible.needs_key());
     // Every reason renders in both languages.
     for e in [
         Eligibility::Eligible,
         Eligibility::OfficialLogin,
         Eligibility::NoKey,
-        Eligibility::PatOnly,
         Eligibility::NoApiKeyMode,
         Eligibility::UnknownSite,
     ] {
@@ -128,14 +128,14 @@ async fn turning_the_router_on_without_an_eligible_member_says_why_and_what_to_d
     })
     .await
     .unwrap();
-    // The user's only member uses a PAT only.
-    set_work(&w, |p| p.set_auth(AuthChoice::Pat));
+    // The user's only member has no key (any more).
+    set_work(&w, |p| p.key_ref = None);
     let e = sw.router_set_enabled(true).await.unwrap_err();
     let Error::Invalid { message } = &e else {
         panic!("expected Invalid, got {e:?}");
     };
     assert!(
-        message.contains("needs at least one member that uses an API key"),
+        message.contains("needs at least one member with an API key"),
         "{message}"
     );
     assert!(message.contains("Need an API key: work"), "{message}");
@@ -143,10 +143,55 @@ async fn turning_the_router_on_without_an_eligible_member_says_why_and_what_to_d
     let mut request = superba_core::SwitchRequest::profile(ProfileId::new(""));
     request.intent = superba_core::SwitchIntent::Router { enable: true };
     let e = sw.plan(request).await.unwrap_err();
-    assert!(e.to_string().contains("uses an API key"), "{e}");
-    // Back to Auto: it works again.
-    set_work(&w, |p| p.set_auth(AuthChoice::Auto));
+    assert!(e.to_string().contains("with an API key"), "{e}");
+}
+
+/// User bug 78: one `spb switch --auth pat` stored PAT as the profile's
+/// direct auth, and the router then refused the profile ("PAT only; the
+/// router needs an API key"). Eligibility is having a key: the member stays,
+/// router mode routes it with the key as an API key, and a direct switch
+/// afterwards keeps the chosen PAT.
+#[tokio::test]
+async fn a_member_set_to_pat_for_direct_switches_stays_routable() {
+    let w = World::new();
+    let sw = w.switcher();
+    sw.router_install(RouterInstallRequest {
+        members: vec![ProfileId::new("work")],
+    })
+    .await
+    .unwrap();
+    // What `spb switch --auth pat` leaves behind: PAT for direct switches.
+    set_work(&w, |p| p.set_auth(AuthChoice::Pat));
+    let direct = sw
+        .plan(superba_core::SwitchRequest::profile(ProfileId::new("work")))
+        .await
+        .unwrap();
+    assert_eq!(
+        direct.to.auth_mode,
+        Some(AuthMode::Pat),
+        "{:?}",
+        direct.primary
+    );
+    let set = w.profiles.set.lock().unwrap().clone();
+    let c = router_candidates(&set, &catalog::builtin_sites());
+    let work = c
+        .iter()
+        .find(|c| c.profile_id.as_ref().is_some_and(|p| p.as_str() == "work"))
+        .unwrap();
+    assert_eq!(work.eligibility, Eligibility::Eligible);
+    assert!(has_eligible_member(&c));
+    // Router mode: planned, not blocked, through the router with the API key.
+    let mut on = superba_core::SwitchRequest::profile(ProfileId::new(""));
+    on.intent = superba_core::SwitchIntent::Router { enable: true };
+    let plan = sw.plan(on).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    assert_eq!(plan.to.auth_mode, Some(AuthMode::ApiKey));
+    assert_eq!(plan.to.label.key, "switch.destination.router");
     sw.router_set_enabled(true).await.unwrap();
+    // The direct choice is untouched by the router.
+    let set = w.profiles.set.lock().unwrap().clone();
+    let work = set.profile(&ProfileId::new("work")).unwrap();
+    assert_eq!(work.auth_choice(), AuthChoice::Pat);
 }
 
 #[tokio::test]
@@ -162,13 +207,13 @@ async fn doctor_without_router_facts_still_explains_the_members() {
     );
     let text = report.render_text(&render(Locale::ZhCn));
     assert!(
-        text.contains("开启路由需要至少一个用 API key 的成员。"),
+        text.contains("开启路由需要至少一个有 API key 的成员。"),
         "{text}"
     );
     assert!(text.contains("spb router enable --member work"), "{text}");
     assert!(text.contains("[供应商]"), "{text}");
     assert!(
-        text.contains("不是成员 · 可以作为成员（使用 API key）"),
+        text.contains("不是成员 · 可以作为成员（有 API key）"),
         "{text}"
     );
     // The fake router has no facts: said so, not hidden.
@@ -346,7 +391,7 @@ async fn doctor_report_from_mac_facts_renders_every_part_in_both_languages() {
                 "$ /bin/launchctl print gui/501/com.krill.superba.router",
                 "  last exit code = 78: EX_CONFIG",
                 "Work (work): 3 line(s), key present",
-                "member · can be a member (uses an API key)",
+                "member · can be a member (has an API key)",
                 "On the port: free (nothing listens)",
                 "[Log (last 1 lines)]",
                 "'/Users/Jane Doe/Library/Application Support/com.krill-code.Superba'",
@@ -359,7 +404,7 @@ async fn doctor_report_from_mac_facts_renders_every_part_in_both_languages() {
                 "macOS 把 /Applications/Superba.app 标记为下载文件",
                 "[路由程序]",
                 "[后台服务]",
-                "成员 · 可以作为成员（使用 API key）",
+                "成员 · 可以作为成员（有 API key）",
                 "端口上: 空闲（没有程序监听）",
                 "[在终端里运行（日志直接显示，Ctrl-C 停止）]",
             ],

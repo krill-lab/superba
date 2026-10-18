@@ -133,12 +133,12 @@ resume_recording = "继续记录请求"
 doctor = "本地路由诊断"
 
 [router.eligibility]
-none = "开启路由需要至少一个用 API key 的成员。"
+none = "开启路由需要至少一个有 API key 的成员。"
 add = "添加 {name} 为成员"
 fill_key = "为 {name} 填写 API key"
 add_provider = "添加供应商"
 reason = "{name}：{reason}"
-no_candidates = "还没有可以作为成员的供应商：请在供应商页添加一个用 API key 的供应商。"
+no_candidates = "还没有可以作为成员的供应商：请在供应商页添加一个有 API key 的供应商。"
 
 [router.doctor]
 open = "诊断"

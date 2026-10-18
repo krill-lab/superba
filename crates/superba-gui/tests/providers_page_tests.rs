@@ -178,6 +178,22 @@ fn automatic_authentication_shows_what_the_planner_will_pick() {
         },
     );
     assert_eq!(d.mode, Some(AuthMode::Pat));
+    // Router mode sends the key as an API key, also for a manual PAT choice
+    // (user bug 78): what the Providers page says matches the plan.
+    let d = shared::decision_with(
+        &site,
+        Some(&line),
+        None,
+        Some(&manual),
+        shared::AutoFacts {
+            pat_version_ok: Some(true),
+            router: true,
+        },
+    );
+    assert_eq!(
+        (d.mode, d.reason),
+        (Some(AuthMode::ApiKey), superba_core::AuthReason::RouterMode)
+    );
 }
 
 // ---------------------------------------------------------------------------

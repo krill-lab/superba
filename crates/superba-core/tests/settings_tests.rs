@@ -333,8 +333,27 @@ fn manual_choices_never_fall_back() {
         (d.mode, d.reason),
         (Some(AuthMode::Pat), AuthReason::Manual)
     );
+    // Through the local router the key is always sent as an API key: a PAT
+    // choice is for direct switches only (user bug 78) and never blocks it.
     let d = AuthChoice::Pat.decide(&cx.router(true));
-    assert_eq!(d.mode, None);
+    assert_eq!(
+        (d.mode, d.reason.clone(), d.choice),
+        (
+            Some(AuthMode::ApiKey),
+            AuthReason::RouterMode,
+            AuthChoice::Pat
+        )
+    );
+    assert!(
+        !d.fell_back(),
+        "a manual choice is not Automatic falling back"
+    );
+    let d = AuthChoice::Pat.decide(&cx.router(true).caps(&edge));
+    assert_eq!(
+        d.mode,
+        Some(AuthMode::ApiKey),
+        "PAT's edge block is no matter"
+    );
 
     let d = AuthChoice::ApiKey.decide(&cx.caps(&edge));
     assert_eq!(

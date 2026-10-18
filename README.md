@@ -519,7 +519,9 @@ hot-switched until Superba reopens it. Ways to open it through Superba:
 
 Router mode is off until you turn it on (**Router** page, or `spb router
 enable`). It needs at least one member: a Krill or custom-site profile with its
-own key.
+own key. The router sends that key as an API key, also for a profile that uses a
+personal access token when switched directly (that choice stays for direct
+switches).
 
 - Superba installs `superba-router` as a per-user service (systemd user unit with
   an XDG autostart fallback on Linux, a LaunchAgent on macOS, a `HKCU\...\Run`

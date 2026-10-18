@@ -448,20 +448,11 @@ pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Acti
         return;
     }
     // `key:<profile>`: the profile's key field (the Router page sends here a
-    // provider without an API key); a profile set to PAT only also gets the
-    // auth choice shown, since the router sends the key as an API key.
+    // provider without an API key).
     if let Some(id) = command.strip_prefix("key:") {
-        let profile = ProfileId::new(id);
-        let target = ProviderId::Profile(profile.clone());
+        let target = ProviderId::Profile(ProfileId::new(id));
         state.select(target.clone());
         state.tab = Tab::Connection;
-        state.advanced = cx
-            .data
-            .profiles
-            .value
-            .as_ref()
-            .and_then(|set| set.profile(&profile))
-            .is_some_and(|p| p.auth_choice() == superba_core::AuthChoice::Pat);
         state.key_edit = Some(KeyEdit {
             provider: Some(target),
             ..KeyEdit::default()

@@ -250,9 +250,6 @@ fn no_eligible_member(candidates: &[RouterCandidate], out: &mut Output) -> Resul
             (Eligibility::NoKey, None) => {
                 next.push(text("cli.router.next_profile").arg("site", id));
             }
-            (Eligibility::PatOnly, Some(_)) => {
-                next.push(text("cli.router.next_auth").arg("id", id));
-            }
             _ => {}
         }
     }

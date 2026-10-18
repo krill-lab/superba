@@ -2,13 +2,15 @@
 //! `superba-router`'s diagnostic facts as a localized, pasteable report.
 //!
 //! A member needs a key the router can send as an API key: a Krill or
-//! OpenAI-compatible site, a stored key, an auth choice that is not "PAT only",
-//! and a site with an API-key mode. The official ChatGPT login is never routed.
+//! OpenAI-compatible site with an API-key mode and a key (stored, or read from
+//! an environment variable). The profile's auth choice is for direct switches
+//! only (user bug 78): a profile set to PAT is still a member, and the router
+//! sends its key as an API key. The official ChatGPT login is never routed.
 //! The GUI (Router page), `spb router enable` and `spb router doctor` all use
 //! [`router_candidates`], so they explain the same thing the same way.
 
 use superba_core::{
-    AuthChoice, AuthMode, Error, LocalizedText, Notice, Profile, ProfileId, ProfileSet, Result,
+    AuthMode, Error, LocalizedText, Notice, Profile, ProfileId, ProfileSet, Result,
     RouterDoctorReport, RouterDoctorRow, RouterDoctorSection, Severity, Site, SiteId, SiteKind,
 };
 use superba_router::doctor::{Finding, PortState, RouterFacts};
@@ -27,8 +29,6 @@ pub enum Eligibility {
     OfficialLogin,
     /// No key entered yet.
     NoKey,
-    /// The profile's auth is set to "PAT only"; the router sends an API key.
-    PatOnly,
     /// The site has no API-key mode.
     NoApiKeyMode,
     /// The profile's site no longer exists.
@@ -47,7 +47,6 @@ impl Eligibility {
             Eligibility::Eligible => "eligible",
             Eligibility::OfficialLogin => "official",
             Eligibility::NoKey => "no_key",
-            Eligibility::PatOnly => "pat_only",
             Eligibility::NoApiKeyMode => "no_api_key_mode",
             Eligibility::UnknownSite => "unknown_site",
         }
@@ -60,7 +59,7 @@ impl Eligibility {
 
     /// A key would fix it (the Providers page key field / `spb key set`).
     pub fn needs_key(self) -> bool {
-        matches!(self, Eligibility::NoKey | Eligibility::PatOnly)
+        self == Eligibility::NoKey
     }
 }
 
@@ -90,7 +89,10 @@ impl RouterCandidate {
     }
 }
 
-/// Whether `profile` (on `site`) can be a router member.
+/// Whether `profile` (on `site`) can be a router member: it has a key and its
+/// site an API-key mode. Its auth choice does not matter (user bug 78): it is
+/// what direct switches use, while the router always sends the key as an API
+/// key, so `spb switch --auth pat` never takes a provider out of the router.
 pub fn eligibility(profile: &Profile, site: Option<&Site>) -> Eligibility {
     let Some(site) = site else {
         return Eligibility::UnknownSite;
@@ -101,8 +103,6 @@ pub fn eligibility(profile: &Profile, site: Option<&Site>) -> Eligibility {
         Eligibility::NoKey
     } else if !site.supports(AuthMode::ApiKey) {
         Eligibility::NoApiKeyMode
-    } else if profile.auth_choice() == AuthChoice::Pat {
-        Eligibility::PatOnly
     } else {
         Eligibility::Eligible
     }

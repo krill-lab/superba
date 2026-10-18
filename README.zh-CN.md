@@ -394,7 +394,8 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 ## 本地路由（可选）
 
 路由模式默认关闭，需要你主动开启（**路由**页面，或 `spb router enable`）。至少需要
-一个成员：一个带自己 Key 的 Krill 或自定义站点配置。
+一个成员：一个带自己 Key 的 Krill 或自定义站点配置。路由会把这个 Key 当作 API Key 发送，
+直连时设为个人访问令牌（PAT）的配置也一样可以作为成员（直连切换仍用它选的认证方式）。
 
 - Superba 把 `superba-router` 安装为本用户服务（Linux：systemd 用户服务，不可用时用
   XDG 自启动；macOS：LaunchAgent；Windows：`HKCU\...\Run` 启动项），只监听

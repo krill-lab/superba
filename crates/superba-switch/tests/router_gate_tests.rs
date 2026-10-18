@@ -1,6 +1,6 @@
 //! User bug 39 (0.1.1-alpha.1 on Windows): Krill with its API key was already
 //! the router's member and the router was answering, `spb router doctor` said
-//! "成员 · 可以作为成员（使用 API key）", yet the Router page kept 开启 disabled.
+//! "成员 · 可以作为成员（有 API key）", yet the Router page kept 开启 disabled.
 //! The service side of the one rule: the gate, the member router mode applies
 //! and the doctor agree, and turning router mode on with Auto auth on a
 //! PAT-capable Krill profile writes the API-key form (router mode is API key
@@ -140,10 +140,7 @@ async fn a_krill_member_with_its_key_turns_router_mode_on_with_the_api_key_form(
     );
     let catalog = messages::catalog(Locale::ZhCn);
     let text = doctor.render_text(&|t| catalog.text(t));
-    assert!(
-        text.contains("成员 · 可以作为成员（使用 API key）"),
-        "{text}"
-    );
+    assert!(text.contains("成员 · 可以作为成员（有 API key）"), "{text}");
     sw.router_set_enabled(false).await.unwrap();
 
     // Turning router mode on: the routed configuration uses the API-key form
@@ -224,14 +221,17 @@ async fn turning_the_router_on_applies_a_member_never_another_profile() {
 fn the_routed_member_is_the_applied_eligible_member_else_the_first_one() {
     let w = World::new();
     let mut set = w.profiles.set.lock().unwrap().clone();
+    let mut keyless = krill_profile("keyless", None, AuthMode::ApiKey);
+    keyless.key_ref = None;
+    let second = krill_profile("second", None, AuthMode::ApiKey);
+    // PAT for direct switches: still routed with its key (user bug 78).
     let mut pat = krill_profile("pat", None, AuthMode::Pat);
     pat.set_auth(AuthChoice::Pat);
-    let second = krill_profile("second", None, AuthMode::ApiKey);
-    set.profiles.extend([pat, second]);
+    set.profiles.extend([keyless, second, pat]);
     let sites = catalog::builtin_sites();
     let id = ProfileId::new;
 
-    set.settings.router.members = vec![id("pat"), id("work"), id("second")];
+    set.settings.router.members = vec![id("keyless"), id("work"), id("second"), id("pat")];
     let c = router_candidates(&set, &sites);
     assert!(has_eligible_member(&c));
     // The applied profile when it is an eligible member.
@@ -239,12 +239,16 @@ fn the_routed_member_is_the_applied_eligible_member_else_the_first_one() {
         router_mode_profile(&c, Some(&id("second"))),
         Some(id("second"))
     );
-    // A PAT-only member is skipped for the first eligible one.
-    assert_eq!(router_mode_profile(&c, Some(&id("pat"))), Some(id("work")));
+    assert_eq!(router_mode_profile(&c, Some(&id("pat"))), Some(id("pat")));
+    // A member without a key is skipped for the first eligible one.
+    assert_eq!(
+        router_mode_profile(&c, Some(&id("keyless"))),
+        Some(id("work"))
+    );
     assert_eq!(router_mode_profile(&c, None), Some(id("work")));
 
     // An eligible profile that is not a member is never routed by itself.
-    set.settings.router.members = vec![id("pat")];
+    set.settings.router.members = vec![id("keyless")];
     let c = router_candidates(&set, &sites);
     assert!(!has_eligible_member(&c));
     assert_eq!(router_mode_profile(&c, Some(&id("work"))), None);

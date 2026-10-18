@@ -75,11 +75,20 @@ impl AuthChoice {
 
     /// Resolve the choice for one destination. Pure: the caller supplies the probe
     /// result and the facts it knows.
+    ///
+    /// Through the local router a PAT choice resolves like `Auto` (user bug 78):
+    /// the router always sends the profile's key as an API key, and the choice
+    /// stays what direct switches use.
     pub fn decide(self, cx: &AuthContext<'_>) -> AuthDecision {
         let decision = |mode: Option<AuthMode>, reason: AuthReason| AuthDecision {
             choice: self,
             mode,
             reason,
+        };
+        let resolve_as = if cx.router && self == AuthChoice::Pat {
+            AuthChoice::Auto
+        } else {
+            self
         };
         let site_pat = cx.site.supports(AuthMode::Pat);
         let site_key = cx.site.supports(AuthMode::ApiKey);
@@ -100,7 +109,7 @@ impl AuthChoice {
         let line_down = cx
             .caps
             .is_some_and(|c| !c.reachable || c.codex_path.is_none());
-        match self {
+        match resolve_as {
             AuthChoice::Auto => {
                 if let Some(blocker) = pat_blocker {
                     return if !site_key {
@@ -183,7 +192,8 @@ pub struct AuthContext<'a> {
     pub caps: Option<&'a LineCaps>,
     /// The profile writes a custom `openai_base_url` (API key only).
     pub custom_base_url: bool,
-    /// Codex reaches the site through Superba's local router (API key only in v2).
+    /// Codex reaches the site through Superba's local router, which sends the
+    /// profile's key as an API key whatever the choice.
     pub router: bool,
     /// Every Codex that reads the configuration supports PAT (`None` = unknown).
     pub pat_version_ok: Option<bool>,
@@ -365,7 +375,7 @@ impl AuthReason {
             ),
             AuthReason::RouterMode => LocalizedText::new(
                 "auth_reason.router_mode",
-                "Traffic goes through Superba's local router, which uses your API key.",
+                "Traffic goes through Superba's local router, which sends your key as an API key.",
             ),
             AuthReason::CodexTooOld => LocalizedText::new(
                 "auth_reason.codex_too_old",

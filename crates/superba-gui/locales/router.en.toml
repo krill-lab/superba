@@ -134,12 +134,12 @@ resume_recording = "Resume request recording"
 doctor = "Local router diagnostics"
 
 [router.eligibility]
-none = "Turning on the router needs at least one member that uses an API key."
+none = "Turning on the router needs at least one member with an API key."
 add = "Add {name} as a member"
 fill_key = "Enter an API key for {name}"
 add_provider = "Add a provider"
 reason = "{name}: {reason}"
-no_candidates = "No provider can be a member yet: add one that uses an API key on the Providers page."
+no_candidates = "No provider can be a member yet: add one with an API key on the Providers page."
 
 [router.doctor]
 open = "Diagnostics"

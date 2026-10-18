@@ -26,7 +26,7 @@ async fn enable_without_a_keyed_member_says_why_and_what_to_run_next() {
     let (code, stdout, stderr) = invoke(service.clone(), &["router", "enable", "--yes"]).await;
     assert_eq!(code, 3, "{stderr}");
     for needle in [
-        "Turning on the local router needs at least one member that uses an API key.",
+        "Turning on the local router needs at least one member with an API key.",
         "Profile work (work): no API key entered yet",
         "Next:",
         "spb key set --profile work --stdin",
@@ -46,15 +46,17 @@ async fn enable_without_a_keyed_member_says_why_and_what_to_run_next() {
     .await;
     assert_eq!(code, 3);
     assert!(
-        stdout.contains("开启路由需要至少一个用 API key 的成员。"),
+        stdout.contains("开启路由需要至少一个有 API key 的成员。"),
         "{stdout}"
     );
     assert!(stdout.contains("还没有填写 API key"), "{stdout}");
     assert!(stdout.contains("下一步："), "{stdout}");
 }
 
+/// User bug 78: a member whose direct auth is PAT (`spb switch --auth pat`)
+/// still has its key, which the router sends as an API key.
 #[tokio::test]
-async fn enable_with_a_pat_only_member_suggests_switching_its_auth() {
+async fn enable_with_a_member_set_to_pat_installs_the_router() {
     let service = FakeService::new();
     key(&service);
     service
@@ -66,33 +68,23 @@ async fn enable_with_a_pat_only_member_suggests_switching_its_auth() {
         .find(|p| p.id.as_str() == "work")
         .unwrap()
         .set_auth(AuthChoice::Pat);
-    let (code, stdout, _) = invoke(
+    let (code, stdout, stderr) = invoke(
         service.clone(),
         &["router", "enable", "--member", "work", "--yes"],
     )
     .await;
-    assert_eq!(code, 3);
-    assert!(
-        stdout.contains("(work, member): set to use a personal access token (PAT) only"),
-        "{stdout}"
+    assert_ne!(code, 3, "not refused: {stdout}{stderr}");
+    assert!(!stdout.contains("needs at least one member"), "{stdout}");
+    assert!(!stdout.contains("personal access token"), "{stdout}");
+    assert_eq!(
+        service.calls().router_installs,
+        vec![vec![ProfileId::new("work")]],
+        "{stderr}"
     );
-    assert!(
-        stdout.contains("spb profile edit work --auth auto"),
-        "{stdout}"
-    );
-    assert!(service.calls().router_installs.is_empty());
-
-    // JSON: one document naming each provider and why.
-    let (code, stdout, _) = invoke(
-        service.clone(),
-        &["--json", "router", "enable", "--member", "work", "--yes"],
-    )
-    .await;
-    assert_eq!(code, 3);
-    let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-    assert_eq!(v["error"], "no_eligible_member");
-    assert_eq!(v["providers"][0]["id"], "work");
-    assert_eq!(v["providers"][0]["eligibility"], "pat_only");
+    // The doctor lists it as a member that can carry traffic.
+    let (code, stdout, _) = invoke(service.clone(), &["--json", "router", "doctor"]).await;
+    assert_eq!(code, 0);
+    assert!(!stdout.contains("pat_only"), "{stdout}");
 }
 
 #[tokio::test]
@@ -103,7 +95,7 @@ async fn enable_with_an_eligible_provider_that_is_not_a_member_names_it() {
     let (code, stdout, _) = invoke(service.clone(), &["router", "enable", "--yes"]).await;
     assert_eq!(code, 3);
     assert!(
-        stdout.contains("can be a member (uses an API key)"),
+        stdout.contains("can be a member (has an API key)"),
         "{stdout}"
     );
     assert!(
@@ -130,7 +122,7 @@ async fn doctor_lists_providers_with_reasons_even_without_router_facts() {
     assert_eq!(code, 0, "{stderr}");
     for needle in [
         "local router diagnostics",
-        "! Turning on the local router needs at least one member that uses an API key.",
+        "! Turning on the local router needs at least one member with an API key.",
         "[Providers]",
         "Profile work (work): not a member · no API key entered yet",
     ] {
@@ -181,7 +173,7 @@ async fn enable_with_a_keyed_member_and_a_running_router_plans_router_mode() {
         invoke(service.clone(), &["--locale", "zh-CN", "router", "doctor"]).await;
     assert_eq!(code, 0);
     assert!(
-        stdout.contains("成员 · 可以作为成员（使用 API key）"),
+        stdout.contains("成员 · 可以作为成员（有 API key）"),
         "{stdout}"
     );
     assert!(!stdout.contains("开启路由需要至少一个"), "{stdout}");
@@ -207,7 +199,7 @@ async fn enable_with_a_keyed_member_and_a_running_router_plans_router_mode() {
 }
 
 #[tokio::test]
-async fn enable_while_the_router_runs_still_says_why_a_pat_only_member_cannot_carry_traffic() {
+async fn enable_while_the_router_runs_plans_router_mode_for_a_member_set_to_pat() {
     let service = FakeService::new();
     member_running(&service);
     service
@@ -219,11 +211,14 @@ async fn enable_while_the_router_runs_still_says_why_a_pat_only_member_cannot_ca
         .find(|p| p.id.as_str() == "work")
         .unwrap()
         .set_auth(AuthChoice::Pat);
-    let (code, stdout, _) = invoke(service.clone(), &["router", "enable", "--yes"]).await;
-    assert_eq!(code, 3, "{stdout}");
+    let (code, stdout, stderr) = invoke(service.clone(), &["router", "enable", "--yes"]).await;
+    assert_ne!(code, 3, "not blocked: {stdout}{stderr}");
+    assert!(!stdout.contains("needs at least one member"), "{stdout}");
     assert!(
-        stdout.contains("(work, member): set to use a personal access token (PAT) only"),
-        "{stdout}"
+        service.calls().plans.iter().any(|r| matches!(
+            r.intent,
+            superba_core::SwitchIntent::Router { enable: true }
+        )),
+        "router mode planned"
     );
-    assert!(service.calls().plans.is_empty(), "nothing planned");
 }

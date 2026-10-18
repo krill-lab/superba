@@ -364,13 +364,12 @@ check_failed = "Could not check the newest {what} versions: {reason}"
 remote_restart_failed = "{host}'s Codex could not be restarted: {reason}"
 
 [switch.router_eligibility]
-eligible = "can be a member (uses an API key)"
+eligible = "can be a member (has an API key)"
 official = "the official ChatGPT login is never routed"
 no_key = "no API key entered yet"
-pat_only = "set to use a personal access token (PAT) only; the router needs an API key"
 no_api_key_mode = "this site has no API-key mode"
 unknown_site = "its site no longer exists"
-none_eligible = "Turning on the local router needs at least one member that uses an API key."
+none_eligible = "Turning on the local router needs at least one member with an API key."
 
 [switch.router_doctor]
 title = "Superba {version} · local router diagnostics · {platform}"
@@ -451,7 +450,7 @@ exe_transient = "Superba runs from a temporary location ({path}); move Superba.a
 exe_on_network = "The router program {path} is on a network share: the background service starts it when you sign in, often before the share is connected, and then the router does not start. Install Superba with the MSI (or copy it to a local folder) and turn the router on from there."
 quarantined = "macOS marks {path} as downloaded (quarantine), so launchd may refuse to start the router. Run in Terminal: xattr -dr com.apple.quarantine \"{path}\" — then turn the router on again."
 protected_folder = "{path} is in a folder macOS protects from background services (Desktop, Documents, Downloads, iCloud Drive); move it elsewhere."
-not_configured = "The router is not set up yet: add at least one member that uses an API key."
+not_configured = "The router is not set up yet: add at least one member with an API key."
 config_invalid = "The router configuration cannot be used: {detail}"
 secrets_missing = "The router's key file is missing or unreadable; turn the router on again in Superba to rewrite it."
 members_without_key = "These members have no key in the router's key file: {members}."

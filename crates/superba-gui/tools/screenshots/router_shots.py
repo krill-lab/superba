@@ -3,9 +3,10 @@
 and of its 诊断 / Diagnostics dialog, from the real `superba` binary.
 
 shoot.py's Session provisions what the 0.1.0 user had: a Krill profile set to
-PAT only (`--auth pat`) and a custom site without a key, no router member. The
-Router page then shows 开启 disabled, the reason under the banner and the fixes
-("为 Krill 填写 API key", ...). The diagnostics dialog is opened through the
+PAT for direct switches (`--auth pat`) and a custom site without a key, no router
+member. The Router page then shows 开启 disabled, the reason under the banner and
+the fixes ("添加 Krill 为成员": a PAT profile still has its key, which the router
+sends as an API key, user bug 78; "为 … 填写 API key"). The diagnostics dialog is opened through the
 command palette ("doctor") and shows the real `router_doctor` report of that
 HOME. Nothing is installed and no button is clicked.
 
