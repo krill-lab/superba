@@ -5,6 +5,7 @@ mod claude;
 mod config;
 mod execute;
 mod handoff;
+mod harness;
 mod import;
 mod key;
 mod lines;
@@ -129,6 +130,7 @@ pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) 
             refresh,
         } => models::run(command.as_ref(), profile.as_deref(), *refresh, rt, out).await,
         Command::Speed(args) => models::speed(args, rt, out).await,
+        Command::Harness { command } => harness::run(command, rt, out).await,
         Command::Codex { command } => versions::codex(command, rt, out).await,
         Command::App { command } => versions::app(command, rt, out).await,
         Command::SelfUpdate { command } => selfupdate::run(command, rt, out).await,

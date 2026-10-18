@@ -31,6 +31,7 @@ pub mod compaction;
 pub mod core_watch;
 pub mod executor;
 mod files;
+pub mod harness;
 pub mod hosts;
 mod import;
 pub mod journal;
@@ -1121,5 +1122,73 @@ impl SwitchService for Switcher {
 
     async fn notify_watch(&self) -> Result<superba_core::NotifyReport> {
         self.notify_watch_impl().await
+    }
+
+    // -- other coding-agent harnesses ([`harness`]) --
+
+    async fn harness_list(&self) -> Result<Vec<superba_core::harness::HarnessSummary>> {
+        self.harness_list_impl().await
+    }
+
+    async fn harness_view(
+        &self,
+        harness: superba_core::harness::HarnessId,
+    ) -> Result<superba_core::harness::HarnessView> {
+        self.harness_view_impl(harness).await
+    }
+
+    async fn save_harness_settings(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        settings: superba_core::harness::HarnessSettings,
+    ) -> Result<superba_core::harness::HarnessView> {
+        self.save_harness_settings_impl(harness, settings).await
+    }
+
+    async fn save_provider_protocols(
+        &self,
+        provider: ProfileId,
+        protocols: superba_core::harness::ProviderProtocols,
+    ) -> Result<()> {
+        self.save_provider_protocols_impl(provider, protocols).await
+    }
+
+    async fn set_harness_router_token(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        token: Option<Secret>,
+    ) -> Result<superba_core::harness::HarnessView> {
+        self.set_harness_router_token_impl(harness, token).await
+    }
+
+    async fn harness_plan(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        kind: superba_core::harness::HarnessPlanKind,
+    ) -> Result<superba_core::harness::HarnessPlan> {
+        self.harness_plan_impl(harness, kind).await
+    }
+
+    async fn harness_apply(
+        &self,
+        plan: superba_core::harness::HarnessPlan,
+        take_over: bool,
+    ) -> Result<superba_core::harness::HarnessApplyReport> {
+        self.harness_apply_impl(plan, take_over).await
+    }
+
+    async fn harness_backups(
+        &self,
+        harness: superba_core::harness::HarnessId,
+    ) -> Result<Vec<superba_core::harness::HarnessBackup>> {
+        self.harness_backups_impl(harness).await
+    }
+
+    async fn harness_restore_backup(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        id: String,
+    ) -> Result<superba_core::harness::HarnessApplyReport> {
+        self.harness_restore_backup_impl(harness, id).await
     }
 }

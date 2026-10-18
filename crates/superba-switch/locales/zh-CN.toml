@@ -518,6 +518,11 @@ stopped_pending = "{host} 未运行，本次切换不改动它（Superba 不会�
 stopped_skipped = "{host} 未运行，未检查它（Superba 不会自行启动 WSL 发行版）。"
 legacy_mode = "ChatGPT app 在 WSL 中运行本机的 Codex（{distro}，“在 WSL 中运行 Codex”）：它读取这里写入的配置，热切会在那里重启它。"
 
+[switch.harness]
+not_ready = "还不能应用：{reason}"
+routed = "{harness} 经过本地路由 {url}。"
+opencode_shape = "按 OpenCode {major} 的格式写入。"
+
 [switch.ownership]
 kept = "已保留 {source} 在 Superba 写入之后做的 {count} 项修改：{items}。Superba 只还原它仍在管理的内容；如需一并还原，请选择接管。"
 hand_off_note = "Superba 将不再管理 Codex 配置：只还原它仍在管理的键，保留另一个工具做的所有修改，并加密保存两份文件的副本。以后切换到任一配置方案时会重新接管。"

@@ -519,6 +519,11 @@ stopped_pending = "{host} is not running, so this switch leaves it as it is (Sup
 stopped_skipped = "{host} is not running and was not checked (Superba never starts a WSL distribution by itself)."
 legacy_mode = "The ChatGPT app runs this computer's Codex inside WSL ({distro}, \"Run Codex in WSL\"): it reads the configuration written here, and a hot restart restarts it there."
 
+[switch.harness]
+not_ready = "Not ready to apply: {reason}"
+routed = "{harness} goes through the local router at {url}."
+opencode_shape = "Written in the OpenCode {major} shape."
+
 [switch.ownership]
 kept = "Kept {count} changes made by {source} after Superba wrote them: {items}. Superba restores only what it still manages; take them over to restore them too."
 hand_off_note = "Superba stops managing Codex's configuration: it puts back only the keys it still manages, keeps everything the other tool changed and an encrypted copy of both files. Switching to a profile later takes over again."

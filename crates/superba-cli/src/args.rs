@@ -109,6 +109,11 @@ pub enum Command {
     },
     #[command(about = english("cli.help.speed"))]
     Speed(SpeedArgs),
+    #[command(about = english("cli.harness.help.group"))]
+    Harness {
+        #[command(subcommand)]
+        command: HarnessCommand,
+    },
     #[command(about = english("cli.help.codex_group"))]
     Codex {
         #[command(subcommand)]
@@ -1580,4 +1585,93 @@ pub struct NotifySetArgs {
     pub mute: Vec<String>,
     #[arg(long = "unmute", value_name = "HARNESS", help = english("cli.help.notify_unmute"))]
     pub unmute: Vec<String>,
+}
+
+/// `spb harness`: the other coding-agent harnesses (dsh, opencode, pi,
+/// ZCode, WorkBuddy).
+#[derive(Debug, Subcommand)]
+pub enum HarnessCommand {
+    #[command(about = english("cli.harness.help.list"))]
+    List,
+    #[command(about = english("cli.harness.help.status"))]
+    Status {
+        #[arg(value_name = "HARNESS", help = english("cli.harness.help.harness"))]
+        harness: String,
+    },
+    #[command(about = english("cli.harness.help.apply"))]
+    Apply(HarnessApplyArgs),
+    #[command(about = english("cli.harness.help.restore"))]
+    Restore {
+        #[arg(value_name = "HARNESS", help = english("cli.harness.help.harness"))]
+        harness: String,
+        #[arg(long, help = english("cli.help.config_yes"))]
+        yes: bool,
+        #[arg(long, help = english("cli.harness.help.take_over"))]
+        take_over: bool,
+        #[arg(long, value_name = "ID", help = english("cli.harness.help.backup"))]
+        backup: Option<String>,
+    },
+    #[command(about = english("cli.harness.help.backups"))]
+    Backups {
+        #[arg(value_name = "HARNESS", help = english("cli.harness.help.harness"))]
+        harness: String,
+    },
+    #[command(about = english("cli.harness.help.endpoints"))]
+    Endpoints {
+        #[arg(value_name = "PROVIDER", help = english("cli.harness.help.endpoints_provider"))]
+        provider: String,
+        #[arg(long, value_name = "URL", conflicts_with = "clear", help = english("cli.harness.help.chat"))]
+        chat: Option<String>,
+        #[arg(long, value_name = "URL", conflicts_with = "clear", help = english("cli.harness.help.anthropic"))]
+        anthropic: Option<String>,
+        #[arg(long, help = english("cli.harness.help.clear_endpoints"))]
+        clear: bool,
+    },
+    #[command(about = english("cli.harness.help.token"))]
+    #[command(group(ArgGroup::new("token_source").required(true).args(["stdin", "key_env", "clear"])))]
+    Token {
+        #[arg(value_name = "HARNESS", help = english("cli.harness.help.harness"))]
+        harness: String,
+        #[arg(long, help = english("cli.harness.help.token_stdin"))]
+        stdin: bool,
+        #[arg(long, value_name = "VAR", help = english("cli.harness.help.token_env"))]
+        key_env: Option<String>,
+        #[arg(long, help = english("cli.harness.help.token_clear"))]
+        clear: bool,
+    },
+}
+
+/// `spb harness apply`.
+#[derive(Debug, Args)]
+pub struct HarnessApplyArgs {
+    #[arg(value_name = "HARNESS", help = english("cli.harness.help.harness"))]
+    pub harness: String,
+    #[arg(long, value_name = "PROVIDER", conflicts_with = "follow_codex", help = english("cli.harness.help.provider"))]
+    pub provider: Option<String>,
+    #[arg(long, help = english("cli.harness.help.follow_codex"))]
+    pub follow_codex: bool,
+    #[arg(long, value_name = "PROTOCOL", value_parser = ["auto", "responses", "chat", "anthropic"], help = english("cli.harness.help.protocol"))]
+    pub protocol: Option<String>,
+    #[arg(long, value_name = "MODEL", conflicts_with = "all_models", help = english("cli.harness.help.model"))]
+    pub model: Vec<String>,
+    #[arg(long, help = english("cli.harness.help.all_models"))]
+    pub all_models: bool,
+    #[arg(long, value_name = "MODEL", help = english("cli.harness.help.default_model"))]
+    pub default_model: Option<String>,
+    #[arg(long, conflicts_with = "direct", help = english("cli.harness.help.routed"))]
+    pub routed: bool,
+    #[arg(long, help = english("cli.harness.help.direct"))]
+    pub direct: bool,
+    #[arg(long, value_name = "URL", help = english("cli.harness.help.router_url"))]
+    pub router_url: Option<String>,
+    #[arg(long, value_parser = ["off", "unmanaged"], help = english("cli.harness.help.telemetry"))]
+    pub telemetry: Option<String>,
+    #[arg(long, value_name = "MAJOR", value_parser = ["auto", "1", "2"], help = english("cli.harness.help.opencode_major"))]
+    pub opencode_major: Option<String>,
+    #[arg(long, value_name = "EDITION", value_parser = ["cn", "intl"], help = english("cli.harness.help.edition"))]
+    pub edition: Vec<String>,
+    #[arg(long, help = english("cli.help.config_yes"))]
+    pub yes: bool,
+    #[arg(long, help = english("cli.harness.help.take_over"))]
+    pub take_over: bool,
 }
