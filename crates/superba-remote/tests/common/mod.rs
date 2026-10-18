@@ -311,6 +311,7 @@ impl ConfigEngine for FakeEngine {
             openai_base_url: toml_get(&cfg, config_keys::OPENAI_BASE_URL),
             chatgpt_base_url: toml_get(&cfg, config_keys::CHATGPT_BASE_URL),
             model: None,
+            model_owned: false,
             reasoning_effort: None,
             profile_override: None,
             cli_auth_credentials_store: None,

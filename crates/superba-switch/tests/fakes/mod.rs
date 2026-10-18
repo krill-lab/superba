@@ -108,6 +108,7 @@ pub fn base_state(home: &Path) -> ConfigState {
         openai_base_url: Some(format!("{OVERSEAS}/backend-api/codex")),
         chatgpt_base_url: None,
         model: None,
+        model_owned: false,
         reasoning_effort: None,
         profile_override: None,
         cli_auth_credentials_store: None,
@@ -666,6 +667,10 @@ pub struct FakeProber {
     pub authapi: Mutex<BTreeMap<String, AuthApiHealth>>,
     pub models: Mutex<std::result::Result<Vec<String>, Error>>,
     pub authapi_checks: Mutex<Vec<String>>,
+    /// `model_list` answers (`None` = not implemented).
+    pub model_list: Mutex<Option<std::result::Result<superba_core::ModelList, Error>>>,
+    /// Base URLs `model_list` was called with.
+    pub model_list_calls: Mutex<Vec<String>>,
 }
 
 pub fn good_caps(site: &str, line: &str) -> LineCaps {
@@ -784,11 +789,18 @@ impl LineProber for FakeProber {
 
     async fn model_list(
         &self,
-        _: superba_core::ModelListRequest<'_>,
+        request: superba_core::ModelListRequest<'_>,
     ) -> superba_core::Result<superba_core::ModelList> {
-        Err(superba_core::Error::not_implemented(
-            "LineProber::model_list",
-        ))
+        self.model_list_calls
+            .lock()
+            .unwrap()
+            .push(request.base_url.to_string());
+        match self.model_list.lock().unwrap().clone() {
+            Some(answer) => answer,
+            None => Err(superba_core::Error::not_implemented(
+                "LineProber::model_list",
+            )),
+        }
     }
 
     async fn usage_report(
@@ -2218,6 +2230,8 @@ impl World {
                 authapi: Mutex::new(BTreeMap::new()),
                 models: Mutex::new(Ok(Vec::new())),
                 authapi_checks: Mutex::new(Vec::new()),
+                model_list: Mutex::new(None),
+                model_list_calls: Mutex::new(Vec::new()),
             }),
             sessions: Arc::new(FakeSessions {
                 log: log.clone(),

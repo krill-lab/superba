@@ -178,6 +178,7 @@ remove = "{legacy} is ignored by Codex and can be removed"
 [settings.change]
 connection = "Site, line and auth"
 model = "Profile model"
+kept_model = "Keeps the model in use"
 setting = "Profile setting"
 reset = "Reset to Codex default"
 released = "No longer managed: original value restored"

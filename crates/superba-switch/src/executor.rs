@@ -2070,6 +2070,17 @@ impl Run<'_> {
         {
             tracing::warn!(error = %e, "cannot record the model catalog file");
         }
+        if let Some(kept) = self.pc.kept_model.clone()
+            && let Some(report) = self.written.config.as_ref()
+            && let Err(e) = crate::model_keep::commit_kept(
+                &d.ctx.data_dir,
+                &self.pc.home,
+                kept.as_deref(),
+                report.generation,
+            )
+        {
+            tracing::warn!(error = %e, "cannot record the kept model");
+        }
         if let Some(enabled) = self.pc.router_enabled_after {
             match d.profiles.load().await {
                 Ok(mut set) => {

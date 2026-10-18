@@ -178,6 +178,7 @@ remove = "Codex 已忽略 {legacy}，可以删除"
 [settings.change]
 connection = "站点、线路和认证"
 model = "配置的模型"
+kept_model = "保留当前使用的模型"
 setting = "配置的设置项"
 reset = "恢复为 Codex 默认值"
 released = "不再管理：恢复原值"

@@ -444,6 +444,12 @@ pub struct ConfigState {
     pub chatgpt_base_url: Option<String>,
     /// `model`.
     pub model: Option<String>,
+    /// Superba's last apply wrote `model` (a profile's model, a site's name for
+    /// it, a tier-suffixed name or the model kept across an auth change, user bug
+    /// 58): a switch that sets no model restores the value from before Superba
+    /// took the key over instead of keeping this one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub model_owned: bool,
     /// `model_reasoning_effort`.
     pub reasoning_effort: Option<String>,
     /// Top-level `profile = ...` override (diagnostic).

@@ -113,6 +113,12 @@ back to the official ChatGPT login.
   what each tier does for the terminal and for the desktop app is shown per
   provider (the desktop app in API-key mode runs Standard; a tier given through a
   `-fast` / `-ultrafast` model name only where the site supports it).
+- **The model stays across a change of authentication**: for a provider without
+  a default model, turning the router on (or switching between PAT and API key)
+  writes the model Codex runs with now, because with an API key Codex and the
+  desktop app choose a default of their own (often `gpt-5.5`). The plan shows it
+  ("Keeps the model in use") and says how to choose another; turning the router
+  off drops it again when the PAT's own default is the same model.
 - **Signed feeds** (`spb feeds`): model, price and version lists signed with an
   Ed25519 key, fetched through configurable mirrors with the built-in lists as
   fallback; GitHub proxies are off unless enabled under Preferences → Network,

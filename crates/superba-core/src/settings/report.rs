@@ -306,6 +306,9 @@ pub enum ChangeReason {
     Connection,
     /// The profile's model defaults.
     Model,
+    /// The model Codex runs with now, written so that a change of
+    /// authentication or the router does not change it (user bug 58).
+    KeptModel,
     /// A setting of the profile.
     Setting,
     /// A setting reset to Codex's default (key removed).
@@ -330,6 +333,9 @@ impl ChangeReason {
                 LocalizedText::new("settings.change.connection", "Site, line and auth")
             }
             ChangeReason::Model => LocalizedText::new("settings.change.model", "Profile model"),
+            ChangeReason::KeptModel => {
+                LocalizedText::new("settings.change.kept_model", "Keeps the model in use")
+            }
             ChangeReason::Setting => {
                 LocalizedText::new("settings.change.setting", "Profile setting")
             }

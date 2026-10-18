@@ -84,6 +84,10 @@ pub(crate) struct PlanContext {
     /// WSL distributions the plan leaves out because they are stopped (user
     /// bug 54): recorded as pending after a successful switch.
     pub wsl_pending: Vec<TargetId>,
+    /// User bug 58: the model kept in the local `config.toml`, recorded after
+    /// the apply (`Some(None)` = none kept; `None` = the local home is not
+    /// written).
+    pub kept_model: Option<Option<String>>,
 }
 
 impl PlanContext {
@@ -118,6 +122,7 @@ impl PlanContext {
             pin_config: None,
             kept_foreign_auth: false,
             wsl_pending: Vec::new(),
+            kept_model: None,
         }
     }
 }
@@ -211,6 +216,9 @@ struct Dest {
     catalog_record: Option<Option<crate::models::CatalogRecord>>,
     /// GH#5: a hand-off to another tool (no restart, nothing migrated).
     hand_off: bool,
+    /// The local `model` is the one Codex runs with now, kept across an auth
+    /// change (user bug 58).
+    kept_model: bool,
 }
 
 /// One line judged for a switch (auth decision, Codex path, blocks).
@@ -384,17 +392,20 @@ pub(crate) fn model_left_to_config(
         .as_ref()
         .and_then(|a| a.profile_id.as_ref())
         .and_then(|id| set.profile(id));
-    let wrote = applied.is_some_and(|a| {
-        let site = sites.iter().find(|s| s.id == a.site_id);
-        a.model.model.is_some()
-            || current.as_deref().is_some_and(|m| {
-                site.is_some_and(|s| {
-                    s.model_map.values().any(|v| v == m)
-                        || (s.capabilities.tier_model_suffix
-                            && (m.ends_with("-fast") || m.ends_with("-ultrafast")))
+    // The engine knows when Superba's last apply wrote the key (also a model
+    // kept across an auth change, user bug 58, which no profile names).
+    let wrote = state.model_owned
+        || applied.is_some_and(|a| {
+            let site = sites.iter().find(|s| s.id == a.site_id);
+            a.model.model.is_some()
+                || current.as_deref().is_some_and(|m| {
+                    site.is_some_and(|s| {
+                        s.model_map.values().any(|v| v == m)
+                            || (s.capabilities.tier_model_suffix
+                                && (m.ends_with("-fast") || m.ends_with("-ultrafast")))
+                    })
                 })
-            })
-    });
+        });
     if !wrote {
         return current;
     }
@@ -932,6 +943,21 @@ impl Switcher {
             None
         };
 
+        // --- the model Codex runs with across an auth change (user bug 58) --------
+        if local && draft.blocks.is_empty() && dest.writes_local {
+            self.keep_model(
+                &set,
+                &sites,
+                &state,
+                baseline.as_ref(),
+                &installs,
+                &binaries,
+                &mut dest,
+                &mut draft,
+            )
+            .await;
+        }
+
         // --- models: speed tier and model catalog file (v0.3) --------------------
         if local && draft.blocks.is_empty() {
             self.plan_models(&set, &state, &installs, &binaries, &mut dest, &mut draft)
@@ -1231,8 +1257,18 @@ impl Switcher {
             warnings: draft.warnings,
             cleanup: draft.cleanup,
         };
+        let mut changes = preview(&plan, &settings_plans);
+        if dest.kept_model {
+            crate::model_keep::mark_kept(&mut changes);
+        }
+        let kept_model = plan.config.is_some().then(|| {
+            dest.resolved
+                .as_ref()
+                .filter(|_| dest.kept_model)
+                .and_then(|r| r.model.model.clone())
+        });
         let settings = PlanSettings {
-            changes: preview(&plan, &settings_plans),
+            changes,
             targets: settings_plans,
         };
         self.remember_plan(
@@ -1266,9 +1302,65 @@ impl Switcher {
                 pin_config: None,
                 kept_foreign_auth,
                 wsl_pending,
+                kept_model,
             },
         );
         Ok(plan)
+    }
+
+    /// Keep the model Codex runs with when the destination would let Codex
+    /// choose another one ([`crate::model_keep`], user bug 58). Local only:
+    /// remote hosts get the destination as it was.
+    #[allow(clippy::too_many_arguments)]
+    async fn keep_model(
+        &self,
+        set: &ProfileSet,
+        sites: &[Site],
+        state: &ConfigState,
+        baseline: Option<&superba_core::Baseline>,
+        installs: &[superba_core::AppInstall],
+        binaries: &[superba_core::CodexBinary],
+        dest: &mut Dest,
+        draft: &mut Draft,
+    ) {
+        let (Some(site), Some(resolved), Some(auth)) =
+            (dest.site.as_ref(), dest.resolved.as_ref(), dest.auth)
+        else {
+            return;
+        };
+        let left = model_left_to_config(state, set, sites, baseline);
+        let (app, _) = crate::models::local_codexes(dest.install_id.as_deref(), installs, binaries);
+        let version = app.and_then(|a| a.version);
+        let direct = match (dest.routed, &dest.endpoints, &dest.key) {
+            (false, Some(e), Some(k)) => Some((&e.openai_base_url, k)),
+            _ => None,
+        };
+        let decision = self
+            .plan_model_keep(crate::model_keep::KeepInput {
+                state,
+                set,
+                site,
+                dest_auth: auth,
+                direct,
+                resolved,
+                left: left.as_deref(),
+                client_version: version.as_ref(),
+            })
+            .await;
+        match decision {
+            crate::model_keep::KeepDecision::Nothing => {}
+            crate::model_keep::KeepDecision::Note(n) => draft.warnings.push(n),
+            crate::model_keep::KeepDecision::Keep { model, notice } => {
+                if dest.remote_resolved.is_none() {
+                    dest.remote_resolved = dest.resolved.clone();
+                }
+                if let Some(r) = dest.resolved.as_mut() {
+                    r.model.model = Some(model);
+                }
+                draft.warnings.push(notice);
+                dest.kept_model = true;
+            }
+        }
     }
 
     /// Speed tier and model catalog of a key-based destination: `service_tier`

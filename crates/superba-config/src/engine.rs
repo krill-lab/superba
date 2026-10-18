@@ -205,6 +205,10 @@ impl TomlConfigEngine {
         let hs = state::read_home(self.data(), root)?;
         st.active = hs.active();
         st.drift = render::drift(&files, hs.last_written());
+        st.model_owned = hs
+            .last_written()
+            .iter()
+            .any(|k| k.path == superba_core::codex::config_keys::MODEL && k.value.is_some());
         st.auth_drift = self.auth_drift(&files, &hs);
         st.handed_off = hs.current().and_then(|e| {
             e.handed_off.clone().map(|to| superba_core::HandOffInfo {

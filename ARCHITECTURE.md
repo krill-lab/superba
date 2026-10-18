@@ -336,6 +336,7 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 | `cache/usage/` (usage reports per site, key fingerprint and range; no keys) | net |
 | `cache/transports.json` (WebSocket / zstd checks per site, line, base URL and key fingerprint, with the time of the check; no keys) | switch |
 | `cache/compaction.json` (remote compaction checks per site, base URL and key fingerprint, with the time and model of the check; no keys) | switch |
+| `kept-model.json` (per Codex home: the `model` value a switch kept across a change of authentication and the generation that wrote it, user bug 58) | switch |
 | `imported-usage.sqlite3` (usage history imported from cc-switch / AI Toolbox: requests by the tool's own id, daily totals; numbers, model and provider names only) | switch |
 | `cache/import/import-<uuid>/` (a private 0700 copy of another tool's database with pending `-wal` / `-journal` changes, removed right after reading) | import |
 | `router/` (`config.json`, 0600 `secrets.json` and `runtime.json`, log, `compactions.json`: which member made each compaction item, by fingerprint) | router |
@@ -446,7 +447,20 @@ Superba run a router-off switch to the applied profile (`router_fall_back`:
 restart, drifted keys kept except the routing keys). Router mode is stored as off
 only when that switch succeeds, so a failed attempt is retried at a later tick.
 In router mode `config.toml` keeps Codex's model name: the router maps names per
-member. The GUI shell runs a tick every 5 s while router
+member. Codex chooses a model itself only when `config.toml` names none, and the
+choice depends on the authentication: with a PAT it is the default of the
+provider's own list (sorted by priority, the first entry shown in the picker),
+with an API key (also through the router) Codex never reads that list and the
+desktop app picks a default of its own (its fallback is `gpt-5.5`). So a switch
+on the applied site whose destination sets no model and that changes the
+authentication (PAT <-> API key, direct <-> router) writes the model Codex runs
+with now and names it in the plan (`superba_switch::model_keep`, user bug 58;
+preview reason "Keeps the model in use"); the value is Superba's
+(`ConfigState::model_owned`, `kept-model.json`) and a later switch drops it
+again when the PAT's own default is the same model. A relay without capacity
+for a model answers with a stream that ends in a retryable `server_busy`; that
+stream has started, so the router passes it to Codex from its line and never
+tries the member's other lines with it. The GUI shell runs a tick every 5 s while router
 mode is on; `spb router watch` does the same from a terminal. Without either,
 Codex waits on the dead loopback port ("Reconnecting...") until the service
 manager restarts the router.

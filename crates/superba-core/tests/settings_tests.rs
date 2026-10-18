@@ -765,6 +765,7 @@ fn all_texts() -> Vec<LocalizedText> {
     for r in [
         ChangeReason::Connection,
         ChangeReason::Model,
+        ChangeReason::KeptModel,
         ChangeReason::Setting,
         ChangeReason::Reset,
         ChangeReason::Released,

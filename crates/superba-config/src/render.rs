@@ -803,6 +803,7 @@ pub(crate) fn inspect(codex_home: &Path, files: &CodexFiles) -> ConfigState {
         openai_base_url: None,
         chatgpt_base_url: None,
         model: None,
+        model_owned: false,
         reasoning_effort: None,
         profile_override: None,
         cli_auth_credentials_store: None,

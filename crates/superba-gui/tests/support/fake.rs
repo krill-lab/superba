@@ -474,6 +474,7 @@ impl FakeState {
                 chatgpt_base_url: (!first)
                     .then(|| format!("{}/backend-api/", catalog::KRILL_ORIGIN_OVERSEAS)),
                 model: Some("gpt-5.5".into()),
+                model_owned: false,
                 reasoning_effort: Some("high".into()),
                 profile_override: None,
                 cli_auth_credentials_store: None,

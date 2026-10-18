@@ -33,6 +33,7 @@ pub mod journal;
 pub mod localtime;
 pub mod machine;
 pub mod messages;
+pub mod model_keep;
 pub mod models;
 pub mod monitor;
 pub mod ownership;

@@ -463,7 +463,7 @@ fn save_state(data_dir: &superba_core::DataDir, state: &CatalogState) -> Result<
     )
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
     let dir = path
         .parent()
