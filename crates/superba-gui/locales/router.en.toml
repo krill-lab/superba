@@ -120,6 +120,7 @@ member_changed = "Conversation moved"
 reloaded = "Configuration reloaded"
 local_limit = "This computer ran short (no line blamed)"
 compaction = "Compaction routed (kept on its provider)"
+ciphertext = "Content another provider encrypted left out and sent again"
 
 [router.palette]
 setup = "Set up the local router"

@@ -611,6 +611,13 @@ impl Switcher {
         if installs.is_empty() && session.is_none() {
             notices.push(Notice::info(text("switch.overview.no_app")));
         }
+        // Conversations stopped for content another provider encrypted
+        // (GitHub issue 11); the router repairs them itself.
+        if !set.settings.router.enabled
+            && let Some(n) = self.encrypted_refusals_notice().await
+        {
+            notices.push(n);
+        }
         // The app's own Codex moved past the version it is pinned to.
         if let superba_core::AppCodexPin::Version { version } = &set.settings.app_codex.pin
             && let Some(bundled) = installs

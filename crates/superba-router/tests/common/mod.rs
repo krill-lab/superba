@@ -32,6 +32,7 @@ use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::Role;
 use url::Url;
 
+pub mod ciphers;
 pub mod responses;
 
 pub const ROUTER_TOKEN: &str = "sbr_test_router_token_0123456789abcdef";

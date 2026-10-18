@@ -79,6 +79,8 @@ struct Open {
     tap: ResponseTap,
     held: Vec<(EventKind, Bytes)>,
     first_frame: bool,
+    /// The ciphertexts the frame took to the member ([`crate::cipher`]).
+    ciphers: Option<crate::cipher::Scan>,
 }
 
 type Queue = Arc<Mutex<VecDeque<Open>>>;
@@ -201,6 +203,7 @@ where
     };
     let s2c = {
         let queue = queue.clone();
+        let ctx = ctx.clone();
         let oversize = oversize.clone();
         let (up_rx, down_tx) = (&mut up_rx, &mut down_tx);
         async move {
@@ -231,15 +234,18 @@ where
                 let Some(msg) = msg else { break };
                 match msg {
                     Ok(Message::Text(t)) => {
-                        let out = server_text(&queue, t);
-                        let mut failed = false;
+                        let out = server_text(&ctx, &queue, t);
+                        let mut done = false;
                         for m in out {
-                            if down_tx.send(m).await.is_err() {
-                                failed = true;
+                            // A close (the conversation is sent again on a
+                            // new socket) ends this one.
+                            let closing = matches!(m, Message::Close(_));
+                            if down_tx.send(m).await.is_err() || closing {
+                                done = true;
                                 break;
                             }
                         }
-                        if failed {
+                        if done {
                             break;
                         }
                     }
@@ -427,6 +433,74 @@ fn compaction_detour(ctx: &RelayCtx, m: &meta::RequestMeta, t0: Instant) -> Opti
     }))))
 }
 
+/// The member refused ciphertexts of the oldest open request: its refusal is
+/// not passed on; the request is recorded as refused, and the socket is closed
+/// with 1012 so Codex sends the turn again on a new one, where what the member
+/// refused is left out (the frame Codex sends again is the same, so the
+/// conversation keeps its bytes from then on).
+fn resend_on_new_socket(
+    ctx: &RelayCtx,
+    q: &mut std::sync::MutexGuard<'_, VecDeque<Open>>,
+    set: &std::collections::BTreeSet<crate::compaction::Fingerprint>,
+) -> Vec<Message> {
+    let member = &ctx.generation.members[ctx.answered.member].cfg;
+    let Some(mut done) = q.pop_front() else {
+        return Vec::new();
+    };
+    // What leaving out `set` changes, counted on the ciphertexts it named.
+    let removed = removed_of(done.ciphers.as_ref(), set);
+    ctx.shared.event(
+        RouteEventKind::Ciphertext,
+        Some(&member.id),
+        None,
+        Some(crate::cipher::event_detail(&member.name, &removed, true)),
+    );
+    done.tracker.note(format!(
+        "{}: {}; left out {} and closed the WebSocket (1012) so Codex sends the turn again",
+        member.id,
+        crate::cipher::REJECTION_CODE,
+        removed.describe()
+    ));
+    let summary = done.tap.summary();
+    done.tracker.finish(End {
+        summary: Some(summary),
+        status: Some(RequestStatus::Http {
+            status: 400,
+            code: Some(crate::cipher::REJECTION_CODE.into()),
+        }),
+        ..End::default()
+    });
+    vec![Message::Close(Some(CloseFrame {
+        code: CloseCode::Restart,
+        reason: "sending again without content this provider cannot read".into(),
+    }))]
+}
+
+/// [`crate::cipher::Removed`] counted from the places of the ciphertexts in
+/// `set` (a WebSocket relay keeps no copy of the frame).
+fn removed_of(
+    scan: Option<&crate::cipher::Scan>,
+    set: &std::collections::BTreeSet<crate::compaction::Fingerprint>,
+) -> crate::cipher::Removed {
+    use crate::cipher::Place;
+    let mut r = crate::cipher::Removed::default();
+    let mut seen = std::collections::BTreeSet::new();
+    for c in scan.into_iter().flat_map(|s| s.ciphers.iter()) {
+        if !set.contains(&c.fp) || !seen.insert((c.item, c.fp.clone())) {
+            continue;
+        }
+        match c.place {
+            Place::Reasoning => r.reasoning += 1,
+            Place::Field => r.fields += 1,
+            Place::Part { plaintext: true } => r.parts_as_text += 1,
+            Place::Part { plaintext: false } => r.parts_omitted += 1,
+            Place::Argument => r.arguments += 1,
+            Place::Compaction => r.compactions += 1,
+        }
+    }
+    r
+}
+
 /// A client frame: track and strip `response.create`, pass everything else.
 fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Client {
     let bytes: Bytes = t.clone().into();
@@ -438,18 +512,51 @@ fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Client {
     if let Some(detour) = compaction_detour(ctx, &m, t0) {
         return detour;
     }
-    let send = match strip::strip(&bytes) {
+    let out = match strip::strip(&bytes) {
         Some((new, n)) => {
             m.stripped = n;
-            text(Bytes::from(new)).unwrap_or(Message::Text(t))
+            Bytes::from(new)
         }
-        None => Message::Text(t),
+        None => bytes,
     };
+    // Ciphertexts another provider made: what this member refused before is
+    // left out ([`crate::cipher`]).
+    let member = &ctx.generation.members[ctx.answered.member].cfg;
+    let scan = crate::cipher::scan(&out);
+    let (out, ciphers, left_out) = if scan.is_empty() {
+        (out, None, None)
+    } else {
+        let ledger = &ctx.shared.stats.ciphers;
+        let sent = crate::cipher::Scan {
+            ciphers: scan
+                .ciphers
+                .iter()
+                .filter(|c| !ledger.refuses(&member.id, &c.fp))
+                .cloned()
+                .collect(),
+            task_item: scan.task_item,
+        };
+        match crate::cipher::neutralise(&out, &|fp| ledger.refuses(&member.id, fp)) {
+            Some((new, removed)) => (Bytes::from(new), Some(sent), Some(removed)),
+            None => (out, Some(sent), None),
+        }
+    };
+    let send = text(out).unwrap_or(Message::Text(t));
     let mut tracker = ctx
         .shared
         .stats
         .track(ctx.generation.clone(), m, t0, now_ms());
     tracker.ws_pinned(ctx.answered, ctx.failovers.swap(0, Ordering::Relaxed));
+    if let Some(r) = left_out {
+        tracker.note(format!(
+            "{}: left out {} it refused before",
+            member.id,
+            r.describe()
+        ));
+    }
+    if let Some(sent) = &ciphers {
+        tracker.ciphers_sent(sent.ciphers.iter().map(|c| c.fp.clone()).collect());
+    }
     let tap = ResponseTap::new(t0, tracker.line_setup());
     // The frame goes to the member right after this returns.
     tracker.set_sent(Instant::now());
@@ -458,13 +565,14 @@ fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Client {
         tap,
         held: Vec::new(),
         first_frame: true,
+        ciphers,
     });
     Client::Forward(send)
 }
 
 /// A member frame: feed the oldest open request's tap; returns the frames to
 /// send to the client now.
-fn server_text(queue: &Queue, t: Utf8Bytes) -> Vec<Message> {
+fn server_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Vec<Message> {
     let bytes: Bytes = t.clone().into();
     let now = Instant::now();
     let kind = sniff_type(&bytes).map_or(EventKind::Other, EventKind::of);
@@ -475,6 +583,53 @@ fn server_text(queue: &Queue, t: Utf8Bytes) -> Vec<Message> {
     if head.first_frame {
         head.first_frame = false;
         head.tracker.set_ttfb(now);
+    }
+    let member = &ctx.generation.members[ctx.answered.member].cfg;
+    // A refusal of a ciphertext comes before any output.
+    if let Some(sent) = head.ciphers.as_ref()
+        && matches!(kind, EventKind::Error | EventKind::Failed)
+        && head.tap.first_token().is_none()
+        && let Some(rejection) = crate::cipher::rejection::from_event(&bytes)
+    {
+        match crate::cipher::refused(&ctx.shared.stats.ciphers, &member.id, sent, &rejection) {
+            crate::cipher::Plan::Neutralise(set) => {
+                return resend_on_new_socket(ctx, &mut q, &set);
+            }
+            crate::cipher::Plan::TaskUnreadable => {
+                let message = crate::cipher::task_unreadable_message(&member.name);
+                ctx.shared.event(
+                    RouteEventKind::Ciphertext,
+                    Some(&member.id),
+                    None,
+                    Some(message.clone()),
+                );
+                let event = serde_json::json!({
+                    "type": "error",
+                    "status": 400,
+                    "error": {
+                        "type": "invalid_request_error",
+                        "code": crate::cipher::TASK_UNREADABLE_CODE,
+                        "message": format!("Superba local router: {message}"),
+                    }
+                });
+                let event = Bytes::from(event.to_string());
+                if let Some(done) = q.pop_front() {
+                    drop(q);
+                    let summary = done.tap.summary();
+                    done.tracker.finish(End {
+                        summary: Some(summary),
+                        status: Some(RequestStatus::Http {
+                            status: 400,
+                            code: Some(crate::cipher::TASK_UNREADABLE_CODE.into()),
+                        }),
+                        error: Some(message.chars().take(300).collect()),
+                        ..End::default()
+                    });
+                }
+                return text(event).into_iter().collect();
+            }
+            crate::cipher::Plan::PassThrough => {}
+        }
     }
     let decision = head.tap.on_event(kind, &bytes, now);
     let out: Vec<Message> = match decision {

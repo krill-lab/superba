@@ -164,7 +164,8 @@ root_no_hot_switch = "Superba 以 root 身份运行时会禁用热切换；打�
 cli_processes = "终端里有 {count} 个 codex 进程不受影响，重新打开后才会走新线路。"
 ide_processes = "{count} 个编辑器窗口（VS Code、Cursor 等）里的 Codex 扩展会继续使用旧配置，直到编辑器重启它（“Developer: Restart Extension Host”或重新加载窗口）；编辑器本身保持打开。"
 remotes = "远程主机 {hosts} 也会切换；远端正在运行的回合和命令同样会中断。"
-cross_site = "切换站点后，继续之前的对话可能报 invalid_encrypted_content，建议新开对话。"
+cross_site = "在其他服务商上开始的对话带有只有该服务商能读取的内容（隐藏的推理、子 agent 任务、加密的工具结果）。在这里继续可能报 invalid_encrypted_content：请切回开始它的服务商继续、新开对话，或打开路由——它会去掉当前服务商读不了的内容后重发。"
+ciphertext_elsewhere = "最近 {days} 天用过的 {count} 个对话最后是在“{provider}”上继续的，其中有只有“{provider}”能读取的内容（隐藏的推理、子 agent 任务、加密的工具结果），在“{site}”上继续可能报 invalid_encrypted_content。请切回“{provider}”继续、新开对话，或打开路由——它会去掉“{site}”读不了的内容后重发。"
 model_missing = "「{site}」没有你当前用的模型 {model}，切换后改用 {replacement}。"
 model_mapped = "「{site}」上你的模型 {model} 名为 {mapped}，配置中的模型会写成 {mapped}。"
 authapi_line = "认证仍走 app 启动时的「{line}」线路（已检测可用），下次完全重启后跟随当前线路。"
@@ -262,6 +263,7 @@ external = "{source} 修改了 {count} 项由 Superba 管理的内容；未经�
 handed_off = "Codex 的配置目前由 {tool} 管理；只有你再次切换时 Superba 才会修改它。"
 hidden_sessions = "有 {count} 个会话属于其他 provider，目前看不见。"
 stale_processes = "有 {count} 个 codex 进程仍在用之前的配置。"
+encrypted_refused = "最近一天有 {count} 个对话因 invalid_encrypted_content 中断：其中有其他服务商加密的内容，只有该服务商能读取。请切回开始它们的服务商继续、新开对话（/fork 会复制同样的内容，没用），或打开路由——它会去掉当前服务商读不了的内容后重发。"
 no_app = "没有找到 ChatGPT 桌面 app，只配置 CLI。"
 
 [switch.doctor]

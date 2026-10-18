@@ -245,6 +245,16 @@ back to the official ChatGPT login.
   provider compacted; the local router sends compaction requests only to members
   that can compact and keeps every compacted conversation with the member that
   made it (HTTP and WebSocket, no failover elsewhere, a clear error instead).
+- **Conversations started on another provider** (GitHub issue 11): continuing
+  one on a provider that cannot read the content another provider encrypted in
+  it (hidden reasoning, a sub-agent's task, encrypted tool results) stopped
+  every turn with `invalid_encrypted_content`. The local router now leaves out
+  exactly what the provider refuses (a sub-agent task that is plain text stays
+  as text) and sends the request once more, and leaves the same items out of
+  the conversation's later turns before they go (HTTP and WebSocket; an event on
+  the Router page and a line in the request detail). In direct mode the switch
+  preview counts the recent conversations that would stop and the Overview /
+  `spb status` names conversations that did, with what to do.
 - **Usage history from cc-switch and AI Toolbox** (GitHub issue 1): the import
   dialog and `spb import usage ccs|ai-toolbox [--dry-run] [--remove]` preview
   (requests, daily totals, date range, recorded cost) and import their Codex
@@ -395,10 +405,12 @@ back to the official ChatGPT login.
 - The local router has been exercised with the real `codex` CLI and a test
   relay, and its switch-service integration with fakes; router mode with the
   real desktop app (enable, watchdog fallback, hot restarts), the real launchd /
-  systemd / Run-key backends, WebSocket passthrough to a relay that accepts
-  WebSockets, and failover between different providers (whose encrypted
-  reasoning items are not stripped) are not verified yet. Router mode uses API
-  keys only (no PAT router mode).
+  systemd / Run-key backends and WebSocket passthrough to a relay that accepts
+  WebSockets are not verified yet. Leaving out content another provider
+  encrypted is verified end to end over HTTP with the real `codex` CLI and the
+  Krill test relay; over WebSocket only with a fake upstream (the test relay
+  does not accept WebSockets for API keys). Router mode uses API keys only (no
+  PAT router mode).
 - Restarting the app's Codex core on an SSH remote host through the desktop app
   (`hostId` + `killCodexProcess`) is untested; remote file writes and
   verification are covered by a Docker sshd integration test.

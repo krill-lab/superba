@@ -165,7 +165,8 @@ root_no_hot_switch = "Hot switching is disabled while Superba runs as root; Chat
 cli_processes = "{count} codex processes in terminals are not affected; they use the new line after they are reopened."
 ide_processes = "The Codex extension of {count} editor windows (VS Code, Cursor, ...) keeps the previous configuration until the editor restarts it (“Developer: Restart Extension Host” or reloading the window); the editor stays open."
 remotes = "Remote hosts {hosts} switch too; turns and commands running there are interrupted as well."
-cross_site = "After switching sites, continuing an earlier conversation may fail with invalid_encrypted_content; start a new conversation."
+cross_site = "Conversations started on another provider carry content only that provider can read (hidden reasoning, sub-agent tasks, encrypted tool results). Continuing one here can stop with “invalid_encrypted_content”: continue it on the provider it was started with, start a new conversation, or turn on the router — it leaves out what this provider cannot read and sends the turn again."
+ciphertext_elsewhere = "{count} conversations used in the last {days} days were last continued on “{provider}”. They carry content only “{provider}” can read (hidden reasoning, sub-agent tasks, encrypted tool results), so continuing them on “{site}” can stop with “invalid_encrypted_content”. Continue them on “{provider}”, start a new conversation, or turn on the router — it leaves out what “{site}” cannot read and sends the turn again."
 model_missing = "“{site}” does not offer your current model {model}; {replacement} is used after the switch."
 model_mapped = "“{site}” serves your model {model} as {mapped}; {mapped} is written as the model."
 authapi_line = "Auth still goes through the line “{line}” ChatGPT was started with (checked: working). It follows the current line after the next full restart."
@@ -264,6 +265,7 @@ handed_off = "Codex's configuration is managed by {tool}; Superba changes it aga
 hidden_sessions = "{count} sessions are hidden because they belong to another provider."
 stale_processes = "{count} codex processes still use the previous configuration."
 no_app = "No ChatGPT desktop app found; only the CLI is configured."
+encrypted_refused = "{count} conversations stopped in the last day with “invalid_encrypted_content”: they carry content another provider encrypted, which only that provider can read. Continue them on the provider they were started with, start a new conversation (/fork copies the same content), or turn on the router — it leaves out what the current provider cannot read and sends the turn again."
 
 [switch.doctor]
 journal_pending = "An interrupted switch is waiting for recovery"

@@ -234,6 +234,10 @@ pub enum RouteEventKind {
     /// members that cannot read it, or refused because no member can
     /// ([`crate::compaction`]).
     Compaction,
+    /// A member could not read content another provider encrypted in a
+    /// conversation; the router left it out and sent the request again
+    /// ([`crate::cipher`]).
+    Ciphertext,
 }
 
 /// One routing event.

@@ -310,6 +310,37 @@ because Codex lists sessions per provider id).
   the right member on their own. The router keeps only fingerprints of
   compaction items and member ids (`router/compactions.json`), never content.
 
+## Conversations started on another provider
+
+Every Codex conversation carries content its provider encrypted for itself:
+hidden reasoning, a sub-agent's task, encrypted tool results, compacted
+history. Only that provider can read it. Because Superba configures every
+provider as Codex's own `openai` provider, Codex lists every conversation
+under every profile, and continuing one on a provider that cannot read its
+content stops with `invalid_encrypted_content` ("The encrypted content for item
+amsg_… could not be verified", "Encrypted function output content could not be
+decrypted or decoded") on every turn. A sub-agent spawned on a provider that
+is not an OpenAI backend makes this certain: Codex stores its task as encrypted
+content even when it is plain text. Superba treats the official login and
+Krill as one provider here (both run on the ChatGPT Codex backend); each
+compatible site is its own.
+
+- **Router mode** repairs these requests: when a provider refuses content, the
+  router leaves out exactly what it cannot read (hidden reasoning goes, a
+  sub-agent task that is plain text stays as text, an encrypted payload
+  becomes a short note) and sends the request once more; later turns of the
+  conversation leave the same items out before they leave, so the conversation
+  keeps working and keeps its prompt cache. The Router page lists each repair,
+  and the request detail says what was left out. A sub-agent whose own task the
+  provider cannot read gets `encrypted_task_unreadable` with an explanation
+  instead of running without its task.
+- **Direct mode.** Superba is not in the path, so it warns: before a switch to a
+  provider that cannot read the content, the preview counts the conversations
+  of the last 7 days last continued elsewhere; afterwards the Overview (and
+  `spb status`) names conversations that stopped for it in the last day.
+  Continue such a conversation on the provider it was started with, start a new
+  conversation (`/fork` copies the same content), or turn on the router.
+
 ## Using Superba next to cc-switch or AI Toolbox
 
 Superba owns exactly what its last switch wrote: the keys in `config.toml` listed

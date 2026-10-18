@@ -312,6 +312,31 @@ struct WireTurnEvent {
 struct WireError {
     #[serde(default)]
     codex_error_info: Option<serde_json::Value>,
+    /// Only read for the refusal of a ciphertext another provider made
+    /// ([`ENCRYPTED_CONTENT_CODE`]); never kept.
+    #[serde(default)]
+    message: Option<String>,
+}
+
+/// The code of a failed turn whose provider could not read content another
+/// provider encrypted in the conversation (GitHub issue 11). Codex records it
+/// as `other` with the upstream's answer as the message (`"The encrypted
+/// content for item amsg_… could not be verified"`, `"Encrypted function output
+/// content could not be decrypted or decoded."`).
+pub const ENCRYPTED_CONTENT_CODE: &str = "invalid_encrypted_content";
+
+/// The short code of a failed turn: [`ENCRYPTED_CONTENT_CODE`] when its
+/// message says so, else the `codex_error_info` code.
+fn failure_code(err: &WireError) -> Option<String> {
+    let encrypted = err.message.as_deref().is_some_and(|m| {
+        m.contains(ENCRYPTED_CONTENT_CODE)
+            || (m.contains("The encrypted content ") && m.contains("could not be verified"))
+            || m.contains("Encrypted function output content could not be decrypted")
+    });
+    if encrypted {
+        return Some(ENCRYPTED_CONTENT_CODE.to_owned());
+    }
+    error_code(err.codex_error_info.as_ref())
 }
 
 #[derive(Deserialize)]
@@ -660,7 +685,7 @@ impl Parser {
             "task_complete" | "turn_complete" => {
                 let e = serde_json::from_slice::<WireTurnComplete>(p).ok();
                 if let Some(err) = e.as_ref().and_then(|e| e.error.as_ref()) {
-                    let code = error_code(err.codex_error_info.as_ref());
+                    let code = failure_code(err);
                     let started = self.start_of_request();
                     let turn = self.turn_key(e.as_ref().and_then(|e| e.turn_id.as_deref()), ts);
                     if let Some(row) = self.row(

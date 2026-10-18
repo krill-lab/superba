@@ -45,6 +45,11 @@
 //!   members that cannot read it); compaction requests and compacted
 //!   conversations of unknown origin skip members marked as not supporting
 //!   remote compaction. Bodies pass through untouched.
+//! - **Ciphertexts another provider made** ([`cipher`]): a request a member
+//!   refuses with `invalid_encrypted_content` (reasoning, sub-agent messages,
+//!   encrypted tool outputs made elsewhere) is sent again once without exactly
+//!   what it cannot read, and later requests to it leave those items out
+//!   before they leave.
 //! - **Health** ([`health`]): passive breakers with exponential backoff plus
 //!   unauthenticated probes of half-open lines.
 //! - **Local budget** ([`limits`]): bounded concurrent requests / WebSocket
@@ -75,6 +80,7 @@
 
 #![warn(missing_docs)]
 
+pub mod cipher;
 pub mod client;
 pub mod compaction;
 pub mod config;

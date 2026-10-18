@@ -282,6 +282,7 @@ fn event_key(kind: RouteEventKind) -> (&'static str, bool) {
         RouteEventKind::Reloaded => ("router.event.reloaded", false),
         RouteEventKind::LocalLimit => ("router.event.local_limit", true),
         RouteEventKind::Compaction => ("router.event.compaction", false),
+        RouteEventKind::Ciphertext => ("router.event.ciphertext", false),
     }
 }
 

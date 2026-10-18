@@ -62,30 +62,7 @@ pub fn strip(body: &[u8]) -> Option<(Vec<u8>, u32)> {
     if removed == 0 {
         return None;
     }
-    let mut out = Vec::with_capacity(body.len());
-    out.push(b'{');
-    for (i, (key, value)) in top.iter().enumerate() {
-        if i > 0 {
-            out.push(b',');
-        }
-        // A key that round-trips through serde_json is valid JSON text.
-        out.extend_from_slice(serde_json::to_string(key.as_ref()).ok()?.as_bytes());
-        out.push(b':');
-        if i == input_at {
-            out.push(b'[');
-            for (j, item) in new_items.iter().enumerate() {
-                if j > 0 {
-                    out.push(b',');
-                }
-                out.extend_from_slice(item.as_bytes());
-            }
-            out.push(b']');
-        } else {
-            out.extend_from_slice(value.get().as_bytes());
-        }
-    }
-    out.push(b'}');
-    Some((out, removed))
+    Some((assemble(&top, input_at, &new_items)?, removed))
 }
 
 /// [`strip`] for a body with `Content-Encoding: zstd` (decoded up to `limit`
@@ -142,10 +119,49 @@ fn strip_item(raw: &str) -> Option<(String, u32)> {
     Some((serde_json::to_string(&item).ok()?, removed))
 }
 
-type RawObject<'a> = Vec<(Cow<'a, str>, &'a RawValue)>;
+/// The members of a top-level JSON object in order, values as raw text.
+pub(crate) type RawObject<'a> = Vec<(Cow<'a, str>, &'a RawValue)>;
+
+/// `top` written out again with `items` as the value of member `input_at`
+/// (an array); every other member keeps its exact bytes.
+pub(crate) fn assemble(
+    top: &RawObject<'_>,
+    input_at: usize,
+    items: &[Cow<'_, str>],
+) -> Option<Vec<u8>> {
+    let size = top
+        .iter()
+        .map(|(k, v)| k.len() + v.get().len() + 4)
+        .sum::<usize>()
+        + items.iter().map(|i| i.len() + 1).sum::<usize>();
+    let mut out = Vec::with_capacity(size);
+    out.push(b'{');
+    for (i, (key, value)) in top.iter().enumerate() {
+        if i > 0 {
+            out.push(b',');
+        }
+        // A key that round-trips through serde_json is valid JSON text.
+        out.extend_from_slice(serde_json::to_string(key.as_ref()).ok()?.as_bytes());
+        out.push(b':');
+        if i == input_at {
+            out.push(b'[');
+            for (j, item) in items.iter().enumerate() {
+                if j > 0 {
+                    out.push(b',');
+                }
+                out.extend_from_slice(item.as_bytes());
+            }
+            out.push(b']');
+        } else {
+            out.extend_from_slice(value.get().as_bytes());
+        }
+    }
+    out.push(b'}');
+    Some(out)
+}
 
 /// The members of a top-level JSON object in order, values as raw text.
-fn split_object(body: &[u8]) -> Option<RawObject<'_>> {
+pub(crate) fn split_object(body: &[u8]) -> Option<RawObject<'_>> {
     let text = std::str::from_utf8(body).ok()?;
     let mut de = serde_json::Deserializer::from_str(text);
     let out = (&mut de).deserialize_map(ObjectVisitor).ok()?;

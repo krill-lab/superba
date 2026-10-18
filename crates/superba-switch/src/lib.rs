@@ -24,6 +24,7 @@
 //! pass fakes through [`SwitcherDeps`] directly.
 
 mod account;
+pub mod ciphers;
 pub mod compaction;
 pub mod core_watch;
 pub mod executor;

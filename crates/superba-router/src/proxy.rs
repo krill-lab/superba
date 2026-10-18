@@ -23,16 +23,17 @@ use http_body_util::{BodyExt, Limited};
 use hyper::body::Incoming;
 use superba_core::RequestCompression;
 
+use crate::cipher::{self, Plan, Removed};
 use crate::compaction::{self, CompactionInput, Route};
 use crate::config::join_path;
 use crate::forward::{
-    Observed, describe_error, empty_responses_answer, failover_status, local_busy, request_headers,
-    response_headers, router_error, set_route,
+    Observed, UpBody, UpResponse, describe_error, empty_responses_answer, failover_status,
+    local_busy, request_headers, response_headers, router_error, set_route, up_response,
 };
 use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_detail, file_limit_in};
 use crate::model_map::map_model;
 use crate::select::{Candidate, candidates};
-use crate::state::{GaugeGuard, Generation, RespBody, Shared, View, lock};
+use crate::state::{GaugeGuard, Generation, MemberRt, RespBody, Shared, View, lock};
 use crate::stats::body::{Mode, TapBody};
 use crate::stats::hub::{End, Tracker, now_ms};
 use crate::stats::tap::{ResponseTap, SseTap};
@@ -199,6 +200,14 @@ pub(crate) async fn proxy_http(
     );
     note_compaction_route(&shared, &generation, &route, pin, now, order.first());
 
+    // Ciphertexts another provider made (GitHub issue 11): what a member
+    // refused before is left out of its body, and a refusal now leaves out
+    // what it names and goes to the same line once more ([`crate::cipher`]).
+    let ciphers = if is_responses_path(&parts.method, &rest) {
+        CipherBody::read(&parts.headers, &body, limit)
+    } else {
+        None
+    };
     let mut mapped: HashMap<usize, Bytes> = HashMap::new();
     // Lines that accept zstd get Responses bodies Codex sent uncompressed
     // compressed (one compression per member body).
@@ -213,63 +222,151 @@ pub(crate) async fn proxy_http(
         let member = &generation.members[c.member];
         let line = &member.lines[c.line];
         let label = generation.label(c.member, c.line);
-        let send_body = mapped
-            .entry(c.member)
-            .or_insert_with(|| {
-                map_model(&body, &parts.headers, &member.cfg.model_map, limit)
-                    .unwrap_or_else(|| body.clone())
-            })
-            .clone();
         let drop_turn_state = pin.is_some_and(|p| p.member != c.member);
         if let Some(t) = &tracker {
             t.trying(c);
         }
-        let zstd_body = if compressible
-            && transport::compresses(&shared.transports, &member.cfg, &line.cfg, Instant::now())
-        {
-            match compressed.get(&c.member) {
-                Some(z) => z.clone(),
+        let mut resent = false;
+        let (result, compression, started) = loop {
+            let send_body = match mapped.get(&c.member) {
+                Some(b) => b.clone(),
                 None => {
-                    let z = transport::compress_body(send_body.clone()).await;
-                    compressed.insert(c.member, z.clone());
-                    z
+                    let (b, left_out) = member_body(
+                        &shared,
+                        &body,
+                        ciphers.as_ref(),
+                        member,
+                        &parts.headers,
+                        limit,
+                    );
+                    if let (Some(t), Some(r), false) = (&mut tracker, left_out, resent) {
+                        t.note(format!(
+                            "{}: left out {} it refused before",
+                            member.cfg.id,
+                            r.describe()
+                        ));
+                    }
+                    mapped.insert(c.member, b.clone());
+                    b
                 }
+            };
+            let zstd_body = if compressible
+                && transport::compresses(&shared.transports, &member.cfg, &line.cfg, Instant::now())
+            {
+                match compressed.get(&c.member) {
+                    Some(z) => z.clone(),
+                    None => {
+                        let z = transport::compress_body(send_body.clone()).await;
+                        compressed.insert(c.member, z.clone());
+                        z
+                    }
+                }
+            } else {
+                None
+            };
+            let started = Instant::now();
+            let (result, compression) = match zstd_body {
+                Some(z) => {
+                    send_zstd(
+                        &shared,
+                        &generation,
+                        &parts,
+                        &rest,
+                        c,
+                        (z, send_body),
+                        drop_turn_state,
+                        tracker.as_mut(),
+                    )
+                    .await
+                }
+                None => (
+                    send(
+                        &generation,
+                        &parts,
+                        &rest,
+                        c,
+                        send_body,
+                        drop_turn_state,
+                        false,
+                    )
+                    .await,
+                    if client_zstd {
+                        RequestCompression::ClientZstd
+                    } else {
+                        RequestCompression::None
+                    },
+                ),
+            };
+            let result = result.map(up_response);
+            // A refusal of a ciphertext arrives as a small JSON error before
+            // any byte reached Codex: read it, then decide.
+            let (Some(cb), false) = (ciphers.as_ref(), resent) else {
+                break (result, compression, started);
+            };
+            let resp = match result {
+                Ok(r)
+                    if cipher::rejection::may_be(
+                        r.status().as_u16(),
+                        content_type_of(r.headers()),
+                    ) =>
+                {
+                    r
+                }
+                other => break (other, compression, started),
+            };
+            let (resp, whole) = read_small(resp).await;
+            let Some(rejection) = whole.as_deref().and_then(cipher::rejection::from_body) else {
+                break (Ok(resp), compression, started);
+            };
+            let id = &member.cfg.id;
+            let status = resp.status().as_u16();
+            match cipher::refused(
+                &shared.stats.ciphers,
+                id,
+                &cb.sent(&shared.stats.ciphers, id),
+                &rejection,
+            ) {
+                Plan::Neutralise(set) => {
+                    let removed = cb.removed_by(&set);
+                    if let Some(t) = &mut tracker {
+                        t.cipher_refused(c, status, started.elapsed(), &removed.describe());
+                    }
+                    shared.event(
+                        RouteEventKind::Ciphertext,
+                        Some(id),
+                        Some(&line.cfg.id),
+                        Some(cipher::event_detail(&member.cfg.name, &removed, false)),
+                    );
+                    resent = true;
+                    mapped.remove(&c.member);
+                    compressed.remove(&c.member);
+                }
+                Plan::TaskUnreadable => {
+                    let message = cipher::task_unreadable_message(&member.cfg.name);
+                    shared.event(
+                        RouteEventKind::Ciphertext,
+                        Some(id),
+                        Some(&line.cfg.id),
+                        Some(message.clone()),
+                    );
+                    if let Some(t) = tracker {
+                        t.finish(End {
+                            status: Some(superba_core::RequestStatus::Http {
+                                status: 400,
+                                code: Some(cipher::TASK_UNREADABLE_CODE.into()),
+                            }),
+                            error: Some(message.chars().take(300).collect()),
+                            ..End::default()
+                        });
+                    }
+                    return router_error(
+                        StatusCode::BAD_REQUEST,
+                        cipher::TASK_UNREADABLE_CODE,
+                        &message,
+                    );
+                }
+                Plan::PassThrough => break (Ok(resp), compression, started),
             }
-        } else {
-            None
-        };
-        let started = Instant::now();
-        let (result, compression) = match zstd_body {
-            Some(z) => {
-                send_zstd(
-                    &shared,
-                    &generation,
-                    &parts,
-                    &rest,
-                    c,
-                    (z, send_body),
-                    drop_turn_state,
-                    tracker.as_mut(),
-                )
-                .await
-            }
-            None => (
-                send(
-                    &generation,
-                    &parts,
-                    &rest,
-                    c,
-                    send_body,
-                    drop_turn_state,
-                    false,
-                )
-                .await,
-                if client_zstd {
-                    RequestCompression::ClientZstd
-                } else {
-                    RequestCompression::None
-                },
-            ),
         };
         if let Some(t) = &mut tracker {
             t.set_compression(compression);
@@ -312,6 +409,10 @@ pub(crate) async fn proxy_http(
                     (reason, Some(resp.status().as_u16()))
                 }
                 None => {
+                    if let (Some(cb), Some(t)) = (&ciphers, &mut tracker) {
+                        let sent = cb.sent(&shared.stats.ciphers, &member.cfg.id);
+                        t.ciphers_sent(sent.ciphers.into_iter().map(|c| c.fp).collect());
+                    }
                     let ttfb = started.elapsed();
                     on_answer(
                         &shared,
@@ -612,7 +713,7 @@ fn downstream(
     generation: Arc<Generation>,
     c: Candidate,
     label: &str,
-    resp: reqwest::Response,
+    resp: UpResponse,
     (active, admission): (GaugeGuard, Admission),
     tracker: Option<Tracker>,
 ) -> Response<RespBody> {
@@ -625,8 +726,7 @@ fn downstream(
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
     let encoded = content_encoding(resp.headers()).is_some();
-    let upstream: http::Response<reqwest::Body> = resp.into();
-    let inner = upstream.into_body();
+    let inner = resp.into_body();
     let body = match tracker {
         None => Observed::new(inner, shared, generation, c.member, c.line, active)
             .holding(admission)
@@ -661,4 +761,124 @@ fn downstream(
     *out.status_mut() = status;
     *out.headers_mut() = headers;
     out
+}
+
+// ---------------------------------------------------------------------------
+// Ciphertexts another provider made (GitHub issue 11)
+// ---------------------------------------------------------------------------
+
+/// Largest error answer read before it is passed on.
+const REFUSAL_READ_LIMIT: usize = 64 * 1024;
+/// How long reading such an answer may take.
+const REFUSAL_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+fn content_type_of(headers: &HeaderMap) -> Option<&str> {
+    headers.get(CONTENT_TYPE).and_then(|v| v.to_str().ok())
+}
+
+/// A Responses body that carries ciphertexts, decoded when Codex sent it
+/// zstd-compressed.
+struct CipherBody {
+    plain: Bytes,
+    zstd: bool,
+    scan: cipher::Scan,
+}
+
+impl CipherBody {
+    /// `None` when the body carries no ciphertext (or an encoding the router
+    /// does not read).
+    fn read(headers: &HeaderMap, body: &Bytes, limit: usize) -> Option<Self> {
+        let (plain, zstd) = match content_encoding(headers).as_deref() {
+            None => (body.clone(), false),
+            Some("zstd") => (Bytes::from(strip::decode_zstd(body, limit)?), true),
+            Some(_) => return None,
+        };
+        let scan = cipher::scan(&plain);
+        (!scan.is_empty()).then_some(Self { plain, zstd, scan })
+    }
+
+    /// The body for `member` without what it refused before.
+    fn for_member(&self, ledger: &cipher::Ledger, member: &str) -> Option<(Bytes, Removed)> {
+        let (new, removed) = cipher::neutralise(&self.plain, &|fp| ledger.refuses(member, fp))?;
+        let bytes = if self.zstd {
+            Bytes::from(zstd::stream::encode_all(new.as_slice(), 3).ok()?)
+        } else {
+            Bytes::from(new)
+        };
+        Some((bytes, removed))
+    }
+
+    /// The ciphertexts that go to `member` (those it did not refuse before).
+    fn sent(&self, ledger: &cipher::Ledger, member: &str) -> cipher::Scan {
+        cipher::Scan {
+            ciphers: self
+                .scan
+                .ciphers
+                .iter()
+                .filter(|c| !ledger.refuses(member, &c.fp))
+                .cloned()
+                .collect(),
+            task_item: self.scan.task_item,
+        }
+    }
+
+    /// What leaving out `set` changes.
+    fn removed_by(&self, set: &std::collections::BTreeSet<compaction::Fingerprint>) -> Removed {
+        cipher::neutralise(&self.plain, &|fp| set.contains(fp))
+            .map(|(_, r)| r)
+            .unwrap_or_default()
+    }
+}
+
+/// The body a member gets: without the ciphertexts it refused before
+/// (what was left out), with its model names mapped.
+fn member_body(
+    shared: &Shared,
+    body: &Bytes,
+    ciphers: Option<&CipherBody>,
+    member: &MemberRt,
+    headers: &HeaderMap,
+    limit: usize,
+) -> (Bytes, Option<Removed>) {
+    let (base, left_out) =
+        match ciphers.and_then(|cb| cb.for_member(&shared.stats.ciphers, &member.cfg.id)) {
+            Some((b, r)) => (b, Some(r)),
+            None => (body.clone(), None),
+        };
+    let mapped = map_model(&base, headers, &member.cfg.model_map, limit).unwrap_or(base);
+    (mapped, left_out)
+}
+
+/// Read an answer of at most [`REFUSAL_READ_LIMIT`] bytes; the answer comes
+/// back whole either way, with its bytes when it ended within the limit.
+async fn read_small(resp: UpResponse) -> (UpResponse, Option<Bytes>) {
+    let (head, mut body) = resp.into_parts();
+    let mut buf = bytes::BytesMut::new();
+    let deadline = tokio::time::Instant::now() + REFUSAL_READ_TIMEOUT;
+    loop {
+        if buf.len() > REFUSAL_READ_LIMIT {
+            break;
+        }
+        match tokio::time::timeout_at(deadline, body.frame()).await {
+            Ok(Some(Ok(frame))) => {
+                if let Ok(data) = frame.into_data() {
+                    buf.extend_from_slice(&data);
+                }
+            }
+            Ok(None) => {
+                let bytes = buf.freeze();
+                let whole = bytes.clone();
+                return (
+                    http::Response::from_parts(head, UpBody::replay(bytes)),
+                    Some(whole),
+                );
+            }
+            // A broken or slow answer is passed on as it is.
+            Ok(Some(Err(_))) | Err(_) => break,
+        }
+    }
+    (
+        http::Response::from_parts(head, body.prepend(buf.freeze())),
+        None,
+    )
 }

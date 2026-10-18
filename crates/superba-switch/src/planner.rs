@@ -1195,17 +1195,26 @@ impl Switcher {
         if local && !primary.is_blocked() {
             self.consumer_warnings(&restarts, &processes, &dest, &mut draft);
             self.restart_notes(&primary, &dest, &sites, &authapi_env, &mut draft);
-            if let (Some(from), Some(to)) = (
-                state.active.as_ref().and_then(|a| a.site_id.as_ref()),
-                dest.site.as_ref(),
-            ) && from != &to.id
-                && to.kind != SiteKind::Official
-            {
-                draft.info(text("switch.warn.cross_site"));
+            let dest_profile = dest.profile_id.as_ref().and_then(|id| set.profile(id));
+            // Content another provider encrypted (GitHub issue 11): the local
+            // rollouts only, nothing is sent; the router repairs requests
+            // itself.
+            if let Some(to) = dest.site.as_ref().filter(|_| !dest.routed) {
+                let name =
+                    dest_profile.map_or_else(|| to.name.fallback.clone(), |p| p.name.clone());
+                let notes = self
+                    .ciphertext_notes(
+                        &set,
+                        &sites,
+                        state.active.as_ref().and_then(|a| a.site_id.as_ref()),
+                        to,
+                        &name,
+                    )
+                    .await;
+                draft.warnings.extend(notes);
             }
             // Remote compaction (GitHub issue 3): cached checks and the local
             // rollouts only, nothing is sent.
-            let dest_profile = dest.profile_id.as_ref().and_then(|id| set.profile(id));
             let notes = self
                 .compaction_notes(
                     &set,

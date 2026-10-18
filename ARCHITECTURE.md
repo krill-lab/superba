@@ -565,6 +565,49 @@ index: it warns when the destination cannot compact (or was never checked),
 names the router members compaction skips, and counts the conversations of the
 last 7 days whose latest compaction was made by a provider on another site.
 
+**Content another provider encrypted** (GitHub issue 11; `superba_router::cipher`,
+`superba_switch::ciphers`). A Codex conversation carries opaque state only the
+backend that made it reads: `reasoning.encrypted_content`, the payload of a
+multi-agent `agent_message` (`amsg_…`), encrypted tool outputs (`notes` /
+`history`), encrypted function-call arguments, compaction items, and with
+output-token replay the `encrypted_content` of messages and tool calls. Codex
+strips none of it for the built-in `openai` provider, and stores a sub-agent's
+task as an `encrypted_content` part unless the provider marked the call's
+arguments as plain (`encrypted_function_args: []`, which only OpenAI backends
+send), so a sub-agent spawned on another provider leaves plain text where an
+OpenAI backend expects its own ciphertext. Any move of a conversation between
+providers — a direct switch, a failover, a reload that moves conversations to
+the new first member — then gets `invalid_encrypted_content` on every turn. The
+router reads the ciphertexts of each Responses body and `response.create` frame
+(fingerprints, places), recognises a refusal (HTTP 400 / 422 / 502 JSON before
+any byte reached Codex; a WebSocket `error` / `response.failed` before any
+output) and what it names (item id, the ciphertext's first and last four
+characters, the function-output wording), and neutralises byte-preservingly:
+reasoning items go, an encrypted part holding plain text becomes `input_text`
+with that text, a real ciphertext part or argument becomes a short note, an
+item's own `encrypted_content` field goes, a compaction item is replaced by a
+note only when named. On a refusal it neutralises what is named plus every
+other non-compaction ciphertext the member is not known to read, remembers them
+as refused by that member (`StatsHub::ciphers`, in memory, 100 000 fingerprints)
+and sends the request once more (HTTP: at once, to the same line, never a
+failover and no line is blamed; WebSocket: the socket is closed with 1012 and
+Codex sends the turn again on a new one). Later requests to that member are
+neutralised before they leave, so the conversation presents the same bytes
+every turn. A member reads a ciphertext only when a request carrying it ended
+with a completed response (a 200 whose stream fails reads nothing). A
+sub-agent whose own task is a real ciphertext the member cannot read is answered
+400 `encrypted_task_unreadable` instead. Each repair is a `RouteEventKind::
+Ciphertext` event and a request attempt / log line. In direct mode Superba is not
+in the path: the planner counts the conversations of the last 7 days last
+continued on a provider of another "cipher family" (official and Krill share
+the ChatGPT Codex backend; a compatible site is its own;
+`switch.warn.ciphertext_elsewhere`, else `switch.warn.cross_site`), and the
+overview names conversations whose latest turn stopped for it in the last 24 h
+(the rollout index reads Codex's recorded refusal as `invalid_encrypted_content`;
+`switch.overview.encrypted_refused`). No rollout is rewritten: a "repair this
+thread" would have to rewrite every reasoning line and shift Codex's
+`thread_history_*.sqlite` offsets, and the router repairs requests without it.
+
 **Local budget** (user bug 35; `superba_router::limits`). Each proxied request
 holds two sockets and a WebSocket session two for its life, and launchd starts
 agents with a soft limit of 256 open files. The router sizes its budget from the

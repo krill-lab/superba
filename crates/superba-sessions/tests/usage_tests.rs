@@ -431,3 +431,38 @@ fn overlong_lines_are_skipped_without_losing_the_next_ones() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].started_at, at(1, 0));
 }
+
+#[test]
+fn a_turn_refused_for_another_providers_ciphertext_gets_its_own_code() {
+    // The task_complete Codex 0.163 wrote when the provider could not read
+    // a sub-agent message another provider made (GitHub issue 11).
+    let refusal = r#"{"error": {"type": "invalid_request_error", "code": "invalid_encrypted_content", "message": "The encrypted content for item amsg_01a14f90-4274-7462-ab32-fd7a6bb914ec could not be verified. Reason: encrypted content hydration failed: Encrypted content could not be decrypted or parsed.", "param": "input"}}"#;
+    let mut s = meta(&ts(0, 0), T1);
+    s += &started(&ts(1, 0), "turn-1");
+    s += &item(&ts(1, 10), "message", Some("user"));
+    s += &event(
+        &ts(7, 0),
+        serde_json::json!({"type": "task_complete", "turn_id": "turn-1", "last_agent_message": null,
+            "error": {"message": refusal, "codex_error_info": "other"}}),
+    );
+    // The function-output wording (no code in the message).
+    s += &started(&ts(10, 0), "turn-2");
+    s += &item(&ts(10, 10), "message", Some("user"));
+    s += &event(
+        &ts(11, 0),
+        serde_json::json!({"type": "task_complete", "turn_id": "turn-2", "last_agent_message": null,
+            "error": {"message": "Encrypted function output content could not be decrypted or decoded.", "codex_error_info": "bad_request"}}),
+    );
+    let rows = parse_rollout(s.as_bytes());
+    assert_eq!(rows.len(), 2);
+    for r in &rows {
+        assert_eq!(
+            r.status,
+            RequestStatus::Failed {
+                code: Some(superba_sessions::usage::ENCRYPTED_CONTENT_CODE.into())
+            }
+        );
+    }
+    let dump = format!("{rows:?}");
+    assert!(!dump.contains("amsg_"), "the message is not kept: {dump}");
+}

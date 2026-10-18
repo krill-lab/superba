@@ -240,6 +240,26 @@ Superba 所配置的 provider（`openai`），Codex 总是这样压缩，没有�
   `compaction_unsupported`。WebSocket 会话会自动重连到正确的成员。路由只保存压缩项的指纹和
   成员 ID（`router/compactions.json`），从不保存内容。
 
+## 在其他服务商上开始的对话
+
+每个 Codex 对话都带有服务商为自己加密的内容：隐藏的推理、子 agent 的任务、加密的工具结果、
+压缩后的历史，只有这个服务商能读取。Superba 把所有服务商都配置成 Codex 自带的 `openai`
+provider，所以 Codex 在每个配置下都列出所有对话；在读不了这些内容的服务商上继续某个对话，
+每一轮都会报 `invalid_encrypted_content`（“The encrypted content for item amsg_… could not be
+verified”、“Encrypted function output content could not be decrypted or decoded”）。在非
+OpenAI 后端的服务商上派出过子 agent 的对话一定会遇到：即使任务是明文，Codex 也把它当作加密
+内容保存。Superba 把官方登录和 Krill 视为同一家（都运行在 ChatGPT Codex 后端上）；每个兼容
+站点各算一家。
+
+- **路由模式** 会修复这类请求：服务商拒绝某些内容时，路由去掉它读不了的那部分（隐藏推理直接
+  去掉，明文的子 agent 任务保留为文本，加密内容换成一句说明）后再发一次；这个对话之后的每一
+  轮在发出前就去掉同样的内容，对话可以继续，提示缓存也不受影响。路由页列出每次修复，请求详情
+  写明去掉了什么。如果服务商读不了子 agent 自己的任务，路由会返回带说明的
+  `encrypted_task_unreadable`，不会让子 agent 没有任务地运行。
+- **直连模式。** Superba 不在请求路径上，所以会提醒：切换到读不了这些内容的服务商前，预览会
+  统计最近 7 天里最后在其他服务商上继续的对话；之后概览（以及 `spb status`）会列出最近一天因此
+  中断的对话。请切回开始这个对话的服务商继续、新开对话（`/fork` 会复制同样的内容），或打开路由。
+
 ## 与 cc-switch、AI Toolbox 一起使用
 
 Superba 只拥有它最近一次切换写入的内容：[Superba 会改动什么](#superba-会改动什么) 里列出的

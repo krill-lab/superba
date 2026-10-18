@@ -313,3 +313,84 @@ where
         self.inner.size_hint()
     }
 }
+
+/// An upstream response body, possibly with its first bytes already read
+/// (a small error answer the router inspected before passing it on).
+pub(crate) struct UpBody {
+    prefix: Option<Bytes>,
+    rest: Option<reqwest::Body>,
+}
+
+impl UpBody {
+    /// The body as it arrives.
+    pub(crate) fn live(body: reqwest::Body) -> Self {
+        Self {
+            prefix: None,
+            rest: Some(body),
+        }
+    }
+
+    /// `bytes`, the whole body (read already).
+    pub(crate) fn replay(bytes: Bytes) -> Self {
+        Self {
+            prefix: (!bytes.is_empty()).then_some(bytes),
+            rest: None,
+        }
+    }
+
+    /// This body (its own first bytes already taken) with `prefix` before
+    /// what it still holds.
+    pub(crate) fn prepend(mut self, prefix: Bytes) -> Self {
+        if !prefix.is_empty() {
+            self.prefix = Some(prefix);
+        }
+        self
+    }
+}
+
+impl Body for UpBody {
+    type Data = Bytes;
+    type Error = reqwest::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, reqwest::Error>>> {
+        if let Some(p) = self.prefix.take() {
+            return Poll::Ready(Some(Ok(Frame::data(p))));
+        }
+        match self.rest.as_mut() {
+            Some(rest) => Pin::new(rest).poll_frame(cx),
+            None => Poll::Ready(None),
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.prefix.is_none() && self.rest.as_ref().is_none_or(Body::is_end_stream)
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        let mut hint = self
+            .rest
+            .as_ref()
+            .map(Body::size_hint)
+            .unwrap_or_else(|| SizeHint::with_exact(0));
+        if let Some(p) = &self.prefix {
+            let n = p.len() as u64;
+            hint.set_lower(hint.lower() + n);
+            if let Some(u) = hint.upper() {
+                hint.set_upper(u + n);
+            }
+        }
+        hint
+    }
+}
+
+/// An upstream answer as passed on: status, headers and [`UpBody`].
+pub(crate) type UpResponse = http::Response<UpBody>;
+
+/// A `reqwest` answer as an [`UpResponse`].
+pub(crate) fn up_response(resp: reqwest::Response) -> UpResponse {
+    let resp: http::Response<reqwest::Body> = resp.into();
+    resp.map(UpBody::live)
+}

@@ -120,6 +120,9 @@ pub(crate) struct StatsHub {
     dropped: AtomicU64,
     /// Which member made each compaction item ([`crate::compaction`]).
     pub compactions: Arc<crate::compaction::Owners>,
+    /// Which member reads which ciphertext (in memory, kept across reloads;
+    /// GitHub issue 11, [`crate::cipher`]).
+    pub ciphers: crate::cipher::Ledger,
 }
 
 impl std::fmt::Debug for StatsHub {
@@ -138,6 +141,7 @@ impl StatsHub {
         ));
         Self {
             compactions,
+            ciphers: crate::cipher::Ledger::new(),
             paths,
             next_row: AtomicI64::new(0),
             next_inflight: AtomicU64::new(0),
@@ -329,6 +333,7 @@ impl StatsHub {
             ttfb: None,
             upstream_request_id: None,
             compression: superba_core::RequestCompression::None,
+            ciphers_sent: Vec::new(),
             done: false,
         }
     }
@@ -387,6 +392,9 @@ pub(crate) struct Tracker {
     upstream_request_id: Option<String>,
     /// How the body goes to the line of the current attempt.
     compression: superba_core::RequestCompression,
+    /// Fingerprints of the ciphertexts the answering attempt carried
+    /// ([`crate::cipher`]): read by its member when the request ends well.
+    ciphers_sent: Vec<crate::compaction::Fingerprint>,
     done: bool,
 }
 
@@ -517,6 +525,37 @@ impl Tracker {
         let label = self.generation.label(c.member, c.line);
         self.note(format!(
             "{label}: zstd body answered HTTP {status}, sent again uncompressed"
+        ));
+    }
+
+    /// The answering attempt carried these ciphertexts: when the request ends
+    /// well (a completed response), its member reads them.
+    pub fn ciphers_sent(&mut self, fps: Vec<crate::compaction::Fingerprint>) {
+        self.ciphers_sent = fps;
+    }
+
+    /// `c` refused a ciphertext of the request with `status` after `elapsed`;
+    /// `what` was left out and the request goes to the same line again (not a
+    /// failover; [`crate::cipher`]).
+    pub fn cipher_refused(&mut self, c: Candidate, status: u16, elapsed: Duration, what: &str) {
+        let m = &self.generation.members[c.member];
+        let l = &m.lines[c.line];
+        self.attempts.push(RequestAttempt {
+            member_id: ProfileId::new(m.cfg.id.clone()),
+            line_name: Some(l.cfg.name.clone()),
+            upstream_host: l.cfg.base_url.host_str().map(str::to_owned),
+            status: Some(status),
+            outcome: format!(
+                "{}: left out {what}, sent again",
+                crate::cipher::REJECTION_CODE
+            ),
+            elapsed_ms: Some(ms(elapsed)),
+            compression: self.body_compression(),
+        });
+        let label = self.generation.label(c.member, c.line);
+        self.note(format!(
+            "{label}: HTTP {status} {}; left out {what} and sent the request again",
+            crate::cipher::REJECTION_CODE
         ));
     }
 
@@ -657,6 +696,13 @@ impl Tracker {
             self.hub
                 .compactions
                 .learn(&self.meta.compaction.items, member, true);
+            // Only a completed response proves the member read them: a 200
+            // whose stream then fails (no capacity) read nothing.
+            self.hub.ciphers.learn(
+                member,
+                self.ciphers_sent.iter(),
+                crate::cipher::Verdict::Reads,
+            );
         }
         let (member_id, member_name, line_id, line_name, host) = match self.answered {
             Some(c) => {
