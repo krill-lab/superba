@@ -227,6 +227,46 @@ async fn a_relaunch_waits_for_a_slow_app_and_then_names_what_it_saw() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_relaunched_app_running_codex_in_wsl_gets_a_longer_window() {
+    // User bug 69b (e2e run 20261018-191254, WSL 1): with "Run Codex in WSL"
+    // the app's first core (a wsl.exe) exited and its replacement came 60-80 s
+    // after the launch.
+    let script = || {
+        vec![
+            (Duration::from_secs(20), Some(Duration::from_secs(2))),
+            (Duration::from_secs(72), None),
+        ]
+    };
+    let opts = ExecuteOptions {
+        allow_full_restart: true,
+        ..ExecuteOptions::default()
+    };
+    let w = full_restart_world();
+    let mut host = wsl_host("Ubuntu", 1, superba_core::WslNetworking::Nat);
+    host.wsl.as_mut().unwrap().default = true;
+    w.remote.hosts.lock().unwrap().push(host);
+    let home = w.ctx.codex_home();
+    std::fs::create_dir_all(home.root()).unwrap();
+    std::fs::write(
+        home.config_toml(),
+        "[desktop]\nrunCodexInWindowsSubsystemForLinux = true\n",
+    )
+    .unwrap();
+    *w.app.spawn_script.lock().unwrap() = script();
+    let sw = Switcher::with_tuning(w.deps(), tuning(5 * S));
+    let o = run_with(&w, &sw, opts.clone(), ScriptedDecider::with(&[])).await;
+    assert_eq!(o.status, OutcomeStatus::Switched, "{:?}", o.notices);
+    assert_eq!(o.verification.unwrap().process, CheckResult::Passed);
+
+    // The app's own Windows core keeps the 60 s window.
+    let w = full_restart_world();
+    *w.app.spawn_script.lock().unwrap() = script();
+    let sw = Switcher::with_tuning(w.deps(), tuning(5 * S));
+    let o = run_with(&w, &sw, opts, ScriptedDecider::with(&[])).await;
+    assert_eq!(o.status, OutcomeStatus::WrittenOnly, "{:?}", o.notices);
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_relaunched_app_without_a_core_yet_is_named_as_such() {
     // The first start after an install took 93 s to its first app-server on
     // the Windows VM: past the window the check is skipped and says why.

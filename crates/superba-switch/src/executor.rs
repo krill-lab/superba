@@ -39,6 +39,10 @@ pub use crate::rules::PROCESS_START_SLACK_MS;
 /// before the switch fails naming its processes (user bug 53).
 const STILL_RUNNING_ROUNDS: usize = 3;
 
+/// The launch window of the core check ([`crate::Tuning::launch_verify_timeout`])
+/// is this many times longer when the app runs its Codex inside WSL.
+const WSL_LAUNCH_WINDOW_FACTOR: u32 = 2;
+
 /// A relaunched renderer can need several seconds to leave its startup screen.
 /// Bound the wait for navigation readiness so a switch can still finish.
 const NAV_RESTORE_WAIT: Duration = Duration::from_secs(15);
@@ -1641,7 +1645,15 @@ impl Run<'_> {
         // window then runs from the launch, not from this check.
         let appear_by = match self.launched_at {
             Some(at) if before.is_empty() => {
-                (at + tuning.launch_verify_timeout).max(started + tuning.verify_timeout)
+                // "Run Codex in WSL": the app's core is a `wsl.exe` that starts
+                // a login shell and Codex inside the distribution; on WSL 1 the
+                // app's replacement of its first core came 60-80 s after the
+                // launch (user bug 69b, e2e run 20261018-191254).
+                let window = match self.sw.legacy_wsl(&self.pc.home).await {
+                    Some(_) => tuning.launch_verify_timeout * WSL_LAUNCH_WINDOW_FACTOR,
+                    None => tuning.launch_verify_timeout,
+                };
+                (at + window).max(started + tuning.verify_timeout)
             }
             _ => started + tuning.verify_timeout,
         };

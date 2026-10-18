@@ -386,6 +386,32 @@ def w81(t):
                 f"new WSL app-server: {[p['pid'] for p in sv0]} -> {[p['pid'] for p in sv1]}")
         run.state["line"] = other
         App(run).onboarding(90)
+    with t.step("A full restart through Superba passes its core check (spb launch --restart)") as s:
+        # User bug 69b: the app's core in WSL (wsl.exe + login shell + Codex on WSL 1) needs longer after a
+        # launch; a check that still fails says so (no "restart ChatGPT yourself") and exits non-zero.
+        main0, sv0 = wsl_app_servers(run, a)
+        r = run.spb("launch", "--restart", "--countdown", "0", "--yes", "--force", timeout=400,
+                    label="launch-restart-legacy-wsl")
+        s.save("launch-restart.txt", r["stdout"] + r["stderr"])
+        out = r["stdout"] + r["stderr"]
+        bad = [l for l in out.splitlines() if "did not pass" in l or "Verify core: failed" in l]
+        s.check(not any("Restart ChatGPT yourself" in l for l in out.splitlines()),
+                "no 'Restart ChatGPT yourself' after Superba reopened ChatGPT")
+        if bad:
+            s.check(r["code"] != 0, f"a failed check exits non-zero: exit {r['code']} [{r['transcript']}]")
+        s.check(r["code"] == 0 and not bad, f"reopened and verified: exit {r['code']}, {bad} [{r['transcript']}]",
+                soft=True)
+        m = a.wait_main(150, not_pid=main0["pid"] if main0 else None)
+        s.check(m is not None, "ChatGPT reopened by Superba with a debugging port")
+        end = time.time() + 150
+        sv1 = []
+        while time.time() < end:
+            main1, sv1 = wsl_app_servers(run, a)
+            if sv1 and not {p["pid"] for p in sv1} & {p["pid"] for p in sv0}:
+                break
+            time.sleep(3)
+        s.check(bool(sv1), f"a new WSL app-server: {[p['pid'] for p in sv0]} -> {[p['pid'] for p in sv1]}")
+        App(run).onboarding(120)
     flows.turn(run, t, "E2E-LEGACYWSL", expect_line=run.state["line"], new_chat=True)
     with t.step("WSLENV forwards CODEX_AUTHAPI_BASE_URL in PAT mode") as s:
         env = run.user_env()
