@@ -134,6 +134,11 @@ pub enum Command {
         #[command(subcommand)]
         command: AppCommand,
     },
+    #[command(about = english("cli.tools.help.group"))]
+    Tools {
+        #[command(subcommand)]
+        command: ToolsCommand,
+    },
     #[command(name = "self-update", about = english("cli.help.self_update_group"))]
     SelfUpdate {
         #[command(subcommand)]
@@ -1278,6 +1283,54 @@ pub enum SelfUpdateCommand {
     /// Restart the router service onto the new binary (the Windows hand-off runs it).
     #[command(hide = true)]
     RestartRouter,
+}
+
+/// `spb tools`: coding-agent tools (Claude Code, dsh, opencode, pi, ZCode,
+/// WorkBuddy).
+#[derive(Debug, Subcommand)]
+pub enum ToolsCommand {
+    #[command(about = english("cli.tools.help.list"))]
+    List,
+    #[command(about = english("cli.tools.help.check"))]
+    Check,
+    #[command(about = english("cli.tools.help.install"))]
+    Install {
+        #[arg(value_name = "TOOL", help = english("cli.tools.help.tool"))]
+        tool: String,
+        #[arg(long, value_name = "VERSION", help = english("cli.tools.help.version"))]
+        version: Option<String>,
+        #[arg(long, value_name = "CHANNEL", help = english("cli.tools.help.channel"))]
+        channel: Option<String>,
+        #[arg(short = 'y', long, help = english("cli.tools.help.yes"))]
+        yes: bool,
+    },
+    #[command(about = english("cli.tools.help.update"))]
+    Update {
+        #[arg(value_name = "TOOL", help = english("cli.tools.help.tool"))]
+        tool: String,
+        #[arg(long, value_name = "VERSION", help = english("cli.tools.help.version"))]
+        version: Option<String>,
+        #[arg(long, value_name = "CHANNEL", help = english("cli.tools.help.channel"))]
+        channel: Option<String>,
+        #[arg(short = 'y', long, help = english("cli.tools.help.yes"))]
+        yes: bool,
+    },
+    #[command(about = english("cli.tools.help.uninstall"))]
+    Uninstall {
+        #[arg(value_name = "TOOL", help = english("cli.tools.help.tool"))]
+        tool: String,
+        #[arg(long, help = english("cli.tools.help.remove_data"))]
+        remove_data: bool,
+        #[arg(short = 'y', long, help = english("cli.tools.help.yes"))]
+        yes: bool,
+    },
+    #[command(name = "manage-updates", about = english("cli.tools.help.manage_updates"))]
+    ManageUpdates {
+        #[arg(value_name = "TOOL", help = english("cli.tools.help.tool"))]
+        tool: String,
+        #[arg(value_enum, value_name = "STATE", help = english("cli.tools.help.state"))]
+        state: OnOff,
+    },
 }
 
 /// `spb feeds`.

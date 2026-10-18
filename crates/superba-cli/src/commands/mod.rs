@@ -26,6 +26,7 @@ mod settings;
 mod site;
 mod status;
 mod switch;
+mod tools;
 mod versions;
 mod wsl;
 
@@ -154,6 +155,7 @@ pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) 
         },
         Command::Remote { command } => remote::run(command, rt, out).await,
         Command::Wsl { command } => wsl::run(command, rt, out).await,
+        Command::Tools { command } => tools::run(command, rt, out).await,
         Command::Import(args) => match &args.what {
             Some(crate::ImportCommand::Usage(u)) => import::usage_run(u, rt, out).await,
             None => import::run(args, rt, out).await,

@@ -58,6 +58,7 @@ pub mod service;
 pub mod session_events;
 mod settings;
 mod sites;
+mod tools;
 mod transports;
 pub mod usage;
 pub mod usage_import;
@@ -930,6 +931,28 @@ impl SwitchService for Switcher {
     async fn open_app_package(&self, path: std::path::PathBuf) -> Result<()> {
         self.refuse_elevated()?;
         self.open_app_package_impl(path).await
+    }
+
+    async fn tools(&self, refresh: bool) -> Result<superba_core::ToolsView> {
+        self.tools_impl(refresh).await
+    }
+
+    async fn tool_run(
+        &self,
+        request: superba_core::ToolRequest,
+        progress: Arc<dyn superba_core::ToolProgressSink>,
+    ) -> Result<superba_core::ToolReport> {
+        self.refuse_elevated()?;
+        self.tool_run_impl(request, progress).await
+    }
+
+    async fn tool_settings(
+        &self,
+        tool: superba_core::ToolId,
+        change: superba_core::ToolSettingsChange,
+    ) -> Result<superba_core::ToolRow> {
+        self.refuse_elevated()?;
+        self.tool_settings_impl(tool, change).await
     }
 
     async fn router_requests(

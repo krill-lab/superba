@@ -22,6 +22,7 @@ superba-notify.workspace = true
 superba-remote.workspace = true
 superba-router.workspace = true
 superba-sessions.workspace = true
+superba-tools.workspace = true
 superba-versions.workspace = true
 async-trait.workspace = true
 directories.workspace = true
