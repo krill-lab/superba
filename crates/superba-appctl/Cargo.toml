@@ -35,6 +35,9 @@ which.workspace = true
 libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+# The router's handle-isolating spawn (service::detach) for the directly
+# started desktop app.
+superba-router.workspace = true
 windows.workspace = true
 windows-sys.workspace = true
 winreg.workspace = true

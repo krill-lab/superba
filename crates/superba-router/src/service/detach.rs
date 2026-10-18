@@ -13,7 +13,10 @@
 //!   the log file (stdout, stderr) and nothing else, `CREATE_NO_WINDOW |
 //!   CREATE_NEW_PROCESS_GROUP`. Program, arguments, added variables and the
 //!   working directory come from the [`Command`] (built through
-//!   `superba_core::process`).
+//!   `superba_core::process`). [`spawn_windows`] is the same call for other
+//!   background programs: the desktop app Superba starts directly (an install
+//!   that is not an MSIX package) must not keep Superba's pipes and log files
+//!   open either.
 //! - **Unix**: a session of its own (`setsid`: no controlling terminal, no
 //!   hang-up when the terminal closes), stdin from `/dev/null`, stdout and stderr
 //!   to the log. Our standard streams are replaced in the child and every other
@@ -29,6 +32,32 @@ use std::process::Command;
 /// on a thread).
 pub(super) fn spawn(command: Command, log: File) -> io::Result<u32> {
     imp::spawn(command, log)
+}
+
+/// How a Windows child started by [`spawn_windows`] gets a console.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Console {
+    /// `CREATE_NO_WINDOW`: a console program runs with a console nobody sees
+    /// (the router).
+    Hidden,
+    /// `DETACHED_PROCESS`: no console at all (a GUI program such as the
+    /// desktop app; its own console children open theirs as they like).
+    Detached,
+}
+
+/// Windows: start `command` (program, arguments, added and removed variables,
+/// working directory) in its own process group with stdin from the null
+/// device and stdout + stderr to `output` (the null device when `None`),
+/// inheriting no other handle of ours: `CreateProcessW` with an explicit
+/// `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. Its stdio settings are not used.
+/// Returns the pid; there is nothing to reap on Windows.
+#[cfg(windows)]
+pub fn spawn_windows(
+    command: &Command,
+    output: Option<&File>,
+    console: Console,
+) -> io::Result<u32> {
+    imp::spawn_with(command, output, console)
 }
 
 #[cfg(unix)]
@@ -74,7 +103,7 @@ mod imp {
     };
     use windows_sys::Win32::System::Threading::{
         CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
-        DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
+        DETACHED_PROCESS, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
         InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
         PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_INFORMATION, STARTF_USESTDHANDLES,
         STARTUPINFOEXW, UpdateProcThreadAttribute,
@@ -216,6 +245,16 @@ mod imp {
     }
 
     pub(super) fn spawn(command: Command, log: File) -> io::Result<u32> {
+        let pid = spawn_with(&command, Some(&log), Console::Hidden)?;
+        drop(log);
+        Ok(pid)
+    }
+
+    pub(super) fn spawn_with(
+        command: &Command,
+        output: Option<&File>,
+        console: Console,
+    ) -> io::Result<u32> {
         let program = command.get_program();
         let application = nul_terminated(program)?;
         let mut line = Vec::new();
@@ -231,7 +270,7 @@ mod imp {
             ));
         }
         line.push(0);
-        let env = env_block(&command)?;
+        let env = env_block(command)?;
         let cwd = command
             .get_current_dir()
             .map(|d| nul_terminated(d.as_os_str()))
@@ -239,7 +278,15 @@ mod imp {
 
         let nul = File::open("NUL")?;
         let stdin = inheritable(&nul)?;
-        let output = inheritable(&log)?;
+        let nul_out = match output {
+            Some(_) => None,
+            None => Some(std::fs::OpenOptions::new().write(true).open("NUL")?),
+        };
+        let output = inheritable(
+            output
+                .or(nul_out.as_ref())
+                .ok_or_else(|| io::Error::other("no output handle for the child"))?,
+        )?;
         let handles: [HANDLE; 2] = [stdin, output];
         let mut attributes = AttributeList::new()?;
         // SAFETY: `handles` outlives the CreateProcessW call below (the list
@@ -266,7 +313,11 @@ mod imp {
         startup.StartupInfo.hStdError = output;
         startup.lpAttributeList = attributes.ptr();
         let mut info = PROCESS_INFORMATION::default();
-        let mut flags = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | EXTENDED_STARTUPINFO_PRESENT;
+        let window = match console {
+            Console::Hidden => CREATE_NO_WINDOW,
+            Console::Detached => DETACHED_PROCESS,
+        };
+        let mut flags = window | CREATE_NEW_PROCESS_GROUP | EXTENDED_STARTUPINFO_PRESENT;
         if env.is_some() {
             flags |= CREATE_UNICODE_ENVIRONMENT;
         }
@@ -297,7 +348,7 @@ mod imp {
         }
         drop(attributes);
         drop(nul);
-        drop(log);
+        drop(nul_out);
         Ok(info.dwProcessId)
     }
 }

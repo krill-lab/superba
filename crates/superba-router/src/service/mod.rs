@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use superba_core::Result;
 
 mod autostart;
-mod detach;
+pub mod detach;
 mod launchd;
 mod runkey;
 pub mod supervise;

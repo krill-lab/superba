@@ -273,8 +273,10 @@ pub fn spawn(spec: &LaunchSpec, install: &AppInstall, log: Option<&Path>) -> Res
     imp::spawn(spec, install, log)
 }
 
+/// The app's command: program, arguments, environment changes, working
+/// directory (its own folder); stdio is set by the caller.
 #[cfg(not(target_os = "macos"))]
-fn configure_command(spec: &LaunchSpec, log: Option<&Path>) -> std::process::Command {
+fn base_command(spec: &LaunchSpec) -> std::process::Command {
     // Detached (see `process::detached_command`): the app is a GUI program that must
     // outlive us; it has no console window to hide.
     let mut cmd = superba_core::process::detached_command(&spec.program);
@@ -288,20 +290,32 @@ fn configure_command(spec: &LaunchSpec, log: Option<&Path>) -> std::process::Com
     if let Some(dir) = spec.program.parent() {
         cmd.current_dir(dir);
     }
+    cmd
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn configure_command(spec: &LaunchSpec, log: Option<&Path>) -> std::process::Command {
+    let mut cmd = base_command(spec);
     configure_stdio(&mut cmd, log);
     cmd
 }
 
-fn configure_stdio(cmd: &mut std::process::Command, log: Option<&Path>) {
-    use std::process::Stdio;
-
-    cmd.stdin(Stdio::null());
-    let log_file = log.and_then(|p| {
+/// The launch log, created anew (`None` when it cannot be).
+fn open_log(log: Option<&Path>) -> Option<std::fs::File> {
+    log.and_then(|p| {
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
         std::fs::File::create(p).ok()
-    });
+    })
+}
+
+#[cfg(unix)]
+fn configure_stdio(cmd: &mut std::process::Command, log: Option<&Path>) {
+    use std::process::Stdio;
+
+    cmd.stdin(Stdio::null());
+    let log_file = open_log(log);
     match log_file.and_then(|f| f.try_clone().ok().map(|g| (f, g))) {
         Some((out, err)) => {
             cmd.stdout(Stdio::from(out));
@@ -314,7 +328,7 @@ fn configure_stdio(cmd: &mut std::process::Command, log: Option<&Path>) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn spawn_direct(mut cmd: std::process::Command) -> Result<Spawned> {
     let mut child = cmd.spawn().map_err(|e| Error::Process {
         message: format!("cannot start the app: {e}"),
@@ -442,7 +456,25 @@ mod imp {
 
     use superba_core::{AppInstall, Error, Result};
 
-    use super::{LaunchSpec, Spawned, configure_command, spawn_direct};
+    use super::{LaunchSpec, Spawned, base_command, open_log};
+
+    /// An install that is not packaged: started directly, in its own process
+    /// group and without a console, with stdout + stderr to the launch log and
+    /// no other handle of Superba's. `std::process::Command` lets a Windows
+    /// child inherit every inheritable handle of ours (the pipes of a captured
+    /// `spb` output, log files), which the app and its children would keep
+    /// open for as long as they run: the router supervisor's user bug 54 (c),
+    /// fixed the same way.
+    fn spawn_isolated(spec: &LaunchSpec, log: Option<&Path>) -> Result<Spawned> {
+        use superba_router::service::detach::{Console, spawn_windows};
+        let cmd = base_command(spec);
+        let log = open_log(log);
+        let pid =
+            spawn_windows(&cmd, log.as_ref(), Console::Detached).map_err(|e| Error::Process {
+                message: format!("cannot start the app: {e}"),
+            })?;
+        Ok(Spawned { pid: Some(pid) })
+    }
 
     fn activate(aumid: &str, args: &[String]) -> Result<u32> {
         use windows::Win32::System::Com::{
@@ -494,8 +526,7 @@ mod imp {
             let pid = activate(&id, &spec.args)?;
             return Ok(Spawned { pid: Some(pid) });
         }
-        // `configure_command` applies DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP.
-        spawn_direct(configure_command(spec, log))
+        spawn_isolated(spec, log)
     }
 }
 
