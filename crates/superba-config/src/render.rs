@@ -387,6 +387,8 @@ fn auth_target(
             AuthTarget::Write(authjson::render_token(*auth, key)?)
         }
         ResolvedMode::Official => official_auth(live_shape, inp.login_stash, notes),
+        // A hand-off restores the credential only while it is Superba's.
+        ResolvedMode::Release { .. } if inp.last_written.is_empty() => AuthTarget::Keep,
         ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => {
             let b = inp.baseline.ok_or_else(|| Error::NotFound {
                 what: "baseline".into(),
@@ -492,10 +494,10 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
             .and_then(|b| b.keys.iter().find(|s| s.path == p))
             .map(|s| s.value.clone())
     };
-    let restore_released = matches!(
-        inp.desired.mode,
-        ResolvedMode::Original { .. } | ResolvedMode::Release { .. }
-    ) && inp.baseline.is_some_and(|b| b.released);
+    // A hand-off when Superba already owns nothing puts nothing back: only an
+    // explicit restore of the original configuration restores released keys.
+    let restore_released = matches!(inp.desired.mode, ResolvedMode::Original { .. })
+        && inp.baseline.is_some_and(|b| b.released);
     let released_original = if restore_released {
         inp.original_files.map(parse_config).transpose()?
     } else {

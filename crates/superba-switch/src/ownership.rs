@@ -220,8 +220,14 @@ impl Switcher {
             let c = self.ownership.lock().ok()?;
             (c.files == files).then(|| c.env.clone()).flatten()
         };
+        // Superba sets CODEX_AUTHAPI_BASE_URL only for a PAT.
+        let pat = state
+            .active
+            .as_ref()
+            .is_some_and(|a| a.auth_mode == Some(superba_core::AuthMode::Pat));
         let env = match cached_env {
             Some(env) => env,
+            None if !pat => Vec::new(),
             None => {
                 let env = match self.deps.env.inspect(ENV_AUTHAPI_BASE_URL).await {
                     Ok(report) => env_drift(&report),

@@ -327,3 +327,36 @@ async fn codex_signing_in_is_a_credential_change_that_a_switch_stashes() {
     let plan = e.plan(&env.home, &apikey(OVERSEAS)).await.unwrap();
     assert!(plan.auth_change.as_ref().is_some_and(|c| c.stash_login));
 }
+
+#[tokio::test]
+async fn a_hand_off_when_superba_owns_nothing_writes_nothing() {
+    let env = superba_on_krill().await;
+    let e = &env.engine;
+    // Back to the official login: Superba owns nothing any more.
+    e.apply(
+        &e.plan(&env.home, &restore(ResolvedMode::Official))
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    // AI Toolbox takes Codex over afterwards.
+    let (config, auth) = tools::ai_toolbox(
+        env.config_opt().as_deref(),
+        env.auth().as_deref(),
+        &AITB_RELAY,
+    );
+    env.write_config(&config);
+    env.write_auth(&auth);
+    let plan = e
+        .plan(
+            &env.home,
+            &release(ChangeSource::AiToolbox { provider: None }),
+        )
+        .await
+        .unwrap();
+    assert!(plan.writes_no_files(), "{:?}", plan.key_changes);
+    e.apply(&plan).await.unwrap();
+    assert_eq!((env.config(), env.auth().unwrap()), (config, auth));
+    assert!(e.read_state(&env.home).await.unwrap().handed_off.is_some());
+}
