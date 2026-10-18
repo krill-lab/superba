@@ -7,6 +7,7 @@ tool_provider = "{tool}（供应商“{provider}”）"
 tool = "{tool}"
 codex_login = "Codex 自己的登录"
 codex_app = "Codex 应用（模型选择器）或手动修改"
+superba_editor = "你在 Superba 文件编辑器里的修改"
 unknown = "其他程序或手动修改"
 
 [ownership.auth]

@@ -114,6 +114,7 @@ fn facts<'a>(
         processes,
         active: a,
         generations: gens,
+        edited: None,
         hot,
         busy,
         can_stop: true,

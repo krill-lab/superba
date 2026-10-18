@@ -1735,4 +1735,16 @@ impl ConfigEngine for TomlConfigEngine {
         let scope = scope.clone();
         self.run(move |e| e.stash.load(&scope)).await
     }
+
+    async fn owned_keys(&self, home: &CodexHome) -> Result<Vec<superba_core::KeySnapshot>> {
+        let root = home.root().to_path_buf();
+        self.run(move |e| {
+            let hs = state::read_home(e.data(), &root)?;
+            if hs.current().is_some_and(|g| g.handed_off.is_some()) {
+                return Ok(Vec::new());
+            }
+            Ok(hs.last_written().to_vec())
+        })
+        .await
+    }
 }

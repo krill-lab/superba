@@ -18,17 +18,21 @@
 //! - [`settings`]: the settings engine: a profile's Codex settings filtered and
 //!   validated per Codex home against the settings catalog, legacy-key
 //!   migrations, the diff preview and the `codex features list` cross-check.
+//! - [`codex_files`]: the file editor (GitHub issue 9): checks, formatting
+//!   that keeps comments, masked `auth.json` secrets, line diffs, and the
+//!   encrypted backups taken before every save.
 //! - [`toml_keys`], [`authjson`], [`version`]: reusable pure helpers.
 //!
 //! Everything is rooted in an injected [`superba_core::LocalContext`]; nothing here
 //! reads the real `$HOME` or process environment directly.
 //!
 //! Files owned in the data dir: `profiles.json`, `state.json`, `env-state.json`,
-//! `journal/config/`, `backups/{first-write,switch,login-stash,rc}/`, `secrets/`.
+//! `journal/config/`, `backups/{first-write,switch,login-stash,rc,editor}/`, `secrets/`.
 //! Backups and stashes of `auth.json` / `config.toml` are encrypted
 //! (ChaCha20-Poly1305, data key in the OS keyring or `secrets/vault-key`).
 
 pub mod authjson;
+pub mod codex_files;
 mod engine;
 mod env;
 mod fsx;

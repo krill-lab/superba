@@ -182,6 +182,14 @@ pub trait ConfigEngine: Send + Sync {
 
     /// Decrypt the stashed login for `scope` (input of [`RenderInput::login_stash`]).
     async fn load_login_stash(&self, scope: &StashScope) -> Result<Option<SecretBytes>>;
+
+    /// The keys Superba's current generation owns in the home's `config.toml`
+    /// with the values it wrote (empty = it owns nothing): the file editor
+    /// marks them and names the ones an edit changes (GitHub issue 9).
+    async fn owned_keys(&self, home: &CodexHome) -> Result<Vec<crate::config::KeySnapshot>> {
+        let _ = home;
+        Ok(Vec::new())
+    }
 }
 
 /// Persists environment variables for future processes (plan 6.1, 9.9):
@@ -848,6 +856,30 @@ pub trait RemoteHosts: Send + Sync {
         let _ = (host, address, port, path);
         Err(Error::not_implemented("RemoteHosts::http_get"))
     }
+
+    /// Read `config.toml` or `auth.json` of the host for the file editor
+    /// (GitHub issue 9), with the host's Codex version and the keys Superba
+    /// owns there.
+    async fn read_codex_file(
+        &self,
+        host: &RemoteHost,
+        kind: crate::config::CodexFileKind,
+    ) -> Result<crate::remote::RemoteCodexFile> {
+        let _ = (host, kind);
+        Err(Error::not_implemented("RemoteHosts::read_codex_file"))
+    }
+
+    /// Replace one Codex file of the host with an edit: under the host's write
+    /// lock, only when the file still holds `write.expect` (compare and swap;
+    /// [`Error::Conflict`] otherwise), keeping its mode (`auth.json` 0600).
+    async fn write_codex_file(
+        &self,
+        host: &RemoteHost,
+        write: &crate::remote::RemoteFileWrite,
+    ) -> Result<()> {
+        let _ = (host, write);
+        Err(Error::not_implemented("RemoteHosts::write_codex_file"))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1361,6 +1393,60 @@ pub trait SwitchService: Send + Sync {
         let _ = (processes, force);
         Err(Error::NotImplemented {
             what: "stopping Codex processes".into(),
+        })
+    }
+
+    /// Open `config.toml` or `auth.json` of this computer (`TargetId::local()`),
+    /// a remote host or a WSL distribution for editing (GitHub issue 9): the
+    /// bytes, their hash, what the catalog check needs and the keys Superba
+    /// manages there.
+    async fn codex_file(
+        &self,
+        target: TargetId,
+        kind: crate::config::CodexFileKind,
+    ) -> Result<crate::codex_files::CodexFileDoc> {
+        let _ = (target, kind);
+        Err(Error::NotImplemented {
+            what: "editing Codex files".into(),
+        })
+    }
+
+    /// Save an edited Codex file: refused while a switch runs or did not
+    /// finish, when the file changed since it was opened, when it does not
+    /// parse, or (without `force`) when the catalog check finds errors. The
+    /// file it replaces is backed up first (encrypted). The edit is the user's
+    /// own change: Superba never reverts it by itself (GH#5).
+    async fn save_codex_file(
+        &self,
+        save: crate::codex_files::CodexFileSave,
+    ) -> Result<crate::codex_files::CodexFileSaved> {
+        let _ = save;
+        Err(Error::NotImplemented {
+            what: "editing Codex files".into(),
+        })
+    }
+
+    /// Backups of the Codex files, newest first: the editor's own, the
+    /// pre-images of Superba's switches and the originals (local home).
+    async fn codex_file_backups(
+        &self,
+        query: crate::codex_files::CodexFileBackupQuery,
+    ) -> Result<Vec<crate::codex_files::CodexFileBackup>> {
+        let _ = query;
+        Err(Error::NotImplemented {
+            what: "editing Codex files".into(),
+        })
+    }
+
+    /// One backup, decrypted, for a restore (saved like an edit with
+    /// [`crate::codex_files::SaveReason::Restore`]).
+    async fn codex_file_backup(
+        &self,
+        id: &str,
+    ) -> Result<crate::codex_files::CodexFileBackupContents> {
+        let _ = id;
+        Err(Error::NotImplemented {
+            what: "editing Codex files".into(),
         })
     }
 

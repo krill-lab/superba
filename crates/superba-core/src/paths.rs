@@ -290,6 +290,12 @@ impl DataDir {
         self.backups_dir().join("switch")
     }
 
+    /// `backups/editor/` (encrypted copies of `config.toml` / `auth.json` taken
+    /// before each save of Superba's file editor, and its index).
+    pub fn editor_backups_dir(&self) -> PathBuf {
+        self.backups_dir().join("editor")
+    }
+
     /// `backups/login-stash/` (encrypted ChatGPT logins).
     pub fn login_stash_dir(&self) -> PathBuf {
         self.backups_dir().join("login-stash")

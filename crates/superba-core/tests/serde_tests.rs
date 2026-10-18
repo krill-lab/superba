@@ -365,6 +365,7 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
                 can_stop: true,
             }],
             busy_checked: true,
+            edited: None,
         }),
         notices: vec![Notice::warning(
             LocalizedText::new("test.stale", "{count} old process").arg("count", 1),

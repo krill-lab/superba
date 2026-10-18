@@ -518,9 +518,17 @@ legacy_mode = "ChatGPT app 在 WSL 中运行本机的 Codex（{distro}，“在 
 [switch.ownership]
 kept = "已保留 {source} 在 Superba 写入之后做的 {count} 项修改：{items}。Superba 只还原它仍在管理的内容；如需一并还原，请选择接管。"
 hand_off_note = "Superba 将不再管理 Codex 配置：只还原它仍在管理的键，保留另一个工具做的所有修改，并加密保存两份文件的副本。以后切换到任一配置方案时会重新接管。"
+editor_evidence = "这是你在 Superba 的文件编辑器里保存的（设置 → 编辑 Codex 文件，或 spb config edit）。"
 
 [switch.stop]
 asking = "正在请 Codex 进程退出（{count} 个）"
 process = "{role}（pid {pid}）"
 result = "{process}：{outcome}"
 failed = "{process}：无法停止（{error}）"
+
+[switch.codex_files]
+journal_pending = "有一次切换没有完成，所以 Superba 现在不保存 Codex 的文件。Superba 会在启动时完成它（或运行 spb recover），之后再重新打开文件。"
+unreadable = "Superba 无法读取这个文件（{detail}）。"
+not_utf8 = "这个文件不是 UTF-8 文本，Superba 不编辑它。"
+unchanged = "没有改动，文件未写入。"
+remote_restart = "{host} 上的 Codex 只在其 app-server 启动时读取 {file}：下一次切换会重启它，或在 ChatGPT 里重新连接 {host}。"

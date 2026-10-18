@@ -265,6 +265,15 @@ impl Switcher {
 
     /// Who changed the local files (cached per state of the files).
     pub(crate) async fn change_attribution(&self, state: &ConfigState) -> Attribution {
+        // Saved in Superba's own file editor (GitHub issue 9): the user's change.
+        let keys = !state.drift.is_empty() || !state.since_release.is_empty();
+        let auth = state.auth_drift.is_some() || state.since_release_auth.is_some();
+        if let Some(at) = self.editor_source(state, keys, auth) {
+            return Attribution {
+                source: ChangeSource::SuperbaEditor { at },
+                evidence: vec![text("switch.ownership.editor_evidence")],
+            };
+        }
         let files = files_fingerprint(state);
         if let Ok(c) = self.ownership.lock()
             && c.files == files

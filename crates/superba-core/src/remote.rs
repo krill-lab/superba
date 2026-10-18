@@ -414,3 +414,58 @@ pub struct HostMigrationReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report: Option<crate::sessions::SessionReport>,
 }
+
+/// One Codex file of a remote host, read for the file editor
+/// ([`crate::RemoteHosts::read_codex_file`], GitHub issue 9). Never
+/// serialized: the bytes may hold keys.
+#[derive(Clone)]
+pub struct RemoteCodexFile {
+    /// Its remote path (POSIX).
+    pub path: String,
+    /// The bytes (`None` = absent).
+    pub contents: Option<SecretBytes>,
+    /// Why it could not be read (unreadable, larger than Superba reads).
+    pub unreadable: Option<String>,
+    /// The host's operating system (selects the catalog).
+    pub os: RemoteOs,
+    /// The Codex the host's app-server runs, when known.
+    pub codex_version: Option<CodexVersion>,
+    /// Keys Superba owns on the host with the values it wrote.
+    pub owned: Vec<crate::config::KeySnapshot>,
+}
+
+impl std::fmt::Debug for RemoteCodexFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteCodexFile")
+            .field("path", &self.path)
+            .field("contents", &self.contents.as_ref().map(SecretBytes::len))
+            .field("unreadable", &self.unreadable)
+            .field("codex_version", &self.codex_version)
+            .finish_non_exhaustive()
+    }
+}
+
+/// An edit of one Codex file of a remote host
+/// ([`crate::RemoteHosts::write_codex_file`]).
+#[derive(Clone)]
+pub struct RemoteFileWrite {
+    /// Which file.
+    pub kind: crate::config::CodexFileKind,
+    /// Its remote path (from [`RemoteCodexFile::path`]).
+    pub path: String,
+    /// What the file must still hold (`None` = it must not exist).
+    pub expect: Option<SecretBytes>,
+    /// The new contents.
+    pub contents: SecretBytes,
+}
+
+impl std::fmt::Debug for RemoteFileWrite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteFileWrite")
+            .field("kind", &self.kind)
+            .field("path", &self.path)
+            .field("expect", &self.expect.as_ref().map(SecretBytes::len))
+            .field("contents", &self.contents.len())
+            .finish()
+    }
+}

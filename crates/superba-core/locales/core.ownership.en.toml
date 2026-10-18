@@ -9,6 +9,7 @@ tool_provider = "{tool} (provider “{provider}”)"
 tool = "{tool}"
 codex_login = "Codex's own sign-in"
 codex_app = "the Codex app (its model picker) or a hand edit"
+superba_editor = "your edit in Superba's file editor"
 unknown = "another program or a hand edit"
 
 [ownership.auth]

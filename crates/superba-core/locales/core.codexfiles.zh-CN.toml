@@ -1,0 +1,16 @@
+# superba-core 的文件编辑器消息（GitHub issue 9：手动编辑 Codex 的
+# config.toml 与 auth.json、备份与还原）。与其他分区文件一样拼接进 core 目录；
+# 每个键都必须在 core.codexfiles.en.toml 中存在。
+
+[codex_files]
+owned_named = "Superba 为 {profile} 管理这个键：你的修改会保留；下一次切换在改动它之前会先询问你。"
+owned = "Superba 管理这个键：你的修改会保留；下一次切换在改动它之前会先询问你。"
+owned_promise = "Superba 不会自行把这些改回去：下一次切换会询问你是保留自己的值还是由 Superba 接管，还原时也会保留它们。"
+restart_needed = "Codex 只在启动时读取 {file}：正在运行的 Codex 会继续使用旧文件，直到重启。"
+
+[codex_files.source]
+before_edit = "编辑之前"
+before_restore = "还原 {backup} 之前"
+before_switch_named = "第 {generation} 次切换之前（切到 {profile}）"
+before_switch = "第 {generation} 次切换之前"
+original = "原始文件，Superba 首次写入之前"

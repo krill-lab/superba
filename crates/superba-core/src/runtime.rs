@@ -389,6 +389,11 @@ pub struct RuntimeView {
     /// Running turns were looked at ([`ConsumerRuntime::busy`] is meaningful).
     #[serde(default)]
     pub busy_checked: bool,
+    /// The file editor saved a file of this home after the configuration in
+    /// [`RuntimeView::written`] (GitHub issue 9): a consumer started before
+    /// that save runs the file from before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited: Option<crate::codex_files::ManualEdit>,
 }
 
 impl RuntimeView {

@@ -83,6 +83,13 @@ pub enum ChangeSource {
     /// Only keys the Codex app writes itself changed (`model`, reasoning
     /// effort, speed tier: the app's model picker), or a hand edit of them.
     CodexApp,
+    /// The user saved the file in Superba's own editor (GitHub issue 9): an
+    /// explicit change of their own, kept like any other but never offered
+    /// as "another tool".
+    SuperbaEditor {
+        /// When the edit was saved.
+        at: Timestamp,
+    },
     /// Another program or a hand edit.
     #[default]
     Unknown,
@@ -125,6 +132,9 @@ impl ChangeSource {
                     "codex_app",
                     "the Codex app (its model picker) or a hand edit",
                 ),
+                ChangeSource::SuperbaEditor { .. } => {
+                    t("superba_editor", "your edit in Superba's file editor")
+                }
                 _ => t("unknown", "another program or a hand edit"),
             },
         }

@@ -232,6 +232,7 @@ fn the_view_counts_consumers_on_an_older_configuration() {
             }),
         ],
         busy_checked: false,
+        edited: None,
     };
     assert_eq!(view.previous_count(), 1);
     assert_eq!(BusyState::default(), BusyState::NotChecked);

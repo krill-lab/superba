@@ -16,7 +16,7 @@ use std::path::Path;
 use superba_core::codex::{ORIGINATOR_DESKTOP, ORIGINATOR_EXEC, ORIGINATOR_TUI};
 use superba_core::{
     ActiveState, ActivitySignal, BusyState, CodexProcessKind, ConsumerRole, ConsumerRuntime,
-    GenerationRecord, HotSwitchStatus, ProcessInfo, RestartAdvice, RunningGeneration,
+    GenerationRecord, HotSwitchStatus, ManualEdit, ProcessInfo, RestartAdvice, RunningGeneration,
     RuntimeEffect, RuntimeView, StopOutcome, StopReport, ThreadActivity, Timestamp, UnknownReason,
     process_role,
 };
@@ -33,6 +33,9 @@ pub struct RuntimeFacts<'a> {
     pub active: Option<&'a ActiveState>,
     /// Generation history of the home (ascending).
     pub generations: &'a [GenerationRecord],
+    /// The last save of the file editor in the home (GitHub issue 9), when it
+    /// came after the configuration Superba wrote last.
+    pub edited: Option<&'a ManualEdit>,
     /// Whether the running app can be hot-restarted.
     pub hot: Option<&'a HotSwitchStatus>,
     /// Busy threads of the local target (`None`: not checked).
@@ -75,17 +78,33 @@ pub fn effect(
     active: Option<&ActiveState>,
     generations: &[GenerationRecord],
 ) -> RuntimeEffect {
-    let Some(active) = active else {
-        return RuntimeEffect::Unknown {
-            reason: UnknownReason::NothingWritten,
-        };
+    effect_with_edit(started, active, generations, None)
+}
+
+/// [`effect`] when the file editor saved a file of the home at `edited` (a
+/// process that started before the save runs the file from before it, also
+/// when Superba never wrote the home).
+pub fn effect_with_edit(
+    started: Option<Timestamp>,
+    active: Option<&ActiveState>,
+    generations: &[GenerationRecord],
+    edited: Option<&ManualEdit>,
+) -> RuntimeEffect {
+    let written_at = match (active.map(|a| a.applied_at), edited.map(|e| e.at)) {
+        (Some(a), Some(e)) => a.max(e),
+        (Some(t), None) | (None, Some(t)) => t,
+        (None, None) => {
+            return RuntimeEffect::Unknown {
+                reason: UnknownReason::NothingWritten,
+            };
+        }
     };
     let Some(started) = started else {
         return RuntimeEffect::Unknown {
             reason: UnknownReason::NoStartTime,
         };
     };
-    if started.as_millis().saturating_add(PROCESS_START_SLACK_MS) < active.applied_at.as_millis() {
+    if started.as_millis().saturating_add(PROCESS_START_SLACK_MS) < written_at.as_millis() {
         RuntimeEffect::Previous {
             running: generation_at(generations, started),
         }
@@ -138,7 +157,7 @@ pub fn build(f: &RuntimeFacts<'_>) -> RuntimeView {
             .max_by_key(|c| c.started_at)
             .copied();
         let effect = match core {
-            Some(c) => effect(c.started_at, f.active, f.generations),
+            Some(c) => effect_with_edit(c.started_at, f.active, f.generations, f.edited),
             None => RuntimeEffect::Unknown {
                 reason: UnknownReason::NoCore,
             },
@@ -167,7 +186,7 @@ pub fn build(f: &RuntimeFacts<'_>) -> RuntimeView {
         .iter()
         .filter(|c| !mains.iter().any(|m| c.ppid == Some(m.pid)))
     {
-        let effect = effect(core.started_at, f.active, f.generations);
+        let effect = effect_with_edit(core.started_at, f.active, f.generations, f.edited);
         let role = ConsumerRole::DesktopApp;
         rows.push(ConsumerRuntime {
             advice: advice(&role, &effect, f.hot),
@@ -193,7 +212,7 @@ pub fn build(f: &RuntimeFacts<'_>) -> RuntimeView {
         )
     }) {
         let role = process_role(p);
-        let effect = effect(p.started_at, f.active, f.generations);
+        let effect = effect_with_edit(p.started_at, f.active, f.generations, f.edited);
         rows.push(ConsumerRuntime {
             advice: advice(&role, &effect, f.hot),
             role,
@@ -217,6 +236,7 @@ pub fn build(f: &RuntimeFacts<'_>) -> RuntimeView {
         written: f.active.cloned(),
         consumers: rows,
         busy_checked: f.busy.is_some(),
+        edited: f.edited.copied(),
     }
 }
 
@@ -328,6 +348,7 @@ pub fn busy_of(processes: &[ProcessInfo], busy: &[ThreadActivity]) -> Vec<Thread
         processes,
         active: None,
         generations: &[],
+        edited: None,
         hot: None,
         busy: Some(busy),
         can_stop: false,
@@ -400,10 +421,12 @@ impl Switcher {
         } else {
             None
         };
+        let edited = self.local_edit_after(active);
         let mut view = build(&RuntimeFacts {
             processes,
             active,
             generations: &generations,
+            edited: edited.as_ref(),
             hot,
             busy: busy.as_deref(),
             can_stop: true,

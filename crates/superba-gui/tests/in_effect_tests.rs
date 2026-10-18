@@ -141,6 +141,7 @@ fn view() -> RuntimeView {
             ),
         ],
         busy_checked: true,
+        edited: None,
     }
 }
 

@@ -124,7 +124,7 @@ fn builtin_words(builtin: Option<BuiltinProfile>) -> &'static str {
 }
 
 impl Switcher {
-    async fn local_settings_inputs(&self) -> (Vec<SettingsConsumer>, Option<Vec<u8>>) {
+    pub(crate) async fn local_settings_inputs(&self) -> (Vec<SettingsConsumer>, Option<Vec<u8>>) {
         let d = &self.deps;
         let facts = self.monitor.facts().await;
         let installs = facts.installs.clone();

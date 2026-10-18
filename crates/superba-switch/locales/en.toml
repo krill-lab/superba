@@ -519,9 +519,17 @@ legacy_mode = "The ChatGPT app runs this computer's Codex inside WSL ({distro}, 
 [switch.ownership]
 kept = "Kept {count} changes made by {source} after Superba wrote them: {items}. Superba restores only what it still manages; take them over to restore them too."
 hand_off_note = "Superba stops managing Codex's configuration: it puts back only the keys it still manages, keeps everything the other tool changed and an encrypted copy of both files. Switching to a profile later takes over again."
+editor_evidence = "You saved this in Superba's file editor (Settings → Edit Codex files or spb config edit)."
 
 [switch.stop]
 asking = "Asking the Codex processes to exit ({count})"
 process = "{role} (pid {pid})"
 result = "{process}: {outcome}"
 failed = "{process}: could not be stopped ({error})"
+
+[switch.codex_files]
+journal_pending = "A switch did not finish, so Superba does not save Codex's files now. Superba finishes it at start (or run spb recover), then open the file again."
+unreadable = "Superba cannot read this file ({detail})."
+not_utf8 = "This file is not UTF-8 text, so Superba does not edit it."
+unchanged = "Nothing changed; the file was not written."
+remote_restart = "Codex on {host} reads {file} only when its app-server starts: the next switch restarts it, or reconnect {host} in ChatGPT."

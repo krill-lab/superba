@@ -27,6 +27,8 @@
 //! - [`compaction`]: a provider's remote compaction support (check, choice, effect).
 //! - [`runtime`]: what the running Codex consumers actually use, and stopping
 //!   them for the user.
+//! - [`codex_files`]: editing `config.toml` and `auth.json` by hand (open,
+//!   check, save with a backup, restore; GitHub issue 9).
 //! - [`router`]: router mode settings and status; [`views`]: settings page rows,
 //!   settings edits and the settings part of a plan.
 //! - v0.3: [`models`] (model lists, overrides, speed tiers, the catalog file),
@@ -43,6 +45,7 @@ pub mod auth;
 pub mod caps;
 pub mod catalog;
 pub mod codex;
+pub mod codex_files;
 pub mod compaction;
 pub mod config;
 pub mod env;
@@ -82,6 +85,11 @@ pub use app::*;
 pub use auth::*;
 pub use caps::*;
 pub use codex::CodexVersion;
+pub use codex_files::{
+    BackupSource, CodexFileBackup, CodexFileBackupContents, CodexFileBackupQuery, CodexFileDoc,
+    CodexFileSave, CodexFileSaved, FileProblem, FileSchema, ManualEdit, OwnedKey, ProblemKind,
+    ProblemSeverity, SaveReason,
+};
 pub use compaction::*;
 pub use config::*;
 pub use env::{

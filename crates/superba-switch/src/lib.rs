@@ -27,6 +27,7 @@ mod account;
 pub mod compaction;
 pub mod core_watch;
 pub mod executor;
+mod files;
 pub mod hosts;
 mod import;
 pub mod journal;
@@ -73,6 +74,9 @@ use superba_core::{
 
 pub use machine::{Effect, Input, MachineState, PlanTicket, SwitchMachine};
 pub use planner::ENV_SUPERBA_TEST_SITES;
+/// The file editor's pure parts (checks, formatting, masking, diffs; GitHub
+/// issue 9), so the GUI and `spb` check an edit exactly as the service does.
+pub use superba_config::codex_files;
 /// Build a user-defined OpenAI-compatible site from its Responses base URL (for the
 /// GUI and `spb site add`; validated with the prober's key-safety rules).
 pub use superba_net::new_compatible_site;
@@ -908,6 +912,32 @@ impl SwitchService for Switcher {
 
     async fn runtime(&self) -> Result<superba_core::RuntimeView> {
         self.runtime_impl().await
+    }
+
+    async fn codex_file(
+        &self,
+        target: superba_core::TargetId,
+        kind: superba_core::CodexFileKind,
+    ) -> Result<superba_core::CodexFileDoc> {
+        self.codex_file_impl(target, kind).await
+    }
+
+    async fn save_codex_file(
+        &self,
+        save: superba_core::CodexFileSave,
+    ) -> Result<superba_core::CodexFileSaved> {
+        self.save_codex_file_impl(save).await
+    }
+
+    async fn codex_file_backups(
+        &self,
+        query: superba_core::CodexFileBackupQuery,
+    ) -> Result<Vec<superba_core::CodexFileBackup>> {
+        self.codex_file_backups_impl(query).await
+    }
+
+    async fn codex_file_backup(&self, id: &str) -> Result<superba_core::CodexFileBackupContents> {
+        self.codex_file_backup_impl(id).await
     }
 
     async fn stop_processes(

@@ -47,6 +47,7 @@
 
 pub mod discover;
 pub mod envrc;
+mod files;
 pub mod helper;
 mod hostops;
 pub mod install;
@@ -1542,6 +1543,22 @@ impl RemoteHosts for SshRemoteHosts {
 
     async fn written(&self, host: &RemoteHost) -> Result<bool> {
         Ok(self.store(host).load_baseline().await?.is_some())
+    }
+
+    async fn read_codex_file(
+        &self,
+        host: &RemoteHost,
+        kind: CodexFileKind,
+    ) -> Result<superba_core::RemoteCodexFile> {
+        self.read_codex_file_impl(host, kind).await
+    }
+
+    async fn write_codex_file(
+        &self,
+        host: &RemoteHost,
+        write: &superba_core::RemoteFileWrite,
+    ) -> Result<()> {
+        self.write_codex_file_impl(host, write).await
     }
 
     fn forget_cached(&self) {

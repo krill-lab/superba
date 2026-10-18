@@ -1,0 +1,17 @@
+# superba-core messages of the file editor (GitHub issue 9: editing Codex's
+# config.toml and auth.json by hand, backups and restore). Concatenated into
+# the core catalog like the other area files; every key must also exist in
+# core.codexfiles.zh-CN.toml.
+
+[codex_files]
+owned_named = "Superba manages this key for {profile}: your change stays yours; the next switch asks before it changes it."
+owned = "Superba manages this key: your change stays yours; the next switch asks before it changes it."
+owned_promise = "Superba never changes these back by itself: the next switch asks whether to keep your values or take them over, and a restore keeps them."
+restart_needed = "Codex reads {file} only when it starts: Codex that is running now keeps the old file until it restarts."
+
+[codex_files.source]
+before_edit = "Before an edit"
+before_restore = "Before restoring {backup}"
+before_switch_named = "Before switch {generation} (to {profile})"
+before_switch = "Before switch {generation}"
+original = "Original, before Superba first wrote it"

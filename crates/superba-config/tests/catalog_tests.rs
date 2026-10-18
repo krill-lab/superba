@@ -166,9 +166,14 @@ fn source_keys(source: &str) -> BTreeSet<String> {
     let mut keys = BTreeSet::new();
     for (i, token) in tokens.iter().enumerate() {
         if let Some(text) = literal(token)
-            && ["config.note.", "config.settings.", "env.scope."]
-                .iter()
-                .any(|prefix| text.starts_with(prefix))
+            && [
+                "config.note.",
+                "config.settings.",
+                "env.scope.",
+                "codex_files.",
+            ]
+            .iter()
+            .any(|prefix| text.starts_with(prefix))
             && !text.contains(['{', '}', ' ', '\n', '\\'])
         {
             keys.insert(text.to_owned());
