@@ -304,7 +304,7 @@ fn render_host(h: &HostView, out: &mut Output) -> superba_core::Result<()> {
     }
     out.field(
         "cli.hosts.col.follow",
-        out.boolean(h.settings.follow_switches),
+        out.boolean(h.settings.follows(h.host.kind)),
     )?;
     out.field("cli.hosts.hot_restart", out.boolean(h.hot_restart))?;
     if let Some(n) = h.pending_sync {

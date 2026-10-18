@@ -112,7 +112,7 @@ pub fn cards(
     row: &RequestRow,
     detail: Option<&RequestDetail>,
 ) -> Vec<Card> {
-    let client = tr.text(&row.client.text());
+    let client = tr.text(&row.client_text());
     let transport = requests::transport_text(tr, row.transport);
     let path = match (row.transport, row.request_kind) {
         (RequestTransport::WebSocket, _) => "WS response.create".to_owned(),

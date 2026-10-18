@@ -526,18 +526,20 @@ async fn discovery_adds_listed_distributions_and_merges_the_apps_own() {
 
 #[test]
 fn registry_entries_give_installed_distributions_with_the_default_first() {
-    let e = |guid: &str, name: &str, version: u32, state: u32| LxssEntry {
+    // As the test VM's registry has them: a WSL 1 distribution has Flags 0x7
+    // (interop, Windows PATH, drive mounting), a WSL 2 one 0xF (+ VM mode).
+    let e = |guid: &str, name: &str, flags: u32, state: u32| LxssEntry {
         guid: guid.into(),
         name: name.into(),
-        version: Some(version),
+        flags: Some(flags),
         state: Some(state),
     };
     let d = distros_from_lxss(
         &[
-            e("{a}", "Debian", 1, 1),
-            e("{b}", "Ubuntu", 2, 1),
-            e("{c}", "docker-desktop", 2, 1),
-            e("{d}", "Installing", 2, 3),
+            e("{a}", "Debian", 0x7, 1),
+            e("{b}", "Ubuntu", 0xF, 1),
+            e("{c}", "docker-desktop", 0xF, 1),
+            e("{d}", "Installing", 0xF, 3),
         ],
         Some("{B}"),
     );

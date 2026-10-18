@@ -127,10 +127,23 @@ async fn render_log(
                 ms(r.duration_ms),
                 tps(r.tps_milli),
                 usd(r.cost),
-                out.render(&text(match r.source {
-                    superba_core::RequestSource::Rollout => "cli.requests.source.rollout",
-                    _ => "cli.requests.source.router",
-                })),
+                {
+                    let source = out.render(&text(match r.source {
+                        superba_core::RequestSource::Rollout => "cli.requests.source.rollout",
+                        _ => "cli.requests.source.router",
+                    }));
+                    // The Codex host when it is not this computer (WSL, user bug 45).
+                    match r
+                        .codex_host
+                        .as_deref()
+                        .and_then(superba_core::wsl::distro_of_router_source)
+                    {
+                        Some(d) => {
+                            format!("{source} · {}", out.render(&superba_core::wsl_title(d)))
+                        }
+                        None => source,
+                    }
+                },
             ]
         })
         .collect::<Vec<_>>();

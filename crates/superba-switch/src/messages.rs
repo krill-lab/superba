@@ -327,10 +327,12 @@ pub fn confirm_full(kind: &RestartKind) -> Vec<LocalizedText> {
 
 /// `ssh:devbox` -> `devbox`; other ids unchanged.
 pub fn target_label(target_id: &str) -> String {
-    target_id
-        .strip_prefix("ssh:")
-        .unwrap_or(target_id)
-        .to_owned()
+    let key = target_id.strip_prefix("ssh:").unwrap_or(target_id);
+    // A WSL distribution is called the way the app calls it (user bug 45).
+    match superba_core::wsl::distro_of_host_id(key) {
+        Some(distro) => superba_remote::discover::wsl_label(&distro),
+        None => key.to_owned(),
+    }
 }
 
 /// Seconds with one decimal for toasts (`1.2`).

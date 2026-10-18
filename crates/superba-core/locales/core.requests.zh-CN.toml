@@ -7,6 +7,7 @@ desktop = "桌面 app"
 tui = "终端"
 exec = "codex exec"
 other = "其他"
+on_host = "{client} · {host}"
 
 # 请求记录的来源（用量页、CSV、spb usage）。
 [request_source]

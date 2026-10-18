@@ -116,8 +116,10 @@ pub fn read_networking(path: Option<&Path>) -> WslNetworking {
 }
 
 /// Registry key where WSL keeps the user's distributions (one `{GUID}` subkey
-/// each with `DistributionName` and `Version`; `DefaultDistribution` names the
-/// default's GUID).
+/// each with `DistributionName`, `State` and `Flags`; `DefaultDistribution`
+/// names the default's GUID). The WSL version is bit 0x8 of `Flags`
+/// (`LXSS_DISTRO_FLAGS_VM_MODE`): `Version` is the registration format (2 for
+/// every modern distribution, WSL 1 ones too), observed in the test VM.
 pub const LXSS_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Lxss";
 
 /// One distribution as the registry records it.
@@ -127,11 +129,14 @@ pub struct LxssEntry {
     pub guid: String,
     /// `DistributionName`.
     pub name: String,
-    /// `Version` (1 or 2; other values unknown).
-    pub version: Option<u32>,
+    /// `Flags` (0x8 = runs in the WSL 2 VM).
+    pub flags: Option<u32>,
     /// `State` (1 = installed; 2 and 3 are being installed / removed).
     pub state: Option<u32>,
 }
+
+/// `Flags` bit of a distribution that runs in the WSL 2 VM.
+pub const FLAG_VM_MODE: u32 = 0x8;
 
 /// Distributions from registry entries (pure): installed ones only, utility
 /// distributions left out, the default (by `default_guid`) first.
@@ -148,10 +153,7 @@ pub fn distros_from_lxss(entries: &[LxssEntry], default_guid: Option<&str>) -> V
         }
         out.push(WslDistro {
             name: name.to_owned(),
-            version: e
-                .version
-                .and_then(|v| u8::try_from(v).ok())
-                .filter(|v| matches!(v, 1 | 2)),
+            version: e.flags.map(|f| if f & FLAG_VM_MODE != 0 { 2 } else { 1 }),
             default: default_guid.is_some_and(|g| g.eq_ignore_ascii_case(&e.guid)),
             state: String::new(),
             networking: WslNetworking::Nat,
@@ -179,7 +181,7 @@ fn read_lxss() -> std::io::Result<(Vec<LxssEntry>, Option<String>)> {
         entries.push(LxssEntry {
             guid,
             name,
-            version: key.get_value::<u32, _>("Version").ok(),
+            flags: key.get_value::<u32, _>("Flags").ok(),
             state: key.get_value::<u32, _>("State").ok(),
         });
     }

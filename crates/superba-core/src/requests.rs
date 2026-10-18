@@ -371,6 +371,21 @@ pub struct RequestRow {
 }
 
 impl RequestRow {
+    /// The client, with the Codex host it ran on when that is not this computer
+    /// ("Terminal · WSL: Ubuntu", user bug 45).
+    pub fn client_text(&self) -> LocalizedText {
+        match self
+            .codex_host
+            .as_deref()
+            .and_then(crate::wsl::distro_of_router_source)
+        {
+            Some(distro) => LocalizedText::new("request_client.on_host", "{client} · {host}")
+                .arg_text("client", self.client.text())
+                .arg_text("host", crate::target::wsl_title(distro)),
+            None => self.client.text(),
+        }
+    }
+
     /// Non-cached input: `input - cached - cache_write` (`None` without usage).
     pub fn fresh_input_tokens(&self) -> Option<u64> {
         let input = self.input_tokens?;

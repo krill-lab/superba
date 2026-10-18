@@ -1130,7 +1130,7 @@ pub fn csv(tr: &Tr, titles: &BTreeMap<String, SessionTitle>, rows: &[RequestRow]
                 .unwrap_or_default(),
             r.cost.map(|c| c.amount(6)).unwrap_or_default(),
             r.model.clone().unwrap_or_default(),
-            tr.text(&r.client.text()),
+            tr.text(&r.client_text()),
             r.line_label().unwrap_or_default().to_owned(),
             r.upstream_host.clone().unwrap_or_default(),
             tr.text(&r.source.text()),

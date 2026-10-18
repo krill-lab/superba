@@ -8,6 +8,7 @@ desktop = "Desktop app"
 tui = "Terminal"
 exec = "codex exec"
 other = "Other"
+on_host = "{client} · {host}"
 
 # Where a request row comes from (Usage page, CSV, spb usage).
 [request_source]
