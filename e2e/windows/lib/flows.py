@@ -267,16 +267,49 @@ def gui_log(run):
 
 
 # --------------------------------------------------------------------------- wizard / switching
+# How much longer a switch may stay paused while ChatGPT finishes its first-start Windows
+# setup (it creates its sandbox, minutes on a fresh VM; the switch goes on by itself after).
+APP_SETUP_EXTRA_S = 480
+
+
 def wait_switch_done(run, s, u, timeout=240, force_quit=True):
     """Follows the switch overlay until it is gone; answers the force-quit question
-    (Windows: ChatGPT not opened by Superba) when force_quit. Returns the phases seen."""
+    (Windows: ChatGPT not opened by Superba) when force_quit. Returns the phases seen.
+
+    A switch paused for running turns ("N conversations are running; switch paused") is
+    still busy: it goes on by itself once they finish. While the pause names ChatGPT's
+    first-start Windows setup the wait gets APP_SETUP_EXTRA_S more; a pause that outlasts
+    the wait fails with its text (user bug 78)."""
     seen = []
     t0 = time.time()
     end = t0 + timeout
     busy = [re.compile(u.R(k)) for k in ("banner.running.title", "banner.armed.title", "banner.reapply.title",
                                          "banner.planning")]
+    paused = re.compile(u.R("banner.waiting.title"))
+    app_setup = u.L("banner.waiting.app_setup")
+    here = u.L("banner.waiting.this_computer")
+    pause_seen = None
+    extended = False
+    names = []
+
+    def pause_lines(names):
+        return [n for n in names if paused.match(n) or n == app_setup or n.startswith(here + " ·")]
+
     while time.time() < end:
         names = u.texts()
+        lines = pause_lines(names)
+        if any(paused.match(n) for n in lines):
+            if lines != pause_seen:
+                s.info(f"switch paused for running turns: {lines}")
+                pause_seen = lines
+                if "[paused]" not in seen:
+                    seen.append("[paused]")
+            if app_setup in lines and not extended:
+                extended = True
+                end = max(end, time.time() + APP_SETUP_EXTRA_S)
+                s.info(f"ChatGPT is finishing its first-start Windows setup: waiting up to {APP_SETUP_EXTRA_S} s more")
+            time.sleep(2)
+            continue
         for n in names:
             if n not in seen and (n.startswith("→") or n in [u.L(f"step.{k}") for k in
                                   ("quit", "launch", "restart_core", "verify_auth", "verify_line", "verify_files",
@@ -297,6 +330,10 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
                 and not any(n == u.L("confirm.title") for n in names):
             return seen, names
         time.sleep(2)
+    lines = pause_lines(names)
+    if lines:
+        raise UiError(f"the switch stayed paused for running turns ({round(time.time() - t0)} s): {lines}; "
+                      f"phases seen {seen}")
     raise UiError(f"the switch did not finish within {timeout} s; phases seen {seen}")
 
 
@@ -393,7 +430,11 @@ def app_ready(run, t, prefix=""):
         if p["login"] and run.state.get("auth_mode") == "pat":
             s.shot("app-login-page", process_re="^ChatGPT$")
             s.check(False, "ChatGPT shows its sign-in page after the PAT switch (PAT login did not take)")
-        steps, p = a.onboarding(150)
+        # A fresh ChatGPT first finishes its Windows setup (blank window / "Finishing Windows
+        # setup", minutes on a new VM): that time is not part of the onboarding budget.
+        steps, p = a.onboarding(150, setup_timeout=420)
+        if a.setup_waited:
+            s.info(f"waited {a.setup_waited} s for ChatGPT's first-start setup")
         s.info(f"onboarding answered: {steps}")
         s.check(p["composer"] and not p["login"], "composer shown, not the sign-in page")
         ready = a.composer_ready(420)

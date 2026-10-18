@@ -116,6 +116,32 @@ class StepRec:
             self.add_evidence(p)
         return p
 
+    def failure_evidence(self):
+        """The screen as it is now (through the desktop agent, else the VM's framebuffer:
+        a [setup] step often fails because the agent is gone) and the agent's log."""
+        run = self.t.run
+        seq = self.t.seq()
+        shot = self.t.evdir / f"{seq:02d}-failure.png"
+        p = None
+        try:
+            p = run.screenshot(shot, full=True)
+        except Exception as e:
+            run.log(f"    failure screenshot through the agent failed ({e}); taking the VM framebuffer")
+            try:
+                p = run.vm.screen(str(shot))
+            except Exception as e2:
+                run.log(f"    VM framebuffer failed too: {e2}")
+        if p and Path(p).is_file():
+            self.add_evidence(p)
+        if run.agent:
+            log = self.t.evdir / f"{seq:02d}-agent.log"
+            try:
+                run.agent.fetch_log(log)
+            except Exception as e:
+                run.log(f"    agent log not fetched: {e}")
+            if log.is_file():
+                self.add_evidence(log)
+
     # --- context manager
     def __enter__(self):
         self.t.run.log(f"  step: {self.name}")
@@ -130,13 +156,7 @@ class StepRec:
                 self.t.run.log(f"    ERROR {et.__name__}: {ev}")
             else:
                 self.error = str(ev)
-            # Evidence of the failure: the screen as it is now.
-            try:
-                p = self.t.run.screenshot(self.t.evdir / f"{self.t.seq():02d}-failure.png", full=True)
-                if p:
-                    self.add_evidence(p)
-            except Exception:
-                pass
+            self.failure_evidence()
         self.t.steps.append(self)
         if et is KeyboardInterrupt:
             return False  # interrupted run (SIGINT/SIGTERM): stop everything, the runner tears down

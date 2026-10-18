@@ -48,6 +48,7 @@ class AppError(RuntimeError):
 class App:
     def __init__(self, run):
         self.run = run
+        self.setup_waited = 0
 
     @property
     def agent(self):
@@ -146,13 +147,21 @@ class App:
               " if (el) { el.click(); return w; } } return null; })()") % json.dumps(labels)
         return self.eval(js)
 
-    def onboarding(self, timeout=120):
+    def onboarding(self, timeout=120, setup_timeout=0):
         """Answer the first-run onboarding (Engineering -> Continue -> Skip -> Go to
-        ChatGPT) and dismiss announcement modals; returns (steps, probe)."""
+        ChatGPT) and dismiss announcement modals; returns (steps, probe).
+
+        setup_timeout: while ChatGPT is still in its first-start setup (a blank window, or
+        "Finishing Windows setup", before any onboarding page) the budget grows, up to this
+        many seconds in all (self.setup_waited says how long that took)."""
         steps = []
         text = ""
         last_error = None
-        end = time.time() + timeout
+        t0 = time.time()
+        end = t0 + timeout
+        hard_end = end + setup_timeout
+        setup_since = None
+        self.setup_waited = 0
         while time.time() < end:
             try:
                 p = self.probe(retries=3)
@@ -161,6 +170,14 @@ class App:
                 last_error = e
                 time.sleep(2)
                 continue
+            if setup_timeout and not steps and self.first_start_setup(p, text):
+                setup_since = setup_since or time.time()
+                end = min(hard_end, max(end, time.time() + 30))
+                time.sleep(3)
+                continue
+            if setup_since:
+                self.setup_waited += round(time.time() - setup_since)
+                setup_since = None
             if p["composer"] and not any(w in text for w in ("Which best describes your work", "Skip setup?")):
                 clicked = self.click_text(["Continue with current model", "Not now", "Maybe later", "Got it"])
                 if clicked:
@@ -174,9 +191,24 @@ class App:
                     steps.append(clicked)
                     break
             time.sleep(1.5)
+        if setup_since:
+            self.setup_waited += round(time.time() - setup_since)
         shown = " ".join((text or "").split())[:300]
-        raise AppError(f"onboarding did not finish: {steps}; the app shows {shown!r}"
+        raise AppError(f"onboarding did not finish: {steps}"
+                       + (f" (first-start setup for {self.setup_waited} s)" if self.setup_waited else "")
+                       + f"; the app shows {shown!r}"
                        + (f"; last renderer error: {last_error}" if last_error and not shown else ""))
+
+    SETUP_TEXTS = ("Finishing Windows setup", "Setting up", "Getting things ready")
+
+    @classmethod
+    def first_start_setup(cls, probe, text):
+        """ChatGPT is still in its first-start setup: no composer, nothing to answer, and
+        a blank window or one of its setup texts."""
+        if probe.get("composer") or probe.get("login"):
+            return False
+        shown = " ".join((text or "").split())
+        return not shown or any(t in shown for t in cls.SETUP_TEXTS)
 
     def new_chat(self):
         return self.click_text(["New chat", "New thread"])
