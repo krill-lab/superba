@@ -597,7 +597,23 @@ mod imp {
             });
         };
         tracing::info!(aumid = %id, "activating the running packaged app");
+        // The app raises its window from its own process (Electron's second
+        // instance hands over to the running one), and Windows lets only a
+        // process with the foreground right do that: pass ours on (we have it
+        // when the user's click started us, or a start the user clicked handed
+        // it to us; see superba-gui's instance forwarding). Without it the
+        // taskbar button only flashes.
+        allow_any_foreground();
         activate(&id, &[]).map(|_| ())
+    }
+
+    fn allow_any_foreground() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWindow};
+        // SAFETY: plain Win32 call without pointers; failure (we do not have the
+        // right ourselves) only leaves the window where it is.
+        unsafe {
+            AllowSetForegroundWindow(ASFW_ANY);
+        }
     }
 }
 
