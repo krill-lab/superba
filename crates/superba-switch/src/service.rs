@@ -282,6 +282,10 @@ impl Switcher {
             .min(crate::machine::MAX_COUNTDOWN_SECS);
         let mut set = self.deps.profiles.load().await?;
         let was_persisted = set.settings.app_codex.persist_env;
+        // Notification channels (and their key references) change only
+        // through `notify_save_channel` / `notify_delete_channel`: a stale
+        // copy of the preferences never drops or revives a channel.
+        settings.notify.channels = std::mem::take(&mut set.settings.notify.channels);
         set.settings = settings;
         let persist = set.settings.app_codex.persist_env;
         if was_persisted == persist {

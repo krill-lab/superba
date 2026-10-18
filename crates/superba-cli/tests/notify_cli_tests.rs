@@ -553,3 +553,31 @@ fn real_codex_reports_finished_turns_and_approvals() {
         );
     }
 }
+
+#[test]
+fn saving_preferences_never_drops_a_channel() {
+    let home = Home::new();
+    let sink = Mock::sink();
+    add_telegram(&home, &sink);
+    // A stale copy of the preferences (as a second Superba window would hold)
+    // written back after a channel was added elsewhere.
+    let profiles = home.p("data/profiles.json");
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&profiles).unwrap()).unwrap();
+    assert_eq!(
+        v["settings"]["notify"]["channels"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    home.ok(&["notify", "set", "--rate", "3"], &[]);
+    v = serde_json::from_str(&std::fs::read_to_string(&profiles).unwrap()).unwrap();
+    assert_eq!(
+        v["settings"]["notify"]["channels"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(v["settings"]["notify"]["rate_limit"]["per_minute"], 3);
+}

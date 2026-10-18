@@ -1052,7 +1052,9 @@ pub trait SwitchService: Send + Sync {
     /// Delete a non-built-in profile and its stored key.
     async fn delete_profile(&self, id: &ProfileId) -> Result<()>;
 
-    /// Save settings.
+    /// Save settings. The notification channels are kept as stored (they
+    /// change through [`SwitchService::notify_save_channel`] /
+    /// [`SwitchService::notify_delete_channel`] only).
     async fn save_settings(&self, settings: Settings) -> Result<()>;
 
     /// Create or update a custom (compatible) site; validates line origins.
