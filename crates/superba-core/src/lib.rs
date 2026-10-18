@@ -37,6 +37,8 @@
 //!   [`requests`] (the router's request log and prices), [`versions`] (Codex and
 //!   app versions, the Codex store, pinning, [`VersionStore`]), [`feeds`] (signed
 //!   data feeds, [`FeedSource`]); remote host sync types live in [`remote`].
+//! - [`tools`]: coding-agent tools Superba installs, updates and removes
+//!   (Claude Code, dsh, opencode, pi, ZCode, WorkBuddy).
 //! - [`i18n`], [`time`], [`error`]: infrastructure.
 
 #![forbid(unsafe_code)]
@@ -82,6 +84,7 @@ pub mod settings;
 pub mod site;
 pub mod target;
 pub mod time;
+pub mod tools;
 pub mod traits;
 pub mod transports;
 pub mod update_control;
@@ -140,6 +143,7 @@ pub use settings::*;
 pub use site::*;
 pub use target::*;
 pub use time::{Clock, Countdown, LocalTime, ManualClock, SystemClock, Timestamp};
+pub use tools::*;
 pub use traits::*;
 pub use transports::*;
 pub use update_control::UpdateControl;

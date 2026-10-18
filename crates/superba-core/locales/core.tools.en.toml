@@ -1,0 +1,51 @@
+# Coding-agent tools (superba-tools): notes and cautions of the Updates page's
+# Tools rows and `spb tools`. Every key must also be in core.tools.zh-CN.toml.
+
+[tools.app]
+caution_close = "{name} is running and will be closed first."
+closed_after_install = "{name} opened itself after installing; Superba closed it. Start it from the Start menu."
+machine_wide = "This copy is installed for all users: changing it needs administrator rights, so Superba leaves it to its own installer."
+
+[tools.claude]
+caution_alias = "It removes the old `claude` alias lines from {files}."
+caution_local = "It deletes the old local install in {path}."
+caution_npm = "Claude Code's installer runs `npm uninstall -g @anthropic-ai/claude-code`: the npm install in {path} will be removed."
+kept = "Claude Code's settings and history ({config}, ~/.claude.json) were kept."
+multiple = "Several Claude Code installs were found; `claude` runs {path}."
+native_offer = "Install adds Claude Code's native build (its recommended method) beside this install."
+npm_placeholder = "This npm install is broken: npm blocked its install script, so `claude` is only a placeholder. Update it (Superba allows the script) or install the native build."
+path_windows = "{dir} is not on your PATH yet; Superba adds it when it installs Claude Code."
+updates_blocked = "{by} is set: Claude Code refuses every install and update (and reports success without installing). Superba does not install while it is set."
+
+[tools.dsh]
+kept = "dsh's settings and sessions in ~/.dsh were kept."
+needs_node = "dsh needs Node.js 22.19 or newer with npm on this computer (there is no Node-free build for it)."
+no_node = "Node.js {need} or newer with npm was not found ({found}): Superba installs dsh's Node-free build from PyPI, which is published for some releases only."
+node_gone = "Node.js 22.19 or newer is not on PATH any more: dsh cannot run or be updated until it is."
+shadowed = "`dsh` runs {path}, not the copy Superba installed."
+
+[tools.note]
+not_on_path = "{dir} is not on your PATH: add `{line}` to {file}, or run the program by its full path."
+offline = "Online checks are off: newest versions are looked up only when you check now."
+path_added = "{dir} was added to your PATH; terminals opened from now on find the program."
+wsl = "Tools inside WSL distributions are not managed here yet; install them in the distribution with their own installers."
+
+[tools.opencode]
+caution_running = "opencode is running ({n} process(es), its background service included): they are ended first."
+data_removed = "opencode's settings and data were removed too."
+kept = "opencode's settings and sessions (~/.config/opencode, ~/.local/share/opencode) were kept."
+multiple = "Several opencode installs were found; `opencode` runs {path}."
+path_windows = "{dir} is not on your PATH; updating through Superba adds it."
+
+[tools.pi]
+kept = "pi's settings and sessions in ~/.pi/agent were kept."
+multiple = "Several pi installs were found; `pi` runs {path}."
+
+[tools.workbuddy]
+kept = "{name}'s settings and data in ~/{data} were kept."
+login_item = "{name} starts when you sign in to Windows (its own setting, on by default)."
+self_update = "{name} updates itself and cannot be told not to; Superba shows its version only."
+
+[tools.zcode]
+kept = "ZCode's settings and sessions in ~/.zcode were kept."
+self_update = "ZCode also updates itself (Help → Check for Updates); its server can require an update."

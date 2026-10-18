@@ -1,0 +1,51 @@
+# 编码代理工具（superba-tools）：「更新」页「工具」各行与 `spb tools` 的说明和提醒。
+# 每个键都必须同时存在于 core.tools.en.toml。
+
+[tools.app]
+caution_close = "{name} 正在运行，会先被关闭。"
+closed_after_install = "{name} 安装完成后自己打开了，Superba 已将它关闭。请从「开始」菜单启动它。"
+machine_wide = "这一份是为所有用户安装的：更改它需要管理员权限，所以 Superba 交给它自己的安装程序处理。"
+
+[tools.claude]
+caution_alias = "它会从 {files} 中删除旧的 `claude` alias 行。"
+caution_local = "它会删除 {path} 中旧的本地安装。"
+caution_npm = "Claude Code 的安装程序会运行 `npm uninstall -g @anthropic-ai/claude-code`：{path} 中的 npm 安装会被删除。"
+kept = "Claude Code 的设置和历史记录（{config}、~/.claude.json）已保留。"
+multiple = "找到了多份 Claude Code；`claude` 运行的是 {path}。"
+native_offer = "「安装」会在这份安装之外再装上 Claude Code 的原生版本（官方推荐的方式）。"
+npm_placeholder = "这份 npm 安装已损坏：npm 拦截了它的安装脚本，所以 `claude` 只是一个占位程序。请更新它（Superba 会放行该脚本）或安装原生版本。"
+path_windows = "{dir} 还不在你的 PATH 中；Superba 安装 Claude Code 时会把它加上。"
+updates_blocked = "已设置 {by}：Claude Code 会拒绝所有安装和更新（且在没安装时也报告成功）。设置存在期间 Superba 不会安装。"
+
+[tools.dsh]
+kept = "dsh 在 ~/.dsh 中的设置和会话已保留。"
+needs_node = "dsh 需要这台电脑上有 Node.js 22.19 或更新版本以及 npm（没有适用于它的免 Node 版）。"
+no_node = "没有找到 Node.js {need} 或更新版本以及 npm（找到：{found}）：Superba 会安装 dsh 发布在 PyPI 上的免 Node 版，它只覆盖部分版本。"
+node_gone = "PATH 中不再有 Node.js 22.19 或更新版本：在它回来之前，dsh 无法运行或更新。"
+shadowed = "`dsh` 运行的是 {path}，不是 Superba 安装的那一份。"
+
+[tools.note]
+not_on_path = "{dir} 不在你的 PATH 中：把 `{line}` 加入 {file}，或者用完整路径运行程序。"
+offline = "联网检查已关闭：只有在你点「立即检查」时才会查询最新版本。"
+path_added = "已把 {dir} 加入你的 PATH；之后新打开的终端都能找到这个程序。"
+wsl = "这里还不管理 WSL 发行版中的工具；请在发行版里用它们自己的安装程序安装。"
+
+[tools.opencode]
+caution_running = "opencode 正在运行（{n} 个进程，包括它的后台服务）：会先结束它们。"
+data_removed = "opencode 的设置和数据也已删除。"
+kept = "opencode 的设置和会话（~/.config/opencode、~/.local/share/opencode）已保留。"
+multiple = "找到了多份 opencode；`opencode` 运行的是 {path}。"
+path_windows = "{dir} 不在你的 PATH 中；通过 Superba 更新时会把它加上。"
+
+[tools.pi]
+kept = "pi 在 ~/.pi/agent 中的设置和会话已保留。"
+multiple = "找到了多份 pi；`pi` 运行的是 {path}。"
+
+[tools.workbuddy]
+kept = "{name} 在 ~/{data} 中的设置和数据已保留。"
+login_item = "{name} 会在你登录 Windows 时启动（这是它自己的设置，默认开启）。"
+self_update = "{name} 会自行更新且无法关闭；Superba 只显示它的版本。"
+
+[tools.zcode]
+kept = "ZCode 在 ~/.zcode 中的设置和会话已保留。"
+self_update = "ZCode 也会自行更新（帮助 → 检查更新）；它的服务器可以要求必须更新。"

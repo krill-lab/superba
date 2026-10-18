@@ -1438,6 +1438,43 @@ pub trait SwitchService: Send + Sync {
         Err(Error::not_implemented("SwitchService::open_app_package"))
     }
 
+    // --- coding-agent tools (Updates page "Tools", `spb tools`) -------------
+
+    /// Claude Code, dsh, opencode, pi, ZCode and WorkBuddy on this computer:
+    /// installs found, the newest version on each channel (cached for a day;
+    /// `refresh` looks it up now), the tools' own updaters and what Superba
+    /// can do. Reads only.
+    async fn tools(&self, refresh: bool) -> Result<crate::ToolsView> {
+        let _ = refresh;
+        Err(Error::not_implemented("SwitchService::tools"))
+    }
+
+    /// Install, update or remove a tool with its official per-user method,
+    /// reporting to `progress` (a cancel there stops it). Never needs
+    /// administrator rights and never changes the tool's settings or data
+    /// (except `remove_data` on a removal). Refused while another operation
+    /// on the same tool runs.
+    async fn tool_run(
+        &self,
+        request: crate::ToolRequest,
+        progress: Arc<dyn crate::ToolProgressSink>,
+    ) -> Result<crate::ToolReport> {
+        let _ = (request, progress);
+        Err(Error::not_implemented("SwitchService::tool_run"))
+    }
+
+    /// Change the channel Superba follows for a tool, or turn "Superba
+    /// manages updates" on or off (the tool's own updater off / back on);
+    /// returns the row as it is now.
+    async fn tool_settings(
+        &self,
+        tool: crate::ToolId,
+        change: crate::ToolSettingsChange,
+    ) -> Result<crate::ToolRow> {
+        let _ = (tool, change);
+        Err(Error::not_implemented("SwitchService::tool_settings"))
+    }
+
     // --- v0.3: request log and stats ----------------------------------------
 
     /// Request log rows, totals and source-list groups (read-only from the
