@@ -528,11 +528,12 @@ def router_on(run, t, prefix=""):
         s.check(bool(u.has_text(r"^Krill")), "Krill listed as a member")
         u.click(key="router.banner.turn_on")
         time.sleep(2)
-        s.ui_dump("router-plan")
         if not getattr(run.opts, "model", None) and run.state.get("turn_models"):
-            # User bug 58: a profile without a model keeps the model the PAT gave.
+            # User bug 58: a profile without a model keeps the model the PAT gave. Read
+            # before the dump: the plan's countdown (3 s) may end while it is written.
             s.check(bool(u.has_text(u.R("switch.models.keep_api_key"))),
                     "the plan says Codex keeps the model the PAT gave (user bug 58)", soft=True)
+        s.ui_dump("router-plan")
         u.try_click(key="banner.switch_now")  # else the countdown runs out by itself
         phases, names = wait_switch_done(run, s, u)
         s.info(f"phases: {phases}")
