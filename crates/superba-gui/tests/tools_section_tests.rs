@@ -52,7 +52,6 @@ fn every_tool_is_listed_with_its_versions_and_buttons_in_both_languages() {
                 "下载页面",
                 "原生安装器 · 由 Superba 安装",
                 "由 Superba 管理更新",
-                "强制自行更新",
                 "最新 2.1.302",
             ],
         ),
@@ -78,6 +77,8 @@ fn every_tool_is_listed_with_its_versions_and_buttons_in_both_languages() {
         for id in ToolId::ALL {
             assert!(f.has(id.display_name()), "{id}");
         }
+        // The tool's own updater is shown once it is installed.
+        assert!(!f.has("强制自行更新") && !f.has("Forces its own updates"));
     }
 }
 
