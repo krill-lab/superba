@@ -19,6 +19,7 @@ fn host(id: Option<&str>, label: &str, kind: HostKind) -> RemoteHost {
         ssh: SshEndpoint::default(),
         sources: vec![HostSource::Cdp],
         connected: None,
+        wsl: None,
     }
 }
 
@@ -47,8 +48,8 @@ fn host_ids_are_classified_like_the_app_does() {
 }
 
 #[test]
-fn only_ssh_is_managed_and_cloud_or_unknown_hosts_are_not_listed() {
-    let rows: Vec<(HostKind, bool, bool, &str)> = [
+fn ssh_and_wsl_are_managed_and_cloud_or_unknown_hosts_are_not_listed() {
+    let rows: Vec<(HostKind, bool, bool, bool, &str)> = [
         HostKind::Ssh,
         HostKind::RemoteControl,
         HostKind::Wsl,
@@ -56,16 +57,23 @@ fn only_ssh_is_managed_and_cloud_or_unknown_hosts_are_not_listed() {
         HostKind::Unknown,
     ]
     .into_iter()
-    .map(|k| (k, k.is_managed(), k.is_listed(), k.as_str()))
+    .map(|k| (k, k.is_managed(), k.is_ssh(), k.is_listed(), k.as_str()))
     .collect();
     assert_eq!(
         rows,
         vec![
-            (HostKind::Ssh, true, true, "ssh"),
-            (HostKind::RemoteControl, false, true, "remote_control"),
-            (HostKind::Wsl, false, true, "wsl"),
-            (HostKind::Cloud, false, false, "cloud"),
-            (HostKind::Unknown, false, false, "unknown"),
+            (HostKind::Ssh, true, true, true, "ssh"),
+            (
+                HostKind::RemoteControl,
+                false,
+                false,
+                true,
+                "remote_control"
+            ),
+            // User bug 45: WSL distributions are managed (through wsl.exe).
+            (HostKind::Wsl, true, false, true, "wsl"),
+            (HostKind::Cloud, false, false, false, "cloud"),
+            (HostKind::Unknown, false, false, false, "unknown"),
         ]
     );
     assert_eq!(HostKind::default(), HostKind::Ssh);

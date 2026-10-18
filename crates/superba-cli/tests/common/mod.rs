@@ -346,6 +346,7 @@ pub fn overview() -> Overview {
                     HostSource::Manual,
                 ],
                 connected: Some(true),
+                wsl: None,
             },
             state: None,
             error: None,

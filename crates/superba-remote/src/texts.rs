@@ -85,6 +85,32 @@ pub fn env_scope() -> LocalizedText {
     )
 }
 
+/// WSL: the distribution has no `/usr/bin/bash` (the app needs it).
+pub fn wsl_login_bash(host: &str) -> LocalizedText {
+    LocalizedText::new(
+        "remote.warn.wsl_login_bash",
+        "{host} has no /usr/bin/bash, so the ChatGPT app cannot run its Codex there; CODEX_HOME and the environment were read from your login shell (what the Codex CLI sees).",
+    )
+    .arg("host", host)
+}
+
+/// WSL: no Codex CLI in the distribution.
+pub fn wsl_codex_missing(host: &str) -> LocalizedText {
+    LocalizedText::new(
+        "remote.warn.wsl_codex_missing",
+        "No Codex CLI was found in {host} (the app looks in ~/.local/bin and on your login PATH); the files are written for when Codex is installed there.",
+    )
+    .arg("host", host)
+}
+
+/// WSL: who sees the env block.
+pub fn wsl_env_scope() -> LocalizedText {
+    LocalizedText::new(
+        "remote.env.wsl_scope",
+        "Applies to new shells in the WSL distribution and to the Codex the ChatGPT app starts there.",
+    )
+}
+
 /// A switch with "follow this computer" changes only the host's connection.
 pub fn scope_connection(host: &str) -> LocalizedText {
     LocalizedText::new(
@@ -109,6 +135,9 @@ pub fn all_samples() -> Vec<LocalizedText> {
     v.extend([
         no_host_id("h"),
         pkill("h"),
+        wsl_login_bash("h"),
+        wsl_codex_missing("h"),
+        wsl_env_scope(),
         login_shell("h"),
         codex_missing("h"),
         version_unknown("h"),

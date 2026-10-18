@@ -62,6 +62,22 @@ pub struct RouterConfig {
     /// [`RouterManager::write_config`](crate::manager::RouterManager::write_config)).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stats: Option<StatsConfig>,
+    /// Extra IPv4 addresses to listen on for WSL 2 distributions behind NAT
+    /// (the Windows host's address on the WSL adapter, user bug 45), on the same
+    /// port. Only source tokens of WSL hosts (`wsl:<distro>`) are accepted
+    /// there, and the admin API answers nothing but `health`. Bound while the
+    /// address exists (WSL creates the adapter when its VM starts).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wsl_listen: Vec<std::net::Ipv4Addr>,
+}
+
+/// An address the router may listen on for WSL: a private (RFC 1918) or
+/// shared (RFC 6598, `100.64/10`) IPv4 unicast address. WSL's NAT network uses
+/// such a range; never loopback, link-local, public or broadcast addresses.
+pub fn wsl_listen_allowed(ip: std::net::Ipv4Addr) -> bool {
+    let o = ip.octets();
+    let shared = o[0] == 100 && (64..128).contains(&o[1]);
+    (ip.is_private() || shared) && !ip.is_broadcast() && o[3] != 0 && o[3] != 255
 }
 
 fn default_true() -> bool {
@@ -252,6 +268,7 @@ impl RouterConfig {
             use_system_proxy: true,
             extra_ca_file: None,
             stats: None,
+            wsl_listen: Vec::new(),
         }
     }
 
@@ -270,6 +287,13 @@ impl RouterConfig {
         }
         if self.members.is_empty() {
             return Err(Error::invalid("the router needs at least one member"));
+        }
+        for ip in &self.wsl_listen {
+            if !wsl_listen_allowed(*ip) {
+                return Err(Error::invalid(format!(
+                    "{ip} is not a WSL adapter address (only private IPv4 addresses are accepted)"
+                )));
+            }
         }
         let mut ids = BTreeSet::new();
         for m in &self.members {

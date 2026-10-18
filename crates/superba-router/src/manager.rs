@@ -459,6 +459,13 @@ impl RouterManager {
                 _ => free_loopback_port()?,
             };
         }
+        // The WSL listeners are set on their own (`set_wsl_listen`); a members
+        // rewrite keeps them.
+        if config.wsl_listen.is_empty()
+            && let Some(stored) = &stored
+        {
+            config.wsl_listen = stored.wsl_listen.clone();
+        }
         if config.stats.is_none() {
             config.stats = Some(stored.and_then(|s| s.stats).unwrap_or_default());
         }
@@ -575,6 +582,33 @@ impl RouterManager {
             return Ok(false);
         }
         config.stats = Some(stats);
+        config.save(&self.paths)?;
+        if !watchdog::check(&self.paths).await.is_up() {
+            return Ok(false);
+        }
+        let client = AdminClient::from_runtime(&self.paths)?;
+        client.reload().await?;
+        Ok(true)
+    }
+
+    /// Listen also on these WSL adapter addresses (user bug 45; the same port,
+    /// source tokens only). A running router reloads the configuration; it binds
+    /// an address once it exists. Returns whether a running router reloaded.
+    pub async fn set_wsl_listen(&self, addresses: Vec<std::net::Ipv4Addr>) -> Result<bool> {
+        let mut config = RouterConfig::load(&self.paths).map_err(|e| match e {
+            Error::Io { .. } => Error::NotFound {
+                what: "the local router configuration (enable the router first)".into(),
+            },
+            other => other,
+        })?;
+        let mut addresses = addresses;
+        addresses.sort();
+        addresses.dedup();
+        if config.wsl_listen == addresses {
+            return Ok(false);
+        }
+        config.wsl_listen = addresses;
+        config.validate()?;
         config.save(&self.paths)?;
         if !watchdog::check(&self.paths).await.is_up() {
             return Ok(false);

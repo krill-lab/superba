@@ -16,11 +16,7 @@ pub(super) async fn run(
                 crate::text::text("cli.hosts.sessions_read_only"),
             ));
         }
-        let id = if h.contains(':') {
-            superba_core::TargetId::new(h)
-        } else {
-            superba_core::TargetId::remote(h)
-        };
+        let id = super::remote::target(h);
         let sessions = rt.service.host_sessions(&id).await?;
         let rows = sessions
             .report

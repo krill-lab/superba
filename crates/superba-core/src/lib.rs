@@ -68,6 +68,7 @@ pub mod transports;
 pub mod usage;
 pub mod versions;
 pub mod views;
+pub mod wsl;
 
 pub use app::*;
 pub use auth::*;
@@ -104,6 +105,7 @@ pub use transports::*;
 pub use usage::*;
 pub use versions::*;
 pub use views::*;
+pub use wsl::{RouterPath, WslDistro, WslNetworking};
 
 /// Re-exported so implementors use the same macro version as the trait definitions.
 pub use async_trait::async_trait;

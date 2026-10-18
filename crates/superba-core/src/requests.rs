@@ -363,6 +363,11 @@ pub struct RequestRow {
     /// Where the row comes from (router log or Codex rollout).
     #[serde(default)]
     pub source: RequestSource,
+    /// The Codex host that sent the request: `None` = this computer,
+    /// `wsl:<distro>` = a WSL distribution (router rows, user bug 45; rollout
+    /// rows of a distribution name it the same way).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_host: Option<String>,
 }
 
 impl RequestRow {

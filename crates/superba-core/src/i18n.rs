@@ -215,6 +215,10 @@ const CORE_EN_FILES: &[(&str, &str)] = &[
         "core.import.en.toml",
         include_str!("../locales/core.import.en.toml"),
     ),
+    (
+        "core.wsl.en.toml",
+        include_str!("../locales/core.wsl.en.toml"),
+    ),
 ];
 const CORE_ZH_CN_FILES: &[(&str, &str)] = &[
     ("zh-CN.toml", include_str!("../locales/zh-CN.toml")),
@@ -242,6 +246,10 @@ const CORE_ZH_CN_FILES: &[(&str, &str)] = &[
         "core.import.zh-CN.toml",
         include_str!("../locales/core.import.zh-CN.toml"),
     ),
+    (
+        "core.wsl.zh-CN.toml",
+        include_str!("../locales/core.wsl.zh-CN.toml"),
+    ),
 ];
 
 /// The whole core catalog per locale: the files above, concatenated at compile
@@ -260,6 +268,8 @@ const CORE_EN: &str = concat!(
     include_str!("../locales/core.selfupdate.en.toml"),
     "\n",
     include_str!("../locales/core.import.en.toml"),
+    "\n",
+    include_str!("../locales/core.wsl.en.toml"),
 );
 const CORE_ZH_CN: &str = concat!(
     include_str!("../locales/zh-CN.toml"),
@@ -275,6 +285,8 @@ const CORE_ZH_CN: &str = concat!(
     include_str!("../locales/core.selfupdate.zh-CN.toml"),
     "\n",
     include_str!("../locales/core.import.zh-CN.toml"),
+    "\n",
+    include_str!("../locales/core.wsl.zh-CN.toml"),
 );
 
 /// Raw TOML source of the whole core catalog for `locale` (every core file,

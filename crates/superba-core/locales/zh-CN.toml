@@ -69,6 +69,7 @@ http = "服务器错误：{detail}"
 cdp = "无法与 ChatGPT 通信：{detail}"
 process = "进程错误：{detail}"
 ssh = "SSH 错误：{detail}"
+wsl = "WSL 错误：{detail}"
 secret = "Key 存储错误：{detail}"
 cancelled = "已取消"
 timeout = "超时：{detail}"
@@ -105,9 +106,12 @@ version_unknown = "无法确定 {host} 上的 Codex 版本；PAT 需要较新的
 shared_home = "{host} 上的 Codex 目录最近一次是由另一台机器（{other}）写入的，可能是共享目录（例如 NFS）；这次改动会影响所有使用它的机器。"
 legacy_provider = "{host} 使用的是旧的 \"krill\" provider；迁移之前，它已有的会话在 ChatGPT 中不会显示。"
 foreign_env = "{path} 第 {line} 行把 CODEX_AUTHAPI_BASE_URL 设为 {value}，可能会覆盖 Superba 写入的值。"
+wsl_login_bash = "{host} 中没有 /usr/bin/bash，ChatGPT app 无法在其中运行 Codex；CODEX_HOME 和环境变量改为从你的登录 shell 读取（即 Codex CLI 看到的环境）。"
+wsl_codex_missing = "在 {host} 中没有找到 Codex CLI（app 会查找 ~/.local/bin 和登录 shell 的 PATH）；配置照常写入，安装 Codex 后即生效。"
 
 [remote.env]
 scope = "对新的 SSH 会话和 ChatGPT 在这台主机上启动的内核生效。"
+wsl_scope = "对该 WSL 发行版中新打开的 shell，以及 ChatGPT app 在其中启动的 Codex 内核生效。"
 
 [usage.cost_source]
 costs = "费用接口"

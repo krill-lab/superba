@@ -718,6 +718,27 @@ pub trait RemoteHosts: Send + Sync {
     /// Read-only provider counts of the host's sessions (`session_meta` of each
     /// rollout under `sessions/` and `archived_sessions/`; bounded output).
     async fn scan_sessions(&self, host: &RemoteHost) -> Result<SessionReport>;
+
+    /// WSL on this computer: the configured networking mode and why WSL could
+    /// not be listed, if it could not (user bug 45).
+    async fn wsl_status(&self) -> Result<(crate::wsl::WslNetworking, Option<String>)> {
+        Err(Error::not_implemented("RemoteHosts::wsl_status"))
+    }
+
+    /// `GET http://<address>:<port><path>` from inside the host (a WSL
+    /// distribution checks that Superba's router answers it there, user bug 45):
+    /// the response (status line, headers, body; at most 4 KiB), `Ok(None)` when
+    /// nothing accepted the connection within a few seconds.
+    async fn http_get(
+        &self,
+        host: &RemoteHost,
+        address: &str,
+        port: u16,
+        path: &str,
+    ) -> Result<Option<String>> {
+        let _ = (host, address, port, path);
+        Err(Error::not_implemented("RemoteHosts::http_get"))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1030,6 +1051,23 @@ pub trait SwitchService: Send + Sync {
     /// Sessions of one host: this computer (`local`) as [`SwitchService::sessions`],
     /// a remote host as a read-only scan.
     async fn host_sessions(&self, target_id: &TargetId) -> Result<HostSessions>;
+
+    /// WSL on this computer: networking mode, distributions (as hosts, with the
+    /// last probe) and the router's WSL listeners (user bug 45). Empty outside
+    /// Windows.
+    async fn wsl_overview(&self) -> Result<crate::wsl::WslOverview> {
+        Err(Error::not_implemented("SwitchService::wsl_overview"))
+    }
+
+    /// Let a WSL distribution reach the local router: on WSL 1 / mirrored
+    /// networking a check of `127.0.0.1`; behind WSL 2 NAT the router also
+    /// listens on the Windows host's WSL adapter address and, when Windows
+    /// Firewall blocks it, Superba adds its firewall rule (asks for
+    /// administrator approval once). Applies at the next switch.
+    async fn wsl_router_access(&self, target_id: &TargetId) -> Result<crate::wsl::WslAccessReport> {
+        let _ = target_id;
+        Err(Error::not_implemented("SwitchService::wsl_router_access"))
+    }
 
     // --- v0.3: versions and updates -----------------------------------------
 

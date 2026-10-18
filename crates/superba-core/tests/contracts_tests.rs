@@ -479,6 +479,8 @@ fn remote_shared_home_detection_requires_two_different_machine_ids() {
             app_server_pids: vec![],
             owned_paths: vec![],
             config_toml: None,
+            app_bash: None,
+            gateway: None,
         };
         assert_eq!(
             state.shared_home_suspected(),
@@ -513,6 +515,7 @@ fn target_ids_distinguish_local_and_remote_and_local_consumers_share_a_home() {
         },
         sources: vec![],
         connected: None,
+        wsl: None,
     });
     assert_eq!(target.id(), remote);
     assert!(!target.is_local());

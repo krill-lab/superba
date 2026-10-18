@@ -19,6 +19,10 @@ sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+# The WSL distribution list (HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss)
+winreg.workspace = true
+
 [dev-dependencies]
 pretty_assertions.workspace = true
 tempfile.workspace = true

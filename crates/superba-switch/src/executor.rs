@@ -1695,7 +1695,19 @@ impl Run<'_> {
         let futs = work.into_iter().map(|(host, plan)| {
             let d = d.clone();
             let session = session.clone();
-            let expected_authapi = expected_authapi.clone();
+            // A host's own plan says which env it gets (a WSL distribution may be
+            // routed or direct while this computer is the other).
+            let expected_authapi = plan
+                .and_then(|p| p.desired.as_ref())
+                .map(|desired| match &desired.mode {
+                    superba_core::ResolvedMode::Token {
+                        auth, endpoints, ..
+                    } if auth.needs_authapi_env() => {
+                        endpoints.authapi_origin.as_ref().map(|o| o.as_str())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| expected_authapi.clone());
             let journal = journal.clone();
             let rollback_target = rollback_target.clone();
             async move {
@@ -1743,7 +1755,13 @@ impl Run<'_> {
                             rolled_back: false,
                         });
                     }
-                    if host.host_id.is_none() || session.is_none() {
+                    if host.kind == superba_core::HostKind::Wsl {
+                        if status == OutcomeStatus::WrittenOnly {
+                            self.notices.push(Notice::info(
+                                text("switch.wsl.written_only").arg_text("host", host.title()),
+                            ));
+                        }
+                    } else if host.host_id.is_none() || session.is_none() {
                         self.notices.push(Notice::info(
                             text("switch.warn.remote_no_host_id").arg("host", &host.label),
                         ));

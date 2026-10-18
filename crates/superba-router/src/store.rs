@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS requests (
   tps_milli INTEGER, cost_micros INTEGER, price_rev TEXT,
   injected INTEGER NOT NULL DEFAULT 0, stripped INTEGER NOT NULL DEFAULT 0,
   upstream_request_id TEXT, attempts TEXT, log TEXT,
-  sent_ms INTEGER, last_delta_ms INTEGER
+  sent_ms INTEGER, last_delta_ms INTEGER, codex_host TEXT
 );
 CREATE INDEX IF NOT EXISTS requests_time ON requests(started_ms);
 CREATE INDEX IF NOT EXISTS requests_member_time ON requests(member_id, started_ms);
@@ -72,6 +72,22 @@ pub(crate) const ROW_COLUMNS: &str = "id, started_ms, prompt_cache_key, thread_i
      input_tokens, cached_tokens, cache_write_tokens, output_tokens, reasoning_tokens, ttfb_ms, \
      first_token_ms, duration_ms, tps_milli, cost_micros, price_rev, injected, stripped, \
      upstream_request_id";
+
+/// Whether the request log has a `codex_host` column (logs written before
+/// user bug 45 do not until the router opens them for writing).
+fn has_codex_host(conn: &Connection) -> bool {
+    conn.prepare("SELECT codex_host FROM requests LIMIT 0")
+        .is_ok()
+}
+
+/// [`ROW_COLUMNS`] plus the Codex host (column 40; `NULL` in an old log).
+pub(crate) fn row_columns(conn: &Connection) -> String {
+    if has_codex_host(conn) {
+        format!("{ROW_COLUMNS}, codex_host")
+    } else {
+        format!("{ROW_COLUMNS}, NULL")
+    }
+}
 
 /// The session key of a row (SQL).
 const SESSION_KEY: &str = "COALESCE(prompt_cache_key, thread_id)";
@@ -182,6 +198,7 @@ pub(crate) fn row_from_sql(r: &Row<'_>) -> rusqlite::Result<RequestRow> {
         stripped: u32::try_from(r.get::<_, i64>(38)?).unwrap_or(0),
         upstream_request_id: r.get(39)?,
         source: superba_core::RequestSource::Router,
+        codex_host: r.get(40)?,
     })
 }
 
@@ -226,6 +243,11 @@ pub(crate) fn open_write(path: &Path, schema: &str) -> Result<Connection> {
     conn.execute_batch("PRAGMA synchronous = NORMAL;")
         .map_err(sql_err)?;
     conn.execute_batch(schema).map_err(sql_err)?;
+    // A log created before the Codex host was recorded gets the column.
+    if schema == USAGE_SCHEMA && !has_codex_host(&conn) {
+        conn.execute_batch("ALTER TABLE requests ADD COLUMN codex_host TEXT;")
+            .map_err(sql_err)?;
+    }
     conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))
         .map_err(sql_err)?;
     Ok(conn)
@@ -582,7 +604,8 @@ impl Reader {
         };
         let f = Self::filter(query, true, true);
         let sql = format!(
-            "SELECT {ROW_COLUMNS} FROM requests{} ORDER BY {} LIMIT {}",
+            "SELECT {} FROM requests{} ORDER BY {} LIMIT {}",
+            row_columns(&conn),
             f.sql(),
             sort_sql(query),
             limit + 1
@@ -630,17 +653,18 @@ impl Reader {
         let found = conn
             .query_row(
                 &format!(
-                    "SELECT {ROW_COLUMNS}, first_event_ms, attempts, log, sent_ms, \
-                     last_delta_ms FROM requests WHERE id = ?1"
+                    "SELECT {}, first_event_ms, attempts, log, sent_ms, \
+                     last_delta_ms FROM requests WHERE id = ?1",
+                    row_columns(&conn)
                 ),
                 [id],
                 |r| {
                     let row = row_from_sql(r)?;
-                    let first_event: Option<i64> = r.get(40)?;
-                    let attempts: Option<String> = r.get(41)?;
-                    let log: Option<String> = r.get(42)?;
-                    let sent: Option<i64> = r.get(43)?;
-                    let last_delta: Option<i64> = r.get(44)?;
+                    let first_event: Option<i64> = r.get(41)?;
+                    let attempts: Option<String> = r.get(42)?;
+                    let log: Option<String> = r.get(43)?;
+                    let sent: Option<i64> = r.get(44)?;
+                    let last_delta: Option<i64> = r.get(45)?;
                     Ok((row, [first_event, sent, last_delta], attempts, log))
                 },
             )
@@ -844,7 +868,8 @@ impl Reader {
                 marks.join(", ")
             ));
             let sql = format!(
-                "SELECT {ROW_COLUMNS} FROM requests{} ORDER BY started_ms ASC, id ASC LIMIT {}",
+                "SELECT {} FROM requests{} ORDER BY started_ms ASC, id ASC LIMIT {}",
+                row_columns(&conn),
                 f.sql(),
                 MAX_QUERY_ROWS * 10
             );

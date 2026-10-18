@@ -613,7 +613,7 @@ pub fn host_from_connection(c: &AppConnection) -> RemoteHost {
         .display_name
         .clone()
         .filter(|name| !looks_like_host_id(name))
-        .or_else(|| kind.is_managed().then(|| ssh.label()))
+        .or_else(|| kind.is_ssh().then(|| ssh.label()))
         .unwrap_or_default();
     RemoteHost {
         target_id: TargetId::remote(&c.host_id),
@@ -623,6 +623,7 @@ pub fn host_from_connection(c: &AppConnection) -> RemoteHost {
         ssh,
         sources: vec![HostSource::GlobalState],
         connected: None,
+        wsl: None,
     }
 }
 
@@ -654,7 +655,7 @@ fn add_source(host: &mut RemoteHost, source: HostSource) {
 fn fill_host(existing: &mut RemoteHost, incoming: RemoteHost) {
     existing.host_id = existing.host_id.take().or(incoming.host_id);
     // Only SSH hosts have an endpoint; the first record's kind stays.
-    if existing.kind.is_managed() && incoming.kind.is_managed() {
+    if existing.kind.is_ssh() && incoming.kind.is_ssh() {
         existing.ssh.alias = existing.ssh.alias.take().or(incoming.ssh.alias);
         existing.ssh.host = existing.ssh.host.take().or(incoming.ssh.host);
         existing.ssh.port = existing.ssh.port.or(incoming.ssh.port);
@@ -716,7 +717,20 @@ pub fn host_from_app(host: &RemoteHost) -> RemoteHost {
         }
     }
     let mut from_id = false;
-    if host.kind.is_managed() {
+    if host.kind == HostKind::Wsl && host.wsl.is_none() {
+        host.wsl = host
+            .host_id
+            .as_deref()
+            .and_then(superba_core::wsl::distro_of_host_id)
+            .map(superba_core::WslDistro::named);
+    }
+    if host.kind == HostKind::Wsl
+        && (host.label.trim().is_empty() || looks_like_host_id(&host.label))
+        && let Some(d) = &host.wsl
+    {
+        host.label = wsl_label(&d.name);
+    }
+    if host.kind.is_ssh() {
         if host.ssh.alias.is_none()
             && host.ssh.host.is_none()
             && let Some(alias) = host.host_id.as_deref().and_then(discovered_alias)
@@ -734,7 +748,7 @@ pub fn host_from_app(host: &RemoteHost) -> RemoteHost {
                 || host.host_id.as_deref().map(str::trim) == Some(label)));
     if raw {
         let has_endpoint = host.ssh.alias.is_some() || host.ssh.host.is_some();
-        host.label = if host.kind.is_managed() && has_endpoint {
+        host.label = if host.kind.is_ssh() && has_endpoint {
             host.ssh.label()
         } else {
             String::new()
@@ -753,6 +767,7 @@ fn endpoint_host(ssh: SshEndpoint, source: HostSource) -> RemoteHost {
         ssh,
         sources: vec![source],
         connected: None,
+        wsl: None,
     }
 }
 
@@ -870,6 +885,46 @@ pub fn discover_from_files(
         .unwrap_or_default();
     let ssh_config = home_dir.map(load_ssh_config).unwrap_or_default();
     merge_hosts(&global, from_app, &declared, live, &ssh_config)
+}
+
+/// The label of a distribution: the app's own display name (`WSL: <distro>`).
+pub fn wsl_label(distro: &str) -> String {
+    format!("WSL: {distro}")
+}
+
+/// Add the WSL distributions Windows lists (user bug 45) to `hosts`: a
+/// distribution the app reported too (`remote-wsl:<distro>`) gets the listed
+/// facts (WSL version, default, state) and the [`HostSource::Wsl`] source; one
+/// the app does not know (WSL 1, the app's WSL connections off, a CLI-only
+/// distribution) is added as a host of its own. A distribution the app reports
+/// that Windows no longer lists keeps the app's record.
+pub fn merge_wsl(hosts: &mut Vec<RemoteHost>, distros: &[superba_core::WslDistro]) {
+    for distro in distros {
+        let target = superba_core::wsl::target_id(&distro.name);
+        if let Some(host) = hosts.iter_mut().find(|h| {
+            h.kind == HostKind::Wsl
+                && (h.target_id == target || h.wsl_distro().as_deref() == Some(&distro.name))
+        }) {
+            host.wsl = Some(distro.clone());
+            host.host_id.get_or_insert_with(|| distro.host_id());
+            host.target_id = target;
+            if host.label.trim().is_empty() {
+                host.label = wsl_label(&distro.name);
+            }
+            add_source(host, HostSource::Wsl);
+            continue;
+        }
+        hosts.push(RemoteHost {
+            target_id: target,
+            label: wsl_label(&distro.name),
+            host_id: Some(distro.host_id()),
+            kind: HostKind::Wsl,
+            ssh: SshEndpoint::default(),
+            sources: vec![HostSource::Wsl],
+            connected: None,
+            wsl: Some(distro.clone()),
+        });
+    }
 }
 
 /// True when the host's only discovery source is SSH config.

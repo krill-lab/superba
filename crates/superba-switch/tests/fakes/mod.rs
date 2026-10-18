@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use superba_core::{
     ActiveCredentials, ActiveState, AppController, AppInstall, AppSession, AppVariant, ApplyPlan,
-    ApplyReport, AuthApiHealth, AuthMode, AuthShape, Baseline, BaselineExtras, BridgeStatus,
-    CdpEndpoint, Clock, CodexBinary, CodexFileKind, CodexFiles, CodexHome, CodexPath,
+    ApplyReport, AuthApiHealth, AuthMode, AuthShape, Baseline, BaselineExtras, BlockReason,
+    BridgeStatus, CdpEndpoint, Clock, CodexBinary, CodexFileKind, CodexFiles, CodexHome, CodexPath,
     CodexProcessKind, CodexVersion, ConfigEngine, ConfigState, Decision, DecisionRequest,
     EnvApplied, EnvEdit, EnvEditAction, EnvLocation, EnvObservation, EnvOp, EnvPersister, EnvPlan,
     EnvReport, Error, FileChange, FileWrite, GenerationRecord, HotRestartOutcome,
@@ -826,6 +826,11 @@ pub struct FakeRouter {
     pub inflight: Mutex<Vec<superba_core::InflightRequest>>,
     /// Recorder state the running router reports.
     pub stats_status: Mutex<Option<superba_core::RouterStatsStatus>>,
+    /// WSL listeners of the stored configuration (bound while the router runs).
+    pub wsl_listen: Mutex<Vec<std::net::Ipv4Addr>>,
+    /// Firewall rules asked for (`address:port`); `Some(error)` fails them.
+    pub firewall: Mutex<Vec<String>>,
+    pub firewall_error: Mutex<Option<Error>>,
 }
 
 impl FakeRouter {
@@ -843,6 +848,9 @@ impl FakeRouter {
             clears: Mutex::new(Vec::new()),
             inflight: Mutex::new(Vec::new()),
             stats_status: Mutex::new(None),
+            wsl_listen: Mutex::new(Vec::new()),
+            firewall: Mutex::new(Vec::new()),
+            firewall_error: Mutex::new(None),
         }
     }
 
@@ -951,7 +959,9 @@ impl RouterControl for FakeRouter {
                     "members": [], "totals": {"requests": 0, "active_requests": 0,
                     "websockets": 0, "active_websockets": 0, "failovers": 0,
                     "unavailable": 0, "rejected": 0, "ws_refused": 0},
-                    "sticky_sessions": 0, "recent": []
+                    "sticky_sessions": 0, "recent": [],
+                    "wsl_listen": self.wsl_listen.lock().unwrap().iter()
+                        .map(|ip| format!("{ip}:18431")).collect::<Vec<_>>()
                 }))
                 .expect("router status fixture"),
             ))
@@ -1001,6 +1011,42 @@ impl RouterControl for FakeRouter {
 
     async fn inflight(&self) -> Result<Vec<superba_core::InflightRequest>> {
         Ok(self.inflight.lock().unwrap().clone())
+    }
+
+    async fn set_wsl_listen(&self, addresses: Vec<std::net::Ipv4Addr>) -> Result<bool> {
+        push(
+            &self.log,
+            format!(
+                "router.wsl_listen {}",
+                addresses
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        );
+        *self.wsl_listen.lock().unwrap() = addresses;
+        Ok(*self.up.lock().unwrap())
+    }
+
+    fn wsl_listen(&self) -> Vec<std::net::Ipv4Addr> {
+        self.wsl_listen.lock().unwrap().clone()
+    }
+
+    async fn allow_wsl_firewall(
+        &self,
+        address: std::net::Ipv4Addr,
+        port: u16,
+    ) -> Result<superba_router::firewall::FirewallChange> {
+        if let Some(e) = self.firewall_error.lock().unwrap().clone() {
+            return Err(e);
+        }
+        push(&self.log, format!("router.firewall {address}:{port}"));
+        self.firewall
+            .lock()
+            .unwrap()
+            .push(format!("{address}:{port}"));
+        Ok(superba_router::firewall::FirewallChange::Added)
     }
 
     async fn stats_status(&self) -> Option<superba_core::RouterStatsStatus> {
@@ -1536,6 +1582,16 @@ pub struct FakeRemote {
     pub sessions: Mutex<SessionReport>,
     /// No `codex app-server` runs on the host (the app is not connected to it).
     pub idle: Mutex<bool>,
+    /// WSL (user bug 45): the distribution's default gateway.
+    pub gateway: Mutex<Option<String>>,
+    /// WSL: no Codex at all (no command, no files, no app-server).
+    pub no_codex: Mutex<bool>,
+    /// WSL: what `http_get` answers per `address:port` (missing = no answer).
+    pub http: Mutex<BTreeMap<String, String>>,
+    /// WSL: `http_get` calls (`host address:port path`).
+    pub http_calls: Mutex<Vec<String>>,
+    /// WSL: blocked plans per host label (e.g. no baseline).
+    pub blocked: Mutex<BTreeMap<String, Vec<BlockReason>>>,
 }
 
 pub fn remote_host(key: &str, host_id: Option<&str>) -> RemoteHost {
@@ -1550,6 +1606,7 @@ pub fn remote_host(key: &str, host_id: Option<&str>) -> RemoteHost {
         },
         sources: vec![superba_core::HostSource::GlobalState],
         connected: Some(true),
+        wsl: None,
     }
 }
 
@@ -1578,6 +1635,8 @@ fn remote_state(host: &RemoteHost, version: Option<CodexVersion>, shared: bool) 
         app_server_pids: vec![900],
         owned_paths: Vec::new(),
         config_toml: None,
+        app_bash: None,
+        gateway: None,
     }
 }
 
@@ -1608,6 +1667,14 @@ impl RemoteHosts for FakeRemote {
         if *self.idle.lock().unwrap() {
             state.app_server_pids.clear();
         }
+        if host.kind == superba_core::HostKind::Wsl {
+            state.gateway = self.gateway.lock().unwrap().clone();
+            state.app_bash = Some(true);
+            if *self.no_codex.lock().unwrap() {
+                state.codex_path = None;
+                state.app_server_pids.clear();
+            }
+        }
         Ok(state)
     }
 
@@ -1619,7 +1686,13 @@ impl RemoteHosts for FakeRemote {
             key_changes: Vec::new(),
             auth_change: None,
             env: None,
-            blocked: Vec::new(),
+            blocked: self
+                .blocked
+                .lock()
+                .unwrap()
+                .get(&host.label)
+                .cloned()
+                .unwrap_or_default(),
             warnings: Vec::new(),
             scope: superba_core::RemoteApplyScope::Both,
             desired: Some(desired.clone()),
@@ -1734,6 +1807,52 @@ impl RemoteHosts for FakeRemote {
     async fn scan_sessions(&self, host: &RemoteHost) -> Result<SessionReport> {
         push(&self.log, format!("remote.scan_sessions {}", host.label));
         Ok(self.sessions.lock().unwrap().clone())
+    }
+
+    async fn http_get(
+        &self,
+        host: &RemoteHost,
+        address: &str,
+        port: u16,
+        path: &str,
+    ) -> Result<Option<String>> {
+        self.http_calls
+            .lock()
+            .unwrap()
+            .push(format!("{} {address}:{port} {path}", host.label));
+        Ok(self
+            .http
+            .lock()
+            .unwrap()
+            .get(&format!("{address}:{port}"))
+            .cloned())
+    }
+
+    async fn wsl_status(&self) -> Result<(superba_core::WslNetworking, Option<String>)> {
+        Ok((superba_core::WslNetworking::Nat, None))
+    }
+}
+
+/// The router's `health` answer for the fake router's instance.
+pub fn router_health() -> String {
+    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{\"service\":\"superba-router\",\"version\":\"test\",\"instance_id\":\"i\"}".into()
+}
+
+/// A WSL distribution host (`version` 1 or 2, `networking`).
+pub fn wsl_host(distro: &str, version: u8, networking: superba_core::WslNetworking) -> RemoteHost {
+    RemoteHost {
+        target_id: superba_core::wsl::target_id(distro),
+        label: format!("WSL: {distro}"),
+        host_id: Some(superba_core::wsl::host_id(distro)),
+        kind: superba_core::HostKind::Wsl,
+        ssh: superba_core::SshEndpoint::default(),
+        sources: vec![superba_core::HostSource::Wsl],
+        connected: None,
+        wsl: Some(superba_core::WslDistro {
+            version: Some(version),
+            networking,
+            ..superba_core::WslDistro::named(distro)
+        }),
     }
 }
 
@@ -1990,6 +2109,11 @@ impl World {
                     &[("openai", 2), ("krill", 3)],
                 )),
                 idle: Mutex::new(false),
+                gateway: Mutex::new(None),
+                no_codex: Mutex::new(false),
+                http: Mutex::new(BTreeMap::new()),
+                http_calls: Mutex::new(Vec::new()),
+                blocked: Mutex::new(BTreeMap::new()),
             }),
             router: Arc::new(FakeRouter::new(log.clone())),
             v3: v3::V3 {

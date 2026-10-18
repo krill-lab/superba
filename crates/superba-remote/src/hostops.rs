@@ -109,9 +109,10 @@ impl SshRemoteHosts {
         let nonce = new_nonce();
         let script = install::install_script(&nonce, &spec);
         tracing::info!(host = %host.label, %version, target, size, "installing Codex on a remote host");
-        crate::ssh::require_ssh(host)?;
+        crate::ssh::require_reachable(host)?;
         let out = self
-            .shell
+            .shells
+            .for_host(host)
             .run_with_payload(host, &script, package, self.timeouts.install)
             .await?;
         let recs = Records::parse(&out.stdout, &nonce)?;

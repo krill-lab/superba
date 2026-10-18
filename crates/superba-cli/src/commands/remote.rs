@@ -2,8 +2,9 @@
 //! `~/.ssh/config` are never listed). A switch changes a host only when it
 //! follows this computer, and then only its connection; settings reach a host
 //! through `spb remote sync`, filtered by the host's Codex version. The
-//! remote-control devices and WSL distributions the app reports are listed with
-//! their kind (user bug 36); every SSH command refuses them.
+//! remote-control devices the app reports are listed with their kind (user bug
+//! 36); every SSH command refuses them. WSL distributions of this computer are
+//! managed hosts (`wsl:<distro>`, user bug 45); `spb wsl` lists them.
 
 use superba_core::{
     CodexVersion, HostSource, HostSyncAction, HostSyncSelection, HostView, InstallRequest,
@@ -14,9 +15,14 @@ use super::{Result, execute, request, switch, usage};
 use crate::text::text;
 use crate::{OnOff, Output, RemoteCodexCommand, RemoteCommand, Runtime, SwitchAnswers, exit};
 
-/// Host names as typed (`dev`) or as target ids (`ssh:dev`).
-fn target(t: &str) -> TargetId {
-    if t.contains(':') {
+/// Host names as typed (`dev`), as target ids (`ssh:dev`), a WSL distribution
+/// as `wsl:<distro>` (user bug 45) or an app host id (`remote-wsl:Ubuntu`).
+pub(super) fn target(t: &str) -> TargetId {
+    if let Some(distro) = t.strip_prefix("wsl:") {
+        superba_core::wsl::target_id(distro)
+    } else if superba_core::HostKind::of_host_id(t) != superba_core::HostKind::Unknown {
+        TargetId::remote(t)
+    } else if t.contains(':') {
         TargetId::new(t)
     } else {
         TargetId::remote(t)
@@ -145,7 +151,7 @@ pub(super) async fn run(command: &RemoteCommand, rt: &Runtime, out: &mut Output)
             request.targets.remotes = targets
                 .iter()
                 .chain(&exec.remotes)
-                .map(TargetId::new)
+                .map(|t| target(t))
                 .collect();
             execute::run(request, exec, rt, out).await
         }
@@ -153,7 +159,7 @@ pub(super) async fn run(command: &RemoteCommand, rt: &Runtime, out: &mut Output)
             execute::run(
                 request(
                     SwitchIntent::RollbackRemote {
-                        target_id: TargetId::new(target),
+                        target_id: self::target(target),
                     },
                     exec,
                 ),
@@ -191,6 +197,7 @@ pub(super) fn render(remotes: &[RemoteOverview], out: &mut Output) -> superba_co
                             HostSource::ProcessScan => "cli.source.process_scan",
                             HostSource::SshConfig => "cli.source.ssh_config",
                             HostSource::Manual => "cli.source.manual",
+                            HostSource::Wsl => "cli.source.wsl",
                         })
                     })
                     .collect::<Vec<_>>()
@@ -234,7 +241,7 @@ fn render_hosts(hosts: &[HostView], out: &mut Output) -> superba_core::Result<()
                     .connected
                     .map(|b| out.boolean(b))
                     .unwrap_or_else(|| out.label("cli.value.unknown")),
-                out.boolean(h.settings.follow_switches),
+                out.boolean(h.settings.follows(h.host.kind)),
                 h.state
                     .as_ref()
                     .and_then(|s| s.codex_version.as_ref())

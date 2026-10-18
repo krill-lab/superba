@@ -50,9 +50,10 @@ impl Target {
 /// host ids as `remote-ssh-discovered:<alias>` / `remote-ssh-codex-managed:<uuid>`
 /// (SSH), `remote-wsl:<distro>` (WSL), `remote-control:<environment id>` (ChatGPT
 /// remote control) and `durable` / `chatgpt:<account>:<user>` (hosted by ChatGPT);
-/// see [`HostKind::of_host_id`]. Only SSH hosts are managed by Superba (probe,
-/// follow, settings sync, Codex installs, session scans, hot restart); the others
-/// are shown read-only ([`HostKind::is_listed`]) or not at all.
+/// see [`HostKind::of_host_id`]. SSH hosts and WSL distributions are managed by
+/// Superba (probe, follow, settings sync, Codex installs, session scans, hot
+/// restart; WSL through `wsl.exe`, user bug 45); remote-control devices are shown
+/// read-only ([`HostKind::is_listed`]) and ChatGPT-hosted ids not at all.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
@@ -102,8 +103,28 @@ impl HostKind {
         }
     }
 
-    /// Superba manages hosts of this kind (only SSH).
+    /// The kind of a Superba target id (`ssh:<app host id | alias>`): WSL for a
+    /// `remote-wsl:` key, SSH otherwise (the local target is [`HostKind::Unknown`]).
+    pub fn of_target(id: &TargetId) -> HostKind {
+        match id.as_str().strip_prefix("ssh:") {
+            Some(key) if key.trim().starts_with(HOST_ID_PREFIX_WSL) => HostKind::Wsl,
+            Some(key) => match HostKind::of_host_id(key) {
+                HostKind::Unknown => HostKind::Ssh,
+                kind => kind,
+            },
+            None => HostKind::Unknown,
+        }
+    }
+
+    /// Superba manages hosts of this kind: SSH hosts (over `ssh`) and WSL
+    /// distributions of this computer (over `wsl.exe`).
     pub fn is_managed(self) -> bool {
+        matches!(self, HostKind::Ssh | HostKind::Wsl)
+    }
+
+    /// Hosts of this kind are reached with the system `ssh` (they carry an
+    /// [`SshEndpoint`]).
+    pub fn is_ssh(self) -> bool {
         self == HostKind::Ssh
     }
 
@@ -151,18 +172,7 @@ pub const HOST_ID_PREFIX_SSH_DISCOVERED: &str = "remote-ssh-discovered:";
 /// (JavaScript `decodeURIComponent`); `None` for other ids or a bad encoding.
 pub fn discovered_ssh_alias(host_id: &str) -> Option<String> {
     let encoded = host_id.trim().strip_prefix(HOST_ID_PREFIX_SSH_DISCOVERED)?;
-    let mut bytes = Vec::with_capacity(encoded.len());
-    let mut rest = encoded.bytes();
-    while let Some(byte) = rest.next() {
-        if byte == b'%' {
-            let hex = [rest.next()?, rest.next()?];
-            let hex = std::str::from_utf8(&hex).ok()?;
-            bytes.push(u8::from_str_radix(hex, 16).ok()?);
-        } else {
-            bytes.push(byte);
-        }
-    }
-    let alias = String::from_utf8(bytes).ok()?;
+    let alias = crate::wsl::decode_uri_component(encoded)?;
     let alias = alias.trim();
     (!alias.is_empty()).then(|| alias.to_owned())
 }
@@ -174,6 +184,8 @@ pub fn target_title(id: &TargetId) -> LocalizedText {
     let key = id.as_str().strip_prefix("ssh:").unwrap_or(id.as_str());
     if let Some(alias) = discovered_ssh_alias(key) {
         LocalizedText::new(String::new(), alias)
+    } else if let Some(distro) = crate::wsl::distro_of_host_id(key) {
+        wsl_title(&distro)
     } else if looks_like_host_id(key) {
         HostKind::of_host_id(key).text()
     } else {
@@ -188,8 +200,14 @@ pub fn looks_like_host_id(text: &str) -> bool {
     text == "local" || HostKind::of_host_id(text) != HostKind::Unknown
 }
 
-/// A remote host the desktop app knows (plan 8); only [`HostKind::Ssh`] hosts are
-/// reached (over SSH) and managed.
+/// "WSL: <distro>", as the desktop app names a distribution.
+pub fn wsl_title(distro: &str) -> LocalizedText {
+    LocalizedText::new("host_kind.wsl_title", "WSL: {distro}").arg("distro", distro)
+}
+
+/// A remote host the desktop app knows (plan 8), or a WSL distribution of this
+/// computer; [`HostKind::Ssh`] hosts are reached over SSH, [`HostKind::Wsl`]
+/// distributions with `wsl.exe` ([`RemoteHost::wsl`]).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteHost {
     /// `ssh:<host_id | alias | host>`.
@@ -214,6 +232,10 @@ pub struct RemoteHost {
     /// Whether the app currently has a live connection (`None` = unknown).
     #[serde(default)]
     pub connected: Option<bool>,
+    /// The distribution of a [`HostKind::Wsl`] host (`wsl.exe --list --verbose`;
+    /// only the name when the app reported it but Windows did not list it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wsl: Option<crate::wsl::WslDistro>,
 }
 
 impl RemoteHost {
@@ -224,8 +246,24 @@ impl RemoteHost {
         self.sources.iter().any(|s| {
             matches!(
                 s,
-                HostSource::GlobalState | HostSource::Cdp | HostSource::ProcessScan
+                HostSource::GlobalState
+                    | HostSource::Cdp
+                    | HostSource::ProcessScan
+                    | HostSource::Wsl
             )
+        })
+    }
+
+    /// The distribution name of a WSL host (from [`RemoteHost::wsl`], else the
+    /// app's `remote-wsl:<distro>` host id).
+    pub fn wsl_distro(&self) -> Option<String> {
+        if self.kind != HostKind::Wsl {
+            return None;
+        }
+        self.wsl.as_ref().map(|d| d.name.clone()).or_else(|| {
+            self.host_id
+                .as_deref()
+                .and_then(crate::wsl::distro_of_host_id)
         })
     }
 
@@ -257,7 +295,10 @@ impl RemoteHost {
         match self.display_name() {
             // No key: the name is shown as it is.
             Some(name) => LocalizedText::new(String::new(), name),
-            None => self.kind.text(),
+            None => match self.wsl_distro() {
+                Some(distro) => wsl_title(&distro),
+                None => self.kind.text(),
+            },
         }
     }
 }
@@ -317,4 +358,6 @@ pub enum HostSource {
     SshConfig,
     /// Added by the user.
     Manual,
+    /// `wsl.exe --list --verbose` on this Windows computer.
+    Wsl,
 }

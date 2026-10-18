@@ -69,6 +69,7 @@ http = "Server error: {detail}"
 cdp = "Cannot talk to ChatGPT: {detail}"
 process = "Process error: {detail}"
 ssh = "SSH error: {detail}"
+wsl = "WSL error: {detail}"
 secret = "Key storage error: {detail}"
 cancelled = "Cancelled"
 timeout = "Timed out: {detail}"
@@ -105,9 +106,12 @@ version_unknown = "The Codex version on {host} is unknown; PAT needs a recent Co
 shared_home = "The Codex home on {host} was last written from another machine ({other}); it is probably shared (e.g. NFS), so this change affects every machine using it."
 legacy_provider = "{host} uses the old \"krill\" provider; its existing sessions stay hidden in ChatGPT until they are migrated."
 foreign_env = "{path} line {line} sets CODEX_AUTHAPI_BASE_URL to {value}; it may override Superba's value."
+wsl_login_bash = "{host} has no /usr/bin/bash, so the ChatGPT app cannot run its Codex there; CODEX_HOME and the environment were read from your login shell (what the Codex CLI sees)."
+wsl_codex_missing = "No Codex CLI was found in {host} (the app looks in ~/.local/bin and on your login PATH); the files are written for when Codex is installed there."
 
 [remote.env]
 scope = "Applies to new SSH sessions and to the app-server ChatGPT starts on this host."
+wsl_scope = "Applies to new shells in the WSL distribution and to the Codex the ChatGPT app starts there."
 
 [usage.cost_source]
 costs = "Costs API"

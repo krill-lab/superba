@@ -99,6 +99,14 @@ pub struct RemoteState {
     /// `readlink -f` of that `codex`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex_resolved_path: Option<String>,
+    /// WSL: the distribution's IPv4 default gateway (`/proc/net/route`); behind
+    /// WSL 2 NAT this is the Windows host's address on the WSL adapter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway: Option<String>,
+    /// WSL: `/usr/bin/bash` exists, so the desktop app can run its WSL
+    /// app-server there (`None` = not checked: SSH hosts).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_bash: Option<bool>,
 }
 
 impl RemoteState {

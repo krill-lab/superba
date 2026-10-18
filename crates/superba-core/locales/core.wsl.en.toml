@@ -1,0 +1,13 @@
+# superba-core messages about WSL distributions (user bug 45). Concatenated after
+# en.toml into the core catalog, so this file must start with a table header and
+# must not repeat a key of another core file (enforced by tests). Every key must
+# also exist in core.wsl.zh-CN.toml.
+
+[wsl]
+version = "WSL {version}"
+version_unknown = "WSL"
+default = "default distribution"
+networking_nat = "NAT networking"
+networking_mirrored = "mirrored networking"
+networking_none = "no networking"
+networking_virtio_proxy = "virtio proxy networking"

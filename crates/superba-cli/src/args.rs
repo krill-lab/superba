@@ -83,6 +83,11 @@ pub enum Command {
         #[command(subcommand)]
         command: RemoteCommand,
     },
+    #[command(about = english("cli.help.wsl_group"))]
+    Wsl {
+        #[command(subcommand)]
+        command: WslCommand,
+    },
     #[command(about = english("cli.help.models_group"))]
     Models {
         #[command(subcommand)]
@@ -1050,6 +1055,18 @@ pub enum RemoteCommand {
         target: String,
         #[command(subcommand)]
         action: RemoteCodexCommand,
+    },
+}
+
+/// `spb wsl ...` (user bug 45).
+#[derive(Debug, Subcommand)]
+pub enum WslCommand {
+    #[command(about = english("cli.help.wsl_list"))]
+    List,
+    #[command(name = "router-access", about = english("cli.help.wsl_router_access"))]
+    RouterAccess {
+        #[arg(value_name = "DISTRO", help = english("cli.help.wsl_distro"))]
+        distro: String,
     },
 }
 

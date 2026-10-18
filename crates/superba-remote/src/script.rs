@@ -141,6 +141,88 @@ sb_file() {{
     )
 }
 
+/// How a script reaches the Codex the desktop app runs on a host.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Flavor {
+    /// An SSH host: the app starts `codex app-server --listen` through the user's
+    /// login shell (`$SHELL -l -i -c`).
+    #[default]
+    Ssh,
+    /// A WSL distribution (user bug 45): the app starts `codex … app-server`
+    /// over stdio with `/usr/bin/bash -lc` (the environment of a non-interactive
+    /// login bash) and the PATH of an interactive login bash.
+    Wsl,
+}
+
+impl Flavor {
+    /// The flavor of a host.
+    pub fn of(host: &superba_core::RemoteHost) -> Self {
+        if host.kind == superba_core::HostKind::Wsl {
+            Flavor::Wsl
+        } else {
+            Flavor::Ssh
+        }
+    }
+}
+
+/// The host functions of a flavor: [`HOST_FUNCS`], with the WSL login view and
+/// app-server pattern for [`Flavor::Wsl`].
+fn host_funcs(flavor: Flavor) -> String {
+    match flavor {
+        Flavor::Ssh => HOST_FUNCS.to_owned(),
+        Flavor::Wsl => format!("{HOST_FUNCS}{WSL_FUNCS}"),
+    }
+}
+
+/// WSL overrides (defined after [`HOST_FUNCS`], so they replace `sb_login` and
+/// `sb_pids`):
+/// - `sb_login`: what the app's WSL app-server sees: `/usr/bin/bash -lc` (a
+///   non-interactive login bash: `/etc/profile`, the first of `~/.bash_profile`,
+///   `~/.bash_login`, `~/.profile`) with the `PATH` an interactive login bash
+///   prints (the app reads it the same way, between markers). Without
+///   `/usr/bin/bash` the app cannot use the distribution; the user's login shell
+///   (the CLI's view) is used instead.
+/// - `sb_pids`: the app's stdio app-server (`app-server` with
+///   `features.code_mode_host`, which the app always passes; IDE app-servers of
+///   the same user are not the app's).
+const WSL_FUNCS: &str = r#"sb_user_login() {
+  sb_ls=$(sb_shell)
+  if [ -z "$sb_ls" ] || [ ! -x "$sb_ls" ]; then return 127; fi
+  SB_PAYLOAD="$1"
+  export SB_PAYLOAD
+  case "${sb_ls##*/}" in
+    csh|tcsh) "$sb_ls" -i -c 'set loginsh=1; if ( -r /etc/csh.login ) source /etc/csh.login; if ( -r ~/.login ) source ~/.login; exec /bin/sh -c "$SB_PAYLOAD"' ;;
+    nu) "$sb_ls" -l -i -c 'exec /bin/sh -c $env.SB_PAYLOAD' ;;
+    fish|xonsh) "$sb_ls" -l -i -c 'exec /bin/sh -c "$SB_PAYLOAD"' ;;
+    *) "$sb_ls" -l -i -c 'CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"; export CODEX_HOME; exec /bin/sh -c "$SB_PAYLOAD"' ;;
+  esac
+}
+sb_login() {
+  if [ ! -x /usr/bin/bash ]; then sb_user_login "$1"; return $?; fi
+  SB_PAYLOAD="$1"
+  SB_IPC='printf "%s
+" __SB_P0__ "$PATH" __SB_P1__'
+  SB_WRAP='sb_ip=$(/usr/bin/bash -ilc "$SB_IPC" </dev/null 2>/dev/null | sed -n "/^__SB_P0__$/,/^__SB_P1__$/p" | sed "1d;\$d"); if [ -n "$sb_ip" ]; then PATH=$sb_ip; export PATH; fi; CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"; export CODEX_HOME; exec /bin/sh -c "$SB_PAYLOAD"'
+  export SB_PAYLOAD SB_IPC SB_WRAP
+  /usr/bin/bash -lc "$SB_WRAP"
+}
+sb_pids() {
+  sb_u=$(id -u 2>/dev/null)
+  if sb_ps=$(ps -A -o pid= -o uid= -o args= 2>/dev/null) && [ -n "$sb_ps" ]; then
+    printf '%s
+' "$sb_ps" | awk -v u="$sb_u" '$2 == u && /[a]pp-server/ && /code_mode_host/ { printf "%s ", $1 }'
+    return 0
+  fi
+  for sb_d in /proc/[0-9]*; do
+    [ -r "$sb_d/cmdline" ] || continue
+    sb_pu=$(awk '/^Uid:/ { print $2; exit }' "$sb_d/status" 2>/dev/null)
+    [ "$sb_pu" = "$sb_u" ] || continue
+    sb_a=$(tr '\000' ' ' < "$sb_d/cmdline" 2>/dev/null)
+    case "$sb_a" in *code_mode_host*app-server*) printf '%s ' "${sb_d#/proc/}" ;; esac
+  done
+}
+"#;
+
 /// Functions used by scripts that inspect the host (shell, login shell, pids).
 const HOST_FUNCS: &str = r#"sb_shell() {
   sb_s="${SHELL:-}"
@@ -263,6 +345,11 @@ pub(crate) fn wrap(nonce: &str, funcs: &str, body: &str) -> String {
     s
 }
 
+/// [`wrap`] without extra functions, for scripts built in other modules.
+pub fn wrap_public(nonce: &str, body: &str) -> String {
+    wrap(nonce, "", body)
+}
+
 /// [`wrap`] for a script that receives a payload after itself on stdin
 /// ([`crate::ssh::RemoteShell::run_with_payload`]): stdin is kept as fd 3 before
 /// `main` runs with `</dev/null`, so the payload is read with `<&3` explicitly.
@@ -279,6 +366,13 @@ pub(crate) fn wrap_with_payload(nonce: &str, funcs: &str, body: &str) -> String 
 /// The probe / snapshot script: OS, shell, login-shell view, Codex files, rc
 /// files, marker, first-write pre-images, machine id and app-server pids.
 pub fn probe_script(nonce: &str, with_version: bool) -> String {
+    probe_script_for(nonce, with_version, Flavor::Ssh)
+}
+
+/// [`probe_script`] for a host of `flavor`; a WSL distribution also reports
+/// whether `/usr/bin/bash` exists (`K app_bash`) and its routing table
+/// (`F route`, for the default gateway).
+pub fn probe_script_for(nonce: &str, with_version: bool, flavor: Flavor) -> String {
     let mut body = String::new();
     let _ = writeln!(
         body,
@@ -328,9 +422,16 @@ sb_put arch "$(uname -m 2>/dev/null)"
 sb_put kernel "$(uname -r 2>/dev/null)"
 if [ "$(uname -s 2>/dev/null)" = Darwin ]; then sb_put translated "$(sysctl -in sysctl.proc_translated 2>/dev/null)"; fi
 sb_put disk_free "$(df -Pk "${HOME:-/}" 2>/dev/null | awk 'NR == 2 { print $4 }')"
-sb_put done 1"#,
+"#,
     );
-    wrap(nonce, HOST_FUNCS, &body)
+    if flavor == Flavor::Wsl {
+        body.push_str(
+            "if [ -x /usr/bin/bash ]; then sb_put app_bash 1; else sb_put app_bash 0; fi\n\
+             sb_file route /proc/net/route\n",
+        );
+    }
+    body.push_str("sb_put done 1");
+    wrap(nonce, &host_funcs(flavor), &body)
 }
 
 /// What a write operation expects to find before replacing a file (compare and
@@ -617,6 +718,16 @@ sb_put done 1"#,
 /// `previous` (only new app-servers are inspected), and the current contents of
 /// `paths` (records `f.<index>`).
 pub fn verify_script(nonce: &str, previous: &[u32], paths: &[String]) -> String {
+    verify_script_for(nonce, previous, paths, Flavor::Ssh)
+}
+
+/// [`verify_script`] for a host of `flavor` (the app-server pattern differs).
+pub fn verify_script_for(
+    nonce: &str,
+    previous: &[u32],
+    paths: &[String],
+    flavor: Flavor,
+) -> String {
     let prev: Vec<String> = previous.iter().map(u32::to_string).collect();
     let mut b = format!(
         "sb_prev=' {} '\nsb_p=$(sb_pids)\nsb_put pids \"$sb_p\"\n\
@@ -627,5 +738,5 @@ pub fn verify_script(nonce: &str, previous: &[u32], paths: &[String]) -> String 
         let _ = writeln!(b, "sb_file f.{i} {}", sh_quote(p));
     }
     b.push_str("sb_put done 1");
-    wrap(nonce, HOST_FUNCS, &b)
+    wrap(nonce, &host_funcs(flavor), &b)
 }

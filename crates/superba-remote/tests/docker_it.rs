@@ -199,6 +199,7 @@ fn alias_host(user: &str) -> RemoteHost {
         },
         sources: Vec::new(),
         connected: Some(true),
+        wsl: None,
     }
 }
 
@@ -444,6 +445,7 @@ async fn remote_hosts_against_an_sshd_container() {
         },
         sources: Vec::new(),
         connected: None,
+        wsl: None,
     };
     let st = rh.probe(&bob).await.expect("probe bob");
     assert_eq!(st.shell, ShellKind::Zsh);

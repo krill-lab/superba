@@ -19,6 +19,7 @@ mod site;
 mod status;
 mod switch;
 mod versions;
+mod wsl;
 
 use superba_core::{Error, LocalizedText, Secret, Site, SiteId, SwitchIntent, SwitchRequest};
 
@@ -139,6 +140,7 @@ pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) 
             }
         },
         Command::Remote { command } => remote::run(command, rt, out).await,
+        Command::Wsl { command } => wsl::run(command, rt, out).await,
         Command::Import(args) => import::run(args, rt, out).await,
         Command::Doctor => status::doctor(rt, out).await,
         Command::Recover => status::recover(rt, out).await,

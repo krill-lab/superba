@@ -49,6 +49,7 @@ fn renderer(id: Option<&str>, label: &str, ssh: SshEndpoint) -> RemoteHost {
         ssh,
         sources: vec![HostSource::Cdp],
         connected: None,
+        wsl: None,
     }
 }
 

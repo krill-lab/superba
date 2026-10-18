@@ -4593,6 +4593,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "winreg",
 ]
 
 [[package]]
@@ -4603,6 +4604,7 @@ dependencies = [
  "bytes",
  "clap",
  "futures-util",
+ "hex",
  "http",
  "http-body",
  "http-body-util",
@@ -4615,6 +4617,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "superba-core",
  "superba-models",
  "tempfile",

@@ -19,6 +19,7 @@ fn device(id: &str, label: &str, kind: HostKind) -> HostView {
             ssh: SshEndpoint::default(),
             sources: vec![HostSource::Cdp],
             connected: None,
+            wsl: None,
         },
         state: None,
         probe_error: None,

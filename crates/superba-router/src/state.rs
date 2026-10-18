@@ -279,6 +279,8 @@ pub(crate) struct Shared {
     /// When to try opening the request log again (it failed for want of
     /// descriptors).
     pub stats_retry: Mutex<Option<Instant>>,
+    /// WSL listeners currently bound (user bug 45).
+    pub wsl_bound: Mutex<Vec<SocketAddr>>,
 }
 
 impl Shared {

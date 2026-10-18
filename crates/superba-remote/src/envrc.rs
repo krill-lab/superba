@@ -282,6 +282,15 @@ struct FileWork<'a> {
 /// restore the legacy lines Superba neutralised (on a remote host there are no
 /// registry or launchctl values to restore).
 pub fn plan_env(shell: &ShellKind, files: &[RcFile], op: &EnvOp) -> Result<RcPlan> {
+    plan_env_for(std::slice::from_ref(shell), files, op)
+}
+
+/// [`plan_env`] for a host whose consumers start through several shells: the
+/// block goes into the files of each (a WSL distribution: the desktop app's
+/// `/usr/bin/bash -l` and the user's own login shell for the Codex CLI). The
+/// first shell must be supported; others that are not are left out.
+pub fn plan_env_for(shells: &[ShellKind], files: &[RcFile], op: &EnvOp) -> Result<RcPlan> {
+    let shell = shells.first().cloned().unwrap_or(ShellKind::Sh);
     let mut work: Vec<FileWork<'_>> = Vec::new();
     let mut warnings = Vec::new();
     for f in files {
@@ -301,7 +310,7 @@ pub fn plan_env(shell: &ShellKind, files: &[RcFile], op: &EnvOp) -> Result<RcPla
     }
     match op {
         EnvOp::Set { value, .. } => {
-            if !shell_supported(shell) {
+            if !shell_supported(&shell) {
                 return Err(Error::Unsupported {
                     what: format!(
                         "persisting {ENV_AUTHAPI_BASE_URL} for the {shell:?} login shell"
@@ -346,7 +355,15 @@ pub fn plan_env(shell: &ShellKind, files: &[RcFile], op: &EnvOp) -> Result<RcPla
                 w.text = out;
             }
             // 2. Write the block into the target files.
-            for (name, placement) in targets(shell, files) {
+            let mut wanted: Vec<(&'static str, Placement)> = Vec::new();
+            for sh in shells.iter().filter(|sh| shell_supported(sh)) {
+                for t in targets(sh, files) {
+                    if !wanted.iter().any(|(n, _)| *n == t.0) {
+                        wanted.push(t);
+                    }
+                }
+            }
+            for (name, placement) in wanted {
                 let Some(w) = work.iter_mut().find(|w| w.file.spec.name == name) else {
                     let path = files
                         .iter()

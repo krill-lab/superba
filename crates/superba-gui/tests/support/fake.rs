@@ -294,6 +294,7 @@ fn fake_remote(now: Timestamp, devbox: bool) -> RemoteOverview {
             },
             sources: vec![HostSource::GlobalState, HostSource::ProcessScan],
             connected: Some(true),
+            wsl: None,
         },
         state: Some(RemoteState {
             disk_free_kib: None,
@@ -332,6 +333,8 @@ fn fake_remote(now: Timestamp, devbox: bool) -> RemoteOverview {
             app_server_pids: vec![if devbox { 812 } else { 2041 }],
             owned_paths: Vec::new(),
             config_toml: None,
+            app_bash: None,
+            gateway: None,
         }),
         error: None,
     }

@@ -745,6 +745,7 @@ impl Tracker {
             stripped: self.meta.stripped,
             upstream_request_id: self.upstream_request_id.take(),
             source: superba_core::RequestSource::Router,
+            codex_host: self.meta.codex_host.clone(),
         };
         let stored = StoredRow {
             row,

@@ -57,6 +57,9 @@ pub struct RouterStatus {
     /// (default from a router that does not report it).
     #[serde(default)]
     pub local: LocalStatus,
+    /// WSL listeners currently bound (`<adapter address>:<port>`, user bug 45).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wsl_listen: Vec<String>,
 }
 
 /// The router's local budget ([`crate::limits`]) and the local shortages it

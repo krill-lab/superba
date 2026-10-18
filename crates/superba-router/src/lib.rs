@@ -73,6 +73,7 @@
 pub mod client;
 pub mod config;
 pub mod doctor;
+pub mod firewall;
 pub mod health;
 pub mod limits;
 pub mod manager;

@@ -255,6 +255,14 @@ pub fn snapshot_from_records(
         app_server_pids: parse_pids(recs.get("pids").unwrap_or_default()),
         owned_paths: Vec::new(),
         config_toml: files.config_toml.clone(),
+        gateway: match recs.file("route") {
+            Some(FileRead::Bytes(b)) => {
+                superba_core::wsl::default_gateway(&String::from_utf8_lossy(b.expose()))
+                    .map(|ip| ip.to_string())
+            }
+            _ => None,
+        },
+        app_bash: recs.get_nonempty("app_bash").map(|v| v == "1"),
     };
     let install_dir = recs
         .get_raw_nonempty("install_dir")

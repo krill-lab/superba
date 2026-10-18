@@ -1,9 +1,10 @@
 #![allow(missing_docs)]
 //! Hosts Superba does not manage (user bug 36): the ChatGPT remote-control
-//! devices and WSL distributions the app reports are listed read-only under the
-//! app's display name or their kind, never under the raw app host id (0.1.0
-//! showed `remote-control:env_e_…`), and no page offers them an SSH action:
-//! no probe, follow, sync, Codex install or session scan.
+//! devices the app reports are listed read-only under the app's display name or
+//! their kind, never under the raw app host id (0.1.0 showed
+//! `remote-control:env_e_…`), and no page offers them an SSH action: no probe,
+//! follow, sync, Codex install or session scan. WSL distributions are managed
+//! hosts since user bug 45.
 
 mod router_harness;
 mod support;
@@ -127,7 +128,8 @@ fn a_device_gets_a_read_only_detail_without_any_ssh_action() {
             .into_iter()
             .map(|i| i.title)
             .collect();
-        assert_eq!(titles.len(), 2, "{titles:?}");
+        // devbox, gpu-01 and the WSL distribution.
+        assert_eq!(titles.len(), 3, "{titles:?}");
         assert!(titles.iter().all(|t| !t.contains("Studio")), "{titles:?}");
     });
     assert!(state.sync.is_none(), "no sync dialog for a device");
@@ -135,7 +137,6 @@ fn a_device_gets_a_read_only_detail_without_any_ssh_action() {
     let devices = [
         FakeService::DEVICE_HOST_ID,
         FakeService::UNNAMED_DEVICE_HOST_ID,
-        FakeService::WSL_HOST_ID,
     ]
     .map(TargetId::remote);
     assert!(
@@ -171,9 +172,10 @@ fn the_sessions_switcher_names_devices_and_never_scans_them() {
         vec![
             ("devbox".to_owned(), true),
             ("gpu-01".to_owned(), true),
+            // User bug 45: a managed host.
+            ("WSL: Ubuntu".to_owned(), true),
             ("Studio Mac".to_owned(), false),
             ("远程控制设备".to_owned(), false),
-            ("WSL: Ubuntu".to_owned(), false),
         ]
     );
     let mut state = sessions::State::default();
@@ -198,7 +200,7 @@ fn the_sessions_switcher_names_devices_and_never_scans_them() {
             .into_iter()
             .map(|i| i.title)
             .collect();
-        assert_eq!(palette.len(), 2, "{palette:?}");
+        assert_eq!(palette.len(), 3, "{palette:?}");
     });
     h.frames(3, |ui, cx, out| sessions::show(ui, cx, &mut state, out));
     assert!(
@@ -215,17 +217,18 @@ fn the_overview_path_counts_ssh_hosts_and_names_the_others() {
     let overview = h.data.overview.value.clone().unwrap();
     h.frame(|_, cx, _| {
         let hero = hero::model(cx, &overview, &[], None);
-        // devbox and gpu-01 only (old-box is an ssh-config entry).
-        assert_eq!(hero.remotes, 2);
+        // devbox, gpu-01 and the WSL distribution (old-box is an ssh-config
+        // entry).
+        assert_eq!(hero.remotes, 3);
         assert!(
-            hero.this.tip.contains("app 记录了 2 台远程主机"),
+            hero.this.tip.contains("app 记录了 3 台远程主机"),
             "{}",
             hero.this.tip
         );
         assert!(
             hero.this
                 .tip
-                .contains("不由 Superba 管理：Studio Mac, 远程控制设备, WSL: Ubuntu"),
+                .contains("不由 Superba 管理：Studio Mac, 远程控制设备"),
             "{}",
             hero.this.tip
         );

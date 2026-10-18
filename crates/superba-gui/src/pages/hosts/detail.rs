@@ -1,10 +1,12 @@
 //! Detail of one host: endpoint, OS / architecture and probe age; its
 //! connection with the "switch with this computer" toggle; its Codex (version,
 //! path, install kind, update hint); the settings sync summary; sessions; and
-//! whether a hot restart is possible. A host Superba does not manage (a
-//! remote-control device, a WSL distribution; user bug 36) gets a read-only
-//! pane instead: its kind, why nothing can be done here, and a copy button for
-//! the app's host id.
+//! whether a hot restart is possible. A WSL distribution (user bug 45) shows its
+//! WSL version and networking instead of an SSH endpoint, follows this computer
+//! by default and has a local-router row (router access for WSL 2 behind NAT).
+//! A host Superba does not manage (a remote-control device; user bug 36) gets a
+//! read-only pane instead: its kind, why nothing can be done here, and a copy
+//! button for the app's host id.
 
 use egui::{Align, Layout, Ui};
 use superba_core::{
@@ -121,12 +123,13 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     let id = h.host.target_id.clone();
     let connected = h.host.connected == Some(true);
     let probed = h.state.is_some();
+    let wsl = h.host.kind == HostKind::Wsl;
     // Title.
     ui.horizontal(|ui| {
         ui.label(Text::title(names::title(cx.tr, &h.host), cx.pal));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let mut sources = Vec::new();
-            if h.host.is_app_known() {
+            if h.host.is_app_known() && !wsl {
                 sources.push(cx.tr.t("hosts.app_record"));
             }
             let (status, key) = if connected {
@@ -134,7 +137,11 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
             } else {
                 (Status::Idle, "hosts.not_connected")
             };
-            let mut text = cx.tr.t(key);
+            let mut text = if wsl && !connected {
+                names::kind(cx.tr, h.host.kind)
+            } else {
+                cx.tr.t(key)
+            };
             if !sources.is_empty() {
                 text = format!("{text} · {}", sources.join(" · "));
             }
@@ -143,7 +150,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     });
     // Endpoint · OS · probe age, on the center line of the probe button.
     FormRow::unlabeled().show(ui, |ui| {
-        let mut parts = vec![endpoint(&h)];
+        let mut parts = vec![names::wsl_facts(cx.tr, &h.host).unwrap_or_else(|| endpoint(&h))];
         if let Some(s) = &h.state {
             parts.push(os_text(s));
             parts.push(cx.tr.f("hosts.probed", &[("age", &cx.ago(s.probed_at))]));
@@ -185,12 +192,17 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         };
         ui.label(Text::small(text, cx.pal).color(cx.pal.text));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let mut on = h.settings.follow_switches;
+            let mut on = h.settings.follows(h.host.kind);
+            let tip = cx.tr.t(if wsl {
+                "hosts.wsl.follow_tip"
+            } else {
+                "hosts.follow_tip"
+            });
             let r = ui
                 .add(Toggle::new(&mut on, cx.tr.t("hosts.follow")))
-                .on_hover_text(cx.tr.t("hosts.follow_tip"));
+                .on_hover_text(tip.clone());
             ui.label(Text::caption(cx.tr.t("hosts.follow"), cx.pal))
-                .on_hover_text(cx.tr.t("hosts.follow_tip"));
+                .on_hover_text(tip);
             if r.changed() {
                 state.set_follow(cx, id.clone(), on);
             }
@@ -323,12 +335,16 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
             });
         }
     });
+    if wsl {
+        router_row(ui, cx, state, &h);
+    }
     // Hot restart.
     kv(ui, cx, &cx.tr.t("hosts.hot_label"), |ui| {
-        let (status, key) = if h.hot_restart {
-            (Status::Ok, "hosts.hot.ok")
-        } else {
-            (Status::Warn, "hosts.hot.reconnect")
+        let (status, key) = match (wsl, h.hot_restart) {
+            (true, true) => (Status::Ok, "hosts.wsl.hot_ok"),
+            (true, false) => (Status::Idle, "hosts.wsl.hot_next"),
+            (false, true) => (Status::Ok, "hosts.hot.ok"),
+            (false, false) => (Status::Warn, "hosts.hot.reconnect"),
         };
         ui.add(Badge::new(cx.tr.t(key)).status(status));
     });
@@ -347,6 +363,58 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         && s.shared_home_suspected()
     {
         note(ui, cx, Status::Warn, cx.tr.t("hosts.shared_home"));
+    }
+}
+
+/// How a WSL distribution reaches the local router, with the router access
+/// button for WSL 2 behind NAT and the last access result.
+fn router_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, h: &HostView) {
+    let id = h.host.target_id.clone();
+    let path = h
+        .host
+        .wsl
+        .as_ref()
+        .map_or(superba_core::RouterPath::HostAddress, |d| d.router_path());
+    let report = state.access_reports.get(&id).cloned();
+    kv(ui, cx, &cx.tr.t("hosts.wsl.router_label"), |ui| {
+        let text = match (&report, path) {
+            (Some(r), _) if r.reachable => r.address.clone().unwrap_or_default(),
+            (_, superba_core::RouterPath::Loopback) => cx.tr.t("hosts.wsl.router_loopback"),
+            (_, superba_core::RouterPath::Unreachable) => cx.tr.t("hosts.wsl.router_none"),
+            _ => cx.tr.t("hosts.wsl.router_nat"),
+        };
+        ui.label(Text::small(text, cx.pal).color(cx.pal.text));
+        if path == superba_core::RouterPath::HostAddress {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let busy = state.accessing(&id);
+                let label = if busy {
+                    cx.tr.t("hosts.wsl.router_checking")
+                } else {
+                    cx.tr.t("hosts.wsl.router_access")
+                };
+                if ui
+                    .add(
+                        Button::new(label)
+                            .small()
+                            .loading(busy)
+                            .enabled(!busy && !cx.busy),
+                    )
+                    .clicked()
+                {
+                    state.router_access(cx, id.clone());
+                }
+            });
+        }
+    });
+    if let Some(r) = &report {
+        for n in &r.notes {
+            let status = if n.severity == superba_core::Severity::Warning {
+                Status::Warn
+            } else {
+                Status::Idle
+            };
+            note(ui, cx, status, cx.localize(&n.text));
+        }
     }
 }
 

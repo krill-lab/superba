@@ -4,12 +4,14 @@
 //! version on the right of the name.
 //! Connected hosts first. The rows are rounded tiles separated by spacing,
 //! without divider lines. The empty state never suggests ssh-config hosts.
-//! Hosts Superba does not manage (remote-control devices, WSL distributions;
-//! user bug 36) come last, with their own icon, no status dot or version, and
-//! "<kind> · read-only" as the hint; the app's host id is in the row's tooltip.
+//! Hosts Superba does not manage (remote-control devices; user bug 36) come
+//! last, with their own icon, no status dot or version, and "<kind> ·
+//! read-only" as the hint; the app's host id is in the row's tooltip. WSL
+//! distributions (user bug 45) are managed: their hint names the WSL version and
+//! whether they switch with this computer.
 
 use egui::{CursorIcon, Rect, Sense, Ui, pos2, vec2};
-use superba_core::HostView;
+use superba_core::{HostKind, HostView};
 
 use super::State;
 use crate::design::fonts::{Weight, font};
@@ -31,6 +33,21 @@ pub fn hint(cx: &Cx<'_>, h: &HostView) -> String {
             "hosts.read_only.label",
             &[("kind", &names::kind(cx.tr, h.host.kind))],
         );
+    }
+    if h.host.kind == HostKind::Wsl {
+        if h.probe_error.is_some() {
+            return cx.tr.t("hosts.list.probe_failed");
+        }
+        let version = h.host.wsl.as_ref().map_or_else(
+            || names::kind(cx.tr, h.host.kind),
+            |d| cx.tr.text(&d.version_text()),
+        );
+        let key = if h.settings.follows(h.host.kind) {
+            "hosts.wsl.list_follow"
+        } else {
+            "hosts.wsl.list_alone"
+        };
+        return cx.tr.f(key, &[("version", &version)]);
     }
     if h.host.connected != Some(true) {
         let sync = if h.settings.last_sync.is_some() {
@@ -57,6 +74,14 @@ pub fn dot(h: &HostView) -> Option<Status> {
 }
 
 fn managed_dot(h: &HostView) -> Status {
+    if h.host.kind == HostKind::Wsl {
+        // A distribution is reached when it runs; its last check decides.
+        return match (&h.state, &h.probe_error) {
+            (_, Some(_)) => Status::Warn,
+            (Some(_), None) => Status::Ok,
+            _ => Status::Idle,
+        };
+    }
     match (h.host.connected, &h.probe_error) {
         (Some(true), Some(_)) => Status::Warn,
         (Some(true), None) => Status::Ok,

@@ -1,8 +1,8 @@
 //! The loopback server: binding, connection handling, dispatch and shutdown.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::convert::Infallible;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -21,7 +21,7 @@ use tracing::Instrument;
 
 use crate::admin::{self, ADMIN_PREFIX, VERSION};
 use crate::config::{ROUTER_BASE_PATH, ROUTER_V1_PATH, RouterConfig, RouterSecrets};
-use crate::forward::{local_busy, router_error};
+use crate::forward::{CODEX_HOST_HEADER, local_busy, router_error};
 use crate::limits::{Budget, Busy, ConnSlot, LOCAL_BUSY_CODE, Limits, Place, file_limit_in};
 use crate::paths::RouterPaths;
 use crate::probe::health_loop;
@@ -30,7 +30,7 @@ use crate::state::{Generation, RespBody, Shared, Totals, unix_ms};
 use crate::stats::hub::{End, StatsHub, now_ms};
 use crate::stats::meta;
 use crate::status::RouterStatus;
-use crate::token::{self, bearer, constant_time_eq};
+use crate::token::{self, bearer, constant_time_eq, verify_source_token};
 use crate::{proxy, ws};
 
 /// How long a shutdown waits for open connections to finish.
@@ -39,6 +39,18 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 /// Longest time spent discarding the body of a request answered locally.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+/// How often the WSL listeners are reconciled with the configuration (an
+/// adapter address appears when WSL starts its VM).
+const WSL_LISTEN_TICK: Duration = Duration::from_secs(5);
+
+/// Where a connection came in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Entry {
+    /// `127.0.0.1:<port>`: this computer (also WSL 1 and mirrored WSL 2).
+    Loopback,
+    /// A WSL adapter address ([`RouterConfig::wsl_listen`]): WSL 2 behind NAT.
+    Wsl,
+}
 
 /// A bound, not yet serving router.
 pub struct RouterServer {
@@ -123,6 +135,7 @@ impl RouterServer {
             transports: crate::transport::TransportMemory::default(),
             limits: Limits::new(budget),
             stats_retry: Mutex::new(None),
+            wsl_bound: Mutex::new(Vec::new()),
         });
         shared.apply_stats(shared.current().config.stats.as_ref());
         Ok(Self { shared, listener })
@@ -201,12 +214,18 @@ impl RouterServer {
         );
         drop(generation);
         tokio::spawn(health_loop(shared.clone()));
+        let (wsl_tx, mut wsl_rx) = tokio::sync::mpsc::channel::<(TcpStream, SocketAddr)>(64);
+        tokio::spawn(wsl_listeners(shared.clone(), wsl_tx));
         let mut stop = shared.shutdown.subscribe();
         let mut connections = tokio::task::JoinSet::new();
         loop {
-            let (stream, peer) = tokio::select! {
+            let (stream, peer, entry) = tokio::select! {
+                wsl = wsl_rx.recv() => match wsl {
+                    Some((stream, peer)) => (stream, peer, Entry::Wsl),
+                    None => continue,
+                },
                 accepted = listener.accept() => match accepted {
-                    Ok(a) => a,
+                    Ok((stream, peer)) => (stream, peer, Entry::Loopback),
                     Err(e) => {
                         if file_limit_in(&e).is_some() {
                             // No descriptor for the connection: it stays in
@@ -222,7 +241,11 @@ impl RouterServer {
                 },
                 _ = stop.changed() => break,
             };
-            if !peer.ip().is_loopback() {
+            let allowed = match entry {
+                Entry::Loopback => peer.ip().is_loopback(),
+                Entry::Wsl => wsl_peer(peer.ip()),
+            };
+            if !allowed {
                 continue;
             }
             // At the connection cap this one waits for a place (open
@@ -234,7 +257,7 @@ impl RouterServer {
             };
             let _ = stream.set_nodelay(true);
             connections.spawn(
-                serve_connection(shared.clone(), stream, slot)
+                serve_connection(shared.clone(), stream, slot, entry)
                     .instrument(tracing::debug_span!("conn", %peer)),
             );
             while connections.try_join_next().is_some() {}
@@ -348,8 +371,88 @@ fn pressure_tick(idle: Duration) -> Duration {
     (idle / 2).clamp(Duration::from_millis(50), Duration::from_secs(1))
 }
 
+/// A peer the WSL listeners accept: a private or shared IPv4 address (the WSL
+/// VM behind NAT), never a public one.
+fn wsl_peer(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => crate::config::wsl_listen_allowed(v4),
+        IpAddr::V6(v6) => v6
+            .to_ipv4_mapped()
+            .is_some_and(crate::config::wsl_listen_allowed),
+    }
+}
+
+/// Keep one listener per configured WSL address ([`RouterConfig::wsl_listen`])
+/// bound on the router's port, forwarding accepted connections to the main
+/// loop. An address that cannot be bound yet (WSL's VM not started) is tried
+/// again every [`WSL_LISTEN_TICK`]; a listener whose address went away (its
+/// accept fails) is dropped and bound again later.
+async fn wsl_listeners(
+    shared: Arc<Shared>,
+    tx: tokio::sync::mpsc::Sender<(TcpStream, SocketAddr)>,
+) {
+    let port = shared.listen.port();
+    let mut stop = shared.shutdown.subscribe();
+    let mut running: BTreeMap<Ipv4Addr, tokio::task::JoinHandle<()>> = BTreeMap::new();
+    loop {
+        let wanted: Vec<Ipv4Addr> = shared.current().config.wsl_listen.clone();
+        running.retain(|ip, task| {
+            let keep = wanted.contains(ip) && !task.is_finished();
+            if !keep {
+                task.abort();
+            }
+            keep
+        });
+        for ip in wanted {
+            if running.contains_key(&ip) {
+                continue;
+            }
+            let addr = SocketAddr::from((ip, port));
+            match TcpListener::bind(addr).await {
+                Ok(listener) => {
+                    tracing::info!(%addr, "listening for WSL");
+                    let tx = tx.clone();
+                    running.insert(
+                        ip,
+                        tokio::spawn(async move {
+                            loop {
+                                match listener.accept().await {
+                                    Ok(conn) => {
+                                        if tx.send(conn).await.is_err() {
+                                            return;
+                                        }
+                                    }
+                                    Err(e) if file_limit_in(&e).is_some() => {
+                                        tokio::time::sleep(ACCEPT_BACKOFF).await;
+                                    }
+                                    Err(e) => {
+                                        tracing::info!(%addr, error = %e, "WSL listener closed");
+                                        return;
+                                    }
+                                }
+                            }
+                        }),
+                    );
+                }
+                Err(e) => tracing::debug!(%addr, error = %e, "WSL address not available yet"),
+            }
+        }
+        *shared.wsl_bound.lock().unwrap_or_else(|p| p.into_inner()) = running
+            .keys()
+            .map(|ip| SocketAddr::from((*ip, port)))
+            .collect();
+        tokio::select! {
+            () = tokio::time::sleep(WSL_LISTEN_TICK) => {}
+            _ = stop.changed() => break,
+        }
+    }
+    for task in running.values() {
+        task.abort();
+    }
+}
+
 /// Serve one inbound connection until it closes or the router stops.
-async fn serve_connection(shared: Arc<Shared>, stream: TcpStream, slot: ConnSlot) {
+async fn serve_connection(shared: Arc<Shared>, stream: TcpStream, slot: ConnSlot, entry: Entry) {
     let mut conn_stop = shared.shutdown.subscribe();
     let mut shed = shared.limits.shed_signal();
     let mut pressure = shared.limits.pressure_signal();
@@ -369,7 +472,7 @@ async fn serve_connection(shared: Arc<Shared>, stream: TcpStream, slot: ConnSlot
         st.requests.fetch_add(1, Ordering::Relaxed);
         st.in_flight.fetch_add(1, Ordering::AcqRel);
         async move {
-            let mut resp = dispatch(s, req).await;
+            let mut resp = dispatch(s, req, entry).await;
             if st.close_after.load(Ordering::Relaxed)
                 && resp.status() != StatusCode::SWITCHING_PROTOCOLS
             {
@@ -457,10 +560,34 @@ fn close_now(state: &ConnState) -> bool {
     }
 }
 
+/// Which Codex host a bearer token belongs to: `Some(None)` for this
+/// computer's router token (loopback only), `Some(Some(source))` for a source
+/// token (a WSL listener accepts only `wsl:` sources), `None` when it is
+/// neither.
+fn authenticate(router_token: &[u8], presented: &[u8], entry: Entry) -> Option<Option<String>> {
+    if entry == Entry::Loopback && constant_time_eq(presented, router_token) {
+        return Some(None);
+    }
+    let source = verify_source_token(router_token, presented)?;
+    (entry == Entry::Loopback || source.starts_with("wsl:")).then_some(Some(source))
+}
+
 /// Route one request.
-async fn dispatch(shared: Arc<Shared>, req: Request<Incoming>) -> Response<RespBody> {
+async fn dispatch(
+    shared: Arc<Shared>,
+    mut req: Request<Incoming>,
+    entry: Entry,
+) -> Response<RespBody> {
     let path = req.uri().path();
     if path.starts_with(ADMIN_PREFIX) {
+        // Over a WSL listener only `health` answers (reachability checks).
+        if entry == Entry::Wsl && path != format!("{ADMIN_PREFIX}health") {
+            return router_error(
+                StatusCode::FORBIDDEN,
+                "admin_auth",
+                "the admin API is only available on 127.0.0.1",
+            );
+        }
         return admin::handle(shared, req).await;
     }
     let Some(rest) = strip_prefix(path) else {
@@ -474,13 +601,21 @@ async fn dispatch(shared: Arc<Shared>, req: Request<Incoming>) -> Response<RespB
         );
     };
     let generation = shared.current();
-    let authorized = req
+    let host = req
         .headers()
         .get(AUTHORIZATION)
         .and_then(|v| bearer(v.as_bytes()))
-        .is_some_and(|t| constant_time_eq(t, generation.router_token.expose().as_bytes()));
+        .and_then(|t| authenticate(generation.router_token.expose().as_bytes(), t, entry));
     drop(generation);
-    if !authorized {
+    // The Codex host is ours to say: a client's own header is dropped (and the
+    // header is never forwarded upstream).
+    req.headers_mut().remove(CODEX_HOST_HEADER);
+    if let Some(Some(source)) = &host
+        && let Ok(v) = HeaderValue::from_str(source)
+    {
+        req.headers_mut().insert(CODEX_HOST_HEADER, v);
+    }
+    if host.is_none() {
         shared.totals.rejected.fetch_add(1, Ordering::Relaxed);
         return router_error(
             StatusCode::UNAUTHORIZED,

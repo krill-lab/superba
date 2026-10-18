@@ -63,6 +63,7 @@ pub fn host_view() -> HostView {
             },
             sources: vec![HostSource::GlobalState],
             connected: Some(true),
+            wsl: None,
         },
         state: None,
         probe_error: None,

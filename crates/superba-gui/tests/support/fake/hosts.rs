@@ -93,6 +93,7 @@ fn device(id: &str, label: &str, kind: HostKind) -> HostView {
             ssh: SshEndpoint::default(),
             sources: vec![HostSource::Cdp],
             connected: None,
+            wsl: None,
         },
         state: None,
         probe_error: None,
@@ -178,6 +179,7 @@ fn ssh_config_only() -> RemoteHost {
         },
         sources: vec![HostSource::SshConfig],
         connected: Some(false),
+        wsl: None,
     }
 }
 
@@ -220,6 +222,7 @@ fn views(fake: &FakeService) -> Vec<HostView> {
                         paths: vec!["approval_policy".into(), "notify".into()],
                         value_hashes: Default::default(),
                     }),
+                    follow_chosen: false,
                 },
                 pending_sync: devbox.then_some(3),
                 hot_restart: host.host_id.is_some(),

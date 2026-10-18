@@ -36,6 +36,7 @@ fn from_app(id: &str, label: &str, kind: HostKind) -> RemoteHost {
         ssh: SshEndpoint::default(),
         sources: vec![HostSource::Cdp],
         connected: None,
+        wsl: None,
     }
 }
 
@@ -203,19 +204,27 @@ fn mixed_kinds_from_the_renderer_keep_their_kind_and_never_get_an_endpoint() {
         .filter(|h| h.is_managed())
         .map(|h| h.label.as_str())
         .collect();
+    // User bug 45: a WSL distribution is managed (through wsl.exe), without an
+    // SSH endpoint, and knows its distribution from the app's id.
     assert_eq!(
         managed,
-        vec!["devbox", "gpu-01", "old-box", "lab box", "studio.local"]
+        vec![
+            "devbox",
+            "gpu-01",
+            "old-box",
+            "WSL: Ubuntu",
+            "lab box",
+            "studio.local"
+        ]
     );
+    let wsl = hosts.iter().find(|h| h.kind == HostKind::Wsl).unwrap();
+    assert_eq!(wsl.wsl_distro().as_deref(), Some("Ubuntu"));
     let listed_read_only: Vec<&str> = hosts
         .iter()
         .filter(|h| h.is_listed() && !h.is_managed())
         .map(|h| h.host_id.as_deref().unwrap())
         .collect();
-    assert_eq!(
-        listed_read_only,
-        vec![RC, "remote-control:env_other", "remote-wsl:Ubuntu"]
-    );
+    assert_eq!(listed_read_only, vec![RC, "remote-control:env_other"]);
     // The device on the projects / auto-connect keys only came from the renderer.
     assert_eq!(hosts[3].sources, vec![HostSource::Cdp]);
     assert_eq!(
@@ -304,12 +313,7 @@ async fn no_ssh_operation_reaches_the_transport_for_a_remote_control_device() {
     let shell = Arc::new(Recording::default());
     let hosts = SshRemoteHosts::new(engine(), DataDir::new(tmp.path().join("data")))
         .with_shell(shell.clone());
-    for kind in [
-        HostKind::RemoteControl,
-        HostKind::Wsl,
-        HostKind::Cloud,
-        HostKind::Unknown,
-    ] {
+    for kind in [HostKind::RemoteControl, HostKind::Cloud, HostKind::Unknown] {
         let mut h = from_app(RC, "Studio Mac", kind);
         // Even an endpoint (never set by discovery) is not used.
         h.ssh.alias = Some("studio".into());

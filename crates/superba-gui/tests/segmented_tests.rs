@@ -233,6 +233,7 @@ fn host(id: &str) -> RemoteOverview {
             },
             sources: vec![HostSource::GlobalState],
             connected: Some(true),
+            wsl: None,
         },
         state: None,
         error: None,

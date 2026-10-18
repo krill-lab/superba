@@ -34,9 +34,14 @@ const HOP_BY_HOP: &[&str] = &[
     "upgrade",
 ];
 
+/// The Codex host a request came from (`wsl:<distro>`; absent for this
+/// computer), set by the router after checking the token (user bug 45) and
+/// read into the request log; never forwarded.
+pub const CODEX_HOST_HEADER: &str = "x-superba-codex-host";
+
 /// Request headers never forwarded to a member: codex's credential is replaced
 /// by the member's own key, and ChatGPT account routing belongs to PAT mode.
-const DROPPED_REQUEST: &[&str] = &["chatgpt-account-id"];
+const DROPPED_REQUEST: &[&str] = &["chatgpt-account-id", CODEX_HOST_HEADER];
 
 /// Turn routing token issued by one provider; meaningless to another.
 pub const TURN_STATE_HEADER: &str = "x-codex-turn-state";

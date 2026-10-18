@@ -30,12 +30,34 @@ pub const MAX_STDERR_BYTES: u64 = 1024 * 1024;
 /// remote-control device, a WSL distribution, a ChatGPT-hosted or unknown host;
 /// user bug 36): nothing is ever sent to it with `ssh`.
 pub fn require_ssh(host: &RemoteHost) -> Result<()> {
+    if host.kind.is_ssh() {
+        return Ok(());
+    }
+    if host.is_managed() {
+        return Err(Error::invalid(format!(
+            "{} ({}) is not reached over SSH",
+            host.title(),
+            host.kind.text()
+        )));
+    }
+    Err(Error::Unsupported {
+        what: format!(
+            "SSH access to {} ({}): the ChatGPT app does not reach it over SSH, so Superba cannot probe, sync, switch or scan it",
+            host.title(),
+            host.kind.text()
+        ),
+    })
+}
+
+/// Refuse a host Superba does not manage (remote-control devices, ChatGPT-hosted
+/// and unknown hosts): only SSH hosts and WSL distributions run scripts.
+pub fn require_reachable(host: &RemoteHost) -> Result<()> {
     if host.is_managed() {
         return Ok(());
     }
     Err(Error::Unsupported {
         what: format!(
-            "SSH access to {} ({}): the ChatGPT app does not reach it over SSH, so Superba cannot probe, sync, switch or scan it",
+            "access to {} ({}): the ChatGPT app does not reach it over SSH or WSL, so Superba cannot probe, sync, switch or scan it",
             host.title(),
             host.kind.text()
         ),
@@ -391,6 +413,16 @@ impl RemoteShell for SystemSsh {
 pub(crate) struct Input {
     prefix: Vec<u8>,
     file: Option<PathBuf>,
+}
+
+impl Input {
+    /// `prefix` followed by the bytes of `file`.
+    pub(crate) fn with_file(prefix: Vec<u8>, file: PathBuf) -> Self {
+        Self {
+            prefix,
+            file: Some(file),
+        }
+    }
 }
 
 /// Spawn `cmd`, write `input` to its stdin (then close it), collect stdout and

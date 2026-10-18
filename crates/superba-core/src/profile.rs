@@ -334,11 +334,37 @@ impl Background {
 #[serde(default)]
 pub struct HostSettings {
     /// A local switch also changes this host's connection (routing and auth keys
-    /// only, always direct). Off by default: switches leave the host alone.
+    /// only, always direct). Off by default for SSH hosts: switches leave the host
+    /// alone. A WSL distribution follows unless the user turned it off
+    /// ([`HostSettings::follows`]).
     pub follow_switches: bool,
+    /// The user set [`HostSettings::follow_switches`] (a WSL distribution without
+    /// a choice follows this computer).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub follow_chosen: bool,
     /// The last settings sync to the host.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_sync: Option<HostSync>,
+}
+
+impl HostSettings {
+    /// Whether a local switch also switches the host: the user's choice, else
+    /// (no choice made) on for a WSL distribution of this computer and off for an
+    /// SSH host. A setting stored before the choice was recorded counts as a
+    /// choice when it turned following on.
+    pub fn follows(&self, kind: crate::HostKind) -> bool {
+        if self.follow_chosen || self.follow_switches {
+            self.follow_switches
+        } else {
+            kind == crate::HostKind::Wsl
+        }
+    }
+
+    /// Record the user's follow choice.
+    pub fn choose_follow(&mut self, follow: bool) {
+        self.follow_switches = follow;
+        self.follow_chosen = true;
+    }
 }
 
 /// A completed settings sync to a host (conflict detection, "unsynced" badge).

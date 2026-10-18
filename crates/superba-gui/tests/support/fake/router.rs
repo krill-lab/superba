@@ -131,6 +131,7 @@ fn row(
         stripped: 0,
         upstream_request_id: Some(format!("req_{id:08x}")),
         source: superba_core::RequestSource::Router,
+        codex_host: None,
     }
 }
 

@@ -410,6 +410,13 @@ fn every_error_code_has_complete_translations_and_detail_argument() {
             "ssh",
         ),
         (
+            Error::Wsl {
+                distro: "Ubuntu".into(),
+                message: "the distribution did not start".into(),
+            },
+            "wsl",
+        ),
+        (
             Error::Secret {
                 message: "keyring unavailable".into(),
             },

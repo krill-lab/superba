@@ -428,6 +428,7 @@ fn remote_host(host_id: String, label: String, kind: HostKind, ssh: SshEndpoint)
         ssh,
         sources: vec![HostSource::Cdp],
         connected: None,
+        wsl: None,
     }
 }
 

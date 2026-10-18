@@ -305,6 +305,7 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
                 },
                 sources: vec![HostSource::GlobalState, HostSource::SshConfig],
                 connected: Some(false),
+                wsl: None,
             },
             state: None,
             error: Some(Error::Ssh {

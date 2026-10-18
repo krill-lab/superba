@@ -475,7 +475,14 @@ impl Switcher {
         };
         let mut set = self.deps.profiles.load().await?;
         let entry = set.settings.hosts.entry(id.clone()).or_default();
-        entry.follow_switches = follow;
+        if host.kind == superba_core::HostKind::Wsl {
+            // A WSL distribution follows by default: turning it off is a choice
+            // to remember (user bug 45).
+            entry.choose_follow(follow);
+        } else {
+            entry.follow_switches = follow;
+            entry.follow_chosen = false;
+        }
         if *entry == HostSettings::default() {
             set.settings.hosts.remove(id);
         }

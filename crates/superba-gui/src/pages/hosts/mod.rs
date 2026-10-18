@@ -9,10 +9,12 @@
 //! skip / remove / conflict); confirming plans `SwitchIntent::HostSync`, which
 //! pushes settings only and hot-restarts that host's Codex core.
 //!
-//! Remote-control devices and WSL distributions the app reports (user bug 36)
-//! are listed read-only: titled with the app's display name or their kind, the
-//! app's host id only in a tooltip and a copy button, and never probed,
-//! followed, synced or offered any other SSH action.
+//! Remote-control devices the app reports (user bug 36) are listed read-only:
+//! titled with the app's display name or their kind, the app's host id only in
+//! a tooltip and a copy button, and never probed, followed, synced or offered
+//! any other SSH action. WSL distributions of this computer (user bug 45) are
+//! managed like SSH hosts (through `wsl.exe`), follow this computer by default
+//! and offer router access when they run WSL 2 behind NAT.
 
 mod detail;
 mod list;
@@ -22,6 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use egui::Ui;
+use superba_core::wsl::WslAccessReport;
 use superba_core::{HostSyncPlan, HostView, TargetId, VersionsView};
 
 use super::router::db::Loader;
@@ -51,6 +54,10 @@ pub struct State {
     pub versions: Loader<VersionsView>,
     /// The sync dialog.
     pub sync: Option<sync::SyncDialog>,
+    /// Router access for a WSL distribution in progress (user bug 45).
+    access: Option<(TargetId, ReadTask<WslAccessReport>)>,
+    /// The last router access result per distribution.
+    pub access_reports: BTreeMap<TargetId, WslAccessReport>,
     errors: Vec<String>,
     /// A probe or the follow toggle changed a host: the shell reloads its own
     /// host list (the sidebar badge and the Overview read it).
@@ -153,6 +160,18 @@ impl State {
                 Err(e) => self.errors.push(super::error_text(cx.tr, &e)),
             }
         }
+        if let Some((id, task)) = &self.access
+            && let Some(result) = task.poll()
+        {
+            let id = id.clone();
+            self.access = None;
+            match result {
+                Ok(report) => {
+                    self.access_reports.insert(id, report);
+                }
+                Err(e) => self.errors.push(super::error_text(cx.tr, &e)),
+            }
+        }
         for plan in self.plans.values_mut() {
             plan.poll();
         }
@@ -247,6 +266,25 @@ impl State {
         ));
     }
 
+    /// Let a WSL distribution reach the local router (may ask Windows for
+    /// administrator approval once).
+    pub fn router_access(&mut self, cx: &Cx<'_>, id: TargetId) {
+        if self.access.is_some() || !self.managed(&id) {
+            return;
+        }
+        let service = cx.service.clone();
+        let target = id.clone();
+        self.access = Some((
+            id,
+            crate::runtime::task(async move { service.wsl_router_access(&target).await }),
+        ));
+    }
+
+    /// Router access for `id` is running.
+    pub fn accessing(&self, id: &TargetId) -> bool {
+        self.access.as_ref().is_some_and(|(a, _)| a == id)
+    }
+
     /// Open the sync dialog for `id` (SSH hosts only).
     pub fn open_sync(&mut self, cx: &Cx<'_>, id: TargetId) {
         let view = self
@@ -301,7 +339,10 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     if std::mem::take(&mut state.notify_shell) {
         out.push(Action::LoadHosts);
     }
-    let busy = state.hosts.loading() || !state.probes.is_empty() || state.follow.is_some();
+    let busy = state.hosts.loading()
+        || !state.probes.is_empty()
+        || state.follow.is_some()
+        || state.access.is_some();
     if busy || state.sync.as_ref().is_some_and(|d| d.loading()) {
         ui.ctx().request_repaint_after(Duration::from_millis(100));
     }

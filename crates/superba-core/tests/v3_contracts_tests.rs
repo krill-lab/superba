@@ -52,6 +52,7 @@ fn host(alias: &str, sources: Vec<HostSource>) -> RemoteHost {
         },
         sources,
         connected: Some(true),
+        wsl: None,
     }
 }
 
@@ -131,6 +132,7 @@ fn row() -> RequestRow {
         stripped: 2,
         upstream_request_id: Some("req_123".into()),
         source: superba_core::RequestSource::Router,
+        codex_host: None,
     }
 }
 
@@ -1230,6 +1232,7 @@ fn host_sync_types_round_trip() {
         settings: HostSettings {
             follow_switches: true,
             last_sync: None,
+            follow_chosen: false,
         },
         pending_sync: Some(3),
         hot_restart: true,
@@ -1472,6 +1475,7 @@ fn v3_settings_round_trip_with_every_field_set() {
                 paths: vec!["approval_policy".into()],
                 value_hashes,
             }),
+            follow_chosen: false,
         },
     );
     s.network = NetworkSettings {

@@ -180,6 +180,7 @@ impl Attribution {
             stripped: 0,
             upstream_request_id: None,
             source: RequestSource::Rollout,
+            codex_host: None,
         }
     }
 }

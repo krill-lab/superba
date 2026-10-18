@@ -1,7 +1,8 @@
 //! Host kinds in the switch service (user bug 36): the remote-control devices
-//! and WSL distributions the app reports are listed read-only and refused by
-//! every SSH operation; ChatGPT-hosted and unknown hosts are not listed; a
-//! switch never plans, probes or writes a host Superba does not manage.
+//! the app reports are listed read-only and refused by every SSH operation;
+//! ChatGPT-hosted and unknown hosts are not listed; a switch never plans,
+//! probes or writes a host Superba does not manage. WSL distributions are
+//! managed since user bug 45 (`wsl_tests.rs`).
 
 #![allow(missing_docs)]
 
@@ -25,6 +26,7 @@ fn app_host(id: &str, label: &str, kind: HostKind) -> RemoteHost {
         ssh: superba_core::SshEndpoint::default(),
         sources: vec![HostSource::Cdp],
         connected: None,
+        wsl: None,
     }
 }
 
@@ -68,6 +70,7 @@ async fn only_ssh_and_read_only_kinds_are_listed() {
         HostSettings {
             follow_switches: true,
             last_sync: None,
+            follow_chosen: false,
         },
     );
     let sw = w.switcher();
@@ -88,9 +91,12 @@ async fn only_ssh_and_read_only_kinds_are_listed() {
         vec![
             ("ssh:dev".into(), HostKind::Ssh, true, false),
             (format!("ssh:{RC}"), HostKind::RemoteControl, false, false),
-            ("ssh:remote-wsl:Ubuntu".into(), HostKind::Wsl, false, false),
+            // User bug 45: managed, hot-restartable through the app.
+            ("ssh:remote-wsl:Ubuntu".into(), HostKind::Wsl, true, false),
         ]
     );
+    // A distribution follows by default (no stored choice).
+    assert!(hosts[2].settings.follows(HostKind::Wsl));
     assert!(hosts[1].state.is_none() && hosts[1].pending_sync.is_none());
     let overview = sw.overview().await.unwrap();
     let kinds: Vec<HostKind> = overview.remotes.iter().map(|r| r.host.kind).collect();
@@ -98,21 +104,24 @@ async fn only_ssh_and_read_only_kinds_are_listed() {
         kinds,
         vec![HostKind::Ssh, HostKind::RemoteControl, HostKind::Wsl]
     );
-    // The Updates page offers Codex installs on SSH hosts only.
+    // The Updates page offers Codex installs on SSH hosts and WSL distributions.
     let versions = sw.versions(false).await.unwrap();
     let remote: Vec<String> = versions
         .remote
         .iter()
         .map(|r| r.target_id.to_string())
         .collect();
-    assert_eq!(remote, vec!["ssh:dev".to_owned()]);
+    assert_eq!(
+        remote,
+        vec!["ssh:dev".to_owned(), "ssh:remote-wsl:Ubuntu".to_owned()]
+    );
 }
 
 #[tokio::test]
 async fn every_ssh_operation_refuses_a_remote_control_device() {
     let w = world();
     let sw = w.switcher();
-    for id in [rc(), TargetId::remote("remote-wsl:Ubuntu")] {
+    for id in [rc()] {
         refused(sw.host_probe(&id).await, "probe");
         refused(sw.set_host_follow(&id, true).await, "follow");
         refused(sw.host_sync_plan(&id).await, "sync plan");
@@ -152,6 +161,7 @@ async fn a_stale_follow_can_be_turned_off() {
         HostSettings {
             follow_switches: true,
             last_sync: None,
+            follow_chosen: false,
         },
     );
     let sw = w.switcher();
@@ -171,6 +181,7 @@ async fn a_switch_skips_a_followed_device_and_blocks_one_asked_for() {
                 HostSettings {
                     follow_switches: true,
                     last_sync: None,
+                    follow_chosen: false,
                 },
             );
         }
@@ -185,7 +196,11 @@ async fn a_switch_skips_a_followed_device_and_blocks_one_asked_for() {
         .iter()
         .map(|p| p.target_id.to_string())
         .collect();
-    assert_eq!(planned, vec!["ssh:dev".to_owned()]);
+    // The WSL distribution follows by default (user bug 45).
+    assert_eq!(
+        planned,
+        vec!["ssh:dev".to_owned(), "ssh:remote-wsl:Ubuntu".to_owned()]
+    );
     let scoped: Vec<String> = w
         .remote
         .scoped
@@ -194,7 +209,7 @@ async fn a_switch_skips_a_followed_device_and_blocks_one_asked_for() {
         .iter()
         .map(|(h, _, _)| h.clone())
         .collect();
-    assert_eq!(scoped, vec!["dev".to_owned()]);
+    assert_eq!(scoped, vec!["dev".to_owned(), "WSL: Ubuntu".to_owned()]);
     let skip = plan
         .warnings
         .iter()

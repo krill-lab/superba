@@ -129,6 +129,15 @@ pub enum Error {
         /// Error message (stderr excerpt).
         message: String,
     },
+    /// `wsl.exe` failure for a WSL distribution (it is not installed, the
+    /// distribution does not exist or does not start, a script inside failed).
+    #[error("WSL error on {distro}: {message}")]
+    Wsl {
+        /// Distribution name.
+        distro: String,
+        /// Error message (`wsl.exe` output excerpt).
+        message: String,
+    },
     /// OS keyring or secret file failure.
     #[error("secret store error: {message}")]
     Secret {
@@ -170,6 +179,7 @@ impl Error {
             Error::Cdp { .. } => "cdp",
             Error::Process { .. } => "process",
             Error::Ssh { .. } => "ssh",
+            Error::Wsl { .. } => "wsl",
             Error::Secret { .. } => "secret",
             Error::Cancelled => "cancelled",
             Error::Timeout { .. } => "timeout",
@@ -255,6 +265,7 @@ impl Error {
                 message,
             } => format!("HTTP {status} from {url}: {message}"),
             Error::Ssh { host, message } => format!("{host}: {message}"),
+            Error::Wsl { distro, message } => format!("{distro}: {message}"),
             Error::Cancelled => String::new(),
         }
     }

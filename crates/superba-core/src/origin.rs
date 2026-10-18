@@ -51,6 +51,22 @@ impl Origin {
         Ok(Origin(url))
     }
 
+    /// `http://<address>:<port>` of Superba's local router as a WSL 2
+    /// distribution behind NAT reaches it: the Windows host's address on the
+    /// WSL adapter (user bug 45). Plain http is allowed only here, for a private
+    /// IPv4 address the router listens on for WSL (never parsed from user input);
+    /// the request does not leave the computer.
+    pub fn local_router_for_wsl(address: std::net::Ipv4Addr, port: u16) -> Result<Self> {
+        if !address.is_private() {
+            return Err(Error::invalid(format!(
+                "{address} is not a private WSL adapter address"
+            )));
+        }
+        let url = Url::parse(&format!("http://{address}:{port}"))
+            .map_err(|e| Error::invalid(format!("router address {address}:{port}: {e}")))?;
+        Ok(Origin(url))
+    }
+
     /// `https://host[:port]` without a trailing slash. This exact string is the value
     /// of `CODEX_AUTHAPI_BASE_URL` for PAT mode.
     pub fn as_str(&self) -> String {

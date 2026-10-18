@@ -109,6 +109,27 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
     async fn restart(&self) -> Result<()> {
         Err(Error::not_implemented("router restart"))
     }
+    /// Listen also on these WSL adapter addresses (user bug 45; the stored
+    /// configuration, reloaded by a running router). Returns whether a running
+    /// router reloaded.
+    async fn set_wsl_listen(&self, addresses: Vec<std::net::Ipv4Addr>) -> Result<bool> {
+        let _ = addresses;
+        Err(Error::not_implemented("router WSL listeners"))
+    }
+    /// The WSL addresses the stored configuration listens on.
+    fn wsl_listen(&self) -> Vec<std::net::Ipv4Addr> {
+        Vec::new()
+    }
+    /// Add or update the Windows Firewall rule that lets WSL reach the router at
+    /// `address:port` (asks for administrator approval).
+    async fn allow_wsl_firewall(
+        &self,
+        address: std::net::Ipv4Addr,
+        port: u16,
+    ) -> Result<superba_router::firewall::FirewallChange> {
+        let _ = (address, port);
+        Err(Error::not_implemented("Windows Firewall rules"))
+    }
     /// Service state and liveness.
     async fn overview(&self) -> (RouterServiceInfo, Liveness);
     /// Ask the running router (admin API on loopback).
@@ -220,6 +241,24 @@ impl superba_router::watchdog::DirectModeFallback for AlreadyDirect {
 impl RouterControl for SystemRouterControl {
     async fn restart(&self) -> Result<()> {
         self.manager.restart(ROUTER_START_WAIT).await
+    }
+
+    async fn set_wsl_listen(&self, addresses: Vec<std::net::Ipv4Addr>) -> Result<bool> {
+        self.manager.set_wsl_listen(addresses).await
+    }
+
+    fn wsl_listen(&self) -> Vec<std::net::Ipv4Addr> {
+        superba_router::config::RouterConfig::load(self.manager.paths())
+            .map(|c| c.wsl_listen)
+            .unwrap_or_default()
+    }
+
+    async fn allow_wsl_firewall(
+        &self,
+        address: std::net::Ipv4Addr,
+        port: u16,
+    ) -> Result<superba_router::firewall::FirewallChange> {
+        superba_router::firewall::allow_wsl(address, port, &self.manager.spec().exe).await
     }
 
     fn endpoint(&self) -> Result<RouterEndpointInfo> {

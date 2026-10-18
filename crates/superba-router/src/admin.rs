@@ -266,6 +266,10 @@ pub(crate) fn status(shared: &Shared) -> RouterStatus {
         recent: lock(&shared.events).iter().cloned().collect(),
         stats: shared.stats.status(generation.config.stats.as_ref()),
         local: shared.limits.status(),
+        wsl_listen: lock(&shared.wsl_bound)
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
     }
 }
 

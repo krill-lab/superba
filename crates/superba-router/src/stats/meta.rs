@@ -53,6 +53,9 @@ pub struct RequestMeta {
     pub transport: RequestTransport,
     /// Stats lines removed from the input.
     pub stripped: u32,
+    /// The Codex host the router authenticated (`wsl:<distro>`; `None` = this
+    /// computer), from [`crate::forward::CODEX_HOST_HEADER`].
+    pub codex_host: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -178,5 +181,6 @@ fn peek_with(headers: &HeaderMap, body: &[u8], transport: RequestTransport) -> R
         structured_output,
         transport,
         stripped: 0,
+        codex_host: short(header(headers, crate::forward::CODEX_HOST_HEADER)),
     }
 }

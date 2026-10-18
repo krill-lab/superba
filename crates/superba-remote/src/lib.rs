@@ -59,6 +59,7 @@ pub mod store;
 pub mod texts;
 pub mod turns;
 pub mod util;
+pub mod wsl;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -77,13 +78,14 @@ use superba_core::{
     ResolvedProfile, Result, SecretBytes, SessionReport, StashScope, SystemClock, TurnActivity,
 };
 
-use crate::envrc::{RcPlan, plan_env, shell_supported};
+use crate::envrc::{RcPlan, plan_env_for, shell_supported};
 use crate::probe::{RemoteMarker, Snapshot, parse_pids, snapshot_from_records};
 use crate::records::{FileRead, Records};
-use crate::script::{Expect, FileOp, Mode, REMOTE_DIR, WriteSpec, backup_name, new_nonce};
+use crate::script::{Expect, FileOp, Flavor, Mode, REMOTE_DIR, WriteSpec, backup_name, new_nonce};
 use crate::ssh::{RemoteShell, SystemSsh};
 use crate::store::{HostState, HostStore, JournalEntry, JournalStatus};
 use crate::util::{new_apply_id, rjoin, sha256_hex};
+use crate::wsl::{HostShells, SystemWsl, WslInventory, WslLister, WslShell};
 
 pub use crate::ssh::{LocalShell, ScriptOutput};
 
@@ -131,7 +133,8 @@ impl Default for Timeouts {
 pub struct SshRemoteHosts {
     engine: Arc<dyn ConfigEngine>,
     data_dir: DataDir,
-    shell: Arc<dyn RemoteShell>,
+    shells: HostShells,
+    wsl: Arc<dyn WslLister>,
     clock: Arc<dyn Clock>,
     home_dir: Option<PathBuf>,
     timeouts: Timeouts,
@@ -141,7 +144,8 @@ impl std::fmt::Debug for SshRemoteHosts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SshRemoteHosts")
             .field("data_dir", &self.data_dir)
-            .field("shell", &self.shell)
+            .field("shells", &self.shells)
+            .field("wsl", &self.wsl)
             .field("home_dir", &self.home_dir)
             .finish_non_exhaustive()
     }
@@ -149,22 +153,48 @@ impl std::fmt::Debug for SshRemoteHosts {
 
 impl SshRemoteHosts {
     /// Create with the config engine used to render remote files and the data dir
-    /// for per-host data (`DataDir::remote_dir`). Uses the system `ssh`.
+    /// for per-host data (`DataDir::remote_dir`). Uses the system `ssh` for SSH
+    /// hosts and `wsl.exe` for WSL distributions (listed with `wsl.exe --list`).
     pub fn new(engine: Arc<dyn ConfigEngine>, data_dir: DataDir) -> Self {
         Self {
             engine,
             data_dir,
-            shell: Arc::new(SystemSsh::default()),
+            shells: HostShells {
+                ssh: Arc::new(SystemSsh::default()),
+                wsl: Arc::new(WslShell::default()),
+            },
+            wsl: Arc::new(SystemWsl::default()),
             clock: Arc::new(SystemClock::new()),
             home_dir: None,
             timeouts: Timeouts::default(),
         }
     }
 
-    /// Run scripts through another transport (tests: [`LocalShell`]).
+    /// Run scripts of every host through another transport (tests:
+    /// [`LocalShell`]).
     pub fn with_shell(mut self, shell: Arc<dyn RemoteShell>) -> Self {
-        self.shell = shell;
+        self.shells = HostShells {
+            ssh: shell.clone(),
+            wsl: shell,
+        };
         self
+    }
+
+    /// Run scripts of WSL distributions through another transport.
+    pub fn with_wsl_shell(mut self, shell: Arc<dyn RemoteShell>) -> Self {
+        self.shells.wsl = shell;
+        self
+    }
+
+    /// List WSL distributions with another lister (tests: [`wsl::FixedWsl`]).
+    pub fn with_wsl_lister(mut self, lister: Arc<dyn WslLister>) -> Self {
+        self.wsl = lister;
+        self
+    }
+
+    /// The WSL distributions of this computer and the configured networking mode.
+    pub async fn wsl_inventory(&self) -> WslInventory {
+        self.wsl.list().await
     }
 
     /// Use another clock.
@@ -208,8 +238,12 @@ impl SshRemoteHosts {
         nonce: &str,
         timeout: Duration,
     ) -> Result<Records> {
-        ssh::require_ssh(host)?;
-        let out = self.shell.run(host, script, timeout).await?;
+        ssh::require_reachable(host)?;
+        let out = self
+            .shells
+            .for_host(host)
+            .run(host, script, timeout)
+            .await?;
         let recs = Records::parse(&out.stdout, nonce)?;
         tracing::debug!(host = %host.label, status = ?out.status, "remote script finished");
         if out.status != Some(0) && !recs.has("done") && !recs.has("result") {
@@ -233,7 +267,7 @@ impl SshRemoteHosts {
     /// Probe the host and keep its paths for later turn checks.
     async fn snapshot(&self, host: &RemoteHost, with_version: bool) -> Result<Snapshot> {
         let nonce = new_nonce();
-        let script = script::probe_script(&nonce, with_version);
+        let script = script::probe_script_for(&nonce, with_version, Flavor::of(host));
         let recs = self.run(host, &script, &nonce, self.timeouts.probe).await?;
         let snap = snapshot_from_records(
             &host.target_id,
@@ -350,7 +384,7 @@ impl SshRemoteHosts {
                         .authapi_origin
                         .as_ref()
                         .unwrap_or(&endpoints.origin);
-                    if !shell_supported(&state.shell) {
+                    if !env_shells(host, state).iter().any(shell_supported) {
                         c.blocked.push(BlockReason::UnsupportedTarget {
                             detail: format!(
                                 "{}: Superba cannot set {ENV_AUTHAPI_BASE_URL} for the login shell {:?}; use API key mode",
@@ -422,14 +456,18 @@ impl SshRemoteHosts {
             },
         ];
         if let Some(op) = &env_op {
-            match plan_env(&state.shell, &snap.rc, op) {
+            match plan_env_for(&env_shells(host, state), &snap.rc, op) {
                 Ok(rc) => {
                     if !rc.edits.is_empty() {
                         c.env = Some(EnvPlan {
                             var: ENV_AUTHAPI_BASE_URL.to_owned(),
                             op: op.clone(),
                             edits: rc.edits.clone(),
-                            scope_notes: vec![texts::env_scope()],
+                            scope_notes: vec![if host.kind == superba_core::HostKind::Wsl {
+                                texts::wsl_env_scope()
+                            } else {
+                                texts::env_scope()
+                            }],
                         });
                     }
                     c.rc = rc;
@@ -452,18 +490,37 @@ impl SshRemoteHosts {
         scope: RemoteApplyScope,
         c: &Computed,
     ) -> Vec<Notice> {
-        let label = host.label.as_str();
+        let title = host.title().render_fallback();
+        let label = if host.kind == superba_core::HostKind::Wsl {
+            title.as_str()
+        } else {
+            host.label.as_str()
+        };
         let pat = scope != RemoteApplyScope::Settings
             && desired.auth_mode().is_some_and(AuthMode::needs_authapi_env);
-        let mut w = vec![Notice::warning(match &host.host_id {
-            None => texts::no_host_id(label),
-            Some(_) => texts::pkill(label),
-        })];
-        if !snap.login_ok {
-            w.push(Notice::warning(texts::login_shell(label)));
+        let wsl = host.kind == superba_core::HostKind::Wsl;
+        let mut w = Vec::new();
+        if wsl {
+            // The app restarts only its own WSL app-server (stdio, no pkill).
+            if snap.state.app_bash == Some(false) {
+                w.push(Notice::warning(texts::wsl_login_bash(label)));
+            }
+            if snap.state.codex_path.is_none() {
+                w.push(Notice::info(texts::wsl_codex_missing(label)));
+            }
+        } else {
+            w.push(Notice::warning(match &host.host_id {
+                None => texts::no_host_id(label),
+                Some(_) => texts::pkill(label),
+            }));
+            if !snap.login_ok {
+                w.push(Notice::warning(texts::login_shell(label)));
+            }
         }
         if pat && snap.state.codex_path.is_none() {
-            w.push(Notice::warning(texts::codex_missing(label)));
+            if !wsl {
+                w.push(Notice::warning(texts::codex_missing(label)));
+            }
         } else if pat && snap.state.codex_version.is_none() {
             w.push(Notice::warning(texts::version_unknown(label)));
         }
@@ -844,9 +901,9 @@ fn infer_home(home: &CodexHome) -> Option<PathBuf> {
     (root.file_name()? == ".codex").then(|| root.parent().map(Path::to_path_buf))?
 }
 
-#[async_trait]
-impl RemoteHosts for SshRemoteHosts {
-    async fn discover(
+/// The trait methods; [`RemoteHosts`] wraps them so errors name the host kind.
+impl SshRemoteHosts {
+    async fn discover_impl(
         &self,
         home: &CodexHome,
         from_app: &[RemoteHost],
@@ -856,23 +913,33 @@ impl RemoteHosts for SshRemoteHosts {
         let home = home.clone();
         let from_app = from_app.to_vec();
         let live = live.to_vec();
-        tokio::task::spawn_blocking(move || {
+        let mut hosts = tokio::task::spawn_blocking(move || {
             discover::discover_from_files(&home, home_dir.as_deref(), &from_app, &live)
         })
         .await
-        .map_err(|e| Error::other(format!("discovery task failed: {e}")))
+        .map_err(|e| Error::other(format!("discovery task failed: {e}")))?;
+        let inventory = self.wsl.list().await;
+        if let Some(error) = &inventory.error {
+            tracing::debug!(%error, "no WSL distributions listed");
+        }
+        discover::merge_wsl(&mut hosts, &inventory.distros);
+        Ok(hosts)
     }
 
-    async fn probe(&self, host: &RemoteHost) -> Result<RemoteState> {
+    async fn probe_impl(&self, host: &RemoteHost) -> Result<RemoteState> {
         Ok(self.snapshot(host, true).await?.state)
     }
 
-    async fn plan_apply(&self, host: &RemoteHost, desired: &ResolvedProfile) -> Result<RemotePlan> {
+    async fn plan_apply_impl(
+        &self,
+        host: &RemoteHost,
+        desired: &ResolvedProfile,
+    ) -> Result<RemotePlan> {
         self.plan_in_scope(host, desired, RemoteApplyScope::Both)
             .await
     }
 
-    async fn plan_apply_scoped(
+    async fn plan_apply_scoped_impl(
         &self,
         host: &RemoteHost,
         desired: &ResolvedProfile,
@@ -881,7 +948,7 @@ impl RemoteHosts for SshRemoteHosts {
         self.plan_scoped(host, desired, scope).await
     }
 
-    async fn install_codex(
+    async fn install_codex_impl(
         &self,
         host: &RemoteHost,
         package: &Path,
@@ -890,15 +957,15 @@ impl RemoteHosts for SshRemoteHosts {
         self.install(host, package, version).await
     }
 
-    async fn rollback_codex(&self, host: &RemoteHost) -> Result<RemoteInstallReport> {
+    async fn rollback_codex_impl(&self, host: &RemoteHost) -> Result<RemoteInstallReport> {
         self.rollback_install(host).await
     }
 
-    async fn scan_sessions(&self, host: &RemoteHost) -> Result<SessionReport> {
+    async fn scan_sessions_impl(&self, host: &RemoteHost) -> Result<SessionReport> {
         self.scan(host).await
     }
 
-    async fn apply(&self, host: &RemoteHost, plan: &RemotePlan) -> Result<RemoteApplyReport> {
+    async fn apply_impl(&self, host: &RemoteHost, plan: &RemotePlan) -> Result<RemoteApplyReport> {
         if plan.target_id != host.target_id {
             return Err(Error::invalid(format!(
                 "plan is for {}, not {}",
@@ -991,7 +1058,7 @@ impl RemoteHosts for SshRemoteHosts {
         })
     }
 
-    async fn rollback(&self, host: &RemoteHost, report: &RemoteApplyReport) -> Result<()> {
+    async fn rollback_impl(&self, host: &RemoteHost, report: &RemoteApplyReport) -> Result<()> {
         // (path, before hash, after hash, backup, mode)
         struct Item {
             path: String,
@@ -1219,7 +1286,7 @@ impl RemoteHosts for SshRemoteHosts {
         }
     }
 
-    async fn turn_activity(&self, host: &RemoteHost) -> Result<TurnActivity> {
+    async fn turn_activity_impl(&self, host: &RemoteHost) -> Result<TurnActivity> {
         let st = self.store(host).load_state().await?;
         let nonce = new_nonce();
         let script = script::turn_script(&nonce, st.codex_home.as_deref());
@@ -1244,7 +1311,7 @@ impl RemoteHosts for SshRemoteHosts {
         })
     }
 
-    async fn verify(
+    async fn verify_impl(
         &self,
         host: &RemoteHost,
         request: &RemoteVerifyRequest,
@@ -1263,7 +1330,12 @@ impl RemoteHosts for SshRemoteHosts {
             let recs = self
                 .run(
                     host,
-                    &script::verify_script(&nonce, &request.previous_app_server_pids, &paths),
+                    &script::verify_script_for(
+                        &nonce,
+                        &request.previous_app_server_pids,
+                        &paths,
+                        Flavor::of(host),
+                    ),
                     &nonce,
                     self.timeouts.verify_poll,
                 )
@@ -1331,5 +1403,153 @@ impl RemoteHosts for SshRemoteHosts {
             }
             tokio::time::sleep(self.timeouts.poll_interval).await;
         }
+    }
+}
+
+#[async_trait]
+impl RemoteHosts for SshRemoteHosts {
+    async fn discover(
+        &self,
+        home: &CodexHome,
+        from_app: &[RemoteHost],
+        live: &[ProcessInfo],
+    ) -> Result<Vec<RemoteHost>> {
+        self.discover_impl(home, from_app, live).await
+    }
+
+    async fn probe(&self, host: &RemoteHost) -> Result<RemoteState> {
+        kinded(host, self.probe_impl(host).await)
+    }
+
+    async fn plan_apply(&self, host: &RemoteHost, desired: &ResolvedProfile) -> Result<RemotePlan> {
+        kinded(host, self.plan_apply_impl(host, desired).await)
+    }
+
+    async fn plan_apply_scoped(
+        &self,
+        host: &RemoteHost,
+        desired: &ResolvedProfile,
+        scope: RemoteApplyScope,
+    ) -> Result<RemotePlan> {
+        kinded(
+            host,
+            self.plan_apply_scoped_impl(host, desired, scope).await,
+        )
+    }
+
+    async fn install_codex(
+        &self,
+        host: &RemoteHost,
+        package: &Path,
+        version: &CodexVersion,
+    ) -> Result<RemoteInstallReport> {
+        kinded(host, self.install_codex_impl(host, package, version).await)
+    }
+
+    async fn rollback_codex(&self, host: &RemoteHost) -> Result<RemoteInstallReport> {
+        kinded(host, self.rollback_codex_impl(host).await)
+    }
+
+    async fn scan_sessions(&self, host: &RemoteHost) -> Result<SessionReport> {
+        kinded(host, self.scan_sessions_impl(host).await)
+    }
+
+    async fn apply(&self, host: &RemoteHost, plan: &RemotePlan) -> Result<RemoteApplyReport> {
+        kinded(host, self.apply_impl(host, plan).await)
+    }
+
+    async fn rollback(&self, host: &RemoteHost, report: &RemoteApplyReport) -> Result<()> {
+        kinded(host, self.rollback_impl(host, report).await)
+    }
+
+    async fn turn_activity(&self, host: &RemoteHost) -> Result<TurnActivity> {
+        kinded(host, self.turn_activity_impl(host).await)
+    }
+
+    async fn verify(
+        &self,
+        host: &RemoteHost,
+        request: &RemoteVerifyRequest,
+    ) -> Result<RemoteVerification> {
+        kinded(host, self.verify_impl(host, request).await)
+    }
+
+    async fn http_get(
+        &self,
+        host: &RemoteHost,
+        address: &str,
+        port: u16,
+        path: &str,
+    ) -> Result<Option<String>> {
+        kinded(host, self.http_get_impl(host, address, port, path).await)
+    }
+
+    async fn wsl_status(&self) -> Result<(superba_core::WslNetworking, Option<String>)> {
+        let inv = self.wsl.list().await;
+        Ok((inv.networking, inv.error))
+    }
+}
+
+impl SshRemoteHosts {
+    async fn http_get_impl(
+        &self,
+        host: &RemoteHost,
+        address: &str,
+        port: u16,
+        path: &str,
+    ) -> Result<Option<String>> {
+        let ip: std::net::Ipv4Addr = address
+            .parse()
+            .map_err(|_| Error::invalid(format!("not an IPv4 address: {address:?}")))?;
+        let nonce = new_nonce();
+        let script = wsl::http_get_script(&nonce, ip, port, path)?;
+        let recs = self
+            .run(
+                host,
+                &script,
+                &nonce,
+                self.timeouts.turn.max(Duration::from_secs(15)),
+            )
+            .await?;
+        recs.require_done("http_get")?;
+        if recs.has("nobash") {
+            return Err(Error::Unsupported {
+                what: format!("connecting from {} (no bash)", host.title()),
+            });
+        }
+        Ok(match recs.file("answer") {
+            Some(records::FileRead::Bytes(b)) => {
+                Some(String::from_utf8_lossy(b.expose()).into_owned())
+            }
+            _ => None,
+        })
+    }
+}
+
+/// The shells whose rc files carry `CODEX_AUTHAPI_BASE_URL` on a host: its
+/// login shell; for a WSL distribution first the desktop app's `/usr/bin/bash
+/// -l` (when present), then the user's login shell (the Codex CLI's).
+pub fn env_shells(host: &RemoteHost, state: &RemoteState) -> Vec<superba_core::ShellKind> {
+    let mut out = Vec::new();
+    if host.kind == superba_core::HostKind::Wsl && state.app_bash != Some(false) {
+        out.push(superba_core::ShellKind::Bash);
+    }
+    if !out.contains(&state.shell) {
+        out.push(state.shell.clone());
+    }
+    out
+}
+
+/// Errors of a WSL distribution name WSL, not SSH: the script engine reports
+/// remote failures as [`Error::Ssh`] with the host label.
+fn kinded<T>(host: &RemoteHost, result: Result<T>) -> Result<T> {
+    match result {
+        Err(Error::Ssh { message, .. }) if host.kind == superba_core::HostKind::Wsl => {
+            Err(Error::Wsl {
+                distro: host.wsl_distro().unwrap_or_else(|| host.label.clone()),
+                message,
+            })
+        }
+        other => other,
     }
 }

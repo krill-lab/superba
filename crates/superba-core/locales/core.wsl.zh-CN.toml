@@ -1,0 +1,12 @@
+# superba-core 中关于 WSL 发行版的文案（用户问题 45）。拼接在 zh-CN.toml 之后组成
+# core 文案，所以本文件必须以表头开头，且不能重复其他 core 文件中的键（由测试保证）。
+# 每个键都必须在 core.wsl.en.toml 中存在。
+
+[wsl]
+version = "WSL {version}"
+version_unknown = "WSL"
+default = "默认发行版"
+networking_nat = "NAT 网络"
+networking_mirrored = "镜像网络"
+networking_none = "无网络"
+networking_virtio_proxy = "virtio 代理网络"

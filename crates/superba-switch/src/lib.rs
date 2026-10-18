@@ -46,6 +46,7 @@ mod transports;
 pub mod usage;
 pub mod versions;
 pub mod winapp;
+mod wsl;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -715,6 +716,18 @@ impl SwitchService for Switcher {
         target_id: &superba_core::TargetId,
     ) -> Result<superba_core::HostSessions> {
         self.host_sessions_impl(target_id).await
+    }
+
+    async fn wsl_overview(&self) -> Result<superba_core::wsl::WslOverview> {
+        self.wsl_overview_impl().await
+    }
+
+    async fn wsl_router_access(
+        &self,
+        target_id: &superba_core::TargetId,
+    ) -> Result<superba_core::wsl::WslAccessReport> {
+        self.refuse_elevated()?;
+        self.wsl_router_access_impl(target_id).await
     }
 
     async fn versions(&self, refresh: bool) -> Result<superba_core::VersionsView> {

@@ -51,6 +51,7 @@ fn host(id: &str, sources: Vec<HostSource>) -> RemoteOverview {
             },
             sources,
             connected: Some(true),
+            wsl: None,
         },
         state: None,
         error: None,

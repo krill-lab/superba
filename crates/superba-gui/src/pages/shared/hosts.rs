@@ -71,3 +71,26 @@ pub fn id_tip(tr: &Tr, host: &RemoteHost) -> Option<String> {
         .as_deref()
         .map(|id| tr.f("hosts.host_id_tip", &[("id", &id)]))
 }
+
+/// "WSL 2 · NAT networking" (WSL 1 shares Windows' network: no mode), with
+/// "default" for the default distribution; `None` for other hosts.
+pub fn wsl_facts(tr: &Tr, host: &RemoteHost) -> Option<String> {
+    let d = host.wsl.as_ref().filter(|_| host.kind == HostKind::Wsl)?;
+    let mut version = tr.text(&d.version_text());
+    if d.default {
+        version = format!("{version} · {}", tr.t("hosts.wsl.default"));
+    }
+    if d.version == Some(1) {
+        return Some(version);
+    }
+    let key = match d.networking {
+        superba_core::WslNetworking::Mirrored => "wsl.networking_mirrored",
+        superba_core::WslNetworking::None => "wsl.networking_none",
+        superba_core::WslNetworking::VirtioProxy => "wsl.networking_virtio_proxy",
+        _ => "wsl.networking_nat",
+    };
+    Some(tr.f(
+        "hosts.wsl.endpoint",
+        &[("version", &version), ("networking", &tr.t(key))],
+    ))
+}

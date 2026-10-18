@@ -655,19 +655,40 @@ impl Switcher {
         let local = request.targets.local;
         // v0.3: a profile switch changes a remote host only when the host follows
         // this computer (its connection only); explicit targets stay as asked.
-        let followed: Vec<TargetId> = if local
-            && request.targets.remotes.is_empty()
-            && matches!(request.intent, SwitchIntent::Profile { .. })
-        {
+        // WSL distributions (user bug 45) follow by default, also for router on /
+        // off, restores and uninstall; plan_remotes adds the ones without a
+        // stored setting.
+        let auto_targets = local && request.targets.remotes.is_empty();
+        let wsl_follow = auto_targets && crate::wsl::participates(&request.intent);
+        let profile_switch = matches!(request.intent, SwitchIntent::Profile { .. });
+        let mut followed: Vec<TargetId> = if auto_targets {
             set.settings
                 .hosts
                 .iter()
-                .filter(|(_, h)| h.follow_switches)
+                .filter(|(t, h)| {
+                    let kind = superba_core::HostKind::of_target(t);
+                    h.follows(kind)
+                        && (profile_switch || (wsl_follow && kind == superba_core::HostKind::Wsl))
+                })
                 .map(|(t, _)| t.clone())
                 .collect()
         } else {
             Vec::new()
         };
+        if wsl_follow {
+            // The distributions of this computer (Windows lists them; no process
+            // is started) that follow by default.
+            if let Ok(hosts) = d.remote.discover(&home, &[], &[]).await {
+                for h in hosts
+                    .iter()
+                    .filter(|h| h.kind == superba_core::HostKind::Wsl)
+                {
+                    if crate::wsl::follows(&set, h) && !followed.contains(&h.target_id) {
+                        followed.push(h.target_id.clone());
+                    }
+                }
+            }
+        }
         request.targets.remotes.extend(followed.iter().cloned());
 
         if local {
@@ -1033,6 +1054,7 @@ impl Switcher {
             .plan_remotes(
                 &request,
                 &followed,
+                &set,
                 &dest,
                 &home,
                 session.as_ref(),
@@ -2366,6 +2388,7 @@ impl Switcher {
         &self,
         request: &SwitchRequest,
         followed: &[TargetId],
+        set: &ProfileSet,
         dest: &Dest,
         home: &CodexHome,
         session: Option<&AppSession>,
@@ -2452,23 +2475,42 @@ impl Switcher {
                 }
                 continue;
             }
-            used_hosts.push(host.clone());
             if dest.rollback_remote.as_ref() == Some(&tid) {
+                used_hosts.push(host.clone());
                 restarts.push((tid, decide_remote(host.host_id.as_deref(), &[])));
                 continue;
             }
+            let wsl = host.kind == superba_core::HostKind::Wsl;
+            let by_default =
+                wsl && followed.contains(&tid) && !crate::wsl::follow_chosen(set, &host);
             let state = match d.remote.probe(&host).await {
                 Ok(s) => s,
+                Err(e) if by_default => {
+                    // A distribution that does not start is skipped, not failed.
+                    draft.info(
+                        text("switch.wsl.unavailable")
+                            .arg_text("host", host.title())
+                            .arg("detail", e.detail()),
+                    );
+                    continue;
+                }
                 Err(e) => {
                     draft.warn(
                         text("switch.warn.remote_unavailable")
                             .arg("host", &host.label)
                             .arg("detail", e.to_string()),
                     );
+                    used_hosts.push(host.clone());
                     restarts.push((tid, unavailable(e.to_string())));
                     continue;
                 }
             };
+            if by_default && !crate::wsl::has_codex(&state) {
+                // Nothing in this distribution reads a Codex home.
+                draft.info(text("switch.wsl.no_codex").arg_text("host", host.title()));
+                continue;
+            }
+            used_hosts.push(host.clone());
             let gate = rules::gate_versions(
                 &[VersionedConsumer {
                     label: host.label.clone(),
@@ -2481,13 +2523,25 @@ impl Switcher {
             if state.shared_home_suspected() {
                 shared.push(tid.clone());
             }
-            // Remote hosts are never routed through the local router.
+            // SSH hosts are never routed through the local router; a WSL
+            // distribution is when it can reach it (user bug 45).
             let Some(base) = dest.remote_resolved.as_ref().or(dest.resolved.as_ref()) else {
                 restarts.push((tid, unavailable("nothing to apply".into())));
                 continue;
             };
-            let (resolved, scope) = remote_resolution(base, followed.contains(&tid));
+            let (resolved, scope) = if wsl {
+                self.wsl_resolution(set, base, dest, &host, &state, draft)
+                    .await
+            } else {
+                remote_resolution(base, followed.contains(&tid))
+            };
             match d.remote.plan_apply_scoped(&host, &resolved, scope).await {
+                Ok(p) if by_default && p.blocked == [BlockReason::NoBaseline] => {
+                    // Superba never wrote this distribution: nothing to restore.
+                    draft
+                        .info(text("switch.wsl.nothing_to_restore").arg_text("host", host.title()));
+                    used_hosts.retain(|h| h.target_id != tid);
+                }
                 Ok(mut p) => {
                     for b in gate.blocks {
                         if !p.blocked.contains(&b) {
@@ -2657,6 +2711,51 @@ impl Switcher {
                 request: alt,
             });
         }
+    }
+}
+
+impl Switcher {
+    /// What a WSL distribution gets from a local destination (user bug 45):
+    /// connection and settings, like this computer. Router mode routes it when
+    /// it reaches the router (else direct, with the reason); the settings are
+    /// the profile's, filtered for the distribution's Codex; a restore restores
+    /// both key families. A local model catalog file is not written there.
+    async fn wsl_resolution(
+        &self,
+        set: &ProfileSet,
+        base: &ResolvedProfile,
+        dest: &Dest,
+        host: &RemoteHost,
+        state: &superba_core::RemoteState,
+        draft: &mut Draft,
+    ) -> (ResolvedProfile, superba_core::RemoteApplyScope) {
+        let mut resolved = base.clone();
+        if let ResolvedMode::Token { .. } = resolved.mode {
+            if dest.routed
+                && let Some(local) = dest.resolved.as_ref()
+            {
+                match self.wsl_route(host, state).await {
+                    crate::wsl::WslRoute::Routed { origin, token } => {
+                        resolved = crate::wsl::routed(local, &origin, &token);
+                        draft.info(
+                            text("switch.wsl.routed")
+                                .arg_text("host", host.title())
+                                .arg("address", origin.as_str()),
+                        );
+                    }
+                    crate::wsl::WslRoute::Direct { reason } => draft.warn(reason),
+                }
+            }
+            let (settings, notes) = self.wsl_settings(set, &resolved, host, state);
+            resolved.settings = settings;
+            draft.warnings.extend(notes);
+        } else {
+            resolved.settings = Default::default();
+        }
+        if resolved.model_catalog.take().is_some() {
+            draft.info(text("switch.wsl.no_model_catalog").arg_text("host", host.title()));
+        }
+        (resolved, superba_core::RemoteApplyScope::Both)
     }
 }
 

@@ -480,6 +480,7 @@ pub fn host(alias: &str, host_id: Option<&str>) -> RemoteHost {
         },
         sources: Vec::new(),
         connected: None,
+        wsl: None,
     }
 }
 

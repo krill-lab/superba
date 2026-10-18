@@ -23,5 +23,6 @@ no_meta = "{count} session files have no readable session header and were not co
 ssh = "SSH host"
 remote_control = "Remote-control device"
 wsl = "WSL distribution"
+wsl_title = "WSL: {distro}"
 cloud = "ChatGPT cloud"
 unknown = "Other connection"

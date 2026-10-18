@@ -22,5 +22,6 @@ no_meta = "有 {count} 个会话文件读不到会话头信息，没有统计。
 ssh = "SSH 主机"
 remote_control = "远程控制设备"
 wsl = "WSL 发行版"
+wsl_title = "WSL：{distro}"
 cloud = "ChatGPT 云端"
 unknown = "其他连接"
