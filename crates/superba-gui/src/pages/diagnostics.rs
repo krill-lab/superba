@@ -27,6 +27,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
 
     checks(ui, cx);
     ui.add_space(24.0);
+    claude(ui, cx, out);
     processes(ui, cx, out);
     ui.add_space(24.0);
     environment(ui, cx);
@@ -95,6 +96,67 @@ fn checks(ui: &mut Ui, cx: &Cx<'_>) {
             &cx.tr.t("diag.not_run_body"),
         ),
     }
+}
+
+/// Claude Code (user bug 79): the program, settings.json, managed settings
+/// that override Superba's keys, variables outside the file, a claude.ai
+/// login, apiKeyHelper. Hidden when the service has no Claude Code support.
+fn claude(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<super::Action>) {
+    let d = match (&cx.data.claude_diag.value, &cx.data.claude_diag.error) {
+        (_, Some(superba_core::Error::NotImplemented { .. })) => return,
+        (Some(d), _) => d,
+        (None, Some(e)) => {
+            section(ui, cx, &cx.tr.t("claude.diag.title"), None);
+            error_state(ui, cx, &cx.tr.t("diag.failed"), e);
+            ui.add_space(24.0);
+            return;
+        }
+        (None, None) => return,
+    };
+    super::section_with(ui, cx, &cx.tr.t("claude.diag.title"), None, |ui| {
+        if ui
+            .add(Button::ghost(cx.tr.t("nav.claude_code")).small())
+            .clicked()
+        {
+            out.push(super::Action::Go(super::Page::ClaudeCode));
+        }
+    });
+    Card::new().flat().show(ui, |ui| {
+        let n = d.findings.len();
+        for (i, f) in d.findings.iter().enumerate() {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(20, 10))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal_top(|ui| {
+                        let status = match f.severity {
+                            Severity::Info => Status::Ok,
+                            Severity::Warning => Status::Warn,
+                            Severity::Danger => Status::Error,
+                        };
+                        let (r, _) =
+                            ui.allocate_exact_size(egui::vec2(10.0, 20.0), egui::Sense::hover());
+                        StatusDot::new(status).paint_at(ui, r.center());
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.add(
+                                egui::Label::new(Text::body(cx.tr.text(&f.title), cx.pal)).wrap(),
+                            );
+                            if let Some(detail) = &f.detail {
+                                ui.add(
+                                    egui::Label::new(Text::small(cx.tr.text(detail), cx.pal))
+                                        .wrap(),
+                                );
+                            }
+                        });
+                    });
+                });
+            if i + 1 < n {
+                crate::shell::divider(ui, cx.pal);
+            }
+        }
+    });
+    ui.add_space(24.0);
 }
 
 /// Codex processes of this computer (moved from the 0.2 Targets page): the

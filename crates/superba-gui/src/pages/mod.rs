@@ -542,6 +542,8 @@ pub struct Data {
     pub sessions: Load<(SessionReport, Vec<MigrationReceipt>)>,
     /// Diagnostics.
     pub doctor: Load<Vec<DoctorFinding>>,
+    /// Diagnostics of Claude Code (loaded with [`Data::doctor`]).
+    pub claude_diag: Load<superba_core::ClaudeDiagnostics>,
     /// Identity and balance of the applied key-based profile.
     pub account: Load<superba_core::AccountReport>,
     /// Last router watchdog state (while router mode is on).

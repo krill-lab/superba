@@ -1,0 +1,263 @@
+# Claude Code 页面（用户问题 79）。
+
+[claude]
+loading = "正在读取 Claude Code 的设置…"
+load_failed = "无法读取 Claude Code 的状态"
+reload = "重新读取"
+cancel = "取消"
+discard = "放弃修改"
+
+[claude.palette]
+apply = "应用 Claude Code 配置"
+pull = "拉取 Claude Code 模型"
+files = "编辑 Claude Code 的 settings.json"
+
+[claude.banner]
+new_sessions = "已写入 settings.json。新开的 Claude Code 会话生效；正在运行的会话保持启动时的设置。"
+restored = "Claude Code 的设置已还原为 Superba 之前的样子，新开的会话生效。"
+dismiss = "知道了"
+
+[claude.provider]
+title = "供应商"
+follow = "与 Codex 相同"
+follows_named = "{name}（与 Codex 相同）"
+none = "没有带 Key 的供应商"
+no_anthropic = "这个供应商没有 Anthropic 接口，协议转换将在 0.1.2 支持"
+
+[claude.route]
+title = "路由"
+direct = "直连"
+router = "本地路由"
+router_soon = "路由即将支持 Claude Code"
+
+[claude.endpoint]
+title = "Anthropic 接口"
+edit = "修改"
+none = "这个供应商没有 Anthropic 接口。点“修改”选择预设或填写地址。"
+suggested = "建议值"
+auth = "Key 发送方式"
+auth_bearer = "Bearer（ANTHROPIC_AUTH_TOKEN）"
+auth_key = "x-api-key（ANTHROPIC_API_KEY）"
+check = "检测"
+check_tip = "向默认模型（或第一个槽位）发一次 1 个 token 的 /v1/messages 请求。"
+check_ok = "{model} 用时 {ms} 毫秒应答"
+check_failed = "失败：{error}"
+dialog_title = "Anthropic 接口"
+dialog_body = "Claude Code 会带着供应商的 Key 向这个基础 URL 发送 /v1/messages。预设来自各厂商自己的文档。"
+preset = "预设"
+custom = "自定义地址"
+docs = "厂商文档"
+no_list = "这个接口不提供模型列表：请手动添加模型 id。"
+save = "保存"
+reset = "使用建议值"
+reset_tip = "不再使用这个地址，改用 Superba 为该供应商建议的预设（如果有）。"
+
+[claude.status]
+title = "Claude Code"
+found = "Claude Code {version}"
+not_found = "未找到 Claude Code（设置仍会写入）"
+file_absent = "{path}（应用时创建）"
+file_ok = "{path}"
+file_invalid = "{path} 不是有效的 JSON"
+applied = "已应用（{at}）· {n} 个键"
+not_applied = "尚未应用"
+pending = "{n} 个键尚未应用"
+drift = "{n} 个键被别人改过"
+
+[claude.models]
+title = "模型"
+search = "搜索模型"
+pull = "拉取模型"
+pull_tip = "重新向供应商拉取 Codex 列表和 Anthropic 接口的 /v1/models 列表。"
+list_codex = "Codex 列表"
+list_standard = "标准列表"
+manual = "手动添加"
+codex_only = "仅 Codex 可用"
+codex_only_tip = "只有 Codex 列表里有这个模型，而这个 Anthropic 接口不提供 Codex 列表里的模型：Claude Code 在这里不能用它。"
+in_picker = "在 /model 中"
+add = "添加模型 id"
+add_hint = "模型 id，例如 deepseek-chat"
+empty_title = "还没有模型"
+empty_body = "拉取模型，或手动添加模型 id。"
+no_provider_title = "没有供应商"
+no_provider_body = "请在上方选择一个有 Anthropic 接口的供应商。"
+
+[claude.slot]
+opus = "Opus"
+sonnet = "Sonnet"
+haiku = "Haiku"
+fable = "Fable"
+custom = "自定义"
+
+[claude.role]
+main = "默认模型"
+main_tip = "model：新会话开始时使用的模型。"
+subagent = "子代理"
+subagent_tip = "CLAUDE_CODE_SUBAGENT_MODEL：子代理使用的模型。"
+background = "后台"
+background_tip = "ANTHROPIC_SMALL_FAST_MODEL：后台任务使用的模型（未设置时用 Haiku 槽位）。"
+
+[claude.detail]
+close = "关闭"
+context = "上下文窗口 {n}"
+levels = "推理强度：{levels}"
+use_as = "用作"
+row_text = "{slot} 在 /model 中的显示"
+name_hint = "名称（默认：模型 id）"
+description_hint = "说明"
+
+[claude.caps]
+title = "能力"
+suggested = "建议值"
+suggested_reset = "使用建议值"
+written = "写入为：{list}"
+effort = "推理强度（/effort）。"
+xhigh_effort = "xhigh 推理强度。"
+max_effort = "max 推理强度。"
+thinking = "带 token 预算的扩展思考。"
+adaptive_thinking = "自适应思考：由模型决定思考多久。"
+interleaved_thinking = "工具调用之间的思考。"
+temperature = "temperature 参数。"
+mid_conversation_system = "对话中途的系统消息。"
+
+[claude.picker]
+title = "/model 列表"
+empty = "没有条目：/model 只显示 Claude Code 自带的条目和槽位。"
+add = "加入 /model 列表"
+add_tip = "为这个模型写一条 modelPicker 条目（Claude Code 自己的网关发现只会列出 claude-* 模型）。"
+label_hint = "条目标题（默认：模型 id）"
+description_hint = "条目说明"
+behaves_as = "按此模型处理"
+behaves_as_tip = "Claude Code 认识的一个 Claude 模型，客户端按它的方式处理（提示词、推理强度默认值）。没有它时，Claude Code 不认识的模型不会出现在 /model 中。"
+behaves_none = "未设置"
+remove = "删除"
+up = "上移"
+down = "下移"
+replace = "隐藏 Claude 自带的条目"
+replace_tip = "replaceBuiltInOptions：/model 只显示“默认”和这些条目。"
+
+[claude.summary]
+title = "槽位"
+hint = "在列表中选一个模型，把它放进槽位或 /model 列表。"
+unset = "未设置"
+
+[claude.hints]
+title = "厂商推荐的设置"
+body = "{vendor} 的文档还设置了这些变量；需要的话请在 Claude Code 设置页设置："
+
+[claude.footer]
+unsaved = "有修改尚未应用"
+pending = "settings.json 中有 {n} 个键尚未应用"
+in_sync = "settings.json 与当前配置一致"
+not_applied = "Superba 还没有管理 settings.json 里的任何键"
+
+[claude.apply]
+button = "应用"
+tip = "先显示 settings.json 将要改动的内容，再只写入 Superba 管理的键（写入前先备份文件）。"
+nothing = "settings.json 已与当前配置一致。"
+done = "已写入 settings.json 的 {n} 个键。"
+restored = "已还原 settings.json 的 {n} 个键。"
+
+[claude.restore]
+button = "还原"
+tip = "把 Superba 管理的键恢复为 Superba 第一次写入之前的值。"
+
+[claude.plan]
+title = "写入 settings.json？"
+title_restore = "还原 settings.json？"
+body = "{path}：只改动这些键，其他键保持不变。"
+absent = "（无）"
+drift = "被别人改过"
+take_over = "同时覆盖被别人改过的键"
+backup = "Superba 会先备份文件（Claude Code 设置 → 编辑 settings.json → 备份）。"
+write = "写入"
+restore = "还原"
+
+[claude.settings]
+search = "搜索键和环境变量"
+show_deprecated = "已弃用"
+common = "常用"
+changed = "文件中已设置"
+pick = "在列表中选择一个键。"
+load_failed = "无法读取 settings.json"
+invalid_file = "settings.json 不是有效的 JSON（{error}）：请先在文件编辑器中修正。"
+fix_file_first = "请先修正文件（编辑 settings.json）。"
+edit_file = "编辑 settings.json"
+edit_file_tip = "手动编辑 settings.json：输入时即检查，保存前自动备份。"
+empty_title = "这里没有内容"
+empty_body = "换一个分组或搜索词试试。"
+owned_note = "这个键由 Superba 管理（在“Claude Code · 连接与模型”中写入），请在那里修改。"
+go_connect = "打开连接与模型"
+secret_note = "这个 Key 只在文件编辑器中完整显示。"
+file_only = "没有任何目录认识这个键：它会被保留，并以 JSON 方式编辑。"
+default = "默认：{value}"
+remove_key = "从文件中删除"
+remove_key_tip = "删除这个键，Claude Code 将使用默认值。"
+undo = "撤销"
+examples = "示例：{list}"
+copy_key = "复制键名"
+pending = "{n} 项未保存的修改"
+diff = "查看改动"
+discard = "放弃"
+save = "保存"
+saved = "settings.json 已保存（原文件已备份）。"
+diff_title = "保存 settings.json？"
+diff_body = "只有你修改的键会变化。预览中的 Key 已隐藏。"
+prev = "上一页"
+next = "下一页"
+remove = "删除"
+add = "添加"
+add_item = "添加一项"
+plugin_hint = "插件@市场"
+model_hint = "模型 id"
+window_hint = "token 数或 auto"
+
+[claude.settings.group]
+connection = "连接"
+models = "模型"
+capabilities = "能力"
+output_context = "输出与上下文"
+traffic_privacy = "流量与隐私"
+other = "其他"
+
+[claude.settings.badge]
+env = "环境变量"
+deprecated = "已弃用"
+file = "仅文件中"
+official = "官方"
+binary = "Claude Code 自带"
+owned = "Superba 管理"
+
+[claude.settings.value]
+unset = "未设置"
+on = "开"
+off = "关"
+on_1 = "开（1）"
+off_0 = "关（0）"
+items = "{n} 项"
+fields = "{n} 个字段"
+other_hint = "或其他值"
+
+[claude.settings.invalid]
+integer = "范围内的整数。"
+number = "范围内的数字。"
+json = "不是 JSON：{error}"
+
+[claude.settings.env]
+name = "变量名"
+value = "值"
+
+[claude.settings.hooks]
+matcher = "匹配"
+matcher_hint = "例如 Edit|Write（留空：全部）"
+command_hint = "shell 命令"
+timeout_hint = "秒"
+timeout_tip = "超时（秒）"
+add_command = "添加命令"
+add_matcher = "添加匹配"
+remove_matcher = "删除匹配"
+add_event = "添加事件"
+
+[claude.diag]
+title = "Claude Code"
+probe = "检测接口"

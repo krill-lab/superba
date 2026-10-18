@@ -1,0 +1,263 @@
+# Claude Code pages (user bug 79).
+
+[claude]
+loading = "Reading Claude Code's settings…"
+load_failed = "Claude Code's state could not be read"
+reload = "Reload"
+cancel = "Cancel"
+discard = "Discard edits"
+
+[claude.palette]
+apply = "Apply Claude Code configuration"
+pull = "Pull Claude Code models"
+files = "Edit Claude Code settings.json"
+
+[claude.banner]
+new_sessions = "Written to settings.json. New Claude Code sessions use it; running sessions keep what they started with."
+restored = "Claude Code's settings are back to what they were before Superba. New sessions use them."
+dismiss = "Dismiss"
+
+[claude.provider]
+title = "Provider"
+follow = "Same as Codex"
+follows_named = "{name} (same as Codex)"
+none = "No provider with a key"
+no_anthropic = "This provider has no Anthropic endpoint; protocol translation comes in 0.1.2."
+
+[claude.route]
+title = "Route"
+direct = "Direct"
+router = "Local router"
+router_soon = "The router will serve Claude Code soon."
+
+[claude.endpoint]
+title = "Anthropic endpoint"
+edit = "Change"
+none = "This provider has no Anthropic endpoint. Choose a preset or enter one with Change."
+suggested = "suggested"
+auth = "Key sent as"
+auth_bearer = "Bearer (ANTHROPIC_AUTH_TOKEN)"
+auth_key = "x-api-key (ANTHROPIC_API_KEY)"
+check = "Check"
+check_tip = "Send one 1-token /v1/messages request to the default model (or the first slot)."
+check_ok = "{model} answered in {ms} ms"
+check_failed = "Failed: {error}"
+dialog_title = "Anthropic endpoint"
+dialog_body = "Claude Code sends /v1/messages to this base URL with the provider's key. Presets come from each vendor's documentation."
+preset = "Preset"
+custom = "Custom URL"
+docs = "Vendor documentation"
+no_list = "This endpoint does not list its models: add model ids by hand."
+save = "Save"
+reset = "Use the suggestion"
+reset_tip = "Forget this endpoint and use the preset Superba suggests for the provider (if any)."
+
+[claude.status]
+title = "Claude Code"
+found = "Claude Code {version}"
+not_found = "Claude Code not found (settings are written anyway)"
+file_absent = "{path} (created when applied)"
+file_ok = "{path}"
+file_invalid = "{path} is not valid JSON"
+applied = "Applied {at} · {n} keys"
+not_applied = "Not applied yet"
+pending = "{n} keys not applied yet"
+drift = "{n} keys changed by someone else"
+
+[claude.models]
+title = "Models"
+search = "Search models"
+pull = "Pull models"
+pull_tip = "Ask the provider for its Codex list and the Anthropic endpoint's /v1/models list again."
+list_codex = "Codex list"
+list_standard = "Standard list"
+manual = "added by hand"
+codex_only = "Codex only"
+codex_only_tip = "Only the Codex list names this model and the Anthropic endpoint does not serve that list: Claude Code cannot use it here."
+in_picker = "in /model"
+add = "Add model id"
+add_hint = "model id, e.g. deepseek-chat"
+empty_title = "No models yet"
+empty_body = "Pull the models, or add a model id by hand."
+no_provider_title = "No provider"
+no_provider_body = "Choose a provider with an Anthropic endpoint above."
+
+[claude.slot]
+opus = "Opus"
+sonnet = "Sonnet"
+haiku = "Haiku"
+fable = "Fable"
+custom = "Custom"
+
+[claude.role]
+main = "Default model"
+main_tip = "model: the model new sessions start with."
+subagent = "Subagents"
+subagent_tip = "CLAUDE_CODE_SUBAGENT_MODEL: the model of subagents."
+background = "Background"
+background_tip = "ANTHROPIC_SMALL_FAST_MODEL: background tasks (else the Haiku slot)."
+
+[claude.detail]
+close = "Close"
+context = "Context window {n}"
+levels = "Reasoning: {levels}"
+use_as = "Use as"
+row_text = "{slot} row in /model"
+name_hint = "Name (default: the model id)"
+description_hint = "Description"
+
+[claude.caps]
+title = "Capabilities"
+suggested = "suggested"
+suggested_reset = "Use the suggestion"
+written = "Written as: {list}"
+effort = "Effort levels (/effort)."
+xhigh_effort = "The xhigh effort level."
+max_effort = "The max effort level."
+thinking = "Extended thinking with a token budget."
+adaptive_thinking = "Adaptive thinking: the model decides how long to think."
+interleaved_thinking = "Thinking between tool calls."
+temperature = "A temperature parameter."
+mid_conversation_system = "System messages in the middle of a conversation."
+
+[claude.picker]
+title = "/model rows"
+empty = "No rows: /model shows Claude Code's own rows and the slots."
+add = "In /model"
+add_tip = "Write a modelPicker row for this model (Claude Code's own gateway discovery lists only claude-* ids)."
+label_hint = "Row title (default: the model id)"
+description_hint = "Row description"
+behaves_as = "Behaves as"
+behaves_as_tip = "A Claude model this Claude Code knows whose client-side handling (prompts, effort defaults) applies. Rows for models it does not know are not offered without it."
+behaves_none = "Not set"
+remove = "Remove"
+up = "Move up"
+down = "Move down"
+replace = "Hide Claude's own rows"
+replace_tip = "replaceBuiltInOptions: /model shows only Default and these rows."
+
+[claude.summary]
+title = "Slots"
+hint = "Pick a model in the list to put it into a slot or /model."
+unset = "not set"
+
+[claude.hints]
+title = "Recommended by the vendor"
+body = "{vendor}'s documentation also sets these variables; set them on the Claude Code settings page if you want them:"
+
+[claude.footer]
+unsaved = "Edits not applied yet"
+pending = "{n} keys of settings.json are not applied yet"
+in_sync = "settings.json matches this configuration"
+not_applied = "Superba manages nothing in settings.json yet"
+
+[claude.apply]
+button = "Apply"
+tip = "Show what changes in settings.json, then write only the keys Superba manages (the file is backed up first)."
+nothing = "settings.json already matches this configuration."
+done = "Wrote {n} keys to settings.json."
+restored = "Restored {n} keys of settings.json."
+
+[claude.restore]
+button = "Restore"
+tip = "Put back what Superba's keys held before Superba first wrote them."
+
+[claude.plan]
+title = "Write to settings.json?"
+title_restore = "Restore settings.json?"
+body = "{path}: only these keys change; every other key stays as it is."
+absent = "(absent)"
+drift = "changed by someone else"
+take_over = "Also overwrite the keys someone else changed"
+backup = "Superba backs the file up first (Claude Code settings → Edit settings.json → Backups)."
+write = "Write"
+restore = "Restore"
+
+[claude.settings]
+search = "Search keys and variables"
+show_deprecated = "Deprecated"
+common = "Common"
+changed = "In the file"
+pick = "Pick a key in the list."
+load_failed = "settings.json could not be read"
+invalid_file = "settings.json is not valid JSON ({error}): fix it in the file editor first."
+fix_file_first = "Fix the file first (Edit settings.json)."
+edit_file = "Edit settings.json"
+edit_file_tip = "Edit settings.json by hand: checked as you type, backed up before every save."
+empty_title = "Nothing here"
+empty_body = "Try another group or search term."
+owned_note = "Superba manages this key (Claude Code · Connection & models writes it). Change it there."
+go_connect = "Open Connection & models"
+secret_note = "This key is shown in full only in the file editor."
+file_only = "No catalog knows this key: it is kept and edited as JSON."
+default = "Default: {value}"
+remove_key = "Remove from the file"
+remove_key_tip = "Delete the key so Claude Code uses its default."
+undo = "Undo"
+examples = "Examples: {list}"
+copy_key = "Copy the key"
+pending = "{n} unsaved edits"
+diff = "Show changes"
+discard = "Discard"
+save = "Save"
+saved = "settings.json saved (the previous file is backed up)."
+diff_title = "Save settings.json?"
+diff_body = "Only the keys you edited change. Keys are hidden in this preview."
+prev = "Previous"
+next = "Next"
+remove = "Remove"
+add = "Add"
+add_item = "Add an item"
+plugin_hint = "plugin@marketplace"
+model_hint = "model id"
+window_hint = "tokens or auto"
+
+[claude.settings.group]
+connection = "Connection"
+models = "Models"
+capabilities = "Capabilities"
+output_context = "Output & context"
+traffic_privacy = "Traffic & privacy"
+other = "Other"
+
+[claude.settings.badge]
+env = "env"
+deprecated = "Deprecated"
+file = "Only in the file"
+official = "Official"
+binary = "Claude Code itself"
+owned = "Managed by Superba"
+
+[claude.settings.value]
+unset = "Not set"
+on = "On"
+off = "Off"
+on_1 = "On (1)"
+off_0 = "Off (0)"
+items = "{n} items"
+fields = "{n} fields"
+other_hint = "or another value"
+
+[claude.settings.invalid]
+integer = "A whole number in range."
+number = "A number in range."
+json = "Not JSON: {error}"
+
+[claude.settings.env]
+name = "VARIABLE"
+value = "value"
+
+[claude.settings.hooks]
+matcher = "Matcher"
+matcher_hint = "e.g. Edit|Write (empty: all)"
+command_hint = "shell command"
+timeout_hint = "secs"
+timeout_tip = "Timeout in seconds"
+add_command = "Add command"
+add_matcher = "Add matcher"
+remove_matcher = "Remove matcher"
+add_event = "Add event"
+
+[claude.diag]
+title = "Claude Code"
+probe = "Check endpoint"

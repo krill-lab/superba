@@ -323,6 +323,8 @@ pub enum Reply {
     Sessions(Result<(SessionReport, Vec<MigrationReceipt>)>),
     /// Diagnostics finished.
     Doctor(Result<Vec<DoctorFinding>>),
+    /// Claude Code's diagnostics finished.
+    ClaudeDoctor(Result<superba_core::ClaudeDiagnostics>),
     /// A plan is ready.
     Planned {
         /// Sequence number of the request.
@@ -621,7 +623,10 @@ async fn handle(
             });
         }
         Command::Sessions => out.send(Reply::Sessions(service.sessions().await)),
-        Command::Doctor => out.send(Reply::Doctor(service.doctor().await)),
+        Command::Doctor => {
+            out.send(Reply::Doctor(service.doctor().await));
+            out.send(Reply::ClaudeDoctor(service.claude_diagnostics().await));
+        }
         Command::Plan { seq, request } => {
             let result = service.plan(request).await;
             let plan_id = result.as_ref().ok().map(|p| p.id.clone());

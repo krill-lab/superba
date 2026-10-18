@@ -851,6 +851,7 @@ impl SuperbaApp {
                 }
                 Reply::Sessions(r) => self.data.sessions.finish(r),
                 Reply::Doctor(r) => self.data.doctor.finish(r),
+                Reply::ClaudeDoctor(r) => self.data.claude_diag.finish(r),
                 Reply::Planned { seq, result } => self.flow.on_planned(seq, result, now),
                 Reply::Event(ev) => self.on_event(ev),
                 Reply::Decide(d) => self.flow.on_decision(d, now),
@@ -1440,6 +1441,7 @@ impl SuperbaApp {
             }
             Page::Diagnostics if self.data.doctor.value.is_none() && !self.data.doctor.loading => {
                 self.data.doctor.start();
+                self.data.claude_diag.start();
                 self.backend.send(Command::Doctor);
             }
             _ => {}
@@ -1549,6 +1551,7 @@ impl SuperbaApp {
             }
             Action::RunDoctor => {
                 self.data.doctor.start();
+                self.data.claude_diag.start();
                 self.backend.send(Command::Doctor);
             }
             Action::ShowExternal => {
