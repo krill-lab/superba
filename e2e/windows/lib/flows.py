@@ -490,6 +490,14 @@ def turn(run, t, marker, prefix="", expect_line=None, new_chat=False):
         since = time.time()
         a.send_turn(f"{marker}: reply with exactly the text PONG")
         posts = wait_relay_turn(run, since, marker)
+        if not posts:
+            # What the app shows instead (an error bubble with Retry, a stuck spinner...).
+            try:
+                s.save("app-text.txt", (a.body_text() or "")[-3000:])
+                a.shot(t.evdir / f"{t.seq():02d}-app-no-turn.png")
+                s.add_evidence(t.evdir / f"{t._seq:02d}-app-no-turn.png")
+            except Exception as e:
+                s.info(f"app evidence not saved: {e}")
         s.check(bool(posts), f"POST …/responses seen by the relay: {[(e.get('line'), e.get('path'), e.get('status')) for e in posts][:3]}")
         a.wait_idle(180)
         time.sleep(2)
