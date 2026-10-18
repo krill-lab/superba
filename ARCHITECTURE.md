@@ -696,7 +696,7 @@ every distribution with a Codex as a managed host of kind `HostKind::Wsl`
   the migration history stay inside the distribution. The helper is
   `SUPERBA_WSL_HELPER` or `spb-linux-<arch>` next to the program; the MSI
   ships `spb-linux-x86_64`, a static musl build
-  (`scripts/release/build-wsl-helper.sh`).
+  (`scripts/release/build-musl.sh`).
 - CLI: `spb wsl list` (state, pending updates), `spb wsl router-access <distro>`,
   `spb wsl update <distro>`, and `wsl:<distro>` as a host shorthand
   (`spb remote ...`, `spb sessions --host wsl:<distro> ...`).

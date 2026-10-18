@@ -165,27 +165,20 @@ jobs:
           rustup target add "$BUILD_TARGET"
           cargo build --release --locked -p superba-gui -p superba-cli -p superba-router \
             --target "$BUILD_TARGET"
-      - name: Build the headless musl binaries
+      # The same script as CI's musl job (ci.yml), on the same runner image:
+      # static spb + superba-router, checked; spb staged as the MSI's WSL helper.
+      - name: Build the static musl binaries
         if: matrix.platform == 'musl'
-        env:
-          CC_x86_64_unknown_linux_musl: musl-gcc
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: |
-          rustup target add x86_64-unknown-linux-musl
           sudo apt-get update
           sudo apt-get install -y musl-tools
-          cargo build --release --locked -p superba-cli -p superba-router \
-            --target x86_64-unknown-linux-musl
+          scripts/release/build-musl.sh --helper-out wsl-helper
       - name: Package GNU Linux binaries
         if: matrix.platform == 'linux'
         run: |
           scripts/release/package-linux.sh --target-dir "target/$BUILD_TARGET/release" \
             --version "$RELEASE_VERSION" --arch "$BUILD_ARCH" \
             --notices "$RUNNER_TEMP/notices/THIRD-PARTY-NOTICES.txt" --out dist
-      # The Linux spb the Windows MSI carries for WSL (static, checked, run once).
-      - name: Stage the WSL helper
-        if: matrix.platform == 'musl'
-        run: scripts/release/build-wsl-helper.sh --out wsl-helper --no-build
       - name: Upload the WSL helper
         if: matrix.platform == 'musl'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

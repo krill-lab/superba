@@ -7,7 +7,7 @@
   LICENSE-APACHE, THIRD-PARTY-NOTICES.txt and LICENSE-Geist-OFL.txt (the
   already signed binaries in a release), and spb-linux-x86_64: the static musl
   spb Superba runs inside WSL distributions to migrate their sessions
-  (scripts/release/build-wsl-helper.sh). -Version is the release version
+  (scripts/release/build-musl.sh). -Version is the release version
   without "v" (0.1.0 or 0.1.0-alpha.2): the MSI ProductVersion is its X.Y.Z
   and the full version is kept in the product name and the ARP comments.
   Needs the `wix` tool (dotnet tool install --global wix --version 5.0.2).

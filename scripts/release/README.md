@@ -18,7 +18,8 @@ this bundle version scheme.
 The prepare job resolves the tag to a commit, checks the version and required
 documents, and gives every build the same commit. GNU Linux releases build on
 Ubuntu 22.04 for its older glibc baseline; the musl release is headless (`spb` and
-`superba-router`, no GUI).
+`superba-router`, no GUI), built by `scripts/release/build-musl.sh` as static PIEs (the
+same script runs in CI's `musl` job, on the same image).
 macOS builds both architectures with deployment target 11.0, combines them with
 `lipo`, and checks that both slices are present. The app bundle requires macOS
 11.0 and uses the identifier `com.krill-code.superba`.
@@ -284,7 +285,7 @@ from the install folder. During an upgrade it runs with `--keep-service` (it onl
 the process; the update restarts the router).
 
 The MSI is built in `sign-windows` (with `spb-linux-x86_64` from the musl job, which
-checks it with `scripts/release/build-wsl-helper.sh --no-build`: static, x86-64, `--version`
+builds and checks it with `scripts/release/build-musl.sh`: static, x86-64, `--version`
 runs; build-msi.ps1 refuses a stage without it), after the three executables are signed (and signed
 again as a whole when the optional Authenticode secrets are set; WiX runs while no key is
 on disk). Test it without tagging: run the `msi-package` job of CI

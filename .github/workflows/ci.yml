@@ -120,11 +120,13 @@ jobs:
       # the router ship without the GUI (headless servers, the musl archive).
       - run: cargo build -p superba-cli -p superba-router --locked
 
-  # The Linux spb the MSI carries for WSL session migration (static musl;
-  # user bug 54(d)). Manual runs only, for msi-package.
-  wsl-helper:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
+  # The release's musl build, exactly: scripts/release/build-musl.sh on the
+  # release's runner image (static spb + superba-router for the headless
+  # archive; spb as the MSI's WSL helper, user bug 54(d)). Every run, so a
+  # change that breaks the static build fails here and not at a release tag;
+  # msi-package packages its helper.
+  musl:
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -138,13 +140,9 @@ jobs:
           sudo apt-get install -y musl-tools
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: wsl-helper
-      - name: Build and check the helper
-        env:
-          # A test build: no LTO, quicker; still static musl.
-          CARGO_PROFILE_RELEASE_LTO: "false"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-        run: scripts/release/build-wsl-helper.sh --out wsl-helper
+          key: musl
+      - name: Build the static musl binaries (as the release does)
+        run: scripts/release/build-musl.sh --helper-out wsl-helper
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: wsl-helper
@@ -157,7 +155,7 @@ jobs:
   #   gh workflow run ci.yml --ref <branch> -f msi_only=true
   msi-package:
     if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs: wsl-helper
+    needs: musl
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
