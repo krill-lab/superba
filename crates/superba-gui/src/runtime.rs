@@ -8,11 +8,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 
 use superba_core::{
-    AppSession, AuthMode, Decision, DecisionRequest, DoctorFinding, Error, ExecuteOptions,
-    KeyCheck, KeyInput, LineCaps, LineId, MigrationReceipt, Overview, Profile, ProfileSet,
-    RecoveryReport, Result, Secret, SessionReport, Settings, Site, SiteId, SiteKind, SwitchDecider,
-    SwitchEvent, SwitchEvents, SwitchOutcome, SwitchPlan, SwitchRequest, SwitchService,
-    async_trait,
+    AuthMode, Decision, DecisionRequest, DoctorFinding, Error, ExecuteOptions, KeyCheck, KeyInput,
+    LineCaps, LineId, MigrationReceipt, Overview, Profile, ProfileSet, RecoveryReport, Result,
+    Secret, SessionReport, Settings, Site, SiteId, SiteKind, SwitchDecider, SwitchEvent,
+    SwitchEvents, SwitchOutcome, SwitchPlan, SwitchRequest, SwitchService, async_trait,
 };
 use tokio::sync::{mpsc as tmpsc, oneshot};
 
@@ -207,8 +206,9 @@ pub enum Command {
     },
     /// Remove an unused compatible site and all profiles referencing it.
     RemoveCompatibleSite(SiteId),
-    /// Launch the app through Superba.
-    OpenApp,
+    /// Open ChatGPT through Superba, or bring it forward, or report that it
+    /// needs a reopen (GH#7, [`crate::launch`]).
+    LaunchApp(crate::launch::LaunchOrigin),
     /// Start-up recovery.
     Recover,
     /// Identity and balance (and, when `request.usage` is set, the usage report).
@@ -344,8 +344,13 @@ pub enum Reply {
     SiteAdded(Result<Profile>),
     /// Compatible site and its profiles removed.
     SiteRemoved(Result<()>),
-    /// App launched.
-    AppOpened(Result<AppSession>),
+    /// What [`Command::LaunchApp`] did.
+    AppLaunched {
+        /// Who asked.
+        origin: crate::launch::LaunchOrigin,
+        /// The result.
+        result: Result<crate::launch::LaunchResult>,
+    },
     /// Recovery finished.
     Recovered(Result<RecoveryReport>),
     /// Router watchdog tick finished.
@@ -669,8 +674,9 @@ async fn handle(
             out.send(Reply::Sites(service.sites().await));
             out.send(Reply::Profiles(service.profile_set().await));
         }
-        Command::OpenApp => {
-            out.send(Reply::AppOpened(service.open_app().await));
+        Command::LaunchApp(origin) => {
+            let result = crate::launch::launch(service.as_ref(), origin).await;
+            out.send(Reply::AppLaunched { origin, result });
             let o = after_switches(switches, || service.overview()).await;
             out.send(Reply::Overview(o));
         }

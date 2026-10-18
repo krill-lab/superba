@@ -92,6 +92,7 @@ pub struct FakeService {
     options: FakeOptions,
     next_plan: AtomicU64,
     areas: Areas,
+    open_calls: AtomicU64,
 }
 
 /// Fake state per page area (`fake/<area>.rs`).
@@ -136,6 +137,7 @@ impl FakeService {
             options,
             next_plan: AtomicU64::new(1),
             areas: Areas::default(),
+            open_calls: AtomicU64::new(0),
         }
         .with_account_summary(true)
     }
@@ -163,6 +165,18 @@ impl FakeService {
         st.app.hot_switch = HotSwitchStatus::Unavailable {
             reason: FullRestartReason::NoCdp,
         };
+    }
+
+    /// GH#7: ChatGPT is installed but not running.
+    pub fn quit_app(&self) {
+        let mut st = self.state();
+        st.app.session = None;
+        st.app.hot_switch = HotSwitchStatus::NotRunning;
+    }
+
+    /// How often `open_app` was called (GH#7).
+    pub fn open_app_calls(&self) -> u64 {
+        self.open_calls.load(Ordering::SeqCst)
     }
 
     fn state(&self) -> MutexGuard<'_, FakeState> {
@@ -2069,7 +2083,19 @@ impl SwitchService for FakeService {
     }
 
     async fn open_app(&self) -> Result<AppSession> {
+        self.open_calls.fetch_add(1, Ordering::SeqCst);
         let mut s = self.state();
+        // Running already: the session as it is (the real service brings it
+        // forward when Superba opened it, and refuses otherwise).
+        if let Some(session) = s.app.session.clone() {
+            return if session.cdp.is_some() {
+                Ok(session)
+            } else {
+                Err(Error::Conflict {
+                    message: "ChatGPT is already running without Superba".into(),
+                })
+            };
+        }
         Ok(s.launch())
     }
 

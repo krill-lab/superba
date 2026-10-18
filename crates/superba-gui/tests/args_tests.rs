@@ -23,6 +23,7 @@ fn defaults_leave_all_overrides_disabled() {
         locale: None,
         size: None,
         page: None,
+        launch_chatgpt: false,
     };
     assert_eq!(GuiArgs::default(), expected);
     assert_eq!(parse(&[]).unwrap(), expected);
@@ -211,6 +212,34 @@ fn flags_compose_and_later_values_override_earlier_ones() {
             locale: Some(Locale::ZhCn),
             size: Some([1280.0, 800.0]),
             page: Some(Page::Hosts),
+            launch_chatgpt: false,
         }
     );
+}
+
+#[test]
+fn launch_chatgpt_opens_chatgpt_through_superba() {
+    // GH#7: the "ChatGPT (Superba)" shortcut and the Linux desktop action.
+    assert_eq!(
+        parse(&["--launch-chatgpt"]).unwrap(),
+        GuiArgs {
+            launch_chatgpt: true,
+            ..GuiArgs::default()
+        }
+    );
+    // With other GUI flags (a window that opens anyway uses them).
+    let args = parse(&["--lang", "zh-CN", "--launch-chatgpt"]).unwrap();
+    assert!(args.launch_chatgpt);
+    assert_eq!(args.locale, Some(Locale::ZhCn));
+    // It takes no value.
+    let error = parse(&["--launch-chatgpt=yes"]).unwrap_err();
+    assert!(error.contains("unknown argument"), "{error}");
+    // `superba --gui-help` documents it.
+    assert!(USAGE.contains("--launch-chatgpt"));
+    // Not a subcommand: `superba --launch-chatgpt` reaches the GUI's parser.
+    let argv: Vec<OsString> = ["superba", "--launch-chatgpt"]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+    assert!(!superba_cli::is_cli_invocation(&argv));
 }

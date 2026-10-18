@@ -533,6 +533,8 @@ pub struct Data {
     pub active_models: Load<ModelsView>,
     /// Superba's own paths (Diagnostics); `None` in tests.
     pub paths: Option<DataPaths>,
+    /// ChatGPT is being opened through Superba (GH#7; the hero's button spins).
+    pub launching_app: bool,
 }
 
 /// Superba's own paths, shown on Diagnostics and opened from Preferences.

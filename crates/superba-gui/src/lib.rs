@@ -34,6 +34,8 @@ pub mod external;
 pub mod flow;
 pub mod i18n;
 pub mod in_effect;
+pub mod instance;
+pub mod launch;
 pub mod movers;
 pub mod notices;
 pub mod pages;
@@ -72,6 +74,8 @@ pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
         theme: args.theme,
         locale: args.locale,
         page: args.page,
+        launch_chatgpt: args.launch_chatgpt,
+        single_instance: true,
     };
     let gpu = startup::Gpu::from_env_value(std::env::var(startup::ENV_SUPERBA_GPU).ok().as_deref());
     let mut result = run_window(&viewport, gpu, &service, &opts, report);

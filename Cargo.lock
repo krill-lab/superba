@@ -4529,6 +4529,7 @@ dependencies = [
  "toml",
  "tracing",
  "url",
+ "uuid",
  "wgpu",
  "windows-sys 0.61.2",
  "winresource",

@@ -225,6 +225,14 @@ impl Tree {
 
 static ISOLATE: Once = Once::new();
 
+/// Superba's data directory of this test binary (after the first harness).
+pub fn data_dir() -> std::path::PathBuf {
+    isolate();
+    std::env::var_os("SUPERBA_DATA_DIR")
+        .map(std::path::PathBuf::from)
+        .expect("isolated")
+}
+
 /// Point Superba's data dir and HOME at a throwaway directory for this test
 /// binary (the app reads `superba_switch::detect_context()` for paths it shows),
 /// before any app or thread exists.
@@ -260,20 +268,24 @@ pub struct AppHarness {
 impl AppHarness {
     /// The app in `locale` and `theme`, opened on `page`, in a 1280x800 window.
     pub fn new(service: Arc<FakeService>, locale: Locale, page: Page) -> Self {
-        isolate();
-        let ctx = egui::Context::default();
-        ctx.enable_accesskit();
-        let cc = eframe::CreationContext::_new_kittest(ctx.clone());
-        let app = SuperbaApp::new(
-            &cc,
-            service.clone(),
+        Self::with_options(
+            service,
             AppOptions {
                 theme: Some(egui::Theme::Light),
                 locale: Some(locale),
                 page: Some(page),
+                ..AppOptions::default()
             },
         )
-        .expect("the app starts");
+    }
+
+    /// The app started with `options`, in a 1280x800 window.
+    pub fn with_options(service: Arc<FakeService>, options: AppOptions) -> Self {
+        isolate();
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let cc = eframe::CreationContext::_new_kittest(ctx.clone());
+        let app = SuperbaApp::new(&cc, service.clone(), options).expect("the app starts");
         Self {
             ctx,
             app,

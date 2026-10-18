@@ -86,6 +86,10 @@ pub struct Hero {
     pub remotes: usize,
     /// When the line in use was last probed.
     pub probed: Option<superba_core::Timestamp>,
+    /// The desktop app's action at the top right (GH#7): open ChatGPT through
+    /// Superba, or reopen it so it can be hot-switched; `None` while hot
+    /// switching is available (or cannot be had by reopening).
+    pub launch: Option<crate::launch::AppLaunch>,
 }
 
 impl Hero {
@@ -331,6 +335,7 @@ pub fn model(
         latency,
         remotes,
         probed,
+        launch: crate::launch::app_launch(overview),
     }
 }
 
@@ -655,10 +660,17 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
         font(text::SMALL + 1.0, Weight::Medium),
         pal.text_muted,
     );
+    // GH#7: open or reopen ChatGPT through Superba, always in reach at the top
+    // right (drawn last, over the nodes' hover areas); the probe time moves to
+    // its left.
+    let launch = launch_button(ui, cx, hero, pos2(inner.max.x, inner.min.y + 10.0));
+    let action_left = launch
+        .as_ref()
+        .map_or(inner.max.x, |(r, ..)| r.min.x - 12.0);
     // When the line in use was last probed.
     if let Some(at) = hero.probed.filter(|_| !hero.provider.ghost) {
         ui.painter().text(
-            pos2(inner.max.x, inner.min.y + 10.0),
+            pos2(action_left, inner.min.y + 10.0),
             Align2::RIGHT_CENTER,
             cx.tr.f("overview.hero.probed", &[("ago", &cx.ago(at))]),
             font(text::CAPTION, Weight::Regular),
@@ -756,12 +768,44 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
             });
         }
     }
+    if let Some((rect, button, action, tip)) = launch
+        && ui.put(rect, button).on_hover_text(tip).clicked()
+    {
+        out.push(action);
+    }
     if let Some(c) = &drawn[2].chevron {
         provider_popover(c, cx, out);
     }
     if let Some(c) = &drawn[3].chevron {
         speed_popover(c, cx, out);
     }
+}
+
+/// The desktop app's action (GH#7), its right edge and vertical centre at
+/// `anchor`: "Open ChatGPT with Superba" while ChatGPT is not running,
+/// "Reopen with Superba" while it runs without hot switching (a full restart,
+/// previewed and confirmed). Where it goes, the button, what a click does and
+/// its hover text; `None` when there is nothing to offer.
+fn launch_button(
+    ui: &Ui,
+    cx: &Cx<'_>,
+    hero: &Hero,
+    anchor: Pos2,
+) -> Option<(Rect, crate::design::widgets::Button, Action, String)> {
+    let launch = hero.launch?;
+    let (icon, action) = match launch {
+        crate::launch::AppLaunch::Open => (Icon::Play, Action::OpenApp),
+        crate::launch::AppLaunch::Reopen(_) => (Icon::Bolt, Action::RestartApp),
+    };
+    let launching = cx.data.launching_app;
+    let button = crate::design::widgets::Button::primary(cx.tr.t(launch.label_key()))
+        .small()
+        .icon(icon)
+        .loading(launching)
+        .enabled(!cx.busy && !launching);
+    let size = button.desired_size(ui);
+    let rect = Rect::from_min_size(pos2(anchor.x - size.x, anchor.y - size.y / 2.0), size);
+    Some((rect, button, action, cx.tr.t(launch.tip_key())))
 }
 
 /// The provider node's popover: the applied provider's lines with their

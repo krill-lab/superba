@@ -40,6 +40,12 @@ pub struct AppOptions {
     pub locale: Option<Locale>,
     /// Page to open first.
     pub page: Option<Page>,
+    /// Started by `superba --launch-chatgpt` without a Superba window to hand
+    /// the request to: open ChatGPT through Superba (or plan its reopen) at once.
+    pub launch_chatgpt: bool,
+    /// Register this window so a second start hands its requests over
+    /// ([`crate::instance`]); off in tests.
+    pub single_instance: bool,
 }
 
 /// Build a [`Cx`] from the app's fields without borrowing the whole app (page
@@ -291,6 +297,12 @@ pub struct SuperbaApp {
     elevated_notice: Option<(superba_switch::privilege::RunAs, PathBuf)>,
     held_toasts: Vec<Toast<ToastAction>>,
     ack_selfupdate_problem: bool,
+    /// This window's registration for requests of other starts (GH#7).
+    instance: Option<crate::instance::Listener>,
+    /// Requests other starts handed over, not handled yet.
+    instance_requests: Arc<std::sync::Mutex<Vec<crate::instance::Request>>>,
+    /// The start-up preference "Open ChatGPT through Superba" was looked at.
+    startup_launch_checked: bool,
 }
 
 impl std::fmt::Debug for SuperbaApp {
@@ -365,6 +377,9 @@ impl SuperbaApp {
             elevated_notice: None,
             held_toasts: Vec::new(),
             ack_selfupdate_problem: false,
+            instance: None,
+            instance_requests: Arc::default(),
+            startup_launch_checked: false,
             opts,
         };
         app.data.sites = catalog::builtin_sites();
@@ -384,7 +399,110 @@ impl SuperbaApp {
         app.data.overview.start();
         app.data.profiles.start();
         app.backend.send(Command::Refresh);
+        if app.opts.single_instance {
+            app.listen_for_other_starts(&ctx);
+        }
+        if app.opts.launch_chatgpt {
+            // The start-up preference has nothing more to do.
+            app.startup_launch_checked = true;
+            app.launch_app(crate::launch::LaunchOrigin::Shortcut);
+        }
         Ok(app)
+    }
+
+    /// Take requests of later starts of `superba` (GH#7: `--launch-chatgpt`).
+    fn listen_for_other_starts(&mut self, ctx: &egui::Context) {
+        let Some(dir) = self.data.paths.as_ref().map(|p| p.data_dir.clone()) else {
+            return;
+        };
+        let queue = Arc::clone(&self.instance_requests);
+        let repaint = ctx.clone();
+        match crate::instance::listen(&dir, move |request| {
+            queue
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .push(request);
+            repaint.request_repaint();
+        }) {
+            Ok(listener) => self.instance = Some(listener),
+            Err(e) => {
+                tracing::warn!(error = %e, "other starts of Superba cannot reach this window")
+            }
+        }
+    }
+
+    /// Handle what later starts handed over ([`crate::instance::Request`]).
+    fn handle_instance_requests(&mut self) {
+        let requests = std::mem::take(
+            &mut *self
+                .instance_requests
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()),
+        );
+        for request in requests {
+            match request {
+                crate::instance::Request::LaunchChatGpt => {
+                    self.launch_app(crate::launch::LaunchOrigin::Shortcut);
+                }
+            }
+        }
+    }
+
+    /// Open ChatGPT through Superba, bring it forward, or plan its reopen
+    /// ([`crate::launch`]); the result comes back as [`Reply::AppLaunched`].
+    /// The entry point of every "Open ChatGPT with Superba" (the hero, the
+    /// palette, toasts, other starts, the start-up preference).
+    pub(crate) fn launch_app(&mut self, origin: crate::launch::LaunchOrigin) {
+        self.data.launching_app = true;
+        self.backend.send(Command::LaunchApp(origin));
+    }
+
+    /// Once the settings and the first overview are known: the preference
+    /// "Open ChatGPT through Superba when Superba starts".
+    fn maybe_launch_on_start(&mut self) {
+        if self.startup_launch_checked
+            || !self.settings_loaded
+            || self.data.overview.value.is_none()
+        {
+            return;
+        }
+        self.startup_launch_checked = true;
+        if self.settings.open_app_on_start {
+            self.launch_app(crate::launch::LaunchOrigin::Startup);
+        }
+    }
+
+    /// What [`Command::LaunchApp`] did.
+    fn on_app_launched(
+        &mut self,
+        ctx: &egui::Context,
+        origin: crate::launch::LaunchOrigin,
+        result: superba_core::Result<crate::launch::LaunchResult>,
+    ) {
+        use crate::launch::{LaunchOrigin, LaunchResult};
+        self.data.launching_app = false;
+        match result {
+            Ok(LaunchResult::Opened) => self
+                .toasts
+                .push(Toast::new(Status::Ok, self.tr.t("toast.app_opened"))),
+            Ok(LaunchResult::Activated) if origin == LaunchOrigin::Window => self.toasts.push(
+                Toast::new(Status::Idle, self.tr.t("toast.app_already_open")),
+            ),
+            Ok(LaunchResult::Activated | LaunchResult::Nothing) => {}
+            Ok(LaunchResult::NeedsReopen) => {
+                // A full restart, planned and confirmed (running turns waited for).
+                self.request(SwitchIntent::RestartApp { install_id: None });
+                if origin.from_outside() {
+                    bring_to_front(ctx);
+                }
+            }
+            Err(e) => {
+                self.error_toast(self.tr.t("toast.app_open_failed"), &e);
+                if origin.from_outside() {
+                    bring_to_front(ctx);
+                }
+            }
+        }
     }
 
     /// The applied state the account card was loaded for: reload after a switch
@@ -645,6 +763,7 @@ impl SuperbaApp {
                     self.data.overview.finish(r);
                     self.maybe_load_account();
                     self.maybe_load_models();
+                    self.maybe_launch_on_start();
                     // Page-entry loads need the applied site, known only now.
                     if !self.entered && self.data.overview.value.is_some() {
                         self.entered = true;
@@ -673,6 +792,7 @@ impl SuperbaApp {
                         self.apply_settings(ctx);
                     }
                     self.data.profiles.finish(r);
+                    self.maybe_launch_on_start();
                     self.maybe_open_wizard();
                 }
                 Reply::Sites(r) => {
@@ -747,12 +867,7 @@ impl SuperbaApp {
                     }
                     Err(e) => self.log(Status::Error, error_text(&self.tr, &e)),
                 },
-                Reply::AppOpened(r) => match r {
-                    Ok(_) => self
-                        .toasts
-                        .push(Toast::new(Status::Ok, self.tr.t("toast.app_opened"))),
-                    Err(e) => self.error_toast(self.tr.t("toast.app_open_failed"), &e),
-                },
+                Reply::AppLaunched { origin, result } => self.on_app_launched(ctx, origin, result),
                 Reply::RouterWatch(result) => self.on_router_watch(result),
                 Reply::PlanSettings { plan_id, result } => match result {
                     Ok(settings) => self.data.plan_settings = Some((plan_id, settings)),
@@ -1303,7 +1418,7 @@ impl SuperbaApp {
                 });
             }
             Action::LoadAccount { refresh } => self.load_account(refresh),
-            Action::OpenApp => self.backend.send(Command::OpenApp),
+            Action::OpenApp => self.launch_app(crate::launch::LaunchOrigin::Window),
             Action::SaveSettings => {
                 self.apply_settings(ctx);
                 let prefs = (
@@ -1472,7 +1587,7 @@ impl SuperbaApp {
 
     fn handle_toast_action(&mut self, a: ToastAction) {
         match a {
-            ToastAction::OpenApp => self.backend.send(Command::OpenApp),
+            ToastAction::OpenApp => self.launch_app(crate::launch::LaunchOrigin::Window),
             ToastAction::FullRestart => self.request(SwitchIntent::RestartApp { install_id: None }),
             ToastAction::ViewLog => self.go(Page::Diagnostics),
             ToastAction::OpenPath(path) => {
@@ -1669,6 +1784,7 @@ impl SuperbaApp {
 impl eframe::App for SuperbaApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.handle_instance_requests();
         self.handle_replies(&ctx);
         let now = self.now();
         // Let Escape/Enter win over a countdown expiring in this same frame.
@@ -1807,6 +1923,7 @@ impl eframe::App for SuperbaApp {
             // `ui` follows in this pass and does all of it.
             return;
         }
+        self.handle_instance_requests();
         self.handle_replies(ctx);
         for command in self.flow.take_commands() {
             self.backend.send(command);
@@ -2023,27 +2140,45 @@ pub fn shell_palette(tr: &Tr, data: &Data) -> Vec<PaletteItem> {
         group: PaletteGroup::Commands,
         action: Action::Refresh,
     });
-    let running = data
-        .overview
-        .value
-        .as_ref()
-        .is_some_and(|o| o.app.session.is_some());
+    // Open or reopen ChatGPT through Superba (GH#7); a running ChatGPT that
+    // can be hot-switched can still be restarted fully.
+    let overview = data.overview.value.as_ref();
+    let running = overview.is_some_and(|o| o.app.session.is_some());
+    let (title, detail, action) = match overview.and_then(crate::launch::app_launch) {
+        Some(launch @ crate::launch::AppLaunch::Reopen(_)) => (
+            tr.t(launch.label_key()),
+            Some(tr.t(launch.tip_key())),
+            Action::RestartApp,
+        ),
+        _ if running => (tr.t("action.full_restart"), None, Action::RestartApp),
+        _ => (tr.t("action.open_app"), None, Action::OpenApp),
+    };
     items.push(PaletteItem {
-        title: tr.t(if running {
-            "action.full_restart"
-        } else {
-            "action.open_app"
-        }),
-        detail: None,
-        keywords: vec!["chatgpt".into(), "codex".into(), "app".into()],
+        title,
+        detail,
+        keywords: vec![
+            "chatgpt".into(),
+            "codex".into(),
+            "app".into(),
+            "open".into(),
+            "reopen".into(),
+            "hot switch".into(),
+            "superba".into(),
+        ],
         group: PaletteGroup::Commands,
-        action: if running {
-            Action::RestartApp
-        } else {
-            Action::OpenApp
-        },
+        action,
     });
     items
+}
+
+/// Show the window and bring it to the front (a request of another start
+/// needs the user: a reopen to confirm, an error to read). On Windows the
+/// request's sender passes its foreground right on first
+/// ([`crate::instance::forward`]).
+pub(crate) fn bring_to_front(ctx: &egui::Context) {
+    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
 }
 
 /// How a provider is named in lists: the profile name, else the site name.

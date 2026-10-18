@@ -256,6 +256,10 @@ pub struct Settings {
     /// still frame. Off by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub reduce_motion: bool,
+    /// Open ChatGPT through Superba when the Superba window starts and ChatGPT
+    /// is not running yet (GH#7), so it can be hot-switched. Off by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub open_app_on_start: bool,
 }
 
 fn default_true() -> bool {
@@ -299,6 +303,7 @@ impl Default for Settings {
             auto_update_check: true,
             update_channel: None,
             reduce_motion: false,
+            open_app_on_start: false,
         }
     }
 }

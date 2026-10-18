@@ -3,6 +3,7 @@
 //!
 //! ```text
 //! superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
+//!         [--launch-chatgpt]
 //! ```
 
 use std::ffi::OsString;
@@ -22,17 +23,26 @@ pub struct GuiArgs {
     pub size: Option<[f32; 2]>,
     /// Page to open first.
     pub page: Option<Page>,
+    /// `--launch-chatgpt`: open ChatGPT through Superba (GH#7; the
+    /// "ChatGPT (Superba)" shortcut). A running Superba window takes the
+    /// request; otherwise no window opens unless it has to ask something.
+    pub launch_chatgpt: bool,
 }
 
 /// Usage text for `--gui-help`.
 pub const USAGE: &str = "\
 superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
+        [--launch-chatgpt]
 
   --theme T     dark or light (default: preferences / system)
   --lang L      en or zh-CN (default: preferences / system)
   --size WxH    initial window size in points, e.g. 1280x800
   --page NAME   open a page first: overview providers models router usage
                 settings sessions hosts updates diagnostics preferences
+  --launch-chatgpt
+                open ChatGPT through Superba (so it can be hot-switched); a
+                running Superba window does it, else no window opens unless
+                a reopen has to be confirmed (the \"ChatGPT (Superba)\" shortcut)
 
 Subcommands (status, switch, restore, ...) behave like `spb`; see `superba --help`.";
 
@@ -110,6 +120,7 @@ impl GuiArgs {
                         .map_err(|_| format!("bad height in {v:?}"))?;
                     out.size = Some([w.max(320.0), h.max(240.0)]);
                 }
+                "--launch-chatgpt" if inline.is_none() => out.launch_chatgpt = true,
                 other => return Err(format!("unknown argument {other:?} (see --gui-help)")),
             }
         }

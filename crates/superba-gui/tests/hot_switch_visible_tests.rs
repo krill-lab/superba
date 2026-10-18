@@ -194,17 +194,19 @@ fn the_overview_shows_it_and_the_reopen_plans_a_full_restart() {
         let t = h.click(Some(Role::Button), &tr.t("overview.hero.switch_menu"));
         assert!(t.has(&tr.t("overview.hero.reopen")), "{}", t.dump());
         h.key(egui::Key::Escape);
-        // The To-do's button plans the reopen: a full restart, confirmed first.
+        // The To-do's button plans the reopen: a full restart, confirmed first
+        // (titled as the reopen it is, GH#7).
+        let title = tr.t("confirm.title_reopen");
         let t = h.click(Some(Role::Button), &tr.t("overview.todo.fix.reopen"));
-        let t = if t.has(&tr.t("confirm.title")) {
+        let t = if t.has(&title) {
             t
         } else {
-            h.wait_for(None, &tr.t("confirm.title"))
+            h.wait_for(None, &title)
         };
         assert!(
             t.with_role(Role::Dialog)
                 .iter()
-                .any(|d| t.name(*d).as_deref() == Some(tr.t("confirm.title").as_str())),
+                .any(|d| t.name(*d).as_deref() == Some(title.as_str())),
             "{}",
             t.dump()
         );

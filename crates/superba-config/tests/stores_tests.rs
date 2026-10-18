@@ -103,6 +103,7 @@ fn user_set() -> ProfileSet {
         auto_update_check: false,
         update_channel: Some(superba_core::UpdateChannel::Preview),
         reduce_motion: true,
+        open_app_on_start: true,
     };
     set
 }

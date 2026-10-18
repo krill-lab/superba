@@ -1709,8 +1709,18 @@ pub fn confirm_full(
     let pal = cx.pal;
     let tr = cx.tr;
     let mut action: Option<u8> = None;
+    // "Reopen ChatGPT with Superba" (GH#7, user bug 61): no switch, nothing to
+    // write; the app is closed and opened again through Superba.
+    let reopen = matches!(plan.request.intent, SwitchIntent::RestartApp { .. });
     let resp = dialog(ctx, egui::Id::unique("confirm-full"), 560.0, |ui| {
-        ui.label(Text::h2(tr.t("confirm.title"), pal));
+        ui.label(Text::h2(
+            tr.t(if reopen {
+                "confirm.title_reopen"
+            } else {
+                "confirm.title"
+            }),
+            pal,
+        ));
         ui.label(Text::small(
             tr.f("banner.destination", &[("dest", &cx.dest(&plan.to))]),
             pal,
@@ -1734,6 +1744,19 @@ pub fn confirm_full(
             );
         }
         ui.add(egui::Label::new(Text::muted(tr.t("confirm.body"), pal)).wrap());
+        // Running turns (GH#7): the restart waits for them, and says so now.
+        if !plan.active_threads.is_empty() && plan.primary.interrupts_turns() {
+            ui.add_space(4.0);
+            note(
+                ui,
+                pal,
+                Severity::Warning,
+                &tr.f("confirm.turns", &[("n", &plan.active_threads.len())]),
+            );
+            for t in &plan.active_threads {
+                busy_line(ui, cx, t);
+            }
+        }
         for w in &plan.warnings {
             note(ui, pal, w.severity, &cx.localize(&w.text));
         }
@@ -1751,12 +1774,18 @@ pub fn confirm_full(
         ui.add_space(12.0);
         ui.horizontal_wrapped(|ui| {
             if ui
-                .add(Button::primary(tr.t("confirm.full_restart")))
+                .add(Button::primary(tr.t(if reopen {
+                    "confirm.reopen"
+                } else {
+                    "confirm.full_restart"
+                })))
                 .clicked()
             {
                 action = Some(0);
             }
-            if plan.migration.is_none() && ui.add(Button::new(tr.t("confirm.write_only"))).clicked()
+            if plan.migration.is_none()
+                && !reopen
+                && ui.add(Button::new(tr.t("confirm.write_only"))).clicked()
             {
                 action = Some(1);
             }

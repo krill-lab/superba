@@ -48,6 +48,14 @@ fn main() -> ExitCode {
     }
     // macOS starts apps with a soft limit of 256 open files.
     superba_cli::raise_open_files_limit();
+    // GH#7: the "ChatGPT (Superba)" shortcut. A running Superba window takes
+    // the request; otherwise ChatGPT is opened here without a window, which
+    // shows only when a reopen must be confirmed or opening failed.
+    if gui_args.launch_chatgpt
+        && superba_gui::launch::forward_or_launch() != superba_gui::launch::Handled::ShowWindow
+    {
+        return ExitCode::SUCCESS;
+    }
     // From here on the GUI never ends silently: a failed start or a panic is
     // logged and, on Windows (no console), shown in a message box (user bug 43).
     let report = superba_gui::startup::Reporter::new(
