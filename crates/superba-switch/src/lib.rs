@@ -82,7 +82,7 @@ pub use superba_versions::selfupdate::msi as installer;
 /// Resolve the real [`LocalContext`]: home from the OS, data dir from
 /// `SUPERBA_DATA_DIR` or the platform data directory
 /// (`~/.local/share/superba`, `~/Library/Application Support/com.krill-code.Superba`,
-/// `%APPDATA%\krill-code\Superba\data`).
+/// `%LOCALAPPDATA%\krill-code\Superba\data`).
 pub fn detect_context() -> Result<LocalContext> {
     let env: Arc<dyn EnvSource> = Arc::new(ProcessEnv);
     let base = directories::BaseDirs::new()

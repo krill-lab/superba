@@ -322,12 +322,12 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 |---|---|---|
 | `~/.codex/config.toml`（或 `$CODEX_HOME`） | 每次切换 | 只改 Superba 负责的键（`model_provider`、`openai_base_url`、`chatgpt_base_url`、配置的模型以及它管理的 Codex 设置）；配置不再管理的键会恢复原值；注释、MCP 服务、插件和其他内容逐字节保留；Superba 写入后被其他程序改过的键会被保留（见上文） |
 | `~/.codex/auth.json` | 每次切换 | 以 0600 权限写入；替换前会加密暂存你的 ChatGPT 登录；其他程序放进去的凭据，还原时保留，切换时只有你选择接管才会替换 |
-| shell 启动文件 | 仅 PAT 模式 | 一个带标记的块，导出 `CODEX_AUTHAPI_BASE_URL`（Linux：`~/.profile`、`~/.bashrc`、`~/.zshenv`、fish `conf.d`、`~/.config/environment.d`；macOS：`~/.zshenv` 加 LaunchAgent；Windows：`HKCU\Environment`）。旧 Krill 教程写的行会被注释掉，之后可还原 |
+| shell 启动文件 | 仅 PAT 模式 | 一个带标记的块，导出 `CODEX_AUTHAPI_BASE_URL`（Linux：`~/.profile` 和 `~/.config/environment.d/60-superba.conf`，以及已存在或属于你所用 shell 的 `~/.bashrc`、`~/.bash_profile`、`~/.zshenv`（设了 `$ZDOTDIR` 时在其中）、fish `conf.d/superba.fish`；macOS：`~/.zshenv`、同样的 bash / fish 文件，外加 LaunchAgent `~/Library/LaunchAgents/com.krill-code.superba.env.codex-authapi-base-url.plist`；Windows：`HKCU\Environment` 里的用户变量，不写文件）。旧 Krill 教程写的行会被注释掉，之后可还原 |
 | `state_5.sqlite`、`thread_history_*.sqlite`、`sessions/**/rollout-*.jsonl` | 仅在迁移会话时 | 备份加迁移账本；`spb sessions rollback <id>` |
 | 远程主机的 `~/.codex` 和 shell 文件 | 仅限你选中的主机 | 在主机上按次备份；`spb remote rollback <目标>` |
-| 路由服务（`superba-router.service`、`com.krill.superba.router` LaunchAgent、`SuperbaRouter` 启动项） | 仅在安装了本地路由时 | `spb router uninstall` / `spb uninstall` |
+| 路由服务（Linux：`~/.config/systemd/user/superba-router.service`；macOS：`~/Library/LaunchAgents/com.krill.superba.router.plist`；Windows：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下的 `SuperbaRouter` 启动项） | 仅在安装了本地路由时 | `spb router uninstall` / `spb uninstall` |
 | cc-switch / AI Toolbox 的存储 | 仅在从它们导入时 | 只读，从不写入（有未落盘改动的数据库会先复制到 Superba 缓存里的私有副本再读，读完即删） |
-| Superba 数据目录 | 始终 | `~/.local/share/superba`（Linux）、`~/Library/Application Support/com.krill-code.Superba`（macOS）、`%APPDATA%\krill-code\Superba\data`（Windows）；可用 `SUPERBA_DATA_DIR` 覆盖 |
+| Superba 数据目录 | 始终 | `~/.local/share/superba`（Linux；设了 `$XDG_DATA_HOME` 时为 `$XDG_DATA_HOME/superba`）、`~/Library/Application Support/com.krill-code.Superba`（macOS）、`%LOCALAPPDATA%\krill-code\Superba\data`（Windows：本地、不漫游的用户目录）；可用 `SUPERBA_DATA_DIR` 覆盖 |
 
 你交给 Superba 的 Key 存在系统钥匙串（Keychain、凭据管理器、Secret Service）中；
 没有钥匙串时存在数据目录下权限为 0600 的文件里。登录和文件的备份用
