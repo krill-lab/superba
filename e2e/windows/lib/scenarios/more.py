@@ -297,7 +297,7 @@ CHATGPT_LNK = r"\Microsoft\Windows\Start Menu\Programs\ChatGPT (Superba).lnk"
 
 
 @scenario("W16", "Open ChatGPT through Superba: the ChatGPT (Superba) shortcut, the Overview's open / reopen (GH#7)",
-          area="launch", needs=("app_ready",), bugs=(61, 66))
+          area="launch", needs=("app_ready",), bugs=(61, 66, 76))
 def w16(t):
     run = t.run
     a = App(run)
@@ -385,9 +385,12 @@ def w16(t):
         sw = run.agent.windows(process_re="^superba$")
         s.check(any(w.get("foreground") for w in sw), "the Superba window came to the front", soft=True)
         s.shot("reopen-confirm", full=True)
+        # A ChatGPT Superba did not open cannot be asked to quit (no debugging port): the
+        # confirmation says up front that it is force-quit, and confirming is the answer, no
+        # graceful wait and no second question (user bug 76).
+        s.check(bool(u.has_text(re.escape(u.L("switch.warn.windows_force_quit")))),
+                "the confirmation says ChatGPT is force-quit (user bug 76)")
         u.click(key="confirm.reopen")
-        # A ChatGPT Superba did not open cannot be asked to quit: the force-quit
-        # question comes, as for any full restart of it (user bug 53).
         forced, m1, t0 = False, None, time.time()
         quit_titles = (u.L("decide.force_quit.title_windows"), u.L("decide.force_quit.title"))
         while time.time() - t0 < 300:
@@ -402,6 +405,8 @@ def w16(t):
             m1 = None
             time.sleep(2)
         s.check(m1 is not None, f"ChatGPT reopened with a debugging port (pid {m1 and m1['pid']})")
+        s.check(not forced, "no force-quit question after the confirmation (user bug 76)")
+        s.info(f"reopened {round(time.time() - t0)} s after the confirmation")
         time.sleep(10)
         out = status(s, "status-reopened")
         s.check("Launched by Superba: yes" in out and "Hot switch: Ready" in out,
