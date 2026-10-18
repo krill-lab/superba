@@ -9,10 +9,10 @@ use superba_config::{
     ENV_SUPERBA_SECRET_BACKEND, JsonProfileStore, KeyringSecretStore, PROFILES_SCHEMA,
 };
 use superba_core::{
-    AuthMode, Background, DataDir, Error, KeyRef, Line, LineId, LineSource, LocalContext, Locale,
-    LocalizedText, MapEnv, ModelDefaults, Origin, Profile, ProfileId, ProfileSet, ProfileStore,
-    Secret, SecretBackend, SecretStore, Settings, Site, SiteEndpoints, SiteId, SiteKind, Theme,
-    catalog,
+    AuthMode, Background, CloseAction, DataDir, Error, KeyRef, Line, LineId, LineSource,
+    LocalContext, Locale, LocalizedText, MapEnv, ModelDefaults, Origin, Profile, ProfileId,
+    ProfileSet, ProfileStore, Secret, SecretBackend, SecretStore, Settings, Site, SiteEndpoints,
+    SiteId, SiteKind, Theme, catalog,
 };
 
 fn context(root: &Path, env: MapEnv) -> LocalContext {
@@ -97,7 +97,8 @@ fn user_set() -> ProfileSet {
         theme: Theme::Dark,
         background: Background::Lavender,
         auto_probe: false,
-        tray: true,
+        close_action: Some(CloseAction::Tray),
+        start_in_tray: true,
         preferred_app_id: Some("test-app".into()),
         router: Default::default(),
         auto_update_check: false,

@@ -228,8 +228,16 @@ pub struct Settings {
     pub background: Background,
     /// Probe lines automatically when the app opens.
     pub auto_probe: bool,
-    /// Show the tray icon (P1).
-    pub tray: bool,
+    /// What closing the main window does (item 70). `None` until the user
+    /// chose: Windows and Linux then ask on the first close, macOS keeps
+    /// running in the menu bar. Without a tray (a Linux desktop without a
+    /// StatusNotifierItem host) closing always quits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub close_action: Option<CloseAction>,
+    /// Start with the window hidden in the tray (menu bar on macOS) when a
+    /// tray is available. Off by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub start_in_tray: bool,
     /// Desktop app install to use when several are present (`AppInstall::id`).
     pub preferred_app_id: Option<String>,
     /// Router mode (opt-in, off by default).
@@ -294,7 +302,8 @@ impl Default for Settings {
             theme: Theme::System,
             background: Background::Neutral,
             auto_probe: true,
-            tray: false,
+            close_action: None,
+            start_in_tray: false,
             preferred_app_id: None,
             router: crate::router::RouterSettings::default(),
             hosts: BTreeMap::new(),
@@ -306,6 +315,16 @@ impl Default for Settings {
             open_app_on_start: false,
         }
     }
+}
+
+/// What closing Superba's main window does ([`Settings::close_action`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloseAction {
+    /// Quit Superba (the router keeps running as its own service).
+    Quit,
+    /// Hide the window and keep running in the tray (the menu bar on macOS).
+    Tray,
 }
 
 /// UI theme preference.

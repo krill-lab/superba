@@ -429,6 +429,32 @@ fn file_write_serialization_excludes_secret_contents() {
 }
 
 #[test]
+fn the_window_choices_persist_and_stay_out_of_a_default_file() {
+    // Item 70: what closing the window does, and starting in the tray.
+    let default = serde_json::to_value(Settings::default()).unwrap();
+    assert!(
+        default.get("close_action").is_none(),
+        "unset: asked on the first close"
+    );
+    assert!(default.get("start_in_tray").is_none());
+    for (action, text) in [(CloseAction::Quit, "quit"), (CloseAction::Tray, "tray")] {
+        let settings = Settings {
+            close_action: Some(action),
+            start_in_tray: true,
+            ..Settings::default()
+        };
+        let value = serde_json::to_value(&settings).unwrap();
+        assert_eq!(value["close_action"], text);
+        assert_eq!(value["start_in_tray"], true);
+        assert_eq!(serde_json::from_value::<Settings>(value).unwrap(), settings);
+    }
+    let old: Settings = serde_json::from_value(json!({"countdown_secs": 3})).unwrap();
+    assert_eq!(old.close_action, None);
+    assert!(!old.start_in_tray);
+    assert!(serde_json::from_value::<Settings>(json!({"close_action": "minimize"})).is_err());
+}
+
+#[test]
 fn empty_settings_deserialize_to_defaults_and_partial_settings_preserve_other_defaults() {
     let settings: Settings = serde_json::from_str("{}").unwrap();
     assert_eq!(settings, Settings::default());
@@ -439,7 +465,8 @@ fn empty_settings_deserialize_to_defaults_and_partial_settings_preserve_other_de
     assert!(settings.auto_probe);
     assert!(!settings.safe_mode);
     assert!(!settings.takeover_app);
-    assert!(!settings.tray);
+    assert_eq!(settings.close_action, None);
+    assert!(!settings.start_in_tray);
     let partial: Settings =
         serde_json::from_value(json!({"locale":"zh-CN", "safe_mode":true, "countdown_secs":0}))
             .unwrap();
