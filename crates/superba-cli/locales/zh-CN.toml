@@ -798,6 +798,8 @@ installed = "Superba {version} 已安装。重新启动 Superba 即可使用。"
 handoff = "Superba {version} 已就绪，本命令退出后会完成更新。"
 manual = "Superba {version} 已下载并校验，但无法原地安装。"
 router_restarted = "本地路由器已重启到新版本。"
+problem_failed = "上次更新到 {version} 失败：{reason} 每一步都记录在 {path}"
+problem_installed = "Superba {version} 已安装，但有问题：{reason} 每一步都记录在 {path}"
 
 [cli.import]
 action_created = "已添加为 {name}"

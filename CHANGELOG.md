@@ -149,6 +149,12 @@ back to the official ChatGPT login.
   the binaries; on Windows the verified MSI is run (`msiexec /i ... /passive`) by
   a copy of `superba.exe --finish-update` after Superba has exited. A folder that is not writable ends in the verified package plus short
   manual steps. A running local router service is restarted onto the new binary.
+- **Log.** Each attempt is logged step by step in `logs/selfupdate.log` (the
+  last attempts are kept): download and checksum, the swap, and on Windows the
+  wait for Superba to exit, the `msiexec` command line and exit code with its
+  meaning (plus a verbose installer log), the router restart and the relaunch.
+  A failed update is shown at the next start with the reason and the log path,
+  stays on the Updates page and in `spb self-update check`.
 - Tests-only overrides `SUPERBA_SELF_UPDATE_API` and `SUPERBA_SELF_UPDATE_DOWNLOADS`
   accept only https or loopback http.
 
@@ -255,8 +261,10 @@ back to the official ChatGPT login.
 - The debugging port is loopback-only with `--remote-allow-origins` pinned to
   its origin; its owner is checked before the first request and a mismatch
   disables hot switching for that session. Safe mode launches without it.
-- Running as root never opens a debugging port; `sudo` and elevated Windows
-  tokens are refused.
+- Running as root never opens a debugging port; `sudo` is refused, and so is
+  another Windows account than the signed-in user (SYSTEM, `runas`, a scheduled
+  task). Running as administrator (an elevated token of the signed-in user, or
+  any process with UAC off) is allowed, with a one-time note.
 - Keys live in the OS keyring (0600 file fallback on headless Linux), are sent
   only to their site's https origins, never on command lines, never logged,
   and are masked in process listings (`sk-…`, `nb_…`).

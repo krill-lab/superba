@@ -213,3 +213,32 @@ async fn the_hidden_restart_router_step_asks_the_service() {
     assert_eq!(one_json(&stdout)["restarted"], true);
     assert_eq!(service.self_update.lock().unwrap().router_restarts, 1);
 }
+
+#[tokio::test]
+async fn check_tells_when_the_last_update_failed_and_where_its_log_is() {
+    let service = FakeService::new();
+    let mut v = view(SelfUpdateStatus::Available, Some(release("0.2.0")));
+    v.problem = Some(superba_core::SelfUpdateProblem {
+        version: "0.2.0".into(),
+        at: Timestamp::from_millis(1_800_000_000_000),
+        installed: false,
+        reason: superba_core::LocalizedText::new(
+            "selfupdate.problem.wait_timeout",
+            "Superba did not quit within {secs} s, so the update to {version} was not installed.",
+        )
+        .arg("secs", 60)
+        .arg("version", "0.2.0"),
+        log: "/data/logs/selfupdate.log".into(),
+        seen: true,
+    });
+    set(&service, v);
+    let (code, stdout, _) = invoke_runtime(&runtime(service), &["self-update", "check"]).await;
+    assert_eq!(code, 0, "{stdout}");
+    assert!(
+        stdout.contains(
+            "The last update, to 0.2.0, failed: Superba did not quit within 60 s, so the update \
+             to 0.2.0 was not installed. Every step is in /data/logs/selfupdate.log"
+        ),
+        "{stdout}"
+    );
+}

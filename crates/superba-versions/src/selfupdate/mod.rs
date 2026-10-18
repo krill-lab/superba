@@ -20,6 +20,11 @@
 //!   that is not writable ends in [`SelfInstallOutcome::Manual`] with the
 //!   verified package and short steps.
 //!
+//! Every install attempt is logged step by step in
+//! `<data dir>/logs/selfupdate.log` ([`runlog`]; the last attempts are kept) and
+//! recorded in `selfupdate.json` ([`record`]), so the next start can say when
+//! an update failed ([`superba_core::SelfUpdateView::problem`]).
+//!
 //! The endpoints can be replaced for tests with [`ENV_SUPERBA_SELF_UPDATE_API`]
 //! and [`ENV_SUPERBA_SELF_UPDATE_DOWNLOADS`]; like the other overrides they
 //! must be https or loopback ([`crate::sources::override_base`]).
@@ -29,7 +34,9 @@ mod fetch;
 pub mod finish;
 mod install;
 pub mod msi;
+pub mod record;
 pub mod release;
+pub mod runlog;
 pub mod state;
 pub mod version;
 pub mod zipx;
@@ -252,6 +259,10 @@ impl SelfUpdater {
             skipped: state.skipped.clone(),
             include_prereleases: self.include_prereleases,
             auto_check: self.auto_check,
+            problem: state
+                .last_attempt
+                .as_ref()
+                .and_then(|a| a.problem(&self.current, self.now())),
         }
     }
 
@@ -332,6 +343,37 @@ impl SelfUpdater {
             tracing::warn!(error = %e, "could not save the self-update state");
         }
         self.compose(&state)
+    }
+
+    /// The last attempt's problem has been shown: do not announce it again.
+    pub fn acknowledge(&self) -> SelfUpdateView {
+        let path = self.state_path();
+        record::update(&path, self.now(), |a| a.seen = true);
+        self.view()
+    }
+
+    /// The log of the current (or last) install attempt.
+    pub fn attempt_log(&self) -> runlog::RunLog {
+        runlog::RunLog::resume(runlog::RunLog::path_in(&self.data_dir), "update")
+    }
+
+    /// Note a problem of the current attempt found after the files were in
+    /// place (the router could not be restarted). Shown at the next start.
+    pub fn attempt_problem(&self, reason: superba_core::LocalizedText) {
+        record::update(&self.state_path(), self.now(), |a| {
+            a.problem = Some(reason);
+            a.seen = false;
+        });
+    }
+
+    /// The current attempt failed with `error`, already shown to the user.
+    pub fn attempt_failed(&self, error: &superba_core::Error) {
+        self.attempt_log().line(format!("FAILED: {error}"));
+        record::update(&self.state_path(), self.now(), |a| {
+            a.stage = record::Stage::Failed;
+            a.problem = Some(record::error_reason(&error.detail()));
+            a.seen = true;
+        });
     }
 
     /// Skip `version` (or clear the skip with `None`).

@@ -71,6 +71,9 @@ pub struct State {
     /// A backup waiting for the new version to start.
     #[serde(default)]
     pub cleanup: Option<Cleanup>,
+    /// The last install attempt ([`super::record`]).
+    #[serde(default)]
+    pub last_attempt: Option<super::record::Attempt>,
 }
 
 impl State {

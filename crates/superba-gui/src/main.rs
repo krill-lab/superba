@@ -36,6 +36,16 @@ fn main() -> ExitCode {
             return ExitCode::from(superba_cli::exit::USAGE);
         }
     };
+    // Windows: never as another account than the signed-in user (SYSTEM,
+    // `runas`, a scheduled task): its files would land in that account's
+    // profile. Checked before anything is written (user bug 44).
+    if superba_gui::startup::refuse_other_account(
+        gui_args
+            .locale
+            .unwrap_or_else(superba_gui::i18n::system_locale),
+    ) {
+        return ExitCode::from(superba_cli::exit::BLOCKED);
+    }
     // macOS starts apps with a soft limit of 256 open files.
     superba_cli::raise_open_files_limit();
     // From here on the GUI never ends silently: a failed start or a panic is

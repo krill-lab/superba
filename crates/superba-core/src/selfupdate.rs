@@ -87,6 +87,31 @@ pub struct SelfUpdateView {
     /// This OS / architecture has no package in the offered release.
     #[serde(default)]
     pub no_package: bool,
+    /// The last install attempt failed or ended with a problem (shown once at
+    /// the next start, and on the Updates page until the next attempt).
+    #[serde(default)]
+    pub problem: Option<SelfUpdateProblem>,
+}
+
+/// What went wrong in the last install attempt: the reason and the log with
+/// every step (`<data dir>/logs/selfupdate.log`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelfUpdateProblem {
+    /// The version that was being installed.
+    pub version: String,
+    /// When the attempt started.
+    pub at: Timestamp,
+    /// `true`: the new version was installed but a later step failed (router
+    /// restart, a pending Windows restart); `false`: the update failed and the
+    /// old version is still installed.
+    pub installed: bool,
+    /// Why.
+    pub reason: LocalizedText,
+    /// The log of that attempt.
+    pub log: PathBuf,
+    /// Already shown to the user ([`crate::SwitchService::self_update_acknowledge`]).
+    #[serde(default)]
+    pub seen: bool,
 }
 
 impl SelfUpdateView {

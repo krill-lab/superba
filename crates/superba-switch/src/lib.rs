@@ -33,6 +33,7 @@ pub mod messages;
 pub mod models;
 pub mod monitor;
 pub mod planner;
+pub mod privilege;
 pub mod router;
 pub mod router_doctor;
 pub mod rules;
@@ -631,6 +632,10 @@ impl SwitchService for Switcher {
         version: Option<String>,
     ) -> Result<superba_core::SelfUpdateView> {
         self.self_update_skip_impl(version).await
+    }
+
+    async fn self_update_acknowledge(&self) -> Result<superba_core::SelfUpdateView> {
+        self.self_update_acknowledge_impl().await
     }
 
     async fn self_update_install(

@@ -37,7 +37,8 @@ impl WindowsRunKeyService {
 /// Remove the login-startup entry when it starts the `superba-router` in `dir`
 /// (the Windows installer removing that install); an entry that starts another
 /// copy is left alone. Registry only, no file is written: it runs even where
-/// the full router removal is refused (an uninstaller run as administrator).
+/// the full router removal is refused (an uninstaller running as another
+/// account than the signed-in user).
 /// Returns whether an entry was removed.
 pub fn remove_run_entry_of(store: &dyn RunKeyStore, dir: &Path) -> std::io::Result<bool> {
     let Some(command) = store.get(RUN_VALUE_NAME)? else {

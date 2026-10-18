@@ -234,6 +234,8 @@ pub enum Command {
     SaveSettingsThenSelfUpdate(Settings),
     /// Skip a version of Superba (`None` clears the skip).
     SelfUpdateSkip(Option<String>),
+    /// The last update attempt's problem was shown: do not announce it again.
+    SelfUpdateAcknowledge,
     /// State of the feeds (`refresh` = fetch now).
     Feeds {
         /// Fetch now.
@@ -720,6 +722,9 @@ async fn handle(
         }
         Command::SelfUpdateSkip(version) => {
             out.send(Reply::SelfUpdate(service.self_update_skip(version).await));
+        }
+        Command::SelfUpdateAcknowledge => {
+            out.send(Reply::SelfUpdate(service.self_update_acknowledge().await));
         }
         Command::Feeds { refresh } => {
             let result = if refresh {

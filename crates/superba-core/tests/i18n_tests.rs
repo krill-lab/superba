@@ -234,6 +234,14 @@ fn every_block_reason_has_complete_translations_and_arguments() {
             message: "unexpected token".into(),
         },
         BlockReason::Elevated,
+        BlockReason::OtherUser {
+            account: "NT AUTHORITY\\SYSTEM".into(),
+            desktop_user: Some("PC\\alice".into()),
+        },
+        BlockReason::OtherUser {
+            account: "NT AUTHORITY\\LOCAL SERVICE".into(),
+            desktop_user: None,
+        },
         BlockReason::Locked {
             what: "state.lock".into(),
         },

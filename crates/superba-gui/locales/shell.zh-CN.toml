@@ -206,6 +206,10 @@ search = "搜索…"
 switched = "已切换到 {line}"
 what_restarts = "哪些内容会重启？"
 
+[notice]
+elevated_title = "Superba 正以管理员身份运行"
+elevated_body = "这没有问题：它仍在你自己的账户里工作。它的文件、本地路由（随你登录启动）和它设置的环境变量都只属于你这个用户，和平时一样。不需要以管理员身份启动它。"
+
 [startup]
 crash_body = "Superba 遇到内部错误，必须关闭：{reason}\n\n崩溃报告已写入 {path}。"
 crash_title = "Superba 已停止"

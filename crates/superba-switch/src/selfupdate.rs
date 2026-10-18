@@ -6,7 +6,7 @@ use superba_core::{
     Error, Result, SelfInstallOutcome, SelfUpdateCheckRequest, SelfUpdateInstallRequest,
     SelfUpdateReport, SelfUpdateView,
 };
-use superba_versions::selfupdate::{SelfUpdater, finish};
+use superba_versions::selfupdate::{SelfUpdater, finish, record};
 
 use crate::Switcher;
 
@@ -41,6 +41,10 @@ impl Switcher {
         Ok(self.self_updater().await.skip(version))
     }
 
+    pub(crate) async fn self_update_acknowledge_impl(&self) -> Result<SelfUpdateView> {
+        Ok(self.self_updater().await.acknowledge())
+    }
+
     /// Restart the router service when it is installed and running.
     pub(crate) async fn restart_router_if_running(&self) -> Result<bool> {
         let (info, live) = self.deps.router.overview().await;
@@ -73,14 +77,24 @@ impl Switcher {
             let (info, live) = self.deps.router.overview().await;
             info.installed && live.is_up()
         };
+        let log = updater.attempt_log();
         let mut plan = done.finish;
         match report.outcome {
             SelfInstallOutcome::Installed => {
                 // The files are in place: the service restarts onto the new binary.
                 match self.restart_router_if_running().await {
-                    Ok(restarted) => report.router_restarted = restarted,
+                    Ok(restarted) => {
+                        report.router_restarted = restarted;
+                        log.line(if restarted {
+                            "restarted the router service onto the new version"
+                        } else {
+                            "the router service is not running: nothing to restart"
+                        });
+                    }
                     Err(e) => {
-                        tracing::warn!(error = %e, "could not restart the router after the update")
+                        tracing::warn!(error = %e, "could not restart the router after the update");
+                        log.line(format!("FAILED: could not restart the router service: {e}"));
+                        updater.attempt_problem(record::router_reason(&e.detail()));
                     }
                 }
             }
@@ -95,13 +109,21 @@ impl Switcher {
         }
         if let Some(plan) = plan {
             let handoff = report.outcome == SelfInstallOutcome::Handoff;
+            let shown = finish::shown_command(&plan.exe.to_string_lossy(), &plan.args.to_args());
             match finish::spawn(&plan) {
                 Ok(()) => {
+                    log.line(format!("started the second stage: {shown}"));
                     report.relaunching =
                         plan.args.relaunch.is_some() || plan.args.open_app.is_some();
                 }
-                Err(e) if handoff => return Err(e),
-                Err(e) => tracing::warn!(error = %e, "could not schedule the restart"),
+                Err(e) if handoff => {
+                    updater.attempt_failed(&e);
+                    return Err(e);
+                }
+                Err(e) => {
+                    log.line(format!("could not start the second stage ({shown}): {e}"));
+                    tracing::warn!(error = %e, "could not schedule the restart");
+                }
             }
         }
         if report.outcome == SelfInstallOutcome::Handoff && report.replaced.is_empty() {

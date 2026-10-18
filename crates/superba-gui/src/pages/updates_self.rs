@@ -11,15 +11,17 @@
 use std::time::Duration;
 
 use egui::{Sense, Ui, vec2};
+use superba_core::paths::display_path;
 use superba_core::{
-    SelfInstallOutcome, SelfUpdateInstallRequest, SelfUpdateReport, SelfUpdateStatus,
-    SelfUpdateView,
+    SelfInstallOutcome, SelfUpdateInstallRequest, SelfUpdateProblem, SelfUpdateReport,
+    SelfUpdateStatus, SelfUpdateView,
 };
 
 use super::{Action, Cx, callout, error_text, kv};
 use crate::design::icons::Icon;
 use crate::design::tokens::radius;
 use crate::design::widgets::{Badge, Button, Status, Text};
+use crate::i18n::Tr;
 use crate::runtime::ReadTask;
 
 /// One line of rendered release notes.
@@ -119,6 +121,57 @@ pub fn note_lines(notes: &str) -> Vec<NoteLine> {
         out.pop();
     }
     out
+}
+
+/// How the last install attempt's problem is told: the start-up toast and the
+/// Updates page use the same words.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProblemText {
+    /// Error: the update failed; warning: installed, but a later step failed.
+    pub status: Status,
+    /// One line.
+    pub title: String,
+    /// The reason (`reason`, already localized) and where the log is.
+    pub body: String,
+}
+
+/// The words for `problem`, whose reason reads `reason` in the UI language.
+pub fn problem_text(tr: &Tr, problem: &SelfUpdateProblem, reason: &str) -> ProblemText {
+    let (status, key) = if problem.installed {
+        (Status::Warn, "updates.superba.problem_installed")
+    } else {
+        (Status::Error, "updates.superba.problem_failed")
+    };
+    ProblemText {
+        status,
+        title: tr.f(key, &[("version", &problem.version)]),
+        body: tr.f(
+            "updates.superba.problem_body",
+            &[("reason", &reason), ("path", &display_path(&problem.log))],
+        ),
+    }
+}
+
+/// The last attempt's problem on the page (it stays until the next attempt).
+fn problem_callout(ui: &mut Ui, cx: &Cx<'_>, problem: &SelfUpdateProblem, out: &mut Vec<Action>) {
+    let text = problem_text(cx.tr, problem, &cx.localize(&problem.reason));
+    callout(
+        ui,
+        cx,
+        text.status,
+        &format!("{}\n{}", text.title, text.body),
+    );
+    ui.add_space(6.0);
+    if ui
+        .add(
+            Button::new(cx.tr.t("updates.superba.open_log"))
+                .icon(Icon::External)
+                .small(),
+        )
+        .clicked()
+    {
+        out.push(Action::OpenUrl(problem.log.display().to_string()));
+    }
 }
 
 /// State of the section (kept across navigation).
@@ -428,6 +481,9 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut SelfState, out: &mut Vec<Actio
     if let Some(result) = &state.result {
         ui.add_space(8.0);
         install_result(ui, cx, result, out);
+    } else if let Some(problem) = &view.problem {
+        ui.add_space(8.0);
+        problem_callout(ui, cx, problem, out);
     }
     if let Some(t) = view.checked_at {
         ui.add_space(6.0);

@@ -325,7 +325,7 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 | `cache/import/import-<uuid>/` (a private 0700 copy of another tool's database with pending `-wal` / `-journal` changes, removed right after reading) | import |
 | `router/` (`config.json`, 0600 `secrets.json` and `runtime.json`, log) | router |
 | `catalog/` (a downloaded, signature-checked settings catalog; unused while remote updates are off) | catalog |
-| `selfupdate.json` (ETags and answers of the release check, last check time, skipped version, macOS backup to remove; no secrets), `downloads/superba-update/` (verified Superba packages and staging) | versions |
+| `selfupdate.json` (ETags and answers of the release check, last check time, skipped version, macOS backup to remove, the record of the last install attempt; no secrets), `downloads/superba-update/` (verified Superba packages and staging), `logs/selfupdate*.log` (the install attempts' steps) | versions |
 
 Shell rc marker blocks (`# >>> superba >>>` … `# <<< superba <<<`) and legacy-line
 comments (`# [superba] export …`) are rendered by `superba_core::env` for both local
@@ -572,9 +572,16 @@ touched.
   never placed on command lines (remote writes use stdin), stored in the keyring.
 - `auth.json` is written 0600; stashes and backups of logins are encrypted
   (ChaCha20-Poly1305, key in the keyring).
-- Superba refuses to run under `sudo` (euid 0 with `SUDO_USER`) and with an elevated
-  Windows token (`TokenElevation`): switching, "Open ChatGPT", recovery and every
-  `SwitchService` method that writes its files (`Switcher::refuse_elevated`). A
+- Superba refuses to run under `sudo` (euid 0 with `SUDO_USER`) and, on Windows, as
+  another account than the user signed in at this computer (SYSTEM and the other
+  service accounts, another user through `runas` or a scheduled task; the token's
+  user SID compared with the SID of the user of the process's session, or of the
+  active console session from session 0: `superba_switch::privilege`): switching,
+  "Open ChatGPT", recovery and every `SwitchService` method that writes its files
+  (`Switcher::refuse_elevated`); the GUI does not start at all as another account
+  and says why in a message box (on the console user's desktop from session 0).
+  An elevated token of the signed-in user is allowed (same account and profile;
+  with UAC off every process is elevated); the GUI says so once. A
   real root user is
   allowed but never gets a debugging port (any local user could drive a root-owned
   Codex through it).
@@ -746,6 +753,20 @@ Linux tarballs and the Windows zip, `superba-router` inside
   runs `spb self-update restart-router` and starts the new Superba. If the
   location is not writable the verified package is kept and
   `SelfInstallOutcome::Manual` carries short steps.
+- **Log and record.** Every attempt is logged step by step, with times, in
+  `<data>/logs/selfupdate.log` (`selfupdate::runlog`; the four attempts before are
+  kept as `selfupdate.1.log` ...): the download source and checksum, the swap or
+  the hand-off, and the second stage (`finish::run_with`: waiting for the old
+  process and its timeout, the `msiexec` command line and its exit code with the
+  meaning, a verbose `selfupdate-msiexec.log`, the router restart and its output,
+  the relaunch). `selfupdate.json` records the attempt (`selfupdate::record`:
+  running, installed, handed off, done, manual, failed, with the reason); the
+  second stage finishes it before it starts the new version. The next start turns
+  a failed attempt, a problem after the install (router restart, a pending Windows
+  restart), an attempt that never finished, or a "success" that left the old
+  version running into `SelfUpdateView::problem`: a sticky toast once
+  (`SwitchService::self_update_acknowledge`), a callout on the Updates page until
+  the next attempt, and a line in `spb self-update check`.
 - **Wiring.** `SwitchService::self_update_{view,check,skip,install}` and
   `self_update_restart_router` (defaults: not implemented) are implemented by
   `superba-switch` (`selfupdate.rs`), which adds Preferences (`Settings::

@@ -1390,14 +1390,20 @@ async fn a_wizard_save_under_the_preset_id_edits_the_existing_profile() {
 #[test]
 fn every_switch_text_key_used_in_the_sources_exists() {
     let en = superba_core::i18n::flatten_toml(superba_switch::messages::SWITCH_EN).unwrap();
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut dirs = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src")];
     let mut missing = Vec::new();
-    for entry in std::fs::read_dir(dir).unwrap().flatten() {
-        let text = std::fs::read_to_string(entry.path()).unwrap();
-        for part in text.split("text(\"switch.").skip(1) {
-            let key = format!("switch.{}", part.split('"').next().unwrap());
-            if !en.contains_key(&key) {
-                missing.push(key);
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            if entry.path().is_dir() {
+                dirs.push(entry.path());
+                continue;
+            }
+            let text = std::fs::read_to_string(entry.path()).unwrap();
+            for part in text.split("text(\"switch.").skip(1) {
+                let key = format!("switch.{}", part.split('"').next().unwrap());
+                if !en.contains_key(&key) {
+                    missing.push(key);
+                }
             }
         }
     }

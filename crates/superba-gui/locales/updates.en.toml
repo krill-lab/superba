@@ -128,6 +128,10 @@ handoff = "Superba {version} is ready. The update finishes when Superba closes, 
 router_restarted = "The local router was restarted onto the new version."
 manual = "Superba can't replace itself in this location. The package was downloaded and verified; install it by hand:"
 reveal = "Show the package in its folder"
+problem_failed = "The update to Superba {version} failed"
+problem_installed = "Superba {version} was installed with a problem"
+problem_body = "{reason}\nEvery step is in the log: {path}"
+open_log = "Open the log"
 
 [updates.win]
 download = "Download installer ({size})"

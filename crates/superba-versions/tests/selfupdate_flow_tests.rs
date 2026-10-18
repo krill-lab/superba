@@ -727,3 +727,80 @@ async fn windows_installs_through_the_msi_handoff_and_never_swaps_files() {
         "nothing is swapped here"
     );
 }
+
+#[tokio::test]
+async fn an_install_logs_its_steps_and_records_the_attempt() {
+    use superba_versions::selfupdate::record::Stage;
+    use superba_versions::selfupdate::state::State;
+    let f = Fixture::new().await;
+    serve_release(&f, "v0.2.0", false);
+    let dir = install_dir(f.data.path(), "0.1.0");
+    let u = f.updater().with_exe(dir.join("superba"));
+    let result = u.install(true).await.unwrap();
+    let log_path = f.data.path().join("logs").join("selfupdate.log");
+    assert_eq!(result.log, log_path);
+    let log = std::fs::read_to_string(&log_path).unwrap();
+    for want in [
+        "Superba 0.1.0 -> 0.2.0 (v0.2.0)",
+        "downloading http://127.0.0.1",
+        "/dl/v0.2.0/superba-0.2.0-linux-x86_64.tar.gz (direct)",
+        "downloaded and verified ",
+        "(SHA-256 ",
+        "install layout: Files",
+        "extracted into ",
+        "replaced [",
+        "Installed: replaced [",
+        "second stage: ",
+        "--finish-update",
+        "--state ",
+        "selfupdate.json",
+    ] {
+        assert!(log.contains(want), "{want:?} missing in:\n{log}");
+    }
+    let plan = result.finish.expect("a second stage");
+    assert_eq!(plan.args.log.as_deref(), Some(log_path.as_path()));
+    assert_eq!(
+        plan.args.state.as_deref(),
+        Some(f.data.path().join("selfupdate.json").as_path())
+    );
+    let attempt = State::load(&f.data.path().join("selfupdate.json"))
+        .last_attempt
+        .unwrap();
+    assert_eq!(
+        (attempt.from.as_str(), attempt.to.as_str()),
+        ("0.1.0", "0.2.0")
+    );
+    assert_eq!(attempt.stage, Stage::Installed);
+    assert_eq!(u.view().problem, None, "installed, waiting for the restart");
+}
+
+#[tokio::test]
+async fn a_failed_install_is_logged_and_recorded_as_seen() {
+    use superba_versions::selfupdate::record::Stage;
+    use superba_versions::selfupdate::state::State;
+    let f = Fixture::new().await;
+    let tar = b"not the package".to_vec();
+    let asset = "superba-0.2.0-linux-x86_64.tar.gz";
+    f.mock.route(
+        "/api/releases/latest",
+        Route::ok(release_json("v0.2.0", false, true, tar.len() as u64)),
+    );
+    f.mock.route(&format!("/dl/v0.2.0/{asset}"), Route::ok(tar));
+    f.mock.route(
+        &format!("/dl/v0.2.0/{SUMS_FILE}"),
+        Route::ok(format!("{}  {asset}\n", "0".repeat(64))),
+    );
+    let dir = install_dir(f.data.path(), "0.1.0");
+    let u = f.updater().with_exe(dir.join("spb"));
+    let e = u.install(false).await.unwrap_err();
+    let log = std::fs::read_to_string(f.data.path().join("logs/selfupdate.log")).unwrap();
+    assert!(log.contains("download from direct failed: "), "{log}");
+    assert!(log.contains(&format!("FAILED: {e}")), "{log}");
+    let attempt = State::load(&f.data.path().join("selfupdate.json"))
+        .last_attempt
+        .unwrap();
+    assert_eq!(attempt.stage, Stage::Failed);
+    assert!(attempt.seen, "the window that started it showed the error");
+    let problem = u.view().problem.expect("on the Updates page");
+    assert!(problem.seen && !problem.installed);
+}

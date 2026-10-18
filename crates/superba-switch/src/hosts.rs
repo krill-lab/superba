@@ -714,8 +714,8 @@ impl Switcher {
         let config = d.config.read_state(&home).await?;
         let mut blocks: Vec<BlockReason> = Vec::new();
         let mut warnings: Vec<Notice> = Vec::new();
-        if crate::planner::elevated(d.ctx.env.as_ref()) {
-            blocks.push(BlockReason::Elevated);
+        if let Some(reason) = crate::planner::account_block(d.ctx.env.as_ref()) {
+            blocks.push(reason);
         }
         if let Ok(unfinished) = crate::journal::SwitchJournal::new(&d.ctx.data_dir).unfinished()
             && !unfinished.is_empty()

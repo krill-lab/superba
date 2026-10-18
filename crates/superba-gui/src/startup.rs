@@ -8,6 +8,13 @@
 //! window gets one more try on WARP, and `SUPERBA_GPU=software` ([`ENV_SUPERBA_GPU`])
 //! uses WARP from the start (a way around a GPU driver that hangs or crashes).
 //!
+//! **Account** ([`refusal`]): on Windows the GUI does not start as another
+//! account than the user signed in at this computer (SYSTEM, a service account,
+//! `runas`, a scheduled task): everything it writes would land in that
+//! account's profile. It says so on stderr and in a message box, on the
+//! signed-in user's desktop when the process has none (session 0). An elevated
+//! token of the signed-in user starts normally (user bug 44).
+//!
 //! **Reports** ([`Reporter`]): release builds on Windows have no console, so what
 //! goes to stderr is lost there. Each start rewrites `superba-gui.log` in the logs
 //! directory (version, renderer and adapter, why the window could not open);
@@ -22,6 +29,7 @@ use std::sync::Arc;
 
 use superba_core::paths::display_path;
 use superba_core::{Locale, Timestamp};
+use superba_switch::privilege::RunAs;
 
 use crate::i18n::Tr;
 
@@ -164,6 +172,33 @@ impl std::fmt::Display for WindowError {
 }
 
 impl std::error::Error for WindowError {}
+
+/// Why the GUI must not start as `run_as`, in the UI language of `tr`: only
+/// another account than the signed-in user (an elevated token of that user
+/// and Unix `sudo` start; `sudo` is refused per write, as in `spb`).
+pub fn refusal(tr: &Tr, run_as: &RunAs) -> Option<String> {
+    match run_as {
+        RunAs::OtherUser { .. } => run_as.block_reason().map(|r| tr.text(&r.text())),
+        _ => None,
+    }
+}
+
+/// Refuse to start when this process runs as another account than the
+/// signed-in user ([`refusal`]): the reason on stderr and in a message box,
+/// nothing written. Returns whether it refused.
+pub fn refuse_other_account(locale: Locale) -> bool {
+    let run_as = superba_switch::privilege::current(&superba_core::ProcessEnv);
+    let tr = Tr::new(locale);
+    let Some(reason) = refusal(&tr, &run_as) else {
+        return false;
+    };
+    let title = tr.t("startup.failed_title");
+    eprintln!("{title}: {reason}");
+    tracing::warn!(?run_as, facts = ?superba_switch::privilege::windows_facts(), "refusing to start");
+    #[cfg(windows)]
+    win::message_box_anywhere(&title, &reason);
+    true
+}
 
 /// Where the GUI keeps its startup and crash logs, and how it tells the user
 /// that it could not start or stopped (see the module docs).
@@ -332,6 +367,9 @@ fn show_message(title: &str, body: &str) {
 
 #[cfg(windows)]
 mod win {
+    use windows_sys::Win32::System::RemoteDesktop::{
+        WTS_CURRENT_SERVER_HANDLE, WTSGetActiveConsoleSessionId, WTSSendMessageW,
+    };
     use windows_sys::Win32::System::StationsAndDesktops::{
         GetProcessWindowStation, GetUserObjectInformationW, UOI_FLAGS, USEROBJECTFLAGS,
     };
@@ -361,6 +399,40 @@ mod win {
                 ) != 0
         };
         ok && (flags.dwFlags & WSF_VISIBLE as u32) != 0
+    }
+
+    /// [`message_box`], or, from a process without a visible desktop (a task
+    /// or service in session 0), on the desktop of the active console session
+    /// (`WTSSendMessageW`, not waiting for the answer).
+    pub(super) fn message_box_anywhere(title: &str, body: &str) {
+        if interactive() {
+            message_box(title, body);
+            return;
+        }
+        // SAFETY: no arguments, no preconditions.
+        let session = unsafe { WTSGetActiveConsoleSessionId() };
+        if session == u32::MAX {
+            return;
+        }
+        let wide = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
+        let (title, body) = (wide(title), wide(body));
+        let mut response = 0;
+        // SAFETY: both buffers outlive the call and their byte lengths are
+        // passed; `response` is a valid output location. bWait = FALSE.
+        unsafe {
+            WTSSendMessageW(
+                WTS_CURRENT_SERVER_HANDLE,
+                session,
+                title.as_ptr(),
+                (title.len() * 2) as u32,
+                body.as_ptr(),
+                (body.len() * 2) as u32,
+                MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST,
+                0,
+                &mut response,
+                0,
+            );
+        }
     }
 
     pub(super) fn message_box(title: &str, body: &str) {

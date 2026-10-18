@@ -221,8 +221,19 @@ pub enum BlockReason {
         /// Parser message.
         message: String,
     },
-    /// Running under sudo / an elevated token (wrong file ownership, MSIX failures).
+    /// Unix: running as root through `sudo` (files in the user's home would end
+    /// up owned by root). An elevated Windows token of the signed-in user is fine.
     Elevated,
+    /// Windows: running as another account than the user signed in at this
+    /// computer (SYSTEM, a service account, another user through `runas` or a
+    /// scheduled task): Superba's and Codex's files would go to that account's
+    /// profile instead of the user's.
+    OtherUser {
+        /// The account Superba runs as (`NT AUTHORITY\SYSTEM`).
+        account: String,
+        /// The signed-in user (`PC\alice`), when there is one.
+        desktop_user: Option<String>,
+    },
     /// Another Superba instance or tool holds a lock.
     Locked {
         /// Lock description.
@@ -297,10 +308,26 @@ impl BlockReason {
                     .arg("path", path.display())
                     .arg("message", message)
             }
-            BlockReason::Elevated => LocalizedText::new(
-                "block.elevated",
-                "Do not run Superba with sudo or as administrator.",
-            ),
+            BlockReason::Elevated => {
+                LocalizedText::new("block.elevated", "Do not run Superba with sudo.")
+            }
+            BlockReason::OtherUser {
+                account,
+                desktop_user: Some(user),
+            } => LocalizedText::new(
+                "block.other_user",
+                "Superba is running as {account}, not as {user}, the user signed in at this computer: its files would go to the wrong user profile. Start Superba from {user}'s desktop.",
+            )
+            .arg("account", account)
+            .arg("user", user),
+            BlockReason::OtherUser {
+                account,
+                desktop_user: None,
+            } => LocalizedText::new(
+                "block.other_user_no_desktop",
+                "Superba is running as {account}, which is not a user signed in at this computer: its files would go to the wrong user profile. Start Superba from your own desktop.",
+            )
+            .arg("account", account),
             BlockReason::Locked { what } => {
                 LocalizedText::new("block.locked", "Busy: {what} is locked by another process.")
                     .arg("what", what)

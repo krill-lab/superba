@@ -135,9 +135,9 @@ jobs:
           cargo test -p superba-appctl --locked --no-run --test windows_app_it
           cargo test -p superba-gui --locked --no-run --test windows_settings_it
           cargo test -p superba-versions --locked --no-run --test windows_store_it
-          # The runner user is an administrator and Superba refuses to run
-          # elevated by design; this test build lifts that one check.
-          cargo build -p superba-cli --locked --bin spb --features superba-switch/test-unelevated
+          # The runner user is an administrator signed in at its own desktop:
+          # an elevated token of the signed-in user is allowed (user bug 44).
+          cargo build -p superba-cli --locked --bin spb
       - name: Activate, CDP, quit and relaunch the packaged app
         shell: bash
         env:

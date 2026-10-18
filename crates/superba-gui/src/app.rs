@@ -72,6 +72,8 @@ pub enum ToastAction {
     Retry(Box<SwitchRequest>),
     /// Switch to this provider ("Switch to this provider" after adding one).
     Switch(ProfileId),
+    /// Open a file (the self-update log).
+    OpenPath(PathBuf),
 }
 
 /// How long the "added" toast with its "Switch to this provider" button stays
@@ -274,6 +276,15 @@ pub struct SuperbaApp {
     had_providers: bool,
     pending_key_save: bool,
     wizard_request: Option<SwitchRequest>,
+    /// The last update attempt's problem was announced in this run.
+    selfupdate_problem_announced: bool,
+    /// Start-up notices wait until the main window shows (not behind the
+    /// setup wizard): the elevated-token notice (who runs, the data
+    /// directory for its marker) and toasts held back, with whether showing
+    /// them acknowledges the self-update problem.
+    elevated_notice: Option<(superba_switch::privilege::RunAs, PathBuf)>,
+    held_toasts: Vec<Toast<ToastAction>>,
+    ack_selfupdate_problem: bool,
 }
 
 impl std::fmt::Debug for SuperbaApp {
@@ -342,6 +353,10 @@ impl SuperbaApp {
             had_providers: false,
             pending_key_save: false,
             wizard_request: None,
+            selfupdate_problem_announced: false,
+            elevated_notice: None,
+            held_toasts: Vec::new(),
+            ack_selfupdate_problem: false,
             opts,
         };
         app.data.sites = catalog::builtin_sites();
@@ -351,6 +366,12 @@ impl SuperbaApp {
                 router_db: superba_router::RouterPaths::new(&context.data_dir).usage_db(),
                 data_dir: context.data_dir.root().to_path_buf(),
             });
+        // An elevated token of the signed-in user is fine (user bug 44): say so
+        // once, when the main window shows.
+        if let Ok(context) = superba_switch::detect_context() {
+            let run_as = superba_switch::privilege::current(context.env.as_ref());
+            app.elevated_notice = Some((run_as, context.data_dir.root().to_path_buf()));
+        }
         app.backend.send(Command::Recover);
         app.data.overview.start();
         app.data.profiles.start();
@@ -751,6 +772,9 @@ impl SuperbaApp {
                         && !e.is_not_implemented()
                     {
                         tracing::debug!(error = %e, "self-update check failed");
+                    }
+                    if let Ok(view) = &r {
+                        self.announce_selfupdate_problem(view);
                     }
                     self.data.selfupdate.finish(r);
                 }
@@ -1328,11 +1352,55 @@ impl SuperbaApp {
         items
     }
 
+    /// The last update attempt failed (or ended with a problem) and that was
+    /// not shown yet: a sticky toast with the reason and the log, once.
+    fn announce_selfupdate_problem(&mut self, view: &superba_core::SelfUpdateView) {
+        if self.selfupdate_problem_announced {
+            return;
+        }
+        let (tr, data) = (&self.tr, &self.data);
+        let Some(toast) = crate::notices::selfupdate_problem_toast(tr, view, |t| {
+            pages::localize_text(tr, data, t)
+        }) else {
+            return;
+        };
+        self.selfupdate_problem_announced = true;
+        let line = match &toast.body {
+            Some(body) => format!("{}: {body}", toast.title),
+            None => toast.title.clone(),
+        };
+        self.log(toast.status, line);
+        self.held_toasts.push(toast);
+        self.ack_selfupdate_problem = true;
+    }
+
+    /// Show the start-up notices once the main window is what the user sees:
+    /// the first data is in and the setup wizard (which would cover them) is
+    /// closed or was never opened.
+    fn release_startup_notices(&mut self) {
+        let decided = self.data.overview.value.is_some() && self.data.profiles.value.is_some();
+        if !decided || self.wizard.is_some() {
+            return;
+        }
+        if let Some((run_as, dir)) = self.elevated_notice.take() {
+            crate::notices::show_elevated_once(&self.tr, &run_as, Some(&dir), &mut self.toasts);
+        }
+        for toast in self.held_toasts.drain(..) {
+            self.toasts.push(toast);
+        }
+        if std::mem::take(&mut self.ack_selfupdate_problem) {
+            self.backend.send(Command::SelfUpdateAcknowledge);
+        }
+    }
+
     fn handle_toast_action(&mut self, a: ToastAction) {
         match a {
             ToastAction::OpenApp => self.backend.send(Command::OpenApp),
             ToastAction::FullRestart => self.request(SwitchIntent::RestartApp { install_id: None }),
             ToastAction::ViewLog => self.go(Page::Diagnostics),
+            ToastAction::OpenPath(path) => {
+                let _ = open::that_detached(path);
+            }
             ToastAction::Retry(r) => {
                 let now = self.now();
                 self.flow.request(*r, now);
@@ -1617,6 +1685,7 @@ impl eframe::App for SuperbaApp {
                 actions.push(action);
             }
         }
+        self.release_startup_notices();
         if let Some(a) = self.toasts.show(&ctx) {
             self.handle_toast_action(a);
         }

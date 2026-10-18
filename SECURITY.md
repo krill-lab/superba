@@ -153,8 +153,12 @@ written back.
 
 - Superba refuses to switch, open the app or change its own files (profiles,
   sites, settings, the router) through `sudo` (files would end up owned by root)
-  and, on Windows, with an elevated (Administrator) token. Read-only commands
-  such as `spb status` still work. A real root login (for
+  and, on Windows, as another account than the user signed in at the computer
+  (SYSTEM, a service account, another user through `runas` or a scheduled task:
+  the files would land in that account's profile; the window does not open at
+  all then). An elevated (Administrator) token of the signed-in user is the
+  same account and profile and is allowed. Read-only commands such as
+  `spb status` still work. A real root login (for
   example on a VPS) is allowed, but then Superba never opens a debugging port:
   any local user could otherwise drive a root-owned Codex through it. Switches
   are full restarts in that case.

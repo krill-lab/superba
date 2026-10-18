@@ -902,8 +902,8 @@ fn member_view(
 }
 
 /// The Windows installer's removal step for the login startup, which also
-/// runs where the full router removal is refused (an uninstaller run as
-/// administrator): delete the Run entry when it starts the router of the
+/// runs where the full router removal is refused (an uninstaller running as
+/// another account than the signed-in user): delete the Run entry when it starts the router of the
 /// install in `dir` (`superba_router::service::remove_run_entry_of`). Whether
 /// an entry was removed; always `false` off Windows.
 pub fn remove_login_startup(dir: &std::path::Path) -> bool {

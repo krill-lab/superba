@@ -605,3 +605,98 @@ fn release_notes_are_rendered_as_plain_text() {
     assert!(note_lines("").is_empty());
     assert!(note_lines("\n\n").is_empty());
 }
+
+fn problem(installed: bool, seen: bool) -> superba_core::SelfUpdateProblem {
+    superba_core::SelfUpdateProblem {
+        version: "0.2.0".into(),
+        at: Timestamp::now(),
+        installed,
+        reason: superba_core::LocalizedText::new(
+            "selfupdate.problem.msiexec",
+            "The installer (msiexec) ended with code {code}: {meaning}",
+        )
+        .arg("code", 1603)
+        .arg_text(
+            "meaning",
+            superba_core::LocalizedText::new(
+                "selfupdate.msiexec.c1603",
+                "a fatal error occurred during the installation",
+            ),
+        ),
+        log: "/home/user/.local/share/superba/logs/selfupdate.log".into(),
+        seen,
+    }
+}
+
+#[test]
+fn a_failed_update_stays_on_the_page_with_its_reason_and_log() {
+    // User bug 44: the next start says why the last update failed.
+    let mut v = view(SelfUpdateStatus::Available, Some(release("0.2.0")));
+    v.problem = Some(problem(false, true));
+    let mut h = harness(fake(), Locale::ZhCn, v);
+    let mut state = State::default();
+    let f = page(&mut h, &mut state, "更新到 Superba 0.2.0 失败");
+    for want in [
+        "安装程序（msiexec）以代码 1603 结束：安装过程中发生严重错误",
+        "每一步都记录在日志里：/home/user/.local/share/superba/logs/selfupdate.log",
+        "打开日志",
+        // The update can be tried again.
+        "立即更新",
+    ] {
+        assert!(f.has(want), "{want}:\n{}", f.all_text());
+    }
+    h.click_text(&f, "打开日志");
+    let f = h.until(
+        |ui, cx, out| updates::show(ui, cx, &mut state, out),
+        |f| !f.actions.is_empty(),
+    );
+    assert!(
+        matches!(&f.actions[0], Action::OpenUrl(p) if p.ends_with("logs/selfupdate.log")),
+        "{:?}",
+        f.actions
+    );
+
+    // Installed with a problem: a warning in English.
+    let mut v = view(SelfUpdateStatus::UpToDate, Some(release("0.2.0")));
+    v.problem = Some(problem(true, false));
+    let mut h = harness(fake(), Locale::En, v);
+    let f = page(
+        &mut h,
+        &mut State::default(),
+        "Superba 0.2.0 was installed with a problem",
+    );
+    assert!(f.has("Every step is in the log: "), "{}", f.all_text());
+}
+
+#[test]
+fn the_start_up_toast_of_a_failed_update_is_shown_once_with_the_log() {
+    use superba_gui::app::ToastAction;
+    use superba_gui::notices::selfupdate_problem_toast;
+    let tr = Tr::new(Locale::ZhCn);
+    let render = |t: &superba_core::LocalizedText| tr.text(t);
+    let mut v = view(SelfUpdateStatus::UpToDate, None);
+    assert!(selfupdate_problem_toast(&tr, &v, render).is_none());
+    v.problem = Some(problem(false, false));
+    let toast = selfupdate_problem_toast(&tr, &v, render).expect("a toast");
+    assert_eq!(toast.status, Status::Error);
+    assert_eq!(toast.title, "更新到 Superba 0.2.0 失败");
+    let body = toast.body.clone().unwrap();
+    assert!(body.contains("以代码 1603 结束"), "{body}");
+    assert!(
+        body.contains("/home/user/.local/share/superba/logs/selfupdate.log"),
+        "{body}"
+    );
+    assert_eq!(toast.ttl, None, "stays until closed");
+    assert!(matches!(
+        &toast.actions[..],
+        [(label, ToastAction::OpenPath(p))] if label == "打开日志" && p.ends_with("selfupdate.log")
+    ));
+    // Installed, a later step failed: a warning.
+    v.problem = Some(problem(true, false));
+    let toast = selfupdate_problem_toast(&tr, &v, render).unwrap();
+    assert_eq!(toast.status, Status::Warn);
+    assert_eq!(toast.title, "Superba 0.2.0 已安装，但有问题");
+    // Shown once: an acknowledged problem has no toast.
+    v.problem = Some(problem(false, true));
+    assert!(selfupdate_problem_toast(&tr, &v, render).is_none());
+}

@@ -207,6 +207,11 @@ search = "Search…"
 switched = "Switched to {line}"
 what_restarts = "What restarts?"
 
+[notice]
+# One-time toast when Superba runs with an elevated Windows token (user bug 44).
+elevated_title = "Superba is running as administrator"
+elevated_body = "That's fine: it still works in your own account. Its files, the local router (it starts when you sign in) and the environment variables it sets stay yours, as when it runs normally. There is no need to start it as administrator."
+
 [startup]
 # Native message box and stderr when the GUI cannot start or stops on a panic
 # (user bug 43); {path} is a log file.

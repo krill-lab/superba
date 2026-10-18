@@ -9,7 +9,9 @@ use superba_core::{
 
 use super::apply::{self, InstallLayout};
 use super::finish::{FinishArgs, FinishPlan};
+use super::record::{self, Attempt, Stage};
 use super::release::{Os, SUMS_FILE};
+use super::runlog::RunLog;
 use super::state::{Cleanup, State};
 use super::{SelfUpdater, version};
 use crate::host_of;
@@ -33,6 +35,8 @@ pub struct InstallResult {
     /// The second stage to start once the caller is ready to quit (and has
     /// restarted the router, on Unix).
     pub finish: Option<FinishPlan>,
+    /// The attempt's log ([`super::runlog`]).
+    pub log: PathBuf,
 }
 
 impl SelfUpdater {
@@ -101,6 +105,20 @@ impl SelfUpdater {
     /// Download `asset` of `release` and verify its size and SHA-256 against the
     /// release's `SHA256SUMS.txt`. Returns the verified archive.
     pub async fn download(&self, release: &SelfRelease, asset: &str) -> Result<PathBuf> {
+        self.download_logged(release, asset, None).await
+    }
+
+    async fn download_logged(
+        &self,
+        release: &SelfRelease,
+        asset: &str,
+        log: Option<&RunLog>,
+    ) -> Result<PathBuf> {
+        let note = |line: String| {
+            if let Some(log) = log {
+                log.line(line);
+            }
+        };
         if asset.contains(['/', '\\']) || asset.starts_with('.') {
             return Err(Error::Invalid {
                 message: format!("unexpected package name {asset}"),
@@ -119,12 +137,18 @@ impl SelfUpdater {
         // Older updates' downloads are of no use any more.
         prune_downloads(&self.data_dir.selfupdate_downloads_dir(), &dir);
         if dest.is_file() && http::verify_file(&dest, &want, release.asset_size).is_ok() {
+            note(format!(
+                "{} was downloaded and verified before (SHA-256 {})",
+                dest.display(),
+                want_hex(&want)
+            ));
             return Ok(dest);
         }
         let client = http::client(true)?;
         let mut errors = Vec::new();
         for (source, url) in self.urls(&release.tag, asset) {
             tracing::info!(%source, version = %release.version, "downloading Superba");
+            note(format!("downloading {url} ({source})"));
             match http::download(
                 &client,
                 &url,
@@ -135,9 +159,17 @@ impl SelfUpdater {
             )
             .await
             {
-                Ok(_) => return Ok(dest),
+                Ok(_) => {
+                    note(format!(
+                        "downloaded and verified {} (SHA-256 {}, as in {SUMS_FILE})",
+                        dest.display(),
+                        want_hex(&want)
+                    ));
+                    return Ok(dest);
+                }
                 Err(e) => {
                     tracing::warn!(%source, error = %e, "Superba download failed");
+                    note(format!("download from {source} failed: {}", e.detail()));
                     errors.push(format!("{source}: {}", e.detail()));
                 }
             }
@@ -227,10 +259,76 @@ impl SelfUpdater {
         let asset = release.asset.clone().ok_or_else(|| Error::Unsupported {
             what: format!("a Superba package for this system in {}", release.tag),
         })?;
-        let archive = self.download(&release, &asset).await?;
+        let log = self.begin_attempt(&release);
+        let result = self.install_release(&release, &asset, relaunch, &log).await;
+        match &result {
+            Ok(done) => {
+                let stage = match done.outcome {
+                    SelfInstallOutcome::Handoff => Stage::Handoff,
+                    SelfInstallOutcome::Installed => Stage::Installed,
+                    _ => Stage::Manual,
+                };
+                log.line(format!(
+                    "{:?}: replaced {:?}; second stage: {}",
+                    done.outcome,
+                    done.replaced,
+                    done.finish.as_ref().map_or_else(
+                        || "none".to_owned(),
+                        |f| super::finish::shown_command(
+                            &f.exe.to_string_lossy(),
+                            &f.args.to_args()
+                        )
+                    )
+                ));
+                record::update(&self.state_path(), self.now(), |a| a.stage = stage);
+            }
+            Err(e) => self.attempt_failed(e),
+        }
+        result
+    }
+
+    /// Start the log and the record of an attempt to install `release`.
+    fn begin_attempt(&self, release: &SelfRelease) -> RunLog {
+        let path = RunLog::path_in(&self.data_dir);
+        let exe = self
+            .exe_path()
+            .map_or_else(|e| e.detail(), |p| superba_core::paths::display_path(&p));
+        let log = RunLog::begin(
+            &path,
+            &format!(
+                "Superba {} -> {} ({}), {} on {:?} {}",
+                self.current,
+                release.version,
+                release.tag,
+                exe,
+                self.platform.os,
+                self.platform.arch
+            ),
+        );
+        record::start(
+            &self.state_path(),
+            Attempt::new(
+                &self.current.to_string(),
+                &release.version,
+                &path,
+                self.now(),
+            ),
+        );
+        log
+    }
+
+    async fn install_release(
+        &self,
+        release: &SelfRelease,
+        asset: &str,
+        relaunch: bool,
+        log: &RunLog,
+    ) -> Result<InstallResult> {
+        let archive = self.download_logged(release, asset, Some(log)).await?;
         let me = self.clone();
         let rel = release.clone();
-        tokio::task::spawn_blocking(move || me.apply_blocking(&rel, &archive, relaunch))
+        let log = log.clone();
+        tokio::task::spawn_blocking(move || me.apply_blocking(&rel, &archive, relaunch, &log))
             .await
             .map_err(|e| Error::other(format!("background task failed: {e}")))?
     }
@@ -247,6 +345,7 @@ impl SelfUpdater {
         msi: &Path,
         relaunch: bool,
         exe: &Path,
+        log: &RunLog,
     ) -> Result<InstallResult> {
         let dir = exe.parent();
         let gui = dir.map(|d| d.join("superba.exe")).filter(|g| g.is_file());
@@ -257,15 +356,31 @@ impl SelfUpdater {
             steps,
             replaced: Vec::new(),
             finish: None,
+            log: log.path().to_owned(),
         };
         let Some(gui) = gui else {
+            log.line(format!(
+                "no superba.exe next to {}: the MSI is left for a manual install",
+                exe.display()
+            ));
             return Ok(manual(manual_steps(Os::Windows, msi, dir)));
         };
         // The finisher must not live in the folder the MSI replaces.
         let helper = msi.with_file_name(format!("finish-update-{}.exe", crate::store::nonce()));
-        if std::fs::copy(&gui, &helper).is_err() {
+        if let Err(e) = std::fs::copy(&gui, &helper) {
+            log.line(format!(
+                "could not copy {} to {}: {e}; the MSI is left for a manual install",
+                gui.display(),
+                helper.display()
+            ));
             return Ok(manual(manual_steps(Os::Windows, msi, dir)));
         }
+        log.line(format!(
+            "the second stage ({}) installs {} once this process ({}) has exited",
+            helper.display(),
+            msi.display(),
+            std::process::id()
+        ));
         Ok(InstallResult {
             version: release.version.clone(),
             outcome: SelfInstallOutcome::Handoff,
@@ -278,10 +393,12 @@ impl SelfUpdater {
                     wait_pid: Some(std::process::id()),
                     msi: Some(msi.to_owned()),
                     relaunch: relaunch.then_some(gui),
-                    log: Some(self.data_dir.root().join("selfupdate.log")),
+                    log: Some(log.path().to_owned()),
+                    state: Some(self.state_path()),
                     ..FinishArgs::default()
                 },
             }),
+            log: log.path().to_owned(),
         })
     }
 
@@ -290,6 +407,7 @@ impl SelfUpdater {
         release: &SelfRelease,
         archive: &Path,
         relaunch: bool,
+        log: &RunLog,
     ) -> Result<InstallResult> {
         let exe = self.exe_path()?;
         let os = self.platform.os;
@@ -300,29 +418,47 @@ impl SelfUpdater {
             steps,
             replaced: Vec::new(),
             finish: None,
+            log: log.path().to_owned(),
         };
         if os == Os::Windows {
-            return self.windows_msi_handoff(release, archive, relaunch, &exe);
+            return self.windows_msi_handoff(release, archive, relaunch, &exe, log);
         }
         let Some(layout) = apply::detect_layout(&exe, os) else {
+            log.line(format!(
+                "{} is not in a layout Superba can replace: the package is left for a manual install",
+                exe.display()
+            ));
             return Ok(manual(manual_steps(os, archive, exe.parent())));
         };
+        log.line(format!("install layout: {layout:?}"));
         let nonce = crate::store::nonce();
         let pid = std::process::id();
         match layout {
             InstallLayout::Bundle { app, spb } => {
                 let Some(parent) = app.parent().filter(|p| apply::writable_dir(p)) else {
+                    log.line(format!(
+                        "{} is not writable: the package is left for a manual install",
+                        app.parent().unwrap_or(&app).display()
+                    ));
                     return Ok(manual(manual_steps(os, archive, app.parent())));
                 };
                 let stage = parent.join(format!(".superba-update-{nonce}"));
                 let result = (|| {
                     let root = self.extract(archive, &stage)?;
+                    log.line(format!("extracted into {}", root.display()));
                     self.smoke_test(&root, &release.version)?;
+                    log.line(format!("the new spb reports {}", release.version));
                     let mut replaced = Vec::new();
                     if let Some(spb) = spb.filter(|s| s.parent().is_some_and(apply::writable_dir)) {
-                        replaced.extend(apply::replace_files(&[(root.join("spb"), spb)])?);
+                        replaced.extend(apply::replace_files(&[(root.join("spb"), spb.clone())])?);
+                        log.line(format!("replaced {}", spb.display()));
                     }
                     let backup = apply::swap_bundle(&app, &root.join("Superba.app"))?;
+                    log.line(format!(
+                        "replaced {} (the old bundle is kept as {} until the new version runs)",
+                        app.display(),
+                        backup.display()
+                    ));
                     let path = self.state_path();
                     let mut state = State::load(&path);
                     state.cleanup = Some(Cleanup {
@@ -343,7 +479,8 @@ impl SelfUpdater {
                     args: FinishArgs {
                         wait_pid: Some(pid),
                         open_app: Some(app.clone()),
-                        log: Some(self.data_dir.root().join("selfupdate.log")),
+                        log: Some(log.path().to_owned()),
+                        state: Some(self.state_path()),
                         ..FinishArgs::default()
                     },
                 });
@@ -355,10 +492,15 @@ impl SelfUpdater {
                     steps: Vec::new(),
                     replaced,
                     finish,
+                    log: log.path().to_owned(),
                 })
             }
             InstallLayout::Files { dir, names } => {
                 if !apply::writable_dir(&dir) {
+                    log.line(format!(
+                        "{} is not writable: the package is left for a manual install",
+                        dir.display()
+                    ));
                     return Ok(manual(manual_steps(os, archive, Some(&dir))));
                 }
                 let stage = archive
@@ -367,7 +509,9 @@ impl SelfUpdater {
                     .join(format!("stage-{nonce}"));
                 let result = (|| {
                     let root = self.extract(archive, &stage)?;
+                    log.line(format!("extracted into {}", root.display()));
                     self.smoke_test(&root, &release.version)?;
+                    log.line(format!("the new spb reports {}", release.version));
                     let pairs: Vec<(PathBuf, PathBuf)> = names
                         .iter()
                         .filter(|n| root.join(n).is_file())
@@ -379,6 +523,7 @@ impl SelfUpdater {
                         });
                     }
                     let replaced = apply::replace_files(&pairs)?;
+                    log.line(format!("replaced {replaced:?} in {}", dir.display()));
                     Ok(replaced)
                 })();
                 let replaced = match result {
@@ -389,7 +534,6 @@ impl SelfUpdater {
                     }
                 };
                 let gui = dir.join(apply::bin_name("superba", os));
-                let log = Some(self.data_dir.root().join("selfupdate.log"));
                 let _ = std::fs::remove_dir_all(&stage);
                 let _ = std::fs::remove_file(archive);
                 let finish = (relaunch && gui.is_file()).then(|| FinishPlan {
@@ -397,7 +541,8 @@ impl SelfUpdater {
                     args: FinishArgs {
                         wait_pid: Some(pid),
                         relaunch: Some(gui),
-                        log,
+                        log: Some(log.path().to_owned()),
+                        state: Some(self.state_path()),
                         ..FinishArgs::default()
                     },
                 });
@@ -408,9 +553,17 @@ impl SelfUpdater {
                     steps: Vec::new(),
                     replaced,
                     finish,
+                    log: log.path().to_owned(),
                 })
             }
         }
+    }
+}
+
+/// A checksum as hex, for the log.
+fn want_hex(want: &Checksum) -> String {
+    match want {
+        Checksum::Sha256(hex) | Checksum::Sha512Integrity(hex) => hex.clone(),
     }
 }
 

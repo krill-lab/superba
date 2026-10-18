@@ -16,7 +16,7 @@ use superba_core::{
 use crate::Switcher;
 use crate::journal::{JournalEntry, JournalStatus, StateLock, SwitchJournal};
 use crate::messages::text;
-use crate::planner::{all_sites, effective_root, elevated, launch_cdp_mode};
+use crate::planner::{account_block, all_sites, effective_root, launch_cdp_mode};
 use crate::rules;
 
 /// A change of what the router copies from a member profile (its site, lines,
@@ -111,13 +111,14 @@ impl Switcher {
             .and_then(|a| a.profile_id)
     }
 
-    /// Writes into the user's data directory refuse to run through `sudo` or
-    /// with an elevated Windows token (files would end up owned by root /
-    /// the administrators group), like switching does.
+    /// Writes into the user's data directory refuse to run through `sudo`
+    /// (files would end up owned by root) or, on Windows, as another account
+    /// than the signed-in user (they would land in that account's profile),
+    /// like switching does. An elevated token of the signed-in user is fine.
     pub(crate) fn refuse_elevated(&self) -> Result<()> {
-        if elevated(self.deps.ctx.env.as_ref()) {
+        if let Some(reason) = account_block(self.deps.ctx.env.as_ref()) {
             return Err(Error::Blocked {
-                reasons: vec![superba_core::BlockReason::Elevated],
+                reasons: vec![reason],
             });
         }
         Ok(())
@@ -411,9 +412,9 @@ impl Switcher {
 
     pub(crate) async fn open_app_impl(&self) -> Result<AppSession> {
         let d = &self.deps;
-        if elevated(d.ctx.env.as_ref()) {
+        if let Some(reason) = account_block(d.ctx.env.as_ref()) {
             return Err(Error::Blocked {
-                reasons: vec![superba_core::BlockReason::Elevated],
+                reasons: vec![reason],
             });
         }
         if let Some(s) = d.app.running_session().await? {
@@ -851,12 +852,26 @@ impl Switcher {
                 text("switch.doctor.plaintext_secrets"),
             ));
         }
-        if elevated(d.ctx.env.as_ref()) {
-            out.push(finding(
+        match crate::privilege::current(d.ctx.env.as_ref()) {
+            crate::privilege::RunAs::Sudo => out.push(finding(
                 "elevated",
                 Severity::Danger,
                 text("switch.doctor.elevated"),
-            ));
+            )),
+            crate::privilege::RunAs::OtherUser {
+                account,
+                desktop_user,
+            } => out.push(finding(
+                "other_user",
+                Severity::Danger,
+                superba_core::BlockReason::OtherUser {
+                    account,
+                    desktop_user,
+                }
+                .text(),
+            )),
+            // An elevated token of the signed-in user is fine: the GUI says so once.
+            crate::privilege::RunAs::ElevatedUser | crate::privilege::RunAs::User => {}
         }
         Ok(out)
     }

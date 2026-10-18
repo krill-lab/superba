@@ -601,57 +601,10 @@ fn app_core_current(processes: &[ProcessInfo], active: Option<&superba_core::Act
     cores.iter().all(|p| !p.stale)
 }
 
-/// Refuse sudo and Windows administrator tokens (plan 12.4). Real Unix root
-/// logins are allowed, but must launch without CDP.
-#[cfg(unix)]
-pub(crate) fn elevated(env: &dyn superba_core::EnvSource) -> bool {
-    env.var_non_empty("SUDO_USER").is_some() && effective_root()
-}
-
-#[cfg(all(windows, feature = "test-unelevated"))]
-pub(crate) fn elevated(_env: &dyn superba_core::EnvSource) -> bool {
-    // Hosted Windows CI runners run as an administrator, which would block every
-    // plan; the tests build with this feature (never enabled for a real build)
-    // and exercise the Unix `sudo` rule through the injected environment instead.
-    false
-}
-
-#[cfg(all(windows, not(feature = "test-unelevated")))]
-pub(crate) fn elevated(_env: &dyn superba_core::EnvSource) -> bool {
-    use windows_sys::Win32::{
-        Foundation::CloseHandle,
-        Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation},
-        System::Threading::{GetCurrentProcess, OpenProcessToken},
-    };
-
-    let mut token = std::ptr::null_mut();
-    let mut elevation = TOKEN_ELEVATION::default();
-    let mut returned = 0;
-    // SAFETY: these APIs receive valid output buffers; the queried process token
-    // is closed on every path after opening. Fail closed if its state is unknown.
-    unsafe {
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
-            tracing::warn!(error = %std::io::Error::last_os_error(), "cannot query process token");
-            return true;
-        }
-        let ok = GetTokenInformation(
-            token,
-            TokenElevation,
-            (&mut elevation as *mut TOKEN_ELEVATION).cast(),
-            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
-            &mut returned,
-        );
-        if ok == 0 {
-            tracing::warn!(error = %std::io::Error::last_os_error(), "cannot query token elevation");
-        }
-        CloseHandle(token);
-        ok == 0 || elevation.TokenIsElevated != 0
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-pub(crate) fn elevated(_env: &dyn superba_core::EnvSource) -> bool {
-    false
+/// Why writes are refused for the account Superba runs as (sudo, another
+/// Windows account; [`crate::privilege`]), or `None`.
+pub(crate) fn account_block(env: &dyn superba_core::EnvSource) -> Option<BlockReason> {
+    crate::privilege::current(env).block_reason()
 }
 
 #[cfg(unix)]
@@ -728,8 +681,8 @@ impl Switcher {
                 });
             }
         }
-        if elevated(d.ctx.env.as_ref()) {
-            draft.block(BlockReason::Elevated);
+        if let Some(reason) = account_block(d.ctx.env.as_ref()) {
+            draft.block(reason);
         }
         if local && effective_root() {
             draft.warn(text("switch.warn.root_no_hot_switch"));

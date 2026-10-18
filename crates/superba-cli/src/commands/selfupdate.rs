@@ -50,6 +50,19 @@ fn describe(view: &SelfUpdateView, out: &mut Output) -> Result<()> {
         SelfUpdateStatus::OnlineChecksOff => text("cli.selfupdate.off"),
         _ => text("cli.selfupdate.not_checked"),
     })?;
+    if let Some(p) = &view.problem {
+        let key = if p.installed {
+            "cli.selfupdate.problem_installed"
+        } else {
+            "cli.selfupdate.problem_failed"
+        };
+        out.line(
+            text(key)
+                .arg("version", &p.version)
+                .arg_text("reason", p.reason.clone())
+                .arg("path", superba_core::paths::display_path(&p.log)),
+        )?;
+    }
     Ok(())
 }
 

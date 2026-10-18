@@ -961,6 +961,13 @@ pub trait SwitchService: Send + Sync {
         Err(crate::Error::not_implemented("self update install"))
     }
 
+    /// Mark the last attempt's problem ([`crate::SelfUpdateView::problem`]) as
+    /// shown, so the next start does not announce it again; it stays on the
+    /// Updates page until the next attempt.
+    async fn self_update_acknowledge(&self) -> Result<crate::SelfUpdateView> {
+        Err(crate::Error::not_implemented("self update acknowledge"))
+    }
+
     /// Restart the local router service when it is installed and running, so it
     /// runs the binary on disk (the last step of an update; `spb self-update
     /// restart-router` runs it for the Windows hand-off). `false` = nothing to

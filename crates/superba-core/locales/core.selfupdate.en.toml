@@ -7,3 +7,33 @@ package = "The update was downloaded and verified: {path}"
 macos = "Quit Superba, unzip the package and drag Superba.app into {dir}, replacing the old one."
 windows = "Quit Superba and run the installer {path}."
 linux = "Quit Superba and extract the archive over {dir} (use sudo if it belongs to root): tar -xzf {path} --strip-components=1 -C {dir}"
+
+# The last install attempt went wrong (shown at the next start and on the Updates page).
+[selfupdate.problem]
+failed = "The update to {version} failed."
+not_applied = "The installer reported success, but this is still Superba {current}."
+unfinished = "The update to {version} did not finish."
+error = "{detail}"
+wait_timeout = "Superba did not quit within {secs} s, so the update to {version} was not installed."
+msiexec_start = "The installer (msiexec) could not be started: {error}"
+msiexec = "The installer (msiexec) ended with code {code}: {meaning}"
+restart_pending = "The update was installed; Windows must restart to finish it."
+router = "The update was installed, but the local router could not be restarted ({detail}). Start it again on the Router page."
+
+# Windows Installer exit codes.
+[selfupdate.msiexec]
+c0 = "success"
+c1641 = "success; Windows Installer started a restart of Windows"
+c3010 = "success; Windows must restart to finish the update"
+c1601 = "the Windows Installer service could not be accessed"
+c1602 = "the installation was cancelled"
+c1603 = "a fatal error occurred during the installation"
+c1612 = "the installation source is not available"
+c1618 = "another installation is already in progress"
+c1619 = "the installation package could not be opened"
+c1620 = "the installation package is invalid"
+c1625 = "the installation is forbidden by system policy"
+c1633 = "the package is not supported on this platform"
+c1638 = "another version of this product is already installed"
+c1639 = "invalid command line"
+unknown = "unknown error"

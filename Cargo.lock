@@ -4678,7 +4678,6 @@ dependencies = [
  "superba-remote",
  "superba-router",
  "superba-sessions",
- "superba-switch",
  "superba-versions",
  "sys-locale",
  "tempfile",

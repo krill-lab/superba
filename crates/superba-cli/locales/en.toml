@@ -798,6 +798,8 @@ installed = "Superba {version} is installed. Start Superba again to use it."
 handoff = "Superba {version} is ready. The update finishes when this command exits."
 manual = "Superba {version} was downloaded and verified but cannot be installed in place."
 router_restarted = "The local router was restarted onto the new version."
+problem_failed = "The last update, to {version}, failed: {reason} Every step is in {path}"
+problem_installed = "Superba {version} was installed with a problem: {reason} Every step is in {path}"
 
 [cli.import]
 action_created = "added as {name}"

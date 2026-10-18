@@ -85,9 +85,9 @@ async fn installer_teardown(keep_service: bool, rt: &Runtime, out: &mut Output) 
             let _ = execute::run(router_switch(false, &exec), &exec, rt, out).await;
         }
         let _ = rt.service.router_uninstall().await;
-        // That is refused when the uninstaller runs as administrator (an
-        // elevated terminal, UAC off), but the program goes away all the same:
-        // its login startup must not outlive it.
+        // That is refused when the uninstaller runs as another account than
+        // the signed-in user, but the program goes away all the same: its
+        // login startup must not outlive it.
         if let Some(dir) = &dir {
             superba_switch::router::remove_login_startup(dir);
         }

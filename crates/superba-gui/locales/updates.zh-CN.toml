@@ -127,6 +127,10 @@ handoff = "Superba {version} 已就绪。Superba 关闭后会完成更新并自�
 router_restarted = "本地路由器已重启到新版本。"
 manual = "Superba 无法在当前位置替换自己。更新包已下载并校验，请手动安装："
 reveal = "在文件夹中显示更新包"
+problem_failed = "更新到 Superba {version} 失败"
+problem_installed = "Superba {version} 已安装，但有问题"
+problem_body = "{reason}\n每一步都记录在日志里：{path}"
+open_log = "打开日志"
 
 [updates.win]
 download = "下载安装包（{size}）"

@@ -424,6 +424,7 @@ fn finish_arguments_round_trip() {
         relaunch: Some("/opt/superba/superba".into()),
         open_app: None,
         log: Some("/tmp/log".into()),
+        state: Some("/tmp/selfupdate.json".into()),
     };
     let mut argv = vec![std::ffi::OsString::from("superba")];
     argv.extend(args.to_args());
