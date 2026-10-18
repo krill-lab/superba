@@ -4536,6 +4536,7 @@ dependencies = [
 name = "superba-import"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "pretty_assertions",
  "rusqlite",
  "serde",

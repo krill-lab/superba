@@ -188,6 +188,8 @@ struct Facts {
     key: Option<String>,
     /// auth.json is a ChatGPT login.
     login: bool,
+    /// The login's e-mail address (from its id token), lower case.
+    login_email: Option<String>,
     auth_missing: bool,
 }
 
@@ -228,12 +230,19 @@ impl Facts {
             .and_then(|m| m.get("tokens"))
             .is_some_and(Value::is_object);
         let key = toml.bearer_token().map(str::to_owned).or(auth_key);
+        let login_email = auth
+            .as_ref()
+            .and_then(|m| m.get("tokens"))
+            .and_then(|t| t.get("id_token"))
+            .and_then(Value::as_str)
+            .and_then(jwt_email);
         Self {
             text,
             catalog,
             base_url,
             key,
             login,
+            login_email,
             auth_missing: live.auth_json.is_none(),
             toml,
         }
@@ -359,9 +368,20 @@ impl Candidate {
                     .provider_id
                     .as_deref()
                     .is_none_or(|id| id == "openai");
-                if p.current && f.login && codex_official {
+                // An account named by its e-mail must be the signed-in one;
+                // an official card without one ("OpenAI Official") is weak.
+                let weight = if p.name.contains('@') {
+                    let same = f
+                        .login_email
+                        .as_deref()
+                        .is_some_and(|e| e.eq_ignore_ascii_case(p.name.trim()));
+                    if same { 3 } else { 0 }
+                } else {
+                    1
+                };
+                if p.current && f.login && codex_official && weight > 0 {
                     hit = Some((
-                        3,
+                        weight,
                         evidence(
                             "store_official",
                             "{tool}'s current Codex provider “{provider}” is the official ChatGPT login.",
@@ -412,6 +432,21 @@ impl Candidate {
             self.add(score, text);
         }
     }
+}
+
+/// The `email` claim of an (unverified) id token, lower case.
+fn jwt_email(jwt: &str) -> Option<String> {
+    use base64::Engine as _;
+    let payload = jwt.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    let claims: Value = serde_json::from_slice(&bytes).ok()?;
+    claims
+        .get("email")
+        .or_else(|| claims.get("https://api.openai.com/profile")?.get("email"))
+        .and_then(Value::as_str)
+        .map(str::to_ascii_lowercase)
 }
 
 fn is_loopback(url: &str) -> bool {
