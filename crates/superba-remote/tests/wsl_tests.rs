@@ -191,7 +191,36 @@ async fn the_apps_wsl_app_server_is_found_by_its_stdio_command_line() {
 
 #[tokio::test]
 async fn pat_on_a_distribution_writes_the_block_for_the_app_and_the_cli() {
-    if !have_bash() || !Path::new("/bin/zsh").is_file() && !Path::new("/usr/bin/zsh").is_file() {
+    if !have_bash() {
+        // A distribution without /usr/bin/bash (this machine has none, e.g. a
+        // macOS runner): the app cannot start its Codex there, so only the
+        // user's login shell gets the block, and the plan says why.
+        let env = setup("/bin/sh");
+        let plan = env
+            .hosts
+            .plan_apply(
+                &distro("Ubuntu"),
+                &token_profile(ORIGIN, AuthMode::Pat, KEY),
+            )
+            .await
+            .unwrap();
+        assert!(plan.blocked.is_empty(), "{:?}", plan.blocked);
+        assert_eq!(plan.state.app_bash, Some(false));
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|n| n.text.key == "remote.warn.wsl_login_bash"),
+            "{:?}",
+            plan.warnings
+        );
+        let report = env.hosts.apply(&distro("Ubuntu"), &plan).await.unwrap();
+        assert!(report.env.is_some());
+        assert!(read(&env.home.join(".profile")).contains(MARKER_BEGIN));
+        let bashrc = read(&env.home.join(".bashrc"));
+        assert!(!bashrc.contains(MARKER_BEGIN), "{bashrc}");
+        return;
+    }
+    if !Path::new("/bin/zsh").is_file() && !Path::new("/usr/bin/zsh").is_file() {
         // Without zsh the union case is covered by the pure test below.
         let env = setup("/bin/sh");
         let plan = env
