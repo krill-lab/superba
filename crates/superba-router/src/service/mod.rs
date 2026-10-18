@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use superba_core::Result;
 
 mod autostart;
+mod detach;
 mod launchd;
 mod runkey;
 pub mod supervise;
@@ -289,7 +290,9 @@ pub trait CommandRunner: Send + Sync + fmt::Debug {
 
     /// Start `exe args` detached from the caller (own session / process group, no
     /// console window, stdin null, stdout+stderr appended to `log_file`), with
-    /// `env` added to the inherited environment. Returns its pid.
+    /// `env` added to the inherited environment and no other handle (file
+    /// descriptor) of the caller: a captured output pipe of ours must reach
+    /// end-of-file when we exit. Returns its pid.
     fn spawn_detached(
         &self,
         exe: &Path,

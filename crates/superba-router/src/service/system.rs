@@ -51,22 +51,8 @@ impl CommandRunner for SystemRunner {
         }
         let mut command = superba_core::process::command(exe);
         command.args(args).envs(env.iter().map(|(k, v)| (k, v)));
-        command
-            .stdin(Stdio::null())
-            .stdout(log.try_clone()?)
-            .stderr(log);
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
-        superba_core::process::no_window_new_group(&mut command);
-        let mut child = command.spawn()?;
-        let pid = child.id();
-        std::thread::spawn(move || {
-            let _ = child.wait();
-        });
-        Ok(pid)
+        // Nothing of ours but the null device and the log (user bug 54 (c)).
+        super::detach::spawn(command, log)
     }
 
     fn run_timeout(
