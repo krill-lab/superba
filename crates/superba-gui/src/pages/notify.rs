@@ -424,6 +424,34 @@ pub fn section_ui(
         ui.scroll_to_cursor(Some(Align::TOP));
     }
     section(ui, cx, &cx.tr.t("prefs.notify.title"), None);
+    body(ui, cx, settings, state, out);
+}
+
+/// The section without its title, scrolling or page layout (for a later
+/// layout of Preferences that draws its own title). Toggles edit `settings`
+/// like every preference; channel changes, the test button and the Codex
+/// hook buttons act through the service at once.
+pub fn body_ui(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    settings: &mut Settings,
+    state: &mut State,
+    out: &mut Vec<Action>,
+) {
+    if poll(cx, settings, state, out) {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(100));
+    }
+    body(ui, cx, settings, state, out);
+}
+
+fn body(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    settings: &mut Settings,
+    state: &mut State,
+    out: &mut Vec<Action>,
+) {
     Card::new().flat().show(ui, |ui| {
         row(
             ui,
