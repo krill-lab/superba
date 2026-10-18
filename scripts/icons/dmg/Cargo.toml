@@ -1,0 +1,14 @@
+# Throwaway generator for the DMG window background; not part of the workspace.
+[package]
+name = "superba-dmg-background-render"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+# "text" shapes the hint with the font files passed on the command line; no
+# system font lookup ("system-fonts" stays off).
+resvg = { version = "0.45", default-features = false, features = ["text"] }
+png = "0.17"

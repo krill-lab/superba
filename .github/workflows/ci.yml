@@ -10,6 +10,10 @@ on:
         description: Run only the Windows MSI package test (no tag needed)
         type: boolean
         default: false
+      dmg_only:
+        description: Run only the macOS DMG package test (no tag needed)
+        type: boolean
+        default: false
 
 # Third-party actions are pinned to full commit SHAs (version in a comment).
 permissions:
@@ -29,7 +33,7 @@ env:
 
 jobs:
   fmt:
-    if: ${{ !inputs.msi_only }}
+    if: ${{ !inputs.msi_only && !inputs.dmg_only }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -42,7 +46,7 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    if: ${{ !inputs.msi_only }}
+    if: ${{ !inputs.msi_only && !inputs.dmg_only }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -69,7 +73,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
-    if: ${{ !inputs.msi_only }}
+    if: ${{ !inputs.msi_only && !inputs.dmg_only }}
     runs-on: ${{ matrix.os }}
     # Blocking on all three systems: a test that fails only on macOS or Windows
     # fails the workflow like one on Linux.
@@ -103,7 +107,7 @@ jobs:
         run: cargo test --workspace --locked --no-fail-fast
 
   spb-headless:
-    if: ${{ !inputs.msi_only }}
+    if: ${{ !inputs.msi_only && !inputs.dmg_only }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -124,8 +128,9 @@ jobs:
   # release's runner image (static spb + superba-router for the headless
   # archive; spb as the MSI's WSL helper, user bug 54(d)). Every run, so a
   # change that breaks the static build fails here and not at a release tag;
-  # msi-package packages its helper.
+  # msi-package packages its helper. (Skipped by dmg_only.)
   musl:
+    if: ${{ !inputs.dmg_only }}
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -154,7 +159,7 @@ jobs:
   # PATH, Add/Remove Programs, upgrade, uninstall. Manual runs only:
   #   gh workflow run ci.yml --ref <branch> -f msi_only=true
   msi-package:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dmg_only }}
     needs: musl
     runs-on: windows-latest
     timeout-minutes: 60
@@ -223,5 +228,97 @@ jobs:
         with:
           name: msi-test
           path: ${{ runner.temp }}/msi-test/*
+          if-no-files-found: ignore
+          retention-days: 3
+
+  # Builds the macOS disk image as the release does (user bug 84; an Apple silicon
+  # build, ad-hoc signed instead of Developer ID + notarization): the layout with
+  # dmgbuild, then the files with hdiutil and ditto, read back with `macos-dmg.sh
+  # inspect`. Then opens its window in Finder and takes screenshots in light and dark
+  # appearance, here (macOS 14, as the release) and in dmg-finder (macOS 15, 26).
+  # Manual runs only:
+  #   gh workflow run ci.yml --ref <branch> -f dmg_only=true
+  dmg-package:
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.msi_only }}
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: package-test-dmg
+          cache-on-failure: true
+      - name: Build the macOS programs
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CARGO_PROFILE_RELEASE_DEBUG: "0"
+        run: cargo build --release --locked -p superba-gui -p superba-cli -p superba-router
+      - name: Stage the release files
+        run: |
+          stage="$RUNNER_TEMP/stage"
+          # The real notices come from cargo-about in the release workflow.
+          printf 'Third-party notices placeholder for the package test.\n' > "$RUNNER_TEMP/THIRD-PARTY-NOTICES.txt"
+          scripts/release/macos-bundle.sh --binary target/release/superba \
+            --helper target/release/superba-router --version 0.1.0 --out "$stage" \
+            --notices "$RUNNER_TEMP/THIRD-PARTY-NOTICES.txt"
+          install -m 755 target/release/spb "$stage/spb"
+          cp README.md LICENSE-MIT LICENSE-APACHE "$RUNNER_TEMP/THIRD-PARTY-NOTICES.txt" \
+            crates/superba-gui/assets/fonts/LICENSE-Geist-OFL.txt "$stage/"
+          codesign --force --sign - "$stage/Superba.app/Contents/MacOS/superba-router"
+          codesign --force --sign - "$stage/Superba.app"
+          codesign --force --sign - "$stage/spb"
+          codesign --verify --strict --deep "$stage/Superba.app"
+      - name: Build the DMG (layout, then the files) and read it back
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          mkdir -p dmg-test
+          scripts/release/macos-dmg.sh layout --version "$version" --out "$RUNNER_TEMP/layout.dmg"
+          scripts/release/macos-dmg.sh finish --layout "$RUNNER_TEMP/layout.dmg" \
+            --staging "$RUNNER_TEMP/stage" --out "dmg-test/superba-$version-macos-universal.dmg"
+          scripts/release/macos-dmg.sh inspect "dmg-test/superba-$version-macos-universal.dmg" \
+            | tee dmg-test/layout.txt
+          ls -l dmg-test
+      - name: Open the window in Finder (light and dark)
+        run: scripts/release/test-dmg.sh dmg-test/*.dmg dmg-test/macos-14
+      - name: Keep the DMG, its layout and the screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dmg-test
+          path: dmg-test/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  dmg-finder:
+    needs: dmg-package
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.msi_only }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dmg-test
+          path: dmg-test
+      - name: Open the window in Finder (light and dark)
+        run: scripts/release/test-dmg.sh dmg-test/*.dmg "shots/${{ matrix.os }}"
+      - name: Keep the screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dmg-finder-${{ matrix.os }}
+          path: shots/
           if-no-files-found: ignore
           retention-days: 3

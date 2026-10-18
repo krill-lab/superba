@@ -6,7 +6,8 @@
 #     packaging/windows/superba-dialog.bmp (493x312) and superba-banner.bmp (493x58): the
 #                                    MSI's WixUIDialogBmp / WixUIBannerBmp (24-bit, light)
 #   assets/icon/superba-macos.svg (Apple's grid: 824 px tile at 100,100) ->
-#     scripts/release/Superba.icns   (16..1024 incl. @2x, copied into the macOS bundle)
+#     scripts/release/Superba.icns   (16..1024 incl. @2x, copied into the macOS bundle; also
+#                                    the DMG volume icon, see scripts/release/macos-dmg.sh)
 #     assets/icon/png/superba-macos-256.png (runtime Dock icon of an unbundled macOS binary)
 # Needs only cargo (a pure-Rust renderer: resvg); output is deterministic.
 set -euo pipefail

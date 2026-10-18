@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">superba — disk image window</title><desc id="desc">The window of the macOS disk image: a pearl-white field with a soft sea-blue glow at the bottom, a dotted coral arrow from Superba to Applications and a bilingual hint.</desc>
+<!-- Master of packaging/macos/dmg-background{,@2x}.png (scripts/icons/render-dmg.sh). 1 unit = 1 pt of the
+     Finder window's 640 x 400 pt area under its title bar. Finder draws the 128 pt icons centred on the positions in
+     packaging/macos/dmg-settings.py (Superba.app 170,170 and Applications 470,170) with their labels
+     below; the arrow runs between the two icons and the hint sits under the labels. Move them together.
+     Palette of the app icon: pearl #FFFFFF/#F4F6FA/#DFE6F0, coral #FF9A65/#FF6277/#EB327F, sea #CCE6F8,
+     ink #172638. -->
+<defs>
+<linearGradient id="pearl" x1="0" y1="0" x2="0" y2="400" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".62" stop-color="#F7F9FC"/><stop offset="1" stop-color="#EDF2F8"/></linearGradient>
+<radialGradient id="sea"><stop offset="0" stop-color="#CCE6F8" stop-opacity=".62"/><stop offset=".55" stop-color="#CCE6F8" stop-opacity=".22"/><stop offset="1" stop-color="#CCE6F8" stop-opacity="0"/></radialGradient>
+<radialGradient id="warm"><stop stop-color="#FFE3D6" stop-opacity=".5"/><stop offset="1" stop-color="#FFE3D6" stop-opacity="0"/></radialGradient>
+<linearGradient id="trail" x1="256" y1="0" x2="372" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FF9A65" stop-opacity=".35"/><stop offset=".55" stop-color="#FF6277" stop-opacity=".8"/><stop offset="1" stop-color="#EB327F"/></linearGradient>
+<linearGradient id="coral" x1="364" y1="158" x2="376" y2="171" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FF6277"/><stop offset="1" stop-color="#EB327F"/></linearGradient>
+</defs>
+<rect width="640" height="400" fill="url(#pearl)"/>
+<ellipse cx="320" cy="438" rx="460" ry="170" fill="url(#sea)"/>
+<ellipse cx="610" cy="-20" rx="300" ry="190" fill="url(#warm)"/>
+<path d="M60 372C150 356 230 384 320 368C410 352 490 380 580 364" stroke="#BCD7EC" stroke-opacity=".45" stroke-width="1.2" stroke-linecap="round"/>
+<path d="M110 388C190 376 250 396 330 384C410 372 470 392 540 382" stroke="#BCD7EC" stroke-opacity=".3" stroke-width="1" stroke-linecap="round"/>
+<path d="M256 176C290 158 340 156 368 164.5" stroke="url(#trail)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 9"/>
+<path d="M368.5 156.9L375 167L363.9 171.6" stroke="url(#coral)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="320" y="306" text-anchor="middle" font-family="Noto Sans CJK SC" font-size="15" fill="#334257">拖到 <tspan font-family="Geist" font-weight="500">Applications</tspan> 即可安装</text>
+<text x="320" y="328" text-anchor="middle" font-family="Geist" font-size="12.5" letter-spacing=".15" fill="#7A879A">Drag to Applications to install</text>
+</svg>

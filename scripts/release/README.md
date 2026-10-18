@@ -30,7 +30,7 @@ macOS builds both architectures with deployment target 11.0, combines them with
 | `superba-<ver>-linux-aarch64.tar.gz` | `superba`, `spb`, `superba-router`, release documents |
 | `spb-<ver>-linux-x86_64-musl.tar.gz` | `spb`, `superba-router`, release documents |
 | `superba-<ver>-macos-universal.zip` | `Superba.app` (with `superba-router` in `Contents/MacOS`), universal `spb`, release documents |
-| `superba-<ver>-macos-universal.dmg` | `Superba.app` (with `superba-router` in `Contents/MacOS`), universal `spb`, release documents |
+| `superba-<ver>-macos-universal.dmg` | the same files; its Finder window shows `Superba.app` and an `Applications` link to drag it onto (see [macOS disk image](#macos-disk-image)) |
 | `superba-<ver>-windows-x86_64.msi` | per-user installer: `superba.exe`, `spb.exe`, `superba-router.exe`, `spb-linux-x86_64` (static musl `spb` run inside WSL distributions for session migration), release documents; the only Windows package |
 
 `superba-router` is the opt-in local router. `superba` and `spb` install it as a
@@ -57,7 +57,8 @@ locally: `cargo install --locked cargo-about --version 0.9.2 --features cli`, th
 `cargo about generate --workspace -c about.toml scripts/release/third-party-notices.hbs`.
 Linux tarballs
 and the macOS ZIP contain a directory matching the archive basename. The DMG
-places the listed items at its root. The GNU tarball directory
+places the listed items at its root (all but `Superba.app` hidden in Finder) next to
+the `Applications` link. The GNU tarball directory
 is `superba-<ver>-linux-<arch>/`; the musl directory is
 `spb-<ver>-linux-x86_64-musl/`. The GNU tarball also holds `superba.desktop` and
 `icons/hicolor/<N>x<N>/apps/superba.png` (16 to 512 px): copy `icons/` to
@@ -77,14 +78,18 @@ Dock shows `Superba.icns`). `scripts/icons/render.sh` regenerates all of them wi
 a pure-Rust renderer (resvg; only cargo needed, output is deterministic); re-run
 it and commit the outputs after changing either SVG, and change both SVGs together.
 `crates/superba-gui/tests/app_icon_tests.rs` checks that the macOS icons stay on
-Apple's grid. The DMG has no custom volume icon or background.
+Apple's grid. `Superba.icns` is also the DMG's volume icon; the DMG's window
+background has its own master (see [macOS disk image](#macos-disk-image)).
 
 Build jobs never see signing secrets: they have no environment, no secrets and no
 build cache, and hand the unsigned macOS app and Windows binaries to two signing
 jobs (`sign-macos`, `sign-windows`). Those run in the `release-signing` GitHub
 environment: configure it with required reviewers and store the signing secrets
 there, not as repository secrets. The signing jobs run only first-party actions
-and this repository's scripts. Every third-party action in both workflows is
+and this repository's scripts; the one third-party tool in `sign-macos`, dmgbuild
+(pinned by hash), runs in its first step, before the unsigned app is downloaded and
+before any signing material exists, as WiX in `sign-windows` runs while no key is on
+disk. Every third-party action in both workflows is
 pinned to a full commit SHA (its version in a comment); update pins deliberately.
 Only the final job has `contents: write`.
 
@@ -183,7 +188,7 @@ APPLE_API_KEY_P8=AuthKey_<key id>.p8
 ```
 
 Never print the file, never commit it, and never paste its values into issues or
-logs. To build, bundle and sign a universal app locally:
+logs. To build, bundle and sign a universal app locally (and the DMG, below):
 
 ```bash
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -199,6 +204,12 @@ done
 scripts/release/macos-bundle.sh --binary dist/universal/superba --helper dist/universal/superba-router \
   --version 0.1.0 --out dist/app
 scripts/release/macos-sign.sh dist/app/Superba.app dist/universal/spb   # reads .secrets/macos-signing.env
+# The DMG, as the release makes it: the signed app, spb and the documents.
+cp dist/universal/spb README.md LICENSE-MIT LICENSE-APACHE \
+  crates/superba-gui/assets/fonts/LICENSE-Geist-OFL.txt dist/app/
+scripts/release/macos-dmg.sh build --staging dist/app --version 0.1.0 \
+  --out dist/superba-0.1.0-macos-universal.dmg
+scripts/release/macos-sign.sh dist/superba-0.1.0-macos-universal.dmg
 ```
 
 Run on macOS with Xcode command line tools. The signing script rejects other
@@ -231,6 +242,72 @@ are fatal. In the workflow the app is stapled before ZIP/DMG creation, `spb` is
 signed and notarized separately, and the finished UDZO DMG is signed, notarized,
 and stapled too. See Apple's
 [notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+
+## macOS disk image
+
+Opening the DMG shows a drag-to-install window (user bug 84): 640 x 400 pt under the
+title bar (a 640 x 428 pt frame: Finder counts the 28 pt title bar of macOS 14 and 15
+in the window size; macOS 26's 32 pt one covers the background's bottom 4 pt), no
+toolbar, path bar, sidebar, tab bar or status bar, icon view with 128 pt icons and
+14 pt labels; `Superba.app` on the left (icon centre 170,170) and an `Applications`
+link to `/Applications` on the right (470,170), a dotted coral arrow between them and
+the hint "拖到 Applications 即可安装 · Drag to Applications to install" below, on a
+pearl background with a sea-blue glow (the app icon's palette). The volume is named
+`Superba <version>` and uses `Superba.icns` as its icon (`.VolumeIcon.icns`). `spb` and
+the release documents are at the image's root as before, hidden in Finder (`chflags
+hidden`; `ls "/Volumes/Superba <version>"` lists them, the ZIP shows them). With a
+background picture Finder draws the window light in dark mode as well, so the labels
+stay dark on the light background.
+
+| File | Role |
+| --- | --- |
+| `packaging/macos/dmg-background.svg` | master of the background, 1 unit = 1 pt of the window; the arrow and the hint follow the icon positions |
+| `packaging/macos/dmg-background.png`, `dmg-background@2x.png` | 640x400 (72 dpi) and 1280x800 (144 dpi) renderings, committed; dmgbuild joins them into one multi-resolution `.background.tiff` (`tiffutil -cathidpicheck`), so the window is sharp on Retina displays |
+| `packaging/macos/dmg-settings.py` | dmgbuild settings: window, view options, icon positions, Applications link, volume icon |
+| `packaging/macos/dmg-requirements.txt` | dmgbuild 1.6.7, ds_store 1.3.3, mac_alias 2.2.3: wheels pinned by sha256 |
+| `scripts/release/macos-dmg.sh` | builds and checks the image (below) |
+| `scripts/release/macos-dmg-layout.py` | reads an image's `.DS_Store` back and compares it with the settings |
+| `scripts/release/test-dmg.sh` | opens the window in Finder and takes screenshots in light and dark appearance (CI) |
+
+`scripts/icons/render-dmg.sh` regenerates both PNGs from the SVG (resvg, like the
+icon renderers; output is deterministic). Text is shaped only with the font files it
+is given: Geist from `crates/superba-gui/assets/fonts` and Noto Sans CJK SC Regular for
+the Chinese line (Debian/Ubuntu `fonts-noto-cjk`, macOS `brew install --cask
+font-noto-sans-cjk-sc`, or `SUPERBA_CJK_FONT=<file>`). Re-run it and commit both PNGs
+after changing the SVG; change the SVG, the icon positions in `dmg-settings.py` and
+this section together.
+
+[dmgbuild](https://github.com/dmgbuild/dmgbuild) writes the `.DS_Store` (window,
+view options, icon positions, background alias) directly, so nothing scripts Finder
+and the layout is the same on every run. `macos-dmg.sh` (macOS, Python 3.10+, set
+`PYTHON` to choose one) installs the pinned wheels into a private venv (`pip
+--require-hashes --no-deps --only-binary :all:`) and works in two parts:
+
+- `layout --version X.Y.Z --out LAYOUT.dmg`: dmgbuild makes a read-write image with
+  the window, the icon positions, the background, the `Applications` link and the
+  volume icon, but none of Superba's files (Finder keys positions by name). The image
+  is then read back: `.DS_Store` against the settings, the link, the volume icon and
+  its custom-icon flag, both resolutions in the TIFF. It refuses to run while a
+  volume of the same name is mounted (the background is found by volume name).
+- `finish --layout LAYOUT.dmg --staging DIR --out FILE.dmg`: hdiutil, ditto and
+  chflags only. It grows a copy of the layout, copies every entry of `DIR` into it,
+  hides all but `Superba.app`, converts it to a compressed UDZO image, runs `hdiutil
+  verify` and compares the result with `DIR`: same files, the hidden flags, the
+  unchanged `.DS_Store`, the link, and a signature that still verifies when the
+  staged app is signed.
+- `build --staging DIR --version X.Y.Z --out FILE.dmg` does both; `inspect FILE.dmg`
+  prints and checks the layout of any image.
+
+In the release, `sign-macos` runs `layout` as its first step and `finish` in the
+signing step in place of the former `hdiutil create -srcfolder`, after the app is
+signed, notarized and stapled; the DMG is then signed, notarized and stapled by
+`macos-sign.sh --require-notarize` as before, and the ZIP is unchanged. To test the
+image without a tag: `gh workflow run ci.yml --ref <branch> -f dmg_only=true`. Its
+`dmg-package` job builds an Apple silicon app (ad-hoc signed), stages it as the
+release does, runs `layout`, `finish` and `inspect`, and `test-dmg.sh` opens the
+window in Finder and keeps screenshots in light and dark appearance (artifact
+`dmg-test`); `dmg-finder` repeats the screenshots on macOS 15 and 26
+(`dmg-finder-<os>`).
 
 ## Packaging helpers
 

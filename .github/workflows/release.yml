@@ -266,7 +266,8 @@ jobs:
 
   # Signing runs in the protected `release-signing` environment: configure it with
   # required reviewers and keep the signing secrets there (not as repository
-  # secrets). Only first-party actions and this repository's scripts run here.
+  # secrets). Only first-party actions and this repository's scripts run here
+  # (sign-macos: plus dmgbuild, pinned by hash, before any signing material exists).
   sign-macos:
     needs: [prepare, build]
     runs-on: macos-14
@@ -280,6 +281,15 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
+      # The DMG window (background, icon positions, Applications link, volume icon;
+      # user bug 84) is written by dmgbuild, third-party Python code pinned by hash in
+      # packaging/macos/dmg-requirements.txt. It runs first, before the app is
+      # downloaded and before any signing material exists, and makes an image without
+      # Superba's files; the signing step adds the signed files with hdiutil and ditto.
+      - name: Lay out the DMG window
+        run: |
+          scripts/release/macos-dmg.sh layout --version "$RELEASE_VERSION" \
+            --out "$RUNNER_TEMP/dmg-layout/superba-layout.dmg"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: unsigned-macos-universal
@@ -356,8 +366,10 @@ jobs:
           mkdir -p dist
           # Bundle tickets must be stapled before making the distribution ZIP/DMG.
           ditto -c -k --keepParent "$staging" "dist/superba-$RELEASE_VERSION-macos-universal.zip"
-          hdiutil create -volname "Superba $RELEASE_VERSION" -srcfolder "$staging" \
-            -ov -format UDZO "dist/superba-$RELEASE_VERSION-macos-universal.dmg"
+          # The DMG: the layout from above plus the staging directory (hdiutil, ditto
+          # and chflags only), compressed (UDZO) and compared with the staging directory.
+          scripts/release/macos-dmg.sh finish --layout "$RUNNER_TEMP/dmg-layout/superba-layout.dmg" \
+            --staging "$staging" --out "dist/superba-$RELEASE_VERSION-macos-universal.dmg"
           if [[ "$signing_enabled" == true ]]; then
             scripts/release/macos-sign.sh --require-notarize "dist/superba-$RELEASE_VERSION-macos-universal.dmg"
           fi
