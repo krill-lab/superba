@@ -65,9 +65,32 @@ class Agent:
             raise AgentError(f"desktop agent did not start: {(r.stdout + r.stderr).strip()[-1200:]}")
         self.host_port = free_port()
         self.tunnel = vm.tunnel(local=[(self.host_port, self.guest_port)])
-        info = self.call("ping", timeout=30)
+        info = self.wait_ready()
         self.log(f"agent up: {info}")
         return info
+
+    def wait_ready(self, timeout=90):
+        """The first ping, retried: right after a snapshot restore (seen with wintest-wsl1
+        on VM 2) the SSH forward or the agent's listener may refuse connections for a while
+        although the agent logged that it listens. A forward that died is opened again."""
+        end = time.time() + timeout
+        last = None
+        tries = 0
+        while True:
+            tries += 1
+            try:
+                info = self.call("ping", timeout=30)
+                if tries > 1:
+                    self.log(f"agent answered after {tries} tries ({last})")
+                return info
+            except AgentError as e:
+                last = e
+            if time.time() >= end:
+                raise AgentError(f"desktop agent not reachable after {tries} tries in {timeout} s: {last}")
+            if self.tunnel and self.tunnel.poll() is not None:
+                self.log(f"agent tunnel exited ({self.tunnel.returncode}); opening it again")
+                self.tunnel = self.vm.tunnel(local=[(self.host_port, self.guest_port)])
+            time.sleep(3)
 
     def to_state(self):
         return {"token": self.token, "guest_port": self.guest_port, "host_port": self.host_port,

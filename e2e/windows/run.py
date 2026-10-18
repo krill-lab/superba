@@ -12,7 +12,8 @@ Options of `run`:
     --old-msi PATH    older MSI for the self-update / upgrade scenarios
     --net mock|real   mock relay on the host (default) or line forwarders to the test relay of
                       SUPERBA_E2E_ENV (needed by scenarios marked real)
-    --base wintest|uacoff  UAC on (default) or the UAC-off variant (snapshot `clean`, old MSI removed)
+    --base wintest|uacoff|wintest-wsl1  UAC on (default), the UAC-off variant (snapshot `clean`, old MSI
+                      removed) or wintest with WSL 1 (snapshot `wintest-wsl1`, the WSL scenarios' base)
     --vm ID           use this VM of the pool (default: the first free one, queueing for it)
     --held            the caller already holds --vm via `pool.sh acquire`: no acquire/release
     --model NAME      set the Krill profile's model after the wizard (when the relay's default is busy)
@@ -275,8 +276,9 @@ def main(argv=None):
         p.add_argument("--msi")
         p.add_argument("--old-msi")
         p.add_argument("--net", default="mock", choices=["mock", "real", "none"])
-        p.add_argument("--base", default="wintest", choices=["wintest", "uacoff"],
-                       help="machine variant: wintest = UAC on (default), uacoff = the clean image (UAC off)")
+        p.add_argument("--base", default="wintest", choices=["wintest", "uacoff", "wintest-wsl1"],
+                       help="machine variant: wintest = UAC on (default), uacoff = the clean image (UAC off), "
+                            "wintest-wsl1 = wintest with WSL 1 (the WSL scenarios' snapshot)")
         p.add_argument("--keep-vm", action="store_true")
         p.add_argument("--include-manual", action="store_true")
         p.add_argument("--model", default=os.environ.get("SUPERBA_WINTEST_MODEL"),

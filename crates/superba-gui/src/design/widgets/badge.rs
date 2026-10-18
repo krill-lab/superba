@@ -1,4 +1,6 @@
-//! Neutral pill badges with an optional status dot and line icon.
+//! Neutral pill badges with an optional status dot and line icon. A badge is
+//! a text label to screen readers and UI Automation (user bug 77: "Running" /
+//! "Stopped" on Remote hosts were painted only, so nothing could read them).
 
 use egui::{Color32, Rect, Response, Sense, Stroke, StrokeKind, Ui, Widget, pos2, vec2};
 
@@ -73,6 +75,7 @@ impl Widget for Badge {
         let icon_w = if self.icon.is_some() { ICON + 4.0 } else { 0.0 };
         let size = vec2(galley.size().x + 16.0 + dot_w + icon_w, 20.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+        crate::design::a11y::text(&response, &self.text);
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
             if self.outline {

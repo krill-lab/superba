@@ -134,7 +134,10 @@ fn lines(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Ve
                 Some(c) if !c.reachable => Latency::Unreachable,
                 Some(c) => c.latency_ms.map_or(Latency::Unknown, Latency::Ms),
             };
-            ui.add_sized([80.0, 22.0], LatencyBadge::new(latency));
+            ui.add_sized(
+                [80.0, 22.0],
+                LatencyBadge::new(latency).name(crate::pages::overview::latency_text(cx, latency)),
+            );
             super::transports::badges(ui, cx, p, &line.id);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
@@ -380,7 +383,10 @@ fn base_url(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
             Some(c) if !c.reachable => Latency::Unreachable,
             Some(c) => c.latency_ms.map_or(Latency::Unknown, Latency::Ms),
         };
-        ui.add_sized([80.0, 22.0], LatencyBadge::new(latency));
+        ui.add_sized(
+            [80.0, 22.0],
+            LatencyBadge::new(latency).name(crate::pages::overview::latency_text(cx, latency)),
+        );
         if let Some(line) = site.default_line() {
             super::transports::badges(ui, cx, p, &line.id);
             availability(ui, cx, state, p, line, caps);

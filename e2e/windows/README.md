@@ -12,6 +12,7 @@ SUPERBA_E2E_ENV=/path/to/e2e.env e2e/windows/run.py run W12 W13 --net real
 e2e/windows/run.py run --all
 e2e/windows/run.py run W01 W04 W10 W11 W30 W40 W42 --base uacoff     # the UAC-off machine (snapshot `clean`)
 e2e/windows/run.py run W80 W82 W83 W84 W85 W88 W86 W81               # Codex inside WSL 1 (snapshot `wintest-wsl1`)
+e2e/windows/run.py run W81 W90 --base wintest-wsl1 --net real         # the same machine as their base
 e2e/windows/run.py prep-snapshot                                      # rebuild the `wintest` base snapshot
 ```
 

@@ -965,7 +965,8 @@ fn line_card(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, site: &Site, line: &super
                 crate::pages::elided(ui, Text::mono_muted(line.origin.as_str(), cx.pal));
             });
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.add(LatencyBadge::new(latency(caps, probing)));
+                let l = latency(caps, probing);
+                ui.add(LatencyBadge::new(l).name(crate::pages::overview::latency_text(cx, l)));
             });
         });
         ui.add_space(4.0);

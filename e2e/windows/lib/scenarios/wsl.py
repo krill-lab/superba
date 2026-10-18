@@ -673,7 +673,7 @@ def w90(t):
     flows.wsl_keepalive(run)
     with t.step("Turn the mode on in config.toml (ChatGPT closed) and open ChatGPT through Superba") as s:
         legacy_mode_on(run, s, a)
-    with t.step("A line switch hands the app's WSL Codex the auth address (PAT: WSLENV, full restart)") as s:
+    with t.step("A line switch hands the app's WSL Codex the auth address (PAT: WSLENV, hot since bug 69a)") as s:
         other = "b" if run.state.get("line", "a") == "a" else "a"
         r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", "--force",
                     timeout=300, label="switch-legacy-w90")

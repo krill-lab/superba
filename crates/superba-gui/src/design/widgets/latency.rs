@@ -37,12 +37,24 @@ impl Latency {
 #[must_use = "add it with ui.add(..)"]
 pub struct LatencyBadge {
     latency: Latency,
+    name: Option<String>,
 }
 
 impl LatencyBadge {
     /// New badge.
     pub fn new(latency: Latency) -> Self {
-        Self { latency }
+        Self {
+            latency,
+            name: None,
+        }
+    }
+
+    /// What screen readers and UI Automation read (user bug 77), e.g. the
+    /// translated "Unreachable" for the "—" it shows; default: "97 ms" for a
+    /// measured latency, nothing for the other states.
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
@@ -61,6 +73,13 @@ impl Widget for LatencyBadge {
         );
         let w = (galley.size().x + 30.0).max(72.0);
         let (rect, response) = ui.allocate_exact_size(vec2(w, 22.0), Sense::hover());
+        let name = self.name.clone().or(match self.latency {
+            Latency::Ms(ms) => Some(format!("{ms} ms")),
+            _ => None,
+        });
+        if let Some(name) = name {
+            crate::design::a11y::text(&response, &name);
+        }
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
             painter.rect_filled(rect, radius::PILL, pal.hover);

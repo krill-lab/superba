@@ -39,8 +39,9 @@ foreach ($prod in $products) {
 HARNESS_ENV = {"SUPERBA_TEST_LINES", "SUPERBA_TEST_SITES"}
 # --base: the machine every scenario starts from. `wintest` = UAC on (a retail Windows);
 # `uacoff` = the `clean` image (UAC off: every process of the admin is elevated) with its old
-# Superba MSI removed after each restore.
-BASES = {"wintest": (BASE_SNAPSHOT, False), "uacoff": ("clean", True)}
+# Superba MSI removed after each restore; `wintest-wsl1` = wintest with WSL 1 and the
+# distribution `Ubuntu-WSL1` (what the WSL scenarios run on).
+BASES = {"wintest": (BASE_SNAPSHOT, False), "uacoff": ("clean", True), "wintest-wsl1": ("wintest-wsl1", False)}
 
 
 WORK = REPO / "e2e" / ".work" / "windows"

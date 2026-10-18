@@ -431,3 +431,50 @@ fn toasts_name_their_close_button() {
         assert!(toasts.is_empty(), "{locale:?}: the toast stays open");
     }
 }
+
+/// User bug 77: badges and labels that carry a state are text in the
+/// accessibility tree, so UI Automation (and a screen reader) reads them — on
+/// Remote hosts the WSL distribution's "Running" / "Stopped" and an SSH host's
+/// "Connected", in both languages. They were painted only before.
+#[test]
+fn state_badges_are_readable_in_both_languages() {
+    let starts_with = |t: &Tree, role: Role, text: &str| {
+        t.with_role(role)
+            .into_iter()
+            .find(|id| t.name(*id).is_some_and(|n| n.starts_with(text)))
+    };
+    for locale in LOCALES {
+        let tr = Tr::new(locale);
+        for running in [true, false] {
+            let service = fake(false);
+            if running {
+                service.with_running_wsl();
+            } else {
+                service.with_stopped_wsl_pending();
+            }
+            let mut h = AppHarness::new(service, locale, Page::Hosts);
+            let t = h.until(&format!("{locale:?} hosts"), |t| {
+                starts_with(t, Role::ListItem, "WSL: Ubuntu").is_some()
+            });
+            let row = starts_with(&t, Role::ListItem, "WSL: Ubuntu").unwrap();
+            h.click_id(row);
+            let state = tr.t(if running {
+                "hosts.wsl.running"
+            } else {
+                "hosts.wsl.stopped"
+            });
+            let t = h.until(&format!("{locale:?} WSL badge {state:?}"), |t| {
+                starts_with(t, Role::Label, &state).is_some()
+            });
+            assert_named(&format!("{locale:?} Remote hosts › WSL"), &t);
+
+            // An SSH host the app is connected to.
+            let row = starts_with(&t, Role::ListItem, "devbox").expect("devbox listed");
+            h.click_id(row);
+            let connected = tr.t("hosts.connected");
+            h.until(&format!("{locale:?} SSH badge {connected:?}"), |t| {
+                starts_with(t, Role::Label, &connected).is_some()
+            });
+        }
+    }
+}

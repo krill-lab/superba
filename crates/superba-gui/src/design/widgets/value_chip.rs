@@ -163,6 +163,8 @@ impl Widget for ValueChip<'_> {
             galley.size().y.max(18.0)
         };
         let (rect, response) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+        // Read as the value's first line, not the shortened one (user bug 77).
+        crate::design::a11y::text(&response, line);
         if ui.is_rect_visible(rect) {
             if self.pill {
                 let fill = if self.muted { pal.bg_subtle } else { pal.hover };
