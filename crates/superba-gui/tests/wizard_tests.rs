@@ -378,6 +378,7 @@ async fn every_entry_point_opens_the_wizard_with_an_existing_profile() {
         // Preferences → Setup wizard → Run setup again.
         let mut out = Vec::new();
         let mut settings = superba_core::Settings::default();
+        let mut notify = superba_gui::pages::notify::State::default();
         let mut prefs = |ui: &mut egui::Ui| {
             let cx = Cx {
                 tr: &tr,
@@ -389,7 +390,7 @@ async fn every_entry_point_opens_the_wizard_with_an_existing_profile() {
                 service: &dyn_service,
                 log: &[],
             };
-            preferences::show(ui, &cx, &mut settings, &mut out);
+            preferences::show(ui, &cx, &mut settings, &mut notify, &mut out);
         };
         // The row title and its button share the text: the button is drawn last.
         assert!(tall.click_last_text(&tr.t("prefs.wizard.run"), &mut prefs));

@@ -24,6 +24,15 @@ use crate::Switcher;
 
 pub use superba_notify::hooks::{claude_code_hooks, split_codex_args};
 
+/// Check a channel's fields before saving (`secrets` = the typed ones plus
+/// placeholders for the stored ones): the first missing or malformed field.
+pub fn validate_channel(
+    channel: &NotifyChannel,
+    secrets: &NotifySecrets,
+) -> std::result::Result<(), LocalizedText> {
+    channels::validate(channel, secrets).map_err(|e| e.0)
+}
+
 /// Environment variable naming the program hooks run (tests, portable
 /// installs); default: `spb` next to the running binary.
 pub const ENV_NOTIFY_PROGRAM: &str = "SUPERBA_NOTIFY_PROGRAM";

@@ -171,6 +171,8 @@ pub struct PageStates {
     pub updates: pages::updates::State,
     /// Claude Code (both of its pages share one state).
     pub claude: pages::claude::State,
+    /// Preferences → Notifications.
+    pub notify: pages::notify::State,
 }
 
 impl PageStates {
@@ -187,7 +189,11 @@ impl PageStates {
             Page::Updates => pages::updates::status(&self.updates),
             Page::ClaudeCode | Page::ClaudeSettings => pages::claude::status(&self.claude, page),
             Page::Overview => pages::overview::status(&self.overview),
-            Page::Diagnostics | Page::Preferences => PageStatus::default(),
+            Page::Preferences => PageStatus {
+                modal: self.notify.modal(),
+                ..PageStatus::default()
+            },
+            Page::Diagnostics => PageStatus::default(),
         }
     }
 
@@ -211,7 +217,8 @@ impl PageStates {
                 pages::claude::command(&mut self.claude, page, cx, command, out);
             }
             Page::Overview => pages::overview::command(&mut self.overview, cx, command, out),
-            Page::Diagnostics | Page::Preferences => {
+            Page::Preferences => pages::notify::command(&mut self.notify, cx, command),
+            Page::Diagnostics => {
                 tracing::debug!(?page, %command, "page has no commands");
             }
         }
@@ -228,6 +235,7 @@ impl PageStates {
         items.extend(pages::hosts::palette(cx, &self.hosts));
         items.extend(pages::updates::palette(cx, &self.updates));
         items.extend(pages::claude::palette(cx, &self.claude));
+        items.extend(pages::notify::palette(cx));
         items
     }
 
@@ -254,7 +262,7 @@ impl PageStates {
                 pages::claude::show(ui, cx, &mut self.claude, page, out);
             }
             Page::Diagnostics => pages::diagnostics::show(ui, cx, out),
-            Page::Preferences => pages::preferences::show(ui, cx, prefs, out),
+            Page::Preferences => pages::preferences::show(ui, cx, prefs, &mut self.notify, out),
         }
     }
 }
@@ -307,6 +315,8 @@ pub struct SuperbaApp {
     wizard_request: Option<SwitchRequest>,
     /// The last update attempt's problem was announced in this run.
     selfupdate_problem_announced: bool,
+    /// A scan for failed Codex turns to notify about (GH#12) is running.
+    notify_watch: Option<crate::runtime::ReadTask<superba_core::NotifyReport>>,
     /// Start-up notices wait until the main window shows (not behind the
     /// setup wizard): the elevated-token notice (who runs, the data
     /// directory for its marker) and toasts held back, with whether showing
@@ -397,6 +407,7 @@ impl SuperbaApp {
             pending_key_save: false,
             wizard_request: None,
             selfupdate_problem_announced: false,
+            notify_watch: None,
             elevated_notice: None,
             held_toasts: Vec::new(),
             ack_selfupdate_problem: false,
@@ -711,6 +722,8 @@ impl SuperbaApp {
             overview_loading: self.data.overview.loading,
             hosts_loading: self.data.hosts.loading,
             selfupdate_loading: self.data.selfupdate.loading,
+            notify_watch: self.notify_watch.is_none()
+                && pages::notify::watch_wanted(&self.settings),
             environment_generation: self.service.environment_generation(),
         }
     }
@@ -722,6 +735,13 @@ impl SuperbaApp {
             self.data.router_watch = None;
         }
         let now = Instant::now();
+        if self
+            .notify_watch
+            .as_ref()
+            .is_some_and(|t| t.poll().is_some())
+        {
+            self.notify_watch = None;
+        }
         let inputs = self.cadence_inputs(ctx, visible);
         for due in self.cadence.tick(now, inputs) {
             match due {
@@ -733,6 +753,13 @@ impl SuperbaApp {
                 }
                 Due::Hosts => self.handle_action(ctx, Action::LoadHosts),
                 Due::SelfUpdate => self.check_self_update(false),
+                Due::NotifyWatch => {
+                    let service = self.service.clone();
+                    self.notify_watch =
+                        Some(crate::runtime::task(
+                            async move { service.notify_watch().await },
+                        ));
+                }
                 Due::EnvironmentChanged => {
                     // Installs or Codex versions changed: the views built from them.
                     if self.data.versions.value.is_some() && !self.data.versions.loading {

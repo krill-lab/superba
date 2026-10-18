@@ -564,8 +564,9 @@ fn preferences_has_the_two_update_choices_with_the_right_defaults() {
     ] {
         let mut h = Harness::new([1280.0, 2600.0], locale, fake(), false);
         let mut settings = Settings::default();
+        let mut notify = superba_gui::pages::notify::State::default();
         let f = h.until(
-            |ui, cx, out| preferences::show(ui, cx, &mut settings, out),
+            |ui, cx, out| preferences::show(ui, cx, &mut settings, &mut notify, out),
             |f| f.has(auto),
         );
         for want in [channel, stable, preview] {
@@ -581,13 +582,14 @@ fn picking_a_channel_in_preferences_saves_it() {
         update_channel: Some(UpdateChannel::Stable),
         ..Settings::default()
     };
+    let mut notify = superba_gui::pages::notify::State::default();
     let f = h.until(
-        |ui, cx, out| preferences::show(ui, cx, &mut settings, out),
+        |ui, cx, out| preferences::show(ui, cx, &mut settings, &mut notify, out),
         |f| f.has("Update channel"),
     );
     h.click_text(&f, "Preview");
     let f = h.until(
-        |ui, cx, out| preferences::show(ui, cx, &mut settings, out),
+        |ui, cx, out| preferences::show(ui, cx, &mut settings, &mut notify, out),
         |f| f.actions.iter().any(|a| matches!(a, Action::SaveSettings)),
     );
     assert!(!f.actions.is_empty());

@@ -19,7 +19,7 @@ pub const PROJECT_URL: &str = "https://github.com/krill-lab/superba";
 /// One settings row: title + description on the left, control on the right,
 /// both centered on the row (at least 56 px high, taller when the description
 /// wraps).
-fn row(
+pub(crate) fn row(
     ui: &mut Ui,
     cx: &Cx<'_>,
     title: &str,
@@ -240,7 +240,13 @@ pub fn background_swatches(ui: &mut Ui, cx: &Cx<'_>, value: &mut Background) {
 }
 
 /// Draw the settings page; edits `settings` in place.
-pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Action>) {
+pub fn show(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    settings: &mut Settings,
+    notify: &mut super::notify::State,
+    out: &mut Vec<Action>,
+) {
     page_header(ui, cx, Page::Preferences, |_| {});
     let before = settings.clone();
 
@@ -452,6 +458,9 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
         );
         update_channel_row(ui, cx, settings);
     });
+
+    ui.add_space(24.0);
+    super::notify::section_ui(ui, cx, settings, notify, out);
 
     ui.add_space(24.0);
     section(ui, cx, &cx.tr.t("prefs.data.title"), None);

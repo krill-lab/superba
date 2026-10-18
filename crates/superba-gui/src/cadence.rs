@@ -29,6 +29,8 @@ pub const HOSTS_EVERY: Duration = Duration::from_secs(5 * 60);
 pub const HOSTS_ON_FOCUS_AFTER: Duration = Duration::from_secs(60);
 /// Superba's own update check (the backend also honours its preference).
 pub const SELF_UPDATE_EVERY: Duration = Duration::from_secs(24 * 3600);
+/// Look for failed Codex turns to notify about (GH#12; also while hidden).
+pub const NOTIFY_WATCH_EVERY: Duration = Duration::from_secs(20);
 
 /// What the shell can do right now (from its state at this frame).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -50,6 +52,8 @@ pub struct Inputs {
     pub hosts_loading: bool,
     /// A self-update check is in flight.
     pub selfupdate_loading: bool,
+    /// Notifications want the failed-turn watcher and no scan is in flight.
+    pub notify_watch: bool,
     /// The environment monitor's generation as the service reports it.
     pub environment_generation: u64,
 }
@@ -67,6 +71,8 @@ pub enum Due {
     Hosts,
     /// Look for a newer Superba.
     SelfUpdate,
+    /// Look for failed Codex turns to notify about.
+    NotifyWatch,
     /// The environment monitor saw a change: reload the views built from it.
     EnvironmentChanged,
 }
@@ -80,6 +86,7 @@ pub struct Cadence {
     last_router_watch: Option<Instant>,
     last_hosts: Option<Instant>,
     last_selfupdate: Instant,
+    last_notify_watch: Option<Instant>,
     generation: Option<u64>,
 }
 
@@ -93,6 +100,7 @@ impl Cadence {
             last_router_watch: Some(now),
             last_hosts: Some(now),
             last_selfupdate: now,
+            last_notify_watch: Some(now),
             generation: None,
         }
     }
@@ -142,6 +150,10 @@ impl Cadence {
             self.last_router_watch = Some(now);
             due.push(Due::RouterWatch);
         }
+        if inputs.notify_watch && older(self.last_notify_watch, NOTIFY_WATCH_EVERY) {
+            self.last_notify_watch = Some(now);
+            due.push(Due::NotifyWatch);
+        }
         if !inputs.visible {
             return due;
         }
@@ -187,9 +199,16 @@ impl Cadence {
                 (at + every).saturating_duration_since(now)
             })
         };
-        let watch = inputs
+        let router = inputs
             .router_watch
             .then(|| left(self.last_router_watch, ROUTER_WATCH_EVERY));
+        let notify = inputs
+            .notify_watch
+            .then(|| left(self.last_notify_watch, NOTIFY_WATCH_EVERY));
+        let watch = match (router, notify) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         if !inputs.visible {
             return watch;
         }

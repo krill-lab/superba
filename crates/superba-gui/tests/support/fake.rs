@@ -22,6 +22,7 @@ mod files;
 mod hosts;
 mod import;
 mod models;
+mod notify;
 mod providers;
 mod router;
 mod selfupdate;
@@ -110,6 +111,7 @@ struct Areas {
     versions: Mutex<versions::State>,
     selfupdate: Mutex<selfupdate::State>,
     import: Mutex<import::State>,
+    notify: Mutex<notify::State>,
 }
 
 struct FakeState {
@@ -2007,6 +2009,26 @@ impl SwitchService for FakeService {
 
     async fn self_update_view(&self) -> Result<SelfUpdateView> {
         selfupdate::view(self).await
+    }
+
+    async fn notify_save_channel(
+        &self,
+        channel: NotifyChannel,
+        secrets: NotifySecrets,
+    ) -> Result<NotifyChannel> {
+        notify::save_channel(self, channel, secrets).await
+    }
+
+    async fn notify_send(&self, event: NotifyEvent, options: SendOptions) -> Result<NotifyReport> {
+        notify::send(self, event, options).await
+    }
+
+    async fn notify_hooks(&self) -> Result<NotifyHooks> {
+        notify::hooks(self).await
+    }
+
+    async fn notify_set_hook(&self, request: HookRequest) -> Result<NotifyHooks> {
+        notify::set_hook(self, request).await
     }
 
     async fn self_update_check(&self, request: SelfUpdateCheckRequest) -> Result<SelfUpdateView> {

@@ -30,6 +30,7 @@ pub const UI_AREAS: [&str; 16] = [
     "movers",
     "tray",
     "claude",
+    "notify",
 ];
 
 /// English UI catalog files as `(area, TOML source)`.
@@ -56,6 +57,7 @@ const UI_EN: [(&str, &str); 16] = [
     ("movers", include_str!("../locales/movers.en.toml")),
     ("tray", include_str!("../locales/tray.en.toml")),
     ("claude", include_str!("../locales/claude.en.toml")),
+    ("notify", include_str!("../locales/notify.en.toml")),
 ];
 
 /// Simplified Chinese UI catalog files as `(area, TOML source)`.
@@ -82,6 +84,7 @@ const UI_ZH_CN: [(&str, &str); 16] = [
     ("movers", include_str!("../locales/movers.zh-CN.toml")),
     ("tray", include_str!("../locales/tray.zh-CN.toml")),
     ("claude", include_str!("../locales/claude.zh-CN.toml")),
+    ("notify", include_str!("../locales/notify.zh-CN.toml")),
 ];
 
 /// The UI catalog files of a locale as `(area, TOML source)`, in [`UI_AREAS`]
