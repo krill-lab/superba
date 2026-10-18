@@ -71,6 +71,11 @@ pub enum Command {
         #[command(subcommand)]
         command: SettingsCommand,
     },
+    #[command(about = english("cli.help.config_group"))]
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
+    },
     #[command(about = english("cli.help.router_group"))]
     Router {
         #[command(subcommand)]
@@ -539,6 +544,70 @@ pub enum SettingsCommand {
         profile: Option<String>,
         #[arg(long = "remote", value_name = "TARGET", help = english("cli.help.remote"))]
         remotes: Vec<String>,
+    },
+}
+
+/// Which Codex file `spb config` works on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+pub enum CodexFileArg {
+    /// `config.toml`.
+    #[default]
+    Config,
+    /// `auth.json`.
+    Auth,
+}
+
+impl CodexFileArg {
+    /// The file kind.
+    pub fn kind(self) -> superba_core::CodexFileKind {
+        match self {
+            CodexFileArg::Config => superba_core::CodexFileKind::ConfigToml,
+            CodexFileArg::Auth => superba_core::CodexFileKind::AuthJson,
+        }
+    }
+}
+
+/// `spb config`: Codex's own `config.toml` and `auth.json`, edited by hand
+/// (GitHub issue 9).
+#[derive(Debug, Subcommand)]
+pub enum ConfigCommand {
+    #[command(about = english("cli.help.config_edit"))]
+    Edit {
+        #[arg(value_enum, default_value = "config", help = english("cli.help.config_file"))]
+        file: CodexFileArg,
+        #[arg(long, value_name = "TARGET", help = english("cli.help.config_host"))]
+        host: Option<String>,
+        #[arg(long, help = english("cli.help.config_yes"))]
+        yes: bool,
+        #[arg(long, help = english("cli.help.config_force"))]
+        force: bool,
+        #[arg(long, help = english("cli.help.config_show_secrets"))]
+        show_secrets: bool,
+    },
+    #[command(about = english("cli.help.config_check"))]
+    Check {
+        #[arg(value_enum, default_value = "config", help = english("cli.help.config_file"))]
+        file: CodexFileArg,
+        #[arg(long, value_name = "TARGET", help = english("cli.help.config_host"))]
+        host: Option<String>,
+    },
+    #[command(about = english("cli.help.config_backups"))]
+    Backups {
+        #[arg(long, value_enum, help = english("cli.help.config_file"))]
+        file: Option<CodexFileArg>,
+        #[arg(long, value_name = "TARGET", help = english("cli.help.config_host"))]
+        host: Option<String>,
+    },
+    #[command(about = english("cli.help.config_restore"))]
+    Restore {
+        #[arg(value_name = "ID", help = english("cli.help.config_backup_id"))]
+        id: String,
+        #[arg(long, help = english("cli.help.config_yes"))]
+        yes: bool,
+        #[arg(long, help = english("cli.help.config_force"))]
+        force: bool,
+        #[arg(long, help = english("cli.help.config_show_secrets"))]
+        show_secrets: bool,
     },
 }
 

@@ -58,6 +58,19 @@ pub(super) fn render(view: &RuntimeView, out: &mut Output) -> superba_core::Resu
         )?,
         None => out.line(text("cli.runtime.written_none"))?,
     }
+    if let Some(e) = &view.edited {
+        out.line(
+            text("cli.runtime.edited")
+                .arg("file", e.kind.file_name())
+                .arg("at", out.time(e.at)),
+        )?;
+    }
+    // Started after the configuration Superba wrote, before the hand edit.
+    let before_edit = |c: &ConsumerRuntime| {
+        view.edited.is_some()
+            && matches!(&c.effect, RuntimeEffect::Previous { running }
+                if running.generation == view.written.as_ref().map(|w| w.generation))
+    };
     let rows = view
         .consumers
         .iter()
@@ -66,7 +79,11 @@ pub(super) fn render(view: &RuntimeView, out: &mut Output) -> superba_core::Resu
                 out.render(&c.role.text()),
                 c.pid.to_string(),
                 out.optional_time(c.started_at),
-                out.render(&effect_text(c)),
+                out.render(&if before_edit(c) {
+                    text("cli.runtime.before_edit")
+                } else {
+                    effect_text(c)
+                }),
                 out.render(&busy_text(&c.busy)),
             ]
         })
