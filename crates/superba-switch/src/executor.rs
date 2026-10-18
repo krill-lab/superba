@@ -1983,6 +1983,25 @@ impl Run<'_> {
     /// Store the line / auth overrides into the profile and remember the selection.
     async fn after_success(&mut self, remotes: &[superba_core::RemoteOutcome]) {
         let d = self.deps().clone();
+        // WSL distributions (user bug 54): the ones this switch left out because
+        // they were stopped are pending, the ones it reached are up to date.
+        if crate::wsl::participates(&self.plan.request.intent) {
+            let pending = superba_core::HostPending {
+                at: d.clock.now(),
+                intent: self.plan.request.intent.clone(),
+            };
+            for id in &self.pc.wsl_pending {
+                self.sw
+                    .cache_host(id, |c| c.pending = Some(pending.clone()));
+            }
+            for r in remotes.iter().filter(|r| {
+                r.status != OutcomeStatus::Failed
+                    && superba_core::HostKind::of_target(&r.target_id)
+                        == superba_core::HostKind::Wsl
+            }) {
+                self.sw.cache_host(&r.target_id, |c| c.pending = None);
+            }
+        }
         if let Some((target, record)) = self.pc.host_sync.clone()
             && remotes
                 .iter()

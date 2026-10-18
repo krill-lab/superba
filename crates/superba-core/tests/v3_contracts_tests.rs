@@ -1238,6 +1238,7 @@ fn host_sync_types_round_trip() {
         },
         pending_sync: Some(3),
         hot_restart: true,
+        pending: None,
     });
 }
 

@@ -475,6 +475,8 @@ access_not_needed = "{host} 可以通过 127.0.0.1 访问本机路由（WSL 1 �
 access_unreachable = "本机路由已在 {address} 为 WSL 开放，但 {host} 仍然无法访问。请检查 Windows 防火墙和 WSL 的 Hyper-V 防火墙，或改用镜像网络模式。"
 access_cancelled = "没有获得管理员授权；NAT 模式的 WSL 2 发行版保持直连。"
 access_needs_router = "请先安装并启动本机路由。"
+stopped_pending = "{host} 未运行，本次切换不改动它（Superba 不会自行启动 WSL 发行版）。它运行时的下一次切换会更新它，也可以在“远程主机”页对它点“立即更新”。"
+stopped_skipped = "{host} 未运行，未检查它（Superba 不会自行启动 WSL 发行版）。"
 
 [switch.ownership]
 kept = "已保留 {source} 在 Superba 写入之后做的 {count} 项修改：{items}。Superba 只还原它仍在管理的内容；如需一并还原，请选择接管。"

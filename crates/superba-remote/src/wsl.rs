@@ -45,11 +45,23 @@ pub struct WslInventory {
 #[async_trait]
 pub trait WslLister: Send + Sync + fmt::Debug {
     /// The current inventory. Never fails: problems go into
-    /// [`WslInventory::error`].
+    /// [`WslInventory::error`]. Starts no process when Windows' registry can
+    /// be read (the GUI lists hosts on a timer).
     async fn list(&self) -> WslInventory;
+
+    /// The distributions running now (`wsl.exe --list --running --quiet`,
+    /// which never starts one; user bug 54); `None` when WSL cannot tell.
+    async fn running(&self) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Forget a cached inventory (an explicit refresh).
+    fn forget(&self) {}
 }
 
-/// A lister that always answers the same (tests, other platforms).
+/// A lister that always answers the same (tests, other platforms): the
+/// distributions whose state is [`superba_core::wsl::STATE_RUNNING`] run;
+/// unknown when no distribution has a state.
 #[derive(Clone, Debug, Default)]
 pub struct FixedWsl(pub WslInventory);
 
@@ -58,7 +70,22 @@ impl WslLister for FixedWsl {
     async fn list(&self) -> WslInventory {
         self.0.clone()
     }
+
+    async fn running(&self) -> Option<Vec<String>> {
+        let distros = &self.0.distros;
+        distros.iter().any(|d| d.running().is_some()).then(|| {
+            distros
+                .iter()
+                .filter(|d| d.running() == Some(true))
+                .map(|d| d.name.clone())
+                .collect()
+        })
+    }
 }
+
+/// How long [`SystemWsl::list`] answers from its last reading (user bug 54:
+/// the overview and the host list ask on every poll).
+pub const INVENTORY_TTL: Duration = Duration::from_secs(30);
 
 /// The `wsl.exe` to run: `%SystemRoot%\System32\wsl.exe` when present (GUI
 /// processes may have an unusual `PATH`), else `wsl.exe` from `PATH`.
@@ -75,11 +102,14 @@ pub fn default_wsl_program() -> PathBuf {
 }
 
 /// [`WslLister`] over the system `wsl.exe` (Windows only; elsewhere empty).
-#[derive(Clone, Debug)]
+/// The inventory is read again after [`INVENTORY_TTL`] or [`WslLister::forget`].
+#[derive(Debug)]
 pub struct SystemWsl {
     program: PathBuf,
     /// `%USERPROFILE%` (for `.wslconfig`); `None` = from the environment.
     profile_dir: Option<PathBuf>,
+    /// The last inventory and when it was read.
+    cached: std::sync::Mutex<Option<(std::time::Instant, WslInventory)>>,
 }
 
 impl Default for SystemWsl {
@@ -87,6 +117,7 @@ impl Default for SystemWsl {
         Self {
             program: default_wsl_program(),
             profile_dir: None,
+            cached: std::sync::Mutex::new(None),
         }
     }
 }
@@ -194,6 +225,47 @@ impl WslLister for SystemWsl {
         if !cfg!(windows) {
             return WslInventory::default();
         }
+        if let Some((at, inventory)) = self
+            .cached
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            && at.elapsed() < INVENTORY_TTL
+        {
+            return inventory.clone();
+        }
+        let inventory = self.read().await;
+        if inventory.error.is_none() {
+            *self.cached.lock().unwrap_or_else(|p| p.into_inner()) =
+                Some((std::time::Instant::now(), inventory.clone()));
+        }
+        inventory
+    }
+
+    async fn running(&self) -> Option<Vec<String>> {
+        if !cfg!(windows) {
+            return None;
+        }
+        let mut cmd = tokio::process::Command::from(superba_core::process::command(&self.program));
+        cmd.args(["--list", "--running", "--quiet"])
+            .env(ENV_WSL_UTF8, "1");
+        let out = run_with_stdin(cmd, b"", LIST_TIMEOUT, "wsl.exe")
+            .await
+            .ok()?;
+        let names = superba_core::wsl::parse_list_quiet(&decode_output(&out.stdout));
+        // WSL 3 prints nothing (exit 0) when none runs; older versions print a
+        // localized "no running distributions" line and exit non-zero.
+        (out.status == Some(0) || !out.stdout.is_empty()).then_some(names)
+    }
+
+    fn forget(&self) {
+        *self.cached.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+}
+
+impl SystemWsl {
+    /// The registry, else `wsl.exe --list --verbose`.
+    async fn read(&self) -> WslInventory {
         let networking = read_networking(self.wslconfig().as_deref());
         // The registry first: listing hosts must not start a process (the GUI
         // lists hosts on a timer).

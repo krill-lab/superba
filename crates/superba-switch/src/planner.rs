@@ -81,6 +81,9 @@ pub(crate) struct PlanContext {
     /// GH#5: `auth.json` is left to another tool (kept by a restore or a
     /// hand-off): its key is never sent anywhere to verify the result.
     pub kept_foreign_auth: bool,
+    /// WSL distributions the plan leaves out because they are stopped (user
+    /// bug 54): recorded as pending after a successful switch.
+    pub wsl_pending: Vec<TargetId>,
 }
 
 impl PlanContext {
@@ -114,6 +117,7 @@ impl PlanContext {
             catalog_record: None,
             pin_config: None,
             kept_foreign_auth: false,
+            wsl_pending: Vec::new(),
         }
     }
 }
@@ -684,14 +688,27 @@ impl Switcher {
             Vec::new()
         };
         if wsl_follow {
-            // The distributions of this computer (Windows lists them; no process
-            // is started) that follow by default.
+            // Which distributions run: a stopped one is never started by a
+            // switch (user bug 54). `wsl.exe --list --running` starts none.
+            if let Err(e) = d.remote.wsl_running().await
+                && !e.is_not_implemented()
+            {
+                tracing::debug!(error = %e, "cannot tell which WSL distributions run");
+            }
+            // The distributions of this computer (Windows lists them) that
+            // follow it, and for a restore the ones Superba wrote.
+            let restore = crate::wsl::restores(&request.intent);
             if let Ok(hosts) = d.remote.discover(&home, &[], &[]).await {
                 for h in hosts
                     .iter()
                     .filter(|h| h.kind == superba_core::HostKind::Wsl)
                 {
-                    if crate::wsl::follows(&set, h) && !followed.contains(&h.target_id) {
+                    if followed.contains(&h.target_id) {
+                        continue;
+                    }
+                    let take = crate::wsl::follows(&set, h)
+                        || (restore && d.remote.written(h).await.unwrap_or(false));
+                    if take {
                         followed.push(h.target_id.clone());
                     }
                 }
@@ -1097,6 +1114,7 @@ impl Switcher {
         }
 
         // --- remote hosts (plan 8) ---------------------------------------------
+        let mut wsl_pending = Vec::new();
         let (hosts, remote_plans, remote_restarts) = self
             .plan_remotes(
                 &request,
@@ -1108,6 +1126,7 @@ impl Switcher {
                 &processes,
                 caps.as_slice(),
                 &mut active_threads,
+                &mut wsl_pending,
                 &mut draft,
             )
             .await;
@@ -1239,6 +1258,7 @@ impl Switcher {
                 catalog_record: dest.catalog_record,
                 pin_config: None,
                 kept_foreign_auth,
+                wsl_pending,
             },
         );
         Ok(plan)
@@ -2490,6 +2510,7 @@ impl Switcher {
         processes: &[ProcessInfo],
         caps: &[VersionCapability],
         active_threads: &mut Vec<ThreadActivity>,
+        wsl_pending: &mut Vec<TargetId>,
         draft: &mut Draft,
     ) -> (
         Vec<RemoteHost>,
@@ -2576,8 +2597,27 @@ impl Switcher {
                 continue;
             }
             let wsl = host.kind == superba_core::HostKind::Wsl;
-            let by_default =
-                wsl && followed.contains(&tid) && !crate::wsl::follow_chosen(set, &host);
+            // Taken in automatically (the default follow, a restore of a
+            // distribution Superba wrote), not because the user turned it on.
+            let by_default = wsl && followed.contains(&tid) && !crate::wsl::follow_on(set, &host);
+            // Uninstall removes Superba's changes everywhere, so it starts a
+            // stopped distribution Superba wrote; nothing else does.
+            let uninstall = matches!(request.intent, SwitchIntent::Uninstall { .. });
+            if wsl
+                && followed.contains(&tid)
+                && host.wsl.as_ref().and_then(superba_core::WslDistro::running) == Some(false)
+                && !(uninstall && d.remote.written(&host).await.unwrap_or(false))
+            {
+                // Never started by a switch (user bug 54): it is updated by the
+                // next switch that finds it running, or on demand.
+                if self.wsl_worth_updating(set, &host).await {
+                    draft.info(text("switch.wsl.stopped_pending").arg_text("host", host.title()));
+                    wsl_pending.push(tid);
+                } else {
+                    draft.info(text("switch.wsl.stopped_skipped").arg_text("host", host.title()));
+                }
+                continue;
+            }
             let state = match d.remote.probe(&host).await {
                 Ok(s) => s,
                 Err(e) if by_default => {

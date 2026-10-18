@@ -132,15 +132,26 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
             if h.host.is_app_known() && !wsl {
                 sources.push(cx.tr.t("hosts.app_record"));
             }
-            let (status, key) = if connected {
+            let (mut status, key) = if connected {
                 (Status::Ok, "hosts.connected")
             } else {
                 (Status::Idle, "hosts.not_connected")
             };
-            let mut text = if wsl && !connected {
-                names::kind(cx.tr, h.host.kind)
-            } else {
-                cx.tr.t(key)
+            let running = h
+                .host
+                .wsl
+                .as_ref()
+                .and_then(superba_core::WslDistro::running);
+            let mut text = match (wsl && !connected, running) {
+                // As Windows said last (user bug 54): a stopped distribution is
+                // never started by a switch.
+                (true, Some(true)) => {
+                    status = Status::Ok;
+                    cx.tr.t("hosts.wsl.running")
+                }
+                (true, Some(false)) => cx.tr.t("hosts.wsl.stopped"),
+                (true, None) => names::kind(cx.tr, h.host.kind),
+                (false, _) => cx.tr.t(key),
             };
             if !sources.is_empty() {
                 text = format!("{text} · {}", sources.join(" · "));
@@ -179,6 +190,9 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
             cx.tr
                 .f("hosts.probe_failed", &[("detail", &error_text(cx.tr, e))]),
         );
+    }
+    if let Some(p) = h.pending.as_ref().filter(|_| wsl) {
+        pending_row(ui, cx, &id, p, out);
     }
     ui.add_space(4.0);
     divider(ui, cx);
@@ -364,6 +378,42 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     {
         note(ui, cx, Status::Warn, cx.tr.t("hosts.shared_home"));
     }
+}
+
+/// A switch left the distribution out because it was stopped (user bug 54):
+/// say so and offer to bring it up to date now (starts it; the plan dialog
+/// shows what changes).
+fn pending_row(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    id: &superba_core::TargetId,
+    pending: &superba_core::HostPending,
+    out: &mut Vec<Action>,
+) {
+    FormRow::unlabeled().show(ui, |ui| {
+        ui.add(crate::design::widgets::StatusDot::new(Status::Warn));
+        ui.add(
+            egui::Label::new(Text::small(
+                cx.tr
+                    .f("hosts.wsl.pending", &[("age", &cx.ago(pending.at))]),
+                cx.pal,
+            ))
+            .wrap(),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add(
+                    Button::new(cx.tr.t("hosts.wsl.update_now"))
+                        .small()
+                        .enabled(!cx.busy),
+                )
+                .on_hover_text(cx.tr.t("hosts.wsl.update_now_tip"))
+                .clicked()
+            {
+                out.push(Action::Plan(Box::new(pending.request(id))));
+            }
+        });
+    });
 }
 
 /// How a WSL distribution reaches the local router, with the router access

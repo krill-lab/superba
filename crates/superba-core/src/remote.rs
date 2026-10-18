@@ -242,6 +242,35 @@ pub struct HostView {
     /// The running app can hot-restart this host's app-server (`hostId` known).
     #[serde(default)]
     pub hot_restart: bool,
+    /// A switch left this host out because it was not running (a stopped WSL
+    /// distribution is never started by a switch, user bug 54): it is brought
+    /// up to date by the next switch that finds it running, or on demand
+    /// ([`HostPending::request`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending: Option<HostPending>,
+}
+
+/// A switch that left a host out because the host was not running (user bug 54).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostPending {
+    /// When the switch ran.
+    pub at: Timestamp,
+    /// What the switch did on this computer.
+    pub intent: crate::plan::SwitchIntent,
+}
+
+impl HostPending {
+    /// The request that brings `target` up to date now: the same intent for that
+    /// host alone (planning it starts a stopped WSL distribution: the user asked).
+    pub fn request(&self, target: &TargetId) -> crate::plan::SwitchRequest {
+        let mut request = crate::plan::SwitchRequest::profile(ProfileId::new(""));
+        request.intent = self.intent.clone();
+        request.targets = crate::plan::TargetSelection {
+            local: false,
+            remotes: vec![target.clone()],
+        };
+        request
+    }
 }
 
 /// What a sync does with one key.

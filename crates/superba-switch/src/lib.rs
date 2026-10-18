@@ -851,6 +851,10 @@ impl SwitchService for Switcher {
     }
 
     fn environment_event(&self, event: superba_core::EnvironmentEvent) {
+        if event == superba_core::EnvironmentEvent::Refresh {
+            // The WSL distributions are listed again too (user bug 54).
+            self.deps.remote.forget_cached();
+        }
         self.monitor.event(event);
     }
 

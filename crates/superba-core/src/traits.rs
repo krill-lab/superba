@@ -782,6 +782,26 @@ pub trait RemoteHosts: Send + Sync {
         Err(Error::not_implemented("RemoteHosts::wsl_status"))
     }
 
+    /// Ask Windows which WSL distributions run now (`wsl.exe --list --running`,
+    /// which never starts one; user bug 54). Later [`RemoteHosts::discover`]
+    /// results carry the answer ([`crate::wsl::WslDistro::running`]) until it
+    /// is asked again; discovery itself never starts a process. `Ok(None)` when
+    /// WSL cannot tell.
+    async fn wsl_running(&self) -> Result<Option<Vec<String>>> {
+        Err(Error::not_implemented("RemoteHosts::wsl_running"))
+    }
+
+    /// Superba has written this host (its baseline is kept locally): it has
+    /// something to restore. Read locally; never reaches the host.
+    async fn written(&self, host: &RemoteHost) -> Result<bool> {
+        let _ = host;
+        Ok(false)
+    }
+
+    /// Forget cached discovery (WSL distributions listed, which of them run), so
+    /// the next call reads it again. Called on an explicit refresh.
+    fn forget_cached(&self) {}
+
     /// `GET http://<address>:<port><path>` from inside the host (a WSL
     /// distribution checks that Superba's router answers it there, user bug 45):
     /// the response (status line, headers, body; at most 4 KiB), `Ok(None)` when

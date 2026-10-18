@@ -52,6 +52,10 @@ pub(crate) struct CachedHost {
     /// The last Codex install (rollback target: `previous`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_install: Option<RemoteInstallReport>,
+    /// The last switch left this WSL distribution out: it was stopped (user
+    /// bug 54).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending: Option<superba_core::HostPending>,
 }
 
 /// In-memory probe cache (shared by clones of the service).
@@ -393,6 +397,7 @@ impl Switcher {
             probe_error: cached.and_then(|c| c.error.clone()),
             pending_sync,
             hot_restart,
+            pending: cached.and_then(|c| c.pending.clone()),
             host,
         }
     }
@@ -487,6 +492,10 @@ impl Switcher {
             set.settings.hosts.remove(id);
         }
         self.deps.profiles.save(&set).await?;
+        if !follow {
+            // A distribution that no longer follows has nothing pending.
+            self.cache_host(id, |c| c.pending = None);
+        }
         let cache = self.cached_hosts();
         Ok(self.host_view(host, &set, cache.get(id), session.as_ref(), None))
     }

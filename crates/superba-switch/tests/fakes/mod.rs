@@ -1648,6 +1648,12 @@ pub struct FakeRemote {
     pub blocked: Mutex<BTreeMap<String, Vec<BlockReason>>>,
     /// WSL: helper runs (`host label`, arguments).
     pub helper_runs: Mutex<Vec<(String, Vec<String>)>>,
+    /// Hosts (labels) Superba wrote before: they have a baseline (user bug 54).
+    pub written: Mutex<Vec<String>>,
+    /// Probes run, by host label.
+    pub probes: Mutex<Vec<String>>,
+    /// `wsl_running` calls.
+    pub running_calls: Mutex<u32>,
 }
 
 pub fn remote_host(key: &str, host_id: Option<&str>) -> RemoteHost {
@@ -1708,6 +1714,7 @@ impl RemoteHosts for FakeRemote {
     }
 
     async fn probe(&self, host: &RemoteHost) -> Result<RemoteState> {
+        self.probes.lock().unwrap().push(host.label.clone());
         let mut state = remote_state(
             host,
             self.version.lock().unwrap().clone(),
@@ -1907,6 +1914,16 @@ impl RemoteHosts for FakeRemote {
 
     async fn wsl_status(&self) -> Result<(superba_core::WslNetworking, Option<String>)> {
         Ok((superba_core::WslNetworking::Nat, None))
+    }
+
+    async fn wsl_running(&self) -> Result<Option<Vec<String>>> {
+        *self.running_calls.lock().unwrap() += 1;
+        // The fixtures' own states answer (discover returns them as they are).
+        Ok(None)
+    }
+
+    async fn written(&self, host: &RemoteHost) -> Result<bool> {
+        Ok(self.written.lock().unwrap().contains(&host.label))
     }
 }
 
@@ -2197,6 +2214,9 @@ impl World {
                 http_calls: Mutex::new(Vec::new()),
                 blocked: Mutex::new(BTreeMap::new()),
                 helper_runs: Mutex::new(Vec::new()),
+                written: Mutex::new(Vec::new()),
+                probes: Mutex::new(Vec::new()),
+                running_calls: Mutex::new(0),
             }),
             router: Arc::new(FakeRouter::new(log.clone())),
             v3: v3::V3 {

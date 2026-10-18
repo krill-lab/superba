@@ -63,12 +63,24 @@ pub(crate) fn follows(set: &ProfileSet, host: &RemoteHost) -> bool {
         .map_or(host.kind == HostKind::Wsl, |h| h.follows(host.kind))
 }
 
-/// The user chose to follow (not just the default of a WSL distribution).
-pub(crate) fn follow_chosen(set: &ProfileSet, host: &RemoteHost) -> bool {
+/// The user turned following on (not just the default of a WSL distribution).
+pub(crate) fn follow_on(set: &ProfileSet, host: &RemoteHost) -> bool {
     set.settings
         .hosts
         .get(&host.target_id)
-        .is_some_and(|h| h.follow_chosen || h.follow_switches)
+        .is_some_and(|h| h.follow_switches)
+}
+
+/// Intents that also reach a distribution Superba wrote that no longer follows
+/// this computer: its own baseline comes back (user bug 54).
+pub(crate) fn restores(intent: &SwitchIntent) -> bool {
+    matches!(
+        intent,
+        SwitchIntent::Uninstall { .. }
+            | SwitchIntent::Restore {
+                target: RestoreTarget::Original { .. }
+            }
+    )
 }
 
 /// The distribution has a Codex that would read its `CODEX_HOME`: a `codex` the
@@ -130,6 +142,19 @@ pub(crate) fn routed(base: &ResolvedProfile, origin: &Origin, token: &Secret) ->
 }
 
 impl Switcher {
+    /// A stopped distribution a switch comes back to (pending): the user turned
+    /// following on, Superba wrote it, or its last check found a Codex. Read
+    /// locally; the distribution is not started.
+    pub(crate) async fn wsl_worth_updating(&self, set: &ProfileSet, host: &RemoteHost) -> bool {
+        follow_on(set, host)
+            || self.deps.remote.written(host).await.unwrap_or(false)
+            || self
+                .cached_hosts()
+                .get(&host.target_id)
+                .and_then(|c| c.state.as_ref())
+                .is_some_and(has_codex)
+    }
+
     /// Whether and how `host` reaches the running router (read-only: asks the
     /// router's `health` from inside the distribution).
     pub(crate) async fn wsl_route(&self, host: &RemoteHost, state: &RemoteState) -> WslRoute {
@@ -263,6 +288,13 @@ const LISTEN_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
 impl Switcher {
     pub(crate) async fn wsl_overview_impl(&self) -> Result<WslOverview> {
         let d = &self.deps;
+        // Asked for (spb wsl list): which distributions run now, without
+        // starting any.
+        if let Err(e) = d.remote.wsl_running().await
+            && !e.is_not_implemented()
+        {
+            tracing::debug!(error = %e, "cannot tell which WSL distributions run");
+        }
         let (networking, error) = match d.remote.wsl_status().await {
             Ok(s) => s,
             Err(e) if e.is_not_implemented() => (Default::default(), None),

@@ -53,10 +53,18 @@ pub(super) async fn run(command: &WslCommand, rt: &Runtime, out: &mut Output) ->
                     let d = h.host.wsl.clone().unwrap_or_else(|| {
                         superba_core::WslDistro::named(h.host.wsl_distro().unwrap_or_default())
                     });
+                    let state = match d.running() {
+                        Some(true) => out.label("cli.wsl.running"),
+                        Some(false) if h.pending.is_some() => out.label("cli.wsl.stopped_pending"),
+                        Some(false) => out.label("cli.wsl.stopped"),
+                        None if h.pending.is_some() => out.label("cli.wsl.pending"),
+                        None => out.none(),
+                    };
                     vec![
                         format!("wsl:{}", d.name),
                         out.render(&d.version_text()),
                         out.boolean(d.default),
+                        state,
                         out.boolean(h.settings.follows(h.host.kind)),
                         h.state
                             .as_ref()
@@ -76,6 +84,7 @@ pub(super) async fn run(command: &WslCommand, rt: &Runtime, out: &mut Output) ->
                     "cli.label.target",
                     "cli.wsl.col.version",
                     "cli.wsl.col.default",
+                    "cli.wsl.col.state",
                     "cli.hosts.col.follow",
                     "cli.hosts.col.codex",
                     "cli.wsl.col.router",
@@ -86,8 +95,29 @@ pub(super) async fn run(command: &WslCommand, rt: &Runtime, out: &mut Output) ->
             if !o.router_wsl_listen.is_empty() {
                 out.field("cli.wsl.listening", o.router_wsl_listen.join(", "))?;
             }
+            for h in o.distros.iter().filter(|h| h.pending.is_some()) {
+                let name = h.host.wsl_distro().unwrap_or_default();
+                out.line(text("cli.wsl.pending_hint").arg("distro", &name))?;
+            }
             out.value(&o)?;
             Ok(exit::OK)
+        }
+        WslCommand::Update { distro, exec } => {
+            // What the last switch left out while the distribution was stopped
+            // (user bug 54), for it alone; it is started for this.
+            let name = distro.strip_prefix("wsl:").unwrap_or(distro);
+            let id = superba_core::wsl::target_id(name);
+            let o = rt.service.wsl_overview().await?;
+            let Some(view) = o.distros.iter().find(|h| h.host.target_id == id) else {
+                out.line(text("cli.wsl.unknown").arg("distro", name))?;
+                return Ok(exit::BLOCKED);
+            };
+            let Some(pending) = &view.pending else {
+                out.line(text("cli.wsl.nothing_pending").arg("distro", name))?;
+                out.value(view)?;
+                return Ok(exit::OK);
+            };
+            super::execute::run(pending.request(&id), exec, rt, out).await
         }
         WslCommand::RouterAccess { distro } => {
             let name = distro.strip_prefix("wsl:").unwrap_or(distro);

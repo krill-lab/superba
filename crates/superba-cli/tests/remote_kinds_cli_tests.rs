@@ -26,6 +26,7 @@ fn device(id: &str, label: &str, kind: HostKind) -> HostView {
         settings: HostSettings::default(),
         pending_sync: None,
         hot_restart: false,
+        pending: None,
     }
 }
 

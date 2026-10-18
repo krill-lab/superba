@@ -70,7 +70,22 @@ pub struct WslDistro {
     pub networking: WslNetworking,
 }
 
+/// [`WslDistro::state`] of a distribution `wsl.exe --list --running` names.
+pub const STATE_RUNNING: &str = "Running";
+/// [`WslDistro::state`] of a distribution `wsl.exe --list --running` leaves out.
+pub const STATE_STOPPED: &str = "Stopped";
+
 impl WslDistro {
+    /// Record whether it runs ([`STATE_RUNNING`] / [`STATE_STOPPED`]).
+    pub fn set_running(&mut self, running: bool) {
+        self.state = if running {
+            STATE_RUNNING
+        } else {
+            STATE_STOPPED
+        }
+        .to_owned();
+    }
+
     /// A distribution with only its name known.
     pub fn named(name: impl Into<String>) -> Self {
         Self {

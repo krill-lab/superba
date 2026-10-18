@@ -1172,6 +1172,13 @@ pub enum WslCommand {
         #[arg(value_name = "DISTRO", help = english("cli.help.wsl_distro"))]
         distro: String,
     },
+    #[command(about = english("cli.help.wsl_update"))]
+    Update {
+        #[arg(value_name = "DISTRO", help = english("cli.help.wsl_distro"))]
+        distro: String,
+        #[command(flatten)]
+        exec: ExecArgs,
+    },
 }
 
 /// `spb remote codex <host> ...`.

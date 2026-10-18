@@ -70,6 +70,7 @@ pub fn host_view() -> HostView {
         settings: HostSettings::default(),
         pending_sync: Some(1),
         hot_restart: true,
+        pending: None,
     }
 }
 

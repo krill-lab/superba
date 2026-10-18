@@ -47,7 +47,19 @@ pub fn hint(cx: &Cx<'_>, h: &HostView) -> String {
         } else {
             "hosts.wsl.list_alone"
         };
-        return cx.tr.f(key, &[("version", &version)]);
+        let mut hint = cx.tr.f(key, &[("version", &version)]);
+        if h.pending.is_some() {
+            hint = format!("{hint} · {}", cx.tr.t("hosts.wsl.list_pending"));
+        } else if h
+            .host
+            .wsl
+            .as_ref()
+            .and_then(superba_core::WslDistro::running)
+            == Some(false)
+        {
+            hint = format!("{hint} · {}", cx.tr.t("hosts.wsl.stopped"));
+        }
+        return hint;
     }
     if h.host.connected != Some(true) {
         let sync = if h.settings.last_sync.is_some() {
@@ -75,9 +87,11 @@ pub fn dot(h: &HostView) -> Option<Status> {
 
 fn managed_dot(h: &HostView) -> Status {
     if h.host.kind == HostKind::Wsl {
-        // A distribution is reached when it runs; its last check decides.
+        // A distribution is reached when it runs; its last check decides. One a
+        // switch left out while it was stopped needs an update (user bug 54).
         return match (&h.state, &h.probe_error) {
             (_, Some(_)) => Status::Warn,
+            _ if h.pending.is_some() => Status::Warn,
             (Some(_), None) => Status::Ok,
             _ => Status::Idle,
         };

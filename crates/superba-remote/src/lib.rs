@@ -136,6 +136,9 @@ pub struct SshRemoteHosts {
     data_dir: DataDir,
     shells: HostShells,
     wsl: Arc<dyn WslLister>,
+    /// The distributions `wsl.exe --list --running` named last
+    /// ([`RemoteHosts::wsl_running`]); `None` = not asked or WSL could not tell.
+    wsl_running: Arc<std::sync::Mutex<Option<BTreeSet<String>>>>,
     clock: Arc<dyn Clock>,
     home_dir: Option<PathBuf>,
     timeouts: Timeouts,
@@ -165,6 +168,7 @@ impl SshRemoteHosts {
                 wsl: Arc::new(WslShell::default()),
             },
             wsl: Arc::new(SystemWsl::default()),
+            wsl_running: Arc::default(),
             clock: Arc::new(SystemClock::new()),
             home_dir: None,
             timeouts: Timeouts::default(),
@@ -919,16 +923,45 @@ impl SshRemoteHosts {
         })
         .await
         .map_err(|e| Error::other(format!("discovery task failed: {e}")))?;
-        let inventory = self.wsl.list().await;
+        let mut inventory = self.wsl.list().await;
         if let Some(error) = &inventory.error {
             tracing::debug!(%error, "no WSL distributions listed");
+        }
+        // Running or stopped as last asked (never a process here).
+        if let Some(running) = self
+            .wsl_running
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+        {
+            for d in &mut inventory.distros {
+                d.set_running(running.contains(&d.name));
+            }
         }
         discover::merge_wsl(&mut hosts, &inventory.distros);
         Ok(hosts)
     }
 
+    /// Note that `distro` runs (a script just ran inside it).
+    fn note_running(&self, host: &RemoteHost) {
+        if host.kind != superba_core::HostKind::Wsl {
+            return;
+        }
+        if let Some(distro) = host.wsl_distro()
+            && let Some(running) = self
+                .wsl_running
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .as_mut()
+        {
+            running.insert(distro);
+        }
+    }
+
     async fn probe_impl(&self, host: &RemoteHost) -> Result<RemoteState> {
-        Ok(self.snapshot(host, true).await?.state)
+        let state = self.snapshot(host, true).await?.state;
+        self.note_running(host);
+        Ok(state)
     }
 
     async fn plan_apply_impl(
@@ -1498,6 +1531,21 @@ impl RemoteHosts for SshRemoteHosts {
     async fn wsl_status(&self) -> Result<(superba_core::WslNetworking, Option<String>)> {
         let inv = self.wsl.list().await;
         Ok((inv.networking, inv.error))
+    }
+
+    async fn wsl_running(&self) -> Result<Option<Vec<String>>> {
+        let running = self.wsl.running().await;
+        *self.wsl_running.lock().unwrap_or_else(|p| p.into_inner()) =
+            running.as_ref().map(|r| r.iter().cloned().collect());
+        Ok(running)
+    }
+
+    async fn written(&self, host: &RemoteHost) -> Result<bool> {
+        Ok(self.store(host).load_baseline().await?.is_some())
+    }
+
+    fn forget_cached(&self) {
+        self.wsl.forget();
     }
 }
 

@@ -627,6 +627,7 @@ fn host_view(
         settings: Default::default(),
         pending_sync: pending,
         hot_restart: true,
+        pending: None,
     }
 }
 

@@ -38,6 +38,9 @@ pub(super) struct State {
     plan: Option<HostSyncPlan>,
     hide_all: bool,
     devices: bool,
+    /// The WSL distribution is stopped and the last switch left it out (user
+    /// bug 54).
+    wsl_pending: bool,
 }
 
 impl FakeService {
@@ -80,6 +83,13 @@ impl FakeService {
     pub fn with_device_hosts(&self) {
         self.areas.hosts.lock().unwrap().devices = true;
     }
+
+    /// The WSL distribution is stopped and has an update pending (user bug 54).
+    pub fn with_stopped_wsl_pending(&self) {
+        let mut area = self.areas.hosts.lock().unwrap();
+        area.devices = true;
+        area.wsl_pending = true;
+    }
 }
 
 /// A host the app reports that Superba does not manage.
@@ -100,6 +110,7 @@ fn device(id: &str, label: &str, kind: HostKind) -> HostView {
         settings: HostSettings::default(),
         pending_sync: None,
         hot_restart: false,
+        pending: None,
     }
 }
 
@@ -226,6 +237,7 @@ fn views(fake: &FakeService) -> Vec<HostView> {
                 },
                 pending_sync: devbox.then_some(3),
                 hot_restart: host.host_id.is_some(),
+                pending: None,
                 host,
             }
         })
@@ -237,6 +249,7 @@ fn views(fake: &FakeService) -> Vec<HostView> {
         settings: HostSettings::default(),
         pending_sync: None,
         hot_restart: false,
+        pending: None,
     });
     if area.devices {
         out.push(device(DEVICE, "Studio Mac", HostKind::RemoteControl));
@@ -246,7 +259,26 @@ fn views(fake: &FakeService) -> Vec<HostView> {
             DEVICE_UNNAMED,
             HostKind::RemoteControl,
         ));
-        out.push(device(WSL, "WSL: Ubuntu", HostKind::Wsl));
+        let mut wsl = device(WSL, "WSL: Ubuntu", HostKind::Wsl);
+        if area.wsl_pending {
+            let mut distro = WslDistro {
+                version: Some(2),
+                default: true,
+                ..WslDistro::named("Ubuntu")
+            };
+            distro.set_running(false);
+            wsl.host.wsl = Some(distro);
+            wsl.host.sources = vec![HostSource::Wsl];
+            wsl.pending = Some(HostPending {
+                at: Timestamp::now().saturating_sub(Duration::from_secs(30 * 60)),
+                intent: SwitchIntent::Profile {
+                    profile_id: ProfileId::new("work"),
+                    line_id: None,
+                    auth_mode: None,
+                },
+            });
+        }
+        out.push(wsl);
     }
     out
 }

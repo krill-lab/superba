@@ -476,6 +476,8 @@ access_not_needed = "{host} reaches the router on 127.0.0.1 (WSL 1 or mirrored n
 access_unreachable = "The router listens for WSL at {address}, but {host} still cannot reach it. Check Windows Firewall and the Hyper-V firewall for WSL, or use mirrored networking."
 access_cancelled = "Administrator approval was declined; WSL 2 distributions behind NAT stay direct."
 access_needs_router = "Install and start the local router first."
+stopped_pending = "{host} is not running, so this switch leaves it as it is (Superba never starts a WSL distribution by itself). The next switch while it runs updates it, or “Update now” on its Remote hosts page."
+stopped_skipped = "{host} is not running and was not checked (Superba never starts a WSL distribution by itself)."
 
 [switch.ownership]
 kept = "Kept {count} changes made by {source} after Superba wrote them: {items}. Superba restores only what it still manages; take them over to restore them too."
