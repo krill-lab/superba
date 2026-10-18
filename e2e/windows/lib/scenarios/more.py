@@ -293,6 +293,140 @@ def w14(t):
         s.check(str(a.cdp_port() or "") in r["stdout"], "spb status shows the app's debugging port", soft=True)
 
 
+CHATGPT_LNK = r"\Microsoft\Windows\Start Menu\Programs\ChatGPT (Superba).lnk"
+
+
+@scenario("W16", "Open ChatGPT through Superba: the ChatGPT (Superba) shortcut, the Overview's open / reopen (GH#7)",
+          area="launch", needs=("app_ready",), bugs=(61, 66))
+def w16(t):
+    run = t.run
+    a = App(run)
+    u = U(t)
+    lnk = run.guest["APPDATA"] + CHATGPT_LNK
+
+    def shortcut(s):
+        run.agent.start_proc("explorer.exe", [lnk])
+        s.info("started the ChatGPT (Superba) shortcut (explorer, unelevated)")
+
+    def guis():
+        return run.agent.procs(r"^superba\.exe$")
+
+    def status(s, label):
+        r = run.spb("status", timeout=120, label=label)
+        s.save(f"{label}.txt", r["stdout"] + r["stderr"])
+        return r["stdout"]
+
+    def foreground(pid):
+        return any(w.get("foreground") for w in run.agent.windows(pid=pid))
+
+    with t.step("The MSI put ChatGPT (Superba) in the Start menu: superba.exe --launch-chatgpt") as s:
+        r = run.vm.ps(f"$sc = (New-Object -ComObject WScript.Shell).CreateShortcut({psq(lnk)});"
+                      " $sc.TargetPath + '|' + $sc.Arguments")
+        target, _, args = r.stdout.strip().partition("|")
+        s.check(target.lower().endswith("\\superba.exe") and args == "--launch-chatgpt",
+                f"shortcut runs {target!r} {args!r}")
+    with t.step("No Superba window, ChatGPT closed: the shortcut opens ChatGPT through Superba, no window") as s:
+        flows.stop_superba(run)
+        a.kill_all()
+        time.sleep(3)
+        t0 = time.time()
+        shortcut(s)
+        # The shortcut's process waits (invisibly) until ChatGPT's core is
+        # ready, then exits; it never shows a window.
+        seen, running = [], []
+        while time.time() - t0 < 240:
+            running = guis()
+            if not running and time.time() - t0 > 5:
+                break
+            seen += [w["title"] for w in run.agent.windows(process_re="^superba$") if w["title"]]
+            time.sleep(2)
+        s.check(not running, f"the shortcut's Superba process exited after {time.time() - t0:.0f} s "
+                             f"(left: {[p['pid'] for p in running]})")
+        s.check(not seen, f"it showed no Superba window: {sorted(set(seen))}")
+        m = a.wait_main(60)
+        s.check(m is not None, f"ChatGPT running with a debugging port (pid {m and m['pid']})")
+        w = run.agent.wait_window(timeout=90, pid=m["pid"]) if m else None
+        s.check(w is not None, f"ChatGPT shows its window: {w and w['title']!r}", soft=True)
+        out = status(s, "status-shortcut")
+        s.check("Launched by Superba: yes" in out, "spb status: launched by Superba")
+        s.check("Hot switch: Ready" in out, "spb status: hot switch ready")
+        s.shot("shortcut-opened", full=True)
+        run.state["main_pid"] = m and m["pid"]
+    with t.step("Superba open, ChatGPT open through it: the shortcut brings ChatGPT forward, nothing restarts") as s:
+        flows.start_superba(run, s)
+        time.sleep(4)
+        u.page("overview")
+        time.sleep(2)
+        s.check(not u.exists(key="action.open_app") and not u.exists(key="action.reopen_app"),
+                "hot switching works: no open / reopen action on the Overview")
+        m0 = a.main()
+        shortcut(s)
+        time.sleep(8)
+        m1 = a.main()
+        s.check(m0 and m1 and m0["pid"] == m1["pid"], f"same ChatGPT: {m0 and m0['pid']} -> {m1 and m1['pid']}")
+        s.check(len(guis()) == 1, f"one Superba process: {[p['pid'] for p in guis()]}")
+        s.check(m1 is not None and foreground(m1["pid"]), "ChatGPT is the foreground window", soft=True)
+        s.shot("shortcut-activated", full=True)
+    with t.step("ChatGPT started from its own tile: the Overview offers the reopen; the shortcut asks to confirm it") as s:
+        a.kill_all()
+        time.sleep(3)
+        a.activate()
+        m = a.wait_main(60, with_port=False)
+        s.check(m is not None and not a.cdp_port(m), "ChatGPT started without Superba (no debugging port)")
+        time.sleep(12)  # the Overview's next poll
+        u.page("overview")
+        s.check(bool(u.exists(timeout=20, key="action.reopen_app")),
+                "the Overview shows " + repr(u.L("action.reopen_app")))
+        s.shot("reopen-offered")
+        shortcut(s)
+        s.check(bool(u.exists(timeout=60, key="confirm.title_reopen")),
+                "the open Superba window asks to confirm the reopen")
+        s.check(len(guis()) == 1, f"one Superba process: {[p['pid'] for p in guis()]}")
+        sw = run.agent.windows(process_re="^superba$")
+        s.check(any(w.get("foreground") for w in sw), "the Superba window came to the front", soft=True)
+        s.shot("reopen-confirm", full=True)
+        u.click(key="confirm.reopen")
+        # A ChatGPT Superba did not open cannot be asked to quit: the force-quit
+        # question comes, as for any full restart of it (user bug 53).
+        forced, m1, t0 = False, None, time.time()
+        quit_titles = (u.L("decide.force_quit.title_windows"), u.L("decide.force_quit.title"))
+        while time.time() - t0 < 300:
+            if not forced and any(x in u.texts() for x in quit_titles):
+                s.shot("force-quit-question", full=True)
+                u.click(key="decide.force")
+                forced = True
+                s.info("ChatGPT did not quit by itself: answered Force quit")
+            m1 = a.main()
+            if m1 and (not m or m1["pid"] != m["pid"]) and a.cdp_port(m1):
+                break
+            m1 = None
+            time.sleep(2)
+        s.check(m1 is not None, f"ChatGPT reopened with a debugging port (pid {m1 and m1['pid']})")
+        time.sleep(10)
+        out = status(s, "status-reopened")
+        s.check("Launched by Superba: yes" in out and "Hot switch: Ready" in out,
+                "spb status: launched by Superba, hot switch ready")
+        run.state["main_pid"] = m1 and m1["pid"]
+    with t.step("ChatGPT closed: the Overview's Open ChatGPT with Superba opens it") as s:
+        a.kill_all()
+        time.sleep(12)
+        u.page("overview")
+        s.check(bool(u.exists(timeout=30, key="action.open_app")),
+                "the Overview shows " + repr(u.L("action.open_app")))
+        s.shot("open-offered")
+        u.click(key="action.open_app")
+        m = a.wait_main(120)
+        s.check(m is not None, f"ChatGPT running with a debugging port (pid {m and m['pid']})")
+        time.sleep(10)
+        out = status(s, "status-open-button")
+        s.check("Launched by Superba: yes" in out and "Hot switch: Ready" in out,
+                "spb status: launched by Superba, hot switch ready")
+        s.check(not u.exists(timeout=20, key="action.open_app"), "the action is gone once hot switching works",
+                soft=True)
+        s.shot("opened")
+        run.state["main_pid"] = m and m["pid"]
+
+
 # --------------------------------------------------------------------------- providers, settings, models
 @scenario("W15", "Providers page: add, rename, context menu, delete confirmation, capability badges",
           area="providers", net="mock", needs=("configured",), bugs=(2, 3, 5, 6, 14))
