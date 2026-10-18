@@ -407,7 +407,10 @@ def w16(t):
         s.check(m1 is not None, f"ChatGPT reopened with a debugging port (pid {m1 and m1['pid']})")
         s.check(not forced, "no force-quit question after the confirmation (user bug 76)")
         s.info(f"reopened {round(time.time() - t0)} s after the confirmation")
-        time.sleep(10)
+        # The reopen goes on verifying the new Codex core and window: status after it ends.
+        phases, _ = flows.wait_switch_done(run, s, u, timeout=240)
+        s.info(f"phases: {phases}")
+        time.sleep(5)
         out = status(s, "status-reopened")
         s.check("Launched by Superba: yes" in out and "Hot switch: Ready" in out,
                 "spb status: launched by Superba, hot switch ready")

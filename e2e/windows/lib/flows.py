@@ -432,7 +432,11 @@ def app_ready(run, t, prefix=""):
             s.check(False, "ChatGPT shows its sign-in page after the PAT switch (PAT login did not take)")
         # A fresh ChatGPT first finishes its Windows setup (blank window / "Finishing Windows
         # setup", minutes on a new VM): that time is not part of the onboarding budget.
-        steps, p = a.onboarding(150, setup_timeout=420)
+        try:
+            steps, p = a.onboarding(150, setup_timeout=420)
+        except Exception:
+            s.save("app-diagnose.json", a.diagnose())
+            raise
         if a.setup_waited:
             s.info(f"waited {a.setup_waited} s for ChatGPT's first-start setup")
         s.info(f"onboarding answered: {steps}")

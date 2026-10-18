@@ -201,6 +201,34 @@ class App:
 
     SETUP_TEXTS = ("Finishing Windows setup", "Setting up", "Getting things ready")
 
+    DIAG_JS = r"""(() => ({
+      url: String(location.href), ready: document.readyState, title: document.title,
+      html: document.body ? document.body.innerHTML.length : -1,
+      root: (() => { const r = document.getElementById('root'); return r ? r.childElementCount : -1; })(),
+      visibility: document.visibilityState, focus: document.hasFocus(),
+    }))()"""
+
+    def diagnose(self):
+        """What the renderer is doing when it shows nothing usable: its pages (CDP
+        targets), the main page's URL / ready state / DOM size, ChatGPT's processes."""
+        out = {}
+        try:
+            port = self.cdp_port()
+            out["port"] = port
+            out["targets"] = [{k: t.get(k) for k in ("type", "url", "title")}
+                              for t in (self.agent.call("cdp.list", port=port) or [])]
+        except Exception as e:
+            out["targets_error"] = str(e)
+        try:
+            out["page"] = self.eval(self.DIAG_JS)
+        except Exception as e:
+            out["page_error"] = str(e)
+        try:
+            out["procs"] = [{k: p.get(k) for k in ("pid", "name", "cmdline")} for p in self.procs()]
+        except Exception as e:
+            out["procs_error"] = str(e)
+        return out
+
     @classmethod
     def first_start_setup(cls, probe, text):
         """ChatGPT is still in its first-start setup: no composer, nothing to answer, and
@@ -244,11 +272,23 @@ class App:
             raise AppError(f"the composer still holds {left} characters; nothing was sent")
         self.cdp("Input.insertText", {"text": prompt})
         time.sleep(0.3)
-        for typ in ("rawKeyDown", "char", "keyUp"):
-            ev = {"type": typ, "windowsVirtualKeyCode": 13, "key": "Enter", "code": "Enter"}
-            if typ == "char":
-                ev["text"] = "\r"
-            self.cdp("Input.dispatchKeyEvent", ev)
+        # Right after a turn the composer sometimes keeps the text on the first Enter (the
+        # turn never leaves the app): press it again while the prompt is still there.
+        for attempt in range(3):
+            for typ in ("rawKeyDown", "char", "keyUp"):
+                ev = {"type": typ, "windowsVirtualKeyCode": 13, "key": "Enter", "code": "Enter"}
+                if typ == "char":
+                    ev["text"] = "\r"
+                self.cdp("Input.dispatchKeyEvent", ev)
+            end = time.time() + 5
+            left = -1
+            while time.time() < end:
+                left = self.eval("(() => { const el = document.querySelector('.ProseMirror');"
+                                 " return el ? (el.innerText || '').trim().length : -1; })()")
+                if left is None or left <= 0:
+                    return
+                time.sleep(0.5)
+            self.run.log(f"  the composer still holds {left} characters after Enter (try {attempt + 1}); pressing it again")
 
     def wait_idle(self, timeout=120):
         end = time.time() + timeout
