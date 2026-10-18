@@ -81,10 +81,11 @@ def source_filter(option):
     `option` (1-based), pick that entry."""
     def act(s):
         shoot.focus(s)
-        s.input.click(1166, 232)
+        # Positions for the content card of user bug 85 (page 22 px lower).
+        s.input.click(1160, 254)
         time.sleep(0.8)
         if option:
-            s.input.click(1166, 238 + 30 * option)
+            s.input.click(1160, 260 + 30 * option)
             time.sleep(2.5)
         s.input.park()
     return act

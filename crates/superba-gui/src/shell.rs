@@ -13,7 +13,7 @@ use superba_core::{
 
 use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::{self, Icon};
-use crate::design::tokens::{Palette, radius, text};
+use crate::design::tokens::{Palette, chrome, radius, size, text};
 use crate::design::widgets::{
     Button, CountdownBar, Dropdown, Status, StatusDot, Text, dialog, link_button,
 };
@@ -61,23 +61,29 @@ pub fn brand_mark(ui: &mut Ui, _pal: &Palette, size: f32) {
     ui.painter().image(texture.id(), paint, uv, Color32::WHITE);
 }
 
-/// The sidebar panel's frame (margins around the navigation).
+/// The sidebar panel's frame (margins around the navigation): room for the
+/// traffic lights above the first row on macOS, the rows
+/// [`size::NAV_INSET_RIGHT`] clear of the content card, the last row's bottom
+/// in line with the card's (user bug 85).
 pub fn sidebar_frame() -> egui::Frame {
     egui::Frame::new().inner_margin(egui::Margin {
-        left: 12,
-        right: 12,
-        top: 16,
-        bottom: 12,
+        left: size::NAV_INSET_LEFT as i8,
+        right: size::NAV_INSET_RIGHT as i8,
+        top: chrome::NAV_TOP as i8,
+        bottom: chrome::CARD_INSET as i8,
     })
 }
 
-/// Left navigation after Surge (user request 24), on the window background:
-/// brand, the command-palette button, pages under small gray section headings
-/// with their badges and unsaved-edit dots (`status` per page), and Superba's
-/// own pages (Diagnostics, Preferences) pinned at the bottom with the version.
-/// The current state lives on the overview, not in the sidebar.
+/// Left navigation (user request 24, user bug 85), on the window background:
+/// pages under small gray section headings with their badges and unsaved-edit
+/// dots (`status` per page), and Superba's own pages (Diagnostics,
+/// Preferences) pinned at the bottom above a hairline and the version. No
+/// brand and no search field: the window's top is empty (the traffic lights,
+/// the drag area) and the command palette opens with Cmd/Ctrl+K and from the
+/// Overview's menu. The selected row is a soft gray pill with its icon in the
+/// brand coral. The current state lives on the overview, not in the sidebar.
 ///
-/// When the window is too short for comfortable 40 px rows (the 960x640
+/// When the window is too short for the comfortable rows (the 960x640
 /// minimum) the rows and headings are compacted, and the main list scrolls
 /// above the pinned pages rather than running under them (review ux-visual #2).
 pub fn sidebar(
@@ -85,28 +91,11 @@ pub fn sidebar(
     cx: &Cx<'_>,
     page: &mut Page,
     status: &dyn Fn(Page) -> PageStatus,
-    out: &mut Vec<Action>,
+    _out: &mut Vec<Action>,
 ) {
     ui.spacing_mut().item_spacing.y = NAV_GAP;
-    ui.add_space(2.0);
-    ui.horizontal(|ui| {
-        ui.add_space(6.0);
-        brand_mark(ui, cx.pal, 22.0);
-        ui.add_space(2.0);
-        ui.label(
-            RichText::new("Superba")
-                .font(font(15.0, Weight::Semibold))
-                .color(cx.pal.text)
-                .extra_letter_spacing(-0.2),
-        );
-    });
-    ui.add_space(14.0);
-    if search_button(ui, cx).clicked() {
-        out.push(Action::OpenPalette);
-    }
-    ui.add_space(8.0);
 
-    // Superba's own pages sit at the bottom (Surge's 更多 / 面板).
+    // Superba's own pages sit at the bottom.
     let pinned = |p: Page| p.group() == crate::pages::NavGroup::Superba;
     let main: Vec<Page> = Page::ALL.into_iter().filter(|p| !pinned(*p)).collect();
     let footer: Vec<Page> = Page::ALL.into_iter().filter(|p| pinned(*p)).collect();
@@ -121,29 +110,30 @@ pub fn sidebar(
         .frame(egui::Frame::NONE)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = NAV_GAP;
-            ui.add_space(6.0);
+            ui.add_space(FOOTER_ABOVE);
             for p in footer.iter().copied() {
                 if nav_item(ui, cx, p, *page == p, &status(p), metrics.row) {
                     *page = p;
                 }
             }
-            ui.add_space(4.0);
-            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+            let (r, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), FOOTER_RULE), Sense::hover());
             ui.painter().hline(
-                r.x_range().shrink(6.0),
+                r.x_range().shrink(size::NAV_ICON_X),
                 r.center().y,
                 Stroke::new(1.0, cx.pal.border.gamma_multiply(0.8)),
             );
-            ui.add_space(2.0);
-            // Version only: providers are reached through Providers (UX §2.1).
+            // The version (also in Preferences → About), a label screen
+            // readers read.
             ui.horizontal(|ui| {
-                ui.add_space(10.0);
-                ui.label(Text::mono_muted(
-                    format!("v{}", env!("CARGO_PKG_VERSION")),
-                    cx.pal,
-                ));
+                ui.set_height(FOOTER_VERSION);
+                ui.add_space(size::NAV_ICON_X);
+                ui.label(
+                    RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                        .font(mono_font(text::CAPTION - 1.0, Weight::Regular))
+                        .color(cx.pal.text_subtle),
+                );
             });
-            ui.add_space(2.0);
         });
 
     // Never under the pinned pages: the rest of the height, scrolling if even
@@ -164,10 +154,10 @@ pub fn sidebar(
                             Sense::hover(),
                         );
                         ui.painter().text(
-                            pos2(r.min.x + 10.0, r.center().y),
+                            pos2(r.min.x + size::NAV_ICON_X, r.center().y),
                             egui::Align2::LEFT_CENTER,
                             cx.tr.t(key),
-                            font(text::SMALL, Weight::Medium),
+                            font(text::NAV_CAPTION, Weight::Medium),
                             cx.pal.text_subtle,
                         );
                     }
@@ -191,19 +181,19 @@ struct NavMetrics {
 
 impl NavMetrics {
     const FULL: Self = Self {
-        row: NAV_ROW,
-        caption: 20.0,
-        caption_gap: 10.0,
+        row: size::NAV_ROW,
+        caption: size::NAV_CAPTION[0],
+        caption_gap: size::NAV_CAPTION_GAP[0],
     };
     // Thirteen pages in five groups fit the 960x640 minimum with these.
     const COMPACT: Self = Self {
-        row: 30.0,
-        caption: 16.0,
-        caption_gap: 4.0,
+        row: size::NAV_ROW_COMPACT,
+        caption: size::NAV_CAPTION[1],
+        caption_gap: size::NAV_CAPTION_GAP[1],
     };
 
     /// Height of the main list plus the pinned footer (rows, headings, the
-    /// footer's separator and version line) with these sizes.
+    /// footer's hairline and version) with these sizes.
     fn needed(self, main: &[Page], footer_rows: usize) -> f32 {
         let mut groups: Vec<_> = main.iter().map(|p| p.group()).collect();
         groups.dedup();
@@ -212,18 +202,28 @@ impl NavMetrics {
         let list = main.len() as f32 * self.row
             + captions as f32 * (self.caption + self.caption_gap)
             + items as f32 * NAV_GAP;
-        // Rows, then 6 above, 4 + separator (1) + 2 + version line (18) + 2
-        // below, with the gaps between them.
-        let foot = footer_rows as f32 * (self.row + NAV_GAP) + 33.0 + 3.0 * NAV_GAP;
+        // The space above the pinned rows, the rows, the hairline and the
+        // version, with the gaps between them.
+        let foot = FOOTER_ABOVE
+            + footer_rows as f32 * (self.row + NAV_GAP)
+            + FOOTER_RULE
+            + FOOTER_VERSION
+            + 3.0 * NAV_GAP;
         list + foot
     }
 }
 
-/// Height of a sidebar row (Surge-like, comfortable).
-const NAV_ROW: f32 = crate::design::tokens::size::NAV_ROW;
-
 /// Space between sidebar rows.
-const NAV_GAP: f32 = 2.0;
+const NAV_GAP: f32 = size::NAV_GAP;
+
+/// Space above the pinned pages at the bottom of the sidebar.
+const FOOTER_ABOVE: f32 = 6.0;
+
+/// Height of the hairline's row below the pinned pages.
+const FOOTER_RULE: f32 = 7.0;
+
+/// Height of the version line at the bottom of the sidebar.
+const FOOTER_VERSION: f32 = 16.0;
 
 /// The shortcut label shown next to search affordances.
 pub fn palette_shortcut_label() -> &'static str {
@@ -232,68 +232,6 @@ pub fn palette_shortcut_label() -> &'static str {
     } else {
         "Ctrl K"
     }
-}
-
-fn search_button(ui: &mut Ui, cx: &Cx<'_>) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
-    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    let label = cx.tr.t("shell.search");
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-    let t = crate::design::widgets::hover_t(ui, &response);
-    let b = crate::design::backdrop::Backdrop::of(ui.ctx());
-    let p = ui.painter();
-    // A translucent field on the window background.
-    let fill = if cx.pal.dark {
-        Color32::from_white_alpha(12)
-    } else {
-        Color32::from_white_alpha(150)
-    };
-    p.rect(
-        rect,
-        radius::ROW,
-        fill.lerp_to_gamma(b.selected, t * 0.6),
-        Stroke::new(1.0, b.hover),
-        egui::StrokeKind::Inside,
-    );
-    icons::paint(
-        p,
-        Rect::from_center_size(pos2(rect.min.x + 16.0, rect.center().y), vec2(14.0, 14.0)),
-        Icon::Search,
-        cx.pal.text_subtle,
-    );
-    p.text(
-        pos2(rect.min.x + 30.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        label,
-        font(text::SMALL, Weight::Regular),
-        cx.pal.text_subtle,
-    );
-    let key = palette_shortcut_label();
-    let galley = p.layout_no_wrap(
-        key.to_owned(),
-        mono_font(text::CAPTION - 1.0, Weight::Medium),
-        cx.pal.text_muted,
-    );
-    let kr = Rect::from_min_size(
-        pos2(rect.max.x - galley.size().x - 16.0, rect.center().y - 9.0),
-        vec2(galley.size().x + 10.0, 18.0),
-    );
-    p.rect(
-        kr,
-        4,
-        cx.pal.hover,
-        Stroke::new(1.0, cx.pal.border),
-        egui::StrokeKind::Inside,
-    );
-    p.galley(
-        pos2(kr.min.x + 5.0, kr.center().y - galley.size().y / 2.0),
-        galley,
-        cx.pal.text_muted,
-    );
-    if crate::design::widgets::show_focus(&response) {
-        crate::design::widgets::focus_ring(p, rect, radius::CONTROL, cx.pal);
-    }
-    response
 }
 
 fn nav_item(
@@ -321,25 +259,26 @@ fn nav_item(
         Color32::TRANSPARENT.lerp_to_gamma(b.hover, t)
     };
     let p = ui.painter();
-    p.rect_filled(rect, radius::ROW, fill);
+    p.rect_filled(rect, radius::NAV, fill);
     let color = cx.pal.text;
+    // The selected page's icon in the brand coral (the app icon's mark).
     let icon_color = if selected {
-        cx.pal.text
+        crate::design::tokens::brand::coral(cx.pal.dark)
     } else {
         cx.pal.text_muted.lerp_to_gamma(cx.pal.text, t)
     };
-    let side = crate::design::tokens::size::NAV_ICON;
+    let side = size::NAV_ICON;
     let icon_rect = Rect::from_min_size(
-        pos2(rect.min.x + 11.0, rect.center().y - side / 2.0),
+        pos2(rect.min.x + size::NAV_ICON_X, rect.center().y - side / 2.0),
         vec2(side, side),
     );
     icons::paint(p, icon_rect, page.icon(), icon_color);
     p.text(
-        pos2(rect.min.x + 40.0, rect.center().y),
+        pos2(rect.min.x + size::NAV_LABEL_X, rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
         font(
-            text::BODY + 1.0,
+            text::NAV,
             if selected {
                 Weight::Semibold
             } else {
@@ -387,7 +326,7 @@ fn nav_item(
         });
     }
     if crate::design::widgets::show_focus(&response) {
-        crate::design::widgets::focus_ring(p, rect, radius::CONTROL, cx.pal);
+        crate::design::widgets::focus_ring(p, rect, radius::NAV, cx.pal);
     }
     let response = match tip {
         Some(t) => response.on_hover_text(t),

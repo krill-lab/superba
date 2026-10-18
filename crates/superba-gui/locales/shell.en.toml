@@ -239,6 +239,12 @@ router_on = "Router mode is on"
 search = "Search…"
 switched = "Switched to {line}"
 what_restarts = "What restarts?"
+# The window buttons Superba draws on Windows and Linux (user bug 85); named
+# apart from the dialogs' "Close" and the Overview's "Restore".
+window_close = "Close window"
+window_maximize = "Maximize window"
+window_minimize = "Minimize window"
+window_restore = "Restore window"
 
 [notice]
 # One-time toast when Superba runs with an elevated Windows token (user bug 44).

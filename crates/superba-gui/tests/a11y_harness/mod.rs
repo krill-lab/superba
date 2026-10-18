@@ -458,6 +458,13 @@ impl AppHarness {
         self.settle()
     }
 
+    /// Raw input, one frame per entry (pointer presses, moves, releases), then
+    /// settle.
+    pub fn input(&mut self, frames: Vec<Vec<Event>>) -> Tree {
+        self.pending.extend(frames);
+        self.settle()
+    }
+
     /// Type `text` into the focused widget.
     pub fn type_text(&mut self, text: &str) -> Tree {
         self.pending.push_back(vec![Event::Text(text.to_owned())]);

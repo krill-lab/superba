@@ -87,7 +87,7 @@ def add_dialog(_lang):
     """Providers > Add: the page header's button (top right of the window)."""
     def act(s):
         shoot.focus(s)
-        s.input.click(1190, 54)
+        s.input.click(1186, 76)
         s.input.park()
         time.sleep(1.0)
     return act

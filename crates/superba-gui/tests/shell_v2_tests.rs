@@ -456,11 +456,11 @@ async fn every_page_renders_in_its_layout_at_both_window_sizes() {
                 }
             }
         }
-        // The page body below the header (UX §2.3: 678 px at 1280x800, 778 px at
-        // 1440x900).
+        // The page body below the header (UX §2.3; user bug 85: inside the
+        // content card, below the title band on Windows and Linux).
         let report =
             support::fit::render_fit(window, Locale::En, egui::Theme::Dark, &data, |_, _, _| {});
-        let expected = if window[1] == 800.0 { 678.0 } else { 778.0 };
+        let expected = support::fit::body_height(window);
         assert_eq!(report.body_height, expected, "{window:?}");
     }
 }
@@ -546,6 +546,17 @@ async fn the_sidebar_lists_every_page_in_four_groups() {
         for group in [NavGroup::Connect, NavGroup::Codex, NavGroup::Claude] {
             assert!(texts_seen.contains(&tr.t(group.caption_key().unwrap())));
         }
+        // Superba's own pages are pinned at the bottom without a heading; no
+        // brand and no search field above the pages (user bug 85), the
+        // version below them.
+        assert!(
+            !texts_seen.contains("Superba") && !texts_seen.contains(&tr.t("shell.search")),
+            "{texts_seen:?}"
+        );
+        assert!(
+            texts_seen.contains(&format!("v{}", env!("CARGO_PKG_VERSION"))),
+            "{texts_seen:?}"
+        );
         assert!(texts_seen.contains("2"), "host badge count");
         assert!(
             !texts_seen.iter().any(|t| t.contains("krill")),

@@ -63,7 +63,9 @@ winit.workspace = true
 # macOS: a window hidden to the menu bar leaves the Dock (activation policy).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
-objc2-app-kit = { workspace = true, features = ["NSApplication", "NSResponder", "NSRunningApplication"] }
+objc2-app-kit = { workspace = true, features = ["NSApplication", "NSResponder", "NSRunningApplication", "NSWindow"] }
+# The title bar's double-click setting (src/chrome/macos.rs).
+objc2-foundation = { workspace = true, features = ["NSString", "NSUserDefaults"] }
 
 # Renderer: OpenGL (glow) on Linux and macOS (Linux CI and the screenshots run on
 # Xvfb + Mesa llvmpipe).
@@ -75,7 +77,9 @@ eframe = { workspace = true, features = ["glow"] }
 # falls back to the WARP software rasterizer that every Windows 10/11 has (user bug 43).
 [target.'cfg(windows)'.dependencies]
 eframe = { workspace = true, features = ["wgpu_no_default_features"] }
-windows-sys.workspace = true
+# The window frame without its caption (src/chrome/windows.rs).
+windows-sys = { workspace = true, features = ["Win32_Graphics_Gdi", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse"] }
+raw-window-handle.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]

@@ -464,9 +464,16 @@ mod v3 {
 
     #[test]
     fn page_rect_follows_the_ux_width_and_height_budget() {
+        use superba_gui::design::tokens::chrome::{BUTTONS, Buttons};
+        // Inside the content card (user bug 85): 28 px from the card's sides;
+        // the body is 22 px lower where the card sits below the title band.
+        let band = match BUTTONS {
+            Buttons::TrafficLights => 0.0,
+            Buttons::Caption | Buttons::Round => 22.0,
+        };
         for (window, width, body) in [
-            ([1280.0, 800.0], 996.0, 678.0),
-            ([1440.0, 900.0], 1156.0, 778.0),
+            ([1280.0, 800.0], 994.0, 684.0 - band),
+            ([1440.0, 900.0], 1154.0, 784.0 - band),
         ] {
             let fit = layout::page_rect(central(window), true);
             assert_eq!(fit.width(), width, "{window:?}");
@@ -479,7 +486,7 @@ mod v3 {
                 "both centered"
             );
         }
-        // Very wide windows cap the width; narrow ones keep 24 px gutters.
+        // Very wide windows cap the width; narrow ones keep 18 px gutters.
         assert_eq!(
             layout::page_rect(central([2560.0, 1440.0]), true).width(),
             size::CONTENT_WIDE
@@ -488,8 +495,8 @@ mod v3 {
             Rect::from_min_size(pos2(0.0, 0.0), vec2(700.0, 600.0)),
             true,
         );
-        assert_eq!(narrow.min.x, 24.0);
-        assert_eq!(narrow.width(), 652.0);
+        assert_eq!(narrow.min.x, 18.0);
+        assert_eq!(narrow.width(), 654.0);
         assert_eq!(size::DEFAULT_WINDOW, [1280.0, 800.0]);
         assert_eq!(size::MIN_WINDOW, [960.0, 640.0]);
         // The minimum window is below the Fit minimum: such a page scrolls as a whole.

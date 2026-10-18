@@ -242,6 +242,14 @@ fn menu(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
         .show(|ui| {
             ui.set_min_width(220.0);
+            // The command palette (also Cmd/Ctrl+K): the sidebar has no
+            // search field (user bug 85).
+            let search = egui::Button::new(cx.tr.t("shell.search"))
+                .shortcut_text(crate::shell::palette_shortcut_label());
+            if ui.add(search).clicked() {
+                out.push(Action::OpenPalette);
+            }
+            ui.separator();
             let baseline = cx
                 .data
                 .overview

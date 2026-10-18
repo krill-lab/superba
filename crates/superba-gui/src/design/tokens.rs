@@ -161,6 +161,26 @@ impl Palette {
     }
 }
 
+/// Superba's brand colours: the coral of the app icon's mark (its gradient
+/// runs #FF9A65 → #FF6277 → #EB327F) and the pearl of its tile. Used sparingly as
+/// an accent (the icon of the selected sidebar row), never for text.
+pub mod brand {
+    use super::hex;
+    use egui::Color32;
+
+    /// Coral on light backgrounds (the mark's middle tone, a touch deeper).
+    pub const CORAL: Color32 = hex(0xF0566E);
+    /// Coral on dark backgrounds (the mark's lighter tone).
+    pub const CORAL_DARK: Color32 = hex(0xFF7A84);
+    /// The pearl of the icon's tile.
+    pub const PEARL: Color32 = hex(0xF4F6FA);
+
+    /// The coral for the theme `dark`.
+    pub const fn coral(dark: bool) -> Color32 {
+        if dark { CORAL_DARK } else { CORAL }
+    }
+}
+
 /// Spacing scale (8 px grid with a 4 px half step).
 pub mod space {
     /// 4 px.
@@ -189,9 +209,12 @@ pub mod radius {
     pub const ROW: u8 = 10;
     /// Cards, dialogs, toasts, banners.
     pub const CARD: u8 = 16;
-    /// Cards floating on the window background (Overview) and the large
-    /// content panel of the other pages.
+    /// Cards floating on the window background (Overview).
     pub const PANEL: u8 = 20;
+    /// The content card the pages other than the Overview sit in (user bug 85).
+    pub const CONTENT: u8 = 14;
+    /// The selected / hovered sidebar row.
+    pub const NAV: u8 = 10;
     /// Fully rounded (pill buttons, dots).
     pub const PILL: u8 = 255;
 }
@@ -214,7 +237,7 @@ pub mod size {
     pub const SIDEBAR: f32 = 220.0;
     /// Maximum content width of a Scroll page.
     pub const CONTENT_MAX: f32 = 960.0;
-    /// Maximum content width of a Fit page (996 px at 1280, 1156 px at 1440).
+    /// Maximum content width of a Fit page (1000 px at 1280, 1160 px at 1440).
     pub const CONTENT_WIDE: f32 = 1200.0;
     /// Maximum width of the floating switch overlay.
     pub const OVERLAY_MAX: f32 = 680.0;
@@ -222,12 +245,14 @@ pub mod size {
     pub const MIN_WINDOW: [f32; 2] = [960.0, 640.0];
     /// Default window size.
     pub const DEFAULT_WINDOW: [f32; 2] = [1280.0, 800.0];
-    /// Space above the page header.
-    pub const PAGE_TOP: f32 = 28.0;
-    /// Space below a Fit page.
-    pub const PAGE_BOTTOM: f32 = 16.0;
-    /// Height of the page header with its divider and spacing (`pages::page_header`).
-    pub const PAGE_HEADER: f32 = 78.0;
+    /// Top of the page header, from the window's top edge: inside the content
+    /// card, [`super::chrome::CARD_PAD_TOP`] below its top edge.
+    pub const PAGE_TOP: f32 = super::chrome::CARD_TOP + super::chrome::CARD_PAD_TOP;
+    /// Space below a Fit page, from the window's bottom edge (the card's
+    /// bottom inset and 4 px inside it).
+    pub const PAGE_BOTTOM: f32 = super::chrome::CARD_INSET + 4.0;
+    /// Height of the page header with its spacing (`pages::page_header`).
+    pub const PAGE_HEADER: f32 = 74.0;
     /// Below this body height (header excluded) a Fit page scrolls as a whole.
     pub const FIT_MIN_BODY: f32 = 560.0;
     /// Two-line list rows (Settings list).
@@ -246,20 +271,114 @@ pub mod size {
     pub const CONTROL: f32 = 32.0;
     /// Large control height.
     pub const CONTROL_LG: f32 = 40.0;
-    /// Icon size inside controls and the navigation.
+    /// Icon size inside controls.
     pub const ICON: f32 = 16.0;
-    /// Sidebar row height (Surge-like, comfortable).
-    pub const NAV_ROW: f32 = 40.0;
+    /// Sidebar row height (user bug 85: tighter than the 40 pt it had).
+    pub const NAV_ROW: f32 = 34.0;
+    /// Sidebar row height when the window is too short for [`NAV_ROW`].
+    pub const NAV_ROW_COMPACT: f32 = 30.0;
+    /// Space between sidebar rows.
+    pub const NAV_GAP: f32 = 2.0;
     /// Icon size in sidebar rows.
-    pub const NAV_ICON: f32 = 18.0;
-    /// Space between the window edge and the content panel (top, right, bottom).
-    pub const PANEL_MARGIN: f32 = 8.0;
+    pub const NAV_ICON: f32 = 17.0;
+    /// Icon position in a sidebar row, from the row's left edge.
+    pub const NAV_ICON_X: f32 = 10.0;
+    /// Label position in a sidebar row, from the row's left edge.
+    pub const NAV_LABEL_X: f32 = 37.0;
+    /// Space between the sidebar's left edge and its rows.
+    pub const NAV_INSET_LEFT: f32 = 10.0;
+    /// Space between the sidebar's rows and the content card.
+    pub const NAV_INSET_RIGHT: f32 = 14.0;
+    /// Height of a sidebar section caption (comfortable, compact).
+    pub const NAV_CAPTION: [f32; 2] = [20.0, 16.0];
+    /// Space above a sidebar section caption (comfortable, compact).
+    pub const NAV_CAPTION_GAP: [f32; 2] = [12.0, 4.0];
+}
+
+/// Window chrome (user bug 85): no title bar; the sidebar and the window
+/// background are one surface and the pages sit in a white card floating on
+/// it, [`CARD_INSET`] from the window edges.
+///
+/// macOS keeps its native traffic lights, drawn by the system over the top left
+/// of the sidebar (full-size content view, transparent title bar). Windows and
+/// Linux have no such buttons in an undecorated window, so Superba draws its own
+/// in a [`BAND`] at the top right: Windows 11 caption buttons flush with the
+/// corner (Fitts: a maximized window closes from the screen corner), round
+/// GNOME / libadwaita buttons on Linux; the card starts below the band.
+pub mod chrome {
+    /// The window buttons of this platform.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Buttons {
+        /// macOS: the system's close / minimize / zoom buttons over the sidebar.
+        TrafficLights,
+        /// Windows 11 caption buttons: minimize, maximize / restore, close,
+        /// [`CAPTION_BUTTON`] each, flush with the window's top right corner.
+        Caption,
+        /// GNOME / libadwaita style: round buttons inset from the corner.
+        Round,
+    }
+
+    /// The window buttons this build shows.
+    pub const BUTTONS: Buttons = if cfg!(target_os = "macos") {
+        Buttons::TrafficLights
+    } else if cfg!(windows) {
+        Buttons::Caption
+    } else {
+        Buttons::Round
+    };
+
+    /// Height of the title band at the top of the window that holds Superba's
+    /// own window buttons (none with the traffic lights: they sit over the
+    /// sidebar and the card can start right below the window's top edge).
+    pub const BAND: f32 = match BUTTONS {
+        Buttons::TrafficLights => 0.0,
+        Buttons::Caption | Buttons::Round => 32.0,
+    };
+
+    /// Space between the window's top, right and bottom edges and the content
+    /// card. The card's left edge is the sidebar's right edge.
+    pub const CARD_INSET: f32 = 10.0;
+
+    /// Top edge of the content card: [`CARD_INSET`] below the window's top
+    /// edge, or right below the title band.
+    pub const CARD_TOP: f32 = if BAND > 0.0 { BAND } else { CARD_INSET };
+
+    /// Space inside the card left and right of the page.
+    pub const CARD_PAD: f32 = 28.0;
+    /// Space inside the card left and right of the page in a narrow window.
+    pub const CARD_PAD_NARROW: f32 = 18.0;
+    /// Space inside the card above the page header.
+    pub const CARD_PAD_TOP: f32 = 18.0;
+
+    /// Top of the first sidebar row: clear of the traffic lights on macOS, in
+    /// line with the page header elsewhere.
+    pub const NAV_TOP: f32 = match BUTTONS {
+        Buttons::TrafficLights => 48.0,
+        Buttons::Caption | Buttons::Round => CARD_TOP + CARD_PAD_TOP,
+    };
+
+    /// Size of one Windows caption button (Windows 11: 46 x 32 px at 100 %).
+    pub const CAPTION_BUTTON: [f32; 2] = [46.0, 32.0];
+    /// Diameter of a round window button (Linux).
+    pub const ROUND_BUTTON: f32 = 22.0;
+    /// Space between round window buttons and from the window's right edge.
+    pub const ROUND_GAP: f32 = 9.0;
+    /// Width of the window edges that resize the window where Superba does it
+    /// itself (Linux; Windows and macOS keep their native borders).
+    pub const RESIZE_EDGE: f32 = 6.0;
+    /// Corner zones of the resize edges (both directions at once), as large
+    /// as the margin around the content card.
+    pub const RESIZE_CORNER: f32 = CARD_INSET;
 }
 
 /// Type scale (points).
 pub mod text {
     /// Captions, badges, table headers.
     pub const CAPTION: f32 = 12.0;
+    /// Sidebar labels (user bug 85: one size below the 15 pt they had).
+    pub const NAV: f32 = 14.0;
+    /// Sidebar section captions (one size below the 13 pt they had).
+    pub const NAV_CAPTION: f32 = CAPTION;
     /// Secondary body text.
     pub const SMALL: f32 = 13.0;
     /// Body text and controls.

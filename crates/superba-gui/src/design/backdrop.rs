@@ -1,8 +1,8 @@
 //! The window background (user request 24, after Surge): a soft tinted gradient
 //! behind the sidebar and the content, in one of several colour themes
 //! ([`Background`], Preferences → Appearance), each with a light and a dark
-//! variant. Pages sit on it in one large rounded panel ([`panel`]); the Overview
-//! lays its cards directly on it ([`card_frame`]).
+//! variant. Pages sit on it in one rounded content card ([`content_card`], user
+//! bug 85); the Overview lays its cards directly on it ([`card_frame`]).
 //!
 //! The current background lives in the egui context ([`set`] / [`current`]), so
 //! widgets read it the way they read the palette ([`Backdrop::of`]).
@@ -13,13 +13,15 @@ use egui::{
 
 pub use superba_core::Background;
 
-use super::tokens::{Palette, hex, radius, size};
+use super::tokens::{Palette, chrome, hex, radius};
 
 /// Colours of one background theme in one mode.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Backdrop {
     /// The theme.
     pub background: Background,
+    /// Dark mode.
+    pub dark: bool,
     /// Top-left corner of the window gradient.
     pub top: Color32,
     /// Bottom-right corner of the window gradient.
@@ -77,6 +79,7 @@ impl Backdrop {
         if dark_mode {
             Backdrop {
                 background,
+                dark: dark_mode,
                 top,
                 bottom,
                 glow,
@@ -91,6 +94,7 @@ impl Backdrop {
         } else {
             Backdrop {
                 background,
+                dark: dark_mode,
                 top,
                 bottom,
                 glow,
@@ -209,14 +213,60 @@ pub fn name_key(background: Background) -> &'static str {
     }
 }
 
-/// The content panel inside the central area `central` (right of the sidebar):
-/// [`size::PANEL_MARGIN`] from the window's top, right and bottom edges, flush
-/// with the sidebar on the left. Page rectangles ([`super::layout::page_rect`])
-/// lie inside it.
+/// The content card inside the central area `central` (right of the sidebar):
+/// [`chrome::CARD_INSET`] from the window's right and bottom edges, at
+/// [`chrome::CARD_TOP`] (below the title band where there is one), flush with
+/// the sidebar on the left. Page rectangles ([`super::layout::page_rect`]) lie
+/// inside it.
 pub fn panel_rect(central: Rect) -> Rect {
-    let m = size::PANEL_MARGIN;
+    let m = chrome::CARD_INSET;
     Rect::from_min_max(
-        egui::pos2(central.min.x, central.min.y + m),
+        egui::pos2(central.min.x, central.min.y + chrome::CARD_TOP),
         egui::pos2(central.max.x - m, central.max.y - m),
     )
+}
+
+/// The shadow of the content card: soft, wide and faint, lifting the card off
+/// the window background without a visible edge (a pearl hairline outlines it
+/// instead, [`content_card`]). None in dark mode, where the card is lighter
+/// than the background and its hairline is enough.
+pub fn content_shadow(b: &Backdrop) -> Shadow {
+    if b.dark {
+        Shadow::NONE
+    } else {
+        Shadow {
+            offset: [0, 3],
+            blur: 32,
+            spread: 0,
+            color: Color32::from_black_alpha(18),
+        }
+    }
+}
+
+/// The content card's hairline: a faint pearl-gray line in light mode (the
+/// app icon's tile edge, #DFE6F0), a faint light one in dark mode.
+pub fn content_border(b: &Backdrop) -> Color32 {
+    if b.dark {
+        Color32::from_white_alpha(18)
+    } else {
+        Color32::from_rgba_unmultiplied(0x9A, 0xA8, 0xBC, 46)
+    }
+}
+
+/// Paint the content card at `rect` (pages other than the Overview draw
+/// inside it): card fill, [`radius::CONTENT`], [`content_shadow`],
+/// [`content_border`].
+pub fn content_card(painter: &Painter, rect: Rect, b: &Backdrop) {
+    let r = CornerRadius::same(radius::CONTENT);
+    let shadow = content_shadow(b);
+    if shadow.color != Color32::TRANSPARENT {
+        painter.add(shadow.as_shape(rect, r));
+    }
+    painter.rect(
+        rect,
+        r,
+        b.card,
+        Stroke::new(1.0, content_border(b)),
+        egui::StrokeKind::Inside,
+    );
 }

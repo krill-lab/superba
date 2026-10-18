@@ -95,8 +95,17 @@ fn every_page_names_its_controls_in_both_languages() {
             assert_named(&format!("{locale:?} {page:?}"), &t);
         }
 
-        // The command palette's search field.
-        let t = h.click(Some(Role::Button), &tr.t("shell.search"));
+        // The command palette's search field, from the Overview's menu (the
+        // sidebar has no search field since user bug 85; Cmd/Ctrl+K opens it
+        // too).
+        h.go(Page::Overview, &tr);
+        h.click(Some(Role::Button), &tr.t("overview.menu.title"));
+        let search = format!(
+            "{} {}",
+            tr.t("shell.search"),
+            superba_gui::shell::palette_shortcut_label()
+        );
+        let t = h.click(Some(Role::Button), &search);
         assert!(
             t.find(Some(Role::TextInput), &tr.t("palette.placeholder"))
                 .is_some(),

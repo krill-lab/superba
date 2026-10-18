@@ -17,27 +17,37 @@ use egui::{
     UiBuilder, pos2, vec2,
 };
 
-use super::tokens::{Palette, focus, radius, size};
+use super::tokens::{Palette, chrome, focus, radius, size};
 
 /// Smallest page height (header included) a Fit page is drawn in without the
 /// scroll fallback.
 pub const FIT_MIN_HEIGHT: f32 = size::PAGE_HEADER + size::FIT_MIN_BODY;
 
-/// Content width below which the side padding shrinks from 32 to 24 px.
+/// Central-area width below which the card's side padding shrinks from
+/// [`chrome::CARD_PAD`] to [`chrome::CARD_PAD_NARROW`].
 const NARROW: f32 = 760.0;
 
-/// The page rectangle inside the central panel `full`: centered, at most
-/// [`size::CONTENT_WIDE`] (Fit pages) or [`size::CONTENT_MAX`] (Scroll pages) wide,
-/// 28 px from the top and (Fit pages) 16 px from the bottom.
+/// The page rectangle inside the central panel `full` (right of the sidebar):
+/// inside the content card ([`super::backdrop::panel_rect`]), centered, at most
+/// [`size::CONTENT_WIDE`] (Fit pages) or [`size::CONTENT_MAX`] (Scroll pages)
+/// wide with at least the card's padding on both sides, from
+/// [`size::PAGE_TOP`] to [`size::PAGE_BOTTOM`] above the window's bottom edge.
 pub fn page_rect(full: Rect, wide: bool) -> Rect {
-    let pad = if full.width() < NARROW { 24.0 } else { 32.0 };
+    let pad = if full.width() < NARROW {
+        chrome::CARD_PAD_NARROW
+    } else {
+        chrome::CARD_PAD
+    };
     let max = if wide {
         size::CONTENT_WIDE
     } else {
         size::CONTENT_MAX
     };
-    let width = (full.width() - pad * 2.0).clamp(0.0, max);
-    let left = full.min.x + ((full.width() - width) / 2.0).max(pad.min(full.width() / 2.0));
+    let card = full.x_range();
+    let card = (card.min, card.max - chrome::CARD_INSET);
+    let card_w = (card.1 - card.0).max(0.0);
+    let width = (card_w - pad * 2.0).clamp(0.0, max);
+    let left = card.0 + ((card_w - width) / 2.0).max(pad.min(card_w / 2.0));
     let top = full.min.y + size::PAGE_TOP;
     let bottom = (full.max.y - size::PAGE_BOTTOM).max(top);
     Rect::from_min_max(pos2(left, top), pos2(left + width, bottom))

@@ -106,7 +106,7 @@ def review(s):
     lines = (s.home / ".codex" / "config.toml").read_text().splitlines()
     row = next(i for i, l in enumerate(lines) if l.startswith("service_tier"))
     # Into the text: below the toolbar and the notes, on a line of the file.
-    s.input.click(760, 330)
+    s.input.click(756, 352)
     s.input.key("ctrl+Home")
     for _ in range(row):
         s.input.key("Down")

@@ -142,6 +142,8 @@ ksni = { version = "0.3.6", default-features = false, features = ["blocking", "a
 # Linux: open the window through XWayland when it must be able to hide into the
 # tray (EventLoopBuilderExtX11); the same winit eframe uses.
 winit = { version = "0.30", default-features = false }
+# The native window behind eframe (the Windows window frame, superba-gui/src/chrome).
+raw-window-handle = "0.6"
 # Linux tray tests only: a StatusNotifierWatcher on a private session bus
 # (already in the graph through accesskit and ksni).
 zbus = "5"

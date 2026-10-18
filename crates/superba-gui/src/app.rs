@@ -357,6 +357,8 @@ impl SuperbaApp {
         let ctx = cc.egui_ctx.clone();
         let fonts = fonts::install(&ctx);
         style::install(&ctx, opts.theme);
+        // The window frame without its title bar (Windows: the caption goes).
+        crate::chrome::install(cc);
         let repaint_ctx = ctx.clone();
         let backend = Backend::start(
             service.clone(),
@@ -1803,7 +1805,7 @@ impl SuperbaApp {
         let page_rect = layout::page_rect(full, fit || floating);
         let panel = backdrop::panel_rect(full);
         if !floating {
-            backdrop::panel(ui.painter(), panel, &Backdrop::of(ui.ctx()));
+            backdrop::content_card(ui.painter(), panel, &Backdrop::of(ui.ctx()));
         }
         let width = page_rect.width();
         let left = page_rect.min.x;
@@ -1927,6 +1929,9 @@ impl eframe::App for SuperbaApp {
         // The window background (user request 24): a soft tinted gradient behind
         // the sidebar and the content; the panels draw no fill of their own.
         backdrop::paint(ui.painter(), ui.max_rect(), &Backdrop::of(&ctx));
+        // The empty top of the window moves it (user bug 85); registered
+        // first, so everything drawn there later takes the pointer before it.
+        crate::chrome::drag_areas(ui);
 
         Panel::left("nav")
             .exact_size(size::SIDEBAR)
@@ -2030,6 +2035,8 @@ impl eframe::App for SuperbaApp {
         if let Some(a) = self.toasts.show(&ctx, &self.tr.t("action.close")) {
             self.handle_toast_action(a);
         }
+        // The window buttons (Windows, Linux), above everything else.
+        crate::chrome::overlay(&ctx, &self.tr);
 
         for action in actions {
             self.handle_action(&ctx, action);

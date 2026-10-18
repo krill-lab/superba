@@ -14,12 +14,25 @@ use superba_gui::pages::{Action, Cx, Data};
 /// The window sizes every Fit page is checked at (UX §8).
 pub const SIZES: [[f32; 2]; 2] = [[1280.0, 800.0], [1440.0, 900.0]];
 
+/// The body height of a Fit page below its header in a `window` sized window
+/// (UX §2.3, user bug 85): 684 px at 1280x800 and 784 px at 1440x900 on macOS
+/// (the content card 10 px below the window's top), 662 / 762 px on Windows
+/// and Linux (the card below the 32 px title band with the window buttons).
+pub fn body_height(window: [f32; 2]) -> f32 {
+    use superba_gui::design::tokens::chrome::{BUTTONS, Buttons};
+    let at_800 = match BUTTONS {
+        Buttons::TrafficLights => 684.0,
+        Buttons::Caption | Buttons::Round => 662.0,
+    };
+    at_800 + (window[1] - 800.0)
+}
+
 /// What one render produced (second frame).
 #[derive(Debug)]
 pub struct FitReport {
     /// The page rectangle (header included) the page was given.
     pub rect: Rect,
-    /// Height below the page header (678 px at 1280x800, 778 px at 1440x900).
+    /// Height below the page header ([`body_height`]).
     pub body_height: f32,
     /// Bottom edge of what the page drew.
     pub used_bottom: f32,

@@ -1091,11 +1091,23 @@ each Codex release understands. Sources per `openai/codex` release tag:
 
 ## 11. GUI shell
 
-`superba-gui` draws a sidebar (search button, then Overview; Connect: Providers /
-Models / Router / Usage; Codex: Settings / Sessions / Remote hosts / Updates;
-Superba: Diagnostics / Preferences at the bottom) and the page. There is no demo
-mode; tests use an in-memory `SwitchService` under
+`superba-gui` draws a sidebar (Overview; Connect: Providers / Models / Router /
+Usage; Codex: Settings / Sessions / Remote hosts / Updates; Superba: Diagnostics /
+Preferences at the bottom) and the page, in a window without a title bar. There is
+no demo mode; tests use an in-memory `SwitchService` under
 `crates/superba-gui/tests/support`.
+
+- **Window frame** (`chrome/`, geometry in `design::tokens::chrome`): pages sit
+  in a content card floating on the window background; the empty top of the
+  window moves it (`ViewportCommand::StartDrag`, the system's move loop). macOS:
+  full-size content view under a transparent title bar, native traffic lights.
+  Windows: winit's decorated window with a comctl32 subclass that takes the
+  caption into the client area (`WM_NCCALCSIZE`), keeps the native resize
+  borders and answers `HTMAXBUTTON` over Superba's maximize button (Snap
+  Layouts); Superba draws the caption buttons. Linux: undecorated, round window
+  buttons and resize edges that hand off to the window manager
+  (`ViewportCommand::BeginResize`). Window buttons are AccessKit buttons named
+  "Minimize / Maximize / Restore / Close window", outside the Tab order.
 
 - **Page modules.** Pages with their own state (`pages::providers`, `models`,
   `router`, `settings`, `sessions`, `hosts`, `updates`) expose `State`,

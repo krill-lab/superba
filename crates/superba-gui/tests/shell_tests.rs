@@ -259,13 +259,17 @@ fn the_sidebar_never_draws_pages_under_the_pinned_ones_at_the_minimum_window() {
                     "{page:?} at {window:?} is off the window"
                 );
             }
-            // The comfortable 40 px rows stay where there is room.
+            // The comfortable rows stay where there is room (user bug 85:
+            // 34 + 2 px, tighter than the 40 + 2 px they were).
             let step = rect_of(&texts, Page::Models).center().y
                 - rect_of(&texts, Page::Providers).center().y;
             if window[1] >= 800.0 {
-                assert!(step >= 40.0, "rows at {window:?}: {step}");
+                assert_eq!(step, size::NAV_ROW + size::NAV_GAP, "rows at {window:?}");
             } else {
-                assert!(step >= 32.0, "compact rows at {window:?}: {step}");
+                assert!(
+                    step >= size::NAV_ROW_COMPACT + size::NAV_GAP,
+                    "compact rows at {window:?}: {step}"
+                );
             }
         }
     }

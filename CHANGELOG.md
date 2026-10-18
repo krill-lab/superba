@@ -329,6 +329,17 @@ back to the official ChatGPT login.
   place with Retry (user bug 83). Every glyph comes from the bundled fonts
   or a CJK font. No demo mode: screenshots come from the real binaries against an
   isolated home and a local mock relay.
+- **Window without a title bar** (user bug 85): the sidebar and the window
+  background are one surface and the pages sit in a white card with a soft
+  shadow (a hairline in dark mode); a lighter sidebar (smaller text, tighter
+  rows, the selected page's icon in coral) without the brand and the search
+  field (the command palette: Cmd/Ctrl+K or the Overview's menu). The empty top
+  of the window moves it. macOS keeps its traffic lights over the sidebar and
+  follows the system setting for a double click; Windows keeps its native frame
+  (resizing from every edge, Aero Snap, shadow, rounded corners) with Windows 11
+  caption buttons and Snap Layouts on maximize, a double click to maximize and
+  the window menu on a right click; Linux gets round window buttons, resize
+  edges and moving through the window manager.
 - **CLI** (`spb`, also `superba <command>`): `status`, `lines --probe`,
   `profile`, `key`, `site`, `models`, `speed`, `settings`, `account`, `usage`,
   `router`, `switch`, `restore`, `launch`, `sessions`, `remote`, `codex`, `app`,

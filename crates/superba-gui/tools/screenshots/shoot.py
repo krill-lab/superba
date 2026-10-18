@@ -560,8 +560,10 @@ def kill(pid, sig=signal.SIGTERM):
 def focus(s):
     """Give the Superba window keyboard focus (there is no window manager)."""
     s.input.focus()
-    # The sidebar's top margin, above the brand: nothing there reacts.
-    s.input.click(200, 6)
+    # The empty top of the sidebar (user bug 85: the window's drag area; a
+    # single click there neither moves nor maximizes the window), below the
+    # resize edge Linux has along the top.
+    s.input.click(110, 24)
     s.input.park()
     time.sleep(0.3)
 

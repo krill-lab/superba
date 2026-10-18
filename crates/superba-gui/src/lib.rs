@@ -20,6 +20,8 @@
 //! - [`runtime`]: the background runtime bridge;
 //! - [`i18n`]: layered catalogs (`locales/*.toml`);
 //! - `pages` / `shell` / [`app`]: the views; [`palette`]: the Cmd/Ctrl+K palette;
+//! - [`chrome`]: the window frame without a title bar (traffic lights on macOS,
+//!   Superba's own window buttons on Windows and Linux);
 //! - [`tray`]: the tray icon / menu-bar item and what closing the window does
 //!   (item 70); [`instance`]: one window per user (a second start shows it).
 //!
@@ -31,6 +33,7 @@
 pub mod app;
 pub mod args;
 pub mod cadence;
+pub mod chrome;
 pub mod design;
 pub mod external;
 pub mod flow;
@@ -82,12 +85,16 @@ pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
         );
     tray::set_forced_x11(x11);
     let size = args.size.unwrap_or(design::tokens::size::DEFAULT_WINDOW);
-    let viewport = egui::ViewportBuilder::default()
-        .with_title(APP_TITLE)
-        .with_app_id("superba")
-        .with_inner_size(size)
-        .with_min_inner_size(design::tokens::size::MIN_WINDOW)
-        .with_icon(Arc::new(app::window_icon()));
+    // No title bar (user bug 85); the title still names the window for the
+    // taskbar, the window switcher and UI Automation.
+    let viewport = chrome::viewport(
+        egui::ViewportBuilder::default()
+            .with_title(APP_TITLE)
+            .with_app_id("superba")
+            .with_inner_size(size)
+            .with_min_inner_size(design::tokens::size::MIN_WINDOW)
+            .with_icon(Arc::new(app::window_icon())),
+    );
     let opts = AppOptions {
         theme: args.theme,
         locale: args.locale,
