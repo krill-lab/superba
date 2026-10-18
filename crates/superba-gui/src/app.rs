@@ -2079,9 +2079,35 @@ fn local_hm(t: Timestamp) -> String {
 
 /// The window, taskbar and dock icon: Superba's pearl-tile mark, the 256 px
 /// render of `assets/icon/superba.svg`.
+///
+/// macOS (user bug 52): eframe makes this image the Dock icon at runtime, so
+/// there it is the render of `superba-macos.svg` (Apple's grid, as big as other
+/// apps), and inside `Superba.app` no icon is set at all: `IconData::default()`
+/// tells eframe to keep the bundle's own `Superba.icns`, which the Dock,
+/// Finder and Launchpad then all show.
 pub fn window_icon() -> egui::IconData {
-    eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icon/png/superba-256.png"))
-        .expect("the embedded 256 px icon is a valid PNG")
+    #[cfg(target_os = "macos")]
+    if std::env::current_exe().is_ok_and(|exe| is_app_bundle_executable(&exe)) {
+        return egui::IconData::default();
+    }
+    #[cfg(target_os = "macos")]
+    let png = include_bytes!("../../../assets/icon/png/superba-macos-256.png");
+    #[cfg(not(target_os = "macos"))]
+    let png = include_bytes!("../../../assets/icon/png/superba-256.png");
+    eframe::icon_data::from_png_bytes(png).expect("the embedded 256 px icon is a valid PNG")
+}
+
+/// Whether `exe` is the executable of an app bundle: `<X>.app/Contents/MacOS/<exe>`.
+pub fn is_app_bundle_executable(exe: &std::path::Path) -> bool {
+    fn name(p: Option<&std::path::Path>) -> Option<&str> {
+        p?.file_name()?.to_str()
+    }
+    let macos = exe.parent();
+    let contents = macos.and_then(|p| p.parent());
+    let bundle = contents.and_then(|p| p.parent());
+    name(macos) == Some("MacOS")
+        && name(contents) == Some("Contents")
+        && name(bundle).is_some_and(|n| n.len() > ".app".len() && n.ends_with(".app"))
 }
 
 #[cfg(test)]

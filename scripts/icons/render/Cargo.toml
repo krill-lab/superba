@@ -10,5 +10,4 @@ publish = false
 [dependencies]
 resvg = { version = "0.45", default-features = false }
 ico = "0.4"
-icns = "0.3"
 png = "0.17"

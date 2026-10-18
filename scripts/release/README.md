@@ -62,11 +62,20 @@ is `superba-<ver>-linux-<arch>/`; the musl directory is
 `icons/hicolor/<N>x<N>/apps/superba.png` (16 to 512 px): copy `icons/` to
 `~/.local/share/icons/` and the desktop file to `~/.local/share/applications/`.
 
-App icon: `assets/icon/superba.svg` is the master; `scripts/icons/render.sh`
-regenerates `assets/icon/png/*.png`, `assets/icon/superba.ico` (embedded in
-`superba.exe`/`spb.exe` by each crate's `build.rs`, and used by the MSI) and
-`scripts/release/Superba.icns` (picked up by `macos-bundle.sh`) with a pure-Rust
-renderer (resvg). Re-run it and commit the outputs after changing the SVG.
+App icon: two masters with the same artwork. `assets/icon/superba.svg` (the tile
+fills 928 of 1024 px, as Windows and Linux icons do) gives `assets/icon/png/superba-<N>.png`
+and `assets/icon/superba.ico` (embedded in `superba.exe`/`spb.exe` by each crate's
+`build.rs`, and used by the MSI). `assets/icon/superba-macos.svg` puts it on Apple's
+macOS icon grid (an 824 px continuous-corner tile at 100,100, the shadow inside the
+transparent margin) so Superba is as big as other apps in the Dock, Finder and
+Launchpad; it gives `scripts/release/Superba.icns` (16 to 1024 px including @2x,
+picked up by `macos-bundle.sh`) and `assets/icon/png/superba-macos-256.png` (the
+Dock icon of a superba binary run outside `Superba.app`; inside the bundle the
+Dock shows `Superba.icns`). `scripts/icons/render.sh` regenerates all of them with
+a pure-Rust renderer (resvg; only cargo needed, output is deterministic); re-run
+it and commit the outputs after changing either SVG, and change both SVGs together.
+`crates/superba-gui/tests/app_icon_tests.rs` checks that the macOS icons stay on
+Apple's grid. The DMG has no custom volume icon or background.
 
 Build jobs never see signing secrets: they have no environment, no secrets and no
 build cache, and hand the unsigned macOS app and Windows binaries to two signing

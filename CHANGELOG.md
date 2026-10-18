@@ -247,6 +247,10 @@ back to the official ChatGPT login.
   environment is configured; the router inside `Superba.app`), Windows x86_64;
   `superba-router` ships next to `superba` and `spb` everywhere; third-party
   license notices in every archive.
+- **App icon**: a coral krill on a pearl tile for the window, the taskbar and
+  every package; on macOS it follows Apple's icon grid (an 824 px
+  continuous-corner tile on the 1024 px canvas), so Superba is as big as the
+  other apps in the Dock, Finder and Launchpad.
 - **Windows without extras**: the programs link the C runtime statically (no
   VC++ redistributable; the release checks their imports), and the GUI draws with
   Direct3D 12, on WARP, the software rasterizer, where there is no 3D driver (VMs,
