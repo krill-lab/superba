@@ -1487,6 +1487,11 @@ impl AppController for FakeApp {
         Ok(self.session.lock().unwrap().clone())
     }
 
+    async fn activate(&self, session: &AppSession) -> Result<()> {
+        push(&self.log, format!("app.activate {}", session.main_pid));
+        Ok(())
+    }
+
     async fn launch(&self, options: &LaunchOptions) -> Result<AppSession> {
         push(
             &self.log,

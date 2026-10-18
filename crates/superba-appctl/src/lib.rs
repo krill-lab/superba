@@ -785,6 +785,13 @@ impl AppController for DesktopAppController {
         })
     }
 
+    async fn activate(&self, session: &AppSession) -> Result<()> {
+        let install = self.find_install(session.install_id.as_deref()).await?;
+        tokio::task::spawn_blocking(move || launch::activate_running(&install))
+            .await
+            .map_err(blocking_err)?
+    }
+
     async fn probe_bridge(&self, session: &AppSession) -> Result<BridgeStatus> {
         let (_, target) = match self.main_target(session).await {
             Ok(t) => t,

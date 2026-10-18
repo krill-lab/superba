@@ -418,6 +418,11 @@ impl Switcher {
         }
         if let Some(s) = d.app.running_session().await? {
             if s.launched_by_us && s.cdp.is_some() {
+                // Already open through Superba: bring it to the front, as its
+                // own icon would (GH#7: the "ChatGPT (Superba)" shortcut).
+                if let Err(e) = d.app.activate(&s).await {
+                    tracing::debug!(error = %e, "the running app was not brought to the front");
+                }
                 return Ok(s);
             }
             return Err(Error::Conflict {

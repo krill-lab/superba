@@ -285,8 +285,16 @@ async fn key_checks_resolve_profiles_and_report_missing_keys() {
 async fn open_app_launches_with_cdp_and_the_auth_address() {
     let w = World::new();
     let sw = w.switcher();
-    // Already ours: returned as is.
+    // Already ours: returned as is, and brought to the front (GH#7).
     assert_eq!(sw.open_app().await.unwrap().main_pid, 100);
+    assert!(
+        w.log
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|l| l == "app.activate 100")
+    );
+    assert!(w.app.launches.lock().unwrap().is_empty());
     // Running without Superba: refused (a restart through Superba is needed).
     w.set_session(Some(session(None, false)));
     assert_eq!(sw.open_app().await.unwrap_err().code(), "conflict");

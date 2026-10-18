@@ -11,8 +11,8 @@ use superba_appctl::cdp::{
     CdpTarget, evaluate_response, parse_devtools_active_port, pick_main_target, validate_ws_url,
 };
 use superba_appctl::launch::{
-    CdpPlan, build_spec, cdp_args, cdp_plan, home_override_env, macos_launched_pid,
-    macos_open_argv, sanitize_args, split_app_args,
+    CdpPlan, build_spec, cdp_args, cdp_plan, home_override_env, macos_activate_argv,
+    macos_launched_pid, macos_open_argv, sanitize_args, split_app_args,
 };
 use superba_appctl::renderer::{
     DomHooks, busy_threads, fill_titles, navigate_js, parse_probe, probe_js, remote_host_ids,
@@ -289,6 +289,12 @@ fn macos_launchservices_argv_preserves_environment_and_app_arguments() {
     assert_eq!(
         macos_open_argv(bundle, &BTreeMap::new(), &[], &[]),
         ["-n", "-a", "/Applications/My Codex.app", "--args"].map(OsString::from)
+    );
+    // GH#7: bringing the running app forward activates it (no `-n`, no
+    // arguments: no second instance, the debugging port stays as it is).
+    assert_eq!(
+        macos_activate_argv(bundle),
+        ["-a", "/Applications/My Codex.app"].map(OsString::from)
     );
 }
 

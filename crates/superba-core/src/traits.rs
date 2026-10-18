@@ -525,6 +525,17 @@ pub trait AppController: Send + Sync {
     /// is returned with whatever CDP state was reached).
     async fn launch(&self, options: &LaunchOptions) -> Result<AppSession>;
 
+    /// Bring the running app to the front the way its own icon does (a running
+    /// app activated again shows its window; no arguments, no debugging port), for
+    /// "Open ChatGPT with Superba" while it already runs (GH#7). `NotImplemented`
+    /// where that cannot be done without starting a second instance.
+    async fn activate(&self, session: &AppSession) -> Result<()> {
+        let _ = session;
+        Err(crate::Error::NotImplemented {
+            what: "bringing the desktop app to the front".into(),
+        })
+    }
+
     /// Check that a hot restart can be sent.
     async fn probe_bridge(&self, session: &AppSession) -> Result<BridgeStatus>;
 

@@ -273,6 +273,23 @@ pub fn spawn(spec: &LaunchSpec, install: &AppInstall, log: Option<&Path>) -> Res
     imp::spawn(spec, install, log)
 }
 
+/// `open` arguments that bring a running bundle to the front the way a click on
+/// its Dock icon does (no `-n`: LaunchServices activates the running instance
+/// and sends it the reopen event, so a closed window comes back).
+pub fn macos_activate_argv(bundle: &Path) -> Vec<OsString> {
+    vec!["-a".into(), bundle.as_os_str().to_owned()]
+}
+
+/// Bring the running app of `install` to the front the way its own icon does
+/// (GH#7): macOS activates the bundle through LaunchServices, Windows activates
+/// the MSIX package by its AUMID without arguments (what its Start-menu tile
+/// does; the app's single-instance handling shows its window). Elsewhere, and
+/// for an install that is not packaged, `NotImplemented`: starting the
+/// executable again could open a second instance without the debugging port.
+pub fn activate_running(install: &AppInstall) -> Result<()> {
+    imp::activate_running(install)
+}
+
 /// The app's command: program, arguments, environment changes, working
 /// directory (its own folder); stdio is set by the caller.
 #[cfg(not(target_os = "macos"))]
@@ -364,6 +381,12 @@ mod imp {
         cmd.process_group(0);
         spawn_direct(cmd)
     }
+
+    pub(super) fn activate_running(_install: &AppInstall) -> Result<()> {
+        Err(superba_core::Error::NotImplemented {
+            what: "bringing the desktop app to the front on Linux".into(),
+        })
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -375,8 +398,46 @@ mod imp {
 
     use superba_core::{AppInstall, Error, Result, Timestamp};
 
-    use super::{LaunchSpec, Spawned, configure_stdio, macos_launched_pid, macos_open_argv};
+    use super::{
+        LaunchSpec, Spawned, configure_stdio, macos_activate_argv, macos_launched_pid,
+        macos_open_argv,
+    };
     use crate::procs::{ReadOpts, norm_path, snapshot_os};
+
+    pub(super) fn activate_running(install: &AppInstall) -> Result<()> {
+        let mut cmd = superba_core::process::command("/usr/bin/open");
+        cmd.args(macos_activate_argv(&install.path));
+        configure_stdio(&mut cmd, None);
+        let mut child = cmd.spawn().map_err(|e| Error::Process {
+            message: format!("cannot activate the app through LaunchServices: {e}"),
+        })?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) if status.success() => return Ok(()),
+                Ok(Some(status)) => {
+                    return Err(Error::Process {
+                        message: format!("LaunchServices did not activate the app: {status}"),
+                    });
+                }
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(Error::Timeout {
+                        what: "LaunchServices activating the app".into(),
+                    });
+                }
+                Err(e) => {
+                    return Err(Error::Process {
+                        message: format!("cannot wait for LaunchServices: {e}"),
+                    });
+                }
+            }
+        }
+    }
 
     pub(super) fn spawn(
         spec: &LaunchSpec,
@@ -528,6 +589,16 @@ mod imp {
         }
         spawn_isolated(spec, log)
     }
+
+    pub(super) fn activate_running(install: &AppInstall) -> Result<()> {
+        let Some(id) = crate::appx::resolve_aumid(install) else {
+            return Err(Error::NotImplemented {
+                what: "bringing a desktop app that is not packaged to the front".into(),
+            });
+        };
+        tracing::info!(aumid = %id, "activating the running packaged app");
+        activate(&id, &[]).map(|_| ())
+    }
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -541,6 +612,12 @@ mod imp {
     pub(super) fn spawn(_: &LaunchSpec, _: &AppInstall, _: Option<&Path>) -> Result<Spawned> {
         Err(Error::Unsupported {
             what: "launching the desktop app on this platform".into(),
+        })
+    }
+
+    pub(super) fn activate_running(_: &AppInstall) -> Result<()> {
+        Err(Error::NotImplemented {
+            what: "bringing the desktop app to the front on this platform".into(),
         })
     }
 }
