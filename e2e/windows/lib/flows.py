@@ -188,6 +188,8 @@ def install(run, t, prefix="", passive=True):
             if "wsl" in (run.session_snapshot or "") and "wsl_baseline" not in run.state:
                 run.state["wsl_baseline"] = wsl_hashes(run)
                 s.save("wsl-baseline.sha256", run.state["wsl_baseline"])
+                wsl_prepare(run)
+                s.info(f"WSL: harness CA in the distribution's store; keep-alive pid {wsl_keepalive(run)}")
         run.state["msi_sha256"] = hashlib.sha256(run.msi.read_bytes()).hexdigest()
         s.info(f"MSI {run.msi.name} sha256 {run.state['msi_sha256'][:16]}…")
         run.vm.scp_to(run.msi, GUEST_MSI.replace("\\", "/"))
@@ -518,3 +520,46 @@ def wsl_tree_hashes(run, path="~/.codex ~/.bashrc ~/.profile", distro=WSL_DISTRO
     r = wsl(run, f"for p in {path}; do [ -e $p ] && find $p -type f -print0 | xargs -0 -r sha256sum; done | sort -k2",
             distro=distro)
     return r["stdout"]
+
+
+def wsl_running(run, distro=WSL_DISTRO):
+    """Whether the distribution runs now (`wsl --list --running --quiet` starts nothing)."""
+    r = run.agent.exec("wsl.exe", ["--list", "--running", "--quiet"], env={"WSL_UTF8": "1"}, timeout=60)
+    names = [l.strip().strip("\x00") for l in r["stdout"].replace("\x00", "").splitlines()]
+    return distro in names
+
+
+def wsl_keepalive(run, distro=WSL_DISTRO):
+    """A WSL 1 distribution stops ~30 s after it goes idle and a switch never starts a stopped
+    one (it records "update pending"): keep it running with a long `sleep` while switching."""
+    pid = run.state.get("wsl_keepalive")
+    if pid and any(p["pid"] == pid for p in run.agent.procs(r"^wsl\.exe$")):
+        return pid
+    pid = run.agent.start_proc("wsl.exe", ["-d", distro, "--exec", "sleep", "3600"])
+    run.state["wsl_keepalive"] = pid
+    end = time.time() + 30
+    while time.time() < end and not wsl_running(run, distro):
+        time.sleep(1)
+    return pid
+
+
+def wsl_stop(run, distro=WSL_DISTRO):
+    """End the keep-alive and terminate the distribution."""
+    pid = run.state.pop("wsl_keepalive", None)
+    if pid:
+        try:
+            run.agent.call("kill", pid=pid, tree=True)
+        except AgentError:
+            pass
+    run.agent.exec("wsl.exe", ["--terminate", distro], timeout=60)
+    end = time.time() + 30
+    while time.time() < end and wsl_running(run, distro):
+        time.sleep(1)
+    return not wsl_running(run, distro)
+
+
+def wsl_prepare(run, distro=WSL_DISTRO):
+    """The harness CA in the distribution's system store (Codex inside it talks to the
+    test lines over https)."""
+    return wsl(run, "cp /mnt/c/Users/Public/wintest/tls/ca.pem /usr/local/share/ca-certificates/superba-wintest.crt"
+                    " && update-ca-certificates >/dev/null 2>&1; echo ca $?", user="root", distro=distro)

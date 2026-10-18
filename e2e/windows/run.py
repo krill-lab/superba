@@ -60,7 +60,7 @@ import flows  # noqa: E402
 ALL_ORDER = ["W01", "W03", "W04", "W05", "W10", "W11", "W12", "W13", "W14", "W15", "W20", "W21", "W22",
              "W23", "W08", "W60", "W61", "W62", "W63", "W36", "W30", "W31", "W32", "W33", "W34", "W35",
              "W37", "W50", "W51", "W40", "W42", "W02", "W06", "W07", "W41", "W43", "W53", "W52", "W74", "W73", "W71", "W70",
-             "W72", "W80", "W82", "W83", "W84", "W85", "W86", "W81", "W87"]
+             "W72", "W80", "W82", "W83", "W84", "W85", "W88", "W81", "W86", "W87"]
 
 
 def default_msi():
@@ -105,6 +105,10 @@ def run_one(run, sc):
             run.log(f"state has {[c for c in sc.conflicts if run.state.get(c)]}: starting from the base snapshot")
             run.dirty = True
         if sc.on and run.session_snapshot != sc.on:
+            run.dirty = True
+        if (set(sc.needs) & {"configured", "app_ready", "turn", "router_on"} and not run.state.get("configured")
+                and run.state.get("wizard_seen")):
+            run.log("the setup wizard was used up in this VM state (e.g. by a restore): starting from the snapshot again")
             run.dirty = True
         run.ensure_session(sc.snapshot, on=sc.on)
         for need in sc.needs:
