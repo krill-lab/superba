@@ -156,6 +156,7 @@ owned_key_conflict = "{source} changed what Superba manages since it wrote it: {
 shared_home = "These hosts share one home directory: {hosts}. Write it once and restart all of them?"
 
 [switch.warn]
+windows_force_quit = "ChatGPT was not opened by Superba, so Superba cannot ask it to quit: on Windows it keeps running in the notification area when its window closes. Superba ends its processes right away instead (force quit), without waiting; unsaved input in ChatGPT may be lost."
 line_fallback = "Line {first} cannot be used ({reason}); {line}, the next line of this profile, is used instead."
 router_mode = "Traffic for {site} goes through Superba's local router (127.0.0.1:{port}), a process on this computer, with the site's own key. Remote hosts stay direct."
 setting_skipped = "Setting {path} is not written: {reason}"

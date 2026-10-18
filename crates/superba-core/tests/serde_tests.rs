@@ -464,7 +464,6 @@ fn empty_settings_deserialize_to_defaults_and_partial_settings_preserve_other_de
     assert_eq!(settings.locale, None);
     assert!(settings.auto_probe);
     assert!(!settings.safe_mode);
-    assert!(!settings.takeover_app);
     assert_eq!(settings.close_action, None);
     assert!(!settings.start_in_tray);
     let partial: Settings =

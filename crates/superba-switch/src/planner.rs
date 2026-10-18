@@ -1193,6 +1193,12 @@ impl Switcher {
         let restarts =
             rules::consumer_restarts(&primary, local, &processes, home.root(), &remote_restarts);
         if local && !primary.is_blocked() {
+            // Windows, a ChatGPT Superba did not open: it cannot be asked to
+            // quit, so the restart ends it by force; said before confirming
+            // (user bug 76).
+            if rules::quit_needs_force(self.tuning.windows_app, &primary, session.as_ref()) {
+                draft.warn(text(superba_core::FORCE_QUIT_NOTICE));
+            }
             self.consumer_warnings(&restarts, &processes, &dest, &mut draft);
             self.restart_notes(&primary, &dest, &sites, &authapi_env, &mut draft);
             let dest_profile = dest.profile_id.as_ref().and_then(|id| set.profile(id));

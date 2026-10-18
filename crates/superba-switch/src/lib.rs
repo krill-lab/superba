@@ -366,6 +366,10 @@ pub struct Tuning {
     pub reask_after: Duration,
     /// Plans kept for execution (latest selections).
     pub plan_cache: usize,
+    /// The desktop app behaves as on Windows (`cfg!(windows)`; tests set it):
+    /// closing its windows leaves it running in the notification area, so one
+    /// Superba did not open (no debugging port) can only be ended by force.
+    pub windows_app: bool,
 }
 
 impl Default for Tuning {
@@ -377,6 +381,7 @@ impl Default for Tuning {
             stable: Duration::from_secs(5),
             reask_after: Duration::from_secs(15 * 60),
             plan_cache: 16,
+            windows_app: cfg!(windows),
         }
     }
 }

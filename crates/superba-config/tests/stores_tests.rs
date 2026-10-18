@@ -92,7 +92,6 @@ fn user_set() -> ProfileSet {
         countdown_secs: 10,
         safe_mode: true,
         default_auth_mode: AuthMode::ApiKey,
-        takeover_app: true,
         locale: Some(Locale::ZhCn),
         theme: Theme::Dark,
         background: Background::Lavender,

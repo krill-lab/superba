@@ -40,6 +40,7 @@ fn switcher(w: &World) -> Switcher {
             stable: Duration::ZERO,
             reask_after: Duration::from_secs(60),
             plan_cache: 16,
+            windows_app: false,
         },
     )
 }

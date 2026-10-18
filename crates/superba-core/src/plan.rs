@@ -738,7 +738,22 @@ pub struct SwitchPlan {
     pub cleanup: Vec<LocalizedText>,
 }
 
+/// Key of the plan notice that says before confirming that ChatGPT is ended
+/// by force: on Windows a ChatGPT Superba did not open has no debugging port,
+/// so it cannot be asked to quit (closing its windows leaves it running in the
+/// notification area; user bug 76).
+pub const FORCE_QUIT_NOTICE: &str = "switch.warn.windows_force_quit";
+
 impl SwitchPlan {
+    /// The plan says up front that the desktop app is ended by force
+    /// ([`FORCE_QUIT_NOTICE`]): confirming it answers the force-quit question
+    /// ([`ExecuteOptions::force_quit`]).
+    pub fn quits_by_force(&self) -> bool {
+        self.warnings
+            .iter()
+            .any(|w| w.text.key == FORCE_QUIT_NOTICE)
+    }
+
     /// The local restart decision is `Blocked`.
     pub fn is_blocked(&self) -> bool {
         self.primary.is_blocked()
@@ -775,6 +790,11 @@ pub struct ExecuteOptions {
     pub turn_quiet_ms: u64,
     /// Graceful quit timeout before asking to force (default 15000 ms).
     pub quit_timeout_ms: u64,
+    /// End the desktop app by force without asking again: the user confirmed
+    /// a plan that said so up front ([`SwitchPlan::quits_by_force`], user bug
+    /// 76). Ignored when the app can be asked to quit.
+    #[serde(default)]
+    pub force_quit: bool,
 }
 
 impl Default for ExecuteOptions {
@@ -785,6 +805,7 @@ impl Default for ExecuteOptions {
             allow_full_restart: false,
             turn_quiet_ms: 2_000,
             quit_timeout_ms: 15_000,
+            force_quit: false,
         }
     }
 }

@@ -218,8 +218,6 @@ pub struct Settings {
     /// (decision 3: auth is Auto unless changed under Advanced); UIs should not
     /// offer it as a separate preference any more.
     pub default_auth_mode: AuthMode,
-    /// Offer to relaunch a manually opened app in CDP mode (plan P1 #25).
-    pub takeover_app: bool,
     /// UI language; `None` follows the system.
     pub locale: Option<Locale>,
     /// UI theme.
@@ -297,7 +295,6 @@ impl Default for Settings {
             countdown_secs: 5,
             safe_mode: false,
             default_auth_mode: AuthMode::Pat,
-            takeover_app: false,
             locale: None,
             theme: Theme::System,
             background: Background::Neutral,

@@ -368,11 +368,16 @@ impl Flow {
                             ))));
                         continue;
                     };
+                    // The confirmation said up front that ChatGPT is ended by
+                    // force (Windows, not opened by Superba): confirming it is
+                    // the answer, no second question (user bug 76).
+                    let force_quit = allow_full_restart && !write_only && plan.quits_by_force();
                     let plan = Box::new(plan);
                     let options = ExecuteOptions {
                         write_only,
                         allow_full_restart,
                         force_turns,
+                        force_quit,
                         ..ExecuteOptions::default()
                     };
                     self.commands.push(Command::Execute {

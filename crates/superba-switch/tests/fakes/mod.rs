@@ -2618,6 +2618,12 @@ impl World {
     }
 
     pub fn switcher(&self) -> Switcher {
+        self.switcher_on(false)
+    }
+
+    /// The switcher with the desktop app behaving as on Windows (`windows_app`)
+    /// or not.
+    pub fn switcher_on(&self, windows_app: bool) -> Switcher {
         Switcher::with_tuning(
             self.deps(),
             Tuning {
@@ -2627,6 +2633,7 @@ impl World {
                 stable: Duration::ZERO,
                 reask_after: Duration::from_secs(60),
                 plan_cache: 16,
+                windows_app,
             },
         )
     }

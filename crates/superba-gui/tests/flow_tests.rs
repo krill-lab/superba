@@ -289,6 +289,36 @@ fn full_restart_waits_for_confirmation_even_with_zero_countdown() {
     }
 }
 
+/// User bug 76: a plan that says up front that ChatGPT is ended by force
+/// (Windows, not opened by Superba) is answered by its confirmation: the
+/// execution ends the app without asking again. Writing only quits nothing.
+#[test]
+fn confirming_a_plan_that_says_it_force_quits_answers_the_force_question() {
+    let plan = SwitchPlan {
+        warnings: vec![superba_core::Notice::warning(LocalizedText::new(
+            superba_core::FORCE_QUIT_NOTICE,
+            "ends ChatGPT by force",
+        ))],
+        ..full_plan()
+    };
+    assert!(plan.quits_by_force());
+    let mut flow = planned_flow(5, plan.clone());
+    flow.confirm_full(false, Duration::from_secs(1));
+    let (_, options) = take_execute(&mut flow);
+    assert_eq!(
+        options,
+        ExecuteOptions {
+            allow_full_restart: true,
+            force_quit: true,
+            ..ExecuteOptions::default()
+        }
+    );
+    let mut flow = planned_flow(5, plan);
+    flow.confirm_full(true, Duration::from_secs(1));
+    let (_, options) = take_execute(&mut flow);
+    assert!(!options.force_quit && options.write_only, "{options:?}");
+}
+
 #[test]
 fn full_restart_can_write_only_without_permission_to_restart() {
     let plan = full_plan();

@@ -558,3 +558,18 @@ pub fn verification_summary(v: &Verification) -> String {
 pub fn retry_ipc_helps(v: &Verification) -> bool {
     matches!(v.process, CheckResult::Failed { .. })
 }
+
+/// A full restart of the desktop app ends it by force: on Windows (`windows_app`)
+/// an app Superba did not open has no debugging port, so it cannot be asked to
+/// quit (closing its windows leaves it running in the notification area). The
+/// plan says so up front and the executor does not wait for a graceful quit
+/// (user bug 76).
+pub fn quit_needs_force(
+    windows_app: bool,
+    primary: &RestartKind,
+    session: Option<&superba_core::AppSession>,
+) -> bool {
+    windows_app
+        && matches!(primary, RestartKind::FullAppRestart { .. })
+        && session.is_some_and(|s| s.cdp.is_none())
+}

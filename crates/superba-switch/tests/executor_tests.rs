@@ -1041,6 +1041,92 @@ async fn full_restart_without_cdp_before_quit_does_not_remember_a_thread() {
     assert_no_nav_restore(&w, &o, &ev);
 }
 
+/// User bug 76: on Windows a ChatGPT Superba did not open has no debugging
+/// port, so it cannot be asked to quit (closing its windows leaves it in the
+/// notification area). The plan says up front that it is ended by force, and a
+/// confirmation of that plan (the GUI's) ends it without a graceful wait and
+/// without asking again.
+#[tokio::test(start_paused = true)]
+async fn on_windows_a_confirmed_app_without_cdp_is_ended_at_once() {
+    let w = no_cdp_world();
+    let sw = w.switcher_on(true);
+    let plan = plan_with(&sw, req("work")).await;
+    assert!(plan.needs_confirmation(), "{:?}", plan.primary);
+    assert!(plan.quits_by_force(), "{:?}", plan.warnings);
+    let d = ScriptedDecider::with(&[]);
+    let opts = ExecuteOptions {
+        force_quit: true,
+        ..allow_full()
+    };
+    let ev = Arc::new(RecordingEvents::default());
+    let o = sw.execute(plan, opts, d.clone(), ev.clone()).await.unwrap();
+    assert_eq!(o.status, OutcomeStatus::Switched, "{:?}", o.notices);
+    assert!(d.asked_kinds().is_empty(), "{:?}", d.asked_kinds());
+    let calls = w.calls();
+    assert!(
+        !calls.contains(&"app.quit force=false".to_owned()),
+        "{calls:?}"
+    );
+    assert!(
+        calls.contains(&"app.quit force=true".to_owned()),
+        "{calls:?}"
+    );
+    assert!(!ev.phases().contains(&SwitchPhase::ForceQuitConfirm));
+}
+
+/// Without that confirmation (`spb` without --force) nothing waits for a
+/// quit that cannot come: the question is asked at once, and cancelling
+/// leaves ChatGPT as it was (its windows are not closed).
+#[tokio::test(start_paused = true)]
+async fn on_windows_an_app_without_cdp_is_asked_about_at_once() {
+    let w = no_cdp_world();
+    let sw = w.switcher_on(true);
+    let plan = plan_with(&sw, req("work")).await;
+    let d = ScriptedDecider::with(&[("force_quit", Decision::Cancel)]);
+    let o = sw
+        .execute(
+            plan,
+            allow_full(),
+            d.clone(),
+            Arc::new(RecordingEvents::default()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(o.status, OutcomeStatus::Cancelled);
+    assert_eq!(d.asked_kinds(), vec!["force_quit"]);
+    let calls = w.calls();
+    assert!(
+        !calls.iter().any(|c| c.starts_with("app.quit ")),
+        "{calls:?}"
+    );
+    assert!(!calls.contains(&"config.apply".to_owned()));
+}
+
+/// The notice and the shortcut are for Windows without CDP only: an app
+/// Superba opened is asked to quit, and other systems quit it gracefully.
+#[tokio::test(start_paused = true)]
+async fn the_force_quit_notice_needs_windows_and_an_app_without_cdp() {
+    let w = no_cdp_world();
+    let plan = plan_with(&w.switcher_on(false), req("work")).await;
+    assert!(plan.needs_confirmation());
+    assert!(!plan.quits_by_force(), "{:?}", plan.warnings);
+    let w = unhealthy_authapi_world();
+    let sw = w.switcher_on(true);
+    let plan = plan_with(&sw, req("work")).await;
+    assert!(plan.needs_confirmation(), "{:?}", plan.primary);
+    assert!(!plan.quits_by_force(), "{:?}", plan.warnings);
+    // force_quit asked for an app with CDP: it is still asked to quit first.
+    let d = ScriptedDecider::with(&[]);
+    let opts = ExecuteOptions {
+        force_quit: true,
+        ..allow_full()
+    };
+    sw.execute(plan, opts, d, Arc::new(RecordingEvents::default()))
+        .await
+        .unwrap();
+    assert!(w.calls().contains(&"app.quit force=false".to_owned()));
+}
+
 #[tokio::test(start_paused = true)]
 async fn cancelled_full_restart_does_not_navigate() {
     let w = unhealthy_authapi_world();

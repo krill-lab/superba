@@ -613,18 +613,33 @@ impl Run<'_> {
                 graceful_timeout_ms: self.opts.quit_timeout_ms,
                 force: false,
             };
-            let mut outcome = d.app.quit(&session, &graceful).await;
+            // Windows, a ChatGPT Superba did not open: it cannot be asked to
+            // quit, and waiting for its windows to close is pointless (user bug
+            // 76). The plan said so: a confirmation that answered it ends the
+            // app now, otherwise the question comes at once.
+            let force_only = self.sw.tuning.windows_app && session.cdp.is_none();
+            let confirmed = force_only && self.opts.force_quit;
+            let mut outcome = if force_only {
+                tracing::info!(
+                    main = session.main_pid,
+                    confirmed,
+                    "no debugging port: ChatGPT can only be ended by force"
+                );
+                Ok(QuitOutcome::TimedOut)
+            } else {
+                d.app.quit(&session, &graceful).await
+            };
             if let Ok(QuitOutcome::TimedOut) = outcome {
-                self.ev.phase(SwitchPhase::ForceQuitConfirm);
-                // Name what still runs and what was tried (user bug 53).
-                let report = d.app.quit_report(&session).await.unwrap_or_default();
-                if !report.left.is_empty() {
-                    self.ev
-                        .log(Severity::Info, messages::app_still_running(&report));
-                }
-                let decision = if self.opts.force_turns {
+                let decision = if self.opts.force_turns || confirmed {
                     Decision::Force
                 } else {
+                    self.ev.phase(SwitchPhase::ForceQuitConfirm);
+                    // Name what still runs and what was tried (user bug 53).
+                    let report = d.app.quit_report(&session).await.unwrap_or_default();
+                    if !report.left.is_empty() && !force_only {
+                        self.ev
+                            .log(Severity::Info, messages::app_still_running(&report));
+                    }
                     let mut pids: Vec<u32> = report.left.iter().map(|p| p.pid).collect();
                     if pids.is_empty() {
                         pids.push(session.main_pid);
