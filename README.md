@@ -425,7 +425,7 @@ Limits:
 
 - Hot switching works only when Superba launched the app. Otherwise the first
   switch is a **full restart** (quit and relaunch), after which hot switching is
-  available.
+  available. To start ChatGPT that way from the beginning, see below.
 - Some changes always need a full restart: switching between your ChatGPT login
   and a key, PAT on a line whose auth address differs from the one the app was
   started with (the app reads `CODEX_AUTHAPI_BASE_URL` once at launch), and
@@ -444,6 +444,32 @@ Limits:
   multi-user machine other local users, can connect to it and control the app.
   Turn on **Safe mode** in Settings to launch without it (no hot switching).
   Running as root never opens the port. See [SECURITY.md](SECURITY.md).
+
+### Opening ChatGPT through Superba
+
+ChatGPT opened from its own icon (Start menu, Dock, launcher) cannot be
+hot-switched until Superba reopens it. Ways to open it through Superba:
+
+- **Overview**: the route card shows **Open ChatGPT with Superba** while ChatGPT
+  is not running, and **Reopen with Superba (enables hot switching)** while it
+  runs without what hot switching needs (a full restart, previewed and confirmed;
+  running turns are waited for). Nothing is shown once hot switching works. The
+  same action is in the command palette (Cmd/Ctrl+K, type "chatgpt").
+- **Windows**: the MSI adds a Start-menu shortcut **ChatGPT (Superba)**
+  (`superba.exe --launch-chatgpt`). With Superba already open, that window does it
+  and no other window opens; otherwise ChatGPT opens without a Superba window
+  (Superba shows only to confirm a reopen or to report an error). Clicking it while
+  ChatGPT is open through Superba brings ChatGPT to the front.
+- **Linux**: the desktop file has the action **Open ChatGPT with Superba**
+  (right-click Superba in the launcher), running `superba --launch-chatgpt`.
+- **macOS**: use the Overview, the palette or `spb launch` (no Dock menu item yet).
+- **Preferences > Switching > Open ChatGPT through Superba when Superba starts**
+  (off by default) opens ChatGPT whenever Superba opens and ChatGPT is not running;
+  a running ChatGPT is left alone.
+- **CLI**: `spb launch` opens ChatGPT through Superba (and brings it to the front
+  if Superba opened it already); `spb launch --restart` reopens a ChatGPT that was
+  started elsewhere (a full restart, with the same plan and confirmation as a
+  switch).
 
 ## Local router (opt-in)
 
@@ -515,7 +541,7 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | `spb account [--usage] [--days N] [--refresh]` | balance, plan and expiry; daily cost and per-model usage (Krill) |
 | `spb restore [original\|official\|generation] [--take-over]` | restore (what another tool changed is kept unless `--take-over`) |
 | `spb hand-off [--to cc-switch\|ai-toolbox\|other]` | let another tool manage Codex: release what Superba owns, keep the other tool's changes and a backup |
-| `spb launch [--restart]` | open (or fully restart) the desktop app through Superba |
+| `spb launch [--restart]` | open (or fully restart) the desktop app through Superba, so it can be hot-switched |
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | session providers |
 | `spb remote list \| apply \| rollback` | SSH remote hosts |
 | `spb import ccs\|ai-toolbox [--dry-run] [--select NAMES] [--on-conflict skip\|rename\|update]` | import Codex providers from cc-switch or AI Toolbox (their files are only read; Codex is not changed) |

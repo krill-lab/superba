@@ -325,7 +325,7 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 限制：
 
 - 只有 Superba 启动的 app 才能热切换。否则第一次切换是**完整重启**（退出再打开），
-  之后即可热切换。
+  之后即可热切换。想一开始就这样打开 ChatGPT，见下文。
 - 有些变化必须完整重启：在 ChatGPT 登录和 Key 之间切换；PAT 模式下线路的认证地址
   与 app 启动时不同（app 只在启动时读取一次 `CODEX_AUTHAPI_BASE_URL`）；会话迁移
   （必须关闭所有 Codex 进程）。
@@ -338,6 +338,28 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 - 调试端口开启期间，以你的身份运行的其他程序，以及多用户机器上的其他本地用户，
   都可以连上它并控制 app。在设置中打开**安全模式**可以不带调试端口启动（不能热切换）。
   以 root 身份运行时从不开调试端口。详见 [SECURITY.md](SECURITY.md)。
+
+### 通过 Superba 打开 ChatGPT
+
+从 ChatGPT 自己的图标（开始菜单、程序坞、启动器）打开的 ChatGPT，在 Superba 重新
+打开它之前都无法热切换。通过 Superba 打开的方式：
+
+- **概览**：路由卡片右上角在 ChatGPT 未运行时显示**用 Superba 打开 ChatGPT**；在它
+  运行但不满足热切换条件时显示**用 Superba 重新打开（启用热切换）**（完整重启一次，
+  先预览并确认；正在运行的回合会等它结束）。已经可以热切换时不显示。命令面板
+  （Cmd/Ctrl+K，输入“chatgpt”）里也有同样的操作。
+- **Windows**：MSI 会在开始菜单添加快捷方式 **ChatGPT (Superba)**
+  （`superba.exe --launch-chatgpt`）。Superba 已打开时由该窗口完成，不会再开一个窗口；
+  否则直接打开 ChatGPT，不显示 Superba 窗口（只有需要确认重新打开或出错时才显示）。
+  ChatGPT 已由 Superba 打开时点击它，会把 ChatGPT 切到前台。
+- **Linux**：桌面文件带有操作**用 Superba 打开 ChatGPT**（在启动器里右键 Superba），
+  运行 `superba --launch-chatgpt`。
+- **macOS**：使用概览、命令面板或 `spb launch`（暂无程序坞菜单项）。
+- **偏好设置 > 切换 > 启动 Superba 时通过它打开 ChatGPT**（默认关闭）：每次打开
+  Superba 时，若 ChatGPT 没有运行就打开它；已在运行的 ChatGPT 不受影响。
+- **CLI**：`spb launch` 通过 Superba 打开 ChatGPT（若已由 Superba 打开，则切到前台）；
+  `spb launch --restart` 重新打开从别处启动的 ChatGPT（完整重启，与切换一样先给出
+  计划并确认）。
 
 ## 本地路由（可选）
 
@@ -402,7 +424,7 @@ ChaCha20-Poly1305 加密。
 | `spb account [--usage] [--days N] [--refresh]` | 余额、套餐和到期时间；每日费用和按模型的用量（Krill） |
 | `spb restore [original\|official\|generation] [--take-over]` | 还原（其他工具改过的内容默认保留，`--take-over` 才一并还原） |
 | `spb hand-off [--to cc-switch\|ai-toolbox\|other]` | 交给另一个工具管理 Codex：释放 Superba 拥有的内容，保留其他工具的修改并留有备份 |
-| `spb launch [--restart]` | 通过 Superba 打开（或完整重启）桌面 app |
+| `spb launch [--restart]` | 通过 Superba 打开（或完整重启）桌面 app，以便热切换 |
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | 会话 provider |
 | `spb remote list \| apply \| rollback` | SSH 远程主机 |
 | `spb import ccs\|ai-toolbox [--dry-run] [--select 名称] [--on-conflict skip\|rename\|update]` | 从 cc-switch 或 AI Toolbox 导入 Codex 供应商（只读取它们的文件，不改动 Codex） |
