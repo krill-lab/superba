@@ -272,6 +272,30 @@ async fn packaged_app_launches_quits_and_relaunches() {
         "second: quit without CDP (WM_CLOSE only): {outcome:?} in {:.1}s",
         t.elapsed().as_secs_f32()
     ));
+    if outcome == QuitOutcome::TimedOut {
+        let report = ctl.quit_report(&no_cdp).await.unwrap();
+        say(format!(
+            "second: report after the graceful quit: {}",
+            report.describe()
+        ));
+        assert!(
+            report
+                .left
+                .iter()
+                .any(|p| p.pid == no_cdp.main_pid && p.role == "main"),
+            "the report names the main process"
+        );
+        // The main process with its image and architecture; every other
+        // process at least with its image (one of another user may refuse
+        // the architecture query).
+        let main = report
+            .left
+            .iter()
+            .find(|p| p.pid == no_cdp.main_pid)
+            .unwrap();
+        assert!(main.arch.is_some() && main.image.is_some(), "{main:?}");
+        assert!(report.left.iter().all(|p| p.image.is_some()));
+    }
     if outcome != QuitOutcome::Exited {
         let t = Instant::now();
         let outcome = ctl
@@ -288,6 +312,10 @@ async fn packaged_app_launches_quits_and_relaunches() {
             "second: forced quit: {outcome:?} in {:.1}s",
             t.elapsed().as_secs_f32()
         ));
+        if outcome != QuitOutcome::Killed {
+            let report = ctl.quit_report(&no_cdp).await.unwrap();
+            say(format!("second: report: {}", report.describe()));
+        }
         assert_eq!(outcome, QuitOutcome::Killed);
     }
     let left: Vec<u32> = tree
@@ -318,4 +346,152 @@ async fn packaged_app_launches_quits_and_relaunches() {
     say(format!("third: quit: {outcome:?}"));
     assert!(matches!(outcome, QuitOutcome::Exited | QuitOutcome::Killed));
     set_user_env(PROBE, None, true);
+}
+
+/// Electron process type (`--type=...`), `app-server` for Codex, else the
+/// image name.
+fn role(e: &procs::ProcEntry) -> String {
+    if let Some(t) = e.argv.iter().find_map(|a| a.strip_prefix("--type=")) {
+        return t.to_owned();
+    }
+    if e.argv.iter().any(|a| a == "app-server") {
+        return "app-server".into();
+    }
+    e.exe
+        .as_deref()
+        .and_then(|x| x.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "?".into())
+}
+
+/// Every process of the tree with what the OS says about it.
+fn dump(label: &str, main: u32, tree: &[(u32, Option<superba_core::Timestamp>)]) {
+    use superba_appctl::osproc;
+    let entries = procs::snapshot_os(ReadOpts::default());
+    let mut pids = vec![(main, None)];
+    pids.extend(tree.iter().cloned());
+    for (pid, started) in pids {
+        let e = entries.iter().find(|e| e.pid == pid);
+        let f = osproc::facts(pid);
+        say(format!(
+            "{label}: pid {pid} role {} ppid {:?} listed {} sysinfo-start {:?} recorded {:?} os-created {:?} running {:?} arch {:?} image {:?} open-error {:?} liveness {:?}",
+            e.map(role).unwrap_or_else(|| "<not listed>".into()),
+            e.and_then(|e| e.ppid),
+            e.is_some(),
+            e.and_then(|e| e.started_at),
+            started,
+            f.created,
+            f.running,
+            f.arch,
+            f.image,
+            f.open_error,
+            procs::liveness(pid, started.or(e.and_then(|e| e.started_at))),
+        ));
+    }
+}
+
+/// The user's flow (user bug 53): the app opened from the Start menu (no
+/// debugging port), quit without CDP (windows close, the app stays), then by
+/// force; at a timeout everything that is still running is described.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "the real MSIX app on a disposable Windows runner (winapp CI job)"]
+async fn start_menu_app_force_quits() {
+    if std::env::var("SUPERBA_WINAPP_IT").as_deref() != Ok("1") {
+        return;
+    }
+    use superba_appctl::{osproc, package};
+    say(format!(
+        "start menu: this process runs as {}, the machine is {}",
+        osproc::own_arch(),
+        package::native_arch()
+    ));
+    let data = tempfile::tempdir().unwrap();
+    let home = PathBuf::from(std::env::var_os("USERPROFILE").unwrap());
+    let ctx = LocalContext::new(home, DataDir::new(data.path()), Arc::new(ProcessEnv));
+    let ctl = DesktopAppController::new(ctx);
+    let status = std::process::Command::new("explorer.exe")
+        .arg(format!("shell:AppsFolder\\{FAMILY}!App"))
+        .status();
+    say(format!("start menu: explorer {status:?}"));
+    let t = Instant::now();
+    let session = loop {
+        if let Some(s) = ctl.running_session().await.unwrap() {
+            break s;
+        }
+        assert!(
+            t.elapsed() < Duration::from_secs(90),
+            "the app did not start"
+        );
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    };
+    // Let it finish starting (renderers, app-server).
+    tokio::time::sleep(Duration::from_secs(15)).await;
+    let session = ctl.running_session().await.unwrap().unwrap_or(session);
+    say(format!(
+        "start menu: session pid {} started {:?} cdp {:?} exe {:?} parent {}",
+        session.main_pid,
+        session.started_at,
+        session.cdp,
+        session.executable,
+        parent_of(session.main_pid)
+    ));
+    let tree = quit::descendants(&procs::snapshot_os(ReadOpts::default()), session.main_pid);
+    dump("start menu: before", session.main_pid, &tree);
+    let t = Instant::now();
+    let outcome = ctl
+        .quit(
+            &session,
+            &QuitOptions {
+                graceful_timeout_ms: 15_000,
+                force: false,
+            },
+        )
+        .await
+        .unwrap();
+    say(format!(
+        "start menu: graceful quit: {outcome:?} in {:.1}s",
+        t.elapsed().as_secs_f32()
+    ));
+    let mut outcome = outcome;
+    if outcome == QuitOutcome::TimedOut {
+        let t = Instant::now();
+        outcome = ctl
+            .quit(
+                &session,
+                &QuitOptions {
+                    graceful_timeout_ms: 15_000,
+                    force: true,
+                },
+            )
+            .await
+            .unwrap();
+        say(format!(
+            "start menu: forced quit: {outcome:?} in {:.1}s",
+            t.elapsed().as_secs_f32()
+        ));
+    }
+    dump("start menu: after", session.main_pid, &tree);
+    if outcome == QuitOutcome::TimedOut {
+        let report = ctl.quit_report(&session).await.unwrap();
+        say(format!("start menu: report: {}", report.describe()));
+        let after = ctl.end_app_processes(&session, &report.left).await.unwrap();
+        say(format!(
+            "start menu: after ending them: {}",
+            after.describe()
+        ));
+        dump("start menu: after ending them", session.main_pid, &tree);
+    }
+    let left: Vec<u32> = tree
+        .iter()
+        .filter(|(pid, started)| procs::liveness(*pid, *started) == Liveness::Alive)
+        .map(|(pid, _)| *pid)
+        .collect();
+    for (pid, started) in &tree {
+        if left.contains(pid) {
+            let r = osproc::end(*pid, *started, Duration::from_secs(2));
+            say(format!("start menu: ending left-over {pid}: {r:?}"));
+        }
+    }
+    assert_eq!(outcome, QuitOutcome::Killed);
+    assert!(left.is_empty(), "descendants still alive: {left:?}");
 }

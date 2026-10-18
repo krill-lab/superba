@@ -1,10 +1,11 @@
 name: Windows app
 
 # The real ChatGPT app for Windows (the MSIX package OpenAI.Codex) on a hosted
-# runner (user bugs 40 and 41): download the official package, install it,
+# runner (user bugs 40, 41 and 53): download the official package, install it,
 # check what a standard user may do with the package files, then let Superba
 # activate it by AUMID with --remote-debugging-port, connect over CDP, quit it
-# gracefully, quit it without CDP and by force, relaunch it, and load the Codex
+# gracefully, quit it without CDP and by force, relaunch it, quit an app opened
+# from the Start menu (no debugging port, as users open it), and load the Codex
 # settings page source with it installed. Manual runs only:
 #   gh workflow run winapp.yml --ref <branch>
 
@@ -144,7 +145,8 @@ jobs:
           SUPERBA_WINAPP_IT: "1"
           SUPERBA_WINAPP_REPORT: ${{ runner.temp }}/winapp-report.txt
           RUST_LOG: superba_appctl=debug
-        run: cargo test -p superba-appctl --locked --test windows_app_it -- --ignored --nocapture
+        # One test at a time: each starts and quits the one app.
+        run: cargo test -p superba-appctl --locked --test windows_app_it -- --ignored --nocapture --test-threads=1
       - name: Load the Codex settings source with the package installed
         if: ${{ always() }}
         shell: bash
@@ -166,25 +168,24 @@ jobs:
           SUPERBA_DATA_DIR: ${{ runner.temp }}\spb-data
           SUPERBA_SECRET_BACKEND: file
           SUPERBA_LOCALE: zh-CN
+          RUST_LOG: superba_appctl=debug,superba_switch=info
         run: |
           $spb = Join-Path $PWD 'target\debug\spb.exe'
-          function Show-App($label) {
-            "--- ${label}:"
-            Get-CimInstance Win32_Process -Filter "Name='ChatGPT.exe'" |
-              Where-Object { $_.CommandLine -notmatch '--type=' } |
-              ForEach-Object { "  pid $($_.ProcessId) parent $($_.ParentProcessId): $($_.CommandLine)" }
-          }
+          # Every process of the app and Codex: pid, parent, architecture, start, type, image.
+          function Show-App($label) { & (Join-Path $PWD 'scripts\ci\app-processes.ps1') $label }
           # Opened the way the user opens it (Start menu), so without a debugging port.
           Start-Process explorer.exe 'shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App'
           Start-Sleep -Seconds 20
           Show-App 'opened from the Start menu'
           '=== spb launch --restart --yes --force (no CDP: windows close, then forced)'
+          $t = Get-Date
           & $spb launch --restart --yes --force
-          "exit $LASTEXITCODE"
+          "exit $LASTEXITCODE after $([int]((Get-Date) - $t).TotalSeconds) s"
           Show-App 'after the first restart'
           '=== spb launch --restart --yes (CDP: the app quits by itself)'
+          $t = Get-Date
           & $spb launch --restart --yes
-          "exit $LASTEXITCODE"
+          "exit $LASTEXITCODE after $([int]((Get-Date) - $t).TotalSeconds) s"
           Show-App 'after the second restart'
           '=== spb status'
           & $spb status
@@ -216,8 +217,7 @@ jobs:
         if: ${{ always() }}
         shell: pwsh
         run: |
-          Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like '*WindowsApps*' -or $_.Name -like 'codex*' } |
-            Format-Table ProcessId, ParentProcessId, Name, ExecutablePath -AutoSize
+          & scripts/ci/app-processes.ps1 'at the end'
           Get-ChildItem "$env:LOCALAPPDATA\OpenAI\Codex\bin" -ErrorAction SilentlyContinue | Format-Table Name, Length, LastWriteTime
           if (Test-Path "$env:RUNNER_TEMP\winapp-report.txt") { Get-Content "$env:RUNNER_TEMP\winapp-report.txt" }
       - name: Keep the report
