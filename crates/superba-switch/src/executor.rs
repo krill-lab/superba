@@ -1599,7 +1599,17 @@ impl Run<'_> {
             let settling = state == CoreState::Settling && now < appear_by + tuning.stable;
             if now >= appear_by && !settling {
                 if !watch.seen_any() {
-                    return skipped(text("switch.verify.not_supported"));
+                    // After a launch on a slow machine the app may simply not
+                    // have started its core yet (seen on Windows VMs: 93 s on
+                    // the first start after an install); say so instead of
+                    // "not supported".
+                    return match self.launched_at.filter(|_| before.is_empty()) {
+                        Some(at) => skipped(
+                            text("switch.verify.core_not_started")
+                                .arg("seconds", (now - at).as_secs()),
+                        ),
+                        None => skipped(text("switch.verify.not_supported")),
+                    };
                 }
                 let detail = watch.failure(now - started, session.main_pid);
                 tracing::warn!(

@@ -202,6 +202,7 @@ no_new_app_server = "no new Codex core (codex app-server of ChatGPT, pid {app}) 
 new_app_servers_exited = "new Codex core processes of ChatGPT (pid {app}) started but exited again (pid {pids}); none was running after {seconds} s"
 new_app_server_unsettled = "the new Codex core (pid {pid}) had not been running for {stable} s yet when the check ended after {seconds} s"
 old_app_server_alive = "a new Codex core runs (pid {new}), but the previous one (pid {old}) was still running after {seconds} s"
+core_not_started = "ChatGPT had not started its Codex core {seconds} s after it was opened (it may still be starting)"
 with_previous = "{detail}; {previous}"
 previous_running = "the previous Codex core (pid {pids}) is still running"
 previous_exited = "the previous Codex core (pid {pids}) exited"

@@ -219,6 +219,28 @@ async fn a_relaunch_waits_for_a_slow_app_and_then_names_what_it_saw() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_relaunched_app_without_a_core_yet_is_named_as_such() {
+    // The first start after an install took 93 s to its first app-server on
+    // the Windows VM: past the window the check is skipped and says why.
+    let w = full_restart_world();
+    *w.app.spawn_script.lock().unwrap() = vec![(Duration::from_secs(93), None)];
+    let sw = Switcher::with_tuning(w.deps(), tuning(5 * S));
+    let opts = ExecuteOptions {
+        allow_full_restart: true,
+        ..ExecuteOptions::default()
+    };
+    let o = run_with(&w, &sw, opts, ScriptedDecider::with(&[])).await;
+    assert_eq!(o.status, OutcomeStatus::Switched, "{:?}", o.notices);
+    let CheckResult::Skipped { reason } = o.verification.unwrap().process else {
+        panic!("process check should be skipped");
+    };
+    assert_eq!(
+        reason,
+        "ChatGPT had not started its Codex core 60 s after it was opened (it may still be starting)"
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_full_restart_that_is_not_forced_after_a_failed_hot_restart_reports_the_written_config() {
     // User bug 60: the hot restart failed, the user chose a full restart, the
     // app did not close and was not forced: the result must not say
