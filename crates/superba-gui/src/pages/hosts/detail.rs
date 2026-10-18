@@ -76,12 +76,26 @@ pub fn connection_text(cx: &Cx<'_>, sites: &[Site], state: &RemoteState) -> Stri
     let mut parts: Vec<String> = Vec::new();
     if let Some(url) = &base {
         let host = url.host_str().unwrap_or_default();
-        let found = sites.iter().find_map(|s| {
-            s.lines
-                .iter()
-                .find(|l| l.origin.host() == host)
-                .map(|l| (cx.tr.text(&s.name), cx.tr.text(&l.name)))
-        });
+        // The line with this origin (lines on one host differ by port, the
+        // e2e test lines for one), else one on the same host.
+        let origin = superba_core::Origin::parse(&url.origin().ascii_serialization()).ok();
+        let name = |s: &Site, l: &superba_core::Line| (cx.tr.text(&s.name), cx.tr.text(&l.name));
+        let found = sites
+            .iter()
+            .find_map(|s| {
+                s.lines
+                    .iter()
+                    .find(|l| Some(&l.origin) == origin.as_ref())
+                    .map(|l| name(s, l))
+            })
+            .or_else(|| {
+                sites.iter().find_map(|s| {
+                    s.lines
+                        .iter()
+                        .find(|l| l.origin.host() == host)
+                        .map(|l| name(s, l))
+                })
+            });
         match found {
             Some((site, line)) => {
                 parts.push(site);

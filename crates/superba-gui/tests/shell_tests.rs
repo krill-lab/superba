@@ -380,3 +380,17 @@ fn the_progress_banner_of_a_reapply_says_it_applies_the_changes() {
         assert!(texts.iter().any(|t| t == want), "{want}: {texts:?}");
     }
 }
+
+#[test]
+fn a_remote_step_is_named_by_the_host_title_not_its_app_id() {
+    // User bug 68 run: "Host remote-wsl:Ubuntu-WSL1" in the switch banner.
+    let tr = Tr::new(superba_core::Locale::En);
+    let step = |id: &str| superba_core::SwitchStep::Remote {
+        target_id: superba_core::TargetId::new(id),
+    };
+    assert_eq!(
+        shell::step_label(&tr, &step("ssh:remote-wsl:Ubuntu-WSL1")),
+        "Host WSL: Ubuntu-WSL1"
+    );
+    assert_eq!(shell::step_label(&tr, &step("ssh:devbox")), "Host devbox");
+}

@@ -1345,7 +1345,8 @@ fn waiting_banner(ui: &mut Ui, cx: &Cx<'_>, flow: &mut Flow, now: Duration) {
     ui.ctx().request_repaint_after(Duration::from_millis(250));
 }
 
-fn step_label(cx_tr: &crate::i18n::Tr, step: &SwitchStep) -> String {
+/// The label of one step in the switch banner's chain.
+pub fn step_label(cx_tr: &crate::i18n::Tr, step: &SwitchStep) -> String {
     let key = match step {
         SwitchStep::WriteConfig => "step.write_config",
         SwitchStep::WriteEnv => "step.write_env",
@@ -1360,10 +1361,9 @@ fn step_label(cx_tr: &crate::i18n::Tr, step: &SwitchStep) -> String {
         SwitchStep::VerifyLine => "step.verify_line",
         SwitchStep::VerifyRenderer => "step.verify_renderer",
         SwitchStep::Remote { target_id } => {
-            return cx_tr.f(
-                "step.remote",
-                &[("host", &target_id.as_str().trim_start_matches("ssh:"))],
-            );
+            // "WSL: Ubuntu", an SSH alias; never the app's raw host id.
+            let host = cx_tr.text(&superba_core::target_title(target_id));
+            return cx_tr.f("step.remote", &[("host", &host)]);
         }
         _ => "step.other",
     };

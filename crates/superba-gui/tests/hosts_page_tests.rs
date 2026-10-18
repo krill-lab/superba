@@ -472,3 +472,32 @@ fn host_rows_show_their_whole_status_line_next_to_long_versions() {
         );
     }
 }
+
+#[test]
+fn the_connection_names_the_line_with_the_same_origin_not_only_the_same_host() {
+    // Lines on one host differ by port (the e2e test lines all live on
+    // 127.0.0.1): the host's line is the one with its whole origin.
+    let service = fake();
+    let mut h = Harness::new([1280.0, 800.0], Locale::En, service, true);
+    let krill = h
+        .data
+        .sites
+        .iter()
+        .find(|s| s.id.as_str() == "krill")
+        .cloned()
+        .expect("the Krill site");
+    let mut other = krill.clone();
+    other.id = superba_core::SiteId::new("lab");
+    other.name = superba_core::LocalizedText::new("lab.name", "Lab");
+    for l in &mut other.lines {
+        l.origin = superba_core::Origin::parse(&format!("{}:8443", l.origin.as_str())).unwrap();
+        l.name = superba_core::LocalizedText::new("lab.line", "Lab line");
+    }
+    h.data.sites.insert(0, other);
+    let mut state = State::default();
+    let f = h.until(
+        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+        |f| f.has("Krill · Overseas · PAT") || f.has("Lab · Lab line · PAT"),
+    );
+    assert!(f.has("Krill · Overseas · PAT"), "{}", f.all_text());
+}
