@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Path $work -Force | Out-Null
 $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Superba'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $files = 'superba.exe','spb.exe','superba-router.exe','LICENSE-MIT','LICENSE-APACHE',
-         'THIRD-PARTY-NOTICES.txt','LICENSE-Geist-OFL.txt','superba-msi.marker'
+         'THIRD-PARTY-NOTICES.txt','LICENSE-Geist-OFL.txt','superba-msi.marker','spb-linux-x86_64'
 
 function Fail($m) { throw "MSI test failed: $m" }
 function Check($ok, $m) { if (-not $ok) { Fail $m } else { Write-Host "ok: $m" } }
@@ -52,6 +52,20 @@ function ArpEntries {
     }
   }
 }
+# The installed WSL helper (user bug 54(d)): an x86-64 Linux program (ELF64,
+# e_machine 0x3E) without a program interpreter (PT_INTERP), i.e. static musl.
+function CheckLinuxHelper($label) {
+  $b = [IO.File]::ReadAllBytes((Join-Path $installDir 'spb-linux-x86_64'))
+  $elf = $b.Length -ge 64 -and $b[0] -eq 0x7F -and $b[1] -eq 0x45 -and $b[2] -eq 0x4C -and $b[3] -eq 0x46 -and $b[4] -eq 2
+  Check ($elf -and [BitConverter]::ToUInt16($b, 18) -eq 0x3E) "${label}: spb-linux-x86_64 is an x86-64 Linux program"
+  $phoff = [BitConverter]::ToUInt64($b, 32)
+  $phentsize = [BitConverter]::ToUInt16($b, 54)
+  $interp = $false
+  for ($i = 0; $i -lt [BitConverter]::ToUInt16($b, 56); $i++) {
+    if ([BitConverter]::ToUInt32($b, [int]($phoff + $i * $phentsize)) -eq 3) { $interp = $true }
+  }
+  Check (-not $interp) "${label}: spb-linux-x86_64 is static ($($b.Length) bytes)"
+}
 function UserPath { [Environment]::GetEnvironmentVariable('Path', 'User') }
 # The user PATH folders without a trailing '\': the MSI writes [INSTALLFOLDER],
 # which always ends in one (Windows finds programs either way).
@@ -72,6 +86,7 @@ $null = Build '9.0.0' 'superba-9.0.0-windows-x86_64.msi'
 # --- install ---------------------------------------------------------------
 Msi '/i' $msi1 (Join-Path $work 'install.log')
 foreach ($f in $files) { Check (Test-Path (Join-Path $installDir $f)) "installed $f" }
+CheckLinuxHelper 'install'
 $v = & (Join-Path $installDir 'spb.exe') --version
 Check ($LASTEXITCODE -eq 0 -and "$v" -match '\d+\.\d+\.\d+') "spb --version ($v)"
 Check ((UserPathDirs) -contains $installDir) 'install folder is on the user PATH'
@@ -101,6 +116,7 @@ $arp = @(ArpEntries)
 Check ($arp.Count -eq 1) 'upgrade leaves one ARP entry'
 Check ($arp[0].DisplayName -eq "Superba $UpgradeVersion") "ARP name after the upgrade ($($arp[0].DisplayName))"
 foreach ($f in $files) { Check (Test-Path (Join-Path $installDir $f)) "after the upgrade: $f" }
+CheckLinuxHelper 'upgrade'
 Check (@(UserPathDirs | Where-Object { $_ -eq $installDir }).Count -eq 1) 'PATH has the folder exactly once'
 Check ($null -ne (Get-ItemProperty $runKey).SuperbaRouter) 'upgrade keeps the login-startup entry'
 Check (@(RouterProcs).Count -eq 0) 'upgrade stopped the router of the install'
@@ -116,6 +132,7 @@ $proc2 = Start-Process $routerExe -ArgumentList @('supervise', '--data-dir', "`"
 Start-Sleep -Seconds 3
 Msi '/x' $msi3 (Join-Path $work 'uninstall.log')
 Check (-not (Test-Path (Join-Path $installDir 'spb.exe'))) 'spb.exe removed'
+Check (-not (Test-Path (Join-Path $installDir 'spb-linux-x86_64'))) 'spb-linux-x86_64 removed'
 Check ((-not (Test-Path $installDir)) -or @(Get-ChildItem $installDir -Force).Count -eq 0) 'install folder is gone'
 Check (-not ((UserPathDirs) -contains $installDir)) 'PATH entry removed'
 Check (@(ArpEntries).Count -eq 0) 'ARP entry removed'

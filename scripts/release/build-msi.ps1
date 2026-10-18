@@ -5,7 +5,9 @@
 .DESCRIPTION
   -StageDir holds superba.exe, spb.exe, superba-router.exe, LICENSE-MIT,
   LICENSE-APACHE, THIRD-PARTY-NOTICES.txt and LICENSE-Geist-OFL.txt (the
-  already signed binaries in a release). -Version is the release version
+  already signed binaries in a release), and spb-linux-x86_64: the static musl
+  spb Superba runs inside WSL distributions to migrate their sessions
+  (scripts/release/build-wsl-helper.sh). -Version is the release version
   without "v" (0.1.0 or 0.1.0-alpha.2): the MSI ProductVersion is its X.Y.Z
   and the full version is kept in the product name and the ARP comments.
   Needs the `wix` tool (dotnet tool install --global wix --version 5.0.2).
@@ -31,10 +33,16 @@ $work = Join-Path ([IO.Path]::GetTempPath()) ("superba-msi-" + [guid]::NewGuid()
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
   foreach ($f in 'superba.exe','spb.exe','superba-router.exe','LICENSE-MIT','LICENSE-APACHE',
-                 'THIRD-PARTY-NOTICES.txt','LICENSE-Geist-OFL.txt') {
+                 'THIRD-PARTY-NOTICES.txt','LICENSE-Geist-OFL.txt','spb-linux-x86_64') {
     $src = Join-Path $stage $f
     if (-not (Test-Path -LiteralPath $src)) { throw "Missing $f in $stage" }
     Copy-Item -LiteralPath $src -Destination $work
+  }
+  # The WSL helper must be an x86-64 Linux program (ELF64, e_machine 0x3E).
+  $elf = [IO.File]::ReadAllBytes((Join-Path $work 'spb-linux-x86_64'))
+  if ($elf.Length -lt 20 -or $elf[0] -ne 0x7F -or $elf[1] -ne 0x45 -or $elf[2] -ne 0x4C -or $elf[3] -ne 0x46 -or
+      [BitConverter]::ToUInt16($elf, 18) -ne 0x3E) {
+    throw 'spb-linux-x86_64 is not an x86-64 Linux program'
   }
   Copy-Item -LiteralPath $marker -Destination $work
   Copy-Item -LiteralPath $icon -Destination $work

@@ -30,7 +30,7 @@ macOS builds both architectures with deployment target 11.0, combines them with
 | `spb-<ver>-linux-x86_64-musl.tar.gz` | `spb`, `superba-router`, release documents |
 | `superba-<ver>-macos-universal.zip` | `Superba.app` (with `superba-router` in `Contents/MacOS`), universal `spb`, release documents |
 | `superba-<ver>-macos-universal.dmg` | `Superba.app` (with `superba-router` in `Contents/MacOS`), universal `spb`, release documents |
-| `superba-<ver>-windows-x86_64.msi` | per-user installer: `superba.exe`, `spb.exe`, `superba-router.exe`, release documents; the only Windows package |
+| `superba-<ver>-windows-x86_64.msi` | per-user installer: `superba.exe`, `spb.exe`, `superba-router.exe`, `spb-linux-x86_64` (static musl `spb` run inside WSL distributions for session migration), release documents; the only Windows package |
 
 `superba-router` is the opt-in local router. `superba` and `spb` install it as a
 per-user service from where they find it: next to themselves (every archive, the
@@ -282,7 +282,9 @@ where the rest of that step is refused) and stops every `superba-router.exe` sta
 from the install folder. During an upgrade it runs with `--keep-service` (it only stops
 the process; the update restarts the router).
 
-The MSI is built in `sign-windows`, after the three executables are signed (and signed
+The MSI is built in `sign-windows` (with `spb-linux-x86_64` from the musl job, which
+checks it with `scripts/release/build-wsl-helper.sh --no-build`: static, x86-64, `--version`
+runs; build-msi.ps1 refuses a stage without it), after the three executables are signed (and signed
 again as a whole when the optional Authenticode secrets are set; WiX runs while no key is
 on disk). Test it without tagging: run the `msi-package` job of CI
 (`gh workflow run ci.yml --ref <branch> -f msi_only=true`), which builds the MSI on

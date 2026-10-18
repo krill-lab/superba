@@ -140,7 +140,9 @@ On Windows, run the `.msi` (no administrator rights needed): it installs to
 user `PATH` (open a new terminal afterwards). A newer `.msi` upgrades it in place;
 **Settings > Apps** (or `msiexec /x`) removes it and also stops and removes the local
 router's login startup entry. There is no zip for Windows. Silent install:
-`msiexec /i superba-<version>-windows-x86_64.msi /qn`.
+`msiexec /i superba-<version>-windows-x86_64.msi /qn`. The MSI also carries
+`spb-linux-x86_64`, a static Linux build of `spb` that Superba runs inside WSL
+distributions to migrate their sessions.
 
 `superba-router` is the optional local router; keep it next to `superba` and
 `spb` (on macOS it lives inside `Superba.app`, so move the app to Applications

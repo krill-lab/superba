@@ -182,6 +182,18 @@ jobs:
           scripts/release/package-linux.sh --target-dir "target/$BUILD_TARGET/release" \
             --version "$RELEASE_VERSION" --arch "$BUILD_ARCH" \
             --notices "$RUNNER_TEMP/notices/THIRD-PARTY-NOTICES.txt" --out dist
+      # The Linux spb the Windows MSI carries for WSL (static, checked, run once).
+      - name: Stage the WSL helper
+        if: matrix.platform == 'musl'
+        run: scripts/release/build-wsl-helper.sh --out wsl-helper --no-build
+      - name: Upload the WSL helper
+        if: matrix.platform == 'musl'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: wsl-helper
+          path: wsl-helper/*
+          if-no-files-found: error
+          retention-days: 3
       - name: Package the headless musl binaries
         if: matrix.platform == 'musl'
         run: |
@@ -400,6 +412,12 @@ jobs:
         with:
           name: unsigned-windows-x86_64
           path: unsigned
+      # The Linux spb for WSL goes into the MSI as built (an ELF has no
+      # Authenticode signature); build-msi.ps1 checks that it is x86-64 Linux.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: wsl-helper
+          path: unsigned/windows
       # Optional Authenticode signing hook: configure both Windows secrets to
       # enable this step. No Windows signing certificate is required to release.
       - name: Detect optional Windows signing configuration

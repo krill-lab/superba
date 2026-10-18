@@ -66,6 +66,11 @@
       <Component>
         <File Id="RouterExe" Source="$(StageDir)\superba-router.exe" KeyPath="yes" />
       </Component>
+      <!-- spb for Linux (static musl), run inside WSL distributions to migrate their
+           sessions (superba_switch::wsl::helper_file_name: next to superba.exe). -->
+      <Component>
+        <File Id="SpbLinux" Source="$(StageDir)\spb-linux-x86_64" KeyPath="yes" />
+      </Component>
       <Component>
         <File Id="LicenseMit" Source="$(StageDir)\LICENSE-MIT" KeyPath="yes" />
       </Component>

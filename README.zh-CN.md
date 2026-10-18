@@ -107,7 +107,8 @@ Windows 上直接运行 `.msi`（无需管理员权限）：安装到 `%LOCALAPP
 创建开始菜单快捷方式，并把 `spb` 加入当前用户的 `PATH`（装完请新开终端）。新版 `.msi`
 原地升级；在“设置 > 应用”（或 `msiexec /x`）卸载时，会同时停止并移除本地路由器的开机
 启动项。Windows 不再提供 zip。静默安装：
-`msiexec /i superba-<版本>-windows-x86_64.msi /qn`。
+`msiexec /i superba-<版本>-windows-x86_64.msi /qn`。MSI 里还带有 `spb-linux-x86_64`：
+静态链接的 Linux 版 `spb`，Superba 在 WSL 发行版内迁移会话时运行它。
 
 `superba-router` 是可选的本地路由程序，请和 `superba`、`spb` 放在一起（macOS 上
 它在 `Superba.app` 内部，开启路由前请先把 app 移到“应用程序”文件夹）。每个版本附带
