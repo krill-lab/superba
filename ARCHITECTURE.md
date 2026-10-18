@@ -312,7 +312,7 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 
 | Path | Owner |
 |---|---|
-| `profiles.json`, `state.json`, `journal/config/` | config |
+| `profiles.json`, `state.json` (generations, also the `handed_off` record), `journal/config/` | config |
 | `state.lock`, `journal/switch/` | switch |
 | `backups/first-write/`, `backups/switch/`, `backups/login-stash/` (encrypted), `backups/rc/` | config |
 | `secrets/` (0600 key files when no keyring) | config |
@@ -614,6 +614,65 @@ name, same address) and pre-selects the importable ones; `plan` turns selections
 sources for an import (keys never leave the service) and saves through
 `save_site` / `save_profile` (secret store, router member resync); Codex is never
 touched.
+
+### Coexistence with other configuration managers (GH#5)
+
+Superba owns exactly what its current generation wrote: the `last_written` keys,
+the `auth.json` credential while that generation wrote a token credential, and
+the `CODEX_AUTHAPI_BASE_URL` value the env persister set. Types in
+`superba_core::ownership`.
+
+- **Detection** (`superba-config`). `ConfigState::drift` (owned keys whose live
+  value differs from what Superba wrote), `ConfigState::auth_drift` (the
+  credential, compared with `authjson::credential_digest`: PAT, API key,
+  `auth_mode` and the login identity, so AI Toolbox merging its key into the PAT
+  form or cc-switch deleting the file count, a reformat does not; the shape shown
+  is `authjson::drift_shape`). While Superba owns nothing (its current
+  generation restored or handed off), `ConfigState::since_release` /
+  `since_release_auth` list what changed since that write. `EnvReport::superba_value`
+  is the value the persister set (`env-state.json` `written`).
+- **Attribution** (`superba_import::detect`, read-only like the import). Each
+  tool scores on its store (its current Codex provider uses the live address or
+  key: strong; another provider: weaker; an applied ChatGPT account only when it
+  is the signed-in e-mail) and its markers (AI Toolbox: `#:schema none`,
+  `ai-toolbox-codex-model-catalog.json`, its gateway key and `/openai/v1`
+  loopback address; cc-switch: the key as `experimental_bearer_token` with
+  `auth.json` removed, `cc-switch-model-catalog.json`, `PROXY_MANAGED` / port
+  15721, the first-write backup `.source` under `~/.cc-switch/backups/`).
+  Otherwise: a ChatGPT login alone is `CodexLogin`, only the app's own keys
+  (`model`, efforts, `service_tier`) `CodexApp`, else `Unknown`.
+- **Overview and monitor** (`superba_switch::ownership`). `Overview::external`
+  joins drift, credential and env drift (the persister is asked on the first
+  overview and when the files' hashes change, never on a timer: macOS asks
+  `launchctl`), attributed once per state of the files (`OwnershipCache`).
+  The GUI's 5 s overview poll is the background monitor; `spb status` and `spb
+  doctor` (`external_change`) show the same.
+- **Before every write.** The renderer refuses unanswered drift of a key and,
+  for token switches, of the credential (`Error::Conflict`); the planner turns
+  it into `PlanChoice::OwnedKeyConflict { conflicts, auth, source }`. Answers go
+  into `SwitchRequest::key_resolutions` per path (`auth.json` is
+  `AUTH_JSON_PATH`); `ALL_CHANGED` (`*`) answers everything (take over),
+  expanded by the planner against the state it read. A ChatGPT login is never a
+  conflict for a switch (it is stashed first). Because `apply` re-renders from
+  the live files, a change made between plan and write fails the apply safely.
+- **Restores keep.** For Original / Official / Generation / Release
+  destinations the planner answers `KeepCurrent` for every unanswered change
+  (`ownership::keep_external`) and warns which were kept and by whom; the
+  renderer keeps a changed credential by default for them. An apply that only
+  releases ownership is committed even when no file changes
+  (`ApplyPlan::releases_ownership`). The env persister's clear / restore leave
+  locations whose value changed since it set it (`env.scope.kept_changed`).
+  The router fallback writes nothing when the credential or `model_provider`
+  was changed by someone else, and `codex_routed` is false for a non-`openai`
+  provider.
+- **Hand-off** (`SwitchIntent::HandOff { to }`, `ResolvedMode::Release`):
+  rendered like an Original restore with provider `openai` kept, everything
+  changed kept, no session migration, `RestartKind::None`; the generation records
+  `handed_off` (`ConfigState::handed_off`) and keeps the post-apply copies of both
+  files; the generation before it is what Superba had written (point-in-time
+  restore). The next profile switch is a new takeover (fresh baseline = the other
+  tool's configuration), so a later restore returns to it. Verification never
+  sends a kept foreign credential anywhere (`PlanContext::kept_foreign_auth`).
 
 ## 9. Security
 

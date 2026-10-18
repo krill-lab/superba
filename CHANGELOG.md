@@ -68,6 +68,20 @@ back to the official ChatGPT login.
   (stashed encrypted, ChaCha20-Poly1305), or any earlier generation; `spb
   uninstall` also removes Superba's rc blocks, launcher entries and the router
   service.
+- **Coexistence with cc-switch, AI Toolbox and Codex itself** (GH#5): Superba
+  owns exactly what its last switch wrote (its `config.toml` keys, the
+  `auth.json` credential, its `CODEX_AUTHAPI_BASE_URL` values). A later change by
+  another program is detected at start-up, before every write and while the
+  window is open, attributed (cc-switch or AI Toolbox with their provider, from
+  their own stores and the markers they write; Codex's own sign-in; the Codex
+  app's model picker; a hand edit) and shown key by key with the credential's
+  shape. Nothing is overwritten without an answer: take over again (GUI, `spb
+  switch --take-over`, or the question `spb` asks at a terminal), let the other
+  tool manage Codex (`spb hand-off`: Superba restores only the keys it still
+  owns, keeps the other tool's changes and an encrypted copy of both files, and
+  owns nothing until the next switch takes over from a fresh baseline), or leave
+  it for now. Restore, uninstall and the router's fallback keep every external
+  change and say so (`--take-over` restores those too); quitting writes nothing.
 - **Session provider migration** for users of the old Krill tutorial
   (`model_provider = "krill"`): sessions in `state_5.sqlite` and rollout files are
   migrated to `openai` (and back) with backups, a ledger and exact rollback.

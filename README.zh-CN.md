@@ -172,6 +172,41 @@ spb import ccs --json                        # 存储、预览和结果
 另一个工具存放在系统钥匙串里、或从环境变量读取的 Key 不会被复制：该供应商导入时不带 Key，
 并附有说明，之后在 Superba 里补上 Key 即可。
 
+## 与 cc-switch、AI Toolbox 一起使用
+
+Superba 只拥有它最近一次切换写入的内容：[Superba 会改动什么](#superba-会改动什么) 里列出的
+`config.toml` 键、`auth.json` 里的凭据，以及它设置的 `CODEX_AUTHAPI_BASE_URL`。之后如果有别的
+程序改了其中任何一项（cc-switch 或 AI Toolbox 把 Codex 切到它们的供应商、Codex 应用的模型选择器、
+`codex login`、手动编辑），Superba 会发现，并且不经询问绝不覆盖：
+
+- **启动时、每次写入前、窗口打开期间都会检查。** 概览的待办里会列出这次修改并带有**查看**按钮，
+  每出现一种新的文件状态会弹出一次对话框：最可能是谁改的（能从 cc-switch 或 AI Toolbox 自己的
+  存储或它们写入的标记判断时，会写出工具名和供应商名，否则是“Codex 自己的登录”“Codex 应用或手动
+  修改”或“其他程序或手动修改”）、每个被改的键在 Superba 写入时和现在的值，以及凭据的变化
+  （`PAT …1111 → 没有 auth.json`；永远不显示 Key 本身）。`spb status` 和 `spb doctor` 也会显示。
+- **重新接管、交给另一个工具管理，或暂不处理。** *重新接管* 用你的配置方案覆盖这些修改（照常显示
+  计划和倒计时）；*交给 cc-switch 管理* 即下面的交接；*暂不处理* 什么都不改。存在这类修改时发起的
+  切换也会问同样的问题（Esc 取消，不写入任何内容）；命令行用 `spb switch --take-over` 回答，在终端里
+  `spb` 会直接询问。
+- **还原绝不撤销其他工具的修改。** 还原（原始配置、官方登录或某一代）、卸载以及路由器的自动回退
+  只还原 Superba 仍在管理的内容，并列出保留了什么、为什么；`spb restore --take-over` /
+  `spb uninstall --take-over` 会连这些键一起还原。退出 Superba 不会写入任何内容。
+- **交接。** *交给……管理*（或 `spb hand-off`）让 Superba 不再管理 Codex：它仍拥有的键恢复为你原来
+  的样子（例如 cc-switch 不管理的 `chatgpt_base_url`，留着会把 ChatGPT 流量发到 Krill），其他工具改过的
+  内容全部保留，它设置的 `CODEX_AUTHAPI_BASE_URL` 在没被别人改动的位置移除，两份文件的加密副本随
+  历史代数保存。不重启任何程序，也不迁移会话。之后 Superba 不再拥有任何内容，概览显示“由 cc-switch
+  管理”；以后切换到任一配置方案会从新的基线重新接管，因此再还原时得到的是另一个工具的配置。
+
+```sh
+spb status                       # 哪些内容在 Superba 之外被改了，最可能是谁改的
+spb switch --take-over           # 用配置方案覆盖这些修改
+spb hand-off [--to cc-switch|ai-toolbox|other]   # 交给另一个工具管理 Codex
+spb restore --take-over          # 还原原始配置，连其他工具改过的地方一起还原
+```
+
+Superba 读取其他工具的存储只是为了判断是谁做的修改，从不写入；也不支持两个工具同时管理同一组键：
+请选择交接或接管。
+
 ## 热切换的原理
 
 Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环境变量，
@@ -229,8 +264,8 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 
 | 对象 | 何时 | 如何还原 |
 |---|---|---|
-| `~/.codex/config.toml`（或 `$CODEX_HOME`） | 每次切换 | 只改 Superba 负责的键（`model_provider`、`openai_base_url`、`chatgpt_base_url`、配置的模型以及它管理的 Codex 设置）；配置不再管理的键会恢复原值；注释、MCP 服务、插件和其他内容逐字节保留 |
-| `~/.codex/auth.json` | 每次切换 | 以 0600 权限写入；替换前会加密暂存你的 ChatGPT 登录 |
+| `~/.codex/config.toml`（或 `$CODEX_HOME`） | 每次切换 | 只改 Superba 负责的键（`model_provider`、`openai_base_url`、`chatgpt_base_url`、配置的模型以及它管理的 Codex 设置）；配置不再管理的键会恢复原值；注释、MCP 服务、插件和其他内容逐字节保留；Superba 写入后被其他程序改过的键会被保留（见上文） |
+| `~/.codex/auth.json` | 每次切换 | 以 0600 权限写入；替换前会加密暂存你的 ChatGPT 登录；其他程序放进去的凭据，还原时保留，切换时只有你选择接管才会替换 |
 | shell 启动文件 | 仅 PAT 模式 | 一个带标记的块，导出 `CODEX_AUTHAPI_BASE_URL`（Linux：`~/.profile`、`~/.bashrc`、`~/.zshenv`、fish `conf.d`、`~/.config/environment.d`；macOS：`~/.zshenv` 加 LaunchAgent；Windows：`HKCU\Environment`）。旧 Krill 教程写的行会被注释掉，之后可还原 |
 | `state_5.sqlite`、`thread_history_*.sqlite`、`sessions/**/rollout-*.jsonl` | 仅在迁移会话时 | 备份加迁移账本；`spb sessions rollback <id>` |
 | 远程主机的 `~/.codex` 和 shell 文件 | 仅限你选中的主机 | 在主机上按次备份；`spb remote rollback <目标>` |
@@ -262,12 +297,16 @@ ChaCha20-Poly1305 加密。
 | `spb router status \| install \| enable \| disable \| uninstall \| watch` | 可选的本地路由：在线路和站点之间故障切换，只作用于本机 |
 | `spb usage [log] [--provider P]` / `spb usage stats [--by model\|provider\|day\|session]` | 这台电脑上的 Codex 请求（路由的请求记录合并 Codex 会话记录，不开路由也可用）；按供应商（Krill、每个自定义站点）汇总，并列出其各条线路 |
 | `spb account [--usage] [--days N] [--refresh]` | 余额、套餐和到期时间；每日费用和按模型的用量（Krill） |
-| `spb restore [original\|official\|generation]` | 还原 |
+| `spb restore [original\|official\|generation] [--take-over]` | 还原（其他工具改过的内容默认保留，`--take-over` 才一并还原） |
+| `spb hand-off [--to cc-switch\|ai-toolbox\|other]` | 交给另一个工具管理 Codex：释放 Superba 拥有的内容，保留其他工具的修改并留有备份 |
 | `spb launch [--restart]` | 通过 Superba 打开（或完整重启）桌面 app |
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | 会话 provider |
 | `spb remote list \| apply \| rollback` | SSH 远程主机 |
 | `spb import ccs\|ai-toolbox [--dry-run] [--select 名称] [--on-conflict skip\|rename\|update]` | 从 cc-switch 或 AI Toolbox 导入 Codex 供应商（只读取它们的文件，不改动 Codex） |
 | `spb doctor`、`spb recover`、`spb uninstall` | 诊断、崩溃恢复、彻底移除 |
+
+`spb switch --take-over`（`profile use` 同样可用）接管其他工具改过的键和凭据；`--keep-key PATH`
+单独保留某一个。
 
 执行计划的命令常用参数：`--dry-run`（只显示计划）、`--countdown N`（0–30 秒，
 Ctrl-C 取消）、`--yes`（确认完整重启）、`--wait-turn` / `--force`（处理进行中的

@@ -213,6 +213,56 @@ A key the other tool keeps in the system keychain or reads from an environment
 variable is not copied: that provider is imported without a key, with a note, and
 you add the key in Superba.
 
+## Using Superba next to cc-switch or AI Toolbox
+
+Superba owns exactly what its last switch wrote: the keys in `config.toml` listed
+under [What Superba touches](#what-superba-touches), the credential in
+`auth.json` and its `CODEX_AUTHAPI_BASE_URL` values. When something else changes
+one of them afterwards (cc-switch or AI Toolbox switching Codex to one of their
+providers, the Codex app's model picker, `codex login`, a hand edit), Superba
+notices and does not overwrite it without asking:
+
+- **Seen at start-up, before every write and while the window is open.** The
+  Overview lists the change with a **Review** button, and a dialog opens once per
+  new state of the files: who most likely made it (cc-switch or AI Toolbox are
+  named with their provider when their own store or their markers show it, else
+  "Codex's own sign-in", "the Codex app or a hand edit" or "another program or a
+  hand edit"), each changed key with Superba's value and the current one, and the
+  credential (`PAT …1111 → no auth.json`; keys are never shown). `spb status` and
+  `spb doctor` show the same.
+- **Take over again, let the other tool manage it, or not now.** *Take over
+  again* re-applies your profile over the changes (with the usual plan and
+  countdown); *Let cc-switch manage it* hands off (below); *Not now* leaves
+  everything as it is. A switch planned while such changes exist asks the same
+  question (Esc cancels; nothing is written); `spb switch --take-over` answers it
+  on the command line, and `spb` asks at a terminal.
+- **Restoring never undoes the other tool's work.** Restore (original, official
+  or a generation), uninstall and the router's automatic fallback put back only
+  what Superba still manages and list what they kept and why; `spb restore
+  --take-over` / `spb uninstall --take-over` restore those keys too. Quitting
+  Superba writes nothing.
+- **Hand-off.** *Let … manage it* (or `spb hand-off`) makes Superba stop managing
+  Codex: the keys it still owns go back to how you had them (for example its
+  `chatgpt_base_url`, which cc-switch does not manage and which would send
+  ChatGPT traffic to Krill), everything the other tool changed stays, its
+  `CODEX_AUTHAPI_BASE_URL` values are removed where nobody changed them, and an
+  encrypted copy of both files is kept with the generation history. Nothing is
+  restarted and no session is migrated. Superba then owns nothing and the
+  Overview shows "Managed by cc-switch"; switching to a profile later takes over
+  again from a fresh baseline, so a later restore gives the other tool's
+  configuration back.
+
+```sh
+spb status                       # what changed outside Superba and who most likely did it
+spb switch --take-over           # re-apply the profile over those changes
+spb hand-off [--to cc-switch|ai-toolbox|other]   # let the other tool manage Codex
+spb restore --take-over          # restore the original also where another tool changed it
+```
+
+Superba reads the other tools' stores only to say who made a change; it never
+writes to them, and two tools managing the same keys at the same time is not
+supported: hand off, or take over.
+
 ## How hot switching works
 
 Codex reads `config.toml`, `auth.json` and its environment only when its
@@ -288,8 +338,8 @@ See [SECURITY.md](SECURITY.md#the-local-router) for what the router can see.
 
 | What | When | How it is restored |
 |---|---|---|
-| `~/.codex/config.toml` (or `$CODEX_HOME`) | every switch | only the keys Superba owns (`model_provider`, `openai_base_url`, `chatgpt_base_url`, the profile's model and the Codex settings it manages); a key the profile stops managing gets its earlier value back; comments, MCP servers, plugins and everything else stay byte-for-byte |
-| `~/.codex/auth.json` | every switch | written with mode 0600; your ChatGPT login is stashed encrypted before it is replaced |
+| `~/.codex/config.toml` (or `$CODEX_HOME`) | every switch | only the keys Superba owns (`model_provider`, `openai_base_url`, `chatgpt_base_url`, the profile's model and the Codex settings it manages); a key the profile stops managing gets its earlier value back; comments, MCP servers, plugins and everything else stay byte-for-byte; a key another program changed after Superba wrote it is kept (see above) |
+| `~/.codex/auth.json` | every switch | written with mode 0600; your ChatGPT login is stashed encrypted before it is replaced; a credential another program put there is kept by restores and replaced by a switch only when you take it over |
 | Shell startup files | PAT mode only | a marked block exporting `CODEX_AUTHAPI_BASE_URL` (`~/.profile`, `~/.bashrc`, `~/.zshenv`, fish `conf.d`, `~/.config/environment.d` on Linux; `~/.zshenv` plus a LaunchAgent on macOS; `HKCU\Environment` on Windows). Old Krill tutorial lines are commented out and restored later |
 | `state_5.sqlite`, `thread_history_*.sqlite`, `sessions/**/rollout-*.jsonl` | only when you migrate sessions | backups plus a ledger; `spb sessions rollback <id>` |
 | Remote hosts' `~/.codex` and shell files | only for hosts you select | per-host backups on the host; `spb remote rollback <target>` |
@@ -321,12 +371,16 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | `spb router status \| install \| enable \| disable \| uninstall \| watch` | opt-in local router: failover across lines and sites, this computer only |
 | `spb usage [log] [--provider P]` / `spb usage stats [--by model\|provider\|day\|session]` | this computer's Codex requests (the router's log merged with Codex's session files; works without the router); totals per provider (Krill, each custom site) with each of its lines |
 | `spb account [--usage] [--days N] [--refresh]` | balance, plan and expiry; daily cost and per-model usage (Krill) |
-| `spb restore [original\|official\|generation]` | restore |
+| `spb restore [original\|official\|generation] [--take-over]` | restore (what another tool changed is kept unless `--take-over`) |
+| `spb hand-off [--to cc-switch\|ai-toolbox\|other]` | let another tool manage Codex: release what Superba owns, keep the other tool's changes and a backup |
 | `spb launch [--restart]` | open (or fully restart) the desktop app through Superba |
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | session providers |
 | `spb remote list \| apply \| rollback` | SSH remote hosts |
 | `spb import ccs\|ai-toolbox [--dry-run] [--select NAMES] [--on-conflict skip\|rename\|update]` | import Codex providers from cc-switch or AI Toolbox (their files are only read; Codex is not changed) |
 | `spb doctor`, `spb recover`, `spb uninstall` | diagnostics, crash recovery, clean removal |
+
+`spb switch --take-over` (also `profile use`) takes over keys and the credential
+another tool changed; `--keep-key PATH` keeps a single one.
 
 Useful flags for commands that execute a plan: `--dry-run` (show the plan only),
 `--countdown N` (0–30 s, Ctrl-C cancels), `--yes` (confirm a full restart),
