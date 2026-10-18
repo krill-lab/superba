@@ -19,9 +19,11 @@ mod support;
 use std::sync::Arc;
 
 use a11y_harness::{AppHarness, Tree};
-use egui::accesskit::{Action, NodeId, Role};
+use egui::accesskit::{Action, ActionRequest, NodeId, Role, TreeId};
 use superba_core::Locale;
+use superba_gui::design::widgets::Toasts;
 use superba_gui::i18n::Tr;
+use superba_gui::notices;
 use superba_gui::pages::Page;
 use support::fake::{FakeOptions, FakeService};
 
@@ -367,5 +369,65 @@ fn usage_banner_rows_cells_and_detail_tabs_are_readable_and_invokable() {
             let t = h.click(Some(Role::RadioButton), &tr.t(tab));
             assert_named(&format!("{locale:?} Usage › {tab}"), &t);
         }
+    }
+}
+
+/// One frame of the toast stack alone (AccessKit on), with `events`; returns
+/// its tree.
+fn toast_frame(
+    ctx: &egui::Context,
+    toasts: &mut Toasts<superba_gui::app::ToastAction>,
+    close: &str,
+    events: Vec<egui::Event>,
+) -> Tree {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1280.0, 800.0),
+        )),
+        events,
+        ..Default::default()
+    };
+    let output = ctx.run_ui(input, |ui| {
+        toasts.show(ui.ctx(), close);
+    });
+    let tree = Tree::from_update(
+        output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .expect("AccessKit is on"),
+    );
+    output.drop_without_applying_deltas();
+    tree
+}
+
+/// A toast's close button is a named button that closes it through AccessKit.
+/// Shown with the notice an elevated Windows token gets (as on the Windows CI
+/// runner, where its unnamed close button failed the settings walk above).
+#[test]
+fn toasts_name_their_close_button() {
+    for locale in LOCALES {
+        let tr = Tr::new(locale);
+        let close = tr.t("action.close");
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut toasts = Toasts::default();
+        toasts.push(notices::elevated_notice(&tr));
+        toast_frame(&ctx, &mut toasts, &close, Vec::new());
+        let t = toast_frame(&ctx, &mut toasts, &close, Vec::new());
+        assert!(t.has(&tr.t("notice.elevated_title")), "{}", t.dump());
+        assert_named(&format!("{locale:?} elevated notice"), &t);
+        let button = t
+            .find(Some(Role::Button), &close)
+            .unwrap_or_else(|| panic!("no {close:?} button:\n{}", t.dump()));
+        let click = egui::Event::AccessKitActionRequest(ActionRequest {
+            action: Action::Click,
+            target_tree: TreeId::ROOT,
+            target_node: button,
+            data: None,
+        });
+        toast_frame(&ctx, &mut toasts, &close, vec![click]);
+        assert!(toasts.is_empty(), "{locale:?}: the toast stays open");
     }
 }

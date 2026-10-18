@@ -371,7 +371,7 @@ fn widget_frame(theme: Theme) {
             ui.min_rect().bottom() < ui.clip_rect().bottom(),
             "smoke frame must paint every widget"
         );
-        assert_eq!(toasts.show(ui.ctx()), None);
+        assert_eq!(toasts.show(ui.ctx(), "Close"), None);
         assert_eq!(toasts.len(), 2);
         let modal = dialog(ui.ctx(), egui::Id::unique("smoke-dialog"), 320.0, |ui| {
             ui.label("Confirm the switch");

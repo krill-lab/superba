@@ -1773,7 +1773,7 @@ impl eframe::App for SuperbaApp {
             }
         }
         self.release_startup_notices();
-        if let Some(a) = self.toasts.show(&ctx) {
+        if let Some(a) = self.toasts.show(&ctx, &self.tr.t("action.close")) {
             self.handle_toast_action(a);
         }
 

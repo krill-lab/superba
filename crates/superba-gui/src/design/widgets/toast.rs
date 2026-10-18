@@ -111,8 +111,9 @@ impl<A: Clone> Toasts<A> {
         self.items.iter().map(|t| t.title.as_str()).collect()
     }
 
-    /// Draw the stack; returns a clicked action.
-    pub fn show(&mut self, ctx: &egui::Context) -> Option<A> {
+    /// Draw the stack; returns a clicked action. `close_label` names each
+    /// toast's close button for screen readers and UI Automation ("Close").
+    pub fn show(&mut self, ctx: &egui::Context, close_label: &str) -> Option<A> {
         if self.items.is_empty() {
             return None;
         }
@@ -152,7 +153,7 @@ impl<A: Clone> Toasts<A> {
                     })
                     .show(ui, |ui| {
                         ui.set_width(width - 32.0);
-                        toast_body(ui, toast, pal, &mut clicked, &mut close)
+                        toast_body(ui, toast, pal, close_label, &mut clicked, &mut close)
                     });
             });
             let hovered = resp.response.contains_pointer();
@@ -192,6 +193,7 @@ fn toast_body<A: Clone>(
     ui: &mut Ui,
     toast: &mut Toast<A>,
     pal: &Palette,
+    close_label: &str,
     clicked: &mut Option<A>,
     close: &mut Vec<u64>,
 ) {
@@ -227,6 +229,7 @@ fn toast_body<A: Clone>(
             }
         });
         let (x_rect, x_resp) = ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+        x_resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, close_label));
         let color = if x_resp.hovered() {
             pal.text
         } else {
