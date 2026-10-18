@@ -774,6 +774,12 @@ fn cell_node(ui: &mut Ui, row_id: Id, rect: Rect, row: usize, column: usize, con
     child
         .ctx()
         .accesskit_node_builder(child.unique_id(), |node| {
+            node.set_bounds(egui::accesskit::Rect {
+                x0: rect.min.x.into(),
+                y0: rect.min.y.into(),
+                x1: rect.max.x.into(),
+                y1: rect.max.y.into(),
+            });
             node.set_row_index(row);
             node.set_column_index(column);
             if let Some(t) = content.tooltip.as_ref().filter(|t| **t != content.text) {
