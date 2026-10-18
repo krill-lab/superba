@@ -16,6 +16,16 @@ use superba_router::service::{ServiceKind, ServiceManager, ServiceSpec, ServiceS
 use superba_router::watchdog::{self, DirectModeFallback, FallbackReason, Liveness};
 use superba_router::{MemberKind, ShutdownHandle};
 
+/// The tests of this file run one at a time (each holds this lock). A first
+/// configuration's port comes from `free_loopback_port` (bind port 0, let it
+/// go) and the router binds it a moment later; on Windows, listeners and
+/// outgoing connections draw from one dynamic port range, so a parallel test's
+/// socket could take the port in between ("cannot listen ... os error 10048",
+/// CI run 39106144381). The real services restart a router that cannot bind
+/// (systemd `Restart=always`, launchd `KeepAlive`, the supervisor) until the
+/// port is free again; [`InProcess`] starts it once.
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Runs `superba-router run` in a thread of this process.
 #[derive(Debug, Default)]
 struct InProcess {
@@ -126,6 +136,7 @@ fn keys() -> BTreeMap<String, Secret> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn enable_update_and_disable() {
+    let _serial = SERIAL.lock().await;
     let up = upstream(Mode::Json(200, r#"{"ok":true}"#)).await;
     let dir = tempfile::tempdir().unwrap();
     let data = DataDir::new(dir.path());
@@ -208,6 +219,7 @@ async fn enable_update_and_disable() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn reinstalling_a_stopped_router_keeps_its_port_and_token() {
+    let _serial = SERIAL.lock().await;
     let up = upstream(Mode::Json(200, r#"{"ok":true}"#)).await;
     let dir = tempfile::tempdir().unwrap();
     let data = DataDir::new(dir.path());
@@ -253,6 +265,7 @@ async fn reinstalling_a_stopped_router_keeps_its_port_and_token() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn enable_times_out_when_the_service_never_starts() {
+    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let data = DataDir::new(dir.path());
     let service = InProcess {
@@ -276,6 +289,7 @@ async fn enable_times_out_when_the_service_never_starts() {
 
 #[tokio::test]
 async fn write_config_refuses_missing_keys_and_the_official_login() {
+    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let data = DataDir::new(dir.path());
     let manager = RouterManager::new(
@@ -302,6 +316,7 @@ async fn write_config_refuses_missing_keys_and_the_official_login() {
 
 #[tokio::test]
 async fn enable_refuses_a_missing_router_program_before_writing_anything() {
+    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let data = DataDir::new(dir.path());
     let service = InProcess::default();
@@ -391,6 +406,7 @@ fn the_router_program_is_found_in_every_release_layout() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn configure_sets_the_stats_section_and_member_rewrites_keep_it() {
     use superba_router::{RouterConfig, StatsConfig, StatsLineConfig};
+    let _serial = SERIAL.lock().await;
 
     let up = upstream(Mode::Json(200, r#"{"ok":true}"#)).await;
     let dir = tempfile::tempdir().unwrap();
