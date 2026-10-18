@@ -153,16 +153,29 @@ back to the official ChatGPT login.
 
 ### Superba updates
 
-- **Check.** `releases/latest` of `krill-lab/superba` (and, with "Include
-  pre-releases" in Preferences, the newest pre-release of `releases`), ETag cached,
-  8 s deadline, at start-up, every 24 hours and on demand (Updates page, Cmd/Ctrl+K
-  "Check for Superba updates", `spb self-update check [--json]`). Compared by
-  semantic version with the running build. A release page that answers 404 / 401 is
-  shown as a calm "can't check right now" state, not an error. Preferences:
-  "Check for Superba updates automatically" (on) and "Include pre-releases" (off).
+- **Check**, on the update channel: **Stable** reads `releases/latest` of
+  `krill-lab/superba` (final releases only), **Preview** one page of `releases`
+  and takes the newest release including alpha, beta and release candidates by
+  semantic-version precedence (`alpha < beta < rc < final`, drafts skipped). Until
+  the user chooses (Preferences → Updates, the Updates page, `spb self-update
+  check|install --channel stable|preview`), a pre-release build uses Preview and a
+  final build Stable, so a preview user is offered the next alpha (user bug 73).
+  One request per check, ETag cached per channel, 8 s deadline, at start-up, every
+  24 hours and on demand (Updates page, Cmd/Ctrl+K "Check for Superba updates",
+  `spb self-update check [--json]`). GitHub's limit of 60 requests an hour
+  without an account is respected: a rate-limited answer stores the reset time,
+  nothing is asked before it (also not on demand) and the last answer stays shown.
+  Only a release newer than the running build is offered, never an older one: a
+  preview build on Stable waits for the next final release; an older version is
+  installed only when named (`spb self-update install --version 0.1.0`, refused on
+  Windows, whose installer only upgrades). A release page that answers 404 / 401
+  is shown as a calm "can't check right now" state, not an error. Preferences:
+  "Check for Superba updates automatically" (on) and "Update channel".
 - **UI.** A "Superba" section at the top of the Updates page (installed and latest
-  version, release notes as plain text, Update now / Later / Skip this version,
-  last checked), an Overview to-do item and a dot on the sidebar's Updates entry.
+  version, the channel with "You're on preview 0.1.1-alpha.3 · latest preview … ·
+  latest stable …", release notes as plain text, Update now / Later / Skip this
+  version, last checked), an Overview to-do item and a dot on the sidebar's
+  Updates entry.
 - **Install** (after a click, or `spb self-update install` with confirmation /
   `--yes`): the package for this OS and architecture is downloaded from the
   release's download path (GitHub, a mirror of exactly that path, or an opted-in

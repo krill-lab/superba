@@ -392,6 +392,9 @@ pub enum Action {
     LoadHosts,
     /// Check for a newer Superba now (the Updates page, the command palette).
     CheckSelfUpdate,
+    /// Use this Superba update channel (the Updates page; saved like the
+    /// Preferences choice, then checked at once).
+    SetUpdateChannel(superba_core::UpdateChannel),
     /// Skip a version of Superba (`None` clears the skip).
     SkipSelfUpdate(Option<String>),
     /// "Later": stop reminding about this Superba version until the next start

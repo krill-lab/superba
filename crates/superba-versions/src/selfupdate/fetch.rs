@@ -13,8 +13,29 @@ pub(crate) enum Fetched {
     NotModified,
     /// 404 / 401 / 403: a private repository or no such page.
     Unavailable,
-    /// Anything else (network, timeout, 5xx, rate limit).
+    /// GitHub's rate limit (403 with `x-ratelimit-remaining: 0`, or 429).
+    Limited {
+        /// `x-ratelimit-reset`: when the limit resets (Unix seconds).
+        reset_at: Option<u64>,
+        /// `retry-after`: seconds to wait (secondary rate limits).
+        retry_after: Option<u64>,
+    },
+    /// Anything else (network, timeout, 5xx).
     Failed(String),
+}
+
+fn header_u64(headers: &reqwest::header::HeaderMap, name: &str) -> Option<u64> {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse().ok())
+}
+
+fn limited(headers: &reqwest::header::HeaderMap) -> Fetched {
+    Fetched::Limited {
+        reset_at: header_u64(headers, "x-ratelimit-reset"),
+        retry_after: header_u64(headers, "retry-after"),
+    }
 }
 
 fn short(e: &reqwest::Error) -> String {
@@ -50,19 +71,16 @@ pub(crate) async fn get(url: &str, etag: Option<&str>, timeout: Duration) -> Fet
             304 => return Fetched::NotModified,
             404 | 401 => return Fetched::Unavailable,
             403 => {
-                let limited = resp
-                    .headers()
-                    .get("x-ratelimit-remaining")
-                    .and_then(|v| v.to_str().ok())
-                    == Some("0");
-                return if limited {
-                    Fetched::Failed("rate limited".into())
+                let headers = resp.headers();
+                let exhausted = header_u64(headers, "x-ratelimit-remaining") == Some(0);
+                return if exhausted || headers.contains_key("retry-after") {
+                    limited(headers)
                 } else {
                     Fetched::Unavailable
                 };
             }
             200 => {}
-            429 => return Fetched::Failed("rate limited".into()),
+            429 => return limited(resp.headers()),
             n => return Fetched::Failed(format!("HTTP {n}")),
         }
         let etag = resp

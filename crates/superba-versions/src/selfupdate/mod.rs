@@ -1,13 +1,24 @@
 //! Superba's own update: check the GitHub releases of `krill-lab/superba`, and
 //! install a newer release after the user chose to.
 //!
-//! - **Check** ([`SelfUpdater::check`]): `releases/latest` (stable) and, when
-//!   the user opted in, the newest pre-release of `releases`. ETag cached
-//!   (`<data dir>/selfupdate.json`), 8 s deadline, no credentials. A 404 / 401 /
-//!   403 (the repository is private today) ends in
-//!   [`SelfUpdateStatus::PageUnavailable`], a calm state; nothing is retried
-//!   before the next 24 h interval.
-//! - **Install** ([`SelfUpdater::install`]): the package of this OS and
+//! - **Check** ([`SelfUpdater::check`]) on the update channel
+//!   ([`UpdateChannel`]: the user's choice, else Preview on a pre-release build
+//!   and Stable otherwise). Stable reads `releases/latest` (GitHub never lists
+//!   a pre-release there); Preview reads one page of `releases` and takes the
+//!   newest release by semver precedence (`alpha < beta < rc < final`), drafts
+//!   skipped, and the newest final one for the page text. One request per
+//!   check (Preview asks `releases/latest` too only when the page holds no
+//!   final release). Every answer is cached with its ETag
+//!   (`<data dir>/selfupdate.json`), 8 s deadline, no credentials. GitHub
+//!   allows 60 requests an hour without an account: a rate-limited answer
+//!   stores the reset time and no request goes out before it, the cached
+//!   answer is shown meanwhile. A 404 / 401 / 403 (a private repository) ends
+//!   in [`SelfUpdateStatus::PageUnavailable`], a calm state; nothing is retried
+//!   before the next 24 h interval. Only a release newer than the running
+//!   build is offered: never a downgrade (a preview build on the Stable channel
+//!   waits for the next final release).
+//! - **Install** ([`SelfUpdater::install`]; [`SelfUpdater::install_version`]
+//!   for a release the user named, the only way to an older one): the package of this OS and
 //!   architecture ([`release::asset_name`]) from
 //!   `<downloads>/<tag>/<asset>` (GitHub, a configured mirror of exactly that
 //!   path, or an opted-in third-party proxy of it), verified for size and
@@ -47,6 +58,7 @@ use std::time::Duration;
 use semver::Version;
 use superba_core::{
     DataDir, NetworkSettings, SelfRelease, SelfUpdateStatus, SelfUpdateView, Timestamp,
+    UpdateChannel,
 };
 
 use crate::sources::checked_override;
@@ -81,8 +93,12 @@ pub const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 3600);
 /// A failed automatic check is retried after this long.
 pub const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(3600);
 
-/// How many releases `/releases` is asked for.
+/// How many releases `/releases` is asked for (newest first by creation).
 const LIST_PAGE: u32 = 30;
+
+/// The longest wait a rate-limit answer can impose (a far reset time or a
+/// wrong clock never blocks checks for longer).
+const MAX_RATE_LIMIT_WAIT: Duration = Duration::from_secs(3600);
 
 /// Third-party GitHub proxies (prefixes of the download URL), opt-in.
 const PROXIES: [&str; 2] = ["https://gh-proxy.com/", "https://ghfast.top/"];
@@ -133,7 +149,7 @@ pub struct SelfUpdater {
     data_dir: DataDir,
     network: NetworkSettings,
     auto_check: bool,
-    include_prereleases: bool,
+    channel: Option<UpdateChannel>,
     endpoints: Endpoints,
     platform: Platform,
     current: Version,
@@ -149,7 +165,7 @@ impl SelfUpdater {
             data_dir: data_dir.clone(),
             network,
             auto_check: true,
-            include_prereleases: false,
+            channel: None,
             endpoints: Endpoints::with_overrides(|k| std::env::var(k).ok()),
             platform: Platform::current(),
             current: version::parse_version(env!("CARGO_PKG_VERSION"))
@@ -159,10 +175,11 @@ impl SelfUpdater {
         }
     }
 
-    /// The Preferences choices: automatic checks, pre-releases.
-    pub fn with_preferences(mut self, auto_check: bool, include_prereleases: bool) -> Self {
+    /// The Preferences choices: automatic checks and the update channel
+    /// (`None`: the running build decides, see [`UpdateChannel::for_version`]).
+    pub fn with_preferences(mut self, auto_check: bool, channel: Option<UpdateChannel>) -> Self {
         self.auto_check = auto_check;
-        self.include_prereleases = include_prereleases;
+        self.channel = channel;
         self
     }
 
@@ -203,6 +220,16 @@ impl SelfUpdater {
         &self.current
     }
 
+    /// The update channel in use: the user's choice, else Preview on a
+    /// pre-release build and Stable otherwise.
+    pub fn channel(&self) -> UpdateChannel {
+        self.channel.unwrap_or(if self.current.pre.is_empty() {
+            UpdateChannel::Stable
+        } else {
+            UpdateChannel::Preview
+        })
+    }
+
     /// The endpoints in use.
     pub fn endpoints(&self) -> &Endpoints {
         &self.endpoints
@@ -222,42 +249,94 @@ impl SelfUpdater {
         self.compose(&state)
     }
 
+    /// The newest final release and the newest release of all (Preview only)
+    /// the cache knows for `channel`.
+    fn known(
+        &self,
+        state: &State,
+        channel: UpdateChannel,
+    ) -> (Option<SelfRelease>, Option<SelfRelease>) {
+        match channel {
+            UpdateChannel::Stable => (state.stable.release.clone(), None),
+            UpdateChannel::Preview => {
+                let stable = state
+                    .list
+                    .newest_stable
+                    .clone()
+                    .or_else(|| state.stable.release.clone());
+                let newest = [state.list.newest.clone(), stable.clone()]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|r| version::parse_version(&r.version).map(|v| (v, r)))
+                    .max_by(|(a, _), (b, _)| version::cmp(a, b))
+                    .map(|(_, r)| r);
+                (stable, newest)
+            }
+        }
+    }
+
+    /// The release a check on `channel` offers when it is newer than the
+    /// running build (never an older one).
+    fn candidate(&self, state: &State, channel: UpdateChannel) -> Option<SelfRelease> {
+        let (stable, newest) = self.known(state, channel);
+        match channel {
+            UpdateChannel::Stable => stable,
+            UpdateChannel::Preview => newest,
+        }
+    }
+
+    /// GitHub's rate limit is in force at `now`.
+    fn limited(&self, state: &State) -> bool {
+        state
+            .limited_until
+            .is_some_and(|t| t.as_millis() > self.now().as_millis())
+    }
+
     /// The state as the UIs see it.
     fn compose(&self, state: &State) -> SelfUpdateView {
-        let best = [
-            state.stable.release.as_ref(),
-            self.include_prereleases
-                .then_some(state.prerelease.release.as_ref())
-                .flatten(),
-        ]
-        .into_iter()
-        .flatten()
-        .filter_map(|r| version::parse_version(&r.version).map(|v| (v, r)))
-        .max_by(|(a, _), (b, _)| version::cmp(a, b));
+        let channel = self.channel();
+        let (latest_stable, latest_preview) = self.known(state, channel);
+        let best = self
+            .candidate(state, channel)
+            .and_then(|r| version::parse_version(&r.version).map(|v| (v, r)));
         let newer = best
             .as_ref()
             .is_some_and(|(v, _)| version::is_newer(v, &self.current));
-        let status = {
-            match state.outcome {
-                Outcome::None if !self.network.online_checks => SelfUpdateStatus::OnlineChecksOff,
-                Outcome::None => SelfUpdateStatus::NotChecked,
-                Outcome::Unavailable => SelfUpdateStatus::PageUnavailable,
-                Outcome::Failed if best.is_none() => SelfUpdateStatus::CheckFailed,
-                Outcome::Ok | Outcome::Failed if newer => SelfUpdateStatus::Available,
-                Outcome::Ok | Outcome::Failed => SelfUpdateStatus::UpToDate,
-            }
+        // The last round asked for another channel: only this channel's own
+        // cache speaks (Preview never answers from the Stable cache alone).
+        let answered = state.checked_channel == Some(channel);
+        let cached = match channel {
+            UpdateChannel::Stable => state.stable.release.is_some(),
+            UpdateChannel::Preview => state.list.newest.is_some(),
         };
-        let latest: Option<SelfRelease> = best.map(|(_, r)| r.clone());
+        let limited = self.limited(state);
+        let status = match state.outcome {
+            Outcome::None if !self.network.online_checks => SelfUpdateStatus::OnlineChecksOff,
+            Outcome::None => SelfUpdateStatus::NotChecked,
+            _ if best.is_none() && limited => SelfUpdateStatus::CheckFailed,
+            _ if !answered && !cached => SelfUpdateStatus::NotChecked,
+            _ if !answered && newer => SelfUpdateStatus::Available,
+            _ if !answered => SelfUpdateStatus::UpToDate,
+            Outcome::Unavailable => SelfUpdateStatus::PageUnavailable,
+            Outcome::Failed if best.is_none() => SelfUpdateStatus::CheckFailed,
+            Outcome::Ok | Outcome::Failed if newer => SelfUpdateStatus::Available,
+            Outcome::Ok | Outcome::Failed => SelfUpdateStatus::UpToDate,
+        };
+        let latest: Option<SelfRelease> = best.map(|(_, r)| r);
         SelfUpdateView {
             current: self.current.to_string(),
             status,
             no_package: status == SelfUpdateStatus::Available
                 && latest.as_ref().is_some_and(|l| l.asset.is_none()),
             latest,
+            channel,
+            channel_chosen: self.channel.is_some(),
+            latest_stable,
+            latest_preview,
             checked_at: state.checked_at,
             detail: state.detail.clone(),
+            limited_until: state.limited_until.filter(|_| limited),
             skipped: state.skipped.clone(),
-            include_prereleases: self.include_prereleases,
             auto_check: self.auto_check,
             problem: state
                 .last_attempt
@@ -271,7 +350,7 @@ impl SelfUpdater {
         let Some(at) = state.checked_at else {
             return false;
         };
-        if self.include_prereleases && !state.included_prereleases {
+        if state.checked_channel != Some(self.channel()) {
             return false;
         }
         if state.api.as_deref() != Some(self.endpoints.api.as_str()) {
@@ -285,9 +364,22 @@ impl SelfUpdater {
         age >= 0 && (age as u128) < window.as_millis()
     }
 
+    /// When a rate-limited answer allows the next request.
+    fn limit_end(&self, reset_at: Option<u64>, retry_after: Option<u64>) -> Option<Timestamp> {
+        let now = self.now().as_millis();
+        let max = now + MAX_RATE_LIMIT_WAIT.as_millis() as i64;
+        let end = match (reset_at, retry_after) {
+            (_, Some(secs)) => now.saturating_add((secs as i64).saturating_mul(1000)),
+            (Some(at), None) => (at as i64).saturating_mul(1000),
+            (None, None) => return None,
+        };
+        (end > now).then(|| Timestamp::from_millis(end.min(max)))
+    }
+
     /// Check the release page. `manual` ignores the "automatic checks"
     /// preference, the interval and "online checks" being off in the network
     /// preferences (those are about checking on its own; the user asked).
+    /// Nothing is sent while GitHub's rate limit is in force.
     pub async fn check(&self, manual: bool) -> SelfUpdateView {
         self.cleanup();
         let path = self.state_path();
@@ -298,35 +390,60 @@ impl SelfUpdater {
         }
         if state.api.as_deref() != Some(self.endpoints.api.as_str()) {
             state.stable = state::Channel::default();
-            state.prerelease = state::Channel::default();
+            state.list = state::List::default();
+            state.limited_until = None;
             state.api = Some(self.endpoints.api.clone());
         }
+        if self.limited(&state) {
+            return self.compose(&state);
+        }
+        state.limited_until = None;
         let api = self.endpoints.api.trim_end_matches('/');
+        let channel = self.channel();
         let mut results = Vec::new();
+        let mut limits = Vec::new();
+        let mut note = |fetched: &Fetched| {
+            if let Fetched::Limited {
+                reset_at,
+                retry_after,
+            } = fetched
+            {
+                limits.push((*reset_at, *retry_after));
+            }
+        };
 
-        let stable = fetch::get(
-            &format!("{api}/releases/latest"),
-            state.stable.etag.as_deref(),
-            CHECK_TIMEOUT,
-        )
-        .await;
-        results.push(absorb(&mut state.stable, stable, |body| {
-            release::parse_latest(body, &self.platform).map(Some)
-        }));
-        if self.include_prereleases {
+        let mut need_latest = channel == UpdateChannel::Stable;
+        if channel == UpdateChannel::Preview {
             let list = fetch::get(
                 &format!("{api}/releases?per_page={LIST_PAGE}"),
-                state.prerelease.etag.as_deref(),
+                state.list.etag.as_deref(),
                 CHECK_TIMEOUT,
             )
             .await;
-            results.push(absorb(&mut state.prerelease, list, |body| {
-                release::is_list(body).then(|| release::newest_prerelease(body, &self.platform))
-            }));
-        } else {
-            state.prerelease = state::Channel::default();
+            note(&list);
+            let step = absorb_list(&mut state.list, list, &self.platform);
+            // A page of pre-releases only: the newest final release is asked
+            // for separately (it may be older than the page).
+            need_latest = matches!(step, Step::Ok) && state.list.newest_stable.is_none();
+            results.push(step);
         }
-        state.included_prereleases = self.include_prereleases;
+        if need_latest {
+            let stable = fetch::get(
+                &format!("{api}/releases/latest"),
+                state.stable.etag.as_deref(),
+                CHECK_TIMEOUT,
+            )
+            .await;
+            note(&stable);
+            results.push(absorb(&mut state.stable, stable, |body| {
+                release::parse_latest(body, &self.platform).map(Some)
+            }));
+        }
+        state.limited_until = limits
+            .into_iter()
+            .filter_map(|(r, a)| self.limit_end(r, a))
+            .max_by_key(|t| t.as_millis());
+        state.checked_channel = Some(channel);
         state.checked_at = Some(self.now());
         state.detail = None;
         state.outcome = if results.iter().any(|r| matches!(r, Step::Ok)) {
@@ -414,6 +531,36 @@ fn absorb(
             *channel = state::Channel::default();
             Step::Unavailable
         }
+        Fetched::Limited { .. } => Step::Failed("rate limited".into()),
+        Fetched::Failed(why) => Step::Failed(why),
+    }
+}
+
+/// A `/releases` answer into the list cache. A page without any release we
+/// accept is "no release page" ([`Step::Unavailable`]).
+fn absorb_list(list: &mut state::List, fetched: Fetched, platform: &Platform) -> Step {
+    match fetched {
+        Fetched::NotModified => Step::Ok,
+        Fetched::Fresh { body, etag } => match release::parse_list(&body, platform) {
+            Some(answer) if answer.newest.is_none() => {
+                *list = state::List::default();
+                Step::Unavailable
+            }
+            Some(answer) => {
+                *list = state::List {
+                    etag,
+                    newest: answer.newest,
+                    newest_stable: answer.newest_stable,
+                };
+                Step::Ok
+            }
+            None => Step::Failed("unexpected answer".into()),
+        },
+        Fetched::Unavailable => {
+            *list = state::List::default();
+            Step::Unavailable
+        }
+        Fetched::Limited { .. } => Step::Failed("rate limited".into()),
         Fetched::Failed(why) => Step::Failed(why),
     }
 }

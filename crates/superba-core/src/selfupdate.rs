@@ -33,6 +33,50 @@ pub enum SelfUpdateStatus {
     OnlineChecksOff,
 }
 
+/// Which releases of Superba are offered (Preferences → Updates,
+/// `spb self-update --channel`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateChannel {
+    /// Final releases only (`vX.Y.Z`, GitHub's "latest" release).
+    Stable,
+    /// The newest release including pre-releases (alpha < beta < rc < final).
+    Preview,
+}
+
+impl UpdateChannel {
+    /// Both channels, in the order they are shown.
+    pub const ALL: [Self; 2] = [Self::Stable, Self::Preview];
+
+    /// The channel of a build whose user has not chosen one: Preview on a
+    /// pre-release build (`0.1.1-alpha.3`), else Stable.
+    pub fn for_version(running: &str) -> Self {
+        if is_prerelease_version(running) {
+            Self::Preview
+        } else {
+            Self::Stable
+        }
+    }
+
+    /// `stable` / `preview`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stable => "stable",
+            Self::Preview => "preview",
+        }
+    }
+}
+
+/// `version` (with or without a leading `v`) has a pre-release part
+/// (`0.1.1-alpha.3`); build metadata (`+…`) does not count.
+pub fn is_prerelease_version(version: &str) -> bool {
+    version
+        .trim()
+        .split('+')
+        .next()
+        .is_some_and(|core| core.contains('-'))
+}
+
 /// One release of Superba.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelfRelease {
@@ -60,27 +104,46 @@ pub struct SelfRelease {
 }
 
 /// What the Updates page, the Overview and `spb self-update check` show.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelfUpdateView {
     /// The running version (`CARGO_PKG_VERSION`).
     pub current: String,
     /// Latest check result.
     pub status: SelfUpdateStatus,
-    /// The release to offer ([`SelfUpdateStatus::Available`]) or the newest known.
+    /// The release to offer ([`SelfUpdateStatus::Available`]) or the newest
+    /// known on [`SelfUpdateView::channel`]. Never older than
+    /// [`SelfUpdateView::current`] when it is offered.
     #[serde(default)]
     pub latest: Option<SelfRelease>,
+    /// The channel in use: the user's choice, else the one of the running build
+    /// ([`UpdateChannel::for_version`]).
+    #[serde(default = "stable")]
+    pub channel: UpdateChannel,
+    /// [`SelfUpdateView::channel`] is the user's choice (not the default of
+    /// the running build).
+    #[serde(default)]
+    pub channel_chosen: bool,
+    /// The newest final release known.
+    #[serde(default)]
+    pub latest_stable: Option<SelfRelease>,
+    /// The newest release of all, pre-releases included (known on the
+    /// Preview channel).
+    #[serde(default)]
+    pub latest_preview: Option<SelfRelease>,
     /// When the check last got an answer (also a `304`).
     #[serde(default)]
     pub checked_at: Option<Timestamp>,
     /// A short reason for [`SelfUpdateStatus::CheckFailed`] (no secrets).
     #[serde(default)]
     pub detail: Option<String>,
+    /// GitHub's limit for requests without an account (60 an hour per
+    /// address) was reached: no request is sent before this time, also not for
+    /// a check the user asked for; the cached answer is shown meanwhile.
+    #[serde(default)]
+    pub limited_until: Option<Timestamp>,
     /// The version the user chose to skip.
     #[serde(default)]
     pub skipped: Option<String>,
-    /// Pre-releases are included.
-    #[serde(default)]
-    pub include_prereleases: bool,
     /// Checking automatically is on.
     #[serde(default)]
     pub auto_check: bool,
@@ -114,7 +177,37 @@ pub struct SelfUpdateProblem {
     pub seen: bool,
 }
 
+fn stable() -> UpdateChannel {
+    UpdateChannel::Stable
+}
+
+impl Default for SelfUpdateView {
+    fn default() -> Self {
+        Self {
+            current: String::new(),
+            status: SelfUpdateStatus::default(),
+            latest: None,
+            channel: UpdateChannel::Stable,
+            channel_chosen: false,
+            latest_stable: None,
+            latest_preview: None,
+            checked_at: None,
+            detail: None,
+            limited_until: None,
+            skipped: None,
+            auto_check: false,
+            no_package: false,
+            problem: None,
+        }
+    }
+}
+
 impl SelfUpdateView {
+    /// The running build is a pre-release (`0.1.1-alpha.3`).
+    pub fn on_prerelease(&self) -> bool {
+        is_prerelease_version(&self.current)
+    }
+
     /// A newer release exists and has not been skipped.
     pub fn offered(&self) -> bool {
         self.status == SelfUpdateStatus::Available && !self.is_skipped()
@@ -139,10 +232,15 @@ pub struct SelfUpdateCheckRequest {
 }
 
 /// [`crate::SwitchService::self_update_install`] request.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelfUpdateInstallRequest {
     /// Start the new version when the swap is done (the caller then quits).
     pub relaunch: bool,
+    /// Install exactly this release (`0.1.0` or `v0.1.0`), chosen by the user:
+    /// the only way to an older version than the running one. `None` = the
+    /// release offered on the update channel (never older).
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 /// How an install ended.

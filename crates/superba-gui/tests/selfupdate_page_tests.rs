@@ -12,13 +12,15 @@ use pretty_assertions::assert_eq;
 use router_harness::Harness;
 use superba_core::{
     Error, Locale, SelfInstallOutcome, SelfRelease, SelfUpdateReport, SelfUpdateStatus,
-    SelfUpdateView, Settings, Timestamp,
+    SelfUpdateView, Settings, Timestamp, UpdateChannel,
 };
 use superba_gui::design::widgets::Status;
 use superba_gui::i18n::Tr;
 use superba_gui::pages::overview::todo::{self, TodoKind};
 use superba_gui::pages::updates::{self, State};
-use superba_gui::pages::updates_self::{NoteLine, inline, note_lines};
+use superba_gui::pages::updates_self::{
+    NoteLine, channel_line, inline, no_downgrade_note, note_lines,
+};
 use superba_gui::pages::{Action, NavBadge, Page, preferences};
 use support::fake::{FakeOptions, FakeService};
 
@@ -535,16 +537,29 @@ fn preferences_has_the_two_update_choices_with_the_right_defaults() {
         defaults.auto_update_check,
         "automatic checks are on by default"
     );
-    assert!(
-        !defaults.include_prereleases,
-        "pre-releases are off by default"
+    assert_eq!(
+        defaults.update_channel, None,
+        "no channel chosen: the running build decides"
     );
-    for (locale, auto, pre) in [
-        (Locale::ZhCn, "自动检查 Superba 更新", "包含预发布版本"),
+    assert_eq!(
+        defaults.update_channel_for("0.1.1-alpha.3"),
+        UpdateChannel::Preview
+    );
+    assert_eq!(defaults.update_channel_for("0.1.0"), UpdateChannel::Stable);
+    for (locale, auto, channel, stable, preview) in [
+        (
+            Locale::ZhCn,
+            "自动检查 Superba 更新",
+            "更新通道",
+            "稳定版",
+            "预览版",
+        ),
         (
             Locale::En,
             "Check for Superba updates automatically",
-            "Include pre-releases",
+            "Update channel",
+            "Stable",
+            "Preview",
         ),
     ] {
         let mut h = Harness::new([1280.0, 2600.0], locale, fake(), false);
@@ -553,8 +568,30 @@ fn preferences_has_the_two_update_choices_with_the_right_defaults() {
             |ui, cx, out| preferences::show(ui, cx, &mut settings, out),
             |f| f.has(auto),
         );
-        assert!(f.has(pre), "{}", f.all_text());
+        for want in [channel, stable, preview] {
+            assert!(f.has(want), "{locale:?} {want}: {}", f.all_text());
+        }
     }
+}
+
+#[test]
+fn picking_a_channel_in_preferences_saves_it() {
+    let mut h = Harness::new([1280.0, 2600.0], Locale::En, fake(), false);
+    let mut settings = Settings {
+        update_channel: Some(UpdateChannel::Stable),
+        ..Settings::default()
+    };
+    let f = h.until(
+        |ui, cx, out| preferences::show(ui, cx, &mut settings, out),
+        |f| f.has("Update channel"),
+    );
+    h.click_text(&f, "Preview");
+    let f = h.until(
+        |ui, cx, out| preferences::show(ui, cx, &mut settings, out),
+        |f| f.actions.iter().any(|a| matches!(a, Action::SaveSettings)),
+    );
+    assert!(!f.actions.is_empty());
+    assert_eq!(settings.update_channel, Some(UpdateChannel::Preview));
 }
 
 #[test]
@@ -562,21 +599,153 @@ fn old_settings_files_keep_the_defaults_and_only_changes_are_written() {
     // A profiles.json written before these choices existed.
     let old: Settings = serde_json::from_str(r#"{"countdown_secs":3}"#).unwrap();
     assert!(old.auto_update_check);
-    assert!(!old.include_prereleases);
+    assert_eq!(old.update_channel, None);
     let json = serde_json::to_value(Settings::default()).unwrap();
     assert!(
-        json.get("auto_update_check").is_none(),
+        json.get("auto_update_check").is_none() && json.get("update_channel").is_none(),
         "defaults are not written"
     );
     let changed = Settings {
         auto_update_check: false,
-        include_prereleases: true,
+        update_channel: Some(UpdateChannel::Preview),
         ..Settings::default()
     };
     let json = serde_json::to_value(&changed).unwrap();
     assert_eq!(json["auto_update_check"], false);
-    assert_eq!(json["include_prereleases"], true);
+    assert_eq!(json["update_channel"], "preview");
     assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), changed);
+}
+
+/// The reported case: 0.1.1-alpha.3 with 0.1.0 as the newest final release.
+fn preview_build(status: SelfUpdateStatus, channel: UpdateChannel) -> SelfUpdateView {
+    let preview = release("0.1.1-alpha.4");
+    let stable = release("0.1.0");
+    SelfUpdateView {
+        current: "0.1.1-alpha.3".into(),
+        status,
+        latest: Some(match channel {
+            UpdateChannel::Stable => stable.clone(),
+            UpdateChannel::Preview => preview.clone(),
+        }),
+        channel,
+        latest_stable: Some(stable),
+        latest_preview: (channel == UpdateChannel::Preview).then_some(preview),
+        checked_at: Some(Timestamp::now()),
+        auto_check: true,
+        ..SelfUpdateView::default()
+    }
+}
+
+#[test]
+fn the_channel_line_names_this_build_and_what_each_channel_has() {
+    let v = preview_build(SelfUpdateStatus::Available, UpdateChannel::Preview);
+    assert_eq!(
+        channel_line(&Tr::new(Locale::En), &v),
+        "You're on preview 0.1.1-alpha.3 · latest preview 0.1.1-alpha.4 · latest stable 0.1.0"
+    );
+    assert_eq!(
+        channel_line(&Tr::new(Locale::ZhCn), &v),
+        "当前为预览版 0.1.1-alpha.3 · 最新预览版 0.1.1-alpha.4 · 最新稳定版 0.1.0"
+    );
+    let stable = SelfUpdateView {
+        current: "0.1.0".into(),
+        latest_stable: Some(release("0.2.0")),
+        ..SelfUpdateView::default()
+    };
+    assert_eq!(
+        channel_line(&Tr::new(Locale::En), &stable),
+        "You're on stable 0.1.0 · latest stable 0.2.0"
+    );
+    // Only a preview build on Stable that has nothing newer gets the note.
+    let waiting = preview_build(SelfUpdateStatus::UpToDate, UpdateChannel::Stable);
+    let note = no_downgrade_note(&Tr::new(Locale::En), &waiting).unwrap();
+    assert!(note.contains("never installs an older version"), "{note}");
+    assert!(
+        no_downgrade_note(&Tr::new(Locale::ZhCn), &waiting)
+            .unwrap()
+            .contains("不会自动安装更旧的版本")
+    );
+    assert_eq!(no_downgrade_note(&Tr::new(Locale::En), &v), None);
+}
+
+#[test]
+fn the_page_shows_the_channel_and_offers_the_next_preview() {
+    for (locale, want) in [
+        (
+            Locale::En,
+            [
+                "Channel",
+                "Preview",
+                "You're on preview 0.1.1-alpha.3 · latest preview 0.1.1-alpha.4 · latest stable 0.1.0",
+                "Update now",
+            ],
+        ),
+        (
+            Locale::ZhCn,
+            [
+                "更新通道",
+                "预览版",
+                "当前为预览版 0.1.1-alpha.3 · 最新预览版 0.1.1-alpha.4 · 最新稳定版 0.1.0",
+                "立即更新",
+            ],
+        ),
+    ] {
+        let mut h = harness(
+            fake(),
+            locale,
+            preview_build(SelfUpdateStatus::Available, UpdateChannel::Preview),
+        );
+        let f = page(&mut h, &mut State::default(), want[3]);
+        for w in want {
+            assert!(f.has(w), "{locale:?} {w}:\n{}", f.all_text());
+        }
+        assert!(f.has("0.1.1-alpha.4"), "{}", f.all_text());
+    }
+}
+
+#[test]
+fn a_preview_build_on_stable_is_never_offered_the_older_stable() {
+    let mut h = harness(
+        fake(),
+        Locale::En,
+        preview_build(SelfUpdateStatus::UpToDate, UpdateChannel::Stable),
+    );
+    let mut state = State::default();
+    let f = page(&mut h, &mut state, "No stable release is newer");
+    assert!(
+        f.has("You're on preview 0.1.1-alpha.3 · latest stable 0.1.0"),
+        "{}",
+        f.all_text()
+    );
+    assert!(!f.has("Update now"), "{}", f.all_text());
+    // Switching the channel on the page is the same choice as in Preferences.
+    h.click_text(&f, "Preview");
+    let f = h.until(
+        |ui, cx, out| updates::show(ui, cx, &mut state, out),
+        |f| {
+            f.actions
+                .iter()
+                .any(|a| matches!(a, Action::SetUpdateChannel(_)))
+        },
+    );
+    assert!(
+        f.actions
+            .iter()
+            .any(|a| matches!(a, Action::SetUpdateChannel(UpdateChannel::Preview)))
+    );
+}
+
+#[test]
+fn the_rate_limit_is_a_quiet_line_with_the_time_it_ends() {
+    let mut v = preview_build(SelfUpdateStatus::Available, UpdateChannel::Preview);
+    v.detail = Some("rate limited".into());
+    v.limited_until = Some(Timestamp::from_millis(
+        Timestamp::now().as_millis() + 600_000,
+    ));
+    let mut h = harness(fake(), Locale::En, v);
+    let f = page(&mut h, &mut State::default(), "GitHub's limit");
+    assert!(f.has("the last answer is shown"), "{}", f.all_text());
+    assert!(f.has("Update now"), "the cached answer is still offered");
 }
 
 #[test]

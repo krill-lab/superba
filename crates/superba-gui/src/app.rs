@@ -278,7 +278,7 @@ pub struct SuperbaApp {
     account_loaded_for: Option<(Option<superba_core::ProfileId>, u64)>,
     models_loaded_for: Option<(superba_core::ProfileId, u64)>,
     /// Preferences choices about updates as last sent to the backend.
-    selfupdate_prefs: (bool, bool),
+    selfupdate_prefs: (bool, Option<superba_core::UpdateChannel>),
     had_providers: bool,
     pending_key_save: bool,
     wizard_request: Option<SwitchRequest>,
@@ -357,7 +357,7 @@ impl SuperbaApp {
             router_watch_busy: false,
             account_loaded_for: None,
             models_loaded_for: None,
-            selfupdate_prefs: (true, false),
+            selfupdate_prefs: (true, None),
             had_providers: false,
             pending_key_save: false,
             wizard_request: None,
@@ -666,10 +666,8 @@ impl SuperbaApp {
                     if let Ok(set) = &r
                         && !self.settings_loaded
                     {
-                        self.selfupdate_prefs = (
-                            set.settings.auto_update_check,
-                            set.settings.include_prereleases,
-                        );
+                        self.selfupdate_prefs =
+                            (set.settings.auto_update_check, set.settings.update_channel);
                         self.settings = set.settings.clone();
                         self.settings_loaded = true;
                         self.apply_settings(ctx);
@@ -1310,7 +1308,7 @@ impl SuperbaApp {
                 self.apply_settings(ctx);
                 let prefs = (
                     self.settings.auto_update_check,
-                    self.settings.include_prereleases,
+                    self.settings.update_channel,
                 );
                 if prefs != self.selfupdate_prefs {
                     // A changed update choice is acted on at once: check again.
@@ -1325,6 +1323,15 @@ impl SuperbaApp {
                 }
             }
             Action::CheckSelfUpdate => self.check_self_update(true),
+            Action::SetUpdateChannel(channel) => {
+                // From the Updates page: the same as picking it in Preferences.
+                self.settings.update_channel = Some(channel);
+                if let Some(view) = self.data.selfupdate.value.as_mut() {
+                    view.channel = channel;
+                    view.channel_chosen = true;
+                }
+                self.handle_action(ctx, Action::SaveSettings);
+            }
             Action::SkipSelfUpdate(version) => {
                 self.data.selfupdate.start();
                 self.backend.send(Command::SelfUpdateSkip(version));

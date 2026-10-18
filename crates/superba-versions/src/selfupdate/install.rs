@@ -240,7 +240,8 @@ impl SelfUpdater {
         Ok(())
     }
 
-    /// Download, verify and install the offered release.
+    /// Download, verify and install the release offered on the update
+    /// channel (always newer than the running build).
     pub async fn install(&self, relaunch: bool) -> Result<InstallResult> {
         let view = self.check(true).await;
         if view.status == SelfUpdateStatus::OnlineChecksOff {
@@ -256,6 +257,68 @@ impl SelfUpdater {
                 });
             }
         };
+        self.install_chosen(release, relaunch).await
+    }
+
+    /// The release of `version` (`0.1.0` or `v0.1.0`), read from
+    /// `releases/tags/<tag>`; any channel.
+    pub async fn release_of(&self, version: &str) -> Result<SelfRelease> {
+        let tag = format!("v{}", version.trim().trim_start_matches('v'));
+        if version::parse_tag(&tag).is_none() {
+            return Err(Error::invalid(format!(
+                "{version} is not a Superba release version (like 0.1.0 or 0.2.0-rc.1)"
+            )));
+        }
+        let api = self.endpoints.api.trim_end_matches('/');
+        let url = format!("{api}/releases/tags/{tag}");
+        match super::fetch::get(&url, None, super::CHECK_TIMEOUT).await {
+            super::fetch::Fetched::Fresh { body, .. } => {
+                super::release::parse_latest(&body, &self.platform)
+                    .filter(|r| r.tag == tag)
+                    .ok_or_else(|| Error::NotFound {
+                        what: format!("a published Superba release {tag}"),
+                    })
+            }
+            super::fetch::Fetched::Unavailable | super::fetch::Fetched::NotModified => {
+                Err(Error::NotFound {
+                    what: format!("a published Superba release {tag}"),
+                })
+            }
+            super::fetch::Fetched::Limited { .. } => Err(Error::other(
+                "GitHub's rate limit for requests without an account is reached; try again later",
+            )),
+            super::fetch::Fetched::Failed(why) => Err(Error::other(format!(
+                "could not read the release {tag}: {why}"
+            ))),
+        }
+    }
+
+    /// Download, verify and install release `version`, which the user chose
+    /// by name: the only way to an older version than the running one (the
+    /// Windows installer only upgrades, so an older version is refused there).
+    pub async fn install_version(&self, version: &str, relaunch: bool) -> Result<InstallResult> {
+        let release = self.release_of(version).await?;
+        let wanted = version::parse_version(&release.version)
+            .ok_or_else(|| Error::invalid(format!("{} is not a version", release.version)))?;
+        if version::cmp(&wanted, &self.current) == std::cmp::Ordering::Equal {
+            return Err(Error::invalid(format!(
+                "Superba {} is the running version",
+                release.version
+            )));
+        }
+        if self.platform.os == Os::Windows && !version::is_newer(&wanted, &self.current) {
+            return Err(Error::Unsupported {
+                what: format!(
+                    "installing the older Superba {} over {} on Windows (the installer only \
+                     upgrades: uninstall Superba, then install the older MSI from {})",
+                    release.version, self.current, release.url
+                ),
+            });
+        }
+        self.install_chosen(release, relaunch).await
+    }
+
+    async fn install_chosen(&self, release: SelfRelease, relaunch: bool) -> Result<InstallResult> {
         let asset = release.asset.clone().ok_or_else(|| Error::Unsupported {
             what: format!("a Superba package for this system in {}", release.tag),
         })?;

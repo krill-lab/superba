@@ -361,19 +361,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
                 ));
             },
         );
-        row(
-            ui,
-            cx,
-            &cx.tr.t("prefs.updates.prerelease"),
-            &cx.tr.t("prefs.updates.prerelease_desc"),
-            true,
-            |ui| {
-                ui.add(Toggle::new(
-                    &mut settings.include_prereleases,
-                    cx.tr.t("prefs.updates.prerelease"),
-                ));
-            },
-        );
+        update_channel_row(ui, cx, settings);
     });
 
     ui.add_space(24.0);
@@ -539,4 +527,35 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
     if *settings != before {
         out.push(Action::SaveSettings);
     }
+}
+
+/// The Superba update channel (Stable / Preview). Until the user picks one the
+/// running build decides (Preview on a pre-release build); a pick is saved.
+pub fn update_channel_row(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings) {
+    row(
+        ui,
+        cx,
+        &cx.tr.t("prefs.updates.channel"),
+        &cx.tr.t("prefs.updates.channel_desc"),
+        true,
+        |ui| {
+            let running = settings.update_channel_for(env!("CARGO_PKG_VERSION"));
+            let mut channel = running;
+            Segmented::new("update-channel", &mut channel)
+                .label(cx.tr.t("prefs.updates.channel"))
+                .option(
+                    superba_core::UpdateChannel::Stable,
+                    cx.tr.t("updates.superba.channel_stable"),
+                )
+                .option(
+                    superba_core::UpdateChannel::Preview,
+                    cx.tr.t("updates.superba.channel_preview"),
+                )
+                .small()
+                .show(ui);
+            if channel != running {
+                settings.update_channel = Some(channel);
+            }
+        },
+    );
 }

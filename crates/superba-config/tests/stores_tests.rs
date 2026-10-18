@@ -101,7 +101,7 @@ fn user_set() -> ProfileSet {
         preferred_app_id: Some("test-app".into()),
         router: Default::default(),
         auto_update_check: false,
-        include_prereleases: true,
+        update_channel: Some(superba_core::UpdateChannel::Preview),
         reduce_motion: true,
     };
     set

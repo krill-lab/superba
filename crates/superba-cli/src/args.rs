@@ -983,15 +983,38 @@ impl From<ConflictArg> for superba_core::ConflictAction {
     }
 }
 
+/// `spb self-update --channel`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ChannelArg {
+    Stable,
+    Preview,
+}
+
+impl From<ChannelArg> for superba_core::UpdateChannel {
+    fn from(value: ChannelArg) -> Self {
+        match value {
+            ChannelArg::Stable => Self::Stable,
+            ChannelArg::Preview => Self::Preview,
+        }
+    }
+}
+
 /// `spb self-update`.
 #[derive(Debug, Subcommand)]
 pub enum SelfUpdateCommand {
     #[command(about = english("cli.help.self_update_check"))]
-    Check,
+    Check {
+        #[arg(long, value_enum, value_name = "CHANNEL", help = english("cli.help.self_update_channel"))]
+        channel: Option<ChannelArg>,
+    },
     #[command(about = english("cli.help.self_update_install"))]
     Install {
         #[arg(short = 'y', long, help = english("cli.help.self_update_yes"))]
         yes: bool,
+        #[arg(long, value_enum, value_name = "CHANNEL", conflicts_with = "version", help = english("cli.help.self_update_channel"))]
+        channel: Option<ChannelArg>,
+        #[arg(long, value_name = "VERSION", help = english("cli.help.self_update_version"))]
+        version: Option<String>,
     },
     /// Restart the router service onto the new binary (the Windows hand-off runs it).
     #[command(hide = true)]

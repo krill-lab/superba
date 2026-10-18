@@ -247,9 +247,11 @@ pub struct Settings {
     /// always needs a click). On by default.
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub auto_update_check: bool,
-    /// Also offer pre-releases of Superba. Off by default.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub include_prereleases: bool,
+    /// Which Superba releases are offered. `None` until the user chooses:
+    /// then the running build decides ([`crate::UpdateChannel::for_version`]:
+    /// Preview on a pre-release build, else Stable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_channel: Option<crate::UpdateChannel>,
     /// Reduce motion: animated scenes (the session migration dialog) show a
     /// still frame. Off by default.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -266,6 +268,15 @@ fn is_true(v: &bool) -> bool {
 
 fn is_false(v: &bool) -> bool {
     !*v
+}
+
+impl Settings {
+    /// The update channel in effect for a build of version `running`: the
+    /// user's choice, else Preview on a pre-release build and Stable otherwise.
+    pub fn update_channel_for(&self, running: &str) -> crate::UpdateChannel {
+        self.update_channel
+            .unwrap_or_else(|| crate::UpdateChannel::for_version(running))
+    }
 }
 
 impl Default for Settings {
@@ -286,7 +297,7 @@ impl Default for Settings {
             network: NetworkSettings::default(),
             app_codex: AppCodexSettings::default(),
             auto_update_check: true,
-            include_prereleases: false,
+            update_channel: None,
             reduce_motion: false,
         }
     }

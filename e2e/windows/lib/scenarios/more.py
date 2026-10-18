@@ -588,10 +588,16 @@ class _Release(BaseHTTPRequestHandler):
 
     def do_GET(self):
         srv = self.server
-        if self.path.rstrip("/").endswith("/releases/latest"):
-            body = json.dumps({"tag_name": srv.tag, "draft": False, "prerelease": False, "body": "mock",
-                               "published_at": "2026-10-18T00:00:00Z", "html_url": "https://example.invalid/r",
-                               "assets": [{"name": p.name, "size": p.stat().st_size} for p in srv.files]}).encode()
+        release = {"tag_name": srv.tag, "draft": False, "prerelease": "-" in srv.tag, "body": "mock",
+                   "published_at": "2026-10-18T00:00:00Z", "html_url": "https://example.invalid/r",
+                   "assets": [{"name": p.name, "size": p.stat().st_size} for p in srv.files]}
+        path = self.path.split("?")[0].rstrip("/")
+        if path.endswith("/releases/latest"):
+            body = json.dumps({**release, "prerelease": False}).encode()
+            ctype = "application/json"
+        elif path.endswith("/releases"):
+            # The Preview update channel (a pre-release build's default) reads the list.
+            body = json.dumps([release]).encode()
             ctype = "application/json"
         elif self.path.startswith(f"/dl/{srv.tag}/"):
             name = self.path.split("/")[-1]

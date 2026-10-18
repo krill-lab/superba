@@ -4,7 +4,9 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use superba_core::{DataDir, NetworkSettings, SelfInstallOutcome, SelfUpdateStatus, Timestamp};
+use superba_core::{
+    DataDir, NetworkSettings, SelfInstallOutcome, SelfUpdateStatus, Timestamp, UpdateChannel,
+};
 use superba_versions::selfupdate::release::{Os, Platform, SUMS_FILE};
 use superba_versions::selfupdate::{Endpoints, SelfUpdater};
 use support::{Mock, Route, sha256_hex, targz};
@@ -139,8 +141,14 @@ async fn up_to_date_when_the_release_is_not_newer() {
     serve_release(&f, "v0.1.0", false);
     let view = f.updater().check(true).await;
     assert_eq!(view.status, SelfUpdateStatus::UpToDate);
-    // A running pre-release is older than its release.
-    let view = f.updater().with_current("0.1.0-rc.1").check(true).await;
+    // A running pre-release is older than its release (on Stable; a
+    // pre-release build follows Preview unless Stable is chosen).
+    let view = f
+        .updater()
+        .with_current("0.1.0-rc.1")
+        .with_preferences(true, Some(UpdateChannel::Stable))
+        .check(true)
+        .await;
     assert_eq!(view.status, SelfUpdateStatus::Available);
 }
 
@@ -230,7 +238,7 @@ async fn automatic_checks_follow_the_preference_and_the_interval() {
     serve_release(&f, "v0.2.0", false);
     let t0 = Timestamp::from_millis(1_800_000_000_000);
     // Off: an automatic check does nothing, a manual one still works.
-    let off = f.updater().with_now(t0).with_preferences(false, false);
+    let off = f.updater().with_now(t0).with_preferences(false, None);
     assert_eq!(off.check(false).await.status, SelfUpdateStatus::NotChecked);
     assert_eq!(f.mock.hits("/api"), 0);
     assert_eq!(off.check(true).await.status, SelfUpdateStatus::Available);
@@ -257,6 +265,7 @@ async fn online_checks_off_sends_nothing_unless_the_user_asks() {
         ..NetworkSettings::default()
     };
     let u = SelfUpdater::new(&DataDir::new(f.data.path()), net)
+        .with_current("0.1.0")
         .with_endpoints(f.updater().endpoints().clone())
         .with_platform(LINUX);
     assert_eq!(
@@ -299,18 +308,23 @@ async fn skipping_a_version_persists_until_a_newer_one_appears() {
 }
 
 #[tokio::test]
-async fn prereleases_are_only_considered_when_opted_in() {
+async fn the_preview_channel_reads_the_release_list() {
     let f = Fixture::new().await;
     serve_release(&f, "v0.2.0", false);
-    let list = format!(
-        "[{},{},{},{}]",
-        release_json("v0.3.0-rc.1", true, true, 10),
-        release_json("v0.3.0-beta.2", true, true, 10),
-        r#"{"tag_name":"v9.9.9-rc.1","draft":true,"prerelease":true,"assets":[]}"#,
-        release_json("v0.2.0", false, true, 10),
+    let list = |extra: &str| {
+        format!(
+            "[{extra}{},{},{},{}]",
+            release_json("v0.3.0-rc.1", true, true, 10),
+            release_json("v0.3.0-beta.2", true, true, 10),
+            r#"{"tag_name":"v9.9.9-rc.1","draft":true,"prerelease":true,"assets":[]}"#,
+            release_json("v0.2.0", false, true, 10),
+        )
+    };
+    f.mock.route(
+        "/api/releases",
+        Route::ok(list("")).header("ETag", "\"list\""),
     );
-    f.mock
-        .route("/api/releases", Route::ok(list).header("ETag", "\"list\""));
+    // A stable build follows Stable: releases/latest only.
     let stable_only = f.updater().check(true).await;
     assert_eq!(stable_only.latest.as_ref().unwrap().version, "0.2.0");
     assert_eq!(
@@ -319,20 +333,43 @@ async fn prereleases_are_only_considered_when_opted_in() {
         "the list is not requested"
     );
 
-    let view = f.updater().with_preferences(true, true).check(true).await;
-    let latest = view.latest.unwrap();
+    let preview = Some(UpdateChannel::Preview);
+    let view = f
+        .updater()
+        .with_preferences(true, preview)
+        .check(true)
+        .await;
+    let latest = view.latest.clone().unwrap();
     assert_eq!(
         latest.version, "0.3.0-rc.1",
-        "newest pre-release, drafts ignored"
+        "newest release incl. pre-releases, drafts ignored"
     );
     assert!(latest.prerelease);
     assert_eq!(view.status, SelfUpdateStatus::Available);
-    // Turning it off again goes back to stable without asking.
+    assert_eq!(view.channel, UpdateChannel::Preview);
+    assert_eq!(view.latest_stable.unwrap().version, "0.2.0");
+    assert_eq!(
+        f.mock.hits("/api/releases/latest"),
+        1,
+        "the list holds a final release: releases/latest is not asked again"
+    );
+    // Back on Stable the cache answers without asking.
     let off = f.updater().view();
     assert_eq!(off.latest.unwrap().version, "0.2.0");
-    // A stable release newer than every pre-release wins.
-    serve_release(&f, "v0.4.0", false);
-    let view = f.updater().with_preferences(true, true).check(true).await;
+    // A final release newer than every pre-release wins on Preview too.
+    f.mock.route(
+        "/api/releases",
+        Route::ok(list(&format!(
+            "{},",
+            release_json("v0.4.0", false, true, 10)
+        )))
+        .header("ETag", "\"list2\""),
+    );
+    let view = f
+        .updater()
+        .with_preferences(true, preview)
+        .check(true)
+        .await;
     assert_eq!(view.latest.unwrap().version, "0.4.0");
 }
 
@@ -440,6 +477,7 @@ async fn third_party_proxies_are_opt_in_and_never_serve_checksums() {
             ..NetworkSettings::default()
         };
         SelfUpdater::new(&DataDir::new(f.data.path()), net)
+            .with_current("0.1.0")
             .with_endpoints(Endpoints {
                 api: f.mock.url("/api"),
                 downloads: f.mock.url("/dl"),
@@ -473,6 +511,7 @@ async fn third_party_proxies_are_opt_in_and_never_serve_checksums() {
     };
     let other = tempfile::tempdir().unwrap();
     let u = SelfUpdater::new(&DataDir::new(other.path()), net)
+        .with_current("0.1.0")
         .with_endpoints(Endpoints {
             api: f.mock.url("/api"),
             downloads: f.mock.url("/dl"),

@@ -1003,16 +1003,26 @@ Linux tarballs and the Windows zip, `superba-router` inside
 
 ### Self-update (`superba_versions::selfupdate`)
 
-- **Check.** `SelfUpdater::check` asks `<api>/releases/latest` and, when the user
-  opted into pre-releases, `<api>/releases?per_page=30` (newest pre-release; drafts
-  and tags the release workflow would not make are ignored), conditional on the
-  stored ETag, with an 8 s deadline and no credentials, through the shared
-  `http::client`. 404 / 401 / 403 are `PageUnavailable` (the repository is
-  private), network errors, 5xx and rate limits are `CheckFailed`; neither is
-  retried before 24 h / 1 h. The cached answer is compared with
-  `CARGO_PKG_VERSION` on every read (`semver` precedence: a pre-release is older
-  than its release), so a finished update never shows itself as available. The
-  link to the release page is built from the tag, never taken from the API.
+- **Check.** `SelfUpdater::check` follows the update channel (`UpdateChannel`:
+  `Settings::update_channel`, else Preview on a pre-release build and Stable
+  otherwise). Stable asks `<api>/releases/latest`; Preview asks
+  `<api>/releases?per_page=30` and takes the newest release and the newest final
+  release of that page by `semver` precedence (`release::parse_list`; drafts and
+  tags the release workflow would not make are ignored), plus
+  `releases/latest` only when the page holds no final release. Each answer is
+  conditional on its stored ETag (both caches survive a channel switch), with an
+  8 s deadline and no credentials, through the shared `http::client`. 404 / 401 /
+  403 are `PageUnavailable` (the repository is private), network errors and 5xx
+  are `CheckFailed`; neither is retried before 24 h / 1 h. A rate-limited answer
+  (403 with `x-ratelimit-remaining: 0`, or 429) stores `x-ratelimit-reset` /
+  `Retry-After` (at most an hour) as `limited_until`: no request goes out before
+  it, also not for a manual check, and the cached answer stays. The cached answer
+  is compared with `CARGO_PKG_VERSION` on every read (`semver` precedence: a
+  pre-release is older than its release), so a finished update never shows itself
+  as available and an older release is never offered. `SelfUpdater::install_version`
+  installs a release the user named (`releases/tags/<tag>`), also an older one,
+  except on Windows (the MSI only upgrades). The link to the release page is built
+  from the tag, never taken from the API.
 - **Assets** (`release::asset_name`): macOS `superba-<v>-macos-universal.zip`,
   Windows `superba-<v>-windows-x86_64.msi`, Linux `superba-<v>-linux-{x86_64,aarch64}.tar.gz`,
   the static build `spb-<v>-linux-x86_64-musl.tar.gz`. An asset counts only when the
@@ -1052,7 +1062,7 @@ Linux tarballs and the Windows zip, `superba-router` inside
 - **Wiring.** `SwitchService::self_update_{view,check,skip,install}` and
   `self_update_restart_router` (defaults: not implemented) are implemented by
   `superba-switch` (`selfupdate.rs`), which adds Preferences (`Settings::
-  auto_update_check`, `include_prereleases`), the network settings and the router
+  auto_update_check`, `update_channel`), the network settings and the router
   (`RouterControl::restart`, only when the service is installed and running).
   `spb self-update check|install` and the GUI call only the service; `superba
   --finish-update` is handled in `main.rs` before any other argument parsing.

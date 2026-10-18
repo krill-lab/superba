@@ -133,18 +133,36 @@ pub fn parse_latest(body: &[u8], platform: &Platform) -> Option<SelfRelease> {
     api.into_release(platform).map(|(_, r)| r)
 }
 
-/// The newest pre-release in a `/releases` list (drafts and foreign tags
-/// skipped). `None` when the document is not a list or has none.
-pub fn newest_prerelease(body: &[u8], platform: &Platform) -> Option<SelfRelease> {
-    let list: Vec<ApiRelease> = serde_json::from_slice(body).ok()?;
-    list.into_iter()
-        .filter_map(|r| r.into_release(platform))
-        .filter(|(_, r)| r.prerelease)
-        .max_by(|(a, _), (b, _)| cmp(a, b))
-        .map(|(_, r)| r)
+/// What one `/releases` page holds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ListAnswer {
+    /// The newest release, pre-releases included (the Preview channel).
+    pub newest: Option<SelfRelease>,
+    /// The newest final release (the Stable channel).
+    pub newest_stable: Option<SelfRelease>,
 }
 
-/// Whether `body` parses as a JSON list (to tell an empty list from garbage).
-pub fn is_list(body: &[u8]) -> bool {
-    serde_json::from_slice::<Vec<serde_json::Value>>(body).is_ok()
+/// The newest release and the newest final release of a `/releases` page, by
+/// semver precedence (`alpha < beta < rc < final`, numeric parts compared as
+/// numbers), not by publication date. Drafts and foreign tags are skipped; a
+/// release GitHub marks as pre-release counts as one even with a final tag.
+/// `None` when the document is not a list.
+pub fn parse_list(body: &[u8], platform: &Platform) -> Option<ListAnswer> {
+    let list: Vec<serde_json::Value> = serde_json::from_slice(body).ok()?;
+    let releases: Vec<(Version, SelfRelease)> = list
+        .into_iter()
+        .filter_map(|v| serde_json::from_value::<ApiRelease>(v).ok())
+        .filter_map(|r| r.into_release(platform))
+        .collect();
+    let newest = |stable_only: bool| {
+        releases
+            .iter()
+            .filter(|(_, r)| !(stable_only && r.prerelease))
+            .max_by(|(a, _), (b, _)| cmp(a, b))
+            .map(|(_, r)| r.clone())
+    };
+    Some(ListAnswer {
+        newest: newest(false),
+        newest_stable: newest(true),
+    })
 }

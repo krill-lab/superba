@@ -75,7 +75,9 @@ Geist look).
   `SHA256SUMS.txt`, replaces Superba in place (macOS bundle, Windows MSI,
   Linux binaries; manual steps if the folder is not writable) and restarts the
   local router service if it runs. Automatic checks (start-up and every 24 hours)
-  and pre-releases are Preferences; nothing is installed without your click.
+  and the update channel (Stable, or Preview with alpha, beta and release
+  candidates; a preview build starts on Preview) are Preferences; an older version
+  is never offered, and nothing is installed without your click.
 - **Account and usage.** Balance, plan and expiry from the standard billing
   endpoints of any key-based site; Krill also shows the account e-mail, daily
   cost and per-model usage (fetched on demand: Krill allows 10 usage requests an

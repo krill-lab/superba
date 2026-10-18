@@ -20,7 +20,7 @@ impl Switcher {
             .map(|set| set.settings)
             .unwrap_or_default();
         SelfUpdater::new(&self.deps.ctx.data_dir, settings.network.clone())
-            .with_preferences(settings.auto_update_check, settings.include_prereleases)
+            .with_preferences(settings.auto_update_check, settings.update_channel)
     }
 
     pub(crate) async fn self_update_view_impl(&self) -> Result<SelfUpdateView> {
@@ -63,7 +63,10 @@ impl Switcher {
         request: SelfUpdateInstallRequest,
     ) -> Result<SelfUpdateReport> {
         let updater = self.self_updater().await;
-        let done = updater.install(request.relaunch).await?;
+        let done = match request.version.as_deref() {
+            Some(version) => updater.install_version(version, request.relaunch).await?,
+            None => updater.install(request.relaunch).await?,
+        };
         let mut report = SelfUpdateReport {
             version: done.version,
             outcome: done.outcome,

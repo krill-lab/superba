@@ -1,7 +1,10 @@
 //! The Updates page's first section: Superba itself. Current and latest
-//! version, the release notes as plain text with a little markdown, and the
-//! user's choices (update now, later, skip this version). Nothing is installed
-//! without the click on the update button.
+//! version, the update channel (Stable / Preview, the same choice as in
+//! Preferences) with what each channel has ("You're on preview 0.1.1-alpha.3 ·
+//! latest preview … · latest stable …"), the release notes as plain text with a
+//! little markdown, and the user's choices (update now, later, skip this
+//! version). Nothing is installed without the click on the update button, and
+//! an older version is never offered.
 //!
 //! States: not checked, up to date, update available (also skipped), the
 //! release page cannot be read (a private repository today: a calm line, never
@@ -14,13 +17,13 @@ use egui::{Sense, Ui, vec2};
 use superba_core::paths::display_path;
 use superba_core::{
     SelfInstallOutcome, SelfUpdateInstallRequest, SelfUpdateProblem, SelfUpdateReport,
-    SelfUpdateStatus, SelfUpdateView,
+    SelfUpdateStatus, SelfUpdateView, UpdateChannel,
 };
 
 use super::{Action, Cx, callout, error_text, kv};
 use crate::design::icons::Icon;
 use crate::design::tokens::radius;
-use crate::design::widgets::{Badge, Button, Status, Text};
+use crate::design::widgets::{Badge, Button, Segmented, Status, Text};
 use crate::i18n::Tr;
 use crate::runtime::ReadTask;
 
@@ -123,6 +126,38 @@ pub fn note_lines(notes: &str) -> Vec<NoteLine> {
     out
 }
 
+/// What the channels have: "You're on preview 0.1.1-alpha.3 · latest preview
+/// 0.1.1-alpha.4 · latest stable 0.1.0" (the parts that are known).
+pub fn channel_line(tr: &Tr, view: &SelfUpdateView) -> String {
+    let on = if view.on_prerelease() {
+        "updates.superba.on_preview"
+    } else {
+        "updates.superba.on_stable"
+    };
+    let mut parts = vec![tr.f(on, &[("version", &view.current)])];
+    if let Some(p) = &view.latest_preview {
+        parts.push(tr.f("updates.superba.latest_preview", &[("version", &p.version)]));
+    }
+    if let Some(s) = &view.latest_stable {
+        parts.push(tr.f("updates.superba.latest_stable", &[("version", &s.version)]));
+    }
+    parts.join(" · ")
+}
+
+/// Why nothing is offered although a release exists: a preview build on the
+/// Stable channel waits for the next final release (never a downgrade).
+pub fn no_downgrade_note(tr: &Tr, view: &SelfUpdateView) -> Option<String> {
+    (view.channel == UpdateChannel::Stable
+        && view.on_prerelease()
+        && view.status == SelfUpdateStatus::UpToDate)
+        .then(|| {
+            tr.f(
+                "updates.superba.no_downgrade",
+                &[("version", &view.current)],
+            )
+        })
+}
+
 /// How the last install attempt's problem is told: the start-up toast and the
 /// Updates page use the same words.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -198,7 +233,10 @@ impl SelfState {
         let service = cx.service.clone();
         self.install = Some(crate::runtime::task(async move {
             service
-                .self_update_install(SelfUpdateInstallRequest { relaunch: true })
+                .self_update_install(SelfUpdateInstallRequest {
+                    relaunch: true,
+                    version: None,
+                })
                 .await
         }));
     }
@@ -389,6 +427,24 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut SelfState, out: &mut Vec<Actio
     kv(ui, cx, &cx.tr.t("updates.superba.current"), |ui| {
         ui.label(Text::mono(&view.current, cx.pal));
     });
+    kv(ui, cx, &cx.tr.t("updates.superba.channel"), |ui| {
+        let mut channel = view.channel;
+        Segmented::new("superba-update-channel", &mut channel)
+            .label(cx.tr.t("updates.superba.channel"))
+            .option(
+                UpdateChannel::Stable,
+                cx.tr.t("updates.superba.channel_stable"),
+            )
+            .option(
+                UpdateChannel::Preview,
+                cx.tr.t("updates.superba.channel_preview"),
+            )
+            .small()
+            .show(ui);
+        if channel != view.channel {
+            out.push(Action::SetUpdateChannel(channel));
+        }
+    });
     let latest = view.latest.as_ref().filter(|_| {
         matches!(
             view.status,
@@ -426,6 +482,24 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut SelfState, out: &mut Vec<Actio
             }
         },
     );
+    if view.latest_stable.is_some() || view.latest_preview.is_some() {
+        ui.add(egui::Label::new(Text::caption(channel_line(cx.tr, &view), cx.pal)).wrap());
+    }
+    if let Some(note) = no_downgrade_note(cx.tr, &view) {
+        ui.add(egui::Label::new(Text::caption(note, cx.pal)).wrap());
+    }
+    if let Some(t) = view.limited_until {
+        ui.add(
+            egui::Label::new(Text::caption(
+                cx.tr.f(
+                    "updates.superba.rate_limited",
+                    &[("time", &super::clock_time(t, false))],
+                ),
+                cx.pal,
+            ))
+            .wrap(),
+        );
+    }
     if view.status == SelfUpdateStatus::Available
         && let Some(release) = view.latest.clone()
     {

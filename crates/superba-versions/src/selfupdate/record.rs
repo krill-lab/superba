@@ -86,8 +86,17 @@ impl Attempt {
         let stale = now
             .duration_since(self.updated_at)
             .is_some_and(|age| age >= STALE);
-        let not_applied =
-            version::parse_version(&self.to).is_some_and(|to| version::is_newer(&to, current));
+        let to = version::parse_version(&self.to);
+        let from = version::parse_version(&self.from);
+        // An update is not applied while the running version is older than its
+        // target; a chosen older version while the one it started from runs.
+        let not_applied = match (&to, &from) {
+            (Some(to), Some(from)) if version::is_newer(from, to) => {
+                version::cmp(current, from) == std::cmp::Ordering::Equal
+            }
+            (Some(to), _) => version::is_newer(to, current),
+            _ => false,
+        };
         let (installed, reason) = match self.stage {
             Stage::Failed => (
                 false,

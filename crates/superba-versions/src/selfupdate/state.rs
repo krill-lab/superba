@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use superba_core::{SelfRelease, Timestamp};
+use superba_core::{SelfRelease, Timestamp, UpdateChannel};
 
 /// How the last round of requests ended.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,6 +32,22 @@ pub struct Channel {
     pub release: Option<SelfRelease>,
 }
 
+/// The release list (`releases?per_page=…`, the Preview channel) and what was
+/// read from it last time.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct List {
+    /// `ETag` of the last 200 answer.
+    #[serde(default)]
+    pub etag: Option<String>,
+    /// The newest release in it, pre-releases included.
+    #[serde(default)]
+    pub newest: Option<SelfRelease>,
+    /// The newest final release in it (`None`: the page holds only
+    /// pre-releases, `releases/latest` is asked as well).
+    #[serde(default)]
+    pub newest_stable: Option<SelfRelease>,
+}
+
 /// A backup to remove once the new version has started.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cleanup {
@@ -56,15 +72,19 @@ pub struct State {
     /// Why it failed (short, no secrets).
     #[serde(default)]
     pub detail: Option<String>,
-    /// The last round also asked for pre-releases.
+    /// The update channel the last round asked for.
     #[serde(default)]
-    pub included_prereleases: bool,
-    /// `releases/latest`.
+    pub checked_channel: Option<UpdateChannel>,
+    /// GitHub's rate limit was reached: nothing is asked before this time.
+    #[serde(default)]
+    pub limited_until: Option<Timestamp>,
+    /// `releases/latest` (the Stable channel).
     #[serde(default)]
     pub stable: Channel,
-    /// `releases` (newest pre-release), only fetched when opted in.
+    /// `releases` (the Preview channel). Both caches are kept when the
+    /// channel changes, so switching back is answered with a `304`.
     #[serde(default)]
-    pub prerelease: Channel,
+    pub list: List,
     /// The version the user skipped.
     #[serde(default)]
     pub skipped: Option<String>,
