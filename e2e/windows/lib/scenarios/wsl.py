@@ -310,8 +310,14 @@ def legacy_mode_on(run, s, a):
         main, servers = wsl_app_servers(run, a)
         time.sleep(2)
     s.check(bool(servers), f"the app-server is a wsl.exe child of the app: {[(p['pid'], (p['cmdline'] or '')[:120]) for p in servers]}")
-    # `[c]odex`: the pgrep's own command line does not match.
-    inside = flows.wsl(run, "pgrep -af '[c]odex.*app-server' | head -3")["stdout"].strip()
+    # `[c]odex`: the pgrep's own command line does not match. The wsl.exe comes first; the login
+    # shell and Codex inside WSL 1 follow seconds to a minute later.
+    end = time.time() + 90
+    inside = ""
+    while time.time() < end and "app-server" not in inside:
+        inside = flows.wsl(run, "pgrep -af '[c]odex.*app-server' | head -3")["stdout"].strip()
+        if "app-server" not in inside:
+            time.sleep(3)
     s.check("app-server" in inside, f"its Codex runs inside {D}: {inside[:160]!r}")
     steps, p = a.onboarding(120)
     s.check(not p["login"], "the app is usable (not on the sign-in page)")
@@ -333,11 +339,13 @@ def w81(t):
                                                   if k in ("WSLENV", "CODEX_AUTHAPI_BASE_URL")})
             s.check("CODEX_AUTHAPI_BASE_URL" in (env.get("WSLENV") or ""),
                     f"WSLENV names CODEX_AUTHAPI_BASE_URL before ChatGPT starts: {env.get('WSLENV')!r}")
-            seen = flows.wsl(run, "for p in $(pgrep -f 'codex.*app-serve[r]'); do"
-                                  " tr '\\0' '\\n' < /proc/$p/environ 2>/dev/null | grep -c '^CODEX_AUTHAPI_BASE_URL='; done"
-                             )["stdout"].split()
-            s.check(any(n.strip() not in ("", "0") for n in seen),
-                    f"the app's Codex in {D} has CODEX_AUTHAPI_BASE_URL (per app-server: {seen})")
+            # No `$` in the script: wsl.exe hands it to a shell that would expand it first.
+            # Prints: app-server processes that have the variable, and all of them.
+            seen = flows.wsl(run, "pgrep -f 'codex.*app-serve[r]' | xargs -r -I@ grep -zl"
+                                  " ^CODEX_AUTHAPI_BASE_URL= /proc/@/environ 2>/dev/null | wc -l;"
+                                  " pgrep -fc 'codex.*app-serve[r]'")["stdout"].split()
+            s.check(len(seen) == 2 and seen[0] != "0",
+                    f"the app's Codex in {D} has CODEX_AUTHAPI_BASE_URL (with it / app-server processes: {seen})")
     with t.step("First switch with the mode on") as s:
         main0, sv0 = wsl_app_servers(run, a)
         other = "b" if run.state.get("line", "a") == "a" else "a"
@@ -458,7 +466,9 @@ def w88(t):
         s.shot("hosts-pending")
         s.ui_dump("hosts-pending")
         s.check(bool(first), f"the distribution says update pending after spb's switch (Superba was open): {first!r}")
-        s.check(u.has_text(r"^" + re.escape(u.L("hosts.wsl.stopped")) + r"$") is not None, "its badge says Stopped")
+        # The state badge is painted (not in the UI Automation tree); the rows say it in words.
+        stopped = u.has_text(re.escape(u.L("hosts.wsl.not_probed_stopped")) + "|^" + re.escape(u.L("hosts.wsl.stopped")) + "$")
+        s.check(stopped is not None, f"the page knows it is stopped: {stopped!r} (badge in the screenshot)")
         s.check(not flows.wsl_running(run), "showing the page did not start the distribution")
         u.click(key="hosts.refresh")
         time.sleep(8)
@@ -481,8 +491,12 @@ def w88(t):
         time.sleep(4)
         left = u.has_text(pending_rx, timeout=0)
         s.check(left is None, f"the page no longer says update pending: {left!r}")
-        s.check(u.has_text(r"^" + re.escape(u.L("hosts.wsl.running")) + r"$", timeout=20) is not None,
-                "its badge says Running")
+        # Running now: the page checks it by itself (only a running distribution is checked
+        # without asking), so its Codex and connection are shown.
+        checked = u.has_text(r" · " + u.R("hosts.probed").lstrip("^").rstrip("$"), timeout=60)
+        s.shot("hosts-running-checked")
+        s.check(checked is not None, f"checked by itself once running: {checked!r}")
+        s.check(u.has_text(re.escape(u.L("hosts.wsl.not_probed_stopped"))) is None, "no longer 'stopped'")
         r = run.spb("wsl", "list", timeout=120, label="wsl-list-after-update-now")
         s.check(re.search(r"(?i)update pending", r["stdout"]) is None, "spb wsl list: nothing pending any more")
     with t.step("spb wsl update applies a pending switch") as s:

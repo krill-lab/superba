@@ -150,12 +150,15 @@ class App:
         """Answer the first-run onboarding (Engineering -> Continue -> Skip -> Go to
         ChatGPT) and dismiss announcement modals; returns (steps, probe)."""
         steps = []
+        text = ""
+        last_error = None
         end = time.time() + timeout
         while time.time() < end:
             try:
                 p = self.probe(retries=3)
                 text = self.body_text()
-            except AppError:
+            except AppError as e:
+                last_error = e
                 time.sleep(2)
                 continue
             if p["composer"] and not any(w in text for w in ("Which best describes your work", "Skip setup?")):
@@ -171,7 +174,9 @@ class App:
                     steps.append(clicked)
                     break
             time.sleep(1.5)
-        raise AppError(f"onboarding did not finish: {steps}")
+        shown = " ".join((text or "").split())[:300]
+        raise AppError(f"onboarding did not finish: {steps}; the app shows {shown!r}"
+                       + (f"; last renderer error: {last_error}" if last_error and not shown else ""))
 
     def new_chat(self):
         return self.click_text(["New chat", "New thread"])

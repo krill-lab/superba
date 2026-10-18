@@ -287,6 +287,12 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
             u.click(key="decide.force")
             seen.append("[force quit]")
             continue
+        if u.L("decide.remote.title") in names:
+            # A WSL distribution's turn check timed out on a slow VM: nothing runs there in the harness.
+            s.info("running turns on a remote host could not be checked: answering Continue")
+            u.click(key="decide.continue")
+            seen.append("[continue: remote turns unknown]")
+            continue
         if time.time() - t0 > 3 and not any(rx.match(n) for rx in busy for n in names) \
                 and not any(n == u.L("confirm.title") for n in names):
             return seen, names
