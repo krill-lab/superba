@@ -378,3 +378,58 @@ async fn a_new_credential_is_saved_flagged_and_never_logged() {
         std::fs::read_to_string(w.ctx.data_dir.editor_backups_dir().join("index.json")).unwrap();
     assert!(!index.contains(KEY) && !index.contains(new_key));
 }
+
+#[tokio::test]
+async fn a_remote_host_is_edited_through_its_own_codex_and_backed_up_here() {
+    let (w, sw) = on_krill().await;
+    w.remote
+        .hosts
+        .lock()
+        .unwrap()
+        .push(remote_host("devbox", Some("remote-ssh-discovered:devbox")));
+    *w.remote.config_toml.lock().unwrap() = Some("# host\nmodel = \"gpt-5\"\n".into());
+    let target = TargetId::remote("devbox");
+    let doc = sw
+        .codex_file(target.clone(), CodexFileKind::ConfigToml)
+        .await
+        .unwrap();
+    assert_eq!(doc.path, "/home/u/.codex/config.toml");
+    assert_eq!(doc.target_label, "devbox");
+    assert!(matches!(
+        doc.schema.consumers[0].consumer,
+        superba_core::ConsumerKind::Remote { .. }
+    ));
+    let saved = sw
+        .save_codex_file(save(&doc, "# host\nmodel = \"gpt-6\"\n"))
+        .await
+        .unwrap();
+    assert_eq!(
+        w.remote.config_toml.lock().unwrap().as_deref(),
+        Some("# host\nmodel = \"gpt-6\"\n")
+    );
+    assert!(saved.runtime.is_none());
+    assert!(
+        saved
+            .notes
+            .iter()
+            .any(|n| n.text.key == "switch.codex_files.remote_restart")
+    );
+    // The replaced file is backed up on this computer, listed for that host.
+    let list = sw
+        .codex_file_backups(CodexFileBackupQuery {
+            target: Some(target.clone()),
+            kind: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].target_label, "devbox");
+    let b = sw.codex_file_backup(&list[0].id).await.unwrap();
+    assert_eq!(b.contents.expose(), b"# host\nmodel = \"gpt-5\"\n");
+    // A stale editor view is refused on the host too.
+    let err = sw
+        .save_codex_file(save(&doc, "model = \"x\"\n"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, superba_core::Error::Conflict { .. }), "{err}");
+}

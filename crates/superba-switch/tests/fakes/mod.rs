@@ -1918,6 +1918,61 @@ fn remote_state(host: &RemoteHost, version: Option<CodexVersion>, shared: bool) 
 
 #[async_trait]
 impl RemoteHosts for FakeRemote {
+    async fn read_codex_file(
+        &self,
+        host: &RemoteHost,
+        kind: superba_core::CodexFileKind,
+    ) -> Result<superba_core::RemoteCodexFile> {
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("remote.read_codex_file:{}", host.label));
+        let contents = match kind {
+            superba_core::CodexFileKind::ConfigToml => self.config_toml.lock().unwrap().clone(),
+            superba_core::CodexFileKind::AuthJson => None,
+        };
+        Ok(superba_core::RemoteCodexFile {
+            path: format!("/home/u/.codex/{}", kind.file_name()),
+            contents: contents.map(|t| superba_core::SecretBytes::new(t.into_bytes())),
+            unreadable: None,
+            os: RemoteOs::Linux,
+            codex_version: self.version.lock().unwrap().clone(),
+            owned: self
+                .owned_paths
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|p| superba_core::KeySnapshot {
+                    path: p.clone(),
+                    value: None,
+                })
+                .collect(),
+        })
+    }
+
+    async fn write_codex_file(
+        &self,
+        host: &RemoteHost,
+        write: &superba_core::RemoteFileWrite,
+    ) -> Result<()> {
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("remote.write_codex_file:{}", host.label));
+        let mut current = self.config_toml.lock().unwrap();
+        let expect = write
+            .expect
+            .as_ref()
+            .map(|b| String::from_utf8_lossy(b.expose()).into_owned());
+        if *current != expect {
+            return Err(Error::Conflict {
+                message: "changed on the host".into(),
+            });
+        }
+        *current = Some(String::from_utf8_lossy(write.contents.expose()).into_owned());
+        Ok(())
+    }
+
     async fn discover(
         &self,
         _home: &CodexHome,
