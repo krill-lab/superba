@@ -238,6 +238,29 @@ fn channels_test_send_hooks_and_secrets() {
     let out = home.spb(&["notify", "hook", "claude-code"], &[], Some("not json"));
     assert!(out.status.success() && out.stdout.is_empty());
 
+    // The router reports an outage through `spb notify event` (once per id).
+    for _ in 0..2 {
+        home.ok(
+            &[
+                "notify",
+                "event",
+                "router_member_down",
+                "--detail",
+                "Krill (probe: cannot connect)",
+                "--id",
+                "krill@1",
+            ],
+            &[],
+        );
+    }
+    let hits = sink.wait_for(3, Duration::from_secs(5));
+    assert_eq!(hits.len(), 3, "the second report is a duplicate");
+    let text = hits[2].body["text"].as_str().unwrap();
+    assert!(
+        text.contains("Router member down · Superba") && text.contains("Member: Krill"),
+        "{text}"
+    );
+
     // Quiet hours around the clock: a finished task is held back, the test is not.
     home.ok(&["notify", "set", "--quiet-hours", "00:00-23:59"], &[]);
     let stop2 = json!({"hook_event_name": "Stop", "session_id": "s2", "cwd": "/w"});
@@ -253,7 +276,7 @@ fn channels_test_send_hooks_and_secrets() {
         Value::Null,
         "plain messages are always sent"
     );
-    assert_eq!(sink.wait_for(3, Duration::from_secs(5)).len(), 3);
+    assert_eq!(sink.wait_for(4, Duration::from_secs(5)).len(), 4);
 
     // The token is in the key store (0600 file), never in profiles.json.
     let profiles = std::fs::read_to_string(home.p("data/profiles.json")).unwrap();

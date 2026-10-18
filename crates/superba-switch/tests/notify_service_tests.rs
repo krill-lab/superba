@@ -179,3 +179,77 @@ async fn the_codex_hook_is_written_into_config_toml_with_a_backup() {
         .is_err()
     );
 }
+
+/// A loopback HTTP server that records request bodies and answers 204.
+fn sink() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let bodies: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+    let seen = bodies.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut stream = stream;
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut len = 0usize;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some((n, v)) = line.split_once(':')
+                    && n.eq_ignore_ascii_case("content-length")
+                {
+                    len = v.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0u8; len];
+            let _ = reader.read_exact(&mut body);
+            seen.lock()
+                .unwrap()
+                .push(String::from_utf8_lossy(&body).into_owned());
+            let _ = stream.write_all(
+                b"HTTP/1.1 204 No Content\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+            );
+        }
+    });
+    (base, bodies)
+}
+
+#[tokio::test]
+async fn a_finished_switch_is_reported_when_asked_for() {
+    let w = World::new();
+    let sw = w.switcher();
+    let (base, bodies) = sink();
+    sw.notify_save_channel(
+        NotifyChannel::new("", ChannelKind::Webhook, "hook"),
+        secrets(&[("url", &format!("{base}/in"))]),
+    )
+    .await
+    .unwrap();
+    let mut settings = sw.profile_set().await.unwrap().settings;
+    settings.notify.enabled = true;
+    settings.notify.triggers.switch_done = true;
+    sw.save_settings(settings).await.unwrap();
+    let plan = sw
+        .plan(superba_core::SwitchRequest::profile(
+            superba_core::ProfileId::new("work"),
+        ))
+        .await
+        .unwrap();
+    let outcome = sw
+        .execute(
+            plan,
+            superba_core::ExecuteOptions::default(),
+            ScriptedDecider::with(&[]),
+            std::sync::Arc::new(RecordingEvents::default()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(outcome.status, superba_core::OutcomeStatus::Switched);
+    let bodies = bodies.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 1, "{bodies:?}");
+    let v: serde_json::Value = serde_json::from_str(&bodies[0]).unwrap();
+    assert_eq!(v["event"], "switch_done");
+    assert_eq!(v["data"]["harness"], "superba");
+}
