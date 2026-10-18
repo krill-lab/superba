@@ -640,7 +640,7 @@ official = "The official login uses the app's own speed menu."
 not_offered = "No listed model offers {tier}; Codex runs Standard where it is not offered."
 
 [cli.requests]
-imported = "{name} (imported from {tool})"
+imported_cost_note = "Imported rows show the cost the other tool recorded."
 no_router = "No local router: rows come from Codex's session files on this computer, without first token, TPS or line (spb router enable adds them)."
 clear_all_needs_yes = "This deletes every recorded request; confirm with --yes or limit it with --older-than."
 title = "Recent requests"
@@ -685,6 +685,7 @@ source = "Source"
 [cli.requests.source]
 router = "router"
 rollout = "session file"
+imported = "{tool} import"
 
 [cli.versions]
 bad_version = "Not a Codex version: {value}"
@@ -897,10 +898,11 @@ already = "Codex's configuration is already managed by {tool}; Superba owns noth
 would_add = "Would import {n} {n|request|requests} and {days} daily {days|total|totals} ({day_requests} requests){range}, recorded cost {cost}. Nothing was written."
 added = "Imported {n} {n|request|requests} and {days} daily {days|total|totals} ({day_requests} requests){range}, recorded cost {cost}. The Usage page lists them as imported."
 range = " from {from} to {to}"
-unpriced = "{n} of them have no cost recorded by {tool} (shown without one)."
-already = "{n} were imported before (skipped)."
+unpriced = "{n} of them {n|has|have} no cost recorded by {tool} (shown without one)."
+already = "{n} {n|was|were} imported before (skipped)."
+nothing_new = "Nothing new: everything {tool} recorded for Codex is already in Superba's usage history."
 covered = "{n} {n|row was|rows were} read from Codex's session files that Superba reads itself (skipped, not counted twice)."
-other_apps = "{n} {n|row|rows} of other coding tools (Claude Code, Gemini CLI, …) are not imported."
+other_apps = "{n} {n|row|rows} of other coding tools (Claude Code, Gemini CLI, …) {n|is|are} not imported."
 dry_run_hint = "Import them: spb import usage {source}"
 would_remove = "Would remove {n} imported {n|request|requests} and {days} daily {days|total|totals} of {tool}."
 removed = "Removed {n} imported {n|request|requests} and {days} daily {days|total|totals} of {tool}."

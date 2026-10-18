@@ -640,7 +640,7 @@ official = "官方登录使用 app 自己的速度菜单。"
 not_offered = "列表中没有模型提供 {tier}；不提供的模型按标准档运行。"
 
 [cli.requests]
-imported = "{name}（从 {tool} 导入）"
+imported_cost_note = "导入的记录显示的是另一个工具记录的费用。"
 no_router = "没有本地路由：请求来自这台电脑上 Codex 的会话记录，没有首字、TPS 和线路（spb router enable 后可提供）。"
 clear_all_needs_yes = "这会删除全部已记录的请求；请加 --yes 确认，或用 --older-than 限定范围。"
 title = "最近请求"
@@ -685,6 +685,7 @@ source = "来源"
 [cli.requests.source]
 router = "路由"
 rollout = "会话记录"
+imported = "{tool} 导入"
 
 [cli.versions]
 bad_version = "不是有效的 Codex 版本：{value}"
@@ -899,6 +900,7 @@ added = "已导入 {n} 条请求和 {days} 条每日汇总（共 {day_requests} 
 range = "，时间从 {from} 到 {to}"
 unpriced = "其中 {n} 条 {tool} 没有记录费用（显示为无费用）。"
 already = "{n} 条之前已导入（已跳过）。"
+nothing_new = "没有新记录：{tool} 记录的 Codex 用量已全部在 Superba 的用量记录里。"
 covered = "{n} 条是从 Codex 会话记录读取的，Superba 自己也会读取这些记录（已跳过，不会重复计算）。"
 other_apps = "{n} 条属于其他编程工具（Claude Code、Gemini CLI 等），不导入。"
 dry_run_hint = "正式导入：spb import usage {source}"

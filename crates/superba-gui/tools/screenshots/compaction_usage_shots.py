@@ -17,6 +17,8 @@ Shots, at 1280x800 in light and dark, English and Chinese:
 - `usage-imported-*`: the Usage page after `spb import usage ccs` and
   `spb import usage ai-toolbox`, imported rows next to the router's and
   Codex's, with the source filter;
+- `usage-source-filter-*`: the same page filtered to rows imported from CC
+  Switch (the source dropdown's 4th entry);
 - `compaction-native-*`: Providers > Krill > Connection: the Compaction row
   (Krill compacts natively, no check sent);
 - `compaction-unsupported-*`: the same provider set to "Not supported"
@@ -74,6 +76,20 @@ def palette(query, settle=3.5):
     return act
 
 
+def source_filter(option):
+    """Usage: open the source dropdown (right of the filter row) and, with
+    `option` (1-based), pick that entry."""
+    def act(s):
+        shoot.focus(s)
+        s.input.click(1166, 232)
+        time.sleep(0.8)
+        if option:
+            s.input.click(1166, 232 + 30 * option)
+            time.sleep(2.5)
+        s.input.park()
+    return act
+
+
 def spb(s, *argv):
     p = s.run([str(s.args.bin_dir / "spb"), *argv], check=False)
     return p.stdout + p.stderr
@@ -90,6 +106,8 @@ def main():
     ap.add_argument("--work-dir", type=Path, help="scratch space (default: the system temp directory)")
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--only", help="comma-separated shot name prefixes")
+    ap.add_argument("--filter-option", type=int, default=4,
+                    help="entry of the Usage page's source dropdown to pick (0: only open it)")
     a = ap.parse_args()
     a.bin_dir = a.bin_dir.resolve()
     a.out = a.out.resolve()
@@ -128,7 +146,7 @@ def main():
         only = [p for p in (a.only or "").split(",") if p]
 
         def wanted(stem):
-            return not only or any(stem.startswith(p) for p in only)
+            return not only or any(stem.startswith(p) or p.startswith(stem) for p in only)
 
         def shots(stem, page, actions, wait=7.0):
             for theme, lang in VARIANTS:
@@ -147,6 +165,8 @@ def main():
             transcript.append(f"$ spb {' '.join(cmd)}\n{spb(s, *cmd)}")
         if wanted("usage-imported"):
             shots("usage-imported", "usage", None, wait=8.0)
+        if wanted("usage-source-filter"):
+            shots("usage-source-filter", "usage", source_filter(a.filter_option), wait=8.0)
         if wanted("compaction-native"):
             shots("compaction-native", "providers", None)
         transcript.append("$ spb profile edit krill --compaction unsupported\n"

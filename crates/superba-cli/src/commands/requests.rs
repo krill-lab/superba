@@ -115,14 +115,9 @@ async fn render_log(
                 r.started_at.to_rfc3339(),
                 session(r),
                 out.render(&r.status.text()),
-                match (r.line_label(), r.source.imported_from()) {
-                    (Some(line), _) => format!("{} · {line}", r.member_name),
-                    (None, Some(tool)) => out.render(
-                        &text("cli.requests.imported")
-                            .arg("name", &r.member_name)
-                            .arg("tool", tool.name()),
-                    ),
-                    (None, None) => r.member_name.clone(),
+                match r.line_label() {
+                    Some(line) => format!("{} · {line}", r.member_name),
+                    None => r.member_name.clone(),
                 },
                 r.model.clone().unwrap_or_else(|| "-".into()),
                 tokens(r.input_tokens),
@@ -134,10 +129,14 @@ async fn render_log(
                 tps(r.tps_milli),
                 usd(r.cost),
                 {
-                    let source = out.render(&text(match r.source {
-                        superba_core::RequestSource::Rollout => "cli.requests.source.rollout",
-                        _ => "cli.requests.source.router",
-                    }));
+                    let source = match (r.source, r.source.imported_from()) {
+                        (_, Some(tool)) => out
+                            .render(&text("cli.requests.source.imported").arg("tool", tool.name())),
+                        (superba_core::RequestSource::Rollout, _) => {
+                            out.render(&text("cli.requests.source.rollout"))
+                        }
+                        _ => out.render(&text("cli.requests.source.router")),
+                    };
                     // The Codex host when it is not this computer (WSL, user bug 45).
                     match r
                         .codex_host
@@ -184,6 +183,9 @@ async fn render_log(
             .arg("cost", total_cost(t)),
     )?;
     out.line(text("cli.requests.cost_note"))?;
+    if page.rows.iter().any(|r| r.source.imported_from().is_some()) {
+        out.line(text("cli.requests.imported_cost_note"))?;
+    }
     if page.truncated {
         out.line(text("cli.requests.truncated"))?;
     }

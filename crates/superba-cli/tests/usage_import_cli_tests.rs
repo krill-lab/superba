@@ -79,7 +79,7 @@ async fn a_dry_run_previews_counts_range_and_cost_and_writes_nothing() {
     for expected in [
         "CC Switch: ~/.cc-switch/cc-switch.db (CC Switch database, schema 20)",
         "Would import 5 requests and 2 daily totals (52 requests) from 2026-08-01 to 2026-10-11",
-        "1 of them have no cost recorded by CC Switch",
+        "1 of them has no cost recorded by CC Switch",
         "2 rows of other coding tools",
         "Import them: spb import usage ccs",
     ] {
@@ -117,7 +117,8 @@ async fn imported_rows_show_in_the_log_by_source_and_can_be_removed() {
     let (code, stdout, _) = w.spb(&["import", "usage", "ccs"]).await;
     assert_eq!(code, 0);
     assert!(
-        stdout.contains("Imported 0 requests") && stdout.contains("7 were imported before"),
+        stdout.contains("Nothing new: everything CC Switch recorded")
+            && stdout.contains("7 were imported before"),
         "{stdout}"
     );
     let (code, stdout, _) = w
@@ -125,7 +126,7 @@ async fn imported_rows_show_in_the_log_by_source_and_can_be_removed() {
         .await;
     assert_eq!(code, 0);
     assert!(
-        stdout.contains("PackyCode (imported from CC Switch)"),
+        stdout.contains("PackyCode") && stdout.contains("CC Switch import"),
         "{stdout}"
     );
     let (code, stdout, _) = w

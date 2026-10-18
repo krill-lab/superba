@@ -349,18 +349,22 @@ pub(super) async fn usage_run(
         ),
         _ => String::new(),
     };
-    out.line(
-        text(if r.dry_run {
-            "cli.import_usage.would_add"
-        } else {
-            "cli.import_usage.added"
-        })
-        .arg("n", r.requests)
-        .arg("days", r.days)
-        .arg("day_requests", r.day_requests)
-        .arg("range", range)
-        .arg("cost", r.cost.to_string()),
-    )?;
+    if r.requests == 0 && r.days == 0 {
+        out.line(text("cli.import_usage.nothing_new").arg("tool", tool))?;
+    } else {
+        out.line(
+            text(if r.dry_run {
+                "cli.import_usage.would_add"
+            } else {
+                "cli.import_usage.added"
+            })
+            .arg("n", r.requests)
+            .arg("days", r.days)
+            .arg("day_requests", r.day_requests)
+            .arg("range", range)
+            .arg("cost", r.cost.to_string()),
+        )?;
+    }
     if r.unpriced > 0 {
         out.line(
             text("cli.import_usage.unpriced")

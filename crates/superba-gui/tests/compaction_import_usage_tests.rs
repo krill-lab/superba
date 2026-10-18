@@ -304,7 +304,8 @@ fn the_preview_line_names_counts_range_and_cost() {
         "{text}"
     );
     assert!(text.contains("37 daily totals"), "{text}");
-    assert!(text.contains("$48.21"), "{text}");
+    let cost = tr.f("import_dialog.usage.cost", &[("cost", &r.cost)]);
+    assert!(cost.contains("$48.21"), "{cost}");
     let zh = Tr::new(Locale::ZhCn).f(
         "import_dialog.usage.preview",
         &[

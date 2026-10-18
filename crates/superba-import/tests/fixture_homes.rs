@@ -45,8 +45,11 @@ fn recent_requests(prefix: &str, provider: &str, n: usize, semantics: bool) -> S
         .as_secs() as i64;
     let models = ["gpt-6.1-sol", "gpt-5.5", "gpt-6-luna"];
     let mut sql = String::new();
-    for i in 0..n {
-        let at = now - 600 - (i as i64) * 731;
+    // Each provider its own times and sizes.
+    let shift = prefix.len() as i64 * 211;
+    for j in 0..n {
+        let i = j + prefix.len() * 5;
+        let at = now - 600 - shift - (j as i64) * 731;
         let model = models[i % models.len()];
         let input = 18_000 + (i as i64 * 7_919) % 60_000;
         let cached = input * 3 / 4;
@@ -71,9 +74,9 @@ fn recent_requests(prefix: &str, provider: &str, n: usize, semantics: bool) -> S
             "INSERT INTO proxy_request_logs (request_id, provider_id, app_type, model, request_model, \
              input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, total_cost_usd, \
              latency_ms, first_token_ms, duration_ms, status_code, session_id, created_at{cols}) VALUES \
-             ('{prefix}-{i}', '{provider}', 'codex', '{model}', '{model}', {input_stored}, {output}, \
+             ('{prefix}-{j}', '{provider}', 'codex', '{model}', '{model}', {input_stored}, {output}, \
              {cached_stored}, 0, '{cost}', {duration}, {first}, {duration}, {status}, \
-             '019a7c00-0000-7000-8000-0000000{prefix_n}{i:03}', {at}{sem});\n",
+             '019a7c00-0000-7000-8000-0000000{prefix_n}{j:03}', {at}{sem});\n",
             first = 600 + (i as i64 * 89) % 2_000,
             prefix_n = if prefix == "ccs" { "c" } else { "a" },
         ));

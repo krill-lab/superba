@@ -658,16 +658,15 @@ fn usage_block(ui: &mut Ui, cx: &Cx<'_>, d: &mut ImportDialog, source: ImportSou
         return;
     }
     ui.add_space(6.0);
-    let mut summary = cx.tr.f(
+    let summary = cx.tr.f(
         "import_dialog.usage.preview",
         &[
             ("n", &r.requests),
             ("days", &r.days),
             ("range", &range_text(r)),
-            ("cost", &r.cost),
         ],
     );
-    let mut details = Vec::new();
+    let mut details = vec![cx.tr.f("import_dialog.usage.cost", &[("cost", &r.cost)])];
     if r.unpriced > 0 {
         details.push(
             cx.tr
@@ -686,19 +685,15 @@ fn usage_block(ui: &mut Ui, cx: &Cx<'_>, d: &mut ImportDialog, source: ImportSou
     if r.already > 0 {
         details.push(cx.tr.f("import_dialog.usage.already", &[("n", &r.already)]));
     }
+    let details = details.join(" · ");
+    let tip = format!(
+        "{summary}\n{details}\n{}",
+        cx.tr.t("import_dialog.usage.tip")
+    );
     let mut start = false;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.add(StatusDot::new(Status::Idle));
-        let tip = std::iter::once(summary.clone())
-            .chain(details.iter().cloned())
-            .chain(std::iter::once(cx.tr.t("import_dialog.usage.tip")))
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !details.is_empty() {
-            summary.push_str(" · ");
-            summary.push_str(&details.join(" · "));
-        }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui
                 .add(
@@ -715,9 +710,14 @@ fn usage_block(ui: &mut Ui, cx: &Cx<'_>, d: &mut ImportDialog, source: ImportSou
             }
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.add(egui::Label::new(Text::small(summary, cx.pal)).truncate())
-                    .on_hover_text(tip);
+                    .on_hover_text(tip.clone());
             });
         });
+    });
+    ui.horizontal(|ui| {
+        ui.add_space(14.0);
+        ui.add(egui::Label::new(Text::caption(details, cx.pal)).truncate())
+            .on_hover_text(tip);
     });
     if start {
         d.start_usage_import(cx, source);
