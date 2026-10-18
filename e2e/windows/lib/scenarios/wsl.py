@@ -29,8 +29,9 @@ def wsl_show(run):
     """The distribution's Codex files and Superba's env blocks, keys redacted."""
     script = ("cd ~; echo == config.toml; cat ~/.codex/config.toml 2>&1; echo; echo == auth.json keys;"
               " sed -E 's/: *[^,}]+/: <redacted>/g' ~/.codex/auth.json 2>&1; echo; stat -c '%a %n' ~/.codex/auth.json 2>&1;"
-              " for f in .profile .bashrc .zshenv; do grep -q superba $f 2>/dev/null && { echo == $f block;"
-              " sed -n '/>>> superba/,/<<< superba/p' $f; }; done;"
+              # wsl.exe runs the command line through the login shell first: `\$f` reaches bash -lc as `$f`.
+              " for f in .profile .bash_profile .bash_login .bashrc .zshenv; do grep -q superba \\$f 2>/dev/null && {"
+              " echo == \\$f block; sed -n '/>>> superba/,/<<< superba/p' \\$f; }; done;"
               " echo == login bash sees CODEX_AUTHAPI_BASE_URL=$(bash -lc 'printf %s ${CODEX_AUTHAPI_BASE_URL-unset}')")
     return flows.wsl(run, script)["stdout"]
 
@@ -289,6 +290,34 @@ def wsl_app_servers(run, a):
                   and "app-server" in (p["cmdline"] or "")]
 
 
+def legacy_mode_on(run, s, a):
+    """Turn "Run Codex in WSL" on in config.toml with ChatGPT closed, then open ChatGPT through
+    Superba: its app-server is a wsl.exe child running the app's Codex inside the distribution."""
+    a.kill_all()
+    time.sleep(3)
+    path = run.guest["CODEX_HOME"] + r"\config.toml"
+    cfg = run.guest_read(path) or ""
+    local = run.root / "work-legacy-wsl-config.toml"
+    local.write_bytes(set_legacy_wsl(cfg).encode("utf-8"))  # no BOM: the app ignores the key after a BOM
+    run.vm.scp_to(local, path.replace("\\", "/"))
+    r = run.spb("launch", timeout=240, label="launch-legacy-wsl")  # ChatGPT is closed: a plain launch
+    s.check(r["code"] == 0, f"spb launch exit {r['code']} [{r['transcript']}]")
+    m = a.wait_main(120)
+    s.check(m is not None, "ChatGPT opened through Superba with a debugging port")
+    end = time.time() + 120
+    servers = []
+    while time.time() < end and not servers:
+        main, servers = wsl_app_servers(run, a)
+        time.sleep(2)
+    s.check(bool(servers), f"the app-server is a wsl.exe child of the app: {[(p['pid'], (p['cmdline'] or '')[:120]) for p in servers]}")
+    # `[c]odex`: the pgrep's own command line does not match.
+    inside = flows.wsl(run, "pgrep -af '[c]odex.*app-server' | head -3")["stdout"].strip()
+    s.check("app-server" in inside, f"its Codex runs inside {D}: {inside[:160]!r}")
+    steps, p = a.onboarding(120)
+    s.check(not p["login"], "the app is usable (not on the sign-in page)")
+    run.state["legacy_wsl"] = True
+
+
 @scenario("W81", "WSL: the app's legacy 'Run Codex in WSL' mode — hot switch, WSLENV for PAT, restore",
           area="wsl", on=SNAP, needs=("app_ready",), bugs=(45, 54))
 def w81(t):
@@ -296,28 +325,7 @@ def w81(t):
     a = App(run)
     flows.wsl_keepalive(run)
     with t.step("Turn the mode on in config.toml (ChatGPT closed) and open ChatGPT through Superba") as s:
-        a.kill_all()
-        time.sleep(3)
-        path = run.guest["CODEX_HOME"] + r"\config.toml"
-        cfg = run.guest_read(path) or ""
-        local = run.root / "work-w81-config.toml"
-        local.write_bytes(set_legacy_wsl(cfg).encode("utf-8"))  # no BOM: the app ignores the key after a BOM
-        run.vm.scp_to(local, path.replace("\\", "/"))
-        r = run.spb("launch", timeout=240, label="launch-legacy-wsl")  # ChatGPT is closed: a plain launch
-        s.check(r["code"] == 0, f"spb launch exit {r['code']} [{r['transcript']}]")
-        m = a.wait_main(120)
-        s.check(m is not None, "ChatGPT opened through Superba with a debugging port")
-        end = time.time() + 120
-        servers = []
-        while time.time() < end and not servers:
-            main, servers = wsl_app_servers(run, a)
-            time.sleep(2)
-        s.check(bool(servers), f"the app-server is a wsl.exe child of the app: {[(p['pid'], (p['cmdline'] or '')[:120]) for p in servers]}")
-        inside = flows.wsl(run, "pgrep -af 'codex.*app-server' | head -3")["stdout"].strip()
-        s.check("app-server" in inside, f"its Codex runs inside {D}: {inside[:160]!r}")
-        steps, p = a.onboarding(120)
-        s.check(not p["login"], "the app is usable (not on the sign-in page)")
-        run.state["legacy_wsl"] = True
+        legacy_mode_on(run, s, a)
     with t.step("First switch with the mode on") as s:
         main0, sv0 = wsl_app_servers(run, a)
         other = "b" if run.state.get("line", "a") == "a" else "a"
@@ -429,3 +437,168 @@ def w88(t):
 def w87(t):
     t.skip("not runnable in the pool VMs: WSL 2 needs nested virtualization (see wsl-feasibility.md); run on "
            "real hardware: spb wsl router-access <distro>, approve UAC, codex exec in the distro, request row names it")
+
+
+# --------------------------------------------------------------------------- the model kept (user bug 63)
+def top_model(cfg):
+    """The top-level `model` of a config.toml text (`None` = absent)."""
+    head = re.split(r"(?m)^\s*\[", cfg or "", maxsplit=1)[0]
+    m = re.search(r'(?m)^\s*model\s*=\s*"([^"]+)"', head)
+    return m.group(1) if m else None
+
+
+def wsl_exec_turn(run, s, marker, label):
+    """`codex exec` inside the distribution (its own Codex and ~/.codex); the model the relay saw."""
+    env = wsl_trust(run)
+    since = time.time()
+    r = flows.wsl(run, f"mkdir -p ~/work && cd ~/work && {env} timeout 150 codex exec --skip-git-repo-check"
+                       f" -s read-only '{marker}: reply with exactly the text PONG' 2>&1 | tail -5; echo exit $?",
+                  timeout=240)
+    s.save(f"codex-exec-{label}.txt", r["stdout"] + r["stderr"])
+    posts = flows.wait_relay_turn(run, since, marker, timeout=120)
+    s.check(bool(posts), f"{marker}: the relay got the distribution's request")
+    model = posts[-1].get("model") if posts else None
+    s.info(f"{marker}: model {model!r}, line {posts[-1].get('line') if posts else None}")
+    return model
+
+
+def preview_row(text, title, pattern):
+    """The line of the plan's diff preview under section `title:` that matches `pattern`."""
+    section = None
+    for line in text.splitlines():
+        if re.fullmatch(r"\S.*:", line.strip()) and not re.search(r"\s(→|->)\s", line):
+            section = line.strip()[:-1]
+            continue
+        if section == title and re.search(pattern, line.strip()):
+            return line.strip()
+    return None
+
+
+def router_cli(run, s, enable, label, extra=()):
+    if enable:
+        r = run.spb("router", "install", "--member", "krill", timeout=300, label=f"router-install-{label}")
+        s.check(r["code"] == 0, f"spb router install exit {r['code']} [{r['transcript']}]")
+    r = run.spb("router", "enable" if enable else "disable", "--countdown", "0", "--yes", *extra, timeout=300,
+                label=f"router-{'enable' if enable else 'disable'}-{label}")
+    text = r["stdout"] + r["stderr"]
+    s.save(f"router-{'enable' if enable else 'disable'}.txt", text)
+    s.check(r["code"] == 0, f"spb router {'enable' if enable else 'disable'} exit {r['code']} [{r['transcript']}]")
+    local = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
+    if enable:
+        m = re.search(r'openai_base_url = "http://127\.0\.0\.1:(\d+)/backend-api/codex"', local)
+        s.check(bool(m), "this computer's config.toml points Codex at the router")
+        run.state["router_port"] = int(m.group(1)) if m else None
+        run.state["router_on"] = True
+    else:
+        run.state.pop("router_on", None)
+    return text, local
+
+
+@scenario("W89", "WSL: router on/off keeps the model the distribution's Codex runs; the plan names it (bug 63)",
+          area="wsl", on=SNAP, net="real", needs=("configured",), conflicts=("router_on",), bugs=(58, 63))
+def w89(t):
+    run = t.run
+    flows.wsl_keepalive(run)  # a stopped distribution is never started by a switch
+    title = f"WSL: {D}"
+    with t.step("Before: the distribution on its PAT line, no model in its config.toml") as s:
+        out = wsl_show(run)
+        s.save("wsl-before.txt", out)
+        s.check(run.state.get("auth_mode") == "pat", f"PAT applied (auth mode {run.state.get('auth_mode')!r})")
+        s.check("personal_access_token" in out, "the distribution's auth.json holds the PAT")
+        s.check(top_model(wsl_config(run)) is None, "no model in the distribution's config.toml")
+        m0 = wsl_exec_turn(run, s, "W89-D0", "direct")
+        s.check(bool(m0), f"the distribution's Codex ran {m0!r} (the default of the PAT's model list)")
+        run.state["wsl_model"] = m0
+    with t.step(f"spb router enable: the plan keeps {m0} for the distribution and says so") as s:
+        text, local = router_cli(run, s, True, "w89")
+        s.check(re.search(rf"{re.escape(title)}: Codex keeps {re.escape(m0)}, the model it runs with now", text),
+                f"the plan names the model kept in {D}")
+        row = preview_row(text, title, rf'^model: .*"{re.escape(m0)}" \(Keeps the model in use\)')
+        s.check(bool(row), f"the preview row of {D}: {row!r}")
+        cfg = wsl_config(run)
+        s.save("wsl-config-routed.txt", cfg)
+        s.check("http://127.0.0.1:" in cfg, "the distribution goes through the router (WSL 1: 127.0.0.1)")
+        s.check(top_model(cfg) == m0, f"the distribution's config.toml keeps model = {m0!r} ({top_model(cfg)!r})")
+        s.check(top_model(local) == m0, f"this computer keeps it too (bug 58): {top_model(local)!r}", soft=True)
+        s.check(len(re.findall(r"Codex keeps", text)) >= 2, "named for this computer and for the distribution",
+                soft=True)
+    with t.step("codex exec in the distribution through the router runs the same model") as s:
+        m1 = wsl_exec_turn(run, s, "W89-R1", "routed")
+        s.check(m1 == m0, f"through the router: {m1!r} (direct: {m0!r})")
+        rows = []
+        for _ in range(8):  # the router writes its request log asynchronously
+            rr = run.spb_json("usage", "log", timeout=120, label="usage-log-w89")
+            rows = [x for x in ((rr.get("json") or {}).get("rows") or []) if D in json.dumps(x)]
+            if rows:
+                break
+            time.sleep(5)
+        s.save("usage-log-wsl.json", rows[:10])
+        s.check(bool(rows), f"a request row names the distribution ({len(rows)} rows)", soft=True)
+    with t.step("spb router disable: the distribution runs its PAT default again") as s:
+        text, local = router_cli(run, s, False, "w89")
+        cfg = wsl_config(run)
+        s.save("wsl-config-direct.txt", cfg)
+        s.check("http://127.0.0.1" not in cfg and any(run.net.line_url(l) in cfg for l in run.net.ports),
+                "the distribution is back on a test line")
+        if re.search(rf"{re.escape(title)}: Codex keeps", text):
+            s.info("the PAT's default changed meanwhile: the model stays and the plan says so")
+            s.check(top_model(cfg) == m0, f"model = {m0!r} kept")
+        else:
+            s.check(top_model(cfg) is None, f"the kept model is released (the PAT gives {m0!r} itself): "
+                                            f"{top_model(cfg)!r}")
+            row = preview_row(text, title, r'^model: "[^"]+" → - \(No longer managed')
+            s.check(bool(row), f"the preview row of {D} releases it: {row!r}", soft=True)
+        m2 = wsl_exec_turn(run, s, "W89-D1", "direct-again")
+        s.check(m2 == m0, f"direct again: {m2!r} (before: {m0!r})")
+
+
+@scenario("W90", "WSL: 'Run Codex in WSL' — router on/off keeps the model of the app's Codex; the plan names "
+                 "the distribution (bug 63)",
+          area="wsl", on=SNAP, net="real", needs=("app_ready",), conflicts=("router_on",), bugs=(54, 58, 63))
+def w90(t):
+    run = t.run
+    a = App(run)
+    flows.wsl_keepalive(run)
+    with t.step("Turn the mode on in config.toml (ChatGPT closed) and open ChatGPT through Superba") as s:
+        legacy_mode_on(run, s, a)
+    with t.step("A line switch hands the app's WSL Codex the auth address (PAT: WSLENV, full restart)") as s:
+        other = "b" if run.state.get("line", "a") == "a" else "a"
+        r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", "--force",
+                    timeout=300, label="switch-legacy-w90")
+        s.save("switch.txt", r["stdout"] + r["stderr"])
+        s.check(r["code"] == 0, f"switch exit {r['code']} [{r['transcript']}]")
+        run.state["line"] = other
+        a.wait_main(150, not_pid=None)
+        end = time.time() + 150
+        servers = []
+        while time.time() < end and not servers:
+            main, servers = wsl_app_servers(run, a)
+            time.sleep(3)
+        s.check(bool(servers), "the app's app-server runs in WSL again")
+        App(run).onboarding(120)
+    flows.turn(run, t, "E2E-LW0", expect_line=run.state["line"], new_chat=True)
+    m0 = (run.state.get("turn_models") or {}).get("E2E-LW0")
+    with t.step(f"spb router enable: the plan says the app's Codex in {D} keeps {m0}") as s:
+        s.check(bool(m0), f"the app's Codex in WSL ran {m0!r} with the PAT")
+        text, local = router_cli(run, s, True, "w90", extra=("--wait-turn",))
+        s.check(re.search(rf"runs this Codex inside WSL \({re.escape(D)},.*keeps {re.escape(m0)} there too", text),
+                f"the plan names {D} and the model kept there")
+        s.check(top_model(local) == m0, f"config.toml (read by the app's Codex in WSL) keeps {m0!r}: "
+                                        f"{top_model(local)!r}")
+        row = preview_row(text, "This computer", rf'^model: .*"{re.escape(m0)}" \(Keeps the model in use\)')
+        s.check(bool(row), f"the preview row: {row!r}", soft=True)
+        main, servers = wsl_app_servers(run, a)
+        s.check(bool(servers), "the app's app-server runs in WSL", soft=True)
+        App(run).onboarding(120)
+    flows.turn(run, t, "E2E-LR1", new_chat=True)
+    with t.step("The app's turn through the router ran the same model") as s:
+        m1 = (run.state.get("turn_models") or {}).get("E2E-LR1")
+        s.check(m1 == m0, f"through the router: {m1!r} (direct: {m0!r})")
+    with t.step("spb router disable: back to the PAT, the same model") as s:
+        text, local = router_cli(run, s, False, "w90", extra=("--wait-turn",))
+        s.check("http://127.0.0.1" not in local, "this computer is back on a line")
+        App(run).onboarding(120)
+    flows.turn(run, t, "E2E-LD1", expect_line=run.state["line"], new_chat=True)
+    with t.step("The app's turn after the router ran the same model") as s:
+        m2 = (run.state.get("turn_models") or {}).get("E2E-LD1")
+        s.check(m2 == m0, f"direct again: {m2!r} (before: {m0!r})")
