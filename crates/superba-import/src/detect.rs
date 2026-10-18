@@ -429,7 +429,9 @@ impl Candidate {
         if let Some((score, current, name, text)) = found {
             self.current = current;
             self.provider = Some(name);
-            self.add(score, text);
+            // The store says the most; it comes first.
+            self.score += score;
+            self.evidence.insert(0, text);
         }
     }
 }
