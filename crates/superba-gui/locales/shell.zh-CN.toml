@@ -149,7 +149,10 @@ probed = "线路测速：{lines}"
 recovered_nothing = "启动恢复：没有需要恢复的切换"
 
 [nav]
+claude_code = "Claude Code 连接与模型"
+claude_settings = "Claude Code 设置"
 diagnostics = "诊断"
+group.claude = "Claude Code"
 group.codex = "Codex"
 group.connect = "连接"
 group.superba = "Superba"
@@ -163,8 +166,12 @@ sessions = "会话"
 settings = "设置"
 updates = "更新"
 usage = "用量"
+short.claude_code = "连接与模型"
+short.claude_settings = "设置"
 
 [page]
+claude_code.subtitle = "这台电脑上 Claude Code 用哪个供应商和哪些模型：Anthropic 端点、/model 列表、Opus / Sonnet / Haiku 槽位和每个模型支持的能力。Superba 只写 settings.json 里自己管理的键。"
+claude_settings.subtitle = "这台电脑上 Claude Code 的设置（~/.claude/settings.json）：所有键和有文档的环境变量，以及文件编辑器和备份。"
 diagnostics.subtitle = "检查项、Codex 进程、环境和活动日志。"
 hosts.subtitle = "ChatGPT 桌面 app 记录的 SSH 主机，以及默认随本机切换的本机 WSL 发行版。"
 models.subtitle = "供应商提供的模型，以及每个模型的上下文窗口和自动压缩阈值。"

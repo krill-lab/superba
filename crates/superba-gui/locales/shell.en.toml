@@ -150,7 +150,10 @@ probed = "Line test: {lines}"
 recovered_nothing = "Start-up recovery: nothing to recover"
 
 [nav]
+claude_code = "Claude Code connection & models"
+claude_settings = "Claude Code settings"
 diagnostics = "Diagnostics"
+group.claude = "Claude Code"
 group.codex = "Codex"
 group.connect = "Connect"
 group.superba = "Superba"
@@ -164,8 +167,12 @@ sessions = "Sessions"
 settings = "Settings"
 updates = "Updates"
 usage = "Usage"
+short.claude_code = "Connection & models"
+short.claude_settings = "Settings"
 
 [page]
+claude_code.subtitle = "Which provider and models Claude Code uses on this computer: the Anthropic endpoint, the /model list, the Opus / Sonnet / Haiku slots and what each model supports. Superba writes only its own keys of settings.json."
+claude_settings.subtitle = "Claude Code's settings on this computer (~/.claude/settings.json): every key and documented environment variable, with the file editor and its backups."
 diagnostics.subtitle = "Checks, Codex processes, the environment and the activity log."
 hosts.subtitle = "SSH hosts the ChatGPT app knows, and this computer's WSL distributions (they switch with it by default)."
 models.subtitle = "The provider's models, with a context window and auto-compact limit per model."

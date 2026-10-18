@@ -37,6 +37,7 @@
 //! (navigate, toast, refresh) are returned as [`Action`]s. Helpers shared by
 //! several pages live in [`shared`] (never import another page's module).
 
+pub mod claude;
 pub mod diagnostics;
 pub mod hosts;
 pub mod import;
@@ -93,7 +94,14 @@ pub enum Page {
     Sessions,
     /// Remote hosts the desktop app is connected to (settings sync, Codex).
     Hosts,
-    /// Versions of the desktop app and Codex (local and remote), app Codex pin.
+    /// Claude Code: its provider and Anthropic endpoint, the models it lists
+    /// and their slots and capabilities, apply / restore (user bug 79).
+    ClaudeCode,
+    /// Claude Code's `settings.json` (catalog of its keys and environment
+    /// variables, the file editor).
+    ClaudeSettings,
+    /// Versions of the desktop app and Codex (local and remote), app Codex
+    /// pin, and Superba itself.
     Updates,
     /// Diagnostics: checks, environment, processes, the activity log.
     Diagnostics,
@@ -110,7 +118,10 @@ pub enum NavGroup {
     Connect,
     /// Codex on this computer and remote hosts.
     Codex,
-    /// Superba itself.
+    /// Claude Code on this computer.
+    Claude,
+    /// Superba itself: updates, diagnostics, preferences (pinned at the
+    /// bottom of the sidebar).
     Superba,
 }
 
@@ -121,6 +132,7 @@ impl NavGroup {
             NavGroup::Main => None,
             NavGroup::Connect => Some("nav.group.connect"),
             NavGroup::Codex => Some("nav.group.codex"),
+            NavGroup::Claude => Some("nav.group.claude"),
             NavGroup::Superba => Some("nav.group.superba"),
         }
     }
@@ -139,7 +151,7 @@ pub enum PageLayout {
 
 impl Page {
     /// All pages in navigation order.
-    pub const ALL: [Page; 11] = [
+    pub const ALL: [Page; 13] = [
         Page::Overview,
         Page::Providers,
         Page::Models,
@@ -148,6 +160,8 @@ impl Page {
         Page::Settings,
         Page::Sessions,
         Page::Hosts,
+        Page::ClaudeCode,
+        Page::ClaudeSettings,
         Page::Updates,
         Page::Diagnostics,
         Page::Preferences,
@@ -158,8 +172,9 @@ impl Page {
         match self {
             Page::Overview => NavGroup::Main,
             Page::Providers | Page::Models | Page::Router | Page::Usage => NavGroup::Connect,
-            Page::Settings | Page::Sessions | Page::Hosts | Page::Updates => NavGroup::Codex,
-            Page::Diagnostics | Page::Preferences => NavGroup::Superba,
+            Page::Settings | Page::Sessions | Page::Hosts => NavGroup::Codex,
+            Page::ClaudeCode | Page::ClaudeSettings => NavGroup::Claude,
+            Page::Updates | Page::Diagnostics | Page::Preferences => NavGroup::Superba,
         }
     }
 
@@ -174,12 +189,15 @@ impl Page {
             | Page::Usage
             | Page::Settings
             | Page::Sessions
-            | Page::Hosts => PageLayout::Fit,
+            | Page::Hosts
+            | Page::ClaudeCode
+            | Page::ClaudeSettings => PageLayout::Fit,
             Page::Updates | Page::Diagnostics | Page::Preferences => PageLayout::Scroll,
         }
     }
 
-    /// i18n key of the title.
+    /// i18n key of the title (page header, palette, the sidebar row's
+    /// accessible name).
     pub fn title_key(self) -> &'static str {
         match self {
             Page::Overview => "nav.overview",
@@ -190,9 +208,21 @@ impl Page {
             Page::Settings => "nav.settings",
             Page::Sessions => "nav.sessions",
             Page::Hosts => "nav.hosts",
+            Page::ClaudeCode => "nav.claude_code",
+            Page::ClaudeSettings => "nav.claude_settings",
             Page::Updates => "nav.updates",
             Page::Diagnostics => "nav.diagnostics",
             Page::Preferences => "nav.preferences",
+        }
+    }
+
+    /// i18n key of the sidebar label: the title, or a shorter one where the
+    /// group caption says the rest ("设置" under "Claude Code").
+    pub fn nav_key(self) -> &'static str {
+        match self {
+            Page::ClaudeCode => "nav.short.claude_code",
+            Page::ClaudeSettings => "nav.short.claude_settings",
+            other => other.title_key(),
         }
     }
 
@@ -207,6 +237,8 @@ impl Page {
             Page::Settings => "page.settings.subtitle",
             Page::Sessions => "page.sessions.subtitle",
             Page::Hosts => "page.hosts.subtitle",
+            Page::ClaudeCode => "page.claude_code.subtitle",
+            Page::ClaudeSettings => "page.claude_settings.subtitle",
             Page::Updates => "page.updates.subtitle",
             Page::Diagnostics => "page.diagnostics.subtitle",
             Page::Preferences => "page.preferences.subtitle",
@@ -224,6 +256,8 @@ impl Page {
             Page::Settings => Icon::Settings,
             Page::Sessions => Icon::Chat,
             Page::Hosts => Icon::Server,
+            Page::ClaudeCode => Icon::Cloud,
+            Page::ClaudeSettings => Icon::Terminal,
             Page::Updates => Icon::Download,
             Page::Diagnostics => Icon::Probe,
             Page::Preferences => Icon::Gear,

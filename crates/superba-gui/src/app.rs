@@ -169,6 +169,8 @@ pub struct PageStates {
     pub hosts: pages::hosts::State,
     /// Updates.
     pub updates: pages::updates::State,
+    /// Claude Code (both of its pages share one state).
+    pub claude: pages::claude::State,
 }
 
 impl PageStates {
@@ -183,6 +185,7 @@ impl PageStates {
             Page::Sessions => pages::sessions::status(&self.sessions),
             Page::Hosts => pages::hosts::status(&self.hosts),
             Page::Updates => pages::updates::status(&self.updates),
+            Page::ClaudeCode | Page::ClaudeSettings => pages::claude::status(&self.claude, page),
             Page::Overview => pages::overview::status(&self.overview),
             Page::Diagnostics | Page::Preferences => PageStatus::default(),
         }
@@ -204,6 +207,9 @@ impl PageStates {
             Page::Sessions => pages::sessions::command(&mut self.sessions, cx, command, out),
             Page::Hosts => pages::hosts::command(&mut self.hosts, cx, command, out),
             Page::Updates => pages::updates::command(&mut self.updates, cx, command, out),
+            Page::ClaudeCode | Page::ClaudeSettings => {
+                pages::claude::command(&mut self.claude, page, cx, command, out);
+            }
             Page::Overview => pages::overview::command(&mut self.overview, cx, command, out),
             Page::Diagnostics | Page::Preferences => {
                 tracing::debug!(?page, %command, "page has no commands");
@@ -221,6 +227,7 @@ impl PageStates {
         items.extend(pages::sessions::palette(cx, &self.sessions));
         items.extend(pages::hosts::palette(cx, &self.hosts));
         items.extend(pages::updates::palette(cx, &self.updates));
+        items.extend(pages::claude::palette(cx, &self.claude));
         items
     }
 
@@ -243,6 +250,9 @@ impl PageStates {
             Page::Sessions => pages::sessions::show(ui, cx, &mut self.sessions, out),
             Page::Hosts => pages::hosts::show(ui, cx, &mut self.hosts, out),
             Page::Updates => pages::updates::show(ui, cx, &mut self.updates, out),
+            Page::ClaudeCode | Page::ClaudeSettings => {
+                pages::claude::show(ui, cx, &mut self.claude, page, out);
+            }
             Page::Diagnostics => pages::diagnostics::show(ui, cx, out),
             Page::Preferences => pages::preferences::show(ui, cx, prefs, out),
         }

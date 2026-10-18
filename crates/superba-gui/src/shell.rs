@@ -195,10 +195,11 @@ impl NavMetrics {
         caption: 20.0,
         caption_gap: 10.0,
     };
+    // Thirteen pages in five groups fit the 960x640 minimum with these.
     const COMPACT: Self = Self {
-        row: 34.0,
-        caption: 18.0,
-        caption_gap: 6.0,
+        row: 30.0,
+        caption: 16.0,
+        caption_gap: 4.0,
     };
 
     /// Height of the main list plus the pinned footer (rows, headings, the
@@ -306,8 +307,11 @@ fn nav_item(
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    let label = cx.tr.t(page.title_key());
-    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, &label));
+    // The row shows the short label; its accessible name is the page title
+    // ("Claude Code 设置", not a second "设置").
+    let label = cx.tr.t(page.nav_key());
+    let name = cx.tr.t(page.title_key());
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, &name));
     let t = crate::design::widgets::hover_t(ui, &response);
     // Selected: a soft gray rounded rectangle on the window background.
     let b = crate::design::backdrop::Backdrop::of(ui.ctx());

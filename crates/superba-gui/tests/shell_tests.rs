@@ -215,11 +215,19 @@ fn the_sidebar_never_draws_pages_under_the_pinned_ones_at_the_minimum_window() {
     use superba_gui::pages::{NavGroup, Page};
     for locale in [Locale::ZhCn, Locale::En] {
         let tr = Tr::new(locale);
+        // Two rows may share a label ("Settings" of Codex and of Claude
+        // Code): the n-th page with a label is its n-th drawing.
         let rect_of = |texts: &[(String, Rect)], page: Page| {
-            let label = tr.t(page.title_key());
+            let label = tr.t(page.nav_key());
+            let nth = Page::ALL
+                .iter()
+                .take_while(|p| **p != page)
+                .filter(|p| tr.t(p.nav_key()) == label)
+                .count();
             texts
                 .iter()
-                .find(|(t, _)| *t == label)
+                .filter(|(t, _)| *t == label)
+                .nth(nth)
                 .map(|(_, r)| *r)
                 .unwrap_or_else(|| panic!("{page:?} ({label}) not drawn in {locale:?}"))
         };

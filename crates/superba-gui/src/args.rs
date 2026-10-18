@@ -42,7 +42,8 @@ superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
   --lang L      en or zh-CN (default: preferences / system)
   --size WxH    initial window size in points, e.g. 1280x800
   --page NAME   open a page first: overview providers models router usage
-                settings sessions hosts updates diagnostics preferences
+                settings sessions hosts claude-code claude-settings updates
+                diagnostics preferences
   --launch-chatgpt
                 open ChatGPT through Superba (so it can be hot-switched); a
                 running Superba window does it, else no window opens unless
@@ -54,7 +55,7 @@ superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
 Subcommands (status, switch, restore, ...) behave like `spb`; see `superba --help`.";
 
 /// Flag names of the pages, in navigation order.
-pub const PAGE_NAMES: [(Page, &str); 11] = [
+pub const PAGE_NAMES: [(Page, &str); 13] = [
     (Page::Overview, "overview"),
     (Page::Providers, "providers"),
     (Page::Models, "models"),
@@ -63,6 +64,8 @@ pub const PAGE_NAMES: [(Page, &str); 11] = [
     (Page::Settings, "settings"),
     (Page::Sessions, "sessions"),
     (Page::Hosts, "hosts"),
+    (Page::ClaudeCode, "claude-code"),
+    (Page::ClaudeSettings, "claude-settings"),
     (Page::Updates, "updates"),
     (Page::Diagnostics, "diagnostics"),
     (Page::Preferences, "preferences"),

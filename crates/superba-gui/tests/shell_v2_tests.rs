@@ -87,6 +87,7 @@ fn pages_are_grouped_and_every_label_is_translated() {
             NavGroup::Main,
             NavGroup::Connect,
             NavGroup::Codex,
+            NavGroup::Claude,
             NavGroup::Superba
         ]
     );
@@ -101,6 +102,8 @@ fn pages_are_grouped_and_every_label_is_translated() {
             Page::Settings,
             Page::Sessions,
             Page::Hosts,
+            Page::ClaudeCode,
+            Page::ClaudeSettings,
             Page::Updates,
             Page::Diagnostics,
             Page::Preferences,
@@ -121,7 +124,9 @@ fn pages_are_grouped_and_every_label_is_translated() {
             Page::Usage,
             Page::Settings,
             Page::Sessions,
-            Page::Hosts
+            Page::Hosts,
+            Page::ClaudeCode,
+            Page::ClaudeSettings
         ]
     );
     for locale in [Locale::En, Locale::ZhCn] {
@@ -131,7 +136,12 @@ fn pages_are_grouped_and_every_label_is_translated() {
                 assert_ne!(tr.t(key), key, "{key} missing in {locale:?}");
             }
         }
-        for g in [NavGroup::Connect, NavGroup::Codex, NavGroup::Superba] {
+        for g in [
+            NavGroup::Connect,
+            NavGroup::Codex,
+            NavGroup::Claude,
+            NavGroup::Superba,
+        ] {
             let key = g.caption_key().unwrap();
             assert_ne!(tr.t(key), key);
         }
@@ -529,11 +539,11 @@ async fn the_sidebar_lists_every_page_in_four_groups() {
         }
         for page in Page::ALL {
             assert!(
-                texts_seen.contains(&tr.t(page.title_key())),
+                texts_seen.contains(&tr.t(page.nav_key())),
                 "{page:?} missing in {locale:?}: {texts_seen:?}"
             );
         }
-        for group in [NavGroup::Connect, NavGroup::Codex, NavGroup::Superba] {
+        for group in [NavGroup::Connect, NavGroup::Codex, NavGroup::Claude] {
             assert!(texts_seen.contains(&tr.t(group.caption_key().unwrap())));
         }
         assert!(texts_seen.contains("2"), "host badge count");

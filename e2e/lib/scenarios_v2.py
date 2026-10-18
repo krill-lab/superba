@@ -641,7 +641,8 @@ GUI_SIZE = (1280, 800)
 OVERLAY_SIZE = (1280, 940)
 # The pages in navigation order when `superba --gui-help` cannot be read
 # (superba-gui args::PAGE_NAMES); s10 takes the list from the binary.
-PAGES = ["overview", "providers", "models", "router", "usage", "settings", "sessions", "hosts", "updates", "diagnostics", "preferences"]
+PAGES = ["overview", "providers", "models", "router", "usage", "settings", "sessions", "hosts", "claude-code",
+         "claude-settings", "updates", "diagnostics", "preferences"]
 
 
 def gui_pages(run):

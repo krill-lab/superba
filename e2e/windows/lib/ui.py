@@ -106,8 +106,9 @@ class Ui:
 
     def page(self, page):
         """Open a sidebar page: overview providers models router usage settings
-        sessions hosts updates diagnostics preferences."""
-        self.act("invoke", key=f"nav.{page}", type="TabItem")
+        sessions hosts claude-code claude-settings updates diagnostics preferences
+        (the tab's accessible name is the page title, `nav.<name>`)."""
+        self.act("invoke", key=f"nav.{page.replace('-', '_')}", type="TabItem")
         time.sleep(0.6)
 
     # ------------------------------------------------------------- reading
