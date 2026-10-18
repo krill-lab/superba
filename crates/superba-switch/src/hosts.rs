@@ -17,7 +17,9 @@
 //!
 //! The last probe of each host is cached in memory and in
 //! `<data dir>/cache/hosts.json` (without the config bytes), so lists show it
-//! without connecting.
+//! without connecting; the file also records the WSL updates a switch left
+//! pending. Other Superba processes write it too (`spb` next to the GUI), so a
+//! changed file is merged in again (user bug 68).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -42,7 +44,7 @@ pub const HOSTS_CACHE_FILE: &str = "hosts.json";
 
 /// The last probe of one host.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct CachedHost {
+pub struct CachedHost {
     /// Probe result (`config_toml` is kept only in memory).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<RemoteState>,
@@ -62,7 +64,39 @@ pub(crate) struct CachedHost {
 #[derive(Debug, Default)]
 pub(crate) struct HostCache {
     loaded: bool,
+    /// The cache file as last read here (modified time, length). Other Superba
+    /// processes write it too (`spb switch` next to the open GUI records a
+    /// pending WSL update there), so a changed file is read again (user bug 68).
+    stamp: Option<FileStamp>,
     map: BTreeMap<TargetId, CachedHost>,
+}
+
+/// Modified time and length of a file.
+type FileStamp = (std::time::SystemTime, u64);
+
+fn file_stamp(path: &std::path::Path) -> Option<FileStamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.modified().ok()?, meta.len()))
+}
+
+/// Merge what another Superba process stored for a host (`disk`) into this
+/// process' entry (pure): the pending WSL update and the last Codex install
+/// are the shared record (every writer writes through); a newer probe replaces
+/// this process' one, which keeps its config bytes for the same probe.
+pub fn merge_cached(mem: &mut CachedHost, disk: CachedHost) {
+    mem.pending = disk.pending;
+    mem.last_install = disk.last_install;
+    let newer = match (&mem.state, &disk.state) {
+        (_, None) => false,
+        (None, Some(_)) => true,
+        (Some(m), Some(d)) => d.probed_at > m.probed_at,
+    };
+    if newer {
+        mem.state = disk.state;
+        mem.error = disk.error;
+    } else if mem.state.is_none() && mem.error.is_none() {
+        mem.error = disk.error;
+    }
 }
 
 /// sha256 hex of a value as written (`None` = absent).
@@ -277,16 +311,27 @@ impl Switcher {
         self.deps.ctx.data_dir.cache_dir().join(HOSTS_CACHE_FILE)
     }
 
-    /// The cached probe of every host (loaded from disk once).
+    /// The cached probe of every host: loaded from disk once, and merged again
+    /// ([`merge_cached`]) whenever another process changed the file since.
     pub(crate) fn cached_hosts(&self) -> BTreeMap<TargetId, CachedHost> {
+        let path = self.hosts_cache_path();
+        let stamp = file_stamp(&path);
         let mut cache = self.hosts.lock().unwrap_or_else(|p| p.into_inner());
-        if !cache.loaded {
+        let first = !cache.loaded;
+        if first || (stamp.is_some() && stamp != cache.stamp) {
             cache.loaded = true;
-            if let Ok(bytes) = std::fs::read(self.hosts_cache_path())
+            cache.stamp = stamp;
+            if let Ok(bytes) = std::fs::read(&path)
                 && let Ok(map) = serde_json::from_slice::<BTreeMap<TargetId, CachedHost>>(&bytes)
             {
                 for (k, v) in map {
-                    cache.map.entry(k).or_insert(v);
+                    match cache.map.get_mut(&k) {
+                        Some(mem) if !first => merge_cached(mem, v),
+                        Some(_) => {}
+                        None => {
+                            cache.map.insert(k, v);
+                        }
+                    }
                 }
             }
         }
@@ -427,6 +472,19 @@ impl Switcher {
             out.push(self.host_view(host, &set, cached, session.as_ref(), pending));
         }
         Ok(out)
+    }
+
+    /// [`superba_core::SwitchService::hosts_now`]: the WSL inventory read again
+    /// and which distributions run now (none is started), then the list.
+    pub(crate) async fn hosts_now_impl(&self) -> Result<Vec<HostView>> {
+        let d = &self.deps;
+        d.remote.forget_cached();
+        if let Err(e) = d.remote.wsl_running().await
+            && !e.is_not_implemented()
+        {
+            tracing::debug!(error = %e, "cannot tell which WSL distributions run");
+        }
+        self.hosts_impl().await
     }
 
     pub(crate) async fn host_probe_impl(&self, id: &TargetId) -> Result<HostView> {

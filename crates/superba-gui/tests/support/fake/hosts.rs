@@ -41,6 +41,10 @@ pub(super) struct State {
     /// The WSL distribution is stopped and the last switch left it out (user
     /// bug 54).
     wsl_pending: bool,
+    /// The WSL distribution runs as Windows reports it (user bug 68).
+    wsl_running: Option<bool>,
+    /// `hosts_now` calls (each asks Windows which distributions run).
+    hosts_now_calls: u32,
 }
 
 impl FakeService {
@@ -89,6 +93,19 @@ impl FakeService {
         let mut area = self.areas.hosts.lock().unwrap();
         area.devices = true;
         area.wsl_pending = true;
+    }
+
+    /// The WSL distribution runs and nothing is pending (user bug 68).
+    pub fn with_running_wsl(&self) {
+        let mut area = self.areas.hosts.lock().unwrap();
+        area.devices = true;
+        area.wsl_pending = false;
+        area.wsl_running = Some(true);
+    }
+
+    /// `hosts_now` calls so far.
+    pub fn hosts_now_calls(&self) -> u32 {
+        self.areas.hosts.lock().unwrap().hosts_now_calls
     }
 }
 
@@ -277,6 +294,15 @@ fn views(fake: &FakeService) -> Vec<HostView> {
                     auth_mode: None,
                 },
             });
+        } else if let Some(running) = area.wsl_running {
+            let mut distro = WslDistro {
+                version: Some(1),
+                default: true,
+                ..WslDistro::named("Ubuntu")
+            };
+            distro.set_running(running);
+            wsl.host.wsl = Some(distro);
+            wsl.host.sources = vec![HostSource::Wsl];
         }
         out.push(wsl);
     }
@@ -285,6 +311,12 @@ fn views(fake: &FakeService) -> Vec<HostView> {
 
 /// Body of `SwitchService::hosts` (deliberately unfiltered, see the module doc).
 pub(super) async fn hosts(fake: &FakeService) -> Result<Vec<HostView>> {
+    Ok(views(fake))
+}
+
+/// Body of `SwitchService::hosts_now`.
+pub(super) async fn hosts_now(fake: &FakeService) -> Result<Vec<HostView>> {
+    fake.areas.hosts.lock().unwrap().hosts_now_calls += 1;
     Ok(views(fake))
 }
 

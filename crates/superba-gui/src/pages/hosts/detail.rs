@@ -124,6 +124,18 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     let connected = h.host.connected == Some(true);
     let probed = h.state.is_some();
     let wsl = h.host.kind == HostKind::Wsl;
+    // A stopped distribution is never checked by itself: checking starts it.
+    let not_probed = if wsl
+        && h.host
+            .wsl
+            .as_ref()
+            .and_then(superba_core::WslDistro::running)
+            == Some(false)
+    {
+        cx.tr.t("hosts.wsl.not_probed_stopped")
+    } else {
+        cx.tr.t("hosts.not_probed")
+    };
     // Title.
     ui.horizontal(|ui| {
         ui.label(Text::title(names::title(cx.tr, &h.host), cx.pal));
@@ -202,7 +214,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     kv(ui, cx, &cx.tr.t("hosts.connection"), |ui| {
         let text = match &h.state {
             Some(s) => connection_text(cx, &cx.data.sites, s),
-            None => cx.tr.t("hosts.not_probed"),
+            None => not_probed.clone(),
         };
         ui.label(Text::small(text, cx.pal).color(cx.pal.text));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -226,7 +238,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     let latest = latest_stable(state);
     kv(ui, cx, &cx.tr.t("hosts.codex"), |ui| {
         let Some(s) = &h.state else {
-            ui.label(Text::small(cx.tr.t("hosts.not_probed"), cx.pal));
+            ui.label(Text::small(not_probed.clone(), cx.pal));
             return;
         };
         let mut parts = vec![

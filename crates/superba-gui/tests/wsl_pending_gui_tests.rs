@@ -103,3 +103,125 @@ fn a_stopped_distribution_with_a_pending_update_says_so_and_offers_update_now() 
         }
     }
 }
+
+/// What `spb` changed while the GUI was open reaches the page (user bug 68):
+/// "Check again" reads the list again through `hosts_now` (which asks Windows
+/// which distributions run) and shows the stopped distribution with its pending
+/// update and "Update now", without checking (starting) it.
+#[test]
+fn check_again_shows_what_another_process_left_pending() {
+    let service = Arc::new(FakeService::new(FakeOptions {
+        fast: true,
+        ..Default::default()
+    }));
+    service.with_running_wsl();
+    let mut h = harness([1280.0, 800.0], Locale::En, &service);
+    let mut state = State::default();
+    state.selected = Some(wsl());
+    let f = h.until(
+        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+        |f| f.has("WSL: Ubuntu") && f.has("Running"),
+    );
+    assert!(!f.has("Update now"), "{}", f.all_text());
+    assert_eq!(service.hosts_now_calls(), 1, "the page's first list");
+    // A running distribution is checked on its own (that starts nothing).
+    h.until(
+        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+        |_| service.host_probes().contains(&wsl()),
+    );
+
+    // `spb switch` while the distribution was stopped (another process).
+    service.with_stopped_wsl_pending();
+    let wsl_probes = || {
+        service
+            .host_probes()
+            .iter()
+            .filter(|t| **t == wsl())
+            .count()
+    };
+    let probes = wsl_probes();
+    let f = h.frames(4, |ui, cx, out| hosts::show(ui, cx, &mut state, out));
+    assert!(
+        !f.has("Update now"),
+        "no reload by itself:\n{}",
+        f.all_text()
+    );
+    h.click_text(&f, "Check again");
+    let f = h.until(
+        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+        |f| f.has("Update now"),
+    );
+    assert!(service.hosts_now_calls() >= 2);
+    assert!(f.has("Stopped"), "{}", f.all_text());
+    assert!(
+        f.texts.iter().any(|(t, _)| t.contains("update pending")),
+        "{}",
+        f.all_text()
+    );
+    assert!(
+        f.texts
+            .iter()
+            .any(|(t, _)| t.contains("Not checked yet (stopped; Check now starts it)"))
+            || f.texts.iter().any(|(t, _)| t.contains("Checked")),
+        "{}",
+        f.all_text()
+    );
+    // The stopped distribution was not checked again (that would start it).
+    let f = h.frames(6, |ui, cx, out| hosts::show(ui, cx, &mut state, out));
+    assert_eq!(wsl_probes(), probes, "{}", f.all_text());
+}
+
+/// A switch (this GUI's, or `spb`'s seen as a newer applied configuration in
+/// the overview) and coming back to the page read the list again (user bug 68).
+#[test]
+fn a_switch_and_a_visit_read_the_list_again() {
+    let service = Arc::new(FakeService::new(FakeOptions {
+        fast: true,
+        ..Default::default()
+    }));
+    service.with_running_wsl();
+    let mut h = harness([1280.0, 800.0], Locale::En, &service);
+    let mut state = State::default();
+    state.selected = Some(wsl());
+    h.until(
+        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+        |f| f.has("Running"),
+    );
+    let calls = service.hosts_now_calls();
+
+    // This GUI's switch finished.
+    service.with_stopped_wsl_pending();
+    state.after_switch();
+    h.until(
+        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+        |f| f.has("Update now"),
+    );
+    assert_eq!(service.hosts_now_calls(), calls + 1);
+
+    // `spb switch`: the overview reports a newer applied configuration.
+    service.with_running_wsl();
+    let active = h
+        .data
+        .overview
+        .value
+        .as_mut()
+        .and_then(|o| o.active.as_mut())
+        .expect("an applied configuration in the fake overview");
+    active.applied_at = active
+        .applied_at
+        .saturating_add(std::time::Duration::from_secs(60));
+    h.until(
+        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+        |f| f.has("Running") && !f.has("Update now"),
+    );
+    assert_eq!(service.hosts_now_calls(), calls + 2);
+
+    // Coming back to the page.
+    service.with_stopped_wsl_pending();
+    state.entered();
+    h.until(
+        |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+        |f| f.has("Update now"),
+    );
+    assert_eq!(service.hosts_now_calls(), calls + 3);
+}

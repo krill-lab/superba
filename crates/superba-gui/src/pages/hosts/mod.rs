@@ -62,6 +62,10 @@ pub struct State {
     /// A probe or the follow toggle changed a host: the shell reloads its own
     /// host list (the sidebar badge and the Overview read it).
     notify_shell: bool,
+    /// When the configuration the list was loaded with was applied (the
+    /// overview's): a switch by any Superba process, `spb` included, moves it
+    /// and the list is read again (user bug 68).
+    loaded_for: Option<superba_core::Timestamp>,
 }
 
 impl State {
@@ -122,10 +126,24 @@ impl State {
 
     /// Reload the list and probe connected hosts again.
     pub fn refresh(&mut self) {
+        self.after_switch();
+        self.versions.invalidate();
+    }
+
+    /// A switch finished: which WSL distributions run and what it left pending
+    /// changed, the sync previews follow the applied profile (user bug 68).
+    pub fn after_switch(&mut self) {
         self.hosts.invalidate();
         self.probed.clear();
         self.plans.clear();
-        self.versions.invalidate();
+    }
+
+    /// The page is shown again: read the list again (a distribution may have
+    /// started or stopped meanwhile, `spb` may have updated one).
+    pub fn entered(&mut self) {
+        if self.hosts.value.is_some() || self.hosts.error.is_some() {
+            self.hosts.invalidate();
+        }
     }
 
     fn poll(&mut self, cx: &Cx<'_>) {
@@ -183,23 +201,41 @@ impl State {
     /// Start what is due: the list, probes of connected hosts without a recent
     /// probe, the version data and the selected host's sync preview.
     fn load(&mut self, cx: &Cx<'_>) {
+        let applied = cx
+            .data
+            .overview
+            .value
+            .as_ref()
+            .and_then(|o| o.active.as_ref())
+            .map(|a| a.applied_at);
+        if !cx.busy && self.hosts.at.is_some() && applied != self.loaded_for {
+            self.loaded_for = applied;
+            self.after_switch();
+        }
         if self.hosts.due(None) {
+            // The page's own reads look at the distributions again (no process
+            // on the shell's timer, which uses `hosts`).
+            self.loaded_for = applied;
             let service = cx.service.clone();
-            self.hosts.start(async move { service.hosts().await });
+            self.hosts.start(async move { service.hosts_now().await });
         }
         if self.versions.due(None) {
             let service = cx.service.clone();
             self.versions
                 .start(async move { service.versions(false).await });
         }
-        let stale: Vec<TargetId> = self
-            .hosts
-            .value
-            .as_deref()
-            .unwrap_or_default()
+        // Never from a list being read again: a distribution it still shows
+        // running may have stopped, and checking it would start it.
+        let listed: &[HostView] = match self.hosts.loading() {
+            true => &[],
+            false => self.hosts.value.as_deref().unwrap_or_default(),
+        };
+        let stale: Vec<TargetId> = listed
             .iter()
             .filter(|h| {
-                h.host.is_app_known() && h.host.is_managed() && h.host.connected == Some(true)
+                h.host.is_app_known()
+                    && h.host.is_managed()
+                    && (h.host.connected == Some(true) || wsl_running(h))
             })
             .filter(|h| {
                 h.state.as_ref().is_none_or(|s| {
@@ -324,6 +360,16 @@ impl State {
             })
             .count() as u32
     }
+}
+
+/// A WSL distribution Windows reports running: checking it starts nothing.
+fn wsl_running(h: &HostView) -> bool {
+    h.host.kind == superba_core::HostKind::Wsl
+        && h.host
+            .wsl
+            .as_ref()
+            .and_then(superba_core::WslDistro::running)
+            == Some(true)
 }
 
 /// Draw the page.

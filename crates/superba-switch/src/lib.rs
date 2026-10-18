@@ -722,6 +722,10 @@ impl SwitchService for Switcher {
         self.hosts_impl().await
     }
 
+    async fn hosts_now(&self) -> Result<Vec<superba_core::HostView>> {
+        self.hosts_now_impl().await
+    }
+
     async fn host_probe(
         &self,
         target_id: &superba_core::TargetId,

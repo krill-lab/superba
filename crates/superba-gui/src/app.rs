@@ -1089,6 +1089,9 @@ impl SuperbaApp {
                     );
                 }
                 FlowNotice::Finished { plan, outcome } => {
+                    // A switch changes what runs and what is pending on the
+                    // WSL distributions (user bug 68).
+                    self.pages.hosts.after_switch();
                     if matches!(
                         outcome.status,
                         OutcomeStatus::Switched | OutcomeStatus::Partial
@@ -1361,6 +1364,11 @@ impl SuperbaApp {
     }
 
     fn go(&mut self, page: Page) {
+        if page == Page::Hosts && self.page != Page::Hosts {
+            // What runs and what a switch left pending may have changed while
+            // the page was not shown (user bug 68).
+            self.pages.hosts.entered();
+        }
         self.page = page;
         if !self.entered {
             // Loads wait for the first overview (it names the applied site).

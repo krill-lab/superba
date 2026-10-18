@@ -1933,6 +1933,10 @@ impl SwitchService for FakeService {
         hosts::hosts(self).await
     }
 
+    async fn hosts_now(&self) -> Result<Vec<HostView>> {
+        hosts::hosts_now(self).await
+    }
+
     async fn host_probe(&self, target_id: &TargetId) -> Result<HostView> {
         hosts::host_probe(self, target_id).await
     }

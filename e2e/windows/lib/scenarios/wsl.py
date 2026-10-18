@@ -402,28 +402,52 @@ def w88(t):
         s.save("wsl-list.txt", r["stdout"])
         s.check(re.search(r"(?i)update pending", r["stdout"]) is not None, "spb wsl list: stopped, update pending")
         s.check(not flows.wsl_running(run), "listing did not start it either")
-    with t.step("GUI: Remote hosts says update pending") as s:
+    with t.step("GUI: Remote hosts says stopped, update pending (user bug 68)") as s:
         u = U(t)
         flows.start_superba(run, s)
         u.page("hosts")
-        time.sleep(4)
+        first = u.has_text(pending_rx, timeout=20)
         s.shot("hosts-pending")
         s.ui_dump("hosts-pending")
-        first = u.has_text(r"(?i)update pending|not updated by the switch")
-        s.check(bool(first), f"the host tile says update pending right after the switch (Superba was open): {first!r}",
-                soft=True)
-        if not first and u.exists(name="Check again"):
-            u.click(name="Check again")
-            time.sleep(8)
-            s.shot("hosts-pending-after-check")
-            again = u.has_text(r"(?i)update pending|not updated by the switch")
-            s.check(bool(again), f"after 'Check again': {again!r}", soft=True)
-            s.check(not flows.wsl_running(run), "'Check again' did not start the distribution", soft=True)
-    with t.step("spb wsl update applies the pending switch") as s:
+        s.check(bool(first), f"the distribution says update pending after spb's switch (Superba was open): {first!r}")
+        s.check(u.has_text(r"^" + re.escape(u.L("hosts.wsl.stopped")) + r"$") is not None, "its badge says Stopped")
+        s.check(not flows.wsl_running(run), "showing the page did not start the distribution")
+        u.click(key="hosts.refresh")
+        time.sleep(8)
+        s.shot("hosts-pending-after-check")
+        again = u.has_text(pending_rx)
+        s.check(bool(again), f"after 'Check again': {again!r}")
+        s.check(u.exists(key="hosts.wsl.update_now"), "'Update now' offered")
+        s.check(not flows.wsl_running(run), "'Check again' did not start the distribution")
+    with t.step("GUI: Update now starts the distribution, applies the switch and shows the result") as s:
+        u = U(t)
+        u.click(key="hosts.wsl.update_now")
+        phases, names = flows.wait_switch_done(run, s, u, timeout=300)
+        s.info(f"phases: {phases}")
+        result = [n for n in names if re.match(u.R("toast.switched"), n) or re.match(u.R("toast.partial"), n)
+                  or "failed" in n.lower() or "rolled back" in n.lower()]
+        s.info(f"toast/result: {result}")
+        s.shot("hosts-after-update-now")
+        s.ui_dump("hosts-after-update-now")
+        s.check(run.net.line_url(other) in wsl_config(run), f"distribution config.toml now on line {other}")
+        time.sleep(4)
+        left = u.has_text(pending_rx, timeout=0)
+        s.check(left is None, f"the page no longer says update pending: {left!r}")
+        s.check(u.has_text(r"^" + re.escape(u.L("hosts.wsl.running")) + r"$", timeout=20) is not None,
+                "its badge says Running")
+        r = run.spb("wsl", "list", timeout=120, label="wsl-list-after-update-now")
+        s.check(re.search(r"(?i)update pending", r["stdout"]) is None, "spb wsl list: nothing pending any more")
+    with t.step("spb wsl update applies a pending switch") as s:
+        back = "b" if other == "a" else "a"
+        s.check(flows.wsl_stop(run), f"{D} stopped again")
+        r = run.spb("switch", "--line", run.net.line_id(back), "--countdown", "0", "--yes", timeout=300,
+                    label="switch-stopped-2")
+        s.check(r["code"] == 0, f"switch exit {r['code']} [{r['transcript']}]")
+        run.state["line"] = back
         r = run.spb("wsl", "update", D, "--countdown", "0", "--yes", timeout=300, label="wsl-update")
         s.save("wsl-update.txt", r["stdout"] + r["stderr"])
         s.check(r["code"] == 0, f"spb wsl update exit {r['code']} [{r['transcript']}]")
-        s.check(run.net.line_url(other) in wsl_config(run), f"distribution config.toml now on line {other}")
+        s.check(run.net.line_url(back) in wsl_config(run), f"distribution config.toml now on line {back}")
         r = run.spb("wsl", "list", timeout=120, label="wsl-list-after-update")
         s.check(re.search(r"(?i)update pending", r["stdout"]) is None, "nothing pending any more")
         r = run.spb("wsl", "update", D, "--countdown", "0", "--yes", timeout=300, label="wsl-update-again")

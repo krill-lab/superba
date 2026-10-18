@@ -1218,6 +1218,15 @@ pub trait SwitchService: Send + Sync {
     /// with the last probe and the per-host choices.
     async fn hosts(&self) -> Result<Vec<HostView>>;
 
+    /// [`SwitchService::hosts`] after looking again at what changes without
+    /// Superba (user bug 68): Windows' list of WSL distributions and which of
+    /// them run now (`wsl.exe --list --running`, which starts none). For an
+    /// explicit refresh, a visit of the page and after a switch; `hosts` itself
+    /// starts no process (the GUI lists hosts on a timer).
+    async fn hosts_now(&self) -> Result<Vec<HostView>> {
+        self.hosts().await
+    }
+
     /// Probe one host now.
     async fn host_probe(&self, target_id: &TargetId) -> Result<HostView>;
 
