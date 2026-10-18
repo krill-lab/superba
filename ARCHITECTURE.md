@@ -528,6 +528,61 @@ running `superba` / `spb`, next to its resolved path (symlinks), on macOS inside
 `PATH`. `RouterManager::enable` refuses a missing program and, on macOS, a disk
 image or App Translocation path (the service would lose its program).
 
+### Codex inside WSL (user bug 45)
+
+The Windows app can run the Codex of a WSL distribution in two ways: the old
+"run Codex in WSL" desktop setting (the local host inside the default
+distribution, not handled) and WSL connections, host ids
+`remote-wsl:<encodeURIComponent(distro)>`, which start the distribution's own
+`codex app-server` (`/usr/bin/bash -lc`, stdio, Codex 0.141+). Superba treats
+every distribution with a Codex as a managed host of kind `HostKind::Wsl`
+(`superba_core::wsl`, `superba_remote::wsl`):
+
+- Discovery: `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` first
+  (name, state, default; WSL 2 = `Flags & 0x8`; the `Version` value is the
+  registration format, 2 also for WSL 1), `wsl.exe --list --verbose` (UTF-16LE
+  output, decoded) as the fallback; utility distributions (Docker Desktop,
+  Rancher Desktop) are skipped; `.wslconfig` gives the networking mode (`[wsl2]` over
+  `[experimental]`).
+- Transport: `wsl.exe -d <d> --cd ~ --exec /bin/sh -s` runs the same nonce-framed
+  POSIX scripts as SSH hosts (hash-checked writes, journal, baseline, ownership,
+  stash); `WSL_UTF8=1`; wsl.exe failures become `Error::Wsl`. The probe reads the
+  app's view (`/usr/bin/bash -lc` with the interactive PATH) and the CLI's view
+  (the user's login shell); app-server pids are the stdio ones started with
+  `features.code_mode_host`. Env blocks go into the files both read (bash login
+  files and the user's shell rc).
+- Switching: WSL hosts follow this computer by default (`HostSettings::follows`),
+  scope both (connection + settings filtered by the distribution's Codex
+  version, no model catalog file); a distribution without Codex, or never
+  written and without a baseline, is skipped with a note. Restore and
+  uninstall include them. Hot restart is the app's own: closing the stdio
+  app-server makes the app respawn it with the new files.
+- Router mode from WSL: each consumer gets its own source token
+  `sbs_<hex(source)>_<HMAC-SHA256(router token, "superba-router-source-v1\0" + source)>`
+  (source `wsl:<distro>`), so the request log names the distribution
+  (`codex_host`, from the internal `x-superba-codex-host` header, never
+  forwarded). WSL 1 and mirrored networking reach `127.0.0.1`. WSL 2 NAT cannot,
+  so `RouterConfig::wsl_listen` adds a listener on the distribution's default
+  gateway (the Windows vEthernet (WSL) address, read from `/proc/net/route`)
+  that accepts private peers and `wsl:` source tokens only and serves no admin
+  API but `health`; reachability is checked from inside the distribution (bash
+  `/dev/tcp` GET of `/_superba/v1/health`, instance id must match). When the
+  Windows firewall blocks it, `spb wsl router-access <distro>` / the host page
+  add one rule with an elevated `netsh` (UAC, per machine):
+  `localip=<gateway> remoteip=LocalSubnet program=<superba-router.exe>`.
+  Unreachable distributions stay direct with a note. An in-distribution router
+  was rejected: it duplicates the members' secrets and state into every
+  distribution, keeps the WSL VM alive, and splits the request log.
+- Sessions: scans run inside the distribution; migrations run Superba's Linux
+  `spb` inside it (`RemoteHosts::run_helper`: streamed in once per checksum to
+  `~/.local/share/superba/wsl-helper/<sha256>/spb`, verified, run with the
+  host's `CODEX_HOME`, progress lines streamed back), because SQLite locking and
+  Codex's `flock` writer locks do not work over `\\wsl.localhost`. Backups and
+  the migration history stay inside the distribution. The helper is
+  `SUPERBA_WSL_HELPER` or `spb-linux-<arch>` next to the program.
+- CLI: `spb wsl list`, `spb wsl router-access <distro>`, and `wsl:<distro>` as a
+  host shorthand (`spb remote ...`, `spb sessions --host wsl:<distro> ...`).
+
 ### Account-display auth (not implemented)
 
 A planned auth mode shows the Krill plan, usage and name inside the app by
