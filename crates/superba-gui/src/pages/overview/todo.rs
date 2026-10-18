@@ -6,7 +6,9 @@
 //! request log (models without a price). Errors first, then warnings, then
 //! offers (updates).
 
-use superba_core::{RouterLineHealth, RouterWatchState, Severity};
+use superba_core::{
+    FullRestartReason, HotSwitchStatus, Overview, RouterLineHealth, RouterWatchState, Severity,
+};
 
 use super::usage::Snapshot;
 use super::{Action, Cx, Page};
@@ -42,6 +44,9 @@ pub enum TodoKind {
     PlainKeys,
     /// Running Codex processes still use the previous configuration (GH#4).
     OldConfig,
+    /// The running ChatGPT cannot be hot-switched until Superba opens it again
+    /// (user bug 61): it was opened elsewhere, or without the auth address.
+    HotSwitchOff,
     /// Another diagnostics finding (its id).
     Finding(String),
     /// A notice of the overview.
@@ -87,8 +92,15 @@ impl Todo {
                 "overview.todo.fix.router"
             }
             TodoKind::ExternalChange => "overview.todo.fix.review",
+            TodoKind::HotSwitchOff => "overview.todo.fix.reopen",
             _ => "overview.todo.fix.view",
         })
+    }
+
+    /// The button's hover text when it says more than the to-do's own text:
+    /// what reopening ChatGPT does.
+    pub fn fix_tip(&self, cx: &Cx<'_>) -> Option<String> {
+        (self.kind == TodoKind::HotSwitchOff).then(|| cx.tr.t("overview.hero.reopen_tip"))
     }
 
     /// What the button does.
@@ -111,7 +123,30 @@ impl Todo {
                 Action::Go(Page::Diagnostics)
             }
             TodoKind::ExternalChange => Action::ShowExternal,
+            TodoKind::HotSwitchOff => Action::RestartApp,
         }
+    }
+}
+
+/// Why the running ChatGPT cannot be hot-switched, when reopening it through
+/// Superba fixes that (user bug 61): it was opened elsewhere (no debugging
+/// port), or started without the current line's auth address. `None` while it
+/// can be hot-switched, is not running, runs in safe mode by choice, or cannot
+/// be hot-switched for a reason a reopen does not change (an app without the
+/// restart bridge, a platform without hot switching).
+pub fn reopen_fixes(overview: &Overview) -> Option<FullRestartReason> {
+    match &overview.app.hot_switch {
+        HotSwitchStatus::Unavailable { reason }
+            if matches!(
+                reason,
+                FullRestartReason::NoCdp
+                    | FullRestartReason::AuthApiMissing
+                    | FullRestartReason::AuthApiUnhealthy
+            ) =>
+        {
+            Some(*reason)
+        }
+        _ => None,
     }
 }
 
@@ -199,6 +234,18 @@ pub fn todos(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Vec<Todo> {
                 &[("source", &cx.localize(&x.source.text()))],
             ),
             Some(tr.f("overview.todo.external_detail", &[("n", &x.count())])),
+            Some(Spot::ThisComputer),
+        ));
+    }
+
+    // Hot switching (user bug 61): a ChatGPT opened from the Start menu or the
+    // Dock looks the same as one Superba opened, but every switch restarts it.
+    if let Some(reason) = data.overview.value.as_ref().and_then(reopen_fixes) {
+        push(todo(
+            TodoKind::HotSwitchOff,
+            Status::Warn,
+            tr.t("overview.todo.hot_off"),
+            Some(cx.localize(&reason.text())),
             Some(Spot::ThisComputer),
         ));
     }

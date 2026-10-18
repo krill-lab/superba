@@ -150,6 +150,19 @@ impl FakeService {
         self.state().external = external;
     }
 
+    /// User bug 61: the running ChatGPT was opened outside Superba (from the
+    /// Start menu, the Dock): no debugging port, so switches restart it fully
+    /// until Superba opens it again.
+    pub fn open_app_elsewhere(&self) {
+        let mut st = self.state();
+        if let Some(s) = st.app.session.as_mut() {
+            s.cdp = None;
+        }
+        st.app.hot_switch = HotSwitchStatus::Unavailable {
+            reason: FullRestartReason::NoCdp,
+        };
+    }
+
     fn state(&self) -> MutexGuard<'_, FakeState> {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
     }

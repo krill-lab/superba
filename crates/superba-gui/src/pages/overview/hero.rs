@@ -773,6 +773,7 @@ fn provider_popover(response: &egui::Response, cx: &Cx<'_>, out: &mut Vec<Action
         .show(|ui| {
             // A fixed width: rows fill it instead of the popup growing to them.
             ui.set_width(POPOVER_W);
+            hot_note(ui, cx, out);
             let account = super::account_lines(cx);
             if !account.is_empty() {
                 ui.label(Text::caption(cx.tr.t("overview.hero.account"), cx.pal));
@@ -883,6 +884,34 @@ fn provider_popover(response: &egui::Response, cx: &Cx<'_>, out: &mut Vec<Action
                 out.push(Action::Go(Page::Providers));
             }
         });
+}
+
+/// Before a switch is chosen (user bug 61): whether it can be hot, and while
+/// the running ChatGPT cannot be hot-switched, why and the reopen that fixes it.
+fn hot_note(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
+    let Some(overview) = cx.data.overview.value.as_ref() else {
+        return;
+    };
+    if !matches!(
+        overview.app.hot_switch,
+        superba_core::HotSwitchStatus::Unavailable { .. }
+    ) {
+        return;
+    }
+    let (status, text) = cx.hot_status(&overview.app.hot_switch);
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.add(crate::design::widgets::StatusDot::new(status));
+        ui.add(egui::Label::new(Text::small(text, cx.pal).color(cx.pal.text)).wrap());
+    });
+    if super::todo::reopen_fixes(overview).is_some()
+        && crate::design::widgets::link_button(ui, &cx.tr.t("overview.hero.reopen"), false)
+            .on_hover_text(cx.tr.t("overview.hero.reopen_tip"))
+            .clicked()
+    {
+        out.push(Action::RestartApp);
+    }
+    ui.separator();
 }
 
 /// The model node's popover: the speed tier (the tiers some listed model

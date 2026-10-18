@@ -292,11 +292,11 @@ fn todo_row(ui: &mut Ui, cx: &Cx<'_>, i: usize, t: &Todo, row: Rect, out: &mut V
             .id_salt(("overview-todo-fix", i))
             .layout(Layout::left_to_right(Align::Center)),
     );
-    if child
-        .add(button)
-        .on_hover_text(t.detail.clone().unwrap_or_else(|| t.title.clone()))
-        .clicked()
-    {
+    let tip = t
+        .fix_tip(cx)
+        .or_else(|| t.detail.clone())
+        .unwrap_or_else(|| t.title.clone());
+    if child.add(button).on_hover_text(tip).clicked() {
         out.push(t.fix(cx));
     }
     let p = ui.painter();
