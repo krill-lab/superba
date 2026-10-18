@@ -20,11 +20,24 @@ use superba_core::{
 };
 use superba_switch::codex_files::{self, CheckContext, Masker};
 
-use super::{Failure, Result, remote, runtime};
+use super::{Failure, Result, remote, runtime, usage};
 use crate::text::text;
 use crate::{CodexFileArg, ConfigCommand, Output, Runtime, exit};
 
 pub(super) async fn run(command: &ConfigCommand, rt: &Runtime, out: &mut Output) -> Result {
+    if let ConfigCommand::Edit {
+        file,
+        host: Some(_),
+        ..
+    }
+    | ConfigCommand::Check {
+        file,
+        host: Some(_),
+    } = command
+        && *file == CodexFileArg::Claude
+    {
+        return Err(usage(out, text("cli.claude.local_only")));
+    }
     match command {
         ConfigCommand::Edit {
             file,
@@ -271,8 +284,12 @@ fn print_diff(
     show_secrets: bool,
 ) -> superba_core::Result<()> {
     let name = doc.kind.file_name();
-    let (old, new) = if doc.kind == CodexFileKind::AuthJson && !show_secrets {
-        let mut m = Masker::new();
+    let secrets = matches!(
+        doc.kind,
+        CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings
+    );
+    let (old, new) = if secrets && !show_secrets {
+        let mut m = Masker::for_kind(doc.kind);
         (m.mask(old), m.mask(new))
     } else {
         (old.to_owned(), new.to_owned())
@@ -287,7 +304,7 @@ fn print_diff(
     for line in diff.lines() {
         out.data_line(line)?;
     }
-    if doc.kind == CodexFileKind::AuthJson && !show_secrets {
+    if secrets && !show_secrets {
         out.line(text("cli.config.secrets_masked"))?;
     }
     Ok(())
@@ -302,6 +319,9 @@ fn print_ownership(
 ) -> superba_core::Result<()> {
     let changed = match doc.kind {
         CodexFileKind::ConfigToml => codex_files::owned_changes(old, new, &doc.owned),
+        CodexFileKind::ClaudeSettings => {
+            superba_switch::claude_files::owned_changes(old, new, &doc.owned)
+        }
         CodexFileKind::AuthJson => Vec::new(),
     };
     let credential = (doc.kind == CodexFileKind::AuthJson && doc.owns_credential)

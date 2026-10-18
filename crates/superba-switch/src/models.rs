@@ -348,6 +348,7 @@ pub fn spec_from_entry(entry: &serde_json::Value) -> Option<ModelSpec> {
             .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok())
             .unwrap_or_default(),
         raw: Some(entry.clone()),
+        lists: Vec::new(),
         slug,
     })
 }
@@ -731,6 +732,7 @@ pub(crate) struct CatalogPlan {
 impl Switcher {
     /// Model list of a profile for display and generation: the provider's list,
     /// else the feed, else the app Codex's bundled list.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn model_list_for(
         &self,
         site: &Site,
@@ -739,6 +741,7 @@ impl Switcher {
         client_version: Option<&CodexVersion>,
         app_binary: Option<&Path>,
         refresh: bool,
+        source: Option<superba_core::ModelSource>,
     ) -> ModelList {
         let d = &self.deps;
         let mut reason: Option<Error> = None;
@@ -751,11 +754,13 @@ impl Switcher {
                     key,
                     client_version,
                     refresh,
+                    source,
+                    standard_base: None,
                 })
                 .await
             {
                 Ok(list) if !list.models.is_empty() => return list,
-                Ok(_) => {}
+                Ok(list) => reason = list.sources.into_iter().find_map(|s| s.error),
                 Err(e) => reason = Some(e),
             }
         }
@@ -782,6 +787,7 @@ impl Switcher {
                 },
                 models: snap.models,
                 fallback_reason: reason,
+                sources: Vec::new(),
             };
         }
         if let Some(mut list) = self.bundled_list(app_binary).await {
@@ -802,6 +808,7 @@ impl Switcher {
             },
             models: Vec::new(),
             fallback_reason: reason,
+            sources: Vec::new(),
         }
     }
 
@@ -819,6 +826,7 @@ impl Switcher {
             },
             models: bundled.entries.iter().filter_map(spec_from_entry).collect(),
             fallback_reason: None,
+            sources: Vec::new(),
         })
     }
 
@@ -878,6 +886,7 @@ impl Switcher {
                 Some(&app_version),
                 Some(&app_binary),
                 false,
+                input.profile.model_source,
             )
             .await
         };
@@ -1052,6 +1061,7 @@ impl Switcher {
                     Some(version),
                     Some(binary),
                     false,
+                    p.model_source,
                 )
                 .await;
             lists.push((p.name.clone(), list));
@@ -1068,6 +1078,7 @@ impl Switcher {
                     },
                     models: Vec::new(),
                     fallback_reason: None,
+                    sources: Vec::new(),
                 }),
         }
     }
@@ -1165,6 +1176,7 @@ impl Switcher {
                     app_version.as_ref(),
                     app_binary.as_deref(),
                     req.refresh,
+                    None,
                 )
                 .await;
             list.source = ModelListSource::OfficialReadOnly;
@@ -1212,6 +1224,7 @@ impl Switcher {
                 app_version.as_ref(),
                 app_binary.as_deref(),
                 req.refresh,
+                profile.model_source,
             )
             .await;
         self.model_lists

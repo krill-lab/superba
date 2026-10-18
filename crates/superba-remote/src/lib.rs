@@ -570,6 +570,7 @@ impl SshRemoteHosts {
             let current = match pf.kind {
                 CodexFileKind::AuthJson => snap.files.auth_json.as_ref(),
                 CodexFileKind::ConfigToml => snap.files.config_toml.as_ref(),
+                CodexFileKind::ClaudeSettings => continue,
             };
             let new = match &pf.change {
                 FileChange::Unchanged => continue,

@@ -339,6 +339,10 @@ pub struct ModelSpec {
     /// (unknown fields preserved).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Value>,
+    /// The provider lists that named this model (set when lists were read
+    /// with an explicit [`ModelSource`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lists: Vec<ModelListKind>,
 }
 
 fn yes() -> bool {
@@ -365,6 +369,7 @@ impl Default for ModelSpec {
             default_service_tier: None,
             input_modalities: Vec::new(),
             raw: None,
+            lists: Vec::new(),
         }
     }
 }
@@ -482,6 +487,7 @@ impl ModelSpec {
             default_service_tier: text("default_service_tier"),
             input_modalities,
             raw: Some(entry.clone()),
+            lists: Vec::new(),
             slug,
         })
     }
@@ -565,6 +571,92 @@ pub enum ModelListSource {
     },
 }
 
+/// Which of a provider's model lists to read (a provider setting, user
+/// request 79 / design §2a).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelSource {
+    /// Both lists at once, merged by id (an id in both keeps the Codex
+    /// metadata); one failing keeps the other.
+    #[default]
+    Auto,
+    /// Only the Codex list (`/backend-api/codex/models?client_version=`, or
+    /// `/codex/v1/models` with an API key): rich metadata.
+    Codex,
+    /// Only the standard list (`/v1/models`, OpenAI or Anthropic shape):
+    /// ids, also of models that are not in the Codex list.
+    Standard,
+}
+
+impl ModelSource {
+    /// `auto`, `codex`, `standard`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ModelSource::Auto => "auto",
+            ModelSource::Codex => "codex",
+            ModelSource::Standard => "standard",
+        }
+    }
+
+    /// Parse [`ModelSource::as_str`].
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "auto" => Some(ModelSource::Auto),
+            "codex" => Some(ModelSource::Codex),
+            "standard" | "v1" => Some(ModelSource::Standard),
+            _ => None,
+        }
+    }
+
+    /// The lists it reads.
+    pub fn kinds(self) -> &'static [ModelListKind] {
+        match self {
+            ModelSource::Auto => &[ModelListKind::Codex, ModelListKind::Standard],
+            ModelSource::Codex => &[ModelListKind::Codex],
+            ModelSource::Standard => &[ModelListKind::Standard],
+        }
+    }
+}
+
+/// One of a provider's model lists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelListKind {
+    /// The Codex list.
+    Codex,
+    /// The standard `/v1/models` list.
+    Standard,
+}
+
+impl ModelListKind {
+    /// `codex`, `standard`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ModelListKind::Codex => "codex",
+            ModelListKind::Standard => "standard",
+        }
+    }
+}
+
+/// How one list answered.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelSourceStatus {
+    /// Which list.
+    pub kind: ModelListKind,
+    /// Path (and query) asked or that answered, without origin or key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// When the answer was fetched (cached answers keep their time).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetched_at: Option<Timestamp>,
+    /// Models it listed.
+    #[serde(default)]
+    pub count: usize,
+    /// Why it failed (the other list is still used).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<crate::Error>,
+}
+
 /// A model list with its source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelList {
@@ -577,6 +669,10 @@ pub struct ModelList {
     /// this list is a fallback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback_reason: Option<crate::Error>,
+    /// Each list asked when the provider's lists were read with an explicit
+    /// [`ModelSource`] (empty otherwise).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<ModelSourceStatus>,
 }
 
 impl ModelList {

@@ -144,6 +144,7 @@ fn bytes_of(files: &CodexFiles, kind: CodexFileKind) -> Option<&[u8]> {
     match kind {
         CodexFileKind::ConfigToml => files.config_toml.as_ref().map(|b| b.expose()),
         CodexFileKind::AuthJson => files.auth_json.as_ref().map(|b| b.expose()),
+        CodexFileKind::ClaudeSettings => None,
     }
 }
 
@@ -151,12 +152,13 @@ fn file_name(kind: CodexFileKind) -> &'static str {
     match kind {
         CodexFileKind::ConfigToml => "config.toml",
         CodexFileKind::AuthJson => "auth.json",
+        CodexFileKind::ClaudeSettings => "settings.json",
     }
 }
 
 fn mode_for(kind: CodexFileKind) -> Mode {
     match kind {
-        CodexFileKind::AuthJson => Mode::Private,
+        CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => Mode::Private,
         CodexFileKind::ConfigToml => Mode::PreserveOrPrivate,
     }
 }
@@ -454,6 +456,7 @@ impl TomlConfigEngine {
             match kind {
                 CodexFileKind::ConfigToml => out.config_toml = bytes,
                 CodexFileKind::AuthJson => out.auth_json = bytes,
+                CodexFileKind::ClaudeSettings => {}
             }
         }
         Ok(out)

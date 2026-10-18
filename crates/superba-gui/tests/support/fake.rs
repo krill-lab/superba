@@ -238,6 +238,8 @@ fn krill_profile(line: LineId, auth: AuthMode) -> Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
         id: "krill".into(),
         name: "Krill".into(),
         builtin: None,
@@ -1332,6 +1334,7 @@ impl FakeState {
                     match file.kind {
                         CodexFileKind::ConfigToml => config.config_sha256 = Some(sha256.clone()),
                         CodexFileKind::AuthJson => config.auth_sha256 = Some(sha256.clone()),
+                        CodexFileKind::ClaudeSettings => {}
                     }
                 }
             }

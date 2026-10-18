@@ -28,7 +28,7 @@ mod validate;
 
 pub use diff::{DiffLine, DiffStat, DiffTag, Hunk, diff_lines, hunks, stat, unified};
 pub use format::{format, format_json, format_toml, uses_crlf};
-pub use mask::{MASK_CHAR, Masker, has_mask, is_secret_name};
+pub use mask::{MASK_CHAR, Masker, has_mask, is_claude_secret_name, is_secret_name};
 pub use store::{EditRecord, EditorStore, KEEP_PER_FILE, write_file};
 pub use validate::{CheckContext, clean, line_col, validate};
 

@@ -177,6 +177,7 @@ more_lines = "+{n} lines"
 
 # "Edit Codex files" (GitHub issue 9): config.toml and auth.json edited by hand.
 [codex_editor]
+claude_subtitle = "Claude Code's settings.json edited by hand: checked as you type, backed up before every save"
 open = "Edit Codex files"
 open_tip = "Edit config.toml and auth.json by hand: checked as you type, formatted without losing comments, saved after a backup."
 subtitle = "config.toml and auth.json, edited by hand: checked as you type and saved after a backup"

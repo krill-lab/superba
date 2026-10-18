@@ -65,6 +65,8 @@ impl World {
             model_overrides: Default::default(),
             model_picker: Default::default(),
             compaction: Default::default(),
+            anthropic: None,
+            model_source: None,
         });
         set.custom_sites.push(site);
         std::fs::write(

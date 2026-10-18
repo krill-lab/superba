@@ -316,6 +316,8 @@ fn krill(id: &str, name: &str, line: Option<&str>) -> Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
     };
     p.set_auth(AuthChoice::Auto);
     p

@@ -28,6 +28,8 @@ fn compatible_pair(id: &str) -> (Site, Profile) {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
         id: id.into(),
         name: "Example API".into(),
         builtin: None,

@@ -22,7 +22,7 @@ use super::validate;
 pub fn format(kind: CodexFileKind, text: &str) -> Result<String, Box<FileProblem>> {
     match kind {
         CodexFileKind::ConfigToml => format_toml(text),
-        CodexFileKind::AuthJson => format_json(text),
+        CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => format_json(text),
     }
 }
 

@@ -41,6 +41,7 @@ impl CodexFileKind {
         match self {
             CodexFileKind::ConfigToml => "config.toml",
             CodexFileKind::AuthJson => "auth.json",
+            CodexFileKind::ClaudeSettings => "settings.json",
         }
     }
 
@@ -49,6 +50,7 @@ impl CodexFileKind {
         match self {
             CodexFileKind::ConfigToml => "config",
             CodexFileKind::AuthJson => "auth",
+            CodexFileKind::ClaudeSettings => "claude",
         }
     }
 
@@ -57,6 +59,7 @@ impl CodexFileKind {
         match s.trim().to_ascii_lowercase().as_str() {
             "config" | "config.toml" | "toml" => Some(CodexFileKind::ConfigToml),
             "auth" | "auth.json" | "json" => Some(CodexFileKind::AuthJson),
+            "claude" | "settings.json" | "claude-settings" => Some(CodexFileKind::ClaudeSettings),
             _ => None,
         }
     }

@@ -88,6 +88,7 @@ fn astra() -> ModelSpec {
         default_service_tier: Some("priority".into()),
         input_modalities: vec!["text".into(), "image".into()],
         raw: Some(json!({"slug":"gpt-6-astra","zeta_unknown":{"kept":true},"alpha":1})),
+        lists: Vec::new(),
     }
 }
 
@@ -342,6 +343,7 @@ fn model_lists_round_trip_every_source() {
             fallback_reason: Some(Error::Unsupported {
                 what: "site does not list models".into(),
             }),
+            sources: Vec::new(),
         };
         round_trip(&list);
         assert_eq!(list.model("gpt-5.5"), Some(&ModelSpec::new("gpt-5.5")));
@@ -412,6 +414,7 @@ fn models_view_edit_and_report_round_trip() {
             },
             models: vec![astra()],
             fallback_reason: None,
+            sources: Vec::new(),
         },
         defaults: ModelDefaults {
             model: Some("gpt-6-astra".into()),

@@ -166,8 +166,15 @@ fn item_height(ui: &Ui, label: &str, n: usize, width: f32, selected: bool) -> f3
     ITEM_H.max(g.size().y + 6.0)
 }
 
-/// One rail item; true when clicked.
-fn item(ui: &mut Ui, cx: &Cx<'_>, width: f32, label: &str, n: usize, selected: bool) -> bool {
+/// One rail item; true when clicked (also the Claude Code settings page's).
+pub(crate) fn item(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    width: f32,
+    label: &str,
+    n: usize,
+    selected: bool,
+) -> bool {
     let height = item_height(ui, label, n, width, selected);
     let (rect, r) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     let r = r.on_hover_cursor(egui::CursorIcon::PointingHand);

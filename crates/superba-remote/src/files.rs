@@ -20,10 +20,14 @@ impl SshRemoteHosts {
         host: &RemoteHost,
         kind: CodexFileKind,
     ) -> Result<RemoteCodexFile> {
+        if !kind.is_codex() {
+            return Err(local_only(kind));
+        }
         let snap = self.snapshot(host, true).await?;
         let (read, path) = match kind {
             CodexFileKind::ConfigToml => (&snap.config_read, snap.config_path()),
             CodexFileKind::AuthJson => (&snap.auth_read, snap.auth_path()),
+            CodexFileKind::ClaudeSettings => return Err(local_only(kind)),
         };
         let (contents, unreadable) = match read {
             FileRead::Absent => (None, None),
@@ -54,10 +58,14 @@ impl SshRemoteHosts {
         host: &RemoteHost,
         write: &RemoteFileWrite,
     ) -> Result<()> {
+        if !write.kind.is_codex() {
+            return Err(local_only(write.kind));
+        }
         let snap = self.snapshot(host, true).await?;
         let expected_path = match write.kind {
             CodexFileKind::ConfigToml => snap.config_path(),
             CodexFileKind::AuthJson => snap.auth_path(),
+            CodexFileKind::ClaudeSettings => return Err(local_only(write.kind)),
         };
         if expected_path != write.path {
             return Err(Error::Conflict {
@@ -84,7 +92,7 @@ impl SshRemoteHosts {
                     .map_or(Expect::Absent, |b| Expect::Bytes(b.expose().to_vec())),
                 new: Some(write.contents.expose().to_vec()),
                 mode: match write.kind {
-                    CodexFileKind::AuthJson => Mode::Private,
+                    CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => Mode::Private,
                     CodexFileKind::ConfigToml => Mode::Preserve,
                 },
                 backup: write.expect.is_some(),
@@ -124,5 +132,13 @@ impl SshRemoteHosts {
                 ),
             }),
         }
+    }
+}
+
+/// Claude Code's settings are edited on this computer only (remote hosts:
+/// design P3).
+fn local_only(kind: CodexFileKind) -> Error {
+    Error::Unsupported {
+        what: format!("{} on a remote host", kind.file_name()),
     }
 }

@@ -227,6 +227,7 @@ pub fn view_for(profile: &Profile, site: &Site, now: Timestamp) -> ModelsView {
                 source: ModelListSource::OfficialReadOnly,
                 models: krill_models(),
                 fallback_reason: None,
+                sources: Vec::new(),
             },
             false,
         ),
@@ -242,6 +243,7 @@ pub fn view_for(profile: &Profile, site: &Site, now: Timestamp) -> ModelsView {
                     .map(ModelSpec::new)
                     .collect(),
                 fallback_reason: None,
+                sources: Vec::new(),
             },
             true,
         ),
@@ -254,6 +256,7 @@ pub fn view_for(profile: &Profile, site: &Site, now: Timestamp) -> ModelsView {
                 },
                 models: krill_models(),
                 fallback_reason: None,
+                sources: Vec::new(),
             },
             false,
         ),

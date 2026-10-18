@@ -165,6 +165,8 @@ async fn profile_compaction_shows_the_effective_value_and_the_choice_is_saved() 
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
     });
     std::fs::write(
         w.data().join("profiles.json"),

@@ -1,0 +1,2662 @@
+{
+ "_comment": "Chinese names and explanations of Claude Code's settings.json keys and environment variables, and their group (connection, models, capabilities, output_context, traffic_privacy, other). Written by people from the official English text; Superba never generates them.",
+ "keys": {
+  "$schema": {
+   "name_zh": "JSON Schema 引用",
+   "zh": "Claude Code 设置的 JSON Schema 引用。",
+   "group": "other"
+  },
+  "additionalMarketplaces": {
+   "name_zh": "额外插件市场（别名）",
+   "zh": "extraKnownMarketplaces 的别名：此键的读取方式与写成 extraKnownMarketplaces 时完全相同。不要在同一个文件中同时设置两者，如果两者都出现，此键会被忽略并给出警告。Claude Code 更新该文件时，可能会把此键改写为 extraKnownMarketplaces。早于此别名的客户端会忽略它，因此在旧版 Claude Code 仍共用同一份设置期间，优先使用 extraKnownMarketplaces。",
+   "group": "other"
+  },
+  "advisorModel": {
+   "name_zh": "顾问模型",
+   "zh": "服务端顾问（advisor）工具使用的模型。可填模型别名（\"opus\"、\"sonnet\"，v2.1.170+ 还支持 \"fable\"）或完整模型 ID。会被本会话的 --advisor CLI 参数覆盖；模型不在 availableModels 允许列表内时会被拦截。参见 https://code.claude.com/docs/en/advisor",
+   "group": "models"
+  },
+  "agent": {
+   "name_zh": "主线程代理",
+   "zh": "主线程使用的代理（内置或自定义）名称。会应用该代理的系统提示词、工具限制和模型。参见 https://code.claude.com/docs/en/sub-agents",
+   "group": "other"
+  },
+  "agentPushNotifEnabled": {
+   "name_zh": "手机推送通知",
+   "zh": "连接 Remote Control 时，允许 Claude 主动向你的手机发送推送通知，例如长任务完成时。需要 Claude Code v2.1.119 或更高版本。参见 https://code.claude.com/docs/en/remote-control#mobile-push-notifications",
+   "group": "other"
+  },
+  "allowAllClaudeAiMcps": {
+   "name_zh": "允许 claude.ai 连接器",
+   "zh": "（仅限托管设置）在部署了 managed-mcp.json 的同时也加载 claude.ai 连接器；否则 managed-mcp.json 会独占控制并屏蔽这些连接器。参见 https://code.claude.com/docs/en/managed-mcp",
+   "group": "other"
+  },
+  "allowClaudeInChromeWithManagedMcp": {
+   "name_zh": "托管 MCP 下允许 Chrome",
+   "zh": "为 true 时（且需设置在设备托管设置中：MDM、managed-settings.json 文件，或由它们配置的策略助手），内置的 Claude in Chrome MCP 服务器可以与 managed-mcp.json 同时运行，而不会被其独占控制锁定所阻止。deniedMcpServers 和组织的 Claude in Chrome 设置仍然可以阻止它。默认关闭，保持锁定。",
+   "group": "other"
+  },
+  "allowedChannelPlugins": {
+   "name_zh": "频道插件允许列表",
+   "zh": "（仅限托管设置）允许运行的频道插件允许列表，每个插件以其插件市场和插件名标识。设置后，在 channelsEnabled 为 true 时，只有列出的插件可以推送入站频道消息。设置后会替换 Anthropic 默认的允许列表；未定义时回退到默认列表，空数组会阻止所有频道插件。需要 channelsEnabled: true。参见 https://code.claude.com/docs/en/channels#restrict-which-channel-plugins-can-run",
+   "group": "other"
+  },
+  "allowedHttpHookUrls": {
+   "name_zh": "HTTP 钩子 URL 允许列表",
+   "zh": "HTTP 钩子可以访问的 URL 模式允许列表。支持 * 通配符。设置后，URL 不匹配的钩子会被阻止。未定义表示不限制，空数组表示阻止所有 HTTP 钩子。各设置来源中的数组会合并。参见 https://code.claude.com/docs/en/settings#hook-configuration",
+   "group": "other"
+  },
+  "allowedMarketplaces": {
+   "name_zh": "允许的插件市场（别名）",
+   "zh": "strictKnownMarketplaces 的别名（仅限托管设置）：此键的读取方式与写成 strictKnownMarketplaces 时完全相同。不要在同一个文件中同时设置两者，如果两者都出现，此键会被忽略并给出警告。早于此别名的客户端会忽略它，因此当允许列表也必须约束旧版 Claude Code 时，请继续使用 strictKnownMarketplaces。",
+   "group": "other"
+  },
+  "allowedMcpServers": {
+   "name_zh": "MCP 服务器允许列表",
+   "zh": "企业级的可用 MCP 服务器允许列表。适用于所有作用域，包括来自 managed-mcp.json 的企业服务器。未定义时允许所有服务器；为空数组时不允许任何服务器。拒绝列表优先：同时出现在两个列表中的服务器会被拒绝。参见 https://code.claude.com/docs/en/mcp#restriction-options",
+   "group": "other"
+  },
+  "allowedProviders": {
+   "name_zh": "允许的 API 提供商",
+   "zh": "仅限托管设置（managed-settings.json、MDM 或服务端托管）。Claude Code 在本机可以使用的 API 提供商：\"anthropic\"（Anthropic 自有主机上的 Anthropic API，通过 claude.ai 或 Console 登录或 API 密钥访问；与 forceLoginMethod / forceLoginOrgUUID 搭配可强制要求登录）、\"bedrock\"、\"vertex\"、\"foundry\"、\"anthropicAws\"、\"mantle\"（各自指该提供商自己的服务：其区域、FIPS、私有端点和主权云主机）、\"customEndpoint\"（发往其他主机的 Anthropic API 或云提供商 API，例如 LLM 网关：ANTHROPIC_BASE_URL、该提供商的 ANTHROPIC_*_BASE_URL、不是纯名称的 Foundry 资源名，或 Bedrock 下 AWS SDK 的 AWS_ENDPOINT_URL[_BEDROCK[_RUNTIME]]；只放行在同一托管来源的 \"env\" 块中锁定的值），或 \"gateway\"（Cloud 网关登录）。使用未列出提供商的会话会在启动时、登录时以及下一次访问 API 时被拒绝，提示信息会说明是什么选择了该提供商，以及哪个条目可以放行它。设置了列表时，第一方流量的去向（ANTHROPIC_BASE_URL、网关登录）只有在同一托管来源于 \"env\"（或 forceLoginGatewayUrl）中锁定时才会被采用，并且经 claude ssh 隧道进入本机会被拒绝。云提供商的凭证和租户变量，以及网络路径和 TLS 信任（HTTPS_PROXY、NODE_EXTRA_CA_CERTS、CLAUDE_CODE_CERT_STORE）不受此列表评判；请在托管 \"env\" 块中为整个设备群统一设置它们，其值会替换用户的值。若要让整个设备群的 Bedrock 经由网关，请在那里锁定 ANTHROPIC_BEDROCK_BASE_URL（客户端使用的是它，优先于 ~/.aws/config 中的 endpoint_url，而后者不受此列表评判）；AWS SDK 的 AWS_ENDPOINT_URL* 锁定只认可 SDK 自身客户端的去向，绝不能代替 \"bedrock\" 条目。未设置时允许所有提供商；空数组则一个都不允许。只有 managed-settings.json 或 MDM 中的列表才会在本机强制执行：它不能被服务端托管设置放宽或隐藏，并且对每个会话生效。只在管理控制台中设置的列表，只对拉取了服务端托管设置的会话生效，不包括：使用云提供商、其他组织或非 Anthropic 的 ANTHROPIC_BASE_URL 的会话，只用 apiKeyHelper 或 ANTHROPIC_AUTH_TOKEN 认证的会话，Pro/Max 登录，没有 API 密钥的 --bare，或拉取完成之前的首次启动，这些都是用户可控的条件。早于此设置的版本会忽略它；在版本混杂的设备群中，请搭配最低版本策略使用。'claude auth status' 会把 Anthropic API 报告为 apiProvider \"firstParty\"。",
+   "group": "connection"
+  },
+  "allowManagedHooksOnly": {
+   "name_zh": "仅允许托管钩子",
+   "zh": "（仅限托管设置）阻止加载用户、项目和插件钩子，只允许托管钩子和 SDK 钩子。参见 https://code.claude.com/docs/en/settings#hook-configuration",
+   "group": "other"
+  },
+  "allowManagedMcpServersOnly": {
+   "name_zh": "仅限托管 MCP 允许列表",
+   "zh": "（仅限托管设置）为 true 时，只遵循托管设置中的 allowedMcpServers；用户、项目或本地设置中定义的 MCP 服务器会被忽略。deniedMcpServers 仍会合并所有来源。参见 https://code.claude.com/docs/en/managed-mcp",
+   "group": "other"
+  },
+  "allowManagedPermissionRulesOnly": {
+   "name_zh": "仅允许托管权限规则",
+   "zh": "（仅限托管设置）阻止用户和项目设置定义 allow、ask 或 deny 权限规则，只有托管设置中的规则生效。参见 https://code.claude.com/docs/en/settings#permission-settings",
+   "group": "other"
+  },
+  "alwaysThinkingEnabled": {
+   "name_zh": "默认开启扩展思考",
+   "zh": "在所有会话中默认启用扩展思考。通常通过 /config 命令配置，而不是直接编辑。参见 https://code.claude.com/docs/en/common-workflows#use-extended-thinking-thinking-mode",
+   "group": "capabilities"
+  },
+  "apiKeyHelper": {
+   "name_zh": "API 密钥辅助脚本",
+   "zh": "一个脚本的路径，该脚本输出认证值。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "connection"
+  },
+  "appendPlugins": {
+   "name_zh": "后置插件顺序",
+   "zh": "托管插件（托管 enabledPlugins 设为 true 的 plugin@marketplace ID），其钩子按列出的顺序在插件中最后运行、位于最内层：列出的最后一个 ID 紧挨在内置插件之上，看到的每个事件都是其他所有插件处理之后的样子。仅从托管设置读取（或者在没有托管设置的机器上，从用户设置读取，用于你自己的插件）；在项目、本地和 --settings 来源中会被忽略。",
+   "group": "other"
+  },
+  "askUserQuestionTimeout": {
+   "name_zh": "提问自动继续超时",
+   "zh": "未回答的 AskUserQuestion 对话框空闲多久后，按你已选中的选项自动继续。可选 \"60s\"、\"5m\"、\"10m\" 或 \"never\"（默认：\"never\"，即一直等到你回答）。在 /config 中显示为 Question auto-continue timeout，该项会把此键写入用户设置。不从项目设置或本地设置中读取。需要 Claude Code v2.1.200 或更高版本。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "attribution": {
+   "name_zh": "提交与 PR 署名",
+   "zh": "自定义 git 提交和拉取请求（PR）中的署名。参见 https://code.claude.com/docs/en/settings#attribution-settings",
+   "group": "other"
+  },
+  "autoCompactEnabled": {
+   "name_zh": "自动压缩",
+   "zh": "在上下文接近上限时自动压缩对话。也可以通过 DISABLE_AUTO_COMPACT 环境变量配置。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "output_context"
+  },
+  "autoCompactWindow": {
+   "name_zh": "自动压缩窗口",
+   "zh": "自动压缩窗口大小。",
+   "group": "output_context"
+  },
+  "autoConnectIde": {
+   "name_zh": "自动连接 IDE",
+   "zh": "从外部终端启动 Claude Code 时，自动连接到正在运行的 IDE（默认：false）。在 VS Code 或 JetBrains 终端之外运行时，在 /config 中显示为 Auto-connect to IDE (external terminal)。也可以通过 CLAUDE_CODE_AUTO_CONNECT_IDE 环境变量配置，设置后该变量覆盖此项。参见 https://code.claude.com/docs/en/settings#global-config-settings",
+   "group": "other"
+  },
+  "autoContinueAtUsageLimit": {
+   "name_zh": "用量限制后自动继续",
+   "zh": "当 claude.ai 用量限制使会话停止时，等待限制重置后自动继续任务。关闭时，限制对话框会把等待作为一个选项提供。",
+   "group": "other"
+  },
+  "autoDreamEnabled": {
+   "name_zh": "后台记忆整理",
+   "zh": "启用后台记忆整理（auto-dream）。设置后会覆盖服务端默认值。",
+   "group": "other"
+  },
+  "autoInstallIdeExtension": {
+   "name_zh": "自动安装 IDE 扩展",
+   "zh": "在 VS Code 终端中运行时，自动安装 Claude Code IDE 扩展（默认：true）。在 VS Code 或 JetBrains 终端内运行时，在 /config 中显示为 Auto-install IDE extension。也可以将 CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL 环境变量设为 1。参见 https://code.claude.com/docs/en/settings#global-config-settings",
+   "group": "other"
+  },
+  "autoMemoryDirectory": {
+   "name_zh": "自动记忆目录",
+   "zh": "自动记忆的自定义存储目录路径。支持以 ~/ 开头表示主目录。出于安全考虑，如果设置在已提交到仓库的项目设置（.claude/settings.json）中则会被忽略。未设置时默认为 ~/.claude/projects/<sanitized-cwd>/memory/。参见 https://code.claude.com/docs/en/memory",
+   "group": "other"
+  },
+  "autoMemoryEnabled": {
+   "name_zh": "自动记忆",
+   "zh": "启用自动记忆保存，把有用的上下文记录到 ~/.claude/projects/<project>/memory/（该路径由 git 仓库推导，在各 worktree 之间共享）。也可以通过环境变量 CLAUDE_CODE_DISABLE_AUTO_MEMORY 配置（设为 1 禁用，设为 0 启用）。参见 https://code.claude.com/docs/en/memory#storage-location",
+   "group": "other"
+  },
+  "autoMode": {
+   "name_zh": "自动模式分类器",
+   "zh": "自定义自动模式分类器的提示词。通常在托管设置中配置，用于调整 permissions.defaultMode 为 \"auto\" 时使用的允许/拒绝规则。默认情况下，allow、soft_deny 和 environment 会完全替换内置分类器中对应的部分。在数组中加入字面字符串 \"$defaults\"（v2.1.118 新增），可以把内置默认规则插入到该位置，与自定义规则并存。参见 https://code.claude.com/docs/en/permissions",
+   "group": "other"
+  },
+  "autoScrollEnabled": {
+   "name_zh": "自动滚动",
+   "zh": "在全屏渲染中，跟随新输出滚动到对话底部。在 /config 中显示为 Auto-scroll。关闭后，权限确认提示仍会滚动到可见位置。参见 https://code.claude.com/docs/en/fullscreen",
+   "group": "other"
+  },
+  "autoUpdatesChannel": {
+   "name_zh": "更新渠道",
+   "zh": "更新时跟随的发布渠道。\"stable\" 提供的版本通常约落后一周，并会跳过有重大回归的版本；\"latest\"（默认）提供最新发布的版本。设置 DISABLE_AUTOUPDATER=1 可禁用后台自动更新；设置 DISABLE_UPDATES=1（v2.1.118 新增）可阻止所有更新途径，包括手动执行 `claude update`。",
+   "group": "traffic_privacy"
+  },
+  "autoUploadSessions": {
+   "name_zh": "自动上传会话",
+   "zh": "将本地会话以只读方式镜像到 claude.ai（不支持远程控制）。",
+   "group": "traffic_privacy"
+  },
+  "availableModels": {
+   "name_zh": "可选模型列表",
+   "zh": "限制用户可以选择的模型。在多个设置层级（用户、项目等）中都有定义时，数组会合并并去重。参见 https://code.claude.com/docs/en/model-config#restrict-model-selection",
+   "group": "models"
+  },
+  "availableModelsMatch": {
+   "name_zh": "可用模型匹配方式",
+   "zh": "availableModels 条目如何匹配模型 ID。\"prefix\"（默认）让一个条目同时允许以它为前缀扩展出的任何模型 ID，因此 \"claude-opus-5\" 会允许 \"claude-opus-5-5\"。\"exact\" 保留这种匹配，但模型 ID 条目不再放行其他版本：\"claude-opus-5\" 允许 Opus 5 及其带日期和 -fast 的 ID，但在被列出之前不允许 Opus 5.5 或更新的版本，而 -latest ID 需要一条 -latest 条目。系列别名（\"opus\"）仍然允许整个系列；所指模型随版本或设置而变的别名（best、opusplan、default）会被忽略。使用 \"exact\" 且列表中至少列出一个模型时，Default 选项也只会使用列出的模型；如果没有可用的模型，Claude Code 将无法启动。Haiku 后台模型，以及自行选择模型的钩子和其他辅助请求不受此限制（它们由 deniedModels 覆盖；allowManagedHooksOnly 可限制钩子）。仅从托管设置读取。",
+   "group": "models"
+  },
+  "awaySummaryEnabled": {
+   "name_zh": "离开后会话回顾",
+   "zh": "离开几分钟后回到终端时，显示一行会话回顾。设为 false（或在 /config 中关闭 Session recap）即可禁用。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "awsAuthRefresh": {
+   "name_zh": "AWS 凭证刷新命令",
+   "zh": "AWS 凭证过期或不可用时运行的命令；其输出会展示给用户，但不支持交互式输入。配置后，它也用于 /login 中的“Claude Platform on AWS · refresh credentials”选项。参见 https://code.claude.com/docs/en/amazon-bedrock#advanced-credential-configuration",
+   "group": "connection"
+  },
+  "awsCredentialExport": {
+   "name_zh": "AWS 凭证导出命令",
+   "zh": "以 JSON 格式输出 AWS 凭证的命令（格式为 {\"Credentials\": {\"AccessKeyId\": ..., \"SecretAccessKey\": ..., \"SessionToken\": ...}}）。其输出会被静默捕获。适用于无法修改 .aws 目录、必须直接返回凭证的场景。参见 https://code.claude.com/docs/en/amazon-bedrock#advanced-credential-configuration",
+   "group": "connection"
+  },
+  "axScreenReader": {
+   "name_zh": "屏幕阅读器模式",
+   "zh": "输出适合屏幕阅读器的内容：纯文本，不带装饰性边框或动画。屏幕阅读器模式始终使用经典渲染器，因此启用时 tui 设置不起作用。CLAUDE_AX_SCREEN_READER 环境变量和 --ax-screen-reader 参数优先。需要 Claude Code v2.1.181 或更高版本。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "bashEditDiffEnabled": {
+   "name_zh": "显示 Bash 文件改动",
+   "zh": "Bash 工具是否显示 Bash 命令所修改文件的差异（PostToolUse 的 Bash 钩子会在 tool_response 中拿到被修改的文件列表）。设为 false 可关闭。默认：当 Bash 工具负责文件编辑时开启。在自动模式和 bypassPermissions 模式之外，只有用户、标志（flag）或策略设置可以开启它。",
+   "group": "other"
+  },
+  "bashOutputMaxChars": {
+   "name_zh": "Bash 输出字符上限",
+   "zh": "Bash 或 PowerShell 命令成功执行时，Claude 直接接收的输出字符数（默认 30000；取值会被限制在 4000-128000 之间）。超出部分会保存到文件，Claude 只收到一段简短预览和文件路径。设置后它也会取代 BASH_MAX_OUTPUT_LENGTH；后者单独使用时只决定回读窗口的大小。",
+   "group": "output_context"
+  },
+  "blockedMarketplaces": {
+   "name_zh": "插件市场阻止列表",
+   "zh": "（仅限托管设置）插件市场来源的阻止列表。与之完全一致的来源无法被添加为插件市场。检查在下载之前进行，因此被阻止的来源永远不会写入文件系统。",
+   "group": "other"
+  },
+  "browserExternalPageTools": {
+   "name_zh": "浏览器外部页面工具",
+   "zh": "（仅限托管设置）设为 \"disabled\" 可阻止 Claude 在桌面应用的 Browser 面板中使用工具读取或操作外部页面。用户仍可自行访问外部网站，本地开发服务器预览不受影响。参见 https://code.claude.com/docs/en/desktop#browse-external-sites",
+   "group": "other"
+  },
+  "channelsEnabled": {
+   "name_zh": "允许频道",
+   "zh": "（仅限托管设置）为组织允许频道功能。在 claude.ai Team 和 Enterprise 套餐中，该项未设置或为 false 时频道会被阻止。对于使用 API 密钥认证的 Anthropic Console 账号，频道默认允许；但如果组织部署了托管设置，则必须将此项设为 true。参见 https://code.claude.com/docs/en/channels#enterprise-controls",
+   "group": "other"
+  },
+  "claudeMd": {
+   "name_zh": "组织托管 CLAUDE.md",
+   "zh": "（仅限托管设置）以组织托管记忆的形式注入的 CLAUDE.md 风格指令。只从托管/策略设置中读取。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "claudeMdExcludes": {
+   "name_zh": "排除的 CLAUDE.md",
+   "zh": "要排除、不予加载的 CLAUDE.md 文件的 glob 模式。适合在 monorepo 中跳过其他团队的无关指令。模式与文件的绝对路径进行匹配。各设置层级中的数组会合并。托管策略中的 CLAUDE.md 文件无法排除。参见 https://code.claude.com/docs/en/memory#exclude-specific-claude-md-files",
+   "group": "other"
+  },
+  "cleanupPeriodDays": {
+   "name_zh": "清理保留天数",
+   "zh": "会话、孤立的子代理 worktree、任务、shell 快照和备份的保留天数。最小值为 1；设为 0 会因校验错误被拒绝。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "companyAnnouncements": {
+   "name_zh": "公司公告",
+   "zh": "启动时显示的公司公告（提供多条时会随机选一条显示）。",
+   "group": "other"
+  },
+  "crossSessionInbound": {
+   "name_zh": "跨会话入站消息",
+   "zh": "来自其他会话的入站对等消息（你其他会话发出的 SendMessage）：'accept' 直接投递；'hold' 暂扣供你审阅，不让 Claude 据此行动；'refuse' 让此会话退出接收。显式设置的值始终优先。未设置（模式对等）时：仅当发送方会话的权限模式类别与你的一致（bypass↔bypass 或 prompting↔prompting）时，消息才会自动投递；类别不匹配的发送方的消息会被暂扣，等待你批准；未声明类别的发送方的消息，仅在此会话绕过权限确认提示期间才会被暂扣。",
+   "group": "other"
+  },
+  "daemonColdStart": {
+   "name_zh": "后台服务冷启动",
+   "zh": "没有后台服务在运行时：'transient' 为本次登录会话启动一个；'ask' 询问是否将其持久安装。",
+   "group": "other"
+  },
+  "defaultShell": {
+   "name_zh": "! 命令默认 shell",
+   "zh": "输入框中 ! 命令使用的默认 shell。默认：bash。设为 \"powershell\" 时，Windows 上的 ! 命令会通过 PowerShell 执行，此时需要设置 CLAUDE_CODE_USE_POWERSHELL_TOOL=1，并且 PATH 中要有 pwsh。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "deniedMcpServers": {
+   "name_zh": "MCP 服务器拒绝列表",
+   "zh": "企业级的 MCP 服务器拒绝列表，列出明确阻止的服务器。拒绝列表中的服务器会在所有作用域（包括企业作用域）中被阻止。拒绝列表优先于允许列表：同时出现在两个列表中的服务器会被拒绝。参见 https://code.claude.com/docs/en/mcp#restriction-options",
+   "group": "other"
+  },
+  "deniedModels": {
+   "name_zh": "禁用模型列表",
+   "zh": "用户不能选择的模型，即使 availableModels 允许它们。系列别名（\"opus\"）会屏蔽整个系列。模型 ID 会屏蔽该版本的所有写法：日期、-fast 和提供商前缀都会被忽略，因此 \"claude-opus-5-5\" 会屏蔽所有 Opus 5.5 ID，但不会屏蔽 Opus 5。不带次版本号的 ID（\"claude-opus-5\"）还会屏蔽之后的次版本，正如它在 availableModels 中会放行这些版本一样。所指模型随版本或设置而变的别名（best、opusplan、default）会被忽略。Default 选项会越过被屏蔽的模型向下降级；如果 Default 没有可降级到的允许模型，Claude Code 将无法启动。仅从托管设置读取。",
+   "group": "models"
+  },
+  "desktopSessionCleanupPeriodDays": {
+   "name_zh": "桌面会话记录保留上限",
+   "zh": "由桌面宿主端（Claude Desktop、Cowork）创建或最后写入的会话记录的保留上限（天数）；这类会话记录原本不受 cleanupPeriodDays 清理的约束。0（默认）表示没有上限：这类会话记录会一直保留，直到通过其他方式删除。与 cleanupPeriodDays 不同，这里允许设为 0，因为此设置从不禁止写入，只是为这项免删豁免设定上限。该上限是硬性上限：它同样约束生效中的归档宽限期，因此释放标记（release marker）的宽限窗口绝不会让文件保留超过上限。当 cleanupPeriodDays 由组织策略托管时，此设置会被忽略。上限小于或等于 cleanupPeriodDays 时，豁免实际上失效：这些会话记录会按常规的 cleanupPeriodDays 周期过期，因此实际保留期取两者中较长的那个。",
+   "group": "other"
+  },
+  "dialogExpiry": {
+   "name_zh": "远程对话框超时",
+   "zh": "转发到远程客户端的权限/用户对话框等待回答的最长停留时间，以及被暂扣（HELD）的跨会话消息等待批准的时长；超时后两者都会落到安全的不执行默认结果（取消 / 丢弃并拒绝）。默认为 5m，与一贯沿用的远程对话框截止时间一致；\"never\" 表示不设截止时间。仅限本地的权限确认提示（没有远程客户端）不受影响。设置了 CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS 环境变量时，它会覆盖此设置。仅从受信任的来源读取（绝不从签入仓库的设置文件读取）。",
+   "group": "other"
+  },
+  "diffTool": {
+   "name_zh": "Diff 显示位置",
+   "zh": "连接 IDE 时文件 diff 的显示位置：\"auto\"（默认）在 IDE 的 diff 查看器中打开，\"terminal\" 保留在终端中显示。只有 Claude Code 连接到 VS Code 或 JetBrains IDE 时，才会在 /config 中显示为 Diff tool。参见 https://code.claude.com/docs/en/settings#global-config-settings",
+   "group": "other"
+  },
+  "disableAgentView": {
+   "name_zh": "禁用代理视图",
+   "zh": "（托管设置）关闭后台代理和代理视图：claude agents、--bg、/background 以及按需启动的 supervisor。也可以通过 CLAUDE_CODE_DISABLE_AGENT_VIEW 环境变量配置（设为 1 即禁用）。参见 https://code.claude.com/docs/en/agent-view",
+   "group": "other"
+  },
+  "disableAllHooks": {
+   "name_zh": "禁用所有钩子",
+   "zh": "禁用所有钩子以及 statusLine 的执行。在托管设置中设为 true 时，用户级和项目级的 disableAllHooks 无法覆盖它。参见 https://code.claude.com/docs/en/hooks#disable-or-remove-hooks",
+   "group": "other"
+  },
+  "disableArtifact": {
+   "name_zh": "禁用 Artifact 工具",
+   "zh": "禁用 Artifact 工具（该工具会把会话输出发布为 claude.ai 上的私有网页）。也可以通过 CLAUDE_CODE_DISABLE_ARTIFACT 环境变量配置。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "disableAutoMode": {
+   "name_zh": "禁用自动模式",
+   "zh": "设为 \"disable\" 可阻止启用自动模式：将 auto 从 Shift+Tab 切换循环中移除，并在启动时拒绝 --permission-mode auto。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "disableBrowserExternalNavigation": {
+   "name_zh": "禁止浏览外部网站",
+   "zh": "（仅限托管设置）设为 true 可关闭桌面应用 Browser 面板中的外部浏览。用户和 Claude 都无法访问外部网站，localhost 开发服务器预览不受影响。值必须是 JSON 布尔值 true；字符串 \"true\" 会被忽略。参见 https://code.claude.com/docs/en/desktop#browse-external-sites",
+   "group": "other"
+  },
+  "disableBundledSkills": {
+   "name_zh": "禁用内置技能",
+   "zh": "禁用 Claude Code 自带的技能和工作流：内置技能和工作流会被完全移除，而 /init 等内置斜杠命令仍可输入，但对模型隐藏。来自插件、.claude/skills/ 和 .claude/commands/ 的技能不受影响。也可以通过 CLAUDE_CODE_DISABLE_BUNDLED_SKILLS 环境变量配置。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "disableClaudeAiConnectors": {
+   "name_zh": "禁用 claude.ai 连接器",
+   "zh": "禁用 claude.ai MCP 连接器，使其不会被自动拉取或连接。任一设置来源中设为 true 即优先生效。需要 Claude Code v2.1.182 或更高版本。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "disableCommandPluginSources": {
+   "name_zh": "禁用命令型插件来源",
+   "zh": "控制 `command` 插件来源，这类插件的目录由在本机运行插件市场声明的命令生成。true：从不安装、更新或重新解析来自命令来源的插件（该命令永远不会运行）。false：明确允许。未设置：跟随 allowManagedHooksOnly，即把钩子执行限制为仅限托管设置的组织，也会同时禁用命令来源。仅从托管设置读取。",
+   "group": "other"
+  },
+  "disableDeepLinkRegistration": {
+   "name_zh": "禁止注册深层链接",
+   "zh": "设为 \"disable\" 可阻止 Claude Code 在启动时注册 `claude-cli://` 深层链接协议处理程序。最适合写在用户无法覆盖的托管设置中。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "disabledMcpjsonServers": {
+   "name_zh": "已拒绝的 .mcp.json 服务器",
+   "zh": "来自 .mcp.json 的已拒绝 MCP 服务器列表。参见 https://code.claude.com/docs/en/mcp",
+   "group": "other"
+  },
+  "disableMobileSimulatorTools": {
+   "name_zh": "禁用 iOS 模拟器工具",
+   "zh": "（仅限托管设置）设为 true 可阻止 Claude 使用桌面应用 iOS Simulator 面板的工具。用户仍可手动使用该面板，只是移除了 Claude 的访问权限。值必须是 JSON 布尔值 true；其他值都会被忽略，格式错误的值（如 \"true\" 或 1）会记录一条警告。参见 https://code.claude.com/docs/en/desktop-ios-simulator#turn-off-simulator-access",
+   "group": "other"
+  },
+  "disableRemoteControl": {
+   "name_zh": "禁用远程控制",
+   "zh": "禁用远程控制（Remote Control）：阻止 claude remote-control、--remote-control 参数、自动启动以及会话内开关。需要 Claude Code v2.1.128 或更高版本。参见 https://code.claude.com/docs/en/remote-control",
+   "group": "other"
+  },
+  "disableSideloadFlags": {
+   "name_zh": "禁止旁加载参数",
+   "zh": "（仅限托管设置）在启动时拒绝 --plugin-dir、--plugin-url、--agents 和 --mcp-config CLI 参数，否则用户可以借助这些参数在单次运行中绕过 strictKnownMarketplaces。对于在内部带着这些参数启动 CLI 的任何界面（目前是桌面应用中的 Cowork 本地会话），同样拒绝这些参数。如果 --mcp-config 中的服务器全部是进程内 type: \"sdk\" 条目，仍然会被接受，因此 Agent SDK 和 VS Code 扩展可以继续工作。不会阻止 claude mcp add、.mcp.json 或 SDK setMcpServers()；如需按服务器控制 MCP，请搭配 allowedMcpServers 使用。需要 Claude Code v2.1.193 或更高版本。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "disableSkillShellExecution": {
+   "name_zh": "禁用技能内联 Shell",
+   "zh": "对来自用户、项目、插件或附加目录来源的技能和自定义斜杠命令，禁止执行其中 `` !`...` `` 和 ` ```! ` 块里的内联 Shell 命令。这些命令不会被执行，而是替换为 [shell command execution disabled by policy]。内置技能和托管技能不受影响。最适合写在用户无法覆盖的托管设置中。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "disableWorkflows": {
+   "name_zh": "禁用工作流",
+   "zh": "禁用动态工作流和内置的工作流命令。也可以通过 CLAUDE_CODE_DISABLE_WORKFLOWS 环境变量配置。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "editorMode": {
+   "name_zh": "编辑器模式",
+   "zh": "输入框的按键绑定模式：\"normal\" 或 \"vim\"。在 /config 中显示为 Editor mode。参见 https://code.claude.com/docs/en/terminal-config#edit-prompts-with-vim-keybindings",
+   "group": "other"
+  },
+  "effortLevel": {
+   "name_zh": "推理强度",
+   "zh": "跨会话保留自适应推理强度。可设为 low、medium、high 或 xhigh；max 和 ultracode 仅限会话内使用，设置文件不接受这两个值（如需仅在会话内使用 max，请用环境变量 CLAUDE_CODE_EFFORT_LEVEL 或 /effort）。支持推理强度的模型有 Fable 5、Opus 4.8、Opus 4.7、Opus 4.6 和 Sonnet 4.6，其中 xhigh 介于 high 与 max 之间（v2.1.111 新增）。默认值：Fable 5 和 Opus 4.8 默认为 high；Opus 4.6 和 Sonnet 4.6 在所有套餐中默认为 high（Pro/Max 在 v2.1.117 中由 medium 提高到 high）；Opus 4.7 默认为 xhigh。使用 /effort auto 可重置为模型默认值。也可以通过环境变量 CLAUDE_CODE_EFFORT_LEVEL 配置。参见 https://code.claude.com/docs/en/model-config#adjust-effort-level",
+   "group": "capabilities"
+  },
+  "emojiCompletionEnabled": {
+   "name_zh": "Emoji 补全",
+   "zh": "在输入框中输入 : 加短代码时显示 emoji 建议，并把完整的短代码（如 :heart:）替换为对应 emoji（默认：true）。设为 false 可同时关闭这两项。需要 Claude Code v2.1.217 或更高版本。参见 https://code.claude.com/docs/en/interactive-mode#emoji-shortcodes",
+   "group": "other"
+  },
+  "enableAllProjectMcpServers": {
+   "name_zh": "批准全部项目 MCP",
+   "zh": "是否自动批准项目中的所有 MCP 服务器。参见 https://code.claude.com/docs/en/mcp",
+   "group": "other"
+  },
+  "enableArtifact": {
+   "name_zh": "启用 Artifact 工具",
+   "zh": "为当前用户启用或禁用 Artifact 工具。未设置时，默认值取决于该功能对你账号是否可用。/config 中的 Artifacts 一行会写入此键。托管的 disableArtifact 和组织管理员设置优先；项目设置和本地设置（.claude/settings.json、.claude/settings.local.json）中的此键会被忽略，否则仓库可以把它提交进去。需要 Claude Code v2.1.196 或更高版本。参见 https://code.claude.com/docs/en/artifacts",
+   "group": "other"
+  },
+  "enabledMcpjsonServers": {
+   "name_zh": "已批准的 .mcp.json 服务器",
+   "zh": "来自 .mcp.json 的已批准 MCP 服务器列表。参见 https://code.claude.com/docs/en/mcp",
+   "group": "other"
+  },
+  "enabledPlugins": {
+   "name_zh": "已启用插件",
+   "zh": "已启用的插件，格式为 plugin-id@marketplace-id。示例：{ \"formatter@anthropic-tools\": true }。参见 https://code.claude.com/docs/en/plugins",
+   "group": "other"
+  },
+  "enableWorkflows": {
+   "name_zh": "启用工作流",
+   "zh": "为该用户启用或禁用工作流（Workflows）功能。未设置时，在该功能可用后按套餐决定默认值。",
+   "group": "other"
+  },
+  "enforceAvailableModels": {
+   "name_zh": "默认模型受允许列表约束",
+   "zh": "（托管设置）将 availableModels 允许列表的约束扩展到 Default 模型选项（需要 v2.1.175+）。要求 availableModels 列表非空；当账号类型对应的默认模型不在允许列表中时，Default 会改为解析成列表中的第一个允许项。availableModels 未设置或为空时不生效。参见 https://code.claude.com/docs/en/model-config#enforce-the-allowlist-for-the-default-model",
+   "group": "models"
+  },
+  "env": {
+   "name_zh": "环境变量",
+   "zh": "为 Claude Code 会话设置的环境变量。许多环境变量提供了 settings.json 中没有专门属性的设置项（例如思考 token、提示词缓存、bash 超时、shell 配置）。完整列表参见 https://code.claude.com/docs/en/settings#environment-variables",
+   "group": "other"
+  },
+  "externalEditorContext": {
+   "name_zh": "外部编辑器附带上条回复",
+   "zh": "用 Ctrl+G 打开外部编辑器时，把 Claude 的上一条回复以 # 注释形式附加在开头作为上下文（默认：false）。在 /config 中显示为 Show last response in external editor。参见 https://code.claude.com/docs/en/settings#global-config-settings",
+   "group": "other"
+  },
+  "extraKnownMarketplaces": {
+   "name_zh": "额外插件市场",
+   "zh": "为此仓库额外提供的插件市场。通常在仓库的 .claude/settings.json 中使用，确保团队成员拥有所需的插件来源。参见 https://code.claude.com/docs/en/plugin-marketplaces",
+   "group": "other"
+  },
+  "fallbackModel": {
+   "name_zh": "备用模型链",
+   "zh": "当主模型过载、不可用或返回不可重试的服务端错误时，按顺序尝试的备用模型链。去重后最多保留三项；可填模型名或别名，\"default\" 会展开为账号类型对应的默认模型。会被本会话的 --fallback-model CLI 参数覆盖。参见 https://code.claude.com/docs/en/model-config#fallback-model-chains",
+   "group": "models"
+  },
+  "fastMode": {
+   "name_zh": "快速模式",
+   "zh": "启用快速模式。快速模式默认使用 Claude Opus 5（自 v2.1.219 起），以更高的每 token 费用换取更快的输出，且不会降级到更小的模型。需要启用额外用量（extra usage）。可用 /fast 命令切换。支持 Opus 5 和 Opus 4.8；Opus 4.7 的快速模式已于 2026 年 6 月 25 日弃用，并于 2026 年 7 月 24 日移除。在 v2.1.219 之前，快速模式默认使用 Opus 4.8（v2.1.154 至 v2.1.218）和 Opus 4.7（v2.1.142 至 v2.1.153）。参见 https://code.claude.com/docs/en/fast-mode",
+   "group": "capabilities"
+  },
+  "fastModePerSessionOptIn": {
+   "name_zh": "快速模式按会话开启",
+   "zh": "要求每个会话单独选择开启快速模式。为 true 时，快速模式不会跨会话保留，用户每个会话都需要用 /fast 开启。适合用来控制成本。参见 https://code.claude.com/docs/en/fast-mode",
+   "group": "capabilities"
+  },
+  "feedbackDrafts": {
+   "name_zh": "模型起草的反馈",
+   "zh": "由模型起草的反馈（SendFeedback 工具）。\"notify\"（默认）在草稿进入队列时显示一行提示；\"quiet\" 只显示底栏计数；\"off\" 完全禁用该工具，草稿永远不会进入队列。",
+   "group": "traffic_privacy"
+  },
+  "feedbackSurveyRate": {
+   "name_zh": "反馈调查概率",
+   "zh": "满足条件时出现会话质量调查的概率（0–1）。0.05 表示 5% 的符合条件的会话。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "traffic_privacy"
+  },
+  "fileCheckpointingEnabled": {
+   "name_zh": "文件检查点",
+   "zh": "为被编辑的文件创建快照，以便 /rewind 恢复。也可以通过 CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING 环境变量配置（设为 1 即禁用）。参见 https://code.claude.com/docs/en/checkpointing",
+   "group": "other"
+  },
+  "fileSuggestion": {
+   "name_zh": "文件补全脚本",
+   "zh": "为 @ 文件自动补全配置自定义脚本。参见 https://code.claude.com/docs/en/settings#file-suggestion-settings",
+   "group": "other"
+  },
+  "footerLinksRegexes": {
+   "name_zh": "底栏链接正则",
+   "zh": "当正则表达式匹配到轮次输出（工具结果和助手回复）时，在底栏中额外渲染可点击的徽标。只从用户设置、--settings 参数和托管设置中读取；项目设置和本地设置中的该项会被忽略。需要 Claude Code v2.1.176 或更高版本。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "forceLoginGatewayUrl": {
+   "name_zh": "强制网关登录 URL",
+   "zh": "在 /login 的 Cloud gateway 界面中预填并锁定网关 URL。此键或 forceLoginMethod: \"gateway\" 任一项都会显示该界面；两者都设置才能把 URL 填好。只在托管策略层级生效；用户设置和项目设置中的该项会被忽略。参见 https://code.claude.com/docs/en/claude-apps-gateway#set-the-gateway-url",
+   "group": "connection"
+  },
+  "forceLoginMethod": {
+   "name_zh": "限定登录方式",
+   "zh": "设为 \"claudeai\" 时仅允许使用 Claude.ai 账号登录，设为 \"console\" 时仅允许使用 Claude Console 账号登录，设为 \"gateway\" 时仅允许通过云网关登录。在 Claude Code v2.1.212 及更高版本中，所有第一方登录途径都会执行该限制，包括 VS Code 扩展、Agent SDK、`claude setup-token` 和 /install-github-app；v2.1.212 之前只有终端登录会执行该限制。参见 https://code.claude.com/docs/en/authentication#restrict-login-to-your-organization",
+   "group": "connection"
+  },
+  "forceLoginOrgUUID": {
+   "name_zh": "限定登录组织",
+   "zh": "OAuth 登录使用的组织 UUID，也可以是 UUID 数组以允许多个组织。空数组按失败关闭处理，会阻止所有登录。参见 https://code.claude.com/docs/en/authentication#restrict-login-to-your-organization",
+   "group": "connection"
+  },
+  "forceRemoteSettingsRefresh": {
+   "name_zh": "强制刷新远程设置",
+   "zh": "（仅限托管设置）在从服务器重新拉取到最新的远程托管设置之前，阻塞 CLI 启动。如果拉取失败，CLI 会直接退出（失败即关闭），而不是继续使用缓存的设置。未设置时，启动过程不会等待远程设置。参见 https://code.claude.com/docs/en/server-managed-settings",
+   "group": "other"
+  },
+  "gatewayInternalNetworks": {
+   "name_zh": "Cloud 网关内网网段",
+   "zh": "你的 Cloud 网关所在的 IPv4 CIDR 网段（最多 4 个，每个 /8 到 /32，互不重叠）：即组织为内部网络编址所用的公网网段，配置后 /login 才能访问位于其中的网关。网段必须完全位于私有地址空间之外；网关位于私有地址空间时，/login 无需此键即可接受。对于位于所列网段内的网关，/login 只接受直连，并且仅当本机在该连接上的自身地址也位于同一网段内时才接受，因此必须在自身地址位于该网段内的机器上执行 /login（不能经由网段之外的代理服务器、VPN 地址池、容器或 NAT 网段）。这只是防止复制设置文件的一道门槛，并不能证明所在位置。仅从管理员控制的托管设置（MDM / managed-settings.json / 策略助手）读取；在用户、项目和远程下发的设置中会被忽略。",
+   "group": "connection"
+  },
+  "gcpAuthRefresh": {
+   "name_zh": "GCP 凭证刷新命令",
+   "zh": "GCP 凭证过期或无法加载时运行的命令。命令输出会显示给用户，但不支持交互式输入；三分钟后超时。参见 https://code.claude.com/docs/en/google-vertex-ai#advanced-credential-configuration",
+   "group": "connection"
+  },
+  "hooks": {
+   "name_zh": "钩子",
+   "zh": "生命周期事件钩子，在 Claude Code 运行过程中的可配置节点执行（工具使用、会话开始/结束、通知、提交提示词、消息显示等），而不只是在工具执行前后。参见 https://code.claude.com/docs/en/hooks",
+   "group": "other"
+  },
+  "httpHookAllowedEnvVars": {
+   "name_zh": "HTTP 钩子可用环境变量",
+   "zh": "HTTP 钩子可插入到请求头中的环境变量名允许列表。设置后，每个钩子实际生效的 allowedEnvVars 是其自身配置与此列表的交集。未定义表示不限制。各设置来源中的数组会合并。参见 https://code.claude.com/docs/en/settings#hook-configuration",
+   "group": "other"
+  },
+  "idleCompaction": {
+   "name_zh": "空闲时压缩",
+   "zh": "设为 false 可阻止 Claude Code 在会话空闲时压缩较长的对话。设为 true 并不会开启空闲压缩。",
+   "group": "output_context"
+  },
+  "includeCoAuthoredBy": {
+   "name_zh": "Co-authored-by 署名",
+   "zh": "已弃用，请改用 'attribution'。是否在 git 提交和拉取请求中包含 Claude 的 co-authored-by 署名行（默认：true）。",
+   "group": "other"
+  },
+  "includeGitInstructions": {
+   "name_zh": "内置 Git 指令",
+   "zh": "在 Claude 的系统提示词中包含内置的 git 提交和 PR 工作流指令。也可以通过环境变量 CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS 配置（设为 1 禁用）。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "inputNeededNotifEnabled": {
+   "name_zh": "待输入时推送通知",
+   "zh": "连接 Remote Control 时，如果有权限确认提示或问题在等待输入，向你的手机发送推送通知。需要 Claude Code v2.1.119 或更高版本。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "isolatePeerMachines": {
+   "name_zh": "隔离其他机器的会话",
+   "zh": "SendMessage 通过远程控制（Remote Control）联系另一台机器上的对等会话之前，需要明确批准。",
+   "group": "other"
+  },
+  "keybindingFlavor": {
+   "name_zh": "按键绑定风格",
+   "zh": "已弃用：不再有任何作用。输入框的按词编辑按键始终遵循 Bash（readline）惯例。",
+   "group": "other"
+  },
+  "language": {
+   "name_zh": "回复语言",
+   "zh": "配置 Claude 偏好的回复语言（例如 \"japanese\"、\"spanish\"、\"french\"）。Claude 默认会用该语言回复。它同时决定语音听写的语言，以及终端标签页会话标题生成所用的语言。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "managedMcpServers": {
+   "name_zh": "托管 MCP 服务器",
+   "zh": "（托管设置，仅限第三方 Desktop 部署）推送给所有用户的 MCP 服务器配置。每一项指定传输方式和连接信息，并可附带可选的 toolPolicy 映射。通过托管设置文件或 MDM 下发。参见 https://code.claude.com/docs/en/desktop#enterprise-configuration",
+   "group": "other"
+  },
+  "managedSourcesBehavior": {
+   "name_zh": "托管设置来源组合方式",
+   "zh": "控制各托管设置来源如何组合。\"first-wins\"（默认）：存在的来源中优先级最高的那个（服务端托管 > MDM（托管 plist / HKLM）> managed-settings.json）单独构成托管层。\"merge\"：所有存在的来源按固定优先级 服务端托管 > MDM > managed-settings.json 深度合并：标量取最高来源的值（限制性的布尔值或枚举值，即 allowManaged*Only 锁、disable* 开关和沙箱锁定系列，取任一来源所设的最严格值），数组取并集。以下例外：fallbackModel，限制类允许列表 allowedMcpServers、allowedProviders、availableModels、strictKnownMarketplaces 和 allowedChannelPlugins，以及 sandbox.credentials.awsPairs 和 sandbox.ripgrep（由设置了该项的最高来源整体拥有）；modelOverrides（取设置了它的最高来源的整个映射，若该来源低于设置 availableModels 的来源则丢弃）；managedMcpServers（服务器名称取并集，被两个来源设置的同名项取较高来源的整个条目）；以及只从最高来源读取的键：认证锁定项 forceLoginOrgUUID、forceLoginMethod、forceLoginGatewayUrl 和 gatewayInternalNetworks，凭证助手 apiKeyHelper、awsAuthRefresh、awsCredentialExport、gcpAuthRefresh、otelHeadersHelper 和 proxyAuthHelper，modelPicker、permissions.defaultMode、parentSettingsBehavior 以及 policyHelper 配置（env 仍按键各自取并集）。仅从存在的最高优先级来源读取此设置；只有当所有较低来源都由管理员控制时才应启用它，因为启用后较低来源会贡献 permissions.allow 等条目。HKCU 和 --managed-settings 永远不参与合并。",
+   "group": "other"
+  },
+  "maxEffortLevel": {
+   "name_zh": "推理强度上限",
+   "zh": "最大推理强度。任何高于它的设置（/effort 或 /model 中的选择、--effort、CLAUDE_CODE_EFFORT_LEVEL、模型默认值）都会被压到此值，适用于所有提供商，包括 Bedrock、Vertex 和 Foundry。与组织按模型设置的推理强度上限组合时，取两者中较低者；跨多个设置文件时取最低值，modelSettings.<model>.maxEffortLevel 会按模型取代它。在客户端强制执行：通过 CLAUDE_CODE_EXTRA_BODY 提供的推理强度不受此限制。",
+   "group": "capabilities"
+  },
+  "maxProseWidth": {
+   "name_zh": "正文最大宽度",
+   "zh": "Claude 回复中正文（段落、标题、列表、引用块）的最大宽度，单位为终端列数。在更宽的终端中，正文会在此宽度处换行，而表格和代码块保持全宽；只是显示时换行，回复文本本身不会增加换行符。最小值为 40。未设置（默认）时使用整个终端宽度。",
+   "group": "other"
+  },
+  "minimumVersion": {
+   "name_zh": "最低保留版本",
+   "zh": "Claude Code 要保持的最低版本。切换发布渠道时可防止降级。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "traffic_privacy"
+  },
+  "model": {
+   "name_zh": "默认模型",
+   "zh": "覆盖 Claude Code 使用的默认模型。如需更细粒度的控制，可使用环境变量：ANTHROPIC_MODEL（运行时覆盖）、ANTHROPIC_DEFAULT_OPUS_MODEL、ANTHROPIC_DEFAULT_SONNET_MODEL、ANTHROPIC_DEFAULT_HAIKU_MODEL（按模型类别固定版本）、CLAUDE_CODE_SUBAGENT_MODEL（子代理模型）。参见 https://code.claude.com/docs/en/model-config",
+   "group": "models"
+  },
+  "modelOverrides": {
+   "name_zh": "模型 ID 映射",
+   "zh": "把 Anthropic 模型 ID 映射为特定提供商的模型 ID，例如 Bedrock 推理配置文件 ARN、Vertex AI 版本名或 Foundry 部署名。模型选择器中的每个条目在调用提供商 API 时都会使用映射后的值。未知的键会被忽略。参见 https://code.claude.com/docs/en/model-config#override-model-ids-per-version",
+   "group": "models"
+  },
+  "modelPicker": {
+   "name_zh": "模型选择器定制",
+   "zh": "定制 /model 选择器：一份带自定义标签的有序模型列表，独立于内置模型阵容，也不随 Claude Code 版本更新而变。availableModels 仍然对这些条目生效。仅从托管设置、--settings/SDK 和用户设置读取（不从项目检出中读取）；在这些来源中，定义了 modelPicker 的最高优先级来源直接胜出（不跨来源合并）。通常由企业管理员在托管设置中设置。",
+   "group": "models"
+  },
+  "modelPricing": {
+   "name_zh": "模型计价覆盖",
+   "zh": "按组织的合同价而不是标价计算用量费用。会影响 Claude Code 报告的所有花费数字（/cost、状态栏、SDK 的 total_cost_usd、--max-budget-usd，以及 OpenTelemetry 费用指标和事件），这些数字仍然只是美元估算，而不是账单（/model 中按每百万 token 标注的价格仍显示标价）。\"overrides\" 将模型 ID 映射到其每百万 token 的美元费率（input、output、cacheRead、cacheWrite，四项均为必填，取值 0 到 10000；cacheWrite 同时用于 5 分钟和 1 小时缓存写入的计价）。匹配的条目严格按所写价格计费，不再额外叠加快速模式和美国数据驻留附加费。Claude Code 自身为内置模型使用的键（其 ID，例如 \"claude-sonnet-4-6\"，或其第一方、Bedrock（带任意区域前缀或不带前缀）、Vertex 或 Foundry ID）会覆盖该模型所有带日期的形式和各提供商形式；其他任何键（网关模型别名，或 Claude Code 自身不使用的写法）只匹配该模型 ID 本身（不区分大小写），并且这种精确匹配优先于内置条目。在 Bedrock 上，应用推理配置文件按其底层模型匹配。无效的条目或倍率会被报告并跳过，其余仍然生效。\"multiplier\" 取值在 (0, 10] 之间，会按比例缩放每一笔计算出的费用，无论该模型是否被覆盖（0.85 = 价格的 85%，1.2 = 120%）。仅从托管设置（服务端托管、MDM / 操作系统策略或 managed-settings.json）读取；或者在这些来源都未设置时，由管理模型提供商的宿主应用提供。在用户、项目、本地和 --settings 来源中会被忽略。",
+   "group": "models"
+  },
+  "modelSettings": {
+   "name_zh": "按模型设置",
+   "zh": "按规范模型名称索引的各模型设置。",
+   "group": "capabilities"
+  },
+  "otelHeadersHelper": {
+   "name_zh": "OTel 请求头辅助程序",
+   "zh": "一个可执行文件的路径，或带参数的 shell 命令行，以 JSON 对象形式输出 OpenTelemetry 请求头。启动时运行，之后按 CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS 设定的间隔重新运行。需要 CLAUDE_CODE_ENABLE_TELEMETRY=1。参见 https://code.claude.com/docs/en/monitoring-usage#dynamic-headers",
+   "group": "traffic_privacy"
+  },
+  "outputStyle": {
+   "name_zh": "输出风格",
+   "zh": "控制助手回复的输出风格。内置风格：default、Proactive、Explanatory、Learning。可以在 ~/.claude/output-styles/ 或 .claude/output-styles/ 中添加自定义风格。参见 https://code.claude.com/docs/en/output-styles",
+   "group": "other"
+  },
+  "parentSettingsBehavior": {
+   "name_zh": "父级设置合并方式",
+   "zh": "（仅限管理员/托管设置）控制 SDK managedSettings（父级层）如何与继承的设置合并。'first-wins'：第一个非空值生效（默认）。'merge'：合并数组和对象。参见 https://code.claude.com/docs/en/server-managed-settings",
+   "group": "other"
+  },
+  "permissionExplainerEnabled": {
+   "name_zh": "权限提示命令解释",
+   "zh": "在 Bash 或 PowerShell 权限确认提示上按 Ctrl+E 时，显示由模型生成的命令解释（默认：true）。设为 false 可关闭该快捷键。参见 https://code.claude.com/docs/en/permissions#permission-system",
+   "group": "other"
+  },
+  "permissions": {
+   "name_zh": "权限",
+   "zh": "工具使用权限配置。\n参见 https://code.claude.com/docs/en/permissions 和 https://code.claude.com/docs/en/settings#permission-settings\nClaude 可用工具的完整列表参见 https://code.claude.com/docs/en/tools-reference",
+   "group": "other"
+  },
+  "plansDirectory": {
+   "name_zh": "计划文件目录",
+   "zh": "自定义计划文件的存放位置。路径相对于项目根目录（默认：~/.claude/plans）。",
+   "group": "other"
+  },
+  "pluginConfigs": {
+   "name_zh": "插件配置",
+   "zh": "按插件进行的配置，包括 MCP 服务器的用户配置和插件选项，以插件 ID（plugin@marketplace 格式）为键。参见 https://code.claude.com/docs/en/plugins",
+   "group": "other"
+  },
+  "pluginSuggestionMarketplaces": {
+   "name_zh": "插件推荐来源市场",
+   "zh": "（仅限托管设置）插件市场名称的允许列表：只有这些市场中的插件可以在 /plugin 的 Discover 标签页中以“suggested for this directory”（针对当前目录推荐）的上下文提示出现。没有这个允许列表时，市场声明的推荐都不会出现。内置的第一方 frontend-design 提示不受影响。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "pluginTrustMessage": {
+   "name_zh": "插件信任提示附言",
+   "zh": "（仅限托管设置）追加到安装前插件信任警告中的自定义消息。可用来提供组织内已批准插件的相关说明。参见 https://code.claude.com/docs/en/settings#plugin-settings",
+   "group": "other"
+  },
+  "policyHelper": {
+   "name_zh": "策略助手",
+   "zh": "由管理员部署的可执行程序，在启动时动态计算托管设置。只从 MDM 或系统级 managed-settings.json 中读取。需要 Claude Code v2.1.136 或更高版本。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "precomputeCompactionEnabled": {
+   "name_zh": "预先生成压缩摘要",
+   "zh": "在需要之前于后台预先生成压缩摘要。仅在开启自动压缩时适用。",
+   "group": "output_context"
+  },
+  "preferredNotifChannel": {
+   "name_zh": "通知方式",
+   "zh": "任务完成和权限确认提示的通知方式。\"auto\"（默认）在 iTerm2、Ghostty 和 Kitty 中发送桌面通知，在其他终端中不做任何事；\"terminal_bell\" 在任何终端中响铃；\"notifications_disabled\" 关闭通知。参见 https://code.claude.com/docs/en/terminal-config#get-a-terminal-bell-or-notification",
+   "group": "other"
+  },
+  "prefersReducedMotion": {
+   "name_zh": "减少动画",
+   "zh": "减少或禁用界面动画（加载动画、微光、闪烁效果），以提升无障碍体验。",
+   "group": "other"
+  },
+  "prependPlugins": {
+   "name_zh": "前置插件顺序",
+   "zh": "托管插件（托管 enabledPlugins 设为 true 的 plugin@marketplace ID），其钩子按列出的顺序最先运行、位于最外层：列出的第一个 ID 先于其他所有插件看到每个事件，并在其他所有插件之后看到每个结果。未在此处或 appendPlugins 中列出的托管插件排在列出的插件之后；其后是用户、项目和插件市场插件；然后是 appendPlugins；最后是内置插件。捆绑的 cc-plugin-sec-default@builtin 会把自己放在最外层（在有托管设置的机器上，以及 Team 和 Enterprise 组织中），除非设置了此列表，此时请把它列在应处的位置，或者将其省略。只要组织中还有机器可能运行它改名之前的版本，就在这里用 sec-default@builtin 来指代它，这是所有版本都能识别的 ID；认识新 ID 的版本两种写法都能读取。其他任何不是已启用托管插件的 ID 都会被跳过；同时列在两个键中的 ID 按前置处理。仅从托管设置读取（或者在没有托管设置的机器上，从用户设置读取，用于你自己的插件）；在项目、本地和 --settings 来源中会被忽略。",
+   "group": "other"
+  },
+  "processWrapper": {
+   "name_zh": "进程启动包装器",
+   "zh": "放在 Claude Code 所启动的后台进程前面的企业启动器命令。只从托管设置、--settings 文件和用户设置中读取；与 CLAUDE_CODE_PROCESS_WRAPPER 环境变量同时设置时，环境变量优先。需要 Claude Code v2.1.210 或更高版本。参见 https://code.claude.com/docs/en/corporate-launcher",
+   "group": "other"
+  },
+  "promptCacheTtl": {
+   "name_zh": "主对话提示词缓存 TTL",
+   "zh": "主对话（交互式、-p 和 SDK 轮次，以及随其内联运行的辅助请求）的提示词缓存 TTL：\"5m\" 或 \"1h\"。未设置时自动选择：在用量限制内的 Claude 订阅为 1 小时；API 密钥、Bedrock、Vertex 或 Foundry 为 5 分钟。1 小时缓存写入按更高费率计费；停顿较久后缓存依然有效。CLAUDE_CODE_PROMPT_CACHE_TTL 环境变量优先。",
+   "group": "output_context"
+  },
+  "promptSuggestionEnabled": {
+   "name_zh": "提示词建议",
+   "zh": "为 false 时禁用提示词建议。未设置或为 true 时启用提示词建议。",
+   "group": "other"
+  },
+  "proxyAuthHelper": {
+   "name_zh": "代理服务器认证助手",
+   "zh": "输出 Proxy-Authorization 请求头值的 Shell 命令（EAP）。",
+   "group": "connection"
+  },
+  "prUrlTemplate": {
+   "name_zh": "PR 链接模板",
+   "zh": "页脚和工具结果摘要中 PR 徽章所用的 URL 模板。会用 gh 报告的 PR URL 替换占位符 {host}、{owner}、{repo}、{number}、{url}。可用它把 PR 链接指向内部代码评审工具，而不是 github.com。不影响 Claude 正文中 #123 形式的自动链接。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "remote": {
+   "name_zh": "云端会话配置",
+   "zh": "云端会话配置。",
+   "group": "other"
+  },
+  "remoteControlAtStartup": {
+   "name_zh": "启动时连接远程控制",
+   "zh": "每个交互式会话启动时自动连接 Remote Control。true = 始终连接，false = 从不连接，未设置 = 使用组织默认值。需要 Claude Code v2.1.119 或更高版本。参见 https://code.claude.com/docs/en/remote-control#enable-remote-control-for-all-sessions",
+   "group": "other"
+  },
+  "requireCoworkFullVmSandbox": {
+   "name_zh": "Cowork 强制虚拟机沙箱",
+   "zh": "（仅限托管设置）在隔离的虚拟机中运行 Claude 的工具，而不是直接在你的 Mac 上运行。会完全禁用桌面应用的 iOS Simulator 面板和 Claude 的模拟器工具，因此设置期间该面板无法连接设备。参见 https://code.claude.com/docs/en/desktop-ios-simulator#turn-off-simulator-access",
+   "group": "other"
+  },
+  "requiredMaximumVersion": {
+   "name_zh": "允许启动的最高版本",
+   "zh": "（仅限托管设置）允许启动的 Claude Code 最高版本。如果当前运行的版本更新，Claude Code 会在启动时退出，并提示安装经批准的版本。参见 https://code.claude.com/docs/en/admin-setup#decide-what-to-enforce",
+   "group": "traffic_privacy"
+  },
+  "requiredMinimumVersion": {
+   "name_zh": "允许启动的最低版本",
+   "zh": "（仅限托管设置）启动所需的 Claude Code 最低版本。如果当前运行的版本更旧，Claude Code 会在启动时直接退出，而不只是给出警告。参见 https://code.claude.com/docs/en/admin-setup#decide-what-to-enforce",
+   "group": "traffic_privacy"
+  },
+  "respectGitignore": {
+   "name_zh": "遵循 .gitignore",
+   "zh": "控制 @ 文件选择器是否遵循 .gitignore 模式。为 true（默认）时，匹配 .gitignore 模式的文件不会出现在建议中。",
+   "group": "other"
+  },
+  "respondToBashCommands": {
+   "name_zh": "回应 ! Shell 命令",
+   "zh": "在输入框中用 ! 运行 Shell 命令后，Claude 是否作出回应（v2.1.186+）。设为 false 时只把命令输出加入上下文，不作回应。参见 https://code.claude.com/docs/en/interactive-mode#shell-mode-with--prefix",
+   "group": "other"
+  },
+  "sandbox": {
+   "name_zh": "沙箱",
+   "zh": "沙箱执行配置。参见 https://code.claude.com/docs/en/sandboxing",
+   "group": "other"
+  },
+  "showClearContextOnPlanAccept": {
+   "name_zh": "批准计划时可清空上下文",
+   "zh": "为 true 时，计划批准对话框会提供“clear context”（清空上下文）选项。默认为 false。",
+   "group": "other"
+  },
+  "showMessageTimestamps": {
+   "name_zh": "显示消息时间戳",
+   "zh": "为每条消息标注其到达时间。",
+   "group": "other"
+  },
+  "showThinkingSummaries": {
+   "name_zh": "显示思考摘要",
+   "zh": "在会话记录视图（Ctrl+O）中显示思考摘要。交互式会话默认不生成思考摘要；设为 true 可恢复。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "capabilities"
+  },
+  "showTurnDuration": {
+   "name_zh": "显示轮次耗时",
+   "zh": "在回复后显示轮次耗时消息（例如 \"Cooked for 1m 6s\"）。设为 false 可隐藏这些消息（默认：true）。",
+   "group": "other"
+  },
+  "skillListingBudgetFraction": {
+   "name_zh": "技能列表上下文占比",
+   "zh": "为发送给 Claude 的技能列表预留的模型上下文窗口比例（默认 0.01 = 1%）。列表超出该比例时，会缩短描述以适应。也可以通过 SLASH_COMMAND_TOOL_CHAR_BUDGET 环境变量配置（固定字符数）。参见 https://code.claude.com/docs/en/skills#skill-descriptions-are-cut-short",
+   "group": "output_context"
+  },
+  "skillListingMaxDescChars": {
+   "name_zh": "技能描述字符上限",
+   "zh": "Claude 每轮看到的技能列表中，每个技能的 description 与 when_to_use 文本合计的字符上限。超出部分会被截断。参见 https://code.claude.com/docs/en/skills#skill-descriptions-are-cut-short",
+   "group": "output_context"
+  },
+  "skillOverrides": {
+   "name_zh": "技能可见性覆盖",
+   "zh": "按技能覆盖可见性，控制技能是否对 Claude 可见、是否出现在 / 选择器中。取值：'on'（显示名称和描述，默认）、'name-only'（仅显示名称）、'user-invocable-only'（对 Claude 隐藏，在 / 中可见）、'off'（全部隐藏）。插件技能不受此设置影响。参见 https://code.claude.com/docs/en/skills#override-skill-visibility-from-settings",
+   "group": "other"
+  },
+  "skipDangerousModePermissionPrompt": {
+   "name_zh": "已确认绕过权限模式",
+   "zh": "用户是否已接受绕过权限（bypass permissions）模式的确认对话框。通常由 CLI 自行维护，而不是手动设置。",
+   "group": "other"
+  },
+  "skippedMarketplaces": {
+   "name_zh": "已跳过的插件市场",
+   "zh": "用户在提示时选择不安装的插件市场名称列表。参见 https://code.claude.com/docs/en/discover-plugins",
+   "group": "other"
+  },
+  "skippedPlugins": {
+   "name_zh": "已跳过的插件",
+   "zh": "用户在提示时选择不安装的插件 ID 列表（plugin@marketplace 格式）。参见 https://code.claude.com/docs/en/discover-plugins",
+   "group": "other"
+  },
+  "skipWebFetchPreflight": {
+   "name_zh": "跳过 WebFetch 预检",
+   "zh": "跳过 WebFetch 的阻止列表检查，适用于安全策略严格的企业环境。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "traffic_privacy"
+  },
+  "spellcheck": {
+   "name_zh": "输入框拼写检查",
+   "zh": "在输入时为输入框中拼错的单词加下划线，使用已安装的 aspell、hunspell 或 ispell（除非 \"enabled\" 为 true，否则关闭；若都未安装则不起作用）。仅从用户、标志（flag）和托管设置读取（采用其中优先级最高者的整个配置块）；在项目的 .claude/settings.json 和 .claude/settings.local.json 中会被忽略。",
+   "group": "other"
+  },
+  "spinnerTipsEnabled": {
+   "name_zh": "加载动画提示",
+   "zh": "在 Claude 工作时于加载动画中显示提示。设为 false 可禁用提示（默认：true）。",
+   "group": "other"
+  },
+  "spinnerTipsOverride": {
+   "name_zh": "自定义加载提示",
+   "zh": "自定义 Claude 工作时加载动画中显示的提示。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "spinnerVerbs": {
+   "name_zh": "加载动画动词",
+   "zh": "自定义加载动画进度消息中显示的动词。",
+   "group": "other"
+  },
+  "sshConfigs": {
+   "name_zh": "预置 SSH 连接",
+   "zh": "（托管设置）分发给 Desktop 用户的预配置 SSH 连接。参见 https://code.claude.com/docs/en/desktop#ssh-sessions",
+   "group": "other"
+  },
+  "sshHostAllowlist": {
+   "name_zh": "SSH 主机允许列表",
+   "zh": "（仅限托管设置）将 Desktop 的 SSH 会话限制在经批准主机上的允许列表。匹配模式不区分大小写；* 匹配任意主机，*.example.com 匹配 example.com 及其任意子域名。参见 https://code.claude.com/docs/en/desktop#ssh-sessions",
+   "group": "other"
+  },
+  "statusLine": {
+   "name_zh": "状态栏",
+   "zh": "自定义状态栏显示配置。参见 https://code.claude.com/docs/en/statusline",
+   "group": "other"
+  },
+  "strictKnownMarketplaces": {
+   "name_zh": "插件市场允许列表",
+   "zh": "（仅限托管设置）用户可以添加的插件市场允许列表。未定义表示不限制，空数组表示完全锁定。来源规格采用精确匹配。参见 https://code.claude.com/docs/en/plugin-marketplaces#managed-marketplace-restrictions",
+   "group": "other"
+  },
+  "strictPluginOnlyCustomization": {
+   "name_zh": "仅允许插件定制",
+   "zh": "（托管设置）对列出的界面屏蔽插件以外的定制来源。数组形式锁定指定界面（例如 [\"skills\", \"hooks\"]）；true 锁定全部四类；false 表示显式不做任何限制。参见 https://code.claude.com/docs/en/plugins-reference",
+   "group": "other"
+  },
+  "subagentPromptCacheTtl": {
+   "name_zh": "子代理提示词缓存 TTL",
+   "zh": "主对话之外所有请求（子代理、工作流、后台和辅助请求）的提示词缓存 TTL：\"5m\" 或 \"1h\"。未设置时自动选择（5 分钟，除非 ENABLE_PROMPT_CACHING_1H=1）。CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL 环境变量优先。",
+   "group": "output_context"
+  },
+  "subagentStatusLine": {
+   "name_zh": "子代理状态栏",
+   "zh": "子代理会话的状态栏配置。参见 https://code.claude.com/docs/en/statusline#subagent-status-lines",
+   "group": "other"
+  },
+  "switchModelsOnFlag": {
+   "name_zh": "被标记时切换模型",
+   "zh": "当安全防护机制标记某条消息时，自动切换到其他模型以继续对话。关闭时，会话会改为暂停。",
+   "group": "models"
+  },
+  "syncClaudeAiPlugins": {
+   "name_zh": "同步 claude.ai 插件",
+   "zh": "设为 false 可关闭对你在 claude.ai 上已启用插件的同步。在用户设置（或托管设置）中设置时：不再下载任何内容，之前同步的插件（~/.claude/plugins/synced）会在之后启动的每个会话中隐藏，并在下次启动时移到 ~/.claude/plugins/.trash（在 cleanupPeriodDays 后删除；如果重新启用，会重新下载而不是恢复）。在 .claude/settings.local.json 或 --settings 中设置时：仅针对该工作区或该次调用的会话停止下载并隐藏已同步的插件（不会移动任何文件）。不从项目设置（.claude/settings.json）读取。只认 false：该功能由服务端为你的账号开启，因此设为 true 并不能提前开启它。功能开启期间，已同步的插件会像你自己安装的插件一样在每个会话中加载（你自己安装的同名插件优先），每次启动时重新同步，并在你于 claude.ai 上停用后移除。仅在使用 Claude 账号登录时适用。",
+   "group": "other"
+  },
+  "syncClaudeAiSkills": {
+   "name_zh": "同步 claude.ai 技能",
+   "zh": "设为 false 可关闭对你在 claude.ai 上已启用技能的同步。在用户设置（或托管设置）中设置时：不再下载任何内容，之前同步的技能（~/.claude/skills/synced）不能再运行，会在之后启动的每个会话中隐藏，并在下次启动时移到 ~/.claude/skills/.trash（在 cleanupPeriodDays 后删除；如果重新启用，会重新下载而不是恢复）。在 .claude/settings.local.json 或 --settings 中设置时：仅针对该工作区或该次调用的会话停止下载，并阻止和隐藏已同步的技能（不会移动任何文件）。不从项目设置（.claude/settings.json）读取。只认 false：该功能由服务端为你的账号开启，因此设为 true 并不能提前开启它。功能开启期间，已同步的技能在每个会话中都可用；会话使用中约每 10 分钟重新同步一次，其他时候频率为其四分之一；在 claude.ai 上停用后会被移除。仅在使用 Claude 账号登录时适用。",
+   "group": "other"
+  },
+  "syntaxHighlightingDisabled": {
+   "name_zh": "禁用语法高亮",
+   "zh": "在 diff、代码块和文件预览中禁用语法高亮。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "taskOutputMaxChars": {
+   "name_zh": "任务输出字符上限",
+   "zh": "已弃用：不再有任何作用（TaskOutput 工具已移除）。请改用 Read 工具读取后台任务的输出文件。",
+   "group": "output_context"
+  },
+  "teammateDefaultModel": {
+   "name_zh": "队友默认模型",
+   "zh": "派生提示中未指定模型时，代理团队队友使用的默认模型。可设为模型别名（例如 \"sonnet\"），或设为 null 以继承负责人当前的 /model 选择。在 /config 中显示为 Default teammate model。参见 https://code.claude.com/docs/en/agent-teams",
+   "group": "models"
+  },
+  "teammateMode": {
+   "name_zh": "队友显示模式",
+   "zh": "代理团队中队友的显示方式：\"auto\" 在 tmux 或 iTerm2 中使用分屏窗格，其他情况下使用进程内显示；\"iterm2\"（v2.1.186 新增）强制使用 iTerm2 原生分屏窗格，需要 it2 CLI（缺少 it2 时会显示错误及安装命令）。默认值为 \"in-process\"（v2.1.179 之前为 \"auto\"）。代理团队是实验性功能，默认禁用。在 settings.json 或环境中添加 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS 即可启用。参见 https://code.claude.com/docs/en/agent-teams#choose-a-display-mode",
+   "group": "other"
+  },
+  "terminalProgressBarEnabled": {
+   "name_zh": "终端进度条",
+   "zh": "启用终端进度条，在 Windows Terminal、iTerm2 等支持的终端中显示进度（默认：true）。",
+   "group": "other"
+  },
+  "terminalTitleFromRename": {
+   "name_zh": "重命名时更新终端标题",
+   "zh": "/rename 是否更新终端标签页标题（默认为 true）。设为 false 可保留自动生成的主题标题。",
+   "group": "other"
+  },
+  "theme": {
+   "name_zh": "颜色主题",
+   "zh": "界面的颜色主题：auto、dark、light，daltonized 系列（适合绿色盲）、ansi 系列（适用于 16 色终端），或自定义主题引用，例如 custom:<slug> 或 custom:<plugin-name>:<slug>。参见 https://code.claude.com/docs/en/terminal-config#match-the-color-theme",
+   "group": "other"
+  },
+  "timeFormat": {
+   "name_zh": "时间格式",
+   "zh": "界面中所显示时间的时钟格式：\"auto\"（默认，跟随区域设置）、\"12-hour\"、\"24-hour\"、\"24-hour-utc\"（\"18:05Z\"），或 strftime 格式串，例如 \"%H:%M\"（任何包含 \"%\" 的值；其他值按 \"auto\" 处理）。格式串会替换所有位置的时间；消息时间戳只显示格式串的内容，因此需要日期时请包含 %Y-%m-%d。/config 提供预设选项；格式串需在此处设置。",
+   "group": "other"
+  },
+  "timeZone": {
+   "name_zh": "时区",
+   "zh": "界面中所显示时间使用的 IANA 时区，例如 \"UTC\" 或 \"Europe/Dublin\"。默认：系统时区。无法识别的名称会回退到系统时区。",
+   "group": "other"
+  },
+  "todoFeatureEnabled": {
+   "name_zh": "待办任务面板",
+   "zh": "启用待办 / 任务跟踪面板。",
+   "group": "other"
+  },
+  "tui": {
+   "name_zh": "TUI 渲染模式",
+   "zh": "TUI 渲染模式。\"fullscreen\" 使用无闪烁的备用屏幕渲染器，并提供虚拟化的回滚历史；\"default\" 使用经典的主屏幕渲染器。对应 /tui 命令。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "ultracode": {
+   "name_zh": "ultracode 模式",
+   "zh": "为会话启用 ultracode：在任何推理强度下常驻的动态工作流编排。仅作用于当前会话：通常通过 --settings 或 apply_flag_settings 控制请求提供；交互式开关永远不会将其持久化。需要启用工作流，并使用支持 ultracode 的模型。",
+   "group": "other"
+  },
+  "useAutoModeDuringPlan": {
+   "name_zh": "计划模式中启用自动模式",
+   "zh": "为 true 时，在计划模式中也应用自动模式分类器，在制定计划期间自动批准安全的只读工具调用。除非 permissions.defaultMode 允许 auto，否则不生效。参见 https://code.claude.com/docs/en/permissions",
+   "group": "other"
+  },
+  "verbose": {
+   "name_zh": "详细输出",
+   "zh": "显示完整的工具输出，而不是截断后的摘要。--verbose 参数可在单个会话中覆盖此设置。需要 Claude Code v2.1.119 或更高版本。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "viewMode": {
+   "name_zh": "会话记录视图模式",
+   "zh": "会话记录的视图模式。\"default\" 显示标准交互视图；\"verbose\" 展开显示工具详情；\"focus\" 只显示提示词、单行工具摘要和最终回复（Ctrl+O 切换）。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "vimInsertModeRemaps": {
+   "name_zh": "Vim 插入模式映射",
+   "zh": "在 vim 编辑器模式下，把 INSERT 模式中连续输入的双键序列映射为 Escape。每个键必须恰好是依次输入的两个可打印字符，且 \"<Esc>\" 是唯一支持的目标；其他条目会被忽略。只从用户设置、--settings 参数和托管设置中读取，因此仓库中提交的设置无法重映射你的按键。除非 editorMode 为 \"vim\"，否则不生效。需要 Claude Code v2.1.208 或更高版本。参见 https://code.claude.com/docs/en/interactive-mode#remap-insert-mode-key-sequences",
+   "group": "other"
+  },
+  "voice": {
+   "name_zh": "语音听写",
+   "zh": "语音听写设置：enabled 开启听写，mode 选择 \"hold\"（按住）或 \"tap\"（点按），autoSubmit 在按住模式下松开按键时发送提示词。运行 /voice 时会自动写入。需要 Claude.ai 账号。参见 https://code.claude.com/docs/en/voice-dictation",
+   "group": "other"
+  },
+  "voiceEnabled": {
+   "name_zh": "语音（旧写法）",
+   "zh": "voice.enabled 的旧别名；建议改用 voice 对象。需要 Claude.ai 账号。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "wheelScrollAccelerationEnabled": {
+   "name_zh": "滚轮滚动加速",
+   "zh": "在全屏渲染中，快速滚动时加快鼠标滚轮的滚动速度（v2.1.174+）。设为 false 时，每格滚轮的滚动幅度保持不变。参见 https://code.claude.com/docs/en/fullscreen#mouse-wheel-scrolling",
+   "group": "other"
+  },
+  "workflowKeywordTriggerEnabled": {
+   "name_zh": "关键词触发工作流",
+   "zh": "提示词中包含关键词 \"ultracode\" 时是否触发动态工作流。需要 Claude Code v2.1.157 或更高版本。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "workflowSizeGuideline": {
+   "name_zh": "工作流规模建议",
+   "zh": "设置 Claude 编写动态工作流时力求使用的代理数量。Claude Code 会把该值作为建议发送给 Claude，而不是强制上限。可选 \"unrestricted\"（默认，不发送任何建议）、\"small\"、\"medium\" 或 \"large\"。在 /config 中显示为 Dynamic workflow size，也可以用 /config workflowSizeGuideline=small 设置。需要 Claude Code v2.1.202 或更高版本。在 v2.1.203 或更高版本中，该建议对应的代理数量还会取代 Large workflow 警告的默认阈值。参见 https://code.claude.com/docs/en/workflows#set-a-size-guideline",
+   "group": "other"
+  },
+  "worktree": {
+   "name_zh": "worktree 会话",
+   "zh": "--worktree 会话的配置。参见 https://code.claude.com/docs/en/settings#worktree-settings",
+   "group": "other"
+  },
+  "wslInheritsWindowsSettings": {
+   "name_zh": "WSL 继承 Windows 设置",
+   "zh": "（仅限 Windows 托管设置）为 true 时，WSL 上的 Claude Code 除读取 /etc/claude-code 外，还会从 Windows 策略链读取托管设置，且 Windows 来源优先。只有写在 HKLM 注册表项或 C:\\Program Files\\ClaudeCode\\managed-settings.json 中时才生效，这两处都需要 Windows 管理员权限才能写入。若要让 HKCU 策略也在 WSL 上生效，还必须在 HKCU 中同样设置此标志。对原生 Windows 无效。参见 https://code.claude.com/docs/en/settings#available-settings",
+   "group": "other"
+  },
+  "xaaIdp": {
+   "name_zh": "XAA 身份提供方",
+   "zh": "XAA（SEP-990）IdP 连接。只需配置一次，所有启用了 XAA 的 MCP 服务器都会复用它。",
+   "group": "other"
+  }
+ },
+ "env": {
+  "ANTHROPIC_API_KEY": {
+   "name_zh": "Anthropic API 密钥",
+   "zh": "用于 Anthropic API 认证的 API 密钥。",
+   "group": "connection"
+  },
+  "ANTHROPIC_AUTH_TOKEN": {
+   "name_zh": "自定义认证令牌",
+   "zh": "API 请求中自定义 Authorization 请求头使用的 bearer 令牌。",
+   "group": "connection"
+  },
+  "ANTHROPIC_AWS_API_KEY": {
+   "name_zh": "AWS 平台 API 密钥",
+   "zh": "Claude Platform on AWS 的工作区 API 密钥，优先级高于 SigV4 认证。参见 https://code.claude.com/docs/en/claude-platform-on-aws#1-configure-aws-credentials",
+   "group": "connection"
+  },
+  "ANTHROPIC_AWS_BASE_URL": {
+   "name_zh": "AWS 平台端点 URL",
+   "zh": "覆盖 Claude Platform on AWS 的端点 URL。默认为 https://aws-external-anthropic.{region}.api.aws。参见 https://code.claude.com/docs/en/claude-platform-on-aws#route-through-a-corporate-proxy",
+   "group": "connection"
+  },
+  "ANTHROPIC_AWS_WORKSPACE_ID": {
+   "name_zh": "AWS 平台工作区 ID",
+   "zh": "Claude Platform on AWS 必填的工作区 ID，会作为 anthropic-workspace-id 请求头随每个请求发送。参见 https://code.claude.com/docs/en/claude-platform-on-aws#2-configure-claude-code",
+   "group": "connection"
+  },
+  "ANTHROPIC_BASE_URL": {
+   "name_zh": "API 基础 URL",
+   "zh": "覆盖 API 端点 URL，用于经由代理服务器或网关转发请求。",
+   "group": "connection"
+  },
+  "ANTHROPIC_BEDROCK_BASE_URL": {
+   "name_zh": "Bedrock 端点 URL",
+   "zh": "覆盖 Amazon Bedrock 的端点 URL。",
+   "group": "connection"
+  },
+  "ANTHROPIC_BEDROCK_MANTLE_BASE_URL": {
+   "name_zh": "Bedrock Mantle 端点 URL",
+   "zh": "覆盖 Bedrock Mantle 的端点 URL。",
+   "group": "connection"
+  },
+  "ANTHROPIC_BEDROCK_SERVICE_TIER": {
+   "name_zh": "Bedrock 服务层级",
+   "zh": "选择 Bedrock 服务层级，以 X-Amzn-Bedrock-Service-Tier 请求头发送。参见 https://code.claude.com/docs/en/amazon-bedrock#service-tiers",
+   "group": "connection"
+  },
+  "ANTHROPIC_BETAS": {
+   "name_zh": "附加 beta 请求头",
+   "zh": "API 请求中要附带的 beta 请求头取值，以逗号分隔。",
+   "group": "connection"
+  },
+  "ANTHROPIC_CUSTOM_HEADERS": {
+   "name_zh": "自定义请求头",
+   "zh": "API 请求的自定义 HTTP 请求头（以换行分隔的 'Name: Value' 键值对）。",
+   "group": "connection"
+  },
+  "ANTHROPIC_CUSTOM_MODEL_OPTION": {
+   "name_zh": "自定义模型选项",
+   "zh": "要作为一个条目加入模型选择器的自定义模型 ID。",
+   "group": "models"
+  },
+  "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": {
+   "name_zh": "自定义模型显示说明",
+   "zh": "自定义模型在模型选择器中显示的说明文字。",
+   "group": "models"
+  },
+  "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": {
+   "name_zh": "自定义模型显示名",
+   "zh": "自定义模型在模型选择器中显示的名称。",
+   "group": "models"
+  },
+  "ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES": {
+   "name_zh": "自定义模型能力",
+   "zh": "指定自定义模型能力标志的 JSON 对象。",
+   "group": "capabilities"
+  },
+  "ANTHROPIC_DEFAULT_FABLE_MODEL": {
+   "name_zh": "Fable 槽位模型",
+   "zh": "覆盖默认的 Fable 级模型 ID。参见 https://code.claude.com/docs/en/model-config#environment-variables",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION": {
+   "name_zh": "Fable 槽位显示说明",
+   "zh": "Fable 模型在模型选择器中显示的说明文字。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME": {
+   "name_zh": "Fable 槽位显示名",
+   "zh": "Fable 模型在模型选择器中显示的名称。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_FABLE_MODEL_SUPPORTED_CAPABILITIES": {
+   "name_zh": "Fable 槽位模型能力",
+   "zh": "固定的 Fable 模型所支持的能力列表，以逗号分隔。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "capabilities"
+  },
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL": {
+   "name_zh": "Haiku 槽位模型",
+   "zh": "覆盖默认的 Haiku 模型 ID。",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION": {
+   "name_zh": "Haiku 槽位显示说明",
+   "zh": "Haiku 模型在模型选择器中显示的说明文字。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME": {
+   "name_zh": "Haiku 槽位显示名",
+   "zh": "Haiku 模型在模型选择器中显示的名称。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES": {
+   "name_zh": "Haiku 槽位模型能力",
+   "zh": "固定的 Haiku 模型所支持的能力列表，以逗号分隔。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "capabilities"
+  },
+  "ANTHROPIC_DEFAULT_OPUS_MODEL": {
+   "name_zh": "Opus 槽位模型",
+   "zh": "覆盖默认的 Opus 模型 ID。",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION": {
+   "name_zh": "Opus 槽位显示说明",
+   "zh": "Opus 模型在模型选择器中显示的说明文字。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME": {
+   "name_zh": "Opus 槽位显示名",
+   "zh": "Opus 模型在模型选择器中显示的名称。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES": {
+   "name_zh": "Opus 槽位模型能力",
+   "zh": "固定的 Opus 模型所支持的能力列表，以逗号分隔。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "capabilities"
+  },
+  "ANTHROPIC_DEFAULT_SONNET_MODEL": {
+   "name_zh": "Sonnet 槽位模型",
+   "zh": "覆盖默认的 Sonnet 模型 ID。",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION": {
+   "name_zh": "Sonnet 槽位显示说明",
+   "zh": "Sonnet 模型在模型选择器中显示的说明文字。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME": {
+   "name_zh": "Sonnet 槽位显示名",
+   "zh": "Sonnet 模型在模型选择器中显示的名称。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "models"
+  },
+  "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES": {
+   "name_zh": "Sonnet 槽位模型能力",
+   "zh": "固定的 Sonnet 模型所支持的能力列表，以逗号分隔。参见 https://code.claude.com/docs/en/model-config#customize-pinned-model-display-and-capabilities",
+   "group": "capabilities"
+  },
+  "ANTHROPIC_FOUNDRY_API_KEY": {
+   "name_zh": "Foundry API 密钥",
+   "zh": "Microsoft Foundry 的认证密钥。",
+   "group": "connection"
+  },
+  "ANTHROPIC_FOUNDRY_AUTH_TOKEN": {
+   "name_zh": "Foundry 认证令牌",
+   "zh": "用于 Microsoft Foundry 认证的 bearer 令牌，例如 Microsoft Entra 访问令牌。Claude Code 会以 Authorization: Bearer 请求头发送它。优先级高于 ANTHROPIC_FOUNDRY_API_KEY 和 Azure 默认凭证链。需要 Claude Code v2.1.203 或更高版本。参见 https://code.claude.com/docs/en/microsoft-foundry",
+   "group": "connection"
+  },
+  "ANTHROPIC_FOUNDRY_BASE_URL": {
+   "name_zh": "Foundry 资源 URL",
+   "zh": "Microsoft Foundry 资源的 URL。",
+   "group": "connection"
+  },
+  "ANTHROPIC_FOUNDRY_RESOURCE": {
+   "name_zh": "Foundry 资源名",
+   "zh": "Microsoft Foundry 资源的名称。",
+   "group": "connection"
+  },
+  "ANTHROPIC_MODEL": {
+   "name_zh": "使用的模型",
+   "zh": "要使用的模型（例如 'claude-opus-4-1'、'claude-sonnet-4-5-20250514'、'opus'、'sonnet'、'haiku'）。",
+   "group": "models"
+  },
+  "ANTHROPIC_SMALL_FAST_MODEL": {
+   "name_zh": "小型快速模型",
+   "zh": "已弃用（请改用 ANTHROPIC_DEFAULT_HAIKU_MODEL）。用于后台任务和低复杂度任务的 Haiku 级模型（例如 'claude-3-5-haiku-latest'）。",
+   "group": "models"
+  },
+  "ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION": {
+   "name_zh": "Haiku 级模型 AWS 区域",
+   "zh": "覆盖 Bedrock 和 Bedrock Mantle 上 Haiku 级模型所用的 AWS 区域。在 Bedrock 上未设置 ANTHROPIC_DEFAULT_HAIKU_MODEL（或已弃用的 ANTHROPIC_SMALL_FAST_MODEL）时不起作用。参见 https://code.claude.com/docs/en/amazon-bedrock#3-configure-claude-code",
+   "group": "connection"
+  },
+  "ANTHROPIC_VERTEX_BASE_URL": {
+   "name_zh": "Vertex 端点 URL",
+   "zh": "覆盖 Google Cloud Agent Platform（原 Vertex AI）的端点 URL。用于自定义端点，或经由 LLM 网关转发请求时。",
+   "group": "connection"
+  },
+  "ANTHROPIC_VERTEX_PROJECT_ID": {
+   "name_zh": "Vertex GCP 项目 ID",
+   "zh": "发往 Google Cloud Agent Platform（原 Vertex AI）的请求所用的 GCP 项目 ID。会被 GCLOUD_PROJECT、GOOGLE_CLOUD_PROJECT 或 GOOGLE_APPLICATION_CREDENTIALS 凭证文件中的项目覆盖。",
+   "group": "connection"
+  },
+  "ANTHROPIC_WORKSPACE_ID": {
+   "name_zh": "联合身份工作区 ID",
+   "zh": "用于工作负载身份联合的工作区 ID。当联合规则覆盖多个工作区时，用它把签发的令牌限定到某一个工作区。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "API_FORCE_IDLE_TIMEOUT": {
+   "name_zh": "流式响应空闲超时",
+   "zh": "覆盖流式响应默认 5 分钟的空闲超时（设为 0 则禁用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "API_TIMEOUT_MS": {
+   "name_zh": "API 请求超时",
+   "zh": "API 请求的超时时间，单位毫秒（默认：600000，即 10 分钟；最大值：2147483647）。在慢速网络下或经由代理服务器转发时出现请求超时，可以调大此值。超过最大值会使底层计时器溢出，导致请求立即失败。",
+   "group": "connection"
+  },
+  "AWS_BEARER_TOKEN_BEDROCK": {
+   "name_zh": "Bedrock bearer 令牌",
+   "zh": "用于 Bedrock API 认证的 bearer 令牌。",
+   "group": "connection"
+  },
+  "AWS_REGION": {
+   "name_zh": "AWS 区域",
+   "zh": "Amazon Bedrock 和 Claude Platform on AWS 请求所用的 AWS 区域（例如 us-east-1）。参见 https://code.claude.com/docs/en/amazon-bedrock#3-configure-claude-code",
+   "group": "connection"
+  },
+  "BASH_DEFAULT_TIMEOUT_MS": {
+   "name_zh": "Bash 默认超时",
+   "zh": "bash 命令的默认超时时间，单位毫秒（默认：120000）。",
+   "group": "other"
+  },
+  "BASH_MAX_OUTPUT_LENGTH": {
+   "name_zh": "Bash 输出最大字符数",
+   "zh": "bash 输出被截断前允许的最大字符数。",
+   "group": "output_context"
+  },
+  "BASH_MAX_TIMEOUT_MS": {
+   "name_zh": "Bash 最大超时",
+   "zh": "bash 命令的最大超时时间，单位毫秒（默认：600000）。",
+   "group": "other"
+  },
+  "BETA_TRACING_ENDPOINT": {
+   "name_zh": "Beta 追踪端点",
+   "zh": "与 ENABLE_BETA_TRACING_DETAILED=1 一起使用时，用于启用详细 beta 追踪 span（例如 claude_code.hook）的端点。参见 https://code.claude.com/docs/en/monitoring-usage#traces-beta",
+   "group": "traffic_privacy"
+  },
+  "CCR_FORCE_BUNDLE": {
+   "name_zh": "强制本地仓库打包",
+   "zh": "在使用 --remote 调用时，强制将本地仓库打包。",
+   "group": "other"
+  },
+  "CLAUDE_AFK_COUNTDOWN_MS": {
+   "name_zh": "离开倒计时显示时机",
+   "zh": "AskUserQuestion 对话框无人应答时，在自动继续之前多少毫秒开始在屏幕上显示倒计时。默认 20000（20 秒）。另见 CLAUDE_AFK_TIMEOUT_MS。需要 Claude Code v2.1.198 或更高版本。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_AFK_TIMEOUT_MS": {
+   "name_zh": "无人应答自动继续",
+   "zh": "AskUserQuestion 对话框无人应答时，空闲多少毫秒后不再等你、自动继续。默认 60000（60 秒）。需要 Claude Code v2.1.198 或更高版本。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS": {
+   "name_zh": "禁用 SDK 内置子代理",
+   "zh": "在 Agent SDK 中禁用内置的子代理类型。",
+   "group": "other"
+  },
+  "CLAUDE_AGENT_SDK_MCP_NO_PREFIX": {
+   "name_zh": "SDK MCP 工具名无前缀",
+   "zh": "在 Agent SDK 中，MCP 工具名不加 'mcp__<server>__' 前缀。",
+   "group": "other"
+  },
+  "CLAUDE_ASYNC_AGENT_STALL_TIMEOUT_MS": {
+   "name_zh": "后台子代理停滞超时",
+   "zh": "后台子代理的停滞超时时间，单位毫秒（默认 600000）。每收到一次流式进度事件，计时器就会重置；如果在该时间窗口内没有任何进度，子代理会被中止、任务标记为失败，并把已有的部分结果交给父级。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_AUTO_BACKGROUND_TASKS": {
+   "name_zh": "强制自动转入后台",
+   "zh": "强制启用任务自动转入后台运行。",
+   "group": "other"
+  },
+  "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": {
+   "name_zh": "自动压缩触发百分比",
+   "zh": "触发自动压缩的上下文容量百分比阈值（1-100）。",
+   "group": "output_context"
+  },
+  "CLAUDE_AX_SCREEN_READER": {
+   "name_zh": "屏幕阅读器模式",
+   "zh": "设为 1 时输出适合屏幕阅读器的内容：纯文本，没有装饰性边框或动画。设为 0 时，即使 axScreenReader 为 true 也强制关闭屏幕阅读器模式。--ax-screen-reader 参数优先。需要 Claude Code v2.1.181 或更高版本。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": {
+   "name_zh": "Bash 后回到项目目录",
+   "zh": "每条 bash 命令执行后回到原始项目目录。",
+   "group": "other"
+  },
+  "CLAUDE_CLIENT_PRESENCE_FILE": {
+   "name_zh": "用户在场标记文件",
+   "zh": "一个文件的路径，该文件存在即表示用户在场；文件存在期间会跳过移动端推送通知（v2.1.181+）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ACCESSIBILITY": {
+   "name_zh": "无障碍光标",
+   "zh": "保持原生光标可见，便于屏幕放大镜和辅助工具使用。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": {
+   "name_zh": "附加目录 CLAUDE.md",
+   "zh": "从附加目录中加载 CLAUDE.md 记忆文件。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT": {
+   "name_zh": "全屏模式逐帧重绘",
+   "zh": "在全屏模式下强制每一帧都整屏重绘。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT": {
+   "name_zh": "始终发送推理强度",
+   "zh": "对所有模型都发送 effort 参数，而不仅限于默认启用推理强度的模型。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "capabilities"
+  },
+  "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": {
+   "name_zh": "凭证助手刷新间隔",
+   "zh": "凭证助手的刷新间隔，单位毫秒。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_ARTIFACT_AUTO_OPEN": {
+   "name_zh": "自动打开 Artifact",
+   "zh": "设为 0 时，新建 artifact 后不再自动打开浏览器。参见 https://code.claude.com/docs/en/artifacts#create-an-artifact",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ATTRIBUTION_HEADER": {
+   "name_zh": "归属信息块",
+   "zh": "在系统提示词中加入归属信息块。",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_AUTO_COMPACT_WINDOW": {
+   "name_zh": "压缩计算上下文容量",
+   "zh": "压缩计算所用的上下文容量，单位 token。",
+   "group": "output_context"
+  },
+  "CLAUDE_CODE_AUTO_CONNECT_IDE": {
+   "name_zh": "自动连接 IDE",
+   "zh": "覆盖自动连接 IDE 的行为。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_AWS_CHAIN_RESOLVE_TIMEOUT_MS": {
+   "name_zh": "AWS 凭证链解析超时",
+   "zh": "Claude Code 等待 AWS 默认凭证提供链给出凭证的时间，单位毫秒，超时后请求失败并报 \"AWS default-chain credential resolve timed out\"（默认：60000）。如果凭证链中某一步确实需要更久，例如通过 aws-vault 之类的包装工具进行带 MFA 的浏览器 SSO 登录，可以调大此值。凡是 Claude Code 使用默认凭证链签名的地方都适用。需要 Claude Code v2.1.207 或更高版本。参见 https://code.claude.com/docs/en/amazon-bedrock#credential-caching-and-resolution-timeout",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_BRIDGE_SESSION_ID": {
+   "name_zh": "远程控制会话 ID",
+   "zh": "会话存在活动的 Remote Control 连接时，会自动在 Bash 工具和钩子命令的子进程中设置，连接结束后移除。取值为 session_ 形式的会话 ID，与该会话 claude.ai/code URL 中的标识符相同，脚本可以借此链接回运行它的会话。需要 Claude Code v2.1.199 或更高版本。参见 https://code.claude.com/docs/en/remote-control",
+   "group": "other"
+  },
+  "CLAUDE_CODE_CERT_STORE": {
+   "name_zh": "CA 证书来源",
+   "zh": "CA 证书的来源（以逗号分隔：'bundled'、'system'）。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_CHILD_SESSION": {
+   "name_zh": "嵌套子会话标记",
+   "zh": "Claude Code 会在嵌套子进程（Bash、PowerShell、Monitor、钩子命令、状态栏命令）中将其设为 1，用于区分嵌套会话和在 IDE 终端中启动的顶层 claude（v2.1.172+）。以这种方式启动的嵌套交互式 claude TUI 不会出现在 --resume、--continue、上箭头历史记录以及 claude agents 列表中；非交互的 claude -p 会话仍会持久化（可用 CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 覆盖）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_CLIENT_CERT": {
+   "name_zh": "mTLS 客户端证书",
+   "zh": "双向 TLS 所用客户端证书的文件路径。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_CLIENT_KEY": {
+   "name_zh": "mTLS 客户端私钥",
+   "zh": "双向 TLS 所用客户端私钥的文件路径。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE": {
+   "name_zh": "客户端私钥口令",
+   "zh": "加密客户端私钥的口令。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_DEBUG_LOG_LEVEL": {
+   "name_zh": "调试日志级别",
+   "zh": "调试日志的详细级别。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DEBUG_LOGS_DIR": {
+   "name_zh": "调试日志文件路径",
+   "zh": "覆盖调试日志文件的路径。虽然名字里有 DIR，但它是文件路径，不是目录。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_1M_CONTEXT": {
+   "name_zh": "禁用 1M 上下文",
+   "zh": "禁用 1M 上下文窗口的模型。",
+   "group": "output_context"
+  },
+  "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": {
+   "name_zh": "禁用自适应思考",
+   "zh": "禁用自适应推理。",
+   "group": "capabilities"
+  },
+  "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": {
+   "name_zh": "禁用顾问工具",
+   "zh": "禁用服务端的 advisor（顾问）工具。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "models"
+  },
+  "CLAUDE_CODE_DISABLE_AGENT_VIEW": {
+   "name_zh": "禁用后台代理视图",
+   "zh": "关闭后台代理和代理视图（claude agents、--bg、/background 以及按需启动的 supervisor）。等同于 disableAgentView 设置。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN": {
+   "name_zh": "禁用备用屏幕",
+   "zh": "禁用备用屏幕缓冲区渲染。设为 1 时，对话保留在终端原生的回滚缓冲区中，而不是使用全屏渲染器。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_ARTIFACT": {
+   "name_zh": "禁用 Artifact 工具",
+   "zh": "禁用 Artifact 工具。等同于设置 disableArtifact。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_ATTACHMENTS": {
+   "name_zh": "禁用附件处理",
+   "zh": "禁用附件处理。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_AUTO_MEMORY": {
+   "name_zh": "禁用自动记忆",
+   "zh": "禁用自动记忆功能。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": {
+   "name_zh": "禁用后台任务",
+   "zh": "禁用所有后台任务功能。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_BEDROCK_CONTENT_TYPE_GUARD": {
+   "name_zh": "跳过 Bedrock 内容类型检查",
+   "zh": "设为 1 时，跳过对 Amazon Bedrock 流式响应是否带有 application/vnd.amazon.eventstream content-type 的检查。未设置此变量时，content-type 不同的响应会失败，错误信息中会给出该 content-type，这说明有网关或代理服务器在转换响应。仅当网关改写了 Content-Type 请求头、但原样透传二进制 event-stream 响应体时才设置它；如果响应体本身被转换过，请求会改为以 \"Truncated event message received\" 失败。需要 Claude Code v2.1.208 或更高版本。参见 https://code.claude.com/docs/en/amazon-bedrock#streaming-errors-behind-a-gateway-or-proxy",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": {
+   "name_zh": "禁用后台任务交接",
+   "zh": "设为 1 时，当 supervisor 停止、重启或更新某个后台会话的进程时，会停止该会话中正在运行的后台 shell 命令、动态工作流以及（自 v2.1.198 起）后台子代理，而不是把它们交接给该会话的下一个进程。只影响这一交接；CLAUDE_DISABLE_ADOPT 会同时关闭两者。需要 Claude Code v2.1.196 或更高版本。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP": {
+   "name_zh": "禁用后台 shell 内存回收",
+   "zh": "未写入官方文档。禁用在内存压力下自动回收空闲后台 shell 命令（v2.1.193 新增）。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_BUNDLED_SKILLS": {
+   "name_zh": "禁用内置技能",
+   "zh": "禁用 Claude Code 自带的技能和工作流（插件和项目 .claude/skills 不受影响）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_CLAUDE_MDS": {
+   "name_zh": "禁用 CLAUDE.md",
+   "zh": "不加载 CLAUDE.md 记忆文件。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_CRON": {
+   "name_zh": "禁用定时任务",
+   "zh": "禁用计划任务/cron 任务。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": {
+   "name_zh": "移除 beta 请求头",
+   "zh": "从 API 请求中去掉 anthropic-beta 请求头。参见 https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#21123",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS": {
+   "name_zh": "禁用 Explore/Plan 子代理",
+   "zh": "设为 1 时禁用内置的 Explore 和 Plan 子代理。需要 Claude Code v2.1.198 或更高版本。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_FAST_MODE": {
+   "name_zh": "禁用快速模式",
+   "zh": "禁用快速模式开关。",
+   "group": "capabilities"
+  },
+  "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": {
+   "name_zh": "禁用反馈问卷",
+   "zh": "禁用会话质量反馈问卷。",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING": {
+   "name_zh": "禁用文件检查点",
+   "zh": "禁用 /rewind 所用的文件检查点。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS": {
+   "name_zh": "移除 Git 指引",
+   "zh": "从系统提示词中移除 git 提交和 PR 工作流的指引。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_LEGACY_MODEL_REMAP": {
+   "name_zh": "禁用旧模型名重映射",
+   "zh": "阻止自动重映射旧版模型名称。",
+   "group": "models"
+  },
+  "CLAUDE_CODE_DISABLE_MOUSE": {
+   "name_zh": "禁用鼠标追踪",
+   "zh": "在全屏模式下禁用鼠标追踪。参见 https://code.claude.com/docs/en/fullscreen#keep-native-text-selection",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_MOUSE_CLICKS": {
+   "name_zh": "禁用鼠标点击",
+   "zh": "在全屏模式下禁用鼠标点击/拖动/悬停，但保留滚轮滚动（需要 v2.1.195+）。两个变量都设置时，以 CLAUDE_CODE_DISABLE_MOUSE 为准。参见 https://code.claude.com/docs/en/fullscreen#keep-native-text-selection",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": {
+   "name_zh": "禁用非必要流量",
+   "zh": "通过一个设置同时禁用自动更新检查、遥测和反馈。",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": {
+   "name_zh": "禁用非流式回退",
+   "zh": "禁止回退到非流式 API 模式。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_DISABLE_NOTIFICATION_PRESENCE_CHECK": {
+   "name_zh": "终端聚焦时仍通知",
+   "zh": "设为 1 时，即使焦点在终端上，PushNotification 工具也会发送桌面通知。需要 Claude Code v2.1.193 或更高版本。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": {
+   "name_zh": "跳过官方市场自动安装",
+   "zh": "跳过自动安装官方插件市场的插件。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_POLICY_SKILLS": {
+   "name_zh": "跳过系统策略技能",
+   "zh": "跳过加载系统级策略技能。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": {
+   "name_zh": "禁用终端标题更新",
+   "zh": "禁止更新终端标题。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_THINKING": {
+   "name_zh": "强制禁用思考",
+   "zh": "强制禁用扩展思考。",
+   "group": "capabilities"
+  },
+  "CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL": {
+   "name_zh": "禁用虚拟滚动",
+   "zh": "在全屏模式下禁用虚拟滚动。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_DISABLE_WORKFLOWS": {
+   "name_zh": "禁用工作流",
+   "zh": "设为 1 时禁用工作流。等同于 disableWorkflows 设置。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_EFFORT_LEVEL": {
+   "name_zh": "推理强度",
+   "zh": "推理强度级别。",
+   "group": "capabilities"
+  },
+  "CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT": {
+   "name_zh": "追加子代理提示词",
+   "zh": "设为 1 时，允许在每个子代理系统提示词的末尾追加额外文本。--append-subagent-system-prompt 参数会提供要追加的文本并自动设置此变量，因此无需自己设置。需要 Claude Code v2.1.205 或更高版本。参见 https://code.claude.com/docs/en/sub-agents",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ENABLE_AUTO_MODE": {
+   "name_zh": "云平台启用自动模式",
+   "zh": "设为 1 时，在 Amazon Bedrock、Google Cloud Vertex AI 和 Microsoft Foundry 上也可以使用自动模式（需要 v2.1.158+；对 Anthropic API 无效，自动模式在那里默认可用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ENABLE_AWAY_SUMMARY": {
+   "name_zh": "离开摘要",
+   "zh": "覆盖会话回顾/离开摘要功能是否可用。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ENABLE_BACKGROUND_PLUGIN_REFRESH": {
+   "name_zh": "后台刷新插件",
+   "zh": "在轮次之间刷新插件。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ENABLE_FEEDBACK_SURVEY_FOR_OTEL": {
+   "name_zh": "OTel 反馈问卷收集",
+   "zh": "为企业启用通过 OpenTelemetry 收集反馈问卷。",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING": {
+   "name_zh": "细粒度工具流式输出",
+   "zh": "强制启用细粒度的工具输出流式传输。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": {
+   "name_zh": "网关模型发现",
+   "zh": "当 ANTHROPIC_BASE_URL 指向兼容 Anthropic 的网关时，启用从 LLM 网关的 /v1/models 端点发现模型。",
+   "group": "models"
+  },
+  "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": {
+   "name_zh": "提示词建议",
+   "zh": "启用提示词建议。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING": {
+   "name_zh": "非交互文件检查点",
+   "zh": "为非交互的 CLI 运行启用文件检查点，使 `claude -p --resume <session-id> --rewind-files <checkpoint-uuid>` 能够回退文件。启用 enable_file_checkpointing（Python）或 enableFileCheckpointing（TypeScript）时，Agent SDK 会在内部设置它；单独使用 CLI 时从不会设置。没有它时，非交互回退会以 \"File rewinding is not enabled\" 失败。参见 https://code.claude.com/docs/en/agent-sdk/file-checkpointing",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ENABLE_TASKS": {
+   "name_zh": "非交互任务跟踪",
+   "zh": "在非交互模式下启用任务跟踪。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_ENABLE_TELEMETRY": {
+   "name_zh": "启用遥测",
+   "zh": "设为 1 时启用遥测数据收集。所有 OpenTelemetry 集成都需要它。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": {
+   "name_zh": "增强遥测 beta",
+   "zh": "启用增强遥测（追踪）beta。也接受 ENABLE_ENHANCED_TELEMETRY_BETA。参见 https://code.claude.com/docs/en/monitoring-usage#traces-beta",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_EXIT_AFTER_STOP_DELAY": {
+   "name_zh": "停止后自动退出延迟",
+   "zh": "停止后自动退出前的等待时间，单位毫秒。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": {
+   "name_zh": "实验性代理团队",
+   "zh": "启用实验性的代理团队功能。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_EXTRA_BODY": {
+   "name_zh": "附加请求体",
+   "zh": "要合并进每个 API 请求体的 JSON 对象。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS": {
+   "name_zh": "读文件 token 上限",
+   "zh": "文件读取操作的 token 上限。",
+   "group": "output_context"
+  },
+  "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE": {
+   "name_zh": "强制持久化嵌套会话",
+   "zh": "设为 1 时，取消对嵌套交互式 claude TUI 会话的自动排除，使其出现在 --resume、--continue、上箭头历史记录和 claude agents 列表中（需要 v2.1.172+）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_FORCE_STRIKETHROUGH": {
+   "name_zh": "强制删除线渲染",
+   "zh": "设为 1 时，当终端支持删除线但未被自动检测到（例如通过 SSH 连接且未转发 TERM_PROGRAM）时，强制将 Claude 回复中的 ~~text~~ 渲染为删除线。未设置时，未被检测到的终端会直接显示 ~~ 标记。需要 Claude Code v2.1.186 或更高版本。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_FORCE_SYNC_OUTPUT": {
+   "name_zh": "强制同步输出",
+   "zh": "强制同步刷新输出。设为 1 时，在自动检测漏掉的终端（例如 Emacs eat）上强制启用同步输出。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_FORK_SUBAGENT": {
+   "name_zh": "派生子代理进程",
+   "zh": "在非交互会话中以 fork 方式派生子代理进程。参见 https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#21120",
+   "group": "other"
+  },
+  "CLAUDE_CODE_FORWARD_SUBAGENT_TEXT": {
+   "name_zh": "转发子代理文本",
+   "zh": "设为 1 时，在 claude -p --output-format stream-json 的输出中包含子代理的文本和思考块，效果与 --forward-subagent-text 参数相同。当某个外部程序调用 claude、自己无法传入该参数时使用此变量。与该参数不同（该参数在“非交互模式且输出为 stream-json”以外的场景会报错退出），此变量在这些场景下会被忽略，因此在整个进程范围设置它时，嵌套调用仍能正常工作。需要 Claude Code v2.1.211 或更高版本。参见 https://code.claude.com/docs/en/sub-agents",
+   "group": "other"
+  },
+  "CLAUDE_CODE_GIT_BASH_PATH": {
+   "name_zh": "Git Bash 路径",
+   "zh": "Git Bash 可执行文件的路径（仅限 Windows）。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_GLOB_HIDDEN": {
+   "name_zh": "Glob 包含隐藏文件",
+   "zh": "Glob 结果中包含点文件/隐藏文件。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_GLOB_NO_IGNORE": {
+   "name_zh": "Glob 忽略 .gitignore",
+   "zh": "Glob 结果不遵循 .gitignore 规则。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_GLOB_TIMEOUT_SECONDS": {
+   "name_zh": "Glob 超时",
+   "zh": "Glob 工具的超时时间，单位秒（默认：20-60）。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_HIDE_CWD": {
+   "name_zh": "隐藏工作目录",
+   "zh": "在启动 logo 中隐藏工作目录。参见 https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#21126",
+   "group": "other"
+  },
+  "CLAUDE_CODE_IDE_HOST_OVERRIDE": {
+   "name_zh": "IDE 连接地址",
+   "zh": "覆盖 IDE 的连接地址。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL": {
+   "name_zh": "跳过 IDE 扩展自动安装",
+   "zh": "跳过 IDE 扩展的自动安装。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_IDE_SKIP_VALID_CHECK": {
+   "name_zh": "跳过 IDE 锁文件校验",
+   "zh": "跳过 IDE 锁文件的校验。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": {
+   "name_zh": "子代理并发上限",
+   "zh": "一个会话中最多可同时运行多少个子代理，超过后 Agent 工具会拒绝再启动新的子代理（默认：20）。只接受以普通数字书写的正整数，其他值都会被忽略，因此该变量只能调整上限，不能取消上限。需要 Claude Code v2.1.217 或更高版本。参见 https://code.claude.com/docs/en/sub-agents#concurrent-subagent-limit",
+   "group": "other"
+  },
+  "CLAUDE_CODE_MAX_CONTEXT_TOKENS": {
+   "name_zh": "上下文窗口大小",
+   "zh": "覆盖上下文窗口大小（单位：token）。",
+   "group": "output_context"
+  },
+  "CLAUDE_CODE_MAX_OUTPUT_TOKENS": {
+   "name_zh": "最大输出 token 数",
+   "zh": "每次 API 请求的最大输出 token 数。",
+   "group": "output_context"
+  },
+  "CLAUDE_CODE_MAX_RETRIES": {
+   "name_zh": "API 最大重试次数",
+   "zh": "API 请求的最大重试次数（默认：10）。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": {
+   "name_zh": "子代理嵌套层数",
+   "zh": "主对话之下允许的子代理层数（默认：1）。默认情况下子代理不能再启动自己的子代理；设为 2 或更高即可允许。只接受以普通数字书写的正整数，其他值都会被忽略，因此只能调高该限制，不能关闭它。需要 Claude Code v2.1.217 或更高版本。参见 https://code.claude.com/docs/en/sub-agents#let-subagents-spawn-their-own-subagents",
+   "group": "other"
+  },
+  "CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION": {
+   "name_zh": "单会话子代理总数上限",
+   "zh": "一个会话通过 Agent 工具最多可启动的子代理数量（默认：200）。达到上限后，再启动子代理会失败，并返回错误提示 Claude 直接完成剩余工作。只接受以普通数字书写的正整数，没有上限；不接受科学计数法或带数字分隔符的写法。其他值都会被忽略并使用默认值，因此只能调高上限，不能关闭它。需要 Claude Code v2.1.212 或更高版本。参见 https://code.claude.com/docs/en/sub-agents#session-subagent-limit",
+   "group": "other"
+  },
+  "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY": {
+   "name_zh": "工具并行执行上限",
+   "zh": "可并行执行的工具调用最大数量（默认：10）。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_MAX_TURNS": {
+   "name_zh": "最大代理轮次",
+   "zh": "未显式传入限制时，限制代理执行的轮次数量。等同于 --max-turns，且 --max-turns 优先。非正整数会在启动时被拒绝。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION": {
+   "name_zh": "单会话网页搜索上限",
+   "zh": "一个会话最多可调用 WebSearch 的总次数（默认：200）。达到上限后，后续 WebSearch 调用会返回提示，让 Claude 用已收集到的信息继续工作。只接受正整数，没有上限。其他值都会被忽略并使用默认值，因此只能调高上限，不能关闭它。需要 Claude Code v2.1.212 或更高版本。参见 https://code.claude.com/docs/en/tools-reference#websearch-tool-behavior",
+   "group": "other"
+  },
+  "CLAUDE_CODE_MCP_ALLOWLIST_ENV": {
+   "name_zh": "MCP 环境变量隔离",
+   "zh": "将 MCP 服务器的环境隔离为仅包含允许列表中的变量。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS": {
+   "name_zh": "MCP 调用自动转后台",
+   "zh": "仍在运行的 MCP 工具调用经过多少毫秒后转为后台任务（默认：120000，即 2 分钟）。设为 0 可关闭自动转入后台。需要 Claude Code v2.1.212 或更高版本。参见 https://code.claude.com/docs/en/mcp#automatic-backgrounding-of-long-tool-calls",
+   "group": "other"
+  },
+  "CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT": {
+   "name_zh": "MCP 工具空闲超时",
+   "zh": "MCP 工具调用的空闲超时（毫秒）。当 stdio、HTTP、SSE、WebSocket 或 claude.ai 连接器 MCP 服务器在这段时间内既没有响应也没有发送进度通知时，工具调用会直接报错中止，而不是一直等到整体的 MCP_TOOL_TIMEOUT。它会覆盖各传输方式的默认值：网络服务器为 300000（5 分钟），stdio 服务器为 1800000（30 分钟）。设为 0 可关闭空闲检查。小于 1000 的值会被提高到 1 秒，且该值不会超过实际生效的 MCP_TOOL_TIMEOUT。如果 .mcp.json 中某个服务器单独设置的 timeout 不小于 1000，该服务器的空闲窗口会被提高到至少等于这个 timeout。不适用于 IDE 服务器和 SDK 进程内服务器。需要 Claude Code v2.1.187 或更高版本。v2.1.203 之前，stdio 服务器不受空闲超时限制。参见 https://code.claude.com/docs/en/mcp",
+   "group": "other"
+  },
+  "CLAUDE_CODE_NATIVE_CURSOR": {
+   "name_zh": "使用终端原生光标",
+   "zh": "设为 1 时，在输入插入点显示终端自身的光标，而不是绘制的方块光标。该光标会遵循终端的闪烁、形状和焦点设置。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_NEW_INIT": {
+   "name_zh": "交互式 /init 流程",
+   "zh": "使用交互式的 /init 设置流程。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_NO_FLICKER": {
+   "name_zh": "全屏防闪烁渲染",
+   "zh": "启用全屏渲染模式，以减少闪烁。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_OAUTH_REFRESH_TOKEN": {
+   "name_zh": "OAuth 刷新令牌",
+   "zh": "OAuth 刷新令牌。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_OAUTH_SCOPES": {
+   "name_zh": "OAuth 授权范围",
+   "zh": "OAuth 授权范围（以空格分隔）。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_OAUTH_TOKEN": {
+   "name_zh": "OAuth 访问令牌",
+   "zh": "OAuth 访问令牌。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_OTEL_CONTENT_MAX_LENGTH": {
+   "name_zh": "OTel 内容属性长度上限",
+   "zh": "承载内容的 OpenTelemetry 属性（模型回复、工具内容、系统提示词、原始 API 请求/响应体）的最大长度，包含截断标记在内，按 UTF-16 码元计算（默认：61440，即 60 KB）。仅当你的遥测后端能接受超过 64 KB 的属性值时才调高；也可以调低以减少遥测数据量。需要 Claude Code v2.1.214 或更高版本。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_OTEL_DIAG_STDERR": {
+   "name_zh": "OTel 诊断输出到 stderr",
+   "zh": "设为 1 时，将 OpenTelemetry 导出器的诊断错误写入 stderr（否则只在 --debug 下显示）。需要 v2.1.179+。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_OTEL_FLUSH_TIMEOUT_MS": {
+   "name_zh": "OTel 刷新超时",
+   "zh": "OpenTelemetry span 刷新（flush）超时，单位毫秒（默认：5000）。",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS": {
+   "name_zh": "OTel 请求头助手刷新间隔",
+   "zh": "OpenTelemetry 请求头助手的刷新间隔，单位毫秒。",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_OTEL_SHUTDOWN_TIMEOUT_MS": {
+   "name_zh": "OTel 关闭超时",
+   "zh": "OpenTelemetry 关闭超时，单位毫秒（默认：2000）。",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE": {
+   "name_zh": "包管理器自动更新",
+   "zh": "启用通过包管理器的自动更新。设置后，Claude Code 会在 Homebrew/WinGet 上于后台运行升级命令，并提示重启。",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_PERFORCE_MODE": {
+   "name_zh": "Perforce 写保护模式",
+   "zh": "启用 Perforce 写保护模式。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_PLUGIN_CACHE_DIR": {
+   "name_zh": "插件根目录",
+   "zh": "覆盖插件根目录。虽然名字里有 CACHE，但它设置的是上级目录而不是缓存本身：插件市场和插件缓存都位于该路径下的子目录中。默认为 ~/.claude/plugins。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS": {
+   "name_zh": "插件市场 Git 超时",
+   "zh": "插件市场 Git 操作的超时时间，单位毫秒（默认：120000）。参见 https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#2151",
+   "group": "other"
+  },
+  "CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE": {
+   "name_zh": "更新失败时保留缓存",
+   "zh": "更新失败时保留插件缓存。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_PLUGIN_PREFER_HTTPS": {
+   "name_zh": "插件优先用 HTTPS 克隆",
+   "zh": "设为 1 时，以 HTTPS 而不是 SSH 克隆 GitHub owner/repo 形式的插件来源。适用于 CI 运行器、容器，或没有为 github.com 配置 SSH 密钥的环境。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_PLUGIN_SEED_DIR": {
+   "name_zh": "预置插件目录",
+   "zh": "预先填充好插件的目录路径（可为多个）。参见 https://code.claude.com/docs/en/plugin-marketplaces#pre-populate-plugins-for-containers",
+   "group": "other"
+  },
+  "CLAUDE_CODE_POWERSHELL_RESPECT_EXECUTION_POLICY": {
+   "name_zh": "遵循 PowerShell 执行策略",
+   "zh": "设为 1 时，Claude Code 为工具调用、钩子和状态栏命令启动 PowerShell 时不再传入 -ExecutionPolicy Bypass。默认情况下 Claude Code 会绕过执行策略，以便 .ps1 脚本能在默认策略为 Restricted 的 Windows 上运行。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": {
+   "name_zh": "-p 退出等待后台上限",
+   "zh": "`claude -p` 退出时等待后台子代理的最长时间，单位毫秒（默认 10 分钟；设为 0 表示无限等待，v2.1.182 新增）。参见 https://code.claude.com/docs/en/headless#background-tasks-at-exit",
+   "group": "other"
+  },
+  "CLAUDE_CODE_PROCESS_WRAPPER": {
+   "name_zh": "进程启动包装器",
+   "zh": "让 Claude Code 从自身二进制启动的进程（例如承载代理视图会话的后台服务）通过企业启动器运行，启动器以 argv 前缀形式给出，例如 /opt/corp/launcher。请在用户设置或托管设置的 env 块中设置它，而不是在 shell 中 export，这样脱离运行的后台服务才能继承它；项目设置和本地设置不能设置它。等同于 processWrapper 设置（该设置需要 Claude Code v2.1.210 或更高版本）；两者同时设置时以本变量为准。VS Code 扩展通过自己的 claudeProcessWrapper 设置单独配置启动器。在 Windows 上会被忽略。需要 Claude Code v2.1.208 或更高版本。参见 https://code.claude.com/docs/en/corporate-launcher",
+   "group": "other"
+  },
+  "CLAUDE_CODE_PROPAGATE_TRACEPARENT": {
+   "name_zh": "传递 traceparent 请求头",
+   "zh": "使用自定义 ANTHROPIC_BASE_URL 时，在 API 请求中传递 W3C traceparent 请求头。参见 https://code.claude.com/docs/en/monitoring-usage#traces-beta",
+   "group": "traffic_privacy"
+  },
+  "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": {
+   "name_zh": "提供商路由由宿主管理",
+   "zh": "表示由宿主应用管理 API 提供商的路由。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_PROXY_RESOLVES_HOSTS": {
+   "name_zh": "由代理服务器解析 DNS",
+   "zh": "允许代理服务器负责 DNS 解析。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_REMOTE": {
+   "name_zh": "远程 Web 环境标识",
+   "zh": "表示这是远程 Web 环境中的会话。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_REMOTE_SESSION_ID": {
+   "name_zh": "远程会话 ID",
+   "zh": "远程会话的云端会话标识符。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_RESUME_INTERRUPTED_TURN": {
+   "name_zh": "自动续跑中断的轮次",
+   "zh": "自动从轮次中途的中断处恢复。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_RESUME_INTERRUPTED_TURN_MAX_AGE_MS": {
+   "name_zh": "中断续跑最长时效",
+   "zh": "对于在轮次中途结束的会话，恢复时若要自动继续，其会话记录中最后一条消息的最大时长（毫秒）。最后一条消息早于该界限时，Claude Code 会同时跳过 CLAUDE_CODE_RESUME_INTERRUPTED_TURN 的自动续跑和注入的 CLAUDE_CODE_RESUME_PROMPT 续写消息，会话以空闲状态启动，由你显式继续。未设置或为 0 表示不限制；负数或非数字值则按一小时限制。长时间运行代理的启动脚本可以设置它，避免基于旧会话记录重启时重新执行过时的提示词。当 Claude Code 重启一个崩溃的、从交互式会话继承对话的代理视图会话时，它自己会设置一小时的界限。需要 Claude Code v2.1.211 或更高版本。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_RESUME_PROMPT": {
+   "name_zh": "中断续跑提示语",
+   "zh": "覆盖恢复在轮次中途结束的会话时注入的续写消息（默认为 \"Continue from where you left off.\"）。空字符串表示使用默认值。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_RETRY_WATCHDOG": {
+   "name_zh": "容量错误无限重试",
+   "zh": "设为 1 时，适用于无人值守的会话（评测框架、CI、远程 worker）：对 429/529 容量错误无限重试，退避间隔最长 5 分钟，而不是在达到 CLAUDE_CODE_MAX_RETRIES 后失败。需要 v2.1.186+。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_SAFE_MODE": {
+   "name_zh": "安全模式",
+   "zh": "设为 1 时以安全模式启动：不加载 CLAUDE.md、技能、插件、钩子、MCP 服务器、自定义命令和代理、输出风格、工作流、自定义主题、自定义快捷键、状态栏和文件建议命令、LSP 服务器以及自动记忆，用于排查损坏的配置。托管设置中的策略仍然生效。等同于传入 --safe-mode；直接启动的子进程会继承该变量。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SCRIPT_CAPS": {
+   "name_zh": "脚本调用限制",
+   "zh": "脚本调用限制（JSON 对象）。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SCROLL_SPEED": {
+   "name_zh": "鼠标滚轮滚动倍率",
+   "zh": "设置全屏渲染下鼠标滚轮的滚动倍率。接受不超过 20 的任意正数，也可以是小于 1 的小数（例如 0.5），用于在本身会放大滚轮事件的终端中减慢加速后的触控板和滚轮滚动。如果你的终端每格只发送一个滚轮事件且不做放大，设为 3 可与 vim 保持一致。参见 https://code.claude.com/docs/en/fullscreen#mouse-wheel-scrolling",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SESSION_ID": {
+   "name_zh": "当前会话 ID",
+   "zh": "在 Bash/PowerShell 工具子进程、钩子命令子进程和 stdio MCP 服务器子进程中自动设置为当前会话 ID。只读。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS": {
+   "name_zh": "SessionEnd 钩子时限",
+   "zh": "覆盖 SessionEnd 钩子的时间预算，单位毫秒（默认 1500，会按已配置的最大单个钩子 timeout 提高，最多到 60000）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SHELL": {
+   "name_zh": "指定 Shell",
+   "zh": "覆盖自动 shell 检测（例如 '/bin/zsh'、'/bin/bash'）。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SHELL_PREFIX": {
+   "name_zh": "Shell 命令前缀",
+   "zh": "包装 shell 命令的命令前缀。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SIMPLE": {
+   "name_zh": "极简模式",
+   "zh": "仅保留核心工具的极简模式。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT": {
+   "name_zh": "精简系统提示词",
+   "zh": "使用精简版的系统提示词。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH": {
+   "name_zh": "跳过 AWS 版 SigV4 认证",
+   "zh": "跳过 Claude Platform on AWS 的客户端 SigV4 认证；适用于由代理服务器或网关在转发前添加认证的场景。参见 https://code.claude.com/docs/en/claude-platform-on-aws#route-through-a-corporate-proxy",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_SKIP_AWS_CRED_CACHE": {
+   "name_zh": "关闭 AWS 凭证缓存",
+   "zh": "设为 1 时，关闭对 AWS 默认凭证提供链所解析凭证的进程内缓存，Claude Code 会在每次 API 请求时重新解析凭证链。缓存关闭后，基于 SSO 的 profile 会在每次请求时向 IAM Identity Center 请求凭证。需要 Claude Code v2.1.207 或更高版本。参见 https://code.claude.com/docs/en/amazon-bedrock#credential-caching-and-resolution-timeout",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_SKIP_BEDROCK_AUTH": {
+   "name_zh": "跳过 Bedrock 认证",
+   "zh": "跳过 Bedrock 的 AWS 认证。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_SKIP_FAST_MODE_NETWORK_ERRORS": {
+   "name_zh": "快速模式检查失败视为可用",
+   "zh": "设为 1 时，快速模式可用性检查失败也按可用处理，适用于会拦截该检查直连 api.anthropic.com 请求的网络。Claude Code 仍会遵循“已被你的组织禁用”（disabled by your organization）的响应。参见 https://code.claude.com/docs/en/fast-mode#use-fast-mode-behind-proxies-and-llm-gateways",
+   "group": "capabilities"
+  },
+  "CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK": {
+   "name_zh": "跳过快速模式可用性检查",
+   "zh": "设为 1 时，跳过客户端的快速模式可用性检查，适用于会拦截（而不是拒绝）该检查请求的代理服务器。如果你的组织禁用了快速模式，API 仍会拒绝快速模式请求。参见 https://code.claude.com/docs/en/fast-mode#use-fast-mode-behind-proxies-and-llm-gateways",
+   "group": "capabilities"
+  },
+  "CLAUDE_CODE_SKIP_FOUNDRY_AUTH": {
+   "name_zh": "跳过 Foundry 认证",
+   "zh": "跳过 Foundry 的 Azure 认证。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_SKIP_MANTLE_AUTH": {
+   "name_zh": "跳过 Mantle 认证",
+   "zh": "跳过 Bedrock Mantle 的 AWS 认证（例如使用 LLM 网关时）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_SKIP_PROMPT_HISTORY": {
+   "name_zh": "完全不写会话记录",
+   "zh": "完全禁止写入会话记录。参见 https://code.claude.com/docs/en/settings#environment-variables",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SKIP_VERTEX_AUTH": {
+   "name_zh": "跳过 Vertex 认证",
+   "zh": "跳过 Google Cloud 的 Agent Platform 的 Google 认证。",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": {
+   "name_zh": "Stop 钩子连续阻止上限",
+   "zh": "覆盖 Stop 钩子连续阻止的默认最大次数（默认：8），超过后该轮次会以警告结束。当某个 Stop 钩子确实需要超过 8 次迭代才能收敛时可调高。参见 https://code.claude.com/docs/en/hooks-guide",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SUBAGENT_MODEL": {
+   "name_zh": "子代理模型",
+   "zh": "覆盖子代理使用的模型。",
+   "group": "models"
+  },
+  "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": {
+   "name_zh": "清除子进程凭证",
+   "zh": "从子进程的环境变量中剔除凭证。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SYNC_PLUGIN_INSTALL": {
+   "name_zh": "同步等待插件安装",
+   "zh": "同步等待插件安装完成。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SYNC_PLUGIN_INSTALL_TIMEOUT_MS": {
+   "name_zh": "同步插件安装超时",
+   "zh": "同步安装插件的超时时间，单位毫秒。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SYNC_SKILLS": {
+   "name_zh": "同步 claude.ai 技能",
+   "zh": "设为 1 时，在第一次查询前把 claude.ai 上已启用的技能下载到 ~/.claude/skills/，并每 10 分钟重新同步一次（仅限非交互式 -p 模式；需要 claude.ai 认证）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SYNC_SKILLS_INSTALL_TIMEOUT_MS": {
+   "name_zh": "技能中途重同步超时",
+   "zh": "设置了 CLAUDE_CODE_SYNC_SKILLS 时，会话中途重新同步技能的超时时间，单位毫秒（默认 30000）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SYNC_SKILLS_WAIT_TIMEOUT_MS": {
+   "name_zh": "首次技能同步等待超时",
+   "zh": "设置了 CLAUDE_CODE_SYNC_SKILLS 时，第一次查询等待初次技能同步的超时时间，单位毫秒（默认 5000）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_SYNTAX_HIGHLIGHT": {
+   "name_zh": "diff 语法高亮",
+   "zh": "未写入官方文档。在 diff 中启用语法高亮。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_TASK_LIST_ID": {
+   "name_zh": "共享任务列表 ID",
+   "zh": "用于团队协作的共享任务列表标识符。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_TEAM_NAME": {
+   "name_zh": "代理团队名称",
+   "zh": "所属代理团队的名称。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_TEAM_TEARDOWN_PARK_TIMEOUT_MS": {
+   "name_zh": "代理团队收尾等待时长",
+   "zh": "覆盖非交互式会话在退出时等待其代理团队完成收尾的时长，单位毫秒。接受 1000 到 60000；超出范围的值会被忽略，并使用默认值 10000。需要 Claude Code v2.1.206 或更高版本。参见 https://code.claude.com/docs/en/agent-teams",
+   "group": "other"
+  },
+  "CLAUDE_CODE_TMPDIR": {
+   "name_zh": "临时目录",
+   "zh": "覆盖临时目录路径。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_TMUX_TRUECOLOR": {
+   "name_zh": "tmux 真彩色",
+   "zh": "允许在 tmux 中使用 24 位真彩色渲染。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_USE_ANTHROPIC_AWS": {
+   "name_zh": "使用 Claude Platform on AWS",
+   "zh": "启用 Claude Platform on AWS 作为 API 提供商。如果同时设置了 Bedrock 或 Foundry，则以它们为准。参见 https://code.claude.com/docs/en/claude-platform-on-aws#2-configure-claude-code",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_USE_BEDROCK": {
+   "name_zh": "使用 Amazon Bedrock",
+   "zh": "启用 Amazon Bedrock 作为 API 提供商。参见 https://code.claude.com/docs/en/amazon-bedrock#3-configure-claude-code",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_USE_FOUNDRY": {
+   "name_zh": "使用 Microsoft Foundry",
+   "zh": "启用 Microsoft Foundry 作为 API 提供商。参见 https://code.claude.com/docs/en/microsoft-foundry#3-configure-claude-code",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_USE_MANTLE": {
+   "name_zh": "使用 Bedrock Mantle",
+   "zh": "启用 Mantle 端点（Bedrock 上的原生 Anthropic API 格式）。参见 https://code.claude.com/docs/en/amazon-bedrock#enable-mantle",
+   "group": "connection"
+  },
+  "CLAUDE_CODE_USE_NATIVE_FILE_SEARCH": {
+   "name_zh": "原生文件搜索",
+   "zh": "设为 1 时，使用 Node.js 文件 API 而不是 ripgrep 来查找自定义命令、子代理和输出风格（适用于内置 ripgrep 不可用的环境）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_CODE_USE_POWERSHELL_TOOL": {
+   "name_zh": "默认使用 PowerShell",
+   "zh": "将 PowerShell 设为交互式命令的默认 shell（Windows）。",
+   "group": "other"
+  },
+  "CLAUDE_CODE_USE_VERTEX": {
+   "name_zh": "使用 Google Vertex AI",
+   "zh": "启用 Google Cloud 的 Agent Platform 作为 API 提供商。参见 https://code.claude.com/docs/en/google-vertex-ai#4-configure-claude-code",
+   "group": "connection"
+  },
+  "CLAUDE_CONFIG_DIR": {
+   "name_zh": "配置目录",
+   "zh": "覆盖配置目录（默认 ~/.claude），设置、凭证、会话历史和插件都存放在这里。适合并行运行多个账号。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_DISABLE_ADOPT": {
+   "name_zh": "转后台时停止进行中任务",
+   "zh": "设为 1 时，按 ← 或用 /background 将会话转入后台时，会停止正在进行的后台工作，而不是将其带过去。Claude Code 会在转入后台前请你确认，然后停止原本会被带过去的任务。需要 Claude Code v2.1.195 或更高版本。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLAUDE_EFFORT": {
+   "name_zh": "当前推理强度（只读）",
+   "zh": "在 Bash 工具子进程和钩子命令中自动设置为当前轮次生效的推理强度（low、medium、high、xhigh 或 max；ultracode 报告为 xhigh）。只读。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "capabilities"
+  },
+  "CLAUDE_ENABLE_BYTE_WATCHDOG": {
+   "name_zh": "字节级流式看门狗",
+   "zh": "设为 1 强制启用、设为 0 强制禁用字节级流式空闲看门狗：在配置的超时时间内没有收到任何字节时中止连接。直连 Anthropic API 和 Claude Platform on AWS 的连接默认启用。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "CLAUDE_ENABLE_BYTE_WATCHDOG_BEDROCK": {
+   "name_zh": "Bedrock 字节级看门狗",
+   "zh": "设为 1 时，在 Amazon Bedrock 的 eventstream 响应上启用字节级流式空闲看门狗（默认关闭）。超时时间通过 CLAUDE_STREAM_IDLE_TIMEOUT_MS 配置。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "CLAUDE_ENABLE_STREAM_WATCHDOG": {
+   "name_zh": "事件级流式看门狗",
+   "zh": "设为 1 强制启用、设为 0 强制禁用事件级流式空闲看门狗。未设置时，该看门狗对所有提供商默认开启（自 v2.1.196 起；此前未设置时的默认值在直连 Anthropic API 上由服务端控制，在其他提供商上为关闭）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "CLAUDE_ENV_FILE": {
+   "name_zh": "Bash 环境变量持久化文件",
+   "zh": "用于在多条 Bash 命令之间持久保存环境变量的文件路径。",
+   "group": "other"
+  },
+  "CLAUDE_PID": {
+   "name_zh": "Claude Code 进程 ID",
+   "zh": "Claude Code 会在它启动的子进程（Bash 和 PowerShell 工具命令以及钩子命令）中把该变量设为自身的进程 ID。在 Linux 上，Bash 工具的 shell 集成会用它拒绝执行会匹配到 Claude Code 自身进程的 pkill 模式。你可以在自己的脚本中读取它，以有意识地识别父 Claude Code 进程或向其发送信号。需要 Claude Code v2.1.214 或更高版本。参见 https://code.claude.com/docs/en/errors#pkill-pattern-matches-the-claude-code-process",
+   "group": "other"
+  },
+  "CLAUDE_PROJECT_DIR": {
+   "name_zh": "项目根目录",
+   "zh": "项目根目录路径（也会提供给钩子）。",
+   "group": "other"
+  },
+  "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX": {
+   "name_zh": "远程控制会话名前缀",
+   "zh": "未显式设置名称时，自动生成的远程控制（Remote Control）会话名称所用的前缀。默认为本机主机名，生成的名称形如 myhost-graceful-unicorn。参见 https://code.claude.com/docs/en/remote-control#start-a-remote-control-session",
+   "group": "other"
+  },
+  "CLAUDE_STREAM_IDLE_TIMEOUT_MS": {
+   "name_zh": "流式空闲超时",
+   "zh": "流式空闲看门狗关闭停滞连接前的超时时间，单位毫秒。显式设置时最小值为 300000（5 分钟），更小的值会被提高到该值。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "CLAUDECODE": {
+   "name_zh": "Claude Code 子进程标记",
+   "zh": "Claude Code 启动的子进程中会被设为 1（Bash 和 PowerShell 工具、tmux 会话、钩子命令、状态栏命令、stdio MCP 服务器子进程）。IDE 扩展也会在其集成终端中设置该变量。如需区分直接由工具/钩子启动的子进程和 stdio MCP 服务器子进程，请改用 CLAUDE_CODE_CHILD_SESSION。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "CLOUD_ML_REGION": {
+   "name_zh": "Vertex 区域",
+   "zh": "Google Cloud 的 Agent Platform 区域：global、多区域位置（eu、us）或具体区域（例如 us-east5）。参见 https://code.claude.com/docs/en/google-vertex-ai#region-configuration",
+   "group": "connection"
+  },
+  "DEBUG": {
+   "name_zh": "调试模式",
+   "zh": "设为真值（1、true、yes 或 on）时启用调试模式，等同于 --debug。日志写入 ~/.claude/debug/<session-id>.txt。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "DISABLE_AUTO_COMPACT": {
+   "name_zh": "禁用自动压缩",
+   "zh": "设为 1 时，禁用接近上下文上限时的自动压缩。手动 /compact 命令仍然可用。等同于 autoCompactEnabled: false。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "output_context"
+  },
+  "DISABLE_AUTOUPDATER": {
+   "name_zh": "禁用自动更新",
+   "zh": "设为 1 时禁用后台自动更新。手动执行 claude update 仍然可用；如需两者都禁止，请使用 DISABLE_UPDATES。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "traffic_privacy"
+  },
+  "DISABLE_COMPACT": {
+   "name_zh": "禁用全部压缩",
+   "zh": "设为 1 时禁用所有压缩：包括自动压缩和手动 /compact 命令。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "output_context"
+  },
+  "DISABLE_COST_WARNINGS": {
+   "name_zh": "禁用费用警告",
+   "zh": "设为 1 时禁用费用警告消息。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "DISABLE_DOCTOR_COMMAND": {
+   "name_zh": "隐藏 /doctor 命令",
+   "zh": "设为 1 可隐藏 /doctor 命令（适用于托管部署）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "DISABLE_ERROR_REPORTING": {
+   "name_zh": "关闭错误上报",
+   "zh": "关闭 Sentry 错误上报。",
+   "group": "traffic_privacy"
+  },
+  "DISABLE_EXTRA_USAGE_COMMAND": {
+   "name_zh": "隐藏 /usage-credits",
+   "zh": "设为 1 可隐藏 /usage-credits 命令（该命令用于购买超出速率限制的额外用量）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "DISABLE_FEEDBACK_COMMAND": {
+   "name_zh": "禁用 /feedback 命令",
+   "zh": "设为 1 可禁用 /feedback 命令。旧名称 DISABLE_BUG_COMMAND 同样有效。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "traffic_privacy"
+  },
+  "DISABLE_GROWTHBOOK": {
+   "name_zh": "关闭 GrowthBook",
+   "zh": "设为 1 可停止拉取 GrowthBook 功能开关，所有开关均使用代码中的默认值。除非同时设置 DISABLE_TELEMETRY，否则遥测仍保持开启。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "traffic_privacy"
+  },
+  "DISABLE_INSTALL_GITHUB_APP_COMMAND": {
+   "name_zh": "隐藏 GitHub App 安装命令",
+   "zh": "设为 1 可隐藏 /install-github-app 命令（在 Bedrock、Vertex 或 Foundry 上已默认隐藏）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "DISABLE_INSTALLATION_CHECKS": {
+   "name_zh": "关闭安装检查",
+   "zh": "设为 1 可关闭安装相关警告（仅在手动管理安装位置时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "DISABLE_INTERLEAVED_THINKING": {
+   "name_zh": "关闭交错思考",
+   "zh": "设为 1 可不再发送 interleaved-thinking beta 请求头（适用于网关或提供商不支持交错思考的情况）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "capabilities"
+  },
+  "DISABLE_LOGIN_COMMAND": {
+   "name_zh": "隐藏 /login 命令",
+   "zh": "设为 1 可隐藏 /login 命令（适用于通过 API 密钥或 apiKeyHelper 在外部处理认证的情况）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "DISABLE_LOGOUT_COMMAND": {
+   "name_zh": "隐藏 /logout 命令",
+   "zh": "设为 1 可隐藏 /logout 命令。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "DISABLE_PROMPT_CACHING": {
+   "name_zh": "关闭提示词缓存",
+   "zh": "对所有模型关闭提示词缓存。参见 https://code.claude.com/docs/en/prompt-caching#disable-prompt-caching",
+   "group": "output_context"
+  },
+  "DISABLE_PROMPT_CACHING_FABLE": {
+   "name_zh": "关闭 Fable 提示词缓存",
+   "zh": "仅对 Fable 模型关闭提示词缓存。参见 https://code.claude.com/docs/en/prompt-caching#disable-prompt-caching",
+   "group": "output_context"
+  },
+  "DISABLE_PROMPT_CACHING_HAIKU": {
+   "name_zh": "关闭 Haiku 提示词缓存",
+   "zh": "仅对 Haiku 模型关闭提示词缓存。参见 https://code.claude.com/docs/en/prompt-caching#disable-prompt-caching",
+   "group": "output_context"
+  },
+  "DISABLE_PROMPT_CACHING_OPUS": {
+   "name_zh": "关闭 Opus 提示词缓存",
+   "zh": "仅对 Opus 模型关闭提示词缓存。参见 https://code.claude.com/docs/en/prompt-caching#disable-prompt-caching",
+   "group": "output_context"
+  },
+  "DISABLE_PROMPT_CACHING_SONNET": {
+   "name_zh": "关闭 Sonnet 提示词缓存",
+   "zh": "仅对 Sonnet 模型关闭提示词缓存。参见 https://code.claude.com/docs/en/prompt-caching#disable-prompt-caching",
+   "group": "output_context"
+  },
+  "DISABLE_TELEMETRY": {
+   "name_zh": "关闭遥测",
+   "zh": "设为 1 可退出遥测。同时也会停止拉取功能开关（效果与 DISABLE_GROWTHBOOK 相同）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "traffic_privacy"
+  },
+  "DISABLE_UPDATES": {
+   "name_zh": "禁止所有更新",
+   "zh": "阻止所有更新途径，包括手动更新。",
+   "group": "traffic_privacy"
+  },
+  "DISABLE_UPGRADE_COMMAND": {
+   "name_zh": "隐藏 /upgrade 命令",
+   "zh": "设为 1 可隐藏 /upgrade 命令。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "DO_NOT_TRACK": {
+   "name_zh": "不跟踪（DO_NOT_TRACK）",
+   "zh": "设为 1 可退出遥测（跨工具通用约定；等同于 DISABLE_TELEMETRY）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "traffic_privacy"
+  },
+  "ENABLE_BETA_TRACING_DETAILED": {
+   "name_zh": "详细 beta 追踪",
+   "zh": "启用追踪 beta 时，输出包括钩子执行在内的详细 span。参见 https://code.claude.com/docs/en/monitoring-usage#traces-beta",
+   "group": "traffic_privacy"
+  },
+  "ENABLE_CLAUDEAI_MCP_SERVERS": {
+   "name_zh": "claude.ai MCP 服务器",
+   "zh": "选择启用或停用 claude.ai 的 MCP 服务器。参见 https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#2163",
+   "group": "other"
+  },
+  "ENABLE_PROMPT_CACHING_1H": {
+   "name_zh": "1 小时提示词缓存",
+   "zh": "请求 1 小时的提示词缓存 TTL，而不是默认的 5 分钟（按更高费率计费）。参见 https://code.claude.com/docs/en/prompt-caching#cache-lifetime",
+   "group": "output_context"
+  },
+  "ENABLE_TOOL_SEARCH": {
+   "name_zh": "MCP 工具搜索",
+   "zh": "控制 MCP 工具搜索：\"true\" 始终延迟加载工具并发送 beta 请求头（在 Google Cloud 的 Agent Platform 上早于 Sonnet 4.5/Opus 4.5 的模型，或不支持 tool_reference 的代理服务器上，请求会失败）；\"auto\" 在工具能放进上下文 10% 以内时预先加载；\"auto:N\" 自定义阈值百分比（例如 auto:5）；\"false\" 预先加载全部工具。ANTHROPIC_BASE_URL 指向非第一方主机时同样适用。参见 https://code.claude.com/docs/en/google-vertex-ai#4-configure-claude-code",
+   "group": "other"
+  },
+  "FALLBACK_FOR_ALL_PRIMARY_MODELS": {
+   "name_zh": "所有模型过载即停",
+   "zh": "设为任意非空值后，在未配置备用模型时，所有模型（不只是 Opus）遇到反复过载错误都会停止重试。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "models"
+  },
+  "FORCE_AUTOUPDATE_PLUGINS": {
+   "name_zh": "强制插件自动更新",
+   "zh": "即使设置了 DISABLE_AUTOUPDATER=1，也保持插件自动更新开启。参见 https://code.claude.com/docs/en/discover-plugins#configure-auto-updates",
+   "group": "traffic_privacy"
+  },
+  "FORCE_HYPERLINK": {
+   "name_zh": "强制终端超链接",
+   "zh": "终端支持但未被自动识别时，设为 1 可启用可点击的 OSC 8 超链接；设为 0 则关闭。",
+   "group": "other"
+  },
+  "FORCE_PROMPT_CACHING_5M": {
+   "name_zh": "强制 5 分钟缓存",
+   "zh": "无论使用哪种认证方式，都强制使用 5 分钟的缓存 TTL；会覆盖 ENABLE_PROMPT_CACHING_1H 或托管设置中的 TTL。参见 https://code.claude.com/docs/en/prompt-caching#override-the-ttl",
+   "group": "output_context"
+  },
+  "GOOGLE_APPLICATION_CREDENTIALS": {
+   "name_zh": "GCP 凭证文件",
+   "zh": "GCP 凭证配置文件的路径（服务账号密钥或工作负载身份联合配置），用于 Google Cloud 的 Agent Platform 认证。参见 https://code.claude.com/docs/en/google-vertex-ai#3-configure-gcp-credentials",
+   "group": "connection"
+  },
+  "HTTP_PROXY": {
+   "name_zh": "HTTP 代理",
+   "zh": "HTTP 代理服务器 URL。",
+   "group": "connection"
+  },
+  "HTTPS_PROXY": {
+   "name_zh": "HTTPS 代理",
+   "zh": "HTTPS 代理服务器 URL（推荐优先于 HTTP_PROXY 使用）。",
+   "group": "connection"
+  },
+  "IS_DEMO": {
+   "name_zh": "演示模式",
+   "zh": "设为 1 可启用演示模式：在标题栏和 /status 输出中隐藏邮箱和组织名称，并跳过新手引导。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "MAX_MCP_OUTPUT_TOKENS": {
+   "name_zh": "MCP 输出 token 上限",
+   "zh": "MCP 工具输出在被截断前允许的最大 token 数（默认：25000）。超过 10000 token 时 Claude Code 会显示警告。对于声明了 anthropic/maxResultSizeChars 的工具，其文本内容改用该字符上限代替这里的 token 上限，但这些工具返回的图片内容仍受本上限约束。参见 https://code.claude.com/docs/en/mcp",
+   "group": "output_context"
+  },
+  "MAX_STRUCTURED_OUTPUT_RETRIES": {
+   "name_zh": "结构化输出重试次数",
+   "zh": "在非交互（-p）模式下，模型响应未通过 --json-schema 校验时的重试次数（默认 5）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "MAX_THINKING_TOKENS": {
+   "name_zh": "思考 token 预算",
+   "zh": "覆盖扩展思考的 token 预算；设为 0 可在 Anthropic API 上关闭思考。在自适应推理模型（Opus 4.7+、Opus 4.8、Fable 5）上，除非设置了 CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING，否则非零预算会被忽略。参见 https://code.claude.com/docs/en/model-config#extended-thinking",
+   "group": "output_context"
+  },
+  "MCP_CLIENT_SECRET": {
+   "name_zh": "MCP OAuth 客户端密钥",
+   "zh": "供需要预配置凭证的 MCP 服务器使用的 OAuth 客户端密钥（使用 --client-secret 添加服务器时可免去交互式输入）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "MCP_CONNECT_TIMEOUT_MS": {
+   "name_zh": "MCP 启动连接等待",
+   "zh": "阻塞式 MCP 启动在对工具列表做快照前，等待这一批连接的时长（毫秒，默认 5000）。在 MCP_CONNECTION_NONBLOCKING=0 时，或对 alwaysLoad 服务器生效。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "MCP_CONNECTION_NONBLOCKING": {
+   "name_zh": "MCP 非阻塞连接",
+   "zh": "控制启动时是否要等 MCP 服务器连接完成后再执行第一次查询。自 v2.1.142 起默认不阻塞；设为 0 可恢复阻塞式的 5 秒连接等待。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "MCP_OAUTH_CALLBACK_PORT": {
+   "name_zh": "MCP OAuth 回调端口",
+   "zh": "OAuth 重定向回调使用的固定端口；在添加带预配置凭证的 MCP 服务器时，可替代 --callback-port。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "MCP_REMOTE_SERVER_CONNECTION_BATCH_SIZE": {
+   "name_zh": "远程 MCP 并行连接数",
+   "zh": "启动时并行连接的远程 MCP 服务器（HTTP/SSE）最大数量（默认 20）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "MCP_SERVER_CONNECTION_BATCH_SIZE": {
+   "name_zh": "本地 MCP 并行连接数",
+   "zh": "启动时并行连接的本地 MCP 服务器（stdio）最大数量（默认 3）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "MCP_TIMEOUT": {
+   "name_zh": "MCP 启动超时",
+   "zh": "MCP 服务器启动的超时时间，单位毫秒（默认 30000）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "other"
+  },
+  "MCP_TOOL_TIMEOUT": {
+   "name_zh": "MCP 工具执行超时",
+   "zh": "MCP 工具执行的超时时间，单位毫秒（默认：100000000，约 28 小时）。.mcp.json 中为单个服务器设置的 timeout 字段会覆盖该服务器的这一值。低于 1000 的值按 1 秒处理。参见 https://code.claude.com/docs/en/mcp",
+   "group": "other"
+  },
+  "NO_PROXY": {
+   "name_zh": "不走代理的域名",
+   "zh": "绕过代理服务器的域名（以空格或逗号分隔，'*' 表示全部）。",
+   "group": "connection"
+  },
+  "NODE_EXTRA_CA_CERTS": {
+   "name_zh": "自定义 CA 证书",
+   "zh": "自定义 CA 证书文件的路径。",
+   "group": "connection"
+  },
+  "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": {
+   "name_zh": "OTel 属性值长度上限",
+   "zh": "OpenTelemetry SDK 的标准属性值长度上限。Claude Code 会把携带内容的遥测属性截断到该值与 CLAUDE_CODE_OTEL_CONTENT_MAX_LENGTH 中较小的那个，从而让截断标记也落在 SDK 上限之内。Claude Code 以相同方式读取 OTEL_LOGRECORD_ATTRIBUTE_VALUE_LENGTH_LIMIT 和 OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT 这两个变体，已设置的值中最小的那个适用于所有信号。需要 Claude Code v2.1.214 或更高版本。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_CERTIFICATE": {
+   "name_zh": "OTLP CA 证书",
+   "zh": "gRPC OTLP mTLS 使用的 CA 证书路径。参见 https://code.claude.com/docs/en/monitoring-usage#mtls-authentication",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE": {
+   "name_zh": "OTLP 客户端证书",
+   "zh": "gRPC OTLP mTLS 使用的客户端证书路径。参见 https://code.claude.com/docs/en/monitoring-usage#mtls-authentication",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_CLIENT_KEY": {
+   "name_zh": "OTLP 客户端私钥",
+   "zh": "gRPC OTLP mTLS 使用的客户端私钥路径。参见 https://code.claude.com/docs/en/monitoring-usage#mtls-authentication",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_ENDPOINT": {
+   "name_zh": "OTLP 导出端点",
+   "zh": "所有信号共用的 OTLP 导出器端点（例如 http://localhost:4317）。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_HEADERS": {
+   "name_zh": "OTLP 请求头",
+   "zh": "OTLP 导出器请求附带的请求头（例如 Authorization=Bearer token）。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_LOGS_CLIENT_CERTIFICATE": {
+   "name_zh": "OTLP 日志客户端证书",
+   "zh": "gRPC OTLP mTLS 使用的客户端证书路径，仅对日志覆盖 OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE。参见 https://code.claude.com/docs/en/monitoring-usage#mtls-authentication",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_LOGS_CLIENT_KEY": {
+   "name_zh": "OTLP 日志客户端私钥",
+   "zh": "gRPC OTLP mTLS 使用的客户端私钥路径，仅对日志覆盖 OTEL_EXPORTER_OTLP_CLIENT_KEY。参见 https://code.claude.com/docs/en/monitoring-usage#mtls-authentication",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": {
+   "name_zh": "OTLP 日志端点",
+   "zh": "针对日志覆盖的 OTLP 导出器端点。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": {
+   "name_zh": "OTLP 日志协议",
+   "zh": "针对日志覆盖的 OTLP 协议：grpc、http/json 或 http/protobuf。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE": {
+   "name_zh": "OTLP 指标客户端证书",
+   "zh": "gRPC OTLP mTLS 使用的客户端证书路径，仅对指标覆盖 OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE。参见 https://code.claude.com/docs/en/monitoring-usage#mtls-authentication",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_METRICS_CLIENT_KEY": {
+   "name_zh": "OTLP 指标客户端私钥",
+   "zh": "gRPC OTLP mTLS 使用的客户端私钥路径，仅对指标覆盖 OTEL_EXPORTER_OTLP_CLIENT_KEY。参见 https://code.claude.com/docs/en/monitoring-usage#mtls-authentication",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": {
+   "name_zh": "OTLP 指标端点",
+   "zh": "针对指标覆盖的 OTLP 导出器端点。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": {
+   "name_zh": "OTLP 指标协议",
+   "zh": "针对指标覆盖的 OTLP 协议：grpc、http/json 或 http/protobuf。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": {
+   "name_zh": "指标时间性偏好",
+   "zh": "指标的时间性（temporality）偏好：delta（默认）或 cumulative。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_PROTOCOL": {
+   "name_zh": "OTLP 导出协议",
+   "zh": "所有信号共用的 OTLP 导出器协议：grpc、http/json 或 http/protobuf。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_TRACES_CLIENT_CERTIFICATE": {
+   "name_zh": "OTLP 追踪客户端证书",
+   "zh": "gRPC OTLP mTLS 使用的客户端证书路径，仅对追踪覆盖 OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE。参见 https://code.claude.com/docs/en/monitoring-usage#mtls-authentication",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY": {
+   "name_zh": "OTLP 追踪客户端私钥",
+   "zh": "gRPC OTLP mTLS 使用的客户端私钥路径，仅对追踪覆盖 OTEL_EXPORTER_OTLP_CLIENT_KEY。参见 https://code.claude.com/docs/en/monitoring-usage#mtls-authentication",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": {
+   "name_zh": "OTLP 追踪端点",
+   "zh": "针对追踪覆盖的 OTLP 导出器端点。参见 https://code.claude.com/docs/en/monitoring-usage#traces-beta",
+   "group": "traffic_privacy"
+  },
+  "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": {
+   "name_zh": "OTLP 追踪协议",
+   "zh": "针对追踪覆盖的 OTLP 协议：grpc、http/json 或 http/protobuf。参见 https://code.claude.com/docs/en/monitoring-usage#traces-beta",
+   "group": "traffic_privacy"
+  },
+  "OTEL_LOG_ASSISTANT_RESPONSES": {
+   "name_zh": "日志记录助手回复",
+   "zh": "未写入官方文档。在 claude_code.assistant_response 这一 OpenTelemetry 日志事件中包含助手回复文本（v2.1.193 加入）。未设置时跟随 OTEL_LOG_USER_PROMPTS；设为 0 则只记录提示词。",
+   "group": "traffic_privacy"
+  },
+  "OTEL_LOG_RAW_API_BODIES": {
+   "name_zh": "记录原始 API 请求体",
+   "zh": "记录原始的 API 请求/响应体。设为 1，或设为 file:<dir> 将其写入某个目录。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_LOG_TOOL_CONTENT": {
+   "name_zh": "日志记录工具内容",
+   "zh": "在 OpenTelemetry 日志事件中包含完整的工具输入/输出内容（需要启用追踪；默认关闭）。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_LOG_TOOL_DETAILS": {
+   "name_zh": "日志记录工具详情",
+   "zh": "在 OpenTelemetry 日志事件中包含工具名称和参数（默认关闭）。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_LOG_USER_PROMPTS": {
+   "name_zh": "日志记录用户提示词",
+   "zh": "在 OpenTelemetry 日志事件中包含用户提示词文本（默认关闭）。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_LOGS_EXPORT_INTERVAL": {
+   "name_zh": "日志导出间隔",
+   "zh": "日志导出间隔，单位毫秒（默认 5000）。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_LOGS_EXPORTER": {
+   "name_zh": "OTel 日志导出器",
+   "zh": "OpenTelemetry 日志导出器，多个时以逗号分隔。有效值：otlp、console、none。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_METRIC_EXPORT_INTERVAL": {
+   "name_zh": "指标导出间隔",
+   "zh": "指标导出间隔，单位毫秒（默认 60000）。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_METRICS_EXPORTER": {
+   "name_zh": "OTel 指标导出器",
+   "zh": "OpenTelemetry 指标导出器，多个时以逗号分隔。有效值：otlp、prometheus、console、none。参见 https://code.claude.com/docs/en/monitoring-usage#common-configuration-variables",
+   "group": "traffic_privacy"
+  },
+  "OTEL_METRICS_INCLUDE_ACCOUNT_UUID": {
+   "name_zh": "指标含账号 UUID",
+   "zh": "在指标上附带 user.account_uuid 和 user.account_id 属性（默认 true）。参见 https://code.claude.com/docs/en/monitoring-usage#metrics-cardinality-control",
+   "group": "traffic_privacy"
+  },
+  "OTEL_METRICS_INCLUDE_ENTRYPOINT": {
+   "name_zh": "指标含入口点",
+   "zh": "在指标上附带 app.entrypoint 属性（默认 false）。参见 https://code.claude.com/docs/en/monitoring-usage#metrics-cardinality-control",
+   "group": "traffic_privacy"
+  },
+  "OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES": {
+   "name_zh": "指标含资源属性",
+   "zh": "在指标数据点上附带已配置的 OTEL_RESOURCE_ATTRIBUTES（默认 true）。参见 https://code.claude.com/docs/en/monitoring-usage#metrics-cardinality-control",
+   "group": "traffic_privacy"
+  },
+  "OTEL_METRICS_INCLUDE_SESSION_ID": {
+   "name_zh": "指标含会话 ID",
+   "zh": "在指标上附带 session.id 属性（默认 true）。参见 https://code.claude.com/docs/en/monitoring-usage#metrics-cardinality-control",
+   "group": "traffic_privacy"
+  },
+  "OTEL_METRICS_INCLUDE_VERSION": {
+   "name_zh": "指标含版本号",
+   "zh": "在指标上附带 app.version 属性（默认 false）。参见 https://code.claude.com/docs/en/monitoring-usage#metrics-cardinality-control",
+   "group": "traffic_privacy"
+  },
+  "OTEL_RESOURCE_ATTRIBUTES": {
+   "name_zh": "OTel 资源属性",
+   "zh": "附加到所有遥测数据上的资源属性，格式为逗号分隔的 key=value。参见 https://code.claude.com/docs/en/monitoring-usage#multi-team-organization-support",
+   "group": "traffic_privacy"
+  },
+  "OTEL_TRACES_EXPORT_INTERVAL": {
+   "name_zh": "追踪导出间隔",
+   "zh": "追踪导出间隔，单位毫秒（默认 5000）。参见 https://code.claude.com/docs/en/monitoring-usage#traces-beta",
+   "group": "traffic_privacy"
+  },
+  "OTEL_TRACES_EXPORTER": {
+   "name_zh": "OTel 追踪导出器",
+   "zh": "OpenTelemetry 追踪导出器，多个时以逗号分隔。有效值：otlp、console、none。参见 https://code.claude.com/docs/en/monitoring-usage#traces-beta",
+   "group": "traffic_privacy"
+  },
+  "SLASH_COMMAND_TOOL_CHAR_BUDGET": {
+   "name_zh": "技能元数据字符预算",
+   "zh": "覆盖提供给 Skill 工具的技能元数据字符预算。该预算按上下文窗口的 1% 动态调整，回退值为 8000 个字符。保留旧名称是为了向后兼容。参见 https://code.claude.com/docs/en/skills#control-who-invokes-a-skill",
+   "group": "output_context"
+  },
+  "TASK_MAX_OUTPUT_LENGTH": {
+   "name_zh": "子代理输出长度上限",
+   "zh": "子代理输出在被截断前的最大字符数（默认 32000，最大 160000）。被截断时，完整输出会保存到磁盘，并在响应中附上文件路径。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "output_context"
+  },
+  "USE_BUILTIN_RIPGREP": {
+   "name_zh": "使用内置 ripgrep",
+   "zh": "使用捆绑的 ripgrep 二进制文件，而不是系统中的 ripgrep。",
+   "group": "other"
+  },
+  "VERTEX_REGION_CLAUDE_3_5_HAIKU": {
+   "name_zh": "Vertex 区域：3.5 Haiku",
+   "zh": "为 Claude 3.5 Haiku 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_3_5_SONNET": {
+   "name_zh": "Vertex 区域：3.5 Sonnet",
+   "zh": "为 Claude 3.5 Sonnet 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_3_7_SONNET": {
+   "name_zh": "Vertex 区域：3.7 Sonnet",
+   "zh": "为 Claude 3.7 Sonnet 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_4_0_OPUS": {
+   "name_zh": "Vertex 区域：4.0 Opus",
+   "zh": "为 Claude 4.0 Opus 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_4_0_SONNET": {
+   "name_zh": "Vertex 区域：4.0 Sonnet",
+   "zh": "为 Claude 4.0 Sonnet 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_4_1_OPUS": {
+   "name_zh": "Vertex 区域：4.1 Opus",
+   "zh": "为 Claude 4.1 Opus 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_4_5_OPUS": {
+   "name_zh": "Vertex 区域：Opus 4.5",
+   "zh": "为 Claude Opus 4.5 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_4_5_SONNET": {
+   "name_zh": "Vertex 区域：Sonnet 4.5",
+   "zh": "为 Claude Sonnet 4.5 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_4_6_OPUS": {
+   "name_zh": "Vertex 区域：Opus 4.6",
+   "zh": "为 Claude Opus 4.6 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_4_6_SONNET": {
+   "name_zh": "Vertex 区域：Sonnet 4.6",
+   "zh": "为 Claude Sonnet 4.6 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_4_7_OPUS": {
+   "name_zh": "Vertex 区域：Opus 4.7",
+   "zh": "为 Claude Opus 4.7 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_4_8_OPUS": {
+   "name_zh": "Vertex 区域：Opus 4.8",
+   "zh": "为 Claude Opus 4.8 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_5_OPUS": {
+   "name_zh": "Vertex 区域：Opus 5",
+   "zh": "使用 Google Cloud 的 Agent Platform（原 Vertex AI）时，为 Claude Opus 5 覆盖区域。v2.1.219 加入。参见 https://code.claude.com/docs/en/google-vertex-ai",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_5_SONNET": {
+   "name_zh": "Vertex 区域：Sonnet 5",
+   "zh": "使用 Google Cloud 的 Agent Platform（原 Vertex AI）时，为 Claude Sonnet 5 覆盖区域。v2.1.197 加入。参见 https://code.claude.com/docs/en/google-vertex-ai",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_FABLE_5": {
+   "name_zh": "Vertex 区域：Fable 5",
+   "zh": "为 Claude Fable 5 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  },
+  "VERTEX_REGION_CLAUDE_HAIKU_4_5": {
+   "name_zh": "Vertex 区域：Haiku 4.5",
+   "zh": "为 Claude Haiku 4.5 覆盖 Vertex AI 区域（在 CLOUD_ML_REGION=global 时使用）。参见 https://code.claude.com/docs/en/env-vars",
+   "group": "connection"
+  }
+ }
+}

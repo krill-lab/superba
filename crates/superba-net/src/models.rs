@@ -161,7 +161,7 @@ pub(crate) fn parse_models(body: &[u8]) -> std::result::Result<Vec<ModelInfo>, S
 
 /// URLs tried for a compatible site's list: `<base>/models`, then the same
 /// without (or with) `/v1`.
-fn compatible_candidates(base: &Url) -> Vec<Url> {
+pub(crate) fn compatible_candidates(base: &Url) -> Vec<Url> {
     let first = join_base(base, "models");
     let path = base.path().trim_end_matches('/');
     let second = match path.strip_suffix("/v1") {
@@ -180,7 +180,7 @@ fn compatible_candidates(base: &Url) -> Vec<Url> {
 }
 
 /// True for a Codex backend base (`<line>/backend-api/codex`).
-fn is_codex_backend(base: &Url) -> bool {
+pub(crate) fn is_codex_backend(base: &Url) -> bool {
     base.path()
         .trim_end_matches('/')
         .ends_with(CodexPath::BackendApiCodex.suffix())
@@ -188,7 +188,7 @@ fn is_codex_backend(base: &Url) -> bool {
 
 /// Path and query for the source (no origin, never a key: keys are refused in
 /// URLs before sending).
-fn source_path(url: &Url) -> String {
+pub(crate) fn source_path(url: &Url) -> String {
     match url.query() {
         Some(q) => format!("{}?{q}", url.path()),
         None => url.path().to_owned(),
@@ -197,18 +197,18 @@ fn source_path(url: &Url) -> String {
 
 /// One cached answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct CachedList {
-    format: u32,
+pub(crate) struct CachedList {
+    pub(crate) format: u32,
     /// Wall-clock milliseconds of the last successful (or 304) answer.
-    fetched_at: i64,
-    etag: Option<String>,
+    pub(crate) fetched_at: i64,
+    pub(crate) etag: Option<String>,
     /// URL path and query that answered.
-    path: String,
+    pub(crate) path: String,
     /// The answer body (UTF-8 JSON).
-    body: String,
+    pub(crate) body: String,
 }
 
-const CACHE_FORMAT: u32 = 1;
+pub(crate) const CACHE_FORMAT: u32 = 1;
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -239,11 +239,32 @@ impl ModelListCache {
         hex::encode(&Sha256::digest(id.as_bytes())[..16])
     }
 
+    /// The cache id of one explicit list ([`superba_core::ModelListKind`]):
+    /// its own entry and ETag, apart from the other list and from the
+    /// legacy single-source entry.
+    pub(crate) fn source_id(
+        site: &Site,
+        url: &Url,
+        key: &Secret,
+        client_version: &str,
+        kind: superba_core::ModelListKind,
+    ) -> String {
+        let id = format!(
+            "models|{}|{}|{}|{}|{}",
+            kind.as_str(),
+            site.id.as_str(),
+            display_url(url),
+            key_fingerprint(key),
+            client_version
+        );
+        hex::encode(&Sha256::digest(id.as_bytes())[..16])
+    }
+
     fn file(&self, id: &str) -> Option<PathBuf> {
         self.dir.as_ref().map(|d| d.join(format!("{id}.json")))
     }
 
-    fn get(&self, id: &str) -> Option<CachedList> {
+    pub(crate) fn get(&self, id: &str) -> Option<CachedList> {
         if let Some(c) = self.memory.lock().ok()?.get(id).cloned() {
             return Some(c);
         }
@@ -252,7 +273,7 @@ impl ModelListCache {
         (c.format == CACHE_FORMAT).then_some(c)
     }
 
-    fn put(&self, id: &str, c: CachedList) {
+    pub(crate) fn put(&self, id: &str, c: CachedList) {
         if let Some(path) = self.file(id)
             && let Err(e) = write_atomic(&path, &c)
         {
@@ -280,7 +301,7 @@ fn write_atomic(path: &Path, c: &CachedList) -> std::io::Result<()> {
 }
 
 /// The key may go only to the site's own line origins (Krill: also its hosts).
-fn ensure_site_origin(site: &Site, base: &Url) -> Result<()> {
+pub(crate) fn ensure_site_origin(site: &Site, base: &Url) -> Result<()> {
     let on_line = site
         .lines
         .iter()
@@ -300,7 +321,7 @@ fn ensure_site_origin(site: &Site, base: &Url) -> Result<()> {
 }
 
 /// `major.minor.patch` of a Codex version (Codex sends its whole version).
-fn whole_version(v: &superba_core::CodexVersion) -> String {
+pub(crate) fn whole_version(v: &superba_core::CodexVersion) -> String {
     format!("{}.{}.{}", v.major, v.minor, v.patch)
 }
 
@@ -315,6 +336,7 @@ fn list_from(cached: &CachedList) -> Result<ModelList> {
         },
         models: parsed.models,
         fallback_reason: None,
+        sources: Vec::new(),
     })
 }
 
@@ -329,6 +351,9 @@ impl HttpLineProber {
 
     /// See [`superba_core::LineProber::model_list`].
     pub(crate) async fn model_list_impl(&self, req: ModelListRequest<'_>) -> Result<ModelList> {
+        if let Some(source) = req.source {
+            return self.sourced_model_list(&req, source).await;
+        }
         let (site, base, key) = (req.site, req.base_url, req.key);
         Self::ensure_key(key)?;
         ensure_key_target(base, key)?;

@@ -580,6 +580,7 @@ fn tier_effects_follow_each_tier() {
             .filter_map(superba_switch::models::spec_from_entry)
             .collect(),
         fallback_reason: None,
+        sources: Vec::new(),
     };
     let effects = |pat, suffix| {
         tier_effects(&list, |_| None, Some("gpt-6-astra"), false, pat, suffix)
@@ -617,6 +618,7 @@ fn speed_support_is_per_consumer() {
             source: superba_core::ModelListSource::OfficialReadOnly,
             models: Vec::new(),
             fallback_reason: None,
+            sources: Vec::new(),
         }
         .models
         .into_iter()
@@ -633,6 +635,7 @@ fn speed_support_is_per_consumer() {
         )
         .collect(),
         fallback_reason: None,
+        sources: Vec::new(),
     };
     let s = speed_support(
         SpeedTier::Ultrafast,

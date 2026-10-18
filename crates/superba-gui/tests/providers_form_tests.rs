@@ -43,6 +43,8 @@ fn existing() -> (Site, Profile) {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
         id: ProfileId::new("saved-profile"),
         name: "Saved Profile".into(),
         builtin: None,

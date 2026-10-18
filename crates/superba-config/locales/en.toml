@@ -38,6 +38,8 @@ version_unknown = "The Codex version of {consumer} is unknown; settings are writ
 # The file editor's checks and formatting (GitHub issue 9). Messages never
 # quote a value of the file.
 [codex_files]
+claude_not_object = "settings.json must be a JSON object."
+claude_env_not_text = "{field}: environment variables are text; Claude Code reads this value as \"{value}\"."
 toml_syntax = "TOML syntax error: {message}"
 json_syntax = "JSON syntax error: {detail}"
 json_eof = "the file ends too early"
@@ -60,3 +62,8 @@ auth_no_credential = "auth.json holds no credential (no API key, PAT or ChatGPT 
 auth_tokens_missing = "tokens has no {field}: the ChatGPT login may not work."
 format_changed = "Formatting would change what the file means; it was left as it is."
 format_failed = "The file could not be formatted."
+
+[config.claude]
+nothing_owned = "Superba manages nothing in settings.json: there is nothing to restore."
+new_sessions = "New Claude Code sessions use this; running sessions keep what they started with."
+restored = "Claude Code's settings are back to what they were before Superba (keys changed by someone else since were kept)."

@@ -18,6 +18,9 @@
 //! - [`settings`]: the settings engine: a profile's Codex settings filtered and
 //!   validated per Codex home against the settings catalog, legacy-key
 //!   migrations, the diff preview and the `codex features list` cross-check.
+//! - [`claude`]: Claude Code's `settings.json` (user bug 79): the keys Superba
+//!   owns there written, restored and backed up, and Superba's own Claude Code
+//!   configuration (`claude-code.json`).
 //! - [`codex_files`]: the file editor (GitHub issue 9): checks, formatting
 //!   that keeps comments, masked `auth.json` secrets, line diffs, and the
 //!   encrypted backups taken before every save.
@@ -32,6 +35,7 @@
 //! (ChaCha20-Poly1305, data key in the OS keyring or `secrets/vault-key`).
 
 pub mod authjson;
+pub mod claude;
 pub mod codex_files;
 mod engine;
 mod env;

@@ -58,7 +58,7 @@ pub(super) fn provider_label(cx: &Cx<'_>, p: &Provider) -> String {
 
 /// The whole page.
 pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    header(ui, cx, state);
+    header(ui, cx, state, out);
     let Some(view) = state.view.clone() else {
         match &state.error {
             Some(e) => error_state(ui, cx, &cx.tr.t("models.load_failed"), e),
@@ -114,7 +114,7 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
 }
 
 /// Page header: provider picker, search and refresh on the right.
-fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     let list = providers::with_profiles(cx.data);
     let current = state
         .view
@@ -136,6 +136,7 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                     .enabled(!loading && state.view.is_some()),
             )
             .clicked();
+        source_picker(ui, cx, current.as_ref(), narrow, out);
         let name = list
             .iter()
             .find(|p| p.profile_id() == current.as_ref())
@@ -187,6 +188,66 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     }
     if let Some(id) = picked {
         state.select_profile(cx, id);
+    }
+}
+
+/// Which of the provider's lists the page reads (user bug 79, design §2a):
+/// the provider's default (the list its base URL serves), both, the Codex
+/// list or the standard list. Saved with the provider.
+fn source_picker(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    profile: Option<&superba_core::ProfileId>,
+    narrow: bool,
+    out: &mut Vec<Action>,
+) {
+    use superba_core::ModelSource;
+    let Some(p) = profile.and_then(|id| cx.data.profile(id)) else {
+        return;
+    };
+    if p.builtin.is_some() || p.key_ref.is_none() {
+        return;
+    }
+    let label = |s: Option<ModelSource>| {
+        cx.tr.t(match s {
+            None => "models.list_source.default",
+            Some(ModelSource::Auto) => "models.list_source.auto",
+            Some(ModelSource::Codex) => "models.list_source.codex",
+            Some(ModelSource::Standard) => "models.list_source.standard",
+        })
+    };
+    let mut pick = None;
+    Dropdown::new("models-list-source")
+        .label(cx.tr.t("models.list_source.label"))
+        .selected_text(label(p.model_source))
+        .width(if narrow { 110.0 } else { 140.0 })
+        .show_ui(ui, |ui| {
+            for s in [
+                None,
+                Some(ModelSource::Auto),
+                Some(ModelSource::Codex),
+                Some(ModelSource::Standard),
+            ] {
+                if ui
+                    .selectable_label(p.model_source == s, label(s))
+                    .on_hover_text(cx.tr.t("models.list_source.tip"))
+                    .clicked()
+                {
+                    pick = Some(s);
+                }
+            }
+        });
+    ui.label(Text::small(cx.tr.t("models.list_source.label"), cx.pal));
+    ui.add_space(8.0);
+    if let Some(s) = pick
+        && s != p.model_source
+    {
+        let mut next = p.clone();
+        next.model_source = s;
+        out.push(Action::SaveProfile {
+            profile: Box::new(next),
+            key: None,
+        });
     }
 }
 
@@ -870,6 +931,25 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
                 );
                 if let Some(d) = &m.description {
                     r.on_hover_text(d);
+                }
+                // Which lists named the model (explicit list sources).
+                let mut name = name;
+                if !m.lists.is_empty() {
+                    let lists: Vec<String> = m
+                        .lists
+                        .iter()
+                        .map(|k| {
+                            cx.tr.t(match k {
+                                superba_core::ModelListKind::Codex => {
+                                    "models.list_source.codex_short"
+                                }
+                                superba_core::ModelListKind::Standard => {
+                                    "models.list_source.standard_short"
+                                }
+                            })
+                        })
+                        .collect();
+                    name = format!("{name} · {}", lists.join(" + "));
                 }
                 ui.add(egui::Label::new(Text::caption(name, cx.pal)).truncate());
             });

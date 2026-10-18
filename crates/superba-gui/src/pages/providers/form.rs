@@ -293,6 +293,8 @@ pub fn prepare(
                 model_overrides: Default::default(),
                 model_picker: Default::default(),
                 compaction: Default::default(),
+                anthropic: None,
+                model_source: None,
                 id: ProfileId::new(id.as_str()),
                 name: name.to_owned(),
                 builtin: None,

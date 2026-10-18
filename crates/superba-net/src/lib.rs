@@ -72,10 +72,12 @@ mod compaction;
 mod fetch;
 mod http;
 mod keys;
+mod messages;
 mod models;
 mod org;
 mod probe;
 mod responses;
+mod sources;
 mod transports;
 
 use std::path::PathBuf;
@@ -253,6 +255,13 @@ impl LineProber for HttpLineProber {
 
     async fn model_list(&self, request: ModelListRequest<'_>) -> Result<ModelList> {
         self.model_list_impl(request).await
+    }
+
+    async fn probe_messages(
+        &self,
+        request: superba_core::MessagesProbeRequest<'_>,
+    ) -> Result<superba_core::ClaudeProbe> {
+        self.probe_messages_impl(request).await
     }
 
     async fn probe_responses(

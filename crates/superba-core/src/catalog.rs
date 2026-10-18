@@ -183,6 +183,8 @@ pub fn builtin_profiles() -> Vec<Profile> {
             model_overrides: Default::default(),
             model_picker: Default::default(),
             compaction: Default::default(),
+            anthropic: None,
+            model_source: None,
         },
         Profile {
             id: ProfileId::new(PROFILE_OFFICIAL),
@@ -200,6 +202,8 @@ pub fn builtin_profiles() -> Vec<Profile> {
             model_overrides: Default::default(),
             model_picker: Default::default(),
             compaction: Default::default(),
+            anthropic: None,
+            model_source: None,
         },
     ]
 }

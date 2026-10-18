@@ -16,6 +16,8 @@
 //! - `overlay/*.toml` ([`overlay`]): official English text copied by the generator and
 //!   Chinese names and explanations written per entry from the codex source.
 //!
+//! - `claude/` ([`claude`]): the Claude Code `settings.json` catalog (user bug 79).
+//!
 //! The whole tree is compiled in as the built-in snapshot ([`CatalogStore::builtin`]).
 //! [`SnapshotSource`] implements [`superba_core::CatalogSource`] for the settings
 //! engine (`SnapshotSource::builtin()`, or `SnapshotSource::new(load(..)?.store, os)`).
@@ -31,6 +33,7 @@
 
 mod bundle;
 mod bundle_format;
+pub mod claude;
 pub mod coverage;
 pub mod curation;
 mod error;

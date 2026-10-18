@@ -94,7 +94,7 @@ pub fn write_file(
         return Err(changed());
     }
     let mode = match kind {
-        CodexFileKind::AuthJson => Mode::Private,
+        CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => Mode::Private,
         CodexFileKind::ConfigToml => Mode::PreserveOrPrivate,
     };
     let temp = fsx::stage(&target, contents, mode)?;
@@ -202,10 +202,16 @@ impl EditorStore {
                 file: rel,
             });
             // Keep the newest KEEP_PER_FILE of this file of this home.
+            // The original (before Superba first wrote the file) is never
+            // pruned.
             let mut same: Vec<(Timestamp, String)> = index
                 .backups
                 .iter()
-                .filter(|e| e.backup.target == *target && e.backup.kind == kind)
+                .filter(|e| {
+                    e.backup.target == *target
+                        && e.backup.kind == kind
+                        && e.backup.source != BackupSource::Original
+                })
                 .map(|e| (e.backup.at, e.backup.id.clone()))
                 .collect();
             same.sort();

@@ -181,7 +181,8 @@ impl ResolvedProfile {
     }
 }
 
-/// Which Codex file.
+/// Which file: one of Codex's two, or Claude Code's `settings.json` (edited
+/// with the same editor, checks and backups; this computer only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CodexFileKind {
@@ -189,6 +190,23 @@ pub enum CodexFileKind {
     ConfigToml,
     /// `auth.json`.
     AuthJson,
+    /// Claude Code's user `settings.json` (user bug 79).
+    ClaudeSettings,
+}
+
+impl CodexFileKind {
+    /// One of Codex's own files (not Claude Code's).
+    pub fn is_codex(self) -> bool {
+        !matches!(self, CodexFileKind::ClaudeSettings)
+    }
+
+    /// A JSON file.
+    pub fn is_json(self) -> bool {
+        matches!(
+            self,
+            CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings
+        )
+    }
 }
 
 /// Current bytes of the two Codex files (`None` = absent). Input of the pure render.

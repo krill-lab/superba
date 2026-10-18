@@ -323,6 +323,20 @@ pub trait LineProber: Send + Sync {
     /// reach logs or cache files.
     async fn model_list(&self, request: ModelListRequest<'_>) -> Result<ModelList>;
 
+    /// Claude Code's endpoint check: one `POST <endpoint>/v1/messages` with
+    /// `max_tokens: 1` to `model`, the key sent the endpoint's way plus
+    /// `anthropic-version`. The caller vouches that the endpoint may receive
+    /// the key (it is the provider's own). Costs a token.
+    async fn probe_messages(
+        &self,
+        request: MessagesProbeRequest<'_>,
+    ) -> Result<crate::claude::ClaudeProbe> {
+        let _ = request;
+        Err(Error::NotImplemented {
+            what: "the Anthropic endpoint check".into(),
+        })
+    }
+
     /// One minimal authenticated Responses request with `model` (user-triggered
     /// health check; compatible-site validation). Costs a few tokens.
     async fn probe_responses(
@@ -940,6 +954,27 @@ pub struct ModelListRequest<'a> {
     pub client_version: Option<&'a CodexVersion>,
     /// Bypass the cache.
     pub refresh: bool,
+    /// Which lists to read: `None` = the one `base_url` serves (the Codex
+    /// list on a Codex backend path, else `<base>/models`), as before
+    /// explicit sources; `Some` reads the Codex and / or the standard list
+    /// and reports each ([`ModelList::sources`], [`crate::ModelSpec::lists`]).
+    pub source: Option<crate::models::ModelSource>,
+    /// The standard list's base when it is not derived from the site: Claude
+    /// Code's Anthropic endpoint (`<base>/v1/models`, Anthropic or OpenAI
+    /// shape, asked with `x-api-key` and `anthropic-version` as well). The
+    /// caller vouches that this origin may receive the key.
+    pub standard_base: Option<&'a Url>,
+}
+
+/// [`LineProber::probe_messages`]: one minimal Anthropic Messages request.
+#[derive(Clone, Copy, Debug)]
+pub struct MessagesProbeRequest<'a> {
+    /// The endpoint.
+    pub endpoint: &'a crate::claude::AnthropicEndpoint,
+    /// The key.
+    pub key: &'a Secret,
+    /// Model asked.
+    pub model: &'a str,
 }
 
 // ---------------------------------------------------------------------------
@@ -1480,6 +1515,73 @@ pub trait SwitchService: Send + Sync {
         Err(Error::NotImplemented {
             what: "editing Codex files".into(),
         })
+    }
+
+    /// Claude Code (user bug 79): the state of its two pages (where its
+    /// `settings.json` is, the provider and endpoint it uses, what Superba
+    /// applied, what is not applied yet).
+    async fn claude_view(&self) -> Result<crate::claude::ClaudeView> {
+        Err(Error::not_implemented("Claude Code"))
+    }
+
+    /// Save Superba's Claude Code configuration (provider, route, models per
+    /// provider). Writes no Claude Code file: [`Self::claude_plan`] /
+    /// [`Self::claude_apply`] do.
+    async fn save_claude_config(
+        &self,
+        config: crate::claude::ClaudeConfig,
+    ) -> Result<crate::claude::ClaudeView> {
+        let _ = config;
+        Err(Error::not_implemented("Claude Code"))
+    }
+
+    /// A provider's models for Claude Code: its Codex list and its standard
+    /// list at the Anthropic endpoint, merged, plus the ids added by hand.
+    async fn claude_models(
+        &self,
+        request: crate::claude::ClaudeModelsRequest,
+    ) -> Result<crate::claude::ClaudeModelsView> {
+        let _ = request;
+        Err(Error::not_implemented("Claude Code"))
+    }
+
+    /// Plan writing the keys Superba owns in `settings.json` for the current
+    /// configuration, or restoring what they held before Superba. Never
+    /// writes.
+    async fn claude_plan(
+        &self,
+        kind: crate::claude::ClaudePlanKind,
+    ) -> Result<crate::claude::ClaudePlan> {
+        let _ = kind;
+        Err(Error::not_implemented("Claude Code"))
+    }
+
+    /// Execute a plan of [`Self::claude_plan`]: refused when the file changed
+    /// since it was planned; keys someone changed after Superba wrote them
+    /// are written only with `take_over` (else kept and no longer owned);
+    /// every other key of the file is kept; the replaced file is backed up
+    /// first (the Claude Code editor's backups).
+    async fn claude_apply(
+        &self,
+        plan: crate::claude::ClaudePlan,
+        take_over: bool,
+    ) -> Result<crate::claude::ClaudeApplyReport> {
+        let _ = (plan, take_over);
+        Err(Error::not_implemented("Claude Code"))
+    }
+
+    /// Diagnostics of Claude Code: the program, `settings.json`, managed
+    /// settings that override Superba's keys, conflicting environment
+    /// variables, a claude.ai login, `apiKeyHelper`.
+    async fn claude_diagnostics(&self) -> Result<crate::claude::ClaudeDiagnostics> {
+        Err(Error::not_implemented("Claude Code"))
+    }
+
+    /// Check the endpoint with one 1-token request to `model` (default: the
+    /// configured main model, else the first slot).
+    async fn claude_probe(&self, model: Option<String>) -> Result<crate::claude::ClaudeProbe> {
+        let _ = model;
+        Err(Error::not_implemented("Claude Code"))
     }
 
     /// Launch the desktop app through Superba (CDP + auth env), plan 4 #9.

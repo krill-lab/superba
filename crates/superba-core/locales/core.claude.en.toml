@@ -1,0 +1,20 @@
+# Claude Code (user bug 79): presets and endpoint checks.
+
+[claude.preset]
+plain = "{vendor}"
+with_variant = "{vendor} · {variant}"
+variant.china = "China"
+variant.international = "International"
+variant.krill_all = "All models"
+variant.krill_codex = "Codex models"
+variant.qwen_coding_cn = "Coding Plan, China"
+variant.qwen_coding_intl = "Coding Plan, International"
+variant.qwen_token_cn = "Token Plan, China"
+variant.qwen_token_intl = "Token Plan, International"
+
+[claude.endpoint.invalid]
+empty = "Enter the endpoint's base URL."
+url = "Not an http(s) URL."
+http = "Plain http is allowed on this computer only (127.0.0.1, localhost); use https."
+query = "The base URL takes no query or fragment."
+messages = "Enter the base URL without /v1/messages: Claude Code adds it."

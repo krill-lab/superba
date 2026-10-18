@@ -43,6 +43,8 @@ fn user_set() -> ProfileSet {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
         id: ProfileId::new("my-profile"),
         name: "我的 API profile".into(),
         builtin: None,

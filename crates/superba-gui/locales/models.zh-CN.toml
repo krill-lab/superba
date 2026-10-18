@@ -142,3 +142,13 @@ unsaved_tip = "这一行有未保存的改动。"
 all = "所有模型"
 custom = "自定义"
 default = "默认"
+
+[models.list_source]
+label = "列表"
+default = "供应商默认"
+auto = "两个列表"
+codex = "Codex 列表"
+standard = "标准列表"
+codex_short = "Codex 列表"
+standard_short = "标准列表"
+tip = "Codex 列表：/backend-api/codex/models（或 /codex/v1/models），带推理强度和上下文窗口。标准列表：/v1/models，也包含不在 Codex 列表里的模型。两个列表：同时读取并合并。"

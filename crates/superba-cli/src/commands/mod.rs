@@ -1,6 +1,7 @@
 //! Commands build requests and display service results; switching belongs to the service.
 
 mod account;
+mod claude;
 mod config;
 mod execute;
 mod handoff;
@@ -136,6 +137,7 @@ pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) 
         Command::Settings { command } => settings::run(command, rt, out).await,
         Command::Config { command } => config::run(command, rt, out).await,
         Command::Router { command } => router::run(command, rt, out).await,
+        Command::Claude { command } => claude::run(command, rt, out).await,
         Command::Usage(args) => match &args.command {
             None => requests::log(&args.log, rt, out).await,
             Some(crate::UsageCommand::Log(log)) => requests::log(log, rt, out).await,

@@ -622,6 +622,8 @@ fn new_key_profile(site: &Site, id: ProfileId, name: String) -> Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
     };
     // Like the Add dialog and the wizard: Automatic where the site offers PAT,
     // else a plain API key.

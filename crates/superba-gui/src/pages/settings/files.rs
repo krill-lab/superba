@@ -65,9 +65,23 @@ pub enum Next {
     Revert,
 }
 
+/// Which files an editor works on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Scope {
+    /// Codex's `config.toml` / `auth.json` of any home (the Codex Settings
+    /// page).
+    #[default]
+    Codex,
+    /// Claude Code's `settings.json` of this computer (the Claude Code
+    /// Settings page).
+    Claude,
+}
+
 /// The editor's state, kept while the Settings page is left.
 #[derive(Default)]
 pub struct Editor {
+    /// Which files.
+    pub scope: Scope,
     /// The editor replaces the settings list.
     pub open: bool,
     /// The home (`local` until another is chosen).
@@ -135,19 +149,42 @@ fn hash(s: &str, revealed: bool) -> u64 {
 }
 
 impl Editor {
+    /// An editor of Claude Code's `settings.json`.
+    pub fn claude() -> Self {
+        Self {
+            scope: Scope::Claude,
+            masker: Masker::for_kind(CodexFileKind::ClaudeSettings),
+            ..Self::default()
+        }
+    }
+
     /// The home shown.
     pub fn target(&self) -> TargetId {
-        self.target.clone().unwrap_or_else(TargetId::local)
+        match self.scope {
+            Scope::Claude => TargetId::local(),
+            Scope::Codex => self.target.clone().unwrap_or_else(TargetId::local),
+        }
     }
 
     /// The file shown.
     pub fn kind(&self) -> CodexFileKind {
-        self.kind.unwrap_or(CodexFileKind::ConfigToml)
+        match self.scope {
+            Scope::Claude => CodexFileKind::ClaudeSettings,
+            Scope::Codex => self.kind.unwrap_or(CodexFileKind::ConfigToml),
+        }
+    }
+
+    /// The file holds secrets that are hidden until revealed.
+    pub fn has_secrets(&self) -> bool {
+        matches!(
+            self.kind(),
+            CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings
+        )
     }
 
     /// Secrets are shown as placeholders now.
     pub fn masked(&self) -> bool {
-        self.kind() == CodexFileKind::AuthJson && !self.revealed
+        self.has_secrets() && !self.revealed
     }
 
     /// The real text of the buffer (placeholders put back).
@@ -280,7 +317,7 @@ impl Editor {
     /// A freshly read file replaces the buffer.
     pub fn loaded(&mut self, doc: CodexFileDoc) {
         self.original = doc.text().unwrap_or_default();
-        self.masker = Masker::new();
+        self.masker = Masker::for_kind(doc.kind);
         self.revealed = false;
         self.kind = Some(doc.kind);
         self.target = Some(doc.target.clone());
@@ -320,7 +357,7 @@ impl Editor {
 
     /// Show or hide the secrets of `auth.json`.
     pub fn toggle_secrets(&mut self) {
-        if self.kind() != CodexFileKind::AuthJson {
+        if !self.has_secrets() {
             return;
         }
         if self.revealed {
@@ -376,6 +413,10 @@ impl Editor {
         match doc.kind {
             CodexFileKind::ConfigToml => (
                 codex_files::owned_changes(&self.original, &new, &doc.owned),
+                None,
+            ),
+            CodexFileKind::ClaudeSettings => (
+                superba_switch::claude_files::owned_changes(&self.original, &new, &doc.owned),
                 None,
             ),
             CodexFileKind::AuthJson => (

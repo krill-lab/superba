@@ -46,6 +46,7 @@ pub fn validate(kind: CodexFileKind, text: &str, cx: &CheckContext<'_>) -> Vec<F
     let mut out = match kind {
         CodexFileKind::ConfigToml => validate_toml(text, cx),
         CodexFileKind::AuthJson => validate_json(text, cx),
+        CodexFileKind::ClaudeSettings => validate_claude(text, cx),
     };
     out.sort_by(|a, b| {
         (a.line, a.column, a.severity)
@@ -695,6 +696,81 @@ fn validate_json(src: &str, cx: &CheckContext<'_>) -> Vec<FileProblem> {
                     .arg("field", field),
                 ));
             }
+        }
+    }
+    out
+}
+
+/// Claude Code's `settings.json`: JSON syntax, an object, partly changed
+/// hidden keys, the keys Superba owns marked (`env.<NAME>` paths), and
+/// `env` values that are not text (Claude Code reads them as text).
+fn validate_claude(src: &str, cx: &CheckContext<'_>) -> Vec<FileProblem> {
+    if src.trim().is_empty() {
+        // An empty file is read as no settings.
+        return Vec::new();
+    }
+    let value: serde_json::Value = match serde_json::from_str(src) {
+        Ok(v) => v,
+        Err(e) => return vec![json_syntax_problem(src, &e)],
+    };
+    if !value.is_object() {
+        return vec![problem(
+            src,
+            0..src.len().min(1),
+            ProblemSeverity::Error,
+            ProblemKind::Syntax,
+            None,
+            text(
+                "codex_files.claude_not_object",
+                "settings.json must be a JSON object.",
+            ),
+        )];
+    }
+    let mut out = Vec::new();
+    for m in json::members(src) {
+        let path = m.dotted();
+        if m.kind == json::Kind::String && mask::is_claude_secret_name(m.name()) {
+            let raw = &src[m.value.start + 1..m.value.end.saturating_sub(1).max(m.value.start + 1)];
+            if mask::has_mask(raw) && !cx.masker.is_some_and(|mk| mk.knows(raw)) {
+                out.push(problem(
+                    src,
+                    m.value.clone(),
+                    ProblemSeverity::Error,
+                    ProblemKind::Secret,
+                    Some(path.clone()),
+                    text(
+                        "codex_files.secret_partly_changed",
+                        "The hidden value of {field} was changed only partly. Show the secrets to edit it, or undo the change.",
+                    )
+                    .arg("field", &path),
+                ));
+            }
+        }
+        if m.path.len() == 2 && m.path[0] == "env" && !matches!(m.kind, json::Kind::String) {
+            out.push(problem(
+                src,
+                m.value.clone(),
+                ProblemSeverity::Warning,
+                ProblemKind::Schema,
+                Some(path.clone()),
+                text(
+                    "codex_files.claude_env_not_text",
+                    "{field}: environment variables are text; Claude Code reads this value as \"{value}\".",
+                )
+                .arg("field", &path)
+                .arg("value", src[m.value.clone()].trim()),
+            ));
+        }
+        if let Some(o) = cx.owned.iter().find(|o| o.path == path) {
+            let _ = o;
+            out.push(problem(
+                src,
+                m.key.clone(),
+                ProblemSeverity::Info,
+                ProblemKind::Owned,
+                Some(path.clone()),
+                superba_core::codex_files::texts::owned_key(cx.owner),
+            ));
         }
     }
     out

@@ -27,6 +27,8 @@
 //! - [`compaction`]: a provider's remote compaction support (check, choice, effect).
 //! - [`runtime`]: what the running Codex consumers actually use, and stopping
 //!   them for the user.
+//! - [`claude`]: Claude Code as a second harness (its `settings.json`, the
+//!   Anthropic endpoint, model slots and capabilities; user bug 79).
 //! - [`codex_files`]: editing `config.toml` and `auth.json` by hand (open,
 //!   check, save with a backup, restore; GitHub issue 9).
 //! - [`router`]: router mode settings and status; [`views`]: settings page rows,
@@ -44,6 +46,7 @@ pub mod app;
 pub mod auth;
 pub mod caps;
 pub mod catalog;
+pub mod claude;
 pub mod codex;
 pub mod codex_files;
 pub mod compaction;
@@ -84,6 +87,12 @@ pub mod wsl;
 pub use app::*;
 pub use auth::*;
 pub use caps::*;
+pub use claude::{
+    AnthropicAuth, AnthropicEndpoint, ClaudeApplied, ClaudeApplyReport, ClaudeCapability,
+    ClaudeChange, ClaudeConfig, ClaudeDiagnostics, ClaudeEnvConflict, ClaudeFileStatus, ClaudeHome,
+    ClaudeInstall, ClaudeModelRow, ClaudeModels, ClaudeModelsRequest, ClaudeModelsView, ClaudePlan,
+    ClaudePlanKind, ClaudeProbe, ClaudeRoute, ClaudeSlot, ClaudeView, PickerRow, SlotModel,
+};
 pub use codex::CodexVersion;
 pub use codex_files::{
     BackupSource, CodexFileBackup, CodexFileBackupContents, CodexFileBackupQuery, CodexFileDoc,

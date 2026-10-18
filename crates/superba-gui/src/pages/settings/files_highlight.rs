@@ -39,7 +39,7 @@ pub enum Token {
 pub fn tokens(kind: CodexFileKind, text: &str) -> Vec<(Range<usize>, Token)> {
     let raw = match kind {
         CodexFileKind::ConfigToml => toml_tokens(text),
-        CodexFileKind::AuthJson => json_tokens(text),
+        CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => json_tokens(text),
     };
     // Fill the gaps with Plain and mark placeholders.
     let mut out = Vec::with_capacity(raw.len() * 2);

@@ -36,11 +36,24 @@ pub fn has_mask(s: &str) -> bool {
     s.contains(MASK_CHAR)
 }
 
+/// A member of Claude Code's `settings.json` that holds a secret: a name
+/// that ends in `token`, `key`, `secret` or `password` (`ANTHROPIC_AUTH_TOKEN`,
+/// `ANTHROPIC_API_KEY`, `AWS_SECRET_ACCESS_KEY`), not `..._TOKENS` limits or
+/// `apiKeyHelper`.
+pub fn is_claude_secret_name(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    ["token", "key", "secret", "password"]
+        .iter()
+        .any(|w| n.ends_with(w))
+}
+
 /// The placeholders of one editing session and the secrets behind them.
 #[derive(Default)]
 pub struct Masker {
     /// (placeholder without quotes, original raw string contents).
     entries: Vec<(String, Secret)>,
+    /// Claude Code's `settings.json` names its secrets differently.
+    claude: bool,
 }
 
 impl std::fmt::Debug for Masker {
@@ -52,9 +65,25 @@ impl std::fmt::Debug for Masker {
 }
 
 impl Masker {
-    /// No secrets known yet.
+    /// No secrets known yet (`auth.json` names).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// No secrets known yet, for the secrets of `kind`'s file.
+    pub fn for_kind(kind: superba_core::CodexFileKind) -> Self {
+        Self {
+            entries: Vec::new(),
+            claude: kind == superba_core::CodexFileKind::ClaudeSettings,
+        }
+    }
+
+    fn secret_name(&self, name: &str) -> bool {
+        if self.claude {
+            is_claude_secret_name(name)
+        } else {
+            is_secret_name(name)
+        }
     }
 
     /// Number of secrets hidden so far.
@@ -98,7 +127,7 @@ impl Masker {
         let mut out = String::with_capacity(text.len());
         let mut at = 0;
         for m in json::members(text) {
-            if m.kind != json::Kind::String || !is_secret_name(m.name()) {
+            if m.kind != json::Kind::String || !self.secret_name(m.name()) {
                 continue;
             }
             let (start, end) = (m.value.start + 1, m.value.end - 1);

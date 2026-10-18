@@ -81,6 +81,11 @@ pub enum Command {
         #[command(subcommand)]
         command: RouterCommand,
     },
+    #[command(about = english("cli.claude.help.group"))]
+    Claude {
+        #[command(subcommand)]
+        command: ClaudeCommand,
+    },
     #[command(about = english("cli.help.usage_group"))]
     Usage(UsageArgs),
     #[command(about = english("cli.help.remote_group"))]
@@ -555,6 +560,8 @@ pub enum CodexFileArg {
     Config,
     /// `auth.json`.
     Auth,
+    /// Claude Code's `settings.json` (this computer only).
+    Claude,
 }
 
 impl CodexFileArg {
@@ -563,6 +570,7 @@ impl CodexFileArg {
         match self {
             CodexFileArg::Config => superba_core::CodexFileKind::ConfigToml,
             CodexFileArg::Auth => superba_core::CodexFileKind::AuthJson,
+            CodexFileArg::Claude => superba_core::CodexFileKind::ClaudeSettings,
         }
     }
 }
@@ -598,6 +606,131 @@ pub enum ConfigCommand {
         #[arg(long, value_name = "TARGET", help = english("cli.help.config_host"))]
         host: Option<String>,
     },
+    #[command(about = english("cli.help.config_restore"))]
+    Restore {
+        #[arg(value_name = "ID", help = english("cli.help.config_backup_id"))]
+        id: String,
+        #[arg(long, help = english("cli.help.config_yes"))]
+        yes: bool,
+        #[arg(long, help = english("cli.help.config_force"))]
+        force: bool,
+        #[arg(long, help = english("cli.help.config_show_secrets"))]
+        show_secrets: bool,
+    },
+}
+
+/// `spb claude`: Claude Code's provider, models and `settings.json` (user
+/// bug 79).
+#[derive(Debug, Subcommand)]
+pub enum ClaudeCommand {
+    #[command(about = english("cli.claude.help.status"))]
+    Status,
+    #[command(about = english("cli.claude.help.provider"))]
+    Provider {
+        #[arg(value_name = "PROVIDER", help = english("cli.claude.help.provider_id"))]
+        id: Option<String>,
+        #[arg(long, conflicts_with = "id", help = english("cli.claude.help.follow_codex"))]
+        follow_codex: bool,
+    },
+    #[command(about = english("cli.claude.help.endpoint"))]
+    Endpoint {
+        #[arg(value_name = "URL|PRESET", help = english("cli.claude.help.endpoint_value"))]
+        value: Option<String>,
+        #[arg(long, value_name = "PROVIDER", help = english("cli.claude.help.endpoint_provider"))]
+        provider: Option<String>,
+        #[arg(long, value_parser = ["bearer", "x-api-key"], help = english("cli.claude.help.auth"))]
+        auth: Option<String>,
+        #[arg(long, conflicts_with = "value", help = english("cli.claude.help.endpoint_reset"))]
+        reset: bool,
+    },
+    #[command(about = english("cli.claude.help.presets"))]
+    Presets,
+    #[command(about = english("cli.claude.help.models"))]
+    Models {
+        #[arg(long, help = english("cli.claude.help.pull"))]
+        pull: bool,
+        #[arg(long, value_name = "MODEL", help = english("cli.claude.help.add_model"))]
+        add: Vec<String>,
+        #[arg(long, value_name = "MODEL", help = english("cli.claude.help.remove_model"))]
+        remove: Vec<String>,
+    },
+    #[command(about = english("cli.claude.help.slot"))]
+    Slot {
+        #[arg(value_name = "SLOT", help = english("cli.claude.help.slot_name"))]
+        slot: String,
+        #[arg(value_name = "MODEL", help = english("cli.claude.help.slot_model"))]
+        model: Option<String>,
+        #[arg(long, help = english("cli.claude.help.slot_display"))]
+        name: Option<String>,
+        #[arg(long, help = english("cli.claude.help.slot_description"))]
+        description: Option<String>,
+        #[arg(long, conflicts_with = "model", help = english("cli.claude.help.clear"))]
+        clear: bool,
+    },
+    #[command(about = english("cli.claude.help.caps"))]
+    Caps {
+        #[arg(value_name = "MODEL")]
+        model: String,
+        #[arg(value_name = "LIST", help = english("cli.claude.help.caps_list"))]
+        list: Option<String>,
+    },
+    #[command(about = english("cli.claude.help.picker"))]
+    Picker {
+        #[arg(value_parser = ["add", "remove", "clear", "replace-builtin", "keep-builtin"], help = english("cli.claude.help.picker_action"))]
+        action: String,
+        #[arg(value_name = "MODEL")]
+        model: Option<String>,
+        #[arg(long)]
+        label: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long, value_name = "CLAUDE_MODEL", help = english("cli.claude.help.behaves_as"))]
+        behaves_as: Option<String>,
+    },
+    #[command(about = english("cli.claude.help.apply"))]
+    Apply {
+        #[arg(long, help = english("cli.help.config_yes"))]
+        yes: bool,
+        #[arg(long, help = english("cli.claude.help.take_over"))]
+        take_over: bool,
+    },
+    #[command(about = english("cli.claude.help.restore"))]
+    Restore {
+        #[arg(long, help = english("cli.help.config_yes"))]
+        yes: bool,
+        #[arg(long, help = english("cli.claude.help.take_over"))]
+        take_over: bool,
+    },
+    #[command(about = english("cli.claude.help.probe"))]
+    Probe {
+        #[arg(value_name = "MODEL")]
+        model: Option<String>,
+    },
+    #[command(about = english("cli.claude.help.doctor"))]
+    Doctor,
+    #[command(about = english("cli.claude.help.config"))]
+    Config {
+        #[command(subcommand)]
+        command: ClaudeConfigCommand,
+    },
+}
+
+/// `spb claude config`: `settings.json` by hand (the editor of `spb config`).
+#[derive(Debug, Subcommand)]
+pub enum ClaudeConfigCommand {
+    #[command(about = english("cli.claude.help.config_edit"))]
+    Edit {
+        #[arg(long, help = english("cli.help.config_yes"))]
+        yes: bool,
+        #[arg(long, help = english("cli.help.config_force"))]
+        force: bool,
+        #[arg(long, help = english("cli.help.config_show_secrets"))]
+        show_secrets: bool,
+    },
+    #[command(about = english("cli.claude.help.config_check"))]
+    Check,
+    #[command(about = english("cli.claude.help.config_backups"))]
+    Backups,
     #[command(about = english("cli.help.config_restore"))]
     Restore {
         #[arg(value_name = "ID", help = english("cli.help.config_backup_id"))]

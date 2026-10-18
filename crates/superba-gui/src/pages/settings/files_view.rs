@@ -69,24 +69,25 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor, out: &mut Vec<Action>) {
             .request_repaint_after(std::time::Duration::from_millis(60));
     }
     let file = ed.kind().file_name();
-    page_header_with(
-        ui,
-        cx,
-        Page::Settings,
-        &cx.tr.t("codex_editor.subtitle"),
-        |ui| {
-            if ui
-                .add(
-                    Button::ghost(cx.tr.t("codex_editor.back"))
-                        .icon(Icon::Settings)
-                        .small(),
-                )
-                .clicked()
-            {
-                ed.close();
-            }
-        },
-    );
+    let (page, subtitle) = match ed.scope {
+        super::files::Scope::Codex => (Page::Settings, cx.tr.t("codex_editor.subtitle")),
+        super::files::Scope::Claude => (
+            Page::ClaudeSettings,
+            cx.tr.t("codex_editor.claude_subtitle"),
+        ),
+    };
+    page_header_with(ui, cx, page, &subtitle, |ui| {
+        if ui
+            .add(
+                Button::ghost(cx.tr.t("codex_editor.back"))
+                    .icon(Icon::Settings)
+                    .small(),
+            )
+            .clicked()
+        {
+            ed.close();
+        }
+    });
     toolbar(ui, cx, ed);
     notes(ui, cx, ed, out);
     if ed.doc.is_none() {
@@ -153,19 +154,24 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor, out: &mut Vec<Action>) {
 fn toolbar(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        let mut kind = ed.kind();
-        crate::design::widgets::Segmented::new("codex-files-kind", &mut kind)
-            .label(cx.tr.t("codex_editor.a11y.file"))
-            .small()
-            .option(CodexFileKind::ConfigToml, "config.toml")
-            .option(CodexFileKind::AuthJson, "auth.json")
-            .show(ui);
-        if kind != ed.kind() {
-            let target = ed.target();
-            ed.open_file(cx, target, kind);
+        let codex = ed.scope == super::files::Scope::Codex;
+        if codex {
+            let mut kind = ed.kind();
+            crate::design::widgets::Segmented::new("codex-files-kind", &mut kind)
+                .label(cx.tr.t("codex_editor.a11y.file"))
+                .small()
+                .option(CodexFileKind::ConfigToml, "config.toml")
+                .option(CodexFileKind::AuthJson, "auth.json")
+                .show(ui);
+            if kind != ed.kind() {
+                let target = ed.target();
+                ed.open_file(cx, target, kind);
+            }
+        } else {
+            ui.label(Text::mono_muted("settings.json", cx.pal));
         }
         let list = targets(cx);
-        if list.len() > 1 || !ed.target().is_local() {
+        if codex && (list.len() > 1 || !ed.target().is_local()) {
             let current = target_label(cx, &ed.target());
             let mut pick = None;
             // The choice at once, busy while it is read (user bug 83).
@@ -216,7 +222,7 @@ fn toolbar(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor) {
             {
                 ed.open_backups(cx);
             }
-            if ed.kind() == CodexFileKind::AuthJson {
+            if ed.has_secrets() {
                 let (label, icon) = if ed.revealed {
                     (cx.tr.t("codex_editor.hide_secrets"), Icon::EyeOff)
                 } else {

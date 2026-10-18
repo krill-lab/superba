@@ -115,6 +115,7 @@ pub fn fake_v3() -> FakeV3 {
             spec("gpt-6-luna", &["priority"]),
         ],
         fallback_reason: None,
+        sources: Vec::new(),
     };
     let page = RequestPage {
         rows: vec![row(1)],

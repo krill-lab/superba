@@ -22,6 +22,7 @@
 
 mod detail;
 pub mod editor;
+pub(crate) use rail::item as rail_item;
 pub mod files;
 pub mod files_highlight;
 pub mod files_view;

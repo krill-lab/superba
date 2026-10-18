@@ -59,6 +59,7 @@ fn krill_list(default: &str) -> ModelList {
             spec("gpt-6-luna", 4, ModelVisibility::List),
         ],
         fallback_reason: None,
+        sources: Vec::new(),
     }
 }
 

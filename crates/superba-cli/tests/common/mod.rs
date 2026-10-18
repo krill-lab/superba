@@ -263,6 +263,8 @@ pub fn profile(id: &str, site: &str) -> Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
         id: ProfileId::new(id),
         name: format!("Profile {id}"),
         builtin: None,

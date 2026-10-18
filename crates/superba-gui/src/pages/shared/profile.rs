@@ -10,6 +10,8 @@ pub fn new_profile(site: &Site, name: String) -> Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
         id: ProfileId::new(site.id.as_str()),
         name,
         builtin: None,

@@ -25,6 +25,7 @@
 
 mod account;
 pub mod ciphers;
+pub mod claude;
 pub mod compaction;
 pub mod core_watch;
 pub mod executor;
@@ -75,6 +76,9 @@ use superba_core::{
 
 pub use machine::{Effect, Input, MachineState, PlanTicket, SwitchMachine};
 pub use planner::ENV_SUPERBA_TEST_SITES;
+/// Claude Code's `settings.json` helpers (pure parts shared by the GUI and
+/// `spb`).
+pub use superba_config::claude as claude_files;
 /// The file editor's pure parts (checks, formatting, masking, diffs; GitHub
 /// issue 9), so the GUI and `spb` check an edit exactly as the service does.
 pub use superba_config::codex_files;
@@ -416,6 +420,8 @@ pub struct Switcher {
     /// GH#5: the last attribution of a change to the Codex files and the last
     /// environment check ([`ownership`]).
     ownership: ownership::SharedOwnershipCache,
+    /// Claude Code: model lists and the `claude` program ([`claude`]).
+    claude: Arc<claude::ClaudeCache>,
 }
 
 /// Execution context of computed plans, keyed by plan id (things the serializable
@@ -473,6 +479,7 @@ impl Switcher {
             reported_locale: Arc::new(Mutex::new(None)),
             monitor,
             ownership: Arc::default(),
+            claude: Arc::default(),
         }
     }
 
@@ -948,6 +955,47 @@ impl SwitchService for Switcher {
 
     async fn codex_file_backup(&self, id: &str) -> Result<superba_core::CodexFileBackupContents> {
         self.codex_file_backup_impl(id).await
+    }
+
+    async fn claude_view(&self) -> Result<superba_core::ClaudeView> {
+        self.claude_view_impl().await
+    }
+
+    async fn save_claude_config(
+        &self,
+        config: superba_core::ClaudeConfig,
+    ) -> Result<superba_core::ClaudeView> {
+        self.save_claude_config_impl(config).await
+    }
+
+    async fn claude_models(
+        &self,
+        request: superba_core::ClaudeModelsRequest,
+    ) -> Result<superba_core::ClaudeModelsView> {
+        self.claude_models_impl(request).await
+    }
+
+    async fn claude_plan(
+        &self,
+        kind: superba_core::ClaudePlanKind,
+    ) -> Result<superba_core::ClaudePlan> {
+        self.claude_plan_impl(kind).await
+    }
+
+    async fn claude_apply(
+        &self,
+        plan: superba_core::ClaudePlan,
+        take_over: bool,
+    ) -> Result<superba_core::ClaudeApplyReport> {
+        self.claude_apply_impl(plan, take_over).await
+    }
+
+    async fn claude_diagnostics(&self) -> Result<superba_core::ClaudeDiagnostics> {
+        self.claude_diagnostics_impl().await
+    }
+
+    async fn claude_probe(&self, model: Option<String>) -> Result<superba_core::ClaudeProbe> {
+        self.claude_probe_impl(model).await
     }
 
     async fn stop_processes(

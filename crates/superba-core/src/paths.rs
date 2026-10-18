@@ -290,6 +290,17 @@ impl DataDir {
         self.backups_dir().join("switch")
     }
 
+    /// `claude-code.json`: Superba's Claude Code configuration (user bug 79).
+    pub fn claude_config_json(&self) -> PathBuf {
+        self.root.join("claude-code.json")
+    }
+
+    /// `claude/`: what Superba applied to Claude Code's `settings.json`
+    /// (encrypted: it holds the key it wrote and the values it replaced).
+    pub fn claude_dir(&self) -> PathBuf {
+        self.root.join("claude")
+    }
+
     /// `backups/editor/` (encrypted copies of `config.toml` / `auth.json` taken
     /// before each save of Superba's file editor, and its index).
     pub fn editor_backups_dir(&self) -> PathBuf {

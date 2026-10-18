@@ -169,6 +169,7 @@ fn source_keys(source: &str) -> BTreeSet<String> {
             && [
                 "config.note.",
                 "config.settings.",
+                "config.claude.",
                 "env.scope.",
                 "codex_files.",
             ]

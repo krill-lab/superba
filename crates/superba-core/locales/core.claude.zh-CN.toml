@@ -1,0 +1,20 @@
+# Claude Code（用户问题 79）：预设和端点检查。
+
+[claude.preset]
+plain = "{vendor}"
+with_variant = "{vendor} · {variant}"
+variant.china = "中国"
+variant.international = "国际"
+variant.krill_all = "全部模型"
+variant.krill_codex = "Codex 模型"
+variant.qwen_coding_cn = "Coding Plan，中国"
+variant.qwen_coding_intl = "Coding Plan，国际"
+variant.qwen_token_cn = "Token Plan，中国"
+variant.qwen_token_intl = "Token Plan，国际"
+
+[claude.endpoint.invalid]
+empty = "填写端点的基础 URL。"
+url = "不是 http(s) 地址。"
+http = "明文 http 只允许本机地址（127.0.0.1、localhost），请用 https。"
+query = "基础 URL 不能带查询参数或片段。"
+messages = "填写不带 /v1/messages 的基础 URL，Claude Code 会自己加上。"

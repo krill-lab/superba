@@ -143,6 +143,13 @@ pub(crate) struct Request<'a> {
     pub if_none_match: Option<String>,
     /// `Content-Encoding` of the JSON body (the body is sent as given).
     pub content_encoding: Option<&'static str>,
+    /// An Anthropic endpoint: the key also as `x-api-key`, plus
+    /// `anthropic-version`.
+    pub anthropic: bool,
+    /// Send the key only as `x-api-key` (no `Authorization`).
+    pub x_api_key_only: bool,
+    /// Send no `x-api-key` with an Anthropic request.
+    pub bearer_only: bool,
 }
 
 impl<'a> Request<'a> {
@@ -158,7 +165,33 @@ impl<'a> Request<'a> {
             done: None,
             if_none_match: None,
             content_encoding: None,
+            anthropic: false,
+            x_api_key_only: false,
+            bearer_only: false,
         }
+    }
+
+    /// Talk to an Anthropic endpoint: the key also as `x-api-key`, and
+    /// `anthropic-version`.
+    pub fn anthropic(mut self) -> Self {
+        self.anthropic = true;
+        self
+    }
+
+    /// Talk to an Anthropic endpoint the way Claude Code does with an
+    /// `ANTHROPIC_AUTH_TOKEN`: the key only as `Authorization: Bearer`.
+    pub fn anthropic_bearer(mut self) -> Self {
+        self.anthropic = true;
+        self.bearer_only = true;
+        self
+    }
+
+    /// Talk to an Anthropic endpoint the way Claude Code does with an
+    /// `ANTHROPIC_API_KEY`: the key only as `x-api-key`.
+    pub fn anthropic_api_key(mut self) -> Self {
+        self.anthropic = true;
+        self.x_api_key_only = true;
+        self
     }
 
     /// Declare the JSON body as already encoded (`zstd`); the bytes are sent as
@@ -363,7 +396,22 @@ impl Http {
                     }
                 })?;
             v.set_sensitive(true);
-            headers.insert(AUTHORIZATION, v);
+            if !req.x_api_key_only {
+                headers.insert(AUTHORIZATION, v);
+            }
+            if req.anthropic
+                && !req.bearer_only
+                && let Ok(mut k) = HeaderValue::from_str(key.expose())
+            {
+                k.set_sensitive(true);
+                headers.insert("x-api-key", k);
+            }
+        }
+        if req.anthropic {
+            headers.insert(
+                "anthropic-version",
+                HeaderValue::from_static(superba_core::claude::ANTHROPIC_VERSION),
+            );
         }
         if let Some(tag) = req.if_none_match.as_deref()
             && let Ok(v) = HeaderValue::from_str(tag)

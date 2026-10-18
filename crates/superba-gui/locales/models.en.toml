@@ -143,3 +143,13 @@ unsaved_tip = "This row has unsaved changes."
 all = "All models"
 custom = "Custom"
 default = "Default"
+
+[models.list_source]
+label = "List"
+default = "Provider default"
+auto = "Both lists"
+codex = "Codex list"
+standard = "Standard list"
+codex_short = "Codex list"
+standard_short = "standard list"
+tip = "Codex list: /backend-api/codex/models (or /codex/v1/models), with reasoning levels and context windows. Standard list: /v1/models, also models that are not in the Codex list. Both lists: read at once and merged."

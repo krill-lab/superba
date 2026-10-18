@@ -134,7 +134,9 @@ pub(super) async fn codex_file(
         });
     }
     let text = st.files.get(&(target.clone(), kind)).cloned().flatten();
-    let path = if target.is_local() {
+    let path = if kind == CodexFileKind::ClaudeSettings {
+        "/home/u/.claude/settings.json".to_owned()
+    } else if target.is_local() {
         format!("/home/u/.codex/{}", kind.file_name())
     } else {
         format!("/home/dev/.codex/{}", kind.file_name())
@@ -151,11 +153,11 @@ pub(super) async fn codex_file(
         contents: text.map(|t| SecretBytes::new(t.into_bytes())),
         schema: match kind {
             CodexFileKind::ConfigToml => st.schema.clone().unwrap_or_default(),
-            CodexFileKind::AuthJson => FileSchema::default(),
+            CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => FileSchema::default(),
         },
         owned: match kind {
             CodexFileKind::ConfigToml => st.owned.get(&target).cloned().unwrap_or_default(),
-            CodexFileKind::AuthJson => Vec::new(),
+            CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => Vec::new(),
         },
         owns_credential: kind == CodexFileKind::AuthJson && st.owned.contains_key(&target),
         profile: Some(ProfileId::new("krill")),

@@ -1751,6 +1751,8 @@ impl Run<'_> {
             let live = match f.kind {
                 CodexFileKind::ConfigToml => &state.config_sha256,
                 CodexFileKind::AuthJson => &state.auth_sha256,
+                // Not a Codex file: a switch never writes it.
+                CodexFileKind::ClaudeSettings => continue,
             };
             if live == &f.after_sha256 {
                 continue;
@@ -1771,10 +1773,7 @@ impl Run<'_> {
                 );
                 continue;
             }
-            let file = match f.kind {
-                CodexFileKind::ConfigToml => "config.toml",
-                CodexFileKind::AuthJson => "auth.json",
-            };
+            let file = f.kind.file_name();
             let detail = if f.kind == CodexFileKind::ConfigToml && !state.drift.is_empty() {
                 text("switch.verify.owned_keys_changed").arg(
                     "keys",

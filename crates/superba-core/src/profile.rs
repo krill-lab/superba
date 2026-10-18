@@ -78,6 +78,14 @@ pub struct Profile {
     /// (`Auto`, the default) or the user's override ([`crate::compaction`]).
     #[serde(default, skip_serializing_if = "CompactionChoice::is_auto")]
     pub compaction: CompactionChoice,
+    /// The provider's Anthropic Messages endpoint for Claude Code (`None` =
+    /// the suggested preset, if any: [`crate::claude::effective_endpoint`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anthropic: Option<crate::claude::AnthropicEndpoint>,
+    /// Which of the provider's model lists to read (`None` = the provider's
+    /// default: the list its base URL serves).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_source: Option<crate::models::ModelSource>,
 }
 
 impl Profile {

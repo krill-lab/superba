@@ -124,11 +124,13 @@ fn union_keeps_the_first_member_per_slug_and_names_the_member() {
             ModelSpec::new("gpt-5.5"),
         ],
         fallback_reason: None,
+        sources: Vec::new(),
     };
     let b = ModelList {
         source: ModelListSource::OfficialReadOnly,
         models: vec![ModelSpec::new("gpt-5.5"), ModelSpec::new("other")],
         fallback_reason: None,
+        sources: Vec::new(),
     };
     let u = union(&[("Krill".into(), a), ("Site B".into(), b)]).unwrap();
     assert_eq!(

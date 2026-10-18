@@ -213,6 +213,7 @@ pub fn union(lists: &[(String, ModelList)]) -> Result<ModelList> {
         },
         models,
         fallback_reason: None,
+        sources: Vec::new(),
     })
 }
 

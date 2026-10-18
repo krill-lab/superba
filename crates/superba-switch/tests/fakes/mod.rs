@@ -422,6 +422,7 @@ impl ConfigEngine for FakeConfig {
             match f.kind {
                 CodexFileKind::ConfigToml => st.config_sha256 = f.before_sha256.clone(),
                 CodexFileKind::AuthJson => st.auth_sha256 = f.before_sha256.clone(),
+                CodexFileKind::ClaudeSettings => {}
             }
         }
         Ok(())
@@ -663,6 +664,8 @@ pub fn krill_profile(id: &str, line: Option<&str>, auth: AuthMode) -> Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
         compaction: Default::default(),
+        anthropic: None,
+        model_source: None,
         id: ProfileId::new(id),
         name: id.into(),
         builtin: None,
@@ -1970,7 +1973,9 @@ impl RemoteHosts for FakeRemote {
             .push(format!("remote.read_codex_file:{}", host.label));
         let contents = match kind {
             superba_core::CodexFileKind::ConfigToml => self.config_toml.lock().unwrap().clone(),
-            superba_core::CodexFileKind::AuthJson => None,
+            superba_core::CodexFileKind::AuthJson | superba_core::CodexFileKind::ClaudeSettings => {
+                None
+            }
         };
         Ok(superba_core::RemoteCodexFile {
             path: format!("/home/u/.codex/{}", kind.file_name()),

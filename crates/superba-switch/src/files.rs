@@ -62,6 +62,7 @@ impl Switcher {
                 let path = match e.kind {
                     CodexFileKind::ConfigToml => home.config_toml(),
                     CodexFileKind::AuthJson => home.auth_json(),
+                    CodexFileKind::ClaudeSettings => return false,
                 };
                 e.path == path.to_string_lossy()
             })
@@ -124,12 +125,34 @@ impl Switcher {
     ) -> Result<CodexFileDoc> {
         let d = &self.deps;
         let now = d.clock.now();
+        if kind == CodexFileKind::ClaudeSettings {
+            if !target.is_local() {
+                return Err(Error::Unsupported {
+                    what: "Claude Code's settings.json on a remote host".into(),
+                });
+            }
+            let file = self.claude_settings_file()?;
+            let (owned, profile) = self.claude_owned();
+            return Ok(self.doc(
+                target,
+                LOCAL_LABEL.to_owned(),
+                kind,
+                file.path.to_string_lossy().into_owned(),
+                file.bytes.map(SecretBytes::new),
+                FileSchema::default(),
+                owned,
+                false,
+                profile,
+                None,
+                now,
+            ));
+        }
         match self.open_home(&target).await? {
             Home::Local => {
                 let home = d.ctx.codex_home();
                 let path = match kind {
                     CodexFileKind::ConfigToml => home.config_toml(),
-                    CodexFileKind::AuthJson => home.auth_json(),
+                    CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => home.auth_json(),
                 };
                 let contents = match tokio::fs::read(&path).await {
                     Ok(b) => Some(SecretBytes::new(b)),
@@ -154,7 +177,9 @@ impl Switcher {
                             catalog: Some(d.catalog.clone()),
                         }
                     }
-                    CodexFileKind::AuthJson => FileSchema::default(),
+                    CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => {
+                        FileSchema::default()
+                    }
                 };
                 let mut read_only = None;
                 if state.as_ref().is_some_and(|s| s.journal_pending) {
@@ -187,7 +212,9 @@ impl Switcher {
                         )],
                         catalog: Some((d.remote_catalog)(&file.os)),
                     },
-                    CodexFileKind::AuthJson => FileSchema::default(),
+                    CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => {
+                        FileSchema::default()
+                    }
                 };
                 let read_only = file
                     .unreadable
@@ -420,6 +447,9 @@ impl Switcher {
             CodexFileKind::ConfigToml => {
                 codex_files::owned_changes(&old_text, &new_text, &doc.owned)
             }
+            CodexFileKind::ClaudeSettings => {
+                superba_config::claude::owned_changes(&old_text, &new_text, &doc.owned)
+            }
             CodexFileKind::AuthJson => Vec::new(),
         };
         let credential = (doc.kind == CodexFileKind::AuthJson && doc.owns_credential)
@@ -434,7 +464,10 @@ impl Switcher {
         if !owned_changed.is_empty() || credential.is_some() {
             notes.push(Notice::info(texts::owned_promise()));
         }
-        let runtime = if doc.target.is_local() {
+        let runtime = if doc.kind == CodexFileKind::ClaudeSettings {
+            notes.push(Notice::info(text("switch.claude.restart_needed")));
+            None
+        } else if doc.target.is_local() {
             notes.push(Notice::info(texts::restart_needed(doc.kind.file_name())));
             self.runtime_impl().await.ok()
         } else {
@@ -503,6 +536,6 @@ fn owned(kind: CodexFileKind, keys: Vec<superba_core::KeySnapshot>) -> Vec<Owned
                 written: k.value,
             })
             .collect(),
-        CodexFileKind::AuthJson => Vec::new(),
+        CodexFileKind::AuthJson | CodexFileKind::ClaudeSettings => Vec::new(),
     }
 }

@@ -720,6 +720,7 @@ fn models_view(
             },
             models: Vec::new(),
             fallback_reason: None,
+            sources: Vec::new(),
         },
         defaults: profile.model.clone(),
         overrides: Default::default(),
