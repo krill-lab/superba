@@ -153,6 +153,10 @@ Pre-built archives are published on the releases page for:
 | Linux x86_64, CLI only (static musl) | `spb-<version>-linux-x86_64-musl.tar.gz` (`spb`, `superba-router`) |
 | Windows 10+ x86_64 | `superba-<version>-windows-x86_64.msi` — per-user installer (`superba.exe`, `spb.exe`, `superba-router.exe`) |
 
+On macOS, open the `.dmg` and drag Superba onto Applications. `spb` is in the
+image too, hidden in its window: copy it into a folder on your `PATH`, for example
+`cp "/Volumes/Superba <version>/spb" ~/.local/bin/`, or take it from the `.zip`.
+
 On Windows, run the `.msi` (no administrator rights needed): it installs to
 `%LOCALAPPDATA%\Programs\Superba`, adds a Start-menu shortcut and puts `spb` on your
 user `PATH` (open a new terminal afterwards). A newer `.msi` upgrades it in place;

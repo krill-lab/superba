@@ -366,6 +366,12 @@ back to the official ChatGPT login.
   every package; on macOS it follows Apple's icon grid (an 824 px
   continuous-corner tile on the 1024 px canvas), so Superba is as big as the
   other apps in the Dock, Finder and Launchpad.
+- **macOS disk image**: opening the `.dmg` shows a drag-to-install window:
+  Superba on the left, an Applications link on the right, an arrow and the hint
+  "拖到 Applications 即可安装 · Drag to Applications to install" on a light
+  background in the icon's colours (sharp on Retina), no toolbar or sidebar, the
+  app icon as the volume icon. `spb` and the release documents are still in the
+  image, hidden in Finder; the ZIP is unchanged.
 - **Windows without extras**: the programs link the C runtime statically (no
   VC++ redistributable; the release checks their imports), and the GUI draws with
   Direct3D 12, on WARP, the software rasterizer, where there is no 3D driver (VMs,

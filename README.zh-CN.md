@@ -114,6 +114,10 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 | Linux x86_64，仅 CLI（musl 静态） | `spb-<版本>-linux-x86_64-musl.tar.gz`（`spb`、`superba-router`） |
 | Windows 10+ x86_64 | `superba-<版本>-windows-x86_64.msi` —— 本用户安装包（`superba.exe`、`spb.exe`、`superba-router.exe`） |
 
+macOS 上打开 `.dmg`，把 Superba 拖到 Applications 即可。镜像里也有 `spb`（在窗口中隐藏）：
+把它复制到 `PATH` 中的某个目录，例如 `cp "/Volumes/Superba <版本>/spb" ~/.local/bin/`，
+或者从 `.zip` 里取。
+
 Windows 上直接运行 `.msi`（无需管理员权限）：安装到 `%LOCALAPPDATA%\Programs\Superba`，
 创建开始菜单快捷方式，并把 `spb` 加入当前用户的 `PATH`（装完请新开终端）。新版 `.msi`
 原地升级；在“设置 > 应用”（或 `msiexec /x`）卸载时，会同时停止并移除本地路由器的开机
