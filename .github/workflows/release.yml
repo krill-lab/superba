@@ -165,6 +165,10 @@ jobs:
           rustup target add "$BUILD_TARGET"
           cargo build --release --locked -p superba-gui -p superba-cli -p superba-router \
             --target "$BUILD_TARGET"
+      # superba_msi_ca.dll: the MSI's folder check (embedded in the MSI, not installed).
+      - name: Build the installer's custom action
+        if: matrix.platform == 'windows'
+        run: cargo build --release --locked -p superba-msi-ca --target "$BUILD_TARGET"
       # The same script as CI's musl job (ci.yml), on the same runner image:
       # static spb + superba-router, checked; spb staged as the MSI's WSL helper.
       - name: Build the static musl binaries
@@ -230,7 +234,8 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/release/check-imports.ps1 "target/$env:BUILD_TARGET/release/superba.exe" `
-            "target/$env:BUILD_TARGET/release/spb.exe" "target/$env:BUILD_TARGET/release/superba-router.exe"
+            "target/$env:BUILD_TARGET/release/spb.exe" "target/$env:BUILD_TARGET/release/superba-router.exe" `
+            "target/$env:BUILD_TARGET/release/superba_msi_ca.dll"
       - name: Stage unsigned Windows binaries
         if: matrix.platform == 'windows'
         run: |
@@ -238,6 +243,7 @@ jobs:
           for binary in superba spb superba-router; do
             cp "target/$BUILD_TARGET/release/$binary.exe" unsigned/windows/
           done
+          cp "target/$BUILD_TARGET/release/superba_msi_ca.dll" unsigned/windows/
           cp README.md LICENSE-MIT LICENSE-APACHE "$RUNNER_TEMP/notices/THIRD-PARTY-NOTICES.txt" \
             crates/superba-gui/assets/fonts/LICENSE-Geist-OFL.txt unsigned/windows/
       - name: Upload unsigned macOS / Windows output
@@ -434,7 +440,7 @@ jobs:
           $sdkTools = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe"
           $signtool = $sdkTools | Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
           if (-not $signtool) { throw 'Windows SDK signtool.exe was not found' }
-          foreach ($binary in @('superba.exe', 'spb.exe', 'superba-router.exe')) {
+          foreach ($binary in @('superba.exe', 'spb.exe', 'superba-router.exe', 'superba_msi_ca.dll')) {
             $binaryPath = Join-Path "unsigned/windows" $binary
             $signArgs = @('sign', '/fd', 'SHA256', '/f', $pfx, '/p', $env:WINDOWS_SIGNING_PFX_PASSWORD,
                           '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', $binaryPath)

@@ -171,7 +171,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Path smoke | Out-Null
-          foreach ($f in 'superba.exe','spb.exe','superba-router.exe','LICENSE-MIT','LICENSE-APACHE','THIRD-PARTY-NOTICES.txt','LICENSE-Geist-OFL.txt') {
+          foreach ($f in 'superba.exe','spb.exe','superba-router.exe','superba_msi_ca.dll','LICENSE-MIT','LICENSE-APACHE','THIRD-PARTY-NOTICES.txt','LICENSE-Geist-OFL.txt') {
             'x' | Set-Content "smoke/$f"
           }
           # The WSL helper: an x86-64 ELF64 header is enough for the smoke build.
@@ -192,17 +192,19 @@ jobs:
         shell: bash
         env:
           CARGO_PROFILE_RELEASE_DEBUG: "0"
-        run: cargo build --release --locked -p superba-gui -p superba-cli -p superba-router
+        # (+ superba_msi_ca.dll, the installer's folder check embedded in the MSI)
+        run: cargo build --release --locked -p superba-gui -p superba-cli -p superba-router -p superba-msi-ca
       # A clean Windows has no VC++ runtime: the programs must not import it (user bug 43).
       - name: Check the programs need no C runtime DLL
         shell: pwsh
-        run: ./scripts/release/check-imports.ps1 target/release/superba.exe target/release/spb.exe target/release/superba-router.exe
+        run: ./scripts/release/check-imports.ps1 target/release/superba.exe target/release/spb.exe target/release/superba-router.exe target/release/superba_msi_ca.dll
       - name: Stage the release files
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Path stage | Out-Null
           foreach ($b in 'superba','spb','superba-router') { Copy-Item "target/release/$b.exe" stage }
+          Copy-Item target/release/superba_msi_ca.dll stage
           Copy-Item LICENSE-MIT, LICENSE-APACHE, crates/superba-gui/assets/fonts/LICENSE-Geist-OFL.txt stage
           # The real notices come from cargo-about in the release workflow.
           'Third-party notices placeholder for the package test.' | Set-Content stage/THIRD-PARTY-NOTICES.txt

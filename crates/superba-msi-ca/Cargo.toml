@@ -1,0 +1,25 @@
+[package]
+name = "superba-msi-ca"
+description = "Custom action of the Windows installer: checks on the folder page that the chosen install folder is writable with the user's own rights (superba_msi_ca.dll, embedded in the MSI, never installed)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[lib]
+name = "superba_msi_ca"
+path = "src/lib.rs"
+# cdylib: the DLL Windows Installer loads; rlib: the tests.
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_ApplicationInstallationAndServicing"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

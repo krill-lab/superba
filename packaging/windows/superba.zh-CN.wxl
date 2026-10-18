@@ -8,9 +8,9 @@
   <String Id="SuperbaFolderDlgUpdateDescription" Value="Superba 将在当前安装位置更新。" />
   <String Id="SuperbaFolderDlgFolderLabel" Value="将 Superba 安装到：" />
   <String Id="SuperbaFolderDlgUpdateLabel" Value="Superba 已安装在此文件夹中，更新将在原位置进行：" />
-  <String Id="SuperbaFolderDlgHint" Value="Superba 只为当前 Windows 用户安装，不需要管理员权限。可以选择任何你有写入权限的文件夹，例如 D:\Apps\Superba。不能使用 Program Files 和 Windows 文件夹。" />
+  <String Id="SuperbaFolderDlgHint" Value="Superba 只为当前 Windows 用户安装，不需要管理员权限。可以选择任何你有写入权限的文件夹，例如 D:\Apps\Superba；不能使用需要管理员权限的文件夹（如 Program Files）。" />
   <String Id="SuperbaFolderDlgUpdateHint" Value="如需将 Superba 移到其他文件夹，请先卸载（设置 &gt; 应用），再重新安装。" />
-  <String Id="SuperbaFolderRefusedText" Value="无法将 Superba 安装到 [INSTALLFOLDER]：Program Files 和 Windows 文件夹需要管理员权限，而 Superba 以你自己的账户安装和自动更新。请选择其他文件夹，例如 [LocalAppDataFolder]Programs\Superba。" />
+  <String Id="SuperbaFolderRefusedText" Value="无法将 Superba 安装到 [INSTALLFOLDER]：写入该位置需要管理员权限（Program Files 和 Windows 文件夹也是如此），而 Superba 以你自己的账户安装和自动更新。请选择你有写入权限的文件夹，例如 [LocalAppDataFolder]Programs\Superba。" />
   <String Id="SuperbaExitText" Value="Superba 已安装到 [INSTALLFOLDER]。之后可随时从“开始”菜单打开：搜索“Superba”。" />
   <String Id="SuperbaLaunch" Value="启动 Superba" />
 </WixLocalization>

@@ -3,7 +3,8 @@
   Builds the per-user Windows MSI from a folder of release files.
 
 .DESCRIPTION
-  -StageDir holds superba.exe, spb.exe, superba-router.exe, LICENSE-MIT,
+  -StageDir holds superba.exe, spb.exe, superba-router.exe, superba_msi_ca.dll
+  (the installer's folder check, crates/superba-msi-ca; embedded, not installed), LICENSE-MIT,
   LICENSE-APACHE, THIRD-PARTY-NOTICES.txt and LICENSE-Geist-OFL.txt (the
   already signed binaries in a release), and spb-linux-x86_64: the static musl
   spb Superba runs inside WSL distributions to migrate their sessions
@@ -90,7 +91,7 @@ $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($
 $work = Join-Path ([IO.Path]::GetTempPath()) ("superba-msi-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
-  foreach ($f in 'superba.exe','spb.exe','superba-router.exe','LICENSE-MIT','LICENSE-APACHE',
+  foreach ($f in 'superba.exe','spb.exe','superba-router.exe','superba_msi_ca.dll','LICENSE-MIT','LICENSE-APACHE',
                  'THIRD-PARTY-NOTICES.txt','LICENSE-Geist-OFL.txt','spb-linux-x86_64') {
     $src = Join-Path $stage $f
     if (-not (Test-Path -LiteralPath $src)) { throw "Missing $f in $stage" }

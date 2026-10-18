@@ -16,12 +16,14 @@
   self-update) show at most a progress bar and never run the launch action.
 
   The folder page refuses, before anything is written:
-    - paths Windows Installer cannot write to with the user's own rights
-      (SetTargetPath checks the folder; "Unable to write to the specified folder")
     - network, removable and unknown drives (WixUIValidatePath, InvalidDirDlg)
-    - Program Files and the Windows folder (SuperbaFolderRefusedDlg), also for
-      an administrator without UAC who could write there: Superba is a per-user
-      install and its self-update runs without elevation.
+    - folders the user cannot write to with their own rights, i.e. that need
+      administrator rights (superba_msi_ca.dll's CheckInstallFolder, run as the
+      user: it creates and removes a probe file there or in the nearest existing
+      folder above), and Program Files and the Windows folder, also for an
+      administrator without UAC who could write there: Superba is a per-user
+      install and its self-update runs without elevation (SuperbaFolderRefusedDlg).
+    An update keeps the installed copy's folder and skips these checks.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <?foreach WIXUIARCH in X64;A64 ?>
@@ -82,11 +84,14 @@
           <!-- Order 2: WixUIValidatePath (per architecture, above). -->
           <Publish Property="SUPERBA_DIR_CHECK" Value="[INSTALLFOLDER]\" Order="3" />
           <Publish Property="SUPERBA_DIR_REFUSED" Value="{}" Order="4" />
-          <Publish Property="SUPERBA_DIR_REFUSED" Value="1" Order="5"
-                   Condition="(ProgramFiles64Folder AND SUPERBA_DIR_CHECK ~&lt;&lt; ProgramFiles64Folder) OR (ProgramFilesFolder AND SUPERBA_DIR_CHECK ~&lt;&lt; ProgramFilesFolder) OR (WindowsFolder AND SUPERBA_DIR_CHECK ~&lt;&lt; WindowsFolder)" />
-          <Publish Event="SpawnDialog" Value="InvalidDirDlg" Order="6" Condition="WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
-          <Publish Event="SpawnDialog" Value="SuperbaFolderRefusedDlg" Order="7" Condition="WIXUI_INSTALLDIR_VALID=&quot;1&quot; AND SUPERBA_DIR_REFUSED" />
-          <Publish Event="EndDialog" Value="Return" Order="8" Condition="WIXUI_INSTALLDIR_VALID=&quot;1&quot; AND NOT SUPERBA_DIR_REFUSED" />
+          <Publish Property="SUPERBA_DIR_WRITABLE" Value="{}" Order="5" />
+          <Publish Event="DoAction" Value="SuperbaCheckFolder" Order="6"
+                   Condition="WIXUI_INSTALLDIR_VALID=&quot;1&quot; AND NOT SUPERBA_OLDER_FOUND" />
+          <Publish Property="SUPERBA_DIR_REFUSED" Value="1" Order="7"
+                   Condition="NOT SUPERBA_OLDER_FOUND AND (SUPERBA_DIR_WRITABLE=&quot;0&quot; OR (ProgramFiles64Folder AND SUPERBA_DIR_CHECK ~&lt;&lt; ProgramFiles64Folder) OR (ProgramFilesFolder AND SUPERBA_DIR_CHECK ~&lt;&lt; ProgramFilesFolder) OR (WindowsFolder AND SUPERBA_DIR_CHECK ~&lt;&lt; WindowsFolder))" />
+          <Publish Event="SpawnDialog" Value="InvalidDirDlg" Order="8" Condition="WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
+          <Publish Event="SpawnDialog" Value="SuperbaFolderRefusedDlg" Order="9" Condition="WIXUI_INSTALLDIR_VALID=&quot;1&quot; AND SUPERBA_DIR_REFUSED" />
+          <Publish Event="EndDialog" Value="Return" Order="10" Condition="WIXUI_INSTALLDIR_VALID=&quot;1&quot; AND NOT SUPERBA_DIR_REFUSED" />
         </Control>
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
           <Publish Event="NewDialog" Value="WelcomeDlg" />
@@ -157,6 +162,14 @@
       </AdminUISequence>
 
     </UI>
+
+    <!-- The folder check (crates/superba-msi-ca), embedded, never installed. Runs as the
+         user in the UI; sets SUPERBA_DIR_WRITABLE to 1 or 0 (left empty if it cannot run:
+         the folder is then accepted and a folder that turns out unwritable fails the
+         install, which rolls back). -->
+    <Binary Id="SuperbaCa" SourceFile="$(StageDir)\superba_msi_ca.dll" />
+    <CustomAction Id="SuperbaCheckFolder" BinaryRef="SuperbaCa" DllEntry="CheckInstallFolder"
+                  Execute="immediate" Return="ignore" />
 
     <!-- "Launch Superba" on the finish page, checked by default. -->
     <Property Id="SUPERBA_LAUNCH" Value="1" />

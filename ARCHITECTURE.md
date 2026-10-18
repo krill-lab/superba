@@ -18,9 +18,11 @@ Three binaries ship from this workspace, always side by side (section 12):
 | `spb` | `superba-cli` | headless CLI; never links GUI libraries (servers, remote hosts) |
 | `superba-router` | `superba-router` | opt-in local router, run as a per-user service (section 8) |
 
-Two more crates are libraries / tools: `superba-catalog` (the Codex settings
-catalog, section 10) and `superba-catalog-gen` (maintainer tool that generates it,
-never linked into the binaries).
+Three more crates are libraries / tools: `superba-catalog` (the Codex settings
+catalog, section 10), `superba-catalog-gen` (maintainer tool that generates it,
+never linked into the binaries) and `superba-msi-ca` (`superba_msi_ca.dll`, the
+Windows installer's folder check, embedded in the MSI and never installed;
+`scripts/release/README.md`).
 
 ## 1. Crate map and ownership
 

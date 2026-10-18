@@ -281,9 +281,14 @@ where Superba went (Start menu "Superba") with "Launch Superba" checked; Finish 
 `superba.exe` through the shell with the desktop's non-elevated token (`WixUnelevatedShellExec`).
 There is no licence page (MIT/Apache-2.0 need no acceptance; the texts are installed). The
 folder page takes any folder the user can write to (`Change...` browses; spaces and non-ASCII
-names work) and refuses, before anything is written, folders Windows Installer cannot write to
-with the user's rights, network/removable drives, and Program Files or the Windows folder (also
-for an administrator without UAC: Superba installs and self-updates without elevation). The
+names work) and refuses, before anything is written, network/removable drives, folders that
+need administrator rights, and Program Files or the Windows folder (also for an administrator
+without UAC: Superba installs and self-updates without elevation). The writability check is
+`superba_msi_ca.dll` (`crates/superba-msi-ca`, `CheckInstallFolder`): run as the user from the
+page, it creates and removes a probe file in the folder (or a probe folder in the nearest
+existing folder above it). It is built with the programs for the MSI's Binary table, checked by
+`check-imports.ps1` and signed with them, and never installed; if it cannot run, the folder is
+accepted and an unwritable one fails the install, which rolls back. The
 chosen folder is stored in `HKCU\Software\Krill\Superba\InstallDir`, found again by `AppSearch`
 before an older copy is removed, so updates (double-clicked: the folder page shows it read-only),
 repairs, the removal and the self-update's `/passive` install keep it; `INSTALLFOLDER=<dir>` sets
