@@ -71,11 +71,8 @@ jobs:
   test:
     if: ${{ !inputs.msi_only }}
     runs-on: ${{ matrix.os }}
-    # Linux is the reference platform (the only one exercised end to end so far).
-    # macOS and Windows test runs are reported but do not fail the workflow until
-    # their platform paths have been verified on real machines; clippy above is
-    # blocking on all three.
-    continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
+    # Blocking on all three systems: a test that fails only on macOS or Windows
+    # fails the workflow like one on Linux.
     strategy:
       fail-fast: false
       matrix:
@@ -102,8 +99,7 @@ jobs:
         env:
           SUPERBA_SECRET_BACKEND: file
           RUST_BACKTRACE: "1"
-        # --no-fail-fast: report every failing test binary, not only the first
-        # (macOS and Windows runs are informational until verified).
+        # --no-fail-fast: report every failing test binary, not only the first.
         run: cargo test --workspace --locked --no-fail-fast
 
   spb-headless:
