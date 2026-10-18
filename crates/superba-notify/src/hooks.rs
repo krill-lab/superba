@@ -272,12 +272,20 @@ impl GenericPayload {
 /// `$SHELL -lc` on Unix; Claude Code and Codex on Windows run them through a
 /// shell that accepts double quotes).
 pub fn shell_quote(program: &str) -> String {
+    // A plain path needs no quotes in any shell (and quotes would make
+    // PowerShell read the path as a string, not a command).
+    let plain = |extra: &[u8]| {
+        program
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"/._-+".contains(&b) || extra.contains(&b))
+    };
     if cfg!(windows) {
-        format!("\"{}\"", program.replace('"', "\\\""))
-    } else if program
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b"/._-+".contains(&b))
-    {
+        if plain(b"\\:") {
+            program.to_owned()
+        } else {
+            format!("\"{}\"", program.replace('"', "\\\""))
+        }
+    } else if plain(b"") {
         program.to_owned()
     } else {
         format!("'{}'", program.replace('\'', "'\\''"))
