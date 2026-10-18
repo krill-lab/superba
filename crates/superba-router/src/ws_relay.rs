@@ -15,6 +15,8 @@
 //!   `failed`, `incomplete`, `error`) finishes that request's row.
 //!
 //! The socket stays pinned to its line; closing either side closes the other.
+//! Both legs end gracefully (close frame, FIN, the peer's rest read and dropped,
+//! see [`linger`]), so the peer reads the close frame on every OS.
 //!
 //! Both legs are bounded like the HTTP path: a message may be as large as
 //! `tuning.max_body_bytes`, one frame at most [`MAX_FRAME_BYTES`] (tungstenite
@@ -31,7 +33,7 @@ use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use http::HeaderMap;
 use superba_core::{InflightPhase, RequestStatus};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Notify;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
@@ -51,6 +53,9 @@ use crate::status::RouteEventKind;
 
 /// How long the other direction may still run after one side closed.
 const CLOSE_GRACE: Duration = Duration::from_secs(3);
+
+/// How long a closed leg still reads what its peer sends ([`linger`]).
+const LINGER: Duration = Duration::from_secs(2);
 
 /// Largest single frame either leg accepts (capped by the message limit).
 pub(crate) const MAX_FRAME_BYTES: usize = 64 << 20;
@@ -137,10 +142,13 @@ where
     // that moves a compacted conversation to its member).
     let (reply_tx, mut reply_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
 
+    // The directions borrow the halves: they are put back together for the
+    // graceful close at the end.
     let c2s = {
         let queue = queue.clone();
         let ctx = ctx.clone();
         let oversize = oversize.clone();
+        let (down_rx, up_tx) = (&mut down_rx, &mut up_tx);
         async move {
             loop {
                 let msg = tokio::select! {
@@ -194,6 +202,7 @@ where
     let s2c = {
         let queue = queue.clone();
         let oversize = oversize.clone();
+        let (up_rx, down_tx) = (&mut up_rx, &mut down_tx);
         async move {
             // Until the client side ends and drops its sender.
             let mut replies_open = true;
@@ -256,8 +265,8 @@ where
             let _ = down_tx.close().await;
         }
     };
-    tokio::pin!(c2s);
-    tokio::pin!(s2c);
+    let mut c2s = Box::pin(c2s);
+    let mut s2c = Box::pin(s2c);
     // Who ended first decides how open requests are recorded: the client
     // leaving cancels them, anything else (the member leaving, a message over
     // the limits from either side) breaks them.
@@ -271,6 +280,7 @@ where
             false
         }
     };
+    drop((c2s, s2c));
     let cancelled = client_left && !oversize.seen.load(Ordering::Relaxed);
     let open: Vec<Open> = lock(&queue).drain(..).collect();
     for o in open {
@@ -285,6 +295,32 @@ where
             ..End::default()
         });
     }
+    if let (Ok(mut down), Ok(mut up)) = (down_rx.reunite(down_tx), up_rx.reunite(up_tx)) {
+        tokio::join!(linger(&mut down), linger(&mut up));
+    }
+}
+
+/// End a leg the relay closed gracefully: send what is queued (the close
+/// frame), then FIN, then read and drop what the peer still sends until it
+/// closes its side too, for at most [`LINGER`]. Dropping a socket with unread
+/// input resets the connection instead (RST), and Windows discards the data
+/// its peer has not read yet: after a message over the limit, whose rest is
+/// still unread, Codex there saw "connection reset" instead of 1009 (message
+/// too big).
+async fn linger<S>(ws: &mut WebSocketStream<S>)
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let _ = tokio::time::timeout(LINGER, async {
+        let _ = ws.flush().await;
+        let io = ws.get_mut();
+        if io.shutdown().await.is_err() {
+            return;
+        }
+        let mut buf = vec![0u8; 16 * 1024];
+        while matches!(io.read(&mut buf).await, Ok(n) if n > 0) {}
+    })
+    .await;
 }
 
 /// What to do with a client frame.

@@ -308,18 +308,27 @@ fn frame_header(opcode: u8, fin: bool, len: u64) -> Vec<u8> {
     v
 }
 
-/// The close code Codex gets next (frames before it are skipped).
+/// The close code Codex gets next (frames before it are skipped). The router
+/// then ends the socket gracefully: the stream ends after the close frame,
+/// never with a reset (an abortive close of a socket with unread input sends
+/// RST, and Windows drops the close frame queued before it).
 async fn close_code(ws: &mut Ws) -> Option<u16> {
-    loop {
+    let code = loop {
         let msg = tokio::time::timeout(Duration::from_secs(5), ws.next())
             .await
             .expect("closed in time");
         match msg {
-            Some(Ok(Message::Close(f))) => return f.map(|f| f.code.into()),
+            Some(Ok(Message::Close(f))) => break f.map(|f| f.code.into()),
             Some(Ok(_)) => {}
             other => panic!("expected a close frame, got {other:?}"),
         }
-    }
+    };
+    // Our close reply goes out, then the router's end of the stream.
+    let end = tokio::time::timeout(Duration::from_secs(5), ws.next())
+        .await
+        .expect("ended in time");
+    assert!(end.is_none(), "expected the end of the stream, got {end:?}");
+    code
 }
 
 /// The request log once it holds `n` rows.
