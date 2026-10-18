@@ -46,3 +46,8 @@ surrealdb = "This is AI Toolbox's old database format (v0.9.1 and older), which 
 unknown_layout = "Its layout (schema {version}) is not one Superba knows; nothing was read."
 unknown_version = "Version {version} is not one Superba knows; nothing was read."
 unreadable = "It could not be read: {error}. Close {tool} and try again."
+
+# Usage history import (cc-switch, AI Toolbox).
+[import.usage]
+none = "It holds no usage history for Codex."
+unknown_layout = "Its request table has an unknown layout; requests were not read."

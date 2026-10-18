@@ -4443,6 +4443,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "clap",
+ "rusqlite",
  "serde",
  "serde_json",
  "superba-core",

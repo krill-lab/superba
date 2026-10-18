@@ -60,6 +60,8 @@ pub(super) fn show(
         auth(ui, cx, state, p, out);
     }
     key(ui, cx, state, p, out);
+    super::compaction::poll(ui, cx, p);
+    super::compaction::show(ui, cx, p, out);
     if let Some(profile) = profile {
         models(ui, cx, state, profile, out);
         settings(ui, cx, profile, out);
@@ -68,7 +70,7 @@ pub(super) fn show(
 
 /// One summary row: label on the left, content after it, on one center line
 /// ([`FormRow`](crate::design::widgets::FormRow)).
-fn row(ui: &mut Ui, cx: &Cx<'_>, label: &str, content: impl FnOnce(&mut Ui)) {
+pub(super) fn row(ui: &mut Ui, cx: &Cx<'_>, label: &str, content: impl FnOnce(&mut Ui)) {
     crate::design::widgets::FormRow::new(Text::small(label, cx.pal))
         .label_width(LABEL_W)
         .gap(8.0)

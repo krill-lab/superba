@@ -262,6 +262,7 @@ router_log_model = "只看该模型的请求"
 router_log_errors = "只看失败的请求"
 router_log_failover = "只看发生过故障转移的请求"
 router_log_client = "只看来自 app、cli（终端）或 exec 的请求"
+usage_source = "只看某一来源的记录：router（本地路由）、rollout（Codex 会话记录）、ccs 或 ai-toolbox（导入）"
 router_log_limit = "最多显示的行数"
 router_stats_by = "分组方式：model、provider、day 或 session"
 router_stats_line = "查看、开关或修改回复下方的统计行"
@@ -393,6 +394,9 @@ profile_list = "列出已保存配置及密钥来源"
 profile_add = "创建配置"
 profile_remove = "删除配置"
 profile_use = "切换到此配置"
+profile_compaction = "查看服务商的 Codex 远程压缩能力；--check 会向服务商检测（消耗少量 token）"
+compaction_check = "立即检测服务商（一次极小的压缩请求，消耗少量 token）"
+compaction_choice = "远程压缩：auto（按 Superba 检测结果）、native（直接透传）或 unsupported（不支持）"
 id = "配置标识"
 name = "显示名称（默认与标识相同）"
 base_url = "兼容站点的完整基础 URL"
@@ -636,6 +640,7 @@ official = "官方登录使用 app 自己的速度菜单。"
 not_offered = "列表中没有模型提供 {tier}；不提供的模型按标准档运行。"
 
 [cli.requests]
+imported = "{name}（从 {tool} 导入）"
 no_router = "没有本地路由：请求来自这台电脑上 Codex 的会话记录，没有首字、TPS 和线路（spb router enable 后可提供）。"
 clear_all_needs_yes = "这会删除全部已记录的请求；请加 --yes 确认，或用 --older-than 限定范围。"
 title = "最近请求"
@@ -815,6 +820,7 @@ problem_failed = "上次更新到 {version} 失败：{reason} 每一步都记录
 problem_installed = "Superba {version} 已安装，但有问题：{reason} 每一步都记录在 {path}"
 
 [cli.import]
+no_source = "请指定工具：spb import ccs|ai-toolbox；导入其用量记录用 spb import usage ccs|ai-toolbox。"
 action_created = "已添加为 {name}"
 action_failed = "失败：{error}"
 action_not_importable = "不可导入：{reason}"
@@ -886,3 +892,31 @@ other_tool = "另一个工具"
 
 [cli.handoff]
 already = "Codex 配置已经由 {tool} 管理；Superba 不再管理其中任何内容。"
+
+[cli.import_usage]
+would_add = "将导入 {n} 条请求和 {days} 条每日汇总（共 {day_requests} 次请求）{range}，记录的费用 {cost}。未写入任何内容。"
+added = "已导入 {n} 条请求和 {days} 条每日汇总（共 {day_requests} 次请求）{range}，记录的费用 {cost}。用量页面会标为“导入”。"
+range = "，时间从 {from} 到 {to}"
+unpriced = "其中 {n} 条 {tool} 没有记录费用（显示为无费用）。"
+already = "{n} 条之前已导入（已跳过）。"
+covered = "{n} 条是从 Codex 会话记录读取的，Superba 自己也会读取这些记录（已跳过，不会重复计算）。"
+other_apps = "{n} 条属于其他编程工具（Claude Code、Gemini CLI 等），不导入。"
+dry_run_hint = "正式导入：spb import usage {source}"
+would_remove = "将删除从 {tool} 导入的 {n} 条请求和 {days} 条每日汇总。"
+removed = "已删除从 {tool} 导入的 {n} 条请求和 {days} 条每日汇总。"
+
+[cli.import_usage.help]
+about = "把 cc-switch 或 AI Toolbox 为 Codex 记录的用量历史导入 Superba 的用量页面（只读取其数据库）"
+dry_run = "只显示数量、时间范围和记录的费用，不写入任何内容"
+remove = "删除之前从该工具导入的内容"
+
+[cli.compaction]
+effective = "{id}：{support}（{source}）"
+source_override = "在服务商上设置"
+source_check = "来自 Superba 的检测"
+source_builtin = "该服务商的已知能力"
+source_none = "未检测"
+checked = "上次检测 {when}，模型 {model}：{support} {detail}"
+not_checked = "尚未检测：spb profile compaction <id> --check（消耗少量 token）。"
+choice = "设置：{choice}（spb profile edit <id> --compaction auto|native|unsupported）"
+unsupported_hint = "Codex 对 Superba 配置的每个服务商都使用远程压缩，且没有改用本地压缩的设置：对话占满上下文窗口时，在这个服务商上压缩会失败。到时请新开对话，或在路由模式下搭配一个支持压缩的服务商。"

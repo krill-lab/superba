@@ -121,7 +121,7 @@ pub fn cards(
     };
     // Rollout rows: where they come from instead of the transport the rollout
     // does not know.
-    let mut request = vec![if row.source == RequestSource::Rollout {
+    let mut request = vec![if row.source != RequestSource::Router {
         line(
             Some(tr.t("requests.detail.source")),
             tr.text(&row.source.text()),
@@ -223,6 +223,8 @@ pub fn cards(
                 tr.t("requests.detail.line_router_only")
             ),
         )
+    } else if row.source.imported_from().is_some() {
+        line(None, provider_cell(row))
     } else {
         line(None, format!("{} · {failover}", provider_cell(row)))
     }];
@@ -322,6 +324,7 @@ pub fn body(
         0 => general(ui, cx, titles, row, detail, out),
         // Codex's session files have no timing marks: what was derived.
         1 if row.source == RequestSource::Rollout => rollout_timing(ui, cx, row),
+        1 if row.source.imported_from().is_some() => imported_timing(ui, cx, row),
         _ => super::timing::show(ui, cx, row, detail, loading),
     }
 }
@@ -342,6 +345,29 @@ fn rollout_timing(ui: &mut Ui, cx: &Cx<'_>, row: &RequestRow) {
     ui.add(
         egui::Label::new(Text::caption(
             cx.tr.t("requests.detail.rollout_timing_note"),
+            cx.pal,
+        ))
+        .wrap(),
+    );
+}
+
+/// The 计时 tab of an imported row: what the other tool recorded.
+fn imported_timing(ui: &mut Ui, cx: &Cx<'_>, row: &RequestRow) {
+    let tool = row
+        .source
+        .imported_from()
+        .map(|t| t.name())
+        .unwrap_or_default();
+    ui.add(
+        egui::Label::new(Text::small(
+            cx.tr.f(
+                "requests.detail.imported_timing",
+                &[
+                    ("duration", &seconds(row.duration_ms)),
+                    ("first", &seconds(row.first_token_ms)),
+                    ("tool", &tool),
+                ],
+            ),
             cx.pal,
         ))
         .wrap(),

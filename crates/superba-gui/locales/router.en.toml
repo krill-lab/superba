@@ -184,6 +184,7 @@ line_unknown_tip = "requests from Codex session files, or that failed before any
 30d = "30 days"
 
 [requests.filter]
+source.all = "All sources"
 all_providers = "All providers"
 all_models = "All models"
 
@@ -262,6 +263,8 @@ title = "Title"
 other = "Other"
 
 [requests.tip]
+cost_imported = "Cost as {tool} recorded it."
+unpriced_imported = "{tool} recorded no cost for this request."
 input = "Non-cached input; raw input_tokens {raw}"
 input_col = "Input without cached and cache-write tokens"
 output = "Includes {reasoning} reasoning tokens"
@@ -291,6 +294,7 @@ title = "Delete request history?"
 confirm = "Every request the local router recorded is deleted from this computer ({n} {n|is|are} in the current view). Codex's own session files are not touched. This can't be undone."
 
 [requests.detail]
+imported_timing = "Duration {duration}, first token {first}, as {tool} recorded them."
 general = "General"
 source = "Source"
 line_router_only = "line only available through the local router"

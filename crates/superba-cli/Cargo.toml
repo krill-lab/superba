@@ -31,6 +31,8 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+# usage import tests build another tool's database
+rusqlite.workspace = true
 tempfile.workspace = true
 
 [build-dependencies]

@@ -1068,6 +1068,22 @@ pub trait SwitchService: Send + Sync {
         Err(crate::Error::not_implemented("provider import"))
     }
 
+    /// Import (or with `dry_run` preview, or with `remove` take out again) the
+    /// usage history another tool (cc-switch, AI Toolbox) recorded for Codex
+    /// into Superba's own store (`<data dir>/imported-usage.sqlite3`): its
+    /// requests by their own ids (a second import adds only what is new),
+    /// recorded costs and provider names, and the daily totals of days it
+    /// keeps only as totals. Rows the tool read from Codex's session files are
+    /// skipped where Superba reads those files itself. The tool's files are
+    /// read only; Codex is not touched.
+    async fn import_usage(
+        &self,
+        request: crate::UsageImportRequest,
+    ) -> Result<crate::UsageImportReport> {
+        let _ = request;
+        Err(crate::Error::not_implemented("usage import"))
+    }
+
     // --- v0.3: models and speed ------------------------------------------------
 
     /// The Models page of a profile: model list (provider, feed or snapshot, with

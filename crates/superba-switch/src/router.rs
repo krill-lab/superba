@@ -31,10 +31,11 @@ use async_trait::async_trait;
 use superba_core::{
     ActiveState, AuthShape, ClearReport, ClearRequest, CodexPath, ConfigState, DataDir, Error,
     ExecuteOptions, InflightRequest, KeyResolution, NoEvents, OutcomeStatus, PriceTable, Profile,
-    ProfileId, ProfileSet, RequestDetail, RequestPage, RequestQuery, RequestStats, Result,
-    RouterInstallRequest, RouterLineHealth, RouterLineView, RouterMemberView, RouterStatsSettings,
-    RouterStatsStatus, RouterView, RouterWatch, RouterWatchState, SafeDefaults, Secret, Site,
-    SiteKind, StatsQuery, SwitchIntent, SwitchOutcome, SwitchRequest, SwitchService,
+    ProfileId, ProfileSet, RequestDetail, RequestPage, RequestQuery, RequestSource, RequestStats,
+    Result, RouterInstallRequest, RouterLineHealth, RouterLineView, RouterMemberView,
+    RouterStatsSettings, RouterStatsStatus, RouterView, RouterWatch, RouterWatchState,
+    SafeDefaults, Secret, Site, SiteKind, StatsQuery, SwitchIntent, SwitchOutcome, SwitchRequest,
+    SwitchService,
 };
 use superba_router::config::RouterConfig;
 use superba_router::members::{MemberPath, member_from_site, router_id};
@@ -1027,21 +1028,42 @@ pub(crate) fn price_table(feed: Option<PriceTable>) -> PriceTable {
 
 impl Switcher {
     pub(crate) async fn router_requests_impl(&self, query: RequestQuery) -> Result<RequestPage> {
-        let page = match self.deps.router.requests(&query).await {
-            Ok(page) => page,
-            Err(e) if e.is_not_implemented() => RequestPage::default(),
-            Err(e) => return Err(e),
+        let wants = |s: RequestSource| query.source.is_none_or(|q| q == s);
+        let page = if !wants(RequestSource::Router) {
+            RequestPage::default()
+        } else {
+            match self.deps.router.requests(&query).await {
+                Ok(page) => page,
+                Err(e) if e.is_not_implemented() => RequestPage::default(),
+                Err(e) => return Err(e),
+            }
         };
         // Codex's rollouts fill in what the router did not record (also when
-        // there is no router at all); a live tail of router rows skips them.
+        // there is no router at all), imported rows add another tool's
+        // history; a live tail of router rows skips both.
         let mut page = if query.after_id.is_some() {
             page
         } else {
-            let (rollout, truncated) = self
-                .rollout_rows(query.from, query.to)
-                .await
-                .unwrap_or_default();
-            crate::usage::merge_page(page, &rollout, &query, truncated)
+            let mut extra = Vec::new();
+            let mut truncated = false;
+            if wants(RequestSource::Rollout) {
+                let (rows, t) = self
+                    .rollout_rows(query.from, query.to)
+                    .await
+                    .unwrap_or_default();
+                extra.extend(rows);
+                truncated |= t;
+            }
+            if query.source.is_none_or(|s| s.imported_from().is_some()) {
+                match self.imported_rows(query.from, query.to).await {
+                    Ok((rows, t)) => {
+                        extra.extend(rows);
+                        truncated |= t;
+                    }
+                    Err(e) => tracing::warn!(error = %e, "imported usage not read"),
+                }
+            }
+            crate::usage::merge_page(page, &extra, &query, truncated)
         };
         // The database cannot know whether rows are being written: ask the
         // running router (a stopped router records nothing).
@@ -1058,7 +1080,10 @@ impl Switcher {
     }
 
     pub(crate) async fn router_request_impl(&self, id: i64) -> Result<RequestDetail> {
-        // Rollout rows have negative ids.
+        // Imported rows have the lowest ids, rollout rows the other negative ones.
+        if id < crate::usage_import::ID_LIMIT {
+            return self.imported_detail(id).await;
+        }
         if id < 0 {
             return self.rollout_detail(id).await;
         }
@@ -1066,16 +1091,34 @@ impl Switcher {
     }
 
     pub(crate) async fn router_stats_impl(&self, query: StatsQuery) -> Result<RequestStats> {
-        let stats = match self.deps.router.request_stats(&query).await {
-            Ok(stats) => stats,
-            Err(e) if e.is_not_implemented() => RequestStats::default(),
-            Err(e) => return Err(e),
+        let wants = |s: RequestSource| query.source.is_none_or(|q| q == s);
+        let stats = if !wants(RequestSource::Router) {
+            RequestStats::default()
+        } else {
+            match self.deps.router.request_stats(&query).await {
+                Ok(stats) => stats,
+                Err(e) if e.is_not_implemented() => RequestStats::default(),
+                Err(e) => return Err(e),
+            }
         };
-        let (rollout, _) = self
-            .rollout_rows(query.from, query.to)
-            .await
-            .unwrap_or_default();
-        Ok(crate::usage::merge_stats(stats, &rollout, &query))
+        let mut extra = Vec::new();
+        if wants(RequestSource::Rollout) {
+            let (rows, _) = self
+                .rollout_rows(query.from, query.to)
+                .await
+                .unwrap_or_default();
+            extra.extend(rows);
+        }
+        let imported = query.source.is_none_or(|s| s.imported_from().is_some());
+        if imported && let Ok((rows, _)) = self.imported_rows(query.from, query.to).await {
+            extra.extend(rows);
+        }
+        let stats = crate::usage::merge_stats(stats, &extra, &query);
+        if !imported {
+            return Ok(stats);
+        }
+        let days = self.imported_days().await.unwrap_or_default();
+        Ok(crate::usage::merge_days(stats, &days, &query))
     }
 
     pub(crate) async fn router_clear_impl(&self, request: ClearRequest) -> Result<ClearReport> {

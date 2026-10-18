@@ -597,6 +597,7 @@ fn request_queries_default_when_absent_and_round_trip() {
     assert_eq!(q.sort.key, RequestSortKey::Time);
     assert_eq!(RequestQuery::DEFAULT_LIMIT, 500);
     round_trip(&RequestQuery {
+        source: None,
         from: Some(ts(1)),
         to: Some(ts(2)),
         member: Some(ProfileId::new("m")),
@@ -755,6 +756,7 @@ fn request_pages_details_stats_and_inflight_round_trip() {
         totals: RequestTotals::default(),
     });
     round_trip(&StatsQuery {
+        source: None,
         from: Some(ts(1)),
         to: None,
         by: StatsGroupBy::Session,

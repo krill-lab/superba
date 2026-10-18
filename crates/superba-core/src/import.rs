@@ -520,3 +520,115 @@ impl ImportReport {
         self.items.iter().find_map(|i| i.outcome.profile())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Usage history (GitHub issue 1)
+// ---------------------------------------------------------------------------
+
+/// What [`crate::SwitchService::import_usage`] does with one tool's usage
+/// history.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UsageImportRequest {
+    /// The tool.
+    pub source: ImportSource,
+    /// Preview only: read and count, write nothing.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Remove what earlier imports of this tool added (the tool is not read).
+    #[serde(default)]
+    pub remove: bool,
+}
+
+impl UsageImportRequest {
+    /// A preview of `source`.
+    pub fn preview(source: ImportSource) -> Self {
+        Self {
+            source,
+            dry_run: true,
+            remove: false,
+        }
+    }
+
+    /// An import of `source`.
+    pub fn import(source: ImportSource) -> Self {
+        Self {
+            source,
+            dry_run: false,
+            remove: false,
+        }
+    }
+}
+
+/// Preview or result of a usage import: what the tool's database holds for
+/// Codex and what of it Superba adds to its usage history. Requests keep the
+/// tool's own ids (imported once; a second import adds only what is new), its
+/// recorded costs and its provider names; the Usage page lists them as
+/// "imported from …".
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UsageImportReport {
+    /// The tool.
+    pub source: ImportSource,
+    /// Nothing was written.
+    pub dry_run: bool,
+    /// Imported rows were removed instead ([`UsageImportRequest::remove`]).
+    #[serde(default)]
+    pub removed: bool,
+    /// The databases looked at.
+    #[serde(default)]
+    pub stores: Vec<ImportStore>,
+    /// Requests added (with `dry_run`: that would be added).
+    pub requests: u64,
+    /// Requests an earlier import already added.
+    pub already: u64,
+    /// Daily totals added: days the tool keeps only as totals (older than its
+    /// detail retention); they count in the statistics, not in the request list.
+    pub days: u64,
+    /// Requests those daily totals stand for.
+    pub day_requests: u64,
+    /// Rows the tool read from Codex's own session files for conversations
+    /// Superba reads itself (not imported again).
+    pub covered: u64,
+    /// Rows of other coding tools (Claude Code, Gemini CLI, …): not imported.
+    pub other_apps: u64,
+    /// Earliest imported time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first: Option<crate::Timestamp>,
+    /// Latest imported time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<crate::Timestamp>,
+    /// Cost of the added rows and days, as the tool recorded it.
+    pub cost: crate::Usd,
+    /// Added rows and days without a recorded cost (shown without one).
+    pub unpriced: u64,
+    /// Remarks (a newer schema than Superba knows, …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<LocalizedText>,
+}
+
+impl UsageImportReport {
+    /// An empty report of `source`.
+    pub fn new(source: ImportSource, dry_run: bool) -> Self {
+        Self {
+            source,
+            dry_run,
+            removed: false,
+            stores: Vec::new(),
+            requests: 0,
+            already: 0,
+            days: 0,
+            day_requests: 0,
+            covered: 0,
+            other_apps: 0,
+            first: None,
+            last: None,
+            cost: crate::Usd::ZERO,
+            unpriced: 0,
+            notes: Vec::new(),
+        }
+    }
+
+    /// True when a store of the tool was read.
+    pub fn found(&self) -> bool {
+        self.stores.iter().any(|s| s.status == StoreStatus::Read)
+    }
+}

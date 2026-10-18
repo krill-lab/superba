@@ -22,6 +22,7 @@
 pub mod account;
 mod actions;
 mod add;
+mod compaction;
 mod connection;
 mod detail;
 pub mod form;

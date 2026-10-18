@@ -1837,6 +1837,20 @@ impl SwitchService for FakeService {
         providers::line_transports(self, request).await
     }
 
+    async fn provider_compaction(
+        &self,
+        request: superba_core::CompactionRequest,
+    ) -> Result<superba_core::ProviderCompaction> {
+        providers::provider_compaction(self, request).await
+    }
+
+    async fn import_usage(
+        &self,
+        request: superba_core::UsageImportRequest,
+    ) -> Result<superba_core::UsageImportReport> {
+        import::import_usage(self, request).await
+    }
+
     async fn account(&self, request: AccountRequest) -> Result<AccountReport> {
         providers::account(self, request).await
     }

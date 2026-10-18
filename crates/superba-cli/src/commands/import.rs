@@ -22,7 +22,9 @@ const HEADERS: [&str; 6] = [
 ];
 
 pub(super) async fn run(args: &ImportArgs, rt: &Runtime, out: &mut Output) -> Result {
-    let source: ImportSource = args.source.into();
+    let Some(source) = args.source.map(ImportSource::from) else {
+        return Err(usage(out, text("cli.import.no_source")));
+    };
     let on_conflict: ConflictAction = args.on_conflict.into();
     let scan = rt
         .service
@@ -84,10 +86,18 @@ pub(super) async fn run(args: &ImportArgs, rt: &Runtime, out: &mut Output) -> Re
 }
 
 fn describe_stores(found: &SourceScan, out: &mut Output) -> Result<()> {
-    let tool = found.source.name();
-    if !found.found() {
-        let paths = found
-            .stores
+    describe(found.source, &found.stores, found.found(), out)
+}
+
+fn describe(
+    source: ImportSource,
+    stores: &[superba_core::ImportStore],
+    found: bool,
+    out: &mut Output,
+) -> Result<()> {
+    let tool = source.name();
+    if !found {
+        let paths = stores
             .iter()
             .map(|s| s.display_path.clone())
             .collect::<Vec<_>>()
@@ -99,7 +109,7 @@ fn describe_stores(found: &SourceScan, out: &mut Output) -> Result<()> {
         )?;
         return Ok(());
     }
-    for store in &found.stores {
+    for store in stores {
         let note = store.note.clone();
         let line = match store.status {
             StoreStatus::Read => text("cli.import.store_read"),
@@ -294,4 +304,85 @@ fn summary(found: &SourceScan, report: &ImportReport, out: &mut Output) -> Resul
         out.line(text("cli.import.nothing"))?;
     }
     Ok(())
+}
+
+/// `spb import usage ccs|ai-toolbox [--dry-run] [--remove]`: the usage history
+/// another tool recorded for Codex, previewed (counts, date range, recorded
+/// cost) and imported into Superba's usage history, or taken out again.
+pub(super) async fn usage_run(
+    args: &crate::ImportUsageArgs,
+    rt: &Runtime,
+    out: &mut Output,
+) -> Result {
+    let source: ImportSource = args.source.into();
+    let request = superba_core::UsageImportRequest {
+        source,
+        dry_run: args.dry_run,
+        remove: args.remove,
+    };
+    let r = rt.service.import_usage(request).await?;
+    let tool = source.name();
+    if r.removed {
+        out.line(
+            text(if r.dry_run {
+                "cli.import_usage.would_remove"
+            } else {
+                "cli.import_usage.removed"
+            })
+            .arg("tool", tool)
+            .arg("n", r.requests)
+            .arg("days", r.days),
+        )?;
+        out.value(&r)?;
+        return Ok(exit::OK);
+    }
+    describe(source, &r.stores, r.found(), out)?;
+    if !r.found() {
+        out.value(&r)?;
+        return Ok(exit::OK);
+    }
+    let range = match (r.first, r.last) {
+        (Some(a), Some(b)) => out.render(
+            &text("cli.import_usage.range")
+                .arg("from", a.to_rfc3339().chars().take(10).collect::<String>())
+                .arg("to", b.to_rfc3339().chars().take(10).collect::<String>()),
+        ),
+        _ => String::new(),
+    };
+    out.line(
+        text(if r.dry_run {
+            "cli.import_usage.would_add"
+        } else {
+            "cli.import_usage.added"
+        })
+        .arg("n", r.requests)
+        .arg("days", r.days)
+        .arg("day_requests", r.day_requests)
+        .arg("range", range)
+        .arg("cost", r.cost.to_string()),
+    )?;
+    if r.unpriced > 0 {
+        out.line(
+            text("cli.import_usage.unpriced")
+                .arg("n", r.unpriced)
+                .arg("tool", tool),
+        )?;
+    }
+    if r.already > 0 {
+        out.line(text("cli.import_usage.already").arg("n", r.already))?;
+    }
+    if r.covered > 0 {
+        out.line(text("cli.import_usage.covered").arg("n", r.covered))?;
+    }
+    if r.other_apps > 0 {
+        out.line(text("cli.import_usage.other_apps").arg("n", r.other_apps))?;
+    }
+    for note in &r.notes {
+        out.line(text("cli.import.store_note").arg_text("note", note.clone()))?;
+    }
+    if r.dry_run && (r.requests > 0 || r.days > 0) {
+        out.line(text("cli.import_usage.dry_run_hint").arg("source", source.id()))?;
+    }
+    out.value(&r)?;
+    Ok(exit::OK)
 }

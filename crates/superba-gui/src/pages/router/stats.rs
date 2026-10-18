@@ -119,6 +119,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     if s.stats.due(live.then_some(Duration::from_secs(10))) {
         let service = cx.service.clone();
         let q = StatsQuery {
+            source: None,
             from: Some(s.range.from(cx.now)),
             to: None,
             by: s.by,

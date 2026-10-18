@@ -159,7 +159,7 @@ fn unreadable(error: impl std::fmt::Display) -> LocalizedText {
 }
 
 /// Rows of a JSONB table as decoded JSON text (`None` for an undecodable row).
-fn rows(
+pub(crate) fn rows(
     conn: &rusqlite::Connection,
     table: &str,
 ) -> rusqlite::Result<Vec<(String, Option<Value>)>> {

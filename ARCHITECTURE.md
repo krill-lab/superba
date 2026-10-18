@@ -77,11 +77,11 @@ panics.
 | `EnvPersister` | Persist `CODEX_AUTHAPI_BASE_URL` for future processes | `inspect`, `plan(var, EnvOp)`, `apply`, `revert`, `set_authapi_base_url`, `clear_authapi_base_url` |
 | `SecretStore` | Profile keys in the OS keyring (0600 file fallback) | `get`, `put`, `delete`, `backend` |
 | `ProfileStore` | `profiles.json` (`ProfileSet`: profiles, custom sites, settings) | `load`, `save` |
-| `LineProber` | Latency/health of lines, key validation, auth API health, models, Responses probe, WebSocket / zstd transport probe, account and usage data | `probe`, `probe_all`, `check_key`, `check_authapi(site, origin, key)`, `list_models`, `probe_responses`, `probe_transports`, `account_summary`, `usage_report` |
+| `LineProber` | Latency/health of lines, key validation, auth API health, models, Responses probe, WebSocket / zstd transport probe, remote compaction check, account and usage data | `probe`, `probe_all`, `check_key`, `check_authapi(site, origin, key)`, `list_models`, `probe_responses`, `probe_transports`, `probe_compaction`, `account_summary`, `usage_report` |
 | `SessionMigrator` | Session provider scan, migration with backup + ledger, rollback, crash recovery | `scan`, `plan`, `migrate`, `rollback`, `history`, `recover` |
 | `AppController` | Installs, CLI binaries, launch with CDP, bridge, hot restart, quit, processes, turn activity, renderer state, daemon, launcher entry | `detect_installs`, `codex_binaries`, `running_session`, `launch`, `probe_bridge`, `hot_restart`, `quit`, `full_restart`, `processes`, `session_and_processes`, `turn_activity`, `renderer_state`, `current_thread`, `return_to_thread`, `restart_daemon`, `stop_daemon`, `remote_connections`, `launcher_entry`, `set_launcher_entry`, `environment_stamp`, `forget_cached_probes` |
 | `RemoteHosts` | SSH hosts: discovery, probe, remote apply/rollback, turn activity, verification | `discover(home, from_app, live)`, `probe`, `plan_apply`, `apply`, `rollback`, `turn_activity`, `verify(RemoteVerifyRequest)` |
-| `SwitchService` | Application service for GUI and CLI | `overview`, `sites`, `profile_set`, `save_profile`, `delete_profile`, `save_settings`, `save_site`, `delete_site`, `probe_lines`, `probe_site`, `line_transports`, `check_key`, `account`, `sessions`, `doctor`, `open_app`, `recover`, `plan`, `plan_settings`, `execute`, `settings_view`, `edit_settings`, `router_status`, `router_install`, `router_set_enabled`, `router_uninstall`, `router_watch`, `router_fall_back`, `environment_event`, `environment_generation` |
+| `SwitchService` | Application service for GUI and CLI | `overview`, `sites`, `profile_set`, `save_profile`, `delete_profile`, `save_settings`, `save_site`, `delete_site`, `probe_lines`, `probe_site`, `line_transports`, `provider_compaction`, `import_scan`, `import_apply`, `import_usage`, `check_key`, `account`, `sessions`, `doctor`, `open_app`, `recover`, `plan`, `plan_settings`, `execute`, `settings_view`, `edit_settings`, `router_status`, `router_install`, `router_set_enabled`, `router_uninstall`, `router_watch`, `router_fall_back`, `environment_event`, `environment_generation` |
 | `SwitchDecider` | Mid-execution questions (wait for turns, force quit, IPC failed, verification failed) | `decide(DecisionRequest) -> Decision` |
 | `SwitchEvents` | Progress events to the UI | `emit(SwitchEvent)` |
 | `Clock` | Injectable time (countdowns, ages) | `now`, `monotonic` |
@@ -238,6 +238,17 @@ profiles become ordinary settings) and the first save keeps `profiles.v1.json`.
   right after a hot restart; verification therefore compares Superba's owned keys,
   not the file hash. The app lists threads of every source except `exec` (so a
   migrated `codex exec` session stays out of the recents list).
+- Remote compaction (Codex 0.155+; GitHub issue 3): Codex sends the history with a
+  `{"type":"compaction_trigger"}` input item to the ordinary `…/responses`
+  endpoint (HTTP or WebSocket), expects exactly one `compaction` output item
+  (`encrypted_content`, readable only by the provider that made it) and sends it
+  as input in every later request of the conversation; `…/responses/compact` is
+  no longer called. The built-in `openai` provider always compacts remotely
+  (0.149–0.161: default-on `features.remote_compaction_v2`; 0.162+: the
+  provider's capability). `capabilities.remote_compaction = "unsupported"`
+  exists only on `[model_providers.<custom id>]`, and built-in ids cannot be
+  redefined, so for the configuration Superba writes there is no local
+  compaction switch: Superba warns and routes instead (section 8).
 - Codex trusts extra roots from `CODEX_CA_CERTIFICATE` or `SSL_CERT_FILE`.
 - On Linux, Chromium overwrites `/proc/<main pid>/environ` (the app's environment
   is read from its app-server child) and rewrites the command lines of its
@@ -322,8 +333,10 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 | `logs/` | binaries |
 | `cache/usage/` (usage reports per site, key fingerprint and range; no keys) | net |
 | `cache/transports.json` (WebSocket / zstd checks per site, line, base URL and key fingerprint, with the time of the check; no keys) | switch |
+| `cache/compaction.json` (remote compaction checks per site, base URL and key fingerprint, with the time and model of the check; no keys) | switch |
+| `imported-usage.sqlite3` (usage history imported from cc-switch / AI Toolbox: requests by the tool's own id, daily totals; numbers, model and provider names only) | switch |
 | `cache/import/import-<uuid>/` (a private 0700 copy of another tool's database with pending `-wal` / `-journal` changes, removed right after reading) | import |
-| `router/` (`config.json`, 0600 `secrets.json` and `runtime.json`, log) | router |
+| `router/` (`config.json`, 0600 `secrets.json` and `runtime.json`, log, `compactions.json`: which member made each compaction item, by fingerprint) | router |
 | `catalog/` (a downloaded, signature-checked settings catalog; unused while remote updates are off) | catalog |
 | `selfupdate.json` (ETags and answers of the release check, last check time, skipped version, macOS backup to remove, the record of the last install attempt; no secrets), `downloads/superba-update/` (verified Superba packages and staging), `logs/selfupdate*.log` (the install attempts' steps) | versions |
 
@@ -465,6 +478,32 @@ attempt (`RequestAttempt::compression`: uncompressed, zstd from Codex, zstd by
 the router, zstd refused and resent; the answering attempt's value is shown in
 the request detail); the transport (`RequestRow::transport`) is the same on both
 legs.
+
+**Remote compaction** (GitHub issue 3; `superba_router::compaction`,
+`superba_switch::compaction`). Each member carries its
+`MemberConfig::compaction` (native / unsupported / unknown): the profile's
+choice (`Profile::compaction`), else a definite result of
+`LineProber::probe_compaction` (Codex's own V2 request with a two-message
+conversation; a few tokens; cached in `cache/compaction.json` 7 days, an
+inconclusive answer 1 day; run by the provider page and `spb profile compaction
+--check`, never by planning or routing), else Krill's built-in fact (native).
+The router reads each Responses body (decoded zstd) and `response.create` frame
+that contains the bytes `compaction`: a `compaction_trigger` (the request
+compacts) and the SHA-256 fingerprints of `compaction` items. It learns the maker
+of each compaction item from the answer's output item (and adopts an unknown
+item for the member that answered a request carrying it successfully), kept in
+`router/compactions.json` (20 000 fingerprints, 90 days). Routing: a known maker
+→ only that member's lines, no failover to other members, 503
+`compaction_owner_unavailable` when none answers; an unknown maker or a
+compaction request → members not marked unsupported; none left → 400
+`compaction_unsupported` with an explanation. A WebSocket socket stays on its
+line, so a frame that must go elsewhere is not forwarded: the session is
+re-pinned and the socket closed with 1012, Codex reconnects (its handshake
+follows the pin) and resends; a refusal is an `error` event. Bodies are never
+changed (no simulated compaction). Planning reads only caches and the rollout
+index: it warns when the destination cannot compact (or was never checked),
+names the router members compaction skips, and counts the conversations of the
+last 7 days whose latest compaction was made by a provider on another site.
 
 **Local budget** (user bug 35; `superba_router::limits`). Each proxied request
 holds two sockets and a WebSocket session two for its life, and launchd starts
@@ -614,6 +653,22 @@ name, same address) and pre-selects the importable ones; `plan` turns selections
 sources for an import (keys never leave the service) and saves through
 `save_site` / `save_profile` (secret store, router member resync); Codex is never
 touched.
+
+The same databases hold the tools' **usage history** (GitHub issue 1;
+`superba_import::usage`, `superba_switch::usage_import`): `proxy_request_logs`
+(one row per request, stable `request_id`, `app_type`, tokens, the tool's
+`total_cost_usd`, `data_source` = its proxy or its reading of Codex's session
+files) and `usage_daily_rollups` (totals of pruned days). Columns are detected
+per database; only Codex rows are read; token semantics are normalised (cc-switch
+`input_token_semantics`, AI Toolbox fresh input). `SwitchService::import_usage`
+previews (counts, date range, recorded cost, rows covered by Superba's own
+rollouts, other apps) or adds them to `<data dir>/imported-usage.sqlite3`,
+keyed by (tool, request id) or the rollup's key, so a second import adds only
+what is new; session-derived rows are imported only for threads the rollout
+index does not know, session totals only for days before its oldest row. The
+Usage page and `spb usage` merge imported requests like rollout rows
+(`RequestSource::CcSwitch` / `AiToolbox`, ids below `-2^62`, filter
+`RequestQuery::source`), and daily totals into the statistics only.
 
 ### Coexistence with other configuration managers (GH#5)
 

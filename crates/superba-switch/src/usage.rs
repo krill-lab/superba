@@ -264,7 +264,10 @@ fn status_kind(s: &RequestStatus) -> (&'static str, Option<&str>) {
 /// source-list entry). `after_id` (live tail of router rows) matches no rollout
 /// row.
 pub fn matches(r: &RequestRow, q: &RequestQuery, with_group: bool) -> bool {
-    if q.after_id.is_some() && r.source == RequestSource::Rollout {
+    if q.after_id.is_some() && r.source != RequestSource::Router {
+        return false;
+    }
+    if q.source.is_some_and(|s| s != r.source) {
         return false;
     }
     if q.from.is_some_and(|f| r.started_at < f) || q.to.is_some_and(|t| r.started_at >= t) {
@@ -548,6 +551,7 @@ pub fn merge_stats(
             q.from.is_none_or(|f| r.started_at >= f)
                 && q.to.is_none_or(|t| r.started_at < t)
                 && q.member.as_ref().is_none_or(|m| &r.member_id == m)
+                && q.source.is_none_or(|s| s == r.source)
         })
         .collect();
     if rows.is_empty() {
@@ -579,6 +583,87 @@ pub fn merge_stats(
             lines: Vec::new(),
         });
         add_row(&mut d.totals, r);
+    }
+    stats.buckets = merge_buckets(std::mem::take(&mut stats.buckets), buckets);
+    if q.by == StatsGroupBy::Day {
+        stats.buckets.sort_by(|a, b| a.key.cmp(&b.key));
+    } else {
+        stats.buckets.sort_by(by_cost);
+    }
+    stats.daily = merge_buckets(std::mem::take(&mut stats.daily), daily);
+    stats.daily.sort_by(|a, b| a.key.cmp(&b.key));
+    stats
+}
+
+/// Add an imported day's totals (requests it stands for, tokens, recorded
+/// cost) to `t`.
+pub fn add_day(t: &mut RequestTotals, d: &crate::usage_import::ImportedDay) {
+    t.requests += d.requests;
+    t.ok += d.ok.min(d.requests);
+    t.errors += d.requests.saturating_sub(d.ok);
+    t.input_tokens += d.input;
+    t.cached_tokens += d.cached;
+    t.cache_write_tokens += d.cache_write;
+    t.output_tokens += d.output;
+    match d.cost {
+        Some(c) => {
+            t.cost = superba_core::Usd::from_micros(t.cost.micros().saturating_add(c.micros()))
+        }
+        None if d.input > 0 || d.output > 0 => t.unpriced += 1,
+        None => {}
+    }
+}
+
+/// The statistics plus imported daily totals (days the other tool kept only
+/// as totals) in the query's range, member and source. A day counts at the
+/// local midnight of its date at the query's UTC offset.
+pub fn merge_days(
+    mut stats: RequestStats,
+    days: &[crate::usage_import::ImportedDay],
+    q: &StatsQuery,
+) -> RequestStats {
+    let offset_ms = i64::from(q.utc_offset_minutes) * 60_000;
+    let picked: Vec<&crate::usage_import::ImportedDay> = days
+        .iter()
+        .filter(|d| {
+            let Some(start) = crate::usage_import::day_start_ms(&d.day, offset_ms) else {
+                return false;
+            };
+            let at = Timestamp::from_millis(start);
+            q.from.is_none_or(|f| at >= f)
+                && q.to.is_none_or(|t| at < t)
+                && q.member.as_ref().is_none_or(|m| &d.member_id == m)
+                && q.source
+                    .is_none_or(|s| s == RequestSource::of_import(d.source))
+        })
+        .collect();
+    if picked.is_empty() {
+        return stats;
+    }
+    let mut buckets: BTreeMap<String, StatsBucket> = BTreeMap::new();
+    let mut daily: BTreeMap<String, StatsBucket> = BTreeMap::new();
+    for d in picked {
+        add_day(&mut stats.totals, d);
+        let (key, label) = match q.by {
+            StatsGroupBy::Provider => (d.member_id.to_string(), d.member_name.clone()),
+            StatsGroupBy::Day => (d.day.clone(), d.day.clone()),
+            StatsGroupBy::Session => (String::new(), String::new()),
+            _ => (d.model.clone(), d.model.clone()),
+        };
+        let b = buckets.entry(key.clone()).or_insert_with(|| StatsBucket {
+            key,
+            label,
+            totals: RequestTotals::default(),
+            lines: Vec::new(),
+        });
+        add_day(&mut b.totals, d);
+        let day = daily.entry(d.day.clone()).or_insert_with(|| StatsBucket {
+            key: d.day.clone(),
+            label: d.day.clone(),
+            totals: RequestTotals::default(),
+            lines: Vec::new(),
+        });
+        add_day(&mut day.totals, d);
     }
     stats.buckets = merge_buckets(std::mem::take(&mut stats.buckets), buckets);
     if q.by == StatsGroupBy::Day {

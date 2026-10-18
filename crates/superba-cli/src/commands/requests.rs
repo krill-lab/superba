@@ -70,6 +70,7 @@ pub(super) async fn log(args: &RouterLogArgs, rt: &Runtime, out: &mut Output) ->
             LogClientArg::Exec => RequestClient::Exec,
         }),
         limit: args.limit,
+        source: args.source.map(Into::into),
         ..RequestQuery::default()
     };
     let page = rt.service.router_requests(query).await?;
@@ -114,9 +115,14 @@ async fn render_log(
                 r.started_at.to_rfc3339(),
                 session(r),
                 out.render(&r.status.text()),
-                match r.line_label() {
-                    Some(line) => format!("{} · {line}", r.member_name),
-                    None => r.member_name.clone(),
+                match (r.line_label(), r.source.imported_from()) {
+                    (Some(line), _) => format!("{} · {line}", r.member_name),
+                    (None, Some(tool)) => out.render(
+                        &text("cli.requests.imported")
+                            .arg("name", &r.member_name)
+                            .arg("tool", tool.name()),
+                    ),
+                    (None, None) => r.member_name.clone(),
                 },
                 r.model.clone().unwrap_or_else(|| "-".into()),
                 tokens(r.input_tokens),
@@ -197,7 +203,13 @@ async fn render_log(
     out.line(text("cli.requests.remote_note"))
 }
 
-pub(super) async fn stats(by: StatsByArg, secs: u64, rt: &Runtime, out: &mut Output) -> Result {
+pub(super) async fn stats(
+    by: StatsByArg,
+    secs: u64,
+    source: Option<superba_core::RequestSource>,
+    rt: &Runtime,
+    out: &mut Output,
+) -> Result {
     let offset = local_offset_minutes();
     let stats = rt
         .service
@@ -210,6 +222,7 @@ pub(super) async fn stats(by: StatsByArg, secs: u64, rt: &Runtime, out: &mut Out
                 StatsByArg::Session => StatsGroupBy::Session,
             },
             utc_offset_minutes: offset,
+            source,
             ..StatsQuery::default()
         })
         .await?;

@@ -505,7 +505,11 @@ pub fn provider_cell(row: &RequestRow) -> String {
     };
     match row.line_name.as_deref().or(row.line_id.as_deref()) {
         Some(line) if !line.is_empty() => format!("{member} · {line}"),
-        _ => member,
+        // Imported rows name the tool they come from.
+        _ => match row.source.imported_from() {
+            Some(tool) => format!("{member} · {}", tool.name()),
+            None => member,
+        },
     }
 }
 
@@ -848,6 +852,8 @@ pub fn cell(
                     provider_cell(row),
                     tr.t("requests.detail.line_router_only")
                 ));
+            } else if row.source.imported_from().is_some() {
+                c = c.tooltip(tr.text(&row.source.text()));
             }
             c
         }
@@ -876,7 +882,13 @@ pub fn cell(
         Col::Tps => LogCell::text(tps(row.tps_milli)),
         Col::Cost => {
             let mut c = LogCell::text(cost_cell(row.cost));
-            if row.cost.is_some() {
+            if let Some(tool) = row.source.imported_from() {
+                c = c.tooltip(if row.cost.is_some() {
+                    tr.f("requests.tip.cost_imported", &[("tool", &tool.name())])
+                } else {
+                    tr.f("requests.tip.unpriced_imported", &[("tool", &tool.name())])
+                });
+            } else if row.cost.is_some() {
                 c = c.tooltip(tr.t("requests.tip.cost"));
             } else if row.input_tokens.is_some() || row.output_tokens.is_some() {
                 c = c.tooltip(tr.t("requests.tip.unpriced"));

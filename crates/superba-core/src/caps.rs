@@ -358,7 +358,9 @@ pub struct ResponsesProbe {
     pub status: Option<u16>,
     /// Time to the complete answer.
     pub latency_ms: Option<u32>,
-    /// `/responses/compact` is supported (when it was probed).
+    /// The legacy `/responses/compact` endpoint answered (when it was probed;
+    /// Codex 0.155+ no longer calls it: remote compaction is a
+    /// `compaction_trigger` on `/responses`, see [`crate::compaction`]).
     #[serde(default)]
     pub compact_ok: Option<bool>,
     /// Short redacted diagnostic.

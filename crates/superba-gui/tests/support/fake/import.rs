@@ -15,6 +15,9 @@ pub(super) struct State {
     report: Option<ImportReport>,
     scans: Vec<ImportScanRequest>,
     applied: Vec<ImportApplyRequest>,
+    /// Usage history per source (previews answer it, imports mark it imported).
+    usage: std::collections::BTreeMap<ImportSource, UsageImportReport>,
+    usage_requests: Vec<UsageImportRequest>,
 }
 
 impl FakeService {
@@ -27,6 +30,21 @@ impl FakeService {
     /// candidate's target name, with a key when the candidate has one).
     pub fn set_import_report(&self, report: ImportReport) {
         self.areas.import.lock().unwrap().report = Some(report);
+    }
+
+    /// What a usage preview of `report.source` finds.
+    pub fn set_usage_report(&self, report: UsageImportReport) {
+        self.areas
+            .import
+            .lock()
+            .unwrap()
+            .usage
+            .insert(report.source, report);
+    }
+
+    /// Usage imports and previews requested.
+    pub fn usage_requests(&self) -> Vec<UsageImportRequest> {
+        self.areas.import.lock().unwrap().usage_requests.clone()
     }
 
     /// Imports requested.
@@ -102,4 +120,28 @@ pub(super) async fn apply(fake: &FakeService, request: ImportApplyRequest) -> Re
         dry_run: request.dry_run,
         items,
     })
+}
+
+/// A usage preview answers the set report; an import answers it as written
+/// and turns later previews into "already imported".
+pub(super) async fn import_usage(
+    fake: &FakeService,
+    request: UsageImportRequest,
+) -> Result<UsageImportReport> {
+    fake.delay(100).await;
+    let mut area = fake.areas.import.lock().unwrap();
+    area.usage_requests.push(request);
+    let Some(found) = area.usage.get(&request.source).cloned() else {
+        return Ok(UsageImportReport::new(request.source, request.dry_run));
+    };
+    let mut r = found.clone();
+    r.dry_run = request.dry_run;
+    if !request.dry_run {
+        let mut later = found;
+        later.already += later.requests + later.days;
+        later.requests = 0;
+        later.days = 0;
+        area.usage.insert(request.source, later);
+    }
+    Ok(r)
 }

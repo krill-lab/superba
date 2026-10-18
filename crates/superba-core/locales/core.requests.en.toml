@@ -13,6 +13,8 @@ other = "Other"
 [request_source]
 router = "Local router"
 rollout = "Codex session files"
+ccs = "Imported from CC Switch"
+ai_toolbox = "Imported from AI Toolbox"
 
 [request_status]
 ok = "OK"

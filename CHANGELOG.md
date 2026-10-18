@@ -189,6 +189,25 @@ back to the official ChatGPT login.
 
 ### Router, usage and account
 
+- **Remote compaction per provider** (GitHub issue 3): Codex compacts with a
+  `compaction_trigger` request to the provider and only that provider can read
+  the result, and for the configuration Superba writes it has no local-compaction
+  setting. The Connection tab and `spb profile compaction <id> [--check]` show
+  whether a provider compacts natively (Superba's check: one tiny compaction
+  request, a few tokens, cached a week; Krill is native) with an override
+  (`--compaction auto|native|unsupported`); the switch preview warns about a
+  destination that cannot compact and counts recent conversations another site's
+  provider compacted; the local router sends compaction requests only to members
+  that can compact and keeps every compacted conversation with the member that
+  made it (HTTP and WebSocket, no failover elsewhere, a clear error instead).
+- **Usage history from cc-switch and AI Toolbox** (GitHub issue 1): the import
+  dialog and `spb import usage ccs|ai-toolbox [--dry-run] [--remove]` preview
+  (requests, daily totals, date range, recorded cost) and import their Codex
+  usage records into the Usage page, read-only and once per request (the tool's
+  ids), costs as recorded, rows from Codex's session files skipped where Superba
+  reads them itself; imported rows show their source and the source filter
+  (`spb usage --source`) selects them.
+
 - **Local router (opt-in, off by default)**: `superba-router`, a per-user
   service on `127.0.0.1` (systemd user unit with an XDG autostart fallback,
   LaunchAgent, `HKCU` Run entry), forwards this computer's Codex requests to

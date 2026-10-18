@@ -12,6 +12,8 @@ other = "其他"
 [request_source]
 router = "本地路由"
 rollout = "Codex 会话记录"
+ccs = "从 CC Switch 导入"
+ai_toolbox = "从 AI Toolbox 导入"
 
 [request_status]
 ok = "完成"

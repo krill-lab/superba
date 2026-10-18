@@ -45,3 +45,7 @@ surrealdb = "这是 AI Toolbox 的旧数据库格式（v0.9.1 及更早），Sup
 unknown_layout = "它的结构（数据库版本 {version}）不是 Superba 已知的格式；未读取任何内容。"
 unknown_version = "版本 {version} 不是 Superba 已知的格式；未读取任何内容。"
 unreadable = "无法读取：{error}。请关闭 {tool} 后重试。"
+
+[import.usage]
+none = "其中没有 Codex 的用量记录。"
+unknown_layout = "其请求表结构未知，未读取请求记录。"

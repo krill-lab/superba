@@ -46,6 +46,7 @@ mod settings;
 mod sites;
 mod transports;
 pub mod usage;
+pub mod usage_import;
 pub mod versions;
 pub mod winapp;
 mod wsl;
@@ -572,6 +573,13 @@ impl SwitchService for Switcher {
         request: superba_core::CompactionRequest,
     ) -> Result<superba_core::ProviderCompaction> {
         self.provider_compaction_impl(request).await
+    }
+
+    async fn import_usage(
+        &self,
+        request: superba_core::UsageImportRequest,
+    ) -> Result<superba_core::UsageImportReport> {
+        self.import_usage_impl(request).await
     }
 
     async fn plan_settings(&self, plan_id: &str) -> Result<superba_core::PlanSettings> {

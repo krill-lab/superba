@@ -15,7 +15,7 @@ use egui::{Align, Layout, ScrollArea, Ui};
 use superba_core::{
     ConflictAction, ImportApplyRequest, ImportCandidate, ImportKey, ImportOutcome, ImportReport,
     ImportScan, ImportScanRequest, ImportSelection, ImportSource, ProfileId, SiteKind, SourceScan,
-    StoreStatus,
+    StoreStatus, UsageImportReport, UsageImportRequest,
 };
 
 use super::{Action, Cx, error_text};
@@ -61,6 +61,19 @@ pub struct ImportDialog {
     /// Frames left to repaint after the content changed: the modal and its
     /// list take a few frames to settle at the new size, also without input.
     settle: u8,
+    /// Usage history per source (GitHub issue 1): its preview and import.
+    pub usage: BTreeMap<ImportSource, UsageState>,
+}
+
+/// The usage history of one source in the dialog.
+#[derive(Default)]
+pub struct UsageState {
+    preview_task: Option<ReadTask<UsageImportReport>>,
+    /// What an import would add.
+    pub preview: Option<superba_core::Result<UsageImportReport>>,
+    import_task: Option<ReadTask<UsageImportReport>>,
+    /// What the import added.
+    pub result: Option<superba_core::Result<UsageImportReport>>,
 }
 
 /// Frames repainted after the content changed.
@@ -88,7 +101,48 @@ impl ImportDialog {
             );
         let mut d = Self::empty();
         d.scan_task = Some(task);
+        for source in ImportSource::ALL {
+            let service = cx.service.clone();
+            d.usage.insert(
+                source,
+                UsageState {
+                    preview_task: Some(crate::runtime::task(async move {
+                        service
+                            .import_usage(UsageImportRequest::preview(source))
+                            .await
+                    })),
+                    ..UsageState::default()
+                },
+            );
+        }
         d
+    }
+
+    /// Show `report` as the usage preview (`imported`: as the import's result)
+    /// of its source (tests, screenshots of fixed data).
+    pub fn set_usage(&mut self, report: UsageImportReport, imported: bool) {
+        self.settle = SETTLE_FRAMES;
+        let u = self.usage.entry(report.source).or_default();
+        if imported {
+            u.result = Some(Ok(report));
+        } else {
+            u.preview = Some(Ok(report));
+        }
+    }
+
+    /// Start importing the usage history of `source`.
+    pub fn start_usage_import(&mut self, cx: &Cx<'_>, source: ImportSource) {
+        let u = self.usage.entry(source).or_default();
+        if u.import_task.is_some() {
+            return;
+        }
+        let service = cx.service.clone();
+        u.result = None;
+        u.import_task = Some(crate::runtime::task(async move {
+            service
+                .import_usage(UsageImportRequest::import(source))
+                .await
+        }));
     }
 
     /// A dialog showing `scan` (tests, screenshots of fixed data).
@@ -109,6 +163,7 @@ impl ImportDialog {
             report: None,
             error: None,
             settle: 0,
+            usage: BTreeMap::new(),
         }
     }
 
@@ -188,6 +243,33 @@ impl ImportDialog {
 
     /// Collect finished work; true while something runs.
     pub fn poll(&mut self, cx: &Cx<'_>) -> bool {
+        let mut running = false;
+        for u in self.usage.values_mut() {
+            if let Some(task) = &u.preview_task {
+                match task.poll() {
+                    Some(r) => {
+                        u.preview_task = None;
+                        u.preview = Some(r);
+                        self.settle = SETTLE_FRAMES;
+                    }
+                    None => running = true,
+                }
+            }
+            if let Some(task) = &u.import_task {
+                match task.poll() {
+                    Some(r) => {
+                        u.import_task = None;
+                        u.result = Some(r);
+                        self.settle = SETTLE_FRAMES;
+                    }
+                    None => running = true,
+                }
+            }
+        }
+        self.poll_inner(cx) || running
+    }
+
+    fn poll_inner(&mut self, cx: &Cx<'_>) -> bool {
         if let Some(task) = &self.scan_task {
             match task.poll() {
                 Some(r) => {
@@ -470,6 +552,7 @@ fn source_section(ui: &mut Ui, cx: &Cx<'_>, d: &mut ImportDialog, source: &Sourc
     if source.found() && importable.is_empty() {
         ui.label(Text::small(cx.tr.t("import_dialog.source.none"), cx.pal));
     }
+    usage_block(ui, cx, d, source.source);
     for c in importable {
         ui.add_space(6.0);
         candidate_row(ui, cx, d, c);
@@ -507,6 +590,137 @@ fn source_section(ui: &mut Ui, cx: &Cx<'_>, d: &mut ImportDialog, source: &Sourc
                 });
             }
         }
+    }
+}
+
+/// `2026-08-01 – 2026-10-11` of a report.
+fn range_text(r: &UsageImportReport) -> String {
+    match (r.first, r.last) {
+        (Some(a), Some(b)) => {
+            let day =
+                |t: superba_core::Timestamp| t.to_rfc3339().chars().take(10).collect::<String>();
+            format!("{} – {}", day(a), day(b))
+        }
+        _ => String::new(),
+    }
+}
+
+/// The source's usage history: what an import adds (counts, date range,
+/// recorded cost) with its button, or what it added.
+fn usage_block(ui: &mut Ui, cx: &Cx<'_>, d: &mut ImportDialog, source: ImportSource) {
+    let Some(u) = d.usage.get(&source) else {
+        return;
+    };
+    let importing = u.import_task.is_some();
+    let line = |ui: &mut Ui, status: Status, text: String| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.add(StatusDot::new(status));
+            ui.add(egui::Label::new(Text::small(text.clone(), cx.pal)).truncate())
+                .on_hover_text(text);
+        });
+    };
+    if let Some(result) = &u.result {
+        ui.add_space(6.0);
+        match result {
+            Ok(r) => line(
+                ui,
+                Status::Ok,
+                cx.tr.f(
+                    "import_dialog.usage.done",
+                    &[("n", &r.requests), ("days", &r.days), ("cost", &r.cost)],
+                ),
+            ),
+            Err(e) => line(ui, Status::Error, error_text(cx.tr, e)),
+        }
+        return;
+    }
+    let Some(preview) = &u.preview else {
+        if u.preview_task.is_some() {
+            ui.add_space(6.0);
+            line(ui, Status::Busy, cx.tr.t("import_dialog.usage.reading"));
+        }
+        return;
+    };
+    let r = match preview {
+        Ok(r) if r.found() => r,
+        _ => return,
+    };
+    if r.requests == 0 && r.days == 0 {
+        if r.already > 0 {
+            ui.add_space(6.0);
+            line(
+                ui,
+                Status::Ok,
+                cx.tr.f("import_dialog.usage.already", &[("n", &r.already)]),
+            );
+        }
+        return;
+    }
+    ui.add_space(6.0);
+    let mut summary = cx.tr.f(
+        "import_dialog.usage.preview",
+        &[
+            ("n", &r.requests),
+            ("days", &r.days),
+            ("range", &range_text(r)),
+            ("cost", &r.cost),
+        ],
+    );
+    let mut details = Vec::new();
+    if r.unpriced > 0 {
+        details.push(
+            cx.tr
+                .f("import_dialog.usage.unpriced", &[("n", &r.unpriced)]),
+        );
+    }
+    if r.covered > 0 {
+        details.push(cx.tr.f("import_dialog.usage.covered", &[("n", &r.covered)]));
+    }
+    if r.other_apps > 0 {
+        details.push(
+            cx.tr
+                .f("import_dialog.usage.other_apps", &[("n", &r.other_apps)]),
+        );
+    }
+    if r.already > 0 {
+        details.push(cx.tr.f("import_dialog.usage.already", &[("n", &r.already)]));
+    }
+    let mut start = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.add(StatusDot::new(Status::Idle));
+        let tip = std::iter::once(summary.clone())
+            .chain(details.iter().cloned())
+            .chain(std::iter::once(cx.tr.t("import_dialog.usage.tip")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !details.is_empty() {
+            summary.push_str(" · ");
+            summary.push_str(&details.join(" · "));
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add(
+                    Button::new(cx.tr.t("import_dialog.usage.button"))
+                        .icon(Icon::Download)
+                        .small()
+                        .loading(importing)
+                        .enabled(!importing),
+                )
+                .on_hover_text(cx.tr.t("import_dialog.usage.tip"))
+                .clicked()
+            {
+                start = true;
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(egui::Label::new(Text::small(summary, cx.pal)).truncate())
+                    .on_hover_text(tip);
+            });
+        });
+    });
+    if start {
+        d.start_usage_import(cx, source);
     }
 }
 

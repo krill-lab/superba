@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 use egui::{Align, Layout, Ui};
 use superba_core::{
     ProfileId, RequestClient, RequestDetail, RequestGroup, RequestGrouping, RequestPage,
-    RequestQuery, RequestRow, RequestSort, RequestStatusFilter, RequestTotals, SessionTitle,
-    StatsBucket, StatsGroupBy, StatsQuery, Timestamp,
+    RequestQuery, RequestRow, RequestSort, RequestSource, RequestStatusFilter, RequestTotals,
+    SessionTitle, StatsBucket, StatsGroupBy, StatsQuery, Timestamp,
 };
 
 use super::db::Loader;
@@ -53,6 +53,8 @@ const FILTER_ROW: f32 = size::CONTROL_SM;
 /// Below this log-column width the filters take two rows (range, then the
 /// four dropdowns sharing the width), so "App + CLI" is never cut at 960 px.
 const FILTER_TWO_ROWS: f32 = 640.0;
+/// ... and below this width when the source filter is shown as well.
+const FILTER_TWO_ROWS_SOURCES: f32 = 900.0;
 /// Gap between the two filter rows.
 const FILTER_GAP: f32 = 6.0;
 
@@ -78,6 +80,8 @@ pub struct Recent {
     pub status: RequestStatusFilter,
     /// Only this client.
     pub client: Option<RequestClient>,
+    /// Only rows from this source (router, rollouts, an import).
+    pub source: Option<RequestSource>,
     /// Source list grouping.
     pub grouping: RequestGrouping,
     /// Selected source list entry.
@@ -134,6 +138,7 @@ impl Default for Recent {
             model: None,
             status: RequestStatusFilter::All,
             client: None,
+            source: None,
             grouping: RequestGrouping::Session,
             group: None,
             sort: RequestSort::default(),
@@ -171,6 +176,7 @@ impl Recent {
     pub fn query(&self, now: Timestamp, search: &str) -> RequestQuery {
         let search = search.trim();
         RequestQuery {
+            source: self.source,
             from: Some(self.range.from(now)),
             to: None,
             member: self.member.clone(),
@@ -193,8 +199,20 @@ impl Recent {
             || self.model.is_some()
             || self.status != RequestStatusFilter::All
             || self.client.is_some()
+            || self.source.is_some()
             || self.group.is_some()
             || !search.trim().is_empty()
+    }
+
+    /// The source filter is shown: rows imported from another tool exist in
+    /// the range (their providers are among the facets), or it is set.
+    pub fn shows_sources(&self) -> bool {
+        self.source.is_some()
+            || self
+                .facets
+                .value
+                .as_ref()
+                .is_some_and(|f| f.members.iter().any(|b| b.key.starts_with("import:")))
     }
 
     /// Filters changed: reload and show the result at once.
@@ -209,6 +227,7 @@ impl Recent {
         self.model = None;
         self.status = RequestStatusFilter::All;
         self.client = None;
+        self.source = None;
         self.group = None;
         self.changed();
     }
@@ -402,6 +421,7 @@ pub(super) fn load(cx: &Cx<'_>, state: &mut State) {
         let from = Some(r.range.from(now));
         r.facets.start(async move {
             let q = |by| StatsQuery {
+                source: None,
                 from,
                 to: None,
                 by,
@@ -515,7 +535,13 @@ fn main(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     let column = ui.available_rect_before_wrap();
     let show_detail = !state.recent.detail_hidden && state.recent.selected_index().is_some();
     // The filter row is as tall as its small controls (segmented range, dropdowns).
-    let two_rows = column.width() < FILTER_TWO_ROWS;
+    let five = state.recent.shows_sources();
+    let two_rows = column.width()
+        < if five {
+            FILTER_TWO_ROWS_SOURCES
+        } else {
+            FILTER_TWO_ROWS
+        };
     let filter_h = if two_rows {
         FILTER_ROW * 2.0 + FILTER_GAP
     } else {
@@ -580,15 +606,16 @@ fn filters(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, two_rows: bool) {
         layout::fixed(ui, rows[1], |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                // The four dropdowns share the row.
-                let w = ((ui.available_width() - 3.0 * 6.0) / 4.0).floor();
-                dropdown_filters(ui, cx, r, [w; 4]);
+                // The dropdowns share the row.
+                let n = if r.shows_sources() { 5.0 } else { 4.0 };
+                let w = ((ui.available_width() - (n - 1.0) * 6.0) / n).floor();
+                dropdown_filters(ui, cx, r, [w; 5]);
             });
         });
     } else {
         ui.horizontal(|ui| {
             range_filter(ui, cx, r);
-            dropdown_filters(ui, cx, r, [104.0, 104.0, 84.0, 90.0]);
+            dropdown_filters(ui, cx, r, [104.0, 104.0, 84.0, 90.0, 132.0]);
         });
     }
 }
@@ -619,8 +646,9 @@ fn range_filter(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
     }
 }
 
-/// Provider, model, status and client dropdowns, `widths` wide.
-fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 4]) {
+/// Provider, model, status, client and (with imported rows) source
+/// dropdowns, `widths` wide.
+fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) {
     ui.spacing_mut().item_spacing.x = 6.0;
     let facets = r.facets.value.clone().unwrap_or_default();
     let mut members: Vec<(Option<ProfileId>, String)> =
@@ -709,6 +737,22 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 4]) 
         .changed()
     {
         r.changed();
+    }
+    if r.shows_sources() {
+        let mut sources: Vec<(Option<RequestSource>, String)> =
+            vec![(None, cx.tr.t("requests.filter.source.all"))];
+        sources.extend(
+            RequestSource::ALL
+                .iter()
+                .map(|s| (Some(*s), cx.tr.text(&s.text()))),
+        );
+        if Dropdown::new("router-f-source")
+            .width(widths[4])
+            .show_options(ui, &mut r.source, &sources)
+            .changed()
+        {
+            r.changed();
+        }
     }
 }
 

@@ -107,6 +107,7 @@ rename.empty = "Enter a name."
 rename.keys = "Enter to save · Esc to cancel"
 rename.taken = "“{name}” is already in the list."
 row.auth = "Auth"
+row.compaction = "Compaction"
 row.key = "Key"
 row.models = "Models"
 row.settings = "Settings"
@@ -198,6 +199,22 @@ zstd.title = "zstd request bodies"
 zstd.unknown = "zstd request bodies: unknown (the answer did not tell). Request bodies are sent uncompressed."
 zstd.unsupported = "zstd request bodies: not supported. Request bodies are sent uncompressed."
 
+# Connection tab: Codex remote compaction of the provider (GitHub issue 3).
+[providers.compaction]
+change = "Change"
+hide_choice = "Hide"
+check = "Check"
+check_tip = "Send one tiny compaction request the way Codex does (a few tokens) and see whether this provider compacts natively."
+choice_body = "Automatic uses Superba's check. Native passes Codex's compaction through; Not supported makes Superba warn before switches and the local router keep compaction off this provider."
+failed = "Compaction check failed: {error}"
+source_override = "set on this provider"
+source_builtin = "Krill compacts natively"
+source_check = "checked {when}"
+source_none = "not checked yet"
+tip = "Codex compacts long conversations by asking the provider (a compaction_trigger request) and keeps the provider's encrypted compaction item; only that provider can read it."
+tip_check = "Last check {when} with {model}: {result}"
+unsupported_note = "This provider cannot compact Codex conversations. Codex has no setting that makes the provider Superba configures compact locally, so when a conversation fills its context window its compaction fails here: start a new conversation then, or use router mode together with a provider that compacts (the router sends compaction there and keeps the conversation with it)."
+
 [import_dialog]
 button = "Import {n}"
 current = "Current"
@@ -209,6 +226,17 @@ scanning = "Looking for CC Switch and AI Toolbox configurations…"
 selected = "{n} selected"
 title = "Import from other tools"
 toast = "Imported {n} {n|provider|providers}; Codex is unchanged until you switch."
+
+[import_dialog.usage]
+already = "{n} already imported"
+button = "Import usage history"
+covered = "{n} from Codex session files Superba already reads"
+done = "Usage history imported: {n} {n|request|requests} and {days} daily {days|total|totals}, recorded cost {cost}. The Usage page lists them as imported."
+other_apps = "{n} of other coding tools not imported"
+preview = "Usage history: {n} {n|request|requests} and {days} daily {days|total|totals}, {range}, recorded cost {cost}"
+reading = "Reading the usage history…"
+tip = "Copies the tool's Codex usage records into Superba's Usage page (read-only, imported once by the tool's own ids). Costs stay as the tool recorded them; Codex is not touched."
+unpriced = "{n} without a recorded cost"
 
 [import_dialog.conflict]
 both = "{name} already exists with the same name and address."

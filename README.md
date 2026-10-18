@@ -52,7 +52,13 @@ Geist look).
   one Responses call) before switching.
 - **Import from cc-switch and AI Toolbox.** Their Codex providers (Krill lines
   become the Krill preset, other sites custom sites with their lines), previewed
-  with conflicts and keys before anything is saved; their files are only read.
+  with conflicts and keys before anything is saved, and their recorded Codex
+  usage history into the Usage page; their files are only read.
+- **Remote compaction per provider.** Superba knows whether a provider can
+  compact Codex conversations (checked, or set by you), warns before a switch to
+  one that cannot or that cannot read conversations another provider compacted,
+  and the local router keeps every compacted conversation with the provider that
+  compacted it.
 - **Models and speed.** The Models page (and `spb models`) lists a provider's
   models with their context window and auto-compact limit, lets you override
   them per model (shown as default or custom, validated, resettable), and the
@@ -213,6 +219,66 @@ A key the other tool keeps in the system keychain or reads from an environment
 variable is not copied: that provider is imported without a key, with a note, and
 you add the key in Superba.
 
+### Usage history
+
+The same dialog shows, per tool, the Codex usage history it recorded (its local
+proxy's request log and the daily totals it keeps for older days) with the
+number of requests, the date range and the cost the tool recorded; **Import
+usage history** copies it into Superba's Usage page, where those rows say
+"Imported from CC Switch / AI Toolbox" and the source filter selects them
+(`spb import usage` does the same).
+
+- **Read-only and once.** The tool's database is only read. Requests keep the
+  tool's own ids, so importing again adds only what is new. Costs stay as the
+  tool recorded them (a request it recorded no cost for shows none); error texts
+  and prompts are never copied. Rows of Claude Code and other tools are counted,
+  not imported.
+- **Never twice.** Both tools can also read Codex's own session files, which
+  Superba reads itself: those rows are imported only for conversations whose
+  files are gone (and such daily totals only for days before Superba's oldest
+  session file).
+- **Daily totals** stand for days the tool no longer keeps per request; they
+  count in the statistics, not in the request list. `--remove` takes a tool's
+  imported rows out again.
+
+```sh
+spb import usage ccs --dry-run               # counts, date range, recorded cost; nothing written
+spb import usage ai-toolbox                  # import (again: only what is new)
+spb usage log --since 90d --source ccs       # the imported rows
+spb import usage ccs --remove                # take them out again
+```
+
+## Remote compaction
+
+Codex compacts a long conversation by sending it to the provider with a
+`compaction_trigger` item (over HTTP or WebSocket) and keeps the provider's
+single encrypted `compaction` item instead of the old history; only that
+provider can read it later. For the provider Superba configures (`openai`),
+Codex always compacts this way: it has no setting that makes it compact locally
+(that switch exists only for custom provider ids, which Superba never writes,
+because Codex lists sessions per provider id).
+
+- **Per provider.** The Connection tab shows whether a provider compacts
+  natively, does not, or was not checked yet. **Check** sends one tiny compaction
+  request the way Codex does (a few tokens); a custom site nothing is known about
+  is checked once when you open it (again after a week, or a day when the answer
+  did not tell). Krill compacts natively. **Change** overrides the result
+  (Automatic / Native / Not supported); `spb profile compaction <id> [--check]`
+  and `spb profile edit <id> --compaction auto|native|unsupported` do the same.
+- **Direct mode.** A native provider's requests pass through untouched. Before a
+  switch to a provider that cannot compact, the preview says so (a conversation
+  that fills its context window cannot be compacted there: start a new one), and
+  it counts the conversations of the last 7 days that another site's provider
+  compacted: continuing them on the new provider fails or loses their context.
+- **Router mode.** Compaction requests skip members that cannot compact (the
+  compaction goes to one that can, and the conversation stays there); a
+  compacted conversation goes only to the member that made its compaction item
+  and never fails over to another member (it gets `compaction_owner_unavailable`
+  while that member is down); with no member left the router answers
+  `compaction_unsupported` with an explanation. WebSocket sessions reconnect to
+  the right member on their own. The router keeps only fingerprints of
+  compaction items and member ids (`router/compactions.json`), never content.
+
 ## Using Superba next to cc-switch or AI Toolbox
 
 Superba owns exactly what its last switch wrote: the keys in `config.toml` listed
@@ -364,12 +430,13 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | `spb status` | applied profile, desktop app (install, CDP, auth address), CLI processes, remotes |
 | `spb lines [--site ID] [--probe]` | lines and their latency / PAT / API key / edge status |
 | `spb key set --profile P (--stdin \| --key-env VAR)` / `spb key check` | store or check a key |
-| `spb profile list \| add \| edit \| remove \| use` | named profiles (site, line order, auth: auto / PAT / API key, key reference, model) |
+| `spb profile list \| add \| edit \| remove \| use` | named profiles (site, line order, auth: auto / PAT / API key, key reference, model, `--compaction auto\|native\|unsupported`) |
+| `spb profile compaction ID [--check]` | the provider's remote compaction support (`--check` asks the provider: a few tokens) |
 | `spb site list \| add \| edit \| remove \| probe` | built-in and OpenAI-compatible sites, model mapping, line and key checks |
 | `spb switch [--profile P] [--line L] [--auth pat\|apikey]` | plan and execute a switch (the preview lists every changed key and why) |
 | `spb settings list \| get \| set \| reset \| forget \| migrate \| diff` | the Codex settings a profile manages, checked against the installed Codex |
 | `spb router status \| install \| enable \| disable \| uninstall \| watch` | opt-in local router: failover across lines and sites, this computer only |
-| `spb usage [log] [--provider P]` / `spb usage stats [--by model\|provider\|day\|session]` | this computer's Codex requests (the router's log merged with Codex's session files; works without the router); totals per provider (Krill, each custom site) with each of its lines |
+| `spb usage [log] [--provider P] [--source router\|rollout\|ccs\|ai-toolbox]` / `spb usage stats [--by model\|provider\|day\|session] [--source …]` | this computer's Codex requests (the router's log merged with Codex's session files; works without the router); totals per provider (Krill, each custom site) with each of its lines |
 | `spb account [--usage] [--days N] [--refresh]` | balance, plan and expiry; daily cost and per-model usage (Krill) |
 | `spb restore [original\|official\|generation] [--take-over]` | restore (what another tool changed is kept unless `--take-over`) |
 | `spb hand-off [--to cc-switch\|ai-toolbox\|other]` | let another tool manage Codex: release what Superba owns, keep the other tool's changes and a backup |
@@ -377,6 +444,7 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | session providers |
 | `spb remote list \| apply \| rollback` | SSH remote hosts |
 | `spb import ccs\|ai-toolbox [--dry-run] [--select NAMES] [--on-conflict skip\|rename\|update]` | import Codex providers from cc-switch or AI Toolbox (their files are only read; Codex is not changed) |
+| `spb import usage ccs\|ai-toolbox [--dry-run] [--remove]` | import the Codex usage history cc-switch or AI Toolbox recorded into the Usage page (read-only; once per request) |
 | `spb doctor`, `spb recover`, `spb uninstall` | diagnostics, crash recovery, clean removal |
 
 `spb switch --take-over` (also `profile use`) takes over keys and the credential

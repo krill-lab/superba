@@ -27,6 +27,7 @@ pub(super) async fn run(command: &ProfileCommand, rt: &Runtime, out: &mut Output
             out.value(&serde_json::json!({ "removed": id }))?;
             Ok(exit::OK)
         }
+        ProfileCommand::Compaction { id, check } => compaction(id, *check, rt, out).await,
         ProfileCommand::Use { id, answers, exec } => {
             let request = switch::build(ProfileId::new(id), answers, exec, out)?;
             execute::run(request, exec, rt, out).await
@@ -132,7 +133,8 @@ async fn edit(args: &ProfileEditArgs, rt: &Runtime, out: &mut Output) -> Result 
         && args.model.is_none()
         && args.effort.is_none()
         && args.base_url.is_none()
-        && !args.clear_base_url;
+        && !args.clear_base_url
+        && args.compaction.is_none();
     if nothing {
         return Err(usage(out, text("cli.error.profile_edit_nothing")));
     }
@@ -168,10 +170,58 @@ async fn edit(args: &ProfileEditArgs, rt: &Runtime, out: &mut Output) -> Result 
     } else if let Some(url) = &args.base_url {
         profile.base_url_override = Some(parse_base_url(url, out)?);
     }
+    if let Some(choice) = args.compaction {
+        profile.compaction = choice.into();
+    }
     let saved = rt.service.save_profile(profile, None).await?;
     render_saved(&saved, None, out)?;
     out.line(text("cli.profile.applies_next"))?;
     out.value(&saved)?;
+    Ok(exit::OK)
+}
+
+/// `spb profile compaction <id> [--check]`: the provider's remote compaction
+/// (Superba's check, the profile's choice, the effective value).
+async fn compaction(id: &str, check: bool, rt: &Runtime, out: &mut Output) -> Result {
+    use superba_core::{CompactionRequest, CompactionSource, TransportRefresh};
+    let refresh = if check {
+        TransportRefresh::All
+    } else {
+        TransportRefresh::Cached
+    };
+    let r = rt
+        .service
+        .provider_compaction(CompactionRequest::cached(ProfileId::new(id)).with_refresh(refresh))
+        .await?;
+    let source = match r.source {
+        CompactionSource::Override => text("cli.compaction.source_override"),
+        CompactionSource::Check => text("cli.compaction.source_check"),
+        CompactionSource::Builtin => text("cli.compaction.source_builtin"),
+        _ => text("cli.compaction.source_none"),
+    };
+    out.line(
+        text("cli.compaction.effective")
+            .arg("id", id)
+            .arg_text("support", r.support.text())
+            .arg_text("source", source),
+    )?;
+    match (&r.check, r.checked_at) {
+        (Some(c), Some(at)) => {
+            out.line(
+                text("cli.compaction.checked")
+                    .arg("when", at.to_rfc3339())
+                    .arg("model", r.model.clone().unwrap_or_default())
+                    .arg_text("support", c.support.text())
+                    .arg("detail", c.detail.clone().unwrap_or_default()),
+            )?;
+        }
+        _ => out.line(text("cli.compaction.not_checked"))?,
+    }
+    out.line(text("cli.compaction.choice").arg_text("choice", r.choice.text()))?;
+    if r.support == superba_core::CompactionSupport::Unsupported {
+        out.line(text("cli.compaction.unsupported_hint"))?;
+    }
+    out.value(&r)?;
     Ok(exit::OK)
 }
 

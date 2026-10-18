@@ -390,6 +390,13 @@ pub enum ProfileCommand {
         #[arg(help = english("cli.help.id"))]
         id: String,
     },
+    #[command(about = english("cli.help.profile_compaction"))]
+    Compaction {
+        #[arg(help = english("cli.help.id"))]
+        id: String,
+        #[arg(long, help = english("cli.help.compaction_check"))]
+        check: bool,
+    },
     #[command(about = english("cli.help.profile_use"))]
     Use {
         #[arg(help = english("cli.help.id"))]
@@ -451,6 +458,26 @@ pub struct ProfileEditArgs {
     pub base_url: Option<String>,
     #[arg(long, help = english("cli.help.clear_base_url"))]
     pub clear_base_url: bool,
+    #[arg(long, value_enum, help = english("cli.help.compaction_choice"))]
+    pub compaction: Option<CompactionArg>,
+}
+
+/// A provider's remote compaction (`--compaction`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CompactionArg {
+    Auto,
+    Native,
+    Unsupported,
+}
+
+impl From<CompactionArg> for superba_core::CompactionChoice {
+    fn from(value: CompactionArg) -> Self {
+        match value {
+            CompactionArg::Auto => Self::Auto,
+            CompactionArg::Native => Self::Native,
+            CompactionArg::Unsupported => Self::Unsupported,
+        }
+    }
 }
 
 /// `spb settings`.
@@ -622,6 +649,8 @@ pub enum UsageCommand {
         by: StatsByArg,
         #[arg(long, default_value = "7d", value_parser = parse_age, help = english("cli.help.router_since"))]
         since: u64,
+        #[arg(long, value_enum, help = english("cli.help.usage_source"))]
+        source: Option<UsageSourceArg>,
     },
 }
 
@@ -640,8 +669,32 @@ pub struct RouterLogArgs {
     pub failover: bool,
     #[arg(long, value_enum, help = english("cli.help.router_log_client"))]
     pub client: Option<LogClientArg>,
+    #[arg(long, value_enum, help = english("cli.help.usage_source"))]
+    pub source: Option<UsageSourceArg>,
     #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=1000), help = english("cli.help.router_log_limit"))]
     pub limit: u32,
+}
+
+/// Where usage rows come from (`--source`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum UsageSourceArg {
+    Router,
+    Rollout,
+    #[value(alias = "cc-switch")]
+    Ccs,
+    #[value(name = "ai-toolbox", alias = "aitoolbox")]
+    AiToolbox,
+}
+
+impl From<UsageSourceArg> for superba_core::RequestSource {
+    fn from(value: UsageSourceArg) -> Self {
+        match value {
+            UsageSourceArg::Router => Self::Router,
+            UsageSourceArg::Rollout => Self::Rollout,
+            UsageSourceArg::Ccs => Self::CcSwitch,
+            UsageSourceArg::AiToolbox => Self::AiToolbox,
+        }
+    }
 }
 
 /// Request log clients.
@@ -857,17 +910,39 @@ impl From<AppSourceArg> for superba_core::WindowsAppSource {
     }
 }
 
-/// `spb import`: providers from another tool.
+/// `spb import`: providers (or, with `usage`, the usage history) from another
+/// tool.
 #[derive(Debug, Clone, Args)]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
 pub struct ImportArgs {
-    #[arg(value_enum, help = english("cli.import.help.source"))]
-    pub source: ImportSourceArg,
+    #[command(subcommand)]
+    pub what: Option<ImportCommand>,
+    #[arg(value_enum, required = true, help = english("cli.import.help.source"))]
+    pub source: Option<ImportSourceArg>,
     #[arg(long, help = english("cli.import.help.dry_run"))]
     pub dry_run: bool,
     #[arg(long, value_name = "NAMES", value_delimiter = ',', help = english("cli.import.help.select"))]
     pub select: Vec<String>,
     #[arg(long, value_enum, default_value_t = ConflictArg::Skip, help = english("cli.import.help.on_conflict"))]
     pub on_conflict: ConflictArg,
+}
+
+/// `spb import usage`.
+#[derive(Debug, Clone, Subcommand)]
+pub enum ImportCommand {
+    #[command(about = english("cli.import_usage.help.about"))]
+    Usage(ImportUsageArgs),
+}
+
+/// `spb import usage ccs|ai-toolbox`.
+#[derive(Debug, Clone, Args)]
+pub struct ImportUsageArgs {
+    #[arg(value_enum, help = english("cli.import.help.source"))]
+    pub source: ImportSourceArg,
+    #[arg(long, help = english("cli.import_usage.help.dry_run"))]
+    pub dry_run: bool,
+    #[arg(long, help = english("cli.import_usage.help.remove"))]
+    pub remove: bool,
 }
 
 /// Tools `spb import` reads.

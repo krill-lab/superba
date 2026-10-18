@@ -41,7 +41,12 @@ pub fn cost_lines(tr: &Tr, row: &RequestRow) -> Vec<InfoLine> {
         ..InfoLine::default()
     };
     let Some(cost) = row.cost else {
-        let why = if row.input_tokens.is_some() || row.output_tokens.is_some() {
+        let why = if let Some(tool) = row.source.imported_from() {
+            line(
+                tr.f("requests.tip.unpriced_imported", &[("tool", &tool.name())]),
+                None,
+            )
+        } else if row.input_tokens.is_some() || row.output_tokens.is_some() {
             line(
                 tr.t("requests.detail.unpriced"),
                 Some(tr.t("requests.tip.unpriced")),
@@ -53,6 +58,15 @@ pub fn cost_lines(tr: &Tr, row: &RequestRow) -> Vec<InfoLine> {
         };
         return vec![line(DASH.to_owned(), None), why];
     };
+    if let Some(tool) = row.source.imported_from() {
+        return vec![
+            line(cost_text(Some(cost)), None),
+            line(
+                tr.f("requests.tip.cost_imported", &[("tool", &tool.name())]),
+                None,
+            ),
+        ];
+    }
     let mut lines = vec![line(cost_text(Some(cost)), Some(tr.t("requests.tip.cost")))];
     match row.price_rev.as_deref().and_then(PriceBasis::parse) {
         Some(PriceBasis::Override) => lines.push(line(
@@ -178,6 +192,7 @@ pub async fn load_calibration(
     };
     let stats = service
         .router_stats(StatsQuery {
+            source: None,
             from: Some(usage.start),
             to: Some(usage.end),
             by: StatsGroupBy::Day,

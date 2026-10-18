@@ -27,6 +27,10 @@ pub(super) struct State {
     unsaved_probes: Vec<Site>,
     /// Every `line_transports` request (profile, refresh).
     transport_calls: Vec<(ProfileId, TransportRefresh)>,
+    /// What a compaction check finds per profile (default: native).
+    compaction: std::collections::BTreeMap<ProfileId, CompactionSupport>,
+    /// Every `provider_compaction` request (profile, refresh).
+    compaction_calls: Vec<(ProfileId, TransportRefresh)>,
 }
 
 impl FakeService {
@@ -50,6 +54,18 @@ impl FakeService {
     /// Every `line_transports` request so far: (profile, refresh).
     pub fn transport_calls(&self) -> Vec<(ProfileId, TransportRefresh)> {
         self.providers_area().transport_calls.clone()
+    }
+
+    /// What a compaction check of `profile` finds.
+    pub fn set_compaction(&self, profile: &str, support: CompactionSupport) {
+        self.providers_area()
+            .compaction
+            .insert(ProfileId::new(profile), support);
+    }
+
+    /// Every `provider_compaction` request so far: (profile, refresh).
+    pub fn compaction_calls(&self) -> Vec<(ProfileId, TransportRefresh)> {
+        self.providers_area().compaction_calls.clone()
     }
 
     /// Refuse usage reports with 429 (Krill's 10-an-hour limit).
@@ -306,4 +322,62 @@ pub(super) async fn account(fake: &FakeService, request: AccountRequest) -> Resu
         usage,
         usage_error,
     })
+}
+
+/// Remote compaction of a provider: Krill is native by Superba's fact, others
+/// unknown until checked; a check (any refresh but `Cached`) finds what
+/// [`FakeService::set_compaction`] set (default native) an hour ago.
+pub(super) async fn provider_compaction(
+    fake: &FakeService,
+    request: CompactionRequest,
+) -> Result<ProviderCompaction> {
+    fake.delay(100).await;
+    let (checked, found) = {
+        let mut area = fake.providers_area();
+        area.compaction_calls
+            .push((request.profile.clone(), request.refresh));
+        let checked = area
+            .compaction_calls
+            .iter()
+            .any(|(p, r)| p == &request.profile && *r != TransportRefresh::Cached);
+        let found = area
+            .compaction
+            .get(&request.profile)
+            .copied()
+            .unwrap_or(CompactionSupport::Native);
+        (checked, found)
+    };
+    let set = fake.profile_set().await?;
+    let profile = set
+        .profile(&request.profile)
+        .ok_or_else(|| Error::NotFound {
+            what: format!("profile {}", request.profile),
+        })?;
+    let site = fake.state().site(&profile.site_id)?;
+    let builtin = if site.kind == SiteKind::Krill {
+        CompactionSupport::Native
+    } else {
+        CompactionSupport::Unknown
+    };
+    let last = checked.then(|| {
+        let detail = match found {
+            CompactionSupport::Native => "answered with one compaction item",
+            CompactionSupport::Unsupported => {
+                "HTTP 400: Invalid value: 'compaction_trigger'. Supported values are: 'message'."
+            }
+            _ => "rate limited; try again later",
+        };
+        (
+            Timestamp::now().saturating_sub(Duration::from_secs(3600)),
+            Some("gpt-5.5".to_owned()),
+            CompactionCheck::new(found, Some(200), detail),
+        )
+    });
+    Ok(ProviderCompaction::new(
+        profile.id.clone(),
+        site.id.clone(),
+        profile.compaction,
+        builtin,
+        last,
+    ))
 }

@@ -8,6 +8,10 @@
 //! - **AI Toolbox** (`coulsontl/ai-toolbox`): its SQLite database in the app
 //!   data directory.
 //!
+//! The same databases hold the tools' **usage history** ([`usage`]): requests
+//! and daily totals, read for Codex only, normalised to Superba's token
+//! semantics, with the cost the tool recorded.
+//!
 //! Reading is strictly read-only ([`sqlite`]: databases are opened `immutable`
 //! or copied first) and defensive: an unknown version or an unreadable store is
 //! skipped with a reason, never guessed at. [`mapping`] turns what was found into
@@ -28,6 +32,7 @@ pub mod detect;
 pub mod foreign;
 pub mod mapping;
 pub mod sqlite;
+pub mod usage;
 
 use std::path::{Path, PathBuf};
 

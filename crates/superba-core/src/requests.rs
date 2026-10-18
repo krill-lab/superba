@@ -41,6 +41,11 @@ pub enum RequestSource {
     /// Codex's rollout files (`sessions/**/rollout-*.jsonl`): model, tokens and
     /// derived times only; the router's columns are `None`.
     Rollout,
+    /// Imported from cc-switch's usage history (its recorded cost and
+    /// provider names; see [`crate::UsageImportReport`]).
+    CcSwitch,
+    /// Imported from AI Toolbox's usage history.
+    AiToolbox,
 }
 
 impl RequestSource {
@@ -51,6 +56,48 @@ impl RequestSource {
             RequestSource::Rollout => {
                 LocalizedText::new("request_source.rollout", "Codex session files")
             }
+            RequestSource::CcSwitch => {
+                LocalizedText::new("request_source.ccs", "Imported from CC Switch")
+            }
+            RequestSource::AiToolbox => {
+                LocalizedText::new("request_source.ai_toolbox", "Imported from AI Toolbox")
+            }
+        }
+    }
+
+    /// The tool an imported row comes from.
+    pub fn imported_from(self) -> Option<crate::ImportSource> {
+        match self {
+            RequestSource::CcSwitch => Some(crate::ImportSource::Ccs),
+            RequestSource::AiToolbox => Some(crate::ImportSource::AiToolbox),
+            _ => None,
+        }
+    }
+
+    /// The source of rows imported from `tool`.
+    pub fn of_import(tool: crate::ImportSource) -> Self {
+        match tool {
+            crate::ImportSource::Ccs => RequestSource::CcSwitch,
+            _ => RequestSource::AiToolbox,
+        }
+    }
+
+    /// Every source, in the order the Usage page's filter lists them.
+    pub const ALL: [RequestSource; 4] = [
+        RequestSource::Router,
+        RequestSource::Rollout,
+        RequestSource::CcSwitch,
+        RequestSource::AiToolbox,
+    ];
+
+    /// Stable id (`router`, `rollout`, `ccs`, `ai-toolbox`), as `spb usage
+    /// --source` takes it.
+    pub fn id(self) -> &'static str {
+        match self {
+            RequestSource::Router => "router",
+            RequestSource::Rollout => "rollout",
+            RequestSource::CcSwitch => "ccs",
+            RequestSource::AiToolbox => "ai-toolbox",
         }
     }
 }
@@ -559,6 +606,8 @@ pub struct RequestQuery {
     pub status: RequestStatusFilter,
     /// Only this client.
     pub client: Option<RequestClient>,
+    /// Only rows from this source (router log, Codex rollouts, an import).
+    pub source: Option<RequestSource>,
     /// Grouping of [`RequestPage::groups`].
     pub group_by: RequestGrouping,
     /// Only the rows of this group key (of `group_by`).
@@ -589,6 +638,7 @@ impl Default for RequestQuery {
             model: None,
             status: RequestStatusFilter::All,
             client: None,
+            source: None,
             group_by: RequestGrouping::Session,
             group: None,
             search: None,
@@ -907,6 +957,9 @@ pub struct StatsQuery {
     /// UTC offset of the local day in minutes (for [`StatsGroupBy::Day`] and the
     /// daily bars).
     pub utc_offset_minutes: i32,
+    /// Only rows from this source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<RequestSource>,
 }
 
 /// One aggregate.

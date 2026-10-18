@@ -41,7 +41,11 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 - **任意兼容 OpenAI 的站点。** 用 base URL 添加 Responses API 站点，把 Codex 的模型名
   映射到站点上的名称，切换前先检测（延迟、Key、模型列表、一次 Responses 请求）。
 - **从 cc-switch 和 AI Toolbox 导入。** 导入它们的 Codex 供应商（Krill 线路变成 Krill 预设，
-  其他站点变成带线路的自定义站点），保存前先预览冲突和 Key；它们的文件只读不写。
+  其他站点变成带线路的自定义站点），保存前先预览冲突和 Key；也能把它们记录的 Codex
+  用量历史导入用量页面；它们的文件只读不写。
+- **按供应商的远程压缩。** Superba 知道每个供应商能否压缩 Codex 对话（检测得出，或由你设置），
+  切换到不能压缩、或读不了其他供应商压缩过的对话的供应商前会提示；本地路由会把压缩过的对话
+  留在执行压缩的那个供应商。
 - **模型与速度档。** 模型页（以及 `spb models`）列出供应商的模型及其上下文窗口和
   自动压缩上限，可按模型覆盖（区分默认值与自定义值，带校验，可重置）；标准 / Fast /
   Ultrafast 速度档控件会说明每个档位对终端和桌面 app 各自的效果。
@@ -172,6 +176,50 @@ spb import ccs --json                        # 存储、预览和结果
 另一个工具存放在系统钥匙串里、或从环境变量读取的 Key 不会被复制：该供应商导入时不带 Key，
 并附有说明，之后在 Superba 里补上 Key 即可。
 
+### 用量记录
+
+同一个对话框里会按工具显示它记录的 Codex 用量历史（它本地代理的请求记录，以及它为较早
+日期保存的每日汇总）：请求数、时间范围和该工具记录的费用；**导入用量记录**把它们复制到
+Superba 的用量页面，这些记录会标为“从 CC Switch / AI Toolbox 导入”，可用来源筛选
+（`spb import usage` 效果相同）。
+
+- **只读，只导一次。** 只读取该工具的数据库。请求保留该工具自己的 ID，再次导入只会添加新的
+  记录。费用保持该工具记录的数值（它没记录费用的请求显示为无费用）；错误文本和提示词从不复制。
+  Claude Code 等其他工具的记录只计数、不导入。
+- **不会重复。** 两个工具都可能读取 Codex 自己的会话记录，而 Superba 自己也会读取：这类记录
+  只在对应会话文件已不存在时才导入（这类每日汇总只导入 Superba 最早会话文件之前的日期）。
+- **每日汇总** 对应该工具已不按请求保存的日期；它们计入统计，不出现在请求列表里。
+  `--remove` 可把某个工具导入的记录删掉。
+
+```sh
+spb import usage ccs --dry-run               # 数量、时间范围、记录的费用；不写入任何内容
+spb import usage ai-toolbox                  # 导入（再次导入只添加新的）
+spb usage log --since 90d --source ccs       # 查看导入的记录
+spb import usage ccs --remove                # 删除导入的记录
+```
+
+## 远程压缩
+
+Codex 压缩长对话时，会带一个 `compaction_trigger` 项把对话发给服务商（HTTP 或 WebSocket），
+并用服务商返回的唯一一个加密 `compaction` 项代替旧的历史；之后只有这个服务商能读取它。对
+Superba 所配置的 provider（`openai`），Codex 总是这样压缩，没有改用本地压缩的设置（那个开关
+只对自定义 provider ID 有效，而 Superba 从不写自定义 provider，因为 Codex 按 provider ID
+列出会话）。
+
+- **按供应商。** 连接页显示供应商是否原生支持压缩、不支持，或尚未检测。**检测** 会按 Codex
+  的方式发一次极小的压缩请求（消耗少量 token）；尚无任何信息的自定义站点在打开时会检测一次
+  （一周后再测，结果不明确时一天后再测）。Krill 原生支持压缩。**更改** 可覆盖检测结果
+  （自动 / 原生 / 不支持）；`spb profile compaction <id> [--check]` 和
+  `spb profile edit <id> --compaction auto|native|unsupported` 作用相同。
+- **直连模式。** 原生支持的服务商，请求原样透传。切换到不支持压缩的服务商前，预览会说明
+  （对话占满上下文窗口时无法在那里压缩：请新开对话），并统计最近 7 天里由其他站点的服务商
+  压缩过的对话：在新服务商上继续这些对话会失败或丢失上下文。
+- **路由模式。** 压缩请求会跳过不能压缩的成员（交给能压缩的成员，对话随后留在那里）；压缩过
+  的对话只发给生成其压缩项的成员，不会故障转移到其他成员（该成员不可用时返回
+  `compaction_owner_unavailable`）；没有可用成员时，路由直接返回带说明的
+  `compaction_unsupported`。WebSocket 会话会自动重连到正确的成员。路由只保存压缩项的指纹和
+  成员 ID（`router/compactions.json`），从不保存内容。
+
 ## 与 cc-switch、AI Toolbox 一起使用
 
 Superba 只拥有它最近一次切换写入的内容：[Superba 会改动什么](#superba-会改动什么) 里列出的
@@ -290,12 +338,13 @@ ChaCha20-Poly1305 加密。
 | `spb status` | 当前配置、桌面 app（安装、CDP、认证地址）、CLI 进程、远程主机 |
 | `spb lines [--site ID] [--probe]` | 线路及其延迟 / PAT / API Key / 边缘拦截状态 |
 | `spb key set --profile P (--stdin \| --key-env VAR)` / `spb key check` | 保存或检查 Key |
-| `spb profile list \| add \| edit \| remove \| use` | 命名配置（站点、线路顺序、认证：自动 / PAT / API Key、Key 引用、模型） |
+| `spb profile list \| add \| edit \| remove \| use` | 命名配置（站点、线路顺序、认证：自动 / PAT / API Key、Key 引用、模型、`--compaction auto\|native\|unsupported`） |
+| `spb profile compaction ID [--check]` | 服务商的远程压缩能力（`--check` 会向服务商检测，消耗少量 token） |
 | `spb site list \| add \| edit \| remove \| probe` | 内置站点和兼容 OpenAI 的站点、模型映射、线路和 Key 检测 |
 | `spb switch [--profile P] [--line L] [--auth pat\|apikey]` | 计划并执行切换（预览会列出每个改动的键及原因） |
 | `spb settings list \| get \| set \| reset \| forget \| migrate \| diff` | 配置管理的 Codex 设置，按已安装的 Codex 版本检查 |
 | `spb router status \| install \| enable \| disable \| uninstall \| watch` | 可选的本地路由：在线路和站点之间故障切换，只作用于本机 |
-| `spb usage [log] [--provider P]` / `spb usage stats [--by model\|provider\|day\|session]` | 这台电脑上的 Codex 请求（路由的请求记录合并 Codex 会话记录，不开路由也可用）；按供应商（Krill、每个自定义站点）汇总，并列出其各条线路 |
+| `spb usage [log] [--provider P] [--source router\|rollout\|ccs\|ai-toolbox]` / `spb usage stats [--by model\|provider\|day\|session] [--source …]` | 这台电脑上的 Codex 请求（路由的请求记录合并 Codex 会话记录，不开路由也可用）；按供应商（Krill、每个自定义站点）汇总，并列出其各条线路 |
 | `spb account [--usage] [--days N] [--refresh]` | 余额、套餐和到期时间；每日费用和按模型的用量（Krill） |
 | `spb restore [original\|official\|generation] [--take-over]` | 还原（其他工具改过的内容默认保留，`--take-over` 才一并还原） |
 | `spb hand-off [--to cc-switch\|ai-toolbox\|other]` | 交给另一个工具管理 Codex：释放 Superba 拥有的内容，保留其他工具的修改并留有备份 |
@@ -303,6 +352,7 @@ ChaCha20-Poly1305 加密。
 | `spb sessions [scan \| migrate --from krill \| rollback ID]` | 会话 provider |
 | `spb remote list \| apply \| rollback` | SSH 远程主机 |
 | `spb import ccs\|ai-toolbox [--dry-run] [--select 名称] [--on-conflict skip\|rename\|update]` | 从 cc-switch 或 AI Toolbox 导入 Codex 供应商（只读取它们的文件，不改动 Codex） |
+| `spb import usage ccs\|ai-toolbox [--dry-run] [--remove]` | 把 cc-switch 或 AI Toolbox 记录的 Codex 用量历史导入用量页面（只读；每条请求只导入一次） |
 | `spb doctor`、`spb recover`、`spb uninstall` | 诊断、崩溃恢复、彻底移除 |
 
 `spb switch --take-over`（`profile use` 同样可用）接管其他工具改过的键和凭据；`--keep-key PATH`
