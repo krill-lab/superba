@@ -1,0 +1,1007 @@
+"""Scenarios beyond the core path (MATRIX.md). Most are `partial`: the harness does
+the automatable part and lists what a person has to judge on the evidence."""
+
+import json
+import os
+import random
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tarfile
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import flows
+from app import App
+from runner import scenario
+from session import BASE_SNAPSHOT, GUEST_DL
+from ui import Ui
+from vm import REPO, free_port, psq
+
+PAGES = ["overview", "providers", "models", "router", "usage", "settings", "sessions", "hosts", "updates",
+         "diagnostics", "preferences"]
+
+
+def U(t, lang="en"):
+    return Ui(t.run, lang)
+
+
+def page_tour(t, s, lang="en", tag=""):
+    u = U(t, lang)
+    for p in PAGES:
+        u.page(p)
+        time.sleep(2.5)
+        s.shot(f"{tag}{p}")
+    u.page("overview")
+
+
+def restart_superba(t, s, **flags):
+    flows.stop_superba(t.run)
+    return flows.start_superba(t.run, s, via="exe", **flags)
+
+
+# --------------------------------------------------------------------------- start-up
+@scenario("W03", "Start-up robustness: renderer, failure message box, no console windows", area="install",
+          needs=("installed",), bugs=(29, 43))
+def w03(t):
+    run = t.run
+    with t.step("A start without a usable renderer shows a message box, never a silent exit") as s:
+        flows.stop_superba(run)
+        pid = run.agent.start_proc(run.superba_exe, [], env={"WGPU_BACKEND": "gl"})
+        time.sleep(15)
+        ws = run.agent.windows(pid=pid)
+        s.save("windows.json", ws)
+        s.shot("forced-renderer-failure", full=True)
+        s.info(f"windows of pid {pid}: {[w['title'] for w in ws]}")
+        s.manual("forced-renderer-failure.png: either Superba runs (wgpu ignored the variable) or a message box "
+                 "'Superba could not start' names the reason and a report path; never nothing")
+        try:
+            run.agent.call("kill", pid=pid, tree=True)
+        except Exception:
+            pass
+    def action():
+        flows.stop_superba(run)
+        run.agent.start_proc("explorer.exe", [run.guest["APPDATA"] + flows.START_MENU_LNK])
+        time.sleep(10)
+        run.spb("status", timeout=120, label="status-console-watch")
+        run.spb("doctor", timeout=180, label="doctor-console-watch")
+
+    console_watch(t, "Superba start + spb status + spb doctor", action)
+
+
+def console_watch(t, what, action, secs=0):
+    """Polls top-level windows while `action` runs; fails on any console window
+    (conhost / Windows Terminal) whose process descends from a Superba program."""
+    run = t.run
+    with t.step(f"No console windows while: {what}") as s:
+        seen, stop = [], threading.Event()
+
+        def poll():
+            while not stop.is_set():
+                try:
+                    for w in run.agent.windows(all=False):
+                        if w["class"] in ("ConsoleWindowClass", "CASCADIA_HOSTING_WINDOW_CLASS", "PseudoConsoleWindow") \
+                                and w["visible"] and w["rect"][2] > 50:
+                            seen.append({k: w[k] for k in ("title", "class", "pid", "process", "rect")})
+                except Exception:
+                    pass
+                time.sleep(0.5)
+
+        th = threading.Thread(target=poll, daemon=True)
+        th.start()
+        try:
+            action()
+            if secs:
+                time.sleep(secs)
+        finally:
+            stop.set()
+            th.join(5)
+        uniq = {json.dumps(x, sort_keys=True) for x in seen}
+        s.save("console-windows.json", [json.loads(x) for x in uniq])
+        s.check(not uniq, f"no console window appeared ({len(uniq)} seen)")
+
+
+# --------------------------------------------------------------------------- wizard variants
+@scenario("W05", "Wizard: line that blocks PAT -> API key with the reason", area="wizard", net="mock",
+          needs=("configured",), bugs=(28,))
+def w05(t):
+    run = t.run
+    with t.step("Automatic resolved to the API key on edge-blocked lines") as s:
+        s.info(f"wizard review: {run.state.get('wizard_auth')}")
+        s.check(run.state.get("auth_mode") == "apikey", "auth.json holds the API key")
+        s.check("API key" in (run.state.get("wizard_auth") or ""), "the review said Automatic → API key")
+        inv = flows.inventory(run)
+        s.check("CODEX_AUTHAPI_BASE_URL" not in inv["user_env"], "no CODEX_AUTHAPI_BASE_URL written for API-key mode")
+        r = run.spb("lines", "--probe", timeout=180, label="lines-probe")
+        s.save("spb-lines-probe.txt", r["stdout"])
+        s.check(r["code"] == 0, f"spb lines --probe exit {r['code']}")
+        s.check("API key" in r["stdout"], "lines report API key only on the test lines", soft=True)
+
+
+@scenario("W06", "Wizard: official ChatGPT login on a machine with no stashed login", area="wizard",
+          conflicts=("configured", "wizard_seen"), needs=("superba",))
+def w06(t):
+    run = t.run
+    u = U(t)
+    with t.step("Official login preset") as s:
+        run.state["wizard_seen"] = True
+        u.click(key="wizard.continue")
+        u.act("select", key="wizard.preset.official.title", type="RadioButton")
+        u.click(key="wizard.continue")
+        time.sleep(2)
+        s.shot("official-credentials")
+        s.ui_dump("official-credentials")
+        while u.exists(key="wizard.continue", enabled=True):
+            u.click(key="wizard.continue")
+            time.sleep(2)
+        s.shot("official-review")
+        s.ui_dump("official-review")
+        s.manual("official-*.png: explains that nothing is stashed on this machine and ChatGPT will ask to sign in; "
+                 "Apply must not invent an auth.json")
+
+
+@scenario("W07", "Wizard: custom OpenAI-compatible site", area="wizard", net="mock",
+          conflicts=("configured", "wizard_seen"), needs=("superba",), bugs=(5,))
+def w07(t):
+    run = t.run
+    u = U(t)
+    with t.step("Custom site: URL, key, test, model") as s:
+        run.state["wizard_seen"] = True
+        u.click(key="wizard.continue")
+        u.act("select", key="wizard.preset.custom.title", type="RadioButton")
+        u.click(key="wizard.continue")
+        time.sleep(1)
+        s.ui_dump("custom-fields")
+        edits = u.find(type="Edit")
+        s.check(len(edits) >= 3, f"name, base URL and key fields: {len(edits)} edits")
+        u.set_value("Mock site", type="Edit", index=0)
+        u.set_value("not a url", type="Edit", index=1)
+        time.sleep(0.5)
+        bad = u.has_text(re.escape(u.L("wizard.custom.invalid_url")))
+        s.check(bool(bad), "an invalid URL is refused inline", soft=True)
+        u.set_value(run.net.line_url("b") + "/v1", type="Edit", index=1)
+        u.set_value(run.net.key, type="Edit", index=2)
+        u.click(key="wizard.continue")
+        time.sleep(8)
+        s.shot("custom-test")
+        s.ui_dump("custom-test")
+        if u.exists(key="wizard.continue", enabled=True):
+            u.click(key="wizard.continue")
+            time.sleep(2)
+        s.shot("custom-review")
+        s.ui_dump("custom-review")
+        u.click(key="wizard.apply")
+        time.sleep(3)
+        if u.exists(key="confirm.full_restart"):
+            u.click(key="confirm.full_restart")
+        flows.wait_switch_done(run, s, u)
+        cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
+        s.save("config.toml", cfg)
+        s.check(run.net.line_url("b") in cfg, "config.toml points at the custom site")
+        s.shot("custom-applied")
+        run.state.update(configured=True, line="b")
+
+
+def import_fixture_home(run):
+    """A home with cc-switch / AI Toolbox fixture stores (fake keys): $SUPERBA_WINTEST_IMPORT_FIXTURES,
+    or generated with superba-import's fixture_homes test into e2e/.work/windows/import-fixture-home."""
+    env = os.environ.get("SUPERBA_WINTEST_IMPORT_FIXTURES")
+    if env and Path(env, ".cc-switch", "cc-switch.db").is_file():
+        return Path(env)
+    home = REPO / "e2e" / ".work" / "windows" / "import-fixture-home"
+    if (home / ".cc-switch" / "cc-switch.db").is_file():
+        return home
+    home.mkdir(parents=True, exist_ok=True)
+    target = os.environ.get("CARGO_TARGET_DIR") or str(REPO / "target-wintest")
+    run.log(f"building the import fixtures (cargo test -p superba-import --test fixture_homes, target {target})")
+    r = subprocess.run(["cargo", "test", "-p", "superba-import", "--test", "fixture_homes", "--", "--ignored"],
+                       cwd=REPO, env=dict(os.environ, SUPERBA_IMPORT_FIXTURE_HOME=str(home), CARGO_TARGET_DIR=target),
+                       capture_output=True, text=True, timeout=3600)
+    if r.returncode != 0:
+        raise RuntimeError("fixture build failed: " + r.stderr[-800:])
+    return home
+
+
+@scenario("W08", "Import from cc-switch and AI Toolbox fixtures", area="wizard", net="mock",
+          needs=("configured",), bugs=(37, 5))
+def w08(t):
+    run = t.run
+    u = U(t)
+    with t.step("Fixture stores where the tools keep them on Windows") as s:
+        home = import_fixture_home(run)
+        ccs = home / ".cc-switch"
+        tb = home / ".local" / "share" / "com.ai-toolbox"
+        run.vm.ps(f"New-Item -ItemType Directory -Force {psq(run.guest['USERPROFILE'] + chr(92) + '.cc-switch')},"
+                  f" {psq(run.guest['APPDATA'] + chr(92) + 'com.ai-toolbox')} | Out-Null")
+        for f in ccs.iterdir():
+            run.vm.scp_to(f, (run.guest["USERPROFILE"] + "/.cc-switch/").replace("\\", "/"))
+        for f in tb.iterdir():
+            run.vm.scp_to(f, (run.guest["APPDATA"] + "/com.ai-toolbox/").replace("\\", "/"))
+        hashes = run.vm.ps(f"Get-ChildItem {psq(run.guest['USERPROFILE'] + chr(92) + '.cc-switch')},"
+                           f" {psq(run.guest['APPDATA'] + chr(92) + 'com.ai-toolbox')} -File | Get-FileHash |"
+                           " ForEach-Object { $_.Hash + ' ' + $_.Path }").stdout
+        s.save("stores-before.sha256", hashes)
+        run.state["import_hashes"] = hashes
+    with t.step("spb import --dry-run --json (preview only)") as s:
+        for tool in ("ccs", "ai-toolbox"):
+            r = run.spb_json("import", tool, "--dry-run", timeout=120, label=f"import-{tool}")
+            s.save(f"import-{tool}.json", r.get("json") or r["stdout"])
+            s.check(r["code"] == 0, f"spb import {tool} --dry-run exit {r['code']}")
+    with t.step("GUI: Providers > Add > Import from other tools") as s:
+        flows.start_superba(run, s)
+        u.page("providers")
+        time.sleep(1.5)
+        s.ui_dump("providers")
+        names = u.texts()
+        add = next((n for n in names if n.lower().startswith("add")), None)
+        if add:
+            u.click(name=add)
+            time.sleep(1.5)
+        s.shot("add-dialog")
+        s.ui_dump("add-dialog")
+        imp = u.has_text(r"Import from other tools")
+        if imp:
+            u.click(name=imp)
+            time.sleep(3)
+        s.shot("import-preview")
+        s.ui_dump("import-preview")
+        s.manual("import-preview.png: providers of both tools with what they become, keys, conflicts (skip/rename/update)")
+    with t.step("The other tools' files were only read") as s:
+        after = run.vm.ps(f"Get-ChildItem {psq(run.guest['USERPROFILE'] + chr(92) + '.cc-switch')},"
+                          f" {psq(run.guest['APPDATA'] + chr(92) + 'com.ai-toolbox')} -File | Get-FileHash |"
+                          " ForEach-Object { $_.Hash + ' ' + $_.Path }").stdout
+        s.check(after == run.state.get("import_hashes"), "cc-switch / AI Toolbox stores byte-identical")
+
+
+# --------------------------------------------------------------------------- launch variants
+@scenario("W14", "Quit / relaunch: tray-only app, Superba restarted while the app runs", area="launch",
+          needs=("app_ready",), bugs=(40,))
+def w14(t):
+    run = t.run
+    a = App(run)
+    with t.step("ChatGPT window closed (still in the tray): a line switch still works") as s:
+        m0 = a.main()
+        w = run.agent.windows(pid=m0["pid"])
+        for x in w:
+            if x["title"]:
+                run.agent.call("window", hwnd=x["hwnd"], close=True)
+        time.sleep(3)
+        s.check(a.main() is not None, "ChatGPT keeps running without a window (tray)")
+        other = "b" if run.state.get("line", "a") == "a" else "a"
+        r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", timeout=240, label="switch-tray")
+        s.check(r["code"] == 0, f"switch exit {r['code']} [{r['transcript']}]")
+        s.check("Hot restart" in r["stdout"], "still a hot restart", soft=True)
+        run.state["line"] = other
+    with t.step("Superba closed and reopened while ChatGPT runs: hot switching remembered") as s:
+        flows.stop_superba(run)
+        flows.start_superba(run, s)
+        time.sleep(4)
+        u = U(t)
+        hot = u.has_text(re.escape(u.L("hot.ready")), timeout=20)
+        s.check(bool(hot), f"Overview says hot switching is ready: {hot!r}", soft=True)
+        r = run.spb("status", timeout=120, label="status-after-reopen")
+        s.save("spb-status.txt", r["stdout"])
+        s.check(str(a.cdp_port() or "") in r["stdout"], "spb status shows the app's debugging port", soft=True)
+
+
+# --------------------------------------------------------------------------- providers, settings, models
+@scenario("W15", "Providers page: add, rename, context menu, delete confirmation, capability badges",
+          area="providers", net="mock", needs=("configured",), bugs=(2, 3, 5, 6, 14))
+def w15(t):
+    run = t.run
+    u = U(t)
+    with t.step("Providers page and the per-line capabilities") as s:
+        flows.start_superba(run, s)
+        u.page("providers")
+        time.sleep(2)
+        s.shot("providers")
+        s.ui_dump("providers")
+        tabs = [e["name"] for e in u.tree(patterns=False) if e["type"] in ("TabItem", "RadioButton")]
+        s.info(f"tabs: {tabs[:20]}")
+    with t.step("Right-click a provider: context menu with Delete; delete asks first") as s:
+        krill = u.find(name_re=r"^Krill", type="Button") or u.find(name_re=r"^Krill")
+        if krill:
+            u.act("right_click", name=krill[0]["name"], type=krill[0]["type"])
+            time.sleep(1)
+            s.shot("context-menu")
+            s.ui_dump("context-menu")
+            u.key("esc")
+        s.manual("providers.png / context-menu.png: focus ring not clipped (bug 2), no separators between tiles "
+                 "(bug 3), Test/Delete buttons in the detail, delete needs a confirmation (bug 6)")
+    with t.step("Adding a provider does not restart anything (bug 5)") as s:
+        m0 = App(run).main()
+        r = run.spb("profile", "add", "krill2", "--site", "krill", "--line", run.net.line_id("b"), "--key-stdin",
+                    stdin=run.net.key + "\n", timeout=120, label="profile-add")
+        s.check(r["code"] == 0, f"spb profile add exit {r['code']}")
+        s.check("restart" not in r["stdout"].lower(), "no restart offered")
+        m1 = App(run).main()
+        s.check(m0 and m1 and m0["pid"] == m1["pid"], "ChatGPT not restarted")
+
+
+@scenario("W20", "Settings page: load, edit, apply, long values", area="settings", needs=("configured",),
+          bugs=(15, 26, 41))
+def w20(t):
+    run = t.run
+    u = U(t)
+    with t.step("Settings page loads (Codex version known though codex.exe is under WindowsApps)") as s:
+        flows.start_superba(run, s)
+        u.page("settings")
+        time.sleep(4)
+        s.shot("settings")
+        s.ui_dump("settings")
+        err = u.has_text(r"(?i)can't load|could not load|failed")
+        s.check(not err, f"no load error: {err!r}")
+        r = run.spb("settings", "list", timeout=180, label="settings-list")
+        s.save("settings-list.txt", r["stdout"])
+        s.check(r["code"] == 0, f"spb settings list exit {r['code']}")
+    with t.step("Long values: developer_instructions, notify array, [shell_environment_policy.set]") as s:
+        long = "Always answer in English. " * 16
+        r = run.spb("settings", "set", "developer_instructions", long.strip(), timeout=120, label="settings-set-long")
+        s.check(r["code"] in (0, 3, 4), f"spb settings set developer_instructions exit {r['code']}")
+        u.page("overview")
+        u.page("settings")
+        time.sleep(3)
+        s.shot("settings-long-value")
+        s.ui_dump("settings-long-value")
+        s.manual("settings-long-value.png: value chip capped with an ellipsis, tooltip with the full text, detail "
+                 "pane shows a wrapped preview and an Edit button (bug 15)")
+        r = run.spb("settings", "diff", timeout=120, label="settings-diff")
+        s.save("settings-diff.txt", r["stdout"])
+
+
+@scenario("W21", "Models page: per-model context override, speed tiers", area="models", needs=("configured",),
+          bugs=(7, 8, 25))
+def w21(t):
+    run = t.run
+    u = U(t)
+    with t.step("Models page and spb models") as s:
+        flows.start_superba(run, s)
+        u.page("models")
+        time.sleep(4)
+        s.shot("models")
+        s.ui_dump("models")
+        r = run.spb("models", timeout=180, label="models")
+        s.save("spb-models.txt", r["stdout"])
+        s.check(r["code"] == 0, f"spb models exit {r['code']}")
+        r = run.spb("models", "--help", timeout=60, label="models-help")
+        s.save("spb-models-help.txt", r["stdout"])
+        note = u.has_text(r"(?i)desktop app.*(standard|tier)|API key")
+        s.info(f"speed note: {note!r}")
+        s.manual("models.png: each row shows the effective context window / auto-compact (default vs custom); the "
+                 "speed selector's borders are not clipped (bug 8); in API-key mode a note says the desktop app "
+                 "uses Standard")
+    with t.step("Window at 960x640: Models columns fit (bug 25)") as s:
+        u.resize(960, 640)
+        time.sleep(2)
+        s.shot("models-960")
+        u.resize(1280, 800)
+
+
+def legacy_sessions_tar(work, codex_home_win, n=600, kb=48, seed=7):
+    """`n` rollout files under provider `krill` (Windows paths in the rows), as a tar
+    to unpack into %USERPROFILE%\\.codex, plus the rows to insert into state_5.sqlite."""
+    rng = random.Random(seed)
+    root = work / "sessions"
+    shutil.rmtree(root, ignore_errors=True)
+    rows = []
+    base = 1_758_000_000
+    filler = json.dumps({"timestamp": "2025-09-16T00:00:00.000Z", "type": "response_item", "payload": {
+        "type": "reasoning", "summary": [], "encrypted_content": "x" * 3800}}, separators=(",", ":"))
+    for i in range(n):
+        created = base + i * 1800
+        tm = time.gmtime(created)
+        uid = (f"{0x01992a00 + i:08x}-{rng.getrandbits(16):04x}-7{rng.getrandbits(12):03x}"
+               f"-8{rng.getrandbits(12):03x}-{rng.getrandbits(48):012x}")
+        stamp = time.strftime("%Y-%m-%dT%H-%M-%S", tm)
+        iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", tm)
+        rel = Path("sessions") / time.strftime("%Y", tm) / time.strftime("%m", tm) / time.strftime("%d", tm) / f"rollout-{stamp}-{uid}.jsonl"
+        p = work / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        meta = {"timestamp": iso, "type": "session_meta", "payload": {
+            "session_id": uid, "id": uid, "timestamp": iso, "cwd": "C:\\Users\\superba\\project",
+            "originator": "Codex Desktop", "cli_version": "0.162.0", "source": "vscode",
+            "thread_source": "user", "model_provider": "krill", "history_mode": "paginated"}}
+        lines = [json.dumps(meta, separators=(",", ":"))] + [filler] * max(1, (kb * 1024) // (len(filler) + 1))
+        p.write_text("\n".join(lines) + "\n")
+        title = f"Legacy session {i + 1}"
+        rows.append({"id": uid, "rollout_path": codex_home_win + "\\" + str(rel).replace("/", "\\"),
+                     "created_at": created, "updated_at": created + 600, "created_at_ms": created * 1000,
+                     "updated_at_ms": (created + 600) * 1000, "source": "vscode", "model_provider": "krill",
+                     "cwd": "C:\\Users\\superba\\project", "title": title, "first_user_message": title})
+    tar = work / "sessions.tar"
+    with tarfile.open(tar, "w") as tf:
+        tf.add(root, arcname="sessions")
+    return tar, rows
+
+
+@scenario("W22", "Sessions: 600 legacy sessions, migration with progress and animation, undo", area="sessions",
+          needs=("configured",), bugs=(31, 33, 16))
+def w22(t):
+    run = t.run
+    u = U(t)
+    a = App(run)
+    work = Path(run.root / "work-w22")
+    work.mkdir(exist_ok=True)
+    ch = run.guest["CODEX_HOME"]
+    with t.step("600 rollout files under provider krill + their state_5.sqlite rows") as s:
+        flows.stop_superba(run)
+        a.kill_all()
+        time.sleep(3)
+        tar, rows = legacy_sessions_tar(work, ch)
+        run.vm.scp_to(tar, "C:/Users/Public/wintest/sessions.tar")
+        run.vm.ps(f"tar.exe -xf C:\\Users\\Public\\wintest\\sessions.tar -C {psq(ch)}; Remove-Item C:\\Users\\Public\\wintest\\sessions.tar")
+        run.vm.scp_from((ch + "/state_5.sqlite").replace("\\", "/"), work / "state_5.sqlite")
+        sys.path.insert(0, str(REPO / "crates" / "superba-gui" / "tools" / "screenshots"))
+        import fixtures  # noqa: E402  (insert_threads: only the columns the table has)
+        fixtures.insert_threads(work / "state_5.sqlite", rows)
+        run.vm.scp_to(work / "state_5.sqlite", (ch + "/state_5.sqlite").replace("\\", "/"))
+        run.vm.ps(f"Remove-Item -Force -ErrorAction SilentlyContinue {psq(ch + chr(92) + 'state_5.sqlite-wal')}, {psq(ch + chr(92) + 'state_5.sqlite-shm')}")
+        h = run.vm.ps(f"(Get-ChildItem {psq(ch + chr(92) + 'sessions')} -Recurse -File | Get-FileHash | Sort-Object Path |"
+                      " ForEach-Object { $_.Hash + ' ' + $_.Path }) -join \"`n\"").stdout
+        (work / "hashes-before.txt").write_text(h)
+        s.add_evidence(work / "hashes-before.txt")
+        s.check(h.count("\n") >= 599, f"{h.count(chr(10)) + 1} rollout files in place")
+        r = run.spb("sessions", "scan", timeout=300, label="sessions-scan")
+        s.save("sessions-scan.txt", r["stdout"])
+        s.check("600" in r["stdout"], "spb sessions scan counts 600 sessions under krill", soft=True)
+    with t.step("Sessions page: migrate with progress and the animation") as s:
+        flows.start_superba(run, s)
+        u.page("sessions")
+        time.sleep(3)
+        s.shot("sessions-before")
+        s.ui_dump("sessions-before")
+        btn = u.has_text(r"^Migrate to ")
+        s.check(bool(btn), f"migrate button: {btn!r}")
+        u.click(name=btn)
+        time.sleep(2)
+        if u.exists(key="confirm.full_restart"):
+            u.click(key="confirm.full_restart")
+        frames, handles = [], []
+        t0 = time.time()
+        pid = (run.agent.procs(r"^superba\.exe$") or [{}])[0].get("pid")
+        while time.time() - t0 < 300:
+            names = u.texts()
+            prog = next((n for n in names if re.search(r"\d+\s*/\s*600", n)), None)
+            hc = run.vm.ps(f"(Get-Process -Id {pid}).HandleCount", check=False).stdout.strip() if pid else ""
+            handles.append({"t": round(time.time() - t0, 1), "progress": prog, "handles": hc})
+            if len(frames) < 6:
+                frames.append(s.shot(f"migrating-{len(frames)}"))
+            if not any(re.search(r"\d+\s*/\s*600|Migrat", n) for n in names) and time.time() - t0 > 10:
+                break
+            time.sleep(2)
+        s.save("progress-and-handles.json", handles)
+        s.check(any(h["progress"] for h in handles), "progress 'N / 600' shown")
+        err = u.has_text(r"(?i)holds|too many open files|os error")
+        s.check(not err, f"no lock / EMFILE error (bug 31): {err!r}")
+        s.shot("sessions-after")
+        r = run.spb("sessions", "scan", timeout=300, label="sessions-scan-after")
+        s.save("sessions-scan-after.txt", r["stdout"])
+        s.manual("migrating-*.png: krill carrying boxes animation with 'Migrated N / 600', current file, cancel (bug 33)")
+
+
+GLOBAL_STATE = {
+    "codex-managed-remote-connections": [
+        {"hostId": "remote-ssh-discovered:devbox", "displayName": "devbox", "source": "discovered",
+         "alias": "devbox", "hostname": None, "sshPort": None, "identity": None}],
+    "remote-projects": [
+        {"id": "p1", "hostId": "remote-control:env_e_6a1b8b37df48832d9f0", "label": "site", "remotePath": "/Users/me/site"},
+        {"id": "p2", "hostId": "remote-ssh-discovered:devbox", "remotePath": "/srv/app"}],
+    "remote-connection-auto-connect-by-host-id": {"remote-control:env_e_6a1b8b37df48832d9f0": True,
+                                                  "remote-ssh-discovered:devbox": True},
+}
+
+
+@scenario("W23", "Remote hosts: SSH host managed, remote-control / WSL read-only with friendly names",
+          area="hosts", needs=("configured",), bugs=(17, 36, 16))
+def w23(t):
+    run = t.run
+    u = U(t)
+    a = App(run)
+    with t.step("App global state with an SSH host and a remote-control environment") as s:
+        a.kill_all()
+        time.sleep(3)
+        path = run.guest["CODEX_HOME"] + r"\.codex-global-state.json"
+        cur = run.guest_json(path) or {}
+        s.save("global-state-before.json", cur)
+        cur.update(GLOBAL_STATE)
+        local = run.root / "work-w23-global-state.json"
+        local.write_text(json.dumps(cur))
+        run.vm.scp_to(local, path.replace("\\", "/"))
+    with t.step("Remote hosts page") as s:
+        flows.stop_superba(run)
+        flows.start_superba(run, s)
+        u.page("hosts")
+        time.sleep(4)
+        s.shot("hosts")
+        s.ui_dump("hosts")
+        raw = u.has_text(r"env_e_6a1b|^FiE|remote-control:")
+        s.check(not raw, f"no raw remote-control id or stray glyphs (bug 36): {raw!r}")
+        s.check(bool(u.has_text(r"devbox")), "the SSH host devbox listed")
+        u.page("sessions")
+        time.sleep(3)
+        s.shot("sessions-host-switcher")
+        s.manual("hosts.png: tiles without separators (bug 17); remote-control entry read-only with a friendly "
+                 "label; sessions-host-switcher.png: one segmented control (bug 16)")
+
+
+# --------------------------------------------------------------------------- router extras
+@scenario("W37", "Router under load: 150 parallel requests", area="router", net="mock", needs=("router_on",),
+          bugs=(35,), manual_only=True)
+def w37(t):
+    t.skip("manual: see MATRIX.md W37 (needs the router token from the data folder; never print it)")
+
+
+# --------------------------------------------------------------------------- updates
+@scenario("W50", "Updates: ChatGPT app check / download / App Installer (official vs Store)", area="updates",
+          needs=("configured",), bugs=(38,))
+def w50(t):
+    run = t.run
+    u = U(t)
+    with t.step("Updates page and spb app check") as s:
+        flows.start_superba(run, s)
+        u.page("updates")
+        time.sleep(5)
+        s.shot("updates")
+        s.ui_dump("updates")
+        r = run.spb("app", "--help", timeout=60, label="app-help")
+        s.save("spb-app-help.txt", r["stdout"])
+        r = run.spb_json("app", "check", timeout=180, label="app-check")
+        s.save("spb-app-check.json", r.get("json") or (r["stdout"] + r["stderr"]))
+        s.check(r["code"] in (0, 1), f"spb app check ran: exit {r['code']}")
+        s.manual("updates.png: release + package version of ChatGPT, bundled Codex, source official vs Store; "
+                 "for a newer build: Download with progress, then 'Open installer' launches App Installer "
+                 "(not run by the harness: ~950 MB)")
+
+
+@scenario("W51", "Updates: Codex CLI install / pin / unpin, pre-release badges", area="updates",
+          needs=("configured",), bugs=(18, 20))
+def w51(t):
+    run = t.run
+    u = U(t)
+    with t.step("Codex versions in the GUI and the CLI") as s:
+        flows.start_superba(run, s)
+        u.page("updates")
+        time.sleep(4)
+        s.shot("updates-codex")
+        r = run.spb("codex", "--help", timeout=60, label="codex-help")
+        s.save("spb-codex-help.txt", r["stdout"])
+        r = run.spb("codex", "list", timeout=180, label="codex-list")
+        s.save("spb-codex-list.txt", r["stdout"] + r["stderr"])
+        warn = u.has_text(r"(?i)instead of|rather than|而不是")
+        s.check(not warn, f"no false 'the app runs another Codex' warning (bug 18): {warn!r}")
+        s.manual("updates-codex.png: 'Include pre-releases' before the dropdown, pre-release badge, newest first "
+                 "(bug 20). Install/pin/unpin per MATRIX.md W51 when internet time allows")
+
+
+class _Release(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        srv = self.server
+        if self.path.rstrip("/").endswith("/releases/latest"):
+            body = json.dumps({"tag_name": srv.tag, "draft": False, "prerelease": False, "body": "mock",
+                               "published_at": "2026-10-18T00:00:00Z", "html_url": "https://example.invalid/r",
+                               "assets": [{"name": p.name, "size": p.stat().st_size} for p in srv.files]}).encode()
+            ctype = "application/json"
+        elif self.path.startswith(f"/dl/{srv.tag}/"):
+            name = self.path.split("/")[-1]
+            f = next((p for p in srv.files if p.name == name), None)
+            if not f:
+                self.send_error(404)
+                return
+            body, ctype = f.read_bytes(), "application/octet-stream"
+        else:
+            self.send_error(404)
+            return
+        srv.hits.append(self.path)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@scenario("W52", "Superba self-update via the MSI from an older version", area="updates",
+          conflicts=("installed",), bugs=(30, 44))
+def w52(t):
+    run = t.run
+    if not run.old_msi:
+        t.skip("needs --old-msi (the older MSI to start from); the MSI under test is the update")
+    m_new = re.search(r"superba-(\d+\.\d+\.\d+[^-]*?)-windows", run.msi.name)
+    tag = "v" + (m_new.group(1) if m_new else "9.0.0")
+    new_msi, old_msi = run.msi, run.old_msi
+    with t.step("Install the older MSI") as s:
+        run.msi = old_msi
+        try:
+            flows.install(run, t, prefix="[old] ")
+        finally:
+            run.msi = new_msi
+        s.info(f"older Superba {run.state.get('version')} installed; update target {tag}")
+    with t.step("Mock release (loopback) with the newer MSI and SHA256SUMS.txt") as s:
+        import hashlib
+        rel = run.root / "work-w52"
+        rel.mkdir(exist_ok=True)
+        asset = rel / f"superba-{tag[1:]}-windows-x86_64.msi"
+        shutil.copy2(new_msi, asset)
+        (rel / "SHA256SUMS.txt").write_text(f"{hashlib.sha256(asset.read_bytes()).hexdigest()}  {asset.name}\n")
+        srv = ThreadingHTTPServer(("127.0.0.1", free_port()), _Release)
+        srv.tag, srv.files, srv.hits = tag, [asset, rel / "SHA256SUMS.txt"], []
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        port = srv.server_address[1]
+        tun = run.vm.tunnel(remote=[(port, port)])
+        run.vm.ps(f"[Environment]::SetEnvironmentVariable('SUPERBA_SELF_UPDATE_API', 'http://127.0.0.1:{port}/api', 'User');"
+                  f" [Environment]::SetEnvironmentVariable('SUPERBA_SELF_UPDATE_DOWNLOADS', 'http://127.0.0.1:{port}/dl', 'User')")
+        run.agent.call("env.broadcast")
+        s.info(f"mock release {tag} on guest 127.0.0.1:{port}")
+    try:
+        with t.step("Update from the GUI (Updates page)") as s:
+            u = U(t)
+            flows.start_superba(run, s, fresh=True)
+            u.page("updates")
+            time.sleep(4)
+            s.shot("update-available")
+            s.ui_dump("update-available")
+            btn = u.has_text(r"^(Update now|立即更新)")
+            if btn:
+                u.click(name=btn)
+            else:
+                r = run.spb("self-update", "install", "--yes", timeout=600, label="self-update")
+                s.save("self-update.txt", r["stdout"] + r["stderr"])
+            end = time.time() + 420
+            ver = None
+            while time.time() < end:
+                time.sleep(10)
+                r = run.agent.exec(run.spb_exe, ["--version"], timeout=60)
+                ver = r["stdout"].strip()
+                if tag[1:] in ver:
+                    break
+            s.check(tag[1:] in (ver or ""), f"spb --version after the update: {ver!r}")
+            s.info(f"mock release requests: {srv.hits}")
+            inv = flows.inventory(run)
+            s.save("inventory-after-update.json", inv)
+            s.check(len(inv["msi_products"]) == 1 and tag[1:] in inv["msi_products"][0],
+                    f"one Windows Installer product, the new version: {inv['msi_products']}")
+            log = run.guest_read(run.guest["DATA"] + r"\logs\selfupdate.log")
+            s.check(log is not None, "selfupdate.log written (bug 44)", soft=True)
+            if log:
+                s.save("selfupdate.log", log)
+            w = U(t).wait_window(120)
+            s.check(w is not None, "the new Superba started")
+            s.shot("after-update")
+    finally:
+        srv.shutdown()
+        tun.terminate()
+        run.vm.ps("[Environment]::SetEnvironmentVariable('SUPERBA_SELF_UPDATE_API', $null, 'User');"
+                  " [Environment]::SetEnvironmentVariable('SUPERBA_SELF_UPDATE_DOWNLOADS', $null, 'User')", check=False)
+
+
+# --------------------------------------------------------------------------- interface
+@scenario("W60", "Language zh-CN / en on every page and in the stats line", area="ui", needs=("configured",),
+          bugs=(1, 23))
+def w60(t):
+    run = t.run
+    with t.step("Every page in Chinese") as s:
+        restart_superba(t, s, lang="zh-CN", size="1280x800")
+        page_tour(t, s, "zh-CN", "zh-")
+        s.manual("zh-*.png: no tofu boxes (bug 1), Chinese fallback font, labels not clipped")
+    with t.step("Every page in English") as s:
+        restart_superba(t, s, lang="en", size="1280x800")
+        page_tour(t, s, "en", "en-")
+
+
+@scenario("W61", "Themes light / dark and backgrounds; reduce motion", area="ui", needs=("configured",),
+          bugs=(24, 27, 33))
+def w61(t):
+    run = t.run
+    for theme in ("light", "dark"):
+        with t.step(f"Theme {theme}: every page") as s:
+            flows.stop_superba(run)
+            run.agent.start_proc(run.superba_exe, ["--theme", theme, "--size", "1280x800"])
+            U(t).wait_window(60)
+            page_tour(t, s, "en", f"{theme}-")
+    with t.step("Backgrounds (Preferences > Appearance)") as s:
+        u = U(t)
+        u.page("preferences")
+        time.sleep(2)
+        for key in ("neutral", "mint", "sky", "sand", "lavender"):
+            label = u.L(f"settings.background.{key}")
+            if u.exists(name=label):
+                u.act("invoke", name=label)
+                time.sleep(1)
+                u.page("overview")
+                time.sleep(1.5)
+                s.shot(f"background-{key}")
+                u.page("preferences")
+                time.sleep(1)
+        s.manual("background-*.png and theme tours: soft background, readable contrast in both themes (bugs 24/27)")
+
+
+@scenario("W62", "Window sizes 960x640 / 1280x800 / 1440x900: every page", area="ui", needs=("configured",),
+          bugs=(2, 8, 9, 10, 19, 25))
+def w62(t):
+    run = t.run
+    for w, h in ((960, 640), (1280, 800), (1440, 900)):
+        with t.step(f"{w}x{h}") as s:
+            restart_superba(t, s, size=f"{w}x{h}")
+            got = U(t).window()
+            s.info(f"window {got and got['rect']}")
+            page_tour(t, s, "en", f"{w}x{h}-")
+    with t.step("Smaller than the minimum is refused") as s:
+        U(t).resize(700, 500)
+        time.sleep(1)
+        got = U(t).window()
+        s.check(got["rect"][2] >= 940 and got["rect"][3] >= 600, f"window stays at least the minimum: {got['rect']}", soft=True)
+        s.manual("every page at each size: no clipped borders/focus rings (bugs 2, 8, 9), detail cards fit "
+                 "(bug 10), label+control rows aligned (bug 19), Models columns fit at 960 (bug 25)")
+
+
+@scenario("W63", "No console windows; quiet while minimised", area="ui", needs=("app_ready",), bugs=(29, 34))
+def w63(t):
+    run = t.run
+    u = U(t)
+    def action():
+        run.spb("status", timeout=120, label="status-console-watch")
+        other = "b" if run.state.get("line", "a") == "a" else "a"
+        r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", timeout=240,
+                    label="switch-console-watch")
+        if r["code"] == 0:
+            run.state["line"] = other
+
+    console_watch(t, "60 s on the Overview + a hot switch + spb status", action, secs=60)
+    with t.step("Minimised: CPU and child processes") as s:
+        procs = run.agent.procs(r"^superba\.exe$")
+        if not procs:
+            flows.start_superba(run, s)
+            procs = run.agent.procs(r"^superba\.exe$")
+        pid = procs[0]["pid"]
+        run.agent.call("window", minimize=True, **u.win)
+
+        def sample():
+            r = run.vm.ps(f"$p = Get-Process -Id {pid}; '{{0}} {{1}}' -f $p.CPU, (Get-CimInstance Win32_Process -Filter \"ParentProcessId={pid}\" | Measure-Object).Count")
+            cpu, kids = r.stdout.split()
+            return float(cpu), int(kids)
+        c0, k0 = sample()
+        time.sleep(120)
+        c1, k1 = sample()
+        s.save("cpu.json", {"cpu_s_before": c0, "cpu_s_after": c1, "children_before": k0, "children_after": k1})
+        s.check(c1 - c0 < 2.0, f"CPU while minimised: {c1 - c0:.2f} s in 120 s")
+        s.check(k1 <= k0, f"no new child processes: {k0} -> {k1}")
+        run.agent.call("window", restore=True, **u.win)
+
+
+# --------------------------------------------------------------------------- accounts / platforms
+@scenario("W70", "Standard (non-admin) user account", area="accounts", manual_only=True)
+def w70(t):
+    t.skip("manual: follow MATRIX.md W70 (creates a user, changes the auto-logon, reboots)")
+
+
+def elevated_notice(u):
+    return u.has_text(re.escape(u.L("notice.elevated_title")), timeout=20)
+
+
+def integrity(run, pid):
+    return run.agent.call("proc.integrity", pid=pid)
+
+
+@scenario("W71", "UAC off: an elevated Superba works (notice once), hot switch works", area="accounts",
+          snapshot="clean", bugs=(44,))
+def w71(t):
+    """The `clean` image has UAC off: every process of the admin account is elevated."""
+    run = t.run
+    with t.step("The image's old Superba removed; the desktop token is elevated (UAC off)") as s:
+        out = flows.uninstall_all_superba(run)
+        s.info(out.strip() or "no old Superba product")
+        info = run.agent.call("ping")
+        s.check(info["admin_token"] is True, "the agent (and what it starts) has an elevated token")
+    flows.install(run, t)
+    flows.wizard_krill(run, t)
+    u = U(t)
+    with t.step("Elevated Superba: no block, the administrator notice once") as s:
+        p = (run.agent.procs(r"^superba\.exe$") or [{}])[0]
+        lvl = integrity(run, p["pid"]) if p else {}
+        s.check(lvl.get("elevated") is True, f"superba.exe runs elevated: {lvl}")
+        s.check(run.state.get("configured"), "the wizard's switch was not blocked")
+        notice = elevated_notice(u)
+        s.check(bool(notice), f"one-time notice: {notice!r}")
+        s.shot("elevated-notice")
+        flows.stop_superba(run)
+        flows.start_superba(run, s)
+        time.sleep(5)
+        again = u.has_text(re.escape(u.L("notice.elevated_title")))
+        s.check(not again, "not shown again after a restart")
+    flows.app_ready(run, t)
+    with t.step("Hot line switch from the elevated Superba") as s:
+        a = App(run)
+        m0 = a.main()
+        lvl = integrity(run, m0["pid"])
+        s.info(f"ChatGPT main process: {lvl}")
+        other = run.net.line_id("b")
+        r = run.spb("switch", "--line", other, "--countdown", "0", "--yes", timeout=240, label="switch-uacoff")
+        s.check(r["code"] == 0 and "Hot restart" in r["stdout"], f"hot switch exit {r['code']} [{r['transcript']}]")
+        m1 = a.main()
+        s.check(m1 and m1["pid"] == m0["pid"], "main process kept")
+    flows.turn(run, t, "E2E-UACOFF", expect_line="b")
+
+
+@scenario("W73", "UAC on, Superba run as administrator: ChatGPT still medium integrity, hot switch works",
+          area="accounts", conflicts=("configured", "wizard_seen"), needs=("installed",), bugs=(44,))
+def w73(t):
+    run = t.run
+    u = U(t)
+    with t.step("Start Superba elevated (an agent with the Highest run level)") as s:
+        run.start_agent(run_level="Highest")
+        run.dirty = True  # the next scenario starts from the base again
+        info = run.agent.call("ping")
+        s.check(info["admin_token"] is True, "elevated token")
+        flows.start_superba(run, s)
+        p = run.agent.procs(r"^superba\.exe$")[0]
+        lvl = integrity(run, p["pid"])
+        s.check(lvl["level"] == "high" and lvl["elevated"], f"superba.exe: {lvl}")
+    flows.wizard_krill(run, t)
+    with t.step("ChatGPT opened by the elevated Superba runs unelevated") as s:
+        a = App(run)
+        m = a.main()
+        lvl = integrity(run, m["pid"])
+        s.check(lvl["level"] == "medium" and not lvl["elevated"],
+                f"ChatGPT main process integrity: {lvl} (an elevated app would be a security problem)")
+        for sv in a.wait_app_server(60):
+            l2 = integrity(run, sv["pid"])
+            s.check(l2["level"] == "medium", f"app-server {sv['pid']}: {l2}")
+        notice = elevated_notice(u)
+        s.check(bool(notice), f"administrator notice once: {notice!r}")
+    flows.app_ready(run, t)
+    with t.step("Hot line switch from the elevated Superba (GUI)") as s:
+        a = App(run)
+        m0 = a.main()
+        u.page("overview")
+        u.click(name="Switch provider or line")
+        time.sleep(1)
+        u.act("invoke", name_re=rf"^Test {run.net.line_id('b')}\b", type="Button")
+        flows.wait_switch_done(run, s, u, timeout=120)
+        m1 = a.main()
+        s.check(m1 and m0 and m1["pid"] == m0["pid"], "main process kept (hot restart)")
+        cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
+        s.check(run.net.line_url("b") in cfg, "config.toml on line b")
+        run.state["line"] = "b"
+    flows.turn(run, t, "E2E-ELEV", expect_line="b")
+
+
+SYSTEM_TASK_PS = r"""
+$ErrorActionPreference = 'Stop'
+$name = 'superba-wintest-system'
+$a = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/d /c ""' + $args[0] + '" ' + $args[1] + ' > "' + $args[2] + '" 2>&1"')
+Register-ScheduledTask -TaskName $name -Action $a -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest -Force | Out-Null
+Start-ScheduledTask -TaskName $name
+$deadline = (Get-Date).AddSeconds(90)
+Start-Sleep 2
+while ((Get-ScheduledTask -TaskName $name).State -eq 'Running' -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
+$r = (Get-ScheduledTaskInfo -TaskName $name).LastTaskResult
+Unregister-ScheduledTask -TaskName $name -Confirm:$false
+'result ' + $r
+"""
+
+
+@scenario("W74", "Superba started as SYSTEM (scheduled task): refused, nothing written", area="accounts",
+          needs=("installed",), bugs=(44,))
+def w74(t):
+    run = t.run
+    sysprof = r"C:\Windows\System32\config\systemprofile"
+    probe = (f"@(Test-Path '{sysprof}\\AppData\\Local\\krill-code'), (Test-Path '{sysprof}\\AppData\\Roaming\\krill-code'),"
+             f" (Test-Path '{sysprof}\\.codex\\config.toml'), (Test-Path '{sysprof}\\.codex\\auth.json') -join ','")
+    before = run.vm.ps(probe).stdout.strip()
+    for exe, args, label in ((run.superba_exe, "", "gui"), (run.spb_exe, "status", "spb-status"),
+                             (run.spb_exe, "switch --line e2e-a --countdown 0 --yes", "spb-switch")):
+        with t.step(f"{label} as SYSTEM") as s:
+            out = rf"C:\Users\Public\wintest\system-{label}.txt"
+            script = SYSTEM_TASK_PS.replace("$args[0]", psq(exe)).replace("$args[1]", psq(args)).replace("$args[2]", psq(out))
+            r = run.vm.ps(script, timeout=180)
+            m = re.search(r"result (\d+)", r.stdout)
+            code = int(m.group(1)) if m else None
+            text = run.guest_read(out) or ""
+            s.save(f"system-{label}.txt", text)
+            s.info(f"exit {code}: {text.strip()[:300]!r}")
+            if label == "spb-status":
+                s.check(code in (0, 3), f"spb status as SYSTEM ran (read-only): exit {code}", soft=True)
+            else:
+                s.check(code == 3, f"refused with exit 3: {code}")
+                s.check("SYSTEM" in text or "wrong user profile" in text, "the reason names the other account")
+            if label == "gui":
+                box = run.agent.windows(title_re=re.escape(U(t).L("startup.failed_title")))
+                s.check(bool(box), f"message box on the signed-in user's desktop: {[w['title'] for w in box]}", soft=True)
+                s.shot("system-refusal", full=True)
+                for w in box:
+                    run.agent.call("window", hwnd=w["hwnd"], close=True)
+    with t.step("Nothing written to the SYSTEM profile") as s:
+        after = run.vm.ps(probe).stdout.strip()
+        s.check(before == after, f"SYSTEM profile unchanged (krill-code dirs, .codex files): {before} -> {after}")
+
+
+@scenario("W53", "Self-update failure: toast, Updates page, spb self-update check, selfupdate.log", area="updates",
+          needs=("installed",), bugs=(44,))
+def w53(t):
+    run = t.run
+    u = U(t)
+    tag = "v9.9.9"
+    rel = run.root / "work-w53"
+    rel.mkdir(exist_ok=True)
+    import hashlib
+    asset = rel / f"superba-{tag[1:]}-windows-x86_64.msi"
+    asset.write_bytes(os.urandom(256 * 1024))  # not an MSI: msiexec fails (1620)
+    (rel / "SHA256SUMS.txt").write_text(f"{hashlib.sha256(asset.read_bytes()).hexdigest()}  {asset.name}\n")
+    srv = ThreadingHTTPServer(("127.0.0.1", free_port()), _Release)
+    srv.tag, srv.files, srv.hits = tag, [asset, rel / "SHA256SUMS.txt"], []
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_address[1]
+    tun = run.vm.tunnel(remote=[(port, port)])
+    run.vm.ps(f"[Environment]::SetEnvironmentVariable('SUPERBA_SELF_UPDATE_API', 'http://127.0.0.1:{port}/api', 'User');"
+              f" [Environment]::SetEnvironmentVariable('SUPERBA_SELF_UPDATE_DOWNLOADS', 'http://127.0.0.1:{port}/dl', 'User')")
+    run.agent.call("env.broadcast")
+    try:
+        with t.step("Update now to a release whose MSI is broken") as s:
+            flows.start_superba(run, s, fresh=True)
+            u.page("updates")
+            time.sleep(4)
+            r = run.spb("self-update", "check", timeout=120, label="self-update-check-before")
+            s.save("check-before.txt", r["stdout"])
+            s.check("9.9.9" in r["stdout"], "the mock release 9.9.9 is offered")
+            s.shot("update-available")
+            u.click(key="updates.superba.update_now", timeout=30)
+            end = time.time() + 300
+            log = None
+            while time.time() < end:
+                time.sleep(10)
+                log = run.guest_read(run.guest["DATA"] + r"\logs\selfupdate.log")
+                if log and "msiexec" in log and u.window():
+                    break
+            s.check(log is not None, "selfupdate.log written")
+            if log:
+                s.save("selfupdate.log", log)
+                s.check(re.search(r"(?i)msiexec.*(1620|exit|code)", log) is not None, "the log names the msiexec result")
+            s.info(f"mock release requests: {srv.hits}")
+        with t.step("The failure is shown: toast, Updates page, spb self-update check") as s:
+            w = u.wait_window(120)
+            s.check(w is not None, "Superba running again (the old version)")
+            toast = u.has_text(u.R("updates.superba.problem_failed"), timeout=30)
+            s.check(bool(toast), f"failure shown: {toast!r}")
+            s.shot("failure-toast")
+            u.page("updates")
+            time.sleep(3)
+            s.shot("updates-problem")
+            s.ui_dump("updates-problem")
+            s.check(u.exists(key="updates.superba.open_log"), "'Open the log' on the Updates page", soft=True)
+            r = run.spb("self-update", "check", timeout=120, label="self-update-check-after")
+            s.save("check-after.txt", r["stdout"])
+            s.check("failed" in r["stdout"].lower() and "selfupdate.log" in r["stdout"],
+                    "spb self-update check reports the failed update and the log")
+            r = run.agent.exec(run.spb_exe, ["--version"], timeout=60)
+            s.check(run.state.get("version", "") in r["stdout"], f"still the installed version: {r['stdout'].strip()}")
+    finally:
+        srv.shutdown()
+        tun.terminate()
+        run.vm.ps("[Environment]::SetEnvironmentVariable('SUPERBA_SELF_UPDATE_API', $null, 'User');"
+                  " [Environment]::SetEnvironmentVariable('SUPERBA_SELF_UPDATE_DOWNLOADS', $null, 'User')", check=False)
+
+
+@scenario("W72", "Windows on ARM64 (not testable here)", area="accounts", manual_only=True)
+def w72(t):
+    t.skip("manual notes only: MATRIX.md W72")
+
+
+# --------------------------------------------------------------------------- WSL (pending)
+for _id, _title in (
+        ("W80", "WSL: distros and the WSL Codex detected"),
+        ("W81", "WSL: the app's Codex in WSL, hot restart of the WSL app-server"),
+        ("W82", "WSL: switch / restore the distro's ~/.codex and shell rc"),
+        ("W83", "WSL: sessions per distro, scan and migrate"),
+        ("W84", "WSL: settings sync filtered by the WSL Codex version"),
+        ("W85", "WSL: router mode from WSL or direct with a note"),
+        ("W86", "WSL: uninstall / restore leaves the distro clean")):
+    def _pending(t, _id=_id):
+        t.skip(f"pending: WSL support (user bug 45) is being implemented; run per MATRIX.md {_id} on "
+               "snapshot wintest-wsl1 once it lands")
+    scenario(_id, _title, area="wsl", snapshot="wintest-wsl1", manual_only=True, bugs=(45,))(_pending)
