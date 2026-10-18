@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">superba — tray</title><desc id="desc">The coral krill of the Superba icon without its tile, filling the square, for the Windows notification area and Linux status icons.</desc>
+<defs>
+<linearGradient id="mark" x1="380" y1="105" x2="630" y2="845" gradientUnits="userSpaceOnUse"><stop offset="0.000" stop-color="#FF9A65"/><stop offset="0.500" stop-color="#FF6277"/><stop offset="1.000" stop-color="#EB327F"/></linearGradient>
+</defs>
+<g transform="translate(-176.9 -127.4) scale(1.339)"><g fill="url(#mark)"><path d="M237 122L728 113C802 110 861 162 857 230L826 232C829 178 784 140 728 140L387 133Z"/><path d="M354 167L696 160C752 158 800 187 823 229L790 236C771 203 738 187 693 187Z"/><path d="M527 218H857C852 402 734 557 527 547Z"/><path d="M500 218C418 221 343 253 281 309L500 527Z"/><path d="M259 330C203 389 171 467 168 550H479Z"/><path d="M168 580H477L278 779C211 728 174 655 168 580Z"/><path d="M499 603V834C427 834 363 818 304 793Z"/><path d="M530 603L736 809C670 830 596 841 530 834Z"/></g><circle cx="668" cy="350" r="95" fill="#FFFFFF"/><circle cx="668" cy="350" r="71" fill="#172638"/><circle cx="692" cy="326" r="21" fill="#FFFFFF"/></g>
+</svg>
