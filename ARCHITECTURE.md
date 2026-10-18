@@ -48,6 +48,7 @@ Windows installer's folder check, embedded in the MSI and never installed;
 | `superba-router` | the `superba-router` binary; `RouterManager`, watchdog, admin client | `RouterServer` | router agent |
 | `superba-notify` | — (notifications, GH#12: channel payloads and signatures, policy, hook payload parsing, Codex `config.toml` hook edits, rollout enrichment and the failed-turn watcher; depends on `superba-core` only and is used by `superba-switch`'s `notify_*` methods) | `Notifier`, `channels::build`, `policy::decide`, `hooks::parse` | notify agent |
 | `superba-import` | — (read-only scan of cc-switch / AI Toolbox stores, mapping, conflicts; used by `superba-switch`'s `import_scan` / `import_apply`) | `read_source`, `preview`, `plan` | import agent |
+| `superba-tools` | — (coding-agent tools: per-tool, per-OS descriptors, verified per-user installs, updates, removals; used by `superba-switch`'s `tools` / `tool_run` / `tool_settings`) | `ToolManager`, `ToolHost` | tools agent (t1) |
 | `superba-switch` | `SwitchService` (+ `detect_context`, `SwitcherDeps`, `RouterControl`, `settings_catalog`) | `Switcher` | switch agent |
 | `superba-cli` | `spb` binary + `superba_cli::main_with_args` | — | cli agent |
 | `superba-gui` | `superba` binary | `SuperbaApp` | gui agent |
@@ -1452,3 +1453,37 @@ router outage (spb notify event, from superba-router) ───┘        └─
   recorded only on the user's request, with the hash Codex reports in
   `hooks/list` over `codex app-server` (Superba never computes it).
 
+## 14. Coding-agent tools (`superba-tools`)
+
+`SwitchService::tools` / `tool_run` / `tool_settings` (the Updates page's
+"Coding-agent tools" section, `spb tools`) are implemented by `superba-switch`
+with `superba_tools::ToolManager`, built per call from the local context and
+the network settings; its `ToolHost` checks Windows installer signatures through
+`AppController::verify_package_signature`.
+
+- **Descriptors** (`descriptor.rs`): per tool and OS the support level (full,
+  install-only, link, unavailable), the method, the source of the newest
+  version, the channels, the command, the tool's own updater and how Superba
+  turns it off. The tool modules (`tools/*.rs`) carry them out; the research
+  reports (`multi-harness.md` §5) are their source.
+- **Detection** reads files first (launcher links, `package.json`, `Uninstall`
+  registry entries, Info.plist) and runs `--version` only when it must (cached
+  per file size and mtime); an install's kind decides who updates it: Superba's
+  method, or the tool's own package manager (npm with the prefix the install
+  lives in, Homebrew, WinGet, `pi update`); system-wide installs only show their
+  command.
+- **Operations** take a per-tool lock (`<data>/tools/<tool>.lock`), log each
+  step (`<data>/logs/tools/<tool>.log`, four previous kept), download through
+  `.part` files with resume and verify before use (`http::download`: sha256 /
+  sha512 / size; signature for Windows installers), extract with the archive
+  rules (no links, no traversal, bounded), run commands with stdin closed, a
+  deadline and a cancel that ends the process tree, and record what Superba
+  created (`<data>/tools/state.json`: install, launchers in `~/.local/bin`,
+  user `PATH` entries on Windows, the updater switch with the value it
+  replaced) so a removal takes back exactly that. `latest.json` caches the
+  newest version per channel for a day.
+- **Never**: administrator rights, a change to a tool's settings or data on
+  install / update / removal (the updater switch is a separate, explicit
+  change of one key), shell start-up files.
+- WSL distributions are not covered yet (TODO: run the Linux flows inside a
+  distribution through `superba-remote`'s WSL plumbing).

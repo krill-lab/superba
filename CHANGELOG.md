@@ -195,6 +195,39 @@ back to the official ChatGPT login.
 - Tests-only overrides `SUPERBA_SELF_UPDATE_API` and `SUPERBA_SELF_UPDATE_DOWNLOADS`
   accept only https or loopback http.
 
+### Coding-agent tools
+
+- **Install, update and remove** Claude Code, dsh, opencode, pi, ZCode, WorkBuddy
+  and WorkBuddy AI from a "Coding-agent tools" section of the Updates page and
+  `spb tools list|check|install|update|uninstall|manage-updates`, each with the
+  tool's own per-user method: Claude Code's native installer (the verified
+  binary handed to its own `claude install <version>`), dsh with npm into
+  Superba's folder (`--allow-scripts` for the packages that need their install
+  scripts) or, without Node.js 22.19, its Node-free PyPI build, opencode's
+  standalone archive in `~/.opencode/bin` (OpenCode 2 for new installs, an
+  OpenCode 1 install keeps its major), pi's release archive, ZCode's and
+  WorkBuddy's Windows per-user installers (elsewhere a download link). Every
+  download is checked against the published SHA-256 / SHA-512 (Windows
+  installers also by signature) before it is used; nothing needs administrator
+  rights; settings and data are never changed (opencode's only on an explicit
+  "also remove its settings and data"). Progress with Cancel, a log per
+  operation in `logs/tools/`, and a confirmation before what the tool's own
+  installer would do on top (Claude Code's `npm uninstall -g`) and before every
+  removal.
+- **Versions and channels**: installed version, kind and path, the newest
+  version on the chosen channel (Claude Code latest / stable, dsh npm tags,
+  OpenCode 2 / beta / OpenCode 1, ZCode stable / preview), looked up at most
+  daily and on "Check now". Installs made with npm, Homebrew, WinGet or pi's
+  installer are updated and removed with that tool.
+- **"Superba manages updates"** turns the tool's own updater off with one
+  setting (Claude Code `env.DISABLE_AUTOUPDATER`, never `DISABLE_UPDATES`;
+  opencode `update: "disable"` / `autoupdate: false`, edited in place) and puts
+  back what was there when turned off. WorkBuddy forces its own updates: its
+  version is shown, no update is offered.
+- Windows: the program's folder goes on the user PATH (and comes off again on
+  removal); on macOS and Linux the row shows the line to add to the shell's
+  start-up file. Tools inside WSL distributions are not managed yet.
+
 ### Codex settings
 
 - **Codex settings catalog** (`catalog/`): which `config.toml` keys and
