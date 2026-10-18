@@ -103,6 +103,13 @@ pub(crate) async fn health_loop(shared: Arc<Shared>) {
     if shared.current().config.tuning.active_probes {
         probe_all(&shared, &shared.current()).await;
     }
+    // Long member outages go to the notification channels (GH#12); only a
+    // router with a data directory (the service, not in-memory tests).
+    let mut outages = crate::outage::OutageTracker::default();
+    let data_dir = shared
+        .paths
+        .as_ref()
+        .and_then(|p| p.dir().parent().map(std::path::Path::to_path_buf));
     loop {
         tokio::select! {
             _ = tokio::time::sleep(TICK) => {}
@@ -110,6 +117,11 @@ pub(crate) async fn health_loop(shared: Arc<Shared>) {
         }
         shared.retry_stats();
         let generation = shared.current();
+        if let Some(dir) = &data_dir {
+            for outage in outages.tick(&generation, Instant::now()) {
+                crate::outage::report(dir, &outage);
+            }
+        }
         if !generation.config.tuning.active_probes {
             continue;
         }

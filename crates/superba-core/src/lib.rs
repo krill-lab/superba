@@ -59,6 +59,7 @@ pub mod i18n;
 pub mod ids;
 pub mod import;
 pub mod models;
+pub mod notify;
 pub mod origin;
 pub mod ownership;
 pub mod paths;
@@ -111,6 +112,11 @@ pub use i18n::{Catalog, Locale, LocalizedText, Notice, Severity};
 pub use ids::*;
 pub use import::*;
 pub use models::*;
+pub use notify::{
+    ChannelField, ChannelKind, ChannelOutcome, ChannelResult, EventKind, HookRequest, HookState,
+    HookView, NotifyChannel, NotifyContent, NotifyEvent, NotifyHooks, NotifyReport, NotifySecrets,
+    NotifySettings, NotifySkip, NotifyTriggers, QuietHours, RateLimit, SendOptions, TurnTokens,
+};
 pub use origin::{CodexPath, Origin};
 pub use ownership::*;
 pub use paths::{CodexHome, DataDir, EnvSource, LocalContext, MapEnv, ProcessEnv};

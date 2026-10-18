@@ -332,6 +332,12 @@ impl DataDir {
         self.root.join("app-sessions.json")
     }
 
+    /// `notify/`: the sender's state (rate limits, sent turns) and its log
+    /// (no secrets, no message text).
+    pub fn notify_dir(&self) -> PathBuf {
+        self.root.join("notify")
+    }
+
     /// `remote/` (per-host cache and journals).
     pub fn remote_dir(&self) -> PathBuf {
         self.root.join("remote")

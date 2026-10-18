@@ -148,6 +148,11 @@ pub enum Command {
     },
     #[command(name = "hand-off", about = english("cli.help.hand_off"))]
     HandOff(HandOffArgs),
+    #[command(about = english("cli.help.notify_group"))]
+    Notify {
+        #[command(subcommand)]
+        command: NotifyCommand,
+    },
 }
 
 /// A profile's auth choice (Auto unless changed under Advanced).
@@ -1435,4 +1440,144 @@ pub enum RemoteCodexCommand {
         #[arg(long, value_name = "VERSION", help = english("cli.help.remote_codex_rollback_to"))]
         to: Option<String>,
     },
+}
+
+/// `spb notify`: notifications to a phone or chat (GH#12).
+#[derive(Debug, Subcommand)]
+pub enum NotifyCommand {
+    #[command(about = english("cli.help.notify_status"))]
+    Status,
+    #[command(about = english("cli.help.notify_channels"))]
+    Channels {
+        #[command(subcommand)]
+        command: Option<NotifyChannelsCommand>,
+    },
+    #[command(about = english("cli.help.notify_test"))]
+    Test {
+        #[arg(long, value_name = "ID", help = english("cli.help.notify_channel"))]
+        channel: Option<String>,
+    },
+    #[command(about = english("cli.help.notify_send"))]
+    Send {
+        #[arg(value_name = "TEXT", help = english("cli.help.notify_text"))]
+        text: String,
+        #[arg(long, value_name = "KIND", help = english("cli.help.notify_event"))]
+        event: Option<String>,
+        #[arg(long, value_name = "NAME", default_value = "superba", help = english("cli.help.notify_harness"))]
+        harness: String,
+        #[arg(long, value_name = "ID", help = english("cli.help.notify_channel"))]
+        channel: Option<String>,
+        #[arg(long, help = english("cli.help.notify_force"))]
+        force: bool,
+    },
+    #[command(about = english("cli.help.notify_set"))]
+    Set(NotifySetArgs),
+    #[command(about = english("cli.help.notify_install"))]
+    Install {
+        #[arg(value_name = "HARNESS", help = english("cli.help.notify_hook_harness"))]
+        harness: String,
+        #[arg(long, help = english("cli.help.notify_approvals"))]
+        approvals: bool,
+        #[arg(long, requires = "approvals", help = english("cli.help.notify_trust"))]
+        trust: bool,
+    },
+    #[command(about = english("cli.help.notify_uninstall"))]
+    Uninstall {
+        #[arg(value_name = "HARNESS", help = english("cli.help.notify_hook_harness"))]
+        harness: String,
+        #[arg(long, help = english("cli.help.notify_approvals"))]
+        approvals: bool,
+    },
+    /// Codex's `notify` program: `[-- <chained program>...] <json>`.
+    #[command(hide = true)]
+    Codex {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// A lifecycle hook (Claude Code, Codex hooks, other harnesses): the
+    /// JSON comes as the argument or on stdin.
+    #[command(hide = true)]
+    Hook {
+        harness: String,
+        payload: Option<String>,
+    },
+    /// Superba's own events from other Superba programs (the router).
+    #[command(hide = true)]
+    Event {
+        kind: String,
+        #[arg(long)]
+        detail: Option<String>,
+        #[arg(long)]
+        id: Option<String>,
+    },
+}
+
+/// `spb notify channels ...`.
+#[derive(Debug, Subcommand)]
+pub enum NotifyChannelsCommand {
+    #[command(about = english("cli.help.notify_list"))]
+    List,
+    #[command(about = english("cli.help.notify_kinds"))]
+    Kinds,
+    #[command(about = english("cli.help.notify_add"))]
+    Add {
+        #[arg(value_name = "KIND", help = english("cli.help.notify_kind"))]
+        kind: String,
+        #[command(flatten)]
+        fields: NotifyFieldArgs,
+    },
+    #[command(about = english("cli.help.notify_edit"))]
+    Edit {
+        #[arg(value_name = "ID", help = english("cli.help.notify_channel"))]
+        id: String,
+        #[command(flatten)]
+        fields: NotifyFieldArgs,
+        #[arg(long, value_enum, help = english("cli.help.on_off"))]
+        enabled: Option<OnOff>,
+    },
+    #[command(about = english("cli.help.notify_remove"))]
+    Remove {
+        #[arg(value_name = "ID", help = english("cli.help.notify_channel"))]
+        id: String,
+    },
+}
+
+/// Fields of a channel on the command line. Secret fields never come from
+/// argv (visible to other processes): `--secret-env field=VAR` or
+/// `--secret-stdin field`.
+#[derive(Debug, Clone, Default, Args)]
+pub struct NotifyFieldArgs {
+    #[arg(long, value_name = "NAME", help = english("cli.help.notify_name"))]
+    pub name: Option<String>,
+    #[arg(long = "param", value_name = "FIELD=VALUE", help = english("cli.help.notify_param"))]
+    pub params: Vec<String>,
+    #[arg(long = "secret-env", value_name = "FIELD=VAR", help = english("cli.help.notify_secret_env"))]
+    pub secret_env: Vec<String>,
+    #[arg(long = "secret-stdin", value_name = "FIELD", help = english("cli.help.notify_secret_stdin"))]
+    pub secret_stdin: Option<String>,
+}
+
+/// `spb notify set`.
+#[derive(Debug, Clone, Default, Args)]
+pub struct NotifySetArgs {
+    #[arg(long, value_enum, help = english("cli.help.notify_enabled"))]
+    pub enabled: Option<OnOff>,
+    #[arg(long = "on", value_name = "EVENT", help = english("cli.help.notify_trigger_on"))]
+    pub on: Vec<String>,
+    #[arg(long = "off", value_name = "EVENT", help = english("cli.help.notify_trigger_off"))]
+    pub off: Vec<String>,
+    #[arg(long, value_name = "HH:MM-HH:MM|off", help = english("cli.help.notify_quiet"))]
+    pub quiet_hours: Option<String>,
+    #[arg(long, value_enum, help = english("cli.help.notify_urgent"))]
+    pub urgent_in_quiet: Option<OnOff>,
+    #[arg(long, value_name = "N", help = english("cli.help.notify_rate"))]
+    pub rate: Option<u32>,
+    #[arg(long, value_name = "SECONDS", help = english("cli.help.notify_min_secs"))]
+    pub min_turn_secs: Option<u32>,
+    #[arg(long, value_enum, help = english("cli.help.notify_summary"))]
+    pub summary: Option<OnOff>,
+    #[arg(long = "mute", value_name = "HARNESS", help = english("cli.help.notify_mute"))]
+    pub mute: Vec<String>,
+    #[arg(long = "unmute", value_name = "HARNESS", help = english("cli.help.notify_unmute"))]
+    pub unmute: Vec<String>,
 }

@@ -4659,6 +4659,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "superba-notify"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "futures-util",
+ "hex",
+ "hmac",
+ "pretty_assertions",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "superba-core",
+ "sysinfo",
+ "tempfile",
+ "tokio",
+ "toml",
+ "toml_edit",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "superba-remote"
 version = "0.1.0"
 dependencies = [
@@ -4757,6 +4780,7 @@ dependencies = [
  "superba-import",
  "superba-models",
  "superba-net",
+ "superba-notify",
  "superba-remote",
  "superba-router",
  "superba-sessions",

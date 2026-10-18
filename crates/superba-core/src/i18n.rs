@@ -238,6 +238,8 @@ const CORE_EN_FILES: &[(&str, &str)] = &[
     (
         "core.claude.en.toml",
         include_str!("../locales/core.claude.en.toml"),
+        "core.notify.en.toml",
+        include_str!("../locales/core.notify.en.toml"),
     ),
 ];
 const CORE_ZH_CN_FILES: &[(&str, &str)] = &[
@@ -289,6 +291,8 @@ const CORE_ZH_CN_FILES: &[(&str, &str)] = &[
     (
         "core.claude.zh-CN.toml",
         include_str!("../locales/core.claude.zh-CN.toml"),
+        "core.notify.zh-CN.toml",
+        include_str!("../locales/core.notify.zh-CN.toml"),
     ),
 ];
 
@@ -320,6 +324,7 @@ const CORE_EN: &str = concat!(
     include_str!("../locales/core.codexfiles.en.toml"),
     "\n",
     include_str!("../locales/core.claude.en.toml"),
+    include_str!("../locales/core.notify.en.toml"),
 );
 const CORE_ZH_CN: &str = concat!(
     include_str!("../locales/zh-CN.toml"),
@@ -347,6 +352,7 @@ const CORE_ZH_CN: &str = concat!(
     include_str!("../locales/core.codexfiles.zh-CN.toml"),
     "\n",
     include_str!("../locales/core.claude.zh-CN.toml"),
+    include_str!("../locales/core.notify.zh-CN.toml"),
 );
 
 /// Raw TOML source of the whole core catalog for `locale` (every core file,

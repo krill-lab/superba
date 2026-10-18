@@ -1,0 +1,35 @@
+[package]
+name = "superba-notify"
+description = "Superba notifications (GH#12): channel payloads and signatures (Telegram, Feishu/Lark, WeCom, DingTalk, ServerChan, PushPlus, Bark, ntfy, webhook), harness hook parsing (Codex notify, Codex and Claude Code hooks), quiet hours, rate limits and delivery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[dependencies]
+superba-core.workspace = true
+base64.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+hmac.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sysinfo.workspace = true
+tokio.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

@@ -1584,6 +1584,79 @@ pub trait SwitchService: Send + Sync {
         Err(Error::not_implemented("Claude Code"))
     }
 
+    /// Notifications (GH#12): save a channel and its secret fields. Secret
+    /// fields not in `secrets` keep their stored value (an edit that leaves a
+    /// token empty keeps it); an empty channel id gets a new one. Returns the
+    /// saved channel (with its key reference and masked hints).
+    async fn notify_save_channel(
+        &self,
+        channel: crate::NotifyChannel,
+        secrets: crate::NotifySecrets,
+    ) -> Result<crate::NotifyChannel> {
+        let _ = (channel, secrets);
+        Err(Error::NotImplemented {
+            what: "notifications".into(),
+        })
+    }
+
+    /// Delete a channel and its stored secret.
+    async fn notify_delete_channel(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(Error::NotImplemented {
+            what: "notifications".into(),
+        })
+    }
+
+    /// Send `event` to the channels (all, or [`crate::SendOptions::channel`])
+    /// under the preferences' triggers, quiet hours, rate limit and
+    /// deduplication unless [`crate::SendOptions::force`]. Never fails because
+    /// a channel failed: the report says which did.
+    async fn notify_send(
+        &self,
+        event: crate::NotifyEvent,
+        options: crate::SendOptions,
+    ) -> Result<crate::NotifyReport> {
+        let _ = (event, options);
+        Err(Error::NotImplemented {
+            what: "notifications".into(),
+        })
+    }
+
+    /// A harness hook fired: `payload` is what the harness passed (Codex
+    /// `notify`: the JSON argument; Claude Code / Codex hooks: stdin). The
+    /// service parses it, adds what the local files know (duration, tokens,
+    /// title) and sends it like [`SwitchService::notify_send`].
+    async fn notify_hook(&self, harness: &str, payload: &str) -> Result<crate::NotifyReport> {
+        let _ = (harness, payload);
+        Err(Error::NotImplemented {
+            what: "notifications".into(),
+        })
+    }
+
+    /// The harness hooks that report events and their state.
+    async fn notify_hooks(&self) -> Result<crate::NotifyHooks> {
+        Err(Error::NotImplemented {
+            what: "notifications".into(),
+        })
+    }
+
+    /// Install or remove a harness hook (Codex `notify` in `config.toml`, with
+    /// a backup; a program the user had there keeps running through Superba's
+    /// hook and comes back on removal).
+    async fn notify_set_hook(&self, request: crate::HookRequest) -> Result<crate::NotifyHooks> {
+        let _ = request;
+        Err(Error::NotImplemented {
+            what: "notifications".into(),
+        })
+    }
+
+    /// Look for events no hook reports (a Codex turn that ended with an
+    /// error is only in its rollout file) and send them; the GUI calls it on
+    /// a timer while it runs.
+    async fn notify_watch(&self) -> Result<crate::NotifyReport> {
+        Ok(crate::NotifyReport::default())
+    }
+
     /// Launch the desktop app through Superba (CDP + auth env), plan 4 #9.
     async fn open_app(&self) -> Result<AppSession>;
 

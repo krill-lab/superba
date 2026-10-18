@@ -40,6 +40,7 @@ pub mod messages;
 pub mod model_keep;
 pub mod models;
 pub mod monitor;
+pub mod notify;
 pub mod ownership;
 pub mod planner;
 pub mod privilege;
@@ -673,7 +674,20 @@ impl SwitchService for Switcher {
         &self,
         request: superba_core::SelfUpdateCheckRequest,
     ) -> Result<superba_core::SelfUpdateView> {
-        self.self_update_check_impl(request).await
+        let view = self.self_update_check_impl(request).await?;
+        if view.status == superba_core::SelfUpdateStatus::Available
+            && let Some(latest) = &view.latest
+            && view.skipped.as_deref() != Some(latest.version.as_str())
+        {
+            // Once per version (the dedupe key).
+            self.notify_superba(
+                superba_core::EventKind::UpdateAvailable,
+                vec![superba_core::LocalizedText::new("", latest.version.clone())],
+                Some(format!("update:{}", latest.version)),
+            )
+            .await;
+        }
+        Ok(view)
     }
 
     async fn self_update_skip(
@@ -1027,9 +1041,85 @@ impl SwitchService for Switcher {
         decider: Arc<dyn SwitchDecider>,
         events: Arc<dyn SwitchEvents>,
     ) -> Result<SwitchOutcome> {
+        let label = plan.to.label.clone();
+        let plan_id = plan.id.clone();
         let result = self.execute_impl(plan, options, decider, events).await;
         // A switch can pin, launch or install: the views read the machine again.
         self.monitor.invalidate();
+        // GH#12: tell the phone (when the user asked for switch events).
+        let report = match &result {
+            Ok(o) => match o.status {
+                superba_core::OutcomeStatus::Switched
+                | superba_core::OutcomeStatus::WrittenOnly
+                | superba_core::OutcomeStatus::Partial => {
+                    Some((superba_core::EventKind::SwitchDone, vec![label]))
+                }
+                superba_core::OutcomeStatus::Failed | superba_core::OutcomeStatus::RolledBack => {
+                    let mut detail = vec![label];
+                    detail.extend(
+                        o.notices
+                            .iter()
+                            .filter(|n| n.severity == superba_core::Severity::Danger)
+                            .map(|n| n.text.clone())
+                            .take(1),
+                    );
+                    Some((superba_core::EventKind::SwitchFailed, detail))
+                }
+                _ => None,
+            },
+            Err(Error::Cancelled) => None,
+            Err(e) => Some((
+                superba_core::EventKind::SwitchFailed,
+                vec![label, superba_core::LocalizedText::new("", e.to_string())],
+            )),
+        };
+        if let Some((kind, detail)) = report {
+            self.notify_superba(kind, detail, Some(format!("switch:{plan_id}")))
+                .await;
+        }
         result
+    }
+
+    async fn notify_save_channel(
+        &self,
+        channel: superba_core::NotifyChannel,
+        secrets: superba_core::NotifySecrets,
+    ) -> Result<superba_core::NotifyChannel> {
+        self.notify_save_channel_impl(channel, secrets).await
+    }
+
+    async fn notify_delete_channel(&self, id: &str) -> Result<()> {
+        self.notify_delete_channel_impl(id).await
+    }
+
+    async fn notify_send(
+        &self,
+        event: superba_core::NotifyEvent,
+        options: superba_core::SendOptions,
+    ) -> Result<superba_core::NotifyReport> {
+        self.notify_send_impl(event, options).await
+    }
+
+    async fn notify_hook(
+        &self,
+        harness: &str,
+        payload: &str,
+    ) -> Result<superba_core::NotifyReport> {
+        self.notify_hook_impl(harness, payload).await
+    }
+
+    async fn notify_hooks(&self) -> Result<superba_core::NotifyHooks> {
+        self.notify_hooks_impl().await
+    }
+
+    async fn notify_set_hook(
+        &self,
+        request: superba_core::HookRequest,
+    ) -> Result<superba_core::NotifyHooks> {
+        self.notify_set_hook_impl(request).await
+    }
+
+    async fn notify_watch(&self) -> Result<superba_core::NotifyReport> {
+        self.notify_watch_impl().await
     }
 }

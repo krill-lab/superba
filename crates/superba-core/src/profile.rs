@@ -274,6 +274,10 @@ pub struct Settings {
     /// is not running yet (GH#7), so it can be hot-switched. Off by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub open_app_on_start: bool,
+    /// Notifications to a phone or chat (GH#12). Off by default; secrets of the
+    /// channels live in the key store.
+    #[serde(skip_serializing_if = "crate::NotifySettings::is_default")]
+    pub notify: crate::NotifySettings,
 }
 
 fn default_true() -> bool {
@@ -318,6 +322,7 @@ impl Default for Settings {
             update_channel: None,
             reduce_motion: false,
             open_app_on_start: false,
+            notify: crate::NotifySettings::default(),
         }
     }
 }

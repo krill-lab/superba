@@ -9,6 +9,7 @@ mod import;
 mod key;
 mod lines;
 mod models;
+mod notify;
 mod preview;
 mod profile;
 mod remote;
@@ -172,5 +173,6 @@ pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) 
             execute::run(request, exec, rt, out).await
         }
         Command::HandOff(args) => handoff::run(args, rt, out).await,
+        Command::Notify { command } => notify::run(command, rt, out).await,
     }
 }

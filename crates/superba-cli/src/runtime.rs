@@ -14,6 +14,9 @@ pub struct Runtime {
     pub env: Arc<dyn EnvSource>,
     /// Read one secret line, trimmed. Tests inject a reader without touching stdin.
     pub read_stdin_line: Arc<dyn Fn() -> std::io::Result<String> + Send + Sync>,
+    /// Read all of stdin (at most 4 MiB): the JSON a harness hook gets
+    /// (`spb notify hook`). Tests inject the payload.
+    pub read_stdin_all: Arc<dyn Fn() -> std::io::Result<String> + Send + Sync>,
     /// stdin and stderr are terminals: a switch may ask the "stop the Codex
     /// processes for you?" question and read the answer with
     /// [`Self::read_stdin_line`].
@@ -42,6 +45,14 @@ impl Runtime {
                 let mut line = String::new();
                 std::io::stdin().read_line(&mut line)?;
                 Ok(line.trim().to_owned())
+            }),
+            read_stdin_all: Arc::new(|| {
+                use std::io::Read;
+                let mut text = String::new();
+                std::io::stdin()
+                    .take(4 * 1024 * 1024)
+                    .read_to_string(&mut text)?;
+                Ok(text)
             }),
             interactive: {
                 use std::io::IsTerminal;

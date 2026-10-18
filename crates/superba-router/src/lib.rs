@@ -95,6 +95,7 @@ pub mod limits;
 pub mod manager;
 pub mod members;
 pub mod model_map;
+pub mod outage;
 pub mod paths;
 pub mod port;
 pub mod runtime;

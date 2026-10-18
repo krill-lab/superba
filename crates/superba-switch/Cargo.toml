@@ -17,6 +17,7 @@ superba-config.workspace = true
 superba-import.workspace = true
 superba-models.workspace = true
 superba-net.workspace = true
+superba-notify.workspace = true
 superba-remote.workspace = true
 superba-router.workspace = true
 superba-sessions.workspace = true

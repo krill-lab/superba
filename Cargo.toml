@@ -38,6 +38,7 @@ superba-router = { path = "crates/superba-router", version = "0.1.0" }
 superba-models = { path = "crates/superba-models", version = "0.1.0" }
 superba-versions = { path = "crates/superba-versions", version = "0.1.0" }
 superba-import = { path = "crates/superba-import", version = "0.1.0" }
+superba-notify = { path = "crates/superba-notify", version = "0.1.0" }
 
 # --- async runtime and plumbing
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "process", "fs", "time", "sync", "net", "io-util", "signal"] }
@@ -76,6 +77,8 @@ semver = "1"
 
 # --- crypto, ids
 sha2 = "0.11"
+# notification signatures (Feishu, DingTalk, webhook); already in the lock file
+hmac = "0.13"
 # SHA-1 of Windows Store packages (the checksum the Store CDN and its resolver
 # publish); already in the lock file through tungstenite
 sha1 = "0.11"
