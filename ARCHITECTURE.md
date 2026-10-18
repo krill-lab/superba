@@ -990,6 +990,20 @@ mode; tests use an in-memory `SwitchService` under
   profile; the Usage page asks for a `UsageQuery` only when it opens without data
   for its range or on refresh (Krill rate-limits those endpoints; `superba-net`
   caches them on disk).
+- **Tray and window life** (`tray/`, item 70). `tray::menu` builds the menu as
+  data from `Data` (Open Superba, the provider and line in use with a switch
+  submenu, ChatGPT through Superba, the router, Quit); the platform icon renders
+  it: tray-icon + muda on Windows (`Shell_NotifyIcon`) and macOS (`NSStatusItem`,
+  template image; the app leaves the Dock while hidden), ksni on Linux (a
+  StatusNotifierItem over D-Bus, no GTK; no `org.kde.StatusNotifierWatcher` = no
+  tray). Icon and menu events reach the app through a queue plus a repaint
+  request, so a hidden window (eframe runs `App::logic` for it) handles them.
+  `tray::close::WindowLife` decides what a close request does (hide, ask once,
+  quit) from `Settings::close_action`; Quit from the tray or the palette always
+  quits. A native Wayland window cannot hide: Superba opens through XWayland when
+  it keeps running in the tray, or restarts itself with `--start-in-tray`. One
+  window per user: a second start sends `show` over `instance.rs`
+  (`superba-gui/1`, shared with `--launch-chatgpt`).
 - **Fonts.** Geist Sans is bundled with tabular figures mapped as the default
   digits (`tools/freeze-tnum.py`), so numbers align without OpenType features.
 - **Screenshots.** `tools/screenshots/shoot.py` runs the real `superba` / `spb`

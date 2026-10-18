@@ -334,6 +334,20 @@ back to the official ChatGPT login.
   environment is configured; the router inside `Superba.app`), Windows x86_64;
   `superba-router` ships next to `superba` and `spb` everywhere; third-party
   license notices in every archive.
+- **Tray icon and "close to tray"** (GH#10): a notification-area icon on
+  Windows, a menu-bar item (template image) on macOS and a StatusNotifierItem
+  on Linux (no GTK: KDE Plasma, GNOME with the AppIndicator extension, Xfce,
+  ...). Its menu opens Superba, shows the provider and line in use with a
+  submenu to switch provider, line or back to the official login, opens or
+  reopens ChatGPT through Superba, shows the router (on, off, not answering)
+  and turns it off or opens the Router page, and quits Superba (the router
+  keeps running as its own service). Preferences > Window: "When the window is
+  closed: Quit / Keep running in the tray" (Windows and Linux ask on the first
+  close; macOS keeps running in the menu bar and leaves the Dock while hidden)
+  and "Start hidden in the tray" (off; `superba --start-in-tray`). One Superba
+  per user: starting it again shows the running window. A Linux desktop without
+  a tray host shows the setting disabled with the reason and quits on close; a
+  Wayland window hides by reopening through XWayland.
 - **App icon**: a coral krill on a pearl tile for the window, the taskbar and
   every package; on macOS it follows Apple's icon grid (an 824 px
   continuous-corner tile on the 1024 px canvas), so Superba is as big as the

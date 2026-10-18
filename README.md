@@ -131,6 +131,15 @@ Geist look).
   version it replaces.
 - **Doctor.** Finds stale Codex processes, foreign environment variables,
   unparseable configs, keyring problems and more.
+- **Tray icon.** A Superba icon in the Windows notification area, the macOS
+  menu bar and Linux trays (StatusNotifierItem, no GTK needed): open Superba,
+  see and switch the provider and line in use, open or reopen ChatGPT through
+  Superba, see the router and turn it off, quit. Preferences > Window: quit when
+  the window is closed or keep running in the tray (Windows and Linux ask on the
+  first close; macOS keeps running in the menu bar), and "Start hidden in the
+  tray". Starting Superba again shows the running window. On a Linux desktop
+  without a tray (GNOME without the AppIndicator extension) the setting is
+  disabled and closing the window quits.
 - English and Simplified Chinese.
 
 ## Install

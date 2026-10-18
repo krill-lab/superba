@@ -95,6 +95,12 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
   读取该文件的 Codex 版本的设置项检查，格式化不丢注释，`auth.json` 里的密钥在你选择显示之前一直
   隐藏，保存前显示差异，并加密保留被替换的每个版本。
 - **诊断。** 发现过期的 Codex 进程、外来的环境变量、无法解析的配置、钥匙串问题等。
+- **托盘图标。** Windows 通知区域、macOS 菜单栏、Linux 托盘（StatusNotifierItem，不需要 GTK）
+  都有 Superba 图标：打开 Superba、查看并切换当前服务商和线路、通过 Superba 打开或重新打开
+  ChatGPT、查看并开关路由、退出 Superba。偏好设置 → 窗口：关闭窗口时退出，或在托盘中继续运行
+  （Windows 和 Linux 第一次关闭时询问；macOS 默认留在菜单栏），以及“启动时隐藏到托盘”。
+  再次启动 Superba 会打开已在运行的窗口。没有托盘的 Linux 桌面（未启用 AppIndicator 扩展的
+  GNOME）上该设置不可用，关闭窗口即退出。
 - 中英文界面。
 
 ## 安装
