@@ -82,6 +82,7 @@ pub(crate) async fn proxy_ws(
         &View {
             generation: &generation,
             websocket_only: false,
+            route: &crate::compaction::Route::Any,
         },
         pin,
         now,
@@ -98,6 +99,7 @@ pub(crate) async fn proxy_ws(
         &View {
             generation: &generation,
             websocket_only: true,
+            route: &crate::compaction::Route::Any,
         },
         pin,
         now,

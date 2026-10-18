@@ -208,6 +208,7 @@ fn krill_profile(line: LineId, auth: AuthMode) -> Profile {
     Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
+        compaction: Default::default(),
         id: "krill".into(),
         name: "Krill".into(),
         builtin: None,

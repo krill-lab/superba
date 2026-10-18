@@ -64,6 +64,7 @@ impl World {
             codex_settings: Default::default(),
             model_overrides: Default::default(),
             model_picker: Default::default(),
+            compaction: Default::default(),
         });
         set.custom_sites.push(site);
         std::fs::write(

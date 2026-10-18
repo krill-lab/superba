@@ -403,6 +403,7 @@ fn member_websocket_follows_the_line_hints() {
             lines,
             websocket: false,
             model_map: Default::default(),
+            compaction: Default::default(),
         };
         m.apply_websocket_hints();
         m.websocket

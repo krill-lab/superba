@@ -43,6 +43,7 @@ fn member(id: &str, lines: Vec<LineConfig>) -> MemberConfig {
         lines,
         websocket: true,
         model_map: BTreeMap::new(),
+        compaction: Default::default(),
     }
 }
 

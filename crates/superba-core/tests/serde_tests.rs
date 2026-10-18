@@ -18,6 +18,7 @@ fn profile_round_trip_preserves_optional_model_url_and_key_reference() {
     let profile = Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
+        compaction: Default::default(),
         id: "work".into(),
         name: "Work profile".into(),
         builtin: None,

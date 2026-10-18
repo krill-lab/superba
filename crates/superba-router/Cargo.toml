@@ -36,7 +36,8 @@ reqwest.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-# per-consumer source tokens (HMAC-SHA256 over the router token)
+# per-consumer source tokens (HMAC-SHA256 over the router token) and
+# compaction item fingerprints (crate::compaction)
 sha2.workspace = true
 hex.workspace = true
 tokio.workspace = true

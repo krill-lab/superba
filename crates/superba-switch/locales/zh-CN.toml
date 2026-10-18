@@ -161,6 +161,11 @@ missing_env_processes = "有 {count} 个 codex 进程启动时没有 CODEX_AUTHA
 unknown_version_accepted = "{consumer} 上的 Codex 版本未知，已按你的选择继续。"
 write_only_migration = "只写入了配置，会话没有迁移。"
 app_not_ours = "ChatGPT 不是从 Superba 打开的；这次完全重启后会由 Superba 打开，之后的切换都能热切。"
+compaction_unsupported = "“{site}”不支持 Codex 远程压缩：对话占满上下文窗口时，压缩会在这里失败（Codex 没有让 Superba 所配置的服务商改用本地压缩的设置）。到时请新开对话，或在路由模式下搭配一个支持压缩的服务商。"
+compaction_unknown = "尚未检测“{site}”的远程压缩能力；可在服务商页面检测（会消耗少量 token）。"
+compaction_router = "压缩请求会跳过 {members}（不支持远程压缩）；压缩过的对话会留在执行压缩的那个服务商。"
+compaction_router_none = "路由里没有任何服务商支持远程压缩：对话占满上下文窗口时无法压缩。"
+compacted_elsewhere = "最近 {days} 天用过的 {count} 个对话由“{provider}”压缩过，压缩后的历史只有它能读取：在“{site}”上继续这些对话会失败或丢失之前的上下文。请为它们新开对话，或切回“{provider}”继续。"
 
 [switch.done]
 switched = "已切换到 {destination} · 用时 {seconds} 秒"

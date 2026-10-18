@@ -40,6 +40,11 @@
 //!   an upstream WebSocket (see [`transport`] for why).
 //! - **WebSocket**: passthrough pinned per connection; failover only at the
 //!   handshake; 426 locally for members without WebSocket.
+//! - **Remote compaction** ([`compaction`]): a compacted conversation goes
+//!   only to the member that made its `compaction` item (no failover to
+//!   members that cannot read it); compaction requests and compacted
+//!   conversations of unknown origin skip members marked as not supporting
+//!   remote compaction. Bodies pass through untouched.
 //! - **Health** ([`health`]): passive breakers with exponential backoff plus
 //!   unauthenticated probes of half-open lines.
 //! - **Local budget** ([`limits`]): bounded concurrent requests / WebSocket
@@ -71,6 +76,7 @@
 #![warn(missing_docs)]
 
 pub mod client;
+pub mod compaction;
 pub mod config;
 pub mod doctor;
 pub mod firewall;

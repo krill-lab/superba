@@ -162,6 +162,11 @@ missing_env_processes = "{count} codex processes were started without CODEX_AUTH
 unknown_version_accepted = "The Codex version on {consumer} is unknown; continuing as you chose."
 write_only_migration = "Sessions were not migrated because only the configuration was written."
 app_not_ours = "ChatGPT was not opened from Superba; after this full restart it is, and later switches can be hot."
+compaction_unsupported = "“{site}” does not support Codex remote compaction: when a conversation fills its context window, its compaction fails there (Codex has no setting that makes the provider Superba configures compact locally). Start a new conversation then, or use router mode with a provider that compacts."
+compaction_unknown = "Remote compaction of “{site}” has not been checked yet; check it on the provider page (it costs a few tokens)."
+compaction_router = "Compaction requests skip {members} (no remote compaction); a compacted conversation stays with the provider that compacted it."
+compaction_router_none = "None of the router's providers supports remote compaction: a conversation that fills its context window cannot be compacted."
+compacted_elsewhere = "{count} conversations used in the last {days} days were compacted by “{provider}”, and only it can read their compacted history: continuing them on “{site}” fails or loses their earlier context. Start a new conversation for them, or switch back to “{provider}” to continue them."
 
 [switch.done]
 switched = "Switched to {destination} in {seconds} s"

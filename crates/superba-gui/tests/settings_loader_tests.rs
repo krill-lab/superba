@@ -16,6 +16,7 @@ fn profile(id: &str, site: &str) -> Profile {
     Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
+        compaction: Default::default(),
         id: ProfileId::new(id),
         name: format!("{id} profile"),
         builtin: None,

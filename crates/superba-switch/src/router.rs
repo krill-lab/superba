@@ -505,6 +505,8 @@ impl Switcher {
             member.model_map = site.model_map.clone();
             // What the transport checks found per line (zstd, WebSocket).
             self.apply_transport_hints(&mut member, site, profile, &key);
+            // Remote compaction: the check, the user's choice, Krill's fact.
+            member.compaction = self.cached_compaction(site, profile, Some(&key)).support;
             if out
                 .iter()
                 .any(|m: &superba_router::config::MemberConfig| m.id == member.id)

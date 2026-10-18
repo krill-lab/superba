@@ -117,6 +117,7 @@ stream_broken = "流中断"
 member_changed = "会话换了成员"
 reloaded = "配置已重新加载"
 local_limit = "本机资源吃紧（未归咎于线路）"
+compaction = "压缩请求已按能力路由（留在原服务商）"
 
 [router.palette]
 setup = "设置本地路由"

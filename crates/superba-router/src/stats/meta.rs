@@ -56,6 +56,9 @@ pub struct RequestMeta {
     /// The Codex host the router authenticated (`wsl:<distro>`; `None` = this
     /// computer), from [`crate::forward::CODEX_HOST_HEADER`].
     pub codex_host: Option<String>,
+    /// Compaction trigger and compaction items of the input
+    /// ([`crate::compaction`]).
+    pub compaction: crate::compaction::CompactionInput,
 }
 
 #[derive(Deserialize, Default)]
@@ -182,5 +185,6 @@ fn peek_with(headers: &HeaderMap, body: &[u8], transport: RequestTransport) -> R
         transport,
         stripped: 0,
         codex_host: short(header(headers, crate::forward::CODEX_HOST_HEADER)),
+        compaction: crate::compaction::inspect(body),
     }
 }

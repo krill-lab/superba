@@ -21,9 +21,10 @@
 //! - [`plan`]: restart decisions, switch plans, execution events and the overview.
 //! - [`traits`]: the component contracts.
 //! - [`usage`]: account balance and usage data from standard endpoints.
-//! - [`import`]: provider import from other tools (cc-switch, AI Toolbox).
 //! - [`ownership`]: coexistence with those tools: external changes to what
 //!   Superba owns, who made them, take-over and hand-off.
+//! - [`import`]: provider and usage import from other tools (cc-switch, AI Toolbox).
+//! - [`compaction`]: a provider's remote compaction support (check, choice, effect).
 //! - [`router`]: router mode settings and status; [`views`]: settings page rows,
 //!   settings edits and the settings part of a plan.
 //! - v0.3: [`models`] (model lists, overrides, speed tiers, the catalog file),
@@ -40,6 +41,7 @@ pub mod auth;
 pub mod caps;
 pub mod catalog;
 pub mod codex;
+pub mod compaction;
 pub mod config;
 pub mod env;
 pub mod error;
@@ -77,6 +79,7 @@ pub use app::*;
 pub use auth::*;
 pub use caps::*;
 pub use codex::CodexVersion;
+pub use compaction::*;
 pub use config::*;
 pub use env::{
     EnvApplied, EnvEdit, EnvEditAction, EnvLocation, EnvObservation, EnvOp, EnvPlan, EnvReport,

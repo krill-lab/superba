@@ -42,6 +42,7 @@ fn user_set() -> ProfileSet {
     let profile = Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
+        compaction: Default::default(),
         id: ProfileId::new("my-profile"),
         name: "我的 API profile".into(),
         builtin: None,

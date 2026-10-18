@@ -61,6 +61,18 @@ pub const PROVIDER_OPENAI: &str = "openai";
 /// sessions under it are migrated to [`PROVIDER_OPENAI`] on takeover.
 pub const LEGACY_KRILL_PROVIDER: &str = "krill";
 
+/// Input item Codex appends to a remote compaction request on the ordinary
+/// Responses endpoint, HTTP or WebSocket (`{"type":"compaction_trigger"}`;
+/// Codex 0.149+ for the built-in `openai` provider, the only one Superba
+/// writes; there is no setting that makes that provider compact locally —
+/// see [`crate::compaction`]).
+pub const COMPACTION_TRIGGER_ITEM: &str = "compaction_trigger";
+/// Item holding a compacted history: the single output item of a compaction
+/// request, sent back as input in every later request of the conversation
+/// (`{"type":"compaction","encrypted_content":"…"}`, readable only by the
+/// provider that made it).
+pub const COMPACTION_ITEM: &str = "compaction";
+
 /// Owned top-level `config.toml` keys (plan 9.1). Never write `[model_providers.*]`.
 pub mod config_keys {
     /// `model_provider` (always `"openai"` when Superba manages the home).

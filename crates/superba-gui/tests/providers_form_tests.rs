@@ -42,6 +42,7 @@ fn existing() -> (Site, Profile) {
     let mut profile = Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
+        compaction: Default::default(),
         id: ProfileId::new("saved-profile"),
         name: "Saved Profile".into(),
         builtin: None,

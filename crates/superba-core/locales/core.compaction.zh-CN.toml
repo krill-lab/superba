@@ -1,0 +1,11 @@
+# superba-core 中关于服务商远程压缩的文案（GitHub issue 3）。
+
+[compaction.support]
+native = "支持原生远程压缩"
+unsupported = "不支持远程压缩"
+unknown = "压缩能力未检测"
+
+[compaction.choice]
+auto = "自动"
+native = "原生（直接透传）"
+unsupported = "不支持"

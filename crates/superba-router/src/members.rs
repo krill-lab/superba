@@ -107,5 +107,11 @@ pub fn member_from_site(
         lines: out,
         websocket: kind == MemberKind::Krill,
         model_map: Default::default(),
+        // Krill compacts natively; a compatible site is unknown until checked.
+        compaction: if kind == MemberKind::Krill {
+            superba_core::CompactionSupport::Native
+        } else {
+            superba_core::CompactionSupport::Unknown
+        },
     })
 }

@@ -118,6 +118,8 @@ pub(crate) struct StatsHub {
     recorder: Mutex<Option<Recorder>>,
     written: Arc<AtomicU64>,
     dropped: AtomicU64,
+    /// Which member made each compaction item ([`crate::compaction`]).
+    pub compactions: Arc<crate::compaction::Owners>,
 }
 
 impl std::fmt::Debug for StatsHub {
@@ -129,7 +131,13 @@ impl std::fmt::Debug for StatsHub {
 impl StatsHub {
     /// A hub recording under `paths` (none: live view only).
     pub fn new(paths: Option<RouterPaths>) -> Self {
+        let compactions = Arc::new(crate::compaction::Owners::load(
+            paths
+                .as_ref()
+                .map(|p| p.dir().join(crate::compaction::OWNERS_FILE)),
+        ));
         Self {
+            compactions,
             paths,
             next_row: AtomicI64::new(0),
             next_inflight: AtomicU64::new(0),
@@ -636,6 +644,20 @@ impl Tracker {
                 _ => RequestStatus::Ok,
             },
         });
+        // Remote compaction: the member that answered made the answer's
+        // compaction item, and reads the items of its input whose maker was
+        // not known ([`crate::compaction`]).
+        if status == RequestStatus::Ok
+            && let Some(c) = self.answered
+        {
+            let member = &generation.members[c.member].cfg.id;
+            self.hub
+                .compactions
+                .learn(&summary.compactions, member, false);
+            self.hub
+                .compactions
+                .learn(&self.meta.compaction.items, member, true);
+        }
         let (member_id, member_name, line_id, line_name, host) = match self.answered {
             Some(c) => {
                 let m = &generation.members[c.member];

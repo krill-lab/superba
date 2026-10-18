@@ -354,6 +354,24 @@ pub trait LineProber: Send + Sync {
         Err(crate::Error::not_implemented("transport probe"))
     }
 
+    /// Codex remote compaction at `<openai_base_url>/responses` for `key` and
+    /// `model` ([`crate::compaction`]): one streamed request with a two-message
+    /// conversation and a `compaction_trigger` item, as Codex sends it (costs a
+    /// few tokens). Exactly one `compaction` output item = native; a refusal
+    /// that names the item or an answer without a compaction item =
+    /// unsupported; answers that do not tell (401, 403, 429, 5xx, a refused
+    /// model, no answer) = unknown. Never on a switch's path: only explicit
+    /// checks call it. Sends the key only to the endpoints' own origin.
+    async fn probe_compaction(
+        &self,
+        endpoints: &ResolvedEndpoints,
+        key: &Secret,
+        model: &str,
+    ) -> Result<crate::CompactionCheck> {
+        let _ = (endpoints, key, model);
+        Err(crate::Error::not_implemented("compaction probe"))
+    }
+
     /// [`LineProber::probe`] refined with one key (plan 3.2 `LineCaps` per line and
     /// key): sets `key_access` from the API-key view of the authenticated models
     /// request, and keeps `pat_ok` only if the key's PAT endpoints (whoami, accounts
@@ -899,6 +917,20 @@ pub trait SwitchService: Send + Sync {
     async fn line_transports(&self, request: LineTransportsRequest) -> Result<Vec<LineTransports>> {
         let _ = request;
         Err(crate::Error::not_implemented("line transports"))
+    }
+
+    /// Remote compaction of a provider ([`crate::ProviderCompaction`]): the
+    /// last check (cached in `<data dir>/cache/compaction.json` per site, base
+    /// URL and key fingerprint), the profile's choice and the effective value.
+    /// [`crate::TransportRefresh::Cached`] sends nothing; a check costs a few
+    /// tokens ([`LineProber::probe_compaction`]). A changed effective value of
+    /// a router member updates the local router (a reload).
+    async fn provider_compaction(
+        &self,
+        request: crate::CompactionRequest,
+    ) -> Result<crate::ProviderCompaction> {
+        let _ = request;
+        Err(crate::Error::not_implemented("provider compaction"))
     }
 
     /// Probe one line of a site: latency and reachability, and with a key the

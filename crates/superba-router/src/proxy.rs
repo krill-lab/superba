@@ -23,6 +23,7 @@ use http_body_util::{BodyExt, Limited};
 use hyper::body::Incoming;
 use superba_core::RequestCompression;
 
+use crate::compaction::{self, CompactionInput, Route};
 use crate::config::join_path;
 use crate::forward::{
     Observed, describe_error, empty_responses_answer, failover_status, local_busy, request_headers,
@@ -134,12 +135,16 @@ pub(crate) async fn proxy_http(
             );
         }
     };
-    let (body, mut tracker) = if tracked {
+    let (body, mut tracker, compaction) = if tracked {
         let (body, m) = prepare(&parts.headers, body, limit);
+        let compaction = m.compaction.clone();
         let t = shared.stats.track(generation.clone(), m, t0, started_ms);
-        (body, Some(t))
+        (body, Some(t), compaction)
+    } else if is_responses_path(&parts.method, &rest) {
+        let compaction = inspect_encoded(&parts.headers, &body, limit);
+        (body, None, compaction)
     } else {
-        (body, None)
+        (body, None, CompactionInput::default())
     };
 
     let key = session_key(&parts.headers);
@@ -147,14 +152,52 @@ pub(crate) async fn proxy_http(
     let pin = key
         .as_deref()
         .and_then(|k| lock(&generation.sticky).get(k, now));
+    // Remote compaction: a compacted conversation stays with the member that
+    // made its compaction item; compaction requests skip members that cannot
+    // compact (crate::compaction).
+    let route = compaction::route(
+        &generation.member_facts(),
+        &compaction,
+        &shared.stats.compactions,
+    );
+    if let Route::Refuse {
+        status,
+        code,
+        message,
+    } = &route
+    {
+        shared.event(
+            RouteEventKind::Compaction,
+            None,
+            None,
+            Some(message.clone()),
+        );
+        if let Some(t) = tracker {
+            t.finish(End {
+                status: Some(superba_core::RequestStatus::Http {
+                    status: *status,
+                    code: Some((*code).into()),
+                }),
+                error: Some(message.chars().take(300).collect()),
+                ..End::default()
+            });
+        }
+        return router_error(
+            StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_REQUEST),
+            code,
+            message,
+        );
+    }
     let order = candidates(
         &View {
             generation: &generation,
             websocket_only: false,
+            route: &route,
         },
         pin,
         now,
     );
+    note_compaction_route(&shared, &generation, &route, pin, now, order.first());
 
     let mut mapped: HashMap<usize, Bytes> = HashMap::new();
     // Lines that accept zstd get Responses bodies Codex sent uncompressed
@@ -324,21 +367,98 @@ pub(crate) async fn proxy_http(
         None,
         Some(failures.join("; ")),
     );
+    // A compacted conversation never fails over to a member that cannot
+    // read it: say so instead of a bare "no line reachable".
+    let (status, code, message) = match &route {
+        Route::Members {
+            kept_on: Some(o), ..
+        } => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            compaction::OWNER_UNAVAILABLE_CODE,
+            compaction::owner_unavailable_message(
+                &generation.members[*o].cfg.name,
+                &failures.join("; "),
+            ),
+        ),
+        _ => (
+            StatusCode::BAD_GATEWAY,
+            "router_unavailable",
+            format!("no line reachable ({})", failures.join("; ")),
+        ),
+    };
     if let Some(t) = tracker {
         t.finish(End {
             status: Some(superba_core::RequestStatus::Http {
-                status: 502,
-                code: Some("router_unavailable".into()),
+                status: status.as_u16(),
+                code: Some(code.into()),
             }),
             error: Some(failures.join("; ").chars().take(300).collect()),
             ..End::default()
         });
     }
-    router_error(
-        StatusCode::BAD_GATEWAY,
-        "router_unavailable",
-        &format!("no line reachable ({})", failures.join("; ")),
-    )
+    router_error(status, code, &message)
+}
+
+/// The compaction facts of a Responses body Codex sent as it is or
+/// zstd-compressed (other encodings are not read).
+fn inspect_encoded(headers: &HeaderMap, body: &Bytes, limit: usize) -> CompactionInput {
+    match content_encoding(headers).as_deref() {
+        None => compaction::inspect(body),
+        Some("zstd") => strip::decode_zstd(body, limit)
+            .map(|plain| compaction::inspect(&plain))
+            .unwrap_or_default(),
+        Some(_) => CompactionInput::default(),
+    }
+}
+
+/// A routing event when compaction keeps a request off the member it would
+/// otherwise have gone to (its conversation's pin, or the preferred member).
+pub(crate) fn note_compaction_route(
+    shared: &Shared,
+    generation: &Generation,
+    route: &Route,
+    pin: Option<Pin>,
+    now: Instant,
+    chosen: Option<&Candidate>,
+) {
+    if matches!(route, Route::Any) {
+        return;
+    }
+    let usual = pin.map(|p| p.member).or_else(|| {
+        candidates(
+            &View {
+                generation,
+                websocket_only: false,
+                route: &Route::Any,
+            },
+            None,
+            now,
+        )
+        .first()
+        .map(|c| c.member)
+    });
+    let Some(usual) = usual.filter(|u| !route.allows(*u)) else {
+        return;
+    };
+    let from = &generation.members[usual].cfg.name;
+    let detail = match (route, chosen) {
+        (
+            Route::Members {
+                kept_on: Some(o), ..
+            },
+            _,
+        ) => format!(
+            "compacted conversation kept on “{}” (made its compaction item) instead of “{from}”",
+            generation.members[*o].cfg.name
+        ),
+        (_, Some(c)) => format!(
+            "compaction went to “{}”: “{from}” does not support remote compaction",
+            generation.members[c.member].cfg.name
+        ),
+        _ => return,
+    };
+    let member = chosen.map(|c| generation.members[c.member].cfg.id.as_str());
+    shared.event(RouteEventKind::Compaction, member, None, Some(detail));
 }
 
 /// Send `zstd` (the compressed form of `plain`) to a line that accepts zstd.

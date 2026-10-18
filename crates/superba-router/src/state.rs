@@ -161,6 +161,18 @@ impl Generation {
         })
     }
 
+    /// What compaction routing needs to know about the members.
+    pub fn member_facts(&self) -> Vec<crate::compaction::MemberFacts<'_>> {
+        self.members
+            .iter()
+            .map(|m| crate::compaction::MemberFacts {
+                id: &m.cfg.id,
+                name: &m.cfg.name,
+                compaction: m.cfg.compaction,
+            })
+            .collect()
+    }
+
     /// `member/line` label for logs and the route header.
     pub fn label(&self, member: usize, line: usize) -> String {
         let m = &self.members[member];
@@ -225,6 +237,8 @@ fn build_client(
 pub(crate) struct View<'a> {
     pub generation: &'a Generation,
     pub websocket_only: bool,
+    /// Members a compaction-aware request may go to ([`crate::compaction`]).
+    pub route: &'a crate::compaction::Route,
 }
 
 impl Topology for View<'_> {
@@ -235,7 +249,8 @@ impl Topology for View<'_> {
         self.generation.members[member].lines.len()
     }
     fn eligible(&self, member: usize) -> bool {
-        !self.websocket_only || self.generation.members[member].cfg.websocket
+        (!self.websocket_only || self.generation.members[member].cfg.websocket)
+            && self.route.allows(member)
     }
     fn available(&self, member: usize, line: usize, now: Instant) -> bool {
         lock(&self.generation.members[member].lines[line].health).is_available(now)

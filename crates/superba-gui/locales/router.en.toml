@@ -118,6 +118,7 @@ stream_broken = "Stream broken"
 member_changed = "Conversation moved"
 reloaded = "Configuration reloaded"
 local_limit = "This computer ran short (no line blamed)"
+compaction = "Compaction routed (kept on its provider)"
 
 [router.palette]
 setup = "Set up the local router"

@@ -14,7 +14,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use superba_core::{Error, Result, Secret, SiteKind};
+use superba_core::{CompactionSupport, Error, Result, Secret, SiteKind};
 use url::Url;
 use zeroize::Zeroize;
 
@@ -129,6 +129,17 @@ pub struct MemberConfig {
     /// `member name`).
     #[serde(default)]
     pub model_map: BTreeMap<String, String>,
+    /// Codex remote compaction of this member (Superba's check, the user's
+    /// choice, or the built-in fact for Krill): compaction requests and
+    /// compacted conversations never go to a member marked `unsupported`, and
+    /// a conversation compacted by one member stays with it
+    /// ([`crate::compaction`]).
+    #[serde(default, skip_serializing_if = "unknown_compaction")]
+    pub compaction: CompactionSupport,
+}
+
+fn unknown_compaction(c: &CompactionSupport) -> bool {
+    *c == CompactionSupport::Unknown
 }
 
 /// One entry point of a member.

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::auth::AuthMode;
+use crate::compaction::CompactionChoice;
 use crate::i18n::Locale;
 use crate::ids::{LineId, ProfileId, SiteId, TargetId};
 use crate::models::{ModelOverride, ModelPicker, SpeedTier};
@@ -73,6 +74,10 @@ pub struct Profile {
     /// Which list the app's model picker shows (custom sites).
     #[serde(default, skip_serializing_if = "ModelPicker::is_default")]
     pub model_picker: ModelPicker,
+    /// Remote compaction of this provider: what Superba's check found
+    /// (`Auto`, the default) or the user's override ([`crate::compaction`]).
+    #[serde(default, skip_serializing_if = "CompactionChoice::is_auto")]
+    pub compaction: CompactionChoice,
 }
 
 impl Profile {

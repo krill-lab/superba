@@ -182,6 +182,7 @@ pub fn builtin_profiles() -> Vec<Profile> {
             codex_settings: CodexSettings::new(),
             model_overrides: Default::default(),
             model_picker: Default::default(),
+            compaction: Default::default(),
         },
         Profile {
             id: ProfileId::new(PROFILE_OFFICIAL),
@@ -198,6 +199,7 @@ pub fn builtin_profiles() -> Vec<Profile> {
             codex_settings: CodexSettings::new(),
             model_overrides: Default::default(),
             model_picker: Default::default(),
+            compaction: Default::default(),
         },
     ]
 }

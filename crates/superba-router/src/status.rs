@@ -230,6 +230,10 @@ pub enum RouteEventKind {
     /// use): requests got 503 `local_router_busy`; no line was blamed. Shown at
     /// most once a minute.
     LocalLimit,
+    /// A compacted conversation (or a compaction request) was kept off
+    /// members that cannot read it, or refused because no member can
+    /// ([`crate::compaction`]).
+    Compaction,
 }
 
 /// One routing event.

@@ -88,6 +88,7 @@ async fn add(args: &ProfileAddArgs, rt: &Runtime, out: &mut Output) -> Result {
     let mut profile = Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
+        compaction: Default::default(),
         id,
         name: args.name.clone().unwrap_or_else(|| args.id.clone()),
         builtin: None,

@@ -9,6 +9,7 @@ pub fn new_profile(site: &Site, name: String) -> Profile {
     let mut p = Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
+        compaction: Default::default(),
         id: ProfileId::new(site.id.as_str()),
         name,
         builtin: None,

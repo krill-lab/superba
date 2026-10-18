@@ -193,6 +193,7 @@ mod tests {
             lines: vec![line.clone()],
             websocket: true,
             model_map: Default::default(),
+            compaction: Default::default(),
         };
         (m, line)
     }

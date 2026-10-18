@@ -24,6 +24,7 @@
 //! pass fakes through [`SwitcherDeps`] directly.
 
 mod account;
+pub mod compaction;
 pub mod executor;
 pub mod hosts;
 mod import;
@@ -564,6 +565,13 @@ impl SwitchService for Switcher {
         request: superba_core::LineTransportsRequest,
     ) -> Result<Vec<superba_core::LineTransports>> {
         self.line_transports_impl(request).await
+    }
+
+    async fn provider_compaction(
+        &self,
+        request: superba_core::CompactionRequest,
+    ) -> Result<superba_core::ProviderCompaction> {
+        self.provider_compaction_impl(request).await
     }
 
     async fn plan_settings(&self, plan_id: &str) -> Result<superba_core::PlanSettings> {

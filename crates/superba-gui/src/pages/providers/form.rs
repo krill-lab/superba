@@ -292,6 +292,7 @@ pub fn prepare(
             let profile = Profile {
                 model_overrides: Default::default(),
                 model_picker: Default::default(),
+                compaction: Default::default(),
                 id: ProfileId::new(id.as_str()),
                 name: name.to_owned(),
                 builtin: None,

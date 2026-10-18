@@ -47,6 +47,7 @@ use crate::stats::hub::{End, Tracker, now_ms};
 use crate::stats::sse::{EventKind, sniff_type};
 use crate::stats::tap::{Decision, ResponseTap};
 use crate::stats::{inject, meta, strip};
+use crate::status::RouteEventKind;
 
 /// How long the other direction may still run after one side closed.
 const CLOSE_GRACE: Duration = Duration::from_secs(3);
@@ -132,6 +133,9 @@ where
     let queue: Queue = Arc::new(Mutex::new(VecDeque::new()));
     let ctx = Arc::new(ctx);
     let oversize = Arc::new(Oversize::default());
+    // Frames the router itself sends to Codex (compaction refusals, the close
+    // that moves a compacted conversation to its member).
+    let (reply_tx, mut reply_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
 
     let c2s = {
         let queue = queue.clone();
@@ -148,12 +152,23 @@ where
                 };
                 let Some(msg) = msg else { break };
                 match msg {
-                    Ok(Message::Text(t)) => {
-                        let out = client_text(&ctx, &queue, t);
-                        if up_tx.send(out).await.is_err() {
+                    Ok(Message::Text(t)) => match client_text(&ctx, &queue, t) {
+                        Client::Forward(out) => {
+                            if up_tx.send(out).await.is_err() {
+                                break;
+                            }
+                        }
+                        Client::Reply(reply) => {
+                            if reply_tx.send(reply).is_err() {
+                                break;
+                            }
+                        }
+                        Client::Move(close) => {
+                            let _ = reply_tx.send(close);
+                            let _ = up_tx.send(Message::Close(None)).await;
                             break;
                         }
-                    }
+                    },
                     Ok(Message::Close(frame)) => {
                         let _ = up_tx.send(Message::Close(frame)).await;
                         break;
@@ -183,6 +198,14 @@ where
             loop {
                 let msg = tokio::select! {
                     msg = up_rx.next() => msg,
+                    reply = reply_rx.recv() => {
+                        let Some(reply) = reply else { continue };
+                        let closing = matches!(reply, Message::Close(_));
+                        if down_tx.send(reply).await.is_err() || closing {
+                            break;
+                        }
+                        continue;
+                    }
                     () = oversize.notify.notified() => {
                         let _ = down_tx.send(close_too_big()).await;
                         break;
@@ -256,14 +279,121 @@ where
     }
 }
 
+/// What to do with a client frame.
+enum Client {
+    /// Send this to the member.
+    Forward(Message),
+    /// Do not forward; answer Codex with this frame.
+    Reply(Message),
+    /// Do not forward; close the socket with this frame (Codex reconnects and
+    /// its handshake follows the conversation's new pin).
+    Move(Message),
+}
+
+/// A `response.create` frame the socket's member must not get
+/// ([`crate::compaction`]): `None` when it may.
+fn compaction_detour(ctx: &RelayCtx, m: &meta::RequestMeta, t0: Instant) -> Option<Client> {
+    let generation = &ctx.generation;
+    let route = crate::compaction::route(
+        &generation.member_facts(),
+        &m.compaction,
+        &ctx.shared.stats.compactions,
+    );
+    if route.allows(ctx.answered.member) {
+        return None;
+    }
+    let here = &generation.members[ctx.answered.member].cfg;
+    if let crate::compaction::Route::Refuse {
+        status,
+        code,
+        message,
+    } = &route
+    {
+        ctx.shared.event(
+            RouteEventKind::Compaction,
+            Some(&here.id),
+            None,
+            Some(message.clone()),
+        );
+        let tracker = ctx
+            .shared
+            .stats
+            .track(ctx.generation.clone(), m.clone(), t0, now_ms());
+        tracker.finish(End {
+            status: Some(RequestStatus::Http {
+                status: *status,
+                code: Some((*code).into()),
+            }),
+            error: Some(message.chars().take(300).collect()),
+            ..End::default()
+        });
+        let event = serde_json::json!({
+            "type": "error",
+            "status": status,
+            "error": {
+                "type": "invalid_request_error",
+                "code": code,
+                "message": format!("Superba local router: {message}"),
+            }
+        });
+        return Some(Client::Reply(Message::Text(event.to_string().into())));
+    }
+    // Pin the conversation to a member that may serve it, then make Codex
+    // reconnect: the new handshake goes there.
+    let now = Instant::now();
+    let target = crate::select::candidates(
+        &crate::state::View {
+            generation,
+            websocket_only: false,
+            route: &route,
+        },
+        None,
+        now,
+    )
+    .into_iter()
+    .next()?;
+    if let Some(key) = crate::sticky::session_key(&ctx.handshake) {
+        lock(&generation.sticky).set(
+            &key,
+            crate::sticky::Pin {
+                member: target.member,
+                line: target.line,
+            },
+            now,
+        );
+    }
+    let to = &generation.members[target.member].cfg;
+    let detail = match &route {
+        crate::compaction::Route::Members {
+            kept_on: Some(_), ..
+        } => format!(
+            "compacted conversation moves from “{}” to “{}” (made its compaction item); the WebSocket reconnects",
+            here.name, to.name
+        ),
+        _ => format!(
+            "compaction moves from “{}” (no remote compaction) to “{}”; the WebSocket reconnects",
+            here.name, to.name
+        ),
+    };
+    ctx.shared
+        .event(RouteEventKind::Compaction, Some(&to.id), None, Some(detail));
+    Some(Client::Move(Message::Close(Some(CloseFrame {
+        code: CloseCode::Restart,
+        reason: "compacted conversation moves to its provider".into(),
+    }))))
+}
+
 /// A client frame: track and strip `response.create`, pass everything else.
-fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Message {
+fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Client {
     let bytes: Bytes = t.clone().into();
     if sniff_type(&bytes) != Some("response.create") {
-        return Message::Text(t);
+        return Client::Forward(Message::Text(t));
     }
     let t0 = Instant::now();
     let mut m = meta::peek_frame(&ctx.handshake, &bytes);
+    if let Some(detour) = compaction_detour(ctx, &m, t0) {
+        return detour;
+    }
     let send = match strip::strip(&bytes) {
         Some((new, n)) => {
             m.stripped = n;
@@ -285,7 +415,7 @@ fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Message {
         held: Vec::new(),
         first_frame: true,
     });
-    send
+    Client::Forward(send)
 }
 
 /// A member frame: feed the oldest open request's tap; returns the frames to

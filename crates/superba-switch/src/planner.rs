@@ -1126,6 +1126,27 @@ impl Switcher {
             {
                 draft.info(text("switch.warn.cross_site"));
             }
+            // Remote compaction (GitHub issue 3): cached checks and the local
+            // rollouts only, nothing is sent.
+            let dest_profile = dest.profile_id.as_ref().and_then(|id| set.profile(id));
+            let notes = self
+                .compaction_notes(
+                    &set,
+                    &sites,
+                    crate::compaction::CompactionDest {
+                        profile: dest_profile.filter(|_| !dest.routed),
+                        site: dest.site.as_ref().filter(|_| !dest.routed),
+                        key: dest.key.as_ref(),
+                        from_site: state.active.as_ref().and_then(|a| a.site_id.as_ref()),
+                        router_members: dest
+                            .router_update
+                            .as_ref()
+                            .filter(|_| dest.routed)
+                            .map(|(_, built)| built.config.members.as_slice()),
+                    },
+                )
+                .await;
+            draft.warnings.extend(notes);
             if dest.uninstall.is_some() {
                 draft.cleanup.push(text("switch.destination.uninstall"));
             }

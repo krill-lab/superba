@@ -156,6 +156,8 @@ pub struct TapSummary {
     pub injected: bool,
     /// An event was too large to inspect.
     pub uninspected: bool,
+    /// Fingerprints of the `compaction` items of the answer.
+    pub compactions: Vec<crate::compaction::Fingerprint>,
 }
 
 impl TapSummary {
@@ -207,6 +209,8 @@ pub struct ResponseTap {
     held_bytes: usize,
     injected: bool,
     uninspected: bool,
+    /// Fingerprints of the `compaction` output items ([`crate::compaction`]).
+    compactions: Vec<crate::compaction::Fingerprint>,
 }
 
 #[derive(Deserialize, Default)]
@@ -314,6 +318,7 @@ impl ResponseTap {
             held_bytes: 0,
             injected: false,
             uninspected: false,
+            compactions: Vec::new(),
         }
     }
 
@@ -393,6 +398,9 @@ impl ResponseTap {
             EventKind::ItemDone => {
                 // Items that arrive whole (encrypted reasoning, tool calls).
                 self.first_token.get_or_insert(now);
+                if let Some(fp) = crate::compaction::output_item(json) {
+                    self.compactions.push(fp);
+                }
             }
             EventKind::ItemAdded => {
                 let peek: ItemEventPeek<'_> = serde_json::from_slice(json).unwrap_or_default();
@@ -466,6 +474,9 @@ impl ResponseTap {
     }
 
     fn read_terminal(&mut self, kind: EventKind, json: &[u8]) {
+        if kind == EventKind::Completed && self.compactions.is_empty() {
+            self.compactions = crate::compaction::completed_items(json);
+        }
         let peek: TerminalPeek<'_> = serde_json::from_slice(json).unwrap_or_default();
         if let Some(r) = &peek.response {
             self.response_model = r.model.as_deref().map(clip);
@@ -544,6 +555,7 @@ impl ResponseTap {
             deltas: self.deltas,
             injected: self.injected,
             uninspected: self.uninspected,
+            compactions: self.compactions.clone(),
         }
     }
 }

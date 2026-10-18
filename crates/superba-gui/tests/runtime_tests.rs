@@ -27,6 +27,7 @@ fn compatible_pair(id: &str) -> (Site, Profile) {
     let profile = Profile {
         model_overrides: Default::default(),
         model_picker: Default::default(),
+        compaction: Default::default(),
         id: id.into(),
         name: "Example API".into(),
         builtin: None,

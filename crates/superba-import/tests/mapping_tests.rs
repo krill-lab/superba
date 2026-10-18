@@ -315,6 +315,7 @@ fn krill(id: &str, name: &str, line: Option<&str>) -> Profile {
         codex_settings: Default::default(),
         model_overrides: Default::default(),
         model_picker: Default::default(),
+        compaction: Default::default(),
     };
     p.set_auth(AuthChoice::Auto);
     p

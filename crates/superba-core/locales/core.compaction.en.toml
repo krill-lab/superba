@@ -1,0 +1,15 @@
+# superba-core messages of a provider's remote compaction (GitHub issue 3):
+# Providers page, switch report, spb. Concatenated after the other core files,
+# so this file must start with a table header and must not repeat a key of
+# another core file (enforced by tests). Every key must also exist in
+# core.compaction.zh-CN.toml.
+
+[compaction.support]
+native = "Native remote compaction"
+unsupported = "No remote compaction"
+unknown = "Compaction not checked"
+
+[compaction.choice]
+auto = "Automatic"
+native = "Native (pass through)"
+unsupported = "Not supported"

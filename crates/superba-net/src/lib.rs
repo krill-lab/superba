@@ -20,6 +20,9 @@
 //! - **auth API health** for plan 7.1 rule 7, **model catalogs**, a minimal
 //!   **Responses probe** (+ compact), and **account data** (see
 //!   [below](crate#account-data));
+//! - **remote compaction** ([`LineProber::probe_compaction`]): one streamed
+//!   `compaction_trigger` request as Codex sends it (a few tokens), judged by
+//!   the `compaction` output item it must answer with;
 //! - **transports** ([`LineProber::probe_transports`]): the Responses
 //!   WebSocket handshake (closed at once on 101) and a tiny invalid zstd body
 //!   compared with the same body plain and with the compressed bytes sent as
@@ -65,6 +68,7 @@ mod account;
 mod cache;
 mod catalog;
 mod classify;
+mod compaction;
 mod fetch;
 mod http;
 mod keys;
@@ -289,5 +293,14 @@ impl LineProber for HttpLineProber {
         key: &Secret,
     ) -> Result<TransportProbe> {
         self.probe_transports_impl(endpoints, key).await
+    }
+
+    async fn probe_compaction(
+        &self,
+        endpoints: &ResolvedEndpoints,
+        key: &Secret,
+        model: &str,
+    ) -> Result<superba_core::CompactionCheck> {
+        self.probe_compaction_impl(endpoints, key, model).await
     }
 }

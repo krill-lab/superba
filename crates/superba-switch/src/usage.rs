@@ -597,7 +597,7 @@ pub fn merge_stats(
 
 impl Switcher {
     /// Attribution data (generations, names, prices); missing parts are empty.
-    async fn attribution(&self) -> Attribution {
+    pub(crate) async fn attribution(&self) -> Attribution {
         let d = &self.deps;
         let home = d.ctx.codex_home();
         let mut generations = d.config.generations(&home).await.unwrap_or_default();

@@ -432,6 +432,7 @@ pub fn member(id: &str, kind: MemberKind, websocket: bool, lines: Vec<LineConfig
         lines,
         websocket,
         model_map: BTreeMap::new(),
+        compaction: Default::default(),
     }
 }
 
