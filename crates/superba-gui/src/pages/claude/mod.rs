@@ -60,6 +60,12 @@ impl State {
         let profiles_changed = self.view.is_some()
             && cx.data.profiles.value.is_some()
             && self.loaded_profiles.as_ref() != cx.data.profiles.value.as_ref();
+        if profiles_changed {
+            // A provider's endpoint or model list setting may have changed:
+            // read the lists again (the service answers from its cache).
+            self.connect.models.clear();
+            self.connect.load = Default::default();
+        }
         if (self.view.is_none() && self.view_error.is_none()) || profiles_changed {
             self.reload(cx);
         }

@@ -198,10 +198,22 @@ impl HttpLineProber {
                 }
             }
         }
+        // The same URL for both lists (a `/codex/v1` base whose Anthropic
+        // endpoint is `/codex`): asked once.
+        let same =
+            targets.len() == 2 && !targets[0].urls.is_empty() && targets[0].urls == targets[1].urls;
         let fetches = targets
             .iter()
+            .take(if same { 1 } else { targets.len() })
             .map(|t| self.fetch_list(req, t, &client_version));
-        let results = futures_util::future::join_all(fetches).await;
+        let mut results = futures_util::future::join_all(fetches).await;
+        if same {
+            let copy = match &results[0] {
+                Ok(c) => Ok(c.clone()),
+                Err(e) => Err(e.clone()),
+            };
+            results.push(copy);
+        }
 
         let mut sources = Vec::new();
         let mut codex = None;

@@ -541,7 +541,11 @@ async fn backups(
         })
         .collect::<Vec<_>>();
     out.section_table(
-        "cli.config.backups_title",
+        if file == Some(CodexFileArg::Claude) {
+            "cli.config.backups_title_claude"
+        } else {
+            "cli.config.backups_title"
+        },
         &[
             "cli.config.col_id",
             "cli.config.col_time",

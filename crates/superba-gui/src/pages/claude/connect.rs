@@ -40,25 +40,18 @@ use crate::design::widgets::{
     Badge, Button, Card, Dropdown, PagedState, PagedTable, Segmented, Status, StatusDot, Table,
     Text, Toggle, dialog,
 };
+use crate::pages::shared::loading::{self, Latest};
 use crate::pages::{Action, Cx, Page, PageStatus, error_text, page_header};
 use crate::runtime::ReadTask;
 
+/// Time limit of a model list load.
+const MODELS_LIMIT: std::time::Duration = std::time::Duration::from_secs(45);
 /// Width of the detail pane.
 const DETAIL_W: f32 = 380.0;
 /// Height of the top cards.
-const CARDS_H: f32 = 112.0;
+const CARDS_H: f32 = 148.0;
 /// Gap between panes.
 const GAP: f32 = 12.0;
-
-/// Models of one provider.
-#[derive(Debug, Default)]
-pub struct ModelsLoad {
-    /// The last list.
-    pub value: Option<ClaudeModelsView>,
-    /// The last error.
-    pub error: Option<String>,
-    task: Option<ReadTask<ClaudeModelsView>>,
-}
 
 /// The endpoint dialog's edits.
 #[derive(Clone, Debug)]
@@ -80,8 +73,11 @@ pub struct EndpointEdit {
 pub struct ConnectState {
     /// Edited configuration (`None` = as saved).
     pub draft: Option<ClaudeConfig>,
-    /// Model lists per provider.
-    pub models: HashMap<ProfileId, ModelsLoad>,
+    /// Model lists per provider (each shown only for its own provider).
+    pub models: HashMap<ProfileId, ClaudeModelsView>,
+    /// The load of the chosen provider's models (user bug 83: the last
+    /// choice wins, a failure or timeout is shown with Retry).
+    pub load: Latest<ProfileId, ClaudeModelsView>,
     /// Search text of the model list.
     pub search: String,
     /// The model shown in the detail pane.
@@ -166,10 +162,10 @@ impl ConnectState {
         self.save.is_some() || self.plan_task.is_some() || self.apply_task.is_some()
     }
 
-    /// Read the models of `provider` (`refresh` = ask the provider again).
+    /// Read the models of `provider` (`refresh` = ask the provider again):
+    /// it becomes the chosen provider; a load of another one is dropped.
     pub fn load_models(&mut self, cx: &Cx<'_>, provider: &ProfileId, refresh: bool) {
-        let entry = self.models.entry(provider.clone()).or_default();
-        if entry.task.is_some() {
+        if !refresh && self.load.is_chosen(provider) && self.load.loading() {
             return;
         }
         let service = cx.service.clone();
@@ -177,10 +173,8 @@ impl ConnectState {
             provider: Some(provider.clone()),
             refresh,
         };
-        entry.error = None;
-        entry.task = Some(crate::runtime::task(async move {
-            service.claude_models(request).await
-        }));
+        let task = crate::runtime::task(async move { service.claude_models(request).await });
+        self.load.start(provider.clone(), task, MODELS_LIMIT);
     }
 
     /// Save the draft, then plan.
@@ -236,21 +230,10 @@ impl ConnectState {
 fn poll(state: &mut State, cx: &Cx<'_>, out: &mut Vec<Action>) -> bool {
     let mut busy = false;
     let s = &mut state.connect;
-    for load in s.models.values_mut() {
-        if let Some(t) = &load.task {
-            match t.poll() {
-                Some(Ok(v)) => {
-                    load.task = None;
-                    load.value = Some(v);
-                }
-                Some(Err(e)) => {
-                    load.task = None;
-                    load.error = Some(error_text(cx.tr, &e));
-                }
-                None => busy = true,
-            }
-        }
+    if let Some((provider, list)) = s.load.poll() {
+        s.models.insert(provider, list);
     }
+    busy |= s.load.loading();
     if let Some((t, then)) = &s.save {
         let then = *then;
         match t.poll() {
@@ -432,7 +415,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     let provider = current_provider(&view, &config);
     if let Some(p) = &provider
         && !state.connect.models.contains_key(p)
-        && view.provider.as_ref() == Some(p)
+        && !state.connect.load.is_chosen(p)
     {
         state.connect.load_models(cx, p, false);
     }
@@ -762,6 +745,7 @@ fn provider_picker(
     Dropdown::new("claude-provider")
         .label(cx.tr.t("claude.provider.title"))
         .selected_text(selected)
+        .loading(state.connect.load.loading())
         .width(ui.available_width().min(320.0))
         .show_ui(ui, |ui| {
             if ui
@@ -846,14 +830,22 @@ fn model_list(
         return;
     };
     let models = config.models_of(&provider);
-    let load = state.connect.models.get(&provider);
-    let loading = load.is_some_and(|l| l.task.is_some());
-    let all = rows(load.and_then(|l| l.value.as_ref()), &models);
-    let sources = load
-        .and_then(|l| l.value.as_ref())
-        .map(|v| v.sources.clone())
-        .unwrap_or_default();
-    let load_error = load.and_then(|l| l.error.clone());
+    let value = state.connect.models.get(&provider).cloned();
+    let value = value.as_ref();
+    let chosen = state.connect.load.is_chosen(&provider);
+    let loading = chosen && state.connect.load.loading();
+    let failure = if chosen {
+        state.connect.load.failure().map(|f| f.text(cx))
+    } else {
+        None
+    };
+    let all = rows(value, &models);
+    let sources = value.map(|v| v.sources.clone()).unwrap_or_default();
+    let name = cx
+        .data
+        .profile(&provider)
+        .map(|p| provider_label(cx, p))
+        .unwrap_or_else(|| provider.to_string());
     // Toolbar: search, pull, list status.
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -895,9 +887,36 @@ fn model_list(
             }
         }
     });
-    if let Some(e) = &load_error {
-        ui.add(egui::Label::new(Text::caption(e.clone(), cx.pal)).truncate())
-            .on_hover_text(e.clone());
+    // Never another provider's list: the loading state or the failure (with
+    // Retry) in its place until this provider's list is there.
+    if value.is_none() {
+        if let Some(f) = &failure {
+            let title = cx.tr.f("claude.models.load_failed", &[("provider", &name)]);
+            if loading::failed_card(ui, cx, &title, f) {
+                state.connect.load_models(cx, &provider, true);
+            }
+            return;
+        }
+        if loading {
+            loading::spinner_row(
+                ui,
+                cx,
+                &cx.tr.f("claude.models.loading", &[("provider", &name)]),
+            );
+            return;
+        }
+    } else if let Some(f) = &failure {
+        ui.horizontal(|ui| {
+            ui.add(StatusDot::new(Status::Warn));
+            ui.add(
+                egui::Label::new(Text::caption(
+                    cx.tr.f("claude.models.refresh_failed", &[("error", f)]),
+                    cx.pal,
+                ))
+                .truncate(),
+            )
+            .on_hover_text(f.clone());
+        });
     }
     let shown = filtered(&all, &state.connect.search);
     // Room for the manual entry under the list.
@@ -972,6 +991,9 @@ fn model_list(
                                 .collect::<Vec<_>>()
                                 .join(" · ")
                         });
+                        if !m.usable {
+                            second.push(cx.tr.t("claude.models.codex_only"));
+                        }
                         ui.add(
                             egui::Label::new(Text::caption(second.join(" · "), cx.pal)).truncate(),
                         );
@@ -1039,8 +1061,7 @@ fn detail(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &ClaudeView, config
         return;
     };
     let models = config.models_of(&provider);
-    let load = state.connect.models.get(&provider);
-    let all = rows(load.and_then(|l| l.value.as_ref()), &models);
+    let all = rows(state.connect.models.get(&provider), &models);
     let Some(id) = state.connect.selected.clone() else {
         summary(ui, cx, state, view, &provider, &models);
         return;
@@ -1254,10 +1275,17 @@ fn detail(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &ClaudeView, config
                 }
                 changed = Some(m.clone());
             }
-            if let Some(p) = m.picker.iter_mut().find(|p| p.model == row.id)
-                && picker_fields(ui, cx, p)
-            {
-                changed = Some(m.clone());
+            let in_slot = !m.slots_of(&row.id).is_empty();
+            if let Some(p) = m.picker.iter_mut().find(|p| p.model == row.id) {
+                if in_slot {
+                    ui.add(
+                        egui::Label::new(Text::caption(cx.tr.t("claude.picker.slot_row"), cx.pal))
+                            .wrap(),
+                    );
+                }
+                if picker_fields(ui, cx, p) {
+                    changed = Some(m.clone());
+                }
             }
             if let Some(next) = changed {
                 state.connect.edit_models(view, &provider, |mm| *mm = next);
@@ -1688,7 +1716,6 @@ fn endpoint_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, out: &mu
             profile: Box::new(p),
             key: None,
         });
-        state.connect.models.remove(&edit.provider);
         close = true;
     }
     if close {

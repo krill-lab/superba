@@ -29,11 +29,14 @@ use crate::design::widgets::{
     StatusDot, Table, Text, Toggle, dialog,
 };
 use crate::pages::settings::files::Editor;
+use crate::pages::shared::loading::{self, Latest};
 use crate::pages::{
     Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, error_text, page_header,
 };
 use crate::runtime::ReadTask;
 
+/// Time limit of reading settings.json.
+const LOAD_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
 /// Rail width.
 const RAIL_W: f32 = 176.0;
 /// Detail width.
@@ -49,9 +52,9 @@ pub struct SettingsState {
     pub model: Option<SettingsModel>,
     /// The file as read.
     doc: Option<CodexFileDoc>,
-    task: Option<ReadTask<CodexFileDoc>>,
-    /// The last read failed.
-    pub error: Option<String>,
+    /// The read of the file (user bug 83: a loading state or the failure
+    /// with Retry in place of the panes, never stale data).
+    load: Latest<(), CodexFileDoc>,
     /// List filter.
     pub filter: Filter,
     shown_filter: Option<Filter>,
@@ -79,8 +82,7 @@ impl Default for SettingsState {
         Self {
             model: None,
             doc: None,
-            task: None,
-            error: None,
+            load: Latest::default(),
             filter: Filter::default(),
             shown_filter: None,
             table: PagedState::default(),
@@ -127,19 +129,21 @@ impl SettingsState {
         }
         self.model = Some(model);
         self.doc = Some(doc);
-        self.error = None;
     }
 
     fn load(&mut self, cx: &Cx<'_>) {
-        if self.task.is_some() {
-            return;
-        }
         let service = cx.service.clone();
-        self.task = Some(crate::runtime::task(async move {
+        let task = crate::runtime::task(async move {
             service
                 .codex_file(TargetId::local(), CodexFileKind::ClaudeSettings)
                 .await
-        }));
+        });
+        self.load.start((), task, LOAD_LIMIT);
+    }
+
+    /// The file is being read.
+    pub fn loading(&self) -> bool {
+        self.load.loading()
     }
 
     /// Rows listed now.
@@ -231,7 +235,8 @@ impl SettingsState {
     }
 
     fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) -> bool {
-        if (self.model.is_none() && self.error.is_none()) || self.stale {
+        let first = self.model.is_none() && !self.load.loading() && self.load.failure().is_none();
+        if first || self.stale {
             self.stale = false;
             self.load(cx);
         }
@@ -254,23 +259,11 @@ impl SettingsState {
                 Err(e) => self.save_error = Some(error_text(cx.tr, &e)),
             }
         }
-        let Some(t) = &self.task else {
-            return self.saving.is_some();
-        };
-        match t.poll() {
-            Some(Ok(doc)) => {
-                self.task = None;
-                self.set_doc(doc);
-                self.apply_focus();
-                false
-            }
-            Some(Err(e)) => {
-                self.task = None;
-                self.error = Some(error_text(cx.tr, &e));
-                false
-            }
-            None => true,
+        if let Some(((), doc)) = self.load.poll() {
+            self.set_doc(doc);
+            self.apply_focus();
         }
+        self.load.loading() || self.saving.is_some()
     }
 }
 
@@ -317,17 +310,30 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
         }
     });
     let Some(model) = s.model.clone() else {
-        match &s.error {
-            Some(e) => {
-                ui.label(Text::strong(cx.tr.t("claude.settings.load_failed"), cx.pal));
-                ui.add(egui::Label::new(Text::small(e, cx.pal)).wrap());
+        match s.load.failure() {
+            Some(f) => {
+                let reason = f.text(cx);
+                if loading::failed_card(ui, cx, &cx.tr.t("claude.settings.load_failed"), &reason) {
+                    s.load(cx);
+                }
             }
             None => {
-                ui.label(Text::muted(cx.tr.t("claude.loading"), cx.pal));
+                loading::spinner_row(ui, cx, &cx.tr.t("claude.settings.loading"));
             }
         }
         return;
     };
+    if let Some(f) = s.load.failure() {
+        let reason = f.text(cx);
+        ui.horizontal(|ui| {
+            ui.add(StatusDot::new(Status::Warn));
+            ui.label(Text::small(
+                cx.tr
+                    .f("claude.settings.reload_failed", &[("error", &reason)]),
+                cx.pal,
+            ));
+        });
+    }
     let body = ui.available_rect_before_wrap();
     let notice = model.error.is_some();
     let mut tracks = vec![Track::Fixed(size::CONTROL)];
@@ -686,7 +692,8 @@ fn detail(
                         cx.pal,
                     ));
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(8.0);
+                {
                     if current.is_some()
                         && ui
                             .add(Button::ghost(cx.tr.t("claude.settings.remove_key")).small())
@@ -704,7 +711,7 @@ fn detail(
                         s.pending.0.remove(row.path());
                         s.buffers.retain(|k, _| !k.starts_with(row.path()));
                     }
-                });
+                }
             });
             if !row.entry.examples.is_empty() {
                 let ex: Vec<String> = row

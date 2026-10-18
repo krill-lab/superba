@@ -940,9 +940,13 @@ pub fn object(
                     label.on_hover_text(d);
                 }
             });
-            ui.horizontal_wrapped(|ui| {
+            if matches!(kind, ClaudeKind::List | ClaudeKind::Json) {
                 c = scalar(ui, cx, &path, &kind, value, buffers, false);
-            });
+            } else {
+                ui.horizontal_wrapped(|ui| {
+                    c = scalar(ui, cx, &path, &kind, value, buffers, false);
+                });
+            }
             c
         };
         if let Some(v) = change {

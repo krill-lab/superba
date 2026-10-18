@@ -468,7 +468,7 @@ fn backups_hold_the_original_and_each_replaced_file() {
     assert_eq!(
         sources
             .iter()
-            .filter(|s| matches!(s, BackupSource::BeforeSwitch { .. }))
+            .filter(|s| matches!(s, BackupSource::BeforeApply { .. }))
             .count(),
         2
     );

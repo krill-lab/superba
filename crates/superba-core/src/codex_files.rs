@@ -309,6 +309,15 @@ pub enum BackupSource {
     },
     /// The file as it was before Superba first wrote it.
     Original,
+    /// Taken by Superba before it applied its keys to Claude Code's
+    /// `settings.json` (or restored them).
+    BeforeApply {
+        /// The apply's counter.
+        generation: u64,
+        /// The provider it applied (`None` = a restore).
+        #[serde(default)]
+        profile: Option<ProfileId>,
+    },
 }
 
 impl BackupSource {
@@ -335,6 +344,19 @@ impl BackupSource {
                 t("before_switch", "Before switch {generation}").arg("generation", generation)
             }
             BackupSource::Original => t("original", "Original, before Superba first wrote it"),
+            BackupSource::BeforeApply {
+                generation,
+                profile: Some(p),
+            } => t(
+                "before_apply_named",
+                "Before Superba applied {profile} (time {generation})",
+            )
+            .arg("generation", generation)
+            .arg("profile", p),
+            BackupSource::BeforeApply { generation, .. } => {
+                t("before_apply", "Before Superba's change {generation}")
+                    .arg("generation", generation)
+            }
         }
     }
 }

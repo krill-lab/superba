@@ -69,7 +69,8 @@ pub struct ClaudeApplied {
     /// The provider applied.
     #[serde(default)]
     pub provider: Option<ProfileId>,
-    /// The paths Superba owns now.
+    /// The paths Superba wrote a value to (it also owns the keys it
+    /// removed).
     #[serde(default)]
     pub owned: Vec<String>,
     /// Owned paths someone changed since (they stay that person's until the

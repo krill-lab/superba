@@ -142,7 +142,12 @@ impl ClaudeWriter {
             generation: state.generation,
             at: state.applied_at.unwrap_or_default(),
             provider: state.provider.clone(),
-            owned: state.written.keys().cloned().collect(),
+            owned: state
+                .written
+                .iter()
+                .filter(|(_, v)| v.is_some())
+                .map(|(p, _)| p.clone())
+                .collect(),
             drift,
         }))
     }
@@ -265,7 +270,7 @@ impl ClaudeWriter {
                 LOCAL_LABEL,
                 CodexFileKind::ClaudeSettings,
                 old,
-                BackupSource::BeforeSwitch {
+                BackupSource::BeforeApply {
                     generation: next_generation,
                     profile: plan.provider.clone(),
                 },

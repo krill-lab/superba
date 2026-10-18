@@ -65,6 +65,9 @@ pending = "{n} 个键尚未应用"
 drift = "{n} 个键被别人改过"
 
 [claude.models]
+loading = "正在读取 {provider} 的模型…"
+load_failed = "无法读取 {provider} 的模型"
+refresh_failed = "重新读取列表失败（{error}），显示的是上次的列表。"
 title = "模型"
 search = "搜索模型"
 pull = "拉取模型"
@@ -121,6 +124,7 @@ temperature = "temperature 参数。"
 mid_conversation_system = "对话中途的系统消息。"
 
 [claude.picker]
+slot_row = "这个模型已在槽位中：/model 显示槽位那一行（用槽位的名称和说明），不再单独显示这一行。"
 title = "/model 列表"
 empty = "没有条目：/model 只显示 Claude Code 自带的条目和槽位。"
 add = "加入 /model 列表"
@@ -174,6 +178,8 @@ write = "写入"
 restore = "还原"
 
 [claude.settings]
+loading = "正在读取 settings.json…"
+reload_failed = "重新读取 settings.json 失败（{error}），显示的是之前读取的内容。"
 search = "搜索键和环境变量"
 show_deprecated = "已弃用"
 common = "常用"

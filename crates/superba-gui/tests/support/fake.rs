@@ -17,6 +17,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 
 // Per-area state and the bodies of the v0.3 service methods (plan §4 C2): each
 // area's owner edits only its file; `impl SwitchService` below delegates.
+mod claude;
 mod files;
 mod hosts;
 mod import;
@@ -98,6 +99,7 @@ pub struct FakeService {
 /// Fake state per page area (`fake/<area>.rs`).
 #[derive(Debug, Default)]
 struct Areas {
+    claude: Mutex<claude::State>,
     files: Mutex<files::State>,
     providers: Mutex<providers::State>,
     models: Mutex<models::State>,
@@ -1899,6 +1901,39 @@ impl SwitchService for FakeService {
 
     async fn codex_file(&self, target: TargetId, kind: CodexFileKind) -> Result<CodexFileDoc> {
         files::codex_file(self, target, kind).await
+    }
+
+    async fn claude_view(&self) -> Result<superba_core::ClaudeView> {
+        Ok(claude::view(self))
+    }
+
+    async fn save_claude_config(
+        &self,
+        config: superba_core::ClaudeConfig,
+    ) -> Result<superba_core::ClaudeView> {
+        claude::save(self, config)
+    }
+
+    async fn claude_models(
+        &self,
+        request: superba_core::ClaudeModelsRequest,
+    ) -> Result<superba_core::ClaudeModelsView> {
+        Ok(claude::models(self, request))
+    }
+
+    async fn claude_plan(
+        &self,
+        kind: superba_core::ClaudePlanKind,
+    ) -> Result<superba_core::ClaudePlan> {
+        Ok(claude::plan(kind))
+    }
+
+    async fn claude_apply(
+        &self,
+        plan: superba_core::ClaudePlan,
+        _take_over: bool,
+    ) -> Result<superba_core::ClaudeApplyReport> {
+        Ok(claude::apply(plan))
     }
 
     async fn save_codex_file(&self, save: CodexFileSave) -> Result<CodexFileSaved> {
