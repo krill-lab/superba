@@ -7,7 +7,6 @@ desktop = "桌面 app"
 tui = "终端"
 exec = "codex exec"
 other = "其他"
-on_host = "{client} · {host}"
 
 # 请求记录的来源（用量页、CSV、spb usage）。
 [request_source]
@@ -44,3 +43,7 @@ zstd_refused = "未压缩（上游拒绝 zstd，已重发）"
 supported = "支持"
 unsupported = "不支持"
 unknown = "未知"
+
+# The Codex host of a request that is not this computer (user bug 45).
+[request_host]
+client_on_host = "{client} · {host}"

@@ -379,7 +379,7 @@ impl RequestRow {
             .as_deref()
             .and_then(crate::wsl::distro_of_router_source)
         {
-            Some(distro) => LocalizedText::new("request_client.on_host", "{client} · {host}")
+            Some(distro) => LocalizedText::new("request_host.client_on_host", "{client} · {host}")
                 .arg_text("client", self.client.text())
                 .arg_text("host", crate::target::wsl_title(distro)),
             None => self.client.text(),

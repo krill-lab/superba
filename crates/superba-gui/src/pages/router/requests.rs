@@ -759,10 +759,20 @@ pub fn session_cell(tr: &Tr, titles: &BTreeMap<String, SessionTitle>, row: &Requ
         Some(k) => title_of(titles, k),
         None => DASH.to_owned(),
     };
-    if row.thread_source.as_deref() == Some("thread_title") {
+    let base = if row.thread_source.as_deref() == Some("thread_title") {
         format!("{base} · {}", tr.t("requests.group.title_gen"))
     } else {
         base
+    };
+    // A request from a WSL distribution names it first, so a narrow column
+    // still shows it (user bug 45); the tooltip and the detail say "WSL: …".
+    match row
+        .codex_host
+        .as_deref()
+        .and_then(superba_core::wsl::distro_of_router_source)
+    {
+        Some(distro) => format!("{distro} · {base}"),
+        None => base,
     }
 }
 
@@ -789,9 +799,21 @@ pub fn cell(
         }
         Col::Session => {
             let text = session_cell(tr, titles, row);
-            match &row.model {
-                Some(m) => LogCell::text(text.clone()).tooltip(format!("{text} · {m}")),
-                None => LogCell::text(text),
+            let mut tip = text.clone();
+            if let Some(m) = &row.model {
+                tip = format!("{tip} · {m}");
+            }
+            if let Some(d) = row
+                .codex_host
+                .as_deref()
+                .and_then(superba_core::wsl::distro_of_router_source)
+            {
+                tip = format!("{tip}\n{}", tr.text(&superba_core::wsl_title(d)));
+            }
+            if tip == text {
+                LogCell::text(text)
+            } else {
+                LogCell::text(text).tooltip(tip)
             }
         }
         Col::Status => {

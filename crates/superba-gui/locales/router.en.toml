@@ -151,7 +151,7 @@ hint = "Everything about the local router in one block: copy it into a support r
 
 [requests]
 search = "Search sessions, models, cache keys…"
-remote_note = "Requests of remote hosts aren't shown here: they don't go through the local router and their session files stay on the host."
+remote_note = "SSH hosts' requests are not listed: they do not go through the local router and their session files stay on the host. Requests a WSL distribution sends through the router name the distribution."
 total = "Total"
 total_count = "{n} req."
 no_price = "{n} without an official price; set one in Models"

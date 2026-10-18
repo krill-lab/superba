@@ -141,7 +141,7 @@ usage = "用量"
 
 [page]
 diagnostics.subtitle = "检查项、Codex 进程、环境和活动日志。"
-hosts.subtitle = "ChatGPT 桌面 app 记录的 SSH 主机。设置只在你点「同步设置」时推送，并按该主机的 Codex 版本过滤。"
+hosts.subtitle = "ChatGPT 桌面 app 记录的 SSH 主机，以及默认随本机切换的本机 WSL 发行版。"
 models.subtitle = "供应商提供的模型，以及每个模型的上下文窗口和自动压缩阈值。"
 overview.subtitle = "Codex 当前连到哪里，一键切换。"
 placeholder.body = "这个页面尚未包含在当前版本中。"

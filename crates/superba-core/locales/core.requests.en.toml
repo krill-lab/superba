@@ -8,7 +8,6 @@ desktop = "Desktop app"
 tui = "Terminal"
 exec = "codex exec"
 other = "Other"
-on_host = "{client} · {host}"
 
 # Where a request row comes from (Usage page, CSV, spb usage).
 [request_source]
@@ -46,3 +45,7 @@ zstd_refused = "Uncompressed (zstd refused, sent again)"
 supported = "Supported"
 unsupported = "Not supported"
 unknown = "Unknown"
+
+# The Codex host of a request that is not this computer (user bug 45).
+[request_host]
+client_on_host = "{client} · {host}"

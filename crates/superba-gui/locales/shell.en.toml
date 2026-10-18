@@ -142,7 +142,7 @@ usage = "Usage"
 
 [page]
 diagnostics.subtitle = "Checks, Codex processes, the environment and the activity log."
-hosts.subtitle = "SSH hosts the ChatGPT desktop app knows. Settings are pushed only when you sync, filtered by each host's Codex version."
+hosts.subtitle = "SSH hosts the ChatGPT app knows, and this computer's WSL distributions (they switch with it by default)."
 models.subtitle = "The provider's models, with a context window and auto-compact limit per model."
 overview.subtitle = "Where Codex points now, and a one-click switch."
 placeholder.body = "This page is not part of this build yet."

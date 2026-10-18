@@ -49,9 +49,10 @@ pub(super) async fn run(command: &RemoteCommand, rt: &Runtime, out: &mut Output)
                 .set_host_follow(&target(t), state.is_on())
                 .await?;
             out.line(
-                text(match state {
-                    OnOff::On => "cli.hosts.follow_on",
-                    OnOff::Off => "cli.hosts.follow_off",
+                text(match (state, view.host.kind) {
+                    (OnOff::On, superba_core::HostKind::Wsl) => "cli.hosts.follow_on_wsl",
+                    (OnOff::On, _) => "cli.hosts.follow_on",
+                    (OnOff::Off, _) => "cli.hosts.follow_off",
                 })
                 .arg("host", out.render(&view.host.title())),
             )?;

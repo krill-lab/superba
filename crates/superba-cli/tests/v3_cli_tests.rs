@@ -227,7 +227,7 @@ async fn router_log_lists_rows_with_session_names_and_totals() {
         "Work · Overseas",
         "0.82s",
         "87.0",
-        "remote hosts' session files stay on the host",
+        "SSH hosts' session files stay on the host",
     ] {
         assert!(stdout.contains(value), "{value}: {stdout}");
     }

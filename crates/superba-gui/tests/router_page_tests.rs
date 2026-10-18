@@ -457,7 +457,7 @@ fn the_banner_says_traffic_goes_through_a_local_process() {
     assert!(!f.has("最近请求"), "{}", f.all_text());
     let f = h.until(
         |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
-        |f| f.has("远程主机的请求不在这里显示"),
+        |f| f.has("SSH 主机的请求不在这里显示"),
     );
     assert!(
         f.has("路由未开启") || f.has("路由已开启"),
