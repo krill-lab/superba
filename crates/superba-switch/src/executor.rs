@@ -1586,6 +1586,10 @@ impl Run<'_> {
 
     async fn verify_line(&self) -> CheckResult {
         let d = self.deps();
+        if self.pc.kept_foreign_auth {
+            // GH#5: another tool's credential is not Superba's to test.
+            return skipped(text("switch.verify.foreign_auth"));
+        }
         let (url, key) = match (&self.pc.endpoints, &self.pc.key) {
             (Some(e), Some(k)) => (e.openai_base_url.clone(), k.clone()),
             _ => match d.config.active_credentials(&self.pc.home).await {

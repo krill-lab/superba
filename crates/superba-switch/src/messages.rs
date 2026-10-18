@@ -290,9 +290,18 @@ pub fn choice(c: &PlanChoice) -> LocalizedText {
         PlanChoice::UnknownVersion { consumer } => {
             text("switch.choice.unknown_version").arg("consumer", consumer)
         }
-        PlanChoice::OwnedKeyConflict { conflicts } => {
-            let keys: Vec<&str> = conflicts.iter().map(|k| k.path.as_str()).collect();
-            text("switch.choice.owned_key_conflict").arg("keys", keys.join(", "))
+        PlanChoice::OwnedKeyConflict {
+            conflicts,
+            auth,
+            source,
+        } => {
+            let mut keys: Vec<&str> = conflicts.iter().map(|k| k.path.as_str()).collect();
+            if auth.is_some() {
+                keys.push(superba_core::AUTH_JSON_PATH);
+            }
+            text("switch.choice.owned_key_conflict")
+                .arg("keys", keys.join(", "))
+                .arg_text("source", source.text())
         }
         PlanChoice::SharedHome { targets } => {
             let hosts: Vec<String> = targets.iter().map(|t| target_label(t.as_str())).collect();

@@ -898,7 +898,18 @@ async fn later_legacy_lines_are_restored_by_clear_and_baseline_and_tracked_after
             &fs::read(e.ctx.data_dir.root().join("env-state.json")).unwrap(),
         )
         .unwrap();
-        assert!(state["vars"].get(VAR).is_none());
+        // No comment record is left; only the value of Superba's own block,
+        // which the first switch wrote and nothing reverted (GH#5 detection).
+        let var = &state["vars"][VAR];
+        assert!(
+            var.get("commented_legacy")
+                .is_none_or(|v| v == &serde_json::json!([]))
+        );
+        assert!(
+            var.get("commented_foreign")
+                .is_none_or(|v| v == &serde_json::json!([]))
+        );
+        assert_eq!(var["written"], VALUE);
     }
 }
 

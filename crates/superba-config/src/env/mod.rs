@@ -97,6 +97,10 @@ struct VarState {
     /// Legacy lines can appear after the first baseline was captured.
     #[serde(default)]
     commented_legacy: Vec<RcLine>,
+    /// The value Superba last set (GH#5): a location holding another value was
+    /// changed outside Superba, so clearing or restoring leaves it alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    written: Option<String>,
 }
 
 impl VarState {
@@ -135,6 +139,38 @@ impl VarState {
         self.native_originals.is_empty()
             && self.commented_foreign.is_empty()
             && self.commented_legacy.is_empty()
+            && self.written.is_none()
+    }
+
+    /// GH#5: `current` at a location Superba manages was changed since Superba
+    /// set it (removing it counts as Superba's own clear having happened).
+    fn changed_since_written(&self, current: Option<&str>) -> bool {
+        match (self.written.as_deref(), current) {
+            (Some(written), Some(current)) => written != current,
+            _ => false,
+        }
+    }
+}
+
+/// Plan note: a location kept because its value changed after Superba set it.
+fn kept_note(location: &EnvLocation, value: &str) -> LocalizedText {
+    LocalizedText::new(
+        "env.scope.kept_changed",
+        "Left {location} as it is: its value was changed to {value} after Superba set it.",
+    )
+    .arg("location", location_label(location))
+    .arg("value", value)
+}
+
+fn location_label(location: &EnvLocation) -> String {
+    match location {
+        EnvLocation::ShellRc { path, .. } => path.display().to_string(),
+        EnvLocation::EnvironmentD { path } | EnvLocation::LaunchAgent { path } => {
+            path.display().to_string()
+        }
+        EnvLocation::Launchctl => "launchctl".to_owned(),
+        EnvLocation::WindowsUserEnv => r"HKCU\Environment".to_owned(),
+        other => format!("{other:?}"),
     }
 }
 
@@ -451,6 +487,7 @@ impl ShellEnvPersister {
                 Some(v) => EnvObservation::Present(v),
                 None => EnvObservation::Absent,
             },
+            superba_value: vs.written.clone(),
         })
     }
 
@@ -467,6 +504,8 @@ impl ShellEnvPersister {
 
         // Per file: current text, edits in order (comments first, then the block).
         let mut texts = PlannedTexts::default();
+        // Locations a clear or restore leaves alone (GH#5).
+        let mut kept: Vec<LocalizedText> = Vec::new();
 
         // 1. Legacy / foreign lines.
         let mut line_edits: Vec<(PathBuf, ShellKind, EnvEditAction)> = Vec::new();
@@ -591,6 +630,13 @@ impl ShellEnvPersister {
             if cur_value == want {
                 continue;
             }
+            if !matches!(op, EnvOp::Set { .. }) && vs.changed_since_written(cur_value.as_deref()) {
+                kept.push(kept_note(
+                    &loc.location,
+                    cur_value.as_deref().unwrap_or_default(),
+                ));
+                continue;
+            }
             let (after, action, preview) =
                 render_file(&loc, before.as_deref(), var, want.as_deref());
             edits.push(EnvEdit {
@@ -623,6 +669,10 @@ impl ShellEnvPersister {
             if cur == want {
                 continue;
             }
+            if !matches!(op, EnvOp::Set { .. }) && vs.changed_since_written(cur.as_deref()) {
+                kept.push(kept_note(&loc, cur.as_deref().unwrap_or_default()));
+                continue;
+            }
             edits.push(EnvEdit {
                 location: loc,
                 action: match &want {
@@ -635,7 +685,8 @@ impl ShellEnvPersister {
             });
         }
 
-        let mut scope_notes = self.scope_notes();
+        let mut scope_notes = kept;
+        scope_notes.extend(self.scope_notes());
         scope_notes.extend(texts.notices());
         Ok(EnvPlan {
             var: var.to_owned(),
@@ -861,6 +912,10 @@ impl ShellEnvPersister {
     fn record_applied(&self, plan: &EnvPlan) -> Result<()> {
         let mut st = self.load_state()?;
         let vs = st.vars.entry(plan.var.clone()).or_default();
+        vs.written = match &plan.op {
+            EnvOp::Set { value, .. } => Some(value.clone()),
+            EnvOp::Clear | EnvOp::RestoreBaseline { .. } => None,
+        };
         for e in &plan.edits {
             match (&e.location, &e.action) {
                 (loc, EnvEditAction::SetValue { .. }) if edit_path(loc).is_none() => {
@@ -1016,6 +1071,9 @@ impl ShellEnvPersister {
                 }
             }
         }
+        // What Superba's own blocks and values hold after the revert is what it
+        // had written before (GH#5 change detection).
+        vs.written = self.managed_value(&applied.var, vs)?;
         if vs.is_empty() {
             st.vars.remove(&applied.var);
         }
@@ -1030,6 +1088,26 @@ impl ShellEnvPersister {
                 ),
             })
         }
+    }
+
+    /// The value in Superba's own marker blocks (else in a native store Superba
+    /// manages), if any.
+    fn managed_value(&self, var: &str, vs: &VarState) -> Result<Option<String>> {
+        for loc in self.file_locations(var) {
+            if let Some(text) = read_text(&loc.path).ok().flatten()
+                && let Some(v) = file_value(&loc, &text, var)
+            {
+                return Ok(Some(v));
+            }
+        }
+        for loc in self.native_locations() {
+            if vs.native_originals.contains_key(&location_key(&loc))
+                && let Some(v) = self.native.get(&loc, var)?
+            {
+                return Ok(Some(v));
+            }
+        }
+        Ok(None)
     }
 
     /// Plan commenting out every line (legacy and foreign) that sets `var` in the

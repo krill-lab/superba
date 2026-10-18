@@ -87,6 +87,11 @@ pub(super) fn build(
             .key_resolutions
             .insert(path.clone(), KeyResolution::Overwrite);
     }
+    if answers.take_over {
+        // GH#5: everything another tool changed is taken over; a key named
+        // with --keep-key keeps its own answer.
+        superba_switch::ownership::take_over(&mut request);
+    }
     Ok(request)
 }
 

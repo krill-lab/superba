@@ -336,8 +336,31 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
         notices: vec![Notice::warning(
             LocalizedText::new("test.stale", "{count} old process").arg("count", 1),
         )],
+        external: Some(superba_core::ExternalChange {
+            codex_home: "/fixtures/codex".into(),
+            keys: vec![superba_core::KeyChange {
+                path: "model_provider".into(),
+                before: Some("\"openai\"".into()),
+                after: Some("\"custom\"".into()),
+            }],
+            auth: Some(superba_core::AuthDrift {
+                written: AuthShape::Pat {
+                    key_last4: "1111".into(),
+                },
+                live: AuthShape::Missing,
+            }),
+            env: Vec::new(),
+            source: superba_core::ChangeSource::CcSwitch {
+                provider: Some("Kimi".into()),
+            },
+            evidence: vec![LocalizedText::new("ownership.evidence.login", "x")],
+            fingerprint: "abc".into(),
+        }),
     };
     let encoded = json_round_trip!(Overview, overview);
+    assert_eq!(encoded["external"]["source"]["kind"], "cc_switch");
+    assert_eq!(encoded["external"]["source"]["provider"], "Kimi");
+    assert_eq!(encoded["external"]["auth"]["live"]["kind"], "missing");
     assert_eq!(encoded["active"]["auth_mode"], "pat");
     assert_eq!(
         encoded["app"]["installs"][0]["bundled_codex_version"],

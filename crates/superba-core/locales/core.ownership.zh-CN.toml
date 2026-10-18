@@ -1,0 +1,31 @@
+# 与其他管理 Codex 配置的工具共存（GH#5：cc-switch、AI Toolbox、Codex 本身、手动修改；
+# 核心所有权类型与 superba-import 的来源判断）的核心文案。与其他区域文件一起拼接成核心
+# 目录；每个键都必须同时存在于 core.ownership.en.toml。
+
+[ownership.source]
+tool_provider = "{tool}（供应商“{provider}”）"
+tool = "{tool}"
+codex_login = "Codex 自己的登录"
+codex_app = "Codex 应用（模型选择器）或手动修改"
+unknown = "其他程序或手动修改"
+
+[ownership.auth]
+missing = "没有 auth.json"
+api_key = "API Key …{last4}"
+pat = "PAT …{last4}"
+chatgpt_email = "ChatGPT 登录（{email}）"
+chatgpt = "ChatGPT 登录"
+unknown = "Superba 无法识别的 auth.json"
+
+[ownership.evidence]
+store_current = "{tool} 当前的 Codex 供应商“{provider}”使用这个地址。"
+store_current_key = "{tool} 当前的 Codex 供应商“{provider}”使用这个 Key。"
+store_other = "{tool} 里有一个使用这个地址的 Codex 供应商“{provider}”。"
+store_official = "{tool} 当前的 Codex 供应商“{provider}”是官方 ChatGPT 登录。"
+marker_schema = "config.toml 以“#:schema none”开头，这是 AI Toolbox 写入的标记。"
+marker_catalog = "config.toml 引用了 {tool} 的模型目录文件 {file}。"
+marker_gateway = "Codex 指向 {tool} 的本地网关（{url}）。"
+marker_bearer = "供应商表把 Key 写在 experimental_bearer_token 里，并且 auth.json 被删除了，这是 cc-switch 的写法。"
+marker_backup = "cc-switch 保存过这个 config.toml 的首次写入备份（{path}）。"
+only_model_keys = "只改动了 Codex 应用自己会写的键。"
+login = "auth.json 现在是 ChatGPT 登录。"

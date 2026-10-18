@@ -371,6 +371,11 @@ pub struct EnvReport {
     pub foreign_lines: Vec<RcLine>,
     /// Value in Superba's own process environment.
     pub process_value: EnvObservation,
+    /// The value Superba last set for the variable (`None` = it set none, or
+    /// cleared it since). A managed location holding something else was changed
+    /// outside Superba (GH#5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superba_value: Option<String>,
 }
 
 /// Baseline snapshot of a variable at one location (for restore / uninstall).

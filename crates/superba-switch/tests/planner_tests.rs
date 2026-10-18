@@ -803,7 +803,7 @@ async fn edited_owned_keys_raise_a_conflict_question() {
     }];
     let p = plan(&w, req("work")).await;
     assert!(
-        matches!(&p.choices[..], [PlanChoice::OwnedKeyConflict { conflicts }] if conflicts[0].path == "openai_base_url")
+        matches!(&p.choices[..], [PlanChoice::OwnedKeyConflict { conflicts, .. }] if conflicts[0].path == "openai_base_url")
     );
 }
 

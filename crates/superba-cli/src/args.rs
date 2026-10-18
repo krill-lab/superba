@@ -131,9 +131,13 @@ pub enum Command {
         delete_backups: bool,
         #[arg(long, value_enum, help = english("cli.help.provider"))]
         provider: Option<ProviderArg>,
+        #[arg(long, help = english("cli.help.restore_take_over"))]
+        take_over: bool,
         #[command(flatten)]
         exec: ExecArgs,
     },
+    #[command(name = "hand-off", about = english("cli.help.hand_off"))]
+    HandOff(HandOffArgs),
 }
 
 /// A profile's auth choice (Auto unless changed under Advanced).
@@ -227,6 +231,8 @@ pub struct SwitchAnswers {
     pub keep_key: Vec<String>,
     #[arg(long, value_name = "PATH", help = english("cli.help.overwrite_key"))]
     pub overwrite_key: Vec<String>,
+    #[arg(long, help = english("cli.help.take_over"))]
+    pub take_over: bool,
     #[arg(long, value_name = "ID", help = english("cli.help.exclude_thread"))]
     pub exclude_thread: Vec<String>,
 }
@@ -309,6 +315,27 @@ pub struct RestoreArgs {
     pub provider: Option<ProviderArg>,
     #[arg(long, required_if_eq("to", "generation"), help = english("cli.help.generation"))]
     pub generation: Option<u64>,
+    #[arg(long, help = english("cli.help.restore_take_over"))]
+    pub take_over: bool,
+    #[command(flatten)]
+    pub exec: ExecArgs,
+}
+
+/// Who a hand-off names (the attribution Superba made, by default).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum HandOffTo {
+    #[value(name = "cc-switch")]
+    CcSwitch,
+    #[value(name = "ai-toolbox")]
+    AiToolbox,
+    Other,
+}
+
+/// `spb hand-off`.
+#[derive(Debug, Clone, Args)]
+pub struct HandOffArgs {
+    #[arg(long, value_enum, help = english("cli.help.hand_off_to"))]
+    pub to: Option<HandOffTo>,
     #[command(flatten)]
     pub exec: ExecArgs,
 }

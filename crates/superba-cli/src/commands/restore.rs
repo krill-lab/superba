@@ -33,5 +33,10 @@ pub(super) async fn run(args: &RestoreArgs, rt: &Runtime, out: &mut Output) -> R
             },
         },
     };
-    execute::run(request(intent, &args.exec), &args.exec, rt, out).await
+    let mut request = request(intent, &args.exec);
+    if args.take_over {
+        // GH#5: restore also what another tool changed after Superba wrote it.
+        superba_switch::ownership::take_over(&mut request);
+    }
+    execute::run(request, &args.exec, rt, out).await
 }

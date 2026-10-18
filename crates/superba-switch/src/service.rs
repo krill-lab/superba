@@ -538,13 +538,26 @@ impl Switcher {
                 .collect()
         };
 
+        let external = match &config {
+            Some(c) => self.external_change(c).await,
+            None => None,
+        };
         if let Some(c) = &config {
             if c.journal_pending {
                 notices.push(Notice::warning(text("switch.overview.journal_pending")));
             }
-            if !c.drift.is_empty() {
+            // GH#5: the changes and who made them are in `external`; the
+            // notice is the one-line version for `spb status` and the log.
+            if let Some(x) = &external {
                 notices.push(Notice::info(
-                    text("switch.overview.drift").arg("count", c.drift.len()),
+                    text("switch.overview.external")
+                        .arg("count", x.count())
+                        .arg_text("source", x.source.text()),
+                ));
+            }
+            if let Some(h) = &c.handed_off {
+                notices.push(Notice::info(
+                    text("switch.overview.handed_off").arg_text("tool", h.to.text()),
                 ));
             }
         }
@@ -606,6 +619,7 @@ impl Switcher {
             baseline_at,
             login_stash,
             notices,
+            external,
         })
     }
 
@@ -706,11 +720,13 @@ impl Switcher {
                     ));
                 }
             }
-            if !s.drift.is_empty() {
+            if let Some(x) = self.external_change(s).await {
                 out.push(finding(
-                    "drift",
-                    Severity::Info,
-                    text("switch.doctor.drift").arg("count", s.drift.len()),
+                    "external_change",
+                    Severity::Warning,
+                    text("switch.doctor.external")
+                        .arg("count", x.count())
+                        .arg_text("source", x.source.text()),
                 ));
             }
         }

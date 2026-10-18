@@ -2,6 +2,7 @@
 
 mod account;
 mod execute;
+mod handoff;
 mod import;
 mod key;
 mod lines;
@@ -147,21 +148,21 @@ pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) 
         Command::Uninstall {
             delete_backups,
             provider,
+            take_over,
             exec,
         } => {
-            execute::run(
-                request(
-                    SwitchIntent::Uninstall {
-                        delete_backups: *delete_backups,
-                        provider: provider.map(Into::into),
-                    },
-                    exec,
-                ),
+            let mut request = request(
+                SwitchIntent::Uninstall {
+                    delete_backups: *delete_backups,
+                    provider: provider.map(Into::into),
+                },
                 exec,
-                rt,
-                out,
-            )
-            .await
+            );
+            if *take_over {
+                superba_switch::ownership::take_over(&mut request);
+            }
+            execute::run(request, exec, rt, out).await
         }
+        Command::HandOff(args) => handoff::run(args, rt, out).await,
     }
 }

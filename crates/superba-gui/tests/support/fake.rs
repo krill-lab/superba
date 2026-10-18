@@ -122,6 +122,8 @@ struct FakeState {
     busy_armed: bool,
     fail_armed: bool,
     router_installed: bool,
+    /// GH#5: what another tool changed (the overview's `external`).
+    external: Option<superba_core::ExternalChange>,
 }
 
 impl FakeService {
@@ -141,6 +143,11 @@ impl FakeService {
     pub fn with_account_summary(self, enabled: bool) -> Self {
         self.state().account_summary_enabled = enabled;
         self
+    }
+
+    /// GH#5: report a change another tool made in the overview.
+    pub fn set_external(&self, external: Option<superba_core::ExternalChange>) {
+        self.state().external = external;
     }
 
     fn state(&self) -> MutexGuard<'_, FakeState> {
@@ -474,6 +481,10 @@ impl FakeState {
                 }),
                 active,
                 drift: vec![],
+                auth_drift: None,
+                handed_off: None,
+                since_release: Vec::new(),
+                since_release_auth: None,
                 journal_pending: false,
             },
             app: AppOverview {
@@ -545,6 +556,7 @@ impl FakeState {
             busy_armed: options.busy_turns,
             fail_armed: options.fail_verification,
             router_installed: false,
+            external: None,
         }
     }
 
@@ -1095,6 +1107,7 @@ fn config_plan(before: &ConfigState, after: &ConfigState, plan: &SwitchPlan) -> 
         auth_change,
         notes: vec![],
         desired: None,
+        releases_ownership: false,
     }
 }
 
@@ -1587,6 +1600,7 @@ impl SwitchService for FakeService {
                 email: None,
             }),
             notices: vec![],
+            external: s.external.clone(),
         })
     }
 

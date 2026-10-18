@@ -14,6 +14,7 @@ signed_out = "You signed out of ChatGPT since the last switch; that saved login 
 stale_login = "This ChatGPT login was saved {days} days ago; you may need to sign in again after restoring it."
 setting_shape_conflict = "Skipped {key}: config.toml has a different kind of value at or above it."
 generation_catalog_missing = "The model catalog file {file} of generation {generation} no longer exists, so the restored config.toml does not name it (Codex could not start otherwise); its per-model settings are not restored."
+auth_kept = "Kept auth.json: it was changed outside Superba after Superba wrote it."
 
 [env.scope]
 non_utf8_skipped = "Skipped {path}: it contains non-UTF-8 bytes; convert it to UTF-8 so Superba can scan and edit it. Other locations are still planned."
@@ -23,6 +24,7 @@ restart_running = "Running IDEs and terminals keep the old value until restarted
 macos_launchd = "Apps opened from the Dock or Finder from now on get it immediately (launchctl); it is re-applied at every login."
 windows_broadcast = "New Command Prompt / PowerShell windows opened from Explorer get the new value right away."
 windows_terminal = "Windows Terminal and VS Code must be fully restarted to see it."
+kept_changed = "Left {location} as it is: its value was changed to {value} after Superba set it."
 
 [config.settings]
 partial_support = "{key} has no effect for {consumers}; it is written for the others."

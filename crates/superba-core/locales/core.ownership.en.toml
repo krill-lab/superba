@@ -1,0 +1,33 @@
+# superba-core messages of the coexistence with other tools that manage Codex's
+# configuration (GH#5: cc-switch, AI Toolbox, Codex itself, hand edits; core
+# ownership types and superba-import's attribution). Concatenated into the core
+# catalog like the other area files; every key must also exist in
+# core.ownership.zh-CN.toml.
+
+[ownership.source]
+tool_provider = "{tool} (provider “{provider}”)"
+tool = "{tool}"
+codex_login = "Codex's own sign-in"
+codex_app = "the Codex app (its model picker) or a hand edit"
+unknown = "another program or a hand edit"
+
+[ownership.auth]
+missing = "no auth.json"
+api_key = "API key …{last4}"
+pat = "PAT …{last4}"
+chatgpt_email = "ChatGPT login ({email})"
+chatgpt = "ChatGPT login"
+unknown = "an auth.json Superba does not recognize"
+
+[ownership.evidence]
+store_current = "{tool}'s current Codex provider “{provider}” uses this address."
+store_current_key = "{tool}'s current Codex provider “{provider}” uses this key."
+store_other = "{tool} has a Codex provider “{provider}” with this address."
+store_official = "{tool}'s current Codex provider “{provider}” is the official ChatGPT login."
+marker_schema = "config.toml starts with “#:schema none”, which AI Toolbox writes."
+marker_catalog = "config.toml names {tool}'s model catalog file {file}."
+marker_gateway = "Codex points at {tool}'s local gateway ({url})."
+marker_bearer = "The provider table carries its key as experimental_bearer_token and auth.json was removed, as cc-switch does."
+marker_backup = "cc-switch keeps a first-write backup of this config.toml ({path})."
+only_model_keys = "Only keys the Codex app writes itself changed."
+login = "auth.json now holds a ChatGPT login."

@@ -116,6 +116,10 @@ pub fn base_state(home: &Path) -> ConfigState {
         },
         active: None,
         drift: Vec::new(),
+        auth_drift: None,
+        handed_off: None,
+        since_release: Vec::new(),
+        since_release_auth: None,
         journal_pending: false,
     }
 }
@@ -324,6 +328,7 @@ impl ConfigEngine for FakeConfig {
             auth_change: None,
             notes: Vec::new(),
             desired: Some(desired.clone()),
+            releases_ownership: false,
         })
     }
 
@@ -2085,6 +2090,7 @@ impl World {
                     legacy_lines: Vec::new(),
                     foreign_lines: Vec::new(),
                     process_value: EnvObservation::Unknown,
+                    superba_value: None,
                 }),
                 fail_apply: Mutex::new(None),
                 fail_revert: Mutex::new(None),

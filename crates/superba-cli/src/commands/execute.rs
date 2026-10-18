@@ -54,6 +54,19 @@ pub(super) async fn run(
         return planned("blocked", exit::BLOCKED, &plan, settings.as_ref(), out);
     }
     if !plan.choices.is_empty() {
+        // GH#5: what another tool changed, and (at a terminal) the answer.
+        for choice in &plan.choices {
+            external_rows(choice, out)?;
+        }
+        if let Some(next) = ask_external(&plan, args, rt, out)? {
+            return match next {
+                Some(request) => Box::pin(run(request, args, rt, out)).await,
+                None => {
+                    out.line(messages::outcome(OutcomeStatus::Cancelled))?;
+                    planned("cancelled", exit::CANCELLED, &plan, settings.as_ref(), out)
+                }
+            };
+        }
         for choice in &plan.choices {
             out.line(messages::choice(choice))?;
             out.line(text(match choice {
@@ -162,6 +175,100 @@ pub(super) async fn run(
         OutcomeStatus::Cancelled => exit::CANCELLED,
         OutcomeStatus::RolledBack | OutcomeStatus::Failed | OutcomeStatus::Partial => exit::ERROR,
     })
+}
+
+/// The rows of an owned-key conflict: who, each key, the credential.
+fn external_rows(choice: &PlanChoice, out: &mut Output) -> superba_core::Result<()> {
+    let PlanChoice::OwnedKeyConflict {
+        conflicts,
+        auth,
+        source,
+    } = choice
+    else {
+        return Ok(());
+    };
+    if out.json {
+        return Ok(());
+    }
+    out.line(text("cli.external.title").arg_text("source", source.text()))?;
+    for k in conflicts {
+        out.line(
+            text("cli.format.change")
+                .arg("path", &k.path)
+                .arg("before", out.optional(k.before.as_ref()))
+                .arg("after", out.optional(k.after.as_ref())),
+        )?;
+    }
+    if let Some(a) = auth {
+        out.line(
+            text("cli.format.change")
+                .arg("path", superba_core::AUTH_JSON_PATH)
+                .arg(
+                    "before",
+                    out.render(&superba_core::auth_shape_label(&a.written)),
+                )
+                .arg(
+                    "after",
+                    out.render(&superba_core::auth_shape_label(&a.live)),
+                ),
+        )?;
+    }
+    Ok(())
+}
+
+/// GH#5: a person at a terminal answers a plan whose only question is a
+/// change another tool made: take it over (`Some(Some(request))` with every
+/// change answered `Overwrite`), let that tool manage it (a hand-off request),
+/// keep its values (only without a changed credential) or cancel
+/// (`Some(None)`). `None`: not asked (flags, JSON, other questions).
+fn ask_external(
+    plan: &SwitchPlan,
+    args: &ExecArgs,
+    rt: &Runtime,
+    out: &mut Output,
+) -> superba_core::Result<Option<Option<SwitchRequest>>> {
+    let [PlanChoice::OwnedKeyConflict { auth, source, .. }] = plan.choices.as_slice() else {
+        return Ok(None);
+    };
+    if out.json || args.dry_run || !out.interactive() {
+        return Ok(None);
+    }
+    // A switch cannot keep another tool's credential: take over or cancel.
+    let keep_possible = auth.is_none();
+    out.line(text("cli.external.ask").arg_text(
+        "tool",
+        match source.tool() {
+            Some(_) => source.text(),
+            None => text("cli.external.other_tool"),
+        },
+    ))?;
+    if keep_possible {
+        out.line(text("cli.external.ask_keep"))?;
+    }
+    let answer = (rt.read_stdin_line)()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    Ok(Some(match answer.as_str() {
+        "t" | "take" | "take over" => {
+            let mut request = plan.request.clone();
+            superba_switch::ownership::take_over(&mut request);
+            Some(request)
+        }
+        "k" | "keep" if keep_possible => {
+            let mut request = plan.request.clone();
+            request.key_resolutions.insert(
+                superba_core::ALL_CHANGED.to_owned(),
+                superba_core::KeyResolution::KeepCurrent,
+            );
+            Some(request)
+        }
+        "h" | "hand off" | "hand-off" => Some(super::request(
+            superba_core::SwitchIntent::HandOff { to: source.clone() },
+            args,
+        )),
+        _ => None,
+    }))
 }
 
 fn planned(

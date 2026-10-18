@@ -132,7 +132,7 @@ restore_provider_plain = "Restore completely without migrating (sessions get hid
 replacement_model = "The destination does not offer your current model {model}. Pick a replacement: {suggestions}"
 foreign_env = "Your shell already sets CODEX_AUTHAPI_BASE_URL to another address ({lines}). Take it over or keep yours?"
 unknown_version = "The Codex version on {consumer} is unknown; PAT may not work there. Continue anyway?"
-owned_key_conflict = "You edited these settings since Superba wrote them: {keys}. Keep your values or overwrite them?"
+owned_key_conflict = "{source} changed what Superba manages since it wrote it: {keys}. Take it over, let the other tool keep managing it, or cancel?"
 shared_home = "These hosts share one home directory: {hosts}. Write it once and restart all of them?"
 
 [switch.warn]
@@ -199,6 +199,7 @@ not_applicable = "not applicable"
 no_session = "ChatGPT is not running"
 not_supported = "not supported yet"
 remote_failed = "{host}: {detail}"
+foreign_auth = "auth.json belongs to another tool; its key is not tested"
 
 [switch.destination]
 router = "{site} via the local router"
@@ -216,12 +217,15 @@ host_sync = "Sync settings to {host}"
 pin_version = "Run the app with Codex {version}"
 pin_path = "Run the app with the Codex at {path}"
 pin_bundled = "Run the app with its own Codex"
+hand_off = "Let {tool} manage Codex's configuration"
+hand_off_any = "Let another tool manage Codex's configuration"
 
 [switch.overview]
 authapi_line = "Auth address: {line} (follows the current line after the next full restart)"
 authapi_unknown = "Auth address: {origin}"
 journal_pending = "A previous switch was interrupted; Superba recovers it before the next switch."
-drift = "You changed {count} settings that Superba manages; they are kept."
+external = "{source} changed {count} things Superba manages; Superba does not overwrite them without asking."
+handed_off = "Codex's configuration is managed by {tool}; Superba changes it again only when you switch."
 hidden_sessions = "{count} sessions are hidden because they belong to another provider."
 stale_processes = "{count} codex processes still use the previous configuration."
 no_app = "No ChatGPT desktop app found; only the CLI is configured."
@@ -233,7 +237,7 @@ profile_override = "config.toml selects profile “{profile}”, which may overr
 cli_auth_store = "cli_auth_credentials_store = “{value}” keeps credentials outside auth.json"
 legacy_provider = "model_provider is “{provider}”; sessions of other providers are hidden"
 provider_table = "config.toml defines [model_providers.{provider}], which Superba never edits"
-drift = "{count} managed settings were edited by hand"
+external = "{source} changed {count} things Superba manages"
 hidden_sessions = "{count} sessions belong to another provider and are hidden"
 missing_env = "{count} codex processes lack CODEX_AUTHAPI_BASE_URL"
 stale_processes = "{count} codex processes use the previous configuration"
@@ -463,3 +467,7 @@ access_not_needed = "{host} reaches the router on 127.0.0.1 (WSL 1 or mirrored n
 access_unreachable = "The router listens for WSL at {address}, but {host} still cannot reach it. Check Windows Firewall and the Hyper-V firewall for WSL, or use mirrored networking."
 access_cancelled = "Administrator approval was declined; WSL 2 distributions behind NAT stay direct."
 access_needs_router = "Install and start the local router first."
+
+[switch.ownership]
+kept = "Kept {count} changes made by {source} after Superba wrote them: {items}. Superba restores only what it still manages; take them over to restore them too."
+hand_off_note = "Superba stops managing Codex's configuration: it puts back only the keys it still manages, keeps everything the other tool changed and an encrypted copy of both files. Switching to a profile later takes over again."

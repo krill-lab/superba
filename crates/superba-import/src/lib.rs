@@ -15,7 +15,8 @@
 //! custom OpenAI-compatible site), finds conflicts with existing providers and
 //! plans the profiles and sites an import saves. Saving is the switching
 //! service's job (`superba-switch`), through the normal profile and key storage;
-//! nothing here writes Codex's files.
+//! nothing here writes Codex's files. [`detect`] uses the same stores to tell
+//! which tool changed the Codex configuration Superba manages (GH#5).
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -23,6 +24,7 @@
 pub mod aitoolbox;
 pub mod ccs;
 pub mod codex;
+pub mod detect;
 pub mod foreign;
 pub mod mapping;
 pub mod sqlite;

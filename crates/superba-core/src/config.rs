@@ -121,6 +121,13 @@ pub enum ResolvedMode {
         /// Generation number (see [`GenerationRecord`]).
         generation: u64,
     },
+    /// Hand the configuration over to another tool (GH#5): release every owned
+    /// key and the credential without writing `config.toml` or `auth.json`;
+    /// the generation recording it keeps encrypted copies of both files.
+    Release {
+        /// Who takes over (as attributed).
+        to: crate::ownership::ChangeSource,
+    },
 }
 
 /// How to treat an owned key the user edited after Superba last wrote it
@@ -167,7 +174,9 @@ impl ResolvedProfile {
         match &self.mode {
             ResolvedMode::Token { auth, .. } => Some(*auth),
             ResolvedMode::Official => Some(AuthMode::OfficialChatGpt),
-            ResolvedMode::Original { .. } | ResolvedMode::Generation { .. } => None,
+            ResolvedMode::Original { .. }
+            | ResolvedMode::Generation { .. }
+            | ResolvedMode::Release { .. } => None,
         }
     }
 }
@@ -326,11 +335,25 @@ pub struct ApplyPlan {
     /// serialized).
     #[serde(skip)]
     pub desired: Option<ResolvedProfile>,
+    /// Superba gives up keys it owns with this apply (a restore or a hand-off
+    /// whose changes another tool already made): the generation is committed
+    /// even when no file changes, so Superba stops managing them (GH#5).
+    #[serde(default)]
+    pub releases_ownership: bool,
 }
 
 impl ApplyPlan {
-    /// True if nothing would be written.
+    /// True if nothing would be written or recorded.
     pub fn is_noop(&self) -> bool {
+        !self.releases_ownership
+            && self
+                .files
+                .iter()
+                .all(|f| matches!(f.change, FileChange::Unchanged))
+    }
+
+    /// True if neither file changes (ownership may still be released).
+    pub fn writes_no_files(&self) -> bool {
         self.files
             .iter()
             .all(|f| matches!(f.change, FileChange::Unchanged))
@@ -435,6 +458,22 @@ pub struct ConfigState {
     /// shown, never silently reverted).
     #[serde(default)]
     pub drift: Vec<KeyChange>,
+    /// `auth.json` no longer holds the credential Superba wrote (GH#5; shown,
+    /// never silently replaced).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_drift: Option<crate::ownership::AuthDrift>,
+    /// Superba handed this home over to another tool and owns nothing in it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handed_off: Option<crate::ownership::HandOffInfo>,
+    /// Superba owns nothing here (its last apply restored or handed off): the
+    /// keys it restores whose live value changed since that apply (another tool,
+    /// the app or the user). A later restore keeps them unless taken over; they
+    /// are not conflicts (GH#5).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub since_release: Vec<KeyChange>,
+    /// Like [`ConfigState::since_release`], for the `auth.json` credential.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since_release_auth: Option<crate::ownership::AuthDrift>,
     /// A journal entry is pending (crash during apply); `recover` must run first.
     pub journal_pending: bool,
 }

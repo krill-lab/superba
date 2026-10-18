@@ -160,7 +160,7 @@ legacy_sessions = "Answer with --migrate-legacy-sessions or --skip-legacy-sessio
 model = "Choose a replacement with --model <MODEL>."
 env = "Answer with --take-over-env or --keep-env."
 version = "Use --accept-unknown-version to continue."
-keys = "Resolve each path with --keep-key <PATH> or --overwrite-key <PATH>."
+keys = "Take everything over with --take-over, keep single keys with --keep-key <PATH>, or let the other tool manage it: `spb hand-off`."
 shared_home = "Use --accept-shared-home to confirm."
 provider = "Answer with --provider keep-openai|reverse-migrate|no-migrate."
 answers = "Answer the plan choices before executing."
@@ -426,6 +426,10 @@ command_optional = "[COMMAND]"
 aliases = "[aliases: {aliases}]"
 values = "[values: {values}]"
 default_value = "[default: {value}]"
+take_over = "Take over everything another tool changed in what Superba manages (keys, auth.json); --keep-key still keeps single keys"
+restore_take_over = "Also restore what another tool changed after Superba wrote it (by default it is kept and reported)"
+hand_off = "Let another tool (cc-switch, AI Toolbox, ...) manage Codex's configuration: Superba restores only what it still manages, keeps the rest and an encrypted backup, and owns nothing afterwards"
+hand_off_to = "Who takes over (default: the tool Superba saw change the configuration)"
 
 [cli.site]
 updated = "Site {id} updated."
@@ -871,3 +875,14 @@ path_none = "none"
 version = "WSL"
 default = "Default"
 router = "Router path"
+
+[cli.external]
+title = "Changed outside Superba by {source}:"
+evidence = "  why: {text}"
+next = "Take it over with `{binary} switch --take-over`, or let that tool manage Codex with `{binary} hand-off` (a restore keeps these changes)."
+ask = "{tool} changed what Superba manages. [t] take over · [h] let {tool} manage it · [c] cancel (default)"
+ask_keep = "[k] keep its values and switch the rest"
+other_tool = "another tool"
+
+[cli.handoff]
+already = "Codex's configuration is already managed by {tool}; Superba owns nothing in it."

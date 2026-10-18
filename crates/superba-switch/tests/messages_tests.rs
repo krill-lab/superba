@@ -709,6 +709,8 @@ fn every_plan_choice_supplies_counts_names_and_ordered_lists() {
                         after: Some("custom".into()),
                     },
                 ],
+                auth: None,
+                source: Default::default(),
             },
             "owned_key_conflict",
             vec![("keys", "features.fast_mode, model")],
@@ -725,7 +727,13 @@ fn every_plan_choice_supplies_counts_names_and_ordered_lists() {
         let text = messages::choice(&choice);
         assert_message(&text, &format!("switch.choice.{suffix}"));
         assert_args(&text, &args);
-        assert!(text.nested.is_empty());
+        if suffix == "owned_key_conflict" {
+            // GH#5: who made the change is a localized text of its own.
+            let names: Vec<&str> = text.nested.iter().map(|(n, _)| n.as_str()).collect();
+            assert_eq!(names, ["source"]);
+        } else {
+            assert!(text.nested.is_empty());
+        }
     }
 }
 
@@ -754,7 +762,11 @@ fn empty_choice_collections_render_without_missing_arguments() {
             vec![("lines", "")],
         ),
         (
-            PlanChoice::OwnedKeyConflict { conflicts: vec![] },
+            PlanChoice::OwnedKeyConflict {
+                conflicts: vec![],
+                auth: None,
+                source: Default::default(),
+            },
             "owned_key_conflict",
             vec![("keys", "")],
         ),

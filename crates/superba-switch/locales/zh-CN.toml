@@ -131,7 +131,7 @@ restore_provider_plain = "完整还原，不迁移（会话会被隐藏）"
 replacement_model = "目标没有你当前用的模型 {model}，请选择替代模型：{suggestions}"
 foreign_env = "你的 shell 已经把 CODEX_AUTHAPI_BASE_URL 设成了别的地址（{lines}）。接管，还是保留你的？"
 unknown_version = "{consumer} 上的 Codex 版本未知，PAT 可能无法使用。仍然继续吗？"
-owned_key_conflict = "Superba 写入后你手动改过这些设置：{keys}。保留你的值，还是覆盖？"
+owned_key_conflict = "Superba 写入之后，{source} 修改了它管理的内容：{keys}。要接管、交给另一个工具继续管理，还是取消？"
 shared_home = "这些主机共用同一个家目录：{hosts}。只写一次并重启全部主机吗？"
 
 [switch.warn]
@@ -198,6 +198,7 @@ not_applicable = "不适用"
 no_session = "ChatGPT 没有在运行"
 not_supported = "暂不支持"
 remote_failed = "{host}：{detail}"
+foreign_auth = "auth.json 由另一个工具管理；不测试它的 Key"
 
 [switch.destination]
 router = "{site}（经本地路由）"
@@ -215,12 +216,15 @@ host_sync = "同步设置到 {host}"
 pin_version = "让 app 使用 Codex {version}"
 pin_path = "让 app 使用 {path} 处的 Codex"
 pin_bundled = "让 app 使用自带的 Codex"
+hand_off = "交给 {tool} 管理 Codex 配置"
+hand_off_any = "交给其他工具管理 Codex 配置"
 
 [switch.overview]
 authapi_line = "认证地址：{line}（下次完全重启后跟随当前线路）"
 authapi_unknown = "认证地址：{origin}"
 journal_pending = "上一次切换被中断，下次切换前 Superba 会先恢复。"
-drift = "你改过 {count} 项由 Superba 管理的设置，已保留。"
+external = "{source} 修改了 {count} 项由 Superba 管理的内容；未经你确认，Superba 不会覆盖它们。"
+handed_off = "Codex 的配置目前由 {tool} 管理；只有你再次切换时 Superba 才会修改它。"
 hidden_sessions = "有 {count} 个会话属于其他 provider，目前看不见。"
 stale_processes = "有 {count} 个 codex 进程仍在用之前的配置。"
 no_app = "没有找到 ChatGPT 桌面 app，只配置 CLI。"
@@ -232,7 +236,7 @@ profile_override = "config.toml 选择了 profile「{profile}」，可能覆盖�
 cli_auth_store = "cli_auth_credentials_store = 「{value}」，凭据不在 auth.json 中"
 legacy_provider = "model_provider 为「{provider}」，其他 provider 的会话会被隐藏"
 provider_table = "config.toml 定义了 [model_providers.{provider}]，Superba 不会修改它"
-drift = "有 {count} 项受管设置被手动修改"
+external = "{source} 修改了 {count} 项由 Superba 管理的内容"
 hidden_sessions = "有 {count} 个会话属于其他 provider，目前看不见"
 missing_env = "有 {count} 个 codex 进程缺少 CODEX_AUTHAPI_BASE_URL"
 stale_processes = "有 {count} 个 codex 进程在用之前的配置"
@@ -462,3 +466,7 @@ access_not_needed = "{host} 可以通过 127.0.0.1 访问本机路由（WSL 1 �
 access_unreachable = "本机路由已在 {address} 为 WSL 开放，但 {host} 仍然无法访问。请检查 Windows 防火墙和 WSL 的 Hyper-V 防火墙，或改用镜像网络模式。"
 access_cancelled = "没有获得管理员授权；NAT 模式的 WSL 2 发行版保持直连。"
 access_needs_router = "请先安装并启动本机路由。"
+
+[switch.ownership]
+kept = "已保留 {source} 在 Superba 写入之后做的 {count} 项修改：{items}。Superba 只还原它仍在管理的内容；如需一并还原，请选择接管。"
+hand_off_note = "Superba 将不再管理 Codex 配置：只还原它仍在管理的键，保留另一个工具做的所有修改，并加密保存两份文件的副本。以后切换到任一配置方案时会重新接管。"

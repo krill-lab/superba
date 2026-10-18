@@ -363,6 +363,7 @@ fn plan(from: Option<&str>, to: &str, keys: &[&str]) -> SwitchPlan {
             auth_change: None,
             notes: vec![],
             desired: None,
+            releases_ownership: false,
         }),
         env: None,
         migration: None,

@@ -500,6 +500,17 @@ pub enum SwitchIntent {
         /// The new pin.
         pin: crate::versions::AppCodexPin,
     },
+    /// Let another tool manage the local Codex configuration (GH#5): Superba
+    /// releases every key, the credential and its environment values it still
+    /// owns without writing `config.toml` or `auth.json` (environment values it
+    /// set are restored where nobody changed them). The generation recording the
+    /// hand-off keeps encrypted copies of both files; a later profile switch
+    /// takes over again from a fresh baseline.
+    HandOff {
+        /// Who takes over (the attribution shown to the user).
+        #[serde(default)]
+        to: crate::ownership::ChangeSource,
+    },
     /// Remote hosts page: push the local profile's settings, filtered by the
     /// host's Codex version, to one host (settings only, never routing or auth),
     /// then hot-restart its app-server.
@@ -615,11 +626,20 @@ pub enum PlanChoice {
         /// Consumer label.
         consumer: String,
     },
-    /// Owned keys were edited by the user since Superba wrote them (plan 9.3);
-    /// answered per key through [`SwitchRequest::key_resolutions`].
+    /// Owned keys (or the `auth.json` credential) were changed outside Superba
+    /// since it wrote them (plan 9.3, GH#5); answered per key through
+    /// [`SwitchRequest::key_resolutions`] (`auth.json` as
+    /// [`crate::ownership::AUTH_JSON_PATH`]): `Overwrite` takes them over,
+    /// `KeepCurrent` keeps the other tool's value. Not answering is cancelling.
     OwnedKeyConflict {
         /// Key path, the value Superba wrote (`before`) and the live value (`after`).
         conflicts: Vec<KeyChange>,
+        /// The credential, when another tool or a sign-in replaced it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        auth: Option<crate::ownership::AuthDrift>,
+        /// Who most likely made the change.
+        #[serde(default)]
+        source: crate::ownership::ChangeSource,
     },
     /// Several remote hosts share one home directory (NFS, plan 8.6).
     SharedHome {
@@ -1246,6 +1266,11 @@ pub struct Overview {
     /// Banners.
     #[serde(default)]
     pub notices: Vec<Notice>,
+    /// Changes made outside Superba to what it owns in the local Codex home
+    /// (GH#5: cc-switch, AI Toolbox, Codex, hand edits), with who most likely
+    /// made them; `None` when nothing changed or Superba owns nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external: Option<crate::ownership::ExternalChange>,
 }
 
 /// One diagnostics item (plan 4 #21, 11.1 diagnostics page).

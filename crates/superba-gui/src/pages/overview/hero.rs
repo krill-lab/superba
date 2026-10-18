@@ -245,6 +245,14 @@ pub fn model(
             })
             .unwrap_or_else(|| tr.t("overview.account.official"));
         provider.menu = !data.providers().is_empty();
+    } else if let Some(h) = overview.config.as_ref().and_then(|c| c.handed_off.as_ref()) {
+        // GH#5: another tool manages Codex; Superba owns nothing.
+        provider.title = tr.f(
+            "overview.hero.handed_off",
+            &[("tool", &crate::external::tool_name(cx, &h.to))],
+        );
+        provider.detail = tr.t("overview.hero.handed_off_detail");
+        provider.menu = !data.providers().is_empty();
     } else if let (Some(p), Some(s)) = (profile, &site) {
         let name = crate::app::provider_name(tr, p, s);
         let line = super::lines::effective(cx, snap)

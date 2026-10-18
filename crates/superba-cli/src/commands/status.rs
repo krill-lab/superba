@@ -2,7 +2,10 @@ use superba_core::{AppSession, EnvObservation, HotSwitchStatus, JournalAction};
 use superba_switch::messages;
 
 use super::{Result, remote};
-use crate::{Output, Runtime, exit, text::line_label};
+use crate::{
+    Output, Runtime, exit,
+    text::{line_label, text},
+};
 
 pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
     let overview = rt.service.overview().await?;
@@ -119,8 +122,67 @@ pub(super) async fn run(rt: &Runtime, out: &mut Output) -> Result {
     for notice in &overview.notices {
         out.notice(notice)?;
     }
+    if let Some(x) = &overview.external {
+        external(x, out)?;
+    }
     out.value(&overview)?;
     Ok(exit::OK)
+}
+
+/// GH#5: what changed outside Superba in what it manages, who most likely made
+/// the change, and the two ways forward.
+pub(super) fn external(
+    x: &superba_core::ExternalChange,
+    out: &mut Output,
+) -> superba_core::Result<()> {
+    out.line(text("cli.external.title").arg_text("source", x.source.text()))?;
+    for k in &x.keys {
+        out.line(
+            text("cli.format.change")
+                .arg("path", &k.path)
+                .arg("before", out.optional(k.before.as_ref()))
+                .arg("after", out.optional(k.after.as_ref())),
+        )?;
+    }
+    if let Some(a) = &x.auth {
+        out.line(
+            text("cli.format.change")
+                .arg("path", superba_core::AUTH_JSON_PATH)
+                .arg(
+                    "before",
+                    out.render(&superba_core::auth_shape_label(&a.written)),
+                )
+                .arg(
+                    "after",
+                    out.render(&superba_core::auth_shape_label(&a.live)),
+                ),
+        )?;
+    }
+    for e in &x.env {
+        out.line(
+            text("cli.format.change")
+                .arg("path", format!("{} ({})", e.var, env_location(&e.location)))
+                .arg("before", out.optional(e.written.as_ref()))
+                .arg("after", out.optional(e.live.as_ref())),
+        )?;
+    }
+    for ev in &x.evidence {
+        out.line(text("cli.external.evidence").arg_text("text", ev.clone()))?;
+    }
+    out.line(text("cli.external.next").arg("binary", out.binary))
+}
+
+fn env_location(location: &superba_core::EnvLocation) -> String {
+    match location {
+        superba_core::EnvLocation::ShellRc { path, .. }
+        | superba_core::EnvLocation::EnvironmentD { path }
+        | superba_core::EnvLocation::LaunchAgent { path } => {
+            superba_core::paths::display_path(path)
+        }
+        superba_core::EnvLocation::Launchctl => "launchctl".to_owned(),
+        superba_core::EnvLocation::WindowsUserEnv => r"HKCU\Environment".to_owned(),
+        other => format!("{other:?}"),
+    }
 }
 
 pub(super) fn app_session(session: &AppSession, out: &mut Output) -> superba_core::Result<()> {

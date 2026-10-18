@@ -371,6 +371,8 @@ pub enum Action {
     RunDoctor,
     /// Open the first-run wizard.
     StartWizard,
+    /// GH#5: show what another tool changed in what Superba manages.
+    ShowExternal,
     /// Set the speed tier of a key-based profile (`ModelDefaults::speed`) and,
     /// when it is the applied profile, plan the switch that applies it (hot
     /// restart, v0.3 §11).

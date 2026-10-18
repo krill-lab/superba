@@ -14,10 +14,10 @@ use std::path::Path;
 
 use superba_core::codex::{PAT_RECOMMENDED_KEYS, PROVIDER_OPENAI, config_keys as k};
 use superba_core::{
-    AuthChange, AuthShape, Baseline, BaselineExtras, CodexFiles, ConfigState, Error, FileChange,
-    KeyChange, KeyResolution, KeySnapshot, LocalizedText, Notice, ProviderRestore, RenderedFiles,
-    ResolvedMode, ResolvedProfile, Result, SecretBytes, Timestamp, is_valid_setting_path,
-    reserved_owner,
+    AUTH_JSON_PATH, AuthChange, AuthShape, Baseline, BaselineExtras, CodexFiles, ConfigState,
+    Error, FileChange, KeyChange, KeyResolution, KeySnapshot, LocalizedText, Notice,
+    ProviderRestore, RenderedFiles, ResolvedMode, ResolvedProfile, Result, SecretBytes, Timestamp,
+    is_valid_setting_path, reserved_owner,
 };
 
 use crate::authjson;
@@ -88,6 +88,14 @@ pub(crate) struct Inputs<'a> {
     pub original_files: Option<&'a CodexFiles>,
     pub last_written: &'a [KeySnapshot],
     pub generation: Option<&'a GenerationSnapshot>,
+    /// The `auth.json` credential Superba wrote was replaced outside Superba
+    /// (GH#5): it is changed only with an explicit resolution of
+    /// [`superba_core::AUTH_JSON_PATH`].
+    pub auth_drift: bool,
+    /// Superba owns nothing (its last apply restored or handed off): paths, and
+    /// [`superba_core::AUTH_JSON_PATH`], changed since that apply. Restores keep
+    /// them unless the desired state answers `Overwrite`.
+    pub released_changed: &'a [String],
 }
 
 /// Render result plus the ownership bookkeeping the engine persists.
@@ -202,7 +210,14 @@ fn targets(
                 put(p, Target::Restore);
             }
         }
-        ResolvedMode::Original { provider } => {
+        ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => {
+            // A hand-off restores what Superba still owns like a restore of the
+            // original configuration that keeps provider `openai` (sessions stay
+            // visible); what another tool changed is kept (planner resolutions).
+            let provider = match &d.mode {
+                ResolvedMode::Original { provider } => provider,
+                _ => &ProviderRestore::KeepOpenai,
+            };
             let b = inp.baseline.ok_or_else(|| Error::NotFound {
                 what: "baseline (no original configuration was recorded)".into(),
             })?;
@@ -343,12 +358,36 @@ fn auth_target(
     notes: &mut Vec<Notice>,
 ) -> Result<AuthTarget> {
     let live_is_login = matches!(live_shape, AuthShape::ChatGpt { .. });
+    let released_auth =
+        is_restore(&inp.desired.mode) && inp.released_changed.iter().any(|p| p == AUTH_JSON_PATH);
+    if inp.auth_drift || released_auth {
+        let resolution = inp.desired.key_resolutions.get(AUTH_JSON_PATH);
+        let token = matches!(inp.desired.mode, ResolvedMode::Token { .. });
+        match (token, resolution) {
+            (_, Some(KeyResolution::Overwrite)) => {}
+            // A ChatGPT login (Codex's own sign-in) is stashed before a switch
+            // replaces it, and restoring the official login puts it back.
+            (true, _) if live_is_login => {}
+            // A switch cannot route Codex to a line with another tool's key.
+            (true, _) => return Err(auth_conflict()),
+            // Restores, uninstall and hand-offs leave the credential to whoever
+            // changed it, unless told to take it over.
+            (false, _) => {
+                notes.push(note(
+                    Notice::info,
+                    "auth_kept",
+                    "Kept auth.json: it was changed outside Superba after Superba wrote it.",
+                ));
+                return Ok(AuthTarget::Keep);
+            }
+        }
+    }
     Ok(match &inp.desired.mode {
         ResolvedMode::Token { auth, key, .. } => {
             AuthTarget::Write(authjson::render_token(*auth, key)?)
         }
         ResolvedMode::Official => official_auth(live_shape, inp.login_stash, notes),
-        ResolvedMode::Original { .. } => {
+        ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => {
             let b = inp.baseline.ok_or_else(|| Error::NotFound {
                 what: "baseline".into(),
             })?;
@@ -406,6 +445,26 @@ fn auth_target(
     })
 }
 
+/// Destinations that hand the files back (GH#5: they keep what changed
+/// outside Superba unless told otherwise).
+fn is_restore(mode: &ResolvedMode) -> bool {
+    matches!(
+        mode,
+        ResolvedMode::Original { .. }
+            | ResolvedMode::Official
+            | ResolvedMode::Generation { .. }
+            | ResolvedMode::Release { .. }
+    )
+}
+
+/// The conflict error for a replaced credential (the planner turns it into
+/// [`superba_core::PlanChoice::OwnedKeyConflict`] with the auth part).
+fn auth_conflict() -> Error {
+    Error::Conflict {
+        message: format!("owned keys were changed outside Superba: {AUTH_JSON_PATH}"),
+    }
+}
+
 fn file_change(current: Option<&[u8]>, new: Option<Vec<u8>>) -> FileChange {
     match (current, new) {
         (Some(c), Some(n)) if c == n.as_slice() => FileChange::Unchanged,
@@ -433,8 +492,10 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
             .and_then(|b| b.keys.iter().find(|s| s.path == p))
             .map(|s| s.value.clone())
     };
-    let restore_released = matches!(inp.desired.mode, ResolvedMode::Original { .. })
-        && inp.baseline.is_some_and(|b| b.released);
+    let restore_released = matches!(
+        inp.desired.mode,
+        ResolvedMode::Original { .. } | ResolvedMode::Release { .. }
+    ) && inp.baseline.is_some_and(|b| b.released);
     let released_original = if restore_released {
         inp.original_files.map(parse_config).transpose()?
     } else {
@@ -448,6 +509,7 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
     let mut paths: Vec<String> = path_set.iter().cloned().collect();
     paths.sort_by_key(|p| order.iter().position(|o| o == p).unwrap_or(usize::MAX));
 
+    let restore = is_restore(&inp.desired.mode);
     let setting_paths: BTreeSet<&str> = match inp.desired.mode {
         ResolvedMode::Token { .. } => inp.desired.settings.paths().collect(),
         _ => BTreeSet::new(),
@@ -477,7 +539,10 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
             Target::Restore => continue,
         };
         let will_own = !matches!(target, Target::Restore)
-            && !matches!(inp.desired.mode, ResolvedMode::Official);
+            && !matches!(
+                inp.desired.mode,
+                ResolvedMode::Official | ResolvedMode::Release { .. }
+            );
         if opt_eq(current.as_deref(), want.as_deref()) {
             if will_own {
                 owned.push(KeySnapshot {
@@ -493,9 +558,11 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
             }
             continue;
         }
-        if let Some(written) = lw.get(path.as_str())
-            && !opt_eq(current.as_deref(), *written)
-        {
+        let changed_outside = match lw.get(path.as_str()) {
+            Some(written) => !opt_eq(current.as_deref(), *written),
+            None => restore && inp.released_changed.contains(path),
+        };
+        if changed_outside {
             match inp.desired.key_resolutions.get(path) {
                 Some(KeyResolution::KeepCurrent) => {
                     notes.push(
@@ -571,7 +638,7 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
     };
     // Byte-exact restore of a recorded file when only owned keys differ.
     let exact_source: Option<CodexFiles> = match inp.desired.mode {
-        ResolvedMode::Original { .. } => inp.original_files.cloned(),
+        ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => inp.original_files.cloned(),
         ResolvedMode::Generation { .. } => {
             inp.generation
                 .and_then(|g| g.config_toml.clone())
@@ -740,6 +807,10 @@ pub(crate) fn inspect(codex_home: &Path, files: &CodexFiles) -> ConfigState {
         auth,
         active: None,
         drift: Vec::new(),
+        auth_drift: None,
+        handed_off: None,
+        since_release: Vec::new(),
+        since_release_auth: None,
         journal_pending: false,
     };
     match parse_config(files) {

@@ -155,6 +155,10 @@ pub(super) fn alternative(
         }
     }
     for (path, resolution) in &request.key_resolutions {
+        if path == superba_core::ALL_CHANGED && *resolution == KeyResolution::Overwrite {
+            words.push("--take-over".into());
+            continue;
+        }
         option(
             &mut words,
             match resolution {

@@ -95,6 +95,53 @@ pub fn token_credentials(bytes: &[u8]) -> Option<(AuthMode, Secret)> {
     non_empty_str(&m, f::OPENAI_API_KEY).map(|k| (AuthMode::ApiKey, Secret::new(k)))
 }
 
+/// A digest of what Codex authenticates with in `auth.json` (`None` = file
+/// absent): the PAT, the API key, `auth_mode` and the ChatGPT login identity.
+/// Two files with the same digest hold the same credential even when another
+/// writer reordered or reformatted them or added unrelated fields; any other
+/// difference is a credential change (GH#5: AI Toolbox merges its key into the
+/// file, cc-switch deletes it, `codex login` replaces it). No secret is kept.
+pub fn credential_digest(bytes: Option<&[u8]>) -> Option<String> {
+    let bytes = bytes?;
+    let Ok(m) = parse_object(bytes) else {
+        // Unreadable: its exact bytes are the credential.
+        return Some(crate::fsx::sha256_hex(bytes));
+    };
+    let field = |k: &str| non_empty_str(&m, k).unwrap_or("");
+    let login = if m.get(f::TOKENS).is_some_and(Value::is_object) {
+        login_info_from(&m).identity
+    } else {
+        String::new()
+    };
+    let mut joined = format!(
+        "pat={}\u{0}key={}\u{0}mode={}\u{0}login={}",
+        field(f::PERSONAL_ACCESS_TOKEN),
+        field(f::OPENAI_API_KEY),
+        field(f::AUTH_MODE),
+        login
+    );
+    let digest = crate::fsx::sha256_hex(joined.as_bytes());
+    joined.zeroize();
+    Some(digest)
+}
+
+/// The shape a reader should be shown for a changed `auth.json`: like
+/// [`shape`], except that `auth_mode = "apikey"` with an `OPENAI_API_KEY` is
+/// an API key even when a PAT another writer left behind is still in the file
+/// (AI Toolbox merges its key into Superba's PAT form).
+pub fn drift_shape(bytes: Option<&[u8]>) -> AuthShape {
+    let shape = shape(bytes);
+    if let (AuthShape::Pat { .. }, Some(m)) = (&shape, bytes.and_then(|b| parse_object(b).ok()))
+        && non_empty_str(&m, f::AUTH_MODE) == Some(f::AUTH_MODE_APIKEY)
+        && let Some(k) = non_empty_str(&m, f::OPENAI_API_KEY)
+    {
+        return AuthShape::ApiKey {
+            key_last4: last4(k),
+        };
+    }
+    shape
+}
+
 /// Refuse to write anything that is not a non-empty JSON object.
 pub fn validate(bytes: &[u8]) -> Result<()> {
     parse_object(bytes)

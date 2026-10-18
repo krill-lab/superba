@@ -30,6 +30,7 @@ pub mod app;
 pub mod args;
 pub mod cadence;
 pub mod design;
+pub mod external;
 pub mod flow;
 pub mod i18n;
 pub mod movers;

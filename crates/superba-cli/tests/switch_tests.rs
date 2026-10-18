@@ -281,8 +281,10 @@ async fn every_unanswered_choice_prints_its_answer_flags() {
                     before: None,
                     after: Some("test".into()),
                 }],
+                auth: None,
+                source: Default::default(),
             },
-            vec!["--keep-key", "--overwrite-key"],
+            vec!["--take-over", "--keep-key", "hand-off"],
         ),
         (
             PlanChoice::SharedHome {

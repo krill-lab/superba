@@ -358,6 +358,7 @@ pub fn overview() -> Overview {
         notices: vec![Notice::warning(messages::text(
             "switch.warn.daemon_running",
         ))],
+        external: None,
     }
 }
 

@@ -32,6 +32,7 @@ pub mod machine;
 pub mod messages;
 pub mod models;
 pub mod monitor;
+pub mod ownership;
 pub mod planner;
 pub mod privilege;
 pub mod router;
@@ -391,6 +392,9 @@ pub struct Switcher {
     /// The environment monitor: installs and Codex binaries for the views
     /// ([`monitor`]).
     monitor: monitor::EnvMonitor,
+    /// GH#5: the last attribution of a change to the Codex files and the last
+    /// environment check ([`ownership`]).
+    ownership: ownership::SharedOwnershipCache,
 }
 
 /// Execution context of computed plans, keyed by plan id (things the serializable
@@ -447,6 +451,7 @@ impl Switcher {
             usage,
             reported_locale: Arc::new(Mutex::new(None)),
             monitor,
+            ownership: Arc::default(),
         }
     }
 

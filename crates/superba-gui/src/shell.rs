@@ -1569,8 +1569,21 @@ fn choices(
                     }
                 });
             }
-            PlanChoice::OwnedKeyConflict { conflicts } => {
-                ui.label(Text::body(tr.t("banner.conflict.body"), pal));
+            PlanChoice::OwnedKeyConflict {
+                conflicts,
+                auth,
+                source,
+            } => {
+                // GH#5: who changed what Superba manages, and take over / let
+                // that tool manage it / keep its values (not for a credential:
+                // a switch cannot route Codex with another tool's key) / Esc.
+                ui.label(Text::body(
+                    tr.f(
+                        "banner.conflict.body_source",
+                        &[("source", &cx.localize(&source.text()))],
+                    ),
+                    pal,
+                ));
                 for c in conflicts {
                     crate::pages::shared::values::change_row(
                         ui,
@@ -1584,24 +1597,43 @@ fn choices(
                         "—",
                     );
                 }
-                ui.horizontal(|ui| {
+                if let Some(a) = auth {
+                    crate::external::auth_row(ui, cx, &plan.id, a);
+                }
+                ui.horizontal_wrapped(|ui| {
                     let mut answer = None;
                     if ui
-                        .add(Button::new(tr.t("banner.conflict.keep")).small())
-                        .clicked()
-                    {
-                        answer = Some(KeyResolution::KeepCurrent);
-                    }
-                    if ui
-                        .add(Button::primary(tr.t("banner.conflict.overwrite")).small())
+                        .add(Button::primary(tr.t("banner.conflict.take_over")).small())
                         .clicked()
                     {
                         answer = Some(KeyResolution::Overwrite);
+                    }
+                    let tool = crate::external::tool_name(cx, source);
+                    if ui
+                        .add(
+                            Button::new(tr.f("banner.conflict.hand_off", &[("tool", &tool)]))
+                                .small(),
+                        )
+                        .clicked()
+                    {
+                        flow.request(crate::external::hand_off_request(source), now);
+                    }
+                    if auth.is_none()
+                        && ui
+                            .add(Button::new(tr.t("banner.conflict.keep")).small())
+                            .clicked()
+                    {
+                        answer = Some(KeyResolution::KeepCurrent);
                     }
                     if let Some(a) = answer {
                         let mut request = plan.request.clone();
                         for c in conflicts {
                             request.key_resolutions.insert(c.path.clone(), a);
+                        }
+                        if auth.is_some() {
+                            request
+                                .key_resolutions
+                                .insert(superba_core::AUTH_JSON_PATH.to_owned(), a);
                         }
                         flow.request(request, now);
                     }

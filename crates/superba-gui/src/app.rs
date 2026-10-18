@@ -249,6 +249,8 @@ pub struct SuperbaApp {
     banner: BannerState,
     /// The session migration dialog (scene textures and clock).
     movers: crate::movers::dialog::MoversDialog,
+    /// GH#5: the dialog about changes another tool made.
+    external: crate::external::ExternalDialog,
     risk_memory: Option<PathBuf>,
     wizard: Option<Wizard>,
     wizard_dismissed: bool,
@@ -332,6 +334,7 @@ impl SuperbaApp {
             palette: CommandPalette::default(),
             banner: BannerState::default(),
             movers: Default::default(),
+            external: Default::default(),
             risk_memory,
             wizard: None,
             wizard_dismissed: false,
@@ -1290,6 +1293,17 @@ impl SuperbaApp {
                 self.data.doctor.start();
                 self.backend.send(Command::Doctor);
             }
+            Action::ShowExternal => {
+                if let Some(x) = self
+                    .data
+                    .overview
+                    .value
+                    .as_ref()
+                    .and_then(|o| o.external.as_ref())
+                {
+                    self.external.open(x);
+                }
+            }
             Action::StartWizard => {
                 if self.wizard.is_none() {
                     self.wizard = Some(Wizard::start(&self.data));
@@ -1644,7 +1658,7 @@ impl eframe::App for SuperbaApp {
             let cx = cx!(self, pal, self.flow.is_running() || self.flow.is_planning());
             shell::confirm_full(&ctx, &cx, &mut self.flow, &mut self.banner, now);
             shell::decision_dialog(&ctx, &cx, &mut self.flow, now);
-            crate::movers::dialog::show(
+            let movers = crate::movers::dialog::show(
                 &ctx,
                 &cx,
                 &mut self.flow,
@@ -1652,6 +1666,21 @@ impl eframe::App for SuperbaApp {
                 now,
                 self.settings.reduce_motion,
             );
+            // GH#5: a change another tool made is offered once per state of
+            // the files, when nothing else asks for the user's attention.
+            let quiet = !movers
+                && self.wizard.is_none()
+                && !self.palette.is_open()
+                && matches!(self.flow.stage(), crate::flow::Stage::Idle);
+            self.external.offer(
+                self.data
+                    .overview
+                    .value
+                    .as_ref()
+                    .and_then(|o| o.external.as_ref()),
+                quiet,
+            );
+            crate::external::show(&ctx, &cx, &mut self.external, &mut actions);
             if let Some(w) = self.wizard.as_mut() {
                 match pages::wizard::show(&ctx, &cx, w, &mut actions) {
                     WizardOutcome::Continue => {}

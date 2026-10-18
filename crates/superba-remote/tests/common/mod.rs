@@ -317,6 +317,10 @@ impl ConfigEngine for FakeEngine {
             auth: auth_shape(files.auth_json.as_ref()),
             active: None,
             drift: Vec::new(),
+            auth_drift: None,
+            handed_off: None,
+            since_release: Vec::new(),
+            since_release_auth: None,
             journal_pending: false,
         })
     }

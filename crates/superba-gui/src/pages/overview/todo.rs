@@ -52,6 +52,8 @@ pub enum TodoKind {
     AppUpdate,
     /// A newer Codex CLI.
     CliUpdate,
+    /// GH#5: another tool changed what Superba manages.
+    ExternalChange,
 }
 
 /// One entry of the list.
@@ -81,6 +83,7 @@ impl Todo {
             TodoKind::RouterDown | TodoKind::RouterDirect | TodoKind::MemberDown => {
                 "overview.todo.fix.router"
             }
+            TodoKind::ExternalChange => "overview.todo.fix.review",
             _ => "overview.todo.fix.view",
         })
     }
@@ -103,6 +106,7 @@ impl Todo {
             TodoKind::PlainKeys | TodoKind::Finding(_) | TodoKind::Notice => {
                 Action::Go(Page::Diagnostics)
             }
+            TodoKind::ExternalChange => Action::ShowExternal,
         }
     }
 }
@@ -176,6 +180,25 @@ pub fn todos(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Vec<Todo> {
         }
     }
 
+    // GH#5: what another tool changed in what Superba manages.
+    if let Some(x) = data
+        .overview
+        .value
+        .as_ref()
+        .and_then(|o| o.external.as_ref())
+    {
+        push(todo(
+            TodoKind::ExternalChange,
+            Status::Warn,
+            tr.f(
+                "overview.todo.external",
+                &[("source", &cx.localize(&x.source.text()))],
+            ),
+            Some(tr.f("overview.todo.external_detail", &[("n", &x.count())])),
+            Some(Spot::ThisComputer),
+        ));
+    }
+
     // The applied line.
     if let (Some(site), Some(line)) = (
         data.active_site_id(),
@@ -213,6 +236,10 @@ pub fn todos(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Vec<Todo> {
         let Some(status) = status_of(f.severity) else {
             continue;
         };
+        // Shown with its own button above (GH#5).
+        if f.id == "external_change" {
+            continue;
+        }
         if f.id == "plaintext_secrets" {
             push(todo(
                 TodoKind::PlainKeys,

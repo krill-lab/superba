@@ -78,6 +78,9 @@ pub(crate) struct PlanContext {
     /// A pin change's rewrite of the local `config.toml` for the new Codex (a
     /// rebuilt catalog file, or the key left out), decided at execution.
     pub pin_config: Option<ApplyPlan>,
+    /// GH#5: `auth.json` is left to another tool (kept by a restore or a
+    /// hand-off): its key is never sent anywhere to verify the result.
+    pub kept_foreign_auth: bool,
 }
 
 impl PlanContext {
@@ -110,6 +113,7 @@ impl PlanContext {
             catalog: None,
             catalog_record: None,
             pin_config: None,
+            kept_foreign_auth: false,
         }
     }
 }
@@ -201,6 +205,8 @@ struct Dest {
     catalog: Option<crate::models::CatalogWrite>,
     /// Catalog record after success (see [`PlanContext::catalog_record`]).
     catalog_record: Option<Option<crate::models::CatalogRecord>>,
+    /// GH#5: a hand-off to another tool (no restart, nothing migrated).
+    hand_off: bool,
 }
 
 /// One line judged for a switch (auth decision, Codex path, blocks).
@@ -652,6 +658,8 @@ impl Switcher {
         let baseline = d.config.baseline(&home).await?;
         let first_takeover = baseline.as_ref().is_none_or(|b| b.released);
         let mut draft = Draft::default();
+        // "Take over everything" (GH#5) answers each change seen now.
+        crate::ownership::expand_all_changed(&mut request, &state);
         let local = request.targets.local;
         // v0.3: a profile switch changes a remote host only when the host follows
         // this computer (its connection only); explicit targets stay as asked.
@@ -776,6 +784,22 @@ impl Switcher {
             .await?;
         // An explicit install (RestartApp) wins over the running / preferred one.
         dest.install_id = dest.install_id.take().or(install_id);
+
+        // GH#5: restores, uninstall and hand-offs put back only what Superba
+        // still owns; what another tool (or the user) changed since is kept and
+        // named in the plan.
+        if local && let Some(resolved) = dest.resolved.as_mut() {
+            let kept_external = crate::ownership::keep_external(resolved, &state);
+            if !kept_external.is_empty() {
+                let source = self.change_attribution(&state).await.source;
+                draft.warn(crate::ownership::kept_notice(&kept_external, &source));
+            }
+        }
+        let kept_foreign_auth = dest.hand_off
+            || dest.resolved.as_ref().is_some_and(|r| {
+                r.key_resolutions.get(superba_core::AUTH_JSON_PATH)
+                    == Some(&superba_core::KeyResolution::KeepCurrent)
+            });
 
         // --- processes and the restart bridge --------------------------------------
         let processes: Vec<ProcessInfo> =
@@ -921,12 +945,24 @@ impl Switcher {
                             .filter(|k| !request.key_resolutions.contains_key(&k.path))
                             .cloned()
                             .collect::<Vec<_>>();
+                        // The credential: unanswered, or answered "keep" for a
+                        // switch (Superba cannot route Codex with another tool's
+                        // key; only taking it over or cancelling is possible).
+                        let auth = state.auth_drift.clone().filter(|a| {
+                            request.key_resolutions.get(superba_core::AUTH_JSON_PATH)
+                                != Some(&superba_core::KeyResolution::Overwrite)
+                                // A login is stashed before a switch replaces it.
+                                && !matches!(a.live, superba_core::AuthShape::ChatGpt { .. })
+                        });
+                        let source = self.change_attribution(&state).await.source;
                         draft.choices.push(PlanChoice::OwnedKeyConflict {
-                            conflicts: if conflicts.is_empty() {
+                            conflicts: if conflicts.is_empty() && auth.is_none() {
                                 state.drift.clone()
                             } else {
                                 conflicts
                             },
+                            auth,
+                            source,
                         });
                     }
                     Err(Error::Parse { what, message }) => draft.block(BlockReason::Unparseable {
@@ -979,6 +1015,17 @@ impl Switcher {
                     reasons: draft.blocks.clone(),
                 }
             }
+        } else if dest.hand_off {
+            // Nothing of the other tool's is touched and Codex picks up the
+            // configuration at its next start (the other tool restarts it or
+            // asks to).
+            if draft.blocks.is_empty() {
+                RestartKind::None
+            } else {
+                RestartKind::Blocked {
+                    reasons: draft.blocks.clone(),
+                }
+            }
         } else if dest.restart_app {
             if !draft.blocks.is_empty() {
                 RestartKind::Blocked {
@@ -1011,7 +1058,7 @@ impl Switcher {
         // needs no restart (the router reloads; Codex keeps pointing at it).
         let primary = if local
             && dest.router_update.is_some()
-            && config_plan.as_ref().is_none_or(|c| c.is_noop())
+            && config_plan.as_ref().is_none_or(|c| c.writes_no_files())
             && env_plan.as_ref().is_none_or(|e| e.is_noop())
             && migration.is_none()
             && !primary.is_blocked()
@@ -1027,7 +1074,7 @@ impl Switcher {
         // would only interrupt running turns.
         let primary = if local
             && primary.is_hot()
-            && config_plan.as_ref().is_some_and(|c| c.is_noop())
+            && config_plan.as_ref().is_some_and(|c| c.writes_no_files())
             && env_plan.as_ref().is_none_or(|e| e.is_noop())
             && migration.is_none()
             && app_core_current(&processes, state.active.as_ref())
@@ -1170,6 +1217,7 @@ impl Switcher {
                 catalog: dest.catalog,
                 catalog_record: dest.catalog_record,
                 pin_config: None,
+                kept_foreign_auth,
             },
         );
         Ok(plan)
@@ -1504,6 +1552,32 @@ impl Switcher {
                 };
                 dest.label = text("switch.destination.uninstall");
                 dest.uninstall = Some(*delete_backups);
+                Ok(dest)
+            }
+            SwitchIntent::HandOff { to } => {
+                // GH#5: restore only what Superba still owns (what the other tool
+                // changed is kept by `ownership::keep_external`), provider
+                // `openai` kept so no session gets hidden, nothing migrated.
+                let mut dest = self.restore_original(
+                    request,
+                    Some(ProviderRestore::KeepOpenai),
+                    baseline,
+                    false,
+                    draft,
+                );
+                if let Some(r) = dest.resolved.as_mut() {
+                    r.mode = ResolvedMode::Release { to: to.clone() };
+                }
+                dest.migration = None;
+                dest.restore_provider_question = None;
+                dest.profile_id = None;
+                dest.auth = None;
+                dest.hand_off = true;
+                draft.info(text("switch.ownership.hand_off_note"));
+                dest.label = match to.tool() {
+                    Some(_) => text("switch.destination.hand_off").arg_text("tool", to.text()),
+                    None => text("switch.destination.hand_off_any"),
+                };
                 Ok(dest)
             }
             SwitchIntent::RestartApp { install_id } => Ok(Dest {

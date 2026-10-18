@@ -13,6 +13,7 @@ signed_out = "上次切换后你在 ChatGPT 里退出了登录，不会再还原
 stale_login = "这份 ChatGPT 登录已保存 {days} 天，还原后可能需要重新登录。"
 setting_shape_conflict = "已跳过 {key}：config.toml 在这个位置或其上级有不同类型的值。"
 generation_catalog_missing = "第 {generation} 代配置使用的模型目录文件 {file} 已不存在，还原后的 config.toml 不再引用它（否则 Codex 无法启动）；那时的单模型设置不会还原。"
+auth_kept = "已保留 auth.json：它在 Superba 写入之后被 Superba 以外的程序修改过。"
 
 [env.scope]
 non_utf8_skipped = "已跳过 {path}：该文件包含非 UTF-8 字节；请将其转换为 UTF-8，以便 Superba 扫描和编辑。其他位置仍会正常规划。"
@@ -22,6 +23,7 @@ restart_running = "正在运行的 IDE 和终端要重启后才会用新值。"
 macos_launchd = "之后从 Dock 或访达打开的程序立即生效（launchctl），每次登录时会自动重设。"
 windows_broadcast = "之后从资源管理器打开的命令提示符 / PowerShell 立即生效。"
 windows_terminal = "Windows Terminal 和 VS Code 需要完全重启才能看到新值。"
+kept_changed = "{location} 保持不变：Superba 设置之后它的值被改成了 {value}。"
 
 [config.settings]
 partial_support = "{key} 对 {consumers} 无效；仍会为其他 Codex 写入。"

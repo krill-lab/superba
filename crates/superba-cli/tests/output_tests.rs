@@ -307,6 +307,7 @@ async fn plan_preview_covers_diffs_and_never_serializes_secret_payloads() {
                 key_resolutions: Default::default(),
                 settings: Default::default(),
             }),
+            releases_ownership: false,
         });
         p.env = Some(EnvPlan {
             var: "CODEX_AUTHAPI_BASE_URL".into(),

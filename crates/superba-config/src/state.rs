@@ -77,6 +77,9 @@ pub(crate) struct GenerationEntry {
     /// Identity hash of the ChatGPT login left in auth.json by this apply, if any.
     #[serde(default)]
     pub login_identity: Option<String>,
+    /// This generation handed the configuration over to another tool (GH#5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handed_off: Option<superba_core::ChangeSource>,
 }
 
 /// State of one Codex home.

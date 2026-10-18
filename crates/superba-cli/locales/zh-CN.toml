@@ -160,7 +160,7 @@ legacy_sessions = "使用 --migrate-legacy-sessions 或 --skip-legacy-sessions �
 model = "使用 --model <MODEL> 选择替代模型。"
 env = "使用 --take-over-env 或 --keep-env 回答。"
 version = "使用 --accept-unknown-version 继续。"
-keys = "使用 --keep-key <PATH> 或 --overwrite-key <PATH> 处理每个路径。"
+keys = "用 --take-over 全部接管，用 --keep-key <PATH> 单独保留某个键，或交给另一个工具管理：`spb hand-off`。"
 shared_home = "使用 --accept-shared-home 确认。"
 provider = "使用 --provider keep-openai|reverse-migrate|no-migrate 回答。"
 answers = "执行前请回答方案中的问题。"
@@ -426,6 +426,10 @@ command_optional = "[命令]"
 aliases = "[别名：{aliases}]"
 values = "[可选值：{values}]"
 default_value = "[默认值：{value}]"
+take_over = "接管其他工具修改过的、由 Superba 管理的全部内容（配置键、auth.json）；--keep-key 仍可单独保留某个键"
+restore_take_over = "同时还原其他工具在 Superba 写入之后修改过的内容（默认保留并报告）"
+hand_off = "交给其他工具（cc-switch、AI Toolbox 等）管理 Codex 配置：Superba 只还原它仍在管理的内容，保留其余内容并加密备份，之后不再管理任何内容"
+hand_off_to = "由谁接手（默认：Superba 检测到修改配置的工具）"
 
 [cli.site]
 updated = "已更新站点 {id}。"
@@ -871,3 +875,14 @@ path_none = "无"
 version = "WSL"
 default = "默认"
 router = "路由路径"
+
+[cli.external]
+title = "由 {source} 在 Superba 之外修改："
+evidence = "  依据：{text}"
+next = "用 `{binary} switch --take-over` 接管，或用 `{binary} hand-off` 交给那个工具管理 Codex（还原时会保留这些修改）。"
+ask = "{tool} 修改了 Superba 管理的内容。[t] 接管 · [h] 交给 {tool} 管理 · [c] 取消（默认）"
+ask_keep = "[k] 保留它的值，只切换其余部分"
+other_tool = "另一个工具"
+
+[cli.handoff]
+already = "Codex 配置已经由 {tool} 管理；Superba 不再管理其中任何内容。"

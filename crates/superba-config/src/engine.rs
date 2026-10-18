@@ -105,6 +105,11 @@ struct Prepared {
     logged_out: Option<String>,
     /// Notes about the prepared inputs (shown with the plan).
     notes: Vec<superba_core::Notice>,
+    /// The credential Superba wrote was replaced (GH#5).
+    auth_drift: bool,
+    /// Superba owns nothing: paths (and `auth.json`) changed since its last
+    /// write, which restores keep unless taken over (GH#5).
+    released_changed: Vec<String>,
 }
 
 /// A generation restore never names a model catalog file that is gone: Codex
@@ -200,8 +205,147 @@ impl TomlConfigEngine {
         let hs = state::read_home(self.data(), root)?;
         st.active = hs.active();
         st.drift = render::drift(&files, hs.last_written());
+        st.auth_drift = self.auth_drift(&files, &hs);
+        st.handed_off = hs.current().and_then(|e| {
+            e.handed_off.clone().map(|to| superba_core::HandOffInfo {
+                at: e.record.applied_at,
+                to,
+                generation: e.record.generation,
+            })
+        });
+        (st.since_release, st.since_release_auth) = self.since_release(&files, &hs);
         st.journal_pending = self.pending(root)?;
         Ok(st)
+    }
+
+    /// GH#5: the `auth.json` credential Superba wrote is no longer there.
+    /// Superba owns the file only while its current generation wrote a token
+    /// credential and still owns keys (not after a restore or a hand-off).
+    /// Rewrites that keep the credential (Codex reformatting the file, extra
+    /// fields) are not a change; see [`authjson::credential_digest`].
+    fn auth_drift(&self, files: &CodexFiles, hs: &HomeState) -> Option<superba_core::AuthDrift> {
+        let e = hs.current()?;
+        if e.handed_off.is_some()
+            || e.last_written.is_empty()
+            || !e
+                .active
+                .auth_mode
+                .is_some_and(superba_core::AuthMode::uses_key)
+        {
+            return None;
+        }
+        let written_sha = e.auth_sha256.as_ref()?;
+        let live = bytes_of(files, CodexFileKind::AuthJson);
+        if live.map(fsx::sha256_hex).as_ref() == Some(written_sha) {
+            return None;
+        }
+        let written = e
+            .auth_snapshot
+            .as_ref()
+            .and_then(|p| self.vault.read_sealed(p).ok().flatten());
+        let live_shape = authjson::drift_shape(live);
+        match written {
+            Some(w) => {
+                let w = w.expose();
+                (authjson::credential_digest(Some(w)) != authjson::credential_digest(live)).then(
+                    || superba_core::AuthDrift {
+                        written: authjson::drift_shape(Some(w)),
+                        live: live_shape,
+                    },
+                )
+            }
+            // The snapshot was pruned: only the kind of credential can be compared.
+            None => (live_shape.mode() != e.active.auth_mode).then(|| superba_core::AuthDrift {
+                written: match e.active.auth_mode {
+                    Some(superba_core::AuthMode::Pat) => AuthShape::Pat {
+                        key_last4: "····".into(),
+                    },
+                    _ => AuthShape::ApiKey {
+                        key_last4: "····".into(),
+                    },
+                },
+                live: live_shape,
+            }),
+        }
+    }
+
+    /// GH#5: while Superba owns nothing (its current generation restored or
+    /// handed off), what changed since that generation's write in the keys a
+    /// restore would put back and in the credential.
+    fn since_release(
+        &self,
+        files: &CodexFiles,
+        hs: &HomeState,
+    ) -> (
+        Vec<superba_core::KeyChange>,
+        Option<superba_core::AuthDrift>,
+    ) {
+        let Some(e) = hs.current().filter(|e| e.last_written.is_empty()) else {
+            return (Vec::new(), None);
+        };
+        let live_config = bytes_of(files, CodexFileKind::ConfigToml);
+        let mut keys = Vec::new();
+        if live_config.map(fsx::sha256_hex) != e.config_sha256 {
+            let written = match (&e.config_sha256, &e.config_snapshot) {
+                (None, _) => Some(ConfigDoc::empty()),
+                (Some(_), Some(p)) => self
+                    .vault
+                    .read_sealed(p)
+                    .ok()
+                    .flatten()
+                    .and_then(|b| ConfigDoc::parse(b.expose()).ok()),
+                (Some(_), None) => None,
+            };
+            let live = match live_config {
+                Some(b) => ConfigDoc::parse(b).ok(),
+                None => Some(ConfigDoc::empty()),
+            };
+            if let (Some(written), Some(live)) = (written, live) {
+                let mut paths = rollback_paths(hs);
+                if let Some(b) = &hs.baseline {
+                    for k in &b.keys {
+                        if !paths.contains(&k.path) {
+                            paths.push(k.path.clone());
+                        }
+                    }
+                }
+                for path in paths {
+                    let (before, after) = (written.get_repr(&path), live.get_repr(&path));
+                    let same = match (before.as_deref(), after.as_deref()) {
+                        (Some(a), Some(b)) => reprs_equal(a, b),
+                        (None, None) => true,
+                        _ => false,
+                    };
+                    if !same {
+                        keys.push(superba_core::KeyChange {
+                            path,
+                            before,
+                            after,
+                        });
+                    }
+                }
+            }
+        }
+        let live_auth = bytes_of(files, CodexFileKind::AuthJson);
+        let auth = if live_auth.map(fsx::sha256_hex) == e.auth_sha256 {
+            None
+        } else {
+            let written = match (&e.auth_sha256, &e.auth_snapshot) {
+                (None, _) => Some(None),
+                (Some(_), Some(p)) => self.vault.read_sealed(p).ok().flatten().map(Some),
+                (Some(_), None) => None,
+            };
+            written.and_then(|w| {
+                let w = w.as_ref().map(|b| b.expose());
+                (authjson::credential_digest(w) != authjson::credential_digest(live_auth)).then(
+                    || superba_core::AuthDrift {
+                        written: authjson::drift_shape(w),
+                        live: authjson::drift_shape(live_auth),
+                    },
+                )
+            })
+        };
+        (keys, auth)
     }
 
     fn snapshot_baseline_sync(&self, root: &Path, extras: BaselineExtras) -> Result<Baseline> {
@@ -381,6 +525,7 @@ impl TomlConfigEngine {
             desired.mode,
             ResolvedMode::Official
                 | ResolvedMode::Original { .. }
+                | ResolvedMode::Release { .. }
                 | ResolvedMode::Generation { .. }
         );
         let stash = if restores_login {
@@ -389,7 +534,7 @@ impl TomlConfigEngine {
             None
         };
         let original = match desired.mode {
-            ResolvedMode::Original { .. } => {
+            ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => {
                 let mut o = self.original_files(hs, files)?;
                 if o.auth_json.as_ref().is_some_and(&is_signed_out) {
                     o.auth_json = None;
@@ -419,12 +564,19 @@ impl TomlConfigEngine {
             }
             _ => None,
         };
+        let (released_keys, released_auth) = self.since_release(files, hs);
         Ok(Prepared {
             stash,
             original,
             generation,
             logged_out,
             notes,
+            auth_drift: self.auth_drift(files, hs).is_some(),
+            released_changed: released_keys
+                .into_iter()
+                .map(|k| k.path)
+                .chain(released_auth.map(|_| superba_core::AUTH_JSON_PATH.to_owned()))
+                .collect(),
         })
     }
 
@@ -443,6 +595,8 @@ impl TomlConfigEngine {
             original_files: prep.original.as_ref(),
             last_written: hs.last_written(),
             generation: prep.generation.as_ref(),
+            auth_drift: prep.auth_drift,
+            released_changed: &prep.released_changed,
         })
     }
 
@@ -496,6 +650,7 @@ impl TomlConfigEngine {
                 ));
             }
         }
+        let releases_ownership = releases_ownership(&hs, &r, desired);
         let planned = |kind: CodexFileKind, change: FileChange| PlannedFile {
             kind,
             path: root.join(file_name(kind)),
@@ -518,6 +673,7 @@ impl TomlConfigEngine {
             auth_change: r.files.auth_change,
             notes,
             desired: Some(desired.clone()),
+            releases_ownership,
         })
     }
 
@@ -706,6 +862,10 @@ impl TomlConfigEngine {
             auth_snapshot,
             config_snapshot,
             login_identity,
+            handed_off: match &desired.mode {
+                ResolvedMode::Release { to } => Some(to.clone()),
+                _ => None,
+            },
         };
         let mut jentry = Entry {
             id: plan.id.clone(),
@@ -1440,6 +1600,14 @@ fn rollback_paths(hs: &HomeState) -> Vec<String> {
 #[path = "engine_tests.rs"]
 mod tests;
 
+/// GH#5: an apply that leaves Superba owning nothing while it owns keys now
+/// (a restore whose changes another tool already made), or any hand-off, is
+/// committed even when neither file changes.
+fn releases_ownership(hs: &HomeState, r: &Rendered, desired: &ResolvedProfile) -> bool {
+    matches!(desired.mode, ResolvedMode::Release { .. })
+        || (!hs.last_written().is_empty() && r.owned.is_empty())
+}
+
 fn short_id(id: &str) -> String {
     id.chars()
         .filter(char::is_ascii_alphanumeric)
@@ -1459,6 +1627,9 @@ impl ConfigEngine for TomlConfigEngine {
             original_files: input.original_files,
             last_written,
             generation: None,
+            // Remote hosts keep their own records; the credential check is local.
+            auth_drift: false,
+            released_changed: &[],
         })
         .map(|r| r.files)
     }

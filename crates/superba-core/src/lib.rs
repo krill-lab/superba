@@ -22,6 +22,8 @@
 //! - [`traits`]: the component contracts.
 //! - [`usage`]: account balance and usage data from standard endpoints.
 //! - [`import`]: provider import from other tools (cc-switch, AI Toolbox).
+//! - [`ownership`]: coexistence with those tools: external changes to what
+//!   Superba owns, who made them, take-over and hand-off.
 //! - [`router`]: router mode settings and status; [`views`]: settings page rows,
 //!   settings edits and the settings part of a plan.
 //! - v0.3: [`models`] (model lists, overrides, speed tiers, the catalog file),
@@ -48,6 +50,7 @@ pub mod ids;
 pub mod import;
 pub mod models;
 pub mod origin;
+pub mod ownership;
 pub mod paths;
 pub mod plan;
 pub mod process;
@@ -86,6 +89,7 @@ pub use ids::*;
 pub use import::*;
 pub use models::*;
 pub use origin::{CodexPath, Origin};
+pub use ownership::*;
 pub use paths::{CodexHome, DataDir, EnvSource, LocalContext, MapEnv, ProcessEnv};
 pub use plan::*;
 pub use profile::*;

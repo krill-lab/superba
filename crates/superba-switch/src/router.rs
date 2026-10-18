@@ -651,6 +651,15 @@ impl Switcher {
     /// router token in `auth.json`), so a router that moved can never make Codex
     /// look direct to the watchdog, `disable` or the uninstall guard.
     pub(crate) fn codex_routed(&self, state: &ConfigState) -> bool {
+        // Another provider (cc-switch's and AI Toolbox's `custom`) does not use
+        // `openai_base_url` at all.
+        if state
+            .model_provider
+            .as_deref()
+            .is_some_and(|p| p != superba_core::codex::PROVIDER_OPENAI)
+        {
+            return false;
+        }
         let Ok(endpoint) = self.deps.router.endpoint() else {
             return false;
         };
@@ -723,6 +732,23 @@ impl Switcher {
             }
             return Ok(None);
         }
+        // GH#5: another tool took Codex over (its own credential or provider):
+        // Codex does not go through the router any more, and its configuration
+        // is not Superba's to change. Only the stored mode is turned off.
+        if state.auth_drift.is_some()
+            || state
+                .drift
+                .iter()
+                .any(|k| k.path == superba_core::codex::config_keys::MODEL_PROVIDER)
+        {
+            tracing::warn!("router fallback: Codex was changed by another tool; nothing written");
+            let mut set = d.profiles.load().await?;
+            if set.settings.router.enabled {
+                set.settings.router.enabled = false;
+                d.profiles.save(&set).await?;
+            }
+            return Ok(None);
+        }
         let set = d.profiles.load().await?;
         let Some(target) = fallback_profile(state.active.as_ref(), &set) else {
             return Err(Error::NotFound {
@@ -738,21 +764,27 @@ impl Switcher {
         };
         request.targets.remotes.clear();
         // Nothing may wait for an answer: keep the user's foreign environment
-        // lines and legacy sessions as they are, and keep values the app or the
-        // user changed in keys Superba owns (except the routing keys, which must
-        // leave the dead router).
+        // lines and legacy sessions as they are, and keep values the app, the
+        // user or another tool changed in keys Superba owns (GH#5), except a
+        // routing key that still points at a local router, which must leave the
+        // dead router.
         request.take_over_foreign_env = Some(false);
         request.legacy_sessions = Some(superba_core::LegacySessionChoice::Skip);
         for k in &state.drift {
             let routing = [
                 superba_core::codex::config_keys::OPENAI_BASE_URL,
                 superba_core::codex::config_keys::CHATGPT_BASE_URL,
-                superba_core::codex::config_keys::MODEL_PROVIDER,
             ]
             .contains(&k.path.as_str());
+            let to_router = k
+                .after
+                .as_deref()
+                .and_then(superba_config::toml_keys::parse_repr)
+                .and_then(|v| v.as_str().map(is_router_url))
+                .unwrap_or(false);
             request.key_resolutions.insert(
                 k.path.clone(),
-                if routing {
+                if routing && to_router {
                     KeyResolution::Overwrite
                 } else {
                     KeyResolution::KeepCurrent
