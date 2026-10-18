@@ -27,8 +27,8 @@ function Build($version, $name) {
   & "$here\build-msi.ps1" -StageDir $StageDir -Version $version -Out $out
   return $out
 }
-function Msi($verb, $msi, $log) {
-  $p = Start-Process msiexec.exe -ArgumentList @($verb, "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
+function Msi($verb, $msi, $log, [string[]]$extra = @()) {
+  $p = Start-Process msiexec.exe -ArgumentList (@($verb, "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"") + $extra) -Wait -PassThru
   if ($p.ExitCode -ne 0) {
     Get-Content $log -Tail 60 | Write-Host
     Fail "msiexec $verb exited with $($p.ExitCode)"
@@ -145,4 +145,52 @@ Check (-not (Test-Path $lnk)) 'Start menu shortcut removed'
 Check (-not (Test-Path -LiteralPath $chatLnk)) 'ChatGPT (Superba) shortcut removed'
 Check ($null -eq (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).SuperbaRouter) 'login-startup entry removed'
 Check (@(RouterProcs).Count -eq 0) 'no router process left'
+
+# --- languages (user bug 64): English base, Simplified Chinese as the embedded transform ---
+function ComCall($obj, $name, [object[]]$params) {
+  $obj.GetType().InvokeMember($name, [Reflection.BindingFlags]::InvokeMethod, $null, $obj, $params)
+}
+$wi = New-Object -ComObject WindowsInstaller.Installer
+$db = ComCall $wi 'OpenDatabase' @([string]$msi1, 0)
+$template = ComGet (ComGet $db 'SummaryInformation' @(0)) 'Property' @(7)
+$view = ComCall $db 'OpenView' @('SELECT `Name` FROM `_Storages`')
+[void](ComCall $view 'Execute' @())
+$storages = @(while ($rec = ComCall $view 'Fetch' @()) { ComGet $rec 'StringData' @(1) })
+[void](ComCall $view 'Close' @())
+$db = $null; $view = $null; [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+Check ($template -eq 'x64;1033,2052') "package languages ($template)"
+Check ($storages -contains '2052') "embedded 2052 language transform ($($storages -join ', '))"
+Msi '/i' $msi1 (Join-Path $work 'install-zh.log') @('TRANSFORMS=:2052')
+$code = @(ArpEntries)[0].ProductCode
+$applied = ComGet $wi 'ProductInfo' @($code, 'Transforms')
+Check ($applied -eq ':2052') "the embedded 2052 transform installs (product transforms '$applied')"
+Msi '/x' $msi1 (Join-Path $work 'uninstall-zh.log')
+Check (@(ArpEntries).Count -eq 0) 'the Chinese install is removed'
+
+# --- a folder of the user's choice (user bug 64): spaces and CJK; updates keep it ---------
+$customDir = Join-Path $env:USERPROFILE ("Apps\" + (-join [char[]](0x8D85, 0x7EA7)) + ' Superba')   # "Apps\<chao ji> Superba"
+$installReg = 'HKCU:\Software\Krill\Superba'
+Msi '/i' $msi1 (Join-Path $work 'custom-install.log') @("INSTALLFOLDER=`"$customDir`"")
+foreach ($f in $files) { Check (Test-Path -LiteralPath (Join-Path $customDir $f)) "custom folder: installed $f" }
+Check (-not (Test-Path (Join-Path $installDir 'superba.exe'))) 'nothing in the default folder'
+Check ((Get-ItemProperty $installReg).InstallDir.TrimEnd('\') -eq $customDir) 'InstallDir names the custom folder'
+Check ((UserPathDirs) -contains $customDir) 'custom folder is on the user PATH'
+# (Shell.Application reads the link as Unicode; WScript.Shell turns the CJK characters into '?'.)
+$target = (New-Object -ComObject Shell.Application).Namespace((Split-Path $lnk)).ParseName((Split-Path -Leaf $lnk)).GetLink.Path
+Check ($target -eq (Join-Path $customDir 'superba.exe')) "Start menu shortcut points into it ($target)"
+$code = @(ArpEntries)[0].ProductCode
+$loc = ComGet $wi 'ProductInfo' @($code, 'InstallLocation')
+Check ($loc.TrimEnd('\') -eq $customDir) "ARP install location ($loc)"
+# An update without a folder (the self-update's msiexec /i x.msi /passive) stays there.
+Msi '/i' $msi2 (Join-Path $work 'custom-upgrade.log')
+foreach ($f in $files) { Check (Test-Path -LiteralPath (Join-Path $customDir $f)) "custom folder after the upgrade: $f" }
+Check (-not (Test-Path (Join-Path $installDir 'superba.exe'))) 'the upgrade did not move to the default folder'
+Check ((Get-ItemProperty $installReg).InstallDir.TrimEnd('\') -eq $customDir) 'InstallDir kept by the upgrade'
+Check (@(UserPathDirs | Where-Object { $_ -eq $customDir }).Count -eq 1) 'PATH has the custom folder exactly once'
+Check (@(Get-Process superba -ErrorAction SilentlyContinue).Count -eq 0) 'a quiet install starts no Superba'
+Msi '/x' $msi2 (Join-Path $work 'custom-uninstall.log')
+Check (-not (Test-Path -LiteralPath $customDir) -or @(Get-ChildItem -LiteralPath $customDir -Force).Count -eq 0) 'custom folder is gone'
+Check (-not ((UserPathDirs) -contains $customDir)) 'custom PATH entry removed'
+Check ($null -eq (Get-ItemProperty $installReg -ErrorAction SilentlyContinue).InstallDir) 'InstallDir removed'
+Check (-not (Test-Path $lnk)) 'Start menu shortcut removed'
 Write-Host 'MSI install, upgrade and uninstall checks passed.'

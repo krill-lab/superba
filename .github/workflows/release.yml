@@ -454,11 +454,8 @@ jobs:
       # again in the MSI signing step below, which runs no third-party tool).
       - name: Install WiX
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          dotnet tool install --global wix --version 5.0.2
-          if ($LASTEXITCODE -ne 0) { throw 'wix install failed' }
-          "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
+        # WiX 5.0.2 + its UI and Util extensions (pinned hashes), tool folder on the PATH.
+        run: ./scripts/release/install-wix.ps1
       - name: Build the MSI
         shell: pwsh
         run: |

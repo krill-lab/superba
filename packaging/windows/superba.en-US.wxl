@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Superba's own installer texts, English (the base MSI). The WixUI pages' texts
+     come from WixToolset.UI.wixext's en-US culture. Keep superba.zh-CN.wxl in step. -->
+<WixLocalization Culture="en-US" Codepage="1252" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="SuperbaLanguage" Value="1033" />
+  <String Id="SuperbaNewerInstalled" Value="A newer version of Superba is already installed." />
+  <String Id="SuperbaFolderDlgDescription" Value="Choose where to install Superba for your account." />
+  <String Id="SuperbaFolderDlgUpdateDescription" Value="Superba stays in the folder it is installed in." />
+  <String Id="SuperbaFolderDlgFolderLabel" Value="Install Superba to:" />
+  <String Id="SuperbaFolderDlgUpdateLabel" Value="Superba is installed in this folder. The update replaces it there:" />
+  <String Id="SuperbaFolderDlgHint" Value="Superba is installed for your Windows account only and needs no administrator rights. You can choose any folder you can write to, for example D:\Apps\Superba. Program Files and the Windows folder cannot be used." />
+  <String Id="SuperbaFolderDlgUpdateHint" Value="To move Superba to another folder, uninstall it first (Settings &gt; Apps), then install it again." />
+  <String Id="SuperbaFolderRefusedText" Value="Superba cannot be installed in [INSTALLFOLDER]: Program Files and the Windows folder need administrator rights, while Superba installs and updates itself with your own account. Choose another folder, for example [LocalAppDataFolder]Programs\Superba." />
+  <String Id="SuperbaExitText" Value="Superba is installed in [INSTALLFOLDER]. You can open it any time from the Start menu: look for &quot;Superba&quot;." />
+  <String Id="SuperbaLaunch" Value="Launch Superba" />
+</WixLocalization>

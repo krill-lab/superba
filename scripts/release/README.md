@@ -265,12 +265,41 @@ directory. Both packaging helpers accept numeric `X.Y.Z` versions without `v`.
 
 ## Windows MSI
 
-`packaging/windows/superba.wxs` (WiX v5, installed in the signing job with
-`dotnet tool install --global wix --version 5.0.2`) describes a per-user MSI
+`packaging/windows/superba.wxs` (WiX v5 with its UI and Util extensions, installed in the
+signing job by `scripts/release/install-wix.ps1`: `dotnet tool install --global wix --version
+5.0.2`, `wix extension add -g WixToolset.UI.wixext/5.0.2` and `WixToolset.Util.wixext/5.0.2`,
+each extension DLL checked against a pinned sha256) describes a per-user MSI
 (`Scope="perUser"`, no elevation): `superba.exe`, `spb.exe`, `superba-router.exe`,
 `LICENSE-MIT`, `LICENSE-APACHE`, `THIRD-PARTY-NOTICES.txt`, `LICENSE-Geist-OFL.txt`
-and `superba-msi.marker` in `%LOCALAPPDATA%\Programs\Superba`, a Start-menu shortcut,
-and that folder appended to the user `PATH` (removed on uninstall). The UpgradeCode
+and `superba-msi.marker` in the install folder (default `%LOCALAPPDATA%\Programs\Superba`),
+a Start-menu shortcut "Superba", and that folder appended to the user `PATH` (removed on
+uninstall).
+
+Installer pages (`packaging/windows/superba-ui.wxs`, WixUI dialogs with our own folder page):
+a double-clicked MSI shows Welcome, the install folder, progress and a finish page that says
+where Superba went (Start menu "Superba") with "Launch Superba" checked; Finish then starts
+`superba.exe` through the shell with the desktop's non-elevated token (`WixUnelevatedShellExec`).
+There is no licence page (MIT/Apache-2.0 need no acceptance; the texts are installed). The
+folder page takes any folder the user can write to (`Change...` browses; spaces and non-ASCII
+names work) and refuses, before anything is written, folders Windows Installer cannot write to
+with the user's rights, network/removable drives, and Program Files or the Windows folder (also
+for an administrator without UAC: Superba installs and self-updates without elevation). The
+chosen folder is stored in `HKCU\Software\Krill\Superba\InstallDir`, found again by `AppSearch`
+before an older copy is removed, so updates (double-clicked: the folder page shows it read-only),
+repairs, the removal and the self-update's `/passive` install keep it; `INSTALLFOLDER=<dir>` sets
+it on the command line. `/passive` and `/quiet` installs show no pages and never start Superba (the
+self-update starts the new version itself). Branding: `packaging/windows/superba-dialog.bmp`
+(493x312, welcome/finish) and `superba-banner.bmp` (493x58, the other pages), rendered from the
+icon master by `scripts/icons/render.sh`.
+
+Languages: one MSI, English pages by default and Simplified Chinese on a Chinese Windows.
+`build-msi.ps1` builds the package twice with the same ProductCode (`-culture en-US` / `zh-CN`,
+WixUI's culture strings plus `packaging/windows/superba.<culture>.wxl`), embeds the difference
+as the language transform `2052` (a substorage of the MSI) and sets the package languages to
+`x64;1033,2052`: Windows Installer applies that transform by itself when the user's language
+is Chinese (the multi-language MSI layout of the Windows SDK's WiLangId/WiSubStg samples; no
+bootstrapper). `msiexec /i <msi> TRANSFORMS=:2052` shows the Chinese pages on any Windows. Keep
+the two `.wxl` files in step. The UpgradeCode
 `669520BE-07D0-496D-8173-085AA3DEE133` is fixed forever; `MajorUpgrade` (also for the
 same version, because pre-releases of one `X.Y.Z` share a ProductVersion) replaces the
 installed copy in place and refuses downgrades. `scripts/release/build-msi.ps1` maps the
@@ -292,7 +321,11 @@ on disk). Test it without tagging: run the `msi-package` job of CI
 (`gh workflow run ci.yml --ref <branch> -f msi_only=true`), which builds the MSI on
 `windows-latest` and runs `scripts/release/test-msi.ps1`: per-user install, files,
 `spb --version`, `PATH`, Add/Remove Programs, Start-menu shortcut, an upgrade to a higher
-version and to a same-`X.Y.Z` pre-release, then uninstall and a check that nothing is left.
+version and to a same-`X.Y.Z` pre-release, then uninstall and a check that nothing is left;
+then the package languages and the embedded `2052` transform (installed once with
+`TRANSFORMS=:2052`), and an install into a folder with a space and Chinese characters that an
+update without `INSTALLFOLDER` keeps and the removal empties. The pages themselves need a
+desktop: they were checked by hand on Windows 11 (user bug 64).
 
 Self-update on Windows downloads this MSI, verifies it against `SHA256SUMS.txt` and runs
 `msiexec /i <msi> /passive` after Superba exits.

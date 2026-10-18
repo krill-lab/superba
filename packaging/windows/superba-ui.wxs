@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The installer's dialogs (user bug 64), used by superba.wxs through
+  <ui:WixUI Id="SuperbaUI" InstallDirectory="INSTALLFOLDER" />.
+
+  First install:  Welcome -> Install folder [Install] -> progress -> Finish
+                  ("Launch Superba", checked by default)
+  Update:         Welcome -> Install folder (the installed copy's folder, read-only)
+                  [Install] -> progress -> Finish
+  Installed:      the WixUI maintenance pages (Repair / Remove)
+
+  Built from WixToolset.UI.wixext's WixUI_InstallDir (no licence page: Superba is
+  MIT/Apache-2.0, nothing to accept) with our own folder and finish pages. Texts come from
+  WixUI's culture files plus superba.<culture>.wxl. Only a full-UI run (a
+  double-clicked MSI) shows these pages; /passive and /quiet installs (the
+  self-update) show at most a progress bar and never run the launch action.
+
+  The folder page refuses, before anything is written:
+    - paths Windows Installer cannot write to with the user's own rights
+      (SetTargetPath checks the folder; "Unable to write to the specified folder")
+    - network, removable and unknown drives (WixUIValidatePath, InvalidDirDlg)
+    - Program Files and the Windows folder (SuperbaFolderRefusedDlg), also for
+      an administrator without UAC who could write there: Superba is a per-user
+      install and its self-update runs without elevation.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?foreach WIXUIARCH in X64;A64 ?>
+  <Fragment>
+    <UI Id="SuperbaUI_$(WIXUIARCH)">
+      <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction" Value="WixUIValidatePath_$(WIXUIARCH)" Order="3" />
+      <Publish Dialog="SuperbaFolderDlg" Control="Install" Event="DoAction" Value="WixUIValidatePath_$(WIXUIARCH)" Order="2" />
+      <Publish Dialog="SuperbaExitDlg" Control="Finish" Event="DoAction" Value="SuperbaLaunch_$(WIXUIARCH)" Order="1"
+               Condition="SUPERBA_LAUNCH = 1 AND NOT Installed" />
+    </UI>
+    <!-- Starts Superba through the shell with the desktop's (non-elevated) token, as
+         the signed-in user, also when msiexec itself was started elevated. -->
+    <CustomAction Id="SuperbaLaunch_$(WIXUIARCH)" BinaryRef="Wix4UtilCA_$(WIXUIARCH)" DllEntry="WixUnelevatedShellExec"
+                  Execute="immediate" Impersonate="yes" Return="ignore" />
+    <UIRef Id="SuperbaUI" />
+  </Fragment>
+  <?endforeach?>
+
+  <Fragment>
+    <UI Id="SuperbaUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="!(loc.Advanced_Font_FaceName)" Size="!(loc.Advanced_Font_Normal_Size)" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="!(loc.Advanced_Font_FaceName)" Size="!(loc.Advanced_Font_Bigger_Size)" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="!(loc.Advanced_Font_FaceName)" Size="!(loc.Advanced_Font_Title_Size)" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="BrowseDlg" />
+      <DialogRef Id="DiskCostDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+      <!-- Localized Windows Installer messages (for example SetTargetPath's
+           "Unable to write to the specified folder"). -->
+      <UIRef Id="WixUI_ErrorProgressText" />
+
+      <Publish Dialog="BrowseDlg" Control="OK" Event="SpawnDialog" Value="InvalidDirDlg" Order="4" Condition="WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="SuperbaFolderDlg" Condition="NOT Installed" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+
+      <!-- The folder page. An update shows the installed copy's folder (found by
+           superba.wxs's InstallDir search) and cannot change it. -->
+      <Dialog Id="SuperbaFolderDlg" Width="370" Height="270" Title="!(loc.InstallDirDlg_Title)">
+        <Control Id="Install" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.VerifyReadyDlgInstall)">
+          <Publish Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1" />
+          <!-- Order 2: WixUIValidatePath (per architecture, above). -->
+          <Publish Property="SUPERBA_DIR_CHECK" Value="[INSTALLFOLDER]\" Order="3" />
+          <Publish Property="SUPERBA_DIR_REFUSED" Value="{}" Order="4" />
+          <Publish Property="SUPERBA_DIR_REFUSED" Value="1" Order="5"
+                   Condition="(ProgramFiles64Folder AND SUPERBA_DIR_CHECK ~&lt;&lt; ProgramFiles64Folder) OR (ProgramFilesFolder AND SUPERBA_DIR_CHECK ~&lt;&lt; ProgramFilesFolder) OR (WindowsFolder AND SUPERBA_DIR_CHECK ~&lt;&lt; WindowsFolder)" />
+          <Publish Event="SpawnDialog" Value="InvalidDirDlg" Order="6" Condition="WIXUI_INSTALLDIR_VALID&lt;&gt;&quot;1&quot;" />
+          <Publish Event="SpawnDialog" Value="SuperbaFolderRefusedDlg" Order="7" Condition="WIXUI_INSTALLDIR_VALID=&quot;1&quot; AND SUPERBA_DIR_REFUSED" />
+          <Publish Event="EndDialog" Value="Return" Order="8" Condition="WIXUI_INSTALLDIR_VALID=&quot;1&quot; AND NOT SUPERBA_DIR_REFUSED" />
+        </Control>
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="WelcomeDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.SuperbaFolderDlgDescription)"
+                 HideCondition="SUPERBA_OLDER_FOUND" ShowCondition="NOT SUPERBA_OLDER_FOUND" />
+        <Control Id="UpdateDescription" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="!(loc.SuperbaFolderDlgUpdateDescription)"
+                 ShowCondition="SUPERBA_OLDER_FOUND" HideCondition="NOT SUPERBA_OLDER_FOUND" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.InstallDirDlgTitle)" />
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.InstallDirDlgBannerBitmap)" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="FolderLabel" Type="Text" X="20" Y="58" Width="330" Height="12" NoPrefix="yes" Text="!(loc.SuperbaFolderDlgFolderLabel)"
+                 HideCondition="SUPERBA_OLDER_FOUND" ShowCondition="NOT SUPERBA_OLDER_FOUND" />
+        <Control Id="UpdateLabel" Type="Text" X="20" Y="58" Width="330" Height="12" NoPrefix="yes" Hidden="yes" Text="!(loc.SuperbaFolderDlgUpdateLabel)"
+                 ShowCondition="SUPERBA_OLDER_FOUND" HideCondition="NOT SUPERBA_OLDER_FOUND" />
+        <Control Id="Folder" Type="PathEdit" X="20" Y="72" Width="330" Height="18" Property="WIXUI_INSTALLDIR" Indirect="yes"
+                 DisableCondition="SUPERBA_OLDER_FOUND" EnableCondition="NOT SUPERBA_OLDER_FOUND" />
+        <Control Id="ChangeFolder" Type="PushButton" X="20" Y="94" Width="56" Height="17" Text="!(loc.InstallDirDlgChange)"
+                 HideCondition="SUPERBA_OLDER_FOUND" ShowCondition="NOT SUPERBA_OLDER_FOUND">
+          <Publish Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+          <Publish Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+        </Control>
+        <Control Id="FolderHint" Type="Text" X="20" Y="124" Width="330" Height="60" NoPrefix="yes" Text="!(loc.SuperbaFolderDlgHint)"
+                 HideCondition="SUPERBA_OLDER_FOUND" ShowCondition="NOT SUPERBA_OLDER_FOUND" />
+        <Control Id="UpdateHint" Type="Text" X="20" Y="124" Width="330" Height="60" NoPrefix="yes" Hidden="yes" Text="!(loc.SuperbaFolderDlgUpdateHint)"
+                 ShowCondition="SUPERBA_OLDER_FOUND" HideCondition="NOT SUPERBA_OLDER_FOUND" />
+      </Dialog>
+
+      <!-- Program Files / Windows folder chosen: say why and stay on the folder page. -->
+      <Dialog Id="SuperbaFolderRefusedDlg" Width="290" Height="110" Title="!(loc.InvalidDirDlg_Title)">
+        <Control Id="OK" Type="PushButton" X="117" Y="85" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIOK)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+        <Control Id="Text" Type="Text" X="48" Y="15" Width="230" Height="64" NoPrefix="yes" Text="!(loc.SuperbaFolderRefusedText)" />
+        <Control Id="Icon" Type="Icon" X="15" Y="15" Width="24" Height="24" ToolTip="!(loc.InvalidDirDlgIconTooltip)" FixedSize="yes" IconSize="32" Text="!(loc.InvalidDirDlgIcon)" />
+      </Dialog>
+
+      <!-- The finish page: WixUI's ExitDialog plus where Superba went (after an install or
+           update, not after a repair or removal) and "Launch Superba" in the button row
+           (a check box cannot be transparent: on the white picture it would sit in a grey box). -->
+      <Dialog Id="SuperbaExitDlg" Width="370" Height="270" Title="!(loc.ExitDialog_Title)">
+        <Control Id="Finish" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIFinish)">
+          <!-- Order 1: SuperbaLaunch (per architecture, above). -->
+          <Publish Event="EndDialog" Value="Return" Order="999" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUICancel)" />
+        <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="!(loc.ExitDialogBitmap)" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUIBack)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Description" Type="Text" X="135" Y="70" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.ExitDialogDescription)" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="!(loc.ExitDialogTitle)" />
+        <Control Id="WhereText" Type="Text" X="135" Y="110" Width="220" Height="80" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="!(loc.SuperbaExitText)"
+                 ShowCondition="NOT Installed" />
+        <Control Id="Launch" Type="CheckBox" X="15" Y="243" Width="155" Height="17" Hidden="yes" Property="SUPERBA_LAUNCH" CheckBoxValue="1" Text="!(loc.SuperbaLaunch)"
+                 ShowCondition="NOT Installed" />
+      </Dialog>
+      <InstallUISequence>
+        <Show Dialog="SuperbaExitDlg" OnExit="success" />
+      </InstallUISequence>
+      <AdminUISequence>
+        <Show Dialog="SuperbaExitDlg" OnExit="success" />
+      </AdminUISequence>
+
+    </UI>
+
+    <!-- "Launch Superba" on the finish page, checked by default. -->
+    <Property Id="SUPERBA_LAUNCH" Value="1" />
+    <Property Id="WixUnelevatedShellExecTarget" Value="[#SuperbaExe]" />
+
+    <WixVariable Id="WixUIBannerBmp" Value="$(StageDir)\superba-banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(StageDir)\superba-dialog.bmp" />
+
+    <UIRef Id="WixUI_Common" />
+  </Fragment>
+</Wix>

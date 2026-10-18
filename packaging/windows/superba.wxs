@@ -6,15 +6,22 @@
     ProductVersion  numeric X.Y.Z (MSI compares only the first three fields)
     DisplayVersion  the full release version (for example 0.1.0-alpha.2)
     StageDir        folder holding the files listed below
+    ProductCode     the build's ProductCode GUID: the same for the en-US MSI and the
+                    zh-CN one its language transform is made from (build-msi.ps1)
+
+  Texts: superba.<culture>.wxl (wix build -culture en-US / zh-CN); the dialogs are in
+  superba-ui.wxs.
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
       Name="Superba $(DisplayVersion)"
       Manufacturer="Krill"
       Version="$(ProductVersion)"
       UpgradeCode="669520BE-07D0-496D-8173-085AA3DEE133"
       Scope="perUser"
-      Language="1033"
+      ProductCode="$(ProductCode)"
+      Language="!(loc.SuperbaLanguage)"
       InstallerVersion="500"
       Compressed="yes">
 
@@ -22,11 +29,11 @@
 
     <!-- A newer MSI replaces the installed one in place; pre-releases of one
          X.Y.Z share a ProductVersion, so the same version may upgrade. The old
-         product is removed BEFORE costing (right after FindRelatedProducts, not
-         the MajorUpgrade default of after InstallValidate): costing runs against
-         the old files, and an installed exe whose file version is not lower than
-         the new one (an alpha.N -> alpha.N+1 of the same X.Y.Z) would be kept
-         and then deleted with the old product. -->
+         product is removed BEFORE costing (right after FindRelatedProducts and
+         AppSearch, not the MajorUpgrade default of after InstallValidate):
+         costing runs against the old files, and an installed exe whose file
+         version is not lower than the new one (an alpha.N -> alpha.N+1 of the
+         same X.Y.Z) would be kept and then deleted with the old product. -->
     <Upgrade Id="669520BE-07D0-496D-8173-085AA3DEE133">
       <UpgradeVersion Property="SUPERBA_OLDER_FOUND" Minimum="0.0.0" IncludeMinimum="yes"
                       Maximum="$(ProductVersion)" IncludeMaximum="yes"
@@ -35,7 +42,7 @@
                       IncludeMinimum="no" OnlyDetect="yes" />
     </Upgrade>
     <Launch Condition="NOT SUPERBA_NEWER_FOUND"
-            Message="A newer version of Superba is already installed." />
+            Message="!(loc.SuperbaNewerInstalled)" />
     <MediaTemplate EmbedCab="yes" />
 
     <!-- The Superba icon (assets/icon/superba.ico): Apps & features and the shortcut. -->
@@ -52,6 +59,16 @@
       </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
+
+    <!-- The install folder: %LOCALAPPDATA%\Programs\Superba unless the user picks
+         another one on the folder page (or INSTALLFOLDER=... on the command line).
+         The folder of the installed copy (InstallDir below) is used again by
+         updates, repairs, the removal and the self-update's /passive install. -->
+    <Property Id="INSTALLFOLDER" Secure="yes">
+      <RegistrySearch Id="SuperbaInstallDir" Root="HKCU" Key="Software\Krill\Superba" Name="InstallDir" Type="raw" />
+    </Property>
+    <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" Sequence="execute" />
+    <ui:WixUI Id="SuperbaUI" InstallDirectory="INSTALLFOLDER" />
 
     <ComponentGroup Id="Programs" Directory="INSTALLFOLDER">
       <Component>
@@ -132,8 +149,10 @@
                   ExeCommand="&quot;[INSTALLFOLDER]spb.exe&quot; router uninstall --quiet" />
     <CustomAction Id="RouterStop" Directory="INSTALLFOLDER" Return="ignore"
                   ExeCommand="&quot;[INSTALLFOLDER]spb.exe&quot; router uninstall --quiet --keep-service" />
+    <!-- AppSearch (the installed copy's InstallDir) runs before the old product
+         and its registry values are removed, so an update without UI keeps the folder. -->
     <InstallExecuteSequence>
-      <RemoveExistingProducts After="FindRelatedProducts" />
+      <RemoveExistingProducts After="AppSearch" />
       <Custom Action="RouterRemove" Before="InstallValidate"
               Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RouterStop" Before="InstallValidate"

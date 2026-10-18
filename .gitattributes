@@ -3,6 +3,7 @@
 # Windows included (core.autocrlf would otherwise rewrite them to CRLF).
 * text=auto eol=lf
 *.png binary
+*.bmp binary
 *.ttf binary
 *.sqlite binary
 *.sig -text
