@@ -831,6 +831,16 @@ pub fn terminate(pid: u32) -> bool {
     signal(pid, sysinfo::Signal::Term)
 }
 
+/// Send SIGINT (Unix; `false` elsewhere or when the process is gone).
+pub fn interrupt(pid: u32) -> bool {
+    signal(pid, sysinfo::Signal::Interrupt)
+}
+
+/// Send SIGHUP (Unix; `false` elsewhere or when the process is gone).
+pub fn hangup(pid: u32) -> bool {
+    signal(pid, sysinfo::Signal::Hangup)
+}
+
 /// Force-kill a process (SIGKILL / TerminateProcess).
 pub fn kill(pid: u32) -> bool {
     signal(pid, sysinfo::Signal::Kill)

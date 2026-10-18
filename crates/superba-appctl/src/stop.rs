@@ -8,11 +8,20 @@
 //!   user, with the start time it was listed with (a reused pid is left
 //!   alone and reported as gone); the desktop app is never stopped here (its
 //!   own quit goes through [`crate::quit`]);
-//! - graceful first: SIGTERM on Unix. Codex's TUI does not handle it and ends
-//!   at once (verified with 0.163.0-alpha.10.2 in a pty: no reset sequences
-//!   are written), so its terminal keeps the alternate screen, mouse reporting
-//!   and keyboard modes; on Linux Superba writes the TUI's own reset sequence
-//!   to that terminal after it exited. Windows has no way to ask a console
+//! - graceful first: SIGTERM on Unix (app-servers drain and exit on it). A
+//!   codex TUI gets SIGINT, then SIGHUP, then SIGTERM, each after a short
+//!   wait, so a TUI that handles one of them can leave on its own. Codex's TUI
+//!   (checked in its source and with 0.163.0-alpha.10.2 in a pty, user bug
+//!   62(d)) handles none of the three: each ends it at once, with nothing
+//!   written, so its terminal kept the alternate screen, mouse reporting and
+//!   keyboard modes, and the raw mode — bash puts its own modes back after a
+//!   job a signal ended, but zsh adopts the raw output and input modes the
+//!   TUI left (`-opost -icrnl -isig` for every later command). Superba
+//!   therefore puts the terminal back *before* the first signal (Linux: the
+//!   terminal of the TUI's stdin/stdout/stderr; macOS: its controlling
+//!   terminal from `ps`): the TUI's own reset sequence and the cooked modes
+//!   raw mode turns off; the TUI ends within microseconds after, and the shell
+//!   finds a sane terminal. Windows has no way to ask a console
 //!   program or an app-server talking over pipes to exit (no window to close;
 //!   console control events reach the whole console, the shell included), so
 //!   without `force` nothing is sent there ([`StopOutcome::ForceOnly`]);
@@ -97,30 +106,137 @@ pub fn force_targets(entries: &[ProcEntry], pid: u32) -> Vec<(u32, Option<Timest
 pub const TUI_RESET: &str = "\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[<1u\
      \x1b[?1007l\x1b[?1049l\x1b[<u\x1b[>4;0m\x1b[?2004l\x1b[?1004l\x1b[0 q\x1b[?25h";
 
-/// The terminal device of a process (Linux: what its stdin, stdout or stderr
-/// points at, when that is a terminal).
+/// The terminal device of a process: Linux: what its stdin, stdout or stderr
+/// points at, when that is a terminal; macOS (and other Unix): its
+/// controlling terminal as `ps -o tty=` names it. `None` on Windows.
 pub fn terminal_of(pid: u32) -> Option<PathBuf> {
-    if !cfg!(target_os = "linux") {
+    if cfg!(windows) {
         return None;
     }
-    (0..3).find_map(|fd| {
-        let link = std::fs::read_link(format!("/proc/{pid}/fd/{fd}")).ok()?;
-        let s = link.to_string_lossy();
-        (s.starts_with("/dev/pts/") || s.starts_with("/dev/tty")).then_some(link)
-    })
+    if cfg!(target_os = "linux") {
+        return (0..3).find_map(|fd| {
+            let link = std::fs::read_link(format!("/proc/{pid}/fd/{fd}")).ok()?;
+            is_terminal_device(&link.to_string_lossy()).then_some(link)
+        });
+    }
+    let out = superba_core::process::command("ps")
+        .args(["-o", "tty=", "-p", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    tty_from_ps(&String::from_utf8_lossy(&out.stdout))
 }
 
-/// Put a terminal back the way the TUI leaves it on its own (best effort).
-fn reset_terminal(tty: &std::path::Path) {
+fn is_terminal_device(path: &str) -> bool {
+    path.starts_with("/dev/pts/") || path.starts_with("/dev/tty")
+}
+
+/// The device a `ps -o tty=` line names (`ttys003` on macOS, `pts/3` on
+/// Linux); `None` for `??` / `?` (no terminal).
+pub fn tty_from_ps(text: &str) -> Option<PathBuf> {
+    let name = text.lines().next()?.trim();
+    if name.is_empty() || name.starts_with('?') || name.contains("..") {
+        return None;
+    }
+    let path = if name.starts_with("/dev/") {
+        name.to_owned()
+    } else {
+        format!("/dev/{name}")
+    };
+    is_terminal_device(&path).then(|| PathBuf::from(path))
+}
+
+/// Put a terminal back the way the TUI leaves it on its own (best effort):
+/// its reset sequence, and on Unix the modes raw mode turned off (output
+/// processing, CR to NL on input, echo, canonical input, signal keys).
+/// `true` when the sequence was written. Termios is left alone when this
+/// process is a background member of the terminal's own session (it would
+/// be stopped by SIGTTOU).
+pub fn restore_terminal(tty: &std::path::Path) -> bool {
     use std::io::Write;
-    let file = std::fs::OpenOptions::new().write(true).open(tty);
-    match file {
-        Ok(mut f) => {
-            if let Err(e) = f.write_all(TUI_RESET.as_bytes()) {
-                tracing::debug!(error = %e, tty = %tty.display(), "cannot reset the terminal");
-            }
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Never make it our controlling terminal.
+        options.custom_flags(libc::O_NOCTTY);
+    }
+    let mut file = match options.open(tty) {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::debug!(error = %e, tty = %tty.display(), "cannot open the terminal");
+            return false;
         }
-        Err(e) => tracing::debug!(error = %e, tty = %tty.display(), "cannot open the terminal"),
+    };
+    let wrote = match file.write_all(TUI_RESET.as_bytes()) {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::debug!(error = %e, tty = %tty.display(), "cannot reset the terminal");
+            false
+        }
+    };
+    #[cfg(unix)]
+    cooked_modes(&file);
+    wrote
+}
+
+/// Turn the cooked terminal modes back on (what `cfmakeraw` turned off and a
+/// shell expects: `opost onlcr icrnl icanon echo echoe echok isig iexten`);
+/// flow control and the character size are left as they are.
+#[cfg(unix)]
+fn cooked_modes(file: &std::fs::File) {
+    use std::os::fd::AsRawFd;
+    let fd = file.as_raw_fd();
+    // SAFETY: plain calls on an open descriptor of ours; `t` is a termios the
+    // kernel fills in before it is read.
+    unsafe {
+        let sid = libc::tcgetsid(fd);
+        if sid != -1 && sid == libc::getsid(0) && libc::tcgetpgrp(fd) != libc::getpgrp() {
+            tracing::debug!("the terminal belongs to our session's foreground: modes left alone");
+            return;
+        }
+        let mut t = std::mem::MaybeUninit::<libc::termios>::zeroed();
+        if libc::tcgetattr(fd, t.as_mut_ptr()) != 0 {
+            return;
+        }
+        let mut t = t.assume_init();
+        let before = (t.c_iflag, t.c_oflag, t.c_lflag);
+        t.c_iflag |= libc::ICRNL;
+        t.c_oflag |= libc::OPOST | libc::ONLCR;
+        t.c_lflag |=
+            libc::ICANON | libc::ECHO | libc::ECHOE | libc::ECHOK | libc::ISIG | libc::IEXTEN;
+        if before != (t.c_iflag, t.c_oflag, t.c_lflag)
+            && libc::tcsetattr(fd, libc::TCSANOW, &t) != 0
+        {
+            tracing::debug!(error = %std::io::Error::last_os_error(), "cannot restore the terminal modes");
+        }
+    }
+}
+
+/// How long a TUI gets after SIGINT and after SIGHUP before the next signal.
+const TUI_SIGNAL_WAIT: Duration = Duration::from_millis(1_500);
+
+/// SIGINT, then SIGHUP, then SIGTERM, each followed by a wait; SIGTERM gets
+/// what is left of `timeout` (at least a second).
+async fn stop_tui(me: &[(u32, Option<Timestamp>)], timeout: Duration) -> StopOutcome {
+    let pid = me[0].0;
+    let started = tokio::time::Instant::now();
+    for send in [procs::interrupt, procs::hangup] {
+        send(pid);
+        if wait_gone(me, TUI_SIGNAL_WAIT.min(timeout / 3)).await {
+            return StopOutcome::Exited;
+        }
+    }
+    procs::terminate(pid);
+    let left = timeout
+        .saturating_sub(started.elapsed())
+        .max(Duration::from_secs(1));
+    if wait_gone(me, left).await {
+        StopOutcome::Exited
+    } else {
+        StopOutcome::StillRunning
     }
 }
 
@@ -165,9 +281,27 @@ pub async fn stop(listed: &ProcessInfo, force: bool, timeout: Duration) -> Resul
         Identity::Same => {}
     }
     let started = now.and_then(|e| e.started_at).or(listed.started_at);
-    let tty = (listed.kind == CodexProcessKind::CliTui)
-        .then(|| terminal_of(listed.pid))
-        .flatten();
+    let tui = listed.kind == CodexProcessKind::CliTui;
+    if !force && !graceful_supported() {
+        return Ok(StopOutcome::ForceOnly);
+    }
+    let pid = listed.pid;
+    let tty = if tui {
+        tokio::task::spawn_blocking(move || terminal_of(pid))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    // The TUI restores nothing when a signal ends it: its terminal is put back
+    // first (see the module docs).
+    let restored = match tty.clone() {
+        Some(tty) => tokio::task::spawn_blocking(move || restore_terminal(&tty))
+            .await
+            .unwrap_or(false),
+        None => false,
+    };
     let me = [(listed.pid, started)];
     let outcome = if force {
         let targets = force_targets(&entries, listed.pid);
@@ -181,8 +315,8 @@ pub async fn stop(listed: &ProcessInfo, force: bool, timeout: Duration) -> Resul
         } else {
             StopOutcome::StillRunning
         }
-    } else if !graceful_supported() {
-        return Ok(StopOutcome::ForceOnly);
+    } else if tui {
+        stop_tui(&me, timeout).await
     } else {
         procs::terminate(listed.pid);
         if wait_gone(&me, timeout).await {
@@ -192,9 +326,11 @@ pub async fn stop(listed: &ProcessInfo, force: bool, timeout: Duration) -> Resul
         }
     };
     if outcome.is_gone()
+        && !restored
         && let Some(tty) = tty
     {
-        reset_terminal(&tty);
+        // Could not be written before: at least leave the alternate screen now.
+        let _ = tokio::task::spawn_blocking(move || restore_terminal(&tty)).await;
     }
     Ok(outcome)
 }
