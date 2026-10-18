@@ -60,7 +60,8 @@ places the listed items at its root. The GNU tarball directory
 is `superba-<ver>-linux-<arch>/`; the musl directory is
 `spb-<ver>-linux-x86_64-musl/`. The GNU tarball also holds `superba.desktop` and
 `icons/hicolor/<N>x<N>/apps/superba.png` (16 to 512 px): copy `icons/` to
-`~/.local/share/icons/` and the desktop file to `~/.local/share/applications/`.
+`~/.local/share/icons/` and the desktop file to `~/.local/share/applications/`
+(its action "Open ChatGPT with Superba" runs `superba --launch-chatgpt`).
 
 App icon: two masters with the same artwork. `assets/icon/superba.svg` (the tile
 fills 928 of 1024 px, as Windows and Linux icons do) gives `assets/icon/png/superba-<N>.png`

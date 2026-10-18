@@ -82,8 +82,9 @@ if [[ -n "$notices" ]]; then
 fi
 if [[ "$headless" == false ]]; then
     # Desktop integration: copy `icons/` to ~/.local/share/icons and
-    # superba.desktop to ~/.local/share/applications (set Exec to the full path
-    # of `superba` if it is not on PATH).
+    # superba.desktop to ~/.local/share/applications (set both Exec lines, the
+    # app's and the "Open ChatGPT with Superba" action's, to the full path of
+    # `superba` if it is not on PATH).
     install -m 644 -- "$repo_root/assets/icon/superba.desktop" "$staging/$package/superba.desktop"
     for size in 16 32 48 64 128 256 512; do
         icon_dir="$staging/$package/icons/hicolor/${size}x${size}/apps"

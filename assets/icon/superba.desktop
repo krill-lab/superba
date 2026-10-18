@@ -7,3 +7,9 @@ Icon=superba
 Terminal=false
 Categories=Development;Utility;
 StartupWMClass=superba
+Actions=launch-chatgpt;
+
+[Desktop Action launch-chatgpt]
+Name=Open ChatGPT with Superba
+Name[zh_CN]=用 Superba 打开 ChatGPT
+Exec=superba --launch-chatgpt

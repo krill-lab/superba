@@ -97,6 +97,18 @@
                      Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
+    <!-- GH#7: "ChatGPT (Superba)" opens ChatGPT through Superba so it can be
+         hot-switched; a running Superba window takes the request, otherwise no
+         window opens unless a reopen has to be confirmed. -->
+    <Component Id="ChatGptShortcut" Directory="ProgramMenuFolder">
+      <Shortcut Id="ChatGptSuperbaShortcut" Name="ChatGPT (Superba)"
+                Description="Open ChatGPT through Superba (hot switching)"
+                Target="[INSTALLFOLDER]superba.exe" Arguments="--launch-chatgpt"
+                WorkingDirectory="INSTALLFOLDER" Icon="Superba.ico" />
+      <RegistryValue Root="HKCU" Key="Software\Krill\Superba" Name="ChatGptShortcut"
+                     Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
     <!-- The install location, for tools that look it up. -->
     <Component Id="InstallRegistry" Directory="INSTALLFOLDER">
       <RegistryValue Root="HKCU" Key="Software\Krill\Superba" Name="InstallDir"
@@ -108,6 +120,7 @@
     <Feature Id="Main" Title="Superba" Level="1">
       <ComponentGroupRef Id="Programs" />
       <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="ChatGptShortcut" />
       <ComponentRef Id="InstallRegistry" />
     </Feature>
 

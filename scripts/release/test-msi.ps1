@@ -96,6 +96,11 @@ Check ($arp[0].DisplayName -eq "Superba $BaseVersion") "ARP name ($($arp[0].Disp
 Check ($arp[0].DisplayVersion -eq $BaseVersion.Split('-')[0]) "ARP version ($($arp[0].DisplayVersion))"
 $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Superba.lnk'
 Check (Test-Path $lnk) 'Start menu shortcut'
+# GH#7: "ChatGPT (Superba)" runs superba.exe --launch-chatgpt.
+$chatLnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\ChatGPT (Superba).lnk'
+Check (Test-Path -LiteralPath $chatLnk) 'ChatGPT (Superba) shortcut'
+$sc = (New-Object -ComObject WScript.Shell).CreateShortcut($chatLnk)
+Check ($sc.TargetPath -eq (Join-Path $installDir 'superba.exe') -and $sc.Arguments -eq '--launch-chatgpt') "ChatGPT (Superba) runs superba.exe --launch-chatgpt ($($sc.TargetPath) $($sc.Arguments))"
 Check (-not (Test-Path 'HKLM:\Software\Krill\Superba')) 'nothing was written machine-wide'
 
 # A login-startup entry and a running router from the install folder, to see
@@ -137,6 +142,7 @@ Check ((-not (Test-Path $installDir)) -or @(Get-ChildItem $installDir -Force).Co
 Check (-not ((UserPathDirs) -contains $installDir)) 'PATH entry removed'
 Check (@(ArpEntries).Count -eq 0) 'ARP entry removed'
 Check (-not (Test-Path $lnk)) 'Start menu shortcut removed'
+Check (-not (Test-Path -LiteralPath $chatLnk)) 'ChatGPT (Superba) shortcut removed'
 Check ($null -eq (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).SuperbaRouter) 'login-startup entry removed'
 Check (@(RouterProcs).Count -eq 0) 'no router process left'
 Write-Host 'MSI install, upgrade and uninstall checks passed.'
