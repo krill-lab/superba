@@ -46,6 +46,7 @@ pub struct Dropdown {
     width: f32,
     height: f32,
     menu_height: Option<f32>,
+    label: Option<String>,
 }
 
 impl Dropdown {
@@ -57,7 +58,16 @@ impl Dropdown {
             width: 0.0,
             height: size::CONTROL_SM,
             menu_height: None,
+            label: None,
         }
+    }
+
+    /// The accessible name (what the dropdown chooses, e.g. "Provider"): for a
+    /// dropdown without a visible label next to it. Inside a
+    /// [`super::FormRow`] the row's label names it.
+    pub fn label(mut self, name: impl Into<String>) -> Self {
+        self.label = Some(name.into());
+        self
     }
 
     /// The text shown in the field (a `RichText` keeps its font and colour).
@@ -134,9 +144,11 @@ impl Dropdown {
         } else {
             response
         };
+        let name = self.label.clone();
         response.widget_info(|| {
             let mut info = WidgetInfo::new(egui::Role::ComboBox);
             info.enabled = enabled;
+            info.label = name.clone();
             info.current_text_value = Some(accessible.clone());
             info
         });
@@ -170,6 +182,9 @@ impl Dropdown {
         if inner.is_some() {
             ui.ctx().accesskit_node_builder(popup_id, |node| {
                 node.set_role(egui::accesskit::Role::ListBox);
+                if let Some(name) = &self.label {
+                    node.set_label(name.clone());
+                }
             });
         }
 

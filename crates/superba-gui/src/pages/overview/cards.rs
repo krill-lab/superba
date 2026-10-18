@@ -135,6 +135,20 @@ pub fn calm(ui: &Ui, cx: &Cx<'_>, rect: Rect, icon: Icon, tint: Color32, title: 
         font(text::BODY, Weight::Medium),
         cx.pal.text,
     );
+    // The state's words for screen readers (user bug 56).
+    let text = if body.is_empty() {
+        title.to_owned()
+    } else {
+        format!("{title}. {body}")
+    };
+    crate::design::a11y::text(
+        &ui.interact(
+            Rect::from_center_size(pos2(c.x, c.y + 40.0), vec2(rect.width(), 40.0)),
+            ui.scope_id().with(("overview-calm", title)),
+            Sense::hover(),
+        ),
+        &text,
+    );
     if !body.is_empty() {
         let mut job = egui::text::LayoutJob::single_section(
             body.to_owned(),
@@ -220,6 +234,10 @@ pub fn todo_card(ui: &mut Ui, cx: &Cx<'_>, todos: &[Todo], out: &mut Vec<Action>
                 Sense::click(),
             )
             .on_hover_cursor(CursorIcon::PointingHand);
+        let more = cx
+            .tr
+            .f("overview.todo.more", &[("n", &(todos.len() - shown))]);
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &more));
         let t = hover_t(ui, &resp);
         let b = Backdrop::of(ui.ctx());
         ui.painter().rect_filled(
@@ -230,8 +248,7 @@ pub fn todo_card(ui: &mut Ui, cx: &Cx<'_>, todos: &[Todo], out: &mut Vec<Action>
         ui.painter().text(
             pos2(row.min.x + 8.0, row.center().y),
             Align2::LEFT_CENTER,
-            cx.tr
-                .f("overview.todo.more", &[("n", &(todos.len() - shown))]),
+            more,
             font(text::SMALL, Weight::Medium),
             cx.pal.text_muted,
         );
@@ -252,6 +269,23 @@ fn todo_row(ui: &mut Ui, cx: &Cx<'_>, i: usize, t: &Todo, row: Rect, out: &mut V
     let bw = button.desired_size(ui).x;
     // The button on the right, centred vertically.
     let brect = Rect::from_min_size(pos2(row.max.x - bw, row.center().y - 14.0), vec2(bw, 28.0));
+    // The to-do's text first (screen readers read it before its button; the
+    // whole text is on hover too, rows are one line each).
+    let text_rect = Rect::from_min_max(
+        pos2(row.min.x, row.min.y),
+        pos2(brect.min.x - 6.0, row.max.y),
+    );
+    let full = match &t.detail {
+        Some(d) if !d.is_empty() => format!("{}\n{d}", t.title),
+        _ => t.title.clone(),
+    };
+    let text_resp = ui.interact(
+        text_rect,
+        ui.scope_id().with(("overview-todo-text", i)),
+        Sense::hover(),
+    );
+    crate::design::a11y::text(&text_resp, &full.replace('\n', ". "));
+    text_resp.on_hover_text(full);
     let mut child = ui.new_child(
         UiBuilder::new()
             .max_rect(brect)
@@ -299,19 +333,4 @@ fn todo_row(ui: &mut Ui, cx: &Cx<'_>, i: usize, t: &Todo, row: Rect, out: &mut V
             p.galley(pos2(text_x, row.center().y - th / 2.0), title, pal.text);
         }
     }
-    // The whole text is on hover (rows are one line each).
-    let text_rect = Rect::from_min_max(
-        pos2(row.min.x, row.min.y),
-        pos2(brect.min.x - 6.0, row.max.y),
-    );
-    let full = match &t.detail {
-        Some(d) if !d.is_empty() => format!("{}\n{d}", t.title),
-        _ => t.title.clone(),
-    };
-    ui.interact(
-        text_rect,
-        ui.scope_id().with(("overview-todo-text", i)),
-        Sense::hover(),
-    )
-    .on_hover_text(full);
 }

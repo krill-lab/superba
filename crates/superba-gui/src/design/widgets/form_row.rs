@@ -22,6 +22,10 @@
 //!
 //! The row draws in the parent's clip rectangle, so focus rings around its
 //! controls are never cut.
+//!
+//! A text label names the row's controls for screen readers (user bug 56):
+//! every control without a name of its own (a text field, a dropdown, a
+//! segmented control) is labelled by it ([`crate::design::a11y`]).
 
 use egui::{
     Align, AsIdSalt, FontSelection, IdSalt, Label, Layout, Rect, TextWrapMode, Ui, UiBuilder,
@@ -181,17 +185,23 @@ impl FormRow {
                     WidgetText::Text(s) => WidgetText::from(Text::small(s, pal)),
                     other => other,
                 };
+                // The label is drawn first; its node names the controls.
+                let label_id = std::cell::Cell::new(None);
                 let out = self.show_inner(
                     ui,
-                    Some(move |ui: &mut Ui| {
-                        ui.add(
+                    Some(|ui: &mut Ui| {
+                        let r = ui.add(
                             Label::new(text)
                                 .wrap_mode(TextWrapMode::Extend)
                                 .selectable(false),
-                        )
-                        .rect
+                        );
+                        label_id.set(Some(r.id));
+                        r.rect
                     }),
-                    add,
+                    |ui: &mut Ui| match label_id.get() {
+                        Some(id) => crate::design::a11y::label_unnamed_by(ui, id, add),
+                        None => add(ui),
+                    },
                 );
                 FormRowResponse {
                     inner: out.inner.1,
@@ -216,14 +226,28 @@ impl FormRow {
     }
 
     /// Draw the row with a label drawn by `add_label` (widgets in a left-to-right
-    /// layout, centered on the line) and the controls added by `add`.
+    /// layout, centered on the line) and the controls added by `add`. The first
+    /// label widget that names something (a text, a radio button) names the
+    /// controls that have no name of their own.
     pub fn show_with<L, R>(
         self,
         ui: &mut Ui,
         add_label: impl FnOnce(&mut Ui) -> L,
         add: impl FnOnce(&mut Ui) -> R,
     ) -> FormRowResponse<(L, R)> {
-        let out = self.show_inner(ui, Some(add_label), add);
+        let label_id = std::cell::Cell::new(None);
+        let out = self.show_inner(
+            ui,
+            Some(|ui: &mut Ui| {
+                let (inner, id) = crate::design::a11y::first_named(ui, add_label);
+                label_id.set(id);
+                inner
+            }),
+            |ui: &mut Ui| match label_id.get() {
+                Some(id) => crate::design::a11y::label_unnamed_by(ui, id, add),
+                None => add(ui),
+            },
+        );
         FormRowResponse {
             inner: (
                 out.inner.0.expect("the label closure always runs"),

@@ -512,6 +512,8 @@ fn banner_line(
     );
     let (r, resp) = child.allocate_exact_size(g.size(), Sense::hover());
     child.painter().galley(r.min, g, cx.pal.text);
+    // The whole line for screen readers (user bug 56), the tip as its description.
+    crate::design::a11y::text(&resp, line);
     resp.on_hover_text(tip);
     let mut clicked = false;
     if let Some((label, enabled)) = button {
@@ -582,7 +584,8 @@ fn usage_banner(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Actio
 /// Tabs on the left, search on the right.
 fn tab_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     ui.horizontal(|ui| {
-        let mut seg = Segmented::new("router-tabs", &mut state.tab);
+        let mut seg =
+            Segmented::new("router-tabs", &mut state.tab).label(cx.tr.t(Page::Usage.title_key()));
         for t in Tab::ALL {
             seg = seg.option(t, cx.tr.t(t.key()));
         }
@@ -592,7 +595,8 @@ fn tab_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 let edit = egui::TextEdit::singleline(&mut state.search)
                     .hint_text(cx.tr.t("requests.search"))
                     .desired_width(260.0);
-                let r = ui.add(edit);
+                // Named by what it searches (its only visible label is the hint).
+                let r = ui.add(edit).accessible_name(cx.tr.t("requests.search"));
                 if state.focus_search {
                     state.focus_search = false;
                     r.request_focus();

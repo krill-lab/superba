@@ -25,7 +25,7 @@ use crate::design::tokens::{size, space};
 use crate::design::widgets::{Button, PagedTable, RowContent, Status, Table, list_row, paint_row};
 use crate::pages::shared::providers::{Provider, ProviderKind};
 use crate::pages::shared::{auto_facts, decision_with, ordered_lines};
-use crate::pages::{Action, Cx};
+use crate::pages::{Action, Cx, Page};
 
 /// Display name of a provider.
 pub(super) fn name(cx: &Cx<'_>, p: &Provider) -> String {
@@ -108,6 +108,8 @@ pub(super) fn show(
     let mut rename_drawn = false;
     let rename = &mut state.rename;
     let r = PagedTable::new("providers-list", Table::new(&[1.0]), total, &mut state.list)
+        .label(cx.tr.t(Page::Providers.title_key()))
+        .row_name(|row| row_content(cx, &all[row]).accessible_name())
         .row_height(size::ROW_LIST2)
         .tiles(space::XS)
         .keys_when_idle(!modal)
@@ -291,9 +293,8 @@ fn primary_latency(cx: &Cx<'_>, p: &Provider) -> Option<String> {
     caps.latency_ms.map(|ms| format!("{ms} ms"))
 }
 
-/// One row; returns where the name was drawn.
-fn row_ui(ui: &mut Ui, cx: &Cx<'_>, p: &Provider) -> Rect {
-    let rect = ui.max_rect();
+/// What one row shows.
+fn row_content(cx: &Cx<'_>, p: &Provider) -> RowContent {
     let mut row = RowContent::new(icon(p), name(cx, p));
     row.dot = p.applied.then(|| cx.pal.status(Status::Ok));
     row.subtitle = Some(secondary(cx, p));
@@ -303,6 +304,13 @@ fn row_ui(ui: &mut Ui, cx: &Cx<'_>, p: &Provider) -> Rect {
         // "In use" alone sits on the value line.
         row.value = row.secondary.take();
     }
+    row
+}
+
+/// One row; returns where the name was drawn.
+fn row_ui(ui: &mut Ui, cx: &Cx<'_>, p: &Provider) -> Rect {
+    let rect = ui.max_rect();
+    let row = row_content(cx, p);
     let name_rect = paint_row(ui, rect, &row);
     ui.allocate_rect(rect, Sense::hover());
     name_rect

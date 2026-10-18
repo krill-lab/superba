@@ -228,13 +228,15 @@ pub(super) fn rename_field(
         ui.spacing_mut().item_spacing.y = 2.0;
         // Keep the field's border off the tile's top edge.
         ui.add_space(3.0);
-        let r = ui.add(
-            TextEdit::singleline(&mut edit.text)
-                .id(id)
-                .font(font(text::BODY, Weight::Medium))
-                .desired_width(ui.available_width())
-                .margin(vec2(6.0, 1.0)),
-        );
+        let r = ui
+            .add(
+                TextEdit::singleline(&mut edit.text)
+                    .id(id)
+                    .font(font(text::BODY, Weight::Medium))
+                    .desired_width(ui.available_width())
+                    .margin(vec2(6.0, 1.0)),
+            )
+            .accessible_name(cx.tr.t("sites.form.name"));
         let problem = check(&edit.text);
         let (enter, escape) = ui.input(|i| (i.key_pressed(Key::Enter), i.key_pressed(Key::Escape)));
         let had_focus = r.has_focus() || r.lost_focus();

@@ -44,6 +44,7 @@ pub struct SpeedTiers<'a> {
     not_offered: String,
     small: bool,
     enabled: bool,
+    label: Option<String>,
 }
 
 impl<'a> SpeedTiers<'a> {
@@ -61,7 +62,15 @@ impl<'a> SpeedTiers<'a> {
             not_offered: String::new(),
             small: false,
             enabled: true,
+            label: None,
         }
+    }
+
+    /// The accessible name of the control ("Speed"), when no visible label
+    /// next to it names it.
+    pub fn label(mut self, name: impl Into<String>) -> Self {
+        self.label = Some(name.into());
+        self
     }
 
     /// Label and tooltip of `tier` (the default label is the tier's English name).
@@ -93,6 +102,9 @@ impl<'a> SpeedTiers<'a> {
     pub fn show(self, ui: &mut Ui) -> Response {
         let current = *self.value;
         let mut seg = Segmented::new(self.id, self.value);
+        if let Some(name) = self.label {
+            seg = seg.label(name);
+        }
         if self.small {
             seg = seg.small();
         }

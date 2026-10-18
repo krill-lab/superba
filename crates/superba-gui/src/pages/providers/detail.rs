@@ -48,6 +48,7 @@ pub(super) fn show(
     ui.horizontal(|ui| {
         let mut tab = state.tab;
         let mut seg = Segmented::new("providers-tab", &mut tab)
+            .label(super::list::name(cx, p))
             .option(Tab::Connection, cx.tr.t("providers.tab.connection"))
             .small();
         if account {

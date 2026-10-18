@@ -84,6 +84,7 @@ unreachable = "未连接"
 app_command = "由 app 中该主机的命令决定"
 
 [updates.picker]
+version = "要安装的版本"
 prerelease = "包含预发布版本"
 empty = "没有可选的版本"
 

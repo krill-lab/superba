@@ -70,6 +70,7 @@ pub struct Segmented<'a, T: PartialEq + Clone> {
     min_segment: f32,
     max_segment: f32,
     overflow: Option<Overflow<T>>,
+    label: Option<String>,
 }
 
 impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
@@ -84,7 +85,16 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             min_segment: 0.0,
             max_segment: f32::INFINITY,
             overflow: None,
+            label: None,
         }
+    }
+
+    /// The accessible name of the group (what it chooses, e.g. "Time range"):
+    /// for a control without a visible label next to it. Inside a
+    /// [`super::FormRow`] the row's label names it.
+    pub fn label(mut self, name: impl Into<String>) -> Self {
+        self.label = Some(name.into());
+        self
     }
 
     /// Add an option.
@@ -242,6 +252,12 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
         };
         let (track, mut response) =
             ui.allocate_exact_size(vec2(width, self.height), Sense::focusable_noninteractive());
+        // The track is the group's node: a radio group of the segments below.
+        crate::design::a11y::describe(
+            &response,
+            egui::accesskit::Role::RadioGroup,
+            self.label.as_deref().unwrap_or_default(),
+        );
         let n = self.segments.len().max(1);
         let cells = natural.len().max(1);
         let widths: Vec<f32> = if self.full_width {
@@ -432,9 +448,15 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
                 pal.text_muted
             };
             paint_content(&painter, rect, None, galley, color, true);
+            // Named by its own label ("More"), the chosen item as its value.
+            let name = o.label.clone();
+            let value = overflow_sel
+                .map(|i| o.items[i].1.clone())
+                .unwrap_or_default();
             r.widget_info(|| {
                 let mut info = WidgetInfo::new(egui::Role::ComboBox);
-                info.current_text_value = Some(label.clone());
+                info.label = Some(name.clone());
+                info.current_text_value = Some(value.clone());
                 info.selected = Some(is_sel);
                 info
             });

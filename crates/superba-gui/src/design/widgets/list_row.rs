@@ -87,6 +87,19 @@ impl RowContent {
             secondary: None,
         }
     }
+
+    /// What the row shows as one line, for screen readers (user bug 56): the
+    /// name, the line under it, the value and the line under the value.
+    pub fn accessible_name(&self) -> String {
+        std::iter::once(&self.title)
+            .chain(&self.subtitle)
+            .chain(&self.value)
+            .chain(&self.secondary)
+            .filter(|s| !s.trim().is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 /// Side of the icon tile in a row of height `h`.

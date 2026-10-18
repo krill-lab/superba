@@ -773,6 +773,35 @@ pub fn is_resolved(title: &SessionTitle) -> bool {
     title.source != TitleSource::ShortKey
 }
 
+/// A request row's accessible name (user bug 56): when, which session, how it
+/// ended, the model and the cost, as a screen reader reads the row.
+pub fn row_name(
+    tr: &Tr,
+    titles: &BTreeMap<String, SessionTitle>,
+    row: &RequestRow,
+    now: Timestamp,
+) -> String {
+    let (_, status) = status_cell(tr, row);
+    let status = match status_reason(tr, row) {
+        Some(reason) => format!("{status} · {reason}"),
+        None => status,
+    };
+    [
+        date_cell(row.started_at, now),
+        session_cell(tr, titles, row),
+        status,
+        row.model.clone().unwrap_or_default(),
+        match row.cost {
+            Some(_) => format!("{} {}", tr.t("requests.col.cost"), cost_cell(row.cost)),
+            None => String::new(),
+        },
+    ]
+    .into_iter()
+    .filter(|s| !s.is_empty() && s != DASH)
+    .collect::<Vec<_>>()
+    .join(", ")
+}
+
 /// One cell of the 13 columns.
 pub fn cell(
     tr: &Tr,

@@ -1,4 +1,5 @@
-//! Modal dialogs: dimmed backdrop, centered card, 24 px padding.
+//! Modal dialogs: dimmed backdrop, centered card, 24 px padding. The first
+//! text a dialog shows (its title) names it for screen readers (user bug 56).
 
 use egui::{Frame, Id, Margin, Modal, ModalResponse, Shadow, Stroke, Ui};
 
@@ -30,6 +31,10 @@ pub fn dialog<R>(
         .show(ctx, |ui| {
             ui.set_width(width);
             ui.spacing_mut().item_spacing.y = 8.0;
-            add(ui)
+            let (inner, title) = crate::design::a11y::first_text(ui, add);
+            if let Some(title) = title {
+                crate::design::a11y::name_dialog(ui, title);
+            }
+            inner
         })
 }

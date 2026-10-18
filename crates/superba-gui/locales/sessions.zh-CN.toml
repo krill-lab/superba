@@ -2,6 +2,9 @@
 # sessions.en.toml with the same {placeholders} (tests/i18n_tests.rs).
 
 [sessions]
+a11y.hosts = "主机"
+a11y.history = "迁移历史"
+a11y.providers = "按供应商统计的会话"
 col.archived = "已归档"
 col.change = "变化"
 col.provider = "Provider"

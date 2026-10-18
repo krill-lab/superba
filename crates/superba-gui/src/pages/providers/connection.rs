@@ -335,7 +335,9 @@ fn base_url(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
         .default_line()
         .and_then(|l| cx.data.site_caps(&site.id, &l.id));
     let probing = cx.data.probing_site(&site.id);
-    ui.label(Text::strong(cx.tr.t("providers.base_url"), cx.pal));
+    let url_label = ui
+        .label(Text::strong(cx.tr.t("providers.base_url"), cx.pal))
+        .id;
     ui.horizontal(|ui| {
         ui.set_min_height(LINE_H);
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -359,6 +361,7 @@ fn base_url(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
                 .desired_width((ui.available_width() - reserve).max(200.0))
                 .margin(vec2(10.0, 6.0)),
         )
+        .labelled_by(url_label)
         .on_hover_text(cx.tr.t("providers.base_url_hint"));
         if changed
             && ui

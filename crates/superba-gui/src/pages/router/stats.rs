@@ -188,13 +188,17 @@ fn controls(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     let s = &mut state.stats;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        let mut seg = Segmented::new("router-stats-range", &mut s.range).small();
+        let mut seg = Segmented::new("router-stats-range", &mut s.range)
+            .small()
+            .label(cx.tr.t("requests.range.name"));
         for r in Range::ALL {
             seg = seg.option(r, cx.tr.t(r.key()));
         }
         seg.show(ui);
         ui.label(Text::small(cx.tr.t("requests.stats.group"), cx.pal));
-        let mut seg = Segmented::new("router-stats-by", &mut s.by).small();
+        let mut seg = Segmented::new("router-stats-by", &mut s.by)
+            .small()
+            .label(cx.tr.t("requests.stats.group"));
         for (by, key) in GROUPS {
             seg = seg.option(by, cx.tr.t(key));
         }
@@ -204,6 +208,7 @@ fn controls(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             Segmented::new("router-stats-metric", &mut s.metric)
                 .small()
+                .label(cx.tr.t("requests.stats.metric.name"))
                 .option(Metric::Cost, cx.tr.t("requests.stats.metric.cost"))
                 .option(Metric::Requests, cx.tr.t("requests.stats.metric.requests"))
                 .show(ui);
@@ -423,6 +428,7 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     // Numbers as in 最近请求: right-aligned under right-aligned headers, in the
     // UI font at caption size (ux-visual #8).
     PagedTable::new("router-stats-table", table, rows.len(), &mut s.table)
+        .label(cx.tr.t("usage.tab.stats"))
         .header(headers)
         .right_aligned(&(1..11).collect::<Vec<_>>())
         .show(ui, |ui, row, col| {

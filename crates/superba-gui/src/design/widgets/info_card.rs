@@ -199,7 +199,10 @@ impl<'a> InfoCard<'a> {
                 ui.set_min_height((self.min_height - pad_y).max(0.0));
                 ui.spacing_mut().item_spacing.y = LINE_GAP;
                 let w = ui.available_width();
-                let (r, _) = ui.allocate_exact_size(vec2(w, TITLE_HEIGHT), Sense::hover());
+                let (r, title) = ui.allocate_exact_size(vec2(w, TITLE_HEIGHT), Sense::hover());
+                // The card's words for screen readers (user bug 56): its title,
+                // then each line as "label: value".
+                crate::design::a11y::text(&title, &self.title);
                 let g = elided(
                     ui,
                     &self.title,
@@ -265,6 +268,13 @@ fn copy_link(ui: &mut Ui, link: &CopyLink, r: egui::Rect, pal: &Palette) -> (f32
 fn info_line(ui: &mut Ui, line: &InfoLine, label_width: f32, pal: &Palette) -> Option<String> {
     let w = ui.available_width();
     let (r, resp) = ui.allocate_exact_size(vec2(w, LINE_HEIGHT), Sense::hover());
+    crate::design::a11y::text(
+        &resp,
+        &match &line.label {
+            Some(label) => format!("{label}: {}", line.value),
+            None => line.value.clone(),
+        },
+    );
     let (right, copied) = match &line.copy {
         Some(link) => {
             let (right, clicked) = copy_link(ui, link, r, pal);

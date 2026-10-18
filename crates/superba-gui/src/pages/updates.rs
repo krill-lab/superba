@@ -1325,7 +1325,11 @@ impl InstallPicker {
             .target
             .as_ref()
             .map(|v| (v, self.target_tags.as_slice()));
-        if let Some(v) = version_picker(ui, cx, &mut self.shown, &id, &self.items, selected) {
+        let name = cx.tr.t("updates.picker.version");
+        let picked = crate::design::a11y::name_unnamed(ui, &name, |ui| {
+            version_picker(ui, cx, &mut self.shown, &id, &self.items, selected)
+        });
+        if let Some(v) = picked {
             picks.insert(self.key.clone(), v);
             self.chosen = true;
             ui.ctx().request_repaint();

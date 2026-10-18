@@ -142,6 +142,7 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             .map(|p| provider_label(cx, p))
             .unwrap_or_default();
         Dropdown::new("models-provider")
+            .label(cx.tr.t("models.provider"))
             .selected_text(name)
             .width(if narrow { 140.0 } else { 170.0 })
             .show_ui(ui, |ui| {
@@ -163,13 +164,15 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             });
         ui.label(Text::small(cx.tr.t("models.provider"), cx.pal));
         ui.add_space(8.0);
-        let r = ui.add(
-            TextEdit::singleline(&mut state.query)
-                .id(egui::Id::unique("models-search"))
-                .hint_text(cx.tr.t("models.search"))
-                .desired_width(if narrow { 120.0 } else { 170.0 })
-                .margin(vec2(10.0, 5.0)),
-        );
+        let r = ui
+            .add(
+                TextEdit::singleline(&mut state.query)
+                    .id(egui::Id::unique("models-search"))
+                    .hint_text(cx.tr.t("models.search"))
+                    .desired_width(if narrow { 120.0 } else { 170.0 })
+                    .margin(vec2(10.0, 5.0)),
+            )
+            .accessible_name(cx.tr.t("models.search"));
         if state.focus_search {
             r.request_focus();
             state.focus_search = false;
@@ -325,6 +328,7 @@ fn model_picker(
     };
     ui.add_enabled_ui(!read_only, |ui| {
         Dropdown::new(("models-default", &view.profile_id))
+            .label(cx.tr.t("models.default_model"))
             .selected_text(shown)
             .width(if narrow { 112.0 } else { 150.0 })
             .menu_height(360.0)
@@ -375,6 +379,7 @@ fn effort_picker(
         .unwrap_or_else(|| codex_default.clone());
     ui.add_enabled_ui(!read_only, |ui| {
         Dropdown::new(("models-effort", &view.profile_id))
+            .label(cx.tr.t("models.effort"))
             .selected_text(shown)
             .width(if narrow { 84.0 } else { 96.0 })
             .show_ui(ui, |ui| {
@@ -409,6 +414,7 @@ fn speed_control(
         &view.speed.offered,
     )
     .small()
+    .label(cx.tr.t("models.speed.label"))
     .enabled(!read_only)
     .not_offered(cx.tr.t("models.speed.none"));
     for t in SpeedTier::ALL {
@@ -704,6 +710,7 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
         ..
     } = state;
     PagedTable::new(("models", &view.profile_id), columns, total, table)
+        .label(cx.tr.t(Page::Models.title_key()))
         .header(headers)
         .row_height(size::ROW_TABLE2)
         .keys_when_idle(true)
@@ -1305,15 +1312,17 @@ fn upstream(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, value: String) {
         // Not editing: show the stored name, never a copy from an older view.
         buffer.clone_from(&value);
     }
-    let r = ui.add_enabled(
-        !rc.read_only,
-        TextEdit::singleline(buffer)
-            .id(id)
-            .font(egui::TextStyle::Monospace)
-            .hint_text(slug)
-            .desired_width(128.0)
-            .margin(vec2(8.0, 4.0)),
-    );
+    let r = ui
+        .add_enabled(
+            !rc.read_only,
+            TextEdit::singleline(buffer)
+                .id(id)
+                .font(egui::TextStyle::Monospace)
+                .hint_text(slug)
+                .desired_width(128.0)
+                .margin(vec2(8.0, 4.0)),
+        )
+        .accessible_name(format!("{} · {slug}", rc.cx.tr.t("models.col.upstream")));
     let mut picked = None;
     let ids: Vec<&str> = rc
         .saved
@@ -1325,6 +1334,7 @@ fn upstream(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, value: String) {
         .collect();
     ui.add_enabled_ui(!rc.read_only && !ids.is_empty(), |ui| {
         Dropdown::new(("models-upstream-pick", slug))
+            .label(rc.cx.tr.t("models.upstream.pick"))
             .selected_text("")
             .width(20.0)
             .menu_height(300.0)
@@ -1705,7 +1715,8 @@ fn price_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, saved: &Sav
                         .font(egui::TextStyle::Monospace)
                         .desired_width(120.0)
                         .margin(vec2(8.0, 4.0)),
-                );
+                )
+                .accessible_name(cx.tr.t(label));
             });
         }
         if let Some(e) = &d.error {

@@ -4,7 +4,12 @@
 //! footnote at the bottom. Sub-entries (a provider's lines) sit indented under
 //! their entry, with their own counts and a guide line. The rows scroll inside
 //! the list (log-style); the column collapses to a narrow strip with a chevron.
+//!
+//! Screen readers and UI Automation (user bug 56) see the grouping as tabs, the
+//! chevron as a button named by its tooltip, and every entry as a selectable,
+//! invokable list item named "label, count".
 
+use egui::accesskit::Role;
 use egui::{CursorIcon, Id, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
 
 use super::log_table::elided;
@@ -117,9 +122,16 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
         );
         if *self.collapsed {
             let b = Rect::from_min_size(rect.min, vec2(COLLAPSED_WIDTH, COLLAPSED_WIDTH));
-            if chevron(ui, self.id.with("expand"), b, Icon::ChevronRight, pal)
-                .on_hover_text(&self.collapse_tip.1)
-                .clicked()
+            if chevron(
+                ui,
+                self.id.with("expand"),
+                b,
+                Icon::ChevronRight,
+                &self.collapse_tip.1,
+                pal,
+            )
+            .on_hover_text(&self.collapse_tip.1)
+            .clicked()
             {
                 *self.collapsed = false;
                 out.collapsed_changed = true;
@@ -163,6 +175,7 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
                 let resp = ui
                     .interact(r, self.id.with(("group", i)), Sense::click())
                     .on_hover_cursor(CursorIcon::PointingHand);
+                crate::design::a11y::selectable(&resp, Role::Tab, &label, selected);
                 let color = if selected || resp.hovered() {
                     pal.text
                 } else {
@@ -192,6 +205,7 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
             self.id.with("collapse"),
             chevron_r,
             Icon::ChevronDown,
+            &self.collapse_tip.0,
             pal,
         )
         .on_hover_text(&self.collapse_tip.0)
@@ -247,6 +261,7 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
         let mut list_ui = ui.new_child(
             UiBuilder::new()
                 .max_rect(list)
+                .accessibility_role(Role::List)
                 .layout(egui::Layout::top_down(egui::Align::Min)),
         );
         list_ui.set_clip_rect(list.intersect(ui.clip_rect()));
@@ -308,6 +323,12 @@ fn entry(
     let resp = ui
         .interact(r, id, Sense::click())
         .on_hover_cursor(CursorIcon::PointingHand);
+    crate::design::a11y::selectable(
+        &resp,
+        Role::ListItem,
+        &format!("{label}, {}", group_digits(count)),
+        selected,
+    );
     if selected {
         ui.painter().rect_filled(r, radius::CONTROL, pal.active);
     } else if resp.hovered() {
@@ -358,10 +379,11 @@ fn entry(
     resp
 }
 
-fn chevron(ui: &mut Ui, id: Id, r: Rect, icon: Icon, pal: &Palette) -> egui::Response {
+fn chevron(ui: &mut Ui, id: Id, r: Rect, icon: Icon, name: &str, pal: &Palette) -> egui::Response {
     let resp = ui
         .interact(r, id, Sense::click())
         .on_hover_cursor(CursorIcon::PointingHand);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     if resp.hovered() {
         ui.painter().rect_filled(r, radius::CONTROL, pal.hover);
     }

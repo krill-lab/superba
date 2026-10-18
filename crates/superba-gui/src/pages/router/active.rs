@@ -91,6 +91,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         .selected
         .and_then(|id| rows.iter().position(|r| r.id == id));
     let resp = LogTable::new("router-active", &columns, rows.len())
+        .label(cx.tr.t("usage.tab.active"))
         .selected(selected)
         .show(ui, |row, col| {
             requests::active_cell(cx.tr, titles, rows[row], ActiveCol::ALL[col])

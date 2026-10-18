@@ -637,10 +637,14 @@ fn custom_step(ui: &mut Ui, cx: &Cx<'_>, d: &mut AddDialog, close: &mut bool) {
             d.focused = true;
         }
         let row_h = ui.spacing().interact_size.y;
-        FormRow::unlabeled().height(row_h).show(ui, |ui| {
-            field_label(ui, cx, &cx.tr.t("providers.base_url"));
-            ui.label(Text::caption(cx.tr.t("providers.base_url_hint"), cx.pal));
-        });
+        let url_label = FormRow::unlabeled()
+            .height(row_h)
+            .show(ui, |ui| {
+                let l = field_label(ui, cx, &cx.tr.t("providers.base_url"));
+                ui.label(Text::caption(cx.tr.t("providers.base_url_hint"), cx.pal));
+                l.id
+            })
+            .inner;
         ui.add(
             TextEdit::singleline(&mut d.url)
                 .id(egui::Id::unique("providers-add-url"))
@@ -648,7 +652,8 @@ fn custom_step(ui: &mut Ui, cx: &Cx<'_>, d: &mut AddDialog, close: &mut bool) {
                 .hint_text("https://api.example.com/v1")
                 .desired_width(f32::INFINITY)
                 .margin(vec2(12.0, 8.0)),
-        );
+        )
+        .labelled_by(url_label);
         let l = field_label(ui, cx, &cx.tr.t("sites.form.key"));
         KeyField::new(
             "providers-add-custom-key",

@@ -3,8 +3,14 @@
 //! page re-anchors on it), keyboard navigation (↑ ↓ PgUp PgDn Home End Enter) and
 //! a [`Pager`] footer. Used by every catalog-style list of a Fit page instead of a
 //! scroll area.
+//!
+//! Screen readers and UI Automation (user bug 56) see a named list (a table
+//! when it has a header row), its column headers, and one selectable,
+//! invokable item per row in view, named by [`PagedTable::row_name`] or else by
+//! the texts its cells show; the cells' widgets are the row's children.
 
-use egui::{Id, Key, Rect, Response, Sense, Stroke, Ui, UiBuilder, vec2};
+use egui::accesskit::Role;
+use egui::{Id, Key, Rect, Response, Sense, Stroke, Ui, UiBuilder, WidgetInfo, vec2};
 
 use super::{Pager, Table};
 use crate::design::fonts::{Weight, font};
@@ -120,6 +126,9 @@ pub struct PagedResponse {
 /// Extra footer content drawn right-aligned next to the pager.
 type FooterFn<'a> = Box<dyn FnOnce(&mut Ui) + 'a>;
 
+/// The accessible name of a row.
+type RowNameFn<'a> = Box<dyn Fn(usize) -> String + 'a>;
+
 /// A paged, selectable table filling the height it is given.
 #[must_use = "call .show(ui, ..)"]
 pub struct PagedTable<'a> {
@@ -134,6 +143,8 @@ pub struct PagedTable<'a> {
     footer_extra: Option<FooterFn<'a>>,
     tile_gap: Option<f32>,
     right_aligned: Vec<usize>,
+    label: String,
+    row_name: Option<RowNameFn<'a>>,
 }
 
 impl<'a> PagedTable<'a> {
@@ -156,7 +167,23 @@ impl<'a> PagedTable<'a> {
             footer_extra: None,
             tile_gap: None,
             right_aligned: Vec::new(),
+            label: String::new(),
+            row_name: None,
         }
+    }
+
+    /// The list's accessible name ("Providers").
+    pub fn label(mut self, name: impl Into<String>) -> Self {
+        self.label = name.into();
+        self
+    }
+
+    /// The accessible name of row `row` (index into the whole list): what it
+    /// shows, read as one line. Default: the texts of the labels its cells
+    /// add. Called only for rows in view while AccessKit is on.
+    pub fn row_name(mut self, name: impl Fn(usize) -> String + 'a) -> Self {
+        self.row_name = Some(Box::new(name));
+        self
     }
 
     /// Right-align the header labels of these columns (numbers, whose cells
@@ -237,6 +264,16 @@ impl<'a> PagedTable<'a> {
             ),
         );
         let response = ui.interact(rows_rect, self.id, Sense::focusable_noninteractive());
+        let a11y = crate::design::a11y::enabled(ui);
+        // A table with a header row, otherwise a list (of tiles).
+        let (list_role, row_role) = if self.header.is_some() {
+            (Role::Table, Role::Row)
+        } else {
+            (Role::List, Role::ListItem)
+        };
+        if a11y {
+            crate::design::a11y::describe(&response, list_role, &self.label);
+        }
         let focused = response.has_focus();
         if focused {
             ui.memory_mut(|m| {
@@ -285,6 +322,10 @@ impl<'a> PagedTable<'a> {
                     font(text::CAPTION, Weight::Medium),
                     pal.text_subtle,
                 );
+                if a11y && !label.is_empty() {
+                    ui.interact(*col, self.id.with(("header", i)), Sense::hover())
+                        .widget_info(|| WidgetInfo::labeled(egui::Role::ColumnHeader, true, label));
+                }
             }
             ui.painter()
                 .hline(r.x_range(), r.max.y - 0.5, Stroke::new(1.0, pal.border));
@@ -315,16 +356,27 @@ impl<'a> PagedTable<'a> {
                 ui.painter()
                     .rect_filled(r, rr, pal.hover.gamma_multiply(0.6));
             }
-            for (i, col) in self.table.cells(r).into_iter().enumerate() {
-                let mut child = ui.new_child(
-                    UiBuilder::new()
-                        .max_rect(col)
-                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                );
-                child.spacing_mut().item_spacing.x = 6.0;
-                child.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                child.set_clip_rect(col.intersect(ui.clip_rect()));
-                cell(&mut child, row, i);
+            let row_id = resp.id;
+            let ((), texts) = crate::design::a11y::texts_added(ui, |ui| {
+                for (i, col) in self.table.cells(r).into_iter().enumerate() {
+                    let mut child = ui.new_child(
+                        UiBuilder::new()
+                            .max_rect(col)
+                            .accessibility_parent(row_id)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    );
+                    child.spacing_mut().item_spacing.x = 6.0;
+                    child.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                    child.set_clip_rect(col.intersect(ui.clip_rect()));
+                    cell(&mut child, row, i);
+                }
+            });
+            if a11y {
+                let name = match &self.row_name {
+                    Some(f) => f(row),
+                    None => texts.join(", "),
+                };
+                crate::design::a11y::selectable(&resp, row_role, &name, selected);
             }
             if row != last && self.tile_gap.is_none() {
                 ui.painter()

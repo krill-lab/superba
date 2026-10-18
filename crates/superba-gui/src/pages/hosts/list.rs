@@ -145,6 +145,12 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         // gets the whole width (no "Codex" caption beside it).
         row.subtitle = Some(hint(cx, h));
         row.value = version;
+        crate::design::a11y::selectable(
+            &resp,
+            egui::accesskit::Role::ListItem,
+            &row.accessible_name(),
+            selected,
+        );
         paint_row(ui, r, &row);
         if resp.clicked() {
             state.selected = Some(h.host.target_id.clone());

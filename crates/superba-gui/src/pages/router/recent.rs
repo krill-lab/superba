@@ -624,7 +624,9 @@ fn filters(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, two_rows: bool) {
 fn range_filter(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
     ui.spacing_mut().item_spacing.x = 6.0;
     let mut range = r.range;
-    let mut seg = Segmented::new("router-range", &mut range).small();
+    let mut seg = Segmented::new("router-range", &mut range)
+        .small()
+        .label(cx.tr.t("requests.range.name"));
     for x in Range::ALL {
         seg = seg.option(x, cx.tr.t(x.key()));
     }
@@ -665,6 +667,7 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
         members.push((Some(m.clone()), m.to_string()));
     }
     if Dropdown::new("router-f-member")
+        .label(cx.tr.t("requests.col.provider"))
         .width(widths[0])
         .show_options(ui, &mut r.member, &members)
         .changed()
@@ -685,6 +688,7 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
         models.push((Some(m.clone()), m.clone()));
     }
     if Dropdown::new("router-f-model")
+        .label(cx.tr.t("requests.col.model"))
         .width(widths[1])
         .show_options(ui, &mut r.model, &models)
         .changed()
@@ -710,6 +714,7 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
         ),
     ];
     if Dropdown::new("router-f-status")
+        .label(cx.tr.t("requests.col.status"))
         .width(widths[2])
         .show_options(ui, &mut r.status, &statuses)
         .changed()
@@ -732,6 +737,7 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
         ),
     ];
     if Dropdown::new("router-f-client")
+        .label(cx.tr.t("requests.col.client"))
         .width(widths[3])
         .show_options(ui, &mut r.client, &clients)
         .changed()
@@ -747,6 +753,7 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
                 .map(|s| (Some(*s), cx.tr.text(&s.text()))),
         );
         if Dropdown::new("router-f-source")
+            .label(cx.tr.t("requests.filter.source.name"))
             .width(widths[4])
             .show_options(ui, &mut r.source, &sources)
             .changed()
@@ -774,6 +781,8 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     let reveal = std::mem::take(&mut r.reveal).then_some(selected).flatten();
     let shown = &r.shown;
     let resp = LogTable::new("router-requests", &columns, shown.len())
+        .label(cx.tr.t("usage.tab.recent"))
+        .row_name(|row| requests::row_name(cx.tr, titles, &shown[row], cx.now))
         .selected(selected)
         .sort(sort_col, r.sort.descending)
         .totals(totals)

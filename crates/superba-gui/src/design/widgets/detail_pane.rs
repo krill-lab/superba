@@ -7,7 +7,12 @@
 //! hairline on top is a [`split_handle`] the user drags to resize it (double
 //! click: back to the content height). A body taller than the pane scrolls
 //! inside it.
+//!
+//! Screen readers and UI Automation (user bug 56) see the title and the status
+//! as texts, the tabs as selectable, invokable tabs named by their labels, and
+//! the body as the selected tab's panel.
 
+use egui::accesskit::Role;
 use egui::{CursorIcon, Id, Rangef, Rect, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
 
 use super::Status;
@@ -154,11 +159,13 @@ impl<'a> DetailPane<'a> {
                 pal.text_muted,
             );
             let x = right - g.size().x;
-            ui.painter().galley(
-                pos2(x, title_r.center().y - g.size().y / 2.0),
-                g,
-                pal.text_muted,
+            let status_r =
+                Rect::from_min_size(pos2(x, title_r.center().y - g.size().y / 2.0), g.size());
+            crate::design::a11y::text(
+                &ui.interact(status_r, self.id.with("status"), Sense::hover()),
+                label,
             );
+            ui.painter().galley(status_r.min, g, pal.text_muted);
             ui.painter()
                 .circle_filled(pos2(x - 8.0, title_r.center().y), 3.5, pal.status(*status));
             right = x - 18.0;
@@ -170,11 +177,17 @@ impl<'a> DetailPane<'a> {
             pal.text,
             right - title_r.min.x - 4.0,
         );
-        ui.painter().galley(
+        let title_text_r = Rect::from_min_size(
             pos2(title_r.min.x + 4.0, title_r.center().y - g.size().y / 2.0),
-            g,
-            pal.text,
+            g.size(),
         );
+        if !self.title.is_empty() {
+            crate::design::a11y::text(
+                &ui.interact(title_text_r, self.id.with("title"), Sense::hover()),
+                &self.title,
+            );
+        }
+        ui.painter().galley(title_text_r.min, g, pal.text);
         // Tabs.
         let tabs_r =
             Rect::from_min_size(pos2(rect.min.x, title_r.max.y), vec2(rect.width(), TABS_H));
@@ -210,6 +223,7 @@ impl<'a> DetailPane<'a> {
                     Stroke::new(2.0, pal.text),
                 );
             }
+            crate::design::a11y::selectable(&resp, Role::Tab, label, selected);
             if resp.clicked() && !selected {
                 *self.tab = i;
                 out.tab_changed = true;
@@ -223,12 +237,15 @@ impl<'a> DetailPane<'a> {
         );
         // Body.
         let body_r = Rect::from_min_max(pos2(rect.min.x, tabs_r.max.y + BODY_GAP), rect.max);
-        let mut child = ui.new_child(
-            UiBuilder::new()
-                .max_rect(body_r)
-                .id_salt(self.id.with("body"))
-                .layout(egui::Layout::top_down(egui::Align::Min)),
-        );
+        let mut builder = UiBuilder::new()
+            .max_rect(body_r)
+            .id_salt(self.id.with("body"))
+            .accessibility_role(Role::TabPanel)
+            .layout(egui::Layout::top_down(egui::Align::Min));
+        if let Some(label) = self.tabs.get(*self.tab) {
+            builder = builder.accessibility_label(label.clone());
+        }
+        let mut child = ui.new_child(builder);
         child.set_clip_rect(body_r.intersect(ui.clip_rect()));
         body(&mut child, *self.tab);
         ui.allocate_rect(rect, Sense::hover());

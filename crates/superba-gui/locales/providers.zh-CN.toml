@@ -154,6 +154,7 @@ form.rejected = "站点未通过校验：{detail}"
 form.required = "请输入名称、基础 URL 和 API 密钥。"
 
 [usage]
+models.title = "按模型用量"
 col.cached = "缓存"
 col.cost = "花费"
 col.input = "输入"

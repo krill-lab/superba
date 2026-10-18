@@ -380,6 +380,7 @@ fn members(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, snapshot: &model::Snapsh
                 .map(|c| candidate_label(cx, c))
                 .unwrap_or_else(|| cx.tr.t("router.members.pick"));
             Dropdown::new("router-add-member")
+                .label(cx.tr.t("router.members.candidate"))
                 .selected_text(selected)
                 .width(260.0)
                 .show_ui(ui, |ui| {

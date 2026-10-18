@@ -10,11 +10,19 @@
 //! Only the rows in view are built (`ScrollArea::show_viewport`), and cells are
 //! painted directly, so ten thousand rows cost the same per frame as twenty.
 //! The table scrolls inside its own area; the page around it never scrolls.
+//!
+//! Screen readers and UI Automation (user bug 56) see a named table, column
+//! headers (sortable ones invokable, with their sort order), one row per
+//! request in view named by a readable summary ([`LogTable::row_name`]; by
+//! default its cells' texts), selectable and invokable, and its cells with
+//! their full, unshortened texts. The cell nodes are built only while
+//! AccessKit is on.
 
+use egui::accesskit::{Role, SortDirection};
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Color32, CursorIcon, FontId, Id, Key, Rect, Response, ScrollArea, Sense, Stroke, Ui, UiBuilder,
-    pos2, vec2,
+    WidgetInfo, pos2, vec2,
 };
 
 use super::Status;
@@ -289,6 +297,9 @@ pub struct LogTableResponse {
     pub response: Response,
 }
 
+/// The accessible name of a row (its readable summary).
+type RowNameFn<'a> = Box<dyn Fn(usize) -> String + 'a>;
+
 /// The table. Build it, then call [`LogTable::show`] with a cell function.
 #[must_use = "call .show(ui, ..)"]
 pub struct LogTable<'a> {
@@ -302,6 +313,8 @@ pub struct LogTable<'a> {
     pill: Option<String>,
     scroll_to_top: bool,
     reveal: Option<usize>,
+    label: String,
+    row_name: Option<RowNameFn<'a>>,
 }
 
 impl<'a> LogTable<'a> {
@@ -322,7 +335,23 @@ impl<'a> LogTable<'a> {
             pill: None,
             scroll_to_top: false,
             reveal: None,
+            label: String::new(),
+            row_name: None,
         }
+    }
+
+    /// The table's accessible name ("Recent requests").
+    pub fn label(mut self, name: impl Into<String>) -> Self {
+        self.label = name.into();
+        self
+    }
+
+    /// The accessible name of row `row`: a readable summary of what it shows
+    /// (default: its cells' texts, comma separated). Called only for rows in
+    /// view while AccessKit is on.
+    pub fn row_name(mut self, name: impl Fn(usize) -> String + 'a) -> Self {
+        self.row_name = Some(Box::new(name));
+        self
     }
 
     /// Row height (default 26 px).
@@ -392,6 +421,17 @@ impl<'a> LogTable<'a> {
             ),
         );
         let response = ui.interact(rows_rect, self.id, Sense::focusable_noninteractive());
+        let a11y = crate::design::a11y::enabled(ui);
+        if a11y {
+            response.ctx.accesskit_node_builder(response.id, |node| {
+                node.set_role(Role::Table);
+                if !self.label.is_empty() {
+                    node.set_label(self.label.clone());
+                }
+                node.set_row_count(self.rows);
+                node.set_column_count(self.columns.len());
+            });
+        }
         let widths = column_widths(self.columns, rect.width());
         let xs: Vec<(f32, f32)> = widths
             .iter()
@@ -421,6 +461,17 @@ impl<'a> LogTable<'a> {
                 r = r.on_hover_cursor(CursorIcon::PointingHand);
             }
             let sorted = self.sort.filter(|(c, _)| *c == i);
+            // A column header named by its label, with its sort order.
+            r.widget_info(|| WidgetInfo::labeled(egui::Role::ColumnHeader, true, &col.label));
+            if let Some((_, desc)) = sorted {
+                r.ctx.accesskit_node_builder(r.id, |node| {
+                    node.set_sort_direction(if desc {
+                        SortDirection::Descending
+                    } else {
+                        SortDirection::Ascending
+                    });
+                });
+            }
             let arrow_w = if sorted.is_some() { 10.0 } else { 0.0 };
             let color = if sorted.is_some() || r.hovered() {
                 pal.text
@@ -548,6 +599,7 @@ impl<'a> LogTable<'a> {
         let strong_font = font(text::CAPTION, Weight::Medium);
         let mono = mono_font(text::CAPTION, Weight::Regular);
         let mut clicked = None;
+        let row_name = self.row_name.as_ref();
         let out = area.show_viewport(&mut body_ui, |ui, viewport| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
             ui.set_height(row_h * self.rows as f32);
@@ -574,12 +626,19 @@ impl<'a> LogTable<'a> {
                 }
                 let mut tip = None;
                 let pointer_x = resp.hover_pos().map(|p| p.x);
+                let mut texts = Vec::new();
                 for (c, (col, (x, w))) in columns.iter().zip(&xs).enumerate() {
                     if *w <= 0.0 {
                         continue;
                     }
                     let cell_rect = Rect::from_min_size(pos2(*x, r.min.y), vec2(*w, row_h));
                     let content = cell(row, c);
+                    if a11y {
+                        cell_node(ui, resp.id, cell_rect, row, c, &content);
+                        if !content.text.is_empty() {
+                            texts.push(content.text.clone());
+                        }
+                    }
                     let f = if content.mono {
                         mono.clone()
                     } else if content.strong {
@@ -594,6 +653,14 @@ impl<'a> LogTable<'a> {
                             .clone()
                             .or_else(|| elided_text.then(|| content.text.clone()));
                     }
+                }
+                if a11y {
+                    // A selectable, invokable row named by its summary.
+                    let name = row_name.map_or_else(|| texts.join(", "), |f| f(row));
+                    crate::design::a11y::selectable(&resp, Role::Row, &name, is_sel);
+                    resp.ctx.accesskit_node_builder(resp.id, |node| {
+                        node.set_row_index(row);
+                    });
                 }
                 let resp = match tip {
                     Some(t) if !t.is_empty() => resp.on_hover_text(t),
@@ -661,6 +728,7 @@ impl<'a> LogTable<'a> {
             let r = ui
                 .interact(pr, id.with("pill"), Sense::click())
                 .on_hover_cursor(CursorIcon::PointingHand);
+            r.widget_info(|| WidgetInfo::labeled(egui::Role::Button, true, label));
             let fill = if r.hovered() {
                 pal.primary_hover
             } else {
@@ -689,6 +757,29 @@ impl<'a> LogTable<'a> {
             response,
         }
     }
+}
+
+/// The accessibility node of one cell of the row `row_id`: its full text, the
+/// hover text as its description.
+fn cell_node(ui: &mut Ui, row_id: Id, rect: Rect, row: usize, column: usize, content: &LogCell) {
+    let mut builder = UiBuilder::new()
+        .max_rect(rect)
+        .id_salt(("superba-log-cell", row, column))
+        .accessibility_parent(row_id)
+        .accessibility_role(Role::Cell);
+    if !content.text.is_empty() {
+        builder = builder.accessibility_label(content.text.clone());
+    }
+    let child = ui.new_child(builder);
+    child
+        .ctx()
+        .accesskit_node_builder(child.unique_id(), |node| {
+            node.set_row_index(row);
+            node.set_column_index(column);
+            if let Some(t) = content.tooltip.as_ref().filter(|t| **t != content.text) {
+                node.set_description(t.clone());
+            }
+        });
 }
 
 /// Paint one cell; true when its text was elided.

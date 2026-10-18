@@ -452,6 +452,7 @@ fn switcher(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, hosts: &[HostEntry]) {
         let longest =
             ((ui.available_width() - SCAN_TIME_W) / shown as f32).clamp(HOST_MIN, HOST_MAX);
         let mut seg = Segmented::new("sessions-hosts", &mut pick)
+            .label(cx.tr.t("sessions.a11y.hosts"))
             .small()
             .max_segment(longest)
             .option(None, cx.tr.t("sessions.host.local"));
@@ -565,6 +566,7 @@ fn provider_table(
     let table = Table::new(&[1.4, 0.8, 1.0, 1.0, 0.8, 1.4]);
     let mut copy = None;
     PagedTable::new("sessions-providers", table, providers.len(), paging)
+        .label(cx.tr.t("sessions.a11y.providers"))
         .header(headers)
         .row_height(size::ROW + 8.0)
         .show(ui, |ui, row, col| {
@@ -684,6 +686,7 @@ fn history(
     let table = Table::new(&[1.2, 1.8, 0.8, 1.0, 1.0]);
     let note = cx.tr.t("sessions.history.note");
     PagedTable::new("sessions-history", table, history.len(), paging)
+        .label(cx.tr.t("sessions.a11y.history"))
         .header(headers)
         .row_height(size::ROW + 4.0)
         .footer(|ui| {

@@ -154,6 +154,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
             if usage_api {
                 let mut d = acc.days;
                 if Segmented::new(("providers-usage-range", profile.as_str()), &mut d)
+                    .label(cx.tr.t("requests.range.name"))
                     .option(7, cx.tr.t("usage.range.7"))
                     .option(30, cx.tr.t("usage.range.30"))
                     .small()
@@ -545,6 +546,7 @@ fn models_table(ui: &mut Ui, cx: &Cx<'_>, u: &UsageReport, state: &mut PagedStat
     let table = Table::new(&[2.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
     let rows = &u.models;
     PagedTable::new("providers-usage-models", table, rows.len(), state)
+        .label(cx.tr.t("usage.models.title"))
         .header(headers)
         .row_height(size::ROW)
         .footer(|ui| {

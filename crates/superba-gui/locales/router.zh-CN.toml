@@ -74,6 +74,7 @@ ran_short = "本机资源在 {time} 前吃紧：出现 {files} 次「打开的�
 unlimited = "不限"
 
 [router.members]
+candidate = "要添加的供应商"
 title = "成员（按优先级）"
 help = "按优先级排列的供应商。会话固定在一个成员上，只有该成员的所有线路都失败时才会换成员；401 / 403 / 429 不会换到别处重试。"
 empty = "还没有成员：在下方添加供应商。"
@@ -178,11 +179,13 @@ line_unknown = "线路未知"
 line_unknown_tip = "来自 Codex 会话记录，或在任何线路应答前失败的请求"
 
 [requests.range]
+name = "时间范围"
 24h = "24 小时"
 7d = "7 天"
 30d = "30 天"
 
 [requests.filter]
+source.name = "来源"
 source.all = "全部来源"
 all_providers = "全部供应商"
 all_models = "全部模型"
@@ -412,6 +415,7 @@ session = "会话"
 day = "日期"
 
 [requests.stats.metric]
+name = "图表显示"
 requests = "请求数"
 cost = "费用"
 

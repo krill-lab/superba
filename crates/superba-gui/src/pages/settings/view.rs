@@ -187,13 +187,15 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, events: &mu
         ui.spacing_mut().item_spacing.x = 8.0;
         scope_label(ui, cx, model);
         provider_picker(ui, cx, model, events);
-        let search = ui.add(
-            TextEdit::singleline(&mut state.filter.query)
-                .id(egui::Id::unique("codex-settings-search"))
-                .hint_text(cx.tr.t("codex_settings.search"))
-                .desired_width(220.0)
-                .margin(vec2(10.0, 6.0)),
-        );
+        let search = ui
+            .add(
+                TextEdit::singleline(&mut state.filter.query)
+                    .id(egui::Id::unique("codex-settings-search"))
+                    .hint_text(cx.tr.t("codex_settings.search"))
+                    .desired_width(220.0)
+                    .margin(vec2(10.0, 6.0)),
+            )
+            .accessible_name(cx.tr.t("codex_settings.search"));
         if state.focus_search {
             search.request_focus();
             state.focus_search = false;
@@ -326,6 +328,7 @@ fn provider_picker(ui: &mut Ui, cx: &Cx<'_>, model: &Model, events: &mut Events)
         .unwrap_or_else(|| cx.tr.t("codex_settings.no_profile_short"));
     ui.add_enabled_ui(list.len() > 1, |ui| {
         Dropdown::new("codex-settings-profile")
+            .label(cx.tr.t("codex_settings.provider"))
             .selected_text(selected)
             .width(150.0)
             .show_ui(ui, |ui| {
@@ -463,6 +466,7 @@ fn list(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, docked: bool
     let columns = Table::new(&[1.0, 0.0]).min_widths(&[0.0, CHIP_W]);
     let pending = state.pending.clone();
     let r = PagedTable::new("codex-settings-list", columns, total, &mut state.table)
+        .label(cx.tr.t(crate::pages::Page::Settings.title_key()))
         .row_height(size::ROW_LIST2)
         .without_pager()
         .keys_when_idle(true)

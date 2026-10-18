@@ -155,6 +155,7 @@ form.rejected = "The site was rejected: {detail}"
 form.required = "Enter a name, a base URL and an API key."
 
 [usage]
+models.title = "Usage by model"
 col.cached = "Cached"
 col.cost = "Cost"
 col.input = "Input"

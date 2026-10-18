@@ -75,6 +75,7 @@ ran_short = "This computer ran short {time} ago: {files} \"too many open files\"
 unlimited = "unlimited"
 
 [router.members]
+candidate = "Provider to add"
 title = "Members (by priority)"
 help = "Providers in priority order. A conversation stays with its member; it moves only when every line of that member fails. 401, 403 and 429 are never retried elsewhere."
 empty = "No members yet: add a provider below."
@@ -179,11 +180,13 @@ line_unknown = "Line unknown"
 line_unknown_tip = "requests from Codex session files, or that failed before any line answered"
 
 [requests.range]
+name = "Time range"
 24h = "24 h"
 7d = "7 days"
 30d = "30 days"
 
 [requests.filter]
+source.name = "Source"
 source.all = "All sources"
 all_providers = "All providers"
 all_models = "All models"
@@ -413,6 +416,7 @@ session = "Session"
 day = "Day"
 
 [requests.stats.metric]
+name = "Chart shows"
 requests = "Requests"
 cost = "Cost"
 

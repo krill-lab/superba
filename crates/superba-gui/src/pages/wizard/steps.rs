@@ -338,11 +338,14 @@ pub(super) fn stepper(ui: &mut Ui, cx: &Cx<'_>, w: &Wizard) {
     }
 }
 
-fn heading(ui: &mut Ui, cx: &Cx<'_>, title: &str, body: &str) {
-    ui.label(Text::h1(title, cx.pal));
+/// The step's title and explanation; returns the title's id (it names the
+/// step's only field for screen readers).
+fn heading(ui: &mut Ui, cx: &Cx<'_>, title: &str, body: &str) -> egui::Id {
+    let id = ui.label(Text::h1(title, cx.pal)).id;
     ui.add_space(4.0);
     ui.add(egui::Label::new(Text::muted(body, cx.pal)).wrap());
     ui.add_space(18.0);
+    id
 }
 
 fn check_row(ui: &mut Ui, cx: &Cx<'_>, status: Status, title: String, detail: String) {
@@ -767,7 +770,7 @@ pub(super) fn credentials(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Ve
         .as_ref()
         .map(|s| cx.tr.text(&s.name))
         .unwrap_or_default();
-    heading(
+    let title = heading(
         ui,
         cx,
         &cx.tr
@@ -811,7 +814,8 @@ pub(super) fn credentials(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Ve
         &placeholder,
         cx.tr.t("wizard.credentials.reveal"),
     )
-    .show(ui);
+    .show(ui)
+    .labelled_by(title);
     if !w.key.trim().is_empty() {
         w.use_original_key = false;
     }
@@ -843,14 +847,14 @@ fn custom_form(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
         &cx.tr.t("wizard.credentials.custom.body"),
     );
     let field = |ui: &mut Ui, label: String, value: &mut String, hint: &str, mono: bool| {
-        ui.label(Text::caption(label, cx.pal));
+        let l = ui.label(Text::caption(label, cx.pal));
         let mut edit = TextEdit::singleline(value)
             .hint_text(hint)
             .desired_width(ui.available_width());
         if mono {
             edit = edit.font(egui::TextStyle::Monospace);
         }
-        ui.add(edit);
+        ui.add(edit).labelled_by(l.id);
         ui.add_space(8.0);
     };
     field(
@@ -867,7 +871,7 @@ fn custom_form(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
         "https://api.example.com/v1",
         true,
     );
-    ui.label(Text::caption(cx.tr.t("wizard.custom.key"), cx.pal));
+    let l = ui.label(Text::caption(cx.tr.t("wizard.custom.key"), cx.pal));
     KeyInput::new(
         "wizard-custom-key",
         &mut w.key,
@@ -875,7 +879,8 @@ fn custom_form(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
         "",
         cx.tr.t("wizard.credentials.reveal"),
     )
-    .show(ui);
+    .show(ui)
+    .labelled_by(l.id);
     if w.custom.saved.is_some() && w.key.trim().is_empty() {
         ui.add_space(4.0);
         ui.label(Text::small(cx.tr.t("wizard.custom.key_kept"), cx.pal));
@@ -1109,7 +1114,9 @@ fn picker_models(w: &Wizard) -> (Vec<(String, String)>, bool) {
 }
 
 fn model_picker(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
-    ui.label(Text::title(cx.tr.t("wizard.models.title"), cx.pal));
+    let title = ui
+        .label(Text::title(cx.tr.t("wizard.models.title"), cx.pal))
+        .id;
     ui.add_space(4.0);
     let loading = w.probe.is_some();
     let (models, upstream) = picker_models(w);
@@ -1125,21 +1132,23 @@ fn model_picker(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
         })
         .unwrap_or_else(|| default_label.clone());
     FormRow::unlabeled().height(size::CONTROL).show(ui, |ui| {
-        Dropdown::new("wizard-model")
-            .medium()
-            .width(320.0)
-            .selected_text(selected_label)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut w.model, None, default_label.clone());
-                for (slug, label) in &models {
-                    let text = if label == slug {
-                        slug.clone()
-                    } else {
-                        format!("{label} · {slug}")
-                    };
-                    ui.selectable_value(&mut w.model, Some(slug.clone()), text);
-                }
-            });
+        crate::design::a11y::label_unnamed_by(ui, title, |ui| {
+            Dropdown::new("wizard-model")
+                .medium()
+                .width(320.0)
+                .selected_text(selected_label)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut w.model, None, default_label.clone());
+                    for (slug, label) in &models {
+                        let text = if label == slug {
+                            slug.clone()
+                        } else {
+                            format!("{label} · {slug}")
+                        };
+                        ui.selectable_value(&mut w.model, Some(slug.clone()), text);
+                    }
+                });
+        });
         if loading {
             ui.add(StatusDot::new(Status::Busy));
         }

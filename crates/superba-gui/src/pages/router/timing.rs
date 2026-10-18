@@ -404,6 +404,21 @@ fn waterfall(ui: &Ui, cx: &Cx<'_>, steps: &[Step], rect: Rect) {
     let x_of = |ms: u64| track_left + (track_right - track_left) * (ms as f32 / span).min(1.0);
     for (i, step) in steps.iter().enumerate() {
         let mid = rect.min.y + i as f32 * LINE_H + LINE_H / 2.0;
+        // Each line's words for screen readers (user bug 56): mark, offset and
+        // the phase that ends there.
+        let line = Rect::from_min_size(
+            pos2(rect.min.x, mid - LINE_H / 2.0),
+            vec2(rect.width(), LINE_H),
+        );
+        let words = [labels[i].text(), offsets[i].text(), phases[i].text()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        crate::design::a11y::text(
+            &ui.interact(line, ui.scope_id().with(("timing-step", i)), Sense::hover()),
+            &words,
+        );
         let label = labels[i].clone();
         painter.galley(
             pos2(rect.min.x, mid - label.size().y / 2.0),

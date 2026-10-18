@@ -85,6 +85,7 @@ unreachable = "Not connected"
 app_command = "Decided by the app's command for this host"
 
 [updates.picker]
+version = "Version to install"
 prerelease = "Include pre-releases"
 empty = "No versions to choose from"
 

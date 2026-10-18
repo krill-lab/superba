@@ -556,15 +556,17 @@ fn draw_node(
     let chevron = n.menu.then(|| {
         let r = Rect::from_center_size(pos2(tx + tw + 12.0, label_y), vec2(20.0, 20.0));
         let cid = ui.scope_id().with(("overview-hero-menu", n.spot));
+        // Named as its tooltip says: the speed menu on the model, else the
+        // provider and line menu.
+        let label = cx.tr.t(match n.spot {
+            Spot::Model => "overview.hero.speed_menu",
+            _ => "overview.hero.switch_menu",
+        });
         let c = ui
             .interact(r, cid, Sense::click())
-            .on_hover_cursor(CursorIcon::PointingHand)
-            .on_hover_text(cx.tr.t(match n.spot {
-                Spot::Model => "overview.hero.speed_menu",
-                _ => "overview.hero.switch_menu",
-            }));
-        let label = cx.tr.t("overview.hero.switch_menu");
+            .on_hover_cursor(CursorIcon::PointingHand);
         c.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+        let c = c.on_hover_text(label);
         let ct = hover_t(ui, &c);
         let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&c));
         let fill = if open {
@@ -903,6 +905,7 @@ fn speed_popover(response: &egui::Response, cx: &Cx<'_>, out: &mut Vec<Action>) 
                 support.map_or_else(|| vec![SpeedTier::Standard], |s| s.offered.clone());
             let mut value = current;
             let mut control = SpeedTiers::new("overview-speed", &mut value, &offered)
+                .label(cx.tr.t("overview.speed.label"))
                 .small()
                 .enabled(!cx.busy && support.is_some())
                 .not_offered(cx.tr.t("overview.speed.not_offered"));

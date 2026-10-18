@@ -3,6 +3,9 @@
 # defined in another area file (tests/i18n_tests.rs).
 
 [sessions]
+a11y.hosts = "Host"
+a11y.history = "Migration history"
+a11y.providers = "Sessions by provider"
 col.archived = "Archived"
 col.change = "Change"
 col.provider = "Provider"

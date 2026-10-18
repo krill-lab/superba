@@ -288,7 +288,7 @@ impl CommandPalette {
             .desired_width(edit_rect.width())
             .align(Align2::LEFT_CENTER)
             .min_size(edit_rect.size());
-        let r = child.add(edit);
+        let r = child.add(edit).accessible_name(tr.t("palette.placeholder"));
         if self.focus {
             r.request_focus();
             self.focus = false;

@@ -556,6 +556,7 @@ fn path_field(
         width,
         &hint,
         enabled,
+        &cx.tr.t("codex_settings.detail.value"),
     );
     let enter = r.has_focus() && ui.input(|i| i.key_pressed(Key::Enter));
     let mut commit: Option<String> = None;
@@ -623,7 +624,8 @@ fn existing_parent(path: &str) -> Option<std::path::PathBuf> {
 /// A one-line text field. While it is not being edited and its text does not fit,
 /// it shows the text shortened by shape (a path keeps its file name, a URL its
 /// host) inside the same field frame; a click edits it. The response is the text
-/// field's (`changed`, `lost_focus`) while editing.
+/// field's (`changed`, `lost_focus`) while editing. `name` is its accessible
+/// name (user bug 56).
 fn field(
     ui: &mut Ui,
     id: Id,
@@ -631,6 +633,7 @@ fn field(
     width: f32,
     hint: &str,
     enabled: bool,
+    name: &str,
 ) -> egui::Response {
     let margin = vec2(6.0, 4.0);
     let editing_key = id.with("editing");
@@ -655,6 +658,7 @@ fn field(
                 .desired_width(width)
                 .margin(margin),
         );
+        let r = r.accessible_name(name);
         if wants_edit {
             r.request_focus();
             ui.data_mut(|d| d.remove::<bool>(editing_key));
@@ -668,6 +672,9 @@ fn field(
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(vec2(width, h), sense);
+    // A text field to screen readers too: a click edits it.
+    resp.widget_info(|| egui::WidgetInfo::text_edit(enabled, text.as_str(), text.as_str(), hint));
+    let resp = resp.accessible_name(name);
     if ui.is_rect_visible(rect) {
         let v = ui.visuals();
         let w = if resp.hovered() && enabled {
@@ -744,6 +751,7 @@ fn list_rows(
                 w,
                 "",
                 enabled,
+                &format!("{} {}", cx.tr.t("codex_settings.detail.value"), i + 1),
             );
             if focus == Some(i) {
                 r.request_focus();
@@ -877,6 +885,7 @@ fn map_rows_ui(
                 key_w,
                 &cx.tr.t("codex_settings.detail.key"),
                 enabled,
+                &format!("{} {}", cx.tr.t("codex_settings.detail.key"), i + 1),
             );
             if focus == Some(i) {
                 rk.request_focus();
@@ -892,6 +901,7 @@ fn map_rows_ui(
                 avail - key_w - 8.0,
                 &hint,
                 enabled,
+                &format!("{} {}", cx.tr.t("codex_settings.detail.map_value"), i + 1),
             );
             if rk.changed() || rv.changed() {
                 changed = true;
@@ -1076,6 +1086,7 @@ fn editor_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, model: &Mo
                                     .desired_rows(rows)
                                     .frame(egui::Frame::NONE),
                             )
+                            .accessible_name(ed.title.clone())
                         } else {
                             ui.add(
                                 TextEdit::multiline(&mut ed.buffer)
@@ -1087,6 +1098,7 @@ fn editor_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, model: &Mo
                                     .hint_text(cx.tr.t("codex_settings.editor.empty_hint"))
                                     .frame(egui::Frame::NONE),
                             )
+                            .accessible_name(ed.title.clone())
                         };
                         if !ed.focused {
                             resp.request_focus();
