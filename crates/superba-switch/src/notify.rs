@@ -295,8 +295,12 @@ impl Switcher {
             None
         };
         if let Some(f) = facts {
-            event.duration_ms = event.duration_ms.or(f.duration_ms);
-            event.tokens = event.tokens.or(f.tokens);
+            // A question in the middle of a turn: its time and tokens so far
+            // would read like a result.
+            if !event.kind.urgent() {
+                event.duration_ms = event.duration_ms.or(f.duration_ms);
+                event.tokens = event.tokens.or(f.tokens);
+            }
             event.model = event.model.take().or(f.model);
             event.cwd = event.cwd.take().or(f.cwd);
             if event.turn_id.is_none() {
