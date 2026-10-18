@@ -150,7 +150,7 @@ impl Switcher {
                     CodexFileKind::ConfigToml => {
                         let (consumers, _) = self.local_settings_inputs().await;
                         FileSchema {
-                            consumers,
+                            consumers: consumers.into_iter().map(short_label).collect(),
                             catalog: Some(d.catalog.clone()),
                         }
                     }
@@ -480,6 +480,17 @@ impl Switcher {
             .await
             .map_err(|e| Error::other(format!("backup task: {e}")))?
     }
+}
+
+/// A short name for a consumer in the check's messages ("Codex CLI 0.162.0"
+/// rather than the binary's path).
+fn short_label(mut c: SettingsConsumer) -> SettingsConsumer {
+    match c.consumer {
+        ConsumerKind::DesktopApp => c.label = "ChatGPT app".into(),
+        ConsumerKind::CliProcesses => c.label = "Codex CLI".into(),
+        _ => {}
+    }
+    c
 }
 
 /// The owned keys of a `config.toml` (none for `auth.json`).

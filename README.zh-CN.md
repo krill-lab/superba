@@ -90,6 +90,10 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
   回合；以及怎样切过去——app 内核由 Superba 重启，终端和编辑器给出具体操作
   （`codex resume --last`、“Developer: Restart Extension Host”，编辑器不会被关闭）。
   显示在概览的待办、每次切换之后和 `spb status` 中。
+- **手动编辑 Codex 的文件。** 设置 → **编辑 Codex 文件**（以及 `spb config edit`）可以编辑
+  本机、远程主机或 WSL 发行版上的 `config.toml` 和 `auth.json`：TOML / JSON 高亮，每次按键都按
+  读取该文件的 Codex 版本的设置项检查，格式化不丢注释，`auth.json` 里的密钥在你选择显示之前一直
+  隐藏，保存前显示差异，并加密保留被替换的每个版本。
 - **诊断。** 发现过期的 Codex 进程、外来的环境变量、无法解析的配置、钥匙串问题等。
 - 中英文界面。
 
@@ -265,6 +269,45 @@ spb restore --take-over          # 还原原始配置，连其他工具改过的
 Superba 读取其他工具的存储只是为了判断是谁做的修改，从不写入；也不支持两个工具同时管理同一组键：
 请选择交接或接管。
 
+## 手动编辑 config.toml 和 auth.json
+
+设置 → **编辑 Codex 文件**（命令面板里也有：*编辑 config.toml*、*编辑 auth.json*、*从备份还原
+config.toml*）直接编辑 Codex 自己的文件；用**位置**菜单可以切换到 Superba 管理的远程主机或 WSL 发行版。
+
+![编辑 Codex 文件](docs/screenshots/codex-files-light-zh.png)
+
+- **输入时即检查。** TOML 或 JSON 语法错误会带行号和列号标出下划线，这样的文件不能保存（Codex
+  无法用它启动）。`config.toml` 还会按读取它的每个 Codex（本机是 app 自带的 Codex 和 CLI，远程主机
+  是那台主机上的 Codex）的设置目录检查：值的类型不对是错误，仍可选择*仍然保存*（设置目录可能还不认识
+  更新的 Codex）；没有任何 Codex 认识的键、已弃用的键和旧名称是警告。`auth.json` 会检查 Codex 读取
+  的字段。点一下问题即可跳到对应位置。
+- **格式化**只整理空格和空行；注释、值以及它们的顺序保持不变。
+- **密钥保持隐藏。** `auth.json` 里的 API Key、PAT 和登录令牌显示为 `••••••••••••1234`，直到你点
+  **显示密钥**；其余内容可以直接编辑而不必显示密钥，只改了一部分的占位符会被拒绝。密钥不会出现在日志、
+  差异（除非选择显示）或 `--json` 输出里。
+- **检查并保存**（Ctrl/Cmd+S）显示差异，以及这次修改会改动哪些 Superba 管理的键；只有文件仍是你打开
+  时的样子才会保存，并且会先加密备份被替换的文件（每个文件保留最近 50 份）。
+- **你的修改归你。** 你改过的、由 Superba 管理的键就是你的值：Superba 不会自行改回去，下一次切换会询问
+  你是保留还是由 Superba 接管，还原时也会保留（与在 Superba 之外做的任何修改一样，见上文；概览里会把它
+  列为你的修改）。
+- **哪些需要重启。** Codex 只在启动时读取这些文件；保存后 Superba 会列出仍在使用旧文件的每个正在运行的
+  Codex，**Codex 生效情况**会说明它们各自怎样用上新文件。
+- **备份。** 列出这个文件的每一份备份（编辑器保存前的、Superba 每次切换前保留的，以及 Superba 首次写入
+  之前的原始文件），每份都可以查看与编辑器内容的差异；还原某一份就像保存一次编辑，同样会先备份当前文件。
+
+![保存前检查](docs/screenshots/codex-files-review-light-zh.png)
+
+```sh
+spb config edit [config|auth] [--host H]   # 用 $VISUAL / $EDITOR（Windows 上为记事本）编辑，关闭编辑器后检查
+spb config check [config|auth]             # 按原样检查文件
+spb config backups [--file config|auth]    # 列出每份备份的 id、时间和来源
+spb config restore <id>                    # 先看差异，再还原
+```
+
+`spb config edit` 打开的是一份私有副本，编辑器关闭后检查（遇到语法错误会询问是否重新编辑），显示差异
+（除非加 `--show-secrets`，否则密钥会被隐藏），保存前先询问（`--yes` 跳过询问，`--force` 允许保存
+类型不对的值）。
+
 ## 热切换的原理
 
 Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环境变量，
@@ -328,6 +371,7 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 | `state_5.sqlite`、`thread_history_*.sqlite`、`sessions/**/rollout-*.jsonl` | 仅在迁移会话时 | 备份加迁移账本；`spb sessions rollback <id>` |
 | 远程主机的 `~/.codex` 和 shell 文件 | 仅限你选中的主机 | 在主机上按次备份；`spb remote rollback <目标>` |
 | 路由服务（Linux：`~/.config/systemd/user/superba-router.service`；macOS：`~/Library/LaunchAgents/com.krill.superba.router.plist`；Windows：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下的 `SuperbaRouter` 启动项） | 仅在安装了本地路由时 | `spb router uninstall` / `spb uninstall` |
+| 你在 Superba 里编辑的 `config.toml` / `auth.json`（本机、远程主机或 WSL） | 仅在你保存编辑或还原备份时 | 被替换的文件会先加密备份到数据目录（`backups/editor/`，每个文件保留最近 50 份）；设置 → 编辑 Codex 文件 → 备份，或 `spb config restore <id>` |
 | cc-switch / AI Toolbox 的存储 | 仅在从它们导入时 | 只读，从不写入（有未落盘改动的数据库会先复制到 Superba 缓存里的私有副本再读，读完即删） |
 | Superba 数据目录 | 始终 | `~/.local/share/superba`（Linux；设了 `$XDG_DATA_HOME` 时为 `$XDG_DATA_HOME/superba`）、`~/Library/Application Support/com.krill-code.Superba`（macOS）、`%LOCALAPPDATA%\krill-code\Superba\data`（Windows：本地、不漫游的用户目录）；可用 `SUPERBA_DATA_DIR` 覆盖 |
 
@@ -363,6 +407,8 @@ ChaCha20-Poly1305 加密。
 | `spb remote list \| apply \| rollback` | SSH 远程主机 |
 | `spb import ccs\|ai-toolbox [--dry-run] [--select 名称] [--on-conflict skip\|rename\|update]` | 从 cc-switch 或 AI Toolbox 导入 Codex 供应商（只读取它们的文件，不改动 Codex） |
 | `spb import usage ccs\|ai-toolbox [--dry-run] [--remove]` | 把 cc-switch 或 AI Toolbox 记录的 Codex 用量历史导入用量页面（只读；每条请求只导入一次） |
+| `spb config edit [config\|auth] [--host H] [--yes] [--force] [--show-secrets]` | 在 `$VISUAL` / `$EDITOR` 里手动编辑 Codex 的 `config.toml` / `auth.json`：关闭编辑器后检查、显示差异、保存前备份 |
+| `spb config check \| backups \| restore ID` | 按原样检查文件；列出全部备份；还原其中一份（先看差异） |
 | `spb doctor`、`spb recover`、`spb uninstall` | 诊断、崩溃恢复、彻底移除 |
 
 `spb switch --take-over`（`profile use` 同样可用）接管其他工具改过的键和凭据；`--keep-key PATH`
@@ -377,7 +423,8 @@ Ctrl-C 取消）、`--yes`（确认完整重启）、`--wait-turn` / `--force`�
 
 环境变量：`SUPERBA_DATA_DIR`（数据目录）、`SUPERBA_LOCALE`、`SUPERBA_APP_PATH`
 （指定桌面 app 安装位置）、`SUPERBA_APP_ARGS`（额外的 app 启动参数）、
-`SUPERBA_SECRET_BACKEND=keyring|file|auto`、`CODEX_HOME`。
+`SUPERBA_SECRET_BACKEND=keyring|file|auto`、`CODEX_HOME`、`VISUAL` / `EDITOR`
+（`spb config edit`）。
 
 ## Krill
 

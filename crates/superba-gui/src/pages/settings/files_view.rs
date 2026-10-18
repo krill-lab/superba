@@ -177,14 +177,6 @@ fn toolbar(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor) {
                 ed.open_file(cx, t, kind);
             }
         }
-        if let Some(doc) = &ed.doc {
-            ui.add(
-                egui::Label::new(Text::mono_muted(&doc.path, cx.pal))
-                    .truncate()
-                    .sense(Sense::hover()),
-            )
-            .on_hover_text(&doc.path);
-        }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let ready = ed.doc.is_some() && !ed.busy();
             if ui
@@ -239,6 +231,15 @@ fn toolbar(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor) {
             {
                 ed.format();
             }
+            // The path takes what is left, truncated next to the buttons.
+            if let Some(doc) = &ed.doc {
+                ui.add(
+                    egui::Label::new(Text::mono_muted(&doc.path, cx.pal))
+                        .truncate()
+                        .sense(Sense::hover()),
+                )
+                .on_hover_text(&doc.path);
+            }
         });
     });
     ui.add_space(4.0);
@@ -276,17 +277,26 @@ fn notes(ui: &mut Ui, cx: &Cx<'_>, ed: &mut Editor, out: &mut Vec<Action>) {
         .collect();
     if !present.is_empty() {
         let owner = owner_name(cx, ed);
+        let keys = if present.len() > 5 {
+            cx.tr.f(
+                "codex_editor.owned_more",
+                &[
+                    ("keys", &present[..4].join(", ")),
+                    ("n", &(present.len() - 4)),
+                ],
+            )
+        } else {
+            present.join(", ")
+        };
         line(
             ui,
             Status::Idle,
             match owner {
                 Some(o) => cx.tr.f(
                     "codex_editor.owned_named",
-                    &[("keys", &present.join(", ")), ("provider", &o)],
+                    &[("keys", &keys), ("provider", &o)],
                 ),
-                None => cx
-                    .tr
-                    .f("codex_editor.owned", &[("keys", &present.join(", "))]),
+                None => cx.tr.f("codex_editor.owned", &[("keys", &keys)]),
             },
         );
     }

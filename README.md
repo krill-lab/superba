@@ -122,6 +122,13 @@ Geist look).
   terminals and editors get the exact step (`codex resume --last`, "Developer:
   Restart Extension Host"; the editor is never closed). On the Overview's to-do,
   after every switch and in `spb status`.
+- **Edit Codex's files by hand.** Settings → **Edit Codex files** (and `spb
+  config edit`) opens `config.toml` or `auth.json` of this computer, a remote
+  host or a WSL distribution in an editor that highlights TOML / JSON, checks
+  every keystroke against the settings of the Codex versions reading that file,
+  tidies it without losing a comment, hides the keys of `auth.json` until you
+  show them, shows the diff before saving and keeps an encrypted backup of every
+  version it replaces.
 - **Doctor.** Finds stale Codex processes, foreign environment variables,
   unparseable configs, keyring problems and more.
 - English and Simplified Chinese.
@@ -344,6 +351,58 @@ Superba reads the other tools' stores only to say who made a change; it never
 writes to them, and two tools managing the same keys at the same time is not
 supported: hand off, or take over.
 
+## Editing config.toml and auth.json by hand
+
+Settings → **Edit Codex files** (also in the command palette: *Edit config.toml*,
+*Edit auth.json*, *Restore config.toml from a backup*) edits Codex's own files
+directly, for this computer or, from the **Where** menu, for a remote host or a
+WSL distribution Superba manages.
+
+![Edit Codex files](docs/screenshots/codex-files-dark-en.png)
+
+- **Checked as you type.** A TOML or JSON syntax error is underlined with its
+  line and column and the file cannot be saved (Codex could not start with it).
+  `config.toml` is also checked against the settings catalog of every Codex that
+  reads it (the app's bundled Codex and the CLI here, the host's Codex there): a
+  value of the wrong type is an error you can still save with *Save anyway* (the
+  catalog may not know a newer Codex yet), a key no Codex knows, a deprecated key
+  and an old name are warnings. `auth.json` is checked for the fields Codex
+  reads. Click a problem to jump to it.
+- **Format** tidies spacing and blank lines; comments, values and their order
+  stay exactly as they are.
+- **Secrets stay hidden.** The API key, PAT and login tokens of `auth.json` are
+  shown as `••••••••••••1234` until **Show secrets**; you can edit everything
+  else without revealing them, and a placeholder changed only partly is refused.
+  Keys never reach logs, diffs (unless shown) or `--json` output.
+- **Review & save** (Ctrl/Cmd+S) shows the diff, the keys Superba manages that
+  the edit changes, and saves only when the file is still what you opened.
+  The file it replaces is backed up first (encrypted, the newest 50 per file).
+- **Your edit stays yours.** A key Superba manages that you changed is your
+  value: Superba never changes it back by itself, the next switch asks whether to
+  keep it or take it over, and a restore keeps it (as with any change made
+  outside Superba, see above; the Overview lists it as your edit).
+- **What needs a restart.** Codex reads these files only when it starts; after a
+  save Superba names every running Codex still on the old file, and **Codex in
+  effect** says how each one picks up the new one.
+- **Backups.** Every backup of the file (the editor's, the copy Superba keeps
+  before each switch, and the original from before Superba first wrote it), each
+  with a diff to the editor; restoring one is saved like an edit, after a backup
+  of its own.
+
+![Review before saving](docs/screenshots/codex-files-review-dark-en.png)
+
+```sh
+spb config edit [config|auth] [--host H]   # $VISUAL / $EDITOR (notepad on Windows), checked when it closes
+spb config check [config|auth]             # check the file as it is
+spb config backups [--file config|auth]    # every backup with its id, time and source
+spb config restore <id>                    # the diff, then put it back
+```
+
+`spb config edit` opens a private copy, checks it when the editor closes (and
+offers to edit again on a syntax error), shows the diff (keys masked unless
+`--show-secrets`) and asks before saving (`--yes` to skip the question,
+`--force` to save values of the wrong type).
+
 ## How hot switching works
 
 Codex reads `config.toml`, `auth.json` and its environment only when its
@@ -425,6 +484,7 @@ See [SECURITY.md](SECURITY.md#the-local-router) for what the router can see.
 | `state_5.sqlite`, `thread_history_*.sqlite`, `sessions/**/rollout-*.jsonl` | only when you migrate sessions | backups plus a ledger; `spb sessions rollback <id>` |
 | Remote hosts' `~/.codex` and shell files | only for hosts you select | per-host backups on the host; `spb remote rollback <target>` |
 | Router service (Linux: `~/.config/systemd/user/superba-router.service`; macOS: `~/Library/LaunchAgents/com.krill.superba.router.plist`; Windows: the `SuperbaRouter` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`) | only while the local router is installed | `spb router uninstall` / `spb uninstall` |
+| `config.toml` / `auth.json` you edit in Superba (here, on a remote host or in WSL) | only when you save an edit or restore a backup | the file it replaces is backed up first, encrypted, in the data dir (`backups/editor/`, the newest 50 per file); Settings → Edit Codex files → Backups or `spb config restore <id>` |
 | cc-switch / AI Toolbox stores | only when you import from them | read only, never written (a database with pending changes is read from a private copy in Superba's cache, removed right after) |
 | Superba's data dir | always | `~/.local/share/superba` (Linux; `$XDG_DATA_HOME/superba` when set), `~/Library/Application Support/com.krill-code.Superba` (macOS), `%LOCALAPPDATA%\krill-code\Superba\data` (Windows: the local, non-roaming profile); override with `SUPERBA_DATA_DIR` |
 
@@ -460,6 +520,8 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | `spb remote list \| apply \| rollback` | SSH remote hosts |
 | `spb import ccs\|ai-toolbox [--dry-run] [--select NAMES] [--on-conflict skip\|rename\|update]` | import Codex providers from cc-switch or AI Toolbox (their files are only read; Codex is not changed) |
 | `spb import usage ccs\|ai-toolbox [--dry-run] [--remove]` | import the Codex usage history cc-switch or AI Toolbox recorded into the Usage page (read-only; once per request) |
+| `spb config edit [config\|auth] [--host H] [--yes] [--force] [--show-secrets]` | edit Codex's `config.toml` / `auth.json` by hand in `$VISUAL` / `$EDITOR`: checked when the editor closes, the diff, a backup before saving |
+| `spb config check \| backups \| restore ID` | check a file as it is; list every backup; put one back (the diff first) |
 | `spb doctor`, `spb recover`, `spb uninstall` | diagnostics, crash recovery, clean removal |
 
 `spb switch --take-over` (also `profile use`) takes over keys and the credential
@@ -475,7 +537,8 @@ confirmation, `5` cancelled.
 
 Environment: `SUPERBA_DATA_DIR` (data dir), `SUPERBA_LOCALE`, `SUPERBA_APP_PATH`
 (use this desktop app install), `SUPERBA_APP_ARGS` (extra app arguments),
-`SUPERBA_SECRET_BACKEND=keyring|file|auto`, `CODEX_HOME`.
+`SUPERBA_SECRET_BACKEND=keyring|file|auto`, `CODEX_HOME`, `VISUAL` / `EDITOR`
+(`spb config edit`).
 
 ## Krill
 

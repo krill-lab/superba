@@ -73,15 +73,15 @@ panics.
 
 | Trait | Purpose | Key methods |
 |---|---|---|
-| `ConfigEngine` | Owned keys of `config.toml` + `auth.json`, journal, baseline, login stash | pure: `render`, `inspect_files`, `capture_baseline` (shared with remote); `read_state`, `baseline`, `snapshot_baseline`, `plan`, `apply`, `rollback`, `recover`, `generations`, `active_credentials`, `login_stash` / `stash_login` / `load_login_stash` (by `StashScope`: local home or remote target) |
+| `ConfigEngine` | Owned keys of `config.toml` + `auth.json`, journal, baseline, login stash | pure: `render`, `inspect_files`, `capture_baseline` (shared with remote); `read_state`, `baseline`, `snapshot_baseline`, `plan`, `apply`, `rollback`, `recover`, `generations`, `active_credentials`, `login_stash` / `stash_login` / `load_login_stash` (by `StashScope`: local home or remote target), `owned_keys` |
 | `EnvPersister` | Persist `CODEX_AUTHAPI_BASE_URL` for future processes | `inspect`, `plan(var, EnvOp)`, `apply`, `revert`, `set_authapi_base_url`, `clear_authapi_base_url` |
 | `SecretStore` | Profile keys in the OS keyring (0600 file fallback) | `get`, `put`, `delete`, `backend` |
 | `ProfileStore` | `profiles.json` (`ProfileSet`: profiles, custom sites, settings) | `load`, `save` |
 | `LineProber` | Latency/health of lines, key validation, auth API health, models, Responses probe, WebSocket / zstd transport probe, remote compaction check, account and usage data | `probe`, `probe_all`, `check_key`, `check_authapi(site, origin, key)`, `list_models`, `probe_responses`, `probe_transports`, `probe_compaction`, `account_summary`, `usage_report` |
 | `SessionMigrator` | Session provider scan, migration with backup + ledger, rollback, crash recovery | `scan`, `plan`, `migrate`, `rollback`, `history`, `recover` |
 | `AppController` | Installs, CLI binaries, launch with CDP, bridge, hot restart, quit, processes, turn activity, renderer state, daemon, launcher entry | `detect_installs`, `codex_binaries`, `running_session`, `launch`, `probe_bridge`, `hot_restart`, `quit`, `full_restart`, `processes`, `session_and_processes`, `turn_activity`, `renderer_state`, `current_thread`, `return_to_thread`, `restart_daemon`, `stop_daemon`, `remote_connections`, `launcher_entry`, `set_launcher_entry`, `environment_stamp`, `forget_cached_probes`, `stop_process` |
-| `RemoteHosts` | SSH hosts: discovery, probe, remote apply/rollback, turn activity, verification | `discover(home, from_app, live)`, `probe`, `plan_apply`, `apply`, `rollback`, `turn_activity`, `verify(RemoteVerifyRequest)` |
-| `SwitchService` | Application service for GUI and CLI | `overview`, `sites`, `profile_set`, `save_profile`, `delete_profile`, `save_settings`, `save_site`, `delete_site`, `probe_lines`, `probe_site`, `line_transports`, `provider_compaction`, `import_scan`, `import_apply`, `import_usage`, `check_key`, `account`, `sessions`, `doctor`, `runtime`, `stop_processes`, `open_app`, `recover`, `plan`, `plan_settings`, `execute`, `settings_view`, `edit_settings`, `router_status`, `router_install`, `router_set_enabled`, `router_uninstall`, `router_watch`, `router_fall_back`, `environment_event`, `environment_generation` |
+| `RemoteHosts` | SSH hosts: discovery, probe, remote apply/rollback, turn activity, verification | `discover(home, from_app, live)`, `probe`, `plan_apply`, `apply`, `rollback`, `turn_activity`, `verify(RemoteVerifyRequest)`, `read_codex_file`, `write_codex_file` |
+| `SwitchService` | Application service for GUI and CLI | `overview`, `sites`, `profile_set`, `save_profile`, `delete_profile`, `save_settings`, `save_site`, `delete_site`, `probe_lines`, `probe_site`, `line_transports`, `provider_compaction`, `import_scan`, `import_apply`, `import_usage`, `check_key`, `account`, `sessions`, `doctor`, `runtime`, `stop_processes`, `open_app`, `recover`, `plan`, `plan_settings`, `execute`, `settings_view`, `edit_settings`, `router_status`, `router_install`, `router_set_enabled`, `router_uninstall`, `router_watch`, `router_fall_back`, `environment_event`, `environment_generation`, `codex_file`, `save_codex_file`, `codex_file_backups`, `codex_file_backup` |
 | `SwitchDecider` | Mid-execution questions (wait for turns, force quit, IPC failed, verification failed, close / stop Codex processes) | `decide(DecisionRequest) -> Decision` |
 | `SwitchEvents` | Progress events to the UI | `emit(SwitchEvent)` |
 | `Clock` | Injectable time (countdowns, ages) | `now`, `monotonic` |
@@ -329,6 +329,7 @@ Superba data dir (`SUPERBA_DATA_DIR` or the platform data dir,
 | `state.lock`, `journal/switch/` | switch |
 | `backups/first-write/`, `backups/switch/`, `backups/login-stash/` (encrypted), `backups/rc/` | config |
 | `secrets/` (0600 key files when no keyring) | config |
+| `backups/editor/` (the file editor: an encrypted copy of the file each save replaces, `index.json` with the backups and the last save per home and file; GitHub issue 9) | config (`codex_files::EditorStore`) |
 | `backups/migrate-<id>/` (sqlite backup, rollout pre-images, ledger) | sessions |
 | `app-sessions.json` (apps launched by Superba: pid, CDP port, start time) | appctl |
 | `remote/` (per-host cache, journals) | remote |
@@ -838,6 +839,61 @@ the `CODEX_AUTHAPI_BASE_URL` value the env persister set. Types in
   restore). The next profile switch is a new takeover (fresh baseline = the other
   tool's configuration), so a later restore returns to it. Verification never
   sends a kept foreign credential anywhere (`PlanContext::kept_foreign_auth`).
+
+### Editing Codex's files by hand (GitHub issue 9)
+
+Settings → Edit Codex files (`superba_gui::pages::settings::files`) and `spb
+config edit|check|backups|restore` edit `config.toml` / `auth.json` of the local
+home, a remote host or a WSL distribution through four `SwitchService` methods
+(`superba_switch::files`):
+
+- **Open** (`codex_file`): the bytes and their hash, the keys Superba owns there
+  (`ConfigEngine::owned_keys`; a host's `last_written`), whether it owns the
+  credential, and a `FileSchema` for the check: the Codex versions reading the
+  home (`local_consumers`: app-bundled Codex and CLI; the host's Codex from
+  `RemoteHosts::read_codex_file`, which reads it with the probe) and the
+  settings catalog of that OS. A pending config journal, an unreadable file or
+  non-UTF-8 text make the document read-only.
+- **Check** (`superba_config::codex_files`, pure, the same code in the GUI, `spb`
+  and the service): TOML (`toml_edit` spans) / JSON (`serde_json`, plus a small
+  span scanner) syntax with line and column; `config.toml` keys against the
+  catalog with the settings engine's `key_support` / `validate_value` (all
+  consumers missing = unknown key, deprecated / removed / legacy = warnings,
+  a wrong type = an error that needs `force`; unknown tables are reported once,
+  free-form tables are not descended); `auth.json` fields and types, a file
+  without credential, partly changed placeholders. Messages never quote values.
+  `format` tidies `config.toml` by normalising only `toml_edit` decor (key
+  prefixes, ` = `, trailing comments, one blank line before headers) and refuses
+  any result that parses to different data; `auth.json` is `serde_json` pretty.
+  `Masker` replaces secret string values of `auth.json` (names with `token`,
+  `key`, `secret`, `password`) by stable placeholders and puts them back.
+- **Save** (`save_codex_file`): under `state.lock` (never during a switch),
+  refused while a journal is pending, when the hash differs from the one opened
+  (`Error::Conflict`), on a syntax error, and without `force` on a catalog
+  error. The replaced file is sealed into `backups/editor/` first
+  (`EditorStore::backup`, the vault's key); then the local file is staged and
+  renamed after a second hash check (`codex_files::write_file`, auth.json 0600,
+  config.toml keeps its mode, symlinks written through), or the host's file is
+  replaced by the remote write script (per-home lock, compare and swap against
+  the bytes opened, a backup in `<CODEX_HOME>/.superba/backups/edit-<id>/`, no
+  first-write capture and no marker). The save is recorded
+  (`EditRecord`: home, file, time, hashes).
+- **Ownership (GH#5).** A save never touches `state.json`: Superba's owned keys
+  and credential stay what its last switch wrote, so a managed key the user
+  changed is ordinary drift. `Switcher::change_attribution` names the editor
+  (`ChangeSource::SuperbaEditor`) when every drifted part is in a file whose hash
+  is the editor's last save; the GUI lists it as a quiet to-do, never opens the
+  GH#5 dialog by itself and offers "Keep my edits, stop managing" as the
+  hand-off. The planner asks before a switch writes over it, restores keep it.
+- **In effect (GH#4).** `RuntimeView::edited` carries the last local save when
+  it is later than the applied generation; `runtime::effect_with_edit` counts a
+  consumer started before it as running the previous file. The save's result
+  carries the runtime view (local) or a reconnect note (remote).
+- **Backups** (`codex_file_backups`, `codex_file_backup`): the editor's (all
+  homes) plus, for the local home, the switch pre-images on disk
+  (`switch-g<generation>-<file>`) and the first-write originals
+  (`original-<file>`), newest first; a restore is a save with
+  `SaveReason::Restore` (and a backup of its own).
 
 ## 9. Security
 

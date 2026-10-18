@@ -215,6 +215,22 @@ back to the official ChatGPT login.
   on this computer, and with none applied the command says where a setting can
   be stored instead. `--profile` shows or edits one provider's own settings; the
   built-in `official` and `original` explain that they have none.
+- **Edit Codex files** (GitHub issue 9): Settings → Edit Codex files, the
+  command palette and `spb config edit|check|backups|restore` edit Codex's own
+  `config.toml` and `auth.json` of this computer, a remote host or a WSL
+  distribution. TOML / JSON highlighting with line numbers; a check as you type
+  (syntax errors with line and column are never saved, values of the wrong type
+  for the Codex versions reading the file need "Save anyway", unknown,
+  deprecated and renamed keys are warnings); Format keeps every comment;
+  `auth.json` keys are masked until shown (never in logs, diffs or `--json`);
+  the diff and the managed keys an edit changes are shown before saving; every
+  replaced version is backed up encrypted (newest 50 per file) and listed with
+  the switch pre-images and the original, each restorable with a diff. A save
+  is the user's own change (GH#5: never reverted by itself, the next switch
+  asks, a restore keeps it, named as the editor's on the Overview), and Codex in
+  effect (GH#4) names the running Codex still on the old file. `spb config edit`
+  uses `$VISUAL` / `$EDITOR` (notepad on Windows) on a private copy, checks it
+  when the editor closes and asks before saving.
 
 ### Router, usage and account
 

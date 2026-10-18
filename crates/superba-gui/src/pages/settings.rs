@@ -12,7 +12,8 @@
 //! `profile:<id>` (edit another provider's settings), `migrate` (queue every
 //! legacy migration), `search` (Ctrl/Cmd+F), `save` (Ctrl/Cmd+S), `files`,
 //! `files:config|auth[@<target>]` ("Edit Codex files", [`files`]: Codex's own
-//! `config.toml` / `auth.json` edited by hand, GitHub issue 9).
+//! `config.toml` / `auth.json` edited by hand, GitHub issue 9),
+//! `files-backups:config|auth` (the same, with its Backups dialog open).
 
 mod detail;
 pub mod editor;
@@ -432,22 +433,41 @@ fn files_palette(cx: &Cx<'_>) -> Vec<PaletteItem> {
         ),
     ]
     .into_iter()
-    .map(|(kind, key, short)| PaletteItem {
-        title: cx.tr.t(key),
-        detail: Some(cx.tr.t("codex_editor.palette.detail")),
-        keywords: vec![
-            kind.file_name().to_owned(),
-            "codex".into(),
-            "edit".into(),
-            "backup".into(),
-            "restore".into(),
-            "config".into(),
-        ],
-        group: PaletteGroup::Commands,
-        action: Action::PageCommand {
-            page: Page::Settings,
-            command: format!("files:{short}"),
-        },
+    .flat_map(|(kind, key, short)| {
+        [
+            PaletteItem {
+                title: cx.tr.t(key),
+                detail: Some(cx.tr.t("codex_editor.palette.detail")),
+                keywords: vec![
+                    kind.file_name().to_owned(),
+                    "codex".into(),
+                    "edit".into(),
+                    "config".into(),
+                ],
+                group: PaletteGroup::Commands,
+                action: Action::PageCommand {
+                    page: Page::Settings,
+                    command: format!("files:{short}"),
+                },
+            },
+            PaletteItem {
+                title: cx.tr.f(
+                    "codex_editor.palette.backups",
+                    &[("file", &kind.file_name())],
+                ),
+                detail: Some(cx.tr.t("codex_editor.palette.backups_detail")),
+                keywords: vec![
+                    kind.file_name().to_owned(),
+                    "backup".into(),
+                    "restore".into(),
+                ],
+                group: PaletteGroup::Commands,
+                action: Action::PageCommand {
+                    page: Page::Settings,
+                    command: format!("files-backups:{short}"),
+                },
+            },
+        ]
     })
     .collect()
 }
@@ -500,7 +520,14 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
 /// Run a command addressed to this page (see the module docs).
 pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     let _ = out;
-    if let Some(rest) = command.strip_prefix("files") {
+    if let Some(file) = command.strip_prefix("files-backups:") {
+        let kind = superba_core::CodexFileKind::parse(file).unwrap_or(state.files.kind());
+        let target = state.files.target();
+        state.files.open_file(cx, target, kind);
+        if state.files.dialog.is_none() {
+            state.files.open_backups(cx);
+        }
+    } else if let Some(rest) = command.strip_prefix("files") {
         // `files`, `files:config`, `files:auth`, `files:<file>@<target>`.
         let rest = rest.trim_start_matches(':');
         let (file, target) = match rest.split_once('@') {
