@@ -24,6 +24,22 @@ fn store(cache: &FontCache, face: &CjkFace) {
     );
 }
 
+fn set_modified(path: &Path, modified: SystemTime) {
+    File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(modified))
+        .unwrap();
+}
+
+fn cache_size(cache: &FontCache) -> u64 {
+    fs::read_dir(&cache.directory)
+        .unwrap()
+        .map(|e| e.unwrap().metadata().unwrap().len())
+        .sum()
+}
+
 #[test]
 fn cache_hit_and_source_path_index_weight_size_and_mtime_invalidation() {
     let (_dir, cache, face) = fixture();
@@ -91,39 +107,70 @@ fn cache_failure_and_source_change_during_conversion_do_not_block_rendering() {
 }
 
 #[test]
-fn cache_evicts_old_weights_to_bound_total_size_and_removes_abandoned_writes() {
+fn cache_evicts_old_weights_to_bound_total_size() {
     let (_dir, mut cache, mut face) = fixture();
     cache.limit = (GEIST_REGULAR.len() * 2) as u64;
     store(&cache, &face);
     let old = cache.key(&face).unwrap();
-    File::options()
-        .write(true)
-        .open(&old)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_secs(1)))
-        .unwrap();
+    set_modified(&old, UNIX_EPOCH + Duration::from_secs(1));
     face.weight = 500;
     store(&cache, &face);
+    let middle = cache.key(&face).unwrap();
+    set_modified(&middle, UNIX_EPOCH + Duration::from_secs(2));
+    assert_eq!(cache_size(&cache), cache.limit);
+    // The next write must evict the oldest of the two explicitly dated fonts.
     face.weight = 600;
     store(&cache, &face);
     assert!(!old.exists());
+    assert!(middle.exists());
     assert!(cache.read(&face).is_some());
-    let total: u64 = fs::read_dir(&cache.directory)
-        .unwrap()
-        .map(|e| e.unwrap().metadata().unwrap().len())
-        .sum();
+    let total = cache_size(&cache);
     assert!(total <= cache.limit);
+}
+
+#[test]
+fn cache_bounds_total_size_when_fonts_and_active_write_have_same_mtime() {
+    let (_dir, mut cache, mut face) = fixture();
+    cache.limit = (GEIST_REGULAR.len() * 2) as u64;
+    let modified = SystemTime::now();
+    store(&cache, &face);
+    let first = face.clone();
+    set_modified(&cache.key(&face).unwrap(), modified);
+    face.weight = 500;
+    store(&cache, &face);
+    set_modified(&cache.key(&face).unwrap(), modified);
+
+    // With equal mtimes this path sorts before both fonts. Under capacity
+    // pressure even an unexpired temporary file is eligible for eviction.
+    let active = cache.directory.join("active.tmp");
+    fs::write(&active, b"still writing").unwrap();
+    set_modified(&active, modified);
+    assert!(cache_size(&cache) > cache.limit);
+    cache.prune();
+    let total = cache_size(&cache);
+    assert!(total <= cache.limit);
+    assert!(!active.exists());
+    assert!(cache.read(&first).is_some());
+    assert!(cache.read(&face).is_some());
+}
+
+#[test]
+fn cache_removes_abandoned_writes_but_keeps_active_writes_without_capacity_pressure() {
+    let (_dir, mut cache, face) = fixture();
+    store(&cache, &face);
+    let modified = SystemTime::now();
     let abandoned = cache.directory.join("ct-v0-abandoned.tmp");
     fs::write(&abandoned, b"incomplete").unwrap();
-    File::options()
-        .write(true)
-        .open(&abandoned)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(UNIX_EPOCH))
-        .unwrap();
+    set_modified(&abandoned, modified - Duration::from_secs(2 * 3600));
     let active = cache.directory.join("ct-v1-active.tmp");
     fs::write(&active, b"still writing").unwrap();
+    set_modified(&active, modified);
+    // Both temporary files fit: deletion here must be due to age alone.
+    cache.limit = cache_size(&cache) + 1;
+    assert!(cache_size(&cache) < cache.limit);
     cache.prune();
     assert!(!abandoned.exists());
     assert!(active.exists());
+    assert_eq!(fs::read(&active).unwrap(), b"still writing");
+    assert!(cache.read(&face).is_some());
 }
