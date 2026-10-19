@@ -19,7 +19,7 @@ import flows
 from app import App
 from runner import scenario
 from session import BASE_SNAPSHOT, GUEST_DL
-from ui import Ui, SUPERBA_SECTIONS
+from ui import Ui, SUPERBA_SECTIONS, SUPERBA_TABS, SETTINGS_ANCHORS
 from vm import REPO, free_port, psq
 
 PAGES = ["overview", "tools", "providers", "models", "router", "usage", "settings", "sessions", "hosts",
@@ -929,18 +929,27 @@ def w62(t):
                 u = U(t)
                 u.superba("home")
                 left, top, width, height = u.window()["rect"]
-                for section in SUPERBA_SECTIONS:
-                    key = "superba.title" if section == "home" else f"superba.section.{section}"
-                    tabs = u.find(key=key, type="TabItem", visible=False)
-                    expected = 2 if section == "home" else 1
-                    s.check(len(tabs) == expected, f"{section}: {expected} navigation tabs")
-                    for tab in tabs:
-                        x, y, tw, th = tab["rect"]
+                def visible(elements, label):
+                    s.check(len(elements) == 1, f"{label}: exactly one navigation control")
+                    for element in elements:
+                        x, y, tw, th = element["rect"]
                         s.check(tw > 0 and th > 0 and left <= x and top <= y
                                 and x + tw <= left + width and y + th <= top + height,
-                                f"{section} visible without scrolling: {tab['rect']}")
+                                f"{label} visible without scrolling: {element['rect']}")
+                visible(u.find(key="superba.title", type="TabItem", visible=False), "sidebar Superba")
+                for tab, key in SUPERBA_TABS.items():
+                    visible(u.find(key=key, type="TabItem", within=u.superba_tab_list(), visible=False), tab)
                 s.shot("960x640-superba-navigation")
                 s.ui_dump("960x640-superba-navigation")
+                for section in SETTINGS_ANCHORS:
+                    u.superba(section)
+                    for anchor in SETTINGS_ANCHORS:
+                        visible(u.find(key=f"superba.section.{anchor}", type="Button", visible=False), anchor)
+                    selected = u.wait(key=f"superba.section.{section}", type="Button").get("selected")
+                    s.check(selected is True, f"{section} selected after its heading settled: {selected}",
+                            soft=selected is None)
+                    s.shot(f"960x640-settings-{section}")
+                    s.ui_dump(f"960x640-settings-{section}")
     with t.step("Smaller than the minimum is refused") as s:
         u = U(t)
         try:

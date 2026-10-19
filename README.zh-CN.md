@@ -97,7 +97,7 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 - **诊断。** 发现过期的 Codex 进程、外来的环境变量、无法解析的配置、钥匙串问题等。
 - **托盘图标。** Windows 通知区域、macOS 菜单栏、Linux 托盘（StatusNotifierItem，不需要 GTK）
   都有 Superba 图标：打开 Superba、查看并切换当前服务商和线路、通过 Superba 打开或重新打开
-  ChatGPT、查看并开关路由、退出 Superba。Superba → 通用：关闭窗口时退出，或在托盘中继续运行
+  ChatGPT、查看并开关路由、退出 Superba。Superba → 设置 → 通用：关闭窗口时退出，或在托盘中继续运行
   （Windows 和 Linux 第一次关闭时询问；macOS 默认留在菜单栏），以及“启动时隐藏到托盘”。
   再次启动 Superba 会打开已在运行的窗口。没有托盘的 Linux 桌面（未启用 AppIndicator 扩展的
   GNOME）上该设置不可用，关闭窗口即退出。
@@ -107,7 +107,7 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
   （你原来配置的程序会保留），通过信任一次的生命周期钩子报告需要批准的操作；出错的 Codex 任务在
   Superba 运行时发现；Claude Code 通过它的钩子报告（`spb notify hook claude-code`）。消息包含项目、
   会话、电脑名称、用时、Token 和费用；回复开头只有在你打开后才会发送。支持免打扰、频率限制、最短任务
-  用时和测试按钮；Token 和 Webhook 地址保存在密钥库里。Superba → 通知，以及 `spb notify`。
+  用时和测试按钮；Token 和 Webhook 地址保存在密钥库里。Superba → 设置 → 通知，以及 `spb notify`。
 - 中英文界面。
 
 ## 安装
@@ -392,7 +392,7 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 - **Linux**：桌面文件带有操作**用 Superba 打开 ChatGPT**（在启动器里右键 Superba），
   运行 `superba --launch-chatgpt`。
 - **macOS**：使用概览、命令面板或 `spb launch`（暂无程序坞菜单项）。
-- **Superba → 通用 → 启动 Superba 时通过它打开 ChatGPT**（默认关闭）：每次打开
+- **Superba → 设置 → 通用 → 启动 Superba 时通过它打开 ChatGPT**（默认关闭）：每次打开
   Superba 时，若 ChatGPT 没有运行就打开它；已在运行的 ChatGPT 不受影响。
 - **CLI**：`spb launch` 通过 Superba 打开 ChatGPT（若已由 Superba 打开，则切到前台）；
   `spb launch --restart` 重新打开从别处启动的 ChatGPT（完整重启，与切换一样先给出

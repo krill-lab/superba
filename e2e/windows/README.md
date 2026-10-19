@@ -48,6 +48,13 @@ UI Automation dumps, saved files), `transcripts/` (every `spb` call) and `net/` 
   environment, like a new terminal), and CDP calls to the desktop app's renderer.
 - **GUI**: egui → AccessKit → UI Automation; widgets are found by the texts of
   `crates/*/locales/*.toml` (`lib/strings.py`), in English or Chinese.
+  `Ui.superba(section)` opens the pinned sidebar entry, then finds a top tab
+  inside the UIA Tab named Superba. General, Appearance, Network and Notifications
+  use the Settings tab and its fixed jump buttons. The driver waits for the tab's
+  selected state and for the section heading to settle at the top of the scrolling
+  panel. Structural Tab/Pane containers have no bounds and are searched without
+  the visibility filter. If UIA omits a jump button's selected state, the driver
+  records a WARN in the scenario report; an explicit false state still fails.
 - **Desktop app**: through the debugging port Superba opened (onboarding, composer, sidebar state,
   app screenshots), `lib/app.py`.
 - **Network** (`lib/net.py`): `mock` = `e2e/lib/windows_mockrelay.py` with a
@@ -105,3 +112,22 @@ Driver-only regression checks (no VM required):
 ```sh
 python3 -m unittest discover -s e2e/windows/tests -v
 ```
+
+## Documentation screenshots
+
+`screenshots.py` leases a disposable `wintest` VM and installs an explicitly supplied
+MSI. It captures all eight Superba destinations at 1280×800 in both themes and
+languages, then checks the five tabs and four fixed settings anchors at 960×640.
+It releases the VM on completion or failure; it does not run the full matrix.
+
+```sh
+SUPERBA_WINVM_HELPERS=/path/to/vm-helpers python3 e2e/windows/screenshots.py \
+  --msi /path/to/superba.msi --source-commit <full-source-commit> \
+  --out /path/to/review/windows --evidence /path/to/evidence
+```
+
+The fixture uses `C:\Users\Public\SuperbaDemo`, a nonworking example API key,
+`api.example.invalid`, and generated usage records. Superba and Codex data paths
+are passed explicitly. No real account is needed. The evidence directory holds
+the MSI install log, UIA trees and a manifest with the MSI/source identity and PNG
+hashes. Inspect every image before copying it into `docs/screenshots/windows`.

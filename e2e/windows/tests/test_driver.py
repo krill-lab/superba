@@ -11,7 +11,7 @@ HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE / "lib"))
 import flows
 from strings import Strings
-from ui import Ui, UiError, SUPERBA_SECTIONS
+from ui import Ui, UiError, SUPERBA_SECTIONS, SUPERBA_TABS, SETTINGS_ANCHORS
 from runner import T, Scenario, SkipScenario, status_of, PASS, WARN
 
 spec = importlib.util.spec_from_file_location("windows_run", HERE / "run.py")
@@ -24,13 +24,95 @@ class DriverTests(unittest.TestCase):
         run = SimpleNamespace(strings={lang: Strings(lang)}, agent=Mock(), session_snapshot="wintest")
         return Ui(run, lang)
 
-    @patch("ui.time.sleep")
-    def test_home_selects_two_navigation_columns_even_if_tree_order_changes(self, _):
+    def test_superba_scopes_tabs_away_from_same_named_sidebar_items(self):
+        for lang in ("en", "zh-CN"):
+            for section in (*SUPERBA_SECTIONS, "superba"):
+                with self.subTest(lang=lang, section=section):
+                    u = self.ui(lang)
+                    u.act = Mock()
+                    u.wait_selected = Mock()
+                    u.wait_settings_anchor = Mock()
+                    u.superba(section)
+                    tab = "settings" if section in SETTINGS_ANCHORS else {"superba": "home"}.get(section, section)
+                    calls = u.act.call_args_list
+                    self.assertEqual(calls[0].kwargs, {"key": "superba.title", "type": "TabItem"})
+                    self.assertEqual(calls[1].kwargs, {
+                        "key": SUPERBA_TABS[tab], "type": "TabItem",
+                        "within": {"name": "Superba", "type": "Tab", "visible": False}})
+                    u.wait_selected.assert_called_once_with(**calls[1].kwargs)
+                    if section in SETTINGS_ANCHORS:
+                        self.assertEqual(calls[2].kwargs["type"], "Button")
+                        self.assertEqual(calls[2].kwargs["key"], f"superba.section.{section}")
+                        u.wait_settings_anchor.assert_called_once_with(section)
+                    else:
+                        self.assertEqual(len(calls), 2)
+                        u.wait_settings_anchor.assert_not_called()
+
+    def test_unknown_superba_section_does_not_navigate(self):
         u = self.ui()
-        u.find = Mock(return_value=[{"rect": [240, 30, 164, 50]}, {"rect": [10, 600, 200, 32]}])
-        u.act = Mock()
-        u.superba("home")
-        self.assertEqual([c.kwargs["index"] for c in u.act.call_args_list], [1, 0])
+        with self.assertRaises(ValueError):
+            u.superba("missing")
+        u.agent.call.assert_not_called()
+
+    @patch("ui.time.sleep")
+    def test_tab_waits_until_selected(self, sleep):
+        u = self.ui()
+        u.find = Mock(side_effect=[[], [{"selected": False}], [{"selected": True}]])
+        self.assertTrue(u.wait_selected(key="superba.tab.home", type="TabItem")["selected"])
+        self.assertEqual(u.find.call_count, 3)
+
+    @patch("ui.time.sleep")
+    @patch("ui.time.monotonic", side_effect=[0, 1, 2])
+    def test_tab_that_never_selects_fails(self, clock, sleep):
+        u = self.ui()
+        u.find = Mock(return_value=[{"selected": False}])
+        with self.assertRaisesRegex(UiError, "not selected"):
+            u.wait_selected(timeout=2, key="superba.tab.home", type="TabItem")
+
+    @patch("ui.time.sleep")
+    @patch("ui.time.monotonic", side_effect=[0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6])
+    def test_anchor_waits_for_selection_viewport_and_stable_heading(self, clock, sleep):
+        u = self.ui()
+        u.window = Mock(return_value={"rect": [0, 0, 960, 640]})
+        button = {"selected": True, "rect": [600, 200, 80, 30]}
+        def heading(y):
+            return [{"rect": [220, y, 120, 28], "offscreen": False}]
+        u.find = Mock(side_effect=[
+            [{**button, "selected": False}], heading(240),
+            [button], heading(150),  # above the content viewport
+            [button], heading(700),  # below the window
+            [button], heading(300),  # animation still moving
+            [button], heading(240),
+            [button], heading(240),
+            [button], heading(240),
+            [button], heading(240),
+        ])
+        self.assertEqual(u.wait_settings_anchor("network"), (220, 240, 120, 28))
+        self.assertGreaterEqual(u.find.call_count, 14)
+        self.assertEqual(u.find.call_args.kwargs["within"], {
+            "name": u.L("superba.tab.settings"), "type": "Pane", "visible": False})
+
+    @patch("ui.time.sleep")
+    @patch("ui.time.monotonic", side_effect=[0, 0, 0.2, 0.5])
+    def test_missing_button_selection_is_recorded_without_inventing_state(self, clock, sleep):
+        u = self.ui()
+        u.window = Mock(return_value={"rect": [0, 0, 960, 640]})
+        button = {"rect": [600, 200, 80, 30]}
+        u.find = Mock(side_effect=lambda **kw: [button] if kw["type"] == "Button"
+                      else [{"rect": [220, 240, 120, 28]}])
+        self.assertEqual(u.wait_settings_anchor("notify"), (220, 240, 120, 28))
+        self.assertIn("no selected state", u.run.navigation_warnings[0])
+        self.assertNotIn("selected", button)
+
+    @patch("ui.time.sleep")
+    @patch("ui.time.monotonic", side_effect=[0, 0, 1])
+    def test_anchor_without_visible_heading_fails(self, clock, sleep):
+        u = self.ui()
+        u.window = Mock(return_value={"rect": [0, 0, 960, 640]})
+        u.find = Mock(side_effect=lambda **kw: [{"selected": True, "rect": [600, 200, 80, 30]}]
+                      if kw["type"] == "Button" else [])
+        with self.assertRaisesRegex(UiError, "anchor did not settle: notify"):
+            u.wait_settings_anchor("notify", timeout=1)
 
     def test_page_routes_maintenance_and_old_preferences(self):
         u = self.ui()
@@ -45,6 +127,8 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(len(PAGES), 19)
         for lang in ("en", "zh-CN"):
             u = self.ui(lang)
+            for key in SUPERBA_TABS.values():
+                self.assertTrue(u.L(key))
             for section in SUPERBA_SECTIONS:
                 self.assertTrue(u.L("superba.title" if section == "home" else f"superba.section.{section}"))
             self.assertTrue(u.L("superba.tools.title"))
@@ -165,6 +249,33 @@ class DriverTests(unittest.TestCase):
             t = T(run, Scenario("W85", "test", None))
             success(t)
             self.assertEqual(status_of(t.steps), PASS)
+
+    def test_navigation_warning_reaches_report_without_leaking_to_next_scenario(self):
+        with tempfile.TemporaryDirectory() as folder:
+            run = SimpleNamespace(root=Path(folder), wsl_switch_timeouts=[], wsl_retry_warnings={},
+                                  vm=SimpleNamespace(renew=lambda: None), log=lambda _: None,
+                                  opts=SimpleNamespace(include_manual=False), net_mode="mock", state={},
+                                  session_snapshot="wintest", dirty=False, ensure_session=lambda *a, **k: None)
+            warning = "Superba network: UIA Button has no selected state"
+
+            def navigate(t):
+                t.run.navigation_warnings.append(warning)
+                success(t)
+
+            rec = windows_run.run_one(run, Scenario("W62", "navigation", navigate))
+            self.assertEqual(rec["status"], WARN)
+            self.assertIn(warning, str(rec["steps"]))
+            rec = windows_run.run_one(run, Scenario("W63", "next scenario", success))
+            self.assertEqual(rec["status"], PASS)
+            self.assertNotIn(warning, str(rec["steps"]))
+
+            def fails(t):
+                t.run.navigation_warnings.append(warning)
+                raise RuntimeError("navigation stopped")
+
+            rec = windows_run.run_one(run, Scenario("W62", "failed navigation", fails))
+            self.assertEqual(rec["status"], windows_run.FAIL)
+            self.assertIn("navigation stopped", rec["reason"])
 
 
 def success(t):

@@ -143,7 +143,7 @@ Geist look).
 - **Tray icon.** A Superba icon in the Windows notification area, the macOS
   menu bar and Linux trays (StatusNotifierItem, no GTK needed): open Superba,
   see and switch the provider and line in use, open or reopen ChatGPT through
-  Superba, see the router and turn it off, quit. Superba → General: quit when
+  Superba, see the router and turn it off, quit. Superba → Settings → General: quit when
   the window is closed or keep running in the tray (Windows and Linux ask on the
   first close; macOS keeps running in the menu bar), and "Start hidden in the
   tray". Starting Superba again shows the running window. On a Linux desktop
@@ -161,7 +161,7 @@ Geist look).
   conversation, the computer, how long it ran and its tokens and cost; the
   start of the reply is sent only when you turn it on. Quiet hours, a rate
   limit, a minimum task length and a test button; tokens and webhook
-  addresses stay in the key store. Superba → Notifications and `spb
+  addresses stay in the key store. Superba → Settings → Notifications and `spb
   notify`.
 - English and Simplified Chinese.
 
@@ -538,7 +538,7 @@ hot-switched until Superba reopens it. Ways to open it through Superba:
 - **Linux**: the desktop file has the action **Open ChatGPT with Superba**
   (right-click Superba in the launcher), running `superba --launch-chatgpt`.
 - **macOS**: use the Overview, the palette or `spb launch` (no Dock menu item yet).
-- **Superba → General → Open ChatGPT through Superba when Superba starts**
+- **Superba → Settings → General → Open ChatGPT through Superba when Superba starts**
   (off by default) opens ChatGPT whenever Superba opens and ChatGPT is not running;
   a running ChatGPT is left alone.
 - **CLI**: `spb launch` opens ChatGPT through Superba (and brings it to the front

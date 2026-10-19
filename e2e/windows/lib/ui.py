@@ -13,6 +13,14 @@ import time
 from agent import AgentError
 
 SUPERBA_SECTIONS = ("home", "updates", "diagnostics", "data", "general", "appearance", "network", "notify")
+SETTINGS_ANCHORS = ("general", "appearance", "network", "notify")
+SUPERBA_TABS = {
+    "home": "superba.tab.home",
+    "updates": "superba.section.updates",
+    "settings": "superba.tab.settings",
+    "diagnostics": "superba.section.diagnostics",
+    "data": "superba.tab.data",
+}
 
 
 class UiError(RuntimeError):
@@ -118,23 +126,85 @@ class Ui:
         time.sleep(0.6)
 
     def superba(self, section="home"):
-        """Open the pinned Superba tab, then its section. Both the sidebar tab
-        and the home tab are named Superba: use their horizontal position, never
-        the tree order, to select the correct navigation column."""
+        """Open a Superba tab, then a settings anchor when requested.
+
+        Overview and Settings also occur in the main sidebar. Scope tab lookup
+        to the Superba TabList, then wait for the selected anchor's heading to
+        stop moving inside the content viewport.
+        """
+        section = "home" if section == "superba" else section
         if section not in SUPERBA_SECTIONS:
             raise ValueError(f"unknown Superba section: {section}")
-        tabs = self.find(timeout=20, key="superba.title", type="TabItem")
-        if not tabs:
-            raise UiError("Superba sidebar tab not found")
-        sidebar = min(range(len(tabs)), key=lambda i: tabs[i]["rect"][0])
-        self.act("invoke", key="superba.title", type="TabItem", index=sidebar)
-        key = "superba.title" if section == "home" else f"superba.section.{section}"
-        tabs = self.find(timeout=20, key=key, type="TabItem")
-        if not tabs or (section == "home" and len(tabs) < 2):
-            raise UiError(f"Superba section tab not found: {section}")
-        rail = max(range(len(tabs)), key=lambda i: tabs[i]["rect"][0])
-        self.act("invoke", key=key, type="TabItem", index=rail)
-        time.sleep(0.6)
+        self.act("invoke", key="superba.title", type="TabItem")
+        tab = "settings" if section in SETTINGS_ANCHORS else section
+        sel = dict(key=SUPERBA_TABS[tab], type="TabItem", within=self.superba_tab_list())
+        self.act("invoke", **sel)
+        self.wait_selected(**sel)
+        if section in SETTINGS_ANCHORS:
+            self.click(key=f"superba.section.{section}")
+            self.wait_settings_anchor(section)
+
+    def superba_tab_list(self):
+        # AccessKit's structural containers have no bounding rectangle. Only
+        # their interactive children must pass the visibility filter.
+        return {"name": self.L("superba.title"), "type": "Tab", "visible": False}
+
+    def wait_selected(self, timeout=20, **sel):
+        end = time.monotonic() + timeout
+        while True:
+            found = self.find(**sel)
+            if found and found[0].get("selected") is True:
+                return found[0]
+            if time.monotonic() >= end:
+                raise UiError(f"not selected within {timeout} s: {self._describe(self._sel(**sel))}")
+            time.sleep(0.2)
+
+    def wait_settings_anchor(self, section, timeout=20):
+        key = f"superba.section.{section}"
+        end = time.monotonic() + timeout
+        previous, stable_since = None, None
+        while True:
+            buttons = self.find(key=key, type="Button")
+            headings = self.find(key=key, type="Text",
+                                 within={"name": self.L("superba.tab.settings"), "type": "Pane", "visible": False})
+            window = self.window()
+            rect = None
+            selected = buttons[0].get("selected") if buttons else False
+            if buttons and selected is not False and window:
+                bx, by, bw, bh = buttons[0]["rect"]
+                wx, wy, ww, wh = window["rect"]
+                for heading in headings:
+                    r = heading.get("rect")
+                    # AccessKit exposes the section's label as UIA Text. The
+                    # fixed jump row is above the scrolling content viewport.
+                    if r and not heading.get("offscreen", False):
+                        x, y, w, h = r
+                        if (w > 0 and h > 0 and wx <= x and by + bh <= y <= by + bh + 32
+                                and x + w <= wx + ww and y + h <= wy + wh):
+                            rect = tuple(r)
+                            break
+            now = time.monotonic()
+            if rect is not None and rect == previous:
+                if stable_since is not None and now - stable_since >= 0.4:
+                    if selected is None:
+                        # AccessKit Windows 0.35 does not expose SelectionItem
+                        # for Button. Preserve that missing assertion as WARN;
+                        # never manufacture a selected=true result from bounds.
+                        warning = f"Superba {section}: UIA Button has no selected state; verified heading at viewport top"
+                        warnings = getattr(self.run, "navigation_warnings", None)
+                        if warnings is None:
+                            warnings = self.run.navigation_warnings = []
+                        if warning not in warnings:
+                            warnings.append(warning)
+                            if hasattr(self.run, "log"):
+                                self.run.log("WARN: " + warning)
+                    return rect
+            else:
+                stable_since = now if rect is not None else None
+            previous = rect
+            if now >= end:
+                raise UiError(f"Superba settings anchor did not settle: {section}")
+            time.sleep(0.2)
 
     def expand(self, row_key=None, **kw):
         """Expand an update row by its localized accessible name."""
@@ -145,7 +215,7 @@ class Ui:
         return self.act("collapse", key=row_key, type="Button", **kw)
 
     def scroll_detail(self, notches=-4):
-        """Scroll the right-hand detail pane, leaving both navigation rails still."""
+        """Scroll the content pane, below the fixed tabs and settings jump row."""
         w = self.wait_window()
         return self.agent.call("scroll", x=int(w["rect"][2] * 0.8), y=int(w["rect"][3] * 0.65),
                                relative=True, notches=notches, settle_ms=450, **self.win)
