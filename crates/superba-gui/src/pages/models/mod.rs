@@ -20,6 +20,7 @@
 //! context window), `speed:standard|fast|ultrafast` (save the speed of the shown
 //! provider and apply it), `refresh`, `search`, `save`.
 
+mod catalog;
 pub mod model;
 mod view;
 
@@ -69,6 +70,15 @@ struct SaveDone {
 /// Page-local state, kept across navigation.
 #[derive(Default)]
 pub struct State {
+    /// Filter the merged list by its source layer.
+    pub catalog_source: Option<superba_core::CatalogLayer>,
+    /// Filter the merged list by provider id.
+    pub catalog_provider: Option<String>,
+    catalog_slugs: BTreeMap<String, String>,
+    catalog_test: Option<ReadTask<superba_core::RouterModelTest>>,
+    catalog_save: Option<ReadTask<()>>,
+    catalog_result: Option<superba_core::RouterModelTest>,
+    catalog_error: Option<String>,
     /// Provider chosen in the picker (`None` = the applied one).
     profile: Option<ProfileId>,
     /// Loaded view.
@@ -233,6 +243,30 @@ impl State {
 
     /// Poll the background work; true while something runs.
     fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) -> bool {
+        if let Some(task) = &self.catalog_test
+            && let Some(result) = task.poll()
+        {
+            self.catalog_test = None;
+            match result {
+                Ok(result) => {
+                    self.catalog_result = Some(result);
+                    self.load(cx, true);
+                }
+                Err(error) => self.catalog_error = Some(super::error_text(cx.tr, &error)),
+            }
+        }
+        if let Some(task) = &self.catalog_save
+            && let Some(result) = task.poll()
+        {
+            self.catalog_save = None;
+            match result {
+                Ok(()) => {
+                    self.catalog_slugs.clear();
+                    self.load(cx, true);
+                }
+                Err(error) => self.catalog_error = Some(super::error_text(cx.tr, &error)),
+            }
+        }
         let profiles_ready = cx.data.profiles.value.is_some() || cx.data.profiles.error.is_some();
         let first = self.view.is_none() && self.error.is_none() && profiles_ready;
         let switched = cx
@@ -296,7 +330,11 @@ impl State {
                 Err(e) => self.error = Some(e),
             }
         }
-        self.task.is_some() || self.saving.is_some() || self.price_task.is_some()
+        self.task.is_some()
+            || self.saving.is_some()
+            || self.price_task.is_some()
+            || self.catalog_test.is_some()
+            || self.catalog_save.is_some()
     }
 
     fn saved(&mut self, cx: &Cx<'_>, done: SaveDone, out: &mut Vec<Action>) {
@@ -307,7 +345,17 @@ impl State {
             && report.profile.id == v.profile_id
         {
             v.defaults = report.profile.model.clone();
-            v.overrides = report.profile.model_overrides.clone();
+            if v.router_catalog.is_some() {
+                for (slug, value) in &self.pending.overrides {
+                    if value.is_empty() {
+                        v.overrides.remove(slug);
+                    } else {
+                        v.overrides.insert(slug.clone(), value.clone());
+                    }
+                }
+            } else {
+                v.overrides = report.profile.model_overrides.clone();
+            }
             v.picker = report.profile.model_picker;
         }
         self.pending = Pending::default();

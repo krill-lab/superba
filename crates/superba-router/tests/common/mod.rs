@@ -81,12 +81,15 @@ pub enum Mode {
     WsRaw(Arc<Vec<u8>>),
     /// Status + JSON body chosen from the request headers and body.
     Reply(Reply),
+    /// Path-aware JSON response for layered model catalogs.
+    PathReply(PathReply),
     /// 200 + JSON body after a delay (a slow answer holding both sockets).
     Slow(Duration, &'static str),
 }
 
 /// Answer of [`Mode::Reply`].
 pub type Reply = Arc<dyn Fn(&HeaderMap, &[u8]) -> (u16, &'static str) + Send + Sync>;
+pub type PathReply = Arc<dyn Fn(&str, &HeaderMap, &[u8]) -> (u16, serde_json::Value) + Send + Sync>;
 
 /// Frames to answer a client text frame with.
 pub type WsScript = Arc<dyn Fn(&str) -> Vec<String> + Send + Sync>;
@@ -221,6 +224,19 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
         Mode::Reply(reply) => {
             let (status, json) = reply(&parts.headers, &body);
             full(status, json)
+        }
+        Mode::PathReply(reply) => {
+            let (status, value) = reply(parts.uri.path(), &parts.headers, &body);
+            let mut response = Response::new(
+                Full::new(Bytes::from(serde_json::to_vec(&value).unwrap()))
+                    .map_err(|never| match never {})
+                    .boxed(),
+            );
+            *response.status_mut() = StatusCode::from_u16(status).unwrap();
+            response
+                .headers_mut()
+                .insert("content-type", "application/json".parse().unwrap());
+            response
         }
         Mode::JsonHeader(status, body, name, value) => {
             let mut r = full(status, body);
@@ -496,13 +512,13 @@ impl Router {
     }
 
     /// POST `/backend-api/codex/responses` with the router token and a session.
-    pub async fn post(&self, session: Option<&str>, body: &'static str) -> reqwest::Response {
+    pub async fn post(&self, session: Option<&str>, body: &str) -> reqwest::Response {
         let mut rb = self
             .http
             .post(self.url("/backend-api/codex/responses"))
             .bearer_auth(ROUTER_TOKEN)
             .header("content-type", "application/json")
-            .body(body);
+            .body(body.to_owned());
         if let Some(s) = session {
             rb = rb.header("session-id", s);
         }

@@ -1545,6 +1545,12 @@ impl Switcher {
         let Some(resolved) = dest.resolved.as_mut() else {
             return;
         };
+        if dest.routed {
+            // Router entries already contain the profile defaults and L4.
+            // Global config keys would otherwise override every model entry.
+            resolved.model.context_window = None;
+            resolved.model.auto_compact = None;
+        }
         resolved.model.speed = match too_old {
             Some((consumer, version)) if tier != superba_core::SpeedTier::Fast => {
                 draft.warn(

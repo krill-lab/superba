@@ -30,6 +30,8 @@ pub struct RouterSettings {
     /// Codex restart).
     #[serde(skip_serializing_if = "RouterStatsSettings::is_default")]
     pub stats: RouterStatsSettings,
+    /// Namespaces and visibility of the merged Codex catalog.
+    pub catalog: crate::RouterCatalogSettings,
 }
 
 /// Request recording, the optional stats line and the prices of cost estimates.

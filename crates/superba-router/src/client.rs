@@ -94,6 +94,31 @@ impl AdminClient {
     }
 
     /// Full status.
+    pub async fn catalog(&self) -> Result<superba_core::RouterCatalogView> {
+        let url = self.url("catalog");
+        self.call(
+            self.authed(self.http.get(&url).timeout(Duration::from_secs(30))),
+            &url,
+        )
+        .await
+    }
+
+    /// Run the selected model's test and cache its capability evidence.
+    pub async fn test_model(&self, model: &str) -> Result<superba_core::RouterModelTest> {
+        let url = self.url("catalog/test");
+        self.call(
+            self.authed(
+                self.http
+                    .post(&url)
+                    .timeout(Duration::from_secs(120))
+                    .json(&serde_json::json!({"model":model})),
+            ),
+            &url,
+        )
+        .await
+    }
+
+    /// Full status.
     pub async fn status(&self) -> Result<RouterStatus> {
         let url = self.url("status");
         self.call(self.authed(self.http.get(&url)), &url).await

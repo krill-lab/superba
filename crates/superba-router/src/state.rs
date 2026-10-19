@@ -99,6 +99,7 @@ pub(crate) struct Generation {
     /// The OpenAI ingress of this configuration.
     pub openai: crate::openai::rt::OpenAiRt,
     pub catalog: crate::catalog::Catalog,
+    pub merged_catalog: crate::merged_catalog::Catalog,
 }
 
 impl Generation {
@@ -172,6 +173,7 @@ impl Generation {
             ws,
             probe,
             catalog: crate::catalog::Catalog::default(),
+            merged_catalog: crate::merged_catalog::Catalog::default(),
         })
     }
 

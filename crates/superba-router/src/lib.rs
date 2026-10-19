@@ -108,6 +108,7 @@ pub mod health;
 pub mod limits;
 pub mod manager;
 pub mod members;
+pub mod merged_catalog;
 pub mod model_map;
 pub mod openai;
 pub mod outage;

@@ -78,6 +78,40 @@ where
     }
     let method = req.method().clone();
     match (&method, endpoint.as_str()) {
+        (&Method::GET, "catalog") => json(
+            StatusCode::OK,
+            &crate::merged_catalog::report(&shared.current()).await,
+        ),
+        (&Method::POST, "catalog/test") => {
+            let body = match http_body_util::Limited::new(req.into_body(), 4096)
+                .collect()
+                .await
+            {
+                Ok(body) => body.to_bytes(),
+                Err(_) => {
+                    return router_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_model",
+                        "unreadable model test request",
+                    );
+                }
+            };
+            let model = serde_json::from_slice::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v["model"].as_str().map(str::to_owned))
+                .filter(|m| !m.is_empty() && m.len() <= 512);
+            match model {
+                Some(model) => json(
+                    StatusCode::OK,
+                    &crate::merged_catalog::test(&shared, &model).await,
+                ),
+                None => router_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_model",
+                    "expected a model id",
+                ),
+            }
+        }
         (&Method::GET, "status") => json(StatusCode::OK, &status(&shared)),
         (&Method::POST, "probe") => {
             probe_all(&shared, &shared.current()).await;
@@ -163,6 +197,7 @@ pub(crate) fn reload(shared: &Shared) -> Result<u64> {
     // new settings.
     let budget = Budget::new(shared.limits.budget.open_files_limit, &config.tuning);
     let generation = Generation::build(number, config, &secrets, &budget)?;
+    crate::merged_catalog::inherit_probes(&shared.current(), &generation);
     shared.install(generation);
     shared.event(
         RouteEventKind::Reloaded,

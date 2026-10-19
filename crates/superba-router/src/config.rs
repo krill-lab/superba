@@ -42,6 +42,9 @@ const CHATGPT_HOSTS: &[&str] = &["chatgpt.com", "chat.openai.com", "auth.openai.
 /// The whole router configuration.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RouterConfig {
+    /// Merge member catalogs and route models to their observed endpoints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<crate::merged_catalog::CatalogConfig>,
     /// File format ([`CONFIG_FORMAT`]).
     pub format: u32,
     /// Loopback port (always bound on `127.0.0.1`). Persisted because Codex's
@@ -293,6 +296,7 @@ impl RouterConfig {
     /// A configuration with defaults for `members` on `listen_port`.
     pub fn new(listen_port: u16, members: Vec<MemberConfig>) -> Self {
         Self {
+            catalog: None,
             format: CONFIG_FORMAT,
             listen_port,
             members,
@@ -320,6 +324,9 @@ impl RouterConfig {
 
     /// Check every rule; the router refuses to start (or reload) otherwise.
     pub fn validate(&self) -> Result<()> {
+        if let Some(catalog) = &self.catalog {
+            catalog.validate(self)?;
+        }
         if self.format != CONFIG_FORMAT {
             return Err(Error::invalid(format!(
                 "router config format {} is not supported (expected {CONFIG_FORMAT})",

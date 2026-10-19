@@ -836,6 +836,11 @@ impl Switcher {
         let d = &self.deps;
         let mut out = CatalogPlan::default();
         let profile = input.profile;
+        if input.routed {
+            // The live router supplies L0–L4; a static file would hide future
+            // discoveries and verified models from this consumer.
+            return out;
+        }
         let speed = profile_speed(profile);
         let mut reasons = catalog_reasons(profile, input.site, input.auth);
         if self.catalog_off.load(std::sync::atomic::Ordering::SeqCst) && !reasons.is_empty() {
@@ -1189,6 +1194,7 @@ impl Switcher {
                 false,
             );
             return Ok(ModelsView {
+                router_catalog: None,
                 profile_id: profile.id.clone(),
                 site_id: site.id.clone(),
                 read_only: true,
@@ -1216,7 +1222,7 @@ impl Switcher {
                 (None, None)
             }
         };
-        let list = self
+        let mut list = self
             .model_list_for(
                 &site,
                 base_url.as_ref(),
@@ -1227,15 +1233,22 @@ impl Switcher {
                 profile.model_source,
             )
             .await;
+        let routed =
+            set.settings.router.enabled && set.settings.router.members.contains(&profile.id);
+        let mut router_catalog = None;
+        if routed {
+            match self.routed_models().await {
+                Ok((merged, report)) => {
+                    list = merged;
+                    router_catalog = Some(report);
+                }
+                Err(e) => notes.push(Notice::warning(e.to_text())),
+            }
+        }
         self.model_lists
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .insert(profile.id.clone(), list.clone());
-        let routed = set.settings.router.enabled
-            && state
-                .as_ref()
-                .and_then(|s| s.active.as_ref())
-                .is_some_and(|a| a.profile_id.as_ref() == Some(&profile.id));
         let auth = Self::likely_auth(profile, &site, state.as_ref(), routed);
         let pat = auth.needs_authapi_env();
         let model = profile
@@ -1306,7 +1319,7 @@ impl Switcher {
                 ));
             }
         }
-        if pat && profile.model_overrides.values().any(override_needs_catalog) {
+        if pat && !routed && profile.model_overrides.values().any(override_needs_catalog) {
             notes.push(Notice::info(text("switch.models.pat_no_catalog")));
         }
         let active = state
@@ -1319,18 +1332,23 @@ impl Switcher {
             None
         };
         Ok(ModelsView {
+            router_catalog,
             profile_id: profile.id.clone(),
             site_id: site.id.clone(),
             read_only: false,
             list,
             defaults: profile.model.clone(),
-            overrides: profile.model_overrides.clone(),
+            overrides: if routed {
+                set.settings.router.catalog.overrides.clone()
+            } else {
+                profile.model_overrides.clone()
+            },
             picker: profile.model_picker,
             picker_available: site.kind == SiteKind::Compatible,
             speed,
             catalog_file,
             notes,
-            per_model: !pat,
+            per_model: routed || !pat,
             applied,
         })
     }
@@ -1367,6 +1385,11 @@ impl Switcher {
         let spec = |slug: &str| list.as_ref().and_then(|l| l.model(slug)).cloned();
         let mut notes = Vec::new();
         let mut p = profile.clone();
+        let routed = set.settings.router.enabled && set.settings.router.members.contains(&id);
+        let direct_overrides = p.model_overrides.clone();
+        if routed {
+            p.model_overrides = set.settings.router.catalog.overrides.clone();
+        }
         if let Some(defaults) = &edit.defaults {
             superba_core::check_all_models(defaults)
                 .map_err(|e| Error::invalid(format!("all models: {}", e.message())))?;
@@ -1374,9 +1397,15 @@ impl Switcher {
         }
         if edit.reset_all {
             p.model_overrides.clear();
+            if routed {
+                set.settings.router.catalog.visibility.clear();
+            }
         }
         for slug in &edit.reset {
             p.model_overrides.remove(slug);
+            if routed {
+                set.settings.router.catalog.visibility.remove(slug);
+            }
         }
         let mut site_edit: Option<Site> = None;
         for (slug, o) in &edit.set {
@@ -1445,13 +1474,32 @@ impl Switcher {
                 "switch.models.catalog_removed_next_switch",
             )));
         }
-        if auth.needs_authapi_env() && p.model_overrides.values().any(override_needs_catalog) {
+        if auth.needs_authapi_env()
+            && !set.settings.router.enabled
+            && p.model_overrides.values().any(override_needs_catalog)
+        {
             notes.push(Notice::info(text("switch.models.pat_no_catalog")));
+        }
+        if routed {
+            set.settings.router.catalog.overrides = p.model_overrides.clone();
+            for (slug, value) in &edit.set {
+                if value.hidden {
+                    set.settings
+                        .router
+                        .catalog
+                        .visibility
+                        .insert(slug.clone(), false);
+                }
+            }
+            p.model_overrides = direct_overrides;
         }
         if let Some(slot) = set.profiles.iter_mut().find(|x| x.id == id) {
             *slot = p.clone();
         }
         d.profiles.save(&set).await?;
+        if set.settings.router.enabled {
+            self.resync_router_members(&set).await?;
+        }
         if let Some(s) = site_edit {
             self.save_site_impl(s).await?;
         }

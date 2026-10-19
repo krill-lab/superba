@@ -1283,6 +1283,16 @@ pub trait SwitchService: Send + Sync {
     /// Takes effect at the next switch to the profile; the caller plans one.
     async fn save_models(&self, edit: ModelsEdit) -> Result<ModelsEditReport>;
 
+    /// Save router catalog namespaces and the prefixed-model picker setting.
+    async fn save_router_catalog(&self, _settings: crate::RouterCatalogSettings) -> Result<()> {
+        Err(Error::not_implemented("SwitchService::save_router_catalog"))
+    }
+
+    /// Test a model through the local router; synthesized models require a tool round trip.
+    async fn test_router_model(&self, _model: String) -> Result<crate::RouterModelTest> {
+        Err(Error::not_implemented("SwitchService::test_router_model"))
+    }
+
     // --- v0.3: remote hosts --------------------------------------------------
 
     /// Remote hosts the desktop app knows (never ssh-config-only suggestions),

@@ -154,6 +154,16 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
     /// Ask the running router (admin API on loopback).
     async fn liveness(&self) -> Liveness;
 
+    /// Merged catalog diagnostics from the running router.
+    async fn catalog(&self) -> Result<superba_core::RouterCatalogView> {
+        Err(Error::not_implemented("router catalog"))
+    }
+
+    /// Test one model through the running router.
+    async fn test_model(&self, _model: &str) -> Result<superba_core::RouterModelTest> {
+        Err(Error::not_implemented("router model test"))
+    }
+
     // --- v0.3 request log (read-only database; admin API for live data) ------
 
     /// Request log rows, totals and groups (works while the router is stopped).
@@ -401,6 +411,18 @@ impl RouterControl for SystemRouterControl {
             .await
     }
 
+    async fn catalog(&self) -> Result<superba_core::RouterCatalogView> {
+        superba_router::client::AdminClient::from_runtime(self.manager.paths())?
+            .catalog()
+            .await
+    }
+
+    async fn test_model(&self, model: &str) -> Result<superba_core::RouterModelTest> {
+        superba_router::client::AdminClient::from_runtime(self.manager.paths())?
+            .test_model(model)
+            .await
+    }
+
     async fn configure_stats(
         &self,
         settings: &RouterStatsSettings,
@@ -587,6 +609,7 @@ impl Switcher {
             }
             section.routes.retain(|r| !r.targets.is_empty());
         }
+        config.catalog = Some(self.router_catalog_config(set, &config).await);
         config.validate()?;
         Ok(BuiltMembers { config, keys })
     }

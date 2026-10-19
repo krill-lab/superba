@@ -91,6 +91,10 @@ pub(crate) async fn handle(
     let arrived = Instant::now();
     let generation = shared.current();
     let query = req.uri().query().unwrap_or("").to_owned();
+    if generation.config.catalog.is_some() {
+        crate::server::drain(req.into_body(), generation.config.tuning.max_body_bytes).await;
+        return crate::merged_catalog::response(&generation, &query).await;
+    }
     // Do not retain arbitrary, unbounded URLs in a process-wide cache.
     let slot = (query.len() <= 1024)
         .then(|| generation.catalog.slot(query.to_owned()))

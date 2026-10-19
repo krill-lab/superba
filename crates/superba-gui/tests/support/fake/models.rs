@@ -289,6 +289,7 @@ pub fn view_for(profile: &Profile, site: &Site, now: Timestamp) -> ModelsView {
         )));
     }
     ModelsView {
+        router_catalog: None,
         profile_id: profile.id.clone(),
         site_id: site.id.clone(),
         read_only: official,

@@ -52,6 +52,63 @@ async fn krill_view(service: &FakeService) -> ModelsView {
         .unwrap()
 }
 
+#[tokio::test]
+async fn merged_catalog_controls_fit_and_show_pending_evidence() {
+    let fake = service();
+    let data = data(&fake).await;
+    let mut view = krill_view(&fake).await;
+    view.per_model = true;
+    let slug = view.list.models[0].slug.clone();
+    view.router_catalog = Some(superba_core::RouterCatalogView {
+        models: vec![superba_core::RouterCatalogModel {
+            entry: serde_json::json!({"slug":slug}),
+            readiness: superba_core::CatalogReadiness::Pending,
+            detail: None,
+            sources: vec![superba_core::CatalogProvenance {
+                provider: "krill".into(),
+                provider_name: "Krill".into(),
+                provider_slug: "krill".into(),
+                key_scope: "opaque-scope".into(),
+                upstream_id: slug.clone(),
+                endpoint: "https://example.test/v1/models".into(),
+                protocol: "responses".into(),
+                layer: superba_core::CatalogLayer::Synthesized,
+                evidence: "pending".into(),
+                observed_at: 1,
+            }],
+        }],
+        ..Default::default()
+    });
+    for size in SIZES {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let mut state = State::default();
+            state.set_price_table(None);
+            state.set_view(view.clone());
+            let report = render_fit(size, locale, egui::Theme::Dark, &data, |ui, cx, out| {
+                models_page::show(ui, cx, &mut state, out)
+            });
+            assert!(report.fits(), "{size:?} {locale:?}: {report:?}");
+            let text = report.all_text();
+            assert!(
+                text.contains(if locale == Locale::En {
+                    "Not verified"
+                } else {
+                    "待验证"
+                }),
+                "{text}"
+            );
+            assert!(
+                text.contains(if locale == Locale::En {
+                    "Test"
+                } else {
+                    "测试"
+                }),
+                "{text}"
+            );
+        }
+    }
+}
+
 fn saved(view: &ModelsView) -> (BTreeMap<String, String>, BTreeMap<String, PriceEntry>) {
     let _ = view;
     (BTreeMap::new(), BTreeMap::new())

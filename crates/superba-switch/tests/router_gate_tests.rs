@@ -115,6 +115,73 @@ async fn users_state() -> (World, Switcher) {
 }
 
 #[tokio::test]
+async fn router_catalog_edits_are_shared_and_reloaded_without_replacing_direct_overrides() {
+    let (w, sw) = users_state().await;
+    sw.router_set_enabled(true).await.unwrap();
+    let value = superba_core::ModelOverride {
+        context_window: Some(64000),
+        auto_compact: Some(48000),
+        hidden: true,
+        ..Default::default()
+    };
+    sw.save_models(superba_core::ModelsEdit {
+        profile_id: Some(ProfileId::new("work")),
+        set: [("krill/gpt-6.1-sol".into(), value.clone())].into(),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let set = sw.profile_set().await.unwrap();
+    assert_eq!(
+        set.settings.router.catalog.overrides["krill/gpt-6.1-sol"],
+        value
+    );
+    assert!(
+        set.profile(&ProfileId::new("work"))
+            .unwrap()
+            .model_overrides
+            .is_empty()
+    );
+    {
+        let written = w.router.written.lock().unwrap();
+        let catalog = written.last().unwrap().catalog.as_ref().unwrap();
+        assert_eq!(catalog.settings.overrides["krill/gpt-6.1-sol"], value);
+        assert!(!catalog.settings.visibility["krill/gpt-6.1-sol"]);
+    }
+    sw.save_models(superba_core::ModelsEdit {
+        profile_id: Some(ProfileId::new("work")),
+        reset: vec!["krill/gpt-6.1-sol".into()],
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let set = sw.profile_set().await.unwrap();
+    assert!(set.settings.router.catalog.overrides.is_empty());
+    assert!(set.settings.router.catalog.visibility.is_empty());
+}
+
+#[tokio::test]
+async fn router_globals_are_folded_into_live_entries_not_global_codex_keys() {
+    let (w, sw) = users_state().await;
+    {
+        let mut set = w.profiles.set.lock().unwrap();
+        let p = set
+            .profiles
+            .iter_mut()
+            .find(|p| p.id.as_str() == "work")
+            .unwrap();
+        p.model.context_window = Some(64000);
+        p.model.auto_compact = Some(48000);
+    }
+    let plan = sw.plan(router_on_request()).await.unwrap();
+    assert!(!plan.is_blocked());
+    let desired = plan.config.as_ref().unwrap().desired.as_ref().unwrap();
+    assert!(desired.model.context_window.is_none());
+    assert!(desired.model.auto_compact.is_none());
+    assert!(desired.model_catalog.is_none());
+}
+
+#[tokio::test]
 async fn a_krill_member_with_its_key_turns_router_mode_on_with_a_local_pat() {
     let (w, sw) = users_state().await;
     let set = sw.profile_set().await.unwrap();

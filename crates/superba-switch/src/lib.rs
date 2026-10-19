@@ -46,6 +46,7 @@ pub mod ownership;
 pub mod planner;
 pub mod privilege;
 pub mod router;
+mod router_catalog;
 pub mod router_doctor;
 pub mod rules;
 pub mod runtime;
@@ -779,6 +780,19 @@ impl SwitchService for Switcher {
     ) -> Result<superba_core::ModelsEditReport> {
         self.refuse_elevated()?;
         self.save_models_impl(edit).await
+    }
+
+    async fn save_router_catalog(
+        &self,
+        settings: superba_core::RouterCatalogSettings,
+    ) -> Result<()> {
+        self.refuse_elevated()?;
+        self.save_router_catalog_impl(settings).await
+    }
+
+    async fn test_router_model(&self, model: String) -> Result<superba_core::RouterModelTest> {
+        self.refuse_elevated()?;
+        self.deps.router.test_model(&model).await
     }
 
     async fn hosts(&self) -> Result<Vec<superba_core::HostView>> {

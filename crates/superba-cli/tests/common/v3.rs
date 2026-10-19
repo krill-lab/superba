@@ -131,6 +131,7 @@ pub fn fake_v3() -> FakeV3 {
     };
     FakeV3 {
         models: ModelsView {
+            router_catalog: None,
             profile_id: ProfileId::new("work"),
             site_id: SiteId::new("krill"),
             read_only: false,

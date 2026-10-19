@@ -734,6 +734,7 @@ fn models_view(
     offered: Vec<superba_core::SpeedTier>,
 ) -> superba_core::ModelsView {
     superba_core::ModelsView {
+        router_catalog: None,
         profile_id: profile.id.clone(),
         site_id: profile.site_id.clone(),
         read_only: false,

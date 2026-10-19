@@ -405,6 +405,7 @@ fn models_view_edit_and_report_round_trip() {
         },
     );
     let view = ModelsView {
+        router_catalog: None,
         profile_id: ProfileId::new("krill-work"),
         site_id: SiteId::new("krill"),
         read_only: false,

@@ -163,6 +163,20 @@ pub(crate) async fn proxy_http(
     } else {
         body
     };
+    let (body, catalog_selection) = if !openai
+        && generation.config.catalog.is_some()
+        && is_responses_path(&parts.method, &rest)
+    {
+        match crate::merged_catalog::select(&generation, &mut parts.headers, body, limit).await {
+            Ok(selected) => selected,
+            Err(response) => return *response,
+        }
+    } else {
+        (body, None)
+    };
+    if let Some(selection) = &catalog_selection {
+        parts.extensions.insert(selection.clone());
+    }
     // The OpenAI ingress always reads the request (its facts route it, and
     // it is shaped whether or not it is recorded).
     let mut openai_meta = None;
@@ -250,6 +264,10 @@ pub(crate) async fn proxy_http(
         );
     }
     let order = match &openai_meta {
+        None if catalog_selection.is_some() => catalog_selection
+            .as_ref()
+            .expect("selection")
+            .candidates(&generation, &route, pin, now),
         None => candidates(
             &View {
                 generation: &generation,
@@ -313,6 +331,7 @@ pub(crate) async fn proxy_http(
     // compressed (one compression per member body).
     let client_zstd = content_encoding(&parts.headers).as_deref() == Some("zstd");
     let compressible = !openai
+        && catalog_selection.is_none()
         && transport::compressible_path(&parts.method, &rest)
         && content_encoding(&parts.headers).is_none()
         && !body.is_empty();
@@ -353,7 +372,10 @@ pub(crate) async fn proxy_http(
                             r.describe()
                         ));
                     }
-                    if openai
+                    if (openai
+                        || catalog_selection
+                            .as_ref()
+                            .is_some_and(|s| s.standard(c.member)))
                         && let Some((dropped, fields)) = crate::openai::member_responses_body(
                             &generation,
                             c.member,
@@ -833,6 +855,11 @@ async fn send(
             .and_then(|b| b.get(c.line))
             .unwrap_or(&line.cfg.base_url),
     };
+    let selected_base = parts
+        .extensions
+        .get::<crate::merged_catalog::Selection>()
+        .and_then(|s| s.base(generation, c));
+    let base = selected_base.as_ref().unwrap_or(base);
     let upstream = generation
         .config
         .upstream_protocol(&member.cfg.id, Protocol::Responses)

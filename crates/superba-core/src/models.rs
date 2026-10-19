@@ -806,6 +806,9 @@ pub struct ModelsViewRequest {
 /// The Models page of one profile.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelsView {
+    /// Live merged router catalog, including unpublished models and source errors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub router_catalog: Option<crate::RouterCatalogView>,
     /// Profile.
     pub profile_id: ProfileId,
     /// Its site.

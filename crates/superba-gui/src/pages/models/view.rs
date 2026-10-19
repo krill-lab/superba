@@ -79,6 +79,7 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         model_map: &map,
         prices: &prices,
     };
+    super::catalog::controls(ui, cx, state, &view);
     let body = ui.available_rect_before_wrap();
     // A narrow page (the 960 px window) puts the list source on a row of its
     // own above the default model / effort / speed controls (user bug 25).
@@ -712,12 +713,17 @@ enum RowRef<'a> {
 /// The paged model table with the pager and the pending bar in its footer.
 fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
     let view = saved.view;
-    let models = model::rows(saved, &state.pending, state.show_hidden, &state.query);
+    let models: Vec<_> = model::rows(saved, &state.pending, state.show_hidden, &state.query)
+        .into_iter()
+        .filter(|m| super::catalog::matches(state, view, &m.slug))
+        .collect();
     let total = models.len() + 1;
     let custom = !saved.model_map.is_empty()
         || providers::site(cx.data, &view.site_id)
             .is_some_and(|s| s.kind == superba_core::SiteKind::Compatible);
-    let last_col = if custom {
+    let last_col = if view.router_catalog.is_some() {
+        cx.tr.t("models.catalog.actions")
+    } else if custom {
         cx.tr.t("models.col.upstream")
     } else {
         cx.tr.t("models.col.price")
@@ -830,6 +836,10 @@ fn view_applied(cx: &Cx<'_>, view: &ModelsView) -> bool {
 
 /// An edit made in a cell this frame.
 enum Edit {
+    /// Toggle picker visibility.
+    Visible(String, bool),
+    /// Test one model through the router.
+    Test(String),
     /// Committed text of a field.
     Text {
         slug: String,
@@ -951,7 +961,13 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
                         .collect();
                     name = format!("{name} · {}", lists.join(" + "));
                 }
-                ui.add(egui::Label::new(Text::caption(name, cx.pal)).truncate());
+                if let Some(row) = super::catalog::row(rc.saved.view, &m.slug) {
+                    name = format!("{} · {}", name, super::catalog::badge(cx, row));
+                    ui.add(egui::Label::new(Text::caption(name, cx.pal)).truncate())
+                        .on_hover_text(super::catalog::evidence(row));
+                } else {
+                    ui.add(egui::Label::new(Text::caption(name, cx.pal)).truncate());
+                }
             });
         }
         (RowRef::Model(m), 1) => {
@@ -1021,6 +1037,29 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
                     r.on_hover_text(tips.join("\n"));
                 }
             }
+        }
+        (RowRef::Model(m), 4) if rc.saved.view.router_catalog.is_some() => {
+            let mut visible = !model::hidden(m, &rc.pending.override_of(rc.saved, &m.slug));
+            ui.vertical(|ui| {
+                if ui
+                    .add_enabled(
+                        !rc.read_only,
+                        egui::Checkbox::new(&mut visible, cx.tr.t("models.catalog.visible")),
+                    )
+                    .changed()
+                {
+                    rc.edits.push(Edit::Visible(m.slug.clone(), visible));
+                }
+                if ui
+                    .add_enabled(
+                        !rc.read_only,
+                        egui::Button::new(cx.tr.t("models.catalog.test")),
+                    )
+                    .clicked()
+                {
+                    rc.edits.push(Edit::Test(m.slug.clone()));
+                }
+            });
         }
         (RowRef::Model(m), 4) if rc.custom => {
             let o = rc.pending.override_of(rc.saved, &m.slug);
@@ -1449,6 +1488,10 @@ fn upstream(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, value: String) {
 /// Apply a committed cell edit to the pending edits (with validation).
 fn apply_edit(cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>, edit: Edit) {
     match edit {
+        Edit::Visible(slug, visible) => {
+            super::catalog::visibility(state, cx, saved.view, slug, visible);
+        }
+        Edit::Test(slug) => super::catalog::test(state, cx, slug),
         Edit::Reset(slug) => {
             state.pending.reset(saved, &slug);
             for f in [Field::Window, Field::Compact, Field::Upstream] {

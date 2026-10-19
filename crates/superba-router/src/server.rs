@@ -784,6 +784,15 @@ async fn dispatch(
     } else if openai.is_some() {
         crate::openai::handle(shared, req, rest, admission).await
     } else if ws::is_upgrade(&req) {
+        if shared.current().config.catalog.is_some() {
+            // The model is inside the first WebSocket frame. Negotiate HTTP
+            // so namespace and capability checks precede upstream selection.
+            return router_error(
+                StatusCode::UPGRADE_REQUIRED,
+                "model_routing_http",
+                "model-based routing requires HTTP Responses",
+            );
+        }
         ws::proxy_ws(shared, req, rest, admission).await
     } else if req.method() == http::Method::GET && rest.trim_end_matches('/') == "/models" {
         crate::catalog::handle(shared, req, rest, admission).await
@@ -855,6 +864,9 @@ where
 
 /// The remainder below a router prefix (`""` or `/...`), or `None`.
 fn strip_prefix(path: &str) -> Option<String> {
+    if path.trim_end_matches('/') == "/models" {
+        return Some("/models".into());
+    }
     [ROUTER_BASE_PATH, ROUTER_V1_PATH].iter().find_map(|p| {
         let rest = path.strip_prefix(p)?;
         (rest.is_empty() || rest.starts_with('/')).then(|| rest.to_owned())
