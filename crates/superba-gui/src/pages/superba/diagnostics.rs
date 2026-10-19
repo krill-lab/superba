@@ -1,16 +1,20 @@
 //! Diagnostics (UX §3.10): doctor findings, the Codex processes of this
 //! computer, environment facts and the activity log.
 
+mod tools;
+pub use tools::State;
+
 use egui::{Align, Layout, ScrollArea, Ui};
 use superba_core::paths::display_path;
 use superba_core::{CodexProcessKind, EnvObservation, FeedOrigin, Severity};
 
-use super::{Action, Cx, Page, empty_state, error_state, kv, page_header, section};
 use crate::design::icons::Icon;
 use crate::design::widgets::{Button, Card, Status, StatusDot, Table, Text};
+use crate::pages::{Action, Cx, Page, empty_state, error_state, kv, page_header, section};
 
 /// Draw the diagnostics page.
-pub fn show(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
+pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    state.poll(ui, cx);
     page_header(
         ui,
         cx,
@@ -18,10 +22,20 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
         |ui| {
             if ui
                 .add(
+                    Button::ghost(cx.tr.t("superba.diagnostics.copy"))
+                        .icon(Icon::Copy)
+                        .small(),
+                )
+                .clicked()
+            {
+                out.push(Action::Copy(tools::report(cx, state)));
+            }
+            if ui
+                .add(
                     Button::new(cx.tr.t("diag.run"))
                         .icon(Icon::Refresh)
                         .small()
-                        .loading(cx.data.doctor.loading),
+                        .loading(cx.data.doctor.loading || state.loading()),
                 )
                 .clicked()
             {
@@ -32,7 +46,8 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
 
     checks(ui, cx);
     ui.add_space(24.0);
-    claude(ui, cx, out);
+    tools::show(ui, cx, state, out);
+    ui.add_space(24.0);
     processes(ui, cx, out);
     ui.add_space(24.0);
     environment(ui, cx);
@@ -103,70 +118,9 @@ fn checks(ui: &mut Ui, cx: &Cx<'_>) {
     }
 }
 
-/// Claude Code (user bug 79): the program, settings.json, managed settings
-/// that override Superba's keys, variables outside the file, a claude.ai
-/// login, apiKeyHelper. Hidden when the service has no Claude Code support.
-fn claude(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<super::Action>) {
-    let d = match (&cx.data.claude_diag.value, &cx.data.claude_diag.error) {
-        (_, Some(superba_core::Error::NotImplemented { .. })) => return,
-        (Some(d), _) => d,
-        (None, Some(e)) => {
-            section(ui, cx, &cx.tr.t("claude.diag.title"), None);
-            error_state(ui, cx, &cx.tr.t("diag.failed"), e);
-            ui.add_space(24.0);
-            return;
-        }
-        (None, None) => return,
-    };
-    super::section_with(ui, cx, &cx.tr.t("claude.diag.title"), None, |ui| {
-        if ui
-            .add(Button::ghost(cx.tr.t("nav.claude_code")).small())
-            .clicked()
-        {
-            out.push(super::Action::Go(super::Page::ClaudeCode));
-        }
-    });
-    Card::new().flat().show(ui, |ui| {
-        let n = d.findings.len();
-        for (i, f) in d.findings.iter().enumerate() {
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(20, 10))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.horizontal_top(|ui| {
-                        let status = match f.severity {
-                            Severity::Info => Status::Ok,
-                            Severity::Warning => Status::Warn,
-                            Severity::Danger => Status::Error,
-                        };
-                        let (r, _) =
-                            ui.allocate_exact_size(egui::vec2(10.0, 20.0), egui::Sense::hover());
-                        StatusDot::new(status).paint_at(ui, r.center());
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 2.0;
-                            ui.add(
-                                egui::Label::new(Text::body(cx.tr.text(&f.title), cx.pal)).wrap(),
-                            );
-                            if let Some(detail) = &f.detail {
-                                ui.add(
-                                    egui::Label::new(Text::small(cx.tr.text(detail), cx.pal))
-                                        .wrap(),
-                                );
-                            }
-                        });
-                    });
-                });
-            if i + 1 < n {
-                crate::shell::divider(ui, cx.pal);
-            }
-        }
-    });
-    ui.add_space(24.0);
-}
-
 /// Codex processes of this computer (moved from the 0.2 Targets page): the
 /// configuration they started with and their auth address variable.
-fn processes(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<super::Action>) {
+fn processes(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<crate::pages::Action>) {
     section(
         ui,
         cx,
@@ -241,7 +195,7 @@ fn processes(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<super::Action>) {
         .add(crate::design::widgets::Button::ghost(cx.tr.t("diag.proc.in_effect")).small())
         .clicked()
     {
-        out.push(super::Action::ShowRuntime);
+        out.push(crate::pages::Action::ShowRuntime);
     }
 }
 
@@ -268,10 +222,10 @@ fn environment(ui: &mut Ui, cx: &Cx<'_>) {
         }
         if let Some(paths) = &cx.data.paths {
             kv(ui, cx, &cx.tr.t("diag.env.data_dir"), |ui| {
-                super::elided(ui, Text::mono(display_path(&paths.data_dir), cx.pal));
+                crate::pages::elided(ui, Text::mono(display_path(&paths.data_dir), cx.pal));
             });
             kv(ui, cx, &cx.tr.t("diag.env.router_db"), |ui| {
-                super::elided(ui, Text::mono(display_path(&paths.router_db), cx.pal));
+                crate::pages::elided(ui, Text::mono(display_path(&paths.router_db), cx.pal));
             });
         }
         kv(
@@ -303,7 +257,7 @@ fn environment(ui: &mut Ui, cx: &Cx<'_>) {
                         parts.push(cx.ago(t));
                     }
                     parts.push(format!("#{}", f.serial));
-                    super::elided(ui, Text::body(parts.join(" · "), cx.pal));
+                    crate::pages::elided(ui, Text::body(parts.join(" · "), cx.pal));
                 }
                 (None, true) => {
                     ui.add(StatusDot::new(Status::Busy));
@@ -380,7 +334,10 @@ fn activity_log(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
                 for l in cx.log.iter().rev() {
                     ui.horizontal(|ui| {
                         ui.add(StatusDot::new(l.status).size(6.0));
-                        ui.label(Text::mono_muted(super::clock_time(l.at, true), cx.pal));
+                        ui.label(Text::mono_muted(
+                            crate::pages::clock_time(l.at, true),
+                            cx.pal,
+                        ));
                         ui.label(Text::mono(l.text.clone(), cx.pal));
                     });
                 }
@@ -411,7 +368,7 @@ fn env_label(ui: &mut Ui, cx: &Cx<'_>, env: &EnvObservation) {
                 .map(|l| cx.tr.text(&l.name))
                 .unwrap_or_else(|| v.clone());
             ui.add(StatusDot::new(Status::Ok));
-            super::elided(ui, Text::small(name, cx.pal));
+            crate::pages::elided(ui, Text::small(name, cx.pal));
         }
         EnvObservation::Absent => {
             ui.add(StatusDot::new(Status::Warn));

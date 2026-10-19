@@ -1,8 +1,11 @@
 //! Superba's maintenance and preferences: a fixed rail and in-place detail.
 pub mod appearance;
+pub mod backups;
 pub mod data;
+pub mod diagnostics;
 pub mod general;
 pub mod home;
+mod maintenance;
 pub mod network;
 pub mod search;
 pub mod update_settings;
@@ -79,7 +82,7 @@ impl SuperbaSection {
         match self {
             Self::Home => "superba.home.subtitle",
             Self::Updates => "page.updates.subtitle",
-            Self::Diagnostics => "page.diagnostics.subtitle",
+            Self::Diagnostics => "superba.diagnostics.subtitle",
             Self::Data => "superba.data.subtitle",
             Self::General => "superba.general.subtitle",
             Self::Appearance => "superba.appearance.subtitle",
@@ -111,6 +114,10 @@ pub struct State {
     pub focus: Option<String>,
     /// Background reads for the home summary.
     pub home: home::State,
+    /// Coding-tool checks and expansion state.
+    pub diagnostics: diagnostics::State,
+    /// All configuration backup stores.
+    pub backups: backups::State,
 }
 
 /// Fixed rail, independently scrolling detail, and immediate preference saves.
@@ -125,6 +132,13 @@ pub fn show(
     updates: &mut updates::State,
     out: &mut Vec<Action>,
 ) {
+    if state.last != selected {
+        match selected {
+            SuperbaSection::Diagnostics => state.diagnostics.invalidate(),
+            SuperbaSection::Data => state.backups.invalidate(),
+            _ => {}
+        }
+    }
     state.last = selected;
     let before = settings.clone();
     let width = if ui.available_width() < 760.0 {
@@ -209,7 +223,7 @@ pub fn show(
                         .id_salt("diagnostics-content")
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
-                            super::diagnostics::show(ui, cx, out);
+                            diagnostics::show(ui, cx, &mut state.diagnostics, out);
                         });
                 }
                 SuperbaSection::General => {
@@ -226,7 +240,7 @@ pub fn show(
                 }
                 SuperbaSection::Data => {
                     page_header(ui, cx, Page::Superba(selected), |_| {});
-                    data::show(ui, cx, settings, out);
+                    data::show(ui, cx, settings, &mut state.backups, out);
                 }
                 SuperbaSection::Notify => {
                     page_header(ui, cx, Page::Superba(selected), |_| {});
@@ -252,7 +266,8 @@ pub fn show(
                     m.request_focus(id);
                 });
             }
-        } else if !notify.modal()
+        } else if !state.backups.modal()
+            && !notify.modal()
             && !updates::status(updates).modal
             && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
         {

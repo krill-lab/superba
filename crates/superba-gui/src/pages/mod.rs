@@ -38,7 +38,6 @@
 //! several pages live in [`shared`] (never import another page's module).
 
 pub mod claude;
-pub mod diagnostics;
 pub mod hosts;
 pub mod import;
 pub mod models;

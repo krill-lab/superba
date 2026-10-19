@@ -191,7 +191,9 @@ impl PageStates {
             Page::ClaudeCode | Page::ClaudeSettings => pages::claude::status(&self.claude, page),
             Page::Overview => pages::overview::status(&self.overview),
             Page::Superba(_) => PageStatus {
-                modal: self.notify.modal() || pages::superba::updates::status(&self.updates).modal,
+                modal: self.notify.modal()
+                    || pages::superba::updates::status(&self.updates).modal
+                    || self.superba.backups.modal(),
                 ..PageStatus::default()
             },
             Page::Tools => PageStatus::default(),
@@ -1638,6 +1640,7 @@ impl SuperbaApp {
                 self.backend.send(Command::Sessions);
             }
             Action::RunDoctor => {
+                self.pages.superba.diagnostics.invalidate();
                 self.data.doctor.start();
                 self.data.claude_diag.start();
                 self.backend.send(Command::Doctor);

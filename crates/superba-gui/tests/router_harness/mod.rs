@@ -30,6 +30,8 @@ pub struct Frame {
     pub scrolled: bool,
     /// Texts drawn, with where.
     pub texts: Vec<(String, Rect)>,
+    /// Text rectangles with their effective clip; used for cell-fit regressions.
+    pub clipped_texts: Vec<(String, Rect, Rect)>,
     /// Actions returned.
     pub actions: Vec<Action>,
     /// Scroll areas created so far on the context.
@@ -52,6 +54,7 @@ impl Default for Frame {
             used_bottom: 0.0,
             scrolled: false,
             texts: Vec::new(),
+            clipped_texts: Vec::new(),
             actions: Vec::new(),
             scroll_areas: 0,
             passes: 0,
@@ -103,6 +106,7 @@ pub struct Harness {
     pub data: Data,
     window: [f32; 2],
     fit: bool,
+    min_height: f32,
     /// Input events per coming frame.
     pending: std::collections::VecDeque<Vec<egui::Event>>,
 }
@@ -140,8 +144,15 @@ impl Harness {
             data,
             window,
             fit,
+            min_height: layout::FIT_MIN_HEIGHT,
             pending: Default::default(),
         }
+    }
+
+    /// Use the real page's minimum height (the Superba rail fits a 960px window).
+    pub fn min_height(mut self, height: f32) -> Self {
+        self.min_height = height;
+        self
     }
 
     /// Use the dark theme.
@@ -267,7 +278,7 @@ impl Harness {
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
                 if self.fit {
-                    let fit = layout::fit_area(&mut area, layout::FIT_MIN_HEIGHT, |ui| {
+                    let fit = layout::fit_area(&mut area, self.min_height, |ui| {
                         ui.spacing_mut().item_spacing.y = 8.0;
                         show(ui, &cx, &mut frame.actions);
                         ui.min_rect().max.y
@@ -302,6 +313,18 @@ impl Harness {
                 egui::Shape::Text(t) => Some((
                     t.galley.text().to_owned(),
                     t.galley.rect.translate(t.pos.to_vec2()),
+                )),
+                _ => None,
+            })
+            .collect();
+        frame.clipped_texts = output
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) => Some((
+                    t.galley.text().to_owned(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                    s.clip_rect,
                 )),
                 _ => None,
             })

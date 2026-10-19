@@ -21,6 +21,7 @@ mod claude;
 mod files;
 mod hosts;
 mod import;
+mod maintenance;
 mod models;
 mod notify;
 mod providers;
@@ -102,6 +103,7 @@ pub struct FakeService {
 struct Areas {
     claude: Mutex<claude::State>,
     files: Mutex<files::State>,
+    maintenance: Mutex<maintenance::State>,
     providers: Mutex<providers::State>,
     models: Mutex<models::State>,
     settings: Mutex<settings::State>,
@@ -1929,6 +1931,79 @@ impl SwitchService for FakeService {
 
     async fn codex_file(&self, target: TargetId, kind: CodexFileKind) -> Result<CodexFileDoc> {
         files::codex_file(self, target, kind).await
+    }
+
+    async fn harness_list(&self) -> Result<Vec<superba_core::harness::HarnessSummary>> {
+        Ok(self.areas.maintenance.lock().unwrap().harnesses.clone())
+    }
+    async fn harness_view(
+        &self,
+        h: superba_core::harness::HarnessId,
+    ) -> Result<superba_core::harness::HarnessView> {
+        self.areas
+            .maintenance
+            .lock()
+            .unwrap()
+            .views
+            .get(&h)
+            .cloned()
+            .unwrap_or_else(|| Err(Error::other("no fixture")))
+    }
+    async fn harness_backups(
+        &self,
+        h: superba_core::harness::HarnessId,
+    ) -> Result<Vec<superba_core::harness::HarnessBackup>> {
+        self.areas
+            .maintenance
+            .lock()
+            .unwrap()
+            .backups
+            .get(&h)
+            .cloned()
+            .unwrap_or_else(|| Ok(vec![]))
+    }
+    async fn harness_restore_backup(
+        &self,
+        h: superba_core::harness::HarnessId,
+        id: String,
+    ) -> Result<superba_core::harness::HarnessApplyReport> {
+        self.areas
+            .maintenance
+            .lock()
+            .unwrap()
+            .restores
+            .push((h, id));
+        Ok(superba_core::harness::HarnessApplyReport {
+            kind: superba_core::harness::HarnessPlanKind::Restore,
+            harness: h,
+            files: vec![],
+            changed: vec![],
+            kept: vec![],
+            notes: vec![],
+        })
+    }
+    async fn claude_diagnostics(&self) -> Result<superba_core::ClaudeDiagnostics> {
+        let view = claude::view(self);
+        Ok(superba_core::ClaudeDiagnostics {
+            install: view.install,
+            settings_path: view.settings_path,
+            file: view.file,
+            managed: vec![],
+            env_conflicts: vec![],
+            official_login: false,
+            api_key_helper: false,
+            findings: vec![],
+        })
+    }
+    async fn claude_probe(&self, _model: Option<String>) -> Result<superba_core::ClaudeProbe> {
+        Ok(superba_core::ClaudeProbe {
+            model: "test".into(),
+            url: "https://example.test/v1/messages".into(),
+            status: Some(200),
+            latency_ms: 214,
+            ok: true,
+            message: None,
+        })
     }
 
     async fn claude_view(&self) -> Result<superba_core::ClaudeView> {

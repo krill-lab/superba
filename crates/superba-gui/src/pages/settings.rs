@@ -568,8 +568,11 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
 pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     let _ = out;
     if let Some(file) = command.strip_prefix("files-backups:") {
+        let (file, target) = file.split_once('@').map_or((file, None), |(f, t)| {
+            (f, Some(superba_core::TargetId::new(t)))
+        });
         let kind = superba_core::CodexFileKind::parse(file).unwrap_or(state.files.kind());
-        let target = state.files.target();
+        let target = target.unwrap_or_else(|| state.files.target());
         state.files.open_file(cx, target, kind);
         if state.files.dialog.is_none() {
             state.files.open_backups(cx);

@@ -4,7 +4,13 @@ use crate::design::widgets::{Button, Card};
 use egui::Ui;
 use superba_core::{RestoreTarget, Settings};
 /// Draw this section and save changes immediately.
-pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Action>) {
+pub fn show(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    settings: &mut Settings,
+    backups: &mut super::backups::State,
+    out: &mut Vec<Action>,
+) {
     let before = settings.clone();
     section(ui, cx, &cx.tr.t("prefs.data.title"), None);
     Card::new().flat().show(ui, |ui| {
@@ -42,6 +48,10 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
             },
         );
     });
+
+    data_location_section(ui, cx, settings, out);
+    ui.add_space(24.0);
+    super::backups::show(ui, cx, backups, out);
 
     ui.add_space(24.0);
     section(ui, cx, &cx.tr.t("prefs.restore.title"), None);
@@ -119,4 +129,14 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
     if *settings != before {
         out.push(Action::SaveSettings);
     }
+}
+
+/// Mount point for the separate data-location feature (GH#15).
+/// Keep its state and controls in this section when that feature is integrated.
+pub fn data_location_section(
+    _ui: &mut Ui,
+    _cx: &Cx<'_>,
+    _settings: &mut Settings,
+    _out: &mut Vec<Action>,
+) {
 }
