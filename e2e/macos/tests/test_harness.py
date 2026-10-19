@@ -2,6 +2,7 @@ import importlib.util
 import io
 import json
 import os
+import plistlib
 import subprocess
 import tarfile
 import tempfile
@@ -274,6 +275,24 @@ class GuestSafetyTests(unittest.TestCase):
             self.assertNotIn("SUPERBA_DATA_DIR", env)
             for key in ("HOME", "CFFIXED_USER_HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "TMPDIR"):
                 self.assertTrue(env[key].startswith(str(root) + "/"))
+
+    def test_login_fixture_forwards_home_through_launchservices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "session"
+            root.mkdir()
+            real_home = Path(directory) / "login-home"
+            source = root / "autostart.plist"
+            source.write_bytes(plistlib.dumps({"Label": "com.krill-code.superba.autostart",
+                "ProgramArguments": ["/usr/bin/open", "-b", "com.krill-code.superba", "--args", "--autostart"]}))
+            self.guest.save(root, {"env": {}, "login_plists": []})
+            with patch.object(Path, "home", return_value=real_home):
+                result = self.guest.login_item(root, "autostart.plist")
+            plist = plistlib.loads(Path(result["path"]).read_bytes())
+            argv = plist["ProgramArguments"]
+            home_index = argv.index("HOME=" + str(root / "home"))
+            self.assertEqual(argv[home_index - 1], "--env")
+            self.assertLess(home_index, argv.index("--args"))
+            self.assertEqual(argv[-1], "--autostart")
 
 
 if __name__ == "__main__":

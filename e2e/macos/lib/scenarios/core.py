@@ -190,12 +190,18 @@ def autostart(t):
     t.check(after != before, "Kernel boot time changed")
     deadline = time.monotonic() + 60
     service = t.rpc("service", label=label)
-    while time.monotonic() < deadline and "state = running" not in service["stdout"]:
+    processes = t.rpc("login_state")
+    while time.monotonic() < deadline and not processes:
         time.sleep(2)
         service = t.rpc("service", label=label)
+        processes = t.rpc("login_state")
     t.save("service-after-reboot.json", service)
-    t.check(service["code"] == 0 and "state = running" in service["stdout"] and t.root in service["stdout"],
-            "Real login starts the Superba GUI with the isolated product LaunchAgent")
+    t.save("gui-after-reboot.json", processes)
+    # An /usr/bin/open LaunchAgent exits after submitting the launch. Require the
+    # actual GUI and its HOME, not a permanently running launcher process.
+    t.check(service["code"] == 0 and t.root in service["stdout"], "Product LaunchAgent was loaded at login")
+    t.check(bool(processes) and all(process["isolated"] for process in processes),
+            "Real login started the Superba GUI with the temporary HOME and CODEX_HOME")
     t.spb("autostart", "off", gui=True)
     t.check(not t.read(plist), "Autostart off removes the product registration")
 

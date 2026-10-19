@@ -109,7 +109,10 @@ M06 installs the **product-generated GUI autostart LaunchAgent** into the logged
 user's LaunchAgents directory for the duration of the reboot test, with explicit
 environment isolation. The product plist normally lives under the temporary
 HOME, which loginwindow would not load. M06 requires a changed kernel boot time,
-GUI auto-login, and a running job referencing the test directory. It invokes
+GUI auto-login, a loaded job, and a real GUI process with the temporary HOME and
+CODEX_HOME. When the product uses `/usr/bin/open`, the fixture adds explicit
+`--env` arguments because LaunchServices does not inherit open's environment;
+the one-shot launcher is allowed to exit after starting the GUI. It invokes
 `superba autostart on/off` through the app's embedded CLI so executable discovery
 does not depend on where the standalone `spb` was copied. Builds predating the
 autostart command are BLOCKED. M03 separately checks the router's service.

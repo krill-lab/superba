@@ -23,7 +23,8 @@ class Lease:
     def __init__(self, path, label="mx", wait=0):
         self.path = Path(path)
         self.wait = wait
-        self.owner = f"{label} {datetime.now(timezone.utc).isoformat()} {uuid.uuid4().hex}\n"
+        self.label = label
+        self.owner = None
         self.inode = None
 
     def __enter__(self):
@@ -32,6 +33,7 @@ class Lease:
         while True:
             try:
                 with self.path.open("x") as stream:
+                    self.owner = f"{self.label} {datetime.now(timezone.utc).isoformat()} {uuid.uuid4().hex}\n"
                     stream.write(self.owner)
                     self.inode = os.fstat(stream.fileno()).st_ino
                 return self

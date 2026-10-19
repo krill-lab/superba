@@ -240,7 +240,15 @@ def login_item(root, source):
     data = plistlib.loads(source.read_bytes())
     # A reboot only loads plists in the real login user's Library/LaunchAgents.
     # Preserve the product's plist but give the child an explicitly temporary HOME.
-    data.setdefault("EnvironmentVariables", {}).update(environment(root))
+    isolated_env = environment(root)
+    data.setdefault("EnvironmentVariables", {}).update(isolated_env)
+    argv = data.get("ProgramArguments", [])
+    if argv and argv[0] == "/usr/bin/open":
+        # LaunchServices does not inherit open's environment. Forward each test
+        # directory explicitly before --args, retaining the product launch args.
+        split = argv.index("--args") if "--args" in argv else len(argv)
+        forwarded = [arg for item in sorted(isolated_env.items()) for arg in ("--env", "{}={}".format(*item))]
+        data["ProgramArguments"] = argv[:split] + forwarded + argv[split:]
     destination = Path.home() / "Library/LaunchAgents" / source.name
     if destination.exists() or destination.is_symlink():
         raise Blocked("Login item destination already exists")
@@ -400,6 +408,24 @@ def dispatch(op, args):
             save(root, st)
         return {"code": result.returncode, "stdout": result.stdout, "boot":
                 checked(["/usr/sbin/sysctl", "-n", "kern.boottime"]).strip()}
+    if op == "login_state":
+        st = state(root)
+        if not st["installed"]:
+            raise ValueError("This session does not own the app")
+        result = []
+        for row in processes():
+            if row["command"].split(" ", 1)[0] != str(APP / "Contents/MacOS/superba"):
+                continue
+            # Only inspect the app installed by this session. Return booleans,
+            # never its raw environment (which may contain credential variables).
+            env_text = command(["/bin/ps", "eww", "-p", str(row["pid"]), "-o", "command="]).stdout
+            isolated = all(re.search(r"(?:^|\s)" + re.escape("{}={}".format(key, value)) + r"(?=\s|$)", env_text)
+                           for key, value in (("HOME", str(root / "home")),
+                                              ("CODEX_HOME", str(root / "home/.codex"))))
+            st["pids"].append({"pid": row["pid"], "stamp": stamp(row["pid"])})
+            result.append({"pid": row["pid"], "isolated": isolated})
+        save(root, st)
+        return result
     if op == "cleanup":
         return cleanup(root)
     if op == "hashes":
