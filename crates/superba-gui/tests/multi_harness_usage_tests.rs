@@ -300,17 +300,213 @@ async fn ingress_counts_exclude_direct_and_old_records_and_urls_use_the_configur
     let mut old = rows[1].clone();
     old.id = 100;
     old.started_at = Timestamp::now().saturating_sub(Duration::from_secs(90_000));
-    rows.extend([direct, old]);
+    let mut gemini = rows[0].clone();
+    gemini.id = 101;
+    gemini.protocol = RequestProtocol::Gemini;
+    gemini.harness = RequestHarness::Unknown;
+    let mut old_gemini = gemini.clone();
+    old_gemini.id = 102;
+    old_gemini.started_at = old.started_at;
+    let mut direct_gemini = gemini.clone();
+    direct_gemini.id = 103;
+    direct_gemini.source = RequestSource::Rollout;
+    rows.extend([direct, old, gemini, old_gemini, direct_gemini]);
     service.set_request_rows(rows);
     assert_eq!(
         ingress::recent_counts(service.as_ref(), Timestamp::now())
             .await
             .unwrap(),
-        [1, 1, 2]
+        [1, 1, 2, 1]
     );
     assert_eq!(
         ingress::address(Some(18431), 2).as_deref(),
         Some("http://127.0.0.1:18431/openai/v1")
     );
     assert!(ingress::address(None, 0).is_none());
+    assert_eq!(
+        ingress::address(Some(18431), 3).as_deref(),
+        Some("http://127.0.0.1:18431/gemini")
+    );
+    assert!(ingress::address(Some(18431), 4).is_none());
+}
+
+#[test]
+fn ingress_conversion_controls_show_partial_state_and_save_one_direction() {
+    use superba_router::translate::{
+        ir::Protocol,
+        routing::{Conversion, TranslationConfig},
+    };
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = fake();
+        service.set_router_translation(Some(TranslationConfig {
+            disabled: [Conversion {
+                from: Protocol::Messages,
+                to: Protocol::Responses,
+            }]
+            .into(),
+        }));
+        let mut h = AppHarness::new(service.clone(), locale, Page::Router);
+        h.resize([960.0, 640.0]);
+        let title = |enabled| {
+            tr.f(
+                "router.ingress.translation_state",
+                &[("enabled", &enabled), ("total", &12)],
+            )
+        };
+        h.click(None, &title(11));
+        let off = format!(
+            "{} → {}",
+            tr.text(&RequestProtocol::Messages.text()),
+            tr.text(&RequestProtocol::Responses.text())
+        );
+        let reverse = format!(
+            "{} → {}",
+            tr.text(&RequestProtocol::Responses.text()),
+            tr.text(&RequestProtocol::Messages.text())
+        );
+        let tree = h.wait_for(Some(Role::Switch), &off);
+        assert_eq!(
+            tree.node(tree.find(Some(Role::Switch), &off).unwrap())
+                .toggled(),
+            Some(egui::accesskit::Toggled::False)
+        );
+        assert_eq!(
+            tree.node(tree.find(Some(Role::Switch), &reverse).unwrap())
+                .toggled(),
+            Some(egui::accesskit::Toggled::True)
+        );
+        assert_eq!(
+            tree.with_role(Role::Switch)
+                .iter()
+                .filter(|id| tree.name(**id).is_some_and(|n| n.contains('→')))
+                .count(),
+            12
+        );
+        assert!(tree.unnamed().is_empty(), "{}", tree.dump());
+        h.click(Some(Role::Switch), &reverse);
+        h.wait_for(None, &title(10));
+        let saved = service.router_translation().unwrap();
+        assert_eq!(saved.iter().filter(|c| !c.enabled).count(), 2);
+        assert!(saved.iter().any(|c| c.from == RequestProtocol::Messages
+            && c.to == RequestProtocol::Responses
+            && !c.enabled));
+        assert!(saved.iter().any(|c| c.from == RequestProtocol::Responses
+            && c.to == RequestProtocol::Messages
+            && !c.enabled));
+        service.fail_router_conversion(Some(superba_core::Error::invalid(
+            "conversion write failed",
+        )));
+        h.click(Some(Role::Switch), &reverse);
+        h.until("failed conversion is visible", |tree| {
+            tree.has_containing("conversion write failed")
+        });
+        assert_eq!(service.router_translation().unwrap(), saved);
+        h.wait_for(None, &title(10));
+        service.fail_router_conversion(None);
+        h.click(Some(Role::Switch), &reverse);
+        h.wait_for(None, &title(11));
+        assert_eq!(
+            service
+                .router_translation()
+                .unwrap()
+                .iter()
+                .filter(|c| !c.enabled)
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn gemini_ingress_copies_the_real_address_and_handles_missing_configuration() {
+    use superba_core::{ProfileId, RouterInstallRequest, SwitchService};
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = fake();
+        let mut h = AppHarness::new(service.clone(), locale, Page::Router);
+        let copy = tr.f("router.ingress.copy", &[("name", &"Gemini")]);
+        let tree = h.wait_for(Some(Role::Button), &copy);
+        assert!(
+            tree.node(tree.find(Some(Role::Button), &copy).unwrap())
+                .is_disabled()
+        );
+        assert!(tree.has_containing(&tr.t("router.ingress.translation_unknown")));
+        assert!(
+            !tree
+                .nodes
+                .keys()
+                .any(|id| tree.node(*id).role() == Role::Switch
+                    && tree.name(*id).is_some_and(|n| n.contains('→')))
+        );
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(service.router_install(RouterInstallRequest {
+            members: vec![ProfileId::new("krill")],
+        }))
+        .unwrap();
+        let tree = h.until("configured Gemini ingress", |tree| {
+            tree.find(Some(Role::Button), &copy)
+                .is_some_and(|id| !tree.node(id).is_disabled())
+        });
+        // Token readiness is independent of address configuration.
+        assert!(tree.has_containing(&tr.t("router.ingress.token_missing")));
+        h.click(Some(Role::Button), &copy);
+        assert_eq!(h.take_copied_text(), ["http://127.0.0.1:4321/gemini"]);
+    }
+}
+
+#[test]
+fn unavailable_ingress_statistics_do_not_show_a_cached_count() {
+    let mut h = Harness::new([960.0, 640.0], Locale::En, fake(), true);
+    let mut state = State::default();
+    state.ingress.value = Some([0, 0, 0, 987_654]);
+    state.ingress.error = Some(superba_core::Error::invalid("unreadable statistics"));
+    state.ingress.at = Some(std::time::Instant::now());
+    let f = h.until_scrolled(
+        |ui, cx, out| router::show(ui, cx, &mut state, out),
+        |f| f.has("Conversion settings unavailable"),
+    );
+    assert!(f.has("Last 24 hours · unavailable"), "{}", f.all_text());
+    assert!(!f.has("987654"));
+}
+
+#[test]
+fn expanded_conversion_directions_fit_the_narrow_router_column() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = fake();
+        service.set_router_translation(Some(Default::default()));
+        let mut h = Harness::new([960.0, 640.0], locale, service, true);
+        let mut state = State::default();
+        let title = tr.f(
+            "router.ingress.translation_state",
+            &[("enabled", &12), ("total", &12)],
+        );
+        let f = h.until_scrolled(
+            |ui, cx, out| router::show(ui, cx, &mut state, out),
+            |f| f.has(&title),
+        );
+        h.click_at(f.find(&title).unwrap().center());
+        h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
+        let direction = format!(
+            "{} → {}",
+            tr.text(&RequestProtocol::Messages.text()),
+            tr.text(&RequestProtocol::ChatCompletions.text())
+        );
+        let f = h.until_scrolled(
+            |ui, cx, out| router::show(ui, cx, &mut state, out),
+            |f| f.has(&direction),
+        );
+        for (label, rect, clip) in &f.clipped_texts {
+            if label.contains('→') || label == &title {
+                assert!(
+                    rect.right() <= clip.right() + 1.0,
+                    "{locale:?}: {label:?} {rect:?} clipped by {clip:?}"
+                );
+            }
+        }
+    }
 }

@@ -780,6 +780,190 @@ async fn configure_sets_the_stats_section_and_member_rewrites_keep_it() {
     manager.uninstall_service().unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn conversion_edits_persist_reload_and_change_only_the_selected_direction() {
+    use superba_core::{RequestProtocol, RouterConversion};
+    use superba_router::openai::{OpenAiConfig, OpenAiEndpoint, OpenAiMember, OpenAiModel};
+    use superba_router::{RouterConfig, RouterSecrets};
+    let _serial = SERIAL.lock().await;
+    let up = upstream(Mode::Json(200, r#"{"id":"answer","model":"model","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let data = DataDir::new(dir.path());
+    let service = InProcess::default();
+    let log = service.log.clone();
+    let manager = RouterManager::new(&data, fake_exe(dir.path()), Box::new(service));
+    let edit = RouterConversion {
+        from: RequestProtocol::Gemini,
+        to: RequestProtocol::ChatCompletions,
+        enabled: false,
+    };
+    assert!(matches!(
+        manager.set_conversion(edit).await,
+        Err(Error::NotFound { .. })
+    ));
+    let mut cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Compatible,
+        false,
+        vec![line("a", up.base("/native"))],
+    )]);
+    cfg.openai = Some(OpenAiConfig {
+        members: [(
+            "krill".into(),
+            OpenAiMember {
+                responses: None,
+                chat: Some(OpenAiEndpoint::line_base()),
+                models: vec![OpenAiModel {
+                    id: "model".into(),
+                    display_name: None,
+                }],
+                ..Default::default()
+            },
+        )]
+        .into(),
+        ..Default::default()
+    });
+    // An unrelated direction was already disabled before the UI edit.
+    cfg.translation
+        .set_conversion(RouterConversion {
+            from: RequestProtocol::ChatCompletions,
+            to: RequestProtocol::Gemini,
+            enabled: false,
+        })
+        .unwrap();
+    let endpoint = manager
+        .enable(&cfg, keys(), Duration::from_secs(10))
+        .await
+        .unwrap();
+    let before = RouterConfig::load(manager.paths()).unwrap();
+    let secrets = std::fs::read(manager.paths().secrets_json()).unwrap();
+    let http = reqwest::Client::builder().no_proxy().build().unwrap();
+    let send = || {
+        http.post(format!(
+            "http://127.0.0.1:{}/gemini/v1beta/models/model:generateContent",
+            endpoint.port
+        ))
+        .bearer_auth(endpoint.token.expose())
+        .json(&serde_json::json!({"contents":[{"role":"user","parts":[{"text":"Hello"}]}]}))
+        .send()
+    };
+    let response = send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert!(response.text().await.unwrap().contains("hello"));
+    let calls = up.seen().len();
+    let admin = superba_router::client::AdminClient::from_runtime(manager.paths()).unwrap();
+    let status = admin.status().await.unwrap();
+    assert!(manager.set_conversion(edit).await.unwrap());
+    let after = admin.status().await.unwrap();
+    assert_eq!(status.instance_id, after.instance_id);
+    assert_eq!(status.config_generation + 1, after.config_generation);
+    let mut expected = before.clone();
+    expected.translation.set_conversion(edit).unwrap();
+    assert_eq!(RouterConfig::load(manager.paths()).unwrap(), expected);
+    assert_eq!(
+        std::fs::read(manager.paths().secrets_json()).unwrap(),
+        secrets
+    );
+    let response = send().await.unwrap();
+    assert_eq!(response.status(), 404);
+    response.bytes().await.unwrap();
+    assert_eq!(
+        up.seen().len(),
+        calls,
+        "disabled conversion never reaches upstream"
+    );
+    // The native endpoint still forwards even when the reverse direction is off.
+    let response = http
+        .post(format!(
+            "http://127.0.0.1:{}/openai/v1/chat/completions",
+            endpoint.port
+        ))
+        .bearer_auth(endpoint.token.expose())
+        .json(&serde_json::json!({"model":"model","messages":[{"role":"user","content":"Hello"}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    response.bytes().await.unwrap();
+    for protocol in [
+        RequestProtocol::Messages,
+        RequestProtocol::Responses,
+        RequestProtocol::ChatCompletions,
+        RequestProtocol::Gemini,
+    ] {
+        assert!(
+            manager
+                .set_conversion(RouterConversion {
+                    from: protocol,
+                    to: protocol,
+                    enabled: false
+                })
+                .await
+                .is_err()
+        );
+    }
+    assert_eq!(RouterConfig::load(manager.paths()).unwrap(), expected);
+    assert!(
+        manager
+            .set_conversion(RouterConversion {
+                enabled: true,
+                ..edit
+            })
+            .await
+            .unwrap()
+    );
+    assert_eq!(RouterConfig::load(manager.paths()).unwrap(), before);
+    let response = send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    response.bytes().await.unwrap();
+    assert_eq!(
+        *log.lock().unwrap(),
+        ["install"],
+        "edits never restart the service"
+    );
+    // A saved edit is not reported as applied if the running router rejects
+    // reload. Repeating that same edit must retry, even if the file matches.
+    let generation = admin.status().await.unwrap().config_generation;
+    let mut invalid_secrets = RouterSecrets::load(manager.paths()).unwrap();
+    invalid_secrets.member_keys.clear();
+    invalid_secrets.save(manager.paths()).unwrap();
+    assert!(manager.set_conversion(edit).await.is_err());
+    assert_eq!(RouterConfig::load(manager.paths()).unwrap(), expected);
+    assert_eq!(admin.status().await.unwrap().config_generation, generation);
+    std::fs::write(manager.paths().secrets_json(), &secrets).unwrap();
+    assert!(manager.set_conversion(edit).await.unwrap());
+    assert_eq!(
+        admin.status().await.unwrap().config_generation,
+        generation + 1
+    );
+    manager.uninstall_service().unwrap();
+    let counts = superba_router::Reader::open(manager.paths())
+        .unwrap()
+        .stats(&superba_core::StatsQuery {
+            protocol: Some(RequestProtocol::Gemini),
+            source: Some(superba_core::RequestSource::Router),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(
+        counts.totals.requests, 3,
+        "two converted Gemini requests and one refusal were recorded as Gemini"
+    );
+    // Stopped routers save the setting without being started or touching keys.
+    manager.write_config(&before, keys()).unwrap();
+    let stopped_secrets = RouterSecrets::load(manager.paths()).unwrap();
+    assert!(!manager.set_conversion(edit).await.unwrap());
+    assert_eq!(RouterConfig::load(manager.paths()).unwrap(), expected);
+    assert_eq!(
+        RouterSecrets::load(manager.paths())
+            .unwrap()
+            .router_token
+            .expose(),
+        stopped_secrets.router_token.expose()
+    );
+    assert_eq!(*log.lock().unwrap(), ["install", "uninstall"]);
+}
+
 #[tokio::test]
 async fn a_members_rewrite_keeps_the_claude_code_section_of_the_members_left() {
     use superba_router::claude::{ClaudeConfig, ClaudeMember, ClaudeRoute, ClaudeTarget, Endpoint};

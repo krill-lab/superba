@@ -33,6 +33,15 @@ pub type BoxFut<T> = Pin<Box<dyn Future<Output = Result<T>> + Send>>;
 pub trait RouterBackend: Send + Sync {
     /// Members, service state and live status.
     fn snapshot(&self) -> BoxFut<Snapshot>;
+    /// Persist one directed conversion and reload a running router.
+    fn set_conversion(&self, conversion: superba_core::RouterConversion) -> BoxFut<()> {
+        let _ = conversion;
+        Box::pin(async {
+            Err(Error::not_implemented(
+                "router protocol conversion settings",
+            ))
+        })
+    }
     /// Reorder the members (profile ids in the new priority order).
     fn set_order(&self, ids: Vec<String>) -> BoxFut<()>;
     /// Add a profile as a member (the service copies its key for the router).
@@ -432,6 +441,7 @@ impl RouterBackend for SystemRouter {
                 live,
                 port: view.port,
                 token_ready: view.token_ready,
+                translation: view.translation,
                 recording: view.stats.clone(),
                 network_exe: this.network_exe.clone(),
                 claude: view.claude.clone(),
@@ -445,6 +455,11 @@ impl RouterBackend for SystemRouter {
             let members = ids.iter().map(ProfileId::new).collect();
             this.change_members(members).await
         })
+    }
+
+    fn set_conversion(&self, conversion: superba_core::RouterConversion) -> BoxFut<()> {
+        let service = self.service.clone();
+        Box::pin(async move { service.router_set_conversion(conversion).await.map(|_| ()) })
     }
 
     fn add_member(&self, candidate: Candidate) -> BoxFut<()> {

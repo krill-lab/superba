@@ -7,7 +7,7 @@ use crate::openai::{OpenAiEndpoint, OpenAiModel, OpenAiProtocol};
 use http::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use superba_core::{CompactionSupport, Error, Result};
+use superba_core::{CompactionSupport, Error, RequestProtocol, Result, RouterConversion};
 use url::Url;
 
 /// One client → upstream capability switch.
@@ -31,6 +31,67 @@ impl TranslationConfig {
     /// Whether a directed conversion is enabled.
     pub fn allows(&self, from: Protocol, to: Protocol) -> bool {
         from == to || !self.disabled.contains(&Conversion { from, to })
+    }
+
+    /// All directed switches, including a partially disabled configuration.
+    pub fn view(&self) -> Vec<RouterConversion> {
+        Protocol::ALL
+            .into_iter()
+            .flat_map(|from| {
+                Protocol::ALL
+                    .into_iter()
+                    .filter(move |to| from != *to)
+                    .map(move |to| RouterConversion {
+                        from: from.into(),
+                        to: to.into(),
+                        enabled: self.allows(from, to),
+                    })
+            })
+            .collect()
+    }
+
+    /// Edit only the selected direction, preserving all other switches.
+    pub fn set_conversion(&mut self, edit: RouterConversion) -> Result<()> {
+        let conversion = Conversion {
+            from: edit.from.try_into()?,
+            to: edit.to.try_into()?,
+        };
+        if conversion.from == conversion.to {
+            return Err(Error::invalid(
+                "native protocol forwarding cannot be disabled",
+            ));
+        }
+        if edit.enabled {
+            self.disabled.remove(&conversion);
+        } else {
+            self.disabled.insert(conversion);
+        }
+        Ok(())
+    }
+}
+
+impl From<Protocol> for RequestProtocol {
+    fn from(protocol: Protocol) -> Self {
+        match protocol {
+            Protocol::Responses => Self::Responses,
+            Protocol::Chat => Self::ChatCompletions,
+            Protocol::Messages => Self::Messages,
+            Protocol::Gemini => Self::Gemini,
+        }
+    }
+}
+
+impl TryFrom<RequestProtocol> for Protocol {
+    type Error = Error;
+
+    fn try_from(protocol: RequestProtocol) -> Result<Self> {
+        match protocol {
+            RequestProtocol::Responses => Ok(Self::Responses),
+            RequestProtocol::ChatCompletions => Ok(Self::Chat),
+            RequestProtocol::Messages => Ok(Self::Messages),
+            RequestProtocol::Gemini => Ok(Self::Gemini),
+            _ => Err(Error::invalid("unsupported conversion protocol")),
+        }
     }
 }
 
@@ -76,18 +137,12 @@ impl GeminiConfig {
 impl RouterConfig {
     /// Eligibility and connection method shown for the OpenAI/Gemini ingresses.
     pub fn protocol_routes(&self, id: &str) -> Vec<superba_core::RouterProtocolRoute> {
-        use superba_core::{RequestProtocol, RouterProtocolRoute};
-        let view = |p| match p {
-            Protocol::Responses => RequestProtocol::Responses,
-            Protocol::Chat => RequestProtocol::ChatCompletions,
-            Protocol::Messages => RequestProtocol::Messages,
-            Protocol::Gemini => RequestProtocol::Gemini,
-        };
+        use superba_core::RouterProtocolRoute;
         [Protocol::Responses, Protocol::Chat, Protocol::Gemini]
             .into_iter()
             .map(|p| RouterProtocolRoute {
-                protocol: view(p),
-                upstream: self.upstream_protocol(id, p).map(view),
+                protocol: p.into(),
+                upstream: self.upstream_protocol(id, p).map(Into::into),
             })
             .collect()
     }

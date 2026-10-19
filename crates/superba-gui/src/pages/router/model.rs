@@ -270,6 +270,8 @@ pub struct Snapshot {
     pub port: Option<u16>,
     /// The local token was validated by the service (no token value crosses into the view).
     pub token_ready: bool,
+    /// Saved conversion directions; `None` without a readable configuration.
+    pub translation: Option<Vec<superba_core::RouterConversion>>,
     /// Request recording counters of the running router.
     pub recording: Option<superba_core::RouterStatsStatus>,
     /// Every provider as a possible member with its eligibility, from the same

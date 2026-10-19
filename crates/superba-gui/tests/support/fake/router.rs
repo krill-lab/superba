@@ -38,6 +38,8 @@ pub(super) struct State {
     cleared: Vec<ClearRequest>,
     ui_locales: Vec<Locale>,
     title_queries: usize,
+    translation: Option<superba_router::translate::routing::TranslationConfig>,
+    conversion_error: Option<Error>,
 }
 
 /// `(id, name, title, first user message)` of a fixture thread.
@@ -279,6 +281,44 @@ fn many_rows(now: Timestamp, n: usize) -> Vec<RequestRow> {
 }
 
 impl FakeService {
+    pub fn set_router_translation(
+        &self,
+        translation: Option<superba_router::translate::routing::TranslationConfig>,
+    ) {
+        self.areas.router.lock().unwrap().translation = translation;
+    }
+
+    pub fn router_translation(&self) -> Option<Vec<RouterConversion>> {
+        self.areas
+            .router
+            .lock()
+            .unwrap()
+            .translation
+            .as_ref()
+            .map(|t| t.view())
+    }
+
+    pub fn fail_router_conversion(&self, error: Option<Error>) {
+        self.areas.router.lock().unwrap().conversion_error = error;
+    }
+
+    pub async fn edit_router_conversion(&self, conversion: RouterConversion) -> Result<RouterView> {
+        {
+            let mut state = self.areas.router.lock().unwrap();
+            if let Some(error) = &state.conversion_error {
+                return Err(error.clone());
+            }
+            state
+                .translation
+                .as_mut()
+                .ok_or_else(|| Error::NotFound {
+                    what: "router configuration".into(),
+                })?
+                .set_conversion(conversion)?;
+        }
+        self.router_status().await
+    }
+
     /// Fixture thread with a title (登录页样式).
     pub const THREAD_LOGIN: &str = THREAD_LOGIN;
     /// Fixture thread with only a first user message.

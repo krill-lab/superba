@@ -1158,6 +1158,18 @@ pub trait SwitchService: Send + Sync {
     /// through the router).
     async fn router_status(&self) -> Result<RouterView>;
 
+    /// Persist one directed protocol conversion and reload a running router.
+    /// Requires an existing router configuration; never starts the service.
+    async fn router_set_conversion(
+        &self,
+        conversion: crate::RouterConversion,
+    ) -> Result<RouterView> {
+        let _ = conversion;
+        Err(crate::Error::not_implemented(
+            "router protocol conversion settings",
+        ))
+    }
+
     /// Configure the router members (each with its own key), install and start
     /// the router service and wait until it answers. Does not change Codex's
     /// configuration.

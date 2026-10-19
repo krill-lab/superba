@@ -269,6 +269,7 @@ pub struct AppHarness {
     close_next: bool,
     /// Viewport commands the app sent (CancelClose, Visible, Close, ...).
     commands: Vec<egui::ViewportCommand>,
+    copied: Vec<String>,
 }
 
 impl AppHarness {
@@ -302,6 +303,7 @@ impl AppHarness {
             visible: true,
             close_next: false,
             commands: Vec::new(),
+            copied: Vec::new(),
         }
     }
 
@@ -318,6 +320,11 @@ impl AppHarness {
     /// Viewport commands since the last call.
     pub fn take_commands(&mut self) -> Vec<egui::ViewportCommand> {
         std::mem::take(&mut self.commands)
+    }
+
+    /// Clipboard writes issued by the application since the last call.
+    pub fn take_copied_text(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.copied)
     }
 
     /// Press the window's close button (the next frame carries the request,
@@ -361,6 +368,11 @@ impl AppHarness {
                     self.visible = *v;
                 }
                 self.commands.push(command.clone());
+            }
+        }
+        for command in &output.platform_output.commands {
+            if let egui::OutputCommand::CopyText(text) = command {
+                self.copied.push(text.clone());
             }
         }
         let tree = Tree::from_update(

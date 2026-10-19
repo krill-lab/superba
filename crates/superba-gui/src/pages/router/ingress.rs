@@ -7,26 +7,26 @@ use superba_core::{
     RequestHarness, RequestProtocol, RequestSource, StatsQuery, SwitchService, Timestamp,
 };
 
-use super::State;
+use super::{Op, State};
 use crate::design::icons::Icon;
 use crate::design::widgets::{Button, Card, Text, Toggle};
 use crate::pages::Cx;
 
-/// Entry points shipped in this build. Gemini remains a visible placeholder.
-pub const PATHS: [&str; 3] = ["/backend-api/codex", "/claude", "/openai/v1"];
+/// Client base URLs of the four entry points shipped in this build.
+pub const PATHS: [&str; 4] = ["/backend-api/codex", "/claude", "/openai/v1", "/gemini"];
 
 /// Absolute local URL, only when a port is configured.
 pub fn address(port: Option<u16>, index: usize) -> Option<String> {
     Some(format!("http://127.0.0.1:{}{}", port?, PATHS.get(index)?))
 }
 
-/// Recorded traffic in the last 24 hours. Protocol identifies Messages; tool
+/// Recorded traffic in the last 24 hours. Protocol identifies Messages/Gemini; tool
 /// attribution separates Codex from other Responses clients. Counts describe
 /// recorded tool/protocol traffic, since old request records do not retain paths.
 pub async fn recent_counts(
     service: &dyn SwitchService,
     now: Timestamp,
-) -> superba_core::Result<[u64; 3]> {
+) -> superba_core::Result<[u64; 4]> {
     let base = StatsQuery {
         from: Some(now.saturating_sub(Duration::from_secs(86_400))),
         to: Some(now),
@@ -64,7 +64,15 @@ pub async fn recent_counts(
         codex += own;
         openai += all.saturating_sub(own);
     }
-    Ok([codex, claude, openai])
+    let gemini = service
+        .router_stats(StatsQuery {
+            protocol: Some(RequestProtocol::Gemini),
+            ..base
+        })
+        .await?
+        .totals
+        .requests;
+    Ok([codex, claude, openai, gemini])
 }
 
 pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
@@ -87,71 +95,115 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         cx.tr.text(&RequestHarness::Codex.text()),
         cx.tr.text(&RequestHarness::ClaudeCode.text()),
         cx.tr.t("router.ingress.openai"),
+        cx.tr.text(&RequestProtocol::Gemini.text()),
     ];
-    Card::new().padding(12).show(ui, |ui| {
-        ui.label(Text::section(cx.tr.t("router.ingress.title"), cx.pal));
-        for (i, name) in names.iter().enumerate() {
-            ui.push_id(i, |ui| {
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.label(Text::small(name, cx.pal));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(Text::caption(&token, cx.pal));
+    ui.scope(|ui| {
+        // Other controls can widen a scrolling column beyond its visible pane.
+        // Keep this card and its wrapped conversion labels inside that pane.
+        let width = ui
+            .available_width()
+            .min((ui.clip_rect().right() - ui.cursor().left()).max(0.0));
+        ui.set_width(width);
+        Card::new().padding(12).show(ui, |ui| {
+            ui.label(Text::section(cx.tr.t("router.ingress.title"), cx.pal));
+            for (i, name) in names.iter().enumerate() {
+                ui.push_id(i, |ui| {
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        ui.label(Text::small(name, cx.pal));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.label(Text::caption(&token, cx.pal));
+                        });
                     });
-                });
-                let url = address(port, i);
-                ui.horizontal(|ui| {
-                    let copy = cx.tr.f("router.ingress.copy", &[("name", name)]);
-                    let button = ui
-                        .add(
-                            Button::ghost(cx.tr.t("requests.detail.copy"))
-                                .icon(Icon::Copy)
-                                .small()
-                                .enabled(url.is_some()),
+                    let url = address(port, i);
+                    ui.horizontal(|ui| {
+                        let copy = cx.tr.f("router.ingress.copy", &[("name", name)]);
+                        let button = ui
+                            .add(
+                                Button::ghost(cx.tr.t("requests.detail.copy"))
+                                    .icon(Icon::Copy)
+                                    .small()
+                                    .enabled(url.is_some()),
+                            )
+                            .accessible_name(copy);
+                        if button.clicked()
+                            && let Some(url) = &url
+                        {
+                            ui.ctx().copy_text(url.clone());
+                        }
+                        ui.add(
+                            egui::Label::new(Text::small(
+                                url.clone()
+                                    .unwrap_or_else(|| cx.tr.t("router.ingress.no_address")),
+                                cx.pal,
+                            ))
+                            .truncate(),
                         )
-                        .accessible_name(copy);
-                    if button.clicked()
-                        && let Some(url) = &url
-                    {
-                        ui.ctx().copy_text(url.clone());
-                    }
-                    ui.add(
-                        egui::Label::new(Text::small(
-                            url.clone()
-                                .unwrap_or_else(|| cx.tr.t("router.ingress.no_address")),
-                            cx.pal,
-                        ))
-                        .truncate(),
-                    )
-                    .on_hover_text(url.unwrap_or_else(|| PATHS[i].to_owned()));
+                        .on_hover_text(url.unwrap_or_else(|| PATHS[i].to_owned()));
+                    });
+                    let count = state
+                        .ingress
+                        .value
+                        .as_ref()
+                        .filter(|_| state.ingress.error.is_none())
+                        .map(|counts| cx.tr.f("router.ingress.recent", &[("n", &counts[i])]))
+                        .unwrap_or_else(|| cx.tr.t("router.ingress.recent_unknown"));
+                    ui.label(Text::caption(count, cx.pal))
+                        .on_hover_text(cx.tr.t("router.ingress.count_hint"));
                 });
-                let count = state
-                    .ingress
-                    .value
-                    .as_ref()
-                    .filter(|_| state.ingress.error.is_none())
-                    .map(|counts| cx.tr.f("router.ingress.recent", &[("n", &counts[i])]))
-                    .unwrap_or_else(|| cx.tr.t("router.ingress.recent_unknown"));
-                ui.label(Text::caption(count, cx.pal))
-                    .on_hover_text(cx.tr.t("router.ingress.count_hint"));
-            });
-        }
-        ui.add_space(8.0);
+            }
+            ui.add_space(8.0);
+            translation(ui, cx, state);
+        });
+    });
+}
+
+fn translation(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+    if let Some(error) = &state.conversion_error {
+        crate::pages::note(ui, cx, crate::design::widgets::Status::Error, error);
+    }
+    let conversions = state.snapshot.as_ref().and_then(|s| s.translation.clone());
+    let Some(conversions) = conversions else {
+        ui.label(Text::small(cx.tr.t("router.ingress.translation"), cx.pal));
         ui.label(Text::caption(
-            format!("{} · /gemini", cx.tr.t("router.ingress.gemini_pending")),
+            cx.tr.t("router.ingress.translation_unknown"),
             cx.pal,
         ));
-        ui.horizontal(|ui| {
-            let mut enabled = false;
-            ui.add(Toggle::new(&mut enabled, cx.tr.t("router.ingress.translation")).enabled(false));
-            ui.label(Text::small(cx.tr.t("router.ingress.translation"), cx.pal));
+        return;
+    };
+    let enabled = conversions.iter().filter(|c| c.enabled).count();
+    let title = cx.tr.f(
+        "router.ingress.translation_state",
+        &[("enabled", &enabled), ("total", &conversions.len())],
+    );
+    egui::CollapsingHeader::new(title)
+        .id_salt("router-conversion-directions")
+        .show(ui, |ui| {
+            ui.add(
+                egui::Label::new(Text::caption(
+                    cx.tr.t("router.ingress.translation_hint"),
+                    cx.pal,
+                ))
+                .wrap(),
+            );
+            for mut conversion in conversions {
+                let label = format!(
+                    "{} → {}",
+                    cx.tr.text(&conversion.from.text()),
+                    cx.tr.text(&conversion.to.text()),
+                );
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(
+                            Toggle::new(&mut conversion.enabled, &label)
+                                .enabled(state.op.is_none() && state.error.is_none()),
+                        )
+                        .changed()
+                    {
+                        state.start(cx, Op::Conversion, |b| b.set_conversion(conversion));
+                    }
+                    ui.add(egui::Label::new(Text::small(label, cx.pal)).wrap());
+                });
+            }
         });
-        ui.add(
-            egui::Label::new(Text::caption(
-                cx.tr.t("router.ingress.translation_pending"),
-                cx.pal,
-            ))
-            .wrap(),
-        );
-    });
 }

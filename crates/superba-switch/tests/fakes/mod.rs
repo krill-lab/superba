@@ -1006,6 +1006,13 @@ impl RouterControl for FakeRouter {
     fn configuration(&self) -> Option<RouterConfig> {
         self.written.lock().unwrap().last().cloned()
     }
+    async fn set_conversion(&self, conversion: superba_core::RouterConversion) -> Result<()> {
+        let mut written = self.written.lock().unwrap();
+        let config = written.last_mut().ok_or_else(|| Error::NotFound {
+            what: "router configuration".into(),
+        })?;
+        config.translation.set_conversion(conversion)
+    }
     fn endpoint(&self) -> Result<RouterEndpointInfo> {
         self.info()
     }

@@ -407,10 +407,21 @@ async fn conversion_switches_and_endpoints_survive_member_rewrites() {
         from: Protocol::Messages,
         to: Protocol::Responses,
     };
+    let edit = superba_core::RouterConversion {
+        from: superba_core::RequestProtocol::Messages,
+        to: superba_core::RequestProtocol::Responses,
+        enabled: false,
+    };
+    let saved = sw.router_set_conversion(edit).await.unwrap();
+    let switches = saved.translation.unwrap();
+    assert_eq!(switches.len(), 12);
+    assert_eq!(
+        switches.iter().filter(|c| !c.enabled).collect::<Vec<_>>(),
+        [&edit]
+    );
     {
         let mut written = w.router.written.lock().unwrap();
         let cfg = written.last_mut().unwrap();
-        cfg.translation.disabled.insert(conversion);
         cfg.gemini = Some(GeminiConfig {
             members: [(
                 "work".into(),
@@ -441,6 +452,41 @@ async fn conversion_switches_and_endpoints_survive_member_rewrites() {
         Some(superba_core::ClaudeIneligible::NoProtocolRoute)
     );
     assert!(!plain.translated);
+    let saved = sw
+        .router_set_conversion(superba_core::RouterConversion {
+            enabled: true,
+            ..edit
+        })
+        .await
+        .unwrap();
+    assert!(saved.translation.unwrap().iter().all(|c| c.enabled));
+    assert!(
+        saved
+            .claude
+            .unwrap()
+            .members
+            .iter()
+            .find(|m| m.profile_id.as_str() == "plain")
+            .unwrap()
+            .translated
+    );
+}
+
+#[tokio::test]
+async fn conversion_settings_require_a_router_configuration() {
+    let w = world();
+    let sw = w.switcher();
+    assert!(sw.router_status().await.unwrap().translation.is_none());
+    assert!(
+        sw.router_set_conversion(superba_core::RouterConversion {
+            from: superba_core::RequestProtocol::Gemini,
+            to: superba_core::RequestProtocol::Responses,
+            enabled: false,
+        })
+        .await
+        .is_err()
+    );
+    assert!(w.router.written.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

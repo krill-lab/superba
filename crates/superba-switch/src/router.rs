@@ -90,6 +90,13 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
     fn configuration(&self) -> Option<RouterConfig> {
         None
     }
+    /// Persist one conversion direction and reload without starting the service.
+    async fn set_conversion(&self, conversion: superba_core::RouterConversion) -> Result<()> {
+        let _ = conversion;
+        Err(Error::not_implemented(
+            "router protocol conversion settings",
+        ))
+    }
     /// Endpoint of the stored configuration (reads files only).
     fn endpoint(&self) -> Result<RouterEndpointInfo>;
     /// Write the configuration, install and start the service, wait until it
@@ -270,6 +277,9 @@ impl superba_router::watchdog::DirectModeFallback for AlreadyDirect {
 impl RouterControl for SystemRouterControl {
     fn configuration(&self) -> Option<RouterConfig> {
         RouterConfig::load(self.manager.paths()).ok()
+    }
+    async fn set_conversion(&self, conversion: superba_core::RouterConversion) -> Result<()> {
+        self.manager.set_conversion(conversion).await.map(|_| ())
     }
     async fn restart(&self) -> Result<()> {
         self.manager.restart(ROUTER_START_WAIT).await
@@ -834,6 +844,7 @@ impl Switcher {
             settings: set.settings.router.clone(),
             configured: service.configured,
             token_ready: d.router.endpoint().is_ok_and(|e| !e.token.is_empty()),
+            translation: config.as_ref().map(|c| c.translation.view()),
             installed: service.installed,
             running,
             port: service.port,

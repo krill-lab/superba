@@ -510,6 +510,18 @@ pub struct RouterLineRoute {
     pub failed_lines: Vec<String>,
 }
 
+/// One directed client → upstream protocol conversion. Native forwarding is
+/// always allowed and is not a conversion switch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterConversion {
+    /// Protocol spoken by the client.
+    pub from: crate::RequestProtocol,
+    /// Protocol spoken by the upstream provider.
+    pub to: crate::RequestProtocol,
+    /// Whether this direction is allowed when no native endpoint is available.
+    pub enabled: bool,
+}
+
 /// Router status snapshot.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RouterView {
@@ -520,6 +532,10 @@ pub struct RouterView {
     /// The configured local token can be read and is non-empty. Never exposes its value.
     #[serde(default)]
     pub token_ready: bool,
+    /// Persisted directional conversion switches; unknown without a readable
+    /// router configuration. These are permissions, not model readiness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation: Option<Vec<RouterConversion>>,
     /// The service is installed with the service manager.
     pub installed: bool,
     /// The router answers its admin API.

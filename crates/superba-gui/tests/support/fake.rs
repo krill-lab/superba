@@ -1720,6 +1720,7 @@ impl SwitchService for FakeService {
         let members = &s.profiles.settings.router.members;
         Ok(RouterView {
             settings: s.profiles.settings.router.clone(),
+            translation: self.router_translation(),
             configured: !members.is_empty(),
             installed: s.router_installed,
             running: s.router_installed,
@@ -1746,6 +1747,10 @@ impl SwitchService for FakeService {
             claude: self.areas.claude.lock().unwrap().router.clone(),
             ..RouterView::default()
         })
+    }
+
+    async fn router_set_conversion(&self, conversion: RouterConversion) -> Result<RouterView> {
+        self.edit_router_conversion(conversion).await
     }
 
     async fn router_install(&self, request: RouterInstallRequest) -> Result<RouterView> {

@@ -96,6 +96,7 @@ impl Tab {
 /// A change in flight.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Op {
+    Conversion,
     Order,
     Add,
     Remove,
@@ -133,6 +134,7 @@ pub struct State {
     loaded_at: Option<Instant>,
     op: Option<(Op, ReadTask<()>)>,
     op_error: Option<String>,
+    conversion_error: Option<String>,
     pick: Option<usize>,
     show_events: bool,
     /// The router-mode switch to plan once [`Op::Start`] has finished.
@@ -153,7 +155,7 @@ pub struct State {
     /// Router settings (edits in progress).
     pub prefs: settings::Prefs,
     /// Recent recorded request counts for the ingress card.
-    pub ingress: db::Loader<[u64; 3]>,
+    pub ingress: db::Loader<[u64; 4]>,
     /// Session names.
     pub titles: db::Titles,
     stats_save: Option<ReadTask<RouterView>>,
@@ -227,6 +229,9 @@ impl State {
         }
         if let Some(b) = self.backend(cx) {
             self.op_error = None;
+            if op == Op::Conversion {
+                self.conversion_error = None;
+            }
             self.op = Some((op, crate::runtime::task(run(b.as_ref()))));
         }
     }
@@ -264,7 +269,15 @@ impl State {
                 Err(e) => {
                     self.then_plan = None;
                     self.op_error = Some(super::error_text(cx.tr, &e));
+                    if op == Op::Conversion {
+                        self.conversion_error = self.op_error.clone();
+                    }
                 }
+            }
+            if op == Op::Conversion {
+                // An earlier snapshot may still contain the old directions.
+                // Refresh after the write/reload, including after a reload error.
+                self.task = None;
             }
             self.refresh(cx, true);
         }

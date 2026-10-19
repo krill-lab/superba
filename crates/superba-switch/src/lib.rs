@@ -681,6 +681,15 @@ impl SwitchService for Switcher {
         self.router_status_impl().await
     }
 
+    async fn router_set_conversion(
+        &self,
+        conversion: superba_core::RouterConversion,
+    ) -> Result<superba_core::RouterView> {
+        self.refuse_elevated()?;
+        self.deps.router.set_conversion(conversion).await?;
+        self.router_status_impl().await
+    }
+
     async fn router_install(
         &self,
         request: superba_core::RouterInstallRequest,

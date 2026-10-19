@@ -361,9 +361,30 @@ async fn all_directional_switches_are_enforced_and_native_always_wins() {
             }
             let mut c = config(&up, to);
             assert_eq!(c.upstream_protocol("site", from), Some(to));
-            c.translation.disabled.insert(Conversion { from, to });
+            c.translation
+                .set_conversion(superba_core::RouterConversion {
+                    from: from.into(),
+                    to: to.into(),
+                    enabled: false,
+                })
+                .unwrap();
             assert_eq!(c.upstream_protocol("site", from), None);
             assert_eq!(c.upstream_protocol("site", to), Some(to));
+            let disabled = c
+                .translation
+                .view()
+                .into_iter()
+                .filter(|c| !c.enabled)
+                .collect::<Vec<_>>();
+            assert_eq!(disabled.len(), 1);
+            assert_eq!((disabled[0].from, disabled[0].to), (from.into(), to.into()));
+            c.translation
+                .set_conversion(superba_core::RouterConversion {
+                    enabled: true,
+                    ..disabled[0]
+                })
+                .unwrap();
+            assert_eq!(c.upstream_protocol("site", from), Some(to));
         }
     }
     let mut c = config(&up, Protocol::Chat);

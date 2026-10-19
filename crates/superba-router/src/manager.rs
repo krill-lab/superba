@@ -692,6 +692,27 @@ impl RouterManager {
         Ok(true)
     }
 
+    /// Persist one directed conversion and reload a running router in place.
+    /// A stopped router reads it on its next start. Other directions, member
+    /// settings, credentials and the listener are preserved. A reload error is
+    /// returned even though the setting has already been saved; retrying the
+    /// same edit retries the reload.
+    pub async fn set_conversion(&self, edit: superba_core::RouterConversion) -> Result<bool> {
+        let mut config = RouterConfig::load(&self.paths).map_err(|e| match e {
+            Error::Io { .. } => Error::NotFound {
+                what: "the local router configuration (enable the router first)".into(),
+            },
+            other => other,
+        })?;
+        config.translation.set_conversion(edit)?;
+        config.save(&self.paths)?;
+        if !watchdog::check(&self.paths).await.is_up() {
+            return Ok(false);
+        }
+        AdminClient::from_runtime(&self.paths)?.reload().await?;
+        Ok(true)
+    }
+
     /// Listen also on these WSL adapter addresses (user bug 45; the same port,
     /// source tokens only). A running router reloads the configuration; it binds
     /// an address once it exists. Returns whether a running router reloaded.
