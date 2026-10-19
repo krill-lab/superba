@@ -5,7 +5,113 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
-## [0.1.0] - Unreleased
+## [0.1.1-alpha.7] - Unreleased
+
+Changes since [v0.1.1-alpha.6](https://github.com/krill-lab/superba/releases/tag/v0.1.1-alpha.6).
+
+### Added
+
+- **Claude Code** connection, model, settings and diagnostics pages, with direct
+  connections or a local router. Configuration changes have a preview, backups
+  and restore, shared with the other coding tools.
+- **Tools** configuration for dsh, opencode, pi, ZCode and WorkBuddy / WorkBuddy AI,
+  plus Gemini CLI configuration through the Gemini router ingress. Applied
+  tool configurations keep their chosen provider until explicitly reapplied.
+  `spb claude`, `spb harness` and `spb tools` expose the corresponding operations.
+- **Tool installation and updates** in Superba → Updates: Claude Code, dsh,
+  opencode, pi, ZCode and WorkBuddy / WorkBuddy AI, with versions, progress,
+  cancellation and operation logs. New opencode installs use OpenCode 2;
+  existing installs retain their major version. Available actions depend on
+  the platform and the tool's installer and updater.
+- **Notifications** for task completion, approval requests and failures through
+  Codex and Claude Code hooks, plus Superba switch, router and update events.
+  Configure them in Superba → Settings → Notifications or `spb notify`.
+  Channels include Telegram, Feishu / Lark, WeCom, DingTalk, ServerChan,
+  PushPlus, Bark, ntfy and signed webhooks, with quiet hours, rate limits,
+  deduplication and opt-in reply summaries. ([#12](https://github.com/krill-lab/superba/issues/12))
+- **Protocol conversion** between Anthropic Messages, OpenAI Responses,
+  Chat Completions and Gemini, including a `/gemini` ingress. Native endpoints
+  take precedence; conversions can be disabled by direction. The tools and
+  router show whether a connection needs conversion. The `/openai/v1` ingress
+  also supports native Responses and Chat Completions forwarding.
+- **Merged router model catalogs**, combining built-in models, provider Codex
+  catalogs, standard model lists and user overrides, with source errors and
+  capability checks shown on the Models page. Optional `<provider>/<model>`
+  names pin a provider while bare names retain failover order; legacy `krill/`,
+  `krill-usage/` and `krill-balance/` prefixes are accepted in router mode.
+  ([#16](https://github.com/krill-lab/superba/issues/16))
+- **PAT per-model settings**: custom context windows and auto-compaction limits
+  now use a model catalog in key-based PAT profiles too. The official ChatGPT
+  profile keeps Codex's own catalog. ([#14](https://github.com/krill-lab/superba/issues/14))
+- **Router-managed compaction** for eligible models synthesized from standard
+  model lists, using authenticated encrypted summaries. Each selected target
+  keeps its own native or synthetic compaction behavior during failover.
+- **Data location and storage controls** in Superba → Data, including usage,
+  request-record retention, cache cleanup and relocation of Superba's data with
+  progress, verification and rollback. CLI: `spb data where|move|usage`.
+  ([#15](https://github.com/krill-lab/superba/issues/15))
+- **Launch at login** for the current user, with an option to start in the tray.
+  If a usable tray is unavailable, the window opens so the app stays reachable.
+- **Usage by tool**, request and session filters, router ingress cards and
+  per-tool statistics-line settings.
+
+### Changed
+
+- Consolidated maintenance in the bottom **Superba** entry: Overview, Updates,
+  Settings, Diagnostics and Data tabs. Settings uses one scrolling page with
+  section links; all installs and updates live in Updates. The main Overview
+  menu is named **Actions**.
+- Refreshed the window frame and sidebar, removed duplicate headings, and let
+  the unified update list use the available width.
+- Routed PAT connections retain model speed-tier metadata for the desktop
+  app's Fast-mode lightning control where the upstream supports it. Catalog
+  caching preserves those fields and handles conditional requests.
+
+### Fixed
+
+- Restore Original defaults to restoring the original routing and moving
+  session provider IDs back; keeping `openai_base_url` is an explicit choice.
+- Preferred-line changes reload the router configuration. Routing status uses
+  the recorded endpoint and mode, including local PAT, instead of guessing
+  from the authentication method or URL text.
+- WSL cold starts have bounded waits and clearer progress and failure stages;
+  failed update results remain available.
+- macOS launch-at-login, reopening a hidden window and dismissing setup;
+  CJK font alignment and background conversion of cached system fonts.
+- Session-lock diagnostics recover holder information from per-file-descriptor
+  locks where the system-wide lock list does not expose it.
+
+### Limits of this preview
+
+- Moving the data location moves **Superba data only**. It does not relocate
+  Codex's own home, raw conversations or session database, or change where
+  future Codex conversations are stored. Codex disk usage is shown separately.
+- Phone replies that continue a task are **design-only** in alpha.7. Personal
+  WeChat notifications use ServerChan or PushPlus; no native personal-WeChat
+  bot or two-way approval/reply control is included.
+- Protocol conversion does not make every model in the merged Codex catalog
+  usable. Newly synthesized standard-list models need a successful tool probe;
+  entries marked **Needs protocol conversion** remain unavailable through that
+  catalog path. Probe results are held in memory and may need to be repeated
+  after a router restart.
+- Merged-catalog and encrypted-summary routing use HTTP fallback. Native
+  provider-encrypted history cannot be decoded for a synthetic model; return
+  to the original provider or explicitly start a new conversation.
+- PAT per-model settings do not provide concurrent official ChatGPT and API
+  authentication. Speed tiers still depend on upstream capabilities; there
+  is no blanket Fast or Ultrafast support for every provider or model.
+- ZCode and WorkBuddy installers are managed on Windows; macOS and Linux use
+  download links. WorkBuddy retains its own updater. Gemini CLI configuration
+  is included, but Gemini CLI installation and updates are not managed here.
+  Tool installation inside WSL and Windows ARM64 packages remain out of scope.
+
+## [0.1.1-alpha.6] - 2026-10-19
+
+[Release](https://github.com/krill-lab/superba/releases/tag/v0.1.1-alpha.6).
+The cumulative overview below is retained from the alpha.6 source and covers
+0.1.0 through alpha.6, rather than changes introduced by alpha.6 alone. Its
+navigation, limitations and validation notes describe that historical snapshot;
+the alpha.7 entry above supersedes them where applicable.
 
 First public version: a desktop launcher (`superba`, egui), a headless CLI (`spb`)
 and an opt-in local router (`superba-router`) that point OpenAI Codex — the
@@ -195,39 +301,6 @@ back to the official ChatGPT login.
 - Tests-only overrides `SUPERBA_SELF_UPDATE_API` and `SUPERBA_SELF_UPDATE_DOWNLOADS`
   accept only https or loopback http.
 
-### Coding-agent tools
-
-- **Install, update and remove** Claude Code, dsh, opencode, pi, ZCode, WorkBuddy
-  and WorkBuddy AI from a "Coding-agent tools" section of the Updates page and
-  `spb tools list|check|install|update|uninstall|manage-updates`, each with the
-  tool's own per-user method: Claude Code's native installer (the verified
-  binary handed to its own `claude install <version>`), dsh with npm into
-  Superba's folder (`--allow-scripts` for the packages that need their install
-  scripts) or, without Node.js 22.19, its Node-free PyPI build, opencode's
-  standalone archive in `~/.opencode/bin` (OpenCode 2 for new installs, an
-  OpenCode 1 install keeps its major), pi's release archive, ZCode's and
-  WorkBuddy's Windows per-user installers (elsewhere a download link). Every
-  download is checked against the published SHA-256 / SHA-512 (Windows
-  installers also by signature) before it is used; nothing needs administrator
-  rights; settings and data are never changed (opencode's only on an explicit
-  "also remove its settings and data"). Progress with Cancel, a log per
-  operation in `logs/tools/`, and a confirmation before what the tool's own
-  installer would do on top (Claude Code's `npm uninstall -g`) and before every
-  removal.
-- **Versions and channels**: installed version, kind and path, the newest
-  version on the chosen channel (Claude Code latest / stable, dsh npm tags,
-  OpenCode 2 / beta / OpenCode 1, ZCode stable / preview), looked up at most
-  daily and on "Check now". Installs made with npm, Homebrew, WinGet or pi's
-  installer are updated and removed with that tool.
-- **"Superba manages updates"** turns the tool's own updater off with one
-  setting (Claude Code `env.DISABLE_AUTOUPDATER`, never `DISABLE_UPDATES`;
-  opencode `update: "disable"` / `autoupdate: false`, edited in place) and puts
-  back what was there when turned off. WorkBuddy forces its own updates: its
-  version is shown, no update is offered.
-- Windows: the program's folder goes on the user PATH (and comes off again on
-  removal); on macOS and Linux the row shows the line to add to the shell's
-  start-up file. Tools inside WSL distributions are not managed yet.
-
 ### Codex settings
 
 - **Codex settings catalog** (`catalog/`): which `config.toml` keys and
@@ -362,17 +435,6 @@ back to the official ChatGPT login.
   place with Retry (user bug 83). Every glyph comes from the bundled fonts
   or a CJK font. No demo mode: screenshots come from the real binaries against an
   isolated home and a local mock relay.
-- **Window without a title bar** (user bug 85): the sidebar and the window
-  background are one surface and the pages sit in a white card with a soft
-  shadow (a hairline in dark mode); a lighter sidebar (smaller text, tighter
-  rows, the selected page's icon in coral) without the brand and the search
-  field (the command palette: Cmd/Ctrl+K or the Overview's menu). The empty top
-  of the window moves it. macOS keeps its traffic lights over the sidebar and
-  follows the system setting for a double click; Windows keeps its native frame
-  (resizing from every edge, Aero Snap, shadow, rounded corners) with Windows 11
-  caption buttons and Snap Layouts on maximize, a double click to maximize and
-  the window menu on a right click; Linux gets round window buttons, resize
-  edges and moving through the window manager.
 - **CLI** (`spb`, also `superba <command>`): `status`, `lines --probe`,
   `profile`, `key`, `site`, `models`, `speed`, `settings`, `account`, `usage`,
   `router`, `switch`, `restore`, `launch`, `sessions`, `remote`, `codex`, `app`,
@@ -392,24 +454,6 @@ back to the official ChatGPT login.
   environment is configured; the router inside `Superba.app`), Windows x86_64;
   `superba-router` ships next to `superba` and `spb` everywhere; third-party
   license notices in every archive.
-- **Notifications** (GH#12): Preferences > Notifications and `spb notify
-  status|channels|test|send|set|install|uninstall`. Channels: Telegram bot,
-  Feishu / Lark custom bot (signed), WeCom group bot, DingTalk bot (signed or
-  keyword), personal WeChat through ServerChan or PushPlus (third-party relays,
-  marked as such), Bark, ntfy and a generic webhook (HMAC-SHA256 signature);
-  https only (http on loopback), no redirects, secrets in the key store and
-  never in errors or the delivery log. Events: a task finished (Codex `notify`
-  in `config.toml`, chaining a program the user had there and putting it back
-  on removal), an approval is needed (Codex's `PermissionRequest` lifecycle
-  hook, trusted with the hash Codex computes; async on Codex 0.150+), a task
-  failed (Codex rollouts, scanned while Superba runs), Claude Code `Stop` /
-  `StopFailure` / `Notification` hooks (`spb notify hook claude-code`), a
-  switch finished or failed, a router provider down for two minutes, a Superba
-  update. Messages carry project, conversation title, computer, duration,
-  tokens and cost; the reply summary (and the command to approve) is opt-in.
-  Quiet hours (approvals optional), a per-channel rate limit that says how many
-  were dropped, a minimum task length, muted tools, deduplication per turn and
-  a test button.
 - **Tray icon and "close to tray"** (GH#10): a notification-area icon on
   Windows, a menu-bar item (template image) on macOS and a StatusNotifierItem
   on Linux (no GTK: KDE Plasma, GNOME with the AppIndicator extension, Xfce,
