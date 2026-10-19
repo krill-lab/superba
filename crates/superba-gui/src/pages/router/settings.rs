@@ -25,23 +25,37 @@ pub struct Prefs {
 }
 
 pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    // Each column needs room for the mode badge and service/member actions.
+    // Use the existing scrolling layout as one column on narrow windows.
+    if ui.available_width() < 900.0 {
+        scroll_column(ui, "router-settings-stacked", |ui| {
+            column(ui, cx, state, out, 0);
+            section_gap(ui, cx);
+            column(ui, cx, state, out, 1);
+        });
+        return;
+    }
     layout::columns(ui, &[Track::Fill, Track::Fill], 28.0, |ui, i| {
         scroll_column(ui, ("router-settings-col", i), |ui| {
-            ui.spacing_mut().item_spacing.y = 6.0;
-            if i == 0 {
-                view::router_column(ui, cx, state, out);
-                section_gap(ui, cx);
-                super::ingress::show(ui, cx, state);
-                section_gap(ui, cx);
-                prices::section(ui, cx, state);
-            } else {
-                stats_line_section(ui, cx, state);
-                section_gap(ui, cx);
-                recording_section(ui, cx, state);
-            }
-            ui.add_space(12.0);
+            column(ui, cx, state, out, i);
         });
     });
+}
+
+fn column(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, i: usize) {
+    ui.spacing_mut().item_spacing.y = 6.0;
+    if i == 0 {
+        view::router_column(ui, cx, state, out);
+        section_gap(ui, cx);
+        super::ingress::show(ui, cx, state);
+        section_gap(ui, cx);
+        prices::section(ui, cx, state);
+    } else {
+        stats_line_section(ui, cx, state);
+        section_gap(ui, cx);
+        recording_section(ui, cx, state);
+    }
+    ui.add_space(12.0);
 }
 
 /// Height of the fades at a scrolled column's edges.

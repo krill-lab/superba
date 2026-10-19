@@ -23,7 +23,7 @@ use super::model::{Filter, Pending, Rail, Row, SettingsModel};
 use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
-use crate::design::tokens::{size, text};
+use crate::design::tokens::{radius, size, text};
 use crate::design::widgets::{
     Badge, Button, PagedState, PagedTable, Pager, PendingAction, PendingBar, PendingLabels, Status,
     StatusDot, Table, Text, Toggle, dialog,
@@ -41,6 +41,8 @@ const LOAD_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
 const RAIL_W: f32 = 176.0;
 /// Detail width.
 const DETAIL_W: f32 = 400.0;
+/// Keep enough room for names and values before docking the detail pane.
+const DOCK_MIN: f32 = RAIL_W + DETAIL_W + 2.0 * GAP + 360.0;
 /// Gap between panes.
 const GAP: f32 = 12.0;
 /// Widest value chip of a row.
@@ -73,6 +75,8 @@ pub struct SettingsState {
     pub files: Editor,
     focus: Option<String>,
     focus_search: bool,
+    /// Narrow windows open the selected setting in a dismissible side sheet.
+    sheet_open: bool,
     /// The file changed elsewhere (an apply): read it again.
     stale: bool,
 }
@@ -94,6 +98,7 @@ impl Default for SettingsState {
             files: Editor::claude(),
             focus: None,
             focus_search: false,
+            sheet_open: false,
             stale: false,
         }
     }
@@ -161,6 +166,7 @@ impl SettingsState {
     /// Select `path` (widening the filter when needed).
     pub fn focus(&mut self, path: &str) {
         self.focus = Some(path.to_owned());
+        self.sheet_open = true;
         if let Some(m) = &self.model
             && let Some(r) = m.row(path)
         {
@@ -366,22 +372,77 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
         s.table.page = 0;
         s.table.selected = (!s.rows().is_empty()).then_some(0);
     }
-    let cols = layout::column_rects(
-        rects[i],
-        &[Track::Fixed(RAIL_W), Track::Fill, Track::Fixed(DETAIL_W)],
-        GAP,
-    );
+    let docked = body.width() >= DOCK_MIN;
+    let cols = layout::column_rects(rects[i], &[Track::Fixed(RAIL_W), Track::Fill], GAP);
     layout::fixed(ui, cols[0], |ui| rail(ui, cx, s, &model));
-    layout::fixed(ui, cols[1], |ui| list(ui, cx, s, &model));
-    ui.painter().vline(
-        cols[2].min.x - GAP / 2.0,
-        cols[2].y_range(),
-        egui::Stroke::new(1.0, cx.pal.border),
-    );
-    layout::fixed(ui, cols[2], |ui| detail(ui, cx, s, &model, out));
-    layout::fixed(ui, rects[i + 1], |ui| footer(ui, cx, s, cols[1].x_range()));
+    let mut list_x = cols[1].x_range();
+    if docked {
+        let parts = layout::column_rects(cols[1], &[Track::Fill, Track::Fixed(DETAIL_W)], GAP);
+        list_x = parts[0].x_range();
+        layout::fixed(ui, parts[0], |ui| list(ui, cx, s, &model, docked));
+        ui.painter().vline(
+            parts[1].min.x - GAP / 2.0,
+            parts[1].y_range(),
+            egui::Stroke::new(1.0, cx.pal.border),
+        );
+        layout::fixed(ui, parts[1], |ui| detail(ui, cx, s, &model, out));
+    } else {
+        layout::fixed(ui, cols[1], |ui| list(ui, cx, s, &model, docked));
+        if s.sheet_open && s.table.selected.is_some() {
+            sheet(ui.ctx(), cx, s, &model, cols[1], out);
+        }
+    }
+    layout::fixed(ui, rects[i + 1], |ui| footer(ui, cx, s, list_x));
     if s.diff_open {
         diff_dialog(ui.ctx(), cx, s, &model);
+    }
+}
+
+/// The same narrow-window detail sheet used by the Codex settings page.
+fn sheet(
+    ctx: &egui::Context,
+    cx: &Cx<'_>,
+    s: &mut SettingsState,
+    model: &SettingsModel,
+    main: egui::Rect,
+    out: &mut Vec<Action>,
+) {
+    let width = DETAIL_W.min(main.width());
+    let mut close = false;
+    egui::Area::new(egui::Id::unique("claude-settings-sheet"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(egui::pos2(main.max.x - width, main.min.y))
+        .constrain(false)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(cx.pal.surface)
+                .stroke(egui::Stroke::new(1.0, cx.pal.border))
+                .corner_radius(radius::CARD)
+                .inner_margin(egui::Margin::same(16))
+                .shadow(egui::Shadow {
+                    offset: [0, 8],
+                    blur: 24,
+                    spread: 0,
+                    color: cx.pal.shadow,
+                })
+                .show(ui, |ui| {
+                    ui.set_width(width - 32.0);
+                    ui.set_height(main.height() - 32.0);
+                    ui.horizontal(|ui| {
+                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                            close = ui
+                                .add(crate::design::widgets::IconButton::new(
+                                    Icon::Close,
+                                    cx.tr.t("codex_settings.pending.close"),
+                                ))
+                                .clicked();
+                        });
+                    });
+                    detail(ui, cx, s, model, out);
+                });
+        });
+    if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        s.sheet_open = false;
     }
 }
 
@@ -474,7 +535,7 @@ fn rail(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, model: &SettingsModel) 
     }
 }
 
-fn list(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, model: &SettingsModel) {
+fn list(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, model: &SettingsModel, docked: bool) {
     let rows = s.rows();
     if rows.is_empty() {
         ui.add_space(24.0);
@@ -488,7 +549,7 @@ fn list(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, model: &SettingsModel) 
     let columns = Table::new(&[1.0, 0.0]).min_widths(&[0.0, CHIP_W]);
     let pending = s.pending.clone();
     let total = rows.len();
-    PagedTable::new("claude-settings-list", columns, total, &mut s.table)
+    let response = PagedTable::new("claude-settings-list", columns, total, &mut s.table)
         .label(cx.tr.t(Page::ClaudeSettings.title_key()))
         .row_height(size::ROW_LIST2)
         .without_pager()
@@ -508,32 +569,39 @@ fn list(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, model: &SettingsModel) 
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        let title = r.title(zh);
-                        let t = if r.entry.name_zh.is_some() && zh {
-                            RichText::new(title)
-                                .font(font(text::BODY, Weight::Medium))
-                                .color(cx.pal.text)
-                        } else {
-                            RichText::new(title)
-                                .font(mono_font(text::SMALL, Weight::Medium))
-                                .color(cx.pal.text)
-                        };
-                        ui.add(egui::Label::new(t).truncate());
-                        if r.entry.env {
-                            ui.add(Badge::new(cx.tr.t("claude.settings.badge.env")).outline());
-                        }
-                        if r.entry.deprecated {
-                            ui.add(
-                                Badge::new(cx.tr.t("claude.settings.badge.deprecated")).outline(),
-                            );
-                        }
-                        if r.entry.source == ClaudeSource::File {
-                            ui.add(
-                                Badge::new(cx.tr.t("claude.settings.badge.file"))
-                                    .status(Status::Warn),
-                            );
-                        }
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            // Allocate badges first so an elided key cannot push them
+                            // outside the name cell.
+                            if r.entry.source == ClaudeSource::File {
+                                ui.add(
+                                    Badge::new(cx.tr.t("claude.settings.badge.file"))
+                                        .status(Status::Warn),
+                                );
+                            }
+                            if r.entry.deprecated {
+                                ui.add(
+                                    Badge::new(cx.tr.t("claude.settings.badge.deprecated"))
+                                        .outline(),
+                                );
+                            }
+                            if r.entry.env {
+                                ui.add(Badge::new(cx.tr.t("claude.settings.badge.env")).outline());
+                            }
+                            let title = r.title(zh);
+                            let t = if r.entry.name_zh.is_some() && zh {
+                                RichText::new(title)
+                                    .font(font(text::BODY, Weight::Medium))
+                                    .color(cx.pal.text)
+                            } else {
+                                RichText::new(title)
+                                    .font(mono_font(text::SMALL, Weight::Medium))
+                                    .color(cx.pal.text)
+                            };
+                            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                ui.add(egui::Label::new(t).truncate()).on_hover_text(title);
+                            });
+                        });
                     });
                     let sub = if r.entry.name_zh.is_some() && zh {
                         r.path().to_owned()
@@ -568,6 +636,13 @@ fn list(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, model: &SettingsModel) 
                 });
             }
         });
+    if !docked
+        && (response.activated.is_some()
+            || response.rows.iter().any(|(_, row)| row.clicked())
+            || (response.selection_changed && response.response.has_focus()))
+    {
+        s.sheet_open = true;
+    }
 }
 
 fn detail(
@@ -595,7 +670,7 @@ fn detail(
                         .color(cx.pal.text),
                 );
             }
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(
                     RichText::new(row.path())
                         .font(mono_font(text::SMALL, Weight::Medium))
@@ -734,17 +809,31 @@ fn footer(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, list_x: egui::Rangef)
     let rect = ui.max_rect();
     let total = s.rows().len();
     let per = s.table.per_page.max(1);
-    let pager_rect = egui::Rect::from_x_y_ranges(list_x.min..=list_x.max, rect.y_range());
+    let count = s.pending.len();
+    let bar = egui::Rect::from_x_y_ranges(
+        (list_x.max.min(rect.max.x - DETAIL_W)).max(rect.min.x)..=rect.max.x,
+        rect.y_range(),
+    );
+    let compact = count > 0 && rect.width() < DOCK_MIN;
+    // Reuse the rail's footer space while edits are pending, keeping the
+    // compact pager clear of the save controls on narrow windows.
+    let pager_x = if compact {
+        rect.min.x..=bar.min.x - GAP
+    } else {
+        list_x.min..=list_x.max
+    };
+    let pager_rect = egui::Rect::from_x_y_ranges(pager_x, rect.y_range());
     let mut page = s.table.page;
     let changed = layout::fixed(ui, pager_rect, |ui| {
         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-            Pager::new("claude-settings-pager", &mut page, total, per)
-                .labels(
-                    cx.tr.t("claude.settings.prev"),
-                    cx.tr.t("claude.settings.next"),
-                )
-                .show(ui)
-                .changed()
+            let mut pager = Pager::new("claude-settings-pager", &mut page, total, per).labels(
+                cx.tr.t("claude.settings.prev"),
+                cx.tr.t("claude.settings.next"),
+            );
+            if compact {
+                pager = pager.compact();
+            }
+            pager.show(ui).changed()
         })
         .inner
     });
@@ -755,7 +844,6 @@ fn footer(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, list_x: egui::Rangef)
             s.table.selected = (total > 0).then_some(visible.start);
         }
     }
-    let count = s.pending.len();
     if count == 0 {
         return;
     }
@@ -765,10 +853,6 @@ fn footer(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, list_x: egui::Rangef)
         discard: cx.tr.t("claude.settings.discard"),
         save: cx.tr.t("claude.settings.save"),
     };
-    let bar = egui::Rect::from_x_y_ranges(
-        (list_x.max.min(rect.max.x - 360.0)).max(rect.min.x)..=rect.max.x,
-        rect.y_range(),
-    );
     let action = layout::fixed(ui, bar, |ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             PendingBar::new(count, labels)

@@ -192,7 +192,11 @@ pub(crate) fn row(
         .iter()
         .find(|(_, key)| cx.tr.t(label_key(key)) == title)
         .map(|(_, key)| *key);
-    let compact = ui.available_width() < 620.0;
+    // The installer-source explanation is a paragraph, and its three-way
+    // selector exceeds the ordinary control column. Keep both on their own row.
+    let compact = ui.available_width() < 620.0
+        || key == Some("prefs.network.app_source")
+        || (key == Some("prefs.network.source") && ui.available_width() < 860.0);
     let toggle = key.is_some_and(|key| {
         matches!(
             key,

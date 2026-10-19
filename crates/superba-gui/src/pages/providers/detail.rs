@@ -67,6 +67,7 @@ pub(super) fn show(
 /// Name, badges, homepage and the actions.
 fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Vec<Action>) {
     let name = super::list::name(cx, p);
+    let narrow = ui.available_width() < 600.0;
     ui.horizontal(|ui| {
         ui.set_min_height(32.0);
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -82,33 +83,19 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut V
         if p.applied {
             ui.add(Badge::new(cx.tr.t("providers.applied")).status(Status::Ok));
         }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            buttons(ui, cx, state, p, out);
-            let label = if p.kind == ProviderKind::Official {
-                cx.tr.t("providers.official.use")
-            } else {
-                cx.tr.t("providers.use")
-            };
-            let action = switch_action(p);
-            let r = ui.add(
-                Button::primary(label)
-                    .small()
-                    .enabled(action.is_some() && !cx.busy && !p.applied),
-            );
-            let r = if p.applied {
-                r.on_disabled_hover_text(cx.tr.t("providers.use_applied"))
-            } else if action.is_none() {
-                r.on_disabled_hover_text(cx.tr.t("providers.use_needs_key"))
-            } else {
-                r
-            };
-            if r.clicked()
-                && let Some(a) = action
-            {
-                out.push(a);
-            }
-        });
+        if !narrow {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                header_actions(ui, cx, state, p, out);
+            });
+        }
     });
+    if narrow {
+        ui.horizontal(|ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                header_actions(ui, cx, state, p, out);
+            });
+        });
+    }
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         if let Some(home) = &p.site.homepage {
@@ -127,6 +114,40 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut V
         };
         ui.add(egui::Label::new(Text::small(what, cx.pal)).truncate());
     });
+}
+
+/// Header actions get a separate line when the detail column is narrow.
+fn header_actions(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &mut State,
+    p: &Provider,
+    out: &mut Vec<Action>,
+) {
+    buttons(ui, cx, state, p, out);
+    let label = if p.kind == ProviderKind::Official {
+        cx.tr.t("providers.official.use")
+    } else {
+        cx.tr.t("providers.use")
+    };
+    let action = switch_action(p);
+    let r = ui.add(
+        Button::primary(label)
+            .small()
+            .enabled(action.is_some() && !cx.busy && !p.applied),
+    );
+    let r = if p.applied {
+        r.on_disabled_hover_text(cx.tr.t("providers.use_applied"))
+    } else if action.is_none() {
+        r.on_disabled_hover_text(cx.tr.t("providers.use_needs_key"))
+    } else {
+        r
+    };
+    if r.clicked()
+        && let Some(a) = action
+    {
+        out.push(a);
+    }
 }
 
 /// Test and Delete (right to left: Delete is the outermost). Delete opens the

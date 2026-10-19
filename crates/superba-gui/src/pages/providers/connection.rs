@@ -89,7 +89,6 @@ fn lines(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Ve
     let many = lines.len() > 1;
     let probing = cx.data.probing_site(&site.id);
     ui.horizontal(|ui| {
-        ui.label(Text::strong(cx.tr.t("providers.lines.title"), cx.pal));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui
                 .add(
@@ -104,6 +103,11 @@ fn lines(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Ve
                 out.push(Action::Probe(site.id.clone()));
                 super::transports::refresh(ui, cx, p);
             }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(Text::strong(cx.tr.t("providers.lines.title"), cx.pal)).wrap(),
+                );
+            });
         });
     });
     if let Some(e) = cx.data.caps.get(&site.id).and_then(|l| l.error.as_ref()) {
