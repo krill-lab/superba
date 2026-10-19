@@ -49,16 +49,16 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 - **模型与速度档。** 模型页（以及 `spb models`）列出供应商的模型及其上下文窗口和
   自动压缩上限，可按模型覆盖（区分默认值与自定义值，带校验，可重置）；标准 / Fast /
   Ultrafast 速度档控件会说明每个档位对终端和桌面 app 各自的效果。
-- **Codex 与 app 版本。** 更新页（以及 `spb codex`、`spb app`）显示 app、CLI 和每台
+- **Codex 与 app 版本。** Superba → 更新（以及 `spb codex`、`spb app`）显示 app、CLI 和每台
   远程主机运行的 Codex，安装经校验的 Codex 版本，可把桌面 app 固定在某个 Codex 版本，
   并检查 ChatGPT 桌面 app 是否有新版本（只显示安装命令，不会替你执行）。
-- **Superba 自身更新，由你点头。** 更新页、概览待办、侧栏小圆点和 `spb self-update check`
+- **Superba 自身更新，由你点头。** Superba → 更新、概览待办、侧栏小圆点和 `spb self-update check`
   会告诉你有新版 Superba；点“立即更新”或运行 `spb self-update install --yes` 会下载适合
   本系统的安装包，对照该版本的 `SHA256SUMS.txt` 校验大小和 SHA-256，原地替换 Superba
   （macOS 替换应用包，Windows 运行新版 MSI，Linux 替换二进制；目录不可写时给出手动
   步骤），并在本地路由器服务运行时重启它。自动检查（启动时及每 24 小时）和更新通道
   （稳定版，或包含 alpha、beta、候选版的预览版；预览版构建默认使用预览版通道）都在
-  偏好设置里；不会提供比当前更旧的版本，没有你的点击不会安装任何东西。
+  Superba → 更新里；不会提供比当前更旧的版本，没有你的点击不会安装任何东西。
 - **账户与用量。** 任何用 Key 的站点都通过标准计费接口显示余额、套餐和到期时间；
   Krill 还会显示账户邮箱、每日费用和按模型的用量（按需获取：Krill 每小时只允许
   10 次用量查询）。
@@ -97,7 +97,7 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 - **诊断。** 发现过期的 Codex 进程、外来的环境变量、无法解析的配置、钥匙串问题等。
 - **托盘图标。** Windows 通知区域、macOS 菜单栏、Linux 托盘（StatusNotifierItem，不需要 GTK）
   都有 Superba 图标：打开 Superba、查看并切换当前服务商和线路、通过 Superba 打开或重新打开
-  ChatGPT、查看并开关路由、退出 Superba。偏好设置 → 窗口：关闭窗口时退出，或在托盘中继续运行
+  ChatGPT、查看并开关路由、退出 Superba。Superba → 通用：关闭窗口时退出，或在托盘中继续运行
   （Windows 和 Linux 第一次关闭时询问；macOS 默认留在菜单栏），以及“启动时隐藏到托盘”。
   再次启动 Superba 会打开已在运行的窗口。没有托盘的 Linux 桌面（未启用 AppIndicator 扩展的
   GNOME）上该设置不可用，关闭窗口即退出。
@@ -107,7 +107,7 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
   （你原来配置的程序会保留），通过信任一次的生命周期钩子报告需要批准的操作；出错的 Codex 任务在
   Superba 运行时发现；Claude Code 通过它的钩子报告（`spb notify hook claude-code`）。消息包含项目、
   会话、电脑名称、用时、Token 和费用；回复开头只有在你打开后才会发送。支持免打扰、频率限制、最短任务
-  用时和测试按钮；Token 和 Webhook 地址保存在密钥库里。偏好设置 → 通知，以及 `spb notify`。
+  用时和测试按钮；Token 和 Webhook 地址保存在密钥库里。Superba → 通知，以及 `spb notify`。
 - 中英文界面。
 
 ## 安装
@@ -392,7 +392,7 @@ Codex 只在 app-server 进程启动时读取 `config.toml`、`auth.json` 和环
 - **Linux**：桌面文件带有操作**用 Superba 打开 ChatGPT**（在启动器里右键 Superba），
   运行 `superba --launch-chatgpt`。
 - **macOS**：使用概览、命令面板或 `spb launch`（暂无程序坞菜单项）。
-- **偏好设置 > 切换 > 启动 Superba 时通过它打开 ChatGPT**（默认关闭）：每次打开
+- **Superba → 通用 → 启动 Superba 时通过它打开 ChatGPT**（默认关闭）：每次打开
   Superba 时，若 ChatGPT 没有运行就打开它；已在运行的 ChatGPT 不受影响。
 - **CLI**：`spb launch` 通过 Superba 打开 ChatGPT（若已由 Superba 打开，则切到前台）；
   `spb launch --restart` 重新打开从别处启动的 ChatGPT（完整重启，与切换一样先给出

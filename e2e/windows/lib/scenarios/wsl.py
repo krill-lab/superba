@@ -525,8 +525,7 @@ def w88(t):
         u.click(key="hosts.wsl.update_now")
         phases, names = flows.wait_switch_done(run, s, u, timeout=300)
         s.info(f"phases: {phases}")
-        result = [n for n in names if re.match(u.R("toast.switched"), n) or re.match(u.R("toast.partial"), n)
-                  or "failed" in n.lower() or "rolled back" in n.lower()]
+        result = flows.switch_result(u, names)
         s.info(f"toast/result: {result}")
         s.shot("hosts-after-update-now")
         s.ui_dump("hosts-after-update-now")

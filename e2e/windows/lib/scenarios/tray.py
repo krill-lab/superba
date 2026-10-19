@@ -92,7 +92,7 @@ def wait(cond, timeout=15):
 
 @scenario("W64", "Tray icon: close to tray (asked once), the tray menu, a second start, quit from the tray",
           area="gui", needs=("configured",), bugs=(70,))
-def w90(t):
+def w64(t):
     run = t.run
     u = Ui(run)
     with t.step("Superba shows its icon in the notification area") as s:
@@ -105,6 +105,10 @@ def w90(t):
         s.info(f"tooltip / name: {icon['name']!r}")
         s.shot("taskbar", full=True)
         s.ui_dump("taskbar", hwnd=bar["hwnd"])
+        u.superba("general")
+        u.reveal(key="tray.prefs.close.title", type=None)
+        s.shot("general-close-behavior")
+        s.ui_dump("general-close-behavior")
         # The router runs as its own service (HKCU Run) whatever the window does.
         r = run.spb("router", "install", "--member", "krill", timeout=180, label="router-install")
         s.info(f"spb router install rc={r.get('code')}")

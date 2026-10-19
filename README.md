@@ -64,11 +64,11 @@ Geist look).
   them per model (shown as default or custom, validated, resettable), and the
   Standard / Fast / Ultrafast speed control shows what each tier does for the
   terminal and for the desktop app.
-- **Codex and app versions.** The Updates page (and `spb codex`, `spb app`) shows
+- **Codex and app versions.** Superba → Updates (and `spb codex`, `spb app`) shows
   the Codex the app, the CLI and each remote host run, installs verified Codex
   releases, can pin the desktop app to one Codex version, and checks for a newer
   ChatGPT desktop app build (the install command is shown, never run for you).
-- **Superba updates itself, when you say so.** The Updates page, the Overview to-do,
+- **Superba updates itself, when you say so.** Superba → Updates, the Overview to-do,
   a dot in the sidebar and `spb self-update check` tell you when a newer Superba is
   published; `Update now` / `spb self-update install --yes` downloads the package
   for your system, verifies its size and SHA-256 against the release's
@@ -76,7 +76,7 @@ Geist look).
   Linux binaries; manual steps if the folder is not writable) and restarts the
   local router service if it runs. Automatic checks (start-up and every 24 hours)
   and the update channel (Stable, or Preview with alpha, beta and release
-  candidates; a preview build starts on Preview) are Preferences; an older version
+  candidates; a preview build starts on Preview) are in Superba → Updates; an older version
   is never offered, and nothing is installed without your click.
 - **Account and usage.** Balance, plan and expiry from the standard billing
   endpoints of any key-based site; Krill also shows the account e-mail, daily
@@ -143,7 +143,7 @@ Geist look).
 - **Tray icon.** A Superba icon in the Windows notification area, the macOS
   menu bar and Linux trays (StatusNotifierItem, no GTK needed): open Superba,
   see and switch the provider and line in use, open or reopen ChatGPT through
-  Superba, see the router and turn it off, quit. Preferences > Window: quit when
+  Superba, see the router and turn it off, quit. Superba → General: quit when
   the window is closed or keep running in the tray (Windows and Linux ask on the
   first close; macOS keeps running in the menu bar), and "Start hidden in the
   tray". Starting Superba again shows the running window. On a Linux desktop
@@ -161,7 +161,7 @@ Geist look).
   conversation, the computer, how long it ran and its tokens and cost; the
   start of the reply is sent only when you turn it on. Quiet hours, a rate
   limit, a minimum task length and a test button; tokens and webhook
-  addresses stay in the key store. Preferences > Notifications and `spb
+  addresses stay in the key store. Superba → Notifications and `spb
   notify`.
 - English and Simplified Chinese.
 
@@ -538,7 +538,7 @@ hot-switched until Superba reopens it. Ways to open it through Superba:
 - **Linux**: the desktop file has the action **Open ChatGPT with Superba**
   (right-click Superba in the launcher), running `superba --launch-chatgpt`.
 - **macOS**: use the Overview, the palette or `spb launch` (no Dock menu item yet).
-- **Preferences > Switching > Open ChatGPT through Superba when Superba starts**
+- **Superba → General → Open ChatGPT through Superba when Superba starts**
   (off by default) opens ChatGPT whenever Superba opens and ChatGPT is not running;
   a running ChatGPT is left alone.
 - **CLI**: `spb launch` opens ChatGPT through Superba (and brings it to the front

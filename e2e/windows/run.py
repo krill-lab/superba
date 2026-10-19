@@ -92,6 +92,7 @@ def cmd_list(opts):
 def run_one(run, sc):
     t = T(run, sc)
     t0 = time.time()
+    timeout_start = len(run.wsl_switch_timeouts)
     rec = {"id": sc.id, "title": sc.title, "area": sc.area, "bugs": list(sc.bugs)}
     run.log(f"=== {sc.id} {sc.title}")
     run.vm.renew()
@@ -125,6 +126,13 @@ def run_one(run, sc):
         rec["reason"] = f"scenario error: {type(e).__name__}: {e}"
         run.log(traceback.format_exc())
         run.dirty = True
+    timeouts = run.wsl_switch_timeouts[timeout_start:]
+    if timeouts:
+        run.wsl_retry_warnings.setdefault(sc.id, []).extend(timeouts)
+    recovered = run.wsl_retry_warnings.get(sc.id, [])
+    if recovered and not rec.get("reason") and status_of(t.steps) in (runner.PASS, runner.WARN):
+        with t.step("Earlier WSL switch timeout remains visible after recovery") as s:
+            s.check(False, f"scenario completed after a WSL timeout: {', '.join(recovered)}", soft=True)
     rec.setdefault("status", status_of(t.steps) if t.steps else (FAIL if rec.get("reason") else SKIP))
     if rec["status"] == FAIL:
         run.dirty = True

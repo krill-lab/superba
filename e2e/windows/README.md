@@ -87,3 +87,20 @@ e2e/windows/run.py --vm 3 spb status
 e2e/windows/run.py --vm 3 guest 'Get-Process superba*'
 e2e/windows/run.py --vm 3 session down             # restore clean, release the VM
 ```
+
+## Alpha.7 regression coverage
+
+The navigation changes and new W91–W101 scenarios are listed in [MATRIX.md](MATRIX.md).
+Run the new scenarios after the tool editor, unified update list and installer have
+been integrated into the MSI. Missing dependencies produce SKIP, not PASS.
+
+From a worktree, set `SUPERBA_WINVM_HELPERS` to the shared VM helper directory
+containing `pool.sh`, `snapshot.sh`, `ssh.sh` and `common.sh`, and pass `--msi PATH`.
+The variable changes helper discovery only; scenarios and locale keys still come
+from the current checkout.
+
+Driver-only regression checks (no VM required):
+
+```sh
+python3 -m unittest discover -s e2e/windows/tests -v
+```

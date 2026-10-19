@@ -75,6 +75,8 @@ class Run:
         self.started = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.guest = {}
         self._tseq = 0
+        self.wsl_switch_timeouts = []
+        self.wsl_retry_warnings = {}
 
     # ------------------------------------------------------------- logging
     def log(self, msg):
@@ -268,6 +270,10 @@ class Run:
             f"$ spb {shown}\n# exit {r['code']} in {r['ms']} ms{' (timed out)' if r['timed_out'] else ''}\n"
             f"--- stdout\n{r['stdout']}\n--- stderr\n{r['stderr']}\n")
         r["transcript"] = f"transcripts/{name}"
+        if "wsl" in (self.session_snapshot or "") and args and args[0] in ("switch", "router", "wsl"):
+            output = r["stdout"] + "\n" + r["stderr"]
+            if r["timed_out"] or re.search(r"(?i)timed? out|timeout|超时", output):
+                self.wsl_switch_timeouts.append(r["transcript"])
         self.log(f"  spb {shown} -> {r['code']} ({r['ms']} ms)")
         return r
 

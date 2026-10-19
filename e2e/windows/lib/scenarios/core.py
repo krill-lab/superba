@@ -467,15 +467,15 @@ def w36(t):
             s.check(run.net.key not in r["stdout"] + r["stderr"], "no key in the output")
     with t.step("Diagnostics page loads") as s:
         flows.start_superba(run, s)
-        u.page("diagnostics")
+        u.superba("diagnostics")
         time.sleep(4)
         s.shot("diagnostics")
         s.ui_dump("diagnostics")
-        s.manual("diagnostics.png: checks listed with reasons, no raw errors")
+        s.manual("diagnostics.png: checks listed with reasons, no raw errors; the coding-tools table has one row per installed tool")
 
 
 # --------------------------------------------------------------------------- restore / uninstall
-@scenario("W40", "Restore the original configuration (Overview -> More)", area="restore", needs=("turn",),
+@scenario("W40", "Restore the original configuration (Overview -> Actions)", area="restore", needs=("turn",),
           tags=("core",))
 def w40(t):
     run = t.run

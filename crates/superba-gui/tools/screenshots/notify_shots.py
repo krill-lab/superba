@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preferences → Notifications (GitHub issue 12) from the real `superba` binary,
+"""Superba → Notifications (GitHub issue 12) from the real `superba` binary,
 English and Chinese, light (and dark for the overview shot).
 
 The isolated home gets three channels (Telegram, Feishu with a signing secret,

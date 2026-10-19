@@ -7,7 +7,7 @@ A private session bus (`dbus-daemon`) and a minimal StatusNotifierItem host
 dbusmenu and clicks it like a desktop's tray) stand in for KDE Plasma / the
 GNOME AppIndicator extension. Steps, each checked:
 
-1. Preferences → Window with a tray (light/dark, en/zh): "When the window is
+1. Superba → General with a tray (light/dark, en/zh): "When the window is
    closed" not chosen yet, "Start hidden in the tray".
 2. The window's close button (WM_DELETE_WINDOW): the first-close question
    (en/zh shots); "Keep running in the tray" hides the window (unmapped) and
@@ -17,7 +17,7 @@ GNOME AppIndicator extension. Steps, each checked:
    ends.
 4. "Quit Superba" from the tray menu ends the process.
 5. `superba --start-in-tray`: no window, the item registers.
-6. Without a host (the watcher stopped): Preferences shows both rows disabled
+6. Without a host (the watcher stopped): Superba → General shows both rows disabled
    with the reason, and the close button quits.
 
 Like the other shot scripts it re-runs itself in an unprivileged user + PID
@@ -204,7 +204,7 @@ class Run:
         self.gui = None
 
     def scroll_to_window_section(self):
-        # Preferences: Switching, Appearance, then Window.
+        # Superba → General: switching controls, then window behavior.
         self.s.input.scroll(760, 450, 8)
         time.sleep(0.8)
         self.s.input.park()
@@ -215,7 +215,7 @@ def run(r):
     r.start_bus()
     r.start_host()
 
-    # 1. Preferences → Window with a tray.
+    # 1. Superba → General with a tray.
     for theme, lang in (("light", "en"), ("dark", "zh-CN"), ("dark", "en"), ("light", "zh-CN")):
         r.launch(theme=theme, lang=lang, page="general")
         time.sleep(6)

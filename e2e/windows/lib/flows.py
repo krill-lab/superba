@@ -293,12 +293,26 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
     pause_seen = None
     extended = False
     names = []
+    ended_survivors = False
 
     def pause_lines(names):
         return [n for n in names if paused.match(n) or n == app_setup or n.startswith(here + " ·")]
 
     while time.time() < end:
         names = u.texts()
+        still_running = u.L("decide.still_running.title")
+        if still_running in names:
+            s.info(f"switch dialog: {still_running}")
+            s.ui_dump("chatgpt-still-running")
+            s.shot("chatgpt-still-running")
+            if not force_quit or ended_survivors:
+                raise UiError(f"switch blocked by dialog {still_running!r}; "
+                              f"{'ending processes was already attempted' if ended_survivors else 'force quit is not allowed'}")
+            s.check(False, f"{still_running}: ending the remaining test app processes once", soft=True)
+            u.click(key="decide.still_running.end")
+            ended_survivors = True
+            seen.append(f"[dialog: {still_running}]")
+            continue
         lines = pause_lines(names)
         if any(paused.match(n) for n in lines):
             if lines != pause_seen:
@@ -324,12 +338,16 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
             continue
         if u.L("decide.remote.title") in names:
             # A WSL distribution's turn check timed out on a slow VM: nothing runs there in the harness.
-            s.info("running turns on a remote host could not be checked: answering Continue")
+            s.check(False, "running turns on a remote host could not be checked: answering Continue", soft=True)
             u.click(key="decide.continue")
             seen.append("[continue: remote turns unknown]")
             continue
         if time.time() - t0 > 3 and not any(rx.match(n) for rx in busy for n in names) \
                 and not any(n == u.L("confirm.title") for n in names):
+            if "wsl" in (run.session_snapshot or ""):
+                delayed = [n for n in names if re.search(r"(?i)timed? out|timeout|超时", n)]
+                if delayed:
+                    s.check(False, f"WSL switch reported a timeout: {delayed}", soft=True)
             return seen, names
         time.sleep(2)
     lines = pause_lines(names)
@@ -337,6 +355,11 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
         raise UiError(f"the switch stayed paused for running turns ({round(time.time() - t0)} s): {lines}; "
                       f"phases seen {seen}")
     raise UiError(f"the switch did not finish within {timeout} s; phases seen {seen}")
+
+
+def switch_result(u, initial=(), timeout=8):
+    return u.poll_texts([u.R("toast.switched"), u.R("toast.partial"),
+                         r"(?i)failed|rolled back|失败|已回滚"], timeout=timeout, initial=initial)
 
 
 def applied(run, label="status"):
@@ -425,9 +448,9 @@ def wizard_krill(run, t, prefix="", line="a", lang="en"):
             s.info("no full-restart confirmation (ChatGPT not running?)")
         phases, names = wait_switch_done(run, s, u)
         s.info(f"phases: {phases}")
-        s.shot("after-first-switch")
-        toast = [n for n in names if re.match(u.R("toast.switched"), n) or "failed" in n.lower()]
+        toast = switch_result(u, names)
         s.info(f"toast/result: {toast}")
+        s.shot("after-first-switch")
         a = app(run)
         m = a.wait_main(90)
         s.check(m is not None, "ChatGPT relaunched by Superba with a debugging port")

@@ -19,11 +19,11 @@ import flows
 from app import App
 from runner import scenario
 from session import BASE_SNAPSHOT, GUEST_DL
-from ui import Ui
+from ui import Ui, SUPERBA_SECTIONS
 from vm import REPO, free_port, psq
 
-PAGES = ["overview", "providers", "models", "router", "usage", "settings", "sessions", "hosts", "updates",
-         "diagnostics", "preferences"]
+PAGES = ["overview", "tools", "providers", "models", "router", "usage", "settings", "sessions", "hosts",
+         "claude_code", "claude_settings"] + [f"superba:{section}" for section in SUPERBA_SECTIONS]
 
 
 def U(t, lang="en"):
@@ -35,7 +35,7 @@ def page_tour(t, s, lang="en", tag=""):
     for p in PAGES:
         u.page(p)
         time.sleep(2.5)
-        s.shot(f"{tag}{p}")
+        s.shot(f"{tag}{p.replace(':', '-')}")
     u.page("overview")
 
 
@@ -698,8 +698,9 @@ def w50(t):
     u = U(t)
     with t.step("Updates page and spb app check") as s:
         flows.start_superba(run, s)
-        u.page("updates")
+        u.superba("updates")
         time.sleep(5)
+        u.update_row("updates.app.title")
         s.shot("updates")
         s.ui_dump("updates")
         r = run.spb("app", "--help", timeout=60, label="app-help")
@@ -719,9 +720,16 @@ def w51(t):
     u = U(t)
     with t.step("Codex versions in the GUI and the CLI") as s:
         flows.start_superba(run, s)
-        u.page("updates")
+        u.superba("updates")
         time.sleep(4)
+        u.update_row("updates.pin.title")
         s.shot("updates-codex")
+        s.ui_dump("updates-pin")
+        if u.s.has("updates.list.all"):
+            u.update_row("updates.pin.title", expand=False)
+            u.update_row("updates.list.cli")
+            s.shot("updates-cli")
+            s.ui_dump("updates-cli")
         r = run.spb("codex", "--help", timeout=60, label="codex-help")
         s.save("spb-codex-help.txt", r["stdout"])
         r = run.spb("codex", "list", timeout=180, label="codex-list")
@@ -773,7 +781,7 @@ def w52(t):
     run = t.run
     if not run.old_msi:
         t.skip("needs --old-msi (the older MSI to start from); the MSI under test is the update")
-    m_new = re.search(r"superba-(\d+\.\d+\.\d+[^-]*?)-windows", run.msi.name)
+    m_new = re.search(r"superba-(\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?)(?:-quick)?-windows", run.msi.name)
     tag = "v" + (m_new.group(1) if m_new else "9.0.0")
     new_msi, old_msi = run.msi, run.old_msi
     with t.step("Install the older MSI") as s:
@@ -800,19 +808,22 @@ def w52(t):
         run.agent.call("env.broadcast")
         s.info(f"mock release {tag} on guest 127.0.0.1:{port}")
     try:
-        with t.step("Update from the GUI (Updates page)") as s:
+        with t.step("Update from the GUI (Superba > Updates)") as s:
             u = U(t)
             flows.start_superba(run, s, fresh=True)
-            u.page("updates")
+            if u.exists(key="wizard.skip"):
+                u.click(key="wizard.skip")
+            # The source MSI may predate the new navigation; the updated MSI must use it.
+            if u.exists(key="superba.title", type="TabItem"):
+                u.superba("updates")
+                u.update_row("updates.superba.title")
+            else:
+                u.act("invoke", key="nav.updates", type="TabItem")
             time.sleep(4)
             s.shot("update-available")
             s.ui_dump("update-available")
-            btn = u.has_text(r"^(Update now|立即更新)")
-            if btn:
-                u.click(name=btn)
-            else:
-                r = run.spb("self-update", "install", "--yes", timeout=600, label="self-update")
-                s.save("self-update.txt", r["stdout"] + r["stderr"])
+            u.reveal(key="updates.superba.update_now", type="Button")
+            u.click(key="updates.superba.update_now")
             end = time.time() + 420
             ver = None
             while time.time() < end:
@@ -833,6 +844,9 @@ def w52(t):
                 s.save("selfupdate.log", log)
             w = U(t).wait_window(120)
             s.check(w is not None, "the new Superba started")
+            if u.exists(key="wizard.skip"):
+                u.click(key="wizard.skip")
+            u.superba("updates")
             s.shot("after-update")
     finally:
         srv.shutdown()
@@ -865,9 +879,9 @@ def w61(t):
             run.agent.start_proc(run.superba_exe, ["--theme", theme, "--size", "1280x800"])
             U(t).wait_window(60)
             page_tour(t, s, "en", f"{theme}-")
-    with t.step("Backgrounds (Preferences > Appearance)") as s:
+    with t.step("Backgrounds (Superba > Appearance)") as s:
         u = U(t)
-        u.page("preferences")
+        u.superba("appearance")
         time.sleep(2)
         for key in ("neutral", "mint", "sky", "sand", "lavender"):
             label = u.L(f"settings.background.{key}")
@@ -877,7 +891,7 @@ def w61(t):
                 u.page("overview")
                 time.sleep(1.5)
                 s.shot(f"background-{key}")
-                u.page("preferences")
+                u.superba("appearance")
                 time.sleep(1)
         s.manual("background-*.png and theme tours: soft background, readable contrast in both themes (bugs 24/27)")
 
@@ -892,6 +906,22 @@ def w62(t):
             got = U(t).window()
             s.info(f"window {got and got['rect']}")
             page_tour(t, s, "en", f"{w}x{h}-")
+            if (w, h) == (960, 640):
+                u = U(t)
+                u.superba("home")
+                left, top, width, height = u.window()["rect"]
+                for section in SUPERBA_SECTIONS:
+                    key = "superba.title" if section == "home" else f"superba.section.{section}"
+                    tabs = u.find(key=key, type="TabItem", visible=False)
+                    expected = 2 if section == "home" else 1
+                    s.check(len(tabs) == expected, f"{section}: {expected} navigation tabs")
+                    for tab in tabs:
+                        x, y, tw, th = tab["rect"]
+                        s.check(tw > 0 and th > 0 and left <= x and top <= y
+                                and x + tw <= left + width and y + th <= top + height,
+                                f"{section} visible without scrolling: {tab['rect']}")
+                s.shot("960x640-superba-navigation")
+                s.ui_dump("960x640-superba-navigation")
     with t.step("Smaller than the minimum is refused") as s:
         U(t).resize(700, 500)
         time.sleep(1)
@@ -1122,8 +1152,11 @@ def w53(t):
     try:
         with t.step("Update now to a release whose MSI is broken") as s:
             flows.start_superba(run, s, fresh=True)
-            u.page("updates")
+            if u.exists(timeout=5, key="wizard.skip"):
+                u.click(key="wizard.skip")
+            u.superba("updates")
             time.sleep(4)
+            u.update_row("updates.superba.title")
             r = run.spb("self-update", "check", timeout=120, label="self-update-check-before")
             s.save("check-before.txt", r["stdout"])
             s.check("9.9.9" in r["stdout"], "the mock release 9.9.9 is offered")
@@ -1151,8 +1184,9 @@ def w53(t):
             toast = u.has_text(u.R("updates.superba.problem_failed"), timeout=30)
             s.check(bool(toast), f"failure shown: {toast!r}")
             s.shot("failure-toast")
-            u.page("updates")
+            u.superba("updates")
             time.sleep(3)
+            u.update_row("updates.superba.title")
             s.shot("updates-problem")
             s.ui_dump("updates-problem")
             s.check(u.exists(key="updates.superba.open_log"), "'Open the log' on the Updates page", soft=True)

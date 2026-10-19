@@ -12,6 +12,8 @@ import time
 
 from agent import AgentError
 
+SUPERBA_SECTIONS = ("home", "updates", "diagnostics", "data", "general", "appearance", "network", "notify")
+
 
 class UiError(RuntimeError):
     pass
@@ -105,11 +107,85 @@ class Ui:
         return self.agent.call("key", combo=combo, repeat=repeat)
 
     def page(self, page):
-        """Open a sidebar page: overview providers models router usage settings
-        sessions hosts claude-code claude-settings updates diagnostics preferences
-        (the tab's accessible name is the page title, `nav.<name>`)."""
-        self.act("invoke", key=f"nav.{page.replace('-', '_')}", type="TabItem")
+        """Open a main page or superba:<section>. Maintenance and preferences
+        live in Superba; legacy preferences callers go to General."""
+        if page.startswith("superba:"):
+            return self.superba(page.split(":", 1)[1])
+        if page in SUPERBA_SECTIONS or page in ("superba", "preferences"):
+            return self.superba({"superba": "home", "preferences": "general"}.get(page, page))
+        key = "superba.tools.title" if page == "tools" else f"nav.{page.replace('-', '_')}"
+        self.act("invoke", key=key, type="TabItem")
         time.sleep(0.6)
+
+    def superba(self, section="home"):
+        """Open the pinned Superba tab, then its section. Both the sidebar tab
+        and the home tab are named Superba: use their horizontal position, never
+        the tree order, to select the correct navigation column."""
+        if section not in SUPERBA_SECTIONS:
+            raise ValueError(f"unknown Superba section: {section}")
+        tabs = self.find(timeout=20, key="superba.title", type="TabItem")
+        if not tabs:
+            raise UiError("Superba sidebar tab not found")
+        sidebar = min(range(len(tabs)), key=lambda i: tabs[i]["rect"][0])
+        self.act("invoke", key="superba.title", type="TabItem", index=sidebar)
+        key = "superba.title" if section == "home" else f"superba.section.{section}"
+        tabs = self.find(timeout=20, key=key, type="TabItem")
+        if not tabs or (section == "home" and len(tabs) < 2):
+            raise UiError(f"Superba section tab not found: {section}")
+        rail = max(range(len(tabs)), key=lambda i: tabs[i]["rect"][0])
+        self.act("invoke", key=key, type="TabItem", index=rail)
+        time.sleep(0.6)
+
+    def expand(self, row_key=None, **kw):
+        """Expand an update row by its localized accessible name."""
+        return self.act("expand", key=row_key, type="Button", **kw)
+
+    def collapse(self, row_key=None, **kw):
+        """Collapse an update row through UIA's ExpandCollapse pattern."""
+        return self.act("collapse", key=row_key, type="Button", **kw)
+
+    def scroll_detail(self, notches=-4):
+        """Scroll the right-hand detail pane, leaving both navigation rails still."""
+        w = self.wait_window()
+        return self.agent.call("scroll", x=int(w["rect"][2] * 0.8), y=int(w["rect"][3] * 0.65),
+                               relative=True, notches=notches, settle_ms=450, **self.win)
+
+    def reveal(self, attempts=12, **sel):
+        """Find a control while scrolling only the detail pane, from its top."""
+        if self.exists(**sel):
+            return self.wait(**sel)
+        self.scroll_detail(80)
+        for _ in range(attempts):
+            if self.exists(**sel):
+                return self.wait(**sel)
+            self.scroll_detail(-4)
+        raise UiError(f"control not found in the detail pane: {self._describe(self._sel(**sel))}")
+
+    def update_row(self, title_key, expand=True):
+        """M3 update row names include status/version after the localized title.
+        M2 has an ungrouped body, so no row action is needed there."""
+        if not self.s.has("updates.list.all"):
+            return None
+        sel = {"name_re": "^" + re.escape(self.L(title_key)) + r"(?:,|，)", "type": "Button"}
+        row = self.reveal(**sel)
+        self.act("expand" if expand else "collapse", **sel)
+        return row
+
+    def poll_texts(self, patterns, timeout=8, initial=()):
+        """Read transient result/toast text until it arrives; include the last
+        overlay snapshot so a toast that already appeared is not lost."""
+        regexes = [re.compile(p) for p in patterns]
+        end = time.monotonic() + timeout
+        names = initial
+        while True:
+            matches = [n for n in names if any(rx.search(n) for rx in regexes)]
+            if matches:
+                return matches
+            names = self.texts()
+            matches = [n for n in names if any(rx.search(n) for rx in regexes)]
+            if matches or time.monotonic() >= end:
+                return matches
+            time.sleep(0.25)
 
     # ------------------------------------------------------------- reading
     def tree(self, **sel):
