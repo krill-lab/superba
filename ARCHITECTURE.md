@@ -648,10 +648,9 @@ shortage, 502 `api_error` when no line answered).
   and request log) and each one's Anthropic endpoint: a path below every line's
   origin (Krill's test relay `/codex`, DeepSeek `/anthropic`, GLM
   `/api/anthropic`; empty for Krill's `/v1/messages`) or full URLs per line;
-  `/v1/messages` is appended. Requests are passed through; there is no protocol
-  conversion in this release, so a member without an Anthropic endpoint is not
-  eligible (`ClaudeMember::eligibility` → `superba_core::ClaudeIneligible::
-  NoAnthropicEndpoint`, "protocol conversion comes in 0.1.2"). A member can be
+  `/v1/messages` is appended. Native requests are passed through unchanged. A member without an Anthropic
+  endpoint can serve requests through an enabled IR conversion; routed eligibility
+  uses `RouterConfig::claude_eligibility`. A member can be
   reserved for Claude Code (`claude_only`): Codex requests skip it.
 - **Routing.** Aliases first (`claude-haiku-*` → the model that serves
   Claude Code's own background ids), then the first matching route (exact or
@@ -701,8 +700,8 @@ shortage, 502 `api_error` when no line answered).
   `ANTHROPIC_AUTH_TOKEN` and `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` into
   `settings.json` (`superba_switch::claude::claude_router_route`). Every router
   configuration Superba writes carries the section, built from Claude Code's
-  provider (first) and the router's member profiles that have an Anthropic
-  endpoint; a provider that is not a router member joins as a Claude-only
+  provider (first) and the router's member profiles with a native endpoint
+  or enabled conversion; a provider that is not a router member joins as a Claude-only
   member; every model the provider's configuration names gets a route (the
   provider first, the others as failover); `claude-*haiku*` / `*sonnet*` /
   `*opus*` / `*fable*` map to the slot models. An apply through the router writes
@@ -711,13 +710,39 @@ shortage, 502 `api_error` when no line answered).
   `RouterManager::write_config` keeps a stored section for the members still
   there when a writer passes none. The Router page and `spb claude status` /
   `spb router status` list Claude Code's providers with
-  `ClaudeIneligible::NoAnthropicEndpoint` for those without an endpoint.
+  “Via protocol conversion” for translated members and
+  `ClaudeIneligible::NoProtocolRoute` when no enabled route exists.
   Uninstalling the router, removing its last member, or the watchdog (it also
   runs while only Claude Code uses the router: `Overview::claude_routed`) moves
   Claude Code back to its provider (route direct; `settings.json` rewritten, or
   Superba's keys taken out when the provider has no Anthropic endpoint) and says
   so (`RouterView::notes`, `RouterWatch::notes`); a router that moved to another
   port gets `settings.json` pointed at it again.
+
+**Protocol conversion and Gemini** (`superba_router::translate`). Four codecs
+(Messages, Responses, Chat Completions, Gemini) decode requests and streaming events
+into a shared IR and encode them for the selected endpoint. There are no pairwise
+translators. Same-protocol traffic bypasses the IR. The IR retains system content,
+images and files, tool calls/results and their identities, stop/error states and
+separate cache-read/cache-write usage. Opaque signatures and encrypted reasoning
+are emitted only to their producer family. Responses namespaces and text-input
+tools use stable function identities and a JSON string argument on other protocols;
+the response codec restores their native form using the requesting tool definitions.
+
+`translation.disabled` lists directional switches, for example
+`[{"from":"messages","to":"chat"}]`. All twelve conversions default on; native
+forwarding remains available. `RouterConfig::upstream_protocol` is the common
+native-first capability decision. Remote `/responses/compact` requires native
+Responses support and is never emulated. Translated Codex WebSocket turns use
+HTTP upstream requests and a bounded continuation on the client socket.
+
+Gemini clients use `GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:<port>/gemini`:
+`POST /gemini/v1beta/models/{model}:generateContent`,
+`POST /gemini/v1beta/models/{model}:streamGenerateContent?alt=sse`, and
+`GET /gemini/v1beta/models`. A router token in `x-goog-api-key` or `key=` authenticates
+before routing; query credentials never reach upstream. Signed harness tokens
+attribute requests to Gemini. `gemini.members` configures native `/v1beta` bases
+and model lists (Krill has a default); every ingress can use those endpoints.
 
 **OpenAI ingress for the other coding tools** (multi-harness §1–§3;
 `superba_router::openai`). The same process and port serve OpenAI Responses and
@@ -730,9 +755,9 @@ bearer or as `x-api-key` (WorkBuddy sends both); neither reaches a member.
 Errors are OpenAI-shaped. A Responses WebSocket is answered 426 (no tool needs
 one: all default to HTTP streaming).
 
-- **Members and eligibility** (`openai::config`). Pass-through only (protocol
-  conversion is 0.1.2): a request goes to the members that serve its protocol,
-  each at its own endpoint (the `…/v1` base a tool would be given). Defaults:
+- **Members and eligibility** (`openai::config`). A request uses each member's native
+  endpoint when available, otherwise an enabled IR conversion. Native defaults
+  use each protocol's own endpoint (the `…/v1` base a tool would be given). Defaults:
   a Krill member serves Responses and Chat at `<origin>/codex/v1`; a compatible
   site serves Responses at its line base URL (what Codex uses); a member
   reserved for Claude Code serves neither. `RouterConfig::openai` (`None`: all

@@ -253,3 +253,26 @@ SUPERBA_E2E_ENV=/path/to/e2e.env python3 -I e2e/openai_router.py \
 | 7 | `spb restore original --provider reverse-migrate`: config lines and values, `auth.json` and rc files back to the pre-takeover bytes (keys the app itself added are kept), sessions back on `krill`. |
 | 9 | `superba-remote`'s Docker sshd integration test. The app-level remote restart is out of scope (needs an app connected to an SSH host). |
 | 15 | Tracked tree: no demo mode, demo data or demo wording, no user-facing "context management" wording of Superba's own (the official upstream description of the Codex feature `features.context_management` in the catalog is allowed), no account-summary endpoint, no internal hosts, no "for Krill" brand string; no key or test-relay host bytes in the tracked tree or the release binaries. |
+
+### Protocol conversion with real CLIs
+
+`protocol_translation.py` runs Claude Code through Responses and Chat-only
+members, Codex through Chat, and Gemini CLI through Chat. Each CLI reads a
+random marker with a tool and continues its conversation; the request log must
+record the correct harness and normalized usage. Each run has an empty HOME and
+client configuration directory. It also exercises a native Gemini upstream.
+
+Install Gemini CLI into an isolated npm prefix, then run:
+
+```sh
+SUPERBA_E2E_ENV=/path/to/e2e.env python3 -I e2e/protocol_translation.py \
+  --router /path/to/superba-router --gemini /path/to/prefix/node_modules/.bin/gemini \
+  /path/to/evidence
+```
+
+`--gemini-upstream-mode fake` uses a local Gemini-format upstream when the test
+relay does not serve that path. The report explicitly records the selected mode.
+The script redacts relay credentials/addresses from logs and removes its client
+homes and router credential/config files at exit. `--scenario` can repeat to
+select individual paths. The Rust tests cover all twelve streaming conversion
+directions, native forwarding, capability switches and WebSocket tool continuations.
