@@ -5,6 +5,7 @@ mod router_harness;
 mod support;
 
 use router_harness::{Frame, Harness};
+use std::cell::Cell;
 use std::sync::Arc;
 use superba_core::{Error, Locale, ToolId as CoreId, ToolInstallKind, ToolOp};
 use superba_gui::pages::Action;
@@ -21,9 +22,19 @@ fn harness(service: Arc<FakeService>, locale: Locale) -> Harness {
     Harness::new([1280.0, 2800.0], locale, service, false)
 }
 fn show(h: &mut Harness, state: &mut State, want: &str) -> Frame {
+    // Both inventories affect row positions. Check before drawing so a read
+    // completed during this frame cannot validate coordinates from loading rows.
+    let ready = Cell::new(false);
     h.until(
-        |ui, cx, out| updates::show(ui, cx, state, out),
-        |f| f.has(want),
+        |ui, cx, out| {
+            ready.set(
+                state.view.value.is_some()
+                    && !state.view.loading()
+                    && !state.tools.view(cx).checking,
+            );
+            updates::show(ui, cx, state, out);
+        },
+        |f| ready.get() && f.has(want),
     )
 }
 fn click_row(h: &mut Harness, f: &Frame, name: &str, action: &str) {
@@ -167,6 +178,8 @@ fn a_removal_is_always_confirmed_and_keeps_data_unless_asked() {
             |_| !service.tool_runs().is_empty(),
         );
         let runs = service.tool_runs();
+        assert_eq!(runs.len(), 1);
+        assert!(runs[0].confirmed);
         assert_eq!(
             (runs[0].tool, runs[0].op),
             (CoreId::Opencode, ToolOp::Uninstall)
