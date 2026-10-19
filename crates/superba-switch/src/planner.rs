@@ -1724,6 +1724,12 @@ impl Switcher {
                         draft,
                     )
                     .await?;
+                if !*enable && self.codex_routed(state) && dest.auth == Some(AuthMode::ApiKey) {
+                    // API-key destinations need no auth address, but the router
+                    // persisted one. Restore it through the ownership-aware
+                    // persister before an uninstall can remove the router.
+                    dest.env_op = Some(EnvOp::Clear);
+                }
                 // Only a switch of this computer turns the router on or off.
                 dest.router_enabled_after = request.targets.local.then_some(*enable);
                 // Router mode never changes the profile's stored line or auth.

@@ -559,3 +559,174 @@ async fn interrupted_router_rollback_recovers_the_certificate_environment() {
     );
     assert!(!String::from_utf8_lossy(&read(&w, "config.toml")).contains("127.0.0.1"));
 }
+
+/// The MSI first switches back to direct with `write_only`, then removes the
+/// service. Use the real config/env engines, with an isolated Windows store.
+async fn windows_router_uninstall_env(
+    original: Option<&str>,
+    user_change: Option<(&str, bool)>,
+    direct_pat: bool,
+) {
+    use superba_config::NativeEnv;
+    use superba_core::{EnvLocation, EnvPersister, codex::ENV_AUTHAPI_BASE_URL};
+
+    let w = World::new();
+    // Auto falls back to API key on a line whose edge blocks PAT sign-in,
+    // while routing still uses a local PAT regardless of the upstream mode.
+    if !direct_pat {
+        let mut caps = good_caps(catalog::KRILL_SITE_ID, "overseas");
+        caps.pat_ok = false;
+        caps.blocked_by_edge = true;
+        w.prober
+            .caps
+            .lock()
+            .unwrap()
+            .insert("overseas".into(), caps);
+    }
+    let native = Arc::new(superba_config::MemoryNativeEnv::new());
+    let loc = EnvLocation::WindowsUserEnv;
+    if let Some(value) = original {
+        native.set(&loc, ENV_AUTHAPI_BASE_URL, value).unwrap();
+    }
+    native.set(&loc, "USER_SETTING", "keep-me").unwrap();
+    let env = Arc::new(superba_config::ShellEnvPersister::with_platform(
+        w.ctx.clone(),
+        superba_config::EnvPlatform::Windows,
+        native.clone(),
+    ));
+    let mut deps = w.deps();
+    deps.config = Arc::new(superba_config::TomlConfigEngine::new(w.ctx.clone()));
+    deps.env = env.clone();
+    let sw = Switcher::new(deps);
+    let direct_auth = if direct_pat {
+        AuthMode::Pat
+    } else {
+        AuthMode::ApiKey
+    };
+    let direct = sw.plan(req("work")).await.unwrap();
+    assert_eq!(token_mode(&direct).0, direct_auth);
+    if !direct_pat {
+        assert!(
+            direct.env.is_none(),
+            "ordinary API-key switches leave env alone"
+        );
+    }
+    let write_only = ExecuteOptions {
+        write_only: true,
+        ..ExecuteOptions::default()
+    };
+    let outcome = sw
+        .execute(
+            direct,
+            write_only.clone(),
+            Arc::new(SafeDefaults),
+            Arc::new(NoEvents),
+        )
+        .await
+        .unwrap();
+    assert_eq!(outcome.status, OutcomeStatus::WrittenOnly, "{outcome:?}");
+    sw.router_install(RouterInstallRequest {
+        members: vec![ProfileId::new("work")],
+    })
+    .await
+    .unwrap();
+    let on = sw.plan(router_on_request()).await.unwrap();
+    let router_origin = match &on.env.as_ref().unwrap().op {
+        superba_core::EnvOp::Set { value, .. } => value.clone(),
+        other => panic!("expected router env set: {other:?}"),
+    };
+    let outcome = sw
+        .execute(
+            on,
+            write_only.clone(),
+            Arc::new(SafeDefaults),
+            Arc::new(NoEvents),
+        )
+        .await
+        .unwrap();
+    assert_eq!(outcome.status, OutcomeStatus::WrittenOnly, "{outcome:?}");
+    assert!(sw.router_status().await.unwrap().codex_routed);
+    assert_eq!(
+        native.get(&loc, ENV_AUTHAPI_BASE_URL).unwrap().as_deref(),
+        Some(router_origin.as_str())
+    );
+    assert_eq!(
+        env.inspect(ENV_AUTHAPI_BASE_URL)
+            .await
+            .unwrap()
+            .superba_value,
+        Some(router_origin)
+    );
+
+    if let Some((value, false)) = user_change {
+        native.set(&loc, ENV_AUTHAPI_BASE_URL, value).unwrap();
+    }
+    let mut off = router_on_request();
+    off.intent = SwitchIntent::Router { enable: false };
+    let plan = sw.plan(off).await.unwrap();
+    assert_eq!(token_mode(&plan).0, direct_auth);
+    if let Some((value, true)) = user_change {
+        native.set(&loc, ENV_AUTHAPI_BASE_URL, value).unwrap();
+    }
+    let outcome = sw
+        .execute(plan, write_only, Arc::new(SafeDefaults), Arc::new(NoEvents))
+        .await
+        .unwrap();
+    assert_eq!(outcome.status, OutcomeStatus::WrittenOnly, "{outcome:?}");
+    let view = sw.router_uninstall().await.unwrap();
+    assert!(!view.codex_routed && !view.installed && !view.running);
+    let (mode, _) = superba_config::authjson::token_credentials(&read(&w, "auth.json")).unwrap();
+    assert_eq!(mode, direct_auth);
+    let expected = if direct_pat {
+        Some(OVERSEAS)
+    } else {
+        user_change.map(|(value, _)| value).or(original)
+    };
+    assert_eq!(
+        native.get(&loc, ENV_AUTHAPI_BASE_URL).unwrap().as_deref(),
+        expected,
+        "router removal must restore only the environment value Superba still owns"
+    );
+    assert_eq!(
+        native.get(&loc, "USER_SETTING").unwrap().as_deref(),
+        Some("keep-me")
+    );
+    if !direct_pat && user_change.is_none() {
+        assert_eq!(
+            env.inspect(ENV_AUTHAPI_BASE_URL)
+                .await
+                .unwrap()
+                .superba_value,
+            None
+        );
+    }
+    assert!(
+        w.app.launches.lock().unwrap().is_empty(),
+        "installer teardown must not restart the app"
+    );
+}
+
+#[tokio::test]
+async fn windows_router_uninstall_clears_owned_authapi() {
+    windows_router_uninstall_env(None, None, false).await;
+}
+
+#[tokio::test]
+async fn windows_router_uninstall_restores_original_authapi() {
+    windows_router_uninstall_env(Some("https://original.example.test"), None, false).await;
+}
+
+#[tokio::test]
+async fn windows_router_uninstall_keeps_user_changed_authapi() {
+    windows_router_uninstall_env(None, Some(("https://user.example.test", false)), false).await;
+}
+
+#[tokio::test]
+async fn windows_router_uninstall_keeps_authapi_changed_after_planning() {
+    windows_router_uninstall_env(None, Some(("https://user.example.test", true)), false).await;
+}
+
+#[tokio::test]
+async fn windows_router_uninstall_preserves_direct_pat_authapi() {
+    windows_router_uninstall_env(None, None, true).await;
+}
