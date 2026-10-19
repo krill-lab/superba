@@ -95,6 +95,8 @@ pub struct State {
     pub table: PagedState,
     /// Show hidden models.
     pub show_hidden: bool,
+    /// Show the speed and price columns (off = the three default columns).
+    pub more_columns: bool,
     /// Filter text.
     pub query: String,
     /// Focus the search field next frame.

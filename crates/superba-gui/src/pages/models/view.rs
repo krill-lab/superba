@@ -617,7 +617,7 @@ fn effect_line(
     );
 }
 
-/// "命令行：生效 · 桌面 app：…" for a tier's two effects.
+/// "命令行：生效 · 桌面版：…" for a tier's two effects.
 fn effect_text(cx: &Cx<'_>, cli: &SpeedEffect, app: &SpeedEffect) -> String {
     effect_line_text(cx.tr, cli, app)
 }
@@ -722,25 +722,44 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
     } else {
         cx.tr.t("models.col.price")
     };
-    // Below NARROW_TABLE (the 960 px minimum window) the speed column folds
-    // into the model cell's second line and the value columns narrow, so the
-    // model column keeps room for its slug (user bug 25).
-    let narrow = ui.available_width() < NARROW_TABLE;
+    // Three columns by default: what a model costs is part of the decision, so
+    // the price (or, on a custom site, the upstream name) sits next to the
+    // context length; the auto-trim and speed columns are behind the "More
+    // columns" switch (a view preference of this page, kept in `State`). Speed
+    // is the last data column and the first one to go when the table is narrow:
+    // it folds into the model cell's second line and the value columns narrow,
+    // so the model column keeps room for its slug (user bug 25).
+    let more = state.more_columns;
+    let narrow = more && ui.available_width() < NARROW_TABLE;
     let mut headers = vec![
         cx.tr.t("models.col.model"),
         cx.tr.t("models.col.context"),
-        cx.tr.t("models.col.compact"),
-        cx.tr.t("models.col.speed"),
         last_col,
-        String::new(),
     ];
-    let columns = if narrow {
-        headers.remove(3);
-        Table::new(&[1.0, 0.0, 0.0, 0.0, 0.0]).min_widths(&[0.0, 150.0, 164.0, 158.0, 28.0])
-    } else {
-        Table::new(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-            .min_widths(&[0.0, 176.0, 176.0, 132.0, 176.0, 28.0])
-    };
+    let mut weights = vec![1.0, 0.0, 0.0];
+    let mut widths = vec![0.0, 176.0, 176.0];
+    if more {
+        headers.push(cx.tr.t("models.col.compact"));
+        headers.push(cx.tr.t("models.col.speed"));
+        weights.extend([0.0, 0.0]);
+        widths.extend([176.0, 132.0]);
+    }
+    if narrow {
+        // Speed goes last, so dropping it leaves every other column in place.
+        headers.remove(4);
+        weights.remove(4);
+        widths.remove(4);
+        widths[1] = 150.0;
+        widths[2] = 164.0;
+        widths[3] = 158.0;
+    }
+    // The trailing icon column keeps the reset button on the row's right edge.
+    headers.push(String::new());
+    weights.push(0.0);
+    widths.push(28.0);
+    // The last column as drawn: the closure below gets display indices.
+    let reset_col = headers.len() - 1;
+    let columns = Table::new(&weights).min_widths(&widths);
     let read_only = view.read_only || cx.busy || state.saving.is_some();
     let count = state.pending.count(saved);
     let active = view_applied(cx, view);
@@ -803,8 +822,17 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
                 focus: focus.as_ref(),
                 table: prices.as_ref(),
             };
-            // The narrow table has no speed column (index 3).
-            let col = if narrow && col >= 3 { col + 1 } else { col };
+            // The trailing icon column (the last one drawn) holds the reset
+            // button; `cell` dispatches on the column index (speed is last, so
+            // a narrow table dropping it shifts nobody).
+            if col == reset_col {
+                let slug = match &r {
+                    RowRef::All => ALL_MODELS,
+                    RowRef::Model(m) => &m.slug,
+                };
+                reset_button(ui, &mut rc, slug);
+                return;
+            }
             cell(ui, &mut rc, &r, col);
         });
     for e in edits {
@@ -863,10 +891,13 @@ struct RowCx<'a, 'b> {
 fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
     let cx = rc.cx;
     match (row, col) {
-        (RowRef::All, 0) => name_cell(ui, rc, ALL_MODELS, |ui| {
-            ui.label(Text::strong(cx.tr.t("models.all"), cx.pal));
-            ui.label(Text::caption(cx.tr.t("models.all_hint"), cx.pal));
-        }),
+        (RowRef::All, 0) => {
+            let line = all_line(cx, rc);
+            name_cell(ui, rc, ALL_MODELS, |ui| {
+                ui.label(Text::strong(cx.tr.t("models.all"), cx.pal));
+                ui.add(egui::Label::new(Text::caption(line, cx.pal)).truncate());
+            });
+        }
         (RowRef::All, 1) => {
             let d = rc.pending.defaults(rc.saved);
             let shown = Shown {
@@ -882,7 +913,7 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
             };
             value_cell(ui, rc, ALL_MODELS, Field::Window, shown);
         }
-        (RowRef::All, 2) => {
+        (RowRef::All, 3) => {
             let d = rc.pending.defaults(rc.saved);
             let shown = Shown {
                 value: d.auto_compact,
@@ -897,11 +928,10 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
             };
             value_cell(ui, rc, ALL_MODELS, Field::Compact, shown);
         }
-        (RowRef::All, 3) => {
+        (RowRef::All, 4) => {
             let tier = rc.pending.defaults(rc.saved).speed.unwrap_or_default();
             ui.label(Text::small(cx.tr.text(&tier.text()), cx.pal));
         }
-        (RowRef::All, 5) => reset_button(ui, rc, ALL_MODELS),
         (RowRef::All, _) => {}
         (RowRef::Model(m), 0) => {
             let o = rc.pending.override_of(rc.saved, &m.slug);
@@ -919,6 +949,10 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
                 {
                     name = format!("{name} · {}", cx.tr.text(&t.text()));
                 }
+            }
+            let l = model::limits(rc.saved, rc.pending, m);
+            if let Some(line) = summary_line(cx, l.window, l.compact) {
+                name = format!("{name} · {line}");
             }
             name_cell(ui, rc, &m.slug, |ui| {
                 let r = ui.add(
@@ -970,7 +1004,7 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
             };
             value_cell(ui, rc, &m.slug, Field::Window, shown);
         }
-        (RowRef::Model(m), 2) => {
+        (RowRef::Model(m), 3) => {
             let l = model::limits(rc.saved, rc.pending, m);
             let o = rc.pending.override_of(rc.saved, &m.slug);
             let initial = match l.compact_source {
@@ -994,7 +1028,7 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
             };
             value_cell(ui, rc, &m.slug, Field::Compact, shown);
         }
-        (RowRef::Model(m), 3) => {
+        (RowRef::Model(m), 4) => {
             // Standard is always there: the column names the faster tiers.
             let tiers: Vec<SpeedTier> = model::tiers(m)
                 .into_iter()
@@ -1022,12 +1056,12 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
                 }
             }
         }
-        (RowRef::Model(m), 4) if rc.custom => {
+        (RowRef::Model(m), 2) if rc.custom => {
             let o = rc.pending.override_of(rc.saved, &m.slug);
             let value = o.upstream_name.clone().unwrap_or_default();
             upstream(ui, rc, &m.slug, value);
         }
-        (RowRef::Model(m), 4) => {
+        (RowRef::Model(m), 2) => {
             let shown = model::shown_price(rc.pending, rc.saved, rc.table, &m.slug);
             let (label, color) = match &shown {
                 Some((p, true)) => (price_text(p), cx.pal.text),
@@ -1052,9 +1086,32 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
                 rc.edits.push(Edit::Price(m.slug.clone()));
             }
         }
-        (RowRef::Model(m), 5) => reset_button(ui, rc, &m.slug),
         _ => {}
     }
+}
+
+/// The all-models row's second line: what the default numbers mean.
+fn all_line(cx: &Cx<'_>, rc: &RowCx<'_, '_>) -> String {
+    let hint = cx.tr.t("models.all_hint");
+    let d = rc.pending.defaults(rc.saved);
+    let compact = d
+        .context_window
+        .map(|w| superba_core::effective_auto_compact(w, d.auto_compact));
+    match summary_line(cx, d.context_window, compact) {
+        Some(line) => format!("{hint} · {line}"),
+        None => hint,
+    }
+}
+
+/// One plain sentence for a row: what its two numbers mean. `None` when there
+/// is nothing to state (no window yet), so the row keeps its plain second line.
+fn summary_line(cx: &Cx<'_>, window: Option<u64>, compact: Option<u64>) -> Option<String> {
+    let window = token_label(window?);
+    let compact = token_label(compact?);
+    Some(cx.tr.f(
+        "models.summary",
+        &[("window", &window), ("compact", &compact)],
+    ))
 }
 
 fn source_of(set: bool) -> LimitSource {
@@ -1222,11 +1279,7 @@ fn value_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, field: Field, sho
     let f = TokenField::new(("models", slug, field), buffer, initial)
         .display(label)
         .muted(muted)
-        .hint(if field == Field::Compact {
-            "80%"
-        } else {
-            "400k"
-        })
+        .hint(rc.cx.tr.t("models.hint.field"))
         .width(if rc.narrow { FIELD_W_NARROW } else { FIELD_W })
         .error(error.is_some())
         .enabled(!rc.read_only && shown.enabled);
@@ -1619,6 +1672,22 @@ fn bottom(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
     ui.horizontal(|ui| {
         ui.set_min_height(24.0);
         ui.spacing_mut().item_spacing.x = 6.0;
+        let more = state.more_columns;
+        if ui
+            .add(
+                Button::ghost(cx.tr.t("models.more_columns"))
+                    .small()
+                    .trailing(if more {
+                        Icon::ChevronDown
+                    } else {
+                        Icon::ChevronRight
+                    }),
+            )
+            .clicked()
+        {
+            state.more_columns = !more;
+        }
+        ui.add_space(12.0);
         let hidden = model::hidden_count(saved, &state.pending);
         if hidden > 0 || state.show_hidden {
             ui.add(Toggle::new(

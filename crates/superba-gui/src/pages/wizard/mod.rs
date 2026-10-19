@@ -36,44 +36,67 @@ use crate::design::icons::Icon;
 use crate::design::widgets::{Button, Text};
 use crate::runtime::ReadTask;
 
-/// Number of steps.
-pub const STEPS: usize = 5;
+/// Number of steps of the longest path (a custom site).
+pub const STEPS: usize = 4;
 
 /// A step of the wizard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Step {
-    /// What Superba found (app, CLI, hosts, current configuration, sessions).
-    Detect,
-    /// The preset quick-pick.
+    /// One question: where should Codex connect?
     Provider,
     /// Key (Krill-like presets), site address and key (custom), or the
-    /// official login explained.
+    /// official login explained. The line & model choice is folded in for
+    /// the presets and the official login.
     Credentials,
-    /// Line tiles and the default model (skipped for the official login).
+    /// Line tiles and the default model: the custom site's own step (its
+    /// draft must be tested before Apply saves it).
     LineModels,
-    /// What happens, the legacy sessions choice.
+    /// What happens, what Superba found and the legacy sessions choice.
     Confirm,
 }
 
 impl Step {
-    /// Every step, in order.
+    /// Every step: the longest path (a custom site).
     pub const ALL: [Step; STEPS] = [
-        Step::Detect,
         Step::Provider,
         Step::Credentials,
         Step::LineModels,
         Step::Confirm,
     ];
 
-    /// 0-based position.
+    /// The steps this wizard walks. The presets and the official login skip
+    /// [`Step::LineModels`] (line & model are folded into
+    /// [`Step::Credentials`]); a custom site keeps it: its draft is tested
+    /// before Apply saves it.
+    pub fn path(custom: bool) -> &'static [Step] {
+        if custom {
+            &[
+                Step::Provider,
+                Step::Credentials,
+                Step::LineModels,
+                Step::Confirm,
+            ]
+        } else {
+            &[Step::Provider, Step::Credentials, Step::Confirm]
+        }
+    }
+
+    /// 0-based position in [`Step::ALL`].
     pub fn index(self) -> usize {
         Step::ALL.iter().position(|s| *s == self).unwrap_or(0)
+    }
+
+    /// 0-based position on this wizard's path (for 「第 N / M 步」).
+    pub fn path_index(self, custom: bool) -> usize {
+        Step::path(custom)
+            .iter()
+            .position(|s| *s == self)
+            .unwrap_or(0)
     }
 
     /// i18n key of the stepper label.
     pub fn label_key(self) -> &'static str {
         match self {
-            Step::Detect => "wizard.step.detect",
             Step::Provider => "wizard.step.provider",
             Step::Credentials => "wizard.step.credentials",
             Step::LineModels => "wizard.step.line_models",
@@ -178,7 +201,7 @@ impl Wizard {
                 .map_or_else(|| catalog::PRESET_KRILL.to_owned(), |p| p.id.clone()),
         };
         let mut w = Self {
-            step: Step::Detect,
+            step: Step::Provider,
             presets,
             preset,
             site: None,
@@ -307,13 +330,13 @@ impl Wizard {
         self.editing.as_ref().and_then(|id| data.profile(id))
     }
 
-    /// The next step from `self.step` (the official login skips Line & models).
+    /// The next step from `self.step`: only a custom site walks Line & models
+    /// (the presets and the official login fold it into Credentials).
     pub fn next_step(&self) -> Option<Step> {
         let next = match self.step {
-            Step::Detect => Step::Provider,
             Step::Provider => Step::Credentials,
-            Step::Credentials if self.official() => Step::Confirm,
-            Step::Credentials => Step::LineModels,
+            Step::Credentials if self.custom() => Step::LineModels,
+            Step::Credentials => Step::Confirm,
             Step::LineModels => Step::Confirm,
             Step::Confirm => return None,
         };
@@ -323,12 +346,11 @@ impl Wizard {
     /// The previous step.
     pub fn prev_step(&self) -> Option<Step> {
         let prev = match self.step {
-            Step::Detect => return None,
-            Step::Provider => Step::Detect,
+            Step::Provider => return None,
             Step::Credentials => Step::Provider,
             Step::LineModels => Step::Credentials,
-            Step::Confirm if self.official() => Step::Credentials,
-            Step::Confirm => Step::LineModels,
+            Step::Confirm if self.custom() => Step::LineModels,
+            Step::Confirm => Step::Credentials,
         };
         Some(prev)
     }
@@ -498,11 +520,10 @@ fn body(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) -> Wiza
         .max_height(avail.max(120.0))
         .auto_shrink([false, true])
         .show(ui, |ui| match w.step {
-            Step::Detect => steps::detect(ui, cx, w, out),
             Step::Provider => steps::provider(ui, cx, w, out),
             Step::Credentials => steps::credentials(ui, cx, w, out),
             Step::LineModels => steps::line_models(ui, cx, w, out),
-            Step::Confirm => steps::confirm(ui, cx, w),
+            Step::Confirm => steps::confirm(ui, cx, w, out),
         });
 
     ui.add_space(12.0);
@@ -541,7 +562,10 @@ fn body(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) -> Wiza
             ui.label(Text::small(
                 cx.tr.f(
                     "wizard.progress",
-                    &[("n", &(w.step.index() + 1)), ("total", &STEPS)],
+                    &[
+                        ("n", &(w.step.path_index(w.custom()) + 1)),
+                        ("total", &Step::path(w.custom()).len()),
+                    ],
                 ),
                 cx.pal,
             ));
@@ -560,11 +584,14 @@ pub fn can_continue(cx: &Cx<'_>, w: &Wizard) -> bool {
                 && !w.custom_url.trim().is_empty()
                 && (!w.key.trim().is_empty() || w.custom.saved.is_some())
         }
-        Step::Credentials => w.key_input(cx.data).is_some(),
+        Step::Credentials => {
+            // The line & model choice is folded in here for the presets; a key
+            // the chosen line rejects must not go on to Confirm.
+            w.key_input(cx.data).is_some() && steps::rejected_on_line(cx, w).is_none()
+        }
         Step::LineModels if w.custom() => w.custom_test_passed(),
         Step::LineModels => w.line.is_some() && steps::rejected_on_line(cx, w).is_none(),
         Step::Confirm => legacy_count(cx).is_none() || w.legacy.is_some() || w.official(),
-        Step::Detect => true,
     }
 }
 

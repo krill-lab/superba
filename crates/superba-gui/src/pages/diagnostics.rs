@@ -46,6 +46,7 @@ fn checks(ui: &mut Ui, cx: &Cx<'_>) {
         (Some(findings), _) if !findings.is_empty() => {
             Card::new().flat().show(ui, |ui| {
                 let n = findings.len();
+                let manual = findings.iter().any(|f| f.fixable);
                 for (i, f) in findings.iter().enumerate() {
                     egui::Frame::new()
                         .inner_margin(egui::Margin::symmetric(20, 14))
@@ -69,19 +70,21 @@ fn checks(ui: &mut Ui, cx: &Cx<'_>) {
                                         ui.label(Text::small(cx.tr.text(d), cx.pal));
                                     }
                                 });
-                                if f.fixable {
-                                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                        ui.add(
-                                            Button::new(cx.tr.t("diag.fix")).small().enabled(false),
-                                        )
-                                        .on_disabled_hover_text(cx.tr.t("diag.fix_soon"));
-                                    });
-                                }
                             });
                         });
                     if i + 1 < n {
                         crate::shell::divider(ui, cx.pal);
                     }
+                }
+                // No check can be repaired from here yet: the findings above
+                // carry the manual step in their detail, so the card closes with
+                // one line saying so instead of a button that can never be
+                // pressed (task-20).
+                if manual {
+                    ui.add_space(12.0);
+                    ui.label(
+                        Text::small(cx.tr.t("diag.fix_manual"), cx.pal).color(cx.pal.text_subtle),
+                    );
                 }
             });
         }
@@ -302,7 +305,6 @@ fn environment(ui: &mut Ui, cx: &Cx<'_>) {
                     if let Some(t) = f.fetched_at {
                         parts.push(cx.ago(t));
                     }
-                    parts.push(format!("#{}", f.serial));
                     super::elided(ui, Text::body(parts.join(" · "), cx.pal));
                 }
                 (None, true) => {
@@ -335,11 +337,12 @@ fn environment(ui: &mut Ui, cx: &Cx<'_>) {
     });
 }
 
-/// "0.163.0 · #serial" of the built-in settings catalog.
+/// The built-in settings catalog's version ("0.163.0").
 fn catalog_label() -> Option<String> {
     let store = superba_catalog::CatalogStore::builtin().ok()?;
-    let index = store.index();
-    Some(format!("{} · #{}", index.latest, index.serial))
+    // Only the version: the index serial is internal bookkeeping, not
+    // something a reader can act on (task-20).
+    Some(store.index().latest.clone())
 }
 
 fn activity_log(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {

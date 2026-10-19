@@ -131,25 +131,31 @@ fn pick_best_line(cx: &Cx<'_>, w: &mut Wizard, _report: Option<&superba_core::Si
 /// Entering a step starts what it needs.
 pub(super) fn on_enter(cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) {
     match w.step {
-        Step::Detect | Step::Confirm
-            if cx.data.sessions.value.is_none() && !cx.data.sessions.loading =>
-        {
+        Step::Confirm if cx.data.sessions.value.is_none() && !cx.data.sessions.loading => {
             out.push(Action::LoadSessions);
         }
-        Step::LineModels => {
-            if let Some(site) = w.site.clone() {
-                if !w.custom() && !cx.data.probing_site(&site.id) && !site.lines.is_empty() {
-                    out.push(Action::Probe(site.id.clone()));
-                }
-                if w.line.is_none() {
-                    w.line = site.default_line.clone();
-                }
-            }
-            queue_key_checks(cx, w, out);
-            start_probe(cx, w);
-        }
+        // The presets and the official login fold the line & model choice into
+        // Credentials, so their lines are probed when that screen opens; a
+        // custom site does it on its own Line & models step, where the draft is
+        // tested before Apply saves it.
+        Step::Credentials if !w.custom() && !w.official() => probe_lines(cx, w, out),
+        Step::LineModels => probe_lines(cx, w, out),
         _ => {}
     }
+}
+
+/// Probe the site's lines and check the key on each.
+fn probe_lines(cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) {
+    if let Some(site) = w.site.clone() {
+        if !w.custom() && !cx.data.probing_site(&site.id) && !site.lines.is_empty() {
+            out.push(Action::Probe(site.id.clone()));
+        }
+        if w.line.is_none() {
+            w.line = site.default_line.clone();
+        }
+    }
+    queue_key_checks(cx, w, out);
+    start_probe(cx, w);
 }
 
 /// Check the key on every probed line (Automatic: the mode the line can use).
@@ -300,15 +306,15 @@ pub(super) fn draft_custom(cx: &Cx<'_>, w: &mut Wizard) -> bool {
 
 pub(super) fn stepper(ui: &mut Ui, cx: &Cx<'_>, w: &Wizard) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
-    let n = Step::ALL.len();
+    let path = Step::path(w.custom());
+    let n = path.len();
     let gap = 6.0;
     let seg_w = (rect.width() - gap * (n as f32 - 1.0)) / n as f32;
-    let current = w.step.index();
-    for (i, step) in Step::ALL.iter().enumerate() {
+    let current = w.step.path_index(w.custom());
+    for (i, step) in path.iter().enumerate() {
         let x = rect.min.x + i as f32 * (seg_w + gap);
         let bar = Rect::from_min_size(pos2(x, rect.min.y), vec2(seg_w, 3.0));
-        let skipped = *step == Step::LineModels && w.official();
-        let color = if i <= current && !skipped {
+        let color = if i <= current {
             cx.pal.text
         } else {
             cx.pal.active
@@ -316,7 +322,7 @@ pub(super) fn stepper(ui: &mut Ui, cx: &Cx<'_>, w: &Wizard) {
         ui.painter().rect_filled(bar, 2, color);
         let tcolor = if i == current {
             cx.pal.text
-        } else if i < current && !skipped {
+        } else if i < current {
             cx.pal.text_muted
         } else {
             cx.pal.text_subtle
@@ -491,16 +497,11 @@ fn note_box(ui: &mut Ui, cx: &Cx<'_>, text: String) {
 }
 
 // ---------------------------------------------------------------------------
-// 1 Detect
+// 1 What Superba found (folded into Confirm)
 // ---------------------------------------------------------------------------
 
-pub(super) fn detect(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) {
-    heading(
-        ui,
-        cx,
-        &cx.tr.t("wizard.detect.title"),
-        &cx.tr.t("wizard.detect.body"),
-    );
+/// What Superba found: the body of the Confirm screen's 「详情」 fold.
+pub(super) fn detect_report(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
     let Some(o) = cx.data.overview.value.as_ref() else {
         ui.label(Text::muted(cx.tr.t("overview.loading"), cx.pal));
         return;
@@ -662,38 +663,68 @@ pub(super) fn detect(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Act
             None => {}
         }
     });
-    let _ = w;
 }
 
 // ---------------------------------------------------------------------------
 // 2 Provider
 // ---------------------------------------------------------------------------
 
-pub(super) fn provider(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, _out: &mut Vec<Action>) {
+pub(super) fn provider(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) {
     heading(
         ui,
         cx,
         &cx.tr.t("wizard.provider.title"),
         &cx.tr.t("wizard.provider.body"),
     );
-    // The same option cards as the Add provider dialog.
-    let items: Vec<Choice<String>> = w
-        .presets
-        .iter()
-        .map(|preset| {
-            let (title, body) = preset_text(cx, preset);
-            Choice {
-                value: preset.id.clone(),
-                title,
-                body: (!body.is_empty()).then_some(body),
-                badge: preset.default.then(|| cx.tr.t("wizard.preset.default")),
-                enabled: true,
-            }
-        })
-        .collect();
+    // One question, two answers: the recommended relay or the login the user
+    // already has. Everything else (a site of one's own, an import) is one
+    // click away under 「其它方式」.
+    let is_main = |p: &superba_core::catalog::Preset| {
+        p.default || p.id == superba_core::catalog::PRESET_OFFICIAL
+    };
+    let card = |preset: &superba_core::catalog::Preset| -> Choice<String> {
+        let (title, body) = preset_text(cx, preset);
+        Choice {
+            value: preset.id.clone(),
+            title,
+            body: (!body.is_empty()).then_some(body),
+            badge: preset.default.then(|| cx.tr.t("wizard.preset.default")),
+            enabled: true,
+        }
+    };
+    let main: Vec<Choice<String>> = w.presets.iter().filter(|p| is_main(p)).map(card).collect();
+    let more: Vec<Choice<String>> = w.presets.iter().filter(|p| !is_main(p)).map(card).collect();
     let mut pick = w.preset.clone();
-    if choice_cards(ui, &mut pick, &items) {
+    if choice_cards(ui, &mut pick, &main) {
         w.select_preset(cx.data, &pick);
+    }
+    if !more.is_empty() {
+        ui.add_space(10.0);
+        // A re-run on a site of one's own opens the fold: the chosen card lives
+        // in there.
+        let chosen_inside = more.iter().any(|c| c.value == w.preset);
+        if fold(
+            ui,
+            "providers",
+            &cx.tr.t("wizard.provider.other"),
+            chosen_inside,
+        ) {
+            let mut pick = w.preset.clone();
+            if choice_cards(ui, &mut pick, &more) {
+                w.select_preset(cx.data, &pick);
+            }
+            if ui
+                .add(
+                    Button::ghost(cx.tr.t("wizard.provider.import"))
+                        .icon(Icon::Download)
+                        .small(),
+                )
+                .on_hover_text(cx.tr.t("wizard.provider.import_tip"))
+                .clicked()
+            {
+                w.import = Some(crate::pages::import::ImportDialog::open(cx));
+            }
+        }
     }
     ui.add_space(12.0);
     if let Some(home) = w
@@ -706,7 +737,7 @@ pub(super) fn provider(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, _out: &mut Vec<
             let host = home.host_str().unwrap_or(home.as_str()).to_owned();
             ui.label(Text::small(cx.tr.t("wizard.provider.get_key"), cx.pal));
             if link_button(ui, &host, true).clicked() {
-                _out.push(Action::OpenUrl(home.to_string()));
+                out.push(Action::OpenUrl(home.to_string()));
             }
         });
     }
@@ -714,20 +745,27 @@ pub(super) fn provider(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, _out: &mut Vec<
         ui.add_space(8.0);
         ui.label(Text::small(cx.tr.t("wizard.rerun.keeps"), cx.pal));
     }
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        if ui
-            .add(
-                Button::ghost(cx.tr.t("wizard.provider.import"))
-                    .icon(Icon::Download)
-                    .small(),
-            )
-            .on_hover_text(cx.tr.t("wizard.provider.import_tip"))
-            .clicked()
-        {
-            w.import = Some(crate::pages::import::ImportDialog::open(cx));
-        }
-    });
+}
+
+/// A disclosure label: a ghost button with a chevron that remembers whether it
+/// is open. Like every other fold the state lives in egui's temp memory, so a
+/// fresh wizard starts folded (unless `open_default`).
+fn fold(ui: &mut Ui, id: &str, label: &str, open_default: bool) -> bool {
+    let key = egui::Id::unique(("wizard-fold", id));
+    let mut open = ui.data(|d| d.get_temp::<bool>(key)).unwrap_or(open_default);
+    let chevron = if open {
+        Icon::ChevronDown
+    } else {
+        Icon::ChevronRight
+    };
+    let clicked = ui
+        .add(Button::ghost(label).small().trailing(chevron))
+        .clicked();
+    if clicked {
+        open = !open;
+        ui.data_mut(|d| d.insert_temp(key, open));
+    }
+    open
 }
 
 /// Title and body of a preset card.
@@ -751,6 +789,9 @@ pub fn preset_text(cx: &Cx<'_>, preset: &superba_core::catalog::Preset) -> (Stri
 // ---------------------------------------------------------------------------
 
 pub(super) fn credentials(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) {
+    // The line & model choice lives on this screen for the presets, so the key
+    // typed here is checked on every line as its capabilities arrive.
+    queue_key_checks(cx, w, out);
     if w.official() {
         heading(
             ui,
@@ -836,7 +877,27 @@ pub(super) fn credentials(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Ve
             ));
         });
     }
-    let _ = out;
+    if let Some(site) = w.site.clone() {
+        ui.add_space(10.0);
+        // Why Continue is off has to stay visible even with the fold closed.
+        key_rejected_note(ui, cx, w);
+        if fold(ui, "advanced", &cx.tr.t("wizard.advanced"), false) {
+            ui.add_space(6.0);
+            heading(
+                ui,
+                cx,
+                &cx.tr.t("wizard.line.title"),
+                &cx.tr.t(if keeps_current_line(cx, w) {
+                    "wizard.line.body_current"
+                } else {
+                    "wizard.line.body"
+                }),
+            );
+            line_tiles(ui, cx, w, &site);
+            ui.add_space(16.0);
+            model_picker(ui, cx, w);
+        }
+    }
 }
 
 fn custom_form(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
@@ -923,24 +984,34 @@ pub(super) fn line_models(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Ve
                 "wizard.line.body"
             }),
         );
-        for line in &site.lines {
-            line_card(ui, cx, w, &site, line);
-            ui.add_space(8.0);
-        }
-        if let Some(access) = rejected_on_line(cx, w) {
-            crate::pages::note(
-                ui,
-                cx,
-                Status::Error,
-                cx.tr.f(
-                    "pages.wizard.key_rejected",
-                    &[("reason", &cx.tr.text(&access.text()))],
-                ),
-            );
-        }
+        line_tiles(ui, cx, w, &site);
+        key_rejected_note(ui, cx, w);
     }
     ui.add_space(16.0);
     model_picker(ui, cx, w);
+}
+
+/// The site's line tiles (raises no action).
+fn line_tiles(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, site: &Site) {
+    for line in &site.lines {
+        line_card(ui, cx, w, site, line);
+        ui.add_space(8.0);
+    }
+}
+
+/// The key was rejected on the chosen line: say which line and why.
+fn key_rejected_note(ui: &mut Ui, cx: &Cx<'_>, w: &Wizard) {
+    if let Some(access) = rejected_on_line(cx, w) {
+        crate::pages::note(
+            ui,
+            cx,
+            Status::Error,
+            cx.tr.f(
+                "pages.wizard.key_rejected",
+                &[("reason", &cx.tr.text(&access.text()))],
+            ),
+        );
+    }
 }
 
 /// A re-run selected the edited provider's current line (not the fastest one).
@@ -1176,7 +1247,7 @@ fn model_picker(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
 // 5 Confirm
 // ---------------------------------------------------------------------------
 
-pub(super) fn confirm(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
+pub(super) fn confirm(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Vec<Action>) {
     heading(
         ui,
         cx,
@@ -1276,6 +1347,15 @@ pub(super) fn confirm(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
             });
         }
     });
+    ui.add_space(12.0);
+    // What Superba found folds in here, above the last decision: the screen
+    // that decides stays one screen and the report stays reachable.
+    if fold(ui, "details", &cx.tr.t("wizard.details"), false) {
+        ui.add_space(8.0);
+        ui.label(Text::small(cx.tr.t("wizard.detect.title"), cx.pal));
+        ui.add_space(6.0);
+        detect_report(ui, cx, out);
+    }
     if let Some((provider, count)) = legacy_count(cx) {
         ui.add_space(14.0);
         ui.label(Text::title(
