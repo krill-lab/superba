@@ -150,7 +150,7 @@ async fn original_restore_round_trips(wsl: bool) {
         }
         let restore = resolved(ResolvedMode::Original {
             provider: ProviderRestore::Baseline {
-                reverse_migrate: false,
+                reverse_migrate: true,
             },
         });
         h.apply(&restore, RemoteApplyScope::Both).await;
@@ -382,7 +382,7 @@ async fn restoring_the_original_changes_only_the_connection_of_a_following_host(
     sw.set_host_follow(&TargetId::remote("dev"), true)
         .await
         .unwrap();
-    // `spb restore` without --provider is the "original" profile.
+    // The GUI's restore entry points use the "original" profile.
     let plan = sw.plan(req(catalog::PROFILE_ORIGINAL)).await.unwrap();
     assert_eq!(plan.remotes.len(), 1);
     assert_eq!(
@@ -395,7 +395,7 @@ async fn restoring_the_original_changes_only_the_connection_of_a_following_host(
         w.remote.scoped.lock().unwrap()[0].2.mode,
         ResolvedMode::Original {
             provider: ProviderRestore::Baseline {
-                reverse_migrate: false
+                reverse_migrate: true
             }
         }
     ));

@@ -8,11 +8,23 @@ async fn restores_map_every_destination_and_provider() {
     for (mut args, expected) in [
         (
             vec!["restore"],
-            SwitchRequest::profile(ProfileId::new("original")).intent,
+            SwitchIntent::Restore {
+                target: RestoreTarget::Original {
+                    provider: ProviderRestore::Baseline {
+                        reverse_migrate: true,
+                    },
+                },
+            },
         ),
         (
             vec!["restore", "original"],
-            SwitchRequest::profile(ProfileId::new("original")).intent,
+            SwitchIntent::Restore {
+                target: RestoreTarget::Original {
+                    provider: ProviderRestore::Baseline {
+                        reverse_migrate: true,
+                    },
+                },
+            },
         ),
         (
             vec!["restore", "official"],

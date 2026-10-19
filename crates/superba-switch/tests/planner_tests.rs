@@ -723,7 +723,7 @@ async fn original_profile_with_legacy_baseline_asks_about_the_provider() {
 }
 
 #[tokio::test]
-async fn original_profile_without_hidden_sessions_restores_the_baseline_provider() {
+async fn original_profile_without_hidden_sessions_still_offers_the_restore_policy() {
     let w = World::new();
     w.config
         .baseline
@@ -734,19 +734,26 @@ async fn original_profile_without_hidden_sessions_restores_the_baseline_provider
         .provider_key = Some("krill".into());
     w.sessions.report.lock().unwrap().by_provider.clear();
     let p = plan(&w, req("original")).await;
-    assert!(p.choices.is_empty(), "{:?}", p.choices);
+    assert!(matches!(
+        p.choices.as_slice(),
+        [PlanChoice::RestoreProvider {
+            created_during: 0,
+            migrated_in: 0,
+            ..
+        }]
+    ));
     assert!(matches!(
         p.config.unwrap().desired.unwrap().mode,
         ResolvedMode::Original {
             provider: ProviderRestore::Baseline {
-                reverse_migrate: false
+                reverse_migrate: true
             }
         }
     ));
 }
 
 #[tokio::test]
-async fn full_restore_with_reverse_migration_selects_ledgers_and_krill_generations() {
+async fn default_restore_selects_ledgers_and_krill_and_compatible_generations() {
     let w = World::new();
     w.config
         .baseline
@@ -780,20 +787,18 @@ async fn full_restore_with_reverse_migration_selects_ledgers_and_krill_generatio
         },
         superba_core::GenerationRecord {
             generation: 2,
+            profile_id: Some("compatible".into()),
+            site_kind: Some(superba_core::SiteKind::Compatible),
+            applied_at: Timestamp(T0 - 3_000),
+        },
+        superba_core::GenerationRecord {
+            generation: 3,
             profile_id: Some("official".into()),
             site_kind: Some(superba_core::SiteKind::Official),
             applied_at: Timestamp(T0 - 1_000),
         },
     ];
-    let p = plan(
-        &w,
-        restore(RestoreTarget::Original {
-            provider: ProviderRestore::Baseline {
-                reverse_migrate: true,
-            },
-        }),
-    )
-    .await;
+    let p = plan(&w, req("original")).await;
     assert_eq!(p.primary, full(FullRestartReason::SessionMigration));
     let req = w.sessions.requests.lock().unwrap().last().cloned().unwrap();
     assert_eq!(req.to_provider, "krill");
@@ -806,6 +811,11 @@ async fn full_restore_with_reverse_migration_selects_ledgers_and_krill_generatio
             MigrationSelector::CreatedBetween {
                 provider: "openai".into(),
                 from: Timestamp(T0 - 5_000),
+                to: Some(Timestamp(T0 - 3_000)),
+            },
+            MigrationSelector::CreatedBetween {
+                provider: "openai".into(),
+                from: Timestamp(T0 - 3_000),
                 to: Some(Timestamp(T0 - 1_000)),
             },
         ]

@@ -121,6 +121,93 @@ fn context() -> egui::Context {
 }
 
 #[test]
+fn restore_choice_explains_the_default_and_each_button_replans_its_policy() {
+    use superba_core::{PlanChoice, ProviderRestore, RestoreTarget, SwitchIntent};
+    use support::ui::Harness;
+
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        for (key, provider) in [
+            (
+                "banner.restore.reverse",
+                ProviderRestore::Baseline {
+                    reverse_migrate: true,
+                },
+            ),
+            ("banner.restore.keep", ProviderRestore::KeepOpenai),
+            (
+                "banner.restore.exact",
+                ProviderRestore::Baseline {
+                    reverse_migrate: false,
+                },
+            ),
+        ] {
+            let mut p = plan();
+            p.request =
+                superba_gui::app::planned_request(&superba_gui::pages::Action::restore_original())
+                    .unwrap();
+            p.choices.push(PlanChoice::RestoreProvider {
+                baseline_provider: "legacy".into(),
+                created_during: 2,
+                migrated_in: 1,
+            });
+            let mut flow = Flow::new(0);
+            flow.request(p.request.clone(), Duration::ZERO);
+            flow.take_commands();
+            flow.on_planned(1, Ok(p), Duration::ZERO);
+            let h = Harness::new(size::MIN_WINDOW, egui::Theme::Dark);
+            let mut state = BannerState::default();
+            let data = Data::default();
+            let service = support::idle_service();
+            {
+                let mut show = |ui: &mut egui::Ui| {
+                    ui.set_width(size::MIN_WINDOW[0] - size::SIDEBAR - 64.0);
+                    let cx = Cx {
+                        tr: &tr,
+                        pal: Palette::of(&h.ctx),
+                        data: &data,
+                        busy: false,
+                        now: Timestamp::EPOCH,
+                        fonts: &h.fonts,
+                        service: &service,
+                        log: &[],
+                    };
+                    shell::banner(
+                        ui,
+                        &cx,
+                        &mut flow,
+                        &mut state,
+                        Duration::ZERO,
+                        f32::INFINITY,
+                    );
+                };
+                let texts = h.settle(&mut show);
+                for note in ["banner.restore.reverse_note", "banner.restore.keep_note"] {
+                    assert!(
+                        texts.iter().any(|(text, _)| text == &tr.t(note)),
+                        "{texts:?}"
+                    );
+                }
+                let labels: Vec<&str> = texts.iter().map(|(text, _)| text.as_str()).collect();
+                let position = |key| labels.iter().position(|text| *text == tr.t(key)).unwrap();
+                assert!(position("banner.restore.reverse") < position("banner.restore.keep"));
+                assert!(h.click_text(&tr.t(key), &mut show), "{key}");
+            }
+            let commands = flow.take_commands();
+            let [Command::Plan { request, .. }] = commands.as_slice() else {
+                panic!("expected replanning, got {commands:?}");
+            };
+            assert_eq!(
+                request.intent,
+                SwitchIntent::Restore {
+                    target: RestoreTarget::Original { provider }
+                }
+            );
+        }
+    }
+}
+
+#[test]
 fn risk_disclosure_requires_a_seen_and_completed_switch_and_can_be_reopened() {
     let ctx = context();
     let mut flow = armed();

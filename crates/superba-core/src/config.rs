@@ -80,11 +80,11 @@ impl ResolvedEndpoints {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProviderRestore {
-    /// Option 1 (recommended): restore line and auth only, keep `model_provider="openai"`
-    /// so every session stays visible.
+    /// Explicit opt-in: restore line and auth, keeping `model_provider="openai"`
+    /// and the original address in `openai_base_url` so sessions stay visible.
     KeepOpenai,
-    /// Options 2/3: restore `model_provider` byte-for-byte; `reverse_migrate`
-    /// selects option 2 (move sessions back) vs option 3 (sessions get hidden).
+    /// Restore the configuration byte-for-byte; `reverse_migrate: true` is the
+    /// default (move sessions back). Without migration, sessions get hidden.
     Baseline {
         /// Reverse-migrate sessions to the baseline provider.
         reverse_migrate: bool,

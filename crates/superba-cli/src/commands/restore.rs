@@ -1,7 +1,7 @@
-use superba_core::{ProfileId, RestoreTarget, SwitchIntent, catalog};
+use superba_core::{RestoreTarget, SwitchIntent};
 
 use super::{Result, execute, request, usage};
-use crate::{Output, RestoreArgs, RestoreTo, Runtime, text::text};
+use crate::{Output, ProviderArg, RestoreArgs, RestoreTo, Runtime, text::text};
 
 pub(super) async fn run(args: &RestoreArgs, rt: &Runtime, out: &mut Output) -> Result {
     if (args.provider.is_some() && args.to != RestoreTo::Original)
@@ -10,16 +10,9 @@ pub(super) async fn run(args: &RestoreArgs, rt: &Runtime, out: &mut Output) -> R
         return Err(usage(out, text("cli.error.restore_flags")));
     }
     let intent = match args.to {
-        RestoreTo::Original => match args.provider {
-            Some(provider) => SwitchIntent::Restore {
-                target: RestoreTarget::Original {
-                    provider: provider.into(),
-                },
-            },
-            None => SwitchIntent::Profile {
-                profile_id: ProfileId::new(catalog::PROFILE_ORIGINAL),
-                line_id: None,
-                auth_mode: None,
+        RestoreTo::Original => SwitchIntent::Restore {
+            target: RestoreTarget::Original {
+                provider: args.provider.unwrap_or(ProviderArg::ReverseMigrate).into(),
             },
         },
         RestoreTo::Official => SwitchIntent::Restore {

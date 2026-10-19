@@ -231,6 +231,14 @@ spb restore generation --generation 3
 spb uninstall                     # restore and remove Superba's shell blocks
 ```
 
+Restoring the original defaults to `--provider reverse-migrate`: the configuration
+returns byte for byte (unless another tool changed it), and sessions move back to
+the original provider so they stay visible in Codex. The GUI offers this as its
+default choice. `--provider keep-openai` deliberately retains `model_provider =
+"openai"` and `openai_base_url` pointing to the original address; `--provider
+no-migrate` restores the configuration without moving sessions, which hides
+sessions still under `openai` when the original provider differs.
+
 ## Import from cc-switch and AI Toolbox
 
 Set up Codex providers in [cc-switch](https://github.com/farion1231/cc-switch) or

@@ -5,13 +5,16 @@
 mod fakes;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use fakes::*;
 use superba_config::{EnvPlatform, MemoryNativeEnv, ShellEnvPersister, TomlConfigEngine};
 use superba_core::{
-    AuthMode, ConfigEngine, EnvLocation, ExecuteOptions, LegacySessionChoice, MapEnv, NoEvents,
-    OutcomeStatus, ProfileId, SafeDefaults, SwitchRequest, SwitchService,
+    AuthMode, Clock, ConfigEngine, EnvLocation, ExecuteOptions, LegacySessionChoice, MapEnv,
+    NoEvents, OutcomeStatus, PlanChoice, ProfileId, ProviderRestore, RestoreTarget, SafeDefaults,
+    SwitchIntent, SwitchRequest, SwitchService, Timestamp,
 };
+use superba_sessions::CodexSessionMigrator;
 use superba_switch::Switcher;
 
 const ORIGINAL: &str = "# original\nmodel = \"gpt-5.5\"\n\n[mcp_servers.docs]\ncommand = \"npx\"\nenv = { DOCS_TOKEN = \"fixture\" }\n";
@@ -21,7 +24,22 @@ async fn apply(sw: &Switcher, id: &str) {
     let mut request = SwitchRequest::profile(ProfileId::new(id));
     request.legacy_sessions = Some(LegacySessionChoice::Skip);
     request.take_over_foreign_env = Some(true);
-    let plan = sw.plan(request).await.unwrap();
+    let mut plan = sw.plan(request).await.unwrap();
+    if matches!(
+        plan.choices.as_slice(),
+        [PlanChoice::RestoreProvider { .. }]
+    ) {
+        // The GUI offers the policy even when there are no sessions to move.
+        let mut request = plan.request;
+        request.intent = SwitchIntent::Restore {
+            target: RestoreTarget::Original {
+                provider: ProviderRestore::Baseline {
+                    reverse_migrate: true,
+                },
+            },
+        };
+        plan = sw.plan(request).await.unwrap();
+    }
     assert!(!plan.is_blocked() && plan.choices.is_empty(), "{plan:?}");
     let out = sw
         .execute(
@@ -176,5 +194,158 @@ async fn restore_native_env_values_or_absence_on_windows_and_macos() {
         for present in [false, true] {
             round_trip(ORIGINAL, &["work", "api", "work"], platform, present).await;
         }
+    }
+}
+
+fn session(home: &std::path::Path, id: &str, provider: &str, at: Timestamp) -> std::path::PathBuf {
+    let dir = home.join("sessions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(format!("rollout-{id}.jsonl"));
+    let meta = serde_json::json!({
+        "type": "session_meta",
+        "payload": { "id": id, "model_provider": provider, "timestamp": at.to_rfc3339() }
+    });
+    std::fs::write(&path, format!("{meta}\n")).unwrap();
+    path
+}
+
+fn session_provider(path: &std::path::Path) -> String {
+    let text = std::fs::read_to_string(path).unwrap();
+    let meta: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    meta["payload"]["model_provider"].as_str().unwrap().into()
+}
+
+async fn execute_sessions(sw: &Switcher, request: SwitchRequest) {
+    let plan = sw.plan(request).await.unwrap();
+    assert!(!plan.is_blocked() && plan.choices.is_empty(), "{plan:?}");
+    let outcome = sw
+        .execute(
+            plan,
+            ExecuteOptions {
+                allow_full_restart: true,
+                ..Default::default()
+            },
+            Arc::new(SafeDefaults),
+            Arc::new(NoEvents),
+        )
+        .await
+        .unwrap();
+    assert_eq!(outcome.status, OutcomeStatus::Switched, "{outcome:?}");
+}
+
+#[tokio::test]
+async fn restore_choices_round_trip_config_and_keep_migrated_and_new_sessions_visible() {
+    for provider in [
+        ProviderRestore::Baseline {
+            reverse_migrate: true,
+        },
+        ProviderRestore::KeepOpenai,
+        ProviderRestore::Baseline {
+            reverse_migrate: false,
+        },
+    ] {
+        let mut w = World::new();
+        w.ctx.env = Arc::new(
+            MapEnv::new()
+                .with("HOME", w.ctx.home_dir.as_os_str())
+                .with("SUPERBA_SECRET_BACKEND", "file"),
+        );
+        w.set_session(None);
+        let home = w.ctx.codex_home();
+        std::fs::create_dir_all(home.root()).unwrap();
+        let original = format!("model_provider = \"legacy\"\n{ORIGINAL}\n{PROVIDER}");
+        std::fs::write(home.config_toml(), &original).unwrap();
+        let migrated = session(home.root(), "old-legacy", "legacy", Timestamp(T0 - 10_000));
+        let untouched = session(home.root(), "old-openai", "openai", Timestamp(T0 - 5_000));
+        let mut deps = w.deps();
+        deps.config = Arc::new(TomlConfigEngine::with_clock(w.ctx.clone(), w.clock.clone()));
+        deps.sessions =
+            Arc::new(CodexSessionMigrator::new(w.ctx.data_dir.clone()).with_clock(w.clock.clone()));
+        let sw = Switcher::new(deps);
+        sw.save_site(
+            superba_switch::new_compatible_site(
+                "compatible".into(),
+                "Compatible",
+                &url::Url::parse("https://compatible.example/v1").unwrap(),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        sw.save_profile(
+            superba_core::Profile {
+                site_id: "compatible".into(),
+                ..krill_profile("compatible", None, AuthMode::ApiKey)
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        w.secrets
+            .map
+            .lock()
+            .unwrap()
+            .insert("profile:compatible".into(), KEY.into());
+
+        let mut takeover = SwitchRequest::profile("work".into());
+        takeover.legacy_sessions = Some(LegacySessionChoice::Migrate);
+        execute_sessions(&sw, takeover).await;
+        assert_eq!(session_provider(&migrated), "openai");
+        w.clock.advance(Duration::from_secs(1));
+        let krill = session(home.root(), "new-krill", "openai", w.clock.now());
+        w.clock.advance(Duration::from_secs(1));
+        execute_sessions(&sw, SwitchRequest::profile("compatible".into())).await;
+        w.clock.advance(Duration::from_secs(1));
+        let compatible = session(home.root(), "new-compatible", "openai", w.clock.now());
+        w.clock.advance(Duration::from_secs(1));
+        execute_sessions(&sw, SwitchRequest::profile("work".into())).await;
+        w.clock.advance(Duration::from_secs(1));
+
+        // GUI's original-profile route asks before executing. Its default plan
+        // already describes the exact restore and the same reverse migration
+        // that the CLI selects when --provider is omitted.
+        let pending = sw
+            .plan(SwitchRequest::profile("original".into()))
+            .await
+            .unwrap();
+        assert!(matches!(
+            pending.choices.as_slice(),
+            [PlanChoice::RestoreProvider {
+                created_during: 2,
+                migrated_in: 1,
+                ..
+            }]
+        ));
+        assert_eq!(pending.migration.as_ref().unwrap().items.len(), 3);
+        let request = SwitchRequest {
+            intent: SwitchIntent::Restore {
+                target: RestoreTarget::Original { provider },
+            },
+            ..pending.request
+        };
+        execute_sessions(&sw, request).await;
+        let restored = std::fs::read_to_string(home.config_toml()).unwrap();
+        if provider == ProviderRestore::KeepOpenai {
+            assert!(restored.contains("model_provider = \"openai\""));
+            assert!(restored.contains("openai_base_url = \"https://original.example/v1\""));
+        } else {
+            assert_eq!(restored, original);
+        }
+        let expected = if provider
+            == (ProviderRestore::Baseline {
+                reverse_migrate: true,
+            }) {
+            "legacy"
+        } else {
+            "openai"
+        };
+        for path in [&migrated, &krill, &compatible] {
+            assert_eq!(session_provider(path), expected, "{path:?}");
+        }
+        assert_eq!(
+            session_provider(&untouched),
+            "openai",
+            "pre-takeover session stays untouched"
+        );
     }
 }

@@ -942,13 +942,11 @@ impl Switcher {
                         .unwrap_or(0);
                     now.saturating_sub(before).saturating_sub(migrated_in)
                 });
-                if created_during > 0 || migrated_in > 0 || report.is_none() {
-                    draft.choices.push(PlanChoice::RestoreProvider {
-                        baseline_provider: provider,
-                        created_during,
-                        migrated_in,
-                    });
-                }
+                draft.choices.push(PlanChoice::RestoreProvider {
+                    baseline_provider: provider,
+                    created_during,
+                    migrated_in,
+                });
             }
         }
         let migration = match (&dest.migration, local) {
@@ -2229,7 +2227,7 @@ impl Switcher {
         let provider = match (provider, &baseline_provider) {
             (Some(p), _) => p,
             (None, None) => ProviderRestore::Baseline {
-                reverse_migrate: false,
+                reverse_migrate: true,
             },
             (None, Some(bp)) => {
                 question = Some(bp.clone());
@@ -2238,7 +2236,7 @@ impl Switcher {
                 // provider's base URL into a new top-level key, so it must be
                 // an explicit answer to the session-visibility question.
                 ProviderRestore::Baseline {
-                    reverse_migrate: false,
+                    reverse_migrate: true,
                 }
             }
         };
@@ -2360,7 +2358,7 @@ impl Switcher {
         let mut req = req.clone();
         if req.selectors.is_empty() {
             // Reverse migration (plan 10.4 option 2): ledger of the takeover
-            // migrations, plus sessions created during Krill generations.
+            // migrations, plus sessions created while using a token provider.
             let history = soft(draft, "migration history", d.sessions.history(home).await)
                 .unwrap_or_default();
             for r in history.iter().filter(|r| {
@@ -2375,7 +2373,7 @@ impl Switcher {
             let generations =
                 soft(draft, "generations", d.config.generations(home).await).unwrap_or_default();
             for (i, g) in generations.iter().enumerate() {
-                if g.site_kind == Some(SiteKind::Krill) {
+                if matches!(g.site_kind, Some(SiteKind::Krill | SiteKind::Compatible)) {
                     req.selectors.push(MigrationSelector::CreatedBetween {
                         provider: PROVIDER_OPENAI.to_owned(),
                         from: g.applied_at,

@@ -82,7 +82,7 @@ impl Home {
         self.0.path().join(name)
     }
 
-    fn spb(&self, args: &[&str]) {
+    fn spb(&self, args: &[&str]) -> std::process::Output {
         let out = Command::new(env!("CARGO_BIN_EXE_spb"))
             .env_clear()
             .env("HOME", self.path("home"))
@@ -104,6 +104,7 @@ impl Home {
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         );
+        out
     }
 }
 
@@ -162,6 +163,35 @@ fn round_trip(original_url: bool, custom_provider: bool, repeated: bool) {
     }
     // No --provider override: the normal command restores missing routing keys
     // as missing, and existing keys/tables as their original values.
+    if custom_provider {
+        let dir = h.path("codex/sessions");
+        std::fs::create_dir_all(&dir).unwrap();
+        let meta = serde_json::json!({
+            "type": "session_meta",
+            "payload": {
+                "id": "created-on-compatible",
+                "model_provider": "openai",
+                "timestamp": superba_core::Timestamp::now().to_rfc3339()
+            }
+        });
+        std::fs::write(
+            dir.join("rollout-created-on-compatible.jsonl"),
+            format!("{meta}\n"),
+        )
+        .unwrap();
+        let preview = h.spb(&["restore", "--dry-run", "--json"]);
+        let plan: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+        assert_eq!(plan["status"], "planned");
+        assert_eq!(plan["plan"]["choices"], serde_json::json!([]));
+        assert_eq!(
+            plan["plan"]["migration"]["request"]["to_provider"],
+            "legacy"
+        );
+        assert_eq!(
+            plan["plan"]["migration"]["items"][0]["thread_id"],
+            "created-on-compatible"
+        );
+    }
     h.spb(&["restore", "--write-only", "--yes"]);
     assert_eq!(
         std::fs::read_to_string(h.path("codex/config.toml")).unwrap(),
