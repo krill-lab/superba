@@ -41,6 +41,7 @@ use crate::stats::body::{Mode, TapBody};
 use crate::stats::hub::{End, Tracker};
 use crate::stats::tap::{LineSetup, Outcome, TapSummary, render_line};
 use crate::status::RouteEventKind;
+use crate::translate::{self, ir::Protocol, routing};
 
 /// Largest non-streamed answer read whole for the stats line.
 const MAX_COLLECT: usize = 64 * 1024 * 1024;
@@ -186,13 +187,30 @@ pub(super) async fn chat(
         let member = &generation.members[a.c.member];
         let line = &member.lines[a.c.line];
         let label = generation.label(a.c.member, a.c.line);
-        let Some(base) = generation.openai.members[a.c.member]
-            .bases(OpenAiProtocol::Chat)
-            .and_then(|b| b.get(a.c.line))
+        let Some(upstream) = generation
+            .config
+            .upstream_protocol(&member.cfg.id, Protocol::Chat)
         else {
             continue;
         };
-        let url = join_path(base, OpenAiProtocol::Chat.path(), parts.uri.query());
+        let Some(base) = routing::base(&generation.config, a.c.member, a.c.line, upstream) else {
+            continue;
+        };
+        let upstream_model = member
+            .cfg
+            .model_map
+            .get(&target.model)
+            .unwrap_or(&target.model);
+        let url = if upstream == Protocol::Chat {
+            join_path(&base, OpenAiProtocol::Chat.path(), parts.uri.query())
+        } else {
+            routing::url(
+                &base,
+                upstream,
+                upstream_model,
+                req["stream"].as_bool().unwrap_or(false),
+            )
+        };
         if let Some(t) = &tracker {
             t.trying(a.c);
         }
@@ -208,12 +226,27 @@ pub(super) async fn chat(
                     t.note(n);
                 }
             }
+            let body = if upstream == Protocol::Chat {
+                body
+            } else {
+                match translate::body::request(Protocol::Chat, upstream, &req, upstream_model) {
+                    Ok(body) => body,
+                    Err(e) => {
+                        record_refusal(tracker, 400, "protocol_conversion_error", &e.to_string());
+                        return translate::body::error(Protocol::Chat, StatusCode::BAD_REQUEST, &e);
+                    }
+                }
+            };
             let started = Instant::now();
             let result = generation
                 .http
                 .post(url.clone())
-                .headers(headers_for(&parts.headers, &generation, a.c.member))
-                .body(body)
+                .headers(if upstream == Protocol::Chat {
+                    headers_for(&parts.headers, &generation, a.c.member)
+                } else {
+                    routing::headers(&parts.headers, &generation, a.c.member, upstream)
+                })
+                .body(routing::wire_body(upstream, body))
                 .send()
                 .await
                 .map(up_response);
@@ -310,6 +343,26 @@ pub(super) async fn chat(
                         c: a.c,
                         label,
                         t0,
+                    };
+                    let resp = if upstream != Protocol::Chat {
+                        match translate::body::response(resp, upstream, Protocol::Chat).await {
+                            Ok(resp) => resp,
+                            Err(e) => {
+                                record_refusal(
+                                    tracker,
+                                    502,
+                                    "protocol_conversion_error",
+                                    &e.to_string(),
+                                );
+                                return translate::body::error(
+                                    Protocol::Chat,
+                                    StatusCode::BAD_GATEWAY,
+                                    &e,
+                                );
+                            }
+                        }
+                    } else {
+                        resp
                     };
                     return answer.downstream(resp, tracker, active, admission).await;
                 }

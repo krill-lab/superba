@@ -232,13 +232,15 @@ pub enum RequestHarness {
     /// WorkBuddy (Tencent; China and international builds).
     #[serde(rename = "workbuddy")]
     WorkBuddy,
+    /// Gemini CLI.
+    Gemini,
     /// A client that could not be identified.
     Unknown,
 }
 
 impl RequestHarness {
     /// Every harness, in display order.
-    pub const ALL: [RequestHarness; 8] = [
+    pub const ALL: [RequestHarness; 9] = [
         RequestHarness::Codex,
         RequestHarness::ClaudeCode,
         RequestHarness::Dsh,
@@ -246,6 +248,7 @@ impl RequestHarness {
         RequestHarness::Pi,
         RequestHarness::ZCode,
         RequestHarness::WorkBuddy,
+        RequestHarness::Gemini,
         RequestHarness::Unknown,
     ];
 
@@ -262,6 +265,7 @@ impl RequestHarness {
             RequestHarness::Pi => "pi",
             RequestHarness::ZCode => "zcode",
             RequestHarness::WorkBuddy => "workbuddy",
+            RequestHarness::Gemini => "gemini",
             RequestHarness::Unknown => "unknown",
         }
     }
@@ -285,6 +289,7 @@ impl RequestHarness {
             RequestHarness::WorkBuddy => {
                 LocalizedText::new("request_harness.workbuddy", "WorkBuddy")
             }
+            RequestHarness::Gemini => LocalizedText::new("request_harness.gemini", "Gemini"),
             RequestHarness::Unknown => LocalizedText::new("request_harness.unknown", "Other tool"),
         }
     }
@@ -323,6 +328,7 @@ impl RequestHarness {
             "opencode" => RequestHarness::OpenCode,
             "zcode" => RequestHarness::ZCode,
             "pi" => RequestHarness::Pi,
+            "gemini-cli" | "gemini" => RequestHarness::Gemini,
             n if n.starts_with("codex") => RequestHarness::Codex,
             _ => return None,
         };
@@ -360,6 +366,8 @@ pub enum RequestProtocol {
     ChatCompletions,
     /// Anthropic Messages (`/v1/messages`).
     Messages,
+    /// Gemini v1beta generateContent.
+    Gemini,
 }
 
 impl RequestProtocol {
@@ -372,6 +380,7 @@ impl RequestProtocol {
             RequestProtocol::ChatCompletions => {
                 LocalizedText::new("request_protocol.chat_completions", "Chat Completions")
             }
+            RequestProtocol::Gemini => LocalizedText::new("request_protocol.gemini", "Gemini"),
             RequestProtocol::Messages => {
                 LocalizedText::new("request_protocol.messages", "Anthropic Messages")
             }

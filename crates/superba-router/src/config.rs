@@ -84,6 +84,12 @@ pub struct RouterConfig {
     /// member serves its defaults ([`crate::openai::config`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openai: Option<crate::openai::OpenAiConfig>,
+    /// Native Gemini v1beta endpoints and model discovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gemini: Option<crate::translate::routing::GeminiConfig>,
+    /// Directional protocol conversion switches (all enabled by default).
+    #[serde(default)]
+    pub translation: crate::translate::routing::TranslationConfig,
 }
 
 /// An address the router may listen on for WSL: a private (RFC 1918) or
@@ -297,6 +303,8 @@ impl RouterConfig {
             wsl_listen: Vec::new(),
             claude: None,
             openai: None,
+            gemini: None,
+            translation: Default::default(),
         }
     }
 
@@ -384,6 +392,9 @@ impl RouterConfig {
         }
         if let Some(openai) = &self.openai {
             openai.validate(self)?;
+        }
+        if let Some(gemini) = &self.gemini {
+            gemini.validate(self)?;
         }
         Ok(())
     }

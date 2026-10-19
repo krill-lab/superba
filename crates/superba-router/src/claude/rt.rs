@@ -6,12 +6,15 @@ use http::{HeaderName, HeaderValue};
 use superba_core::{Error, Result};
 use url::Url;
 
-use super::config::{AnthropicAuth, ClaudeConfig, ClaudeMember, Endpoint};
-use crate::config::{MemberConfig, RouterSecrets, join_path};
+use super::config::{AnthropicAuth, ClaudeConfig, ClaudeMember};
+use crate::config::{RouterConfig, RouterSecrets};
+use crate::translate::{ir::Protocol, routing};
 
 /// One member's Claude Code side.
 pub(crate) struct MemberClaude {
     pub cfg: ClaudeMember,
+    /// Native protocol selected for this member.
+    pub protocol: Protocol,
     /// The auth header.
     pub auth: (HeaderName, HeaderValue),
     /// Anthropic base per line (`ANTHROPIC_BASE_URL` style).
@@ -34,39 +37,21 @@ pub(crate) struct ClaudeRt {
     pub order: Vec<usize>,
 }
 
-/// `scheme://host[:port]/` of a base URL.
-fn origin(base: &Url) -> Url {
-    let mut u = base.clone();
-    u.set_path("/");
-    u.set_query(None);
-    u.set_fragment(None);
-    u
-}
-
-fn endpoint_base(ep: &Endpoint, line_id: &str, line_base: &Url) -> Url {
-    match ep.lines.get(line_id) {
-        Some(u) => u.clone(),
-        None => join_path(&origin(line_base), &ep.path, None),
-    }
-}
-
 impl ClaudeRt {
     /// Build from the configuration; `members` in router order.
     pub fn build(
         cfg: &ClaudeConfig,
-        members: &[MemberConfig],
+        router: &RouterConfig,
         secrets: &RouterSecrets,
     ) -> Result<Self> {
+        let members = &router.members;
         let mut out = Vec::with_capacity(members.len());
         for m in members {
-            let Some((c, ep)) = cfg
-                .members
-                .get(&m.id)
-                .and_then(|c| c.anthropic.as_ref().map(|ep| (c, ep)))
-            else {
+            let Some(protocol) = router.upstream_protocol(&m.id, Protocol::Messages) else {
                 out.push(None);
                 continue;
             };
+            let c = cfg.members.get(&m.id).cloned().unwrap_or_default();
             let key = secrets.key(&m.id).ok_or_else(|| Error::Secret {
                 message: format!("no API key for router member {:?}", m.id),
             })?;
@@ -89,13 +74,13 @@ impl ClaudeRt {
                     (http::header::AUTHORIZATION, v)
                 }
             };
-            let base = m
-                .lines
-                .iter()
-                .map(|l| endpoint_base(ep, &l.id, &l.base_url))
+            let member_index = out.len();
+            let base = (0..m.lines.len())
+                .filter_map(|line| routing::base(router, member_index, line, protocol))
                 .collect();
             out.push(Some(MemberClaude {
-                cfg: c.clone(),
+                cfg: c,
+                protocol,
                 auth,
                 base,
             }));

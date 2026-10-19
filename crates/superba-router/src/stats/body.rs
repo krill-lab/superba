@@ -267,6 +267,15 @@ struct JsonError {
 
 /// Usage, error code and the answer's id of a JSON answer.
 fn json_answer(buf: &[u8]) -> (Option<Usage>, Option<String>, Option<String>) {
+    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(buf)
+        && v.get("usageMetadata").is_some()
+    {
+        return (
+            crate::translate::stats_usage(crate::translate::gemini::usage(&v["usageMetadata"])),
+            None,
+            v["responseId"].as_str().map(str::to_owned),
+        );
+    }
     let Ok(a) = serde_json::from_slice::<JsonAnswer>(buf) else {
         return (None, None, None);
     };

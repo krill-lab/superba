@@ -22,7 +22,8 @@ use super::tap::{AnthropicSse, AnthropicUsage};
 use super::{line, meta, passthrough};
 use crate::config::join_path;
 use crate::forward::{
-    Observed, describe_error, failover_status, full, response_headers, set_route,
+    Observed, UpResponse, describe_error, failover_status, full, response_headers, set_route,
+    up_response,
 };
 use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_detail, file_limit_in};
 use crate::proxy::{note_line_down, on_answer};
@@ -32,6 +33,7 @@ use crate::stats::body::{Mode, TapBody};
 use crate::stats::hub::{End, Tracker};
 use crate::stats::tap::{LineSetup, Outcome, TapSummary, render_line};
 use crate::status::RouteEventKind;
+use crate::translate::{self, ir::Protocol, routing};
 
 /// Largest non-streamed answer read whole for the stats line.
 const MAX_COLLECT: usize = 64 * 1024 * 1024;
@@ -157,10 +159,26 @@ pub(super) async fn messages(
         else {
             continue;
         };
-        let (body, notes) = prepared
-            .entry(a.target)
-            .or_insert_with(|| prepare(&req, original, target, mc))
-            .clone();
+        let (body, notes) = if mc.protocol == Protocol::Messages {
+            prepared
+                .entry(a.target)
+                .or_insert_with(|| prepare(&req, original, target, mc))
+                .clone()
+        } else {
+            match translate::body::request(Protocol::Messages, mc.protocol, &req, &target.model) {
+                Ok(body) => (
+                    body,
+                    vec![format!(
+                        "protocol conversion: messages -> {:?}",
+                        mc.protocol
+                    )],
+                ),
+                Err(e) => {
+                    record_refusal(tracker, 400, "protocol_conversion_error", &e.to_string());
+                    return translate::body::error(Protocol::Messages, StatusCode::BAD_REQUEST, &e);
+                }
+            }
+        };
         if let Some(t) = &mut tracker {
             t.trying(a.c);
             t.set_upstream_model(Some(target.model.clone()));
@@ -169,12 +187,26 @@ pub(super) async fn messages(
             }
         }
         let started = Instant::now();
-        let url = join_path(&mc.base[a.c.line], "/v1/messages", parts.uri.query());
+        let url = if mc.protocol == Protocol::Messages {
+            join_path(&mc.base[a.c.line], "/v1/messages", parts.uri.query())
+        } else {
+            routing::url(
+                &mc.base[a.c.line],
+                mc.protocol,
+                &target.model,
+                req["stream"].as_bool().unwrap_or(false),
+            )
+        };
+        let headers = if mc.protocol == Protocol::Messages {
+            passthrough::headers(&parts.headers, mc)
+        } else {
+            routing::headers(&parts.headers, &generation, a.c.member, mc.protocol)
+        };
         let result = generation
             .http
             .post(url)
-            .headers(passthrough::headers(&parts.headers, mc))
-            .body(body)
+            .headers(headers)
+            .body(routing::wire_body(mc.protocol, body))
             .send()
             .await;
         let (reason, status) = match result {
@@ -229,6 +261,28 @@ pub(super) async fn messages(
                         label,
                         t0,
                     };
+                    let mut resp = up_response(resp);
+                    if mc.protocol != Protocol::Messages {
+                        resp =
+                            match translate::body::response(resp, mc.protocol, Protocol::Messages)
+                                .await
+                            {
+                                Ok(resp) => resp,
+                                Err(e) => {
+                                    record_refusal(
+                                        tracker,
+                                        502,
+                                        "protocol_conversion_error",
+                                        &e.to_string(),
+                                    );
+                                    return translate::body::error(
+                                        Protocol::Messages,
+                                        StatusCode::BAD_GATEWAY,
+                                        &e,
+                                    );
+                                }
+                            };
+                    }
                     return answer.downstream(resp, tracker, active, admission).await;
                 }
             },
@@ -321,7 +375,7 @@ impl Answer {
 
     async fn downstream(
         self,
-        resp: reqwest::Response,
+        resp: UpResponse,
         tracker: Option<Tracker>,
         active: GaugeGuard,
         admission: Admission,
@@ -335,7 +389,7 @@ impl Answer {
         let mut headers = response_headers(resp.headers(), false);
         if line.is_some() && !sse {
             // A non-streamed answer that gets the line: read it whole.
-            let body = http::Response::<reqwest::Body>::from(resp).into_body();
+            let body = resp.into_body();
             let bytes = match http_body_util::Limited::new(body, MAX_COLLECT)
                 .collect()
                 .await
@@ -368,7 +422,7 @@ impl Answer {
             };
             (mode, t)
         });
-        let body = http::Response::<reqwest::Body>::from(resp).into_body();
+        let body = resp.into_body();
         self.respond(status, headers, body, tap, (active, admission))
     }
 

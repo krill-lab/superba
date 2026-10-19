@@ -33,6 +33,7 @@ pub struct HarnessRoute {
 pub fn ingress_url(listen: SocketAddr, protocol: RequestProtocol) -> String {
     match protocol {
         RequestProtocol::Messages => crate::claude::base_url(listen),
+        RequestProtocol::Gemini => crate::gemini::base_url(listen),
         _ => crate::openai::base_url(listen),
     }
 }

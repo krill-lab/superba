@@ -52,6 +52,7 @@ client_on_host = "{client} · {host}"
 
 # 发出请求的工具（用量页、请求详情、spb usage）。
 [request_harness]
+gemini = "Gemini"
 codex = "Codex"
 claude_code = "Claude Code"
 dsh = "dsh"
@@ -63,6 +64,7 @@ unknown = "其他工具"
 
 # 请求的 API 协议（工具使用的协议、发往上游的协议）。
 [request_protocol]
+gemini = "Gemini"
 responses = "Responses API"
 chat_completions = "Chat Completions"
 messages = "Anthropic Messages"
@@ -72,3 +74,4 @@ messages = "Anthropic Messages"
 main = "主对话"
 subagent = "子代理"
 background = "后台任务"
+

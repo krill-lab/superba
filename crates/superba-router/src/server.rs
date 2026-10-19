@@ -598,9 +598,11 @@ async fn dispatch(
     }
     let claude = crate::claude::ingress_rest(path);
     let openai = crate::openai::ingress_rest(path);
+    let gemini = crate::gemini::ingress_rest(path);
     let Some(rest) = claude
         .clone()
         .or_else(|| openai.clone())
+        .or_else(|| gemini.clone())
         .or_else(|| strip_prefix(path))
     else {
         return router_error(
@@ -626,8 +628,22 @@ async fn dispatch(
         .flatten()
         .map(|v| v.as_bytes().trim_ascii())
         .filter(|v| !v.is_empty());
+    let gemini_query_key = gemini
+        .as_ref()
+        .and_then(|_| req.uri().query())
+        .and_then(|q| {
+            url::form_urlencoded::parse(q.as_bytes())
+                .find(|(k, _)| k == "key")
+                .map(|(_, v)| v.into_owned())
+        });
+    let gemini_header_key = gemini
+        .as_ref()
+        .and_then(|_| req.headers().get("x-goog-api-key"))
+        .map(|v| v.as_bytes());
     let presenter = bearer_token
         .or(api_key)
+        .or(gemini_header_key)
+        .or(gemini_query_key.as_deref().map(str::as_bytes))
         .and_then(|t| authenticate(router_token, t, entry));
     drop(generation);
     // The host and harness are ours to say: a client's own headers are
@@ -648,6 +664,10 @@ async fn dispatch(
         }
     }
     if presenter.is_none() {
+        if gemini.is_some() {
+            shared.totals.rejected.fetch_add(1, Ordering::Relaxed);
+            return crate::gemini::error(StatusCode::UNAUTHORIZED, "missing or wrong router token");
+        }
         if claude.is_some() {
             shared.totals.rejected.fetch_add(1, Ordering::Relaxed);
             return crate::claude::error::local(
@@ -675,6 +695,15 @@ async fn dispatch(
     let started_ms = now_ms();
     let admission = match shared.limits.admit(wait).await {
         Ok(admission) => admission,
+        Err(Busy) if gemini.is_some() => {
+            let message = shared.local_busy();
+            drain(
+                req.into_body(),
+                shared.current().config.tuning.max_body_bytes,
+            )
+            .await;
+            return crate::gemini::error(StatusCode::SERVICE_UNAVAILABLE, &message);
+        }
         Err(Busy) if claude.is_some() => {
             let message = shared.local_busy();
             let limit = shared.current().config.tuning.max_body_bytes;
@@ -689,7 +718,9 @@ async fn dispatch(
             return busy(&shared, req, (&rest, ingress), t0, started_ms).await;
         }
     };
-    if claude.is_some() {
+    if gemini.is_some() {
+        crate::gemini::handle(shared, req, rest, admission).await
+    } else if claude.is_some() {
         crate::claude::handle(shared, req, rest, admission).await
     } else if openai.is_some() {
         crate::openai::handle(shared, req, rest, admission).await

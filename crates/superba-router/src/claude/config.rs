@@ -254,15 +254,9 @@ impl ClaudeConfig {
                 ));
             }
             for t in &r.targets {
-                let Some(m) = self.members.get(&t.member) else {
+                if router.claude_eligibility(&t.member).is_err() {
                     return Err(Error::invalid(format!(
-                        "Claude Code route {:?}: {:?} is not a Claude Code member",
-                        r.model, t.member
-                    )));
-                };
-                if m.eligibility().is_err() {
-                    return Err(Error::invalid(format!(
-                        "Claude Code route {:?}: member {:?} has no Anthropic endpoint",
+                        "Claude Code route {:?}: member {:?} has no enabled protocol route",
                         r.model, t.member
                     )));
                 }

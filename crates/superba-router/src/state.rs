@@ -150,7 +150,7 @@ impl Generation {
         let claude = config
             .claude
             .as_ref()
-            .map(|c| crate::claude::rt::ClaudeRt::build(c, &config.members, secrets))
+            .map(|c| crate::claude::rt::ClaudeRt::build(c, &config, secrets))
             .transpose()?;
         let openai = crate::openai::rt::OpenAiRt::build(&config);
         let http = build_client(&config, ClientKind::Http, budget)?;
@@ -180,7 +180,7 @@ impl Generation {
             .map(|m| crate::compaction::MemberFacts {
                 id: &m.cfg.id,
                 name: &m.cfg.name,
-                compaction: m.cfg.compaction,
+                compaction: self.config.compaction_support(&m.cfg.id),
             })
             .collect()
     }
@@ -265,6 +265,11 @@ impl Topology for View<'_> {
         (!self.websocket_only || m.cfg.websocket)
             && self.route.allows(member)
             && self.generation.config.serves_codex(&m.cfg.id)
+            && self
+                .generation
+                .config
+                .upstream_protocol(&m.cfg.id, crate::translate::ir::Protocol::Responses)
+                .is_some()
     }
     fn available(&self, member: usize, line: usize, now: Instant) -> bool {
         lock(&self.generation.members[member].lines[line].health).is_available(now)

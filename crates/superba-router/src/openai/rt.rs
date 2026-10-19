@@ -45,7 +45,7 @@ pub(crate) fn origin(base: &Url) -> Url {
     u
 }
 
-fn endpoint_base(ep: &OpenAiEndpoint, line_id: &str, line_base: &Url) -> Url {
+pub(crate) fn endpoint_base(ep: &OpenAiEndpoint, line_id: &str, line_base: &Url) -> Url {
     match (ep.lines.get(line_id), &ep.path) {
         (Some(u), _) => u.clone(),
         (None, Some(path)) => join_path(&origin(line_base), path, None),
@@ -88,14 +88,5 @@ impl OpenAiRt {
             }
         }
         Self { members, order }
-    }
-
-    /// Member indexes that serve `protocol`, in the ingress's order.
-    pub fn serving(&self, protocol: OpenAiProtocol) -> Vec<usize> {
-        self.order
-            .iter()
-            .copied()
-            .filter(|i| self.members[*i].bases(protocol).is_some())
-            .collect()
     }
 }

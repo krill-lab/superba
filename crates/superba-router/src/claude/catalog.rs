@@ -67,8 +67,14 @@ pub fn parse_list(body: &[u8]) -> Option<(Vec<Listed>, Option<String>)> {
             Value::Object(_) => {
                 let id = text(item, "id")
                     .or_else(|| text(item, "slug"))
-                    .or_else(|| text(item, "model"))?;
-                let display_name = text(item, "display_name")
+                    .or_else(|| text(item, "model"))
+                    .or_else(|| {
+                        text(item, "name")
+                            .filter(|n| n.starts_with("models/"))
+                            .map(|n| n.trim_start_matches("models/").to_owned())
+                    })?;
+                let display_name = text(item, "displayName")
+                    .or_else(|| text(item, "display_name"))
                     .or_else(|| text(item, "name"))
                     .filter(|n| n != &id);
                 Some(Listed { id, display_name })

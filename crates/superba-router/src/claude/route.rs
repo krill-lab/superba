@@ -60,6 +60,9 @@ pub(crate) async fn lists_of(
                 .collect(),
         ));
     }
+    if c.protocol != crate::translate::ir::Protocol::Messages {
+        return crate::openai::route::list_of(shared, generation, member).await;
+    }
     shared.claude.catalog.lists(generation, member).await
 }
 

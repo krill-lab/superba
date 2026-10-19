@@ -40,6 +40,7 @@ use crate::stats::tap::{ResponseTap, SseTap};
 use crate::stats::{meta, strip};
 use crate::status::RouteEventKind;
 use crate::sticky::{Pin, session_key};
+use crate::translate::{self, ir::Protocol, routing};
 use crate::transport;
 
 /// The ingress a Responses request came in on.
@@ -157,7 +158,7 @@ pub(crate) async fn proxy_http(
     // The OpenAI ingress always reads the request (its facts route it, and
     // it is shaped whether or not it is recorded).
     let mut openai_meta = None;
-    let (body, mut tracker, compaction) = if openai {
+    let (body, mut tracker, mut compaction) = if openai {
         let (body, m, notes) =
             match crate::openai::prepare_responses(&mut parts.headers, body, limit) {
                 Ok(prepared) => prepared,
@@ -193,6 +194,9 @@ pub(crate) async fn proxy_http(
         (body, None, CompactionInput::default())
     };
 
+    if rest.trim_end_matches('/').ends_with("/responses/compact") {
+        compaction.trigger = true;
+    }
     let key = match &openai_meta {
         Some(m) => crate::openai::route::sticky_key(m),
         None => session_key(&parts.headers),
@@ -315,6 +319,11 @@ pub(crate) async fn proxy_http(
         if let Some(t) = &tracker {
             t.trying(c);
         }
+        let upstream = generation
+            .config
+            .upstream_protocol(&member.cfg.id, Protocol::Responses)
+            .unwrap_or(Protocol::Responses);
+        let converted = upstream != Protocol::Responses && is_responses_path(&parts.method, &rest);
         let mut resent = false;
         let (result, compression, started) = loop {
             let send_body = match mapped.get(&c.member) {
@@ -357,7 +366,47 @@ pub(crate) async fn proxy_http(
                     b
                 }
             };
-            let zstd_body = if compressible
+            let send_body = if converted {
+                let plain = if client_zstd {
+                    match strip::decode_zstd(&send_body, limit) {
+                        Some(b) => Bytes::from(b),
+                        None => {
+                            return translate::body::error(
+                                Protocol::Responses,
+                                StatusCode::BAD_REQUEST,
+                                &translate::Invalid::new("invalid zstd request"),
+                            );
+                        }
+                    }
+                } else {
+                    send_body
+                };
+                let value = match serde_json::from_slice::<serde_json::Value>(&plain) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return translate::body::error(
+                            Protocol::Responses,
+                            StatusCode::BAD_REQUEST,
+                            &translate::Invalid::new("request is not JSON"),
+                        );
+                    }
+                };
+                let model = value["model"].as_str().unwrap_or_default();
+                match translate::body::request(Protocol::Responses, upstream, &value, model) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        return translate::body::error(
+                            Protocol::Responses,
+                            StatusCode::BAD_REQUEST,
+                            &e,
+                        );
+                    }
+                }
+            } else {
+                send_body
+            };
+            let zstd_body = if !converted
+                && compressible
                 && transport::compresses(&shared.transports, &member.cfg, &line.cfg, Instant::now())
             {
                 match compressed.get(&c.member) {
@@ -397,7 +446,7 @@ pub(crate) async fn proxy_http(
                         false,
                     )
                     .await,
-                    if client_zstd {
+                    if client_zstd && !converted {
                         RequestCompression::ClientZstd
                     } else {
                         RequestCompression::None
@@ -405,6 +454,9 @@ pub(crate) async fn proxy_http(
                 ),
             };
             let result = result.map(up_response);
+            if converted {
+                break (result, compression, started);
+            }
             // A refusal of a ciphertext arrives as a small JSON error before
             // any byte reached Codex: read it, then decide.
             let (Some(cb), false) = (ciphers.as_ref(), resent) else {
@@ -541,6 +593,20 @@ pub(crate) async fn proxy_http(
                         let now = Instant::now();
                         t.answered(c, resp.status().as_u16(), resp.headers(), started, now);
                     }
+                    let resp = if converted {
+                        match translate::body::response(resp, upstream, Protocol::Responses).await {
+                            Ok(resp) => resp,
+                            Err(e) => {
+                                return translate::body::error(
+                                    Protocol::Responses,
+                                    StatusCode::BAD_GATEWAY,
+                                    &e,
+                                );
+                            }
+                        }
+                    } else {
+                        resp
+                    };
                     return downstream(
                         shared.clone(),
                         generation.clone(),
@@ -743,10 +809,32 @@ async fn send(
             .and_then(|b| b.get(c.line))
             .unwrap_or(&line.cfg.base_url),
     };
-    let url = join_path(base, rest, parts.uri.query());
-    let mut headers = request_headers(&parts.headers, false, drop_turn_state, &member.auth);
+    let upstream = generation
+        .config
+        .upstream_protocol(&member.cfg.id, Protocol::Responses)
+        .unwrap_or(Protocol::Responses);
+    let converted = upstream != Protocol::Responses && is_responses_path(&parts.method, rest);
+    let (url, mut headers) = if converted {
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+        let model = v["model"].as_str().unwrap_or_default();
+        let base = routing::base(&generation.config, c.member, c.line, upstream)
+            .unwrap_or_else(|| base.clone());
+        (
+            routing::url(
+                &base,
+                upstream,
+                model,
+                v["stream"].as_bool().unwrap_or(true),
+            ),
+            routing::headers(&parts.headers, generation, c.member, upstream),
+        )
+    } else {
+        (
+            join_path(base, rest, parts.uri.query()),
+            request_headers(&parts.headers, false, drop_turn_state, &member.auth),
+        )
+    };
     if ingress == Ingress::OpenAi {
-        // The answer is read for the request log.
         headers.remove(http::header::ACCEPT_ENCODING);
     }
     if zstd {
@@ -757,7 +845,11 @@ async fn send(
         .request(parts.method.clone(), url)
         .headers(headers);
     if !body.is_empty() {
-        rb = rb.body(body);
+        rb = rb.body(if converted {
+            routing::wire_body(upstream, body)
+        } else {
+            body
+        });
     }
     rb.send().await
 }

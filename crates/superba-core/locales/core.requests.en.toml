@@ -54,6 +54,7 @@ client_on_host = "{client} · {host}"
 
 # The tool (harness) that sent a request (Usage page, request detail, spb usage).
 [request_harness]
+gemini = "Gemini"
 codex = "Codex"
 claude_code = "Claude Code"
 dsh = "dsh"
@@ -65,6 +66,7 @@ unknown = "Other tool"
 
 # The API protocol of a request (what the tool spoke, what went upstream).
 [request_protocol]
+gemini = "Gemini"
 responses = "Responses API"
 chat_completions = "Chat Completions"
 messages = "Anthropic Messages"
@@ -74,3 +76,4 @@ messages = "Anthropic Messages"
 main = "Main"
 subagent = "Subagent"
 background = "Background"
+

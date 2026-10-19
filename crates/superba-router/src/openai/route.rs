@@ -45,7 +45,7 @@ pub(crate) fn sticky_key(meta: &RequestMeta) -> Option<String> {
 }
 
 /// The member's model list: Superba's, else its own `/models`.
-async fn list_of(
+pub(crate) async fn list_of(
     shared: &Shared,
     generation: &Arc<Generation>,
     member: usize,
@@ -55,6 +55,40 @@ async fn list_of(
         return Some(Arc::new(
             o.cfg
                 .models
+                .iter()
+                .map(|m| Listed {
+                    id: m.id.clone(),
+                    display_name: m.display_name.clone(),
+                })
+                .collect(),
+        ));
+    }
+    let id = &generation.members[member].cfg.id;
+    if let Some(models) = generation
+        .config
+        .claude
+        .as_ref()
+        .and_then(|c| c.members.get(id))
+        .map(|m| &m.models)
+        .filter(|m| !m.is_empty())
+    {
+        return Some(Arc::new(
+            models
+                .iter()
+                .map(|m| Listed {
+                    id: m.id.clone(),
+                    display_name: m.display_name.clone(),
+                })
+                .collect(),
+        ));
+    }
+    if let Some(g) = generation
+        .config
+        .gemini_member(id)
+        .filter(|g| !g.models.is_empty())
+    {
+        return Some(Arc::new(
+            g.models
                 .iter()
                 .map(|m| Listed {
                     id: m.id.clone(),
@@ -73,19 +107,24 @@ async fn list_of(
 /// `GET <base>/models` of member `member` (its Responses base, else its Chat
 /// base; the first line that answers).
 async fn fetch(generation: &Generation, member: usize) -> Result<Vec<Listed>, String> {
-    let o = &generation.openai.members[member];
-    let bases = o
-        .bases(OpenAiProtocol::Responses)
-        .or_else(|| o.bases(OpenAiProtocol::Chat))
-        .ok_or("serves no OpenAI protocol")?;
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        http::header::AUTHORIZATION,
-        generation.members[member].auth.clone(),
-    );
+    use crate::translate::{ir::Protocol, routing};
+    let id = &generation.members[member].cfg.id;
+    let protocol = Protocol::ALL
+        .into_iter()
+        .find(|p| generation.config.native_protocol(id, *p))
+        .ok_or("no native protocol")?;
+    let bases: Vec<_> = (0..generation.members[member].lines.len())
+        .filter_map(|line| routing::base(&generation.config, member, line, protocol))
+        .collect();
+    let headers = routing::headers(&HeaderMap::new(), generation, member, protocol);
+    let path = if protocol == Protocol::Messages {
+        "/v1/models"
+    } else {
+        "/models"
+    };
     let mut last_error = String::from("no line");
-    for base in bases {
-        match get_list(generation, &join_path(base, "/models", None), &headers).await {
+    for base in &bases {
+        match get_list(generation, &join_path(base, path, None), &headers).await {
             Ok(list) => return Ok(list),
             Err(e) => last_error = e,
         }
@@ -131,8 +170,20 @@ pub(crate) async fn all_models(
         .iter()
         .copied()
         .filter(|m| {
-            let o = &generation.openai.members[*m];
-            o.responses.is_some() || o.chat.is_some()
+            generation
+                .config
+                .upstream_protocol(
+                    &generation.members[*m].cfg.id,
+                    crate::translate::ir::Protocol::Responses,
+                )
+                .is_some()
+                || generation
+                    .config
+                    .upstream_protocol(
+                        &generation.members[*m].cfg.id,
+                        crate::translate::ir::Protocol::Chat,
+                    )
+                    .is_some()
         })
         .collect();
     let lists =
@@ -201,7 +252,18 @@ pub(crate) async fn resolve(
     protocol: OpenAiProtocol,
     model: Option<&str>,
 ) -> Result<Vec<Target>, Refusal> {
-    let serving = generation.openai.serving(protocol);
+    let serving: Vec<usize> = generation
+        .openai
+        .order
+        .iter()
+        .copied()
+        .filter(|i| {
+            generation
+                .config
+                .upstream_protocol(&generation.members[*i].cfg.id, protocol.into())
+                .is_some()
+        })
+        .collect();
     if serving.is_empty() {
         return Err((404, "no_provider", nobody(generation, protocol)));
     }

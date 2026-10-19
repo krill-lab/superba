@@ -51,6 +51,7 @@ pub const HARNESS_HEADER: &str = "x-superba-harness";
 const DROPPED_REQUEST: &[&str] = &[
     "chatgpt-account-id",
     "x-api-key",
+    "x-goog-api-key",
     CODEX_HOST_HEADER,
     HARNESS_HEADER,
 ];
@@ -330,12 +331,20 @@ where
 /// (a small error answer the router inspected before passing it on).
 pub(crate) struct UpBody {
     prefix: Option<Bytes>,
-    rest: Option<reqwest::Body>,
+    rest: Option<RespBody>,
 }
 
 impl UpBody {
     /// The body as it arrives.
     pub(crate) fn live(body: reqwest::Body) -> Self {
+        Self {
+            prefix: None,
+            rest: Some(body.map_err(|e| -> BoxError { Box::new(e) }).boxed_unsync()),
+        }
+    }
+
+    /// A body transformed by a protocol codec, retaining streaming backpressure.
+    pub(crate) fn translated(body: RespBody) -> Self {
         Self {
             prefix: None,
             rest: Some(body),
@@ -362,12 +371,12 @@ impl UpBody {
 
 impl Body for UpBody {
     type Data = Bytes;
-    type Error = reqwest::Error;
+    type Error = BoxError;
 
     fn poll_frame(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Bytes>, reqwest::Error>>> {
+    ) -> Poll<Option<Result<Frame<Bytes>, BoxError>>> {
         if let Some(p) = self.prefix.take() {
             return Poll::Ready(Some(Ok(Frame::data(p))));
         }

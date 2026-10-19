@@ -95,6 +95,7 @@ pub mod compaction;
 pub mod config;
 pub mod doctor;
 pub mod firewall;
+pub mod gemini;
 pub mod harness;
 pub mod health;
 pub mod limits;
@@ -113,8 +114,8 @@ pub mod status;
 pub mod sticky;
 pub mod store;
 pub mod token;
-pub mod transport;
 pub mod translate;
+pub mod transport;
 pub mod watchdog;
 
 mod admin;

@@ -61,7 +61,10 @@ pub(super) async fn count(shared: &Arc<Shared>, parts: &Parts, raw: Bytes) -> Re
     let remembered = lock(&shared.claude.no_count)
         .get(&id)
         .is_some_and(|until| Instant::now() < *until);
-    if mc.cfg.count_tokens == Some(false) || remembered {
+    if mc.protocol != crate::translate::ir::Protocol::Messages
+        || mc.cfg.count_tokens == Some(false)
+        || remembered
+    {
         return estimated(&req);
     }
     let (body, _) = passthrough::body(&req, mc, &target.model);

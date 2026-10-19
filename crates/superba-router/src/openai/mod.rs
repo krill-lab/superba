@@ -119,11 +119,11 @@ pub(crate) async fn handle(
         (&Method::GET, p) if p.starts_with("/models/") => {
             models::one(&shared, &p["/models/".len()..]).await
         }
-        (&Method::POST, "/responses") => {
+        (&Method::POST, "/responses" | "/responses/compact") => {
             crate::proxy::proxy_http(
                 shared,
                 req,
-                "/responses".into(),
+                path.clone(),
                 admission,
                 crate::proxy::Ingress::OpenAi,
             )

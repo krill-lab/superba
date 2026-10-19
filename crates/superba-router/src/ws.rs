@@ -88,6 +88,17 @@ pub(crate) async fn proxy_ws(
         now,
     );
     let preferred_member = preferred.first().map(|c| c.member);
+    if let Some(c) = preferred.first().copied()
+        && generation
+            .config
+            .upstream_protocol(
+                &generation.members[c.member].cfg.id,
+                crate::translate::ir::Protocol::Responses,
+            )
+            .is_some_and(|p| p != crate::translate::ir::Protocol::Responses)
+    {
+        return crate::translate::ws::upgrade(shared, generation, parts, on_upgrade, admission, c);
+    }
     let ws_capable = preferred_member.is_some_and(|m| generation.members[m].cfg.websocket);
     if !ws_capable {
         return refuse(&shared, "the preferred member does not serve WebSocket");

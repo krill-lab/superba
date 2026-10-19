@@ -177,7 +177,7 @@ pub struct OpenAiConfig {
     pub order: Vec<String>,
 }
 
-fn check_endpoint(id: &str, member: &MemberConfig, ep: &OpenAiEndpoint) -> Result<()> {
+pub(crate) fn check_endpoint(id: &str, member: &MemberConfig, ep: &OpenAiEndpoint) -> Result<()> {
     if let Some(path) = &ep.path
         && !(path.starts_with('/') && !path.contains(['?', '#']))
     {
@@ -249,9 +249,8 @@ impl RouterConfig {
         id: &str,
         protocol: OpenAiProtocol,
     ) -> std::result::Result<(), OpenAiIneligible> {
-        match self.openai_member(id) {
-            Some(m) => m.eligibility(protocol),
-            None => Err(protocol.ineligible()),
-        }
+        self.upstream_protocol(id, protocol.into())
+            .map(|_| ())
+            .ok_or(protocol.ineligible())
     }
 }

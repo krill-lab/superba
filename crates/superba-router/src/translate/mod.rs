@@ -2,11 +2,14 @@
 //! Native requests bypass this module entirely.
 
 pub mod anthropic;
+pub(crate) mod body;
 pub mod chat;
 pub mod gemini;
 pub mod ir;
 pub mod responses;
+pub mod routing;
 pub mod stream;
+pub(crate) mod ws;
 
 use ir::{Protocol, Request, Response};
 use serde_json::Value;
@@ -179,4 +182,18 @@ pub fn encode_error(protocol: Protocol, e: &ir::ApiError) -> Value {
         }
         _ => json!({"error":{"type":e.code,"code":e.code,"message":e.message}}),
     }
+}
+
+/// Convert normalized IR usage to the router's statistics representation.
+pub(crate) fn stats_usage(u: ir::Usage) -> Option<crate::stats::usage::Usage> {
+    if u.input.is_none() && u.output.is_none() {
+        return None;
+    }
+    Some(crate::stats::usage::Usage {
+        input: u.input.unwrap_or(0),
+        output: u.output.unwrap_or(0),
+        cached: u.cache_read,
+        cache_write: u.cache_write,
+        reasoning: u.reasoning,
+    })
 }
