@@ -1032,7 +1032,16 @@ impl SwitchService for Switcher {
     }
 
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan> {
-        self.plan_impl(request).await
+        self.plan_with_events(request, Arc::new(superba_core::NoEvents))
+            .await
+    }
+
+    async fn plan_with_events(
+        &self,
+        request: SwitchRequest,
+        events: Arc<dyn SwitchEvents>,
+    ) -> Result<SwitchPlan> {
+        superba_remote::operation::with_events(events, self.plan_impl(request)).await
     }
 
     async fn execute(
@@ -1044,7 +1053,11 @@ impl SwitchService for Switcher {
     ) -> Result<SwitchOutcome> {
         let label = plan.to.label.clone();
         let plan_id = plan.id.clone();
-        let result = self.execute_impl(plan, options, decider, events).await;
+        let result = superba_remote::operation::with_events(
+            events.clone(),
+            self.execute_impl(plan, options, decider, events),
+        )
+        .await;
         // A switch can pin, launch or install: the views read the machine again.
         self.monitor.invalidate();
         // GH#12: tell the phone (when the user asked for switch events).

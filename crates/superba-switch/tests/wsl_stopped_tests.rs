@@ -218,3 +218,42 @@ async fn uninstall_starts_a_stopped_distribution_superba_wrote() {
     assert!(w.remote.probes.lock().unwrap().is_empty());
     assert!(notice_keys(&plan).contains(&"switch.wsl.stopped_skipped".to_owned()));
 }
+
+#[tokio::test]
+async fn a_failed_first_write_is_persisted_in_the_journal_and_pending_until_retry() {
+    let w = world(true);
+    w.remote.fail_apply.lock().unwrap().insert(
+        UBUNTU.into(),
+        superba_core::Error::Timeout {
+            what: "WSL Ubuntu: files".into(),
+        },
+    );
+    let sw = w.switcher();
+    let plan = run(&sw, req("work")).await;
+    assert!(pending(&sw).await.is_some());
+    let journal = superba_switch::journal::SwitchJournal::new(&w.ctx.data_dir);
+    let entry = journal
+        .entries()
+        .unwrap()
+        .into_iter()
+        .find(|e| e.id == plan.id)
+        .unwrap();
+    assert_eq!(
+        entry.status,
+        superba_switch::journal::JournalStatus::Partial
+    );
+    assert!(entry.remotes.is_empty(), "there was no write receipt");
+    assert_eq!(entry.remote_failures.len(), 1);
+    assert_eq!(entry.remote_failures[0].target_id, target());
+    assert!(
+        pending(&w.switcher()).await.is_some(),
+        "pending survives service restart"
+    );
+    assert!(
+        journal.unfinished().unwrap().is_empty(),
+        "a failed remote must not trigger local rollback on startup"
+    );
+    w.remote.fail_apply.lock().unwrap().clear();
+    run(&sw, req("work")).await;
+    assert!(pending(&sw).await.is_none());
+}

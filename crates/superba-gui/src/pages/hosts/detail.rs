@@ -424,8 +424,18 @@ fn pending_row(
         ui.add(crate::design::widgets::StatusDot::new(Status::Warn));
         ui.add(
             egui::Label::new(Text::small(
-                cx.tr
-                    .f("hosts.wsl.pending", &[("age", &cx.ago(pending.at))]),
+                match &pending.failure {
+                    Some(error) => cx.tr.f(
+                        "hosts.wsl.pending_failed",
+                        &[
+                            ("age", &cx.ago(pending.at)),
+                            ("detail", &error_text(cx.tr, error)),
+                        ],
+                    ),
+                    None => cx
+                        .tr
+                        .f("hosts.wsl.pending", &[("age", &cx.ago(pending.at))]),
+                },
                 cx.pal,
             ))
             .wrap(),

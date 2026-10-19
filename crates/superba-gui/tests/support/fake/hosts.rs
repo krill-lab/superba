@@ -287,6 +287,7 @@ fn views(fake: &FakeService) -> Vec<HostView> {
             wsl.host.wsl = Some(distro);
             wsl.host.sources = vec![HostSource::Wsl];
             wsl.pending = Some(HostPending {
+                failure: None,
                 at: Timestamp::now().saturating_sub(Duration::from_secs(30 * 60)),
                 intent: SwitchIntent::Profile {
                     profile_id: ProfileId::new("work"),

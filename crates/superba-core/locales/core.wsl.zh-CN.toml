@@ -10,3 +10,12 @@ networking_nat = "NAT 网络"
 networking_mirrored = "镜像网络"
 networking_none = "无网络"
 networking_virtio_proxy = "virtio 代理网络"
+
+[wsl.progress]
+warmup = "正在启动{host}（第 {attempt}/2 次尝试）…"
+login = "正在读取{host}的登录环境（第 {attempt}/2 次尝试）…"
+version = "正在检查{host}的 Codex 版本（第 {attempt}/2 次尝试）…"
+files = "正在读取{host}的配置（第 {attempt}/2 次尝试）…"
+system = "正在检查{host}的进程（第 {attempt}/2 次尝试）…"
+write = "正在写入{host}的配置…"
+command = "正在{host}上执行命令（第 {attempt}/2 次尝试）…"

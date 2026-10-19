@@ -253,6 +253,19 @@ impl Reporter {
         let _ = append(&self.gui_log(), &format!("{line}\n"));
     }
 
+    /// Keep WSL phase timings in the GUI log, including background probes.
+    /// These transport events contain stage names and durations, never scripts
+    /// or configuration contents. A Windows GUI has no stderr console.
+    pub fn install_wsl_diagnostics(&self) {
+        if let Ok(file) = OpenOptions::new().append(true).open(self.gui_log()) {
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter("superba_remote::wsl=info")
+                .with_ansi(false)
+                .with_writer(file)
+                .try_init();
+        }
+    }
+
     /// What the user is told when the GUI could not start with `error`.
     pub fn failure_message(&self, error: &anyhow::Error) -> String {
         let reason = match error.downcast_ref::<WindowError>() {

@@ -677,3 +677,52 @@ async fn the_linux_helper_is_copied_once_and_its_lines_stream() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn planning_reuses_its_probe_but_apply_and_the_next_plan_read_fresh_files() {
+    use async_trait::async_trait;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use superba_core::{NoEvents, Result};
+    use superba_remote::ScriptOutput;
+    #[derive(Debug)]
+    struct Count {
+        shell: LocalShell,
+        probes: AtomicUsize,
+    }
+    #[async_trait]
+    impl RemoteShell for Count {
+        async fn run(
+            &self,
+            h: &RemoteHost,
+            script: &str,
+            timeout: Duration,
+        ) -> Result<ScriptOutput> {
+            if script.starts_with("# superba-wsl-probe") {
+                self.probes.fetch_add(1, Ordering::SeqCst);
+            }
+            self.shell.run(h, script, timeout).await
+        }
+    }
+    let env = setup("/bin/sh");
+    let shell = Arc::new(Count {
+        shell: LocalShell::new(&env.home).with_login_shell("/bin/sh"),
+        probes: AtomicUsize::new(0),
+    });
+    let hosts = env.hosts.with_shell(shell.clone());
+    let host = distro("Ubuntu");
+    let desired = token_profile(ORIGIN, AuthMode::ApiKey, KEY);
+    superba_remote::operation::with_events(Arc::new(NoEvents), async {
+        hosts.probe(&host).await.unwrap();
+        let plan = hosts.plan_apply(&host, &desired).await.unwrap();
+        assert_eq!(shell.probes.load(Ordering::SeqCst), 1);
+        let path = env.home.join(".codex/config.toml");
+        let original = read(&path);
+        std::fs::write(&path, format!("# concurrent edit\n{original}")).unwrap();
+        hosts.apply(&host, &plan).await.unwrap();
+        assert_eq!(shell.probes.load(Ordering::SeqCst), 2);
+        assert!(read(&path).starts_with("# concurrent edit"));
+    })
+    .await;
+    hosts.plan_apply(&host, &desired).await.unwrap();
+    assert_eq!(shell.probes.load(Ordering::SeqCst), 3);
+}

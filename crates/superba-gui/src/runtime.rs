@@ -165,6 +165,11 @@ pub enum Command {
         /// Request.
         request: SwitchRequest,
     },
+    /// Cancel a read-only planning task.
+    CancelPlan {
+        /// Sequence of the cancelled request.
+        seq: u64,
+    },
     /// Execute a plan.
     Execute {
         /// Plan returned by `Plan`.
@@ -332,6 +337,13 @@ pub enum Reply {
         /// Result.
         result: Result<SwitchPlan>,
     },
+    /// Progress for the identified read-only plan.
+    PlanEvent {
+        /// Request sequence (late events are ignored).
+        seq: u64,
+        /// Current remote stage.
+        event: SwitchEvent,
+    },
     /// Progress during execution.
     Event(SwitchEvent),
     /// A question during execution.
@@ -427,12 +439,16 @@ fn same_overview(old: &Overview, new: &Overview) -> bool {
 /// Forwards switch events to the UI; `stop` is set by [`Command::StopSessions`].
 struct GuiEvents {
     out: Outbox,
+    plan_seq: Option<u64>,
     stop: Arc<AtomicBool>,
 }
 
 impl SwitchEvents for GuiEvents {
     fn emit(&self, event: SwitchEvent) {
-        self.out.send(Reply::Event(event));
+        self.out.send(match self.plan_seq {
+            Some(seq) => Reply::PlanEvent { seq, event },
+            None => Reply::Event(event),
+        });
     }
 
     fn stop_requested(&self) -> bool {
@@ -493,7 +509,25 @@ impl Backend {
                     // The stop request of the running switch's session migration.
                     let stop = Arc::new(AtomicBool::new(false));
                     let last: LastOverview = Arc::default();
+                    let mut planning: Option<(u64, tokio::task::AbortHandle)> = None;
                     while let Some(command) = cmd_rx.recv().await {
+                        let plan_seq = match &command {
+                            Command::Plan { seq, .. } => {
+                                if let Some((_, old)) = planning.take() {
+                                    old.abort();
+                                }
+                                Some(*seq)
+                            }
+                            Command::CancelPlan { seq } => {
+                                if planning.as_ref().is_some_and(|(active, _)| active == seq)
+                                    && let Some((_, task)) = planning.take()
+                                {
+                                    task.abort();
+                                }
+                                continue;
+                            }
+                            _ => None,
+                        };
                         match &command {
                             // In order with the commands, before any task runs.
                             Command::Execute { .. } => stop.store(false, Ordering::SeqCst),
@@ -508,9 +542,12 @@ impl Backend {
                         let switches = switches.clone();
                         let stop = stop.clone();
                         let last = last.clone();
-                        tokio::spawn(async move {
+                        let task = tokio::spawn(async move {
                             handle(service, out, command, &switches, stop, &last).await
                         });
+                        if let Some(seq) = plan_seq {
+                            planning = Some((seq, task.abort_handle()));
+                        }
                     }
                 });
                 // Dropping the runtime cancels in-flight tasks when the window closes.
@@ -628,7 +665,12 @@ async fn handle(
             out.send(Reply::ClaudeDoctor(service.claude_diagnostics().await));
         }
         Command::Plan { seq, request } => {
-            let result = service.plan(request).await;
+            let events = Arc::new(GuiEvents {
+                out: out.clone(),
+                stop: Arc::new(AtomicBool::new(false)),
+                plan_seq: Some(seq),
+            });
+            let result = service.plan_with_events(request, events).await;
             let plan_id = result.as_ref().ok().map(|p| p.id.clone());
             out.send(Reply::Planned { seq, result });
             // The settings diff preview of the plan (local and remote rows).
@@ -641,6 +683,7 @@ async fn handle(
             let decider: Arc<dyn SwitchDecider> = Arc::new(GuiDecider(out.clone()));
             let events: Arc<dyn SwitchEvents> = Arc::new(GuiEvents {
                 out: out.clone(),
+                plan_seq: None,
                 stop,
             });
             let result = service.execute(*plan, options, decider, events).await;
@@ -764,7 +807,7 @@ async fn handle(
             }
         }
         // Handled by the command loop (it sets the stop flag in order).
-        Command::StopSessions => {}
+        Command::StopSessions | Command::CancelPlan { .. } => {}
     }
 }
 

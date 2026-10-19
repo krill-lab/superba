@@ -83,7 +83,7 @@ pub(crate) struct PlanContext {
     pub kept_foreign_auth: bool,
     /// WSL distributions the plan leaves out because they are stopped (user
     /// bug 54): recorded as pending after a successful switch.
-    pub wsl_pending: Vec<TargetId>,
+    pub wsl_pending: Vec<(TargetId, Option<Error>)>,
     /// User bug 58: the model kept in the local `config.toml`, recorded after
     /// the apply (`Some(None)` = none kept; `None` = the local home is not
     /// written).
@@ -2681,7 +2681,7 @@ impl Switcher {
         &self,
         i: RemotesInput<'_>,
         active_threads: &mut Vec<ThreadActivity>,
-        wsl_pending: &mut Vec<TargetId>,
+        wsl_pending: &mut Vec<(TargetId, Option<Error>)>,
         kept_host_models: &mut Vec<KeptHostModel>,
         draft: &mut Draft,
     ) -> (
@@ -2795,7 +2795,7 @@ impl Switcher {
                 // next switch that finds it running, or on demand.
                 if self.wsl_worth_updating(set, &host).await {
                     draft.info(text("switch.wsl.stopped_pending").arg_text("host", host.title()));
-                    wsl_pending.push(tid);
+                    wsl_pending.push((tid, None));
                 } else {
                     draft.info(text("switch.wsl.stopped_skipped").arg_text("host", host.title()));
                 }
@@ -2810,6 +2810,9 @@ impl Switcher {
                             .arg_text("host", host.title())
                             .arg("detail", e.detail()),
                     );
+                    // A running distribution that could not be probed must
+                    // remain visible as pending after the local switch.
+                    wsl_pending.push((tid, Some(e)));
                     continue;
                 }
                 Err(e) => {

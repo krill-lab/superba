@@ -136,6 +136,7 @@ async fn merging_another_process_record_keeps_the_newer_probe() {
     };
     let url = |c: &CachedHost| c.state.as_ref().unwrap().openai_base_url.clone().unwrap();
     let pending = HostPending {
+        failure: None,
         at: Timestamp(5),
         intent: SwitchIntent::Profile {
             profile_id: ProfileId::new("work"),

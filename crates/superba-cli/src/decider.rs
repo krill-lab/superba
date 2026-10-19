@@ -111,6 +111,10 @@ impl Progress {
                         .arg("severity", out.severity(level))
                         .arg_text("text", value),
                 ),
+                SwitchEvent::RemoteProgress {
+                    message: Some(message),
+                    ..
+                } => out.progress(message),
                 SwitchEvent::Sessions { progress } => {
                     let done = progress.stage == SessionStage::Done;
                     out.live_progress(session_progress_line(&progress), done)?;

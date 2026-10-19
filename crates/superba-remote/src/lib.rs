@@ -51,6 +51,7 @@ mod files;
 pub mod helper;
 mod hostops;
 pub mod install;
+pub mod operation;
 pub mod probe;
 pub mod records;
 pub mod scope;
@@ -737,7 +738,13 @@ impl SshRemoteHosts {
         desired: &ResolvedProfile,
         scope: RemoteApplyScope,
     ) -> Result<RemotePlan> {
-        let snap = self.snapshot(host, true).await?;
+        // Planning has already probed this host to select its settings/router
+        // path. Reuse that exact reading within this plan only. Apply still
+        // takes a fresh snapshot and checks every write precondition.
+        let snap = match operation::take(host) {
+            Some(snap) => snap,
+            None => self.snapshot(host, true).await?,
+        };
         let st = self.store(host).load_state().await?;
         let c = self.compute(host, &snap, desired, scope, &st).await?;
         let warnings = if c.blocked.is_empty() {
@@ -961,7 +968,9 @@ impl SshRemoteHosts {
     }
 
     async fn probe_impl(&self, host: &RemoteHost) -> Result<RemoteState> {
-        let state = self.snapshot(host, true).await?.state;
+        let snap = self.snapshot(host, true).await?;
+        operation::remember(host, &snap);
+        let state = snap.state;
         self.note_running(host);
         Ok(state)
     }

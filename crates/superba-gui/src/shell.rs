@@ -585,6 +585,9 @@ pub fn banner(
                     HeaderAside::Buttons(vec![Button::ghost(tr.t("action.cancel")).small()]),
                 );
                 cancel = buttons.iter().any(egui::Response::clicked);
+                for (_, message, _) in flow.remote_progress() {
+                    ui.label(tr.text(message));
+                }
                 ui.ctx().request_repaint();
             });
             if cancel {
@@ -814,6 +817,17 @@ pub fn banner(
                         step_chip(ui, pal, label, status);
                     }
                 });
+                for (_, message, _) in flow.remote_progress() {
+                    ui.label(tr.text(message));
+                }
+                if flow
+                    .remote_progress()
+                    .iter()
+                    .any(|(_, _, can_stop)| *can_stop)
+                    && ui.add(egui::Button::new(tr.t("action.cancel"))).clicked()
+                {
+                    flow.stop_remotes();
+                }
             });
             if !failed {
                 ui.ctx().request_repaint();

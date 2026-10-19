@@ -122,6 +122,7 @@ pub(crate) fn prelude(nonce: &str) -> String {
 LC_ALL=C
 export LC_ALL
 SB_N='{nonce}'
+sb_phase() {{ if [ "${{SB_PROGRESS:-}}" = 1 ]; then printf '@@SBPH:%s:%s\n' "$SB_N" "$1" >&4; fi; }}
 sb_hex() {{ od -A n -v -t x1 | tr -d ' \t\n'; }}
 sb_rec() {{ printf '@@SB:%s:%s:%s:' "$SB_N" "$1" "$2"; }}
 sb_put() {{ sb_rec K "$1"; printf '%s' "$2" | sb_hex; printf '\n'; }}
@@ -309,7 +310,7 @@ if sb_cx=$(command -v codex 2>/dev/null); then
     );
     if with_version {
         s.push_str(
-            "  sb_put codex_version \"$(codex --version </dev/null 2>/dev/null | head -n 1)\"\n",
+            "  sb_phase version\n  sb_put codex_version \"$(codex --version </dev/null 2>/dev/null | head -n 1)\"\n",
         );
     }
     // v0.3: where that `codex` really lives (install kind) and where an install
@@ -378,6 +379,9 @@ pub fn probe_script(nonce: &str, with_version: bool) -> String {
 /// (`F route`, for the default gateway).
 pub fn probe_script_for(nonce: &str, with_version: bool, flavor: Flavor) -> String {
     let mut body = String::new();
+    if flavor == Flavor::Wsl {
+        body.push_str("exec 4>&1\nSB_PROGRESS=1\nexport SB_PROGRESS\nsb_phase system\n");
+    }
     let _ = writeln!(
         body,
         "SB_LP={}",
@@ -389,6 +393,7 @@ sb_put shell "$(sb_shell)"
 sb_put home "${HOME:-}"
 sb_put zdotdir "${ZDOTDIR:-}"
 sb_put xdg_config_home "${XDG_CONFIG_HOME:-}"
+sb_phase login
 sb_lo=$(sb_login "$SB_LP" 2>/dev/null)
 sb_put login_status "$?"
 printf '%s\n' "$sb_lo"
@@ -398,6 +403,7 @@ if [ -z "$ch" ]; then
   if [ "${CODEX_AUTHAPI_BASE_URL+set}" = set ]; then sb_put plain_authapi "$CODEX_AUTHAPI_BASE_URL"; else sb_put plain_authapi_absent 1; fi
 fi
 sb_put codex_home_effective "$ch"
+sb_phase files
 sb_file config "$ch/config.toml"
 sb_file auth "$ch/auth.json"
 "#,
@@ -420,7 +426,8 @@ sb_file auth "$ch/auth.json"
         );
     }
     body.push_str(
-        r#"sb_put machine_id "$(sb_machine_id)"
+        r#"sb_phase system
+sb_put machine_id "$(sb_machine_id)"
 sb_put pids "$(sb_pids)"
 sb_put arch "$(uname -m 2>/dev/null)"
 sb_put kernel "$(uname -r 2>/dev/null)"
@@ -435,7 +442,12 @@ sb_put disk_free "$(df -Pk "${HOME:-/}" 2>/dev/null | awk 'NR == 2 { print $4 }'
         );
     }
     body.push_str("sb_put done 1");
-    wrap(nonce, &host_funcs(flavor), &body)
+    let script = wrap(nonce, &host_funcs(flavor), &body);
+    if flavor == Flavor::Wsl {
+        format!("# superba-wsl-probe\n{script}")
+    } else {
+        script
+    }
 }
 
 /// What a write operation expects to find before replacing a file (compare and
@@ -677,7 +689,7 @@ trap 'rmdir "$sb_lock" 2>/dev/null; exit 1' HUP INT TERM"#
         );
     }
     b.push_str("sb_put result ok");
-    wrap(nonce, "", &b)
+    format!("# superba-write\n{}", wrap(nonce, "", &b))
 }
 
 /// Read a list of files (records `F|A|U|L` named `f.<index>`).

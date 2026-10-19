@@ -987,7 +987,8 @@ pub trait SwitchEvents: Send + Sync {
     /// Handle one event.
     fn emit(&self, event: SwitchEvent);
 
-    /// The user asked to stop the session migration in progress. Polled while
+    /// The user asked to stop safe work: read-only WSL stages or the session
+    /// migration in progress. WSL writes already publishing files finish first. Polled while
     /// sessions move; honoured only while the latest
     /// [`SwitchEvent::Sessions`] report says
     /// [`can_stop`](crate::SessionProgress::can_stop) (everything is then
@@ -1667,6 +1668,16 @@ pub trait SwitchService: Send + Sync {
 
     /// Compute a plan; never writes.
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan>;
+
+    /// Plan with live remote progress. Dropping this read-only future cancels it.
+    async fn plan_with_events(
+        &self,
+        request: SwitchRequest,
+        events: Arc<dyn SwitchEvents>,
+    ) -> Result<SwitchPlan> {
+        let _ = events;
+        self.plan(request).await
+    }
 
     /// Execute a plan after the UI's countdown / confirmation. Re-checks turns before
     /// writing and again right before the IPC; asks `decider` when needed; reports

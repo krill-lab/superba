@@ -522,6 +522,7 @@ fn entry(w: &World, id: &str, status: JournalStatus) -> JournalEntry {
         }),
         migration: None,
         remotes: Vec::new(),
+        remote_failures: Vec::new(),
         rollback: Default::default(),
     }
 }

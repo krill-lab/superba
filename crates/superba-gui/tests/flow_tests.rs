@@ -243,6 +243,10 @@ fn cancelled_planning_discards_a_late_reply() {
     flow.request(plan.request.clone(), Duration::ZERO);
     take_plan(&mut flow);
     assert!(flow.cancel(Duration::from_secs(1)));
+    assert!(matches!(
+        flow.take_commands().as_slice(),
+        [Command::CancelPlan { seq: 1 }]
+    ));
     flow.on_planned(1, Ok(plan), Duration::from_secs(2));
     assert!(matches!(flow.stage(), Stage::Idle));
     assert_eq!(flow.stored_plans(), 0);
@@ -1035,4 +1039,30 @@ fn pending_destination_tracks_reselection_and_clears_on_cancel_or_execute() {
     let mut flow = planned_flow(5, plan);
     flow.switch_now(Duration::from_secs(2));
     assert!(flow.armed_destination().is_none());
+}
+
+#[test]
+fn planning_progress_is_current_and_cancel_stops_the_backend_task() {
+    let mut flow = Flow::new(5);
+    let now = Duration::ZERO;
+    flow.request(SwitchRequest::profile("work".into()), now);
+    let (seq, _) = take_plan(&mut flow);
+    let progress = SwitchEvent::RemoteProgress {
+        target_id: "wsl:Ubuntu".into(),
+        message: Some(LocalizedText::new(
+            "wsl.progress.files",
+            "Reading WSL configuration",
+        )),
+        can_stop: true,
+    };
+    flow.on_plan_event(seq, &progress, now);
+    assert_eq!(flow.remote_progress().len(), 1);
+    assert!(flow.cancel(now));
+    assert!(
+        matches!(flow.take_commands().as_slice(), [Command::CancelPlan { seq: active }] if *active == seq)
+    );
+    assert!(flow.remote_progress().is_empty());
+    flow.on_plan_event(seq, &progress, now);
+    assert!(flow.remote_progress().is_empty());
+    assert!(matches!(flow.stage(), Stage::Idle));
 }

@@ -250,13 +250,16 @@ pub struct HostView {
     pub pending: Option<HostPending>,
 }
 
-/// A switch that left a host out because the host was not running (user bug 54).
+/// A switch that left a host pending (stopped, timed out or failed).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostPending {
     /// When the switch ran.
     pub at: Timestamp,
     /// What the switch did on this computer.
     pub intent: crate::plan::SwitchIntent,
+    /// Why an attempted update failed; absent when the distribution was stopped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<Error>,
 }
 
 impl HostPending {

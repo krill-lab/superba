@@ -23,7 +23,7 @@ use superba_core::{Error, HostKind, RemoteHost, Result};
 
 use crate::ssh::{
     Input, PAYLOAD_BOOTSTRAP, RemoteShell, ScriptOutput, payload_prefix, run_with_input,
-    run_with_stdin,
+    run_with_input_streaming, run_with_stdin,
 };
 
 /// Longest wait for `wsl.exe --list` (a stopped WSL starts its service first).
@@ -385,12 +385,16 @@ pub fn wsl_args(distro: &str, remote: &[&str]) -> Vec<String> {
 #[derive(Clone, Debug)]
 pub struct WslShell {
     program: PathBuf,
+    ready: std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, ReadyState>>>,
+    warmup_timeout: Duration,
 }
 
 impl Default for WslShell {
     fn default() -> Self {
         Self {
             program: default_wsl_program(),
+            ready: Default::default(),
+            warmup_timeout: WARMUP_TIMEOUT,
         }
     }
 }
@@ -400,6 +404,8 @@ impl WslShell {
     pub fn with_program(program: impl Into<PathBuf>) -> Self {
         Self {
             program: program.into(),
+            ready: Default::default(),
+            warmup_timeout: WARMUP_TIMEOUT,
         }
     }
 
@@ -425,6 +431,230 @@ fn wsl_failure(distro: &str, out: &ScriptOutput) -> Option<Error> {
     })
 }
 
+// A cold WSL1 under load can spend most of the old 45 s before executing any
+// script. Readiness has its own allowance; every stage and retry shares a hard
+// deadline, and only a read-only probe is safe to replay.
+const WARMUP_TIMEOUT: Duration = Duration::from_secs(90);
+const READY_TTL: Duration = Duration::from_secs(300);
+type ReadyState = std::sync::Arc<tokio::sync::Mutex<Option<tokio::time::Instant>>>;
+
+impl WslShell {
+    async fn ready(
+        &self,
+        host: &RemoteHost,
+        distro: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<()> {
+        let events = crate::operation::events();
+        // Serialize initial contact (the GUI may probe a host in the background
+        // at the same time as a switch). Waiting for the lock is cancellable too.
+        let state = self
+            .ready
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .entry(distro.to_owned())
+            .or_default()
+            .clone();
+        crate::operation::report(events.as_ref(), host, Some("warmup"), 1, true);
+        let mut ready = self
+            .watch(
+                host,
+                "warmup",
+                1,
+                true,
+                deadline,
+                self.warmup_timeout,
+                state.lock(),
+                None,
+            )
+            .await?;
+        if ready.as_ref().is_some_and(|at| at.elapsed() < READY_TTL) {
+            return Ok(());
+        }
+        for attempt in 1..=2 {
+            crate::operation::report(events.as_ref(), host, Some("warmup"), attempt, true);
+            let cmd = self.command(&wsl_args(distro, &["/bin/true"]));
+            let run = run_with_stdin(
+                cmd,
+                b"",
+                self.warmup_timeout + Duration::from_secs(1),
+                distro,
+            );
+            let result = self
+                .watch(
+                    host,
+                    "warmup",
+                    attempt,
+                    true,
+                    deadline,
+                    self.warmup_timeout,
+                    run,
+                    None,
+                )
+                .await
+                .and_then(|r| r);
+            match result {
+                Ok(out) => {
+                    if let Some(e) = wsl_failure(distro, &out) {
+                        return Err(e);
+                    }
+                    *ready = Some(tokio::time::Instant::now());
+                    return Ok(());
+                }
+                Err(Error::Timeout { .. })
+                    if attempt == 1 && tokio::time::Instant::now() < deadline => {}
+                Err(e) => return Err(e),
+            }
+        }
+        unreachable!()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn watch<T>(
+        &self,
+        host: &RemoteHost,
+        initial: &str,
+        attempt: u8,
+        cancellable: bool,
+        deadline: tokio::time::Instant,
+        limit: Duration,
+        future: impl std::future::Future<Output = T>,
+        mut phases: Option<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    ) -> Result<T> {
+        let events = crate::operation::events();
+        let mut stage = initial.to_owned();
+        let mut since = tokio::time::Instant::now();
+        let mut due = deadline.min(since + limit);
+        let mut poll = tokio::time::interval(Duration::from_millis(100));
+        tokio::pin!(future);
+        loop {
+            tokio::select! {
+                biased;
+                _ = poll.tick() => {
+                    if cancellable && events.as_ref().is_some_and(|e| e.stop_requested()) {
+                        return Err(Error::Cancelled);
+                    }
+                }
+                _ = tokio::time::sleep_until(due) => {
+                    tracing::warn!(host = %host.target_id, %stage, attempt, elapsed_ms = since.elapsed().as_millis() as u64, "WSL stage timed out");
+                    return Err(Error::Timeout { what: format!("WSL {}: {stage} (attempt {attempt}/2, {} ms; total limit 180 s)", host.wsl_distro().unwrap_or_default(), since.elapsed().as_millis()) });
+                }
+                next = async { match phases.as_mut() { Some(rx) => rx.recv().await, None => std::future::pending().await } } => {
+                    if let Some(next) = next {
+                        tracing::info!(host = %host.target_id, %stage, attempt, elapsed_ms = since.elapsed().as_millis() as u64, "WSL stage finished");
+                        stage = next;
+                        since = tokio::time::Instant::now();
+                        let stage_limit = if stage == "login" { Duration::from_secs(60) } else { limit };
+                        due = deadline.min(since + stage_limit);
+                        crate::operation::report(events.as_ref(), host, Some(&stage), attempt, cancellable);
+                    } else { phases = None; }
+                }
+                result = &mut future => {
+                    tracing::info!(host = %host.target_id, %stage, attempt, elapsed_ms = since.elapsed().as_millis() as u64, "WSL stage finished");
+                    return Ok(result);
+                }
+            }
+        }
+    }
+
+    async fn script(
+        &self,
+        host: &RemoteHost,
+        script: &str,
+        timeout: Duration,
+        sink: Option<crate::ssh::LineSink>,
+    ) -> Result<ScriptOutput> {
+        let distro = require_distro(host)?;
+        let budget = crate::operation::budget(host, timeout.max(crate::operation::TOTAL_TIMEOUT));
+        let deadline = budget.deadline;
+        let events = crate::operation::events();
+        let _finish = ProgressEnd {
+            events: events.clone(),
+            host: host.clone(),
+        };
+        self.ready(host, &distro, deadline).await?;
+        let probe = script.starts_with("# superba-wsl-probe\n");
+        let prefix = script
+            .lines()
+            .find_map(|l| l.strip_prefix("SB_N='").and_then(|s| s.strip_suffix('\'')))
+            .map(|nonce| format!("@@SBPH:{nonce}:"));
+        for attempt in 1..=2 {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let prefix = prefix.clone();
+            let downstream = sink.clone();
+            let lines: crate::ssh::LineSink = std::sync::Arc::new(move |line| {
+                if let Some(stage) = prefix.as_ref().and_then(|p| line.strip_prefix(p))
+                    && matches!(stage, "login" | "version" | "files" | "system")
+                {
+                    let _ = tx.send(stage.to_owned());
+                }
+                if let Some(sink) = &downstream {
+                    sink(line);
+                }
+            });
+            let stage = if script.starts_with("# superba-write\n") {
+                "write"
+            } else {
+                "command"
+            };
+            crate::operation::report(events.as_ref(), host, Some(stage), attempt, probe);
+            let cmd = self.command(&wsl_args(&distro, &["/bin/sh", "-s"]));
+            let run = run_with_input_streaming(
+                cmd,
+                Input::new(script.as_bytes().to_vec()),
+                deadline.saturating_duration_since(tokio::time::Instant::now()),
+                &distro,
+                Some(lines),
+            );
+            // The transport's old whole-script timeout becomes a stage timeout.
+            let result = self
+                .watch(
+                    host,
+                    stage,
+                    attempt,
+                    probe,
+                    deadline,
+                    timeout,
+                    run,
+                    Some(rx),
+                )
+                .await
+                .and_then(|r| r);
+            match result {
+                Ok(out) => {
+                    return match wsl_failure(&distro, &out) {
+                        Some(e) => Err(e),
+                        None => Ok(out),
+                    };
+                }
+                Err(Error::Timeout { .. })
+                    if probe && attempt == 1 && tokio::time::Instant::now() < deadline =>
+                {
+                    self.ready
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .remove(&distro);
+                    self.ready(host, &distro, deadline).await?;
+                    tracing::info!(host = %host.target_id, "retrying read-only WSL probe after timeout");
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        unreachable!()
+    }
+}
+
+struct ProgressEnd {
+    events: Option<std::sync::Arc<dyn superba_core::SwitchEvents>>,
+    host: RemoteHost,
+}
+
+impl Drop for ProgressEnd {
+    fn drop(&mut self) {
+        crate::operation::report(self.events.as_ref(), &self.host, None, 1, false);
+    }
+}
+
 #[async_trait]
 impl RemoteShell for WslShell {
     async fn run(
@@ -433,13 +663,7 @@ impl RemoteShell for WslShell {
         script: &str,
         timeout: Duration,
     ) -> Result<ScriptOutput> {
-        let distro = require_distro(host)?;
-        let cmd = self.command(&wsl_args(&distro, &["/bin/sh", "-s"]));
-        let out = run_with_stdin(cmd, script.as_bytes(), timeout, &distro).await?;
-        match wsl_failure(&distro, &out) {
-            Some(e) => Err(e),
-            None => Ok(out),
-        }
+        self.script(host, script, timeout, None).await
     }
 
     async fn run_streaming(
@@ -449,11 +673,18 @@ impl RemoteShell for WslShell {
         timeout: Duration,
         sink: crate::ssh::LineSink,
     ) -> Result<ScriptOutput> {
+        // Session migration is already bounded and cancellable by its helper;
+        // do not replay a mutation or impose the switching budget on it.
         let distro = require_distro(host)?;
         let cmd = self.command(&wsl_args(&distro, &["/bin/sh", "-s"]));
-        let input = Input::new(script.as_bytes().to_vec());
-        let out =
-            crate::ssh::run_with_input_streaming(cmd, input, timeout, &distro, Some(sink)).await?;
+        let out = run_with_input_streaming(
+            cmd,
+            Input::new(script.as_bytes().to_vec()),
+            timeout,
+            &distro,
+            Some(sink),
+        )
+        .await?;
         match wsl_failure(&distro, &out) {
             Some(e) => Err(e),
             None => Ok(out),
@@ -550,4 +781,197 @@ sb_put done 1"#,
         max = HTTP_GET_MAX,
     );
     Ok(crate::script::wrap_public(nonce, &body))
+}
+
+#[cfg(all(test, unix))]
+mod timeout_tests {
+    use super::*;
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    use superba_core::{SwitchEvent, SwitchEvents};
+
+    fn host() -> RemoteHost {
+        RemoteHost {
+            target_id: superba_core::wsl::target_id("Ubuntu"),
+            label: "Ubuntu".into(),
+            host_id: None,
+            kind: HostKind::Wsl,
+            ssh: Default::default(),
+            sources: vec![],
+            connected: None,
+            wsl: Some(WslDistro::named("Ubuntu")),
+        }
+    }
+
+    fn fake(body: &str) -> (tempfile::TempDir, WslShell) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wsl.exe");
+        let staged = dir.path().join("staged");
+        std::fs::write(
+            &staged,
+            format!(
+                "#!/bin/sh\ncd {}\n{body}\n",
+                crate::script::sh_quote(&dir.path().display().to_string())
+            ),
+        )
+        .unwrap();
+        assert!(
+            superba_core::process::command("cp")
+                .arg(staged)
+                .arg(&path)
+                .status()
+                .unwrap()
+                .success()
+        );
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut shell = WslShell::with_program(path);
+        shell.warmup_timeout = Duration::from_millis(200);
+        (dir, shell)
+    }
+
+    #[derive(Default)]
+    struct Events {
+        messages: Mutex<Vec<SwitchEvent>>,
+        stop: AtomicBool,
+        stop_at_files: bool,
+    }
+    impl SwitchEvents for Events {
+        fn emit(&self, event: SwitchEvent) {
+            if self.stop_at_files
+                && matches!(&event, SwitchEvent::RemoteProgress { message: Some(m), .. } if m.key == "wsl.progress.files")
+            {
+                self.stop.store(true, Ordering::SeqCst);
+            }
+            self.messages.lock().unwrap().push(event);
+        }
+        fn stop_requested(&self) -> bool {
+            self.stop.load(Ordering::SeqCst)
+        }
+    }
+
+    #[tokio::test]
+    async fn warmup_timeout_retries_once_and_success_is_shared_by_clones() {
+        let (dir, shell) = fake(
+            "shift 5\nif [ \"$1\" = /bin/true ]; then\n echo warm >> calls\n if [ ! -f warmed ]; then touch warmed; exec sleep 5; fi\nfi\nexec \"$@\"",
+        );
+        for shell in [shell.clone(), shell] {
+            let out = shell
+                .run(&host(), "echo ready\n", Duration::from_secs(2))
+                .await
+                .unwrap();
+            assert_eq!(out.stdout, b"ready\n");
+        }
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("calls"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_timeout_retries_once_and_reports_the_stage() {
+        let (dir, shell) = fake("shift 5\nexec \"$@\"");
+        let events = Arc::new(Events::default());
+        let script = "# superba-wsl-probe\nSB_N='test'\necho attempt >> calls\necho '@@SBPH:test:files'\nif [ ! -f tried ]; then touch tried; exec sleep 5; fi\necho done\n";
+        let out = crate::operation::with_events(
+            events.clone(),
+            shell.run(&host(), script, Duration::from_millis(200)),
+        )
+        .await
+        .unwrap();
+        assert!(out.stdout.ends_with(b"done\n"));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("calls"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+        assert!(events.messages.lock().unwrap().iter().any(|e| matches!(e, SwitchEvent::RemoteProgress { message: Some(m), .. } if m.key == "wsl.progress.files" && m.render_fallback().contains("2/2"))));
+    }
+
+    #[tokio::test]
+    async fn mutation_timeout_is_never_replayed_and_names_wsl() {
+        let (dir, shell) = fake("shift 5\nexec \"$@\"");
+        let error = shell
+            .run(
+                &host(),
+                "# superba-write\necho written >> calls\nexec sleep 5\n",
+                Duration::from_millis(200),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, Error::Timeout { what } if what.contains("WSL Ubuntu: write") && !what.contains("ssh")),
+            "{error}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("calls"))
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_stops_the_probe_child_and_clears_progress() {
+        let (dir, shell) = fake("shift 5\nexec \"$@\"");
+        let events = Arc::new(Events {
+            stop_at_files: true,
+            ..Default::default()
+        });
+        let script = "# superba-wsl-probe\nSB_N='test'\necho $$ > pid\necho '@@SBPH:test:files'\nexec sleep 30\n";
+        let error = crate::operation::with_events(
+            events.clone(),
+            shell.run(&host(), script, Duration::from_secs(5)),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, Error::Cancelled);
+        let pid = std::fs::read_to_string(dir.path().join("pid")).unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let status = superba_core::process::command("kill")
+            .args(["-0", pid.trim()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(!status.success(), "the cancelled child still runs");
+        assert!(matches!(
+            events.messages.lock().unwrap().last(),
+            Some(SwitchEvent::RemoteProgress { message: None, .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn new_phases_cannot_extend_the_total_deadline() {
+        let shell = WslShell::default();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let work = async move {
+            loop {
+                let _ = tx.send("files".into());
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+        let start = tokio::time::Instant::now();
+        let result: Result<()> = shell
+            .watch(
+                &host(),
+                "command",
+                1,
+                true,
+                start + Duration::from_millis(100),
+                Duration::from_secs(30),
+                work,
+                Some(rx),
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Timeout { .. })));
+        assert!(start.elapsed() < Duration::from_secs(2));
+    }
 }

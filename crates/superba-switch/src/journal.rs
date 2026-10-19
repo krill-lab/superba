@@ -68,6 +68,9 @@ pub enum JournalStatus {
     RollingBack,
     /// Finished with the new state in place.
     Done,
+    /// Local work finished, but at least one remote failed. Receipts of
+    /// successful hosts remain available for rollback.
+    Partial,
     /// Finished after undoing the writes.
     RolledBack,
 }
@@ -124,6 +127,9 @@ pub struct JournalEntry {
     /// Remote receipts.
     #[serde(default)]
     pub remotes: Vec<RemoteReceipt>,
+    /// Failed hosts, including failures before a write returned a receipt.
+    #[serde(default)]
+    pub remote_failures: Vec<superba_core::RemoteOutcome>,
     /// Progress of an interrupted undo; absent in older journal files.
     #[serde(default)]
     pub rollback: RollbackProgress,
@@ -214,7 +220,7 @@ impl SwitchJournal {
                 .iter()
                 .find(|r| &r.target_id == target && !r.rolled_back)
                 .cloned()?;
-            (e.status == JournalStatus::Done).then_some((e, r))
+            matches!(e.status, JournalStatus::Done | JournalStatus::Partial).then_some((e, r))
         }))
     }
 
@@ -223,7 +229,12 @@ impl SwitchJournal {
         let finished: Vec<JournalEntry> = self
             .entries()?
             .into_iter()
-            .filter(|e| matches!(e.status, JournalStatus::Done | JournalStatus::RolledBack))
+            .filter(|e| {
+                matches!(
+                    e.status,
+                    JournalStatus::Done | JournalStatus::Partial | JournalStatus::RolledBack
+                )
+            })
             .collect();
         if finished.len() <= KEEP_FINISHED {
             return Ok(());

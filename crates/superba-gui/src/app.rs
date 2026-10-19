@@ -916,6 +916,7 @@ impl SuperbaApp {
                 Reply::Doctor(r) => self.data.doctor.finish(r),
                 Reply::ClaudeDoctor(r) => self.data.claude_diag.finish(r),
                 Reply::Planned { seq, result } => self.flow.on_planned(seq, result, now),
+                Reply::PlanEvent { seq, event } => self.flow.on_plan_event(seq, &event, now),
                 Reply::Event(ev) => self.on_event(ev),
                 Reply::Decide(d) => self.flow.on_decision(d, now),
                 Reply::Executed(r) => self.flow.on_executed(r, now),

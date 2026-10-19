@@ -104,6 +104,39 @@ fn a_stopped_distribution_with_a_pending_update_says_so_and_offers_update_now() 
     }
 }
 
+#[test]
+fn a_failed_update_shows_its_stage_and_offers_retry_in_both_languages() {
+    for (locale, retry, stopped) in [
+        (Locale::En, "Update now", "the distribution was stopped"),
+        (Locale::ZhCn, "立即更新", "当时该发行版未运行"),
+    ] {
+        let service = fake();
+        let mut h = harness([1280.0, 800.0], locale, &service);
+        let mut state = State::default();
+        state.selected = Some(wsl());
+        h.until(
+            |ui, cx, out| hosts::show(ui, cx, &mut state, out),
+            |f| f.has(retry),
+        );
+        let host = state
+            .hosts
+            .value
+            .as_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|h| h.host.target_id == wsl())
+            .unwrap();
+        host.pending.as_mut().unwrap().failure = Some(superba_core::Error::Timeout {
+            what: "WSL Ubuntu: files (attempt 2/2)".into(),
+        });
+        let f = h.frames(4, |ui, cx, out| hosts::show(ui, cx, &mut state, out));
+        assert!(f.all_text().contains("WSL Ubuntu: files (attempt 2/2)"));
+        assert!(!f.all_text().contains(stopped));
+        assert!(f.has(retry));
+        assert!(f.fits());
+    }
+}
+
 /// What `spb` changed while the GUI was open reaches the page (user bug 68):
 /// "Check again" reads the list again through `hosts_now` (which asks Windows
 /// which distributions run) and shows the stopped distribution with its pending

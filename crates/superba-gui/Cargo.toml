@@ -45,6 +45,7 @@ rfd = { workspace = true, optional = true }
 sys-locale.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 url.workspace = true
 # the token of the single-window handover (src/instance.rs)
 uuid.workspace = true

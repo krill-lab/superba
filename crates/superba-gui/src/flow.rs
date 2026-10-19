@@ -211,6 +211,7 @@ pub struct Flow {
     commands: Vec<Command>,
     notices: Vec<FlowNotice>,
     attention: Option<FlowAttention>,
+    remote_progress: Vec<(superba_core::TargetId, superba_core::LocalizedText, bool)>,
 }
 
 impl Default for Flow {
@@ -230,6 +231,7 @@ impl Flow {
             commands: Vec::new(),
             notices: Vec::new(),
             attention: None,
+            remote_progress: Vec::new(),
         }
     }
 
@@ -350,6 +352,7 @@ impl Flow {
         for effect in effects {
             match effect {
                 Effect::Plan { seq, request } => {
+                    self.remote_progress.clear();
                     self.last_request = Some(request.clone());
                     self.commands.push(Command::Plan { seq, request });
                 }
@@ -424,6 +427,10 @@ impl Flow {
         result: superba_core::Result<SwitchPlan>,
         now: Duration,
     ) {
+        if matches!(self.machine.state(), MachineState::Planning { seq: active } if *active == seq)
+        {
+            self.remote_progress.clear();
+        }
         match result {
             Ok(plan) => {
                 let ticket = PlanTicket::from_plan(&plan);
@@ -478,6 +485,10 @@ impl Flow {
                 }
             };
         }
+        if let MachineState::Planning { seq } = self.machine.state() {
+            self.commands.push(Command::CancelPlan { seq: *seq });
+        }
+        self.remote_progress.clear();
         let was_idle = matches!(self.machine.state(), MachineState::Idle);
         self.feed(Input::Cancel, now);
         !was_idle
@@ -579,8 +590,49 @@ impl Flow {
         }
     }
 
+    /// Current WSL stages, also while planning.
+    pub fn remote_progress(
+        &self,
+    ) -> &[(superba_core::TargetId, superba_core::LocalizedText, bool)] {
+        &self.remote_progress
+    }
+
+    /// Stop outstanding read-only WSL work; publishing files is not interrupted.
+    pub fn stop_remotes(&mut self) {
+        if self
+            .remote_progress
+            .iter()
+            .any(|(_, _, can_stop)| *can_stop)
+        {
+            self.commands.push(Command::StopSessions);
+            for (_, _, can_stop) in &mut self.remote_progress {
+                *can_stop = false;
+            }
+        }
+    }
+
+    /// Ignore events of a superseded or cancelled plan.
+    pub fn on_plan_event(&mut self, seq: u64, event: &SwitchEvent, now: Duration) {
+        if matches!(self.machine.state(), MachineState::Planning { seq: active } if *active == seq)
+        {
+            self.on_event(event, now);
+        }
+    }
+
     /// A progress event from `execute`.
     pub fn on_event(&mut self, event: &SwitchEvent, now: Duration) {
+        if let SwitchEvent::RemoteProgress {
+            target_id,
+            message,
+            can_stop,
+        } = event
+        {
+            self.remote_progress.retain(|(id, _, _)| id != target_id);
+            if let Some(message) = message {
+                self.remote_progress
+                    .push((target_id.clone(), message.clone(), *can_stop));
+            }
+        }
         if let Some(run) = &mut self.run {
             match event {
                 SwitchEvent::Phase { phase, .. } => run.phase = *phase,
@@ -716,6 +768,7 @@ impl Flow {
 
     /// `execute` returned.
     pub fn on_executed(&mut self, result: superba_core::Result<SwitchOutcome>, now: Duration) {
+        self.remote_progress.clear();
         let Some(run) = self.run.take() else {
             return;
         };

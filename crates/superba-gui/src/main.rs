@@ -69,6 +69,7 @@ fn main() -> ExitCode {
             .unwrap_or_else(superba_gui::i18n::system_locale),
     );
     report.begin();
+    report.install_wsl_diagnostics();
     report.install_panic_hook();
     match superba_gui::run(gui_args, &report) {
         Ok(()) => ExitCode::SUCCESS,

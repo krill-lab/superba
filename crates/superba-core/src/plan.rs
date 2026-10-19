@@ -918,6 +918,15 @@ pub enum StepStatus {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum SwitchEvent {
+    /// A WSL operation, including read-only planning before execution starts.
+    RemoteProgress {
+        /// Distribution being contacted.
+        target_id: TargetId,
+        /// Current stage (or `None` when finished).
+        message: Option<LocalizedText>,
+        /// Safe to interrupt before any remote files are published.
+        can_stop: bool,
+    },
     /// Entered a state.
     Phase {
         /// State.

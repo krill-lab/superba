@@ -11,3 +11,12 @@ networking_nat = "NAT networking"
 networking_mirrored = "mirrored networking"
 networking_none = "no networking"
 networking_virtio_proxy = "virtio proxy networking"
+
+[wsl.progress]
+warmup = "Starting {host} (attempt {attempt}/2)…"
+login = "Reading the login environment on {host} (attempt {attempt}/2)…"
+version = "Checking the Codex version on {host} (attempt {attempt}/2)…"
+files = "Reading configuration on {host} (attempt {attempt}/2)…"
+system = "Checking processes on {host} (attempt {attempt}/2)…"
+write = "Writing configuration on {host}…"
+command = "Running a command on {host} (attempt {attempt}/2)…"

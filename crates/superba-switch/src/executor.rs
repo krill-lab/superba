@@ -196,6 +196,7 @@ impl Switcher {
             env: None,
             migration: None,
             remotes: Vec::new(),
+            remote_failures: Vec::new(),
             rollback: Default::default(),
         };
         let session = pc.session.clone();
@@ -265,11 +266,32 @@ impl Switcher {
                 OutcomeStatus::Partial
             };
         }
+        run.entry.remote_failures = remotes
+            .iter()
+            .filter(|r| r.status == OutcomeStatus::Failed)
+            .cloned()
+            .collect();
+        // Persist a pending update even for a remote-only failure. A receipt is
+        // not evidence of failure: a timeout can happen before one is returned.
+        if crate::wsl::participates(&plan.request.intent) {
+            for r in &run.entry.remote_failures {
+                if superba_core::HostKind::of_target(&r.target_id) == superba_core::HostKind::Wsl {
+                    self.cache_host(&r.target_id, |c| {
+                        c.pending = Some(superba_core::HostPending {
+                            at: self.deps.clock.now(),
+                            intent: plan.request.intent.clone(),
+                            failure: r.error.clone(),
+                        });
+                    });
+                }
+            }
+        }
         let final_journal = match status {
             OutcomeStatus::Failed if run.entry.status == JournalStatus::RollingBack => {
                 JournalStatus::RollingBack
             }
             OutcomeStatus::RolledBack | OutcomeStatus::Cancelled => JournalStatus::RolledBack,
+            _ if !run.entry.remote_failures.is_empty() => JournalStatus::Partial,
             _ if run.written.any() || !run.entry.remotes.is_empty() => JournalStatus::Done,
             _ => JournalStatus::RolledBack,
         };
@@ -2130,17 +2152,22 @@ impl Run<'_> {
             let pending = superba_core::HostPending {
                 at: d.clock.now(),
                 intent: self.plan.request.intent.clone(),
+                failure: None,
             };
-            for id in &self.pc.wsl_pending {
-                self.sw
-                    .cache_host(id, |c| c.pending = Some(pending.clone()));
+            for (id, failure) in &self.pc.wsl_pending {
+                let mut pending = pending.clone();
+                pending.failure = failure.clone();
+                self.sw.cache_host(id, |c| c.pending = Some(pending));
             }
             for r in remotes.iter().filter(|r| {
                 r.status != OutcomeStatus::Failed
                     && superba_core::HostKind::of_target(&r.target_id)
                         == superba_core::HostKind::Wsl
             }) {
-                self.sw.cache_host(&r.target_id, |c| c.pending = None);
+                self.sw.cache_host(&r.target_id, |c| {
+                    c.pending = None;
+                    c.error = None;
+                });
             }
         }
         if let Some((target, record)) = self.pc.host_sync.clone()
