@@ -63,8 +63,8 @@ fn protect_windows_directory(path: &Path) -> Result<()> {
                     path_w.as_ptr(),
                     SE_FILE_OBJECT,
                     DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                    std::ptr::null(),
-                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
                     acl,
                     std::ptr::null(),
                 );

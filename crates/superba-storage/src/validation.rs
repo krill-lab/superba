@@ -261,7 +261,7 @@ fn local_volume(path: &Path) -> Result<()> {
         return Err(Error::io(path, &std::io::Error::last_os_error()));
     }
     // SAFETY: statfs succeeded.
-    if unsafe { stat.assume_init() }.f_flags & libc::MNT_LOCAL == 0 {
+    if unsafe { stat.assume_init() }.f_flags & libc::MNT_LOCAL as u32 == 0 {
         return Err(Error::invalid("data.path.network"));
     }
     Ok(())
