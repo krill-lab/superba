@@ -3,8 +3,10 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
+use superba_core::LocalContext;
+#[cfg(unix)]
+use superba_core::MapEnv;
 use superba_core::data::DataMoveProgressSink;
-use superba_core::{LocalContext, MapEnv};
 use superba_storage::{
     DataLock, LOCATION_FILE, MOVE_FILE, MoveJournal, Pointer, PreparedMove, resolve,
 };

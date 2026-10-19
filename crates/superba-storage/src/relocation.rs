@@ -336,7 +336,7 @@ pub fn metadata_file(relative: &Path) -> bool {
     if relative.extension().is_none_or(|ext| ext != "json") {
         return false;
     }
-    matches!(relative.to_str(), Some("profiles.json" | "state.json" | "env-state.json" | "secrets/vault.json"))
+    matches!(relative.to_str(), Some("profiles.json" | "harnesses.json" | "state.json" | "env-state.json" | "secrets/vault.json"))
         || relative.starts_with("journal")
         || relative.starts_with("remote")
         || (relative.starts_with("backups") && relative.file_name().is_some_and(|name|

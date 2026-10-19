@@ -182,7 +182,8 @@ pub fn body_ui(
                     egui::TextEdit::singleline(&mut state.destination)
                         .desired_width((ui.available_width() - 110.0).max(100.0))
                         .hint_text(cx.tr.t("prefs.data.destination")),
-                );
+                )
+                .accessible_name(cx.tr.t("prefs.data.destination"));
                 #[cfg(feature = "file-dialogs")]
                 if ui
                     .add(Button::new(cx.tr.t("prefs.data.choose")).small())
@@ -332,10 +333,12 @@ pub fn body_ui(
                 .num_columns(2)
                 .show(ui, |ui| {
                     ui.label(cx.tr.t("recording.usage_days"));
-                    ui.add(egui::DragValue::new(&mut stats.usage_days).range(1..=3650));
+                    ui.add(egui::DragValue::new(&mut stats.usage_days).range(1..=3650))
+                        .accessible_name(cx.tr.t("recording.usage_days"));
                     ui.end_row();
                     ui.label(cx.tr.t("prefs.data.max_rows"));
-                    ui.add(egui::DragValue::new(&mut stats.max_rows).range(1..=10_000_000));
+                    ui.add(egui::DragValue::new(&mut stats.max_rows).range(1..=10_000_000))
+                        .accessible_name(cx.tr.t("prefs.data.max_rows"));
                     ui.end_row();
                 });
             if stats != before {

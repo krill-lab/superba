@@ -540,6 +540,81 @@ impl SwitchService for LocatedService {
         service.execute(plan, options, decider, events).await
     }
 
+    async fn harness_list(&self) -> Result<Vec<superba_core::harness::HarnessSummary>> {
+        let (service, _lock) = self.read().await?;
+        service.harness_list().await
+    }
+
+    async fn harness_view(
+        &self,
+        harness: superba_core::harness::HarnessId,
+    ) -> Result<superba_core::harness::HarnessView> {
+        let (service, _lock) = self.read().await?;
+        service.harness_view(harness).await
+    }
+
+    async fn save_harness_settings(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        settings: superba_core::harness::HarnessSettings,
+    ) -> Result<superba_core::harness::HarnessView> {
+        let (service, _lock) = self.read().await?;
+        service.save_harness_settings(harness, settings).await
+    }
+
+    async fn save_provider_protocols(
+        &self,
+        provider: ProfileId,
+        protocols: superba_core::harness::ProviderProtocols,
+    ) -> Result<()> {
+        let (service, _lock) = self.read().await?;
+        service.save_provider_protocols(provider, protocols).await
+    }
+
+    async fn set_harness_router_token(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        token: Option<Secret>,
+    ) -> Result<superba_core::harness::HarnessView> {
+        let (service, _lock) = self.read().await?;
+        service.set_harness_router_token(harness, token).await
+    }
+
+    async fn harness_plan(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        kind: superba_core::harness::HarnessPlanKind,
+    ) -> Result<superba_core::harness::HarnessPlan> {
+        let (service, _lock) = self.read().await?;
+        service.harness_plan(harness, kind).await
+    }
+
+    async fn harness_apply(
+        &self,
+        plan: superba_core::harness::HarnessPlan,
+        take_over: bool,
+    ) -> Result<superba_core::harness::HarnessApplyReport> {
+        let (service, _lock) = self.read().await?;
+        service.harness_apply(plan, take_over).await
+    }
+
+    async fn harness_backups(
+        &self,
+        harness: superba_core::harness::HarnessId,
+    ) -> Result<Vec<superba_core::harness::HarnessBackup>> {
+        let (service, _lock) = self.read().await?;
+        service.harness_backups(harness).await
+    }
+
+    async fn harness_restore_backup(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        id: String,
+    ) -> Result<superba_core::harness::HarnessApplyReport> {
+        let (service, _lock) = self.read().await?;
+        service.harness_restore_backup(harness, id).await
+    }
+
     fn environment_event(&self, event: superba_core::app::EnvironmentEvent) {
         if let Ok(service) = self.inner.try_read()
             && let Ok(_lock) = superba_storage::DataLock::shared(&self.anchor)

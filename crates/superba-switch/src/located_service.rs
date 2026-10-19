@@ -147,3 +147,22 @@ impl LocatedService {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn production_wrapper_forwards_every_service_method() {
+        let contract = include_str!("../../superba-core/src/traits.rs")
+            .split("pub trait SwitchService: Send + Sync {")
+            .nth(1)
+            .unwrap();
+        let forwards = include_str!("located_service/delegates.rs");
+        for declaration in contract.split("fn ").skip(1) {
+            let name = declaration.split('(').next().unwrap().trim();
+            assert!(
+                forwards.contains(&format!("fn {name}(")),
+                "LocatedService must forward {name}; falling back to the trait default loses the operation"
+            );
+        }
+    }
+}
