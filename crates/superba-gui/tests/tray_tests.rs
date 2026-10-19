@@ -969,9 +969,15 @@ fn superba_tray_sections_show_the_window_and_open_the_requested_section() {
     for section in superba_gui::pages::SuperbaSection::ALL {
         sink.push(TrayEvent::Action(TrayAction::Superba(section)));
         let t = h.until(section.id(), |t| {
-            t.find_all(Some(Role::Tab), &tr.t(section.title_key()))
+            let tab = section.tab();
+            let selected = t
+                .find_all(Some(Role::Tab), &tr.t(tab.title_key()))
                 .iter()
-                .any(|id| t.node(*id).is_selected() == Some(true))
+                .any(|id| t.node(*id).is_selected() == Some(true));
+            selected
+                && (tab != superba_gui::pages::superba::SuperbaTab::Settings
+                    || t.find(Some(Role::Button), &tr.t(section.title_key()))
+                        .is_some_and(|id| t.node(id).is_selected() == Some(true)))
         });
         assert!(h.visible());
         assert!(t.unnamed().is_empty(), "{}", t.dump());

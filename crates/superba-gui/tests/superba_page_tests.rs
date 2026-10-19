@@ -440,8 +440,10 @@ fn settings_search_entry_only_lists_settings_and_global_shortcut_resets_scope() 
 fn preference_edits_still_emit_an_immediate_save() {
     let mut h = router_harness::Harness::new([960.0, 640.0], Locale::En, service(), true);
     let mut pages = PageStates::default();
-    let mut settings = Settings::default();
-    settings.reduce_motion = true;
+    let mut settings = Settings {
+        reduce_motion: true,
+        ..Settings::default()
+    };
     let page = Page::Superba(SuperbaSection::Appearance);
     let f = h.settle(|ui, cx, out| pages.show(page, ui, cx, &mut settings, out));
     h.click_text(&f, "Light");
