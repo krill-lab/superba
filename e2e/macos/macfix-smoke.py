@@ -41,6 +41,7 @@ class Run:
         self.exe = self.app / "Contents/MacOS/superba"
         self.env = dict(os.environ, SUPERBA_DATA_DIR=str(self.data),
                         CODEX_HOME=str(self.out / "codex"),
+                        CLAUDE_CONFIG_DIR=str(self.out / "claude"),
                         SUPERBA_SECRET_BACKEND="file")
         self.env.pop("SUPERBA_GUI_EXE", None)
         self.entry = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
@@ -179,7 +180,8 @@ class Run:
         # Test-only isolation for the process launchd will create. Product plist
         # arguments and bundle identity have already been checked above.
         entry["EnvironmentVariables"] = {k: self.env[k] for k in
-                                         ["SUPERBA_DATA_DIR", "CODEX_HOME", "SUPERBA_SECRET_BACKEND"]}
+                                         ["SUPERBA_DATA_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR",
+                                          "SUPERBA_SECRET_BACKEND"]}
         self.entry.write_bytes(plistlib.dumps(entry))
         self.command("/bin/launchctl", "bootstrap", "gui/" + str(os.getuid()), self.entry)
         self.command("/bin/launchctl", "print", self.target)
