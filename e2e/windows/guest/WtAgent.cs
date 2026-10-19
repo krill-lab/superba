@@ -61,6 +61,8 @@ public static class WtAgent
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int hh, uint flags);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
     [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
@@ -368,12 +370,30 @@ public static class WtAgent
     {
         if (IsIconic(h)) ShowWindow(h, 9);
         if (GetForegroundWindow() == h) return;
-        // The foreground lock lets a process that just produced input take the
-        // foreground: tap Alt first (the documented workaround), then ask.
-        KeyEvent(0x12, false, false); KeyEvent(0x12, true, false);
         BringWindowToTop(h);
         SetForegroundWindow(h);
+        if (GetForegroundWindow() != h)
+        {
+            // The agent's worker thread may not own the foreground input queue.
+            // Share it only for activation, and always detach before doing UIA work.
+            uint pid, current = GetCurrentThreadId();
+            uint foreground = GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+            bool attached = foreground != 0 && foreground != current
+                && AttachThreadInput(current, foreground, true);
+            try { BringWindowToTop(h); SetForegroundWindow(h); }
+            finally { if (attached) AttachThreadInput(current, foreground, false); }
+        }
+        if (GetForegroundWindow() != h)
+        {
+            // Keep Alt down while activating; releasing it before activation can
+            // open the other application's menu and prevent the foreground change.
+            KeyEvent(0x12, false, false);
+            try { SetForegroundWindow(h); }
+            finally { KeyEvent(0x12, true, false); }
+        }
         for (int i = 0; i < 10 && GetForegroundWindow() != h; i++) { Thread.Sleep(50); SetForegroundWindow(h); }
+        if (GetForegroundWindow() != h)
+            throw new InvalidOperationException("could not activate the target window; input/capture cancelled");
     }
 
     // ------------------------------------------------------------------ UI Automation
@@ -591,6 +611,7 @@ public static class WtAgent
         string how = action;
         object p;
         IntPtr win = ResolveWindow(a, false);
+        if (win != IntPtr.Zero) Foreground(win);
         switch (action)
         {
             case "invoke":
