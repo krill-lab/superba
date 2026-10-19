@@ -221,6 +221,16 @@ impl SwitchService for LocatedService {
         service.save_models(edit).await
     }
 
+    async fn save_router_catalog(&self, settings: RouterCatalogSettings) -> Result<()> {
+        let (service, _lock) = self.read().await?;
+        service.save_router_catalog(settings).await
+    }
+
+    async fn test_router_model(&self, model: String) -> Result<RouterModelTest> {
+        let (service, _lock) = self.read().await?;
+        service.test_router_model(model).await
+    }
+
     async fn hosts(&self) -> Result<Vec<HostView>> {
         let (service, _lock) = self.read().await?;
         service.hosts().await
@@ -329,6 +339,25 @@ impl SwitchService for LocatedService {
     async fn open_app_package(&self, path: PathBuf) -> Result<()> {
         let (service, _lock) = self.read().await?;
         service.open_app_package(path).await
+    }
+
+    async fn tools(&self, refresh: bool) -> Result<ToolsView> {
+        let (service, _lock) = self.read().await?;
+        service.tools(refresh).await
+    }
+
+    async fn tool_run(
+        &self,
+        request: ToolRequest,
+        progress: Arc<dyn ToolProgressSink>,
+    ) -> Result<ToolReport> {
+        let (service, _lock) = self.read().await?;
+        service.tool_run(request, progress).await
+    }
+
+    async fn tool_settings(&self, tool: ToolId, change: ToolSettingsChange) -> Result<ToolRow> {
+        let (service, _lock) = self.read().await?;
+        service.tool_settings(tool, change).await
     }
 
     async fn router_requests(&self, query: RequestQuery) -> Result<RequestPage> {
@@ -579,6 +608,42 @@ impl SwitchService for LocatedService {
         service.execute(plan, options, decider, events).await
     }
 
+    async fn harness_preview(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        settings: superba_core::harness::HarnessSettings,
+    ) -> Result<superba_core::harness::HarnessView> {
+        let (service, _lock) = self.read().await?;
+        service.harness_preview(harness, settings).await
+    }
+
+    async fn harness_models(&self, provider: ProfileId, refresh: bool) -> Result<ModelList> {
+        let (service, _lock) = self.read().await?;
+        service.harness_models(provider, refresh).await
+    }
+
+    async fn harness_file(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        file: String,
+    ) -> Result<superba_core::harness::HarnessFileDoc> {
+        let (service, _lock) = self.read().await?;
+        service.harness_file(harness, file).await
+    }
+
+    async fn save_harness_file(
+        &self,
+        save: superba_core::harness::HarnessFileSave,
+    ) -> Result<superba_core::harness::HarnessFileDoc> {
+        let (service, _lock) = self.read().await?;
+        service.save_harness_file(save).await
+    }
+
+    async fn harness_backup_contents(&self, id: String) -> Result<SecretBytes> {
+        let (service, _lock) = self.read().await?;
+        service.harness_backup_contents(id).await
+    }
+
     async fn harness_list(&self) -> Result<Vec<superba_core::harness::HarnessSummary>> {
         let (service, _lock) = self.read().await?;
         service.harness_list().await
@@ -619,6 +684,15 @@ impl SwitchService for LocatedService {
         service.set_harness_router_token(harness, token).await
     }
 
+    async fn harness_plan_preview(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        settings: superba_core::harness::HarnessSettings,
+    ) -> Result<superba_core::harness::HarnessPlan> {
+        let (service, _lock) = self.read().await?;
+        service.harness_plan_preview(harness, settings).await
+    }
+
     async fn harness_plan(
         &self,
         harness: superba_core::harness::HarnessId,
@@ -643,6 +717,18 @@ impl SwitchService for LocatedService {
     ) -> Result<Vec<superba_core::harness::HarnessBackup>> {
         let (service, _lock) = self.read().await?;
         service.harness_backups(harness).await
+    }
+
+    async fn harness_restore_reviewed_backup(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        id: String,
+        base_sha256: Option<String>,
+    ) -> Result<superba_core::harness::HarnessApplyReport> {
+        let (service, _lock) = self.read().await?;
+        service
+            .harness_restore_reviewed_backup(harness, id, base_sha256)
+            .await
     }
 
     async fn harness_restore_backup(
