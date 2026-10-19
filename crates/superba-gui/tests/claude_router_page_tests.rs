@@ -76,9 +76,16 @@ fn the_router_page_lists_claude_codes_providers_with_their_reason() {
             "{}",
             f.all_text()
         );
-        let reason = tr.text(&ClaudeIneligible::NoAnthropicEndpoint.text());
-        assert!(f.has(&reason), "{}", f.all_text());
         assert!(f.has("https://api.krill-code.net"), "{}", f.all_text());
+        // The window chrome reduces the column's visible height. The last
+        // member's reason may be below the fold; it must remain reachable
+        // by scrolling the router column.
+        let reason = tr.text(&ClaudeIneligible::NoAnthropicEndpoint.text());
+        h.scroll_at(f.find("Plain").unwrap().center(), egui::vec2(0.0, -160.0));
+        h.until(
+            |ui, cx, out| router::show(ui, cx, &mut state, out),
+            |f| f.has(&reason),
+        );
     }
 }
 

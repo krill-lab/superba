@@ -190,6 +190,18 @@ impl Harness {
         self.pending.push_back(vec![button(to, false)]);
     }
 
+    /// Scroll the column under `pos` by a wheel delta in points.
+    pub fn scroll_at(&mut self, pos: Pos2, delta: egui::Vec2) {
+        self.pending.push_back(vec![egui::Event::PointerMoved(pos)]);
+        self.pending.push_back(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
+            modifiers: Default::default(),
+        }]);
+    }
+
     /// Double click at `pos`.
     pub fn double_click_at(&mut self, pos: Pos2) {
         let button = |pressed| egui::Event::PointerButton {
