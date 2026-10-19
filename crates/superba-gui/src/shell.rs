@@ -1456,10 +1456,15 @@ fn choices(
                 ));
                 ui.horizontal_wrapped(|ui| {
                     if ui
-                        .add(Button::primary(tr.t("banner.restore.keep")).small())
+                        .add(Button::primary(tr.t("banner.restore.exact")).small())
                         .clicked()
                     {
-                        flow.answer_restore_provider(ProviderRestore::KeepOpenai, now);
+                        flow.answer_restore_provider(
+                            ProviderRestore::Baseline {
+                                reverse_migrate: false,
+                            },
+                            now,
+                        );
                     }
                     if ui
                         .add(Button::new(tr.t("banner.restore.reverse")).small())
@@ -1473,15 +1478,10 @@ fn choices(
                         );
                     }
                     if ui
-                        .add(Button::new(tr.t("banner.restore.exact")).small())
+                        .add(Button::new(tr.t("banner.restore.keep")).small())
                         .clicked()
                     {
-                        flow.answer_restore_provider(
-                            ProviderRestore::Baseline {
-                                reverse_migrate: false,
-                            },
-                            now,
-                        );
+                        flow.answer_restore_provider(ProviderRestore::KeepOpenai, now);
                     }
                 });
             }

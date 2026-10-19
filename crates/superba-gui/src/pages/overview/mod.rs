@@ -29,8 +29,7 @@ use std::time::{Duration, Instant};
 
 use egui::{Align, Layout, Rect, RichText, Sense, Ui, vec2};
 use superba_core::{
-    BillingSummary, LineCaps, Profile, ProviderRestore, RestoreTarget, Site, SpeedSupport,
-    SpeedTier, catalog,
+    BillingSummary, LineCaps, Profile, RestoreTarget, Site, SpeedSupport, SpeedTier, catalog,
 };
 
 use super::{Action, Cx, Page, PageStatus, PaletteItem, empty_state, error_state};
@@ -143,9 +142,7 @@ pub fn palette(cx: &Cx<'_>, _state: &State) -> Vec<PaletteItem> {
 pub fn command(state: &mut State, _cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     match command {
         "wizard" => out.push(Action::StartWizard),
-        "restore:original" => out.push(Action::Restore(RestoreTarget::Original {
-            provider: ProviderRestore::KeepOpenai,
-        })),
+        "restore:original" => out.push(Action::restore_original()),
         "restore:official" => out.push(Action::Restore(RestoreTarget::Official)),
         "refresh" => state.usage.at = None,
         other => tracing::debug!(command = other, "unknown overview command"),
@@ -263,9 +260,7 @@ fn menu(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
                 )
                 .clicked()
             {
-                out.push(Action::Restore(RestoreTarget::Original {
-                    provider: ProviderRestore::KeepOpenai,
-                }));
+                out.push(Action::restore_original());
             }
             if ui
                 .add_enabled(

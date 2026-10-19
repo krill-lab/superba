@@ -55,12 +55,16 @@ struct Host {
 
 impl Host {
     fn new() -> Self {
+        Self::with_config(&host_config(), false)
+    }
+
+    fn with_config(original: &str, wsl: bool) -> Self {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path().join("host-home");
         std::fs::create_dir_all(home.join(".codex")).unwrap();
         std::fs::write(home.join(".profile"), "").unwrap();
         let config = home.join(".codex/config.toml");
-        std::fs::write(&config, host_config()).unwrap();
+        std::fs::write(&config, original).unwrap();
         let data = DataDir::new(tmp.path().join("data"));
         let ctx = LocalContext::new(
             tmp.path().join("local-home"),
@@ -69,13 +73,20 @@ impl Host {
         );
         let engine = Arc::new(TomlConfigEngine::new(ctx));
         let shell = Arc::new(LocalShell::new(&home).with_login_shell("/bin/sh"));
-        let hosts = SshRemoteHosts::new(engine, data.clone()).with_shell(shell);
+        let hosts = SshRemoteHosts::new(engine, data.clone())
+            .with_shell(shell.clone())
+            .with_wsl_shell(shell);
+        let mut host = remote_host("devbox", Some("remote-ssh-discovered:devbox"));
+        if wsl {
+            host.kind = superba_core::HostKind::Wsl;
+            host.wsl = Some(superba_core::WslDistro::named("test-distro"));
+        }
         Self {
             _tmp: tmp,
             config,
             data,
             hosts,
-            host: remote_host("devbox", Some("remote-ssh-discovered:devbox")),
+            host,
         }
     }
 
@@ -109,6 +120,57 @@ impl Host {
             .map(|k| k.path)
             .collect()
     }
+}
+
+async fn original_restore_round_trips(wsl: bool) {
+    for original_url in ["", "openai_base_url = \"https://original.example/v1\"\n"] {
+        let original = format!(
+            "{original_url}model_provider = \"legacy\"\nmodel = \"gpt-5.5\"\n\n[model_providers.legacy]\nbase_url = \"https://legacy.example/v1\"\nenv_key = \"ORIGINAL_KEY\"\n\n[mcp_servers.docs]\ncommand = \"npx\"\nenv = {{ DOCS_TOKEN = \"fixture\" }}\n"
+        );
+        let h = Host::with_config(&original, wsl);
+        let home = h.config.parent().unwrap().parent().unwrap();
+        let rc = "# user's environment\nexport CODEX_AUTHAPI_BASE_URL=https://api-slb.krill-code.net\nexport ORIGINAL_KEY=fixture\n";
+        std::fs::write(home.join(".profile"), rc).unwrap();
+        let origin = Origin::parse(OVERSEAS).unwrap();
+        let mut pat = resolved(ResolvedMode::Token {
+            site_kind: SiteKind::Krill,
+            auth: AuthMode::Pat,
+            endpoints: ResolvedEndpoints::for_line(
+                &origin,
+                CodexPath::BackendApiCodex,
+                AuthMode::Pat,
+            )
+            .unwrap(),
+            key: Secret::new(KEY),
+        });
+        pat.settings = superba_core::CodexSettings::krill_recommended();
+        for profile in [&pat, &apikey(None), &pat] {
+            h.apply(profile, RemoteApplyScope::Both).await;
+            assert!(h.config().contains("openai_base_url"));
+        }
+        let restore = resolved(ResolvedMode::Original {
+            provider: ProviderRestore::Baseline {
+                reverse_migrate: false,
+            },
+        });
+        h.apply(&restore, RemoteApplyScope::Both).await;
+        assert_eq!(h.config(), original);
+        assert!(!home.join(".codex/auth.json").exists());
+        assert_eq!(std::fs::read_to_string(home.join(".profile")).unwrap(), rc);
+        assert!(h.owned().await.is_empty());
+        h.apply(&restore, RemoteApplyScope::Both).await;
+        assert_eq!(h.config(), original);
+    }
+}
+
+#[tokio::test]
+async fn ssh_restore_removes_added_keys_and_preserves_original_values_after_switches() {
+    original_restore_round_trips(false).await;
+}
+
+#[tokio::test]
+async fn wsl_restore_removes_added_keys_and_preserves_original_values_after_switches() {
+    original_restore_round_trips(true).await;
 }
 
 fn line(path: &str, cfg: &str) -> Option<String> {
@@ -327,6 +389,16 @@ async fn restoring_the_original_changes_only_the_connection_of_a_following_host(
         scopes(&w),
         vec![("dev".to_owned(), RemoteApplyScope::Connection)]
     );
+    // Even if the local original used the default provider, a following host
+    // may have used a custom one. It must receive an exact restore policy too.
+    assert!(matches!(
+        w.remote.scoped.lock().unwrap()[0].2.mode,
+        ResolvedMode::Original {
+            provider: ProviderRestore::Baseline {
+                reverse_migrate: false
+            }
+        }
+    ));
 
     // A host the user selects explicitly gets both key families restored.
     w.remote.scoped.lock().unwrap().clear();

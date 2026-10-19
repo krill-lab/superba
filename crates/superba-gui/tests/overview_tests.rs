@@ -502,6 +502,23 @@ async fn fake_data() -> Data {
     data
 }
 
+#[tokio::test]
+async fn restore_original_command_uses_the_shared_provider_choice() {
+    let data = fake_data().await;
+    let mut state = overview::State::default();
+    let mut actions = Vec::new();
+    with_cx(&data, Locale::En, |cx| {
+        overview::command(&mut state, cx, "restore:original", &mut actions);
+    });
+    assert_eq!(actions.len(), 1);
+    let request = superba_gui::app::planned_request(&actions[0]).unwrap();
+    assert!(matches!(
+        request.intent,
+        superba_core::SwitchIntent::Profile { profile_id, .. }
+            if profile_id.as_str() == superba_core::catalog::PROFILE_ORIGINAL
+    ));
+}
+
 fn with_cx<R>(data: &Data, locale: Locale, f: impl FnOnce(&Cx<'_>) -> R) -> R {
     let tr = Tr::new(locale);
     let fonts = superba_gui::design::fonts::FontReport::default();

@@ -433,6 +433,46 @@ fn restore_provider_answer_updates_the_restore_intent() {
 }
 
 #[test]
+fn original_profile_restore_waits_for_and_applies_the_provider_answer() {
+    let request =
+        superba_gui::app::planned_request(&superba_gui::pages::Action::restore_original()).unwrap();
+    assert!(matches!(
+        &request.intent,
+        SwitchIntent::Profile { profile_id, .. }
+            if profile_id.as_str() == superba_core::catalog::PROFILE_ORIGINAL
+    ));
+    for provider in [
+        ProviderRestore::KeepOpenai,
+        ProviderRestore::Baseline {
+            reverse_migrate: false,
+        },
+        ProviderRestore::Baseline {
+            reverse_migrate: true,
+        },
+    ] {
+        let mut plan = full_plan();
+        plan.request = request.clone();
+        plan.choices.push(PlanChoice::RestoreProvider {
+            baseline_provider: "legacy".into(),
+            created_during: 2,
+            migrated_in: 3,
+        });
+        let mut flow = planned_flow(0, plan);
+        assert!(matches!(flow.stage(), Stage::Choose { .. }));
+        flow.tick(Duration::from_secs(60));
+        assert!(flow.take_commands().is_empty());
+        flow.answer_restore_provider(provider, Duration::from_secs(61));
+        let (_, replanned) = take_plan(&mut flow);
+        assert_eq!(
+            replanned.intent,
+            SwitchIntent::Restore {
+                target: RestoreTarget::Original { provider },
+            }
+        );
+    }
+}
+
+#[test]
 fn accepting_risks_answers_only_the_corresponding_request_fields() {
     let foreign = PlanChoice::ForeignEnv {
         lines: vec![RcLine {

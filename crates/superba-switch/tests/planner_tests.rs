@@ -14,8 +14,9 @@ use pretty_assertions::assert_eq;
 use superba_core::{
     AuthApiHealth, AuthMode, AuthShape, BlockReason, CodexProcessKind, CodexVersion, ConsumerKind,
     EnvOp, Error, FullRestartReason, KeyAccess, LegacySessionChoice, Locale, MigrationSelector,
-    PlanChoice, ProfileId, ProviderRestore, RcLine, RestartKind, RestoreTarget, SwitchIntent,
-    SwitchPlan, SwitchRequest, SwitchService, TargetId, Timestamp, codex::LEGACY_KRILL_PROVIDER,
+    PlanChoice, ProfileId, ProviderRestore, RcLine, ResolvedMode, RestartKind, RestoreTarget,
+    SwitchIntent, SwitchPlan, SwitchRequest, SwitchService, TargetId, Timestamp,
+    codex::LEGACY_KRILL_PROVIDER,
 };
 
 fn req(profile: &str) -> SwitchRequest {
@@ -718,6 +719,29 @@ async fn original_profile_with_legacy_baseline_asks_about_the_provider() {
     assert!(matches!(
         w.env.plans.lock().unwrap().last(),
         Some(EnvOp::RestoreBaseline { .. })
+    ));
+}
+
+#[tokio::test]
+async fn original_profile_without_hidden_sessions_restores_the_baseline_provider() {
+    let w = World::new();
+    w.config
+        .baseline
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .provider_key = Some("krill".into());
+    w.sessions.report.lock().unwrap().by_provider.clear();
+    let p = plan(&w, req("original")).await;
+    assert!(p.choices.is_empty(), "{:?}", p.choices);
+    assert!(matches!(
+        p.config.unwrap().desired.unwrap().mode,
+        ResolvedMode::Original {
+            provider: ProviderRestore::Baseline {
+                reverse_migrate: false
+            }
+        }
     ));
 }
 

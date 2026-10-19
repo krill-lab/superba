@@ -521,6 +521,14 @@ impl Flow {
             |r| {
                 if let SwitchIntent::Restore { target } = &mut r.intent {
                     *target = RestoreTarget::Original { provider };
+                } else if matches!(
+                    &r.intent,
+                    SwitchIntent::Profile { profile_id, .. }
+                        if profile_id.as_str() == superba_core::catalog::PROFILE_ORIGINAL
+                ) {
+                    r.intent = SwitchIntent::Restore {
+                        target: RestoreTarget::Original { provider },
+                    };
                 } else if let SwitchIntent::Uninstall { provider: p, .. } = &mut r.intent {
                     *p = Some(provider);
                 }

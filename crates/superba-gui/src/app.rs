@@ -8,9 +8,9 @@ use std::time::{Duration, Instant};
 use egui::{Align, Frame, Layout, Panel, ScrollArea, UiBuilder, pos2};
 use superba_core::{
     EnvironmentEvent, KeyInput, LineCaps, Locale, MigrationRequest, MigrationSelector,
-    OutcomeStatus, ProfileId, ProviderRestore, RestartKind, RestoreTarget, Settings, Severity,
-    SiteId, StepStatus, SwitchEvent, SwitchIntent, SwitchPhase, SwitchRequest, SwitchService,
-    TargetId, TargetSelection, Theme, Timestamp, catalog, codex::PROVIDER_OPENAI,
+    OutcomeStatus, ProfileId, RestartKind, RestoreTarget, Settings, Severity, SiteId, StepStatus,
+    SwitchEvent, SwitchIntent, SwitchPhase, SwitchRequest, SwitchService, TargetId,
+    TargetSelection, Theme, Timestamp, catalog, codex::PROVIDER_OPENAI,
 };
 
 use crate::cadence::{self, Cadence, Due};
@@ -2207,9 +2207,7 @@ pub fn shell_palette(tr: &Tr, data: &Data) -> Vec<PaletteItem> {
             detail: None,
             keywords: vec!["original".into(), "restore".into(), "undo".into()],
             group: PaletteGroup::Switch,
-            action: Action::Restore(RestoreTarget::Original {
-                provider: ProviderRestore::KeepOpenai,
-            }),
+            action: Action::restore_original(),
         });
         // GH#5: let cc-switch, AI Toolbox, ... manage Codex (also before they
         // changed anything), unless Superba already owns nothing.

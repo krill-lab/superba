@@ -337,6 +337,18 @@ impl PaletteGroup {
     }
 }
 
+impl Action {
+    /// Restore through the built-in profile so the service can ask about
+    /// session visibility before choosing a different provider policy.
+    pub fn restore_original() -> Self {
+        Self::Switch {
+            profile: ProfileId::new(superba_core::catalog::PROFILE_ORIGINAL),
+            line: None,
+            auth: None,
+        }
+    }
+}
+
 /// Something a page asks the app to do.
 #[derive(Debug)]
 pub enum Action {

@@ -942,11 +942,13 @@ impl Switcher {
                         .unwrap_or(0);
                     now.saturating_sub(before).saturating_sub(migrated_in)
                 });
-                draft.choices.push(PlanChoice::RestoreProvider {
-                    baseline_provider: provider,
-                    created_during,
-                    migrated_in,
-                });
+                if created_during > 0 || migrated_in > 0 || report.is_none() {
+                    draft.choices.push(PlanChoice::RestoreProvider {
+                        baseline_provider: provider,
+                        created_during,
+                        migrated_in,
+                    });
+                }
             }
         }
         let migration = match (&dest.migration, local) {
@@ -2226,10 +2228,18 @@ impl Switcher {
         let mut question = None;
         let provider = match (provider, &baseline_provider) {
             (Some(p), _) => p,
-            (None, None) => ProviderRestore::KeepOpenai,
+            (None, None) => ProviderRestore::Baseline {
+                reverse_migrate: false,
+            },
             (None, Some(bp)) => {
                 question = Some(bp.clone());
-                ProviderRestore::KeepOpenai
+                // Restoring means returning every managed key to its original
+                // value, including absence. KeepOpenai rewrites the original
+                // provider's base URL into a new top-level key, so it must be
+                // an explicit answer to the session-visibility question.
+                ProviderRestore::Baseline {
+                    reverse_migrate: false,
+                }
             }
         };
         let migration = match (provider, &baseline_provider) {

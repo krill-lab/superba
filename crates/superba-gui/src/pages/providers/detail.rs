@@ -4,7 +4,7 @@
 //! provider, the official login's own detail, and the delete confirmation.
 
 use egui::{Align, Layout, RichText, Ui};
-use superba_core::{KeyInput, Profile, ProfileId, ProviderRestore, RestoreTarget};
+use superba_core::{KeyInput, Profile, ProfileId, RestoreTarget};
 
 use super::{State, Tab, actions, form, ops};
 use crate::design::fonts::{Weight, font};
@@ -278,9 +278,7 @@ fn official(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
                 )
                 .clicked()
         {
-            out.push(Action::Restore(RestoreTarget::Original {
-                provider: ProviderRestore::KeepOpenai,
-            }));
+            out.push(Action::restore_original());
         }
     });
     section_gap(ui, cx);

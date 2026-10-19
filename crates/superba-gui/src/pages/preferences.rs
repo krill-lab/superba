@@ -4,8 +4,8 @@
 
 use egui::{Sense, Stroke, Ui, vec2};
 use superba_core::{
-    Background, CloseAction, DownloadSource, FeedSourceChoice, Locale, ProviderRestore,
-    RestoreTarget, Settings, Theme, WindowsAppSource,
+    Background, CloseAction, DownloadSource, FeedSourceChoice, Locale, RestoreTarget, Settings,
+    Theme, WindowsAppSource,
 };
 
 use super::{Action, Cx, Page, page_header, section};
@@ -548,9 +548,7 @@ pub fn show(
                     )
                     .clicked()
                 {
-                    out.push(Action::Restore(RestoreTarget::Original {
-                        provider: ProviderRestore::KeepOpenai,
-                    }));
+                    out.push(Action::restore_original());
                 }
             },
         );
