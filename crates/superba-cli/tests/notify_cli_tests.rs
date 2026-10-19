@@ -110,7 +110,17 @@ impl Home {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
-        for d in ["home", "codex", "data", "proj", "bin"] {
+        for d in [
+            "home",
+            "home/AppData/Roaming",
+            "home/AppData/Local",
+            "codex",
+            "claude",
+            "data",
+            "proj",
+            "bin",
+            "tmp",
+        ] {
             std::fs::create_dir_all(root.join(d)).unwrap();
         }
         Self { _dir: dir, root }
@@ -124,11 +134,32 @@ impl Home {
         cmd.env_clear()
             .env("HOME", self.p("home"))
             .env("USERPROFILE", self.p("home"))
+            .env("APPDATA", self.p("home/AppData/Roaming"))
+            .env("LOCALAPPDATA", self.p("home/AppData/Local"))
+            .env("TEMP", self.p("tmp"))
+            .env("TMP", self.p("tmp"))
             .env("CODEX_HOME", self.p("codex"))
+            .env("CLAUDE_CONFIG_DIR", self.p("claude"))
             .env("SUPERBA_DATA_DIR", self.p("data"))
             .env("SUPERBA_SECRET_BACKEND", "file")
-            .env("SUPERBA_LOCALE", "en")
-            .env("PATH", format!("{}:/usr/bin:/bin", self.p("bin").display()));
+            .env("SUPERBA_LOCALE", "en");
+        let mut paths = vec![self.p("bin")];
+        #[cfg(unix)]
+        paths.extend([PathBuf::from("/usr/bin"), PathBuf::from("/bin")]);
+        #[cfg(windows)]
+        {
+            // Known-folder resolution needs the Windows installation variables,
+            // even though every writable test directory is isolated above.
+            for name in ["SystemRoot", "SystemDrive", "WINDIR"] {
+                if let Some(value) = std::env::var_os(name) {
+                    cmd.env(name, value);
+                }
+            }
+            if let Some(root) = std::env::var_os("SystemRoot") {
+                paths.push(PathBuf::from(root).join("System32"));
+            }
+        }
+        cmd.env("PATH", std::env::join_paths(paths).unwrap());
     }
 
     fn spb(&self, args: &[&str], envs: &[(&str, &str)], stdin: Option<&str>) -> Output {
@@ -293,12 +324,20 @@ fn channels_test_send_hooks_and_secrets() {
     .unwrap();
     home.ok(&["notify", "install", "codex"], &[]);
     let spb = env!("CARGO_BIN_EXE_spb");
-    assert!(
-        home.config().contains(&format!(
-            "notify = [\"{spb}\", \"notify\", \"codex\", \"--\", \"/usr/local/bin/toast\", \"--codex\"]"
-        )),
-        "{}",
-        home.config()
+    // Windows backslashes can be escaped or represented as a TOML literal.
+    // Check the actual command arguments, not the serializer's quoting choice.
+    let config: toml::Value = toml::from_str(&home.config()).unwrap();
+    assert_eq!(
+        config["notify"],
+        toml::Value::try_from(vec![
+            spb,
+            "notify",
+            "codex",
+            "--",
+            "/usr/local/bin/toast",
+            "--codex",
+        ])
+        .unwrap()
     );
     let status: Value =
         serde_json::from_str(&home.ok(&["notify", "status", "--json"], &[])).unwrap();

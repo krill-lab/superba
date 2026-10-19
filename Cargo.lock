@@ -4513,6 +4513,7 @@ dependencies = [
  "sys-locale",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
  "url",
