@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from e2e.shared import desktop_flows
 
 from ..runner import DATA, scenario
+from ..ui import Ui
 from ..vm import Blocked
 
 
@@ -39,24 +40,36 @@ def desktop_switch(t):
         desktop_flows.wizard_detect(t.ui)
         t.shot("desktop-not-installed")
         raise Blocked("ChatGPT/Codex desktop app is not installed; no app was downloaded")
-    t.baseline()
-    first, first_url, _ = t.provider("mac-a")
-    second, second_url, _ = t.provider("mac-b", (t.start_fixture() + "/alternate/v1", "sk-e2e-macos-second"))
-    t.runner.redactor.add("sk-e2e-macos-second")
-    t.spb("switch", "--profile", first, "--yes", "--write-only")
+    if t.runner.opts.net == "real":
+        first_url, second_url = pat_desktop_lines(t)
+        switch = ("switch", "--profile", "mac-pat", "--line", "b")
+    else:
+        t.baseline()
+        first, first_url, _ = t.provider("mac-a")
+        second, second_url, _ = t.provider("mac-b", (t.start_fixture() + "/alternate/v1", "sk-e2e-macos-second"))
+        t.runner.redactor.add("sk-e2e-macos-second")
+        t.spb("switch", "--profile", first, "--yes", "--write-only")
+        switch = ("switch", "--profile", second)
     desktop = t.rpc("desktop")  # BLOCKED if absent; never installs a desktop app.
     t.save("desktop.json", desktop)
+    desktop_ui = Ui(t, process_re="^(ChatGPT|Codex)$", pid=desktop["pid"])
+    desktop_ui.wait_window()
+    t.ui = desktop_ui
+    t.shot("desktop-before-switch")
+    if t.runner.opts.net == "real":
+        desktop_onboarding(t, desktop_ui)
+        t.shot("desktop-ready")
     ui = t.configured_ui()
     ui.page("providers")
     t.shot("before-switch")
     # A full relaunch through LaunchServices can discard an externally supplied HOME.
     # Never grant full-restart permission to this externally started, isolated app.
-    preview = t.spb("switch", "--profile", second, "--dry-run", "--json", ok=False)
+    preview = t.spb(*switch, "--dry-run", "--json", ok=False)
     plan = json.loads(preview["stdout"]) if preview["code"] == 0 else {}
     kind = plan.get("plan", {}).get("primary", {}).get("kind")
     if preview["code"] or kind != "app_server_hot":
         raise Blocked("The isolated desktop requires a full restart; this build cannot preserve its test HOME")
-    result = t.spb("switch", "--profile", second, "--json", ok=False)
+    result = t.spb(*switch, "--json", ok=False)
     if result["code"] != 0:
         raise Blocked("Desktop switch needs a managed, isolated hot-switch session; full restart was not authorized")
     outcome = json.loads(result["stdout"])["outcome"]
@@ -65,12 +78,66 @@ def desktop_switch(t):
     checks = outcome.get("verification") or {}
     for check in ("process", "files", "renderer"):
         t.check(checks.get(check, {}).get("kind") == "passed", "Hot-switch verification: " + check)
-    config = t.read("home/.codex/config.toml") or ""
-    t.check(second_url in config and first_url != second_url, "Second line is written to Codex")
+    config = tomllib.loads(t.read("home/.codex/config.toml") or "")
+    t.check(config.get("openai_base_url") == second_url and first_url != second_url,
+            "Second line is the exact active Codex endpoint")
     processes = t.rpc("procs")
     t.check(any(row["pid"] == desktop["pid"] for row in processes), "Hot switch keeps the isolated desktop process")
     t.save("processes-after.json", processes)
     t.shot("after-switch")
+    t.ui = desktop_ui
+    t.shot("desktop-after-switch")
+    if t.runner.opts.net == "real":
+        t.save("line-connections.jsonl", t.read("home/line-connections.jsonl") or "")
+
+
+def pat_desktop_lines(t):
+    upstream = t.runner.secrets.get("SUPERBA_E2E_UPSTREAM")
+    key = t.runner.secrets.get("SUPERBA_E2E_KEY")
+    if not upstream or not key:
+        raise Blocked("PAT desktop mode requires the designated test relay and credential")
+    t.runner.redactor.add(urlsplit(upstream).hostname)
+    lines = t.rpc("line_proxy", upstream=upstream.rstrip("/"))
+    t.rpc("env", values={"HTTPS_PROXY": lines["proxy"], "HTTP_PROXY": lines["proxy"],
+                         "ALL_PROXY": lines["proxy"], "NO_PROXY": "localhost,127.0.0.1,::1",
+                         "CODEX_AUTHAPI_BASE_URL": lines["origins"]["a"],
+                         "SUPERBA_TEST_SITES": t.root + "/home/desktop-sites.json"})
+    site = {"id": "mac-e2e", "kind": "krill", "name": {"key": "", "fallback": "Mac e2e"},
+            "homepage": "https://example.invalid/", "default_line": "a",
+            "lines": [{"id": name, "name": {"key": "", "fallback": "Mac line " + name},
+                       "origin": origin, "source": "test"} for name, origin in lines["origins"].items()],
+            "capabilities": {"auth_modes": ["pat", "apikey"],
+                             "codex_paths": ["backend_api_codex", "codex_v1"],
+                             "latency_probe": True, "key_check": True,
+                             "account_summary": False, "model_catalog": True},
+            "endpoints": {"models_unauth": "/backend-api/codex/models",
+                          "whoami": "/v1/user-auth-credential/whoami",
+                          "accounts_check": "/backend-api/wham/accounts/check",
+                          "backend_codex_models": "/backend-api/codex/models",
+                          "codex_v1_models": "/codex/v1/models"}}
+    t.write("home/desktop-sites.json", json.dumps([site]))
+    t.write("home/.codex/config.toml", "# e2e original\n")
+    t.spb("profile", "add", "mac-pat", "--site", "mac-e2e", "--auth", "pat", "--line", "a",
+          "--key-stdin", stdin=key + "\n")
+    t.spb("switch", "--profile", "mac-pat", "--line", "a", "--yes", "--write-only")
+    auth = json.loads(t.read("home/.codex/auth.json"))
+    t.check("personal_access_token" in auth, "Desktop fixture uses PAT authentication in the temporary HOME")
+    return tuple(lines["origins"][name] + "/backend-api/codex" for name in ("a", "b"))
+
+
+def desktop_onboarding(t, ui):
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        if (ui.exists(type="AXTextArea", enabled=True)
+                and not ui.has_text(r"Which best describes your work|Skip setup\?")):
+            t.check(True, "PAT desktop reaches an editable composer without personal-account login")
+            return
+        for label in ("Engineering", "Continue", "Skip", "Go to ChatGPT", "Got it", "Not now"):
+            if ui.exists(name=label, type="Button", enabled=True):
+                ui.click(name=label, type="Button")
+                break
+        time.sleep(1)
+    t.check(False, "PAT desktop reaches an editable composer without personal-account login")
 
 
 @scenario("M03", "Router on, request, off and LaunchAgent removal", "W30/W33/W36")
@@ -197,6 +264,8 @@ def autostart(t):
     t.check(bool(t.read(plist)), "Product generated a LaunchAgent plist")
     item = t.rpc("login_item", path=plist)
     t.save("login-item.json", item)
+    t.configured_ui()
+    t.shot("before-reboot")
     before = t.rpc("service", label=label)["boot"]
     t.save("reboot-preflight.json", t.rpc("reboot_ready"))
     # Reboot, not logout or a simulated process restart. The run marker survives.
@@ -221,6 +290,9 @@ def autostart(t):
     t.check(service["code"] == 0 and t.root in service["stdout"], "Product LaunchAgent was loaded at login")
     t.check(bool(processes) and all(process["isolated"] for process in processes),
             "Real login started the Superba GUI with the temporary HOME and CODEX_HOME")
+    t.ui = Ui(t, pid=processes[0]["pid"])
+    t.ui.wait_window()
+    t.shot("after-reboot")
     t.spb("autostart", "off", gui=True)
     t.check(not t.read(plist), "Autostart off removes the product registration")
 
@@ -260,6 +332,7 @@ def upgrade(t):
     t.rpc("stop")
     new = t.install(t.runner.opts.upgrade_dmg, upgrade=True)
     t.check(old["dmg_sha256"] != new["dmg_sha256"], "Upgrade uses two distinct DMG artifacts")
+    t.check(old["superba_sha256"] != new["superba_sha256"], "Upgrade replaces the actual app executable")
     t.check(t.read(DATA + "/profiles.json") == baseline, "Provider configuration survives app replacement")
     t.check(t.read(DATA + "/e2e-preserved.txt") == "preserve-on-upgrade\n", "Existing data survives app replacement")
     t.configured_ui()
@@ -275,6 +348,10 @@ def uninstall(t):
     t.spb("switch", "--profile", name, "--yes", "--write-only")
     t.spb("restore", "original", "--yes", "--write-only")
     t.check(t.read("home/.codex/config.toml") == original, "Original Codex config is byte-identical")
+    t.configured_ui()
+    t.shot("restored-before-uninstall")
+    t.rpc("stop")
+    t.ui = None
     t.spb("uninstall", "--yes", "--write-only")
     t.check(t.rpc("service")["code"] != 0, "No router service remains")
     agents = t.rpc("list", path="home/Library/LaunchAgents")

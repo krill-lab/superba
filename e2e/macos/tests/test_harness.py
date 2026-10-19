@@ -111,6 +111,19 @@ class ArchiveTests(unittest.TestCase):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_disconnected_mutation_is_not_retried_or_echoed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            helper = Path(directory) / "ssh"
+            helper.touch()
+            vm = Vm(helper)
+            disconnected = types.SimpleNamespace(returncode=255, stdout="",
+                                                   stderr="private connection details")
+            with patch.object(vm, "shell", return_value=disconnected) as shell:
+                with self.assertRaisesRegex(VmError, "guest completion is unknown") as error:
+                    vm.rpc("spb", stdin="private-credential")
+            shell.assert_called_once()
+            self.assertNotIn("private", str(error.exception))
+
     def test_native_dmg_cache_rejects_different_remote_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             helper = Path(directory) / "ssh"
@@ -331,6 +344,23 @@ class GuestSafetyTests(unittest.TestCase):
             self.assertNotIn("SUPERBA_DATA_DIR", env)
             for key in ("HOME", "CFFIXED_USER_HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "TMPDIR"):
                 self.assertTrue(env[key].startswith(str(root) + "/"))
+
+    def test_desktop_cleanup_preserves_existing_and_unrelated_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            support = home / "Library/Application Support"
+            existing = support / "com.openai.codex-existing"
+            created = support / "com.openai.codex"
+            unrelated = support / "OtherApplication"
+            for path in (existing, created, unrelated):
+                path.mkdir(parents=True)
+                (path / "data").write_text("preserved")
+            with patch.object(Path, "home", return_value=home):
+                removed = self.guest.cleanup_desktop_data([str(existing)])
+            self.assertEqual(removed, [str(created)])
+            self.assertTrue(existing.is_dir())
+            self.assertTrue(unrelated.is_dir())
+            self.assertFalse(created.exists())
 
     def test_login_fixture_forwards_home_through_launchservices(self):
         with tempfile.TemporaryDirectory() as directory:

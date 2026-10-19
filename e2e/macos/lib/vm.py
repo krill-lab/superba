@@ -75,6 +75,11 @@ class Vm:
         command = shlex.join(["/usr/bin/python3", self.root + "/guest.py"])
         result = self.shell(command, stdin=json.dumps({"op": operation, "args": args}),
                             timeout=timeout, check=False)
+        if result.returncode == 255:
+            # The request may have reached the guest. Retrying a mutation could
+            # install, switch or reboot twice; recover the recorded session first.
+            raise VmError("SSH connection failed (exit 255); guest completion is unknown. "
+                          "Restore connectivity and clean up the recorded session before retrying")
         try:
             response = json.loads(result.stdout)
         except ValueError:
@@ -159,6 +164,7 @@ class Vm:
         here = Path(__file__).resolve().parents[1]
         self.put(here / "guest" / "guest.py", self.root + "/guest.py")
         self.put(here / "guest" / "fixture.py", self.root + "/fixture.py")
+        self.put(here / "guest" / "line_proxy.py", self.root + "/line_proxy.py")
         self.put(here / "agent" / "MacAgent.swift", self.root + "/agent/MacAgent.swift")
         root = shlex.quote(self.root + "/agent")
         # Preserve the existing executable when unchanged: replacing it can invalidate TCC consent.

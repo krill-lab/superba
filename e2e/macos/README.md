@@ -95,6 +95,20 @@ It never goes on an argv, into the real Keychain, or into tracked files. M03's
 mock model request is omitted in real mode; this mode does not claim upstream
 inference coverage. M04 tests the real Superba Claude config writer/restorer;
 it does not require installing Claude Code or claim a real Claude conversation.
+M02's real mode uses PAT and two HTTPS origins in front of the designated relay:
+
+```sh
+python3 e2e/macos/run.py run M02 --net real --dmg /path/to/superba.dmg --out e2e/out/mac-desktop
+```
+
+An isolated loopback CONNECT proxy maps two virtual ports to that relay while
+preserving its hostname and end-to-end TLS. Only the test processes use the
+proxy; system DNS and certificate trust are unchanged. The proxy permits only
+the designated relay and records line connection counts, never payloads or
+headers. M02 requires PAT files, a usable desktop composer, a verified hot
+restart and the unchanged desktop PID. Its screenshots include the desktop and
+Superba. This is a switching test, not an inference benchmark. A first run may
+need the app's ordinary onboarding; the harness never chooses account sign-in.
 M03 and M04 reopen the GUI after external CLI changes to capture the persisted
 state in a fresh process. M03 also preserves a screenshot before restarting.
 The current GUI classifies every HTTP `127.0.0.1` provider as router mode, including
@@ -112,6 +126,10 @@ cannot be performed. It never approves a full restart that could lose the test
 HOME. `page()`, `superba(section)`, `click()`, `expect()`, `find()`, `tree()`,
 `set_value()` and `type_into()` mirror the Windows API. Locale strings and
 `e2e/shared/desktop_flows.py` are shared with Windows.
+Desktop startup opens a run-specific debugging port so Superba can verify the
+hot-switch path. Existing OpenAI desktop user data blocks that case. Cleanup
+stops the owned app and its helpers, removes only newly created desktop data,
+and keeps the desktop bundle installed.
 
 DMG transfers stream to disk with a separate 15-minute timeout. A guest artifact
 cache keyed and verified by SHA-256 avoids uploading the same image for every
@@ -134,6 +152,40 @@ M06 checks for running Rust builds/tests before setup and immediately before
 rebooting. Background CI may share the VM without holding the GUI lease; those
 jobs must finish first, or M06 is BLOCKED without rebooting.
 
+## Installing the desktop prerequisite
+
+Desktop installation is a separate operator action. Obtain approval and use the
+macOS download button on the [official ChatGPT download page](https://chatgpt.com/download/).
+Choose the current ChatGPT app containing Codex; ChatGPT Classic is a separate
+download. Record the source page, actual download URL, download time and SHA-256.
+If the page supplies a small installer, verify that installer first and preserve
+the official download chain for the full application payload as well.
+
+Mount the downloaded DMG read-only and inspect the app **before copying it into
+Applications or launching it**:
+
+```sh
+shasum -a 256 /path/to/ChatGPT.dmg
+codesign -dv --verbose=4 /path/to/mounted/ChatGPT.app
+codesign --verify --deep --strict --verbose=2 /path/to/mounted/ChatGPT.app
+spctl -a -vv /path/to/mounted/ChatGPT.app
+xcrun stapler validate /path/to/mounted/ChatGPT.app
+```
+
+Require an OpenAI Developer ID Application authority, record its TeamIdentifier,
+and require `accepted` with `source=Notarized Developer ID`. Validate the stapled
+ticket when the tool is available. Stop if a required check fails. Do not remove
+quarantine attributes, disable Gatekeeper, or substitute an unsigned payload.
+Once verified, copy the bundle to an empty `/Applications/ChatGPT.app` slot.
+Do not replace an existing installation without its owner's approval.
+
+Do not sign into a personal ChatGPT account. Scenario credentials belong only
+in the marked temporary HOME. Inventory the login user's OpenAI application data
+before testing so that later cleanup can distinguish test-created files from
+existing data. Keep the verified desktop app installed for later runs, stop its
+test processes, and remove only the test's data. Superba's test installation and
+the temporary HOME are still removed after each case.
+
 Results are `report.json`, `report.md`, `run.log`, and per-case CLI transcripts,
 AX dumps, window PNGs, assertions and cleanup results. Text is scrubbed before
 writing; input screens are not captured. Screenshots cannot be text-redacted, so
@@ -148,6 +200,13 @@ its DMG, remove the installed app, remove its temporary login plist, restore
 the original launchd environment values and delete the run HOME (including keys).
 No real Codex/Claude config files are read, modified or deleted. Cleanup failures
 are reported, and the run marker is retained for recovery.
+
+An SSH disconnect does not tell the caller whether the guest finished the last
+operation. The transport reports this uncertainty and never automatically
+retries the mutation. Restore connectivity, confirm the original runner has
+stopped, and clean up its recorded session before starting another case. Until
+cleanup and a fresh idle audit succeed, do not report that the VM is clean or
+count an interrupted scenario as passed.
 
 After a host interruption, check that the old process has exited before the lock's
 owner removes the abandoned lock. Reacquire normally and run:

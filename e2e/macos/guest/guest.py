@@ -12,6 +12,7 @@ import plistlib
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -194,6 +195,7 @@ def install(root, dmg, upgrade=False):
         info = plistlib.loads((APP / "Contents/Info.plist").read_bytes())
         return {"architecture": arch, "version": info.get("CFBundleShortVersionString"),
                 "dmg_sha256": hashlib.sha256(dmg.read_bytes()).hexdigest(),
+                "superba_sha256": hashlib.sha256((APP / "Contents/MacOS/superba").read_bytes()).hexdigest(),
                 "spb": checked([root / "bin/spb", "--version"], env=environment(root)).strip()}
     finally:
         checked(["/usr/bin/hdiutil", "detach", mount])
@@ -235,6 +237,11 @@ def stop_owned(root):
     if st["installed"]:
         executable = str(APP / "Contents/MacOS/superba")
         owned.update(row["pid"] for row in rows if row["command"].split(" ", 1)[0] == executable)
+    if st.get("desktop_owned_app"):
+        # Setup required no existing desktop process. Helpers can be reparented
+        # by launchd, so include children inside that exact owned app bundle.
+        owned.update(row["pid"] for row in rows
+                     if row["command"].startswith(st["desktop_owned_app"] + "/"))
     # Desktop helpers may be children of launchd. Only processes whose argv contains
     # this session's directory are additionally eligible (never a global pkill).
     owned.update(row["pid"] for row in rows if str(root) + "/" in row["command"])
@@ -256,6 +263,31 @@ def stop_owned(root):
     st["pids"] = []
     save(root, st)
     return {"remaining": sorted(owned)}
+
+
+def desktop_user_data():
+    result = []
+    for directory in ("Application Support", "Caches", "Preferences", "HTTPStorages",
+                      "WebKit", "Saved Application State", "Logs", "Containers", "Group Containers"):
+        parent = Path.home() / "Library" / directory
+        for path in parent.iterdir() if parent.is_dir() else ():
+            if (path.name in ("Codex", "ChatGPT") or path.name.startswith("com.openai.codex")
+                    or path.name.startswith("group.com.openai.codex")):
+                result.append(path)
+    return result
+
+
+def cleanup_desktop_data(before):
+    removed = []
+    for path in desktop_user_data():
+        if str(path) in before:
+            continue
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        removed.append(str(path))
+    return removed
 
 
 def login_item(root, source):
@@ -323,6 +355,8 @@ def cleanup(root):
     remaining = stop_owned(root)["remaining"]
     if remaining:
         errors.append("test processes survived termination")
+    if "desktop_data_before" in st and not remaining:
+        cleanup_desktop_data(st["desktop_data_before"])
     for name, value in st["launch_env"].items():
         args = ["/bin/launchctl", "setenv", name, value] if value else ["/bin/launchctl", "unsetenv", name]
         if command(args).returncode:
@@ -332,6 +366,9 @@ def cleanup(root):
             errors.append("could not detach test DMG")
     if st["installed"] and APP.exists():
         shutil.rmtree(APP)
+    if "desktop_data_before" in st:
+        if any(str(path) not in st["desktop_data_before"] for path in desktop_user_data()):
+            errors.append("test-created desktop user data remains")
     if errors:
         # Keep the ownership marker for recovery; don't hide a cleanup failure.
         return {"ok": False, "errors": errors, "root": str(root)}
@@ -383,13 +420,39 @@ def dispatch(op, args):
         info = plistlib.loads((source / "Contents/Info.plist").read_bytes())
         executable = source / "Contents/MacOS" / info["CFBundleExecutable"]
         st = state(root)
+        before = desktop_user_data()
+        if before and "desktop_data_before" not in st:
+            raise Blocked("Existing OpenAI desktop user data must be preserved by its owner before testing")
+        st.setdefault("desktop_data_before", [str(path) for path in before])
+        st["desktop_owned_app"] = str(source)
         st["env"]["SUPERBA_APP_PATH"] = str(source)
         save(root, st)
-        result = start(root, executable, ["--user-data-dir=" + str(root / "home/desktop")])
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+        argv = ["--user-data-dir=" + str(root / "home/desktop"),
+                "--remote-debugging-port=" + str(port),
+                "--remote-allow-origins=http://127.0.0.1:" + str(port)]
+        proxy = st["env"].get("HTTPS_PROXY")
+        if proxy:
+            argv.append("--proxy-server=" + proxy)
+        result = start(root, executable, argv)
         result["app"] = str(source)
+        result["debug_port"] = port
         return result
     if op == "desktop_installed":
         return any(Path(path).is_dir() for path in ("/Applications/Codex.app", "/Applications/ChatGPT.app"))
+    if op == "line_proxy":
+        config = root / "home/line-proxy.json"
+        config.write_text(json.dumps({"upstream": args["upstream"]}))
+        config.chmod(0o600)
+        start(root, "/usr/bin/python3", [str(ROOT / "line_proxy.py"), str(root)])
+        ready = root / "home/line-proxy-ready.json"
+        for _ in range(50):
+            if ready.is_file():
+                return json.loads(ready.read_text())
+            time.sleep(0.1)
+        raise RuntimeError("Line proxy did not start")
     if op == "fixture":
         start(root, "/usr/bin/python3", [str(ROOT / "fixture.py"), str(root)])
         for _ in range(50):
