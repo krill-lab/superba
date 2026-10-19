@@ -1208,6 +1208,17 @@ pub trait SwitchService: Send + Sync {
         Err(crate::Error::not_implemented("self update install"))
     }
 
+    /// Self-update with a cancellable preparation phase. Implementations without
+    /// a safe preparation boundary commit before delegating.
+    async fn self_update_install_controlled(
+        &self,
+        request: crate::SelfUpdateInstallRequest,
+        control: Arc<crate::UpdateControl>,
+    ) -> Result<crate::SelfUpdateReport> {
+        control.begin_commit()?;
+        self.self_update_install(request).await
+    }
+
     /// Mark the last attempt's problem ([`crate::SelfUpdateView::problem`]) as
     /// shown, so the next start does not announce it again; it stays on the
     /// Updates page until the next attempt.
@@ -1347,6 +1358,17 @@ pub trait SwitchService: Send + Sync {
     /// Install a Codex version locally (standalone layout), into the store, or on
     /// a remote host (then hot restart and re-probe of that host).
     async fn install_codex(&self, request: InstallRequest) -> Result<InstallReport>;
+
+    /// Install with cancellable preparation. Live binary replacement must be
+    /// protected by `control.begin_commit()`.
+    async fn install_codex_controlled(
+        &self,
+        request: InstallRequest,
+        control: Arc<crate::UpdateControl>,
+    ) -> Result<InstallReport> {
+        control.begin_commit()?;
+        self.install_codex(request).await
+    }
 
     /// Switch a Codex install back to the release its last install replaced:
     /// the local standalone CLI ([`crate::InstallTarget::Local`]) or a remote

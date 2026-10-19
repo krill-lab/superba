@@ -146,6 +146,7 @@ impl Endpoints {
 /// The self-update engine for one data directory.
 #[derive(Clone, Debug)]
 pub struct SelfUpdater {
+    control: std::sync::Arc<superba_core::UpdateControl>,
     data_dir: DataDir,
     network: NetworkSettings,
     auto_check: bool,
@@ -162,6 +163,7 @@ impl SelfUpdater {
     /// environment.
     pub fn new(data_dir: &DataDir, network: NetworkSettings) -> Self {
         Self {
+            control: Default::default(),
             data_dir: data_dir.clone(),
             network,
             auto_check: true,
@@ -173,6 +175,13 @@ impl SelfUpdater {
             now: None,
             exe: None,
         }
+    }
+
+    /// Cancellable preparation; replacing the running installation is atomic
+    /// with respect to the final cancellation check.
+    pub fn with_control(mut self, control: std::sync::Arc<superba_core::UpdateControl>) -> Self {
+        self.control = control;
+        self
     }
 
     /// The Preferences choices: automatic checks and the update channel

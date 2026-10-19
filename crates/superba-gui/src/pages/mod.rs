@@ -52,8 +52,6 @@ pub mod router;
 pub mod sessions;
 pub mod settings;
 pub mod shared;
-pub mod updates;
-pub mod updates_self;
 pub mod wizard;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -614,6 +612,8 @@ pub struct Data {
     pub launching_app: bool,
     /// Last failed Codex installs by install target; shared by both home pages.
     pub tool_update_errors: BTreeMap<String, String>,
+    /// Unified inventory count shared by the rail and sidebar after polling.
+    pub update_inventory_count: Option<u32>,
     /// Enabled notifications have missing, untrusted or unreadable hooks.
     pub notify_hooks_attention: bool,
 }
@@ -670,9 +670,11 @@ impl Data {
             .then_some(latest)
     }
 
-    /// Number of installed components with an offered update. Tool rows are
-    /// added by the unified updater when its data source is integrated.
+    /// Unified inventory count, with shell data used until the first snapshot.
     pub fn update_count(&self) -> u32 {
+        if let Some(count) = self.update_inventory_count {
+            return count;
+        }
         u32::from(self.self_update_offered().is_some())
             + self.versions.value.as_ref().map_or(0, |v| {
                 u32::from(v.app.update_available)

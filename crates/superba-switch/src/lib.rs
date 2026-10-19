@@ -731,7 +731,17 @@ impl SwitchService for Switcher {
         request: superba_core::SelfUpdateInstallRequest,
     ) -> Result<superba_core::SelfUpdateReport> {
         self.refuse_elevated()?;
-        self.self_update_install_impl(request).await
+        self.self_update_install_impl(request, Arc::new(superba_core::UpdateControl::default()))
+            .await
+    }
+
+    async fn self_update_install_controlled(
+        &self,
+        request: superba_core::SelfUpdateInstallRequest,
+        control: Arc<superba_core::UpdateControl>,
+    ) -> Result<superba_core::SelfUpdateReport> {
+        self.refuse_elevated()?;
+        self.self_update_install_impl(request, control).await
     }
 
     async fn self_update_restart_router(&self) -> Result<bool> {
@@ -842,8 +852,21 @@ impl SwitchService for Switcher {
         request: superba_core::InstallRequest,
     ) -> Result<superba_core::InstallReport> {
         self.refuse_elevated()?;
-        let result = self.install_codex_impl(request).await;
+        let result = self
+            .install_codex_impl(request, Arc::new(superba_core::UpdateControl::default()))
+            .await;
         // A new or replaced Codex binary: the views read it after this.
+        self.monitor.invalidate();
+        result
+    }
+
+    async fn install_codex_controlled(
+        &self,
+        request: superba_core::InstallRequest,
+        control: Arc<superba_core::UpdateControl>,
+    ) -> Result<superba_core::InstallReport> {
+        self.refuse_elevated()?;
+        let result = self.install_codex_impl(request, control).await;
         self.monitor.invalidate();
         result
     }

@@ -1011,8 +1011,34 @@ pub trait VersionStore: Send + Sync {
     /// verify, extract, check `bin/codex --version`); returns it.
     async fn ensure(&self, version: &CodexVersion) -> Result<StoredCodex>;
 
+    /// Cancellable preparation. Adapters must retain their cache locks until
+    /// any extraction workers have finished, even after cancellation.
+    async fn ensure_controlled(
+        &self,
+        version: &CodexVersion,
+        control: std::sync::Arc<crate::UpdateControl>,
+    ) -> Result<StoredCodex> {
+        control.check()?;
+        let result = self.ensure(version).await;
+        control.check()?;
+        result
+    }
+
     /// The verified package archive of `version` for `target` (remote upload).
     async fn package_path(&self, version: &CodexVersion, target: &str) -> Result<PathBuf>;
+
+    /// Cancellable archive preparation; never abandon a cache mutation worker.
+    async fn package_path_controlled(
+        &self,
+        version: &CodexVersion,
+        target: &str,
+        control: std::sync::Arc<crate::UpdateControl>,
+    ) -> Result<PathBuf> {
+        control.check()?;
+        let result = self.package_path(version, target).await;
+        control.check()?;
+        result
+    }
 
     /// Remove stored versions beyond the retention (keeps `keep` and the newest
     /// three); returns what was removed.

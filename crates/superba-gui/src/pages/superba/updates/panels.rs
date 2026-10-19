@@ -1,44 +1,21 @@
-//! Updates (UX §3.9): the ChatGPT desktop app (installed vs latest per OS), the
-//! Codex the desktop app uses (`CODEX_CLI_PATH` pin), the Codex CLI on this
-//! computer and on each remote host the app is connected to.
-//!
-//! - App: Linux downloads and verifies the package, then opens the system
-//!   installer or shows the `apt` / `dnf` command (Superba never uses sudo);
-//!   macOS updates itself (Sparkle); Windows downloads and verifies the MSIX
-//!   (OpenAI's server, else the Microsoft Store CDN) and opens App Installer,
-//!   where the user clicks Install ([`windows_app`]); the Store stays offered.
-//! - Pin: bundled / a fixed version from Superba's verified store / a custom
-//!   path, with a compatibility badge; applying is a full app restart planned as
-//!   `SwitchIntent::AppCodexPin`. Not offered on Windows in 0.3.
-//! - CLI rows by install kind: standalone installs are updated in place (the
-//!   previous release is kept for rollback), npm / Homebrew only get the command.
-//! - Remote rows install the verified release into the host's `~/.local/bin`.
-
-pub mod windows_app;
-
+//! Expansion panels and version pickers, shared with the unified inventory.
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use egui::{Align, Color32, FontId, Layout, Rect, Sense, Ui, UiBuilder, pos2, vec2};
 use superba_core::paths::display_path;
 use superba_core::{
-    AppCodexPin, AppDownloadReport, AppUpdateAction, CliUpdateAction, CliVersionRow,
-    CodexInstallKind, CodexRelease, CodexVersion, CompatTier, InstallReport, InstallRequest,
-    InstallTarget, ProfileId, RemoteVersionRow, SwitchIntent, SwitchRequest, TargetId,
-    VersionsView,
+    AppCodexPin, AppUpdateAction, CliUpdateAction, CliVersionRow, CodexInstallKind, CodexRelease,
+    CodexVersion, CompatTier, InstallReport, InstallTarget, ProfileId, RemoteVersionRow,
+    SwitchIntent, SwitchRequest, VersionsView,
 };
 
-use super::router::db::Loader;
-use super::{
-    Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, callout, error_text, kv, page_header,
-    section_gap,
-};
+use super::{State, windows_app};
 use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
 use crate::design::tokens::{radius, size, text};
 use crate::design::widgets::{Badge, Button, Dropdown, FormRow, Status, Text, Toggle, link_button};
-use crate::runtime::ReadTask;
+use crate::pages::{Action, Cx, callout, error_text};
 
 /// Which Codex the desktop app should use (the pin choice being edited).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -326,338 +303,7 @@ pub fn update_available(view: &VersionsView) -> bool {
             .any(|r| !matches!(r.action, CliUpdateAction::None))
 }
 
-/// Page-local state, kept across navigation.
-#[derive(Debug, Default)]
-pub struct State {
-    /// The versions.
-    pub view: Loader<VersionsView>,
-    check_now: bool,
-    /// Pin being edited.
-    pub choice: PinChoice,
-    /// Version chosen for [`PinChoice::Version`].
-    pub version: Option<CodexVersion>,
-    /// Path typed for [`PinChoice::Path`].
-    pub path: String,
-    /// "Include pre-releases" of each version picker, by [`PIN_PICKER`] or
-    /// [`install_key`] (unset: see [`State::shows_prerelease`]).
-    pub prerelease: BTreeMap<String, bool>,
-    /// Version picked in each install picker, by [`install_key`] (unset or
-    /// filtered out: the newest offered).
-    pub picks: BTreeMap<String, CodexVersion>,
-    pin_loaded: bool,
-    persist_task: Option<ReadTask<()>>,
-    /// Persist value saved but not yet visible in the profile set.
-    pub persist_pending: Option<bool>,
-    installs: BTreeMap<String, ReadTask<InstallReport>>,
-    /// Results of installs by [`install_key`] (`Err` = translated error).
-    pub results: BTreeMap<String, Result<InstallReport, String>>,
-    download: Option<ReadTask<AppDownloadReport>>,
-    /// The downloaded, verified app package.
-    pub downloaded: Option<AppDownloadReport>,
-    /// Why the download failed (translated).
-    pub download_error: Option<String>,
-    /// Remote row to bring into view.
-    pub focus: Option<TargetId>,
-    /// App version seen when the page first loaded (a later different one means
-    /// the app was updated while Superba ran).
-    pub first_app_version: Option<String>,
-    /// Superba's own update (the first section).
-    pub superba: super::updates_self::SelfState,
-    /// The Windows installer package of the app.
-    pub windows: windows_app::WinState,
-    toasts: Vec<(Status, String)>,
-    /// The page's view was fetched online or an install finished: the shell
-    /// reloads its own copy (the sidebar badge and the Overview read it).
-    notify_shell: bool,
-    refreshing: bool,
-}
-
-impl State {
-    /// Check online now.
-    pub fn check(&mut self) {
-        self.check_now = true;
-        self.view.invalidate();
-    }
-
-    /// Whether picker `key` offers pre-releases. Until its box is ticked or
-    /// cleared, only when the picker's `current` version is a pre-release.
-    pub fn shows_prerelease(&self, key: &str, current: Option<&CodexVersion>) -> bool {
-        self.prerelease
-            .get(key)
-            .copied()
-            .unwrap_or_else(|| current.is_some_and(|v| v.pre.is_some()))
-    }
-
-    /// The version install picker `key` targets among `items` (newest first):
-    /// the one picked, else the newest.
-    pub fn pick(&self, key: &str, items: &[PickerItem]) -> Option<CodexVersion> {
-        self.picks
-            .get(key)
-            .filter(|v| items.iter().any(|i| &i.version == *v))
-            .or_else(|| items.first().map(|i| &i.version))
-            .cloned()
-    }
-
-    /// Something is running.
-    pub fn busy(&self) -> bool {
-        self.view.loading()
-            || self.persist_task.is_some()
-            || !self.installs.is_empty()
-            || self.download.is_some()
-            || self.superba.busy()
-            || self.windows.busy()
-    }
-
-    /// An install for `target` is running.
-    pub fn installing(&self, target: &InstallTarget) -> bool {
-        self.installs.contains_key(&install_key(target))
-    }
-
-    /// Install `version` at `target` (background).
-    pub fn install(&mut self, cx: &Cx<'_>, version: CodexVersion, target: InstallTarget) {
-        let key = install_key(&target);
-        if self.installs.contains_key(&key) {
-            return;
-        }
-        self.results.remove(&key);
-        let service = cx.service.clone();
-        self.installs.insert(
-            key,
-            crate::runtime::task(async move {
-                service
-                    .install_codex(InstallRequest { version, target })
-                    .await
-            }),
-        );
-    }
-
-    /// Switch `target` back to the release its last install replaced
-    /// (background; the result replaces the install result).
-    pub fn rollback(&mut self, cx: &Cx<'_>, target: InstallTarget) {
-        let key = install_key(&target);
-        if self.installs.contains_key(&key) {
-            return;
-        }
-        self.results.remove(&key);
-        let service = cx.service.clone();
-        self.installs.insert(
-            key,
-            crate::runtime::task(async move { service.rollback_codex(target).await }),
-        );
-    }
-
-    /// Download the app update (background).
-    pub fn download(&mut self, cx: &Cx<'_>) {
-        if self.download.is_some() {
-            return;
-        }
-        self.download_error = None;
-        let service = cx.service.clone();
-        self.download = Some(crate::runtime::task(async move {
-            service.download_app_update().await
-        }));
-    }
-
-    pub(crate) fn poll(&mut self, cx: &Cx<'_>) {
-        let finished = self.view.poll();
-        if finished && std::mem::take(&mut self.refreshing) {
-            self.notify_shell = true;
-        }
-        if finished
-            && let Some(v) = &self.view.value
-            && self.first_app_version.is_none()
-        {
-            self.first_app_version = v.app.install.as_ref().and_then(|i| i.app_version.clone());
-        }
-        if let Some(v) = &self.view.value
-            && !self.pin_loaded
-        {
-            self.pin_loaded = true;
-            match &v.app_codex.pin {
-                AppCodexPin::Version { version } => {
-                    self.choice = PinChoice::Version;
-                    self.version = Some(version.clone());
-                }
-                AppCodexPin::Path { path } => {
-                    self.choice = PinChoice::Path;
-                    self.path = display_path(path);
-                }
-                _ => self.choice = PinChoice::Bundled,
-            }
-        }
-        let done: Vec<String> = self
-            .installs
-            .iter()
-            .filter_map(|(k, t)| t.poll().map(|r| (k.clone(), r)))
-            .map(|(k, r)| {
-                let ok = r.is_ok();
-                let text = match &r {
-                    Ok(rep) => cx.tr.f("updates.installed", &[("version", &rep.version)]),
-                    Err(e) => error_text(cx.tr, e),
-                };
-                self.toasts
-                    .push((if ok { Status::Ok } else { Status::Error }, text));
-                self.results
-                    .insert(k.clone(), r.map_err(|e| error_text(cx.tr, &e)));
-                k
-            })
-            .collect();
-        for k in &done {
-            self.installs.remove(k);
-        }
-        if !done.is_empty() {
-            self.view.invalidate();
-            self.notify_shell = true;
-        }
-        if let Some(t) = &self.download
-            && let Some(r) = t.poll()
-        {
-            self.download = None;
-            match r {
-                Ok(rep) => self.downloaded = Some(rep),
-                Err(e) => self.download_error = Some(error_text(cx.tr, &e)),
-            }
-        }
-        if let Some(t) = &self.persist_task
-            && let Some(r) = t.poll()
-        {
-            self.persist_task = None;
-            if let Err(e) = r {
-                self.persist_pending = None;
-                self.toasts.push((Status::Error, error_text(cx.tr, &e)));
-            }
-        }
-    }
-
-    fn load(&mut self, cx: &Cx<'_>) {
-        if self.view.due(None) {
-            let refresh = std::mem::take(&mut self.check_now);
-            self.refreshing |= refresh;
-            let service = cx.service.clone();
-            self.view
-                .start(async move { service.versions(refresh).await });
-        }
-    }
-
-    /// The persisted "also outside Superba" choice.
-    pub fn persist(&self, cx: &Cx<'_>) -> bool {
-        self.persist_pending.unwrap_or_else(|| {
-            cx.data
-                .profiles
-                .value
-                .as_ref()
-                .is_some_and(|p| p.settings.app_codex.persist_env)
-        })
-    }
-
-    fn set_persist(&mut self, cx: &Cx<'_>, on: bool) {
-        let Some(set) = cx.data.profiles.value.as_ref() else {
-            return;
-        };
-        let mut settings = set.settings.clone();
-        settings.app_codex.persist_env = on;
-        self.persist_pending = Some(on);
-        let service = cx.service.clone();
-        self.persist_task = Some(crate::runtime::task(async move {
-            service.save_settings(settings).await
-        }));
-    }
-}
-
-/// Draw the page.
-pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    state.poll(cx);
-    state.load(cx);
-    if let Some((status, text)) = state.superba.poll(cx, out) {
-        state.toasts.push((status, text));
-    }
-    for (status, text) in state.toasts.drain(..) {
-        out.push(Action::Toast { status, text });
-    }
-    if std::mem::take(&mut state.notify_shell) {
-        out.push(Action::LoadVersions);
-    }
-    if state.busy() {
-        ui.ctx().request_repaint_after(Duration::from_millis(100));
-    }
-    if state.persist_pending.is_some()
-        && state.persist_task.is_none()
-        && cx
-            .data
-            .profiles
-            .value
-            .as_ref()
-            .is_some_and(|p| Some(p.settings.app_codex.persist_env) == state.persist_pending)
-    {
-        state.persist_pending = None;
-    }
-    let checked = cx.data.selfupdate.value.as_ref().and_then(|v| v.checked_at);
-    let checking = state.view.loading() || cx.data.selfupdate.loading;
-    page_header(
-        ui,
-        cx,
-        Page::Superba(crate::pages::SuperbaSection::Updates),
-        |ui| {
-            if ui
-                .add(
-                    Button::new(cx.tr.t("updates.check"))
-                        .icon(Icon::Refresh)
-                        .small()
-                        .loading(checking)
-                        .enabled(!checking),
-                )
-                .clicked()
-            {
-                state.check();
-                out.push(Action::CheckSelfUpdate);
-            }
-            if let Some(t) = checked {
-                ui.label(Text::caption(
-                    cx.tr.f("updates.checked", &[("age", &cx.ago(t))]),
-                    cx.pal,
-                ));
-            }
-        },
-    );
-    // Superba itself comes first and does not wait for the other versions.
-    icon_section(ui, cx, Icon::Bolt, &cx.tr.t("updates.superba.title"));
-    super::updates_self::show(ui, cx, &mut state.superba, out);
-    section_gap(ui, cx);
-    let Some(view) = state.view.value.clone() else {
-        match &state.view.error {
-            Some(e) => crate::pages::error_state(ui, cx, &cx.tr.t("updates.load_failed"), e),
-            None => {
-                ui.label(Text::muted(cx.tr.t("updates.loading"), cx.pal));
-            }
-        }
-        return;
-    };
-    if let Some(e) = &state.view.error {
-        callout(ui, cx, Status::Warn, &error_text(cx.tr, e));
-    }
-    for n in &view.notes {
-        callout(
-            ui,
-            cx,
-            match n.severity {
-                superba_core::Severity::Info => Status::Idle,
-                _ => Status::Warn,
-            },
-            &cx.localize(&n.text),
-        );
-    }
-    app_section(ui, cx, state, &view, out);
-    section_gap(ui, cx);
-    pin_section(ui, cx, state, &view, out);
-    section_gap(ui, cx);
-    cli_section(ui, cx, state, &view, out);
-    if !view.remote.is_empty() {
-        section_gap(ui, cx);
-        remote_section(ui, cx, state, &view);
-    }
-}
-
-fn app_section(
+pub(super) fn app_section(
     ui: &mut Ui,
     cx: &Cx<'_>,
     state: &mut State,
@@ -843,7 +489,7 @@ pub fn app_line(
     parts.join(" · ")
 }
 
-fn command_row(ui: &mut Ui, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
+pub(super) fn command_row(ui: &mut Ui, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     kv(ui, cx, &cx.tr.t("updates.command"), |ui| {
         ui.label(Text::mono(command, cx.pal));
         if ui
@@ -921,7 +567,11 @@ fn paint_tags(ui: &mut Ui, cx: &Cx<'_>, rect: Rect, tags: &[VersionTag]) {
 
 /// A row of controls centred on one line as tall as a dropdown ([`FormRow`]).
 fn picker_row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
-    FormRow::unlabeled().height(PICKER_ROW).show(ui, add).inner
+    FormRow::unlabeled()
+        .height(PICKER_ROW)
+        .wrap()
+        .show(ui, add)
+        .inner
 }
 
 /// One menu row: the version, then its tags.
@@ -990,7 +640,9 @@ fn version_picker(
         .map(|i| text_width(ui, &i.version.to_string(), value_font()) + tags_width(ui, cx, &i.tags))
         .fold(text_w + tags_width(ui, cx, tags), f32::max);
     // Room for the menu's own margins and rows' insets too.
-    let width = (FIELD_CHROME + widest + 12.0).max(FIELD_MIN);
+    let width = (FIELD_CHROME + widest + 12.0)
+        .max(FIELD_MIN)
+        .min(ui.max_rect().width().max(FIELD_MIN));
     let current = selected.map(|(v, _)| v);
     let r = Dropdown::new(id_salt)
         .selected_text(text)
@@ -1058,7 +710,7 @@ fn mismatch_callout(
     }
 }
 
-fn pin_section(
+pub(super) fn pin_section(
     ui: &mut Ui,
     cx: &Cx<'_>,
     state: &mut State,
@@ -1101,7 +753,7 @@ fn pin_section(
         Some(v) => cx.tr.f("updates.pin.bundled", &[("version", v)]),
         None => cx.tr.t("updates.pin.bundled_unknown"),
     };
-    FormRow::default().label_width(label_w).show_with(
+    FormRow::default().label_width(label_w).wrap().show_with(
         ui,
         |ui| ui.radio_value(&mut state.choice, PinChoice::Bundled, label),
         |ui| ui.label(Text::caption(cx.tr.t("updates.pin.bundled_hint"), cx.pal)),
@@ -1117,6 +769,7 @@ fn pin_section(
         .map(|v| (tags_of(view, &v, true, &marks), v));
     FormRow::default()
         .label_width(label_w)
+        .wrap()
         .height(PICKER_ROW)
         .hint(Text::caption(cx.tr.t("updates.pin.version_hint"), cx.pal))
         .show_with(
@@ -1158,7 +811,7 @@ fn pin_section(
         state.prerelease.insert(PIN_PICKER.into(), shown);
     }
     // Custom path (an invalid one is named under the field).
-    let mut path_row = FormRow::default().label_width(label_w);
+    let mut path_row = FormRow::default().label_width(label_w).wrap();
     if state.choice == PinChoice::Path
         && !state.path.trim().is_empty()
         && let Err(key) = check_path(&state.path)
@@ -1179,7 +832,7 @@ fn pin_section(
                 egui::TextEdit::singleline(&mut state.path)
                     .font(egui::TextStyle::Monospace)
                     .hint_text("/path/to/codex")
-                    .desired_width(320.0),
+                    .desired_width(320.0_f32.min(ui.available_width())),
             );
             if r.changed() {
                 pick = Some(PinChoice::Path);
@@ -1292,19 +945,19 @@ fn install_label(
 const PICKER_INDENT: f32 = 24.0;
 
 /// One install picker (the local CLI, a remote host) for one frame.
-struct InstallPicker {
+pub(super) struct InstallPicker {
     key: String,
     was: bool,
     shown: bool,
     /// A version was chosen: the box keeps its state from now on.
     chosen: bool,
     items: Vec<PickerItem>,
-    target: Option<CodexVersion>,
+    pub(super) target: Option<CodexVersion>,
     target_tags: Vec<VersionTag>,
 }
 
 impl InstallPicker {
-    fn new(state: &State, view: &VersionsView, key: String, marks: &Marks) -> Self {
+    pub(super) fn new(state: &State, view: &VersionsView, key: String, marks: &Marks) -> Self {
         let was = state.shows_prerelease(&key, marks.current.as_ref());
         let items = picker_items(view, was, false, marks);
         let target = state.pick(&key, &items);
@@ -1394,7 +1047,7 @@ fn pin_label_width(ui: &Ui, cx: &Cx<'_>) -> f32 {
     text + spacing.icon_width + spacing.icon_spacing
 }
 
-fn cli_section(
+pub(super) fn cli_section(
     ui: &mut Ui,
     cx: &Cx<'_>,
     state: &mut State,
@@ -1432,73 +1085,110 @@ fn cli_section(
         let standalone = row.kind == CodexInstallKind::Standalone
             || matches!(row.action, CliUpdateAction::Install { .. });
         let with_picker = standalone && !std::mem::replace(&mut picker_shown, true);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 12.0;
-            // The path takes what the other columns leave, shortened in the
-            // middle so the file name stays visible (review ux-visual #12).
+        if ui.available_width() < 800.0 {
             let path = display_path(&row.binary.path);
-            let path_w = (ui.available_width() - CLI_FIXED_COLUMNS).clamp(220.0, 440.0);
             let shown = crate::design::widgets::value_chip::fit(
                 ui,
                 &path,
-                &crate::design::fonts::mono_font(
-                    text::SMALL,
-                    crate::design::fonts::Weight::Regular,
-                ),
-                path_w,
+                &crate::design::fonts::mono_font(text::SMALL, Weight::Regular),
+                ui.available_width(),
                 crate::design::elide::Ellipsis::Path,
             );
-            cell(ui, path_w, egui::Label::new(Text::mono(shown, cx.pal))).on_hover_text(path);
-            cell(
-                ui,
-                VERSION_COLUMN,
-                egui::Label::new(Text::mono(
+            ui.label(Text::mono(shown, cx.pal)).on_hover_text(path);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(Text::mono(
                     row.binary
                         .version
                         .as_ref()
-                        .map_or_else(|| "—".into(), |v| v.to_string()),
+                        .map_or_else(|| "—".into(), ToString::to_string),
                     cx.pal,
-                )),
-            );
-            cell(
-                ui,
-                100.0,
-                egui::Label::new(Text::small(kind_label(cx, row.kind), cx.pal)),
-            );
-            cell(
-                ui,
-                70.0,
-                egui::Label::new(Text::caption(
-                    row.binary.path_rank.map_or_else(
-                        || "—".into(),
-                        |r| cx.tr.f("updates.cli.path_pos", &[("n", &(r + 1))]),
-                    ),
-                    cx.pal,
-                )),
-            );
-            match &action {
-                CliUpdateAction::Command { command } => {
-                    if ui
-                        .add(
-                            Button::ghost(cx.tr.t("updates.cli.copy_cmd"))
-                                .icon(Icon::Copy)
-                                .small(),
-                        )
-                        .on_hover_text(command.clone())
+                ));
+                ui.label(Text::small(kind_label(cx, row.kind), cx.pal));
+                if let Some(rank) = row.binary.path_rank {
+                    ui.label(Text::caption(
+                        cx.tr.f("updates.cli.path_pos", &[("n", &(rank + 1))]),
+                        cx.pal,
+                    ));
+                }
+                if let CliUpdateAction::Command { command } = &action
+                    && ui
+                        .add(Button::ghost(cx.tr.t("updates.cli.copy_cmd")).small())
                         .clicked()
-                    {
-                        out.push(Action::Copy(command.clone()));
+                {
+                    out.push(Action::Copy(command.clone()));
+                }
+            });
+        } else {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 12.0;
+                // The path takes what the other columns leave, shortened in the
+                // middle so the file name stays visible (review ux-visual #12).
+                let path = display_path(&row.binary.path);
+                let path_w = (ui.available_width() - CLI_FIXED_COLUMNS).clamp(220.0, 440.0);
+                let shown = crate::design::widgets::value_chip::fit(
+                    ui,
+                    &path,
+                    &crate::design::fonts::mono_font(
+                        text::SMALL,
+                        crate::design::fonts::Weight::Regular,
+                    ),
+                    path_w,
+                    crate::design::elide::Ellipsis::Path,
+                );
+                cell(ui, path_w, egui::Label::new(Text::mono(shown, cx.pal))).on_hover_text(path);
+                cell(
+                    ui,
+                    VERSION_COLUMN,
+                    egui::Label::new(Text::mono(
+                        row.binary
+                            .version
+                            .as_ref()
+                            .map_or_else(|| "—".into(), |v| v.to_string()),
+                        cx.pal,
+                    )),
+                );
+                cell(
+                    ui,
+                    100.0,
+                    egui::Label::new(Text::small(kind_label(cx, row.kind), cx.pal)),
+                );
+                cell(
+                    ui,
+                    70.0,
+                    egui::Label::new(Text::caption(
+                        row.binary.path_rank.map_or_else(
+                            || "—".into(),
+                            |r| cx.tr.f("updates.cli.path_pos", &[("n", &(r + 1))]),
+                        ),
+                        cx.pal,
+                    )),
+                );
+                match &action {
+                    CliUpdateAction::Command { command } => {
+                        if ui
+                            .add(
+                                Button::ghost(cx.tr.t("updates.cli.copy_cmd"))
+                                    .icon(Icon::Copy)
+                                    .small(),
+                            )
+                            .on_hover_text(command.clone())
+                            .clicked()
+                        {
+                            out.push(Action::Copy(command.clone()));
+                        }
+                    }
+                    _ if with_picker => {}
+                    _ => {
+                        ui.label(Text::caption("—", cx.pal));
                     }
                 }
-                _ if with_picker => {}
-                _ => {
-                    ui.label(Text::caption("—", cx.pal));
-                }
-            }
-        });
+            });
+        }
         if with_picker {
             picker_row(ui, |ui| {
-                ui.add_space(PICKER_INDENT);
+                if ui.available_width() >= 760.0 {
+                    ui.add_space(PICKER_INDENT);
+                }
                 picker.show(ui, cx, &mut state.picks);
                 if let CliUpdateAction::Install { version } = action {
                     let busy = state.installing(&local);
@@ -1563,15 +1253,14 @@ fn result_row(
     }
 }
 
-fn remote_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &VersionsView) {
+pub(super) fn remote_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &VersionsView) {
     icon_section(ui, cx, Icon::Server, &cx.tr.t("updates.remote.title"));
-    let focus = state.focus.take();
     for row in &view.remote {
         let target = InstallTarget::Remote {
             target_id: row.target_id.clone(),
         };
         let unreachable = row.error.is_some() && row.version.is_none();
-        let r = ui.horizontal(|ui| {
+        let r = ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
             cell(
                 ui,
@@ -1610,26 +1299,18 @@ fn remote_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &VersionsVi
                 ui.label(Text::caption(cx.tr.t("updates.remote.app_command"), cx.pal));
             }
         });
-        let mut rect = r.response.rect;
+        let _ = r;
         if !unreachable {
             let mut picker =
                 InstallPicker::new(state, view, install_key(&target), &remote_marks(view, row));
-            rect = rect.union(picker_row(ui, |ui| {
-                ui.add_space(PICKER_INDENT);
+            picker_row(ui, |ui| {
+                if ui.available_width() >= 760.0 {
+                    ui.add_space(PICKER_INDENT);
+                }
                 picker.show(ui, cx, &mut state.picks);
                 remote_action(ui, cx, state, row, &picker, &target);
-                ui.min_rect()
-            }));
+            });
             picker.finish(state);
-        }
-        if focus.as_ref() == Some(&row.target_id) {
-            ui.scroll_to_rect(rect, Some(Align::Center));
-            ui.painter().rect_stroke(
-                rect.expand(3.0),
-                crate::design::tokens::radius::CONTROL,
-                egui::Stroke::new(1.0, cx.pal.focus),
-                egui::StrokeKind::Outside,
-            );
         }
         if let Some(e) = &row.error {
             ui.label(Text::caption(error_text(cx.tr, e), cx.pal).color(cx.pal.amber));
@@ -1680,90 +1361,12 @@ fn remote_action(
     }
 }
 
-/// Command palette entries.
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let mut items = vec![PaletteItem {
-        title: cx.tr.t("updates.palette.check_superba"),
-        detail: None,
-        keywords: vec![
-            "superba".into(),
-            "update".into(),
-            "upgrade".into(),
-            "更新".into(),
-        ],
-        group: PaletteGroup::Commands,
-        action: Action::PageCommand {
-            page: Page::Superba(crate::pages::SuperbaSection::Updates),
-            command: "check_superba".into(),
-        },
-    }];
-    items.push(PaletteItem {
-        title: cx.tr.t("updates.palette.check"),
-        detail: None,
-        keywords: vec!["update".into(), "version".into(), "更新".into()],
-        group: PaletteGroup::Commands,
-        action: Action::PageCommand {
-            page: Page::Superba(crate::pages::SuperbaSection::Updates),
-            command: "check".into(),
-        },
-    });
-    if state.view.value.as_ref().is_some_and(|v| {
-        v.cli
-            .iter()
-            .any(|r| matches!(r.action, CliUpdateAction::Install { .. }))
-    }) {
-        items.push(PaletteItem {
-            title: cx.tr.t("updates.palette.update_cli"),
-            detail: None,
-            keywords: vec!["codex".into(), "cli".into(), "update".into()],
-            group: PaletteGroup::Commands,
-            action: Action::PageCommand {
-                page: Page::Superba(crate::pages::SuperbaSection::Updates),
-                command: "update_cli".into(),
-            },
-        });
+/// Expanded values stack their labels at compact widths and never hide actions.
+pub(super) fn kv(ui: &mut Ui, cx: &Cx<'_>, label: &str, value: impl FnOnce(&mut Ui)) {
+    if ui.available_width() < 700.0 {
+        ui.label(Text::small(label, cx.pal));
+        ui.horizontal_wrapped(value);
+    } else {
+        crate::pages::kv(ui, cx, label, value);
     }
-    items
-}
-
-/// Run a command addressed to this page: `check`, `update_cli` (update the
-/// first updatable CLI), `focus:<target id>` (bring a remote row into view).
-pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
-    match command {
-        "check" => state.check(),
-        "check_superba" => out.push(Action::CheckSelfUpdate),
-        "update_cli" => {
-            // The version the page's local picker targets, when it is newer.
-            let version = state.view.value.as_ref().and_then(|v| {
-                let key = install_key(&InstallTarget::Local);
-                let target = InstallPicker::new(state, v, key, &local_marks(v)).target;
-                v.cli
-                    .iter()
-                    .find_map(|r| match row_action(r, target.as_ref()) {
-                        CliUpdateAction::Install { version }
-                            if r.binary.version.as_ref().is_none_or(|h| &version > h) =>
-                        {
-                            Some(version)
-                        }
-                        _ => None,
-                    })
-            });
-            if let Some(version) = version {
-                state.install(cx, version, InstallTarget::Local);
-            }
-        }
-        _ => {
-            if let Some(id) = command.strip_prefix("focus:") {
-                state.focus = Some(TargetId::new(id));
-            }
-        }
-    }
-}
-
-/// Dialogs and the sidebar badge (an update is available).
-pub fn status(state: &State) -> PageStatus {
-    // The sidebar dot comes from the shell's own version data
-    // (`app::shell_badges`), one source for every page.
-    let _ = state;
-    PageStatus::default()
 }

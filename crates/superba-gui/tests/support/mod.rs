@@ -5,6 +5,7 @@
 pub mod fake;
 pub mod fit;
 pub mod ui;
+pub mod update_tools;
 
 use std::sync::Arc;
 

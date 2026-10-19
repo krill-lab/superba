@@ -345,6 +345,12 @@ impl SelfUpdater {
                 ));
                 record::update(&self.state_path(), self.now(), |a| a.stage = stage);
             }
+            Err(Error::Cancelled) => {
+                log.line("cancelled before replacing files");
+                let mut state = State::load(&self.state_path());
+                state.last_attempt = None;
+                let _ = state.save(&self.state_path());
+            }
             Err(e) => self.attempt_failed(e),
         }
         result
@@ -387,7 +393,16 @@ impl SelfUpdater {
         relaunch: bool,
         log: &RunLog,
     ) -> Result<InstallResult> {
-        let archive = self.download_logged(release, asset, Some(log)).await?;
+        self.control.check()?;
+        let download = self.download_logged(release, asset, Some(log));
+        tokio::pin!(download);
+        let archive = loop {
+            tokio::select! {
+                result = &mut download => break result?,
+                _ = tokio::time::sleep(std::time::Duration::from_millis(80)) => self.control.check()?,
+            }
+        };
+        self.control.begin_commit()?;
         let me = self.clone();
         let rel = release.clone();
         let log = log.clone();

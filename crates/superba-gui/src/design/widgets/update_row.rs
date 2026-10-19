@@ -1,6 +1,6 @@
 //! Compact update inventory rows. Expanding an item and running its operation
 //! are independent actions; both remain named when text is elided.
-use super::{Badge, Button, InlineProgress, Status, focus_ring, show_focus};
+use super::{Badge, Button, ButtonKind, InlineProgress, Status, focus_ring, show_focus};
 use crate::design::{
     a11y,
     fonts::{Weight, font, mono_font},
@@ -44,6 +44,7 @@ pub struct UpdateRow<'a> {
     tile: UpdateTile<'a>,
     action: Option<(&'a str, Option<&'a str>)>,
     action_enabled: bool,
+    action_kind: ButtonKind,
     progress: Option<(Option<f32>, &'a str)>,
 }
 /// The item expander and its independent operation.
@@ -69,6 +70,7 @@ impl<'a> UpdateRow<'a> {
             tile: UpdateTile::Icon(Icon::Download),
             action: None,
             action_enabled: true,
+            action_kind: ButtonKind::Primary,
             progress: None,
         }
     }
@@ -107,6 +109,11 @@ impl<'a> UpdateRow<'a> {
         if let Some((_, ref mut accessible)) = self.action {
             *accessible = Some(name);
         }
+        self
+    }
+    /// Visual weight of the row's only operation (primary by default).
+    pub fn action_kind(mut self, kind: ButtonKind) -> Self {
+        self.action_kind = kind;
         self
     }
     /// Disable an unavailable operation without hiding it.
@@ -151,7 +158,12 @@ impl<'a> UpdateRow<'a> {
             width,
             |ui| {
                 self.action.map(|(label, name)| {
-                    let r = ui.add(Button::new(label).small().enabled(self.action_enabled));
+                    let r = ui.add(
+                        Button::new(label)
+                            .kind(self.action_kind)
+                            .small()
+                            .enabled(self.action_enabled),
+                    );
                     let name = name
                         .map(str::to_owned)
                         .unwrap_or_else(|| format!("{label} {}", self.name));
@@ -185,12 +197,13 @@ impl<'a> UpdateRow<'a> {
             let (id, row) = ui.allocate_space(vec2(width, height));
             let response = ui.interact(row, id, Sense::click());
             let pal = Palette::of(ui.ctx());
-            let action_width = action_width.clamp(0.0, (width - 80.0).max(0.0));
+            let has_action = action_width > 0.0;
+            let action_width = action_width.max(68.0).clamp(0.0, (width - 80.0).max(0.0));
             let action_rect = Rect::from_min_size(
                 pos2(row.right() - 28.0 - action_width, row.center().y - 14.0),
                 vec2(action_width, 28.0),
             );
-            let in_action = action_width > 0.0
+            let in_action = has_action
                 && ui
                     .input(|i| i.pointer.interact_pos())
                     .is_some_and(|p| action_rect.contains(p));
@@ -249,7 +262,7 @@ impl<'a> UpdateRow<'a> {
                 match self.tile {
                     UpdateTile::Icon(icon) => super::IconTile::new(icon).paint_at(ui, center),
                     UpdateTile::Monogram(s) => {
-                        super::MonogramTile::new(s).paint_at(ui, center);
+                        super::MonogramTile::new(s).size(30.0).paint_at(ui, center);
                     }
                 }
                 let label_left = row.left() + 44.0;
@@ -288,9 +301,14 @@ impl<'a> UpdateRow<'a> {
                 let version_width = if narrow {
                     0.0
                 } else {
-                    (width * 0.22).clamp(110.0, 190.0)
+                    (width * 0.30).clamp(190.0, 250.0)
                 };
-                let title_right = state_rect.left() - 10.0 - version_width;
+                let version_right = if narrow {
+                    state_rect.left()
+                } else {
+                    before_action - 138.0
+                };
+                let title_right = version_right - 10.0 - version_width;
                 paint_line(
                     ui,
                     self.name,
@@ -349,7 +367,7 @@ impl<'a> UpdateRow<'a> {
                         self.versions,
                         Rect::from_min_max(
                             pos2(title_right + 8.0, row.top() + 12.0),
-                            pos2(state_rect.left() - 8.0, row.bottom() - 10.0),
+                            pos2(version_right - 8.0, row.bottom() - 10.0),
                         ),
                         pal.text_muted,
                     );

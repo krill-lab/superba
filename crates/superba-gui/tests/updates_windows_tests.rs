@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use router_harness::Harness;
 use superba_core::*;
-use superba_gui::pages::updates::{self, State};
+use superba_gui::pages::superba::updates::{self, State};
 use superba_gui::pages::{Action, Page};
 use support::fake::{FakeOptions, FakeService};
 
@@ -25,7 +25,7 @@ fn fake() -> Arc<FakeService> {
 }
 
 fn harness(service: Arc<FakeService>, locale: Locale) -> Harness {
-    Harness::new([1280.0, 2600.0], locale, service, false)
+    Harness::new([1280.0, 4200.0], locale, service, false)
 }
 
 const DOWNLOADS: &str = r"C:\Users\me\AppData\Local\Superba\data\downloads";
@@ -152,7 +152,7 @@ fn the_windows_row_offers_the_installer_its_source_and_the_store() {
     let service = fake();
     windows_view(&service, WindowsAppSource::OfficialFirst);
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     for want in [
         "下载安装包（949 MB）",
@@ -178,7 +178,7 @@ fn the_windows_row_offers_the_installer_its_source_and_the_store() {
     // English, and the other source settings.
     windows_view(&service, WindowsAppSource::StoreMirrorOnly);
     let mut h = harness(service.clone(), Locale::En);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     assert!(f.has("Download installer (949 MB)"), "{}", f.all_text());
     assert!(f.has("Microsoft Store mirror only"));
@@ -190,7 +190,7 @@ fn a_download_shows_progress_and_can_be_cancelled() {
     windows_view(&service, WindowsAppSource::OfficialFirst);
     service.set_windows_download(report(AppPackageSource::Official, false), true);
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     h.click_text(&f, "下载安装包（949 MB）");
     let f = h.until(
@@ -225,7 +225,7 @@ fn a_verified_package_is_explained_and_opened_dependencies_first() {
     windows_view(&service, WindowsAppSource::OfficialFirst);
     service.set_windows_download(report(AppPackageSource::StoreMirror, true), false);
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     h.click_text(&f, "下载安装包（949 MB）");
     let f = h.until(
@@ -268,7 +268,7 @@ fn after_app_installer_opens_superba_offers_to_reopen_chatgpt() {
     windows_view(&service, WindowsAppSource::OfficialFirst);
     service.set_windows_download(report(AppPackageSource::Official, false), false);
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     h.click_text(&f, "下载安装包（949 MB）");
     let f = h.until(
@@ -308,7 +308,7 @@ fn failures_are_explained() {
             .into(),
     });
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     h.click_text(&f, "下载安装包（949 MB）");
     let f = h.until(
@@ -326,7 +326,7 @@ fn failures_are_explained() {
         message: "Windows could not open the package with its installer (App Installer)".into(),
     });
     let mut h = harness(service.clone(), Locale::En);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     h.click_text(&f, "Download installer (949 MB)");
     let f = h.until(
@@ -427,7 +427,7 @@ fn an_x64_install_on_arm64_offers_the_native_package() {
         Some("x64"),
     );
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(
         |ui, cx, out| updates::show(ui, cx, &mut state, out),
         |f| f.has("原生版"),
@@ -447,11 +447,25 @@ fn an_x64_install_on_arm64_offers_the_native_package() {
         Some("arm64"),
     );
     let mut h = harness(service.clone(), Locale::En);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(
         |ui, cx, out| updates::show(ui, cx, &mut state, out),
         |f| f.has("Download installer"),
     );
     assert!(f.has("Download installer (1022 MB)"), "{}", f.all_text());
     assert!(!f.has("emulated"));
+}
+
+fn expanded_state() -> State {
+    let mut state = State::default();
+    use updates::UpdateItem;
+    state.expanded.extend([
+        UpdateItem::Superba,
+        UpdateItem::App,
+        UpdateItem::AppPin,
+        UpdateItem::CodexCli,
+        UpdateItem::CodexRemote(superba_core::TargetId::new("ssh:devbox-7c1e")),
+        UpdateItem::CodexRemote(superba_core::TargetId::new("ssh:gpu-01")),
+    ]);
+    state
 }

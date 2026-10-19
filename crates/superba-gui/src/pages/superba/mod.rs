@@ -6,6 +6,7 @@ pub mod home;
 pub mod network;
 pub mod search;
 pub mod update_settings;
+pub mod updates;
 
 use super::{Action, Cx, Page, page_header, section};
 use crate::design::widgets::{SubNav, SubNavItem};
@@ -121,7 +122,7 @@ pub fn show(
     state: &mut State,
     settings: &mut Settings,
     notify: &mut super::notify::State,
-    updates: &mut super::updates::State,
+    updates: &mut updates::State,
     out: &mut Vec<Action>,
 ) {
     state.last = selected;
@@ -199,12 +200,7 @@ pub fn show(
             ui.push_id(selected, |ui| match selected {
                 SuperbaSection::Home => home::show(ui, cx, &mut state.home, settings, notify, out),
                 SuperbaSection::Updates => {
-                    egui::ScrollArea::horizontal()
-                        .id_salt("updates-content")
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| {
-                            super::updates::show(ui, cx, updates, out);
-                        });
+                    updates::show(ui, cx, updates, out);
                     ui.add_space(24.0);
                     update_settings::show(ui, cx, settings, out);
                 }
@@ -257,7 +253,7 @@ pub fn show(
                 });
             }
         } else if !notify.modal()
-            && !super::updates::status(updates).modal
+            && !updates::status(updates).modal
             && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
         {
             rail.request_focus();

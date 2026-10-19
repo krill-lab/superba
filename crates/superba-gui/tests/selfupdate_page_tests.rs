@@ -17,10 +17,10 @@ use superba_core::{
 use superba_gui::design::widgets::Status;
 use superba_gui::i18n::Tr;
 use superba_gui::pages::overview::todo::{self, TodoKind};
-use superba_gui::pages::updates::{self, State};
-use superba_gui::pages::updates_self::{
+use superba_gui::pages::superba::updates::self_update::{
     NoteLine, channel_line, inline, no_downgrade_note, note_lines,
 };
+use superba_gui::pages::superba::updates::{self, State};
 use superba_gui::pages::{Action, NavBadge, Page, superba::update_settings};
 use support::fake::{FakeOptions, FakeService};
 
@@ -89,7 +89,7 @@ fn up_to_date_shows_both_versions_and_when_it_was_checked() {
         Locale::ZhCn,
         view(SelfUpdateStatus::UpToDate, Some(release("0.1.0"))),
     );
-    let f = page(&mut h, &mut State::default(), "已是最新");
+    let f = page(&mut h, &mut expanded_state(), "已是最新");
     for want in ["Superba", "已安装", "0.1.0", "最新", "上次检查"] {
         assert!(f.has(want), "{want}:\n{}", f.all_text());
     }
@@ -114,7 +114,7 @@ fn an_available_update_shows_notes_as_plain_text_and_the_three_choices() {
             locale,
             view(SelfUpdateStatus::Available, Some(release("0.2.0"))),
         );
-        let f = page(&mut h, &mut State::default(), now);
+        let f = page(&mut h, &mut expanded_state(), now);
         for want in [
             now,
             later,
@@ -140,7 +140,7 @@ fn a_private_release_page_is_a_calm_line_not_an_error() {
         Locale::ZhCn,
         view(SelfUpdateStatus::PageUnavailable, None),
     );
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "暂时无法检查更新（发布页不可访问）");
     assert!(!f.has("立即更新"));
     // No toast, no action: the state is quiet.
@@ -156,7 +156,7 @@ fn a_private_release_page_is_a_calm_line_not_an_error() {
     );
     let f = page(
         &mut h,
-        &mut State::default(),
+        &mut expanded_state(),
         "Can't check for updates right now",
     );
     assert!(f.has("release page isn't reachable"));
@@ -169,7 +169,7 @@ fn other_quiet_states() {
     let mut h = harness(fake(), Locale::En, failed);
     let f = page(
         &mut h,
-        &mut State::default(),
+        &mut expanded_state(),
         "The update check failed (timed out)",
     );
     assert!(f.has("try again later"));
@@ -178,13 +178,13 @@ fn other_quiet_states() {
         Locale::En,
         view(SelfUpdateStatus::OnlineChecksOff, None),
     );
-    page(&mut h, &mut State::default(), "Online checks are off");
+    page(&mut h, &mut expanded_state(), "Online checks are off");
     let mut h = harness(
         fake(),
         Locale::ZhCn,
         view(SelfUpdateStatus::NotChecked, None),
     );
-    page(&mut h, &mut State::default(), "尚未检查");
+    page(&mut h, &mut expanded_state(), "尚未检查");
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn a_release_without_a_package_cannot_be_installed_from_here() {
     v.no_package = true;
     v.latest.as_mut().unwrap().asset = None;
     let mut h = harness(fake(), Locale::En, v);
-    let f = page(&mut h, &mut State::default(), "no package for this system");
+    let f = page(&mut h, &mut expanded_state(), "no package for this system");
     assert!(!f.has("Update now"));
 }
 
@@ -205,7 +205,7 @@ fn nothing_is_installed_until_the_button_is_clicked() {
         Locale::En,
         view(SelfUpdateStatus::Available, Some(release("0.2.0"))),
     );
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "Update now");
     for _ in 0..5 {
         h.frame(|ui, cx, out| updates::show(ui, cx, &mut state, out));
@@ -241,7 +241,7 @@ fn a_finished_install_that_relaunches_quits_this_process() {
         Locale::En,
         view(SelfUpdateStatus::Available, Some(release("0.2.0"))),
     );
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "Update now");
     h.click_text(&f, "Update now");
     let f = h.until(
@@ -271,7 +271,7 @@ fn a_failed_install_shows_the_error_and_keeps_the_button() {
         Locale::En,
         view(SelfUpdateStatus::Available, Some(release("0.2.0"))),
     );
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "Update now");
     h.click_text(&f, "Update now");
     let f = h.until(
@@ -307,7 +307,7 @@ fn an_unwritable_location_shows_the_verified_package_and_manual_steps() {
         Locale::ZhCn,
         view(SelfUpdateStatus::Available, Some(release("0.2.0"))),
     );
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "立即更新");
     h.click_text(&f, "立即更新");
     let f = h.until(
@@ -337,7 +337,7 @@ fn later_and_skip_are_actions_and_a_skipped_version_can_be_unskipped() {
         Locale::En,
         view(SelfUpdateStatus::Available, Some(release("0.2.0"))),
     );
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "Later");
     h.click_text(&f, "Later");
     let f = h.until(
@@ -372,7 +372,7 @@ fn later_and_skip_are_actions_and_a_skipped_version_can_be_unskipped() {
     let mut skipped = view(SelfUpdateStatus::Available, Some(release("0.2.0")));
     skipped.skipped = Some("0.2.0".into());
     let mut h = harness(fake(), Locale::En, skipped);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "Don't skip it");
     assert!(
         f.has("Skipped") && f.has("Update now") && !f.has("Later"),
@@ -398,7 +398,7 @@ fn the_check_button_checks_superba_too() {
         Locale::En,
         view(SelfUpdateStatus::UpToDate, Some(release("0.1.0"))),
     );
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "Check for updates");
     h.click_text(&f, "Check for updates");
     let f = h.until(
@@ -518,7 +518,7 @@ fn the_palette_has_a_superba_update_command_that_opens_the_page_and_checks() {
     ] {
         let mut h = Harness::new([1280.0, 800.0], locale, fake(), false);
         h.frame(|_, cx, _| {
-            let items = updates::palette(cx, &State::default());
+            let items = updates::palette(cx, &expanded_state());
             let item = items.iter().find(|i| i.title == title).expect(title);
             assert!(
                 matches!(&item.action, Action::PageCommand { page: Page::Superba(superba_gui::pages::SuperbaSection::Updates), command } if command == "check_superba"),
@@ -526,7 +526,7 @@ fn the_palette_has_a_superba_update_command_that_opens_the_page_and_checks() {
                 item.action
             );
         });
-        let mut state = State::default();
+        let mut state = expanded_state();
         let mut out = Vec::new();
         h.frame(|_, cx, _| updates::command(&mut state, cx, "check_superba", &mut out));
         assert!(out.iter().any(|a| matches!(a, Action::CheckSelfUpdate)));
@@ -698,7 +698,7 @@ fn the_page_shows_the_channel_and_offers_the_next_preview() {
             locale,
             preview_build(SelfUpdateStatus::Available, UpdateChannel::Preview),
         );
-        let f = page(&mut h, &mut State::default(), want[3]);
+        let f = page(&mut h, &mut expanded_state(), want[3]);
         for w in want {
             assert!(f.has(w), "{locale:?} {w}:\n{}", f.all_text());
         }
@@ -713,7 +713,7 @@ fn a_preview_build_on_stable_is_never_offered_the_older_stable() {
         Locale::En,
         preview_build(SelfUpdateStatus::UpToDate, UpdateChannel::Stable),
     );
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "No stable release is newer");
     assert!(
         f.has("You're on preview 0.1.1-alpha.3 · latest stable 0.1.0"),
@@ -746,7 +746,7 @@ fn the_rate_limit_is_a_quiet_line_with_the_time_it_ends() {
         Timestamp::now().as_millis() + 600_000,
     ));
     let mut h = harness(fake(), Locale::En, v);
-    let f = page(&mut h, &mut State::default(), "GitHub's limit");
+    let f = page(&mut h, &mut expanded_state(), "GitHub's limit");
     assert!(f.has("the last answer is shown"), "{}", f.all_text());
     assert!(f.has("Update now"), "the cached answer is still offered");
 }
@@ -806,7 +806,7 @@ fn a_failed_update_stays_on_the_page_with_its_reason_and_log() {
     let mut v = view(SelfUpdateStatus::Available, Some(release("0.2.0")));
     v.problem = Some(problem(false, true));
     let mut h = harness(fake(), Locale::ZhCn, v);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = page(&mut h, &mut state, "更新到 Superba 0.2.0 失败");
     for want in [
         "安装程序（msiexec）以代码 1603 结束：安装过程中发生严重错误",
@@ -834,7 +834,7 @@ fn a_failed_update_stays_on_the_page_with_its_reason_and_log() {
     let mut h = harness(fake(), Locale::En, v);
     let f = page(
         &mut h,
-        &mut State::default(),
+        &mut expanded_state(),
         "Superba 0.2.0 was installed with a problem",
     );
     assert!(f.has("Every step is in the log: "), "{}", f.all_text());
@@ -871,4 +871,10 @@ fn the_start_up_toast_of_a_failed_update_is_shown_once_with_the_log() {
     // Shown once: an acknowledged problem has no toast.
     v.problem = Some(problem(false, true));
     assert!(selfupdate_problem_toast(&tr, &v, render).is_none());
+}
+
+fn expanded_state() -> State {
+    let mut state = State::default();
+    state.expanded.insert(updates::UpdateItem::Superba);
+    state
 }

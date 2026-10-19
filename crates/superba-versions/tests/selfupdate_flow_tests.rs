@@ -843,3 +843,23 @@ async fn a_failed_install_is_logged_and_recorded_as_seen() {
     let problem = u.view().problem.expect("on the Updates page");
     assert!(problem.seen && !problem.installed);
 }
+
+#[tokio::test]
+async fn cancelled_preparation_keeps_the_installed_binaries_and_no_failure_notice() {
+    let f = Fixture::new().await;
+    serve_release(&f, "v0.2.0", false);
+    let install = install_dir(f.data.path(), "0.1.0");
+    let before = std::fs::read(install.join("superba")).unwrap();
+    let control = std::sync::Arc::new(superba_core::UpdateControl::default());
+    assert!(control.cancel());
+    let updater = f
+        .updater()
+        .with_exe(install.join("superba"))
+        .with_control(control);
+    assert!(matches!(
+        updater.install(false).await,
+        Err(superba_core::Error::Cancelled)
+    ));
+    assert_eq!(std::fs::read(install.join("superba")).unwrap(), before);
+    assert!(updater.view().problem.is_none());
+}

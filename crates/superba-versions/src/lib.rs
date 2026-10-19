@@ -454,19 +454,47 @@ impl HttpVersionStore {
         })
     }
 
-    async fn ensure_target(&self, version: &CodexVersion, target: &str) -> Result<StoredCodex> {
+    async fn archive_controlled(
+        &self,
+        version: &CodexVersion,
+        target: &str,
+        control: &superba_core::UpdateControl,
+    ) -> Result<(PathBuf, Layout)> {
+        control.check()?;
+        // Only async HTTP/cache file I/O here; no detached extraction worker.
+        let download = self.verified_archive(version, target);
+        tokio::pin!(download);
+        loop {
+            tokio::select! {
+                result = &mut download => { control.check()?; return result; }
+                _ = tokio::time::sleep(Duration::from_millis(80)) => control.check()?,
+            }
+        }
+    }
+
+    async fn ensure_target(
+        &self,
+        version: &CodexVersion,
+        target: &str,
+        control: &superba_core::UpdateControl,
+    ) -> Result<StoredCodex> {
+        control.check()?;
         let dirs = self.dirs();
         let d2 = dirs.clone();
         let _lock = blocking(move || store::lock(&d2)).await?;
+        control.check()?;
         if let Some(s) = store::list(&dirs, Some(target))
             .into_iter()
             .find(|s| &s.version == version)
         {
             return Ok(s);
         }
-        let (archive, layout) = self.verified_archive(version, target).await?;
+        let (archive, layout) = self.archive_controlled(version, target, control).await?;
         let (d3, v, t) = (dirs.clone(), version.clone(), target.to_owned());
+        // A cancellation must wait for extraction and its version probe; the
+        // store lock cannot be released while this worker still changes files.
         blocking(move || unpack(&d3, &archive, layout, &v, &t)).await?;
+        control.check()?;
         store::list(&dirs, Some(target))
             .into_iter()
             .find(|s| &s.version == version)
@@ -802,10 +830,31 @@ impl VersionStore for HttpVersionStore {
 
     async fn ensure(&self, version: &CodexVersion) -> Result<StoredCodex> {
         let target = self.local_target()?;
-        self.ensure_target(version, &target).await
+        self.ensure_target(version, &target, &superba_core::UpdateControl::default())
+            .await
+    }
+
+    async fn ensure_controlled(
+        &self,
+        version: &CodexVersion,
+        control: Arc<superba_core::UpdateControl>,
+    ) -> Result<StoredCodex> {
+        self.ensure_target(version, &self.local_target()?, &control)
+            .await
     }
 
     async fn package_path(&self, version: &CodexVersion, target: &str) -> Result<PathBuf> {
+        self.package_path_controlled(version, target, Arc::default())
+            .await
+    }
+
+    async fn package_path_controlled(
+        &self,
+        version: &CodexVersion,
+        target: &str,
+        control: Arc<superba_core::UpdateControl>,
+    ) -> Result<PathBuf> {
+        control.check()?;
         if !sources::TARGETS.contains(&target) {
             return Err(Error::invalid(format!(
                 "unknown Codex package target {target:?}"
@@ -814,7 +863,7 @@ impl VersionStore for HttpVersionStore {
         let dirs = self.dirs();
         let d2 = dirs.clone();
         let _lock = blocking(move || store::lock(&d2)).await?;
-        Ok(self.verified_archive(version, target).await?.0)
+        Ok(self.archive_controlled(version, target, &control).await?.0)
     }
 
     async fn prune(&self, keep: &[CodexVersion]) -> Result<Vec<CodexVersion>> {

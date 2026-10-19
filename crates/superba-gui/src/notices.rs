@@ -22,7 +22,7 @@ use superba_switch::privilege::RunAs;
 use crate::app::ToastAction;
 use crate::design::widgets::{Toast, Toasts};
 use crate::i18n::Tr;
-use crate::pages::updates_self::problem_text;
+use crate::pages::superba::updates::self_update::problem_text;
 
 /// The marker that the elevated notice was shown (in the data directory).
 pub const ELEVATED_SEEN_FILE: &str = "gui-elevated-notice-seen-v1";

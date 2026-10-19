@@ -12,7 +12,7 @@ use std::sync::Arc;
 use router_harness::{Frame, Harness};
 use superba_core::{AppCodexPin, CodexVersion, Locale, LocalizedText};
 use superba_gui::pages::Action;
-use superba_gui::pages::updates::{self, State};
+use superba_gui::pages::superba::updates::{self, State};
 use support::fake::{FakeOptions, FakeService};
 
 const RUNNING: &str = "/home/user/.local/share/fnm/node-versions/v22.11.0/installation/lib/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/codex/codex";
@@ -52,8 +52,8 @@ fn a_mismatch_names_both_sides_briefly_and_copies_the_full_paths() {
     let expected = view.expected_codex().expect("the bundled Codex");
     service.set_versions(view);
 
-    let mut h = Harness::new([1280.0, 2400.0], Locale::ZhCn, service, false);
-    let mut state = State::default();
+    let mut h = Harness::new([1280.0, 4200.0], Locale::ZhCn, service, false);
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     let sentence = "app 运行的是 ~/\u{2026}/x86_64-unknown-linux-musl/codex/codex 处的 Codex，\
                     而不是 app 自带的 Codex 0.163.0-alpha.10.2。";
@@ -104,4 +104,18 @@ fn the_expected_codex_follows_the_pin() {
         version: CodexVersion::new(9, 9, 9),
     };
     assert_eq!(view.expected_codex(), None);
+}
+
+fn expanded_state() -> State {
+    let mut state = State::default();
+    use updates::UpdateItem;
+    state.expanded.extend([
+        UpdateItem::Superba,
+        UpdateItem::App,
+        UpdateItem::AppPin,
+        UpdateItem::CodexCli,
+        UpdateItem::CodexRemote(superba_core::TargetId::new("ssh:devbox-7c1e")),
+        UpdateItem::CodexRemote(superba_core::TargetId::new("ssh:gpu-01")),
+    ]);
+    state
 }

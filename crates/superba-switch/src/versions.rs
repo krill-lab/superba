@@ -779,13 +779,18 @@ impl Switcher {
     pub(crate) async fn install_codex_impl(
         &self,
         request: InstallRequest,
+        control: std::sync::Arc<superba_core::UpdateControl>,
     ) -> Result<InstallReport> {
+        control.check()?;
         let d = &self.deps;
         let set = d.profiles.load().await?;
         let store = self.version_store(&set);
         match &request.target {
             InstallTarget::Store => {
-                let s = store.ensure(&request.version).await?;
+                let s = store
+                    .ensure_controlled(&request.version, control.clone())
+                    .await?;
+                control.check()?;
                 Ok(InstallReport {
                     version: s.version,
                     target: request.target,
@@ -828,7 +833,10 @@ impl Switcher {
                         what: format!("Codex packages for {os}/{arch}"),
                     }
                 })?;
-                let package = store.package_path(&request.version, target).await?;
+                let package = store
+                    .package_path_controlled(&request.version, target, control.clone())
+                    .await?;
+                control.begin_commit()?;
                 let report = d
                     .remote
                     .install_codex(&host, &package, &request.version)
@@ -844,7 +852,10 @@ impl Switcher {
                     .await)
             }
             InstallTarget::Local => {
-                store.ensure(&request.version).await?;
+                store
+                    .ensure_controlled(&request.version, control.clone())
+                    .await?;
+                control.begin_commit()?;
                 store
                     .install_standalone(&request.version, &self.standalone_layout())
                     .await

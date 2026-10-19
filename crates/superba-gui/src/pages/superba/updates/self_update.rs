@@ -20,11 +20,12 @@ use superba_core::{
     SelfUpdateStatus, SelfUpdateView, UpdateChannel,
 };
 
-use super::{Action, Cx, callout, error_text, kv};
+use super::panels::kv;
 use crate::design::icons::Icon;
 use crate::design::tokens::radius;
 use crate::design::widgets::{Badge, Button, Segmented, Status, Text};
 use crate::i18n::Tr;
+use crate::pages::{Action, Cx, callout, error_text};
 use crate::runtime::ReadTask;
 
 /// One line of rendered release notes.
@@ -213,6 +214,8 @@ fn problem_callout(ui: &mut Ui, cx: &Cx<'_>, problem: &SelfUpdateProblem, out: &
 #[derive(Debug, Default)]
 pub struct SelfState {
     install: Option<ReadTask<SelfUpdateReport>>,
+    /// Cancellation state until the backend finishes.
+    pub control: Option<std::sync::Arc<superba_core::UpdateControl>>,
     /// How the last install ended (`Err` = translated error).
     pub result: Option<Result<SelfUpdateReport, String>>,
 }
@@ -226,25 +229,54 @@ impl SelfState {
     /// Download, verify and install the offered release (background). The click
     /// on the button is the only caller.
     pub fn install(&mut self, cx: &Cx<'_>) {
+        let version = cx
+            .data
+            .selfupdate
+            .value
+            .as_ref()
+            .and_then(|v| v.latest.as_ref())
+            .map(|r| r.version.clone());
+        self.install_version(cx, version);
+    }
+
+    /// Keep the reviewed release fixed while earlier queued updates run.
+    pub fn install_version(&mut self, cx: &Cx<'_>, version: Option<String>) {
         if self.install.is_some() {
             return;
         }
         self.result = None;
+        let control = std::sync::Arc::new(superba_core::UpdateControl::default());
+        self.control = Some(control.clone());
         let service = cx.service.clone();
         self.install = Some(crate::runtime::task(async move {
             service
-                .self_update_install(SelfUpdateInstallRequest {
-                    relaunch: true,
-                    version: None,
-                })
+                .self_update_install_controlled(
+                    SelfUpdateInstallRequest {
+                        relaunch: true,
+                        version,
+                    },
+                    control,
+                )
                 .await
         }));
+    }
+
+    /// Request a stop before replacing the running app.
+    pub fn cancel(&self) {
+        if let Some(control) = &self.control {
+            control.cancel();
+        }
     }
 
     /// Collect a finished install; returns the toast to show.
     pub fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) -> Option<(Status, String)> {
         let done = self.install.as_ref()?.poll()?;
         self.install = None;
+        self.control = None;
+        if matches!(done, Err(superba_core::Error::Cancelled)) {
+            self.result = None;
+            return Some((Status::Idle, cx.tr.t("updates.win.cancelled")));
+        }
         let toast = match &done {
             Ok(report) => {
                 if report.relaunching {
@@ -493,7 +525,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut SelfState, out: &mut Vec<Actio
             egui::Label::new(Text::caption(
                 cx.tr.f(
                     "updates.superba.rate_limited",
-                    &[("time", &super::clock_time(t, false))],
+                    &[("time", &crate::pages::clock_time(t, false))],
                 ),
                 cx.pal,
             ))
@@ -509,7 +541,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut SelfState, out: &mut Vec<Actio
             callout(ui, cx, Status::Warn, &cx.tr.t("updates.superba.no_package"));
         } else {
             let busy = state.busy();
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if ui
                     .add(
                         Button::primary(cx.tr.t("updates.superba.update_now"))

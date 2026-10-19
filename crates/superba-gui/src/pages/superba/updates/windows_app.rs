@@ -16,10 +16,11 @@ use superba_core::{
     WindowsAppSource,
 };
 
-use super::super::{Action, Cx, Page, callout, error_text, kv};
-use super::command_row;
+use super::panels::command_row;
+use super::panels::kv;
 use crate::design::icons::Icon;
 use crate::design::widgets::{Button, FormRow, Status, Text, link_button};
+use crate::pages::{Action, Cx, Page, callout, error_text};
 use crate::runtime::ReadTask;
 
 /// Download, open and their results.

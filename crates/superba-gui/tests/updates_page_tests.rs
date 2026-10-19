@@ -18,7 +18,7 @@ use superba_core::{
     CodexVersion, CompatTier, Error, InstallTarget, Locale, SwitchIntent, VersionsView,
 };
 use superba_gui::design::widgets::Status;
-use superba_gui::pages::updates::{
+use superba_gui::pages::superba::updates::{
     self, Marks, PickerItem, PinChoice, State, VersionTag, check_path, compat_badge, picker_items,
     pin_for, version_tags,
 };
@@ -54,6 +54,7 @@ fn header_and_superba_row_share_the_same_check_time() {
             ..Default::default()
         }));
         let mut state = State::default();
+        state.expanded.insert(updates::UpdateItem::Superba);
         let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
         let tr = superba_gui::i18n::Tr::new(locale);
         let age = tr.f("time.minutes_ago", &[("n", &6)]);
@@ -70,14 +71,14 @@ fn header_and_superba_row_share_the_same_check_time() {
 }
 
 fn harness(service: Arc<FakeService>, locale: Locale) -> Harness {
-    Harness::new([1280.0, 2400.0], locale, service, false)
+    Harness::new([1280.0, 4200.0], locale, service, false)
 }
 
 #[test]
 fn linux_offers_a_verified_download_and_the_install_command_without_sudo_by_superba() {
     let service = fake();
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     for want in [
         "ChatGPT 桌面 app",
@@ -114,7 +115,7 @@ fn a_corrupted_download_is_reported() {
         "checksum mismatch: the download was discarded",
     ));
     let mut h = harness(service, Locale::En);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     h.click_text(&f, "Download .deb (502 MB)");
     let f = h.until(
@@ -141,7 +142,7 @@ fn macos_and_windows_show_their_own_update_paths() {
     });
     service.set_versions(view.clone());
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     assert!(f.has("ChatGPT 会自行更新（Sparkle）"));
     assert!(f.has("下载完整安装包"));
@@ -153,7 +154,7 @@ fn macos_and_windows_show_their_own_update_paths() {
     });
     view.app_codex.supported = false;
     service.set_versions(view);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(
         |ui, cx, out| updates::show(ui, cx, &mut state, out),
         |f| f.has("Microsoft Store"),
@@ -188,7 +189,7 @@ fn pin_choices_show_compatibility_and_plan_a_full_restart() {
 
     let service = fake();
     let mut h = harness(service, Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     for (version, badge) in [
         ("0.160.0", "较旧"),
@@ -240,7 +241,7 @@ fn pin_choices_show_compatibility_and_plan_a_full_restart() {
 fn cli_rows_follow_their_install_kind() {
     let service = fake();
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     for want in [
         "/home/user/.local/bin/codex",
@@ -287,7 +288,7 @@ fn remote_rows_install_on_the_host_and_failures_are_shown() {
         "not enough space on devbox (needs about 600 MB)",
     ));
     let mut h = harness(service.clone(), Locale::En);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     assert!(f.has("Codex · remote hosts"));
     assert!(f.has("devbox") && f.has("gpu-01"));
@@ -316,7 +317,7 @@ fn remote_rows_install_on_the_host_and_failures_are_shown() {
 fn check_and_palette_commands() {
     let service = fake();
     let mut h = harness(service.clone(), Locale::En);
-    let mut state = State::default();
+    let mut state = expanded_state();
     h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     h.frame(|_, cx, out| updates::command(&mut state, cx, "check", out));
     h.until(
@@ -350,7 +351,7 @@ fn check_and_palette_commands() {
 fn an_app_updated_while_superba_runs_offers_a_reopen() {
     let service = fake();
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     assert!(!f.has("ChatGPT 已更新"));
     let mut view = service.versions_view();
@@ -530,7 +531,7 @@ fn tags_mark_prereleases_the_bundled_and_the_current_version() {
 
 #[test]
 fn the_prerelease_box_is_remembered_per_picker_and_filters_its_list() {
-    let mut state = State::default();
+    let mut state = expanded_state();
     let items_all = picker_items(&fake().versions_view(), true, false, &Marks::default());
     let items_stable = picker_items(&fake().versions_view(), false, false, &Marks::default());
     // Untouched: on only when the version in use there is a pre-release.
@@ -584,7 +585,7 @@ fn pickers_put_the_box_first_and_mark_versions_in_the_menu_and_the_field() {
         .push(candidate("0.166.0-alpha.1", true));
     service.set_versions(view);
     let mut h = harness(service.clone(), Locale::ZhCn);
-    let mut state = State::default();
+    let mut state = expanded_state();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     // Pin, local CLI and devbox (gpu-01 is not connected): each box sits in front
     // of its dropdown, on the dropdown's centre line.
@@ -695,7 +696,7 @@ fn pickers_put_the_box_first_and_mark_versions_in_the_menu_and_the_field() {
 fn pickers_read_in_english() {
     let service = fake();
     let mut h = harness(service, Locale::En);
-    let mut state = State::default();
+    let mut state = expanded_state();
     state.prerelease.insert(updates::PIN_PICKER.into(), true);
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     assert!(f.has("Include pre-releases"));
@@ -718,12 +719,12 @@ fn cli_paths_keep_their_file_name_and_versions_are_never_cut() {
     service.set_versions(view.clone());
     let data = router_harness::data_from(&service);
     for locale in [Locale::ZhCn, Locale::En] {
-        let mut state = State::default();
+        let mut state = expanded_state();
         // Loaded just now: the page does not read the (idle) service again.
         state.view.value = Some(service.versions_view());
         state.view.at = Some(std::time::Instant::now());
         let report = support::fit::render_fit(
-            [1280.0, 2400.0],
+            [1280.0, 4200.0],
             locale,
             egui::Theme::Light,
             &data,
@@ -750,4 +751,18 @@ fn cli_paths_keep_their_file_name_and_versions_are_never_cut() {
                 .collect::<Vec<_>>()
         );
     }
+}
+
+fn expanded_state() -> State {
+    let mut state = State::default();
+    use updates::UpdateItem;
+    state.expanded.extend([
+        UpdateItem::Superba,
+        UpdateItem::App,
+        UpdateItem::AppPin,
+        UpdateItem::CodexCli,
+        UpdateItem::CodexRemote(superba_core::TargetId::new("ssh:devbox-7c1e")),
+        UpdateItem::CodexRemote(superba_core::TargetId::new("ssh:gpu-01")),
+    ]);
+    state
 }

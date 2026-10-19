@@ -112,7 +112,8 @@ impl Widget for Badge {
                         pal.text_muted,
                         ui.input(|i| i.time),
                     );
-                    ui.ctx().request_repaint();
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(80));
                 } else if self.hollow {
                     painter.circle_stroke(center, 3.0, Stroke::new(1.0, pal.text_muted));
                 } else {

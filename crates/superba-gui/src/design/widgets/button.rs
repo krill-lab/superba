@@ -321,7 +321,8 @@ impl Widget for Button {
                 );
                 if self.loading {
                     icons::spinner(painter, icon_rect.shrink(1.0), c.text, ui.input(|i| i.time));
-                    ui.ctx().request_repaint();
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(80));
                 } else if let Some(icon) = self.icon {
                     icons::paint(painter, icon_rect, icon, c.text);
                 }

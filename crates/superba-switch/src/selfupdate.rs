@@ -61,8 +61,10 @@ impl Switcher {
     pub(crate) async fn self_update_install_impl(
         &self,
         request: SelfUpdateInstallRequest,
+        control: std::sync::Arc<superba_core::UpdateControl>,
     ) -> Result<SelfUpdateReport> {
-        let updater = self.self_updater().await;
+        control.check()?;
+        let updater = self.self_updater().await.with_control(control);
         let done = match request.version.as_deref() {
             Some(version) => updater.install_version(version, request.relaunch).await?,
             None => updater.install(request.relaunch).await?,

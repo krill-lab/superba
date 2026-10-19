@@ -585,3 +585,50 @@ async fn local_standalone_install_switch_and_rollback() {
         Err(Error::NotFound { .. })
     ));
 }
+
+#[tokio::test]
+async fn cancelled_preparation_waits_for_the_extraction_worker_and_keeps_the_cache_valid() {
+    let mock = Mock::start().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let started = tmp.path().join("probe-started");
+    let release = tmp.path().join("probe-release");
+    let quote = |p: &Path| format!("'{}'", p.display().to_string().replace('\'', "'\\''"));
+    let script = format!(
+        "#!/bin/sh\n: > {}\nwhile [ ! -f {} ]; do sleep 0.02; done\necho 'codex-cli 0.162.0'\n",
+        quote(&started),
+        quote(&release),
+    );
+    let pkg = support::targz(&[("bin/codex", script.as_bytes(), 0o755)], &[]);
+    mock.route(&gh_path("0.162.0"), Route::ok(pkg.clone()));
+    mock.route(
+        &sums_path("0.162.0"),
+        Route::ok(format!(
+            "{}  codex-package-{}.tar.gz\n",
+            sha256_hex(&pkg),
+            target(),
+        )),
+    );
+    let s = Arc::new(store(tmp.path(), &mock, net(DownloadSource::GitHub, false)));
+    let control = Arc::new(superba_core::UpdateControl::default());
+    let worker = s.clone();
+    let c = control.clone();
+    let task = tokio::spawn(async move { worker.ensure_controlled(&v("0.162.0"), c).await });
+    let ready = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !started.exists() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(ready.is_ok(), "the package version probe did not start");
+    assert!(control.cancel());
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    let waited_for_worker = !task.is_finished();
+    std::fs::write(&release, b"continue").unwrap();
+    assert!(matches!(task.await.unwrap(), Err(Error::Cancelled)));
+    assert!(
+        waited_for_worker,
+        "the lock must outlive the extraction worker"
+    );
+    // A later operation can safely reuse the verified, completely unpacked cache.
+    assert_eq!(s.ensure(&v("0.162.0")).await.unwrap().version, v("0.162.0"));
+}

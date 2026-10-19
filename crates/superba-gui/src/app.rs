@@ -168,7 +168,7 @@ pub struct PageStates {
     /// Remote hosts.
     pub hosts: pages::hosts::State,
     /// Updates.
-    pub updates: pages::updates::State,
+    pub updates: pages::superba::updates::State,
     /// Claude Code (both of its pages share one state).
     pub claude: pages::claude::State,
     /// Superba section navigation and summary.
@@ -191,7 +191,7 @@ impl PageStates {
             Page::ClaudeCode | Page::ClaudeSettings => pages::claude::status(&self.claude, page),
             Page::Overview => pages::overview::status(&self.overview),
             Page::Superba(_) => PageStatus {
-                modal: self.notify.modal() || pages::updates::status(&self.updates).modal,
+                modal: self.notify.modal() || pages::superba::updates::status(&self.updates).modal,
                 ..PageStatus::default()
             },
             Page::Tools => PageStatus::default(),
@@ -221,9 +221,11 @@ impl PageStates {
                 if let Some(key) = command.strip_prefix("focus:") {
                     if pages::superba::search::ROWS.contains(&(section, key)) {
                         self.superba.focus = Some(key.to_owned());
+                    } else if section == pages::SuperbaSection::Updates {
+                        pages::superba::updates::command(&mut self.updates, cx, command, out);
                     }
                 } else if section == pages::SuperbaSection::Updates {
-                    pages::updates::command(&mut self.updates, cx, command, out);
+                    pages::superba::updates::command(&mut self.updates, cx, command, out);
                 } else if section == pages::SuperbaSection::Notify {
                     pages::notify::command(&mut self.notify, cx, command);
                 }
@@ -241,7 +243,7 @@ impl PageStates {
         items.extend(pages::models::palette(cx, &self.models));
         items.extend(pages::sessions::palette(cx, &self.sessions));
         items.extend(pages::hosts::palette(cx, &self.hosts));
-        items.extend(pages::updates::palette(cx, &self.updates));
+        items.extend(pages::superba::updates::palette(cx, &self.updates));
         items.extend(pages::claude::palette(cx, &self.claude));
         items.extend(pages::notify::palette(cx));
         items.extend(pages::superba::search::palette(cx));
@@ -988,6 +990,11 @@ impl SuperbaApp {
                     {
                         let text = error_text(&self.tr, e);
                         self.log(Status::Warn, text);
+                    }
+                    if r.is_ok() {
+                        // Refresh the inventory after a shell check or an external
+                        // install; its local cache also drives both update badges.
+                        self.pages.updates.view.invalidate();
                     }
                     self.data.versions.finish(r);
                 }
@@ -1844,11 +1851,26 @@ impl SuperbaApp {
             let cx = cx!(self, pal, busy);
             let reading_hooks =
                 pages::notify::poll(&cx, &mut self.settings, &mut self.pages.notify, out);
-            // An install may finish after the user leaves Updates.
-            self.pages.updates.poll(&cx);
-            if reading_hooks || self.pages.updates.busy() {
+            if reading_hooks {
                 ui.ctx()
                     .request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        }
+        {
+            let cx = cx!(self, pal, busy);
+            self.pages.updates.background(&cx, out);
+            let tools = self.pages.updates.tools.view(&cx);
+            let entries =
+                pages::superba::updates::items::inventory(&cx, &self.pages.updates, &tools);
+            let count = entries.iter().filter(|e| e.status.actionable()).count() as u32;
+            if self.pages.updates.busy() || self.pages.updates.operation_busy(&cx) || tools.checking
+            {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(100));
+            }
+            if self.data.update_inventory_count.replace(count) != Some(count) {
+                // The sidebar is drawn before this page body.
+                ui.ctx().request_repaint();
             }
         }
         self.data.notify_hooks_attention =

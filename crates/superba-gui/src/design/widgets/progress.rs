@@ -52,7 +52,8 @@ impl Widget for InlineProgress {
             let t = ui.input(|i| i.time) as f32;
             fill.min.x += (t.sin() + 1.0) * 0.35 * r.width();
             fill.max.x = fill.min.x + r.width() * 0.3;
-            ui.ctx().request_repaint();
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(80));
         }
         ui.painter().rect_filled(fill, 2, p.text_muted);
         if let Some(total) = self.total {

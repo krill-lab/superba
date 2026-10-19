@@ -45,7 +45,7 @@ fn channels_test_button_and_hooks() {
                 &mut superba::State::default(),
                 &mut prefs,
                 &mut state,
-                &mut superba_gui::pages::updates::State::default(),
+                &mut superba_gui::pages::superba::updates::State::default(),
                 out,
             )
         },
@@ -89,7 +89,7 @@ fn channels_test_button_and_hooks() {
                 &mut superba::State::default(),
                 &mut prefs,
                 &mut state,
-                &mut superba_gui::pages::updates::State::default(),
+                &mut superba_gui::pages::superba::updates::State::default(),
                 out,
             )
         },
@@ -120,7 +120,7 @@ fn the_add_dialog_checks_fields_in_the_users_language() {
                 &mut superba::State::default(),
                 &mut prefs,
                 &mut state,
-                &mut superba_gui::pages::updates::State::default(),
+                &mut superba_gui::pages::superba::updates::State::default(),
                 out,
             )
         },
@@ -137,7 +137,7 @@ fn the_add_dialog_checks_fields_in_the_users_language() {
                 &mut superba::State::default(),
                 &mut prefs,
                 &mut state,
-                &mut superba_gui::pages::updates::State::default(),
+                &mut superba_gui::pages::superba::updates::State::default(),
                 out,
             )
         },
@@ -187,7 +187,7 @@ fn adding_a_kind_from_the_palette_opens_its_form() {
                 &mut superba::State::default(),
                 &mut prefs,
                 &mut state,
-                &mut superba_gui::pages::updates::State::default(),
+                &mut superba_gui::pages::superba::updates::State::default(),
                 out,
             )
         },
