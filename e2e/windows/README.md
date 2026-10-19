@@ -65,9 +65,13 @@ UI Automation dumps, saved files), `transcripts/` (every `spb` call) and `net/` 
 - **ChatGPT's first start**: the app the wizard's switch opens runs its one-time Windows sandbox
   setup (`codex-windows-sandbox-setup.exe`, "Finishing Windows setup"), and a switch meanwhile
   pauses (`spb switch` without `--wait-turn` exits 5). `flows.first_start_setup` waits for it the
-  way Superba detects it (that process; up to 15 min, then until the app restarted its Codex core)
+  way Superba detects it (that process; up to 15 min, with a stable Codex core afterwards)
   after the wizard's switch and once the app is ready, so a scenario's next switch never runs into
   it. Pauses for running turns (W13, the WSL busy scenarios) are not affected.
+- **WSL router verification (W85)**: records shell startup and Codex command durations, requires
+  Codex's real exit status and the mock answer, and checks a new successful request row for the
+  distribution. A failed WSL config write also saves the GUI log and a separate remote probe;
+  the scenario fails without reapplying the switch, so a product timeout remains visible.
 
 ## Debugging a session by hand
 

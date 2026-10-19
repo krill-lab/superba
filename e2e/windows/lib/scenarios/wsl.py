@@ -195,9 +195,19 @@ def w85(t):
     run = t.run
     flows.wsl_keepalive(run)  # a stopped distribution is never started by a switch
     with t.step("The distribution points at the router with its own source token") as s:
+        probe = flows.wsl(run, "id -un; codex --version")
+        s.save("wsl-probe.json", probe)
+        s.info(f"WSL shell/version probe: exit {probe['code']} in {probe['ms']} ms")
         out = wsl_show(run)
         s.save("wsl-routed.txt", out)
         port = run.state.get("router_port")
+        if f"http://127.0.0.1:{port}/" not in out:
+            # Keep evidence before failing; do not repair/reapply the switch and hide a
+            # product timeout. Compare a plain WSL command with Superba's remote probe.
+            s.ui_dump("router-wsl-not-applied")
+            s.save("superba-gui.log", flows.gui_log(run))
+            remote = run.spb("remote", "probe", HOST, timeout=180, label="wsl-probe-after-failure")
+            s.save("remote-probe.json", remote)
         s.check(f"http://127.0.0.1:{port}/" in out, f"distribution config.toml on the router 127.0.0.1:{port}")
         tok = flows.wsl(run, "grep -o 'sbs_[a-z0-9]*_' ~/.codex/auth.json | head -1")["stdout"].strip()
         s.check(tok.startswith("sbs_"), f"auth.json holds a per-source router token (sbs_…, value not shown)")
@@ -205,23 +215,33 @@ def w85(t):
         s.save("spb-wsl-list.txt", r["stdout"])
         s.check("127.0.0.1" in r["stdout"], "router path 127.0.0.1 (WSL 1)", soft=True)
     with t.step("codex exec inside the distribution goes through the router") as s:
+        before = run.spb_json("usage", "log", timeout=120, label="usage-log-before-wsl")
+        s.check(before["code"] == 0 and before.get("json") is not None, "request log baseline read")
+        old_ids = {row["id"] for row in (before["json"].get("rows") or [])}
         since = time.time()
         env = wsl_trust(run)
         r = flows.wsl(run, f"mkdir -p ~/work && cd ~/work && {env} timeout 120 codex exec --skip-git-repo-check"
-                           " -s read-only 'Reply with one word: pong' 2>&1 | tail -5; echo exit $?", timeout=200)
+                           " -s read-only -o ~/.wintest-w85-answer.txt 'Reply with one word: pong'", timeout=200)
         s.save("codex-exec.txt", r["stdout"] + r["stderr"])
+        s.save("codex-exec-result.json", r)
+        s.check(not r["timed_out"] and r["code"] == 0,
+                f"codex exec completed: exit {r['code']} in {r['ms']} ms (timeout={r['timed_out']})")
+        answer = flows.wsl(run, "cat ~/.wintest-w85-answer.txt")
+        s.save("codex-answer.txt", answer["stdout"])
+        s.check(answer["code"] == 0 and answer["stdout"].strip().lower() == "pong", "Codex received the mock answer")
         posts = flows.wait_relay_turn(run, since, timeout=60)
         s.check(bool(posts), "the relay got the request")
         wsl_rows, rows = [], []
         for _ in range(8):  # the router writes its request log asynchronously
             rr = run.spb_json("usage", "log", timeout=120, label="usage-log-wsl")
             rows = (rr.get("json") or {}).get("rows") or []
-            wsl_rows = [x for x in rows if D in json.dumps(x)]
+            wsl_rows = [x for x in rows if x["id"] not in old_ids and D in (x.get("codex_host") or "")
+                        and x.get("http_status") == 200]
             if wsl_rows:
                 break
             time.sleep(5)
         s.save("usage-log.json", rows[:20])
-        s.check(bool(wsl_rows), f"a request row names the distribution ({len(wsl_rows)} rows)")
+        s.check(bool(wsl_rows), f"a new successful request row names the distribution ({len(wsl_rows)} rows)")
     with t.step("Router off: the distribution is back on the direct line") as s:
         r = run.spb("router", "disable", "--yes", timeout=300, label="router-disable-wsl")
         s.check(r["code"] == 0, f"spb router disable exit {r['code']} [{r['transcript']}]")
