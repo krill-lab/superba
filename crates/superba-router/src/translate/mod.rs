@@ -5,6 +5,7 @@ pub mod anthropic;
 pub(crate) mod body;
 pub mod chat;
 pub mod gemini;
+mod gemini_args;
 pub mod ir;
 pub mod responses;
 pub mod routing;

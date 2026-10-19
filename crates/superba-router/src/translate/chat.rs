@@ -531,9 +531,7 @@ impl Encoder {
     pub fn encode(&mut self, e: &Event) -> Result<Vec<Value>, Invalid> {
         self.state.push(e)?;
         let v = match e {
-            Event::Start { .. } => {
-                self.chunk(json!({"role":"assistant","content":""}), Value::Null)
-            }
+            Event::Start { .. } => self.chunk(json!({"role":"assistant"}), Value::Null),
             Event::BlockStart { index, block } => {
                 let d = match &block.content {
                     Content::ToolCall {

@@ -1,0 +1,6 @@
+data: {"responseId":"fixture","modelVersion":"model","candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"Inspect 世界","thought":true,"thoughtSignature":"google-signature"}]}}]}
+
+data: {"responseId":"fixture","modelVersion":"model","candidates":[{"index":0,"content":{"role":"model","parts":[{"inlineData":{"mimeType":"image/png","data":"cGl4ZWw="}},{"functionCall":{"id":"call_a","name":"read","partialArgs":[{"jsonPath":"$.path","stringValue":"a.","willContinue":true}],"willContinue":true}}]}}]}
+
+data: {"responseId":"fixture","modelVersion":"model","candidates":[{"index":0,"content":{"role":"model","parts":[{"functionCall":{"id":"call_a","partialArgs":[{"jsonPath":"$.path","stringValue":"txt","willContinue":false}],"willContinue":false},"thoughtSignature":"google-signature"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":60,"cachedContentTokenCount":20,"candidatesTokenCount":5,"thoughtsTokenCount":7}}
+

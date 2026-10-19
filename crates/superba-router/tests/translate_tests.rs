@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use superba_router::translate::{
     self,
     ir::*,
-    stream::{Sse, Transcoder},
+    stream::{Decoder, Encoder, Sse, Transcoder},
 };
 
 fn native_request(p: Protocol) -> Value {
@@ -135,10 +135,211 @@ fn wire_stream(p: Protocol) -> (&'static str, &'static str) {
             include_str!("fixtures/translate/chat-error.sse"),
         ),
         Protocol::Gemini => (
-            include_str!("fixtures/translate/gemini.sse"),
+            include_str!("fixtures/translate/gemini-partial.sse"),
             include_str!("fixtures/translate/gemini-error.sse"),
         ),
     }
+}
+
+fn decode_events(p: Protocol, wire: &str) -> Vec<Event> {
+    let mut parser = Sse::default();
+    let mut decoder = Decoder::new(p);
+    let mut events = Vec::new();
+    for data in parser
+        .push(wire.as_bytes())
+        .unwrap()
+        .into_iter()
+        .chain(parser.finish().unwrap())
+    {
+        if data == b"[DONE]" {
+            events.extend(decoder.finish());
+        } else {
+            events.extend(
+                decoder
+                    .decode(&serde_json::from_slice(&data).unwrap())
+                    .unwrap(),
+            );
+        }
+    }
+    events.extend(decoder.finish());
+    events
+}
+
+fn accumulate(events: &[Event]) -> Response {
+    let mut state = Accumulator::default();
+    for event in events {
+        state.push(event).unwrap();
+    }
+    assert!(state.ended, "stream must terminate");
+    state.response
+}
+
+fn response_roundtrip(p: Protocol) {
+    let (success, error) = wire_stream(p);
+    for wire in [success, error] {
+        let original = accumulate(&decode_events(p, wire));
+        let encoded = translate::encode_response(p, &original).unwrap();
+        let decoded = translate::decode_response(p, &encoded).unwrap();
+        assert_eq!(decoded, original, "{p:?} complete response: {encoded}");
+    }
+    for stop in [
+        StopReason::EndTurn,
+        StopReason::MaxTokens,
+        StopReason::Refusal,
+    ] {
+        let original = Response {
+            id: "text-response".into(),
+            model: "model".into(),
+            content: vec![Block::text("Hello 世界")],
+            stop: Some(stop),
+            ..Default::default()
+        };
+        let encoded = translate::encode_response(p, &original).unwrap();
+        assert_eq!(translate::decode_response(p, &encoded).unwrap(), original);
+    }
+}
+
+fn stream_roundtrip(p: Protocol) {
+    let (success, error) = wire_stream(p);
+    for wire in [success, error] {
+        let original = decode_events(p, wire);
+        let mut encoder = Encoder::new(p);
+        let mut bytes = Vec::new();
+        for event in &original {
+            for native in encoder.encode(event).unwrap() {
+                translate::stream::frame(p, &native, &mut bytes);
+            }
+        }
+        let decoded = decode_events(p, std::str::from_utf8(&bytes).unwrap());
+        // Protocols group their text/tool deltas differently; compare the
+        // complete IR, including order, ids, opaque state, usage and errors.
+        assert_eq!(accumulate(&decoded), accumulate(&original), "{p:?} stream");
+    }
+    let events = vec![
+        Event::Start {
+            id: "text-response".into(),
+            model: "model".into(),
+        },
+        Event::BlockStart {
+            index: 0,
+            block: Block::text(""),
+        },
+        Event::Delta {
+            index: 0,
+            delta: Delta::Text("Hello ".into()),
+        },
+        Event::Delta {
+            index: 0,
+            delta: Delta::Text("世界".into()),
+        },
+        Event::BlockEnd { index: 0 },
+        Event::Usage(Usage {
+            input: Some(0),
+            output: Some(0),
+            ..Default::default()
+        }),
+        Event::Stop(StopReason::EndTurn),
+        Event::End,
+    ];
+    let mut encoder = Encoder::new(p);
+    let mut bytes = Vec::new();
+    for event in &events {
+        for native in encoder.encode(event).unwrap() {
+            translate::stream::frame(p, &native, &mut bytes);
+        }
+    }
+    assert_eq!(
+        accumulate(&decode_events(p, std::str::from_utf8(&bytes).unwrap())),
+        accumulate(&events)
+    );
+}
+
+macro_rules! roundtrips {
+    ($response:ident, $stream:ident, $p:ident) => {
+        #[test]
+        fn $response() {
+            response_roundtrip(Protocol::$p);
+        }
+        #[test]
+        fn $stream() {
+            stream_roundtrip(Protocol::$p);
+        }
+    };
+}
+roundtrips!(
+    anthropic_response_roundtrip,
+    anthropic_stream_roundtrip,
+    Messages
+);
+roundtrips!(
+    responses_response_roundtrip,
+    responses_stream_roundtrip,
+    Responses
+);
+roundtrips!(chat_response_roundtrip, chat_stream_roundtrip, Chat);
+roundtrips!(gemini_response_roundtrip, gemini_stream_roundtrip, Gemini);
+
+#[test]
+fn gemini_partial_arguments_and_complete_calls_have_the_same_ir() {
+    let partial = decode_events(Protocol::Gemini, wire_stream(Protocol::Gemini).0);
+    let complete = decode_events(
+        Protocol::Gemini,
+        include_str!("fixtures/translate/gemini.sse"),
+    );
+    assert_eq!(accumulate(&partial), accumulate(&complete));
+    assert!(partial.iter().any(|e| matches!(
+        e,
+        Event::Delta {
+            delta: Delta::Arguments(_),
+            ..
+        }
+    )));
+}
+
+#[test]
+fn gemini_partial_arguments_are_not_executed_before_the_last_fragment() {
+    let mut decoder = Decoder::new(Protocol::Gemini);
+    let mut state = Accumulator::default();
+    let chunk = |call: Value| json!({"candidates":[{"content":{"parts":[{"functionCall":call}]}}]});
+    let first = chunk(
+        json!({"id":"a","name":"read","willContinue":true,"partialArgs":[
+        {"jsonPath":"$.files[0].path","stringValue":"dir/","willContinue":true},
+        {"jsonPath":"$.enabled","boolValue":false},{"jsonPath":"$.limit","numberValue":0},
+        {"jsonPath":"$.optional","nullValue":"NULL_VALUE"}]}),
+    );
+    for event in decoder.decode(&first).unwrap() {
+        state.push(&event).unwrap();
+    }
+    assert!(
+        matches!(&state.response.content[0].content,Content::ToolCall{arguments,..} if arguments.is_empty())
+    );
+    let last = chunk(json!({"id":"a","will_continue":false,"partial_args":[
+        {"json_path":"$.files[0].path","string_value":"file.txt","will_continue":false},
+        {"json_path":"$[\"quoted.key\"]","number_value":2}]}));
+    for event in decoder
+        .decode(&last)
+        .unwrap()
+        .into_iter()
+        .chain(decoder.finish())
+    {
+        state.push(&event).unwrap();
+    }
+    let Content::ToolCall {
+        id,
+        name,
+        arguments,
+    } = &state.response.content[0].content
+    else {
+        panic!("tool call");
+    };
+    assert_eq!((id.as_str(), name.as_str()), ("a", "read"));
+    assert_eq!(
+        serde_json::from_str::<Value>(arguments).unwrap(),
+        json!({"files":[{"path":"dir/file.txt"}],"enabled":false,"limit":0,"optional":null,"quoted.key":2})
+    );
+    let mut truncated = Decoder::new(Protocol::Gemini);
+    truncated.decode(&first).unwrap();
+    assert!(matches!(truncated.finish().as_slice(), [Event::Error(_)]));
 }
 
 fn transcode(from: Protocol, to: Protocol, s: &str, chunk: usize) -> String {

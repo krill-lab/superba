@@ -6,7 +6,7 @@ use super::{Invalid, array, number, optional_string, string, strings};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-fn field<'a>(v: &'a Value, camel: &str, snake: &str) -> &'a Value {
+pub(super) fn field<'a>(v: &'a Value, camel: &str, snake: &str) -> &'a Value {
     v.get(camel)
         .or_else(|| v.get(snake))
         .unwrap_or(&Value::Null)
@@ -511,9 +511,103 @@ pub struct Decoder {
     calls: Calls,
     tools: bool,
     ended: bool,
+    partial: BTreeMap<String, PartialCall>,
+}
+
+struct PartialCall {
+    index: usize,
+    name: String,
+    arguments: super::gemini_args::Arguments,
 }
 
 impl Decoder {
+    fn partial_call(&mut self, p: &Value, out: &mut Vec<Event>) -> Result<bool, Invalid> {
+        let fc = field(p, "functionCall", "function_call");
+        if fc.is_null()
+            || (field(fc, "partialArgs", "partial_args").is_null()
+                && field(fc, "willContinue", "will_continue").is_null())
+        {
+            return Ok(false);
+        }
+        if fc.get("args").is_some() {
+            return Err(Invalid::new(
+                "Gemini call mixes complete and partial arguments",
+            ));
+        }
+        let id = optional_string(fc, "id").filter(|s| !s.is_empty());
+        let name = string(fc, "name");
+        let key = match id {
+            Some(id) => id,
+            None if self.partial.len() == 1 => {
+                let (id, call) = self.partial.first_key_value().unwrap();
+                if !name.is_empty() && name != call.name {
+                    return Err(Invalid::new("ambiguous Gemini partial function call"));
+                }
+                id.clone()
+            }
+            None if !self.partial.is_empty() => {
+                return Err(Invalid::new("parallel Gemini partial calls need ids"));
+            }
+            None => self.calls.call(fc).0,
+        };
+        if !self.partial.contains_key(&key) {
+            if name.is_empty() || self.partial.len() >= 1024 {
+                return Err(Invalid::new("invalid Gemini partial function call"));
+            }
+            let index = self.next;
+            self.next += 1;
+            self.last = None;
+            self.tools = true;
+            self.partial.insert(
+                key.clone(),
+                PartialCall {
+                    index,
+                    name: name.clone(),
+                    arguments: Default::default(),
+                },
+            );
+            out.push(Event::BlockStart {
+                index,
+                block: Block::new(Content::ToolCall {
+                    id: key.clone(),
+                    name: name.clone(),
+                    arguments: String::new(),
+                }),
+            });
+        }
+        let call = self.partial.get_mut(&key).unwrap();
+        if !name.is_empty() && name != call.name {
+            return Err(Invalid::new("Gemini partial function name changed"));
+        }
+        let partial = field(fc, "partialArgs", "partial_args");
+        if !partial.is_null() {
+            for arg in partial
+                .as_array()
+                .ok_or_else(|| Invalid::new("Gemini partialArgs must be an array"))?
+            {
+                call.arguments.push(arg)?;
+            }
+        }
+        if let Some(signature) = field(p, "thoughtSignature", "thought_signature").as_str() {
+            out.push(Event::Delta {
+                index: call.index,
+                delta: Delta::Opaque(Opaque {
+                    family: Family::Google,
+                    kind: OpaqueKind::Signature,
+                    value: signature.into(),
+                }),
+            });
+        }
+        if field(fc, "willContinue", "will_continue").as_bool() != Some(true) {
+            let call = self.partial.remove(&key).unwrap();
+            out.push(Event::Delta {
+                index: call.index,
+                delta: Delta::Arguments(call.arguments.finish()?),
+            });
+        }
+        Ok(true)
+    }
+
     /// Decode one native event into zero or more IR events.
     pub fn decode(&mut self, v: &Value) -> Result<Vec<Event>, Invalid> {
         if v.get("error").is_some() {
@@ -542,6 +636,9 @@ impl Decoder {
                 continue;
             }
             for p in array(&c["content"], "parts") {
+                if self.partial_call(p, &mut out)? {
+                    continue;
+                }
                 let mut b = decode_part(p, &mut self.calls)?;
                 let thinking = matches!(b.content, Content::Reasoning { .. });
                 let text = match &mut b.content {
@@ -606,6 +703,12 @@ impl Decoder {
     pub fn finish(&mut self) -> Vec<Event> {
         if std::mem::replace(&mut self.ended, true) {
             vec![]
+        } else if !self.partial.is_empty() {
+            vec![Event::Error(ApiError {
+                status: 502,
+                code: "invalid_response".into(),
+                message: "unfinished Gemini function call".into(),
+            })]
         } else {
             (0..self.next)
                 .map(|index| Event::BlockEnd { index })
@@ -641,8 +744,14 @@ impl Encoder {
                 }
             }
             Event::Delta { index, delta } => match delta {
-                Delta::Text(t) => out.push(self.chunk(vec![json!({"text":t})])),
-                Delta::Reasoning(t) => out.push(self.chunk(vec![json!({"text":t,"thought":true})])),
+                Delta::Text(t) => {
+                    out.push(self.chunk(vec![json!({"text":t})]));
+                    self.sent.insert(*index, true);
+                }
+                Delta::Reasoning(t) => {
+                    out.push(self.chunk(vec![json!({"text":t,"thought":true})]));
+                    self.sent.insert(*index, true);
+                }
                 Delta::Opaque(o)
                     if o.family == Family::Google
                         && o.kind == OpaqueKind::Signature

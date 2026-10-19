@@ -37,7 +37,8 @@ impl Decoder {
             Self::Gemini(d) => d.decode(v),
         }
     }
-    fn finish(&mut self) -> Vec<Event> {
+    /// Finish a native event stream at its terminal marker or HTTP EOF.
+    pub fn finish(&mut self) -> Vec<Event> {
         match self {
             Self::Chat(d) => d.finish(),
             Self::Gemini(d) => d.finish(),

@@ -326,7 +326,7 @@ pub(crate) fn encode_stop(stop: Option<&StopReason>) -> (Value, Value) {
 pub fn decode_response(v: &Value) -> Result<Response, Invalid> {
     if v.get("error").is_some() {
         return Ok(Response {
-            error: Some(super::decode_error(500, v)),
+            error: Some(decode_error(v)),
             ..Response::default()
         });
     }
@@ -418,17 +418,24 @@ impl Decoder {
                 out
             }
             "message_stop" => vec![Event::End],
-            "error" => vec![Event::Error(super::decode_error(
-                if v["error"]["type"] == "overloaded_error" {
-                    529
-                } else {
-                    500
-                },
-                v,
-            ))],
+            "error" => vec![Event::Error(decode_error(v))],
             _ => vec![],
         })
     }
+}
+
+fn decode_error(v: &Value) -> ApiError {
+    let status = match v["error"]["type"].as_str() {
+        Some("invalid_request_error") => 400,
+        Some("authentication_error") => 401,
+        Some("permission_error") => 403,
+        Some("not_found_error") => 404,
+        Some("request_too_large") => 413,
+        Some("rate_limit_error") => 429,
+        Some("overloaded_error") => 529,
+        _ => 500,
+    };
+    super::decode_error(status, v)
 }
 
 #[derive(Default)]

@@ -643,7 +643,13 @@ impl Encoder {
                 let delta=match &mut initial.content {Content::Text(t)=>Some(Delta::Text(std::mem::take(t))),Content::Reasoning {text,..}=>Some(Delta::Reasoning(std::mem::take(text))),Content::ToolCall {arguments,..}=>Some(Delta::Arguments(std::mem::take(arguments))),_=>None};
                 // Empty reasoning items still have a lifecycle and can receive
                 // summary or encrypted content later.
-                let mut item=encode_item(&initial,*index,false)?.unwrap_or_else(||json!({"type":"reasoning","id":format!("rs_{index}"),"summary":[]}));
+                let mut item=encode_item(&initial,*index,false)?.unwrap_or_else(||{
+                    let id = match &initial.content {
+                        Content::Reasoning { family: Family::OpenAi, id: Some(id), .. } => id.clone(),
+                        _ => format!("rs_{index}"),
+                    };
+                    json!({"type":"reasoning","id":id,"summary":[]})
+                });
                 item["status"]="in_progress".into();
                 if item["type"]=="message" {item["content"]=json!([]);}
                 self.items.insert(*index,item.clone());
