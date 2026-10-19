@@ -395,6 +395,13 @@ pub async fn detect(cx: &Ctx, st: &ToolState) -> Detected {
         && i.kind == ToolInstallKind::NpmGlobal
         && let Some((dir, _)) = common::npm_package_of(&i.path, PACKAGE, os)
     {
+        det.uninstall_cautions.push(
+            text(
+                "tools.claude.caution_npm_uninstall",
+                "This removes the global npm Claude Code install in {path} with `npm uninstall -g @anthropic-ai/claude-code`.",
+            )
+            .arg("path", superba_core::paths::display_path(&dir)),
+        );
         let exe = dir.join("bin").join("claude.exe");
         if std::fs::metadata(&exe).is_ok_and(|m| m.len() < 4096) {
             det.notes.push(Notice::warning(text(

@@ -195,6 +195,7 @@ objc2-app-kit = "0.3"
 
 # --- dev / test
 tempfile = "3"
+same-file = "1"
 pretty_assertions = "1"
 
 [profile.release]

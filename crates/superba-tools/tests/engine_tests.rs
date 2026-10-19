@@ -329,6 +329,83 @@ async fn opencode_install_update_switch_uninstall() {
     .unwrap();
     assert!(!exe.exists());
     assert!(config.is_file(), "settings are kept unless asked");
+    assert!(
+        !tm.ctx().tool_dir(ToolId::Opencode).exists(),
+        "empty install staging folder is removed"
+    );
+    assert!(!tm.ctx().data.root().join("tools/opencode.lock").exists());
+}
+
+#[tokio::test]
+async fn opencode_version_probes_leave_user_directories_untouched() {
+    let mock = Mock::start().await;
+    opencode_routes(&mock);
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+    let bin = home.join(".opencode/bin");
+    let data = root.path().join("user-data");
+    let cache = root.path().join("user-cache");
+    let state = root.path().join("user-state");
+    let tm = manager(
+        root.path(),
+        &mock,
+        &[&bin],
+        &[
+            ("XDG_DATA_HOME", data.to_str().unwrap()),
+            ("XDG_CACHE_HOME", cache.to_str().unwrap()),
+            ("XDG_STATE_HOME", state.to_str().unwrap()),
+        ],
+    );
+    let marker = data.join("opencode/session.txt");
+    support::write(&marker, b"keep my session");
+    let body = b"#!/bin/sh\n/bin/mkdir -p \"$XDG_DATA_HOME/opencode/log\" \"$XDG_DATA_HOME/opencode/repos\" \"$XDG_CACHE_HOME/opencode/bin\" \"$XDG_STATE_HOME/opencode\"\necho log > \"$XDG_DATA_HOME/opencode/log/opencode.log\"\necho 'opencode v2.0.32'\n";
+    let archive = targz(&[("opencode", body, 0o755)], &[]);
+    mock.route("/opencode/update/api/latest/cli", Route::ok(json!({"artifacts": [{"distribution": "opencode", "version": "2.0.32", "metadata": {"files": {
+        "opencode-linux-x64.tar.gz": {"url": mock.url("/probe.tar.gz"), "sha256": sha256_hex(&archive), "size": archive.len()}
+    }}}]}).to_string()));
+    mock.route("/probe.tar.gz", Route::ok(archive));
+    tm.run(
+        req(ToolId::Opencode, ToolOp::Install, None),
+        Arc::new(NoToolProgress),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !data.join("opencode/log").exists(),
+        "install verification writes only to scratch"
+    );
+    superba_tools::forget_versions();
+    assert_eq!(
+        tm.row(ToolId::Opencode, false)
+            .await
+            .unwrap()
+            .installed_version(),
+        Some("2.0.32")
+    );
+    assert!(
+        !data.join("opencode/log").exists(),
+        "list probe writes only to scratch"
+    );
+    assert!(!data.join("opencode/repos").exists());
+    assert!(!cache.exists() && !state.exists());
+    assert!(!home.join(".local/share/opencode").exists());
+    assert!(!home.join(".cache/opencode").exists());
+    assert!(!home.join(".local/state/opencode").exists());
+    assert_eq!(
+        std::fs::read_dir(tm.ctx().data.root().join("tmp"))
+            .unwrap()
+            .count(),
+        0
+    );
+    tm.run(
+        req(ToolId::Opencode, ToolOp::Uninstall, None),
+        Arc::new(NoToolProgress),
+    )
+    .await
+    .unwrap();
+    assert_eq!(std::fs::read(&marker).unwrap(), b"keep my session");
+    assert!(!tm.ctx().tool_dir(ToolId::Opencode).exists());
+    assert!(!tm.ctx().data.root().join("tools/opencode.lock").exists());
 }
 
 fn claude_binary(v: &str) -> Vec<u8> {
@@ -521,7 +598,14 @@ async fn claude_code_asks_before_removing_an_npm_install_and_refuses_with_disabl
         br#"{"name":"@anthropic-ai/claude-code","version":"2.1.284"}"#,
     );
     let prefix_s = prefix.to_string_lossy().into_owned();
-    let tm = manager(root.path(), &mock, &[], &[("NPM_CONFIG_PREFIX", &prefix_s)]);
+    let fake_bin = root.path().join("fake-bin");
+    support::script(&fake_bin.join("npm"), "exit 99");
+    let tm = manager(
+        root.path(),
+        &mock,
+        &[&fake_bin],
+        &[("NPM_CONFIG_PREFIX", &prefix_s)],
+    );
     let row = tm.row(ToolId::ClaudeCode, false).await.unwrap();
     let npm = row
         .installs
@@ -529,6 +613,19 @@ async fn claude_code_asks_before_removing_an_npm_install_and_refuses_with_disabl
         .find(|i| i.kind == ToolInstallKind::NpmGlobal)
         .unwrap();
     assert_eq!(npm.version.as_deref(), Some("2.1.284"));
+    assert!(
+        row.uninstall_cautions
+            .iter()
+            .any(|c| c.key == "tools.claude.caution_npm_uninstall")
+    );
+    let err = tm
+        .run(
+            req(ToolId::ClaudeCode, ToolOp::Uninstall, None),
+            Arc::new(NoToolProgress),
+        )
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("confirm first"), "{err}");
     assert!(
         row.actions.install,
         "the native build can be installed beside it"

@@ -10,6 +10,7 @@ machine_wide = "这一份是为所有用户安装的：更改它需要管理员�
 caution_alias = "它会从 {files} 中删除旧的 `claude` alias 行。"
 caution_local = "它会删除 {path} 中旧的本地安装。"
 caution_npm = "Claude Code 的安装程序会运行 `npm uninstall -g @anthropic-ai/claude-code`：{path} 中的 npm 安装会被删除。"
+caution_npm_uninstall = "将运行 `npm uninstall -g @anthropic-ai/claude-code`，删除 {path} 中全局 npm 安装的 Claude Code。"
 kept = "Claude Code 的设置和历史记录（{config}、~/.claude.json）已保留。"
 multiple = "找到了多份 Claude Code；`claude` 运行的是 {path}。"
 native_offer = "「安装」会在这份安装之外再装上 Claude Code 的原生版本（官方推荐的方式）。"

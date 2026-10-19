@@ -414,6 +414,12 @@ static VERSION_CACHE: OnceLock<Mutex<HashMap<FileKey, Option<String>>>> = OnceLo
 
 /// `program --version` (or `args`), parsed; cached per file size and mtime.
 pub async fn probe_version(cx: &Ctx, program: &Path, args: &[&str]) -> Option<String> {
+    probe_version_with(cx.cmd(program).args(args.iter().copied())).await
+}
+
+/// A version probe with a tool-specific environment, using the same cache.
+pub(crate) async fn probe_version_with(cmd: run::Cmd) -> Option<String> {
+    let program = &cmd.program;
     let meta = std::fs::metadata(program).ok()?;
     let mtime = meta
         .modified()
@@ -425,10 +431,7 @@ pub async fn probe_version(cx: &Ctx, program: &Path, args: &[&str]) -> Option<St
     if let Some(v) = cache.lock().unwrap_or_else(|p| p.into_inner()).get(&key) {
         return v.clone();
     }
-    let cmd = cx
-        .cmd(program)
-        .args(args.iter().copied())
-        .timeout(Duration::from_secs(20));
+    let cmd = cmd.timeout(Duration::from_secs(20));
     let found = run::output(&cmd)
         .await
         .ok()

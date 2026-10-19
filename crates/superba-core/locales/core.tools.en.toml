@@ -10,6 +10,7 @@ machine_wide = "This copy is installed for all users: changing it needs administ
 caution_alias = "It removes the old `claude` alias lines from {files}."
 caution_local = "It deletes the old local install in {path}."
 caution_npm = "Claude Code's installer runs `npm uninstall -g @anthropic-ai/claude-code`: the npm install in {path} will be removed."
+caution_npm_uninstall = "This removes the global npm Claude Code install in {path} with `npm uninstall -g @anthropic-ai/claude-code`."
 kept = "Claude Code's settings and history ({config}, ~/.claude.json) were kept."
 multiple = "Several Claude Code installs were found; `claude` runs {path}."
 native_offer = "Install adds Claude Code's native build (its recommended method) beside this install."

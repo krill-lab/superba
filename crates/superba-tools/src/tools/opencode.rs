@@ -44,6 +44,24 @@ pub const V1_PACKAGE: &str = "opencode-ai";
 /// OpenCode 1's GitHub repository.
 pub const V1_REPO: &str = "anomalyco/opencode";
 
+/// Even `--version` initializes opencode's XDG directories. Keep those
+/// writes in a fresh Superba scratch directory, removed on every exit path.
+async fn probe_version(cx: &Ctx, program: &Path) -> Option<String> {
+    let tmp = cx.data.root().join("tmp");
+    std::fs::create_dir_all(&tmp).ok()?;
+    let scratch = tempfile::Builder::new()
+        .prefix("opencode-probe-")
+        .tempdir_in(&tmp)
+        .ok()?;
+    let cmd = cx
+        .cmd(program)
+        .args(["--version"])
+        .env("XDG_DATA_HOME", scratch.path().join("data"))
+        .env("XDG_STATE_HOME", scratch.path().join("state"))
+        .env("XDG_CACHE_HOME", scratch.path().join("cache"));
+    crate::probe_version_with(cmd).await
+}
+
 /// `~/.opencode/bin`.
 pub fn bin_dir(cx: &Ctx) -> PathBuf {
     cx.home.join(".opencode").join("bin")
@@ -112,7 +130,7 @@ async fn classify(cx: &Ctx, path: &Path) -> ToolInstall {
             true,
         );
     }
-    let v = crate::probe_version(cx, path, &["--version"]).await;
+    let v = probe_version(cx, path).await;
     install(path.to_path_buf(), ToolInstallKind::Other, v, false, true)
 }
 
@@ -136,7 +154,7 @@ pub async fn detect(cx: &Ctx, st: &ToolState) -> Detected {
     let standalone = exe(cx);
     let mut ours = None;
     if standalone.is_file() {
-        let v = crate::probe_version(cx, &standalone, &["--version"]).await;
+        let v = probe_version(cx, &standalone).await;
         let by = st
             .installed
             .as_ref()
@@ -475,7 +493,7 @@ async fn install_archive(op: &Op<'_>) -> Result<ToolReport> {
     op.log.line(format!("installed {}", target.display()));
     op.stage(ToolStage::Checking, None);
     crate::forget_versions();
-    let got = crate::probe_version(cx, &target, &["--version"]).await;
+    let got = probe_version(cx, &target).await;
     op.log.line(format!(
         "--version: {}",
         got.as_deref().unwrap_or("no answer")
@@ -591,6 +609,10 @@ async fn remove_standalone(op: &Op<'_>) -> Result<ToolReport> {
         )));
     }
     let _ = fsx::remove_dir(&common::downloads(cx, ToolId::Opencode));
+    fsx::remove_empty_dirs(
+        &cx.tool_dir(ToolId::Opencode),
+        &crate::state::tools_dir(&cx.data),
+    );
     op.record(|s| s.installed = None)?;
     Ok(op.report(None, None, notes))
 }
@@ -710,7 +732,7 @@ async fn brew(op: &Op<'_>) -> Result<ToolReport> {
     let now = if remove {
         None
     } else {
-        crate::probe_version(cx, &i.path, &["--version"]).await
+        probe_version(cx, &i.path).await
     };
     Ok(op.report(now, (!remove).then(|| i.path.clone()), Vec::new()))
 }

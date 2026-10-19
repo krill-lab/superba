@@ -16,11 +16,13 @@ base64.workspace = true
 flate2.workspace = true
 hex.workspace = true
 reqwest.workspace = true
+same-file.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sysinfo.workspace = true
 tar.workspace = true
+tempfile.workspace = true
 tokio.workspace = true
 
 [target.'cfg(windows)'.dependencies]
@@ -29,7 +31,6 @@ windows-sys.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
-tempfile.workspace = true
 tokio.workspace = true
 
 [lints]

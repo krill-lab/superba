@@ -164,10 +164,16 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 #[derive(Debug)]
 pub struct ToolLock {
     _file: fs::File,
+    path: PathBuf,
 }
 
 impl Drop for ToolLock {
     fn drop(&mut self) {
+        // Unlink while we still hold the lock. An opener of the old file
+        // must check its identity after locking (below), or it could run
+        // alongside a new opener of this path. Windows keeps a deleted
+        // file pending until the last open handle is closed.
+        let _ = fs::remove_file(&self.path);
         // Closing only our descriptor can leave flock held by a concurrent
         // spawn's inherited descriptor until exec. End the operation's lock
         // explicitly so the next operation can start immediately.
@@ -181,22 +187,50 @@ impl ToolLock {
         let dir = tools_dir(data);
         fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, &e))?;
         let path = dir.join(format!("{}.lock", tool.as_str()));
+        loop {
+            match Self::try_acquire(&path, tool)? {
+                Some(lock) => return Ok(lock),
+                None => continue,
+            }
+        }
+    }
+
+    fn try_acquire(path: &Path, tool: ToolId) -> Result<Option<Self>> {
         let file = OpenOptions::new()
             .create(true)
             .truncate(false)
             .read(true)
             .write(true)
-            .open(&path)
-            .map_err(|e| Error::io(&path, &e))?;
+            .open(path)
+            .map_err(|e| Error::io(path, &e))?;
         match file.try_lock() {
-            Ok(()) => Ok(Self { _file: file }),
+            Ok(()) => {
+                let ours = same_file::Handle::from_file(
+                    file.try_clone().map_err(|e| Error::io(path, &e))?,
+                )
+                .map_err(|e| Error::io(path, &e))?;
+                let current = match same_file::Handle::from_path(path) {
+                    Ok(current) => current,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                    Err(e) => return Err(Error::io(path, &e)),
+                };
+                if ours != current {
+                    // The preceding operation unlinked the file after we
+                    // opened it. Retry on the current path, never on this inode.
+                    return Ok(None);
+                }
+                Ok(Some(Self {
+                    _file: file,
+                    path: path.to_owned(),
+                }))
+            }
             Err(fs::TryLockError::WouldBlock) => Err(Error::Locked {
                 what: format!(
                     "another install, update or removal of {}",
                     tool.display_name()
                 ),
             }),
-            Err(fs::TryLockError::Error(e)) => Err(Error::io(&path, &e)),
+            Err(fs::TryLockError::Error(e)) => Err(Error::io(path, &e)),
         }
     }
 }
@@ -215,10 +249,48 @@ mod tests {
         let duplicate = lock._file.try_clone().unwrap();
         assert!(ToolLock::acquire(&data, ToolId::Pi).is_err());
         drop(lock);
+        // Windows keeps the name delete-pending while the duplicate is open.
+        #[cfg(unix)]
         let next = ToolLock::acquire(&data, ToolId::Pi).unwrap();
         drop(duplicate);
+        #[cfg(not(unix))]
+        let next = ToolLock::acquire(&data, ToolId::Pi).unwrap();
         assert!(ToolLock::acquire(&data, ToolId::Pi).is_err());
         drop(next);
+        assert!(!tools_dir(&data).join("pi.lock").exists());
         assert!(ToolLock::acquire(&data, ToolId::Pi).is_ok());
+    }
+
+    #[test]
+    fn competing_operations_remain_exclusive_while_lock_files_are_removed() {
+        use std::sync::{
+            Arc, Barrier,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let root = tempfile::tempdir().unwrap();
+        let data = DataDir::new(root.path());
+        let inside = Arc::new(AtomicUsize::new(0));
+        let start = Arc::new(Barrier::new(4));
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let (inside, start, data) = (inside.clone(), start.clone(), data.clone());
+                scope.spawn(move || {
+                    start.wait();
+                    for _ in 0..100 {
+                        let lock = loop {
+                            if let Ok(lock) = ToolLock::acquire(&data, ToolId::Pi) {
+                                break lock;
+                            }
+                            std::thread::yield_now();
+                        };
+                        assert_eq!(inside.fetch_add(1, Ordering::SeqCst), 0);
+                        std::thread::yield_now();
+                        assert_eq!(inside.fetch_sub(1, Ordering::SeqCst), 1);
+                        drop(lock);
+                    }
+                });
+            }
+        });
+        assert!(!tools_dir(&data).join("pi.lock").exists());
     }
 }

@@ -189,6 +189,71 @@ fn a_removal_is_always_confirmed_and_keeps_data_unless_asked() {
 }
 
 #[test]
+fn removing_global_npm_claude_requires_a_separate_gui_confirmation() {
+    for (locale, kind, title, cancel, uninstall, done) in [
+        (
+            Locale::En,
+            "npm (global)",
+            "Uninstall Claude Code?",
+            "Cancel",
+            "Uninstall",
+            "Removed Claude Code.",
+        ),
+        (
+            Locale::ZhCn,
+            "npm（全局安装）",
+            "卸载 Claude Code？",
+            "取消",
+            "卸载",
+            "已卸载 Claude Code",
+        ),
+    ] {
+        let service = fake();
+        let mut view = support::fake::tools::sample_view();
+        let row = &mut view.rows[0];
+        row.installs[0].kind = superba_core::ToolInstallKind::NpmGlobal;
+        row.installs[0].by_superba = false;
+        row.installs[0].path = "/usr/bin/claude".into();
+        row.uninstall_cautions = vec![superba_core::LocalizedText::new(
+            "tools.claude.caution_npm_uninstall",
+            "This removes the global npm Claude Code install in {path} with `npm uninstall -g @anthropic-ai/claude-code`.",
+        ).arg("path", "/usr/lib/node_modules/@anthropic-ai/claude-code")];
+        service.set_tools(view);
+        let mut h = harness(service.clone(), locale);
+        let mut state = State::default();
+        let f = show(&mut h, &mut state, kind);
+        h.click_text(&f, uninstall);
+        let f = show(&mut h, &mut state, title);
+        assert!(f.has("/usr/lib/node_modules/@anthropic-ai/claude-code"));
+        assert!(f.has("npm uninstall -g"));
+        assert!(service.tool_runs().is_empty());
+        h.click_text(&f, cancel);
+        h.frames(4, |ui, cx, out| tools::section(ui, cx, &mut state, out));
+        assert!(state.confirm.is_none());
+        assert!(service.tool_runs().is_empty());
+        let f = show(&mut h, &mut state, kind);
+        h.click_text(&f, uninstall);
+        let f = show(&mut h, &mut state, title);
+        let ok = f
+            .texts
+            .iter()
+            .rfind(|(t, _)| t == uninstall)
+            .unwrap()
+            .1
+            .center();
+        h.click_at(ok);
+        show(&mut h, &mut state, done);
+        let runs = service.tool_runs();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(
+            (runs[0].tool, runs[0].op, runs[0].confirmed),
+            (ToolId::ClaudeCode, ToolOp::Uninstall, true)
+        );
+        assert!(!runs[0].remove_data);
+    }
+}
+
+#[test]
 fn a_failed_operation_shows_its_error_under_the_row() {
     let service = fake();
     service.fail_tools(Error::Invalid {

@@ -5034,6 +5034,7 @@ dependencies = [
  "hex",
  "pretty_assertions",
  "reqwest",
+ "same-file",
  "serde",
  "serde_json",
  "sha2",
