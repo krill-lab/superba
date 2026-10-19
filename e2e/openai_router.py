@@ -324,7 +324,15 @@ def main():
         check(rows and rows[0]["failovers"] >= 1 and rows[0]["member_id"] == "krill",
               "the first request failed over from the unreachable member")
         ok = [r for r in rows if r["status_kind"] == "ok"]
-        check(len(ok) == len(rows), f"{len(ok)}/{len(rows)} rows ok")
+        # Headless clients may exit after their foreground answer without
+        # waiting for an asynchronous title request. Such client cancellations
+        # are valid background rows; foreground cancellations and errors still
+        # fail the run.
+        cancelled_background = [r for r in rows if r["status_kind"] == "cancelled"
+                                and r["agent_kind"] == "background"]
+        check(len(ok) + len(cancelled_background) == len(rows),
+              f"{len(ok)}/{len(rows)} rows ok; {len(cancelled_background)} background requests "
+              "cancelled by the client, no foreground failure")
         check(ok and all(r["input_tokens"] and r["output_tokens"] for r in ok),
               "answered rows carry input and output tokens")
         check(ok and all(r["response_id"] and r["upstream_request_id"] for r in ok),
