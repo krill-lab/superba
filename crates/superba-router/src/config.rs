@@ -55,6 +55,9 @@ pub struct RouterConfig {
     pub listen_port: u16,
     /// Members in priority order (first = preferred).
     pub members: Vec<MemberConfig>,
+    /// Extra providers for explicitly applied tools; they never join Codex failover.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_only_members: Vec<String>,
     /// Timeouts, stickiness and breaker parameters.
     #[serde(default)]
     pub tuning: Tuning,
@@ -306,6 +309,7 @@ impl RouterConfig {
             stats: None,
             wsl_listen: Vec::new(),
             claude: None,
+            tool_only_members: Vec::new(),
             openai: None,
             gemini: None,
             translation: Default::default(),
@@ -314,7 +318,8 @@ impl RouterConfig {
 
     /// The member serves Codex requests (not reserved for Claude Code).
     pub fn serves_codex(&self, id: &str) -> bool {
-        !self.claude.as_ref().is_some_and(|c| c.claude_only(id))
+        !self.tool_only_members.iter().any(|m| m == id)
+            && !self.claude.as_ref().is_some_and(|c| c.claude_only(id))
     }
 
     /// Look up a member.
@@ -335,6 +340,11 @@ impl RouterConfig {
         }
         if self.members.is_empty() {
             return Err(Error::invalid("the router needs at least one member"));
+        }
+        for id in &self.tool_only_members {
+            if self.member(id).is_none() {
+                return Err(Error::invalid(format!("tool-only provider {id} is absent")));
+            }
         }
         for ip in &self.wsl_listen {
             if !wsl_listen_allowed(*ip) {

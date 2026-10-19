@@ -283,6 +283,7 @@ pub(crate) async fn proxy_http(
                 &generation,
                 crate::openai::OpenAiProtocol::Responses,
                 m.model.as_deref(),
+                crate::forward::bound_member(&parts.headers),
             )
             .await
             {

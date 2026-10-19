@@ -72,6 +72,26 @@ pub fn harness_token(
     source_token(router_token, &source)
 }
 
+/// A tool token bound to the provider explicitly applied in the Tools page.
+/// Changing Codex's provider cannot change this route until the tool is applied again.
+pub fn harness_member_token(
+    router_token: &[u8],
+    harness: RequestHarness,
+    member: &str,
+) -> Option<String> {
+    if member.is_empty()
+        || !member
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+    {
+        return None;
+    }
+    source_token(
+        router_token,
+        &format!("{HARNESS_SOURCE_PREFIX}{}@member:{member}", harness.id()),
+    )
+}
+
 /// What a verified source token says about its presenter.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Presenter {
@@ -79,6 +99,8 @@ pub struct Presenter {
     pub host: Option<String>,
     /// The harness a harness token names.
     pub harness: Option<RequestHarness>,
+    /// Explicit provider binding; absent for ordinary host and harness tokens.
+    pub member: Option<String>,
 }
 
 /// Split a verified source into its host and harness (`wsl:Debian` → host;
@@ -91,14 +113,20 @@ pub fn presenter_of(source: &str) -> Presenter {
                 Some((id, host)) => (id, Some(host.to_owned())),
                 None => (rest, None),
             };
+            let member = host
+                .as_deref()
+                .and_then(|h| h.strip_prefix("member:"))
+                .map(str::to_owned);
             Presenter {
-                host,
+                host: if member.is_some() { None } else { host },
                 harness: RequestHarness::from_id(id),
+                member,
             }
         }
         None => Presenter {
             host: Some(source.to_owned()),
             harness: None,
+            member: None,
         },
     }
 }

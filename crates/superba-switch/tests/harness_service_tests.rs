@@ -322,7 +322,7 @@ async fn routed_mode_needs_the_router_url_and_token_then_writes_them() {
         .await
         .unwrap_err()
         .to_string();
-    assert!(err.contains("router's URL"), "{err}");
+    assert!(err.contains("Set up the local router"), "{err}");
     st.router_url = Some(Url::parse("http://127.0.0.1:18731").unwrap());
     s.save_harness_settings(HarnessId::OpenCode, st)
         .await
@@ -446,6 +446,11 @@ async fn preview_never_saves_a_draft_or_changes_configuration_files() {
         .await
         .unwrap();
     assert!(view.endpoint.is_some());
+    let plan = svc
+        .harness_plan_preview(HarnessId::OpenCode, settings("work"))
+        .await
+        .unwrap();
+    assert!(!plan.changes.is_empty());
     assert!(!w.ctx.data_dir.harness_config_json().exists());
     assert!(view.files.iter().all(|f| !f.path.exists()));
     assert_eq!(
@@ -584,5 +589,142 @@ async fn reviewed_backup_restore_refuses_an_edit_after_preview() {
     assert_eq!(
         std::fs::read_to_string(path).unwrap(),
         "{\"theme\":\"light\"}"
+    );
+}
+
+#[tokio::test]
+async fn local_router_apply_binds_the_tool_provider_without_adding_codex_failover_members() {
+    use superba_router::token::{presenter_of, verify_source_token};
+    let w = world();
+    *w.router.port.lock().unwrap() = Some(18431);
+    let sw = w.switcher();
+    let mut st = settings("work");
+    st.route = HarnessRoute::Routed;
+    let plan = sw
+        .harness_plan_preview(HarnessId::OpenCode, st.clone())
+        .await
+        .unwrap();
+    let target = plan.desired.as_ref().unwrap();
+    let source =
+        verify_source_token(ROUTER_TOKEN.as_bytes(), target.key.expose().as_bytes()).unwrap();
+    let who = presenter_of(&source);
+    assert_eq!(who.harness, Some(superba_core::RequestHarness::OpenCode));
+    assert_eq!(who.member.as_deref(), Some("work"));
+    assert!(who.host.is_none());
+    assert!(w.router.written.lock().unwrap().is_empty());
+    assert!(!w.ctx.data_dir.harness_config_json().exists());
+    sw.save_harness_settings(HarnessId::OpenCode, st)
+        .await
+        .unwrap();
+    sw.harness_apply(plan, false).await.unwrap();
+    let configurations = w.router.written.lock().unwrap();
+    let config = configurations.last().unwrap();
+    assert!(config.member("work").is_some());
+    assert!(!config.serves_codex("work"));
+    let text =
+        std::fs::read_to_string(w.ctx.home_dir.join(".config/opencode/opencode.json")).unwrap();
+    assert!(text.contains("http://127.0.0.1:18431/openai/v1"));
+    assert!(!text.contains(KEY));
+    let state = superba_config::harness::HarnessWriter::new(w.ctx.clone(), HarnessId::OpenCode)
+        .state()
+        .unwrap()
+        .unwrap();
+    assert_eq!(state.route, HarnessRoute::Routed);
+    assert_eq!(state.provider, Some(ProfileId::new("work")));
+}
+
+#[tokio::test]
+async fn following_codex_only_marks_the_tool_pending_and_keeps_its_applied_router_provider() {
+    let w = world();
+    add_compatible(&w);
+    *w.router.port.lock().unwrap() = Some(18431);
+    w.config.state.lock().unwrap().active = Some(superba_core::ActiveState {
+        profile_id: Some(ProfileId::new("work")),
+        site_id: None,
+        line_id: None,
+        auth_mode: Some(AuthMode::Pat),
+        generation: 1,
+        applied_at: superba_core::Timestamp(T0),
+    });
+    let sw = w.switcher();
+    let st = HarnessSettings {
+        route: HarnessRoute::Routed,
+        ..Default::default()
+    };
+    sw.save_harness_settings(HarnessId::OpenCode, st)
+        .await
+        .unwrap();
+    let plan = sw
+        .harness_plan(HarnessId::OpenCode, HarnessPlanKind::Apply)
+        .await
+        .unwrap();
+    sw.harness_apply(plan, false).await.unwrap();
+    let path = w.ctx.home_dir.join(".config/opencode/opencode.json");
+    let before = std::fs::read(&path).unwrap();
+    w.config
+        .state
+        .lock()
+        .unwrap()
+        .active
+        .as_mut()
+        .unwrap()
+        .profile_id = Some(ProfileId::new("compat"));
+    let view = sw.harness_view(HarnessId::OpenCode).await.unwrap();
+    assert!(!view.pending.is_empty());
+    assert_eq!(view.applied.unwrap().provider, Some(ProfileId::new("work")));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    // A later router rewrite (another tool's apply) retains the old applied provider.
+    let st = HarnessSettings {
+        route: HarnessRoute::Routed,
+        ..settings("compat")
+    };
+    sw.save_harness_settings(HarnessId::Pi, st).await.unwrap();
+    let plan = sw
+        .harness_plan(HarnessId::Pi, HarnessPlanKind::Apply)
+        .await
+        .unwrap();
+    sw.harness_apply(plan, false).await.unwrap();
+    let configs = w.router.written.lock().unwrap();
+    let last = configs.last().unwrap();
+    assert!(last.member("work").is_some());
+    assert!(last.member("compat").is_some());
+    assert!(!last.serves_codex("work"));
+    assert!(!last.serves_codex("compat"));
+    assert_eq!(std::fs::read(path).unwrap(), before);
+}
+
+#[tokio::test]
+async fn failing_to_prepare_the_router_does_not_write_tool_files() {
+    let w = world();
+    *w.router.port.lock().unwrap() = Some(18431);
+    *w.router.fail_install.lock().unwrap() =
+        Some(superba_core::Error::other("cannot start router"));
+    let sw = w.switcher();
+    sw.save_harness_settings(
+        HarnessId::Pi,
+        HarnessSettings {
+            route: HarnessRoute::Routed,
+            ..settings("work")
+        },
+    )
+    .await
+    .unwrap();
+    let plan = sw
+        .harness_plan(HarnessId::Pi, HarnessPlanKind::Apply)
+        .await
+        .unwrap();
+    assert!(
+        sw.harness_apply(plan, false)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("cannot start router")
+    );
+    assert!(!w.ctx.home_dir.join(".pi/agent/models.json").exists());
+    assert!(
+        superba_config::harness::HarnessWriter::new(w.ctx.clone(), HarnessId::Pi)
+            .state()
+            .unwrap()
+            .is_none()
     );
 }

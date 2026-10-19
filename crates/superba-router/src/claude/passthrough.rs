@@ -40,6 +40,7 @@ pub(crate) fn headers(src: &HeaderMap, c: &MemberClaude) -> HeaderMap {
             || n == super::API_KEY_HEADER
             || n == CODEX_HOST_HEADER
             || n == HARNESS_HEADER
+            || n == crate::forward::MEMBER_HEADER
         {
             continue;
         }

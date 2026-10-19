@@ -161,18 +161,25 @@ pub(super) async fn chat(
         record_refusal(tracker, 400, "invalid_request_error", message);
         return router_error(StatusCode::BAD_REQUEST, "invalid_request_error", message);
     };
-    let targets =
-        match route::resolve(&shared, &generation, OpenAiProtocol::Chat, Some(&model)).await {
-            Ok(t) => t,
-            Err((status, code, message)) => {
-                record_refusal(tracker, status, code, &message);
-                return router_error(
-                    StatusCode::from_u16(status).unwrap_or(StatusCode::NOT_FOUND),
-                    code,
-                    &message,
-                );
-            }
-        };
+    let targets = match route::resolve(
+        &shared,
+        &generation,
+        OpenAiProtocol::Chat,
+        Some(&model),
+        crate::forward::bound_member(&parts.headers),
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err((status, code, message)) => {
+            record_refusal(tracker, status, code, &message);
+            return router_error(
+                StatusCode::from_u16(status).unwrap_or(StatusCode::NOT_FOUND),
+                code,
+                &message,
+            );
+        }
+    };
     let key = route::sticky_key(&meta);
     let now = Instant::now();
     let pin = key

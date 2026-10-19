@@ -75,7 +75,7 @@ pub(crate) fn is_router_url(url: &str) -> bool {
 
 /// The endpoint of `base` for a member with `lines`: a path below their
 /// origin when it is on one of them, else that URL for every line.
-fn endpoint_for(base: &Url, lines: &[LineConfig]) -> Endpoint {
+pub(crate) fn endpoint_for(base: &Url, lines: &[LineConfig]) -> Endpoint {
     let same_origin = lines.iter().any(|l| l.base_url.origin() == base.origin());
     if same_origin {
         Endpoint {

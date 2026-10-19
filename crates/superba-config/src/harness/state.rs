@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use superba_core::harness::{HarnessChange, HarnessProtocol};
+use superba_core::harness::{HarnessChange, HarnessProtocol, HarnessRoute};
 use superba_core::{ProfileId, Timestamp};
 
 use super::doc::{Format, HarnessFile};
@@ -94,6 +94,9 @@ pub struct HarnessState {
     /// The protocol applied.
     #[serde(default)]
     pub protocol: Option<HarnessProtocol>,
+    /// Connection actually applied (pending preferences do not replace it).
+    #[serde(default)]
+    pub route: HarnessRoute,
     /// Per file key.
     #[serde(default)]
     pub files: BTreeMap<String, FileState>,

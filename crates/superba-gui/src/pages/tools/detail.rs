@@ -18,30 +18,30 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     ui.horizontal_wrapped(|ui| {
         ui.add(MonogramTile::new(state.selected.monogram()).size(40.0));
         ui.heading(state.selected.name());
-        if let Some(h) = state.selected.harness() {
-            if let Some(view) = state.views.get(&h) {
-                if let Some(install) = &view.install
-                    && let Some(version) = &install.version
-                {
-                    let version = if h == HarnessId::OpenCode {
-                        format!(
-                            "OpenCode {} · {version}",
-                            install.opencode_major.unwrap_or(OpencodeMajor::V2).as_str()
-                        )
-                    } else {
-                        version.clone()
-                    };
-                    ui.label(Text::small(version, cx.pal));
-                }
-                let (status, key) = if !view.pending.is_empty() || state.drafts.contains_key(&h) {
-                    (Status::Warn, "tools.pending_short")
-                } else if view.applied.is_some() {
-                    (Status::Ok, "tools.applied")
+        if let Some(h) = state.selected.harness()
+            && let Some(view) = state.views.get(&h)
+        {
+            if let Some(install) = &view.install
+                && let Some(version) = &install.version
+            {
+                let version = if h == HarnessId::OpenCode {
+                    format!(
+                        "OpenCode {} · {version}",
+                        install.opencode_major.unwrap_or(OpencodeMajor::V2).as_str()
+                    )
                 } else {
-                    (Status::Idle, "tools.not_configured")
+                    version.clone()
                 };
-                ui.add(Badge::new(cx.tr.t(key)).status(status));
+                ui.label(Text::small(version, cx.pal));
             }
+            let (status, key) = if !view.pending.is_empty() || state.drafts.contains_key(&h) {
+                (Status::Warn, "tools.pending_short")
+            } else if view.applied.is_some() {
+                (Status::Ok, "tools.applied")
+            } else {
+                (Status::Idle, "tools.not_configured")
+            };
+            ui.add(Badge::new(cx.tr.t(key)).status(status));
         }
         if ui
             .add(Button::ghost(cx.tr.t("tools.usage")).small())
@@ -370,15 +370,21 @@ fn models(
             .wrap(),
         );
     }
-    let available: Vec<_> = list
+    let mut available: Vec<_> = list
         .models
         .iter()
         .filter(|m| m.supported_in_api && m.visibility != ModelVisibility::None)
+        .map(|m| (m.slug.clone(), m.context_window))
         .collect();
+    for id in &s.models {
+        if !available.iter().any(|(slug, _)| slug == id) {
+            available.push((id.clone(), None));
+        }
+    }
     let query = state.search.to_lowercase();
     let filtered: Vec<_> = available
         .iter()
-        .filter(|m| m.slug.to_lowercase().contains(&query))
+        .filter(|m| m.0.to_lowercase().contains(&query))
         .collect();
     let total = filtered.len();
     let count = if s.models.is_empty() {
@@ -393,23 +399,23 @@ fn models(
     state.model_page = state.model_page.min(total.saturating_sub(1) / 6);
     for model in filtered.into_iter().skip(state.model_page * 6).take(6) {
         ui.horizontal(|ui| {
-            let mut checked = s.models.is_empty() || s.models.contains(&model.slug);
-            if ui.checkbox(&mut checked, &model.slug).changed() {
+            let mut checked = s.models.is_empty() || s.models.contains(&model.0);
+            if ui.checkbox(&mut checked, &model.0).changed() {
                 if s.models.is_empty() {
-                    s.models = available.iter().map(|m| m.slug.clone()).collect();
+                    s.models = available.iter().map(|m| m.0.clone()).collect();
                 }
                 if checked {
-                    if !s.models.contains(&model.slug) {
-                        s.models.push(model.slug.clone());
+                    if !s.models.contains(&model.0) {
+                        s.models.push(model.0.clone());
                     }
                 } else if s.models.len() > 1 {
-                    s.models.retain(|id| id != &model.slug);
-                    if s.default_model.as_ref() == Some(&model.slug) {
+                    s.models.retain(|id| id != &model.0);
+                    if s.default_model.as_ref() == Some(&model.0) {
                         s.default_model = s.models.first().cloned();
                     }
                 }
             }
-            if let Some(w) = model.context_window {
+            if let Some(w) = model.1 {
                 ui.label(Text::small(format!("{}K", w / 1000), cx.pal));
             }
         });
@@ -420,24 +426,24 @@ fn models(
         .show(ui);
     let selected: Vec<_> = available
         .iter()
-        .filter(|m| s.models.is_empty() || s.models.contains(&m.slug))
+        .filter(|m| s.models.is_empty() || s.models.contains(&m.0))
         .collect();
     Dropdown::new("tool-default-model")
         .label(cx.tr.t("tools.default_model"))
         .selected_text(
             s.default_model
                 .as_deref()
-                .or_else(|| selected.first().map(|m| m.slug.as_str()))
+                .or_else(|| selected.first().map(|m| m.0.as_str()))
                 .unwrap_or("—"),
         )
         .width(ui.available_width())
         .show_ui(ui, |ui| {
             for m in selected {
                 if ui
-                    .selectable_label(s.default_model.as_ref() == Some(&m.slug), &m.slug)
+                    .selectable_label(s.default_model.as_ref() == Some(&m.0), &m.0)
                     .clicked()
                 {
-                    s.default_model = Some(m.slug.clone());
+                    s.default_model = Some(m.0.clone());
                 }
             }
         });
@@ -582,32 +588,30 @@ fn summary(ui: &mut Ui, cx: &Cx<'_>, state: &State, out: &mut Vec<Action>) {
         {
             ui.label(format!("Codex {version}"));
         }
-        if claude {
-            if let Some(v) = &state.claude {
-                if let Some(e) = v
-                    .router_base_url
-                    .as_ref()
-                    .filter(|_| routed)
-                    .or_else(|| v.endpoint.as_ref().map(|e| &e.base_url))
-                {
-                    ui.add(egui::Label::new(RichText::new(e.as_str()).monospace()).wrap());
+        if claude && let Some(v) = &state.claude {
+            if let Some(e) = v
+                .router_base_url
+                .as_ref()
+                .filter(|_| routed)
+                .or_else(|| v.endpoint.as_ref().map(|e| &e.base_url))
+            {
+                ui.add(egui::Label::new(RichText::new(e.as_str()).monospace()).wrap());
+            }
+            if let Some(id) = &v.provider {
+                let models = v.config.models_of(id);
+                for slot in superba_core::ClaudeSlot::ALL {
+                    ui.label(format!(
+                        "{slot:?}: {}",
+                        models
+                            .slots
+                            .get(&slot)
+                            .map(|m| m.model.as_str())
+                            .unwrap_or("—")
+                    ));
                 }
-                if let Some(id) = &v.provider {
-                    let models = v.config.models_of(id);
-                    for slot in superba_core::ClaudeSlot::ALL {
-                        ui.label(format!(
-                            "{slot:?}: {}",
-                            models
-                                .slots
-                                .get(&slot)
-                                .map(|m| m.model.as_str())
-                                .unwrap_or("—")
-                        ));
-                    }
-                }
-                if let Some(version) = v.install.as_ref().and_then(|i| i.version.as_ref()) {
-                    ui.label(version);
-                }
+            }
+            if let Some(version) = v.install.as_ref().and_then(|i| i.version.as_ref()) {
+                ui.label(version);
             }
         }
         if ui

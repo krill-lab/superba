@@ -6,12 +6,9 @@
 //! one protocol that the provider offers and the harness speaks (no
 //! conversion for direct connections). Direct mode writes the provider's endpoint and
 //! key; routed mode writes the local router's ingress for that protocol and
-//! a per-harness router token from the key store.
-//!
-//! Seams for later work:
-//! - router: [`harness_router_route`] is `None` until the router crate hands
-//!   out per-harness routes and serves `/openai/v1`; until then routed mode
-//!   takes an explicit router URL and token.
+//! a per-harness token bound to the explicitly applied provider. A later
+//! Codex switch only marks the tool pending. Explicit external router URLs
+//! and tokens remain available to CLI callers.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -33,8 +30,7 @@ use url::Url;
 use crate::Switcher;
 use crate::journal::StateLock;
 
-/// A harness's base URL and token through the local router (the router side
-/// is a follow-up: `None` until it serves the harness).
+/// A harness's base URL and token through the local router.
 #[derive(Clone, Debug)]
 pub struct HarnessRouterRoute {
     /// The router's base URL (`http://127.0.0.1:<port>`).
@@ -43,14 +39,31 @@ pub struct HarnessRouterRoute {
     pub token: Secret,
 }
 
-/// The local router's route for `harness`, when the router serves it
-/// (boundary for the router crate; `None` for now).
+/// The local router's route for `harness`, when the router is configured.
 pub async fn harness_router_route(
     router: &dyn crate::router::RouterControl,
     harness: HarnessId,
 ) -> Option<HarnessRouterRoute> {
-    let _ = (router, harness);
-    None
+    let endpoint = router.endpoint().ok()?;
+    let id = if harness == HarnessId::ClaudeCode {
+        "claude-code"
+    } else {
+        harness.as_str()
+    };
+    let request_harness = superba_core::RequestHarness::from_id(id)?;
+    let token = superba_router::token::harness_token(
+        endpoint.token.expose().as_bytes(),
+        request_harness,
+        None,
+    )?;
+    let mut base_url = endpoint.base_url;
+    base_url.set_path("");
+    base_url.set_query(None);
+    base_url.set_fragment(None);
+    Some(HarnessRouterRoute {
+        base_url,
+        token: Secret::new(token),
+    })
 }
 
 fn text(key: &str, fallback: &str) -> LocalizedText {
@@ -396,20 +409,19 @@ impl Switcher {
                 standard_base: endpoint.as_ref().map(|e| &e.base_url),
             })
             .await?;
-        if list.models.is_empty() {
-            if let Some(error) = list
+        if list.models.is_empty()
+            && let Some(error) = list
                 .fallback_reason
                 .as_ref()
                 .or_else(|| list.sources.iter().find_map(|s| s.error.as_ref()))
-            {
-                return Err(error.clone());
-            }
+        {
+            return Err(error.clone());
         }
         Ok(list)
     }
 
     /// The endpoints `profile` offers (direct).
-    async fn harness_endpoints(
+    pub(crate) async fn harness_endpoints(
         &self,
         set: &ProfileSet,
         profile: &Profile,
@@ -476,7 +488,7 @@ impl Switcher {
     ) -> Result<HarnessTarget> {
         let config = self.harness_store().load()?;
         let set = self.deps.profiles.load().await?;
-        let profile = self.harness_provider(&set, &settings).await?.ok_or_else(|| {
+        let profile = self.harness_provider(&set, settings).await?.ok_or_else(|| {
             Error::invalid(format!(
                 "{} has no provider: pick one with a key (spb harness apply {} --provider <id>)",
                 harness.display_name(),
@@ -507,13 +519,27 @@ impl Switcher {
                 key,
             ),
             HarnessRoute::Routed => {
-                let route = harness_router_route(self.deps.router.as_ref(), harness).await;
+                let mut route = harness_router_route(self.deps.router.as_ref(), harness).await;
+                if let Some(route) = route.as_mut() {
+                    let master = self.deps.router.endpoint()?;
+                    let request_harness = superba_core::RequestHarness::from_id(harness.as_str())
+                        .ok_or_else(|| Error::invalid("unknown tool"))?;
+                    let member = superba_router::members::router_id(profile.id.as_str());
+                    route.token = Secret::new(
+                        superba_router::token::harness_member_token(
+                            master.token.expose().as_bytes(),
+                            request_harness,
+                            &member,
+                        )
+                        .ok_or_else(|| Error::invalid("invalid tool provider id"))?,
+                    );
+                }
                 let base = match (&route, &settings.router_url) {
                     (Some(r), _) => r.base_url.clone(),
                     (None, Some(u)) => u.clone(),
                     (None, None) => {
                         return Err(Error::invalid(
-                            "routed mode needs the router's URL (spb harness apply --router-url) until the router hands out harness routes",
+                            "Set up the local router first, then apply the tool again.",
                         ));
                     }
                 };
@@ -829,6 +855,7 @@ impl Switcher {
             return self.claude_apply_impl(plan, take_over).await;
         }
         self.refuse_elevated()?;
+        self.ready_harness_router(&plan).await?;
         let _lock = StateLock::acquire(&self.deps.ctx.data_dir)?;
         let writer = self.harness_writer(plan.harness);
         let now = self.deps.clock.now();

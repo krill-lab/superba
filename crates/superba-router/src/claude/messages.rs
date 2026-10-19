@@ -108,7 +108,11 @@ pub(super) async fn messages(
     let private = crate::openai::shape::drop_private(&mut req);
     let identity = !parts.headers.contains_key(CONTENT_ENCODING);
     let original = (stripped == 0 && private.is_empty() && identity).then_some(&raw);
-    let served = route::alias(&generation, &requested);
+    let served = if crate::forward::bound_member(&parts.headers).is_some() {
+        requested.clone()
+    } else {
+        route::alias(&generation, &requested)
+    };
     let mut meta = meta::claude_meta(&parts.headers, &req, &requested, &served);
     meta.stripped = stripped;
     let mut tracker = generation.config.stats.is_some().then(|| {
@@ -124,7 +128,14 @@ pub(super) async fn messages(
             private.join(", ")
         ));
     }
-    let resolution = match route::resolve(&shared, &generation, &requested).await {
+    let resolution = match route::resolve(
+        &shared,
+        &generation,
+        &requested,
+        crate::forward::bound_member(&parts.headers),
+    )
+    .await
+    {
         Ok(r) => r,
         Err((status, kind, message)) => {
             record_refusal(tracker, status, kind.name(), &message);

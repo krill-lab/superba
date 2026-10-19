@@ -232,10 +232,11 @@ impl State {
         if let Some((_, v)) = self.view_load.poll() {
             self.set_view(v);
         }
-        if let Some(((h, settings), v)) = self.preview_load.poll() {
-            if self.selected.harness() == Some(h) && self.settings(h) == settings {
-                self.preview = Some(v);
-            }
+        if let Some(((h, settings), v)) = self.preview_load.poll()
+            && self.selected.harness() == Some(h)
+            && self.settings(h) == settings
+        {
+            self.preview = Some(v);
         }
         if let Some((id, list)) = self.model_load.poll() {
             self.models.insert(id, list);
@@ -274,13 +275,13 @@ impl State {
                     Duration::from_secs(45),
                 );
             }
-            if let Some(id) = provider(cx, &self.settings(h)) {
-                if !self.model_load.is_chosen(&id) {
-                    if self.models.contains_key(&id) {
-                        self.model_load.choose(id);
-                    } else {
-                        self.pull_models(cx, id, false);
-                    }
+            if let Some(id) = provider(cx, &self.settings(h))
+                && !self.model_load.is_chosen(&id)
+            {
+                if self.models.contains_key(&id) {
+                    self.model_load.choose(id);
+                } else {
+                    self.pull_models(cx, id, false);
                 }
             }
         }
@@ -342,8 +343,13 @@ pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
     ui.separator();
     ui.horizontal_wrapped(|ui| {
         if let Some(h) = state.selected.harness() {
-            let pending = usize::from(state.drafts.contains_key(&h))
-                + state.views.get(&h).map_or(0, |v| v.pending.len());
+            let pending = state
+                .preview
+                .as_ref()
+                .filter(|v| v.harness == h)
+                .or_else(|| state.views.get(&h))
+                .map_or(0, |v| v.pending.len())
+                .max(usize::from(state.drafts.contains_key(&h)));
             if ui
                 .add(
                     Button::ghost(cx.tr.t("tools.restore"))

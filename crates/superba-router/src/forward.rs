@@ -43,6 +43,13 @@ pub const CODEX_HOST_HEADER: &str = "x-superba-codex-host";
 /// plain router token), set by the router after checking the token and read
 /// into the request log; never forwarded.
 pub const HARNESS_HEADER: &str = "x-superba-harness";
+/// The provider authenticated by a bound tool token; never accepted from a client header.
+pub const MEMBER_HEADER: &str = "x-superba-harness-member";
+
+/// The verified provider binding set by the listener.
+pub(crate) fn bound_member(headers: &HeaderMap) -> Option<&str> {
+    headers.get(MEMBER_HEADER).and_then(|v| v.to_str().ok())
+}
 
 /// Request headers never forwarded to a member: the client's credential
 /// (`Authorization`, and `x-api-key`, which WorkBuddy and ZCode also send) is
@@ -54,6 +61,7 @@ const DROPPED_REQUEST: &[&str] = &[
     "x-goog-api-key",
     CODEX_HOST_HEADER,
     HARNESS_HEADER,
+    MEMBER_HEADER,
 ];
 
 /// Turn routing token issued by one provider; meaningless to another.

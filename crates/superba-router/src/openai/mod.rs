@@ -115,9 +115,16 @@ pub(crate) async fn handle(
         );
     }
     match (&method, path.as_str()) {
-        (&Method::GET, "/models") => models::list(&shared).await,
+        (&Method::GET, "/models") => {
+            models::list(&shared, crate::forward::bound_member(req.headers())).await
+        }
         (&Method::GET, p) if p.starts_with("/models/") => {
-            models::one(&shared, &p["/models/".len()..]).await
+            models::one(
+                &shared,
+                &p["/models/".len()..],
+                crate::forward::bound_member(req.headers()),
+            )
+            .await
         }
         (&Method::POST, "/responses" | "/responses/compact") => {
             crate::proxy::proxy_http(

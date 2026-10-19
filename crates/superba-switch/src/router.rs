@@ -563,11 +563,6 @@ impl Switcher {
             }
         }
         keys.extend(claude.keys);
-        if out.is_empty() {
-            return Err(Error::invalid(
-                "the router needs at least one member profile",
-            ));
-        }
         let mut config = RouterConfig::new(0, out);
         if let Some(stored) = self.deps.router.configuration() {
             config.openai = stored.openai;
@@ -580,6 +575,10 @@ impl Switcher {
                 .get_or_insert_with(Default::default)
                 .members
                 .extend(claude.openai);
+        }
+        self.add_harness_router_members(set, &mut config, &mut keys).await?;
+        if config.members.is_empty() {
+            return Err(Error::invalid("the router needs at least one member profile"));
         }
         let ids: Vec<&str> = config.members.iter().map(|m| m.id.as_str()).collect();
         if let Some(openai) = &mut config.openai {

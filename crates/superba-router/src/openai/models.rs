@@ -27,9 +27,9 @@ fn json_response(body: &Value) -> Response<RespBody> {
 }
 
 /// The list.
-pub(super) async fn list(shared: &Arc<Shared>) -> Response<RespBody> {
+pub(super) async fn list(shared: &Arc<Shared>, bound: Option<&str>) -> Response<RespBody> {
     let generation = shared.current();
-    let models = route::all_models(shared, &generation).await;
+    let models = route::all_models(shared, &generation, bound).await;
     let data: Vec<Value> = models
         .iter()
         .map(|(m, member)| entry(&m.id, &generation.members[*member].cfg.name))
@@ -38,9 +38,9 @@ pub(super) async fn list(shared: &Arc<Shared>) -> Response<RespBody> {
 }
 
 /// One model.
-pub(super) async fn one(shared: &Arc<Shared>, id: &str) -> Response<RespBody> {
+pub(super) async fn one(shared: &Arc<Shared>, id: &str, bound: Option<&str>) -> Response<RespBody> {
     let generation = shared.current();
-    match route::all_models(shared, &generation)
+    match route::all_models(shared, &generation, bound)
         .await
         .into_iter()
         .find(|(m, _)| m.id == id)

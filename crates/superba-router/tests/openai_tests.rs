@@ -939,3 +939,167 @@ async fn dsh_private_fields_never_leave_the_claude_ingress_either() {
     assert!(sent.get("dsh_plugin_packages").is_none());
     assert_eq!(sent["messages"], b["messages"]);
 }
+
+#[tokio::test]
+async fn applied_provider_tokens_pin_openai_requests_and_cannot_be_spoofed_by_headers() {
+    use superba_router::token::harness_member_token;
+    for chat in [false, true] {
+        let a = anthropic(Arc::new(
+            move |_| if chat { chat_ok() } else { responses_ok() },
+        ))
+        .await;
+        let b = anthropic(Arc::new(
+            move |_| if chat { chat_ok() } else { responses_ok() },
+        ))
+        .await;
+        let r = start(config(vec![krill("a", &a), krill("b", &b)], vec![])).await;
+        let token = harness_member_token(ROUTER_TOKEN.as_bytes(), H::Pi, "b").unwrap();
+        let mut headers = tool_headers(H::Pi, "same-session");
+        headers.insert("x-superba-harness-member", "a".parse().unwrap());
+        let (path, body) = if chat {
+            ("/openai/v1/chat/completions", chat_body("m", "hi", true))
+        } else {
+            (
+                "/openai/v1/responses",
+                request_body("m", "hi", json!({"store": false})),
+            )
+        };
+        let response = post(&r, path, &token, headers, &body).await;
+        assert_eq!(response.status(), 200);
+        let _ = response.text().await.unwrap();
+        assert_eq!(a.hits(), 0);
+        assert_eq!(b.hits(), 1);
+        assert!(!b.seen()[0].headers.contains_key("x-superba-harness-member"));
+        // Reapplying another provider also works for an already sticky conversation.
+        let token = harness_member_token(ROUTER_TOKEN.as_bytes(), H::Pi, "a").unwrap();
+        let response = post(&r, path, &token, tool_headers(H::Pi, "same-session"), &body).await;
+        assert_eq!(response.status(), 200);
+        let _ = response.text().await.unwrap();
+        assert_eq!(a.hits(), 1);
+        assert_eq!(b.hits(), 1);
+    }
+}
+
+#[tokio::test]
+async fn an_unavailable_applied_provider_never_falls_back_to_another_provider() {
+    use superba_router::token::harness_member_token;
+    for chat in [false, true] {
+        let a = anthropic(Arc::new(|_| responses_ok())).await;
+        let b = anthropic(Arc::new(|_| Fake::json(503, json!({"error": "offline"})))).await;
+        let r = start(config(vec![krill("a", &a), krill("b", &b)], vec![])).await;
+        let (path, body) = if chat {
+            ("/openai/v1/chat/completions", chat_body("m", "hi", true))
+        } else {
+            (
+                "/openai/v1/responses",
+                request_body("m", "hi", json!({"store": false})),
+            )
+        };
+        for provider in ["b", "deleted-provider"] {
+            let token =
+                harness_member_token(ROUTER_TOKEN.as_bytes(), H::OpenCode, provider).unwrap();
+            let response = post(&r, path, &token, HeaderMap::new(), &body).await;
+            assert!(response.status().is_server_error() || response.status() == 404);
+            let _ = response.text().await.unwrap();
+        }
+        assert_eq!(a.hits(), 0);
+        assert_eq!(b.hits(), 1);
+    }
+}
+
+#[tokio::test]
+async fn a_bound_tools_model_list_contains_only_its_applied_provider() {
+    use superba_router::token::harness_member_token;
+    let a = anthropic(Arc::new(|_| chat_ok())).await;
+    let b = anthropic(Arc::new(|_| chat_ok())).await;
+    let entry = |id: &str| OpenAiMember {
+        models: vec![OpenAiModel {
+            id: id.into(),
+            display_name: None,
+        }],
+        ..chat_entry(true)
+    };
+    let r = start(config(
+        vec![compatible("a", &a), compatible("b", &b)],
+        vec![("a", entry("only-a")), ("b", entry("only-b"))],
+    ))
+    .await;
+    let token = harness_member_token(ROUTER_TOKEN.as_bytes(), H::ZCode, "b").unwrap();
+    let v: Value = r
+        .http
+        .get(r.url("/openai/v1/models"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["data"].as_array().unwrap().len(), 1);
+    assert_eq!(v["data"][0]["id"], "only-b");
+    assert_eq!(
+        r.http
+            .get(r.url("/openai/v1/models/only-a"))
+            .bearer_auth(token)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+}
+
+#[tokio::test]
+async fn applied_provider_tokens_also_pin_anthropic_messages_and_hide_internal_headers() {
+    use common::claude::{body, claude_config, claude_headers, claude_member, text_stream};
+    use superba_router::token::harness_member_token;
+    let answer = || {
+        anthropic(Arc::new(|_| {
+            Fake::sse(text_stream(
+                "model",
+                &["ok"],
+                "end_turn",
+                json!({"input_tokens": 1, "output_tokens": 1}),
+            ))
+        }))
+    };
+    let a = answer().await;
+    let b = answer().await;
+    let r = start(claude_config(vec![
+        claude_member("a", &a),
+        claude_member("b", &b),
+    ]))
+    .await;
+    let token = harness_member_token(ROUTER_TOKEN.as_bytes(), H::Dsh, "b").unwrap();
+    let mut headers = claude_headers("s", None);
+    headers.insert("x-superba-harness-member", "a".parse().unwrap());
+    let response = post(
+        &r,
+        "/claude/v1/messages",
+        &token,
+        headers,
+        &body("model", true),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    let _ = response.text().await.unwrap();
+    assert_eq!(a.hits(), 0);
+    assert_eq!(b.messages().len(), 1);
+    assert!(
+        !b.messages()[0]
+            .headers
+            .contains_key("x-superba-harness-member")
+    );
+    let token = harness_member_token(ROUTER_TOKEN.as_bytes(), H::Dsh, "deleted").unwrap();
+    let response = post(
+        &r,
+        "/claude/v1/messages",
+        &token,
+        claude_headers("s", None),
+        &body("model", true),
+    )
+    .await;
+    assert_eq!(response.status(), 404);
+    assert_eq!(a.hits(), 0);
+    assert_eq!(b.messages().len(), 1);
+}

@@ -18,19 +18,24 @@ use crate::state::{RespBody, Shared};
 const CREATED_AT: &str = "2025-01-01T00:00:00Z";
 
 /// Every model with its display name.
-async fn all(shared: &Arc<Shared>) -> Vec<(String, Option<String>)> {
+async fn all(shared: &Arc<Shared>, bound: Option<&str>) -> Vec<(String, Option<String>)> {
     let generation = shared.current();
     let Some(claude) = generation.claude.as_ref() else {
         return Vec::new();
     };
     let mut seen = HashSet::new();
     let mut out = Vec::new();
-    for r in &claude.cfg.routes {
+    for r in claude.cfg.routes.iter().filter(|_| bound.is_none()) {
         if !r.model.contains('*') && seen.insert(r.model.clone()) {
             out.push((r.model.clone(), None));
         }
     }
-    let members: Vec<usize> = claude.order.clone();
+    let members: Vec<usize> = claude
+        .order
+        .iter()
+        .copied()
+        .filter(|m| bound.is_none_or(|id| generation.members[*m].cfg.id == id))
+        .collect();
     let lists = futures_util::future::join_all(
         members
             .iter()
@@ -59,8 +64,12 @@ fn entry(id: &str, display: Option<&str>) -> Value {
 }
 
 /// The list (`limit`, `after_id` honoured).
-pub(super) async fn list(shared: &Arc<Shared>, query: Option<&str>) -> Response<RespBody> {
-    let models = all(shared).await;
+pub(super) async fn list(
+    shared: &Arc<Shared>,
+    query: Option<&str>,
+    bound: Option<&str>,
+) -> Response<RespBody> {
+    let models = all(shared, bound).await;
     let mut limit = models.len().max(1);
     let mut after: Option<String> = None;
     for (k, v) in url::form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
@@ -88,8 +97,8 @@ pub(super) async fn list(shared: &Arc<Shared>, query: Option<&str>) -> Response<
 }
 
 /// One model.
-pub(super) async fn one(shared: &Arc<Shared>, id: &str) -> Response<RespBody> {
-    match all(shared).await.into_iter().find(|(m, _)| m == id) {
+pub(super) async fn one(shared: &Arc<Shared>, id: &str, bound: Option<&str>) -> Response<RespBody> {
+    match all(shared, bound).await.into_iter().find(|(m, _)| m == id) {
         Some((m, d)) => json_response(StatusCode::OK, &entry(&m, d.as_deref())),
         None => error::local(
             StatusCode::NOT_FOUND,

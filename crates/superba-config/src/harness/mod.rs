@@ -733,6 +733,7 @@ impl HarnessWriter {
                 next.applied_at = Some(now);
                 next.provider = plan.provider.clone();
                 next.protocol = plan.protocol;
+                next.route = plan.desired.as_ref().map(|t| t.route).unwrap_or_default();
                 self.save_state(Some(&next))?;
             }
             HarnessPlanKind::Restore => {

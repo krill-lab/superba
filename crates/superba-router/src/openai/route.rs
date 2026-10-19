@@ -163,6 +163,7 @@ async fn lists_within(
 pub(crate) async fn all_models(
     shared: &Shared,
     generation: &Arc<Generation>,
+    bound: Option<&str>,
 ) -> Vec<(Listed, usize)> {
     let members: Vec<usize> = generation
         .openai
@@ -170,7 +171,8 @@ pub(crate) async fn all_models(
         .iter()
         .copied()
         .filter(|m| {
-            generation
+            bound.is_none_or(|id| generation.members[*m].cfg.id == id)
+                && (generation
                 .config
                 .upstream_protocol(
                     &generation.members[*m].cfg.id,
@@ -183,7 +185,7 @@ pub(crate) async fn all_models(
                         &generation.members[*m].cfg.id,
                         crate::translate::ir::Protocol::Chat,
                     )
-                    .is_some()
+                    .is_some())
         })
         .collect();
     let lists =
@@ -256,6 +258,7 @@ pub(crate) async fn resolve(
     generation: &Arc<Generation>,
     protocol: OpenAiProtocol,
     model: Option<&str>,
+    bound: Option<&str>,
 ) -> Result<Vec<Target>, Refusal> {
     let serving: Vec<usize> = generation
         .openai
@@ -263,7 +266,8 @@ pub(crate) async fn resolve(
         .iter()
         .copied()
         .filter(|i| {
-            generation
+            bound.is_none_or(|id| generation.members[*i].cfg.id == id)
+                && generation
                 .config
                 .upstream_protocol(&generation.members[*i].cfg.id, protocol.into())
                 .is_some()

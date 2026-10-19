@@ -177,22 +177,62 @@ pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, ed: &mut Editor) {
             if protected {
                 ui.label(cx.tr.t("tools.protected_file"));
             } else {
+                let font = egui::FontId::monospace(13.0);
+                let json = doc.file.key.ends_with(".json") || doc.file.key.ends_with(".jsonc");
+                let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _width: f32| {
+                    let job = if json {
+                        crate::pages::settings::files_highlight::layout(
+                            buf.as_str(),
+                            superba_core::CodexFileKind::ClaudeSettings,
+                            &[],
+                            cx.pal,
+                            font.clone(),
+                            f32::INFINITY,
+                        )
+                    } else {
+                        egui::text::LayoutJob::simple(
+                            buf.as_str().to_owned(),
+                            font.clone(),
+                            cx.pal.text,
+                            f32::INFINITY,
+                        )
+                    };
+                    ui.fonts_mut(|f| f.layout_job(job))
+                };
+                let lines = ed.buffer.split('\n').count().max(1);
+                let width = lines.to_string().len();
+                let numbers = (1..=lines)
+                    .map(|n| format!("{n:>width$}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 egui::ScrollArea::both()
                     .id_salt("harness-editor-text")
                     .max_height(340.0)
                     .show(ui, |ui| {
-                        let r = ui.add(
-                            egui::TextEdit::multiline(&mut ed.buffer)
-                                .code_editor()
-                                .desired_width(ui.available_width())
-                                .desired_rows(14),
-                        );
-                        r.widget_info(|| {
-                            egui::WidgetInfo::labeled(
-                                egui::Role::TextInput,
-                                ui.is_enabled(),
-                                cx.tr.t("tools.file_contents"),
-                            )
+                        ui.horizontal_top(|ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(numbers)
+                                        .font(font.clone())
+                                        .color(cx.pal.text_subtle),
+                                )
+                                .selectable(false),
+                            );
+                            let r = ui.add(
+                                egui::TextEdit::multiline(&mut ed.buffer)
+                                    .font(font.clone())
+                                    .code_editor()
+                                    .layouter(&mut layouter)
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(14),
+                            );
+                            r.widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::Role::TextInput,
+                                    ui.is_enabled(),
+                                    cx.tr.t("tools.file_contents"),
+                                )
+                            });
                         });
                     });
             }
@@ -233,7 +273,8 @@ pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, ed: &mut Editor) {
                     ui.label(Text::body(f.text(cx), cx.pal).color(cx.pal.red));
                 }
                 if let Some((id, text)) = &ed.backup_preview {
-                    if !protected {
+                    // A historical backup can contain a key even when today's file does not.
+                    if ed.revealed {
                         crate::pages::settings::files_view::diff_view(
                             ui,
                             cx,
@@ -242,6 +283,8 @@ pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, ed: &mut Editor) {
                             text,
                             220.0,
                         );
+                    } else {
+                        ui.label(cx.tr.t("tools.protected_file"));
                     }
                     if ui
                         .add(

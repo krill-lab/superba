@@ -81,6 +81,7 @@ pub(crate) async fn resolve(
     shared: &Shared,
     generation: &Arc<Generation>,
     requested: &str,
+    bound: Option<&str>,
 ) -> Result<Resolution, Refusal> {
     let Some(claude) = generation.claude.as_ref() else {
         return Err((
@@ -89,6 +90,27 @@ pub(crate) async fn resolve(
             "Claude Code is not set up in the local router".into(),
         ));
     };
+    if let Some(id) = bound {
+        let member = generation
+            .members
+            .iter()
+            .position(|m| m.cfg.id == id)
+            .filter(|i| claude.member(*i).is_some())
+            .ok_or_else(|| {
+                (
+                    404,
+                    Kind::NotFound,
+                    "The applied provider does not serve Anthropic Messages".into(),
+                )
+            })?;
+        return Ok(Resolution {
+            model: requested.into(),
+            targets: vec![Target {
+                member,
+                model: requested.into(),
+            }],
+        });
+    }
     let model = alias(generation, requested);
     if let Some(route) = claude.cfg.routes.iter().find(|r| matches(&r.model, &model)) {
         let targets = route

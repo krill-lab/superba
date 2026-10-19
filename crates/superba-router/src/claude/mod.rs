@@ -87,9 +87,21 @@ pub(crate) async fn handle(
     let path = rest.trim_end_matches('/');
     let method = req.method().clone();
     match (&method, path) {
-        (&Method::GET, "/v1/models") => models::list(&shared, req.uri().query()).await,
+        (&Method::GET, "/v1/models") => {
+            models::list(
+                &shared,
+                req.uri().query(),
+                crate::forward::bound_member(req.headers()),
+            )
+            .await
+        }
         (&Method::GET, p) if p.starts_with("/v1/models/") => {
-            models::one(&shared, &p["/v1/models/".len()..]).await
+            models::one(
+                &shared,
+                &p["/v1/models/".len()..],
+                crate::forward::bound_member(req.headers()),
+            )
+            .await
         }
         (&Method::POST, "/v1/messages" | "/v1/messages/count_tokens") => {
             let limit = shared.current().config.tuning.max_body_bytes;

@@ -43,7 +43,14 @@ pub(super) async fn count(shared: &Arc<Shared>, parts: &Parts, raw: Bytes) -> Re
     let Some(requested) = req.get("model").and_then(Value::as_str).map(str::to_owned) else {
         return estimated(&req);
     };
-    let Ok(resolution) = route::resolve(shared, &generation, &requested).await else {
+    let Ok(resolution) = route::resolve(
+        shared,
+        &generation,
+        &requested,
+        crate::forward::bound_member(&parts.headers),
+    )
+    .await
+    else {
         return estimated(&req);
     };
     let Some(target) = resolution.targets.first() else {

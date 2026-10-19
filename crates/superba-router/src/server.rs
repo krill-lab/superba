@@ -701,7 +701,15 @@ async fn dispatch(
     // dropped (and the headers are never forwarded upstream).
     req.headers_mut().remove(CODEX_HOST_HEADER);
     req.headers_mut().remove(HARNESS_HEADER);
+    req.headers_mut().remove(crate::forward::MEMBER_HEADER);
     if let Some(p) = &presenter {
+        if let Some(v) = p
+            .member
+            .as_deref()
+            .and_then(|m| HeaderValue::from_str(m).ok())
+        {
+            req.headers_mut().insert(crate::forward::MEMBER_HEADER, v);
+        }
         if let Some(v) = p
             .host
             .as_deref()
