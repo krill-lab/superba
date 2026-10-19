@@ -1,11 +1,11 @@
 """SSH transport and exclusive local lease. No connection details in the repo."""
 
-import base64
 import hashlib
 import json
 import os
 import shlex
 import subprocess
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -92,14 +92,53 @@ class Vm:
                 "p.write_bytes(sys.stdin.buffer.read()); os.chmod(p,0o600)")
         with Path(source).open("rb") as stream:
             result = subprocess.run([self.helper, shlex.join(["/usr/bin/python3", "-c", code, destination])],
-                                    stdin=stream, capture_output=True, timeout=300)
+                                    stdin=stream, capture_output=True, timeout=900)
         if result.returncode:
             raise VmError("Upload failed")
 
     def get(self, source, destination):
-        command = shlex.join(["/usr/bin/base64", "-i", source])
-        encoded = self.shell(command).stdout
-        Path(destination).write_bytes(base64.b64decode(encoded))
+        # Stream binary artifacts instead of buffering base64 in both processes.
+        # Large DMGs over SSH can take longer than a UI command's timeout.
+        destination = Path(destination)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as stream:
+                temporary = Path(stream.name)
+                result = subprocess.run([self.helper, shlex.join(["/bin/cat", source])],
+                                        stdout=stream, stderr=subprocess.PIPE, timeout=900)
+            if result.returncode:
+                raise VmError("Download failed")
+            temporary.replace(destination)
+        except subprocess.TimeoutExpired:
+            raise VmError("Download timed out") from None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def cache_dmg(self, source, remote_source=None):
+        """Reuse an immutable DMG across fresh test HOMEs, checking its digest."""
+        with Path(source).open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        cache = self.root + "/artifacts/" + digest + ".dmg"
+
+        def valid(path):
+            result = self.shell(shlex.join(["/usr/bin/shasum", "-a", "256", path]), check=False)
+            return result.returncode == 0 and result.stdout.split(maxsplit=1)[:1] == [digest]
+
+        if not valid(cache):
+            partial = cache + ".part"
+            if remote_source is not None:
+                if not valid(remote_source):
+                    raise VmError("Guest DMG digest does not match the downloaded artifact")
+                self.shell("mkdir -p " + shlex.quote(self.root + "/artifacts"))
+                self.shell(shlex.join(["/bin/cp", remote_source, partial]))
+            else:
+                self.put(source, partial)
+            if not valid(partial):
+                self.shell(shlex.join(["/bin/rm", "-f", partial]))
+                raise VmError("Uploaded DMG digest mismatch")
+            self.shell(shlex.join(["/bin/mv", "-f", partial, cache]))
+        return cache
 
     def wait_reboot(self, before, timeout=240):
         deadline = time.monotonic() + timeout

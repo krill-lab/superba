@@ -144,6 +144,7 @@ def execute_build(vm, opts, ref, out):
     remote = destination + "/dist/superba-dev-arm64.dmg"
     local_dmg = out / "superba-dev-arm64.dmg"
     vm.get(remote, local_dmg)
+    vm.cache_dmg(local_dmg, remote_source=remote)
     result = {"mode": "vm-build", "ref": ref, "dmg": str(local_dmg), "guest_source": destination}
     (out / "build.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

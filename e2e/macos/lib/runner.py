@@ -1,6 +1,7 @@
 """Independent scenarios, scrubbed evidence, mandatory cleanup and honest status."""
 
 import json
+import shlex
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,7 +83,8 @@ class Case:
     def install(self, dmg=None, upgrade=False):
         source = Path(dmg or self.runner.opts.dmg).resolve()
         destination = self.root + ("/upgrade.dmg" if upgrade else "/install.dmg")
-        self.runner.vm.put(source, destination)
+        cached = self.runner.vm.cache_dmg(source)
+        self.runner.vm.shell(shlex.join(["/bin/cp", cached, destination]))
         result = self.rpc("install", dmg=destination, upgrade=upgrade, rpc_timeout=300)
         self.save("upgrade.json" if upgrade else "install.json", result)
         self.check("arm64" in result["architecture"].split(), "Installed app contains native arm64")

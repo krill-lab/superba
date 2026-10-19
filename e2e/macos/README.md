@@ -107,6 +107,12 @@ HOME. `page()`, `superba(section)`, `click()`, `expect()`, `find()`, `tree()`,
 `set_value()` and `type_into()` mirror the Windows API. Locale strings and
 `e2e/shared/desktop_flows.py` are shared with Windows.
 
+DMG transfers stream to disk with a separate 15-minute timeout. A guest artifact
+cache keyed and verified by SHA-256 avoids uploading the same image for every
+case; each case still installs independently. Native builds seed this cache from
+their existing guest image. The cache contains only application images, no test
+HOME or credentials, and may be removed while the VM is idle.
+
 M06 installs the **product-generated GUI autostart LaunchAgent** into the logged-in
 user's LaunchAgents directory for the duration of the reboot test, with explicit
 environment isolation. The product plist normally lives under the temporary

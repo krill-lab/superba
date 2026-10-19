@@ -111,6 +111,38 @@ class ArchiveTests(unittest.TestCase):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_native_dmg_cache_rejects_different_remote_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            helper = Path(directory) / "ssh"
+            helper.touch()
+            source = Path(directory) / "artifact.dmg"
+            source.write_bytes(b"downloaded-image")
+            vm = Vm(helper)
+            mismatch = types.SimpleNamespace(returncode=0, stdout="0" * 64 + "  image.dmg\n")
+            with patch.object(vm, "shell", return_value=mismatch) as shell, patch.object(vm, "put") as put:
+                with self.assertRaisesRegex(VmError, "digest"):
+                    vm.cache_dmg(source, remote_source="/Users/Shared/native.dmg")
+            self.assertEqual(shell.call_count, 2)
+            self.assertTrue(all("shasum" in call.args[0] for call in shell.call_args_list))
+            put.assert_not_called()
+
+    def test_failed_binary_download_preserves_existing_destination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            helper = Path(directory) / "ssh"
+            helper.touch()
+            destination = Path(directory) / "artifact.dmg"
+            destination.write_bytes(b"old-complete-image")
+
+            def failed(*_, **kwargs):
+                kwargs["stdout"].write(b"partial-image")
+                return types.SimpleNamespace(returncode=1)
+
+            with patch("subprocess.run", side_effect=failed):
+                with self.assertRaises(VmError):
+                    Vm(helper).get("/Users/Shared/test.dmg", destination)
+            self.assertEqual(destination.read_bytes(), b"old-complete-image")
+            self.assertEqual(set(Path(directory).iterdir()), {helper, destination})
+
     def test_no_secret_on_ssh_command_line(self):
         calls = []
 
