@@ -760,6 +760,15 @@ impl Switcher {
         Ok(view)
     }
 
+    /// Match against the router's recorded Codex ingress.
+    pub(crate) fn matches_router_endpoint(&self, url: &str) -> bool {
+        self.deps
+            .router
+            .endpoint()
+            .ok()
+            .is_some_and(|e| superba_core::router::matches_router_endpoint(url, &e.base_url))
+    }
+
     /// The local Codex home points at the router: its loopback endpoint, or an
     /// earlier port of it (`http://127.0.0.1:<port>/backend-api/codex` with the
     /// router token in `auth.json`), so a router that moved can never make Codex
@@ -780,10 +789,17 @@ impl Switcher {
         let Some(url) = state.openai_base_url.as_deref() else {
             return false;
         };
-        if url.trim_end_matches('/') == endpoint.base_url.as_str().trim_end_matches('/') {
+        if superba_core::router::matches_router_endpoint(url, &endpoint.base_url) {
             return true;
         }
-        is_router_url(url)
+        let Ok(observed) = Url::parse(url) else {
+            return false;
+        };
+        let mut previous = endpoint.base_url.clone();
+        if previous.set_port(observed.port_or_known_default()).is_err() {
+            return false;
+        }
+        superba_core::router::matches_router_endpoint(url, &previous)
             && matches!(&state.auth, AuthShape::ApiKey { key_last4 } | AuthShape::Pat { key_last4 }
                 if !endpoint.token.is_empty() && *key_last4 == endpoint.token.last4())
     }
@@ -821,7 +837,13 @@ impl Switcher {
             installed: service.installed,
             running,
             port: service.port,
-            codex_routed: state.as_ref().is_some_and(|s| self.codex_routed(s)),
+            codex_routed: state.as_ref().is_some_and(|s| {
+                superba_core::router::codex_uses_router(
+                    s,
+                    set.settings.router.enabled,
+                    d.router.endpoint().ok().as_ref().map(|e| &e.base_url),
+                )
+            }),
             members,
             requests: status.as_ref().map_or(0, |s| s.totals.requests),
             failovers: status.as_ref().map_or(0, |s| s.totals.failovers),
@@ -1253,7 +1275,17 @@ fn watchdog_request(state: &ConfigState, target: ProfileId, enable: bool) -> Swi
             .after
             .as_deref()
             .and_then(superba_config::toml_keys::parse_repr)
-            .and_then(|v| v.as_str().map(is_router_url))
+            .and_then(|v| {
+                v.as_str().map(|url| {
+                    state
+                        .openai_base_url
+                        .as_deref()
+                        .and_then(|u| Url::parse(u).ok())
+                        .is_some_and(|expected| {
+                            superba_core::router::matches_router_endpoint(url, &expected)
+                        })
+                })
+            })
             .unwrap_or(false);
         request.key_resolutions.insert(
             k.path.clone(),
@@ -1265,17 +1297,6 @@ fn watchdog_request(state: &ConfigState, target: ProfileId, enable: bool) -> Swi
         );
     }
     request
-}
-
-/// `http://127.0.0.1:<port>/backend-api/codex` (any port): the shape of a
-/// router endpoint.
-pub(crate) fn is_router_url(url: &str) -> bool {
-    let Ok(u) = Url::parse(url) else {
-        return false;
-    };
-    u.scheme() == "http"
-        && u.host_str() == Some("127.0.0.1")
-        && u.path().trim_end_matches('/') == superba_router::config::ROUTER_BASE_PATH
 }
 
 /// Watchdog state kept by the service between ticks.

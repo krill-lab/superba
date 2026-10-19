@@ -563,6 +563,7 @@ fn router_on(data: &mut Data) {
         .router
         .enabled = true;
     let o = data.overview.value.as_mut().unwrap();
+    o.router_base_url = Some("http://127.0.0.1:18431/backend-api/codex".parse().unwrap());
     o.config.as_mut().unwrap().openai_base_url =
         Some("http://127.0.0.1:18431/backend-api/codex".into());
 }

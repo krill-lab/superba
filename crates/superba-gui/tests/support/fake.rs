@@ -1671,6 +1671,9 @@ impl SwitchService for FakeService {
             account: s.account.clone().filter(|_| s.account_summary_enabled),
             baseline_captured: s.baseline_captured,
             claude_routed: false,
+            router_base_url: s
+                .router_installed
+                .then(|| url::Url::parse("http://127.0.0.1:4321/backend-api/codex").unwrap()),
             baseline_at: s
                 .baseline_captured
                 .then(|| Timestamp::from_millis(1_760_572_800_000)),

@@ -28,76 +28,41 @@ fn member(healths: &[LineHealth]) -> MemberView {
 }
 
 #[test]
-fn missing_base_url_means_direct_mode() {
-    assert_eq!(Mode::from_base_url(None), Mode::Direct);
-}
-
-#[test]
-fn http_loopback_urls_select_router_mode_with_their_ports() {
-    for (url, port) in [
-        ("http://127.0.0.1:8123/backend-api/codex", 8123),
-        ("http://localhost:9/backend-api/codex", 9),
-        ("http://[::1]:8123/backend-api/codex", 8123),
-        ("http://127.0.0.1:65535/v1", 65535),
+fn loopback_upstreams_are_direct_local_services_without_recorded_routing() {
+    assert_eq!(Mode::direct(None), Mode::Direct);
+    for (url, address) in [
+        ("http://127.0.0.1:11434/v1", "127.0.0.1:11434"),
+        ("http://localhost:1234/backend-api/codex", "localhost:1234"),
+        ("http://[::1]:8123/openai/v1", "[::1]:8123"),
+        ("https://localhost/v1", "localhost:443"),
+        ("http://localhost/v1", "localhost:80"),
     ] {
         assert_eq!(
-            Mode::from_base_url(Some(url)),
-            Mode::Router { port },
-            "{url}"
+            Mode::direct(Some(url)),
+            Mode::Local {
+                address: address.into()
+            }
         );
     }
 }
 
 #[test]
-fn http_loopback_urls_use_port_80_when_no_port_is_given() {
+fn non_local_and_invalid_upstreams_are_direct() {
     for url in [
-        "http://localhost/v1",
-        "http://127.0.0.1:80/v1",
-        "http://[::1]/v1",
-    ] {
-        assert_eq!(Mode::from_base_url(Some(url)), Mode::Router { port: 80 });
-    }
-}
-
-#[test]
-fn https_loopback_urls_remain_direct() {
-    for url in [
-        "https://127.0.0.1:8123/v1",
-        "https://localhost:9/v1",
-        "https://[::1]:8123/v1",
-    ] {
-        assert_eq!(Mode::from_base_url(Some(url)), Mode::Direct, "{url}");
-    }
-}
-
-#[test]
-fn remote_http_urls_remain_direct() {
-    for url in [
-        "http://api.example.com:8123/v1",
-        "http://203.0.113.2:8123/v1",
+        "https://api.example.com/v1",
         "http://localhost.example.com:8123/v1",
-        "http://127.0.0.1.example.com:8123/v1",
-    ] {
-        assert_eq!(Mode::from_base_url(Some(url)), Mode::Direct, "{url}");
-    }
-}
-
-#[test]
-fn invalid_urls_remain_direct() {
-    for url in [
-        "",
+        "http://203.0.113.2:8123/v1",
         "not a URL",
         "http://[",
-        "http://localhost:65536/v1",
         "/relative/path",
     ] {
-        assert_eq!(Mode::from_base_url(Some(url)), Mode::Direct, "{url}");
+        assert_eq!(Mode::direct(Some(url)), Mode::Direct);
     }
 }
 
 #[test]
 fn missing_configuration_means_unknown_mode() {
-    assert_eq!(Mode::from_config(None), Mode::Unknown);
+    assert_eq!(Mode::from_config(None, false, None), Mode::Unknown);
 }
 
 #[test]

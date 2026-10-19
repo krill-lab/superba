@@ -471,12 +471,20 @@ fn the_menu_follows_chatgpt_the_router_and_a_running_switch() {
     let m = menu::build(&tr, &data, false);
     assert!(labels(&m.items).contains(&tr.t("tray.menu.reopen_app")));
 
+    data.profiles
+        .value
+        .as_mut()
+        .unwrap()
+        .settings
+        .router
+        .enabled = true;
     // Router mode on: its address and "Turn router off"; a router that does
     // not answer says so.
     if let Some(o) = data.overview.value.as_mut()
         && let Some(c) = o.config.as_mut()
     {
-        c.openai_base_url = Some("http://127.0.0.1:17421/v1".into());
+        o.router_base_url = Some("http://127.0.0.1:17421/backend-api/codex".parse().unwrap());
+        c.openai_base_url = o.router_base_url.as_ref().map(ToString::to_string);
     }
     let m = menu::build(&tr, &data, false);
     let l = labels(&m.items);

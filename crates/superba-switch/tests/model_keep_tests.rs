@@ -461,6 +461,7 @@ fn the_scope_is_a_change_of_form_on_the_same_site_with_no_model() {
     fn input(s: &ConfigState) -> ScopeInput<'_> {
         ScopeInput {
             state: s,
+            current_routed: false,
             kept: None,
             dest_site: &KRILL,
             dest_auth: AuthMode::ApiKey,

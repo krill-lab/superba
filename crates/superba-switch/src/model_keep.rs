@@ -114,6 +114,8 @@ pub struct KeepScope {
 pub struct ScopeInput<'a> {
     /// The local home now.
     pub state: &'a ConfigState,
+    /// Current configuration matches Superba's recorded router endpoint.
+    pub current_routed: bool,
     /// The model [`kept_model`] reports for it.
     pub kept: Option<&'a str>,
     /// The destination's site.
@@ -135,12 +137,7 @@ pub struct ScopeInput<'a> {
 /// be dropped.
 pub fn keep_scope(i: ScopeInput<'_>) -> Option<KeepScope> {
     let active = i.state.active.as_ref()?;
-    let from = if i
-        .state
-        .openai_base_url
-        .as_deref()
-        .is_some_and(crate::router::is_router_url)
-    {
+    let from = if i.current_routed {
         ModelForm::Router
     } else {
         ModelForm::of(active.auth_mode?)?
@@ -470,6 +467,11 @@ impl Switcher {
         let kept = kept_model(&d.ctx.data_dir, &home, i.state);
         let Some(scope) = keep_scope(ScopeInput {
             state: i.state,
+            current_routed: superba_core::router::codex_uses_router(
+                i.state,
+                i.set.settings.router.enabled,
+                d.router.endpoint().ok().as_ref().map(|e| &e.base_url),
+            ),
             kept: kept.as_deref(),
             dest_site: &i.site.id,
             dest_auth: i.dest_auth,
@@ -587,6 +589,7 @@ pub fn host_on_site(
     base_url: Option<&str>,
     site: &Site,
     applied_site: Option<&superba_core::SiteId>,
+    router_endpoints: &[url::Url],
 ) -> bool {
     let Some(url) = base_url.and_then(|u| url::Url::parse(u).ok()) else {
         return false;
@@ -594,14 +597,10 @@ pub fn host_on_site(
     if crate::rules::line_for_origin(site, &url.origin().ascii_serialization()).is_some() {
         return true;
     }
-    let router_host = match url.host() {
-        Some(url::Host::Ipv4(a)) => a.is_loopback() || a.is_private(),
-        _ => false,
-    };
-    url.scheme() == "http"
-        && router_host
-        && url.path().trim_end_matches('/') == superba_router::config::ROUTER_BASE_PATH
-        && applied_site == Some(&site.id)
+    applied_site == Some(&site.id)
+        && router_endpoints
+            .iter()
+            .any(|endpoint| superba_core::router::matches_router_endpoint(url.as_str(), endpoint))
 }
 
 /// The line and key a distribution's personal access token reads the
@@ -674,8 +673,32 @@ impl Switcher {
             model.as_deref(),
         );
         let applied_site = i.local.active.as_ref().and_then(|a| a.site_id.as_ref());
+        let router_endpoints = if i.set.settings.router.enabled {
+            self.deps
+                .router
+                .endpoint()
+                .ok()
+                .map(|e| {
+                    let mut endpoints = vec![e.base_url.clone()];
+                    for address in self.deps.router.wsl_listen() {
+                        let mut endpoint = e.base_url.clone();
+                        if endpoint.set_host(Some(&address.to_string())).is_ok() {
+                            endpoints.push(endpoint);
+                        }
+                    }
+                    endpoints
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let Some(scope) = scope_of(ScopeFacts {
-            same_site: host_on_site(i.state.openai_base_url.as_deref(), i.site, applied_site),
+            same_site: host_on_site(
+                i.state.openai_base_url.as_deref(),
+                i.site,
+                applied_site,
+                &router_endpoints,
+            ),
             auth: i.state.auth.mode(),
             dest_auth: *auth,
             model: model.as_deref(),

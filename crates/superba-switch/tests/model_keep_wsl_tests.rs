@@ -569,29 +569,48 @@ async fn run_codex_in_wsl_names_the_model_kept_for_its_distribution() {
 
 #[test]
 fn a_distribution_is_on_the_site_of_its_line_or_of_the_router() {
+    let endpoints: Vec<url::Url> = [
+        "http://127.0.0.1:18431/backend-api/codex",
+        "http://172.24.16.1:18431/backend-api/codex",
+    ]
+    .iter()
+    .map(|u| url::Url::parse(u).unwrap())
+    .collect();
     let site = superba_core::catalog::krill_site();
     let krill = site.id.clone();
     let other = superba_core::SiteId::new("custom");
     let line = format!("{OVERSEAS}/backend-api/codex");
-    assert!(host_on_site(Some(&line), &site, None));
-    assert!(host_on_site(Some(&line), &site, Some(&other)));
+    assert!(host_on_site(Some(&line), &site, None, &endpoints));
+    assert!(host_on_site(Some(&line), &site, Some(&other), &endpoints));
     // The router (loopback or the WSL listener) serves the site applied here.
     for router in [
         "http://127.0.0.1:18431/backend-api/codex",
         "http://172.24.16.1:18431/backend-api/codex",
     ] {
-        assert!(host_on_site(Some(router), &site, Some(&krill)), "{router}");
-        assert!(!host_on_site(Some(router), &site, Some(&other)), "{router}");
-        assert!(!host_on_site(Some(router), &site, None), "{router}");
+        assert!(
+            host_on_site(Some(router), &site, Some(&krill), &endpoints),
+            "{router}"
+        );
+        assert!(
+            !host_on_site(Some(router), &site, Some(&other), &endpoints),
+            "{router}"
+        );
+        assert!(
+            !host_on_site(Some(router), &site, None, &endpoints),
+            "{router}"
+        );
     }
     for elsewhere in [
         None,
         Some("https://api.openai.com/v1"),
         Some("http://203.0.113.9:18431/backend-api/codex"),
         Some("not a url"),
+        Some("http://172.24.16.2:18431/backend-api/codex"),
+        Some("http://172.24.16.1:11434/backend-api/codex"),
+        Some("http://172.24.16.1:18431/openai/v1"),
     ] {
         assert!(
-            !host_on_site(elsewhere, &site, Some(&krill)),
+            !host_on_site(elsewhere, &site, Some(&krill), &endpoints),
             "{elsewhere:?}"
         );
     }

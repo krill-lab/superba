@@ -530,7 +530,7 @@ impl Switcher {
             || !state
                 .openai_base_url
                 .as_deref()
-                .is_some_and(crate::router::is_router_url)
+                .is_some_and(|url| self.matches_router_endpoint(url))
         {
             // Superba itself may have started while routing was on. Avoid
             // inheriting its old managed CA path after Clear restored the user.
@@ -760,6 +760,7 @@ impl Switcher {
             notices,
             external,
             claude_routed: self.claude_routed(),
+            router_base_url: d.router.endpoint().ok().map(|e| e.base_url),
         })
     }
 

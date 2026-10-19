@@ -993,7 +993,7 @@ impl Run<'_> {
             .pc
             .endpoints
             .as_ref()
-            .is_some_and(|e| crate::router::is_router_url(e.openai_base_url.as_str()))
+            .is_some_and(|e| self.sw.matches_router_endpoint(e.openai_base_url.as_str()))
             && plan
                 .to
                 .auth_mode
@@ -1879,7 +1879,7 @@ impl Run<'_> {
             .pc
             .endpoints
             .as_ref()
-            .filter(|e| crate::router::is_router_url(e.openai_base_url.as_str()))
+            .filter(|e| self.sw.matches_router_endpoint(e.openai_base_url.as_str()))
             .map(|e| {
                 superba_net::new_compatible_site(
                     superba_core::SiteId::new("superba-router"),

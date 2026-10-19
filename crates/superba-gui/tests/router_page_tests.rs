@@ -531,3 +531,64 @@ fn every_key_based_provider_has_a_price_ratio_without_the_router() {
         );
     }
 }
+
+#[test]
+fn disabling_router_shows_off_banner_for_a_direct_local_upstream() {
+    let mut h = Harness::new([1280.0, 800.0], Locale::ZhCn, fake(), true);
+    let mut state = State::default();
+    let endpoint: url::Url = "http://127.0.0.1:18431/backend-api/codex".parse().unwrap();
+    h.data
+        .profiles
+        .value
+        .as_mut()
+        .unwrap()
+        .settings
+        .router
+        .enabled = true;
+    let overview = h.data.overview.value.as_mut().unwrap();
+    overview.router_base_url = Some(endpoint.clone());
+    overview.config.as_mut().unwrap().openai_base_url = Some(endpoint.to_string());
+    let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
+    assert!(f.has("路由已开启"), "{}", f.all_text());
+
+    // After the disable switch the original upstream is a local model server.
+    h.data
+        .profiles
+        .value
+        .as_mut()
+        .unwrap()
+        .settings
+        .router
+        .enabled = false;
+    h.data
+        .overview
+        .value
+        .as_mut()
+        .unwrap()
+        .config
+        .as_mut()
+        .unwrap()
+        .openai_base_url = Some("http://127.0.0.1:11434/v1".into());
+    let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
+    assert!(f.has("路由已关闭"), "{}", f.all_text());
+    assert!(
+        f.has("直连 · 本机服务（127.0.0.1:11434）"),
+        "{}",
+        f.all_text()
+    );
+    assert!(!f.has("路由已开启"), "{}", f.all_text());
+
+    // Even an unchanged/stale config cannot turn the saved off choice back on.
+    h.data
+        .overview
+        .value
+        .as_mut()
+        .unwrap()
+        .config
+        .as_mut()
+        .unwrap()
+        .openai_base_url = Some(endpoint.to_string());
+    let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
+    assert!(f.has("路由已关闭"), "{}", f.all_text());
+    assert!(!f.has("路由已开启"), "{}", f.all_text());
+}

@@ -33,12 +33,14 @@ open_active = "打开活动请求"
 open_stats = "打开用量统计"
 
 [router.banner]
+local = "路由已关闭 —— 直连 · 本机服务（{addr}）。"
 on = "路由已开启 —— 这台电脑上 Codex 的请求经由本机进程 superba-router（{addr}）转发。官方登录和远程主机不经过它。"
 off = "路由已关闭 —— Codex 直接连接供应商。"
 turn_on = "开启路由…"
 tip = "开启后，Codex 把请求发给本机 127.0.0.1 上的 superba-router，由它转发给第一个健康的成员。官方 ChatGPT 登录永远不经过路由；远程主机保持直连。路由停止时 Superba 会把 Codex 改回直连。成员的 Key 复制到路由自己的密钥文件（仅你可读）。账号错误（401、403、429）不会换到别处重试。"
 
 [router.mode]
+local = "直连 · 本机服务（{addr}）"
 on = "已开启"
 off = "已关闭"
 unknown = "未知"

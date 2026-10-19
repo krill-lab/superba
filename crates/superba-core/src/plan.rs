@@ -1389,6 +1389,10 @@ pub struct Overview {
     /// keeps the router watchdog running for it too).
     #[serde(default)]
     pub claude_routed: bool,
+    /// Codex ingress from Superba's recorded router listener, never inferred
+    /// from the observed upstream URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub router_base_url: Option<url::Url>,
 }
 
 /// One diagnostics item (plan 4 #21, 11.1 diagnostics page).

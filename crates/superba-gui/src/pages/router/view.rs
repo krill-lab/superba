@@ -51,8 +51,12 @@ pub(super) fn router_column(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &m
     ui.label(Text::section(cx.tr.t("router.section.title"), cx.pal));
     // Mode row.
     kv(ui, cx, &cx.tr.t("router.mode_label"), |ui| {
-        let (status, text) = match mode {
+        let (status, text) = match &mode {
             Mode::Router { .. } => (Status::Ok, cx.tr.t("router.mode.on")),
+            Mode::Local { address } => (
+                Status::Idle,
+                cx.tr.f("router.mode.local", &[("addr", address)]),
+            ),
             Mode::Direct => (Status::Idle, cx.tr.t("router.mode.off")),
             Mode::Unknown => (Status::Idle, cx.tr.t("router.mode.unknown")),
         };

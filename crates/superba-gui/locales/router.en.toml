@@ -34,12 +34,14 @@ open_active = "Open active requests"
 open_stats = "Open usage statistics"
 
 [router.banner]
+local = "Router off — Direct · Local service ({addr})."
 on = "Router on — this computer's Codex requests go through the local process superba-router ({addr}). The official login and remote hosts don't use it."
 off = "Router off — Codex connects to the provider directly."
 turn_on = "Turn on the router…"
 tip = "When on, Codex sends requests to superba-router on 127.0.0.1, which forwards them to the first healthy member. The official ChatGPT login never goes through it; remote hosts stay direct. If the router stops, Superba switches Codex back to a direct line. Member keys are copied into the router's own key file (readable only by you). Account errors (401, 403, 429) are never retried elsewhere."
 
 [router.mode]
+local = "Direct · Local service ({addr})"
 on = "On"
 off = "Off"
 unknown = "Unknown"

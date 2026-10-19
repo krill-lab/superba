@@ -300,3 +300,41 @@ fn wsl_base(w: &World) -> String {
         other => panic!("unexpected {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn status_uses_the_recorded_endpoint_while_watchdog_can_repair_an_old_port() {
+    let w = World::new();
+    let sw = w.switcher();
+    router_on(&sw).await;
+    route_codex(&w, &sw).await;
+    assert!(sw.router_status().await.unwrap().codex_routed);
+    let overview = sw.overview().await.unwrap();
+    assert_eq!(overview.router_base_url.unwrap().as_str(), codex_url(&w));
+
+    for url in [
+        "http://127.0.0.1:11434/v1",
+        "http://127.0.0.1:11434/backend-api/codex",
+        "http://127.0.0.1:18431/openai/v1",
+        "http://localhost:18431/backend-api/codex",
+    ] {
+        w.config.state.lock().unwrap().openai_base_url = Some(url.into());
+        assert!(!sw.router_status().await.unwrap().codex_routed, "{url}");
+    }
+    w.config.state.lock().unwrap().openai_base_url = Some(FakeRouter::base_url(18_431));
+    *w.router.port.lock().unwrap() = Some(19_440);
+    assert!(!sw.router_status().await.unwrap().codex_routed);
+    let tick = sw.router_watch().await.unwrap();
+    assert!(
+        matches!(
+            tick.state,
+            RouterWatchState::Moved {
+                from: 18_431,
+                to: 19_440
+            }
+        ),
+        "{tick:?}"
+    );
+    assert!(sw.router_status().await.unwrap().codex_routed);
+    sw.router_set_enabled(false).await.unwrap();
+    assert!(!sw.router_status().await.unwrap().codex_routed);
+}

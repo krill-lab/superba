@@ -17,6 +17,51 @@ use crate::i18n::{Catalog, Locale, LocalizedText};
 use crate::ids::ProfileId;
 use crate::requests::{Multiplier, PriceEntry, RouterStatsStatus};
 
+/// Match an observed endpoint against Superba's recorded listener and ingress.
+/// Hosts are exact: a WSL gateway is accepted only when it is the recorded host.
+/// A trailing slash is harmless; credentials, queries and fragments are not.
+pub fn matches_router_endpoint(observed: &str, expected: &url::Url) -> bool {
+    let Ok(observed) = url::Url::parse(observed) else {
+        return false;
+    };
+    let plain = |u: &url::Url| {
+        u.username().is_empty()
+            && u.password().is_none()
+            && u.query().is_none()
+            && u.fragment().is_none()
+    };
+    plain(&observed)
+        && plain(expected)
+        && observed.scheme() == expected.scheme()
+        && observed.host() == expected.host()
+        && observed.port_or_known_default() == expected.port_or_known_default()
+        && observed.path().trim_end_matches('/') == expected.path().trim_end_matches('/')
+}
+
+/// Whether the applied Codex configuration uses the recorded router endpoint.
+/// The saved router choice and applied token mode must agree with the live URL;
+/// a local model server alone is never evidence of router mode.
+pub fn codex_uses_router(
+    state: &crate::ConfigState,
+    enabled: bool,
+    endpoint: Option<&url::Url>,
+) -> bool {
+    enabled
+        && state.handed_off.is_none()
+        && state
+            .active
+            .as_ref()
+            .and_then(|a| a.auth_mode)
+            .is_some_and(|m| m.uses_key())
+        && state
+            .model_provider
+            .as_deref()
+            .is_none_or(|p| p == crate::codex::PROVIDER_OPENAI)
+        && endpoint
+            .zip(state.openai_base_url.as_deref())
+            .is_some_and(|(expected, observed)| matches_router_endpoint(observed, expected))
+}
+
 /// Persisted router choice (part of [`crate::Settings`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

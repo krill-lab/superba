@@ -1115,15 +1115,7 @@ pub fn key_changes(ui: &mut Ui, cx: &Cx<'_>, plan: &SwitchPlan) {
             if let Some(a) = config.and_then(|c| c.auth_change.as_ref()) {
                 // The router's local token is not one of the user's keys: name it.
                 let router_after = plan.to.label.key == "switch.destination.router";
-                let router_before = crate::pages::router::model::Mode::from_base_url(
-                    cx.data
-                        .overview
-                        .value
-                        .as_ref()
-                        .and_then(|o| o.config.as_ref())
-                        .and_then(|c| c.openai_base_url.as_deref()),
-                )
-                .is_router();
+                let router_before = crate::pages::router::mode(cx).is_router();
                 let name = |shape: &superba_core::AuthShape, router: bool| {
                     if router && matches!(shape, superba_core::AuthShape::ApiKey { .. }) {
                         cx.tr.t("banner.router_token")

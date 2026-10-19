@@ -307,7 +307,14 @@ fn app_label(tr: &Tr, data: &Data) -> Option<String> {
 /// The router's state and its on/off; nothing before the configuration is
 /// known.
 fn router_items(tr: &Tr, data: &Data, busy: bool) -> Vec<TrayItem> {
-    let mode = Mode::from_config(data.overview.value.as_ref().and_then(|o| o.config.as_ref()));
+    let mode = Mode::from_config(
+        data.overview.value.as_ref().and_then(|o| o.config.as_ref()),
+        data.router_enabled(),
+        data.overview
+            .value
+            .as_ref()
+            .and_then(|o| o.router_base_url.as_ref()),
+    );
     match mode {
         Mode::Unknown => Vec::new(),
         Mode::Router { port } => {
@@ -320,7 +327,7 @@ fn router_items(tr: &Tr, data: &Data, busy: bool) -> Vec<TrayItem> {
                 TrayItem::action(tr.t("tray.router.turn_off"), TrayAction::RouterOff, !busy),
             ]
         }
-        Mode::Direct => vec![
+        Mode::Direct | Mode::Local { .. } => vec![
             TrayItem::Label(tr.t("tray.router.off")),
             TrayItem::action(tr.t("tray.router.turn_on"), TrayAction::RouterPage, true),
         ],

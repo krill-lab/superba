@@ -189,6 +189,11 @@ pub fn recent_shortage(local: &superba_core::RouterLocalView, now_ms: u64) -> bo
 pub enum Mode {
     /// Directly to a site (router off).
     Direct,
+    /// Directly to a local model server.
+    Local {
+        /// Host and port, without credentials.
+        address: String,
+    },
     /// To the local router on this port.
     Router {
         /// Loopback port.
@@ -199,31 +204,46 @@ pub enum Mode {
 }
 
 impl Mode {
-    /// Detect router mode from the observed configuration (see
-    /// [`Mode::from_base_url`]).
-    pub fn from_config(config: Option<&ConfigState>) -> Mode {
-        match config {
-            None => Mode::Unknown,
-            Some(c) => Mode::from_base_url(c.openai_base_url.as_deref()),
+    /// Compare the observed configuration with Superba's recorded routing state.
+    pub fn from_config(
+        config: Option<&ConfigState>,
+        enabled: bool,
+        endpoint: Option<&url::Url>,
+    ) -> Mode {
+        let Some(config) = config else {
+            return Mode::Unknown;
+        };
+        if superba_core::router::codex_uses_router(config, enabled, endpoint) {
+            return Mode::Router {
+                port: endpoint
+                    .and_then(url::Url::port_or_known_default)
+                    .unwrap_or(80),
+            };
         }
+        Self::direct(config.openai_base_url.as_deref())
     }
 
-    /// `openai_base_url` on `http://127.0.0.1:<port>` (or `localhost`, `[::1]`)
-    /// means Codex talks to the local router; anything else is direct.
-    pub fn from_base_url(base: Option<&str>) -> Mode {
-        let Some(base) = base else {
+    /// Direct local services retain their address so the UI can explain the route.
+    pub fn direct(base: Option<&str>) -> Mode {
+        let Some(url) = base.and_then(|s| url::Url::parse(s).ok()) else {
             return Mode::Direct;
         };
-        match url::Url::parse(base) {
-            Ok(url)
-                if url.scheme() == "http"
-                    && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]")) =>
-            {
-                Mode::Router {
-                    port: url.port().unwrap_or(80),
-                }
+        let local = match url.host() {
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            Some(url::Host::Domain(host)) => host == "localhost",
+            None => false,
+        };
+        if local && matches!(url.scheme(), "http" | "https") {
+            Mode::Local {
+                address: format!(
+                    "{}:{}",
+                    url.host_str().unwrap_or_default(),
+                    url.port_or_known_default().unwrap_or(80)
+                ),
             }
-            _ => Mode::Direct,
+        } else {
+            Mode::Direct
         }
     }
 

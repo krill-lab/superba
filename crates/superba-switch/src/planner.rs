@@ -2659,7 +2659,7 @@ impl Switcher {
                 .and_then(|u| Origin::parse(&u.origin().ascii_serialization()).ok())
                 .or_else(|| Some(endpoints.origin.clone()));
         }
-        if auth.needs_authapi_env() && crate::router::is_router_url(base.as_str()) {
+        if auth.needs_authapi_env() && self.matches_router_endpoint(base.as_str()) {
             dest.routed = true;
             endpoints.authapi_origin = Some(endpoints.origin.clone());
         }

@@ -329,22 +329,15 @@ fn setup_card(ui: &mut Ui, cx: &Cx<'_>, dismissed: &mut bool, out: &mut Vec<Acti
 /// The loopback router address Codex points at (`127.0.0.1:<port>`), when the
 /// applied configuration goes through the local router.
 pub fn routed_addr(cx: &Cx<'_>) -> Option<String> {
-    if !cx.data.router_enabled() || cx.data.active_profile().is_none() {
+    if !crate::pages::router::mode(cx).is_router() {
         return None;
     }
-    let base = cx
-        .data
-        .overview
-        .value
-        .as_ref()?
-        .config
-        .as_ref()?
-        .openai_base_url
-        .as_deref()?;
-    let url = url::Url::parse(base).ok()?;
-    let host = url.host_str()?;
-    matches!(host, "127.0.0.1" | "localhost" | "[::1]" | "::1")
-        .then(|| format!("{host}:{}", url.port_or_known_default().unwrap_or(80)))
+    let url = cx.data.overview.value.as_ref()?.router_base_url.as_ref()?;
+    Some(format!(
+        "{}:{}",
+        url.host_str()?,
+        url.port_or_known_default()?
+    ))
 }
 
 /// What the speed control offers and says for the applied provider: `None` for

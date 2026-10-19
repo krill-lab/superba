@@ -1084,7 +1084,7 @@ async fn route_codex(sw: &Switcher) {
 }
 
 #[tokio::test]
-async fn codex_on_an_earlier_router_port_still_counts_as_routed() {
+async fn an_earlier_router_port_is_not_current_but_still_blocks_uninstall() {
     let w = World::new();
     let sw = w.switcher();
     router_on(&sw).await;
@@ -1092,7 +1092,7 @@ async fn codex_on_an_earlier_router_port_still_counts_as_routed() {
     // The router's configuration moved to another port; Codex did not follow.
     *w.router.port.lock().unwrap() = Some(19_000);
     let view = sw.router_status().await.unwrap();
-    assert!(view.codex_routed, "the watchdog and guards still see it");
+    assert!(!view.codex_routed, "the current listener no longer matches");
     let e = sw.router_uninstall().await.unwrap_err();
     assert!(matches!(e, Error::Conflict { .. }), "{e}");
     // An unrelated loopback base URL with another key is not the router.

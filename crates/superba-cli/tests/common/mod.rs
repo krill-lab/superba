@@ -363,6 +363,7 @@ pub fn overview() -> Overview {
         account: None,
         baseline_captured: true,
         claude_routed: false,
+        router_base_url: None,
         baseline_at: None,
         login_stash: None,
         runtime: None,

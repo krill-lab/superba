@@ -400,12 +400,11 @@ impl State {
 
 /// Router mode as observed in the local configuration.
 pub fn mode(cx: &Cx<'_>) -> Mode {
+    let overview = cx.data.overview.value.as_ref();
     Mode::from_config(
-        cx.data
-            .overview
-            .value
-            .as_ref()
-            .and_then(|o| o.config.as_ref()),
+        overview.and_then(|o| o.config.as_ref()),
+        cx.data.router_enabled(),
+        overview.and_then(|o| o.router_base_url.as_ref()),
     )
 }
 
@@ -537,6 +536,11 @@ fn banner(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     let addr = address(state, &mode);
     let (status, line) = if on {
         (Status::Ok, cx.tr.f("router.banner.on", &[("addr", &addr)]))
+    } else if let Mode::Local { address } = &mode {
+        (
+            Status::Idle,
+            cx.tr.f("router.banner.local", &[("addr", address)]),
+        )
     } else {
         (Status::Idle, cx.tr.t("router.banner.off"))
     };
