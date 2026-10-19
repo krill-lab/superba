@@ -68,6 +68,14 @@ pub fn terminal_command(program: impl AsRef<OsStr>) -> Command {
     Command::new(program)
 }
 
+/// A Windows GUI-subsystem executable, such as an NSIS installer. It does
+/// not allocate a console window, even when our GUI has no console. Do not
+/// set `CREATE_NO_WINDOW`: ZCode's NSIS System plugin crashes with that flag.
+/// Console programs and version probes must use [`command`] instead.
+pub fn gui_command(program: impl AsRef<OsStr>) -> Command {
+    terminal_command(program)
+}
+
 /// A command for a child that must outlive us and stay out of our console and
 /// Ctrl+C group (the Codex desktop app, a background daemon).
 ///

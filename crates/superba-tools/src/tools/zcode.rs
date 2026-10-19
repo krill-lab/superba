@@ -293,6 +293,7 @@ async fn install_windows(op: &Op<'_>, args: &[&str], signer: &str) -> Result<Too
     let began = apps::now_secs();
     let cmd = cx
         .cmd(&setup)
+        .gui_program()
         .args(args.iter().copied())
         .timeout(Duration::from_secs(15 * 60));
     op.run_ok(&cmd, ToolStage::Installing).await?;
@@ -348,6 +349,7 @@ async fn uninstall_windows(op: &Op<'_>) -> Result<ToolReport> {
     })?;
     let cmd = cx
         .cmd(&parts[0])
+        .gui_program()
         .args(parts[1..].iter().cloned())
         .timeout(Duration::from_secs(10 * 60));
     op.run_ok(&cmd, ToolStage::Removing).await?;

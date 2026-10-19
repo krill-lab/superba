@@ -28,6 +28,8 @@ pub struct Cmd {
     pub cwd: Option<PathBuf>,
     /// Deadline.
     pub timeout: Duration,
+    /// A GUI-subsystem executable that must not receive `CREATE_NO_WINDOW`.
+    gui_program: bool,
 }
 
 impl Cmd {
@@ -40,6 +42,7 @@ impl Cmd {
             remove: Vec::new(),
             cwd: None,
             timeout: Duration::from_secs(15),
+            gui_program: false,
         }
     }
 
@@ -71,6 +74,13 @@ impl Cmd {
         self
     }
 
+    /// Run a Windows GUI-subsystem program without the console-program
+    /// creation flag. Its streams, deadline and cancellation stay supervised.
+    pub fn gui_program(mut self) -> Self {
+        self.gui_program = true;
+        self
+    }
+
     /// The command line for the log (arguments as given; no secrets are ever
     /// passed on a command line).
     pub fn display(&self) -> String {
@@ -83,8 +93,14 @@ impl Cmd {
     }
 
     fn command(&self) -> tokio::process::Command {
-        // Through the core helper: no console window on Windows.
-        let mut c = tokio::process::Command::from(superba_core::process::command(&self.program));
+        // GUI executables do not allocate a console; applying the console
+        // suppression flag can break their installer plugins.
+        let command = if self.gui_program {
+            superba_core::process::gui_command(&self.program)
+        } else {
+            superba_core::process::command(&self.program)
+        };
+        let mut c = tokio::process::Command::from(command);
         c.args(&self.args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
