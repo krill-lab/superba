@@ -312,10 +312,14 @@ fn session_file_of(root: &Path, thread: &str) -> Option<PathBuf> {
 }
 
 /// ` (pid 4242 codex)` for the processes holding a lock on `path` when the
-/// platform tells (Linux `/proc/locks`); empty otherwise.
+/// platform tells (Linux `/proc/locks` and `/proc/<pid>/fdinfo`); empty otherwise.
 fn holder_suffix(path: &Path) -> String {
-    let Some(pids) = lock_holders(&[path.to_path_buf()]) else {
-        return String::new();
+    let pids = lock_holders(&[path.to_path_buf()]).unwrap_or_default();
+    #[cfg(target_os = "linux")]
+    let pids = if pids.is_empty() {
+        fd_lock_holders(path, Path::new("/proc"))
+    } else {
+        pids
     };
     let me = std::process::id();
     let list: Vec<String> = pids
@@ -503,18 +507,64 @@ pub(crate) fn live_codex_processes(home: &CodexHome, lock_files: &[PathBuf]) -> 
 /// platform offers no such table.
 #[cfg(target_os = "linux")]
 fn lock_holders(paths: &[PathBuf]) -> Option<std::collections::BTreeSet<u32>> {
-    use std::os::unix::fs::MetadataExt;
-    let mut inodes = std::collections::BTreeSet::new();
-    for path in paths {
-        if let Ok(meta) = fs::metadata(path) {
-            let dev = meta.dev();
-            let major = ((dev >> 8) & 0xfff) | ((dev >> 32) & !0xfff);
-            let minor = (dev & 0xff) | ((dev >> 12) & !0xff);
-            inodes.insert((major, minor, meta.ino()));
-        }
-    }
+    let inodes = paths
+        .iter()
+        .filter_map(|path| lock_file_inode(path))
+        .collect();
     let table = fs::read_to_string("/proc/locks").ok()?;
     Some(parse_proc_locks(&table, &inodes))
+}
+
+/// The device and inode identity used in Linux lock records.
+#[cfg(target_os = "linux")]
+fn lock_file_inode(path: &Path) -> Option<(u64, u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+
+    let meta = fs::metadata(path).ok()?;
+    let dev = meta.dev();
+    let major = ((dev >> 8) & 0xfff) | ((dev >> 32) & !0xfff);
+    let minor = (dev & 0xff) | ((dev >> 12) & !0xff);
+    Some((major, minor, meta.ino()))
+}
+
+/// `/proc/locks` spans multiple reads: concurrent additions/removals can move a
+/// held lock past the read position. On a conflict with no reported holder,
+/// consult matching descriptors' own lock records instead. An open descriptor
+/// alone is not lock evidence. This slower scan is only for conflict messages.
+#[cfg(target_os = "linux")]
+fn fd_lock_holders(path: &Path, proc_root: &Path) -> std::collections::BTreeSet<u32> {
+    let mut pids = std::collections::BTreeSet::new();
+    let (Some(inode), Ok(processes)) = (lock_file_inode(path), fs::read_dir(proc_root)) else {
+        return pids;
+    };
+    let inodes = [inode].into_iter().collect();
+    for process in processes.flatten() {
+        // Skip aliases such as `self` and `thread-self`.
+        if process
+            .file_name()
+            .to_string_lossy()
+            .parse::<u32>()
+            .is_err()
+        {
+            continue;
+        }
+        let Ok(fds) = fs::read_dir(process.path().join("fd")) else {
+            continue;
+        };
+        for fd in fds.flatten() {
+            if lock_file_inode(&fd.path()) != Some(inode) {
+                continue;
+            }
+            let Ok(info) = fs::read_to_string(process.path().join("fdinfo").join(fd.file_name()))
+            else {
+                continue;
+            };
+            // Match the identity in the lock record too: the fd may have been
+            // closed and reused since stat, or may merely have the file open.
+            pids.extend(parse_proc_locks(&info, &inodes));
+        }
+    }
+    pids
 }
 
 /// Non-Linux platforms have no lock table to consult.
@@ -641,6 +691,61 @@ garbage
             .collect();
         let pids: Vec<u32> = parse_proc_locks(table, &inodes).into_iter().collect();
         assert_eq!(pids, vec![3_445_291, 4_012_727, 4_012_728]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn fd_lock_holders_find_a_real_flock_but_not_an_unlocked_open_file() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        file.as_file().lock().unwrap();
+        let pids = fd_lock_holders(file.path(), Path::new("/proc"));
+        assert_eq!(pids, [std::process::id()].into_iter().collect());
+
+        file.as_file().unlock().unwrap();
+        assert!(fd_lock_holders(file.path(), Path::new("/proc")).is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn fd_lock_holders_require_matching_descriptors_and_lock_records() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("session.lock");
+        fs::write(&path, "").unwrap();
+        let (major, minor, inode) = lock_file_inode(&path).unwrap();
+        let proc_root = tmp.path().join("proc");
+        let process = proc_root.join("4242");
+        fs::create_dir_all(process.join("fd")).unwrap();
+        fs::create_dir_all(process.join("fdinfo")).unwrap();
+        let fd = process.join("fd/7");
+        let info = process.join("fdinfo/7");
+        symlink(&path, &fd).unwrap();
+        let record = |inode| {
+            format!(
+                "pos:\t0\nflags:\t02100001\nino:\t{inode}\n\
+                 lock:\t1: FLOCK  ADVISORY  WRITE 4242 {major:02x}:{minor:02x}:{inode} 0 EOF\n"
+            )
+        };
+        fs::write(&info, record(inode)).unwrap();
+        // The descriptor records still identify the holder if a global lock
+        // table snapshot omitted it (or the table cannot be read at all).
+        assert_eq!(
+            fd_lock_holders(&path, &proc_root),
+            [4242].into_iter().collect()
+        );
+
+        // Having this same file open without a lock is not evidence.
+        fs::write(&info, format!("pos:\t0\nino:\t{inode}\n")).unwrap();
+        assert!(fd_lock_holders(&path, &proc_root).is_empty());
+
+        // A descriptor reused between stat and reading fdinfo must not name
+        // the holder of a different file's lock.
+        fs::write(&info, record(inode + 1)).unwrap();
+        assert!(fd_lock_holders(&path, &proc_root).is_empty());
+        fs::write(&info, record(inode)).unwrap();
+        fs::remove_file(&fd).unwrap();
+        assert!(fd_lock_holders(&path, &proc_root).is_empty());
     }
 
     #[test]
