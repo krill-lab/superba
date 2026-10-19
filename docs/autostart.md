@@ -68,8 +68,10 @@ the standalone CLI to hand registration to that bundle. Apple's
 [service-management documentation](https://developer.apple.com/documentation/servicemanagement/smappservice)
 describes the newer API; its
 [legacy-agent guidance](https://developer.apple.com/documentation/servicemanagement/updating-helper-executables-from-earlier-versions-of-macos)
-documents the bundle association used here. A developer/ad-hoc build may
-still be shown as an unidentified developer; release signing identifies it.
+documents the bundle association used here. An ad-hoc build can show the
+executable name `superba` and an unidentified developer in System Settings,
+even when the background-item database records `Superba`. Publisher
+attribution still requires release signing.
 
 Normal GUI launches refresh an existing enabled registration after an update
 or portable installation move. Updates restart the installed GUI, which performs
