@@ -23,6 +23,7 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 
 > 截图由真实程序在隔离的主目录和本地模拟中转站上运行生成
 > （`crates/superba-gui/tools/screenshots/shoot.py`），其中的账户、Key 和用量均为虚构数据。
+> alpha.7 的[截图说明与 Windows 截图](docs/screenshots/README.md)包含精确源码提交和图片哈希。
 
 ## 功能
 

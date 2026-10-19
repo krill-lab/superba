@@ -26,6 +26,8 @@ Geist look).
 > Screenshots come from the real binaries running against an isolated home and a
 > local mock relay (`crates/superba-gui/tools/screenshots/shoot.py`); the account,
 > key and usage shown are fake.
+> The alpha.7 [capture details and Windows screenshots](docs/screenshots/README.md)
+> include the exact source commit and image hashes.
 
 ## Features
 
