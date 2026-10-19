@@ -1,0 +1,36 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"fixture","model":"model","status":"in_progress","output":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_a","summary":[]}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","output_index":0,"item_id":"rs_a","summary_index":0,"delta":"Inspect 世界"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_a","summary":[{"type":"summary_text","text":"Inspect 世界"}],"encrypted_content":"openai-ciphertext"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_a","role":"assistant","content":[]}}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","output_index":1,"content_index":0,"part":{"type":"input_image","image_url":"data:image/png;base64,cGl4ZWw="}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","id":"msg_a","role":"assistant","content":[{"type":"input_image","image_url":"data:image/png;base64,cGl4ZWw="}]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":2,"item":{"type":"function_call","id":"fc_a","call_id":"call_a","name":"read","arguments":""}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":2,"item_id":"fc_a","delta":"{\"path\":"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":2,"item_id":"fc_a","delta":"\"a.txt\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":2,"item":{"type":"function_call","id":"fc_a","call_id":"call_a","name":"read","arguments":"{\"path\":\"a.txt\"}"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"fixture","model":"model","status":"completed","output":[{"type":"function_call","call_id":"call_a","name":"read","arguments":"{\"path\":\"a.txt\"}"}],"usage":{"input_tokens":60,"input_tokens_details":{"cached_tokens":20,"cache_write_tokens":30},"output_tokens":12,"output_tokens_details":{"reasoning_tokens":7}}}}
+

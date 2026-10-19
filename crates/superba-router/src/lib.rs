@@ -114,6 +114,7 @@ pub mod sticky;
 pub mod store;
 pub mod token;
 pub mod transport;
+pub mod translate;
 pub mod watchdog;
 
 mod admin;

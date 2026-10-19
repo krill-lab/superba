@@ -1,0 +1,16 @@
+data: {"id":"fixture","model":"model","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Inspect 世界"},"finish_reason":null}]}
+
+data: {"id":"fixture","model":"model","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,cGl4ZWw="}}]},"finish_reason":null}]}
+
+data: {"id":"fixture","model":"model","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"read","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"fixture","model":"model","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":"}}]},"finish_reason":null}]}
+
+data: {"id":"fixture","model":"model","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"a.txt\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"fixture","model":"model","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"id":"fixture","model":"model","choices":[],"usage":{"prompt_tokens":60,"prompt_tokens_details":{"cached_tokens":20,"cache_write_tokens":30},"completion_tokens":12,"completion_tokens_details":{"reasoning_tokens":7}}}
+
+data: [DONE]
+
