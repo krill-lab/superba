@@ -489,6 +489,13 @@ def w88(t):
     run = t.run
     other = "b" if run.state.get("line", "a") == "a" else "a"
     pending_rx = r"(?i)update pending|not updated by the switch"
+    with t.step("Explicitly follow this computer before testing stopped updates") as s:
+        # A first probe may time out before Codex is known or any files are written.
+        # Stopped, unknown distributions are deliberately not marked pending unless
+        # the user chose to follow. W82 covers following by default while running.
+        r = run.spb("remote", "follow", HOST, "on", timeout=120, label="wsl-follow-stopped")
+        s.save("follow-before-stop.txt", r["stdout"] + r["stderr"])
+        s.check(r["code"] == 0, f"explicit WSL follow enabled (exit {r['code']})")
     with t.step("Stop the distribution, then switch") as s:
         s.check(flows.wsl_stop(run), f"{D} stopped (wsl --terminate)")
         r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", "--wait-turn",

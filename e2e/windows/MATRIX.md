@@ -40,6 +40,10 @@ a warning; a repeated dialog fails explicitly. Result toasts are polled across
 frames. An observed WSL switch timeout remains **WARN** after later success in the
 same run; a failed check remains **FAIL**.
 
+W88 explicitly enables following before testing stopped distributions, so a timed
+out first probe cannot leave its pending-update precondition unset. W82 covers the
+default follow behavior for a running distribution.
+
 W50's large app download, W51's destructive pin/version changes and the layout
 judgments remain explicit manual checks in their reports. An installation check
 must not be called verified while its row is SKIP or has outstanding manual items.
