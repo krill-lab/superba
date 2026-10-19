@@ -89,6 +89,7 @@ pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
     // taskbar, the window switcher and UI Automation.
     let viewport = chrome::viewport(
         egui::ViewportBuilder::default()
+            .with_visible(!start_in_tray)
             .with_title(APP_TITLE)
             .with_app_id("superba")
             .with_inner_size(size)

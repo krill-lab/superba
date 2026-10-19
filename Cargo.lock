@@ -4648,6 +4648,7 @@ dependencies = [
  "serde_json",
  "superba-catalog",
  "superba-cli",
+ "superba-config",
  "superba-core",
  "superba-import",
  "superba-models",
@@ -4703,8 +4704,10 @@ dependencies = [
 name = "superba-msi-ca"
 version = "0.1.0"
 dependencies = [
+ "superba-core",
  "tempfile",
  "windows-sys 0.61.2",
+ "winreg",
 ]
 
 [[package]]

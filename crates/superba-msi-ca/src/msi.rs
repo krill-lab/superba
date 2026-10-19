@@ -76,3 +76,64 @@ fn set(install: MSIHANDLE, name: &str, value: &str) {
         MsiSetPropertyW(install, name.as_ptr(), value.as_ptr());
     }
 }
+
+/// Remove only the GUI startup entry. Embedded in the MSI so removal works
+/// even when installed executables are missing. Runs for REMOVE=Main and ALL,
+/// but not the old product's removal during an upgrade.
+#[unsafe(no_mangle)]
+pub extern "system" fn RemoveAutostart(_install: MSIHANDLE) -> u32 {
+    startup_action(|| {
+        use superba_core::autostart::{RUN_KEY, RUN_VALUE};
+        use winreg::{
+            RegKey,
+            enums::{HKEY_CURRENT_USER, KEY_SET_VALUE},
+        };
+        match RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey_with_flags(RUN_KEY, KEY_SET_VALUE)
+            .and_then(|k| k.delete_value(RUN_VALUE))
+        {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        }
+    })
+}
+
+/// An install/repair/upgrade refreshes an existing opt-in with INSTALLFOLDER.
+/// A fresh install without a Run value leaves login startup off.
+#[unsafe(no_mangle)]
+pub extern "system" fn RefreshAutostart(install: MSIHANDLE) -> u32 {
+    startup_action(|| {
+        use superba_core::autostart::{RUN_KEY, RUN_VALUE, windows_command};
+        use winreg::{
+            RegKey,
+            enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE},
+        };
+        let key = match RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey_with_flags(RUN_KEY, KEY_READ | KEY_SET_VALUE)
+        {
+            Ok(k) => k,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        match key.get_value::<String, _>(RUN_VALUE) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+            Ok(_) => {}
+        }
+        let folder = read(install, FOLDER, true)
+            .or_else(|| read(install, FOLDER, false))
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| std::io::Error::other("missing INSTALLFOLDER"))?;
+        let command = windows_command(&PathBuf::from(folder).join("superba.exe"))
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        key.set_value(RUN_VALUE, &command)
+    })
+}
+
+fn startup_action(action: impl FnOnce() -> std::io::Result<()> + std::panic::UnwindSafe) -> u32 {
+    match std::panic::catch_unwind(action) {
+        Ok(Ok(())) => ERROR_SUCCESS,
+        _ => 1603,
+    }
+}

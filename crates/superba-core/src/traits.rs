@@ -1058,6 +1058,16 @@ pub trait SwitchService: Send + Sync {
     /// [`SwitchService::notify_delete_channel`] only).
     async fn save_settings(&self, settings: Settings) -> Result<()>;
 
+    /// Current user's GUI login registration (independent of router startup).
+    async fn autostart_status(&self) -> Result<crate::autostart::AutostartStatus> {
+        Err(Error::not_implemented("autostart status"))
+    }
+
+    /// Enable or remove the current user's GUI login registration.
+    async fn set_autostart(&self, _enabled: bool) -> Result<crate::autostart::AutostartStatus> {
+        Err(Error::not_implemented("set autostart"))
+    }
+
     /// Create or update a custom (compatible) site; validates line origins.
     async fn save_site(&self, site: Site) -> Result<Site>;
 

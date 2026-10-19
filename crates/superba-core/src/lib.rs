@@ -44,6 +44,7 @@
 
 pub mod app;
 pub mod auth;
+pub mod autostart;
 pub mod caps;
 pub mod catalog;
 pub mod claude;

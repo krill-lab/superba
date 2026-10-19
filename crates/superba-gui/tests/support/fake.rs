@@ -1675,6 +1675,17 @@ impl SwitchService for FakeService {
         Ok(self.state().profiles.clone())
     }
 
+    async fn set_autostart(
+        &self,
+        enabled: bool,
+    ) -> Result<superba_core::autostart::AutostartStatus> {
+        self.state().profiles.settings.autostart = enabled;
+        Ok(superba_core::autostart::AutostartStatus {
+            enabled,
+            ..Default::default()
+        })
+    }
+
     async fn router_status(&self) -> Result<RouterView> {
         let s = self.state();
         let members = &s.profiles.settings.router.members;

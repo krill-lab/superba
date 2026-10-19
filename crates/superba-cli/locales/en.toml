@@ -1351,3 +1351,12 @@ no_channel = "No notification channel with id {id}"
 bad_quiet = "Quiet hours look like 23:00-08:00 (or off): {value}"
 settings_saved = "Notification preferences saved."
 claude_fragment = "Claude Code hook entries for settings.json (the Claude Code settings write them):"
+
+[cli.autostart]
+help = "Start Superba at login for the current user"
+status_help = "Show the current login registration"
+on_help = "Start Superba at login"
+off_help = "Remove Superba from login startup"
+enabled = "Start Superba at login: on"
+disabled = "Start Superba at login: off"
+entry = "Registration: {entry}"

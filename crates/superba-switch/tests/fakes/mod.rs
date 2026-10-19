@@ -2603,6 +2603,11 @@ impl World {
     pub fn deps(&self) -> SwitcherDeps {
         SwitcherDeps {
             ctx: self.ctx.clone(),
+            autostart: Arc::new(superba_config::autostart::Manager::with_store(
+                superba_config::autostart::Platform::Linux,
+                Arc::new(superba_config::autostart::MemoryEntry::default()),
+                Ok(self.tmp.path().join("superba")),
+            )),
             config: self.config.clone(),
             env: self.env.clone(),
             secrets: self.secrets.clone(),

@@ -16,7 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod msi;
 
 #[cfg(windows)]
-pub use msi::CheckInstallFolder;
+pub use msi::{CheckInstallFolder, RefreshAutostart, RemoveAutostart};
 
 /// Whether files can be installed into the folder `dir` with this process's
 /// rights. Windows Installer writes into the folder when it exists, and

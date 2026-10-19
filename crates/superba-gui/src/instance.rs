@@ -42,6 +42,8 @@ pub enum Request {
     /// Show the window and bring it to the front: a plain second start of
     /// `superba` while this one runs, e.g. hidden in the tray (item 70).
     Show,
+    /// A login start only acknowledges the existing process; never shows it.
+    Autostart,
 }
 
 impl Request {
@@ -50,6 +52,7 @@ impl Request {
         match self {
             Request::LaunchChatGpt => "launch-chatgpt",
             Request::Show => "show",
+            Request::Autostart => "autostart",
         }
     }
 
@@ -58,6 +61,7 @@ impl Request {
         match s {
             "launch-chatgpt" => Some(Request::LaunchChatGpt),
             "show" => Some(Request::Show),
+            "autostart" => Some(Request::Autostart),
             _ => None,
         }
     }
@@ -223,7 +227,9 @@ pub fn forward(data_dir: &Path, request: Request) -> Option<u32> {
     // Windows lets only the foreground process raise a window: this start was
     // the user's click, so pass that right on to the window (it comes forward
     // when the request needs an answer from the user).
-    allow_foreground(endpoint.pid);
+    if request != Request::Autostart {
+        allow_foreground(endpoint.pid);
+    }
     stream
         .write_all(format!("{PROTOCOL} {} {}\n", endpoint.token, request.as_str()).as_bytes())
         .ok()?;
@@ -276,4 +282,57 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::rename(&tmp, path).inspect_err(|_| {
         let _ = std::fs::remove_file(&tmp);
     })
+}
+
+/// Process-lifetime lock acquired before creating a window. IPC handles later
+/// starts; this lock also covers two starts racing before the listener exists.
+#[derive(Debug)]
+pub struct InstanceLock(std::fs::File);
+
+impl InstanceLock {
+    /// Try to become the one GUI for this data directory. The lock file is
+    /// intentionally kept after exit: unlinking a locked file permits races.
+    pub fn acquire(data_dir: &Path) -> std::io::Result<Option<Self>> {
+        std::fs::create_dir_all(data_dir)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options.open(data_dir.join("gui-instance.lock"))?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(Self(file))),
+            Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+            Err(std::fs::TryLockError::Error(e)) => Err(e),
+        }
+    }
+}
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
+/// Hold the startup lock or deliver a request to its owner. A bounded wait
+/// covers the owner's renderer initialization; an unreachable owner is an
+/// error, never permission to create a duplicate GUI.
+pub fn claim(data_dir: &Path, request: Request) -> std::io::Result<Option<InstanceLock>> {
+    let until = std::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        if forward(data_dir, request).is_some() {
+            return Ok(None);
+        }
+        if let Some(lock) = InstanceLock::acquire(data_dir)? {
+            return Ok(Some(lock));
+        }
+        if std::time::Instant::now() >= until {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "the running Superba did not answer startup IPC",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }

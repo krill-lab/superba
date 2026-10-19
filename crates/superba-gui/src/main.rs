@@ -56,11 +56,6 @@ fn main() -> ExitCode {
     {
         return ExitCode::SUCCESS;
     }
-    // Item 70: one Superba per user. Starting it again shows the window that
-    // runs (also when it hides in the tray) instead of opening a second one.
-    if !gui_args.launch_chatgpt && superba_gui::instance::show_running() {
-        return ExitCode::SUCCESS;
-    }
     // From here on the GUI never ends silently: a failed start or a panic is
     // logged and, on Windows (no console), shown in a message box (user bug 43).
     let report = superba_gui::startup::Reporter::new(
@@ -71,6 +66,36 @@ fn main() -> ExitCode {
     report.begin();
     report.install_wsl_diagnostics();
     report.install_panic_hook();
+    let context = match superba_switch::detect_context() {
+        Ok(context) => context,
+        Err(e) => {
+            report.report_failure(&anyhow::anyhow!(e));
+            return ExitCode::from(superba_cli::exit::ERROR);
+        }
+    };
+    let request = if gui_args.autostart || gui_args.start_in_tray {
+        superba_gui::instance::Request::Autostart
+    } else if gui_args.launch_chatgpt {
+        superba_gui::instance::Request::LaunchChatGpt
+    } else {
+        superba_gui::instance::Request::Show
+    };
+    let _instance_lock = match superba_gui::instance::claim(context.data_dir.root(), request) {
+        Ok(Some(lock)) => lock,
+        Ok(None) => return ExitCode::SUCCESS,
+        Err(e) => {
+            report.report_failure(&anyhow::anyhow!(e));
+            return ExitCode::from(superba_cli::exit::ERROR);
+        }
+    };
+    // Every normal launch repairs an enabled entry after an install move or
+    // update. Login starts do not rewrite Run while Windows enumerates it.
+    if !gui_args.autostart {
+        use superba_config::autostart::LoginStartup;
+        if let Err(e) = superba_config::autostart::Manager::new(&context).refresh() {
+            report.note(&format!("could not refresh login startup: {e}"));
+        }
+    }
     match superba_gui::run(gui_args, &report) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

@@ -78,3 +78,10 @@ restore.title = "还原"
 wizard.body = "重新选择供应商、Key 和线路；已有的配置会保留并被编辑，不会重复创建。"
 wizard.run = "重新运行设置向导"
 wizard.title = "设置向导"
+
+[prefs.general]
+title = "通用"
+
+[prefs.autostart]
+title = "登录时启动 Superba"
+desc = "仅对当前用户生效。"

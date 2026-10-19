@@ -38,6 +38,7 @@
 //! (ChaCha20-Poly1305, data key in the OS keyring or `secrets/vault-key`).
 
 pub mod authjson;
+pub mod autostart;
 pub mod claude;
 pub mod codex_files;
 mod engine;

@@ -122,6 +122,8 @@ pub fn detect_context() -> Result<LocalContext> {
 pub struct SwitcherDeps {
     /// Local machine context.
     pub ctx: LocalContext,
+    /// GUI login registration, separate from the router service.
+    pub autostart: Arc<dyn superba_config::autostart::LoginStartup>,
     /// Config engine.
     pub config: Arc<dyn ConfigEngine>,
     /// Env persister.
@@ -194,6 +196,7 @@ impl SwitcherDeps {
         let config: Arc<dyn ConfigEngine> =
             Arc::new(superba_config::TomlConfigEngine::new(ctx.clone()));
         Self {
+            autostart: Arc::new(superba_config::autostart::Manager::new(&ctx)),
             env: Arc::new(superba_config::ShellEnvPersister::new(ctx.clone())),
             secrets: Arc::new(superba_config::KeyringSecretStore::new(ctx.clone())),
             profiles: Arc::new(superba_config::JsonProfileStore::new(ctx.clone())),
@@ -540,7 +543,22 @@ impl SwitchService for Switcher {
     }
 
     async fn profile_set(&self) -> Result<ProfileSet> {
-        self.deps.profiles.load().await
+        let mut set = self.deps.profiles.load().await?;
+        set.settings.autostart = self.deps.autostart.status()?.enabled;
+        Ok(set)
+    }
+
+    async fn autostart_status(&self) -> Result<superba_core::autostart::AutostartStatus> {
+        self.deps.autostart.status()
+    }
+
+    async fn set_autostart(
+        &self,
+        enabled: bool,
+    ) -> Result<superba_core::autostart::AutostartStatus> {
+        self.refuse_elevated()?;
+        let _lock = journal::StateLock::acquire(&self.deps.ctx.data_dir)?;
+        self.deps.autostart.set_enabled(enabled)
     }
 
     async fn save_profile(&self, profile: Profile, key: Option<Secret>) -> Result<Profile> {

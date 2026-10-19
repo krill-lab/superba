@@ -115,6 +115,21 @@ Start-Sleep -Seconds 3
 $routerAlive = -not $proc.HasExited
 Write-Host "router process alive before the upgrade: $routerAlive"
 
+# GUI startup is opt-in and independent from the router's value.
+Check ($null -eq (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).Superba) 'GUI login startup defaults off'
+& (Join-Path $installDir 'spb.exe') autostart on
+Check ($LASTEXITCODE -eq 0) 'enable GUI login startup'
+$guiRun = "`"$(Join-Path $installDir 'superba.exe')`" --autostart"
+Check ((Get-ItemProperty $runKey).Superba -eq $guiRun) 'GUI startup points at the installed executable'
+Check ((Get-ItemProperty $runKey).SuperbaRouter -eq $runCmd) 'GUI startup leaves router startup unchanged'
+& (Join-Path $installDir 'spb.exe') autostart off
+Check ($LASTEXITCODE -eq 0 -and $null -eq (Get-ItemProperty $runKey).Superba) 'disable GUI login startup'
+Check ((Get-ItemProperty $runKey).SuperbaRouter -eq $runCmd) 'disabling GUI startup keeps the router'
+& (Join-Path $installDir 'spb.exe') autostart on
+Check ($LASTEXITCODE -eq 0) 'enable again for upgrade'
+# Simulate a stale path; the installer must refresh it even without opening the GUI.
+Set-ItemProperty $runKey -Name Superba -Value '"C:\old location\superba.exe" --autostart'
+
 # --- upgrade (higher X.Y.Z, then a pre-release of the same X.Y.Z) -----------
 Msi '/i' $msi2 (Join-Path $work 'upgrade1.log')
 $arp = @(ArpEntries)
@@ -124,6 +139,7 @@ foreach ($f in $files) { Check (Test-Path (Join-Path $installDir $f)) "after the
 CheckLinuxHelper 'upgrade'
 Check (@(UserPathDirs | Where-Object { $_ -eq $installDir }).Count -eq 1) 'PATH has the folder exactly once'
 Check ($null -ne (Get-ItemProperty $runKey).SuperbaRouter) 'upgrade keeps the login-startup entry'
+Check ((Get-ItemProperty $runKey).Superba -eq $guiRun) 'upgrade refreshes GUI startup without opting out'
 Check (@(RouterProcs).Count -eq 0) 'upgrade stopped the router of the install'
 & (Join-Path $installDir 'spb.exe') --version | Out-Null
 Check ($LASTEXITCODE -eq 0) 'spb runs after the upgrade'
@@ -136,6 +152,7 @@ Check ($arp.Count -eq 1 -and $arp[0].DisplayName -eq "Superba $UpgradeVersion2")
 $proc2 = Start-Process $routerExe -ArgumentList @('supervise', '--data-dir', "`"$rtData`"") -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 3
 Msi '/x' $msi3 (Join-Path $work 'uninstall.log')
+Check ($null -eq (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).Superba) '/x removes GUI startup'
 Check (-not (Test-Path (Join-Path $installDir 'spb.exe'))) 'spb.exe removed'
 Check (-not (Test-Path (Join-Path $installDir 'spb-linux-x86_64'))) 'spb-linux-x86_64 removed'
 Check ((-not (Test-Path $installDir)) -or @(Get-ChildItem $installDir -Force).Count -eq 0) 'install folder is gone'
@@ -181,6 +198,10 @@ Check ($target -eq (Join-Path $customDir 'superba.exe')) "Start menu shortcut po
 $code = @(ArpEntries)[0].ProductCode
 $loc = ComGet $wi 'ProductInfo' @($code, 'InstallLocation')
 Check ($loc.TrimEnd('\') -eq $customDir) "ARP install location ($loc)"
+& (Join-Path $customDir 'spb.exe') autostart on
+Check ($LASTEXITCODE -eq 0) 'enable GUI startup from a custom folder'
+$customRun = "`"$(Join-Path $customDir 'superba.exe')`" --autostart"
+Check ((Get-ItemProperty $runKey).Superba -eq $customRun) 'GUI startup uses the custom Unicode folder'
 # An update without a folder (the self-update's msiexec /i x.msi /passive) stays there.
 Msi '/i' $msi2 (Join-Path $work 'custom-upgrade.log')
 foreach ($f in $files) { Check (Test-Path -LiteralPath (Join-Path $customDir $f)) "custom folder after the upgrade: $f" }
@@ -188,7 +209,11 @@ Check (-not (Test-Path (Join-Path $installDir 'superba.exe'))) 'the upgrade did 
 Check ((Get-ItemProperty $installReg).InstallDir.TrimEnd('\') -eq $customDir) 'InstallDir kept by the upgrade'
 Check (@(UserPathDirs | Where-Object { $_ -eq $customDir }).Count -eq 1) 'PATH has the custom folder exactly once'
 Check (@(Get-Process superba -ErrorAction SilentlyContinue).Count -eq 0) 'a quiet install starts no Superba'
-Msi '/x' $msi2 (Join-Path $work 'custom-uninstall.log')
+Check ((Get-ItemProperty $runKey).Superba -eq $customRun) 'custom upgrade preserves GUI startup'
+# Exercise the Remove page's REMOVE=Main condition with installed programs missing.
+Remove-Item -LiteralPath (Join-Path $customDir 'spb.exe')
+Msi '/i' $msi2 (Join-Path $work 'custom-uninstall.log') @('REMOVE=Main')
+Check ($null -eq (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).Superba) 'Remove=Main removes GUI startup even without spb.exe'
 Check (-not (Test-Path -LiteralPath $customDir) -or @(Get-ChildItem -LiteralPath $customDir -Force).Count -eq 0) 'custom folder is gone'
 Check (-not ((UserPathDirs) -contains $customDir)) 'custom PATH entry removed'
 Check ($null -eq (Get-ItemProperty $installReg -ErrorAction SilentlyContinue).InstallDir) 'InstallDir removed'

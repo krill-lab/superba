@@ -502,6 +502,7 @@ impl SuperbaApp {
                     self.launch_app(crate::launch::LaunchOrigin::Shortcut);
                 }
                 crate::instance::Request::Show => self.life.show(),
+                crate::instance::Request::Autostart => {}
             }
         }
     }
@@ -920,6 +921,13 @@ impl SuperbaApp {
                 Reply::Event(ev) => self.on_event(ev),
                 Reply::Decide(d) => self.flow.on_decision(d, now),
                 Reply::Executed(r) => self.flow.on_executed(r, now),
+                Reply::AutostartSet(result) => {
+                    match result {
+                        Ok(status) => self.settings.autostart = status.enabled,
+                        Err(e) => self.error_toast(self.tr.t("toast.settings_failed"), &e),
+                    }
+                    self.backend.send(Command::Refresh);
+                }
                 Reply::SettingsSaved(r) => {
                     if let Err(e) = r {
                         self.error_toast(self.tr.t("toast.settings_failed"), &e);
@@ -1574,6 +1582,7 @@ impl SuperbaApp {
             }
             Action::LoadAccount { refresh } => self.load_account(refresh),
             Action::OpenApp => self.launch_app(crate::launch::LaunchOrigin::Window),
+            Action::SetAutostart(enabled) => self.backend.send(Command::SetAutostart(enabled)),
             Action::SaveSettings => {
                 self.apply_settings(ctx);
                 let prefs = (

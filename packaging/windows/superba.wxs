@@ -151,7 +151,14 @@
                   ExeCommand="&quot;[INSTALLFOLDER]spb.exe&quot; router uninstall --quiet --keep-service" />
     <!-- AppSearch (the installed copy's InstallDir) runs before the old product
          and its registry values are removed, so an update without UI keeps the folder. -->
+    <!-- GUI login startup is independent of the router. The embedded DLL
+         also cleans it when spb.exe is missing; both Remove UI and /x run it. -->
+    <CustomAction Id="SuperbaAutostartRemove" BinaryRef="SuperbaCa" DllEntry="RemoveAutostart" Return="check" />
+    <CustomAction Id="SuperbaAutostartRefresh" BinaryRef="SuperbaCa" DllEntry="RefreshAutostart" Return="check" />
     <InstallExecuteSequence>
+      <Custom Action="SuperbaAutostartRemove" Before="InstallValidate"
+              Condition="REMOVE AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="SuperbaAutostartRefresh" After="InstallFinalize" Condition="NOT REMOVE" />
       <RemoveExistingProducts After="AppSearch" />
       <!-- Any REMOVE is the whole product (one feature): msiexec /x sets REMOVE=ALL,
            but the installer's Remove page sets REMOVE=Main, which becomes ALL only at

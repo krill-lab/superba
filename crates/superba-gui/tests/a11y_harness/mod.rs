@@ -500,6 +500,21 @@ impl AppHarness {
         self.settle()
     }
 
+    /// Scroll the page content with the pointer over its center.
+    pub fn scroll_page(&mut self, delta: f32) -> Tree {
+        self.pending.push_back(vec![
+            Event::PointerMoved(egui::pos2(900.0, 400.0)),
+            Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, delta),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
+                modifiers: Default::default(),
+            },
+        ]);
+        self.settle()
+    }
+
     /// Go to `page` through its sidebar tab, the way a screen reader user does.
     pub fn go(&mut self, page: Page, tr: &superba_gui::i18n::Tr) -> Tree {
         if let Page::Superba(section) = page {

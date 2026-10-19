@@ -737,10 +737,11 @@ fn without_a_tray_closing_quits_and_preferences_says_why() {
     assert!(h.app().tray_menu().is_none());
 
     // Preferences → Window: both rows disabled, the reason shown.
-    let t = h.go(
+    h.go(
         Page::Superba(superba_gui::pages::SuperbaSection::General),
         &tr,
     );
+    let t = h.scroll_page(-440.0);
     assert!(t.has(&tr.t("tray.prefs.section")), "{}", t.dump());
     assert!(t.has_containing(&tr.t(Unavailable::Off.reason_key())));
     for key in ["tray.prefs.close.tray", "tray.prefs.close.tray_mac"] {
@@ -759,10 +760,11 @@ fn preferences_saves_the_choice_and_start_in_the_tray_hides_at_once() {
         TrayOption::Simulated(Sink::default()),
         false,
     );
-    let t = h.go(
+    h.go(
         Page::Superba(superba_gui::pages::SuperbaSection::General),
         &tr,
     );
+    let t = h.scroll_page(-440.0);
     assert!(t.has(&tr.t("tray.prefs.close.title")), "{}", t.dump());
     if !cfg!(target_os = "macos") {
         // Not chosen yet: the description says Superba will ask.
@@ -965,5 +967,53 @@ fn superba_tray_sections_show_the_window_and_open_the_requested_section() {
         });
         assert!(h.visible());
         assert!(t.unnamed().is_empty(), "{}", t.dump());
+    }
+}
+
+#[test]
+fn general_section_exposes_login_startup_in_both_languages() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = fake();
+        let mut h = AppHarness::with_options(
+            service.clone(),
+            AppOptions {
+                locale: Some(locale),
+                theme: Some(egui::Theme::Light),
+                tray: TrayOption::Simulated(Sink::default()),
+                ..AppOptions::default()
+            },
+        );
+        let tree = h.go(
+            Page::Superba(superba_gui::pages::SuperbaSection::General),
+            &tr,
+        );
+        assert!(tree.has(&tr.t("prefs.general.title")), "{}", tree.dump());
+        let title = tr.t("prefs.autostart.title");
+        assert!(tree.has(&title));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        assert!(
+            !runtime
+                .block_on(service.profile_set())
+                .unwrap()
+                .settings
+                .autostart
+        );
+        h.click(Some(Role::Switch), &title);
+        h.until("autostart enabled", |_| {
+            runtime
+                .block_on(service.profile_set())
+                .unwrap()
+                .settings
+                .autostart
+        });
+        h.click(Some(Role::Switch), &title);
+        h.until("autostart disabled", |_| {
+            !runtime
+                .block_on(service.profile_set())
+                .unwrap()
+                .settings
+                .autostart
+        });
     }
 }

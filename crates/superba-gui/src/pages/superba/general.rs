@@ -3,8 +3,7 @@ use super::{Action, Cx, row, section};
 use crate::design::widgets::{Button, Card, Segmented, Toggle};
 use egui::Ui;
 use superba_core::{CloseAction, Locale, Settings};
-/// Preferences → Window (item 70): what closing the window does and whether
-/// Superba starts hidden in the tray. Without a tray both are disabled and
+/// Preferences → Window: what closing the window does. Without a tray it is disabled and
 /// the reason replaces the description (closing then always quits).
 pub fn window_section(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings) {
     use crate::tray::TrayStatus;
@@ -66,6 +65,34 @@ pub fn window_section(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings) {
                 }
             },
         );
+    });
+}
+
+/// General → startup. Kept independent for the future Superba settings page.
+pub fn autostart_section(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Action>) {
+    let mac = cfg!(target_os = "macos");
+    let key = |plain: &'static str, on_mac: &'static str| if mac { on_mac } else { plain };
+    let unavailable = !matches!(cx.data.tray, crate::tray::TrayStatus::Shown(_));
+    section(ui, cx, &cx.tr.t("prefs.general.title"), None);
+    Card::new().flat().show(ui, |ui| {
+        row(
+            ui,
+            cx,
+            &cx.tr.t("prefs.autostart.title"),
+            &cx.tr.t("prefs.autostart.desc"),
+            false,
+            |ui| {
+                if ui
+                    .add(Toggle::new(
+                        &mut settings.autostart,
+                        cx.tr.t("prefs.autostart.title"),
+                    ))
+                    .changed()
+                {
+                    out.push(Action::SetAutostart(settings.autostart));
+                }
+            },
+        );
         row(
             ui,
             cx,
@@ -82,16 +109,17 @@ pub fn window_section(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings) {
                         cx.tr
                             .t(key("tray.prefs.start.title", "tray.prefs.start.title_mac")),
                     )
-                    .enabled(unavailable.is_none()),
+                    .enabled(!unavailable),
                 );
             },
         );
     });
 }
-
 /// Draw this section and save changes immediately.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Action>) {
     let before = settings.clone();
+    autostart_section(ui, cx, settings, out);
+    ui.add_space(24.0);
     section(ui, cx, &cx.tr.t("settings.switching"), None);
     Card::new().flat().show(ui, |ui| {
         row(

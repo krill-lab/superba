@@ -426,6 +426,8 @@ pub enum Action {
     RestartApp,
     /// Persist the edited settings copy.
     SaveSettings,
+    /// Change the current user’s GUI login registration.
+    SetAutostart(bool),
     /// Change the UI language (`None` = system).
     SetLocale(Option<Locale>),
     /// Open a URL in the browser.

@@ -1351,3 +1351,12 @@ no_channel = "没有 ID 为 {id} 的通知渠道"
 bad_quiet = "免打扰时段的格式是 23:00-08:00（或 off）：{value}"
 settings_saved = "通知设置已保存。"
 claude_fragment = "settings.json 中的 Claude Code 钩子条目（由 Claude Code 设置写入）："
+
+[cli.autostart]
+help = "管理当前用户的 Superba 登录启动项"
+status_help = "查看登录启动项状态"
+on_help = "登录时启动 Superba"
+off_help = "移除 Superba 登录启动项"
+enabled = "登录时启动 Superba：开"
+disabled = "登录时启动 Superba：关"
+entry = "启动项：{entry}"

@@ -79,3 +79,10 @@ restore.title = "Restore"
 wizard.body = "Choose the provider, key and line again; existing configuration is edited, not duplicated."
 wizard.run = "Run setup again"
 wizard.title = "Setup wizard"
+
+[prefs.general]
+title = "General"
+
+[prefs.autostart]
+title = "Start Superba at login"
+desc = "Applies to your user account."

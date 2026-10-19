@@ -301,6 +301,20 @@ impl Switcher {
             OutcomeStatus::Switched | OutcomeStatus::WrittenOnly | OutcomeStatus::Partial
         ) {
             run.after_success(&remotes).await;
+            if plan.request.targets.local
+                && (run.pc.uninstall.is_some()
+                    || matches!(
+                        plan.request.intent,
+                        SwitchIntent::Restore {
+                            target: superba_core::RestoreTarget::Original { .. },
+                            ..
+                        }
+                    ))
+                && let Err(e) = self.deps.autostart.set_enabled(false)
+            {
+                run.notices.push(Notice::danger(e.to_text()));
+                status = OutcomeStatus::Partial;
+            }
         }
         let elapsed = self.deps.clock.monotonic().saturating_sub(started);
         let stale = run.stale_processes().await;

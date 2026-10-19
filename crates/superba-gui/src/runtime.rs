@@ -182,6 +182,8 @@ pub enum Command {
     StopSessions,
     /// Save settings.
     SaveSettings(Settings),
+    /// Set GUI login startup.
+    SetAutostart(bool),
     /// Save a profile (and its key).
     SaveProfile {
         /// Profile.
@@ -352,6 +354,8 @@ pub enum Reply {
     Executed(Result<SwitchOutcome>),
     /// Settings saved.
     SettingsSaved(Result<()>),
+    /// GUI login startup result.
+    AutostartSet(Result<superba_core::autostart::AutostartStatus>),
     /// Profile saved.
     ProfileSaved(Result<Profile>),
     /// Compatible site and profile saved.
@@ -693,6 +697,9 @@ async fn handle(
             let (o, p) = tokio::join!(service.overview(), service.profile_set());
             out.send(Reply::Profiles(p));
             out.send(Reply::Overview(o));
+        }
+        Command::SetAutostart(enabled) => {
+            out.send(Reply::AutostartSet(service.set_autostart(enabled).await));
         }
         Command::SaveSettings(settings) => {
             out.send(Reply::SettingsSaved(service.save_settings(settings).await));

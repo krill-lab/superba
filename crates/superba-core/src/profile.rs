@@ -244,6 +244,9 @@ pub struct Settings {
     /// tray is available. Off by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub start_in_tray: bool,
+    /// Actual OS login startup state, populated by the service; never persisted.
+    #[serde(skip)]
+    pub autostart: bool,
     /// Desktop app install to use when several are present (`AppInstall::id`).
     pub preferred_app_id: Option<String>,
     /// Router mode (opt-in, off by default).
@@ -313,6 +316,7 @@ impl Default for Settings {
             auto_probe: true,
             close_action: None,
             start_in_tray: false,
+            autostart: false,
             preferred_app_id: None,
             router: crate::router::RouterSettings::default(),
             hosts: BTreeMap::new(),

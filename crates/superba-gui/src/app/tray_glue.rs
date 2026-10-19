@@ -82,7 +82,13 @@ impl SuperbaApp {
                 .hide_support()
                 .filter(|h| *h == HideSupport::InPlace);
             if self.opts.start_in_tray {
-                self.life.start_hidden(hide);
+                if hide.is_some() {
+                    self.life.start_hidden(hide);
+                } else {
+                    // The native window started invisible. Without a usable
+                    // tray, show it so the application remains reachable.
+                    self.life.show();
+                }
             }
         }
         if ctx.input(|i| i.viewport().close_requested()) {

@@ -25,6 +25,7 @@ fn defaults_leave_all_overrides_disabled() {
         page: None,
         launch_chatgpt: false,
         start_in_tray: false,
+        autostart: false,
     };
     assert_eq!(GuiArgs::default(), expected);
     assert_eq!(parse(&[]).unwrap(), expected);
@@ -215,6 +216,7 @@ fn flags_compose_and_later_values_override_earlier_ones() {
             page: Some(Page::Hosts),
             launch_chatgpt: false,
             start_in_tray: false,
+            autostart: false,
         }
     );
 }
@@ -268,4 +270,12 @@ fn start_in_tray_opens_hidden_in_the_tray() {
         .map(OsString::from)
         .collect();
     assert!(!superba_cli::is_cli_invocation(&argv));
+}
+
+#[test]
+fn login_start_is_distinct_from_forcing_the_tray() {
+    let args = parse(&["--autostart"]).unwrap();
+    assert!(args.autostart);
+    assert!(!args.start_in_tray);
+    assert!(parse(&["--autostart=true"]).is_err());
 }

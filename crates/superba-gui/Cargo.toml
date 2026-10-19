@@ -27,6 +27,7 @@ file-dialogs = ["dep:rfd"]
 
 [dependencies]
 superba-core.workspace = true
+superba-config.workspace = true
 superba-cli.workspace = true
 superba-switch.workspace = true
 superba-catalog.workspace = true

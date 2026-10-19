@@ -1,6 +1,7 @@
 //! Commands build requests and display service results; switching belongs to the service.
 
 mod account;
+mod autostart;
 mod claude;
 mod config;
 mod execute;
@@ -97,6 +98,7 @@ pub(crate) fn request(intent: SwitchIntent, exec: &ExecArgs) -> SwitchRequest {
 pub(crate) async fn dispatch(command: &Command, rt: &Runtime, out: &mut Output) -> Result {
     match command {
         Command::Status => status::run(rt, out).await,
+        Command::Autostart { command } => autostart::run(command, rt, out).await,
         Command::Lines { site, probe } => lines::run(site, *probe, rt, out).await,
         Command::Key { command } => key::run(command, rt, out).await,
         Command::Profile { command } => profile::run(command, rt, out).await,

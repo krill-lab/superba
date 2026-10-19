@@ -24,6 +24,11 @@ pub struct Cli {
 pub enum Command {
     #[command(about = english("cli.help.status"))]
     Status,
+    #[command(about = english("cli.autostart.help"))]
+    Autostart {
+        #[command(subcommand)]
+        command: AutostartCommand,
+    },
     #[command(about = english("cli.help.lines"))]
     Lines {
         #[arg(long, default_value = catalog::KRILL_SITE_ID, help = english("cli.help.site"))]
@@ -1674,4 +1679,15 @@ pub struct HarnessApplyArgs {
     pub yes: bool,
     #[arg(long, help = english("cli.harness.help.take_over"))]
     pub take_over: bool,
+}
+
+/// Current-user GUI login startup.
+#[derive(Debug, Subcommand)]
+pub enum AutostartCommand {
+    #[command(about = english("cli.autostart.status_help"))]
+    Status,
+    #[command(about = english("cli.autostart.on_help"))]
+    On,
+    #[command(about = english("cli.autostart.off_help"))]
+    Off,
 }

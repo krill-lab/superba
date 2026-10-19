@@ -16,6 +16,8 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [target.'cfg(windows)'.dependencies]
+superba-core.workspace = true
+winreg.workspace = true
 windows-sys = { workspace = true, features = ["Win32_System_ApplicationInstallationAndServicing"] }
 
 [dev-dependencies]
