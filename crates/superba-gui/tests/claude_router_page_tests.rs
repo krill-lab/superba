@@ -66,9 +66,9 @@ fn the_router_page_lists_claude_codes_providers_with_their_reason() {
         let mut h = Harness::new([1280.0, 900.0], locale, service.clone(), true);
         let mut state = State::default();
         let title = tr.t("router.claude.routed");
-        let f = h.until(
+        let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| f.has(&title),
+            |f| f.has(&title) && f.has("Plain"),
         );
         assert!(f.has(URL), "{}", f.all_text());
         assert!(f.has("Plain"), "{}", f.all_text());

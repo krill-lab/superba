@@ -431,6 +431,7 @@ impl RouterBackend for SystemRouter {
                 service,
                 live,
                 port: view.port,
+                token_ready: view.token_ready,
                 recording: view.stats.clone(),
                 network_exe: this.network_exe.clone(),
                 claude: view.claude.clone(),

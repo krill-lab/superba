@@ -29,6 +29,7 @@ pub mod db;
 mod detail;
 pub mod doctor;
 pub mod eligibility;
+pub mod ingress;
 pub mod model;
 pub mod prices;
 mod recent;
@@ -151,6 +152,8 @@ pub struct State {
     pub stats: stats::Stats,
     /// Router settings (edits in progress).
     pub prefs: settings::Prefs,
+    /// Recent recorded request counts for the ingress card.
+    pub ingress: db::Loader<[u64; 3]>,
     /// Session names.
     pub titles: db::Titles,
     stats_save: Option<ReadTask<RouterView>>,

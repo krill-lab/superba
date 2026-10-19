@@ -50,6 +50,8 @@ pub struct Dropdown {
     menu_height: Option<f32>,
     label: Option<String>,
     loading: bool,
+    close_on_click: bool,
+    fixed_width: Option<f32>,
 }
 
 impl Dropdown {
@@ -63,7 +65,15 @@ impl Dropdown {
             menu_height: None,
             label: None,
             loading: false,
+            close_on_click: true,
+            fixed_width: None,
         }
+    }
+
+    /// Keep a multi-select menu open while its checkboxes are changed.
+    pub fn keep_open(mut self) -> Self {
+        self.close_on_click = false;
+        self
     }
 
     /// What the chosen value shows is loading: a spinner instead of the chevron,
@@ -92,6 +102,13 @@ impl Dropdown {
     /// width and is then shortened with an ellipsis.
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
+        self
+    }
+
+    /// Exact field width, eliding long selections so adjacent fields keep their space.
+    pub fn fixed_width(mut self, width: f32) -> Self {
+        self.width = width;
+        self.fixed_width = Some(width);
         self
     }
 
@@ -134,7 +151,10 @@ impl Dropdown {
             text::BODY
         };
         let chrome = PAD * 2.0 + GAP + CHEVRON;
-        let max_text = (ui.available_width().max(self.width) - chrome).max(0.0);
+        let room = self
+            .fixed_width
+            .unwrap_or_else(|| ui.available_width().max(self.width));
+        let max_text = (room - chrome).max(0.0);
         let accessible = self.selected.text().to_owned();
         let galley = self.selected.into_galley(
             ui,
@@ -148,7 +168,11 @@ impl Dropdown {
         } else {
             self.height
         };
-        let size = vec2(natural.max(self.width).max(self.height), self.height);
+        let size = vec2(
+            self.fixed_width
+                .unwrap_or_else(|| natural.max(self.width).max(self.height)),
+            self.height,
+        );
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         let enabled = ui.is_enabled();
         let response = if enabled {
@@ -172,7 +196,11 @@ impl Dropdown {
             .id(popup_id)
             .gap(MENU_GAP)
             .width(rect.width())
-            .close_behavior(PopupCloseBehavior::CloseOnClick)
+            .close_behavior(if self.close_on_click {
+                PopupCloseBehavior::CloseOnClick
+            } else {
+                PopupCloseBehavior::CloseOnClickOutside
+            })
             .show(|ui| {
                 ui.set_min_width(ui.available_width());
                 // Selected rows (`selectable_label`) as in lists: gray fill,

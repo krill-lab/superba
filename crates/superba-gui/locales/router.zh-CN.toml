@@ -172,6 +172,8 @@ collapse = "收起列表"
 expand = "展开列表"
 
 [requests.group]
+harness = "按工具"
+harness_model = "工具 × 模型"
 session_short = "会话"
 provider_short = "供应商"
 all = "全部"
@@ -186,6 +188,8 @@ name = "时间范围"
 30d = "30 天"
 
 [requests.filter]
+all_tools = "全部工具"
+all_hosts = "全部主机"
 source.name = "来源"
 source.all = "全部来源"
 all_providers = "全部供应商"
@@ -201,6 +205,11 @@ failover = "发生故障转移"
 all = "App + CLI"
 
 [requests.col]
+turn = "轮次"
+protocol = "协议"
+agent = "代理类型"
+harness = "工具"
+host = "主机"
 cache_key = "缓存键"
 date = "日期"
 session = "会话"
@@ -410,6 +419,8 @@ bars_cost = "这段时间 {cost}（按天；按 OpenAI 官方价估算）"
 bars_cost_hourly = "这段时间 {cost}（按小时；按 OpenAI 官方价估算）"
 
 [requests.stats.by]
+harness = "工具"
+harness_model = "工具 × 模型"
 model = "模型"
 provider = "供应商"
 session = "会话"
@@ -527,3 +538,21 @@ failed_over = "当前：{line}（{failed}失败后切换）"
 observed = "显示这个成员最近收到上游响应头的请求；同时进行的会话可能使用不同线路。"
 waiting = "等待下一次请求"
 recovery = "默认故障冷却 5 秒，失败后倍增至 60 秒。恢复后，新会话优先尝试首选线路；已有会话会保留可用的备用线路，直到闲置 2 小时。调整线路顺序会重置新请求的选择。"
+
+[requests.host]
+local = "这台电脑"
+
+[router.ingress]
+title = "入口"
+openai = "OpenAI 兼容"
+token_ready = "令牌已就绪"
+token_missing = "令牌未就绪"
+token_unknown = "令牌状态未知"
+recent = "最近 24 小时 · {n} 条记录"
+recent_unknown = "最近 24 小时 · 暂无统计"
+count_hint = "按工具和请求协议统计本地路由记录；暂停记录期间的请求不计入。"
+translation = "协议转换"
+translation_pending = "此版本尚未接入协议转换。"
+gemini_pending = "Gemini · 待接入"
+no_address = "尚未配置地址"
+copy = "复制 {name} 入口地址"

@@ -352,8 +352,8 @@ fn rows(fake: &FakeService) -> Vec<RequestRow> {
         .clone()
 }
 
-fn session_key(r: &RequestRow) -> Option<&str> {
-    r.prompt_cache_key.as_deref().or(r.thread_id.as_deref())
+fn session_key(r: &RequestRow) -> Option<String> {
+    r.session_group_key()
 }
 
 fn matches(q: &RequestQuery, r: &RequestRow, with_group: bool, with_after: bool) -> bool {
@@ -364,10 +364,17 @@ fn matches(q: &RequestQuery, r: &RequestRow, with_group: bool, with_after: bool)
         || q.line
             .as_ref()
             .is_some_and(|l| r.line_id.as_ref() != Some(l))
-        || q.model
-            .as_ref()
-            .is_some_and(|m| r.model.as_ref() != Some(m))
+        || q.model.as_ref().is_some_and(|m| {
+            r.served_model() != Some(m.as_str())
+                && r.model.as_ref() != Some(m)
+                && r.response_model.as_ref() != Some(m)
+                && r.requested_model.as_ref() != Some(m)
+        })
         || q.client.is_some_and(|c| r.client != c)
+        || (!q.harnesses.is_empty() && !q.harnesses.contains(&r.harness))
+        || q.host.as_deref().is_some_and(|h| h != r.host_key())
+        || q.protocol.is_some_and(|p| p != r.protocol)
+        || q.source.is_some_and(|s| s != r.source)
     {
         return false;
     }
@@ -380,7 +387,9 @@ fn matches(q: &RequestQuery, r: &RequestRow, with_group: bool, with_after: bool)
     if with_group && let Some(g) = &q.group {
         let hit = match q.group_by {
             RequestGrouping::Provider => r.in_provider_group(g),
-            _ => session_key(r) == Some(g.as_str()),
+            RequestGrouping::Harness => r.harness.id() == g,
+            RequestGrouping::HarnessModel => r.harness_model_key() == *g,
+            _ => session_key(r).as_deref() == Some(g.as_str()),
         };
         if !hit {
             return false;
@@ -395,6 +404,9 @@ fn matches(q: &RequestQuery, r: &RequestRow, with_group: bool, with_after: bool)
             r.line_name.as_deref(),
             r.upstream_host.as_deref(),
             r.model.as_deref(),
+            r.requested_model.as_deref(),
+            Some(r.harness.id()),
+            r.session_id.as_deref(),
             r.upstream_request_id.as_deref(),
         ];
         if !fields
@@ -444,7 +456,7 @@ pub(super) async fn router_requests(
     let sort_key = |r: &RequestRow| -> (i128, String) {
         match query.sort.key {
             RequestSortKey::CacheKey | RequestSortKey::Session => {
-                (0, session_key(r).unwrap_or("").to_owned())
+                (0, session_key(r).unwrap_or_default())
             }
             RequestSortKey::Provider => (
                 0,
@@ -507,12 +519,13 @@ pub(super) async fn router_requests(
         }
     };
     for r in all.iter().filter(|r| matches(&query, r, false, false)) {
-        let k = if by_provider {
-            r.provider_key()
-        } else {
-            session_key(r)
+        let k = match query.group_by {
+            RequestGrouping::Provider => r.provider_key().map(str::to_owned),
+            RequestGrouping::Harness => Some(r.harness.id().to_owned()),
+            RequestGrouping::HarnessModel => Some(r.harness_model_key()),
+            _ => session_key(r),
         };
-        let Some(k) = k.map(str::to_owned) else {
+        let Some(k) = k else {
             continue;
         };
         let label = if by_provider {
@@ -625,6 +638,16 @@ pub(super) async fn router_stats(fake: &FakeService, query: StatsQuery) -> Resul
             query.from.is_none_or(|f| r.started_at >= f)
                 && query.to.is_none_or(|t| r.started_at < t)
                 && query.member.as_ref().is_none_or(|m| &r.member_id == m)
+                && (query.harnesses.is_empty() || query.harnesses.contains(&r.harness))
+                && query.model.as_deref().is_none_or(|m| {
+                    r.served_model() == Some(m)
+                        || r.model.as_deref() == Some(m)
+                        || r.response_model.as_deref() == Some(m)
+                        || r.requested_model.as_deref() == Some(m)
+                })
+                && query.host.as_deref().is_none_or(|h| h == r.host_key())
+                && query.protocol.is_none_or(|p| p == r.protocol)
+                && query.source.is_none_or(|s| s == r.source)
         })
         .collect();
     let bucket = |key_of: &dyn Fn(&RequestRow) -> (String, String)| {
@@ -668,11 +691,17 @@ pub(super) async fn router_stats(fake: &FakeService, query: StatsQuery) -> Resul
             }
             providers
         }
+        StatsGroupBy::Harness => bucket(&|r| (r.harness.id().to_owned(), String::new())),
+        StatsGroupBy::HarnessModel => bucket(&|r| (r.harness_model_key(), String::new())),
+        StatsGroupBy::Host => bucket(&|r| (r.host_key().to_owned(), String::new())),
         StatsGroupBy::Day => bucket(&|r| (day_of(r.started_at, off), String::new())),
-        StatsGroupBy::Session => {
-            bucket(&|r| (session_key(r).unwrap_or("").to_owned(), String::new()))
-        }
-        _ => bucket(&|r| (r.model.clone().unwrap_or_default(), String::new())),
+        StatsGroupBy::Session => bucket(&|r| (session_key(r).unwrap_or_default(), String::new())),
+        _ => bucket(&|r| {
+            (
+                r.served_model().unwrap_or_default().to_owned(),
+                String::new(),
+            )
+        }),
     };
     if query.by != StatsGroupBy::Day {
         buckets.sort_by(|a, b| {

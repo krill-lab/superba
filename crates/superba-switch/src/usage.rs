@@ -226,7 +226,11 @@ pub fn dedupe(rollout: Vec<RequestRow>, router: &[RequestRow]) -> Vec<RequestRow
             .iter()
             .enumerate()
             .filter(|(i, x)| {
-                !used[*i] && same_thread(x, thread) && x.started_at >= lo && x.started_at <= hi
+                !used[*i]
+                    && x.harness == r.harness
+                    && same_thread(x, thread)
+                    && x.started_at >= lo
+                    && x.started_at <= hi
             })
             .filter(|(_, x)| match (r.input_tokens, r.output_tokens) {
                 (Some(i), Some(o)) => x.input_tokens == Some(i) && x.output_tokens == Some(o),
@@ -251,8 +255,8 @@ pub fn dedupe(rollout: Vec<RequestRow>, router: &[RequestRow]) -> Vec<RequestRow
 // ---------------------------------------------------------------------------
 
 /// Session key of a row (prompt cache key, else thread id).
-fn session_key(r: &RequestRow) -> Option<&str> {
-    r.prompt_cache_key.as_deref().or(r.thread_id.as_deref())
+fn session_key(r: &RequestRow) -> Option<String> {
+    r.session_group_key()
 }
 
 fn status_kind(s: &RequestStatus) -> (&'static str, Option<&str>) {
@@ -284,10 +288,16 @@ pub fn matches(r: &RequestRow, q: &RequestQuery, with_group: bool) -> bool {
         || q.line
             .as_ref()
             .is_some_and(|l| r.line_id.as_ref() != Some(l))
-        || q.model
-            .as_ref()
-            .is_some_and(|m| r.model.as_ref() != Some(m))
+        || q.model.as_ref().is_some_and(|m| {
+            r.served_model() != Some(m.as_str())
+                && r.model.as_ref() != Some(m)
+                && r.requested_model.as_ref() != Some(m)
+                && r.response_model.as_ref() != Some(m)
+        })
         || q.client.is_some_and(|c| r.client != c)
+        || (!q.harnesses.is_empty() && !q.harnesses.contains(&r.harness))
+        || q.host.as_deref().is_some_and(|h| h != r.host_key())
+        || q.protocol.is_some_and(|p| p != r.protocol)
     {
         return false;
     }
@@ -303,7 +313,9 @@ pub fn matches(r: &RequestRow, q: &RequestQuery, with_group: bool) -> bool {
     if with_group && let Some(g) = &q.group {
         let ok = match q.group_by {
             RequestGrouping::Provider => r.in_provider_group(g),
-            _ => session_key(r) == Some(g.as_str()),
+            RequestGrouping::Harness => r.harness.id() == g,
+            RequestGrouping::HarnessModel => r.harness_model_key() == *g,
+            _ => session_key(r).as_deref() == Some(g.as_str()),
         };
         if !ok {
             return false;
@@ -319,7 +331,13 @@ pub fn matches(r: &RequestRow, q: &RequestQuery, with_group: bool) -> bool {
             r.line_name.as_deref(),
             r.upstream_host.as_deref(),
             r.model.as_deref(),
+            r.upstream_model.as_deref(),
             r.response_model.as_deref(),
+            r.requested_model.as_deref(),
+            Some(r.harness.id()),
+            r.session_id.as_deref(),
+            r.turn_id.as_deref(),
+            r.codex_host.as_deref(),
             Some(kind),
             code,
             r.upstream_request_id.as_deref(),
@@ -343,6 +361,8 @@ fn fresh(r: &RequestRow) -> Option<u64> {
 /// sorts before any value, ties by id).
 pub fn compare(a: &RequestRow, b: &RequestRow, q: &RequestQuery) -> Ordering {
     let o = match q.sort.key {
+        RequestSortKey::Harness => a.harness.id().cmp(b.harness.id()),
+        RequestSortKey::Model => a.served_model().cmp(&b.served_model()),
         RequestSortKey::CacheKey => a.prompt_cache_key.cmp(&b.prompt_cache_key),
         RequestSortKey::Session => session_key(a).cmp(&session_key(b)),
         RequestSortKey::Status => status_kind(&a.status).0.cmp(status_kind(&b.status).0),
@@ -410,6 +430,8 @@ fn groups_of(rows: &[&RequestRow], by: RequestGrouping) -> Vec<RequestGroup> {
                 Some(k) => (k.to_owned(), r.member_name.clone()),
                 None => continue,
             },
+            RequestGrouping::Harness => (r.harness.id().to_owned(), r.harness.id().to_owned()),
+            RequestGrouping::HarnessModel => (r.harness_model_key(), r.harness_model_key()),
             _ => match session_key(r) {
                 Some(k) => (k.to_owned(), k.to_owned()),
                 None => continue,
@@ -498,20 +520,19 @@ fn bucket_of(r: &RequestRow, by: StatsGroupBy, offset_ms: i64) -> (String, Strin
             };
             (k, l)
         }
+        StatsGroupBy::Harness => (r.harness.id().to_owned(), r.harness.id().to_owned()),
+        StatsGroupBy::HarnessModel => (r.harness_model_key(), r.harness_model_key()),
+        StatsGroupBy::Host => (r.host_key().to_owned(), r.host_key().to_owned()),
         StatsGroupBy::Day => {
             let k = day_of(r.started_at, offset_ms);
             (k.clone(), k)
         }
         StatsGroupBy::Session => {
-            let k = session_key(r).unwrap_or("").to_owned();
+            let k = session_key(r).unwrap_or_default();
             (k.clone(), k)
         }
         _ => {
-            let k = r
-                .model
-                .clone()
-                .or_else(|| r.response_model.clone())
-                .unwrap_or_default();
+            let k = r.served_model().unwrap_or_default().to_owned();
             (k.clone(), k)
         }
     }
@@ -559,6 +580,15 @@ pub fn merge_stats(
                 && q.to.is_none_or(|t| r.started_at < t)
                 && q.member.as_ref().is_none_or(|m| &r.member_id == m)
                 && q.source.is_none_or(|s| s == r.source)
+                && (q.harnesses.is_empty() || q.harnesses.contains(&r.harness))
+                && q.host.as_deref().is_none_or(|h| h == r.host_key())
+                && q.protocol.is_none_or(|p| p == r.protocol)
+                && q.model.as_deref().is_none_or(|m| {
+                    r.served_model() == Some(m)
+                        || r.model.as_deref() == Some(m)
+                        || r.requested_model.as_deref() == Some(m)
+                        || r.response_model.as_deref() == Some(m)
+                })
         })
         .collect();
     if rows.is_empty() {
@@ -629,6 +659,12 @@ pub fn merge_days(
     days: &[crate::usage_import::ImportedDay],
     q: &StatsQuery,
 ) -> RequestStats {
+    if (!q.harnesses.is_empty() && !q.harnesses.contains(&superba_core::RequestHarness::Unknown))
+        || q.host.is_some()
+        || q.protocol.is_some()
+    {
+        return stats;
+    }
     let offset_ms = i64::from(q.utc_offset_minutes) * 60_000;
     let picked: Vec<&crate::usage_import::ImportedDay> = days
         .iter()
@@ -640,6 +676,7 @@ pub fn merge_days(
             q.from.is_none_or(|f| at >= f)
                 && q.to.is_none_or(|t| at < t)
                 && q.member.as_ref().is_none_or(|m| &d.member_id == m)
+                && q.model.as_ref().is_none_or(|m| &d.model == m)
                 && q.source
                     .is_none_or(|s| s == RequestSource::of_import(d.source))
         })
@@ -654,7 +691,15 @@ pub fn merge_days(
         let (key, label) = match q.by {
             StatsGroupBy::Provider => (d.member_id.to_string(), d.member_name.clone()),
             StatsGroupBy::Day => (d.day.clone(), d.day.clone()),
-            StatsGroupBy::Session => (String::new(), String::new()),
+            StatsGroupBy::Harness => ("unknown".into(), "unknown".into()),
+            StatsGroupBy::HarnessModel => {
+                let k = superba_core::harness_group_key(
+                    superba_core::RequestHarness::Unknown,
+                    &d.model,
+                );
+                (k.clone(), k)
+            }
+            StatsGroupBy::Host | StatsGroupBy::Session => (String::new(), String::new()),
             _ => (d.model.clone(), d.model.clone()),
         };
         let b = buckets.entry(key.clone()).or_insert_with(|| StatsBucket {

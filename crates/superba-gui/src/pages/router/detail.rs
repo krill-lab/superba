@@ -40,7 +40,8 @@ pub fn title_line(
     row: &RequestRow,
 ) -> String {
     let mut parts = vec![session_cell(cx.tr, titles, row)];
-    if let Some(m) = &row.model {
+    if row.served_model().is_some() || row.requested_model.is_some() {
+        let m = &requests::model_text(row);
         parts.push(m.clone());
     }
     parts.push(provider_cell(row));
@@ -139,14 +140,25 @@ pub fn cards(
             tr.text(&c.text()),
         ));
     }
-    if let Some(m) = &row.model {
-        let model = match &row.upstream_model {
-            Some(u) if u != m => format!("{m} → {u}"),
-            _ => m.clone(),
-        };
+    if row.served_model().is_some() || row.requested_model.is_some() {
+        let model = requests::model_text(row);
         request.push(line(Some(tr.t("requests.detail.model")), model));
     }
+    request.push(line(
+        Some(tr.t("requests.col.harness")),
+        tr.text(&row.harness.text()),
+    ));
     request.push(line(Some(tr.t("requests.detail.client")), client));
+    request.push(line(
+        Some(tr.t("requests.col.protocol")),
+        tr.text(&row.protocol.text()),
+    ));
+    if let Some(kind) = row.agent_kind {
+        request.push(line(
+            Some(tr.t("requests.col.agent")),
+            tr.text(&kind.text()),
+        ));
+    }
 
     let mut usage = vec![
         line(
@@ -237,10 +249,13 @@ pub fn cards(
 
     let mut session = Vec::new();
     session.push(line(None, session_cell(tr, titles, row)));
-    let thread = row
-        .thread_id
-        .clone()
-        .or_else(|| session_key(row).and_then(|k| titles.get(k).and_then(|t| t.thread_id.clone())));
+    let thread = if row.harness == superba_core::RequestHarness::Codex {
+        row.thread_id.clone().or_else(|| {
+            session_key(row).and_then(|k| titles.get(k).and_then(|t| t.thread_id.clone()))
+        })
+    } else {
+        row.session_id.clone()
+    };
     let mut thread_line = line(
         None,
         match &thread {
@@ -256,6 +271,9 @@ pub fn cards(
         .as_deref()
         .map(|t| copy_link(tr, "requests.detail.copy_thread", t));
     session.push(thread_line);
+    if let Some(turn) = &row.turn_id {
+        session.push(mono_line(tr.t("requests.col.turn"), turn.clone()));
+    }
     if let Some(k) = &row.prompt_cache_key {
         let mut key_line = mono_line(tr.t("requests.col.cache_key"), k.clone());
         key_line.copy = Some(copy_link(tr, "requests.detail.copy_key", k));

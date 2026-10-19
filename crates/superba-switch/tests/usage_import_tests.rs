@@ -223,6 +223,7 @@ async fn imported_rows_are_listed_with_their_source_and_filterable() {
             member: None,
             utc_offset_minutes: 0,
             source: Some(RequestSource::CcSwitch),
+            ..StatsQuery::default()
         })
         .await
         .unwrap();

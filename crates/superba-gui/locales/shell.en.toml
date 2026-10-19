@@ -187,7 +187,7 @@ router.subtitle = "The local router: on or off, members and failover order, pric
 sessions.subtitle = "ChatGPT lists only sessions under the current provider ({provider}). Each host is managed separately."
 settings.subtitle = "Codex settings on this computer (config.toml). Remote hosts are synced per version on Remote hosts."
 updates.subtitle = "Versions of the ChatGPT desktop app and Codex, on this computer and remote hosts."
-usage.subtitle = "Codex requests on this computer: recent, in flight and statistics, from the local router and Codex's session files."
+usage.subtitle = "Requests by tool: recent requests, activity and statistics from the local router and Codex session files."
 
 [phase]
 applying = "Writing configuration"

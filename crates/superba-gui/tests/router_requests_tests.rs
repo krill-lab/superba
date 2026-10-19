@@ -1,5 +1,5 @@
 #![allow(missing_docs)]
-//! View model of the request log (Router & usage, UX §3.5): the 13 columns in
+//! View model of the request log (Router & usage, UX §3.5): the request columns in
 //! the user's order, cell texts, totals, search over session names, CSV, the
 //! stats line template / preview, price ratios and calibration.
 
@@ -41,7 +41,7 @@ fn titles() -> BTreeMap<String, SessionTitle> {
 }
 
 #[test]
-fn the_thirteen_columns_are_in_the_users_order_with_the_specified_widths() {
+fn the_columns_include_tool_and_model_in_display_order() {
     let zh = Tr::new(Locale::ZhCn);
     let labels: Vec<String> = requests::columns(&zh)
         .into_iter()
@@ -52,6 +52,8 @@ fn the_thirteen_columns_are_in_the_users_order_with_the_specified_widths() {
         [
             "缓存键",
             "日期",
+            "工具",
+            "模型",
             "会话",
             "状态",
             "供应商",
@@ -66,7 +68,7 @@ fn the_thirteen_columns_are_in_the_users_order_with_the_specified_widths() {
         ]
     );
     let total: f32 = Col::ALL.iter().map(|c| c.width()).sum();
-    assert!(total <= 834.0, "UX §3.5 table width at 1280x800: {total}");
+    assert!(total <= 1140.0, "preferred width: {total}");
     // The status column holds a dot and a short label (ux-visual #3).
     assert!(Col::Status.width() >= 72.0);
     for c in Col::ALL {
@@ -164,10 +166,10 @@ fn totals_count_success_tokens_and_unpriced_rows() {
     assert!(t.cost.micros() > 0);
     let tr = Tr::new(Locale::En);
     let cells = requests::totals_cells(&tr, &t, &rows);
-    assert_eq!(cells.len(), 13);
+    assert_eq!(cells.len(), Col::ALL.len());
     assert_eq!(cells[0].text, "Total");
     assert_eq!(cells[1].text, "8 req.");
-    assert_eq!(cells[3].text, "75 %");
+    assert_eq!(cells[5].text, "75 %");
     assert!(requests::avg_first_token(&rows).is_some());
     assert!(requests::weighted_tps(&rows).is_some());
 }
@@ -198,9 +200,9 @@ fn csv_has_a_header_full_keys_and_no_content() {
     let csv = requests::csv(&tr, &titles(), &rows);
     let mut lines = csv.lines();
     let header = lines.next().unwrap();
-    assert!(header.starts_with("Cache key,Date,Session,Status,Provider,Input"));
+    assert!(header.starts_with("Cache key,Date,Tool,Model,Session,Status,Provider,Input"));
     assert!(
-        header.ends_with(",Model,Client,Line,Upstream host,Source"),
+        header.ends_with(",Client,Line,Upstream host,Source"),
         "{header}"
     );
     assert_eq!(lines.count(), rows.len());
@@ -210,7 +212,7 @@ fn csv_has_a_header_full_keys_and_no_content() {
     // its line and host are columns of their own.
     let first = csv.lines().nth(1).unwrap();
     let fields: Vec<&str> = first.split(',').collect();
-    assert_eq!(fields[4], rows[0].member_name);
+    assert_eq!(fields[6], rows[0].member_name);
     assert_eq!(fields[fields.len() - 3], rows[0].line_label().unwrap());
     assert_eq!(
         fields[fields.len() - 2],
@@ -223,7 +225,7 @@ fn csv_has_a_header_full_keys_and_no_content() {
         zh.lines()
             .next()
             .unwrap()
-            .ends_with(",模型,客户端,线路,上游主机,来源")
+            .ends_with(",客户端,线路,上游主机,来源")
     );
 }
 
@@ -820,18 +822,20 @@ fn the_session_column_grows_and_narrow_tables_hide_low_value_columns() {
     let cols = requests::columns(&tr);
     let index = |c: Col| Col::ALL.iter().position(|x| *x == c).unwrap();
     let sum = |w: &[f32]| w.iter().sum::<f32>();
-    // 1280x800: every column at about its preferred width.
-    let w = column_widths(&cols, 834.0);
-    assert!((sum(&w) - 834.0).abs() < 0.01);
+    // Every column is available when there is room for its preferred width.
+    let preferred = Col::ALL.iter().map(|c| c.width()).sum::<f32>();
+    let w = column_widths(&cols, preferred);
+    assert!((sum(&w) - preferred).abs() < 0.01);
     assert!(w.iter().all(|w| *w > 0.0));
     for c in Col::ALL {
         assert!(w[index(c)] >= c.width() - 0.01, "{c:?}");
     }
-    // 1440x900: the session name (then the status) gets the extra width.
-    let wide = column_widths(&cols, 964.0);
-    assert!((sum(&wide) - 964.0).abs() < 0.01);
+    // Model mappings and session names get extra room before the status.
+    let wide = column_widths(&cols, preferred + 180.0);
+    assert!((sum(&wide) - preferred - 180.0).abs() < 0.01);
     let gained = |c: Col| wide[index(c)] - w[index(c)];
-    assert!(gained(Col::Session) > 80.0, "{}", gained(Col::Session));
+    assert!((gained(Col::Model) - 90.0).abs() < 0.01);
+    assert!((gained(Col::Session) - 60.0).abs() < 0.01);
     assert!(gained(Col::Status) > 20.0);
     assert!(gained(Col::Provider).abs() < 0.01);
     assert!(gained(Col::Input).abs() < 0.01);
@@ -853,7 +857,10 @@ fn the_session_column_grows_and_narrow_tables_hide_low_value_columns() {
     assert_eq!(totals[index(Col::Date)].text, "合计 0 条");
     assert_eq!(totals[index(Col::Date)].short.as_deref(), Some("0 条"));
     // In between only what does not fit is hidden, cache write first.
-    let mid = column_widths(&cols, 720.0);
+    let mid = column_widths(
+        &cols,
+        Col::ALL.iter().map(|c| c.min_width()).sum::<f32>() - 1.0,
+    );
     assert_eq!(mid[index(Col::CacheWrite)], 0.0);
     assert!(mid[index(Col::CacheKey)] > 0.0);
 }

@@ -198,6 +198,7 @@ pub async fn load_calibration(
             by: StatsGroupBy::Day,
             member: Some(profile.clone()),
             utc_offset_minutes: 0,
+            ..StatsQuery::default()
         })
         .await?;
     let billed = usage.total_cost.unwrap_or_else(|| {

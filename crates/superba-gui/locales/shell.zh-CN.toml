@@ -186,7 +186,7 @@ router.subtitle = "本地路由：开关、成员与故障转移顺序、价格�
 sessions.subtitle = "ChatGPT 只显示当前 provider（{provider}）下的会话。每台主机的会话分开管理。"
 settings.subtitle = "这台电脑上 Codex 的设置（config.toml）。远程主机在「远程主机」页按各自版本同步。"
 updates.subtitle = "ChatGPT app 与本机、远程 Codex 的版本。"
-usage.subtitle = "这台电脑上的 Codex 请求：最近请求、进行中的请求和统计，来自本地路由和 Codex 会话记录。"
+usage.subtitle = "按工具查看最近请求、活动请求和统计，数据来自本地路由和 Codex 会话记录。"
 
 [phase]
 applying = "写入配置"

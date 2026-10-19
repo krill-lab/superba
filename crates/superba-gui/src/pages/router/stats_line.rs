@@ -198,7 +198,11 @@ impl Sample {
         let turn: Vec<&RequestRow> = match &last.turn_id {
             Some(t) => rows
                 .iter()
-                .filter(|r| r.turn_id.as_deref() == Some(t.as_str()))
+                .filter(|r| {
+                    r.turn_id.as_deref() == Some(t.as_str())
+                        && r.harness == last.harness
+                        && r.session_key() == last.session_key()
+                })
                 .collect(),
             None => vec![last],
         };

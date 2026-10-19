@@ -817,6 +817,7 @@ impl Switcher {
             notes: Vec::new(),
             settings: set.settings.router.clone(),
             configured: service.configured,
+            token_ready: d.router.endpoint().is_ok_and(|e| !e.token.is_empty()),
             installed: service.installed,
             running,
             port: service.port,

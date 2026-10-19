@@ -655,6 +655,49 @@ pub struct RequestRow {
 }
 
 impl RequestRow {
+    /// This tool's own session id. Codex can also identify a session by its cache key.
+    pub fn session_key(&self) -> Option<&str> {
+        self.session_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                (self.harness == RequestHarness::Codex)
+                    .then(|| {
+                        self.prompt_cache_key
+                            .as_deref()
+                            .or(self.thread_id.as_deref())
+                    })
+                    .flatten()
+            })
+    }
+
+    /// Session identity including its tool, so unrelated sessions never merge.
+    pub fn session_group_key(&self) -> Option<String> {
+        self.session_key()
+            .map(|id| harness_group_key(self.harness, id))
+    }
+
+    /// Actual model sent upstream; otherwise the selected or response model.
+    pub fn served_model(&self) -> Option<&str> {
+        self.upstream_model
+            .as_deref()
+            .or(self.model.as_deref())
+            .or(self.response_model.as_deref())
+    }
+
+    /// Identity of a tool and model pair.
+    pub fn harness_model_key(&self) -> String {
+        harness_group_key(self.harness, self.served_model().unwrap_or(""))
+    }
+
+    /// Host filter key; absent hosts denote this computer.
+    pub fn host_key(&self) -> &str {
+        self.codex_host
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("local")
+    }
+
     /// The client, with the Codex host it ran on when that is not this computer
     /// ("Terminal · WSL: Ubuntu", user bug 45). Rows of another harness name
     /// that harness ("Claude Code").
@@ -688,10 +731,7 @@ impl RequestRow {
     /// The short session key shown when no title is known (first 8 characters of
     /// the prompt cache key, else of the thread id).
     pub fn short_key(&self) -> Option<String> {
-        self.prompt_cache_key
-            .as_deref()
-            .or(self.thread_id.as_deref())
-            .map(|k| k.chars().take(8).collect())
+        self.session_key().map(|k| k.chars().take(8).collect())
     }
 
     /// The provider group key ([`RequestGrouping::Provider`]): the router member
@@ -719,6 +759,17 @@ impl RequestRow {
         self.provider_key() == Some(provider)
             && line.is_none_or(|l| self.line_label().unwrap_or("") == l)
     }
+}
+
+/// A tool-scoped session or model identity. The tool id cannot contain the separator.
+pub fn harness_group_key(harness: RequestHarness, key: &str) -> String {
+    format!("{}\u{1f}{key}", harness.id())
+}
+
+/// Tool and original session/model id of a grouped identity.
+pub fn split_harness_key(key: &str) -> Option<(RequestHarness, &str)> {
+    let (tool, id) = key.split_once('\u{1f}')?;
+    Some((RequestHarness::from_id(tool)?, id))
 }
 
 /// Separator of a provider · line group key (`<provider>\u{1f}<line>`; the unit
@@ -770,6 +821,10 @@ pub enum RequestGrouping {
     /// provider's lines in [`RequestGroup::lines`]. A group key is a provider
     /// key or a [`provider_line_key`].
     Provider,
+    /// By the tool that sent the request.
+    Harness,
+    /// By tool and served model.
+    HarnessModel,
 }
 
 /// Sortable columns.
@@ -780,6 +835,10 @@ pub enum RequestSortKey {
     /// Start time.
     #[default]
     Time,
+    /// Tool.
+    Harness,
+    /// Served model.
+    Model,
     /// Prompt cache key.
     CacheKey,
     /// Session (title resolved by the caller; sorts by key here).
@@ -842,8 +901,14 @@ pub struct RequestQuery {
     pub member: Option<ProfileId>,
     /// Only this line id.
     pub line: Option<String>,
-    /// Only this model (requested name).
+    /// Only this model (requested or served name).
     pub model: Option<String>,
+    /// Only these tools; empty selects every tool.
+    pub harnesses: Vec<RequestHarness>,
+    /// Host key (`local`, `wsl:<distro>`, or a remote host).
+    pub host: Option<String>,
+    /// Only this ingress protocol.
+    pub protocol: Option<RequestProtocol>,
     /// Status filter.
     pub status: RequestStatusFilter,
     /// Only this client.
@@ -878,6 +943,9 @@ impl Default for RequestQuery {
             member: None,
             line: None,
             model: None,
+            harnesses: Vec::new(),
+            host: None,
+            protocol: None,
             status: RequestStatusFilter::All,
             client: None,
             source: None,
@@ -1172,7 +1240,7 @@ pub struct RequestDetail {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum StatsGroupBy {
-    /// Requested model.
+    /// Served model.
     #[default]
     Model,
     /// Provider ([`RequestRow::provider_key`]), with its lines in
@@ -1180,8 +1248,14 @@ pub enum StatsGroupBy {
     Provider,
     /// Local calendar day.
     Day,
-    /// Session key.
+    /// Session key, scoped to its tool.
     Session,
+    /// Tool.
+    Harness,
+    /// Tool and served model.
+    HarnessModel,
+    /// Host (also supplies the Usage filter's choices).
+    Host,
 }
 
 /// A statistics query.
@@ -1196,6 +1270,14 @@ pub struct StatsQuery {
     pub by: StatsGroupBy,
     /// Only this member.
     pub member: Option<ProfileId>,
+    /// Only these tools; empty selects every tool.
+    pub harnesses: Vec<RequestHarness>,
+    /// Only this requested or served model.
+    pub model: Option<String>,
+    /// Only this host (`local` denotes this computer).
+    pub host: Option<String>,
+    /// Only this ingress protocol.
+    pub protocol: Option<RequestProtocol>,
     /// UTC offset of the local day in minutes (for [`StatsGroupBy::Day`] and the
     /// daily bars).
     pub utc_offset_minutes: i32,

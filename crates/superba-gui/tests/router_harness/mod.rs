@@ -378,6 +378,26 @@ impl Harness {
         }
     }
 
+    /// Find content below the ingress card by scrolling the left settings column.
+    pub fn until_scrolled(
+        &mut self,
+        mut show: impl FnMut(&mut egui::Ui, &Cx<'_>, &mut Vec<Action>),
+        done: impl Fn(&Frame) -> bool,
+    ) -> Frame {
+        let mut frame = self.settle(&mut show);
+        for _ in 0..24 {
+            if done(&frame) {
+                return frame;
+            }
+            self.scroll_at(
+                pos2(frame.rect.min.x + 100.0, frame.rect.center().y),
+                egui::vec2(0.0, -90.0),
+            );
+            frame = self.settle(&mut show);
+        }
+        panic!("content not reachable by scrolling: {}", frame.all_text());
+    }
+
     /// Draw `n` frames, keeping the actions of all of them in the last one.
     pub fn frames(
         &mut self,

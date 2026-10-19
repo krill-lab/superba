@@ -37,7 +37,7 @@ struct Words {
     tabs: [&'static str; 2],
     collapse: &'static str,
     expand: &'static str,
-    cache_key: &'static str,
+    log_header: &'static str,
     totals: &'static str,
     copy: &'static str,
     /// Tabs that no longer exist (request content is never recorded).
@@ -51,7 +51,7 @@ fn words(locale: Locale) -> Words {
             tabs: ["通用", "计时"],
             collapse: "收起详情",
             expand: "展开详情",
-            cache_key: "缓存键",
+            log_header: "输入",
             totals: "合计",
             copy: "复制",
             gone: ["请求头", "响应头", "请求数据", "响应数据"],
@@ -61,7 +61,7 @@ fn words(locale: Locale) -> Words {
             tabs: ["General", "Timing"],
             collapse: "Hide details",
             expand: "Show details",
-            cache_key: "Cache key",
+            log_header: "Input",
             totals: "Total",
             copy: "Copy",
             gone: [
@@ -261,16 +261,16 @@ fn the_split_drags_within_limits_and_double_click_restores_the_content_height() 
         let show = |h: &mut Harness, state: &mut State| {
             h.settle(|ui, cx, out| router::show_usage(ui, cx, state, out))
         };
-        // Up by 60: the pane grows by 60 (its top moves up, the bottom stays).
+        // Shrink first so even the smallest layout has room to grow by 60.
+        let y = split_y(&f, &w);
+        h.drag(pos2(x, y), pos2(x, y + 60.0));
+        let f = show(&mut h, &mut state);
+        let shrunk = first_tab(&f, &w).center().y;
+        assert!((shrunk - natural - 60.0).abs() < 1.0, "{size:?}");
         let y = split_y(&f, &w);
         h.drag(pos2(x, y), pos2(x, y - 60.0));
         let f = show(&mut h, &mut state);
-        let grown = first_tab(&f, &w).center().y;
-        assert!(
-            (natural - grown - 60.0).abs() < 1.0,
-            "{size:?}: moved {}",
-            natural - grown
-        );
+        assert!((first_tab(&f, &w).center().y - natural).abs() < 1.0);
         assert!(state.recent.detail_height.is_some());
         // Far down: the pane stops at its minimum (title, tabs, some body) and
         // the cards scroll inside it instead of being cut.
@@ -284,7 +284,7 @@ fn the_split_drags_within_limits_and_double_click_restores_the_content_height() 
         let y = split_y(&f, &w);
         h.drag(pos2(x, y), pos2(x, 2.0));
         let f = show(&mut h, &mut state);
-        let header = f.find(w.cache_key).unwrap();
+        let header = f.find(w.log_header).unwrap();
         let totals = f.find(w.totals).unwrap();
         assert!(
             totals.center().y - header.center().y

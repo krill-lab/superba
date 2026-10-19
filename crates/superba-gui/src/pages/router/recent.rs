@@ -19,9 +19,9 @@ use std::time::{Duration, Instant};
 
 use egui::{Align, Layout, Ui};
 use superba_core::{
-    ProfileId, RequestClient, RequestDetail, RequestGroup, RequestGrouping, RequestPage,
-    RequestQuery, RequestRow, RequestSort, RequestSource, RequestStatusFilter, RequestTotals,
-    SessionTitle, StatsBucket, StatsGroupBy, StatsQuery, Timestamp,
+    ProfileId, RequestClient, RequestDetail, RequestGroup, RequestGrouping, RequestHarness,
+    RequestPage, RequestQuery, RequestRow, RequestSort, RequestSource, RequestStatusFilter,
+    RequestTotals, SessionTitle, StatsBucket, StatsGroupBy, StatsQuery, Timestamp,
 };
 
 use super::db::Loader;
@@ -29,7 +29,6 @@ use super::requests::{self, Col, Range};
 use super::{Dialog, State, detail, mode};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
-use crate::design::tokens::size;
 use crate::design::widgets::detail_pane::{self, DetailPane};
 use crate::design::widgets::log_table::{self, LogTable};
 use crate::design::widgets::source_list::{COLLAPSED_WIDTH, SourceList};
@@ -47,14 +46,6 @@ const ROLLOUT_LIVE: Duration = Duration::from_secs(5);
 const DEBOUNCE: Duration = Duration::from_millis(300);
 /// Rows per query.
 const LIMIT: u32 = 500;
-/// Height of the filter row: the small controls in it (the range switch and the
-/// dropdowns) are exactly this tall, so the row never clips their borders.
-const FILTER_ROW: f32 = size::CONTROL_SM;
-/// Below this log-column width the filters take two rows (range, then the
-/// four dropdowns sharing the width), so "App + CLI" is never cut at 960 px.
-const FILTER_TWO_ROWS: f32 = 640.0;
-/// ... and below this width when the source filter is shown as well.
-const FILTER_TWO_ROWS_SOURCES: f32 = 900.0;
 /// Gap between the two filter rows.
 const FILTER_GAP: f32 = 6.0;
 
@@ -65,6 +56,8 @@ pub struct Facets {
     pub models: Vec<StatsBucket>,
     /// Members (key = profile id, label = name).
     pub members: Vec<StatsBucket>,
+    /// Hosts in the selected range.
+    pub hosts: Vec<StatsBucket>,
 }
 
 /// State of 最近请求.
@@ -76,6 +69,10 @@ pub struct Recent {
     pub member: Option<ProfileId>,
     /// Only this model.
     pub model: Option<String>,
+    /// Tools selected (empty means all tools).
+    pub harnesses: Vec<RequestHarness>,
+    /// Selected host; `local` means this computer.
+    pub host: Option<String>,
     /// Status filter.
     pub status: RequestStatusFilter,
     /// Only this client.
@@ -136,6 +133,8 @@ impl Default for Recent {
             range: Range::Day,
             member: None,
             model: None,
+            harnesses: Vec::new(),
+            host: None,
             status: RequestStatusFilter::All,
             client: None,
             source: None,
@@ -182,6 +181,9 @@ impl Recent {
             member: self.member.clone(),
             line: None,
             model: self.model.clone(),
+            harnesses: self.harnesses.clone(),
+            host: self.host.clone(),
+            protocol: None,
             status: self.status,
             client: self.client,
             group_by: self.grouping,
@@ -197,6 +199,8 @@ impl Recent {
     pub fn filtered(&self, search: &str) -> bool {
         self.member.is_some()
             || self.model.is_some()
+            || !self.harnesses.is_empty()
+            || self.host.is_some()
             || self.status != RequestStatusFilter::All
             || self.client.is_some()
             || self.source.is_some()
@@ -225,6 +229,8 @@ impl Recent {
     fn clear_filters(&mut self) {
         self.member = None;
         self.model = None;
+        self.harnesses.clear();
+        self.host = None;
         self.status = RequestStatusFilter::All;
         self.client = None;
         self.source = None;
@@ -238,7 +244,7 @@ impl Recent {
     pub fn show_session(&mut self, key: &str) {
         self.clear_filters();
         self.grouping = RequestGrouping::Session;
-        self.group = Some(key.to_owned());
+        self.group = Some(superba_core::harness_group_key(RequestHarness::Codex, key));
         if self.range == Range::Day {
             self.range = Range::Week;
         }
@@ -412,30 +418,7 @@ pub(super) fn load(cx: &Cx<'_>, state: &mut State) {
         r.page
             .start(async move { super::db::load_page(service, query, keys).await });
     }
-    if r.facets_range != Some(r.range) {
-        r.facets.invalidate();
-        r.facets_range = Some(r.range);
-    }
-    if r.facets.due(Some(Duration::from_secs(60))) {
-        let service = cx.service.clone();
-        let from = Some(r.range.from(now));
-        r.facets.start(async move {
-            let q = |by| StatsQuery {
-                source: None,
-                from,
-                to: None,
-                by,
-                member: None,
-                utc_offset_minutes: 0,
-            };
-            let models = service.router_stats(q(StatsGroupBy::Model)).await?.buckets;
-            let members = service
-                .router_stats(q(StatsGroupBy::Provider))
-                .await?
-                .buckets;
-            Ok(Facets { models, members })
-        });
-    }
+    load_facets(cx, r, r.range);
     if r.selected != r.detail_for
         && let Some(id) = r.selected
         && !r.detail.loading()
@@ -447,16 +430,63 @@ pub(super) fn load(cx: &Cx<'_>, state: &mut State) {
         r.detail
             .start(async move { service.router_request(id).await });
     }
-    let mut keys: Vec<&str> = r.shown.iter().filter_map(requests::session_key).collect();
+    let mut keys: Vec<&str> = r
+        .shown
+        .iter()
+        .filter(|r| r.harness == RequestHarness::Codex)
+        .filter_map(requests::session_key)
+        .collect();
     if r.grouping == RequestGrouping::Session {
-        keys.extend(r.groups.iter().map(|g| g.key.as_str()));
+        keys.extend(
+            r.groups
+                .iter()
+                .filter_map(|g| superba_core::split_harness_key(&g.key))
+                .filter(|(h, _)| *h == RequestHarness::Codex)
+                .map(|(_, id)| id),
+        );
     }
     state.titles.want(cx.service, keys);
+}
+
+pub(super) fn load_facets(cx: &Cx<'_>, r: &mut Recent, range: Range) {
+    let now = cx.now;
+    if r.facets_range != Some(range) {
+        r.facets.invalidate();
+        r.facets_range = Some(range);
+    }
+    if r.facets.due(Some(Duration::from_secs(60))) {
+        let service = cx.service.clone();
+        let from = Some(range.from(now));
+        r.facets.start(async move {
+            let q = |by| StatsQuery {
+                source: None,
+                from,
+                to: None,
+                by,
+                member: None,
+                utc_offset_minutes: 0,
+                ..StatsQuery::default()
+            };
+            let models = service.router_stats(q(StatsGroupBy::Model)).await?.buckets;
+            let members = service
+                .router_stats(q(StatsGroupBy::Provider))
+                .await?
+                .buckets;
+            let hosts = service.router_stats(q(StatsGroupBy::Host)).await?.buckets;
+            Ok(Facets {
+                models,
+                members,
+                hosts,
+            })
+        });
+    }
 }
 
 pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     state.recent.poll(cx, out);
     load(cx, state);
+    filters(ui, cx, state);
+    ui.add_space(6.0);
     let rect = ui.available_rect_before_wrap();
     let side = if state.recent.collapsed {
         COLLAPSED_WIDTH
@@ -483,6 +513,11 @@ fn sidebar(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         .grouping(
             &mut grouping,
             vec![
+                (RequestGrouping::Harness, cx.tr.t("requests.group.harness")),
+                (
+                    RequestGrouping::HarnessModel,
+                    cx.tr.t("requests.group.harness_model"),
+                ),
                 (
                     RequestGrouping::Session,
                     cx.tr.t("requests.group.session_short"),
@@ -493,6 +528,7 @@ fn sidebar(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 ),
             ],
         )
+        .grouping_label(cx.tr.t("requests.stats.group"))
         .all(cx.tr.t("requests.group.all"), r.all_count)
         .footnote(cx.tr.t("requests.remote_note"))
         .collapse_tips(
@@ -534,24 +570,7 @@ fn detail_height(cx: &Cx<'_>, state: &State, room: f32) -> f32 {
 fn main(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     let column = ui.available_rect_before_wrap();
     let show_detail = !state.recent.detail_hidden && state.recent.selected_index().is_some();
-    // The filter row is as tall as its small controls (segmented range, dropdowns).
-    let five = state.recent.shows_sources();
-    let two_rows = column.width()
-        < if five {
-            FILTER_TWO_ROWS_SOURCES
-        } else {
-            FILTER_TWO_ROWS
-        };
-    let filter_h = if two_rows {
-        FILTER_ROW * 2.0 + FILTER_GAP
-    } else {
-        FILTER_ROW
-    };
-    let mut tracks = vec![
-        Track::Fixed(filter_h),
-        Track::Fill,
-        Track::Fixed(toolbar::HEIGHT),
-    ];
+    let mut tracks = vec![Track::Fill, Track::Fixed(toolbar::HEIGHT)];
     // The log and the detail pane share what the fixed rows and the gaps leave.
     let fixed: f32 = tracks
         .iter()
@@ -565,13 +584,12 @@ fn main(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
         tracks.push(Track::Fixed(detail_height(cx, state, room)));
     }
     let pane_rect = layout::row_rects(column, &tracks, ROW_GAP)
-        .get(3)
+        .get(2)
         .copied()
         .filter(|_| show_detail);
     layout::rows(ui, &tracks, ROW_GAP, |ui, i| match i {
-        0 => filters(ui, cx, state, two_rows),
-        1 => table(ui, cx, state, out),
-        2 => tools(ui, cx, state),
+        0 => table(ui, cx, state, out),
+        1 => tools(ui, cx, state),
         _ => pane(ui, cx, state, out),
     });
     // The pane's top edge is the split: drag it to resize, double click for the
@@ -592,32 +610,87 @@ fn main(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     }
 }
 
-fn filters(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, two_rows: bool) {
+fn filters(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     let r = &mut state.recent;
-    if two_rows {
-        let rows = layout::row_rects(
-            ui.max_rect(),
-            &[Track::Fixed(FILTER_ROW), Track::Fixed(FILTER_ROW)],
-            FILTER_GAP,
-        );
-        layout::fixed(ui, rows[0], |ui| {
-            ui.horizontal(|ui| range_filter(ui, cx, r));
-        });
-        layout::fixed(ui, rows[1], |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                // The dropdowns share the row.
-                let n = if r.shows_sources() { 5.0 } else { 4.0 };
-                let w = ((ui.available_width() - (n - 1.0) * 6.0) / n).floor();
-                dropdown_filters(ui, cx, r, [w; 5]);
+    ui.horizontal(|ui| {
+        range_filter(ui, cx, r);
+        extra_filters(ui, cx, r);
+    });
+    ui.add_space(FILTER_GAP);
+    tool_filters(ui, cx, r);
+}
+
+/// Shared Usage filters. The whole page width is shared by four fields.
+pub(super) fn tool_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let w = ((ui.available_width() - 18.0) / 4.0).floor();
+        let label = if r.harnesses.is_empty() {
+            cx.tr.t("requests.filter.all_tools")
+        } else {
+            r.harnesses
+                .iter()
+                .map(|h| cx.tr.text(&h.text()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let mut changed = false;
+        Dropdown::new("usage-tools")
+            .keep_open()
+            .label(cx.tr.t("requests.col.harness"))
+            .selected_text(label)
+            .fixed_width(w)
+            .menu_height(300.0)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(r.harnesses.is_empty(), cx.tr.t("requests.filter.all_tools"))
+                    .clicked()
+                {
+                    r.harnesses.clear();
+                    changed = true;
+                }
+                for h in RequestHarness::ALL {
+                    let mut on = r.harnesses.contains(&h);
+                    if ui.checkbox(&mut on, cx.tr.text(&h.text())).changed() {
+                        r.harnesses.retain(|v| *v != h);
+                        if on {
+                            r.harnesses.push(h);
+                        }
+                        r.harnesses.sort();
+                        changed = true;
+                    }
+                }
             });
-        });
-    } else {
-        ui.horizontal(|ui| {
-            range_filter(ui, cx, r);
-            dropdown_filters(ui, cx, r, [104.0, 104.0, 84.0, 90.0, 132.0]);
-        });
-    }
+        if changed {
+            r.changed();
+        }
+        provider_model_filters(ui, cx, r, w);
+        let mut hosts = vec![
+            (None, cx.tr.t("requests.filter.all_hosts")),
+            (Some("local".to_owned()), cx.tr.t("requests.host.local")),
+        ];
+        if let Some(f) = &r.facets.value {
+            hosts.extend(
+                f.hosts
+                    .iter()
+                    .filter(|b| b.key != "local" && !b.key.is_empty())
+                    .map(|b| (Some(b.key.clone()), requests::host_label(cx.tr, &b.key))),
+            );
+        }
+        if let Some(h) = &r.host
+            && !hosts.iter().any(|(v, _)| v.as_ref() == Some(h))
+        {
+            hosts.push((Some(h.clone()), requests::host_label(cx.tr, h)));
+        }
+        if Dropdown::new("usage-host")
+            .label(cx.tr.t("requests.col.host"))
+            .fixed_width(w)
+            .show_options(ui, &mut r.host, &hosts)
+            .changed()
+        {
+            r.changed();
+        }
+    });
 }
 
 /// The range segments, and "showing the newest n" on the right.
@@ -650,7 +723,7 @@ fn range_filter(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
 
 /// Provider, model, status, client and (with imported rows) source
 /// dropdowns, `widths` wide.
-fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) {
+fn provider_model_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, width: f32) {
     ui.spacing_mut().item_spacing.x = 6.0;
     let facets = r.facets.value.clone().unwrap_or_default();
     let mut members: Vec<(Option<ProfileId>, String)> =
@@ -668,7 +741,7 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
     }
     if Dropdown::new("router-f-member")
         .label(cx.tr.t("requests.col.provider"))
-        .width(widths[0])
+        .fixed_width(width)
         .show_options(ui, &mut r.member, &members)
         .changed()
     {
@@ -689,12 +762,15 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
     }
     if Dropdown::new("router-f-model")
         .label(cx.tr.t("requests.col.model"))
-        .width(widths[1])
+        .fixed_width(width)
         .show_options(ui, &mut r.model, &models)
         .changed()
     {
         r.changed();
     }
+}
+
+fn extra_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
     let statuses = [
         (
             RequestStatusFilter::All,
@@ -715,7 +791,7 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
     ];
     if Dropdown::new("router-f-status")
         .label(cx.tr.t("requests.col.status"))
-        .width(widths[2])
+        .width(100.0)
         .show_options(ui, &mut r.status, &statuses)
         .changed()
     {
@@ -738,7 +814,7 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
     ];
     if Dropdown::new("router-f-client")
         .label(cx.tr.t("requests.col.client"))
-        .width(widths[3])
+        .width(108.0)
         .show_options(ui, &mut r.client, &clients)
         .changed()
     {
@@ -754,7 +830,7 @@ fn dropdown_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent, widths: [f32; 5]) 
         );
         if Dropdown::new("router-f-source")
             .label(cx.tr.t("requests.filter.source.name"))
-            .width(widths[4])
+            .width(140.0)
             .show_options(ui, &mut r.source, &sources)
             .changed()
         {

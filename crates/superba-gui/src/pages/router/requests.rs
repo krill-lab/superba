@@ -1,5 +1,5 @@
 //! View model of the request log (Usage → 最近请求 / 活动请求 / 统计):
-//! the 13 columns in the user's order, cell texts, the totals row, search over
+//! the request columns in display order, cell texts, the totals row, search over
 //! session names, ranges, sorting and CSV export. Pure functions (unit tested);
 //! drawing lives in `recent.rs`, `active.rs` and `stats.rs`.
 //!
@@ -12,9 +12,9 @@ use std::time::Duration;
 
 use superba_core::{
     InflightPhase, InflightRequest, ProfileSet, RequestClient, RequestGroup, RequestGrouping,
-    RequestKind, RequestPage, RequestRow, RequestSortKey, RequestSource, RequestStatus,
-    RequestTotals, SessionTitle, Site, SpeedTier, StatsBucket, Timestamp, TitleSource, Usd,
-    provider_line_key, split_provider_key,
+    RequestHarness, RequestKind, RequestPage, RequestRow, RequestSortKey, RequestSource,
+    RequestStatus, RequestTotals, SessionTitle, Site, SpeedTier, StatsBucket, Timestamp,
+    TitleSource, Usd, provider_line_key, split_provider_key,
 };
 use superba_router::members::router_id;
 
@@ -74,6 +74,10 @@ pub enum Col {
     CacheKey,
     /// Start time.
     Date,
+    /// Tool that sent the request.
+    Harness,
+    /// Requested and served models.
+    Model,
     /// Session name.
     Session,
     /// Status.
@@ -99,10 +103,12 @@ pub enum Col {
 }
 
 impl Col {
-    /// The 13 columns in order.
-    pub const ALL: [Col; 13] = [
+    /// The columns in display order.
+    pub const ALL: [Col; 15] = [
         Col::CacheKey,
         Col::Date,
+        Col::Harness,
+        Col::Model,
         Col::Session,
         Col::Status,
         Col::Provider,
@@ -121,6 +127,8 @@ impl Col {
         match self {
             Col::CacheKey => "requests.col.cache_key",
             Col::Date => "requests.col.date",
+            Col::Harness => "requests.col.harness",
+            Col::Model => "requests.col.model",
             Col::Session => "requests.col.session",
             Col::Status => "requests.col.status",
             Col::Provider => "requests.col.provider",
@@ -142,6 +150,8 @@ impl Col {
         match self {
             Col::CacheKey => 76.0,
             Col::Date => 80.0,
+            Col::Harness => 112.0,
+            Col::Model => 170.0,
             Col::Session => 94.0,
             Col::Status => 72.0,
             Col::Provider => 94.0,
@@ -162,6 +172,8 @@ impl Col {
         match self {
             Col::CacheKey => 76.0,
             Col::Date => 62.0,
+            Col::Harness => 100.0,
+            Col::Model => 112.0,
             Col::Session => 72.0,
             Col::Status => 60.0,
             Col::Provider => 72.0,
@@ -180,7 +192,8 @@ impl Col {
     /// then the status (with its reason).
     pub fn grow(self) -> f32 {
         match self {
-            Col::Session => 3.0,
+            Col::Model => 3.0,
+            Col::Session => 2.0,
             Col::Status => 1.0,
             _ => 0.0,
         }
@@ -194,6 +207,11 @@ impl Col {
             Col::CacheKey => Some(1),
             Col::Tps => Some(2),
             Col::CacheRead => Some(3),
+            Col::Duration => Some(4),
+            Col::FirstToken => Some(5),
+            Col::Provider => Some(6),
+            Col::Session => Some(7),
+            Col::Date => Some(8),
             _ => None,
         }
     }
@@ -218,6 +236,8 @@ impl Col {
         match self {
             Col::CacheKey => RequestSortKey::CacheKey,
             Col::Date => RequestSortKey::Time,
+            Col::Harness => RequestSortKey::Harness,
+            Col::Model => RequestSortKey::Model,
             Col::Session => RequestSortKey::Session,
             Col::Status => RequestSortKey::Status,
             Col::Provider => RequestSortKey::Provider,
@@ -370,7 +390,7 @@ pub fn short_cache_key(key: &str) -> String {
 
 /// Session key of a row (as the router groups it).
 pub fn session_key(row: &RequestRow) -> Option<&str> {
-    row.prompt_cache_key.as_deref().or(row.thread_id.as_deref())
+    row.session_key()
 }
 
 /// Status of a row: severity and the short label of the 状态 cell (完成, 失败,
@@ -682,7 +702,11 @@ pub fn source_entries(
     for g in groups {
         if grouping != RequestGrouping::Provider {
             entries.push(SourceEntry {
-                label: title_of(titles, &g.key),
+                label: match grouping {
+                    RequestGrouping::Harness => harness_label(tr, &g.key),
+                    RequestGrouping::HarnessModel => harness_model_label(tr, &g.key),
+                    _ => session_group_label(tr, titles, &g.key),
+                },
                 tooltip: Some(tip(&[Some(&g.key)], g.last)),
                 key: g.key.clone(),
                 count: g.count,
@@ -735,20 +759,89 @@ pub fn source_entries(
     entries
 }
 
+/// Tool label from an aggregate key.
+pub fn harness_label(tr: &Tr, key: &str) -> String {
+    RequestHarness::from_id(key)
+        .map(|h| tr.text(&h.text()))
+        .unwrap_or_else(|| key.to_owned())
+}
+
+/// Tool and model from an aggregate key.
+pub fn harness_model_label(tr: &Tr, key: &str) -> String {
+    superba_core::split_harness_key(key)
+        .map(|(h, m)| {
+            format!(
+                "{} · {}",
+                tr.text(&h.text()),
+                if m.is_empty() { DASH } else { m }
+            )
+        })
+        .unwrap_or_else(|| key.to_owned())
+}
+
+/// Session list labels always name their tool.
+pub fn session_group_label(tr: &Tr, titles: &BTreeMap<String, SessionTitle>, key: &str) -> String {
+    match superba_core::split_harness_key(key) {
+        Some((h, _)) => format!("{} · {}", tr.text(&h.text()), title_of(titles, key)),
+        None => title_of(titles, key),
+    }
+}
+
+/// Readable host filter label.
+pub fn host_label(tr: &Tr, key: &str) -> String {
+    if key == "local" {
+        tr.t("requests.host.local")
+    } else if let Some(d) = superba_core::wsl::distro_of_router_source(key) {
+        tr.text(&superba_core::wsl_title(d))
+    } else {
+        key.to_owned()
+    }
+}
+
+/// Requested → served model when a mapping was applied.
+pub fn model_text(row: &RequestRow) -> String {
+    match (
+        row.requested_model.as_deref().or(row.model.as_deref()),
+        row.served_model(),
+    ) {
+        (Some(requested), Some(served)) if requested != served => format!("{requested} → {served}"),
+        (_, Some(served)) => served.to_owned(),
+        (Some(requested), None) => requested.to_owned(),
+        _ => DASH.to_owned(),
+    }
+}
+
+/// Shared tool glyph; the adjacent name identifies the tool without relying on an icon.
+pub fn harness_icon(harness: RequestHarness) -> crate::design::icons::Icon {
+    use crate::design::icons::Icon;
+    match harness {
+        RequestHarness::Codex | RequestHarness::Dsh | RequestHarness::Pi => Icon::Terminal,
+        RequestHarness::ClaudeCode | RequestHarness::OpenCode => Icon::Sessions,
+        RequestHarness::ZCode | RequestHarness::WorkBuddy => Icon::Targets,
+        _ => Icon::Tools,
+    }
+}
+
 /// Name of the session of `key`: the resolved title, else the short key.
 pub fn title_of(titles: &BTreeMap<String, SessionTitle>, key: &str) -> String {
+    let (tool, id) = superba_core::split_harness_key(key).unwrap_or((RequestHarness::Codex, key));
     titles
         .get(key)
+        .or_else(|| {
+            (tool == RequestHarness::Codex)
+                .then(|| titles.get(id))
+                .flatten()
+        })
         .map(|t| t.title.clone())
         .filter(|t| !t.trim().is_empty())
-        .unwrap_or_else(|| key.chars().take(8).collect())
+        .unwrap_or_else(|| id.chars().take(8).collect())
 }
 
 /// The 会话 cell of a row: the session name, with "· 标题生成" for title
 /// generation requests.
 pub fn session_cell(tr: &Tr, titles: &BTreeMap<String, SessionTitle>, row: &RequestRow) -> String {
     let base = match session_key(row) {
-        Some(k) => title_of(titles, k),
+        Some(k) => title_of(titles, &superba_core::harness_group_key(row.harness, k)),
         None => DASH.to_owned(),
     };
     let base = if row.thread_source.as_deref() == Some("thread_title") {
@@ -790,7 +883,8 @@ pub fn row_name(
         date_cell(row.started_at, now),
         session_cell(tr, titles, row),
         status,
-        row.model.clone().unwrap_or_default(),
+        tr.text(&row.harness.text()),
+        model_text(row),
         match row.cost {
             Some(_) => format!("{} {}", tr.t("requests.col.cost"), cost_cell(row.cost)),
             None => String::new(),
@@ -811,6 +905,8 @@ pub fn cell(
     now: Timestamp,
 ) -> LogCell {
     match col {
+        Col::Harness => LogCell::text(tr.text(&row.harness.text())).icon(harness_icon(row.harness)),
+        Col::Model => LogCell::text(model_text(row)),
         Col::CacheKey => match session_key(row) {
             Some(k) => LogCell::mono(short_cache_key(k)).tooltip(k),
             None => LogCell::text(DASH),
@@ -1081,7 +1177,13 @@ pub fn row_matches(row: &RequestRow, title: Option<&str>, needle: &str) -> bool 
         row.line_name.as_deref(),
         row.upstream_host.as_deref(),
         row.model.as_deref(),
+        row.upstream_model.as_deref(),
         row.response_model.as_deref(),
+        row.requested_model.as_deref(),
+        Some(row.harness.id()),
+        row.session_id.as_deref(),
+        row.turn_id.as_deref(),
+        row.codex_host.as_deref(),
         row.upstream_request_id.as_deref(),
         row.error.as_deref(),
         title,
@@ -1137,7 +1239,6 @@ fn csv_field(s: &str) -> String {
 pub fn csv(tr: &Tr, titles: &BTreeMap<String, SessionTitle>, rows: &[RequestRow]) -> String {
     let mut out = String::new();
     let mut header: Vec<String> = Col::ALL.iter().map(|c| tr.t(c.key())).collect();
-    header.push(tr.t("requests.csv.model"));
     header.push(tr.t("requests.csv.client"));
     header.push(tr.t("requests.csv.line"));
     header.push(tr.t("requests.csv.host"));
@@ -1155,6 +1256,8 @@ pub fn csv(tr: &Tr, titles: &BTreeMap<String, SessionTitle>, rows: &[RequestRow]
         let fields = [
             session_key(r).unwrap_or("").to_owned(),
             full_time(r.started_at),
+            tr.text(&r.harness.text()),
+            model_text(r),
             session_cell(tr, titles, r),
             status,
             if r.member_name.is_empty() {
@@ -1180,7 +1283,6 @@ pub fn csv(tr: &Tr, titles: &BTreeMap<String, SessionTitle>, rows: &[RequestRow]
                 .map(|n| format!("{:.1}", n as f64 / 1000.0))
                 .unwrap_or_default(),
             r.cost.map(|c| c.amount(6)).unwrap_or_default(),
-            r.model.clone().unwrap_or_default(),
             tr.text(&r.client_text()),
             r.line_label().unwrap_or_default().to_owned(),
             r.upstream_host.clone().unwrap_or_default(),

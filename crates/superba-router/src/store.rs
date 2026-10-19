@@ -97,7 +97,10 @@ fn schema_version(conn: &Connection) -> i64 {
 }
 
 /// The session key of a row (SQL).
-const SESSION_KEY: &str = "COALESCE(prompt_cache_key, thread_id)";
+const HARNESS_KEY: &str = "CASE harness WHEN 'claude_code' THEN 'claude-code' ELSE harness END";
+const HOST_KEY: &str = "COALESCE(NULLIF(codex_host, ''), 'local')";
+const SESSION_KEY: &str = "(CASE harness WHEN 'claude_code' THEN 'claude-code' ELSE harness END) || char(31) || COALESCE(NULLIF(session_id, ''), CASE WHEN harness = 'codex' THEN COALESCE(prompt_cache_key, thread_id) END)";
+const HARNESS_MODEL_KEY: &str = "(CASE harness WHEN 'claude_code' THEN 'claude-code' ELSE harness END) || char(31) || COALESCE(upstream_model, model, response_model, '')";
 
 /// The provider key of a row (SQL, `RequestRow::provider_key`).
 const PROVIDER_KEY: &str = "NULLIF(member_id, '')";
@@ -405,6 +408,8 @@ fn totals_from(r: &Row<'_>, at: usize) -> rusqlite::Result<RequestTotals> {
 
 fn sort_sql(query: &RequestQuery) -> String {
     let col = match query.sort.key {
+        RequestSortKey::Harness => HARNESS_KEY,
+        RequestSortKey::Model => "COALESCE(upstream_model, model, response_model)",
         RequestSortKey::CacheKey => "prompt_cache_key",
         RequestSortKey::Session => SESSION_KEY,
         RequestSortKey::Status => "status_kind",
@@ -422,8 +427,13 @@ fn sort_sql(query: &RequestQuery) -> String {
         _ => "started_ms",
     };
     let dir = if query.sort.descending { "DESC" } else { "ASC" };
-    let cols: Vec<String> = col
-        .split(", ")
+    let columns = if query.sort.key == RequestSortKey::Provider {
+        vec!["member_name", "line_name"]
+    } else {
+        vec![col]
+    };
+    let cols: Vec<String> = columns
+        .into_iter()
         .map(|c| format!("{c} {dir}"))
         .chain(std::iter::once(format!("id {dir}")))
         .collect();
@@ -446,9 +456,9 @@ pub fn day_label(days: i64) -> String {
 }
 
 /// Source list entries by session, newest activity first.
-fn session_groups(conn: &Connection, f: &Filter) -> Result<Vec<RequestGroup>> {
+fn keyed_groups(conn: &Connection, f: &Filter, key: &str) -> Result<Vec<RequestGroup>> {
     let sql = format!(
-        "SELECT k, COUNT(*), MAX(started_ms) FROM (SELECT {SESSION_KEY} AS k, started_ms \
+        "SELECT k, COUNT(*), MAX(started_ms) FROM (SELECT {key} AS k, started_ms \
          FROM requests{}) WHERE k IS NOT NULL GROUP BY k ORDER BY MAX(started_ms) DESC \
          LIMIT {MAX_GROUPS}",
         f.sql()
@@ -563,7 +573,28 @@ impl Reader {
             f.push("line_id = ?", text(l));
         }
         if let Some(m) = &query.model {
-            f.push("model = ?", text(m));
+            f.params.push(text(m));
+            let n = f.params.len();
+            f.raw(&format!(
+                "(model = ?{n} OR upstream_model = ?{n} OR requested_model = ?{n} OR response_model = ?{n})"
+            ));
+        }
+        if !query.harnesses.is_empty() {
+            let slots: Vec<String> = query
+                .harnesses
+                .iter()
+                .map(|h| {
+                    f.params.push(text(&enum_name(h)));
+                    format!("?{}", f.params.len())
+                })
+                .collect();
+            f.raw(&format!("harness IN ({})", slots.join(",")));
+        }
+        if let Some(host) = &query.host {
+            f.push(&format!("{HOST_KEY} = ?"), text(host));
+        }
+        if let Some(protocol) = query.protocol {
+            f.push("protocol = ?", text(&enum_name(&protocol)));
         }
         match query.status {
             RequestStatusFilter::Ok => f.raw("status_kind = 'ok'"),
@@ -586,6 +617,10 @@ impl Reader {
                         None => {}
                     }
                 }
+                RequestGrouping::Harness => f.push(&format!("{HARNESS_KEY} = ?"), text(g)),
+                RequestGrouping::HarnessModel => {
+                    f.push(&format!("{HARNESS_MODEL_KEY} = ?"), text(g))
+                }
                 _ => f.push(&format!("{SESSION_KEY} = ?"), text(g)),
             }
         }
@@ -602,7 +637,13 @@ impl Reader {
                 "line_name",
                 "upstream_host",
                 "model",
+                "upstream_model",
                 "response_model",
+                "requested_model",
+                "harness",
+                "session_id",
+                "turn_id",
+                "codex_host",
                 "status_kind",
                 "status_code",
                 "upstream_request_id",
@@ -659,7 +700,9 @@ impl Reader {
         let gf = Self::filter(query, false, false);
         let groups = match query.group_by {
             RequestGrouping::Provider => provider_groups(&conn, &gf)?,
-            _ => session_groups(&conn, &gf)?,
+            RequestGrouping::Harness => keyed_groups(&conn, &gf, HARNESS_KEY)?,
+            RequestGrouping::HarnessModel => keyed_groups(&conn, &gf, HARNESS_MODEL_KEY)?,
+            _ => keyed_groups(&conn, &gf, SESSION_KEY)?,
         };
         Ok(RequestPage {
             rows,
@@ -730,16 +773,20 @@ impl Reader {
         let Some(conn) = open_read_only(&self.paths.usage_db())? else {
             return Ok(RequestStats::default());
         };
-        let mut f = Filter::new();
-        if let Some(from) = query.from {
-            f.push("started_ms >= ?", SqlValue::Integer(from.as_millis()));
-        }
-        if let Some(to) = query.to {
-            f.push("started_ms < ?", SqlValue::Integer(to.as_millis()));
-        }
-        if let Some(m) = &query.member {
-            f.push("member_id = ?", text(m.as_str()));
-        }
+        let f = Self::filter(
+            &RequestQuery {
+                from: query.from,
+                to: query.to,
+                member: query.member.clone(),
+                model: query.model.clone(),
+                harnesses: query.harnesses.clone(),
+                host: query.host.clone(),
+                protocol: query.protocol,
+                ..RequestQuery::default()
+            },
+            false,
+            false,
+        );
         let offset_ms = i64::from(query.utc_offset_minutes) * 60_000;
         let day = format!("((started_ms + ({offset_ms})) / 86400000)");
         // For a provider the label is the newest row's name (SQLite takes the
@@ -749,10 +796,13 @@ impl Reader {
                 format!("COALESCE({PROVIDER_KEY}, '')"),
                 "member_name".to_owned(),
             ),
+            StatsGroupBy::Harness => (HARNESS_KEY.to_owned(), "''".to_owned()),
+            StatsGroupBy::HarnessModel => (HARNESS_MODEL_KEY.to_owned(), "''".to_owned()),
+            StatsGroupBy::Host => (HOST_KEY.to_owned(), "''".to_owned()),
             StatsGroupBy::Day => (day.clone(), "''".to_owned()),
             StatsGroupBy::Session => (format!("COALESCE({SESSION_KEY}, '')"), "''".to_owned()),
             _ => (
-                "COALESCE(model, response_model, '')".to_owned(),
+                "COALESCE(upstream_model, model, response_model, '')".to_owned(),
                 "''".to_owned(),
             ),
         };
@@ -914,3 +964,7 @@ impl Reader {
         Ok(out)
     }
 }
+
+#[cfg(test)]
+#[path = "store_tests.rs"]
+mod tests;

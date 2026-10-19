@@ -696,6 +696,7 @@ fn request_queries_default_when_absent_and_round_trip() {
             key: RequestSortKey::Cost,
             descending: false,
         },
+        ..RequestQuery::default()
     });
     let partial: RequestQuery = serde_json::from_value(json!({"sort": {"key": "tps"}})).unwrap();
     assert!(partial.sort.descending);
@@ -844,6 +845,7 @@ fn request_pages_details_stats_and_inflight_round_trip() {
         by: StatsGroupBy::Session,
         member: None,
         utc_offset_minutes: 480,
+        ..StatsQuery::default()
     });
     round_trip(&InflightRequest {
         id: 7,

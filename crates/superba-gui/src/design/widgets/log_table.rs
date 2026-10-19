@@ -132,6 +132,8 @@ pub struct LogCell {
     pub strong: bool,
     /// A status dot before the text.
     pub dot: Option<Status>,
+    /// A tool glyph before the text.
+    pub icon: Option<crate::design::icons::Icon>,
     /// Hover text.
     pub tooltip: Option<String>,
     /// Shorter text shown instead when `text` does not fit.
@@ -139,6 +141,12 @@ pub struct LogCell {
 }
 
 impl LogCell {
+    /// Add a glyph while retaining the readable text and accessible name.
+    pub fn icon(mut self, icon: crate::design::icons::Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
     /// Plain text.
     pub fn text(text: impl Into<String>) -> Self {
         Self {
@@ -798,7 +806,13 @@ fn paint_cell(
     pal: &Palette,
 ) -> bool {
     let color = content.color.unwrap_or(pal.text);
-    let dot_w = if content.dot.is_some() { 12.0 } else { 0.0 };
+    let dot_w = if content.icon.is_some() {
+        18.0
+    } else if content.dot.is_some() {
+        12.0
+    } else {
+        0.0
+    };
     let max = rect.width() - CELL_PAD * 2.0 - dot_w;
     let mut g = elided(ui, &content.text, font_id.clone(), color, max);
     if g.elided
@@ -819,6 +833,17 @@ fn paint_cell(
             .circle_filled(pos2(dx, rect.center().y), 3.0, pal.status(status));
     }
     let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+    if let Some(icon) = content.icon {
+        crate::design::icons::paint(
+            &painter,
+            Rect::from_center_size(
+                pos2(rect.min.x + CELL_PAD + 7.0, rect.center().y),
+                vec2(14.0, 14.0),
+            ),
+            icon,
+            color,
+        );
+    }
     painter.galley(pos2(x, rect.center().y - g.size().y / 2.0), g, color);
     elided_text
 }

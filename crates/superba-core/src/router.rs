@@ -472,6 +472,9 @@ pub struct RouterView {
     pub settings: RouterSettings,
     /// A router configuration exists.
     pub configured: bool,
+    /// The configured local token can be read and is non-empty. Never exposes its value.
+    #[serde(default)]
+    pub token_ready: bool,
     /// The service is installed with the service manager.
     pub installed: bool,
     /// The router answers its admin API.

@@ -59,6 +59,7 @@ pub struct SourceList<'a, G: PartialEq + Clone> {
     selected: &'a mut Option<String>,
     collapsed: &'a mut bool,
     grouping: Option<(&'a mut G, Vec<(G, String)>)>,
+    grouping_label: Option<String>,
     all: (String, u64),
     entries: &'a [SourceEntry],
     footnote: Option<String>,
@@ -78,6 +79,7 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
             selected,
             collapsed,
             grouping: None,
+            grouping_label: None,
             all: (String::new(), 0),
             entries,
             footnote: None,
@@ -88,6 +90,12 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
     /// The grouping control and its options (value, label).
     pub fn grouping(mut self, value: &'a mut G, options: Vec<(G, String)>) -> Self {
         self.grouping = Some((value, options));
+        self
+    }
+
+    /// Accessible name of the grouping selector.
+    pub fn grouping_label(mut self, label: impl Into<String>) -> Self {
+        self.grouping_label = Some(label.into());
         self
     }
 
@@ -149,55 +157,75 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
             vec2(HEAD_CHEVRON, 28.0),
         );
         if let Some((value, options)) = self.grouping {
-            let mut x = head.min.x;
-            for (i, (v, label)) in options.into_iter().enumerate() {
-                let selected = *value == v;
-                let weight = if selected {
-                    Weight::Medium
-                } else {
-                    Weight::Regular
-                };
-                let room = chevron_r.min.x - x - 2.0;
-                if room < 24.0 {
-                    break;
-                }
-                // Caption-size labels with tight padding: both tabs and the
-                // chevron fit the 150 px column in English ("Sessions",
-                // "Providers") and Chinese.
-                let g = elided(
-                    ui,
-                    &label,
-                    font(text::CAPTION, weight),
-                    pal.text,
-                    room - 6.0,
-                );
-                let r = Rect::from_min_size(pos2(x, head.min.y), vec2(g.size().x + 6.0, 28.0));
-                let resp = ui
-                    .interact(r, self.id.with(("group", i)), Sense::click())
-                    .on_hover_cursor(CursorIcon::PointingHand);
-                crate::design::a11y::selectable(&resp, Role::Tab, &label, selected);
-                let color = if selected || resp.hovered() {
-                    pal.text
-                } else {
-                    pal.text_muted
-                };
-                ui.painter().galley(
-                    pos2(r.min.x + 3.0, r.center().y - g.size().y / 2.0),
-                    g,
-                    color,
-                );
-                if selected {
-                    ui.painter().hline(
-                        (r.min.x + 2.0)..=(r.max.x - 2.0),
-                        r.max.y - 2.0,
-                        Stroke::new(2.0, pal.text),
-                    );
-                }
-                if resp.clicked() && !selected {
-                    *value = v;
+            if options.len() > 2 {
+                let rect = Rect::from_min_max(head.min, pos2(chevron_r.min.x - 4.0, head.max.y));
+                let mut child = ui.new_child(UiBuilder::new().max_rect(rect));
+                let label = self.grouping_label.unwrap_or_else(|| {
+                    options
+                        .iter()
+                        .find(|(v, _)| *v == *value)
+                        .map(|(_, l)| l.clone())
+                        .unwrap_or_default()
+                });
+                if super::Dropdown::new(self.id.with("grouping"))
+                    .label(label)
+                    .fixed_width(rect.width())
+                    .show_options(&mut child, value, &options)
+                    .changed()
+                {
                     out.grouping_changed = true;
                 }
-                x = r.max.x + 2.0;
+            } else {
+                let mut x = head.min.x;
+                for (i, (v, label)) in options.into_iter().enumerate() {
+                    let selected = *value == v;
+                    let weight = if selected {
+                        Weight::Medium
+                    } else {
+                        Weight::Regular
+                    };
+                    let room = chevron_r.min.x - x - 2.0;
+                    if room < 24.0 {
+                        break;
+                    }
+                    // Caption-size labels with tight padding: both tabs and the
+                    // chevron fit the 150 px column in English ("Sessions",
+                    // "Providers") and Chinese.
+                    let g = elided(
+                        ui,
+                        &label,
+                        font(text::CAPTION, weight),
+                        pal.text,
+                        room - 6.0,
+                    );
+                    let r = Rect::from_min_size(pos2(x, head.min.y), vec2(g.size().x + 6.0, 28.0));
+                    let resp = ui
+                        .interact(r, self.id.with(("group", i)), Sense::click())
+                        .on_hover_cursor(CursorIcon::PointingHand);
+                    crate::design::a11y::selectable(&resp, Role::Tab, &label, selected);
+                    let color = if selected || resp.hovered() {
+                        pal.text
+                    } else {
+                        pal.text_muted
+                    };
+                    ui.painter().galley(
+                        pos2(r.min.x + 3.0, r.center().y - g.size().y / 2.0),
+                        g,
+                        color,
+                    );
+                    if selected {
+                        ui.painter().hline(
+                            (r.min.x + 2.0)..=(r.max.x - 2.0),
+                            r.max.y - 2.0,
+                            Stroke::new(2.0, pal.text),
+                        );
+                    }
+                    if resp.clicked() && !selected {
+                        *value = v;
+                        out.grouping_changed = true;
+                    }
+                    x = r.max.x + 2.0;
+                }
             }
         }
         if chevron(

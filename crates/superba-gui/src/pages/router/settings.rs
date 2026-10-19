@@ -29,6 +29,8 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         scroll_column(ui, ("router-settings-col", i), |ui| {
             ui.spacing_mut().item_spacing.y = 6.0;
             if i == 0 {
+                super::ingress::show(ui, cx, state);
+                section_gap(ui, cx);
                 view::router_column(ui, cx, state, out);
                 section_gap(ui, cx);
                 prices::section(ui, cx, state);
@@ -141,6 +143,20 @@ fn stats_line_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     if !mode(cx).is_router() {
         note(ui, cx, Status::Warn, cx.tr.t("stats_line.needs_router"));
     }
+    ui.horizontal_wrapped(|ui| {
+        for harness in superba_core::RequestHarness::ALL {
+            let mut enabled = stats.line.harnesses.contains(&harness);
+            let label = cx.tr.text(&harness.text());
+            if ui
+                .add_enabled(!saving, egui::Checkbox::new(&mut enabled, label))
+                .changed()
+            {
+                let mut next = stats.clone();
+                next.line = stats_line::with_harness(&stats.line, harness, enabled);
+                state.save_stats(cx, next);
+            }
+        }
+    });
     let line = stats.line.clone();
     let custom = stats_line::is_custom(&line);
     // A form: labels in one column, every row on one center line.
@@ -170,17 +186,6 @@ fn stats_line_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 next.line = stats_line::with_client(&line, client, v);
                 state.save_stats(cx, next);
             }
-        }
-        // Claude Code's final answers (its own switch, user request 79).
-        let claude = superba_core::RequestHarness::ClaudeCode;
-        let mut v = line.harnesses.contains(&claude);
-        if ui
-            .checkbox(&mut v, cx.tr.t("stats_line.client.claude_code"))
-            .changed()
-        {
-            let mut next = stats.clone();
-            next.line = stats_line::with_harness(&line, claude, v);
-            state.save_stats(cx, next);
         }
     });
     ui.label(Text::caption(cx.tr.t("stats_line.exec_never"), cx.pal));

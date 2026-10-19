@@ -18,11 +18,11 @@ use superba_core::{
 
 use super::db::Loader;
 use super::requests::{self, Range, cost_cell, hit_rate, hourly_buckets, success_rate};
-use super::{State, mode, prices};
+use super::{State, mode, prices, recent};
 use crate::design::fonts::{Weight, font};
 use crate::design::layout::{self, Track};
 use crate::design::tokens::text;
-use crate::design::widgets::{Button, PagedState, PagedTable, Segmented, Table, Text};
+use crate::design::widgets::{Button, Dropdown, PagedState, PagedTable, Segmented, Table, Text};
 use crate::pages::shared::format::compact;
 use crate::pages::{Action, Cx, error_text};
 
@@ -55,7 +55,7 @@ pub struct Stats {
     pub table: PagedState,
     /// Hourly bars of the 24 h range (empty = too many rows, daily bars).
     pub hourly: Loader<Vec<StatsBucket>>,
-    loaded_for: Option<(Range, StatsGroupBy)>,
+    loaded_for: Option<(Range, StatsGroupBy, superba_core::RequestQuery)>,
 }
 
 impl Stats {
@@ -66,7 +66,12 @@ impl Stats {
 }
 
 /// Groupings offered, with their label keys.
-pub const GROUPS: [(StatsGroupBy, &str); 4] = [
+pub const GROUPS: [(StatsGroupBy, &str); 6] = [
+    (StatsGroupBy::Harness, "requests.stats.by.harness"),
+    (
+        StatsGroupBy::HarnessModel,
+        "requests.stats.by.harness_model",
+    ),
     (StatsGroupBy::Model, "requests.stats.by.model"),
     (StatsGroupBy::Provider, "requests.stats.by.provider"),
     (StatsGroupBy::Session, "requests.stats.by.session"),
@@ -110,11 +115,22 @@ pub fn row_cells(label: String, b: &StatsBucket) -> Vec<String> {
 pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     let _ = out;
     let live = mode(cx).is_router();
+    recent::load_facets(cx, &mut state.recent, state.stats.range);
+    let filters = RequestQuery {
+        harnesses: state.recent.harnesses.clone(),
+        model: state.recent.model.clone(),
+        member: state.recent.member.clone(),
+        host: state.recent.host.clone(),
+        ..RequestQuery::default()
+    };
     let s = &mut state.stats;
     s.stats.poll();
-    if s.loaded_for != Some((s.range, s.by)) {
+    let signature = (s.range, s.by, filters.clone());
+    if s.loaded_for.as_ref() != Some(&signature) {
         s.stats.invalidate();
-        s.loaded_for = Some((s.range, s.by));
+        s.hourly.invalidate();
+        s.table = PagedState::default();
+        s.loaded_for = Some(signature);
     }
     if s.stats.due(live.then_some(Duration::from_secs(10))) {
         let service = cx.service.clone();
@@ -123,7 +139,11 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
             from: Some(s.range.from(cx.now)),
             to: None,
             by: s.by,
-            member: None,
+            member: filters.member.clone(),
+            harnesses: filters.harnesses.clone(),
+            model: filters.model.clone(),
+            host: filters.host.clone(),
+            protocol: None,
             utc_offset_minutes: (requests::local_offset_secs(cx.now).unwrap_or(0) / 60) as i32,
         };
         s.stats.start(async move { service.router_stats(q).await });
@@ -141,7 +161,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
                 .router_requests(RequestQuery {
                     from: Some(from),
                     limit: HOURLY_ROWS,
-                    ..RequestQuery::default()
+                    ..filters
                 })
                 .await?;
             Ok(if page.truncated {
@@ -154,7 +174,13 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     if s.by == StatsGroupBy::Session
         && let Some(v) = &s.stats.value
     {
-        let keys: Vec<&str> = v.buckets.iter().map(|b| b.key.as_str()).collect();
+        let keys: Vec<&str> = v
+            .buckets
+            .iter()
+            .filter_map(|b| superba_core::split_harness_key(&b.key))
+            .filter(|(h, _)| *h == superba_core::RequestHarness::Codex)
+            .map(|(_, id)| id)
+            .collect();
         state.titles.want(cx.service, keys);
     }
     let compare = prices::providers(cx)
@@ -162,7 +188,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         .find(|(_, _, usage)| *usage);
     layout::rows(
         ui,
-        &[Track::Fixed(30.0), Track::Fixed(150.0), Track::Fill],
+        &[Track::Fixed(62.0), Track::Fixed(150.0), Track::Fill],
         10.0,
         |ui, i| match i {
             0 => controls(ui, cx, state),
@@ -195,16 +221,11 @@ fn controls(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             seg = seg.option(r, cx.tr.t(r.key()));
         }
         seg.show(ui);
-        ui.label(Text::small(cx.tr.t("requests.stats.group"), cx.pal));
-        let mut seg = Segmented::new("router-stats-by", &mut s.by)
-            .small()
-            .label(cx.tr.t("requests.stats.group"));
-        for (by, key) in GROUPS {
-            seg = seg.option(by, cx.tr.t(key));
-        }
-        if seg.show(ui).changed() {
-            s.table = PagedState::default();
-        }
+        let options: Vec<_> = GROUPS.iter().map(|(by, key)| (*by, cx.tr.t(key))).collect();
+        Dropdown::new("router-stats-by")
+            .label(cx.tr.t("requests.stats.group"))
+            .fixed_width(160.0)
+            .show_options(ui, &mut s.by, &options);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             Segmented::new("router-stats-metric", &mut s.metric)
                 .small()
@@ -214,6 +235,8 @@ fn controls(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 .show(ui);
         });
     });
+    ui.add_space(6.0);
+    recent::tool_filters(ui, cx, &mut state.recent);
 }
 
 fn bars(ui: &mut Ui, cx: &Cx<'_>, s: &Stats) {
@@ -388,6 +411,8 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     let s = &mut state.stats;
     let headers: Vec<String> = [
         match s.by {
+            StatsGroupBy::Harness => "requests.col.harness",
+            StatsGroupBy::HarnessModel => "requests.stats.by.harness_model",
             StatsGroupBy::Provider => "requests.col.provider",
             StatsGroupBy::Session => "requests.col.session",
             StatsGroupBy::Day => "requests.col.date",
@@ -423,7 +448,7 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         let set = cx.data.profiles.value.as_ref();
         requests::ProviderNames::new(cx.tr, set, &cx.data.sites).relabel_buckets(&mut buckets);
     }
-    let rows = table_rows(titles, s.by, &buckets);
+    let rows = table_rows(cx.tr, titles, s.by, &buckets);
     let table = Table::new(&[2.2, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.8, 0.9, 0.8, 0.9]);
     // Numbers as in 最近请求: right-aligned under right-aligned headers, in the
     // UI font at caption size (ux-visual #8).
@@ -462,6 +487,7 @@ const LINE_INDENT: f32 = 14.0;
 /// Table rows `(is a line row, cells)`: one per bucket; by provider, a provider
 /// that used several lines is followed by one row per line.
 pub fn table_rows(
+    tr: &crate::i18n::Tr,
     titles: &BTreeMap<String, SessionTitle>,
     by: StatsGroupBy,
     buckets: &[StatsBucket],
@@ -469,7 +495,11 @@ pub fn table_rows(
     let mut rows = Vec::new();
     for b in buckets {
         let label = match by {
-            StatsGroupBy::Session if !b.key.is_empty() => requests::title_of(titles, &b.key),
+            StatsGroupBy::Session if !b.key.is_empty() => {
+                requests::session_group_label(tr, titles, &b.key)
+            }
+            StatsGroupBy::Harness => requests::harness_label(tr, &b.key),
+            StatsGroupBy::HarnessModel => requests::harness_model_label(tr, &b.key),
             _ if b.label.is_empty() => requests::DASH.to_owned(),
             _ => b.label.clone(),
         };

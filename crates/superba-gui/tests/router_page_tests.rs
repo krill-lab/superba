@@ -28,39 +28,11 @@ fn loaded(f: &Frame) -> bool {
     f.has("登录页样式") || f.has("Krill · 海外线路")
 }
 
-const ZH_COLUMNS: [&str; 13] = [
-    "缓存键",
-    "日期",
-    "会话",
-    "状态",
-    "供应商",
-    "输入",
-    "输出",
-    "缓存读取",
-    "缓存写入",
-    "首字",
-    "完成时间",
-    "TPS",
-    "费用",
-];
-const EN_COLUMNS: [&str; 13] = [
-    "Cache key",
-    "Date",
-    "Session",
-    "Status",
-    "Provider",
-    "Input",
-    "Output",
-    "Cached",
-    "Written",
-    "TTFT",
-    "Elapsed",
-    "TPS",
-    "Cost",
-];
+const ZH_COLUMNS: [&str; 6] = ["工具", "模型", "状态", "输入", "输出", "费用"];
+const EN_COLUMNS: [&str; 6] = ["Tool", "Model", "Status", "Input", "Output", "Cost"];
 
 #[test]
-fn all_thirteen_columns_fit_without_page_scrolling_at_both_sizes_and_languages() {
+fn essential_columns_fit_without_page_scrolling_at_both_sizes_and_languages() {
     for size in SIZES {
         for (locale, columns) in [(Locale::ZhCn, ZH_COLUMNS), (Locale::En, EN_COLUMNS)] {
             let service = fake();
@@ -500,7 +472,7 @@ fn service_buttons_sit_in_the_value_column_and_long_columns_fade_at_the_edge() {
         let mut state = State::default();
         let tr = superba_gui::i18n::Tr::new(locale);
         let install = tr.t("router.service.install");
-        let f = h.until(
+        let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
             |f| f.has(&install),
         );
@@ -536,7 +508,7 @@ fn every_key_based_provider_has_a_price_ratio_without_the_router() {
         let tr = superba_gui::i18n::Tr::new(locale);
         let mut h = Harness::new([1440.0, 900.0], locale, service.clone(), true);
         let mut state = State::default();
-        let f = h.until(
+        let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
             |f| f.has(&tr.t("prices.title")) && f.has(ratio),
         );

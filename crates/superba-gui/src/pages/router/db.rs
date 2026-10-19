@@ -114,7 +114,10 @@ pub async fn load_page(
     if !searching || title_keys.is_empty() {
         return Ok(page);
     }
-    let mut keys = title_keys;
+    let mut keys: Vec<String> = title_keys
+        .into_iter()
+        .map(|key| superba_core::harness_group_key(superba_core::RequestHarness::Codex, &key))
+        .collect();
     if query.group_by == RequestGrouping::Session
         && let Some(g) = &query.group
     {
@@ -126,16 +129,19 @@ pub async fn load_page(
         q.search = None;
         q.after_id = None;
         // Keep the selected provider (or provider line) of the source list.
-        let provider = (q.group_by == RequestGrouping::Provider)
-            .then(|| q.group.clone())
-            .flatten();
+        let group = q.group.clone();
+        let grouping = q.group_by;
         q.group_by = RequestGrouping::Session;
         q.group = Some(key);
         let rows = service.router_requests(q).await?.rows;
-        extra.extend(
-            rows.into_iter()
-                .filter(|r| provider.as_deref().is_none_or(|p| r.in_provider_group(p))),
-        );
+        extra.extend(rows.into_iter().filter(|r| {
+            group.as_deref().is_none_or(|g| match grouping {
+                RequestGrouping::Provider => r.in_provider_group(g),
+                RequestGrouping::Harness => r.harness.id() == g,
+                RequestGrouping::HarnessModel => r.harness_model_key() == g,
+                _ => true,
+            })
+        }));
     }
     if extra
         .iter()

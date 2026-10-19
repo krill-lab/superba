@@ -18,6 +18,10 @@ use superba_core::{
 };
 use superba_switch::usage::{dedupe, merge_page};
 
+fn session(id: &str) -> String {
+    superba_core::harness_group_key(superba_core::RequestHarness::Codex, id)
+}
+
 const T1: &str = "01a1461c-18fa-73b2-8eb4-7917b838bd3e";
 const T2: &str = "01a14622-ae42-72c3-ac7e-c37d351480e0";
 /// 2026-10-16T19:00:00Z.
@@ -173,7 +177,7 @@ async fn rollout_rows_are_listed_without_a_router() {
     assert_eq!(page.totals.input_tokens, 2_100_000);
     assert_eq!(page.totals.cost, Usd::from_micros(2_412_000));
     assert_eq!(page.groups.len(), 1);
-    assert_eq!(page.groups[0].key, T1);
+    assert_eq!(page.groups[0].key, session(T1));
     assert_eq!(page.groups[0].count, 2);
     // Filters apply to rollout rows too.
     let q = RequestQuery {
@@ -214,7 +218,7 @@ async fn a_request_the_router_recorded_is_listed_once() {
         totals,
         groups: vec![
             superba_core::RequestGroup {
-                key: T2.into(),
+                key: session(T2),
                 label: T2.into(),
                 count: 1,
                 last: at(30),
@@ -222,7 +226,7 @@ async fn a_request_the_router_recorded_is_listed_once() {
                 lines: Vec::new(),
             },
             superba_core::RequestGroup {
-                key: T1.into(),
+                key: session(T1),
                 label: T1.into(),
                 count: 1,
                 last: mine.started_at,
@@ -241,7 +245,7 @@ async fn a_request_the_router_recorded_is_listed_once() {
     assert_eq!(ids[1].1, RequestSource::Rollout);
     assert_eq!(ids[2], (41, RequestSource::Router));
     assert_eq!(page.totals.requests, 3);
-    let t1 = page.groups.iter().find(|g| g.key == T1).unwrap();
+    let t1 = page.groups.iter().find(|g| g.key == session(T1)).unwrap();
     assert_eq!(t1.count, 2);
     // Statistics count it once as well.
     let stats = sw
@@ -349,13 +353,13 @@ fn merged_pages_sort_limit_and_filter_by_group() {
     // the router already).
     let q = RequestQuery {
         group_by: RequestGrouping::Session,
-        group: Some(T1.into()),
+        group: Some(session(T1)),
         ..RequestQuery::default()
     };
     let page = merge_page(RequestPage::default(), &rollout, &q, false);
     assert_eq!(page.rows.len(), 2);
     let q = RequestQuery {
-        group: Some(T2.into()),
+        group: Some(session(T2)),
         ..q
     };
     let page = merge_page(RequestPage::default(), &rollout, &q, false);
@@ -372,4 +376,67 @@ fn merged_pages_sort_limit_and_filter_by_group() {
             .rows
             .is_empty()
     );
+}
+
+#[test]
+fn tool_filters_and_groups_apply_to_merged_rows_without_cross_tool_deduplication() {
+    use superba_core::{RequestHarness, RequestStats, harness_group_key};
+    let codex = rollout_row(-1, T1, 10, 12, Some((100, 5)));
+    let mut claude = codex.clone();
+    claude.id = -2;
+    claude.harness = RequestHarness::ClaudeCode;
+    claude.session_id = Some(T1.into());
+    claude.model = Some("claude-alias".into());
+    claude.upstream_model = Some("gpt-mini".into());
+    claude.requested_model = Some("haiku".into());
+    claude.codex_host = Some("wsl:Ubuntu".into());
+    let mut recorded = claude.clone();
+    recorded.id = 3;
+    recorded.source = RequestSource::Router;
+    assert_eq!(dedupe(vec![codex.clone()], &[recorded]).len(), 1);
+    let rows = vec![codex, claude];
+    let q = RequestQuery {
+        harnesses: vec![RequestHarness::ClaudeCode],
+        model: Some("haiku".into()),
+        host: Some("wsl:Ubuntu".into()),
+        ..RequestQuery::default()
+    };
+    let page = merge_page(RequestPage::default(), &rows, &q, false);
+    assert_eq!(page.rows.len(), 1);
+    for model in ["claude-alias", "gpt-mini", "haiku"] {
+        let filtered = merge_page(
+            RequestPage::default(),
+            &rows,
+            &RequestQuery {
+                model: Some(model.into()),
+                ..q.clone()
+            },
+            false,
+        );
+        assert_eq!(filtered.totals.requests, 1, "{model}");
+    }
+    assert_eq!(
+        page.groups[0].key,
+        harness_group_key(RequestHarness::ClaudeCode, T1)
+    );
+    let stats = superba_switch::usage::merge_stats(
+        RequestStats::default(),
+        &rows,
+        &StatsQuery {
+            harnesses: q.harnesses,
+            model: q.model,
+            host: q.host,
+            by: StatsGroupBy::HarnessModel,
+            ..StatsQuery::default()
+        },
+    );
+    assert_eq!(stats.totals.requests, 1);
+    assert!(stats.buckets[0].key.starts_with("claude-code"));
+    let page = merge_page(
+        RequestPage::default(),
+        &rows,
+        &RequestQuery::default(),
+        false,
+    );
+    assert_eq!(page.groups.len(), 2);
 }

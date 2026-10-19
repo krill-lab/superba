@@ -173,6 +173,8 @@ collapse = "Hide the list"
 expand = "Show the list"
 
 [requests.group]
+harness = "By tool"
+harness_model = "Tool × model"
 session_short = "Sessions"
 provider_short = "Providers"
 all = "All"
@@ -187,6 +189,8 @@ name = "Time range"
 30d = "30 days"
 
 [requests.filter]
+all_tools = "All tools"
+all_hosts = "All hosts"
 source.name = "Source"
 source.all = "All sources"
 all_providers = "All providers"
@@ -202,6 +206,11 @@ failover = "Failed over"
 all = "App + CLI"
 
 [requests.col]
+turn = "Turn"
+protocol = "Protocol"
+agent = "Agent kind"
+harness = "Tool"
+host = "Host"
 cache_key = "Cache key"
 date = "Date"
 session = "Session"
@@ -411,6 +420,8 @@ bars_cost = "{cost} in this range, by day (OpenAI list prices)"
 bars_cost_hourly = "{cost} in this range, by hour (OpenAI list prices)"
 
 [requests.stats.by]
+harness = "Tool"
+harness_model = "Tool × model"
 model = "Model"
 provider = "Provider"
 session = "Session"
@@ -528,3 +539,21 @@ failed_over = "Current: {line} (after {failed} failed)"
 observed = "The latest request to receive upstream headers for this member. Concurrent conversations can use different lines."
 waiting = "Waiting for the next request"
 recovery = "Default failure cooldown: 5 s, doubling up to 60 s. New conversations try the preferred line after recovery. Existing conversations keep a working backup until 2 h idle; changing the line order resets this choice for new requests."
+
+[requests.host]
+local = "This computer"
+
+[router.ingress]
+title = "Ingresses"
+openai = "OpenAI compatible"
+token_ready = "Token ready"
+token_missing = "Token not ready"
+token_unknown = "Token status unknown"
+recent = "Last 24 hours · {n} records"
+recent_unknown = "Last 24 hours · unavailable"
+count_hint = "Local router records grouped by tool and request protocol; requests while recording is paused are excluded."
+translation = "Protocol conversion"
+translation_pending = "Protocol conversion is not connected in this build."
+gemini_pending = "Gemini · coming later"
+no_address = "Address not configured"
+copy = "Copy {name} ingress address"

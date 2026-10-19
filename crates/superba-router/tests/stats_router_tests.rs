@@ -293,7 +293,13 @@ async fn desktop_turns_get_the_line_and_every_request_is_recorded() {
 
     // Source list: one session, one provider with its line.
     assert_eq!(page.groups.len(), 1);
-    assert_eq!(page.groups[0].key, "019a7c00-0000-7000-8000-0000000000e1");
+    assert_eq!(
+        page.groups[0].key,
+        superba_core::harness_group_key(
+            superba_core::RequestHarness::Codex,
+            "019a7c00-0000-7000-8000-0000000000e1"
+        )
+    );
     assert_eq!(page.groups[0].count, 5);
     let reader = Reader::open(&run.paths).unwrap();
     let by_provider = reader
@@ -364,7 +370,10 @@ async fn desktop_turns_get_the_line_and_every_request_is_recorded() {
     assert_eq!(after.rows.len(), 1);
     assert_eq!(
         q(RequestQuery {
-            group: Some("019a7c00-0000-7000-8000-0000000000e1".into()),
+            group: Some(superba_core::harness_group_key(
+                superba_core::RequestHarness::Codex,
+                "019a7c00-0000-7000-8000-0000000000e1"
+            )),
             ..RequestQuery::default()
         })
         .rows

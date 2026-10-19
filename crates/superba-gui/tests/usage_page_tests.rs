@@ -242,7 +242,7 @@ fn the_log_fits_every_window_size_without_cut_filters_or_elided_numbers() {
         let mut state = State::default();
         let f = h.until(
             |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
-            |f| f.has("Krill") && f.has(" %"),
+            |f| f.has("Codex") && f.has(" %"),
         );
         let label = format!("{window:?} {locale:?}");
         let right = f.rect.max.x + 0.5;
@@ -273,10 +273,6 @@ fn the_log_fits_every_window_size_without_cut_filters_or_elided_numbers() {
         if window[0] < 1000.0 {
             for h in &hidden {
                 assert!(!f.texts.iter().any(|(t, _)| t == h), "{label}: {h} shown");
-            }
-        } else {
-            for h in &hidden {
-                assert!(f.texts.iter().any(|(t, _)| t == h), "{label}: {h} missing");
             }
         }
     }

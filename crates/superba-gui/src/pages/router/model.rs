@@ -248,6 +248,8 @@ pub struct Snapshot {
     pub live: Result<Live, String>,
     /// Configured port, when a configuration exists.
     pub port: Option<u16>,
+    /// The local token was validated by the service (no token value crosses into the view).
+    pub token_ready: bool,
     /// Request recording counters of the running router.
     pub recording: Option<superba_core::RouterStatsStatus>,
     /// Every provider as a possible member with its eligibility, from the same
