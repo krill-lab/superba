@@ -294,12 +294,17 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
     extended = False
     names = []
     ended_survivors = False
+    results = []
+    result_patterns = [re.compile(p) for p in switch_result_patterns(u)]
 
     def pause_lines(names):
         return [n for n in names if paused.match(n) or n == app_setup or n.startswith(here + " ·")]
 
     while time.time() < end:
         names = u.texts()
+        for name in names:
+            if name not in results and any(rx.search(name) for rx in result_patterns):
+                results.append(name)
         still_running = u.L("decide.still_running.title")
         if still_running in names:
             s.info(f"switch dialog: {still_running}")
@@ -348,7 +353,9 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
                 delayed = [n for n in names if re.search(r"(?i)timed? out|timeout|超时", n)]
                 if delayed:
                     s.check(False, f"WSL switch reported a timeout: {delayed}", soft=True)
-            return seen, names
+            # A toast can appear while the final overlay frame is still present,
+            # then expire before the next UIA tree query finishes.
+            return seen, list(dict.fromkeys(names + results))
         time.sleep(2)
     lines = pause_lines(names)
     if lines:
@@ -357,9 +364,12 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
     raise UiError(f"the switch did not finish within {timeout} s; phases seen {seen}")
 
 
+def switch_result_patterns(u):
+    return [u.R("toast.switched"), u.R("toast.partial"), r"(?i)failed|rolled back|失败|已回滚"]
+
+
 def switch_result(u, initial=(), timeout=8):
-    return u.poll_texts([u.R("toast.switched"), u.R("toast.partial"),
-                         r"(?i)failed|rolled back|失败|已回滚"], timeout=timeout, initial=initial)
+    return u.poll_texts(switch_result_patterns(u), timeout=timeout, initial=initial)
 
 
 def applied(run, label="status"):

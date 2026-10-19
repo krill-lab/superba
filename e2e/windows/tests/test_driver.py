@@ -72,6 +72,16 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(u.poll_texts(["^done$"], initial=["done"]), ["done"])
         u.texts.assert_not_called()
 
+    @patch("flows.time.sleep")
+    @patch("flows.time.time", side_effect=range(100))
+    def test_toast_seen_while_overlay_closes_survives_next_tree_query(self, clock, sleep):
+        u = self.ui()
+        toast = u.L("toast.switched", line="Test", secs="2")
+        u.texts = Mock(side_effect=[[u.L("banner.planning"), toast], ["Overview"]])
+        _, names = flows.wait_switch_done(u.run, Mock(), u)
+        self.assertEqual(flows.switch_result(u, names), [toast])
+        self.assertEqual(u.texts.call_count, 2)
+
     def test_still_running_is_named_immediately_when_force_quit_disallowed(self):
         for lang in ("en", "zh-CN"):
             u = self.ui(lang)
