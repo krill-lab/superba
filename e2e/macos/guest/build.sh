@@ -2,6 +2,7 @@
 set -euo pipefail
 source_dir=$1
 cd "$source_dir"
+exec > >(tee "$source_dir/build.log") 2>&1
 [[ $(uname -m) == arm64 ]] || { echo 'Native arm64 VM required' >&2; exit 1; }
 available=$(/bin/df -k "$source_dir" | /usr/bin/awk 'NR==2 {print $4}')
 (( available >= 25 * 1024 * 1024 )) || { echo 'Less than 25 GiB free; use CI DMG' >&2; exit 75; }
@@ -20,27 +21,32 @@ if ! rustup toolchain list | /usr/bin/grep -q '^stable-aarch64-apple-darwin'; th
     rustup toolchain install stable --profile minimal
 fi
 # The router helper is needed for M03/M06 and belongs beside the GUI binary.
-cargo +stable build --release --locked --target aarch64-apple-darwin \
+/usr/bin/python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' \
+    cargo +stable build --release --locked --target aarch64-apple-darwin \
     -p superba-gui -p superba-cli -p superba-router &
 build_pid=$!
 cleanup_build() {
-    if kill -0 "$build_pid" 2>/dev/null; then
-        kill -INT "$build_pid" 2>/dev/null || true
-        wait "$build_pid" || true
-    fi
+    # The Python launcher gives only this cargo invocation its own process group.
+    # Stop rustc/linker children too, including after SSH disconnects or low disk.
+    kill -TERM -- "-$build_pid" 2>/dev/null || true
+    for _ in {1..10}; do
+        kill -0 -- "-$build_pid" 2>/dev/null || break
+        sleep 1
+    done
+    kill -KILL -- "-$build_pid" 2>/dev/null || true
+    wait "$build_pid" 2>/dev/null || true
     rm -rf "$CARGO_TARGET_DIR"
 }
 trap cleanup_build EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+trap 'exit 129' HUP
 while kill -0 "$build_pid" 2>/dev/null; do
     available=$(/bin/df -k "$source_dir" | /usr/bin/awk 'NR==2 {print $4}')
     used=$(/usr/bin/du -sk "$CARGO_TARGET_DIR" 2>/dev/null | /usr/bin/awk '{print $1}')
     # Leave headroom below the 20 GiB cap for one compiler output between polls.
     if (( available < 5 * 1024 * 1024 || ${used:-0} > 18 * 1024 * 1024 )); then
         echo 'Build disk guard tripped; stopping cargo' >&2
-        kill "$build_pid" 2>/dev/null || true
-        wait "$build_pid" || true
         exit 75
     fi
     sleep 5
