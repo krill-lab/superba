@@ -104,12 +104,15 @@ class Run:
                           'end tell') == str(pid)
 
     def press(self, pid, label):
-        return self.apple('tell application "System Events"\n'
+        return self.apple('set buttonLabel to item 2 of argv\n'
+                          'tell application "System Events"\n'
                           'tell first process whose unix id is (item 1 of argv as integer)\n'
                           'set frontmost to true\n'
-                          'repeat with e in entire contents of window 1\n'
-                          'try\nif name of e is item 2 of argv then\n'
-                          'perform action "AXPress" of e\nreturn "pressed"\nend if\n'
+                          'set elements to entire contents of window 1\n'
+                          'repeat with e in elements\nset node to contents of e\n'
+                          'try\nif name of node is buttonLabel and '
+                          '(role of node is "AXButton" or role of node is "AXRadioButton") then\n'
+                          'perform action "AXPress" of node\nreturn "pressed"\nend if\n'
                           'end try\nend repeat\nend tell\nend tell\nreturn "missing"',
                           str(pid), label)
 

@@ -43,6 +43,15 @@ shows and focuses the existing window, including when it is hidden in the tray.
 Disabling removes the plist and attempts `launchctl bootout gui/<uid>/<label>`;
 an already absent job or a bootout failure does not make disabling fail.
 
+Two Dock tiles do not by themselves mean two running instances. macOS can keep
+recent-app bookmarks for older copies of a moved or replaced bundle. In the
+macOS regression run, two old `/Applications/Superba.app` bookmarks remained
+after disabling startup and rebooting with **no** Superba process running;
+the active app had moved to `~/Applications`. Direct login execution removes
+the unnecessary `open -n` launch, while single-instance IPC handles competing
+starts. Obsolete recent-app tiles belong to the Dock's history and can be
+removed there; Superba does not rewrite the user's Dock preferences.
+
 The standalone `spb` installed in `~/.local/bin` finds the GUI in this order:
 `SUPERBA_GUI_EXE`, a sibling binary/app, then the installed app by its
 LaunchServices bundle identifier, with `~/Applications` and `/Applications`
