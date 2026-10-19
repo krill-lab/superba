@@ -312,11 +312,60 @@ def w31(t):
             s.check(e.get("markers") == 0, f"stats-line markers in the next request's input: {e.get('markers')}")
 
 
+def usage_rows(run):
+    r = run.spb_json("usage", "log", timeout=120, label="usage-log")
+    if r["code"] != 0:
+        raise RuntimeError(f"spb usage log failed: exit {r['code']}")
+    return (r.get("json") or {}).get("rows") or []
+
+
+def routed_usage_turn(t, timeout=60):
+    """Each W32 invocation makes its own request, including after a snapshot reset."""
+    run = t.run
+    before = {x["id"] for x in usage_rows(run) if x.get("source") == "router"}
+    flows.turn(run, t, "E2E-W32", new_chat=True)
+    with t.step("The independent W32 turn completed and was recorded by the router") as s:
+        thread = run.state.get("thread")
+        s.check(bool(thread), "the new turn has an actual conversation id")
+        end = time.monotonic() + timeout
+        while True:
+            rows = usage_rows(run)
+            ok = [x for x in rows if x.get("source") == "router" and x.get("id") not in before
+                  and x.get("thread_id") == thread and (x.get("status") or {}).get("kind") == "ok"]
+            if ok or time.monotonic() >= end:
+                s.save("w32-independent-request.json", {"before_ids": sorted(before), "thread": thread,
+                                                       "new_successful_rows": ok, "rows": rows[:50]})
+                s.check(bool(ok), "a new successful router row belongs to W32's own conversation")
+                return
+            time.sleep(2)
+
+
+def usage_provider_group(u, s):
+    """AccessKit ComboBox has no Invoke; click its actual UIA bounds and choice."""
+    combo = u.wait(key="requests.stats.group", type="ComboBox", enabled=True)
+    rect = combo.get("rect")
+    s.check(bool(rect), "Group by ComboBox has visible bounds")
+    u.click_at(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2, relative=False)
+    choices = u.find(timeout=10, key="requests.stats.by.provider", enabled=True)
+    choices = [x for x in choices if x["type"] in ("ListItem", "RadioButton", "Button") and x.get("rect")]
+    s.check(len(choices) == 1, "the provider grouping choice is uniquely identified")
+    rect = choices[0]["rect"]
+    u.click_at(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2, relative=False)
+    end = time.monotonic() + 10
+    while True:
+        selected = u.wait(key="requests.stats.group", type="ComboBox")
+        if selected.get("value") == u.L("requests.stats.by.provider") or time.monotonic() >= end:
+            s.check(selected.get("value") == u.L("requests.stats.by.provider"), "Group by actually displays Provider")
+            break
+        time.sleep(0.2)
+
+
 @scenario("W32", "Usage page: router rows, detail General/Timing; router off reads session files",
           area="router", needs=("router_on",), bugs=(10, 11, 12, 13, 21, 22), tags=("core",))
 def w32(t):
     run = t.run
     u = U(t)
+    routed_usage_turn(t)
     with t.step("Usage page lists the routed requests") as s:
         r = run.spb_json("usage", "log", timeout=120, label="usage-log")
         rows = (r.get("json") or {}).get("rows") or []
@@ -364,11 +413,15 @@ def w32(t):
         s.check(not neg, f"no negative or infinite timing values (bug 12): {neg!r}")
         s.manual("usage-detail-*.png: cards not clipped at 1280x800 (bug 10); timing segments in order, 0 ms allowed")
     with t.step("Statistics tab") as s:
-        if u.exists(key="usage.tab.stats"):
-            u.act("select", key="usage.tab.stats", type="RadioButton")
-            time.sleep(1.5)
-            s.shot("usage-stats")
-            s.manual("usage-stats.png: grouping by provider ('Providers', bug 11), cost estimate labelled (bug 13)")
+        u.act("select", key="usage.tab.stats", type="RadioButton")
+        usage_provider_group(u, s)
+        s.shot("usage-stats-provider")
+        s.ui_dump("usage-stats-provider")
+        u.act("select", key="requests.stats.metric.cost", type="RadioButton")
+        u.wait_selected(key="requests.stats.metric.cost", type="RadioButton")
+        s.shot("usage-stats-cost")
+        s.ui_dump("usage-stats-cost")
+        s.manual("usage-stats-*.png: provider grouping (bug 11), cost estimate labelled (bug 13)")
 
 
 @scenario("W33", "Router off: Codex back to the direct line", area="router", needs=("router_on",), bugs=(58,),

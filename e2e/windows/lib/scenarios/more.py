@@ -16,6 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import flows
+from migration import (check_migrated, check_restored, rollout_hashes, scan_sessions,
+                       wait_migration)
 from app import App
 from runner import scenario
 from session import BASE_SNAPSHOT, GUEST_DL
@@ -595,47 +597,43 @@ def w22(t):
         fixtures.insert_threads(work / "state_5.sqlite", rows)
         run.vm.scp_to(work / "state_5.sqlite", (ch + "/state_5.sqlite").replace("\\", "/"))
         run.vm.ps(f"Remove-Item -Force -ErrorAction SilentlyContinue {psq(ch + chr(92) + 'state_5.sqlite-wal')}, {psq(ch + chr(92) + 'state_5.sqlite-shm')}")
-        h = run.vm.ps(f"(Get-ChildItem {psq(ch + chr(92) + 'sessions')} -Recurse -File | Get-FileHash | Sort-Object Path |"
-                      " ForEach-Object { $_.Hash + ' ' + $_.Path }) -join \"`n\"").stdout
-        (work / "hashes-before.txt").write_text(h)
-        s.add_evidence(work / "hashes-before.txt")
-        s.check(h.count("\n") >= 599, f"{h.count(chr(10)) + 1} rollout files in place")
-        r = run.spb("sessions", "scan", timeout=300, label="sessions-scan")
-        s.save("sessions-scan.txt", r["stdout"])
-        s.check("600" in r["stdout"], "spb sessions scan counts 600 sessions under krill", soft=True)
+        hashes_before = rollout_hashes(run, s, "before")
+        fixture_paths = {row["rollout_path"].casefold() for row in rows}
+        s.check(fixture_paths <= hashes_before.keys(), "all 600 fixture rollout files are present")
+        before = scan_sessions(run, s, "before")
     with t.step("Sessions page: migrate with progress and the animation") as s:
         flows.start_superba(run, s)
         u.page("sessions")
         time.sleep(3)
         s.shot("sessions-before")
         s.ui_dump("sessions-before")
-        btn = u.has_text(r"^Migrate to ")
-        s.check(bool(btn), f"migrate button: {btn!r}")
-        u.click(name=btn)
-        time.sleep(2)
-        if u.exists(key="confirm.full_restart"):
-            u.click(key="confirm.full_restart")
-        frames, handles = [], []
-        t0 = time.time()
-        pid = (run.agent.procs(r"^superba\.exe$") or [{}])[0].get("pid")
-        while time.time() - t0 < 300:
-            names = u.texts()
-            prog = next((n for n in names if re.search(r"\d+\s*/\s*600", n)), None)
-            hc = run.vm.ps(f"(Get-Process -Id {pid}).HandleCount", check=False).stdout.strip() if pid else ""
-            handles.append({"t": round(time.time() - t0, 1), "progress": prog, "handles": hc})
-            if len(frames) < 6:
-                frames.append(s.shot(f"migrating-{len(frames)}"))
-            if not any(re.search(r"\d+\s*/\s*600|Migrat", n) for n in names) and time.time() - t0 > 10:
-                break
-            time.sleep(2)
-        s.save("progress-and-handles.json", handles)
-        s.check(any(h["progress"] for h in handles), "progress 'N / 600' shown")
-        err = u.has_text(r"(?i)holds|too many open files|os error")
-        s.check(not err, f"no lock / EMFILE error (bug 31): {err!r}")
+        u.click(name=u.L("sessions.migrate", to="openai"), type="Button")
+        wait_migration(run, s, u)
+        # The page must refresh by itself. Do not hide stale results with Rescan.
+        s.check(u.exists(timeout=30, key="sessions.status.done", type="Text"), "completed migration appears in history")
         s.shot("sessions-after")
-        r = run.spb("sessions", "scan", timeout=300, label="sessions-scan-after")
-        s.save("sessions-scan-after.txt", r["stdout"])
-        s.manual("migrating-*.png: krill carrying boxes animation with 'Migrated N / 600', current file, cancel (bug 33)")
+        s.ui_dump("sessions-after")
+        after = scan_sessions(run, s, "after")
+        hashes_after = rollout_hashes(run, s, "migrated")
+        migration_id = check_migrated(s, before, after, hashes_before, hashes_after, fixture_paths)
+        s.manual("migrating-*.png: carrying-boxes animation, intermediate migrated count, current file and Stop and undo (bug 33)")
+    with t.step("Roll back the completed migration through the Sessions page") as s:
+        u.click(key="sessions.roll_back", type="Button")
+        wait_migration(run, s, u, restore=True)
+        s.check(u.exists(timeout=30, key="sessions.rolled_back", type="Text"), "history shows Rolled back without Rescan")
+        restored = scan_sessions(run, s, "rolled-back")
+        check_restored(s, before, restored, hashes_before, rollout_hashes(run, s, "rolled-back"))
+        s.check(any(x["id"] == migration_id and x["rolled_back"] for x in restored["history"]),
+                "the same migration ledger is marked rolled back")
+        s.shot("sessions-rolled-back")
+        s.ui_dump("sessions-rolled-back")
+    with t.step("Stop and undo during a second active migration") as s:
+        u.click(name=u.L("sessions.migrate", to="openai"), type="Button")
+        wait_migration(run, s, u, stop=True)
+        stopped = scan_sessions(run, s, "stopped")
+        check_restored(s, before, stopped, hashes_before, rollout_hashes(run, s, "stopped"))
+        s.shot("sessions-stopped")
+        s.ui_dump("sessions-stopped")
 
 
 GLOBAL_STATE = {
