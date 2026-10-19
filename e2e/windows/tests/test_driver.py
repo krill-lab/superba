@@ -97,6 +97,27 @@ class DriverTests(unittest.TestCase):
                     with patch("ui.time.sleep"):
                         self.assertEqual(flows.switch_result(u), [title])
 
+    @patch("scenarios.more.time.sleep")
+    def test_msi_version_probe_waits_for_the_replacement_executable(self, sleep):
+        from scenarios.more import wait_msi_version
+        run = SimpleNamespace(spb_exe=r"C:\Program Files\Superba\spb.exe", agent=Mock())
+        missing = {"code": 3, "stdout": "", "stderr": ""}
+        installed = {"code": 0, "stdout": "spb 9.0.0\r\n", "stderr": ""}
+        run.agent.exec.side_effect = [missing, installed]
+        self.assertEqual(wait_msi_version(run, "9.0.0"), installed)
+        self.assertEqual(run.agent.exec.call_count, 2)
+        self.assertTrue(all(call.args[0] == "powershell.exe" for call in run.agent.exec.call_args_list))
+
+    @patch("scenarios.more.time.sleep")
+    def test_msi_version_probe_does_not_hide_a_disconnected_agent(self, sleep):
+        from agent import AgentError
+        from scenarios.more import wait_msi_version
+        run = SimpleNamespace(spb_exe=r"C:\Superba\spb.exe", agent=Mock())
+        run.agent.exec.side_effect = AgentError("agent gone")
+        with self.assertRaisesRegex(AgentError, "agent gone"):
+            wait_msi_version(run, "9.0.0")
+        self.assertEqual(run.agent.exec.call_count, 1)
+
     def test_still_running_is_named_immediately_when_force_quit_disallowed(self):
         for lang in ("en", "zh-CN"):
             u = self.ui(lang)

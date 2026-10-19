@@ -775,6 +775,22 @@ class _Release(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def wait_msi_version(run, version, timeout=420):
+    """The MSI removes the old exe before copying the new one. Launch a stable
+    PowerShell process for each probe so that gap is a retryable exit code."""
+    command = ("$ErrorActionPreference='Stop'; "
+               f"if (!(Test-Path -LiteralPath {psq(run.spb_exe)})) {{ exit 3 }}; "
+               f"& {psq(run.spb_exe)} --version; exit $LASTEXITCODE")
+    end = time.monotonic() + timeout
+    last = {"code": None, "stdout": "", "stderr": "version probe did not run"}
+    while time.monotonic() < end:
+        time.sleep(10)
+        last = run.agent.exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], timeout=60)
+        if last["code"] == 0 and last["stdout"].strip() == f"spb {version}":
+            break
+    return last
+
+
 @scenario("W52", "Superba self-update via the MSI from an older version", area="updates",
           conflicts=("installed",), bugs=(30, 44))
 def w52(t):
@@ -824,15 +840,11 @@ def w52(t):
             s.ui_dump("update-available")
             u.reveal(key="updates.superba.update_now", type="Button")
             u.click(key="updates.superba.update_now")
-            end = time.time() + 420
-            ver = None
-            while time.time() < end:
-                time.sleep(10)
-                r = run.agent.exec(run.spb_exe, ["--version"], timeout=60)
-                ver = r["stdout"].strip()
-                if tag[1:] in ver:
-                    break
-            s.check(tag[1:] in (ver or ""), f"spb --version after the update: {ver!r}")
+            probe = wait_msi_version(run, tag[1:])
+            ver = probe["stdout"].strip()
+            s.save("version-after-update.json", probe)
+            s.check(probe["code"] == 0 and ver == f"spb {tag[1:]}",
+                    f"spb --version after the update: {ver!r} (exit {probe['code']})")
             s.info(f"mock release requests: {srv.hits}")
             inv = flows.inventory(run)
             s.save("inventory-after-update.json", inv)
