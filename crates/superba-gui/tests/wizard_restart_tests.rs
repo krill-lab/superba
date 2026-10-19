@@ -48,6 +48,8 @@ fn skip_survives_restart_and_settings_can_run_setup_again() {
         Locale::En,
         Page::Superba(SuperbaSection::General),
     );
+    next.settle();
+    next.scroll_page(-900.0);
     let tree = next.wait_for(Some(Role::Button), &tr.t("prefs.wizard.run"));
     assert!(
         !tree.has(&tr.t("wizard.skip")),
