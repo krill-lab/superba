@@ -3,6 +3,7 @@
 import json
 import time
 import tomllib
+from urllib.parse import urlsplit
 
 from e2e.shared import desktop_flows
 
@@ -80,7 +81,10 @@ def router_on_off(t):
     t.spb("switch", "--profile", name, "--yes", "--write-only")
     t.spb("router", "enable", "--member", name, "--yes", "--write-only")
     config = t.read("home/.codex/config.toml") or ""
-    t.check("127.0.0.1" in config, "Codex points to the loopback router")
+    router = json.loads(t.read(DATA + "/router/config.json"))
+    active = urlsplit(tomllib.loads(config).get("openai_base_url", ""))
+    t.check(active.hostname == "127.0.0.1" and active.port == router["listen_port"],
+            "Codex active endpoint uses the actual router listening port")
     service = t.rpc("service")
     t.check(service["code"] == 0 and t.root in service["stdout"], "Owned LaunchAgent is loaded")
     t.save("router-service.json", service)
@@ -91,15 +95,24 @@ def router_on_off(t):
         result = t.rpc("router_request")
         t.check(result["id"] == "resp_macos_fixture", "A request travels through the real router to the fixture")
         t.save("router-request.json", result)
-    else:
-        # The fixture model is intentionally not sent to a paid provider.
-        result = None
     t.spb("router", "disable", "--uninstall", "--yes", "--write-only")
-    t.check(base in (t.read("home/.codex/config.toml") or ""), "Router off restores the direct endpoint")
+    direct = tomllib.loads(t.read("home/.codex/config.toml") or "").get("openai_base_url")
+    t.check(direct == base, "Router off restores the exact active direct endpoint")
     t.check(t.rpc("service")["code"] != 0, "LaunchAgent is unloaded")
-    if result:
-        t.check(t.rpc("port_closed", port=result["port"]), "Router listening port is closed")
-    t.shot("router-off")
+    t.check(t.rpc("port_closed", port=router["listen_port"]), "Router listening port is closed")
+    t.shot("router-off-before-restart")
+    # Capture the externally changed configuration in a fresh GUI process.
+    t.rpc("stop")
+    ui = t.configured_ui()
+    desktop_flows.router_page(ui)
+    if t.runner.opts.net == "real":
+        t.check(ui.exists(key="router.banner.off", timeout=15), "Cold-start GUI shows router off")
+    else:
+        t.save("ui-mode-limitation.txt", "This build identifies any HTTP 127.0.0.1 provider as router mode. "
+               "The mock upstream is itself loopback, so its UI banner is ambiguous. "
+               "The exact active endpoint, unloaded job and closed router port are asserted above. "
+               "Use --net real for the GUI off-banner assertion.\n")
+    t.shot("after-router-disable")
 
 
 @scenario("M04", "Claude Code configuration apply and exact restore", "Claude harness")
@@ -119,6 +132,7 @@ def claude_apply_restore(t):
     env = written["env"]
     t.check(env.get("ANTHROPIC_BASE_URL") == endpoint, "Claude endpoint applied")
     t.check(env.get("ANTHROPIC_AUTH_TOKEN") == key, "Claude key applied in temporary HOME only")
+    t.check(env.get("ANTHROPIC_DEFAULT_SONNET_MODEL") == "e2e-model", "Claude Sonnet slot applied")
     t.check(env.get("E2E_KEEP") == "present" and written["permissions"] == original["permissions"],
             "Unrelated Claude settings preserved")
     ui = t.configured_ui()
@@ -127,6 +141,9 @@ def claude_apply_restore(t):
     t.spb("claude", "restore", "--yes")
     restored = json.loads(t.read("home/.claude/settings.json"))
     t.check(restored == original, "Original Claude settings restored without managed keys")
+    t.rpc("stop")
+    ui = t.configured_ui()
+    desktop_flows.claude_page(ui)
     t.shot("claude-restored")
 
 

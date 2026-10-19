@@ -95,6 +95,12 @@ It never goes on an argv, into the real Keychain, or into tracked files. M03's
 mock model request is omitted in real mode; this mode does not claim upstream
 inference coverage. M04 tests the real Superba Claude config writer/restorer;
 it does not require installing Claude Code or claim a real Claude conversation.
+M03 and M04 reopen the GUI after external CLI changes to capture the persisted
+state in a fresh process. M03 also preserves a screenshot before restarting.
+The current GUI classifies every HTTP `127.0.0.1` provider as router mode, including
+the mock upstream. Mock M03 therefore records that UI limitation and verifies the
+exact active endpoint, unloaded service and closed router port. Real M03 also
+requires the fresh GUI to show the router-off banner; it sends no inference request.
 
 Each case starts independently, copies the DMG into a marked run directory,
 installs `/Applications/Superba.app`, and uses a fresh HOME, CODEX_HOME,
