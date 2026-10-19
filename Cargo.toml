@@ -99,6 +99,8 @@ getrandom = "0.3"
 directories = "6"
 rusqlite = { version = "0.40", default-features = false, features = ["bundled", "backup", "cache"] }
 zstd = "0.14"
+# OpenAI request bodies (Content-Encoding: br).
+brotli = "8"
 # Codex packages (superba-versions): tar.gz extraction; RPM `primary.xml.gz`,
 # Sparkle appcasts (quick-xml)
 flate2 = "1"

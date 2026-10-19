@@ -7,6 +7,7 @@
 
 mod common;
 
+use std::io::Write;
 use std::sync::Arc;
 
 use common::claude::{Anthropic, Fake, anthropic};
@@ -64,6 +65,209 @@ impl Calls for Anthropic {
 
 fn sent(up: &Anthropic, i: usize) -> Value {
     serde_json::from_slice(&up.seen()[i].body).unwrap()
+}
+
+fn encoded(body: &[u8], encoding: &str) -> Vec<u8> {
+    match encoding {
+        "gzip" => {
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder.write_all(body).unwrap();
+            encoder.finish().unwrap()
+        }
+        "deflate" => {
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder.write_all(body).unwrap();
+            encoder.finish().unwrap()
+        }
+        "br" => {
+            let mut out = Vec::new();
+            {
+                let mut encoder = brotli::CompressorWriter::new(&mut out, 4096, 3, 22);
+                encoder.write_all(body).unwrap();
+            }
+            out
+        }
+        "zstd" => zstd::stream::encode_all(body, 3).unwrap(),
+        "identity" => body.to_vec(),
+        _ => panic!("unknown test encoding"),
+    }
+}
+
+async fn encoded_private_fields_are_removed(path: &str, encoding: &str) {
+    let chat = path.ends_with("/chat/completions");
+    let up = anthropic(Arc::new(
+        move |_| if chat { chat_ok() } else { responses_ok() },
+    ))
+    .await;
+    let mut member = krill("k", &up);
+    member
+        .model_map
+        .insert("public-model".into(), "upstream-model".into());
+    let r = start(config(vec![member], vec![])).await;
+    let mut body = if chat {
+        chat_body("public-model", "keep this history", true)
+    } else {
+        request_body("public-model", "keep this history", json!({"store": false}))
+    };
+    body["dsh_session_log"] = json!({"events": ["private conversation"]});
+    body["dsh_plugin_packages"] = json!(["private package"]);
+    body["dsh_future_field"] = json!("also private");
+    let resp = r
+        .http
+        .post(r.url(path))
+        .bearer_auth(token_of(H::Dsh))
+        .header("content-encoding", encoding)
+        .body(encoded(&serde_json::to_vec(&body).unwrap(), encoding))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "{path}, {encoding}");
+    let _ = resp.text().await.unwrap();
+    let seen = up.seen();
+    assert_eq!(seen.len(), 1);
+    assert!(!seen[0].headers.contains_key("content-encoding"));
+    assert_eq!(
+        seen[0].headers["content-length"],
+        seen[0].body.len().to_string()
+    );
+    let actual = sent(&up, 0);
+    assert!(
+        actual
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|k| !k.starts_with("dsh_"))
+    );
+    body.as_object_mut()
+        .unwrap()
+        .retain(|k, _| !k.starts_with("dsh_"));
+    body["model"] = json!("upstream-model");
+    assert_eq!(
+        actual, body,
+        "all public fields survive; model mapping sees decoded JSON"
+    );
+}
+
+#[tokio::test]
+async fn gzip_responses_strip_private_fields_before_forwarding() {
+    encoded_private_fields_are_removed("/openai/v1/responses", "gzip").await;
+}
+
+#[tokio::test]
+async fn deflate_responses_strip_private_fields_before_forwarding() {
+    encoded_private_fields_are_removed("/openai/v1/responses", "deflate").await;
+}
+
+#[tokio::test]
+async fn brotli_responses_strip_private_fields_before_forwarding() {
+    encoded_private_fields_are_removed("/openai/v1/responses", "br").await;
+}
+
+#[tokio::test]
+async fn zstd_responses_strip_private_fields_before_forwarding() {
+    encoded_private_fields_are_removed("/openai/v1/responses", "zstd").await;
+}
+
+#[tokio::test]
+async fn chat_strips_private_fields_for_identity_and_every_supported_encoding() {
+    for encoding in ["identity", "gzip", "deflate", "br", "zstd"] {
+        encoded_private_fields_are_removed("/openai/v1/chat/completions", encoding).await;
+    }
+}
+
+#[tokio::test]
+async fn unsupported_encodings_return_415_on_both_protocols_without_contacting_upstream() {
+    let up = anthropic(Arc::new(|_| responses_ok())).await;
+    let r = start(config(vec![krill("k", &up)], vec![])).await;
+    for path in ["/openai/v1/responses", "/openai/v1/chat/completions"] {
+        for values in [
+            vec![http::HeaderValue::from_static("unknown")],
+            vec![http::HeaderValue::from_static("gzip, br")],
+            vec![
+                http::HeaderValue::from_static("identity"),
+                http::HeaderValue::from_static("gzip"),
+            ],
+            vec![http::HeaderValue::from_bytes(b"\xff").unwrap()],
+        ] {
+            let mut headers = HeaderMap::new();
+            for value in values {
+                headers.append("content-encoding", value);
+            }
+            let resp = post(
+                &r,
+                path,
+                &token_of(H::Dsh),
+                headers,
+                &json!({"model": "m", "dsh_session_log": "private"}),
+            )
+            .await;
+            assert_eq!(resp.status(), 415, "{path}");
+            let error: Value = resp.json().await.unwrap();
+            assert_eq!(error["error"]["code"], "bad_request");
+        }
+    }
+    assert_eq!(up.hits(), 0);
+}
+
+#[tokio::test]
+async fn malformed_encoded_or_json_bodies_never_reach_upstream() {
+    let up = anthropic(Arc::new(|_| responses_ok())).await;
+    let r = start(config(vec![krill("k", &up)], vec![])).await;
+    for path in ["/openai/v1/responses", "/openai/v1/chat/completions"] {
+        for encoding in ["gzip", "deflate", "br", "zstd"] {
+            let resp = r
+                .http
+                .post(r.url(path))
+                .bearer_auth(token_of(H::Dsh))
+                .header("content-encoding", encoding)
+                .body(vec![0xff; 8])
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), 400, "{path}, {encoding}");
+        }
+        for body in [br#"{"dsh_private": "x""#.as_slice(), b"{} trailing", b"[]"] {
+            let resp = r
+                .http
+                .post(r.url(path))
+                .bearer_auth(token_of(H::Dsh))
+                .header("content-encoding", "gzip")
+                .body(encoded(body, "gzip"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), 400, "{path}");
+        }
+    }
+    assert_eq!(up.hits(), 0);
+}
+
+#[tokio::test]
+async fn decoded_body_limit_applies_to_both_protocols_before_forwarding() {
+    let up = anthropic(Arc::new(|_| responses_ok())).await;
+    let mut cfg = config(vec![krill("k", &up)], vec![]);
+    cfg.tuning.max_body_bytes = 1024;
+    let r = start(cfg).await;
+    let body = serde_json::to_vec(&json!({"model": "m", "dsh_private": "x".repeat(8192)})).unwrap();
+    for path in ["/openai/v1/responses", "/openai/v1/chat/completions"] {
+        for encoding in ["gzip", "deflate", "br", "zstd"] {
+            let compressed = encoded(&body, encoding);
+            assert!(compressed.len() < 1024);
+            let resp = r
+                .http
+                .post(r.url(path))
+                .bearer_auth(token_of(H::Dsh))
+                .header("content-encoding", encoding)
+                .body(compressed)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), 413, "{path}, {encoding}");
+        }
+    }
+    assert_eq!(up.hits(), 0);
 }
 
 #[tokio::test]

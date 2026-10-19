@@ -64,6 +64,77 @@ fn bodies(up: &common::claude::Anthropic, path: &str) -> Vec<Value> {
 }
 
 #[tokio::test]
+async fn successful_requests_explain_every_member_excluded_by_protocol() {
+    let up = anthropic(Arc::new(|s| {
+        if s.path.ends_with("/chat/completions") {
+            chat_ok()
+        } else {
+            Fake::sse(vec![sse(&text_answer(), false)])
+        }
+    }))
+    .await;
+    let run = start_recording(
+        config(
+            vec![
+                compatible("responses", &up),
+                compatible("chat", &up),
+                compatible("neither", &up),
+                krill("both", &up),
+            ],
+            vec![
+                ("chat", chat_entry(false)),
+                ("neither", superba_router::openai::OpenAiMember::default()),
+            ],
+        ),
+        stats(vec![]),
+    )
+    .await;
+    for (path, body, expected, excluded) in [
+        (
+            "/openai/v1/responses",
+            request_body("m", "history", json!({})),
+            "This provider serves no OpenAI Responses endpoint",
+            ["chat", "neither"],
+        ),
+        (
+            "/openai/v1/chat/completions",
+            chat_body("m", "history", true),
+            "This provider has no Chat Completions endpoint",
+            ["responses", "neither"],
+        ),
+    ] {
+        let resp = post(
+            &run.router,
+            path,
+            &token_of(H::Dsh),
+            tool_headers(H::Dsh, path),
+            &body,
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let _ = resp.text().await.unwrap();
+        let rows = logged(&run.paths, if path.ends_with("/responses") { 1 } else { 2 }).await;
+        let reader = superba_router::Reader::open(&run.paths).unwrap();
+        let detail = reader.detail(rows[0].id).unwrap();
+        let reason = detail
+            .log
+            .iter()
+            .find(|l| l.starts_with("excluded providers: "))
+            .unwrap();
+        for id in excluded {
+            assert!(reason.contains(&format!("({id}): {expected}")), "{reason}");
+        }
+        assert!(!reason.contains("(both)"));
+        assert!(
+            detail
+                .attempts
+                .iter()
+                .all(|a| !excluded.contains(&a.member_id.as_str()))
+        );
+    }
+}
+
+#[tokio::test]
 async fn dsh_rows_carry_the_harness_session_ids_and_usage() {
     let up = anthropic(Arc::new(|_| {
         with_request_id(Fake::sse(vec![sse(&text_answer(), false)]), "req_resp_1")

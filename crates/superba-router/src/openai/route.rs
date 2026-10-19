@@ -3,7 +3,8 @@
 //!
 //! 1. The members that serve the request's protocol ([`OpenAiProtocol`]), in
 //!    the ingress's order; the others are not eligible, and when none is
-//!    left the router answers with each member's reason.
+//!    left the router answers with each member's reason. Excluded members
+//!    are also named in the request details when another member can serve it.
 //! 2. With more than one: those whose model list names the model (Superba's
 //!    list, else the member's own `/models`; a model-mapping entry counts),
 //!    then those whose list is unknown, then the rest. The upstream decides
@@ -24,6 +25,7 @@ use crate::claude::catalog::{Listed, get_list};
 use crate::claude::route::Target;
 use crate::config::join_path;
 use crate::state::{Generation, Shared};
+use crate::stats::hub::Tracker;
 use crate::stats::meta::RequestMeta;
 use http::HeaderMap;
 
@@ -164,6 +166,31 @@ fn nobody(generation: &Generation, protocol: OpenAiProtocol) -> String {
         protocol.request_protocol().text().render_fallback(),
         names.join("; ")
     )
+}
+
+/// Explain every protocol exclusion even when some members remain eligible.
+/// Only member labels and capability reasons are recorded, never bodies.
+pub(crate) fn note_excluded(
+    generation: &Generation,
+    protocol: OpenAiProtocol,
+    tracker: Option<&mut Tracker>,
+) {
+    let Some(tracker) = tracker else { return };
+    let reason = protocol.ineligible().text().render_fallback();
+    let excluded: Vec<_> = generation
+        .openai
+        .order
+        .iter()
+        .filter(|i| generation.openai.members[**i].bases(protocol).is_none())
+        .map(|i| {
+            let member = &generation.members[*i].cfg;
+            format!("{} ({}): {reason}", member.name, member.id)
+        })
+        .collect();
+    if !excluded.is_empty() {
+        // One entry retains every reason within the detail log's entry limit.
+        tracker.note(format!("excluded providers: {}", excluded.join("; ")));
+    }
 }
 
 /// The targets of a request for `model` (`None`: the body names none)

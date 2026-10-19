@@ -117,7 +117,7 @@ pub(crate) async fn proxy_http(
     let generation = shared.current();
     shared.totals.requests.fetch_add(1, Ordering::Relaxed);
     let active = GaugeGuard::new(shared.clone(), |t| &t.active_requests);
-    let (parts, body) = req.into_parts();
+    let (mut parts, body) = req.into_parts();
     let limit = generation.config.tuning.max_body_bytes;
     let tracked = generation.config.stats.is_some() && is_responses_path(&parts.method, &rest);
     let body = match Limited::new(body, limit).collect().await {
@@ -158,7 +158,11 @@ pub(crate) async fn proxy_http(
     // it is shaped whether or not it is recorded).
     let mut openai_meta = None;
     let (body, mut tracker, compaction) = if openai {
-        let (body, m, notes) = crate::openai::prepare_responses(&parts.headers, body, limit);
+        let (body, m, notes) =
+            match crate::openai::prepare_responses(&mut parts.headers, body, limit) {
+                Ok(prepared) => prepared,
+                Err(resp) => return *resp,
+            };
         let compaction = m.compaction.clone();
         let mut t = tracked.then(|| {
             shared
@@ -170,6 +174,11 @@ pub(crate) async fn proxy_http(
                 t.note(n);
             }
         }
+        crate::openai::route::note_excluded(
+            &generation,
+            crate::openai::OpenAiProtocol::Responses,
+            t.as_mut(),
+        );
         openai_meta = Some(m);
         (body, t, compaction)
     } else if tracked {

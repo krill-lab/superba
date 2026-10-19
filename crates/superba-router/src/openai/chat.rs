@@ -114,7 +114,7 @@ fn headers_for(src: &HeaderMap, generation: &Generation, member: usize) -> Heade
 /// Serve one Chat Completions request.
 pub(super) async fn chat(
     shared: Arc<Shared>,
-    parts: Parts,
+    mut parts: Parts,
     raw: Bytes,
     admission: Admission,
     t0: Instant,
@@ -124,7 +124,11 @@ pub(super) async fn chat(
     shared.totals.requests.fetch_add(1, Ordering::Relaxed);
     let active = GaugeGuard::new(shared.clone(), |t| &t.active_requests);
     let limit = generation.config.tuning.max_body_bytes;
-    let mut req = match super::parse_body(&parts.headers, &raw, limit) {
+    let raw = match super::body::decode(&mut parts.headers, raw, limit) {
+        Ok(b) => b,
+        Err(resp) => return *resp,
+    };
+    let mut req = match super::parse_body(&raw) {
         Ok(v) => v,
         Err(resp) => return *resp,
     };
@@ -136,8 +140,7 @@ pub(super) async fn chat(
         OpenAiProtocol::Chat,
     );
     meta.stripped = stripped;
-    let identity = !parts.headers.contains_key(http::header::CONTENT_ENCODING);
-    let original = (stripped == 0 && private.is_empty() && identity).then_some(&raw);
+    let original = (stripped == 0 && private.is_empty()).then_some(&raw);
     let mut tracker = generation.config.stats.is_some().then(|| {
         shared
             .stats
@@ -151,6 +154,7 @@ pub(super) async fn chat(
             private.join(", ")
         ));
     }
+    route::note_excluded(&generation, OpenAiProtocol::Chat, tracker.as_mut());
     let Some(model) = meta.model.clone() else {
         let message = "model: a model name is required";
         record_refusal(tracker, 400, "invalid_request_error", message);

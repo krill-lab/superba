@@ -23,6 +23,11 @@ their tools, and `/openai/v1/models`; then the request log is checked
 (harness by token, version, protocol, session ids, failover, usage, upstream
 response and request ids, injected / stripped lines).
 
+A separate loopback fake upstream checks the bytes it actually receives on
+both protocols: identity, gzip and deflate requests must arrive without any
+top-level dsh_* field. Use --tool-pause to pace real tools against a shared
+relay's rate limit; all request-status assertions still apply.
+
 The relay's address and key come from the env file (SUPERBA_E2E_UPSTREAM,
 SUPERBA_E2E_KEY) and are never printed or written to OUT_DIR. Exit 0 when
 every check passes; OUT_DIR/report.json holds the checks, run times and log
@@ -32,8 +37,10 @@ the run.
 
 import argparse
 import glob
+import gzip
 import hashlib
 import hmac
+import http.server
 import json
 import os
 import shutil
@@ -41,9 +48,11 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 import uuid
+import zlib
 from pathlib import Path
 
 MARKER = "⚡⁠"
@@ -108,6 +117,110 @@ class Namespace:
                               stdin=subprocess.DEVNULL)
 
 
+def check_private_fields(router_bin, work, check, report):
+    """Observe the actual upstream bytes, independently of request-log notes.
+
+    This separate router uses only a loopback fake upstream. Keep booleans in
+    the report, never request bodies, headers or credentials.
+    """
+    seen = []
+
+    class Upstream(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get("content-length", "0")))
+            try:
+                value = json.loads(body)
+                seen.append({
+                    "path": self.path,
+                    "identity": self.headers.get("content-encoding", "identity") == "identity",
+                    "no_private_fields": not any(k.startswith("dsh_") for k in value),
+                    "public_fields_kept": value.get("model") == "privacy-probe"
+                    and (value.get("input") == "public prompt"
+                         or value.get("messages") == [{"role": "user", "content": "public prompt"}]),
+                })
+                reply, status = b'{"id":"privacy-probe","object":"response"}', 200
+            except (ValueError, AttributeError):
+                seen.append({"path": self.path, "no_private_fields": False})
+                reply, status = b'{"error":"unreadable upstream body"}', 400
+            self.send_response(status)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(reply)))
+            self.end_headers()
+            self.wfile.write(reply)
+
+    upstream = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+    thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+    thread.start()
+    port = free_port()
+    token = "sbr_" + uuid.uuid4().hex + uuid.uuid4().hex
+    data = work / "privacy-data"
+    rdir = data / "router"
+    rdir.mkdir(parents=True, exist_ok=True)
+    cfg = {
+        "format": 1, "listen_port": port, "use_system_proxy": False,
+        "members": [{"id": "fake", "name": "Privacy probe", "kind": "compatible",
+                     "websocket": False, "lines": [{"id": "main", "name": "Main",
+                         "base_url": f"http://127.0.0.1:{upstream.server_port}/v1"}]}],
+        "openai": {"members": {"fake": {"responses": {}, "chat": {}}}},
+        "tuning": {"active_probes": False},
+    }
+    write_private(rdir / "config.json", json.dumps(cfg))
+    write_private(rdir / "secrets.json", json.dumps({"format": 1, "router_token": token,
+                  "member_keys": {"fake": "nb_loopback_privacy_probe_000"}}))
+    router = None
+    try:
+        with open(work / "privacy-router.stderr", "w") as log:
+            router = subprocess.Popen(
+                [router_bin, "run", "--data-dir", str(data)], stdout=log, stderr=log,
+                env={"PATH": "/usr/bin:/bin", "HOME": str(work / "privacy-router-home")},
+                start_new_session=True,
+            )
+            for _ in range(100):
+                if (rdir / "runtime.json").exists() or router.poll() is not None:
+                    break
+                time.sleep(0.1)
+            statuses = []
+            for path in ("responses", "chat/completions"):
+                for encoding, encode in (("identity", lambda b: b), ("gzip", gzip.compress),
+                                         ("deflate", zlib.compress)):
+                    body = {"model": "privacy-probe", "stream": False,
+                            "dsh_session_log": {"events": ["private conversation"]},
+                            "dsh_plugin_packages": ["private package"], "dsh_future": "private"}
+                    if path == "responses":
+                        body["input"] = "public prompt"
+                    else:
+                        body["messages"] = [{"role": "user", "content": "public prompt"}]
+                    request = urllib.request.Request(
+                        f"http://127.0.0.1:{port}/openai/v1/{path}",
+                        data=encode(json.dumps(body).encode()),
+                        headers={"authorization": "Bearer " + token,
+                                 "content-type": "application/json", "content-encoding": encoding},
+                    )
+                    try:
+                        with urllib.request.urlopen(request, timeout=10) as response:
+                            statuses.append(response.status)
+                            response.read()
+                    except urllib.error.HTTPError as error:
+                        statuses.append(error.code)
+            report["privacy_upstream"] = seen
+            check(len(seen) == 6 and statuses == [200] * 6
+                  and all(s.get("no_private_fields") and s.get("public_fields_kept")
+                          and s.get("identity") for s in seen),
+                  "fake upstream: no dsh_* fields on Responses or Chat (identity, gzip, deflate)")
+    finally:
+        if router is not None:
+            if router.poll() is None:
+                os.killpg(router.pid, 15)
+            router.wait(timeout=10)
+        upstream.shutdown()
+        upstream.server_close()
+        thread.join(timeout=5)
+        (rdir / "secrets.json").unlink(missing_ok=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
@@ -117,6 +230,8 @@ def main():
     ap.add_argument("--pi", required=True)
     ap.add_argument("--node-dir", default=os.path.dirname(shutil.which("node") or "/usr/bin/node"))
     ap.add_argument("--model", default="gpt-5.6-luna")
+    ap.add_argument("--tool-pause", type=float, default=0,
+                    help="Seconds before each real tool invocation (shared relay rate limits)")
     a = ap.parse_args()
     secrets = load_env(os.environ["SUPERBA_E2E_ENV"])
     upstream = secrets["SUPERBA_E2E_UPSTREAM"].rstrip("/")
@@ -211,7 +326,7 @@ def main():
     )
     ns = Namespace(home, [os.path.dirname(os.path.realpath(p)) for p in (a.opencode, a.pi)]
                    + [os.path.dirname(a.dsh), a.node_dir])
-    report = {"checks": [], "runs": []}
+    report = {"checks": [], "runs": [], "tool_pause": a.tool_pause}
 
     def check(ok, what):
         report["checks"].append({"ok": bool(ok), "what": what})
@@ -224,6 +339,8 @@ def main():
     }
 
     def tool(name, command, timeout=300):
+        if a.tool_pause > 0:
+            time.sleep(a.tool_pause)
         t0 = time.time()
         try:
             p = ns.run(command, tool_env, timeout)
@@ -239,6 +356,7 @@ def main():
         return rc, out
 
     try:
+        check_private_fields(a.router, work, check, report)
         for _ in range(100):
             if (rdir / "runtime.json").exists():
                 break

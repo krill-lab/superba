@@ -22,9 +22,11 @@ superba-core.workspace = true
 # price lookup helpers shared with the switch service
 superba-models.workspace = true
 async-trait.workspace = true
+brotli.workspace = true
 bytes.workspace = true
 clap.workspace = true
 futures-util.workspace = true
+flate2.workspace = true
 http.workspace = true
 http-body.workspace = true
 http-body-util.workspace = true

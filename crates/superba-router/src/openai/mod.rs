@@ -30,6 +30,7 @@ pub mod meta;
 pub mod shape;
 pub mod tap;
 
+mod body;
 mod chat;
 mod models;
 pub(crate) mod route;
@@ -164,93 +165,44 @@ async fn read_body(body: Incoming, limit: usize) -> Result<Bytes, Box<Response<R
     }
 }
 
-fn content_encoding(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get(CONTENT_ENCODING)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.trim().to_ascii_lowercase())
-        .filter(|v| !v.is_empty() && v != "identity")
+fn invalid_json() -> Box<Response<RespBody>> {
+    Box::new(router_error(
+        StatusCode::BAD_REQUEST,
+        "bad_request",
+        "the request body must be a valid JSON object",
+    ))
 }
 
-/// Parse a JSON request body (zstd-encoded bodies decoded).
-fn parse_body(
-    headers: &HeaderMap,
-    body: &[u8],
-    limit: usize,
-) -> Result<serde_json::Value, Box<Response<RespBody>>> {
-    let decoded;
-    let plain: &[u8] = match content_encoding(headers).as_deref() {
-        None => body,
-        Some("zstd") => match crate::stats::strip::decode_zstd(body, limit) {
-            Some(d) => {
-                decoded = d;
-                &decoded
-            }
-            None => {
-                return Err(Box::new(router_error(
-                    StatusCode::BAD_REQUEST,
-                    "bad_request",
-                    "the zstd request body could not be decoded",
-                )));
-            }
-        },
-        Some(other) => {
-            return Err(Box::new(router_error(
-                StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "bad_request",
-                &format!("request bodies encoded as {other} are not supported"),
-            )));
-        }
-    };
-    serde_json::from_slice(plain).map_err(|_| {
-        Box::new(router_error(
-            StatusCode::BAD_REQUEST,
-            "bad_request",
-            "the request body is not valid JSON",
-        ))
-    })
+/// Parse an already decoded JSON object.
+fn parse_body(body: &[u8]) -> Result<serde_json::Value, Box<Response<RespBody>>> {
+    let value: serde_json::Value = serde_json::from_slice(body).map_err(|_| invalid_json())?;
+    if !value.is_object() {
+        return Err(invalid_json());
+    }
+    Ok(value)
 }
 
 /// A Responses request on the ingress, as the Responses path sends it on:
 /// earlier stats lines stripped, the private fields left out, `store: false`
-/// added when the tool did not say ([`shape`]), and its facts. Bodies in
-/// another encoding than identity or zstd pass as they are.
+/// added when the tool did not say ([`shape`]), and its facts. Supported
+/// compressed bodies are decoded and sent as identity; an unreadable body
+/// is refused locally so private fields can never bypass shaping.
 pub(crate) fn prepare_responses(
-    headers: &HeaderMap,
+    headers: &mut HeaderMap,
     body: Bytes,
     limit: usize,
-) -> (Bytes, RequestMeta, Vec<String>) {
-    let zstd = match content_encoding(headers).as_deref() {
-        None => false,
-        Some("zstd") => true,
-        Some(_) => {
-            return (
-                body,
-                meta::from_headers(headers, OpenAiProtocol::Responses),
-                Vec::new(),
-            );
-        }
-    };
-    let plain = match zstd {
-        true => match crate::stats::strip::decode_zstd(&body, limit) {
-            Some(p) => Bytes::from(p),
-            None => {
-                return (
-                    body,
-                    meta::from_headers(headers, OpenAiProtocol::Responses),
-                    Vec::new(),
-                );
-            }
-        },
-        false => body.clone(),
-    };
+) -> Result<(Bytes, RequestMeta, Vec<String>), Box<Response<RespBody>>> {
+    let plain = body::decode(headers, body, limit)?;
+    // Validate without reserializing the remaining values, including large
+    // numbers and duplicate keys. Malformed JSON must never pass unshaped.
+    crate::stats::strip::split_object(&plain).ok_or_else(invalid_json)?;
     let peek = meta::peek(&plain);
     let mut m = meta::of_request(headers, &peek, OpenAiProtocol::Responses);
     m.compaction = crate::compaction::inspect(&plain);
     let add_store = peek.store.is_none() && !m.continuation;
     drop(peek);
     let mut notes = Vec::new();
-    let mut out = plain.clone();
+    let mut out = plain;
     if let Some((new, n)) = crate::stats::strip::strip(&out) {
         m.stripped = n;
         out = Bytes::from(new);
@@ -267,17 +219,7 @@ pub(crate) fn prepare_responses(
         }
         out = Bytes::from(shaped.body);
     }
-    if out == plain {
-        return (body, m, notes);
-    }
-    let out = match zstd {
-        true => match zstd::stream::encode_all(out.as_ref(), 3) {
-            Ok(e) => Bytes::from(e),
-            Err(_) => return (body, m, notes),
-        },
-        false => out,
-    };
-    (out, m, notes)
+    Ok((out, m, notes))
 }
 
 /// The body for member `member` on the Responses path: without the fields it
@@ -289,7 +231,7 @@ pub(crate) fn member_responses_body(
     headers: &HeaderMap,
 ) -> Option<(Bytes, Vec<String>)> {
     let fields = &generation.openai.members[member].cfg.drop_fields;
-    if fields.is_empty() || content_encoding(headers).is_some() {
+    if fields.is_empty() || headers.contains_key(CONTENT_ENCODING) {
         return None;
     }
     let shaped = shape::shape_top(body, &|k| fields.iter().any(|f| f == k), false)?;
