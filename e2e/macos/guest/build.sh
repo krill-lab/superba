@@ -21,6 +21,7 @@ if ! rustup toolchain list | /usr/bin/grep -q '^stable-aarch64-apple-darwin'; th
     rustup toolchain install stable --profile minimal
 fi
 # The router helper is needed for M03/M06 and belongs beside the GUI binary.
+mkdir -p "$CARGO_TARGET_DIR"
 /usr/bin/python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' \
     cargo +stable build --release --locked --target aarch64-apple-darwin \
     -p superba-gui -p superba-cli -p superba-router &

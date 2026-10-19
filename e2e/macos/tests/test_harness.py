@@ -294,6 +294,20 @@ class GuestSafetyTests(unittest.TestCase):
             self.assertLess(home_index, argv.index("--args"))
             self.assertEqual(argv[-1], "--autostart")
 
+    def test_cleanup_adopts_rebooted_gui_only_when_session_installed_it(self):
+        gui = {"pid": 12345, "ppid": 1,
+               "command": "/Applications/Superba.app/Contents/MacOS/superba --autostart"}
+        unrelated = {"pid": 23456, "ppid": 1, "command": "/Applications/Other.app/Contents/MacOS/Other"}
+        for installed in (True, False):
+            with self.subTest(installed=installed), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.guest.save(root, {"pids": [], "installed": installed})
+                with patch.object(self.guest, "processes", side_effect=[[gui, unrelated], [unrelated], [unrelated]]), \
+                        patch.object(self.guest.os, "kill") as kill, patch.object(self.guest.time, "sleep"):
+                    result = self.guest.stop_owned(root)
+                self.assertEqual(result["remaining"], [])
+                self.assertEqual([call.args[0] for call in kill.call_args_list], [12345] if installed else [])
+
 
 if __name__ == "__main__":
     unittest.main()

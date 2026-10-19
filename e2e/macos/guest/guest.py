@@ -211,6 +211,12 @@ def stop_owned(root):
     st = state(root)
     rows = processes()
     owned = {item["pid"] for item in st["pids"] if stamp(item["pid"]) == item["stamp"] and item["stamp"]}
+    # After reboot, LaunchServices reparents the GUI to launchd and its argv has
+    # no run directory. The session installed this exact app into an empty slot;
+    # adopt it even if an assertion failed before login_state recorded its PID.
+    if st["installed"]:
+        executable = str(APP / "Contents/MacOS/superba")
+        owned.update(row["pid"] for row in rows if row["command"].split(" ", 1)[0] == executable)
     # Desktop helpers may be children of launchd. Only processes whose argv contains
     # this session's directory are additionally eligible (never a global pkill).
     owned.update(row["pid"] for row in rows if str(root) + "/" in row["command"])
