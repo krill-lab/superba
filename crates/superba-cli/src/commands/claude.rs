@@ -743,7 +743,7 @@ fn print_plan(plan: &ClaudePlan, out: &mut Output) -> superba_core::Result<()> {
         .iter()
         .map(|c| {
             vec![
-                c.path.clone(),
+                c.slot.clone(),
                 c.before.clone().unwrap_or_else(|| none.clone()),
                 c.after.clone().unwrap_or_else(|| none.clone()),
                 if c.drift {
@@ -814,10 +814,14 @@ async fn apply(
         .arg("n", report.changed.len())
         .arg(
             "path",
-            superba_core::paths::display_path(&report.settings_path),
+            report
+                .files
+                .first()
+                .map(|f| superba_core::paths::display_path(&f.path))
+                .unwrap_or_default(),
         ),
     )?;
-    if let Some(b) = &report.backup {
+    if let Some(b) = report.files.first().and_then(|f| f.backup.as_ref()) {
         out.line(text("cli.claude.backup").arg("id", &b.id))?;
     }
     for n in &report.notes {

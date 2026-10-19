@@ -387,16 +387,17 @@ impl Switcher {
         };
         // Owned keys whose value differs from what the configuration wants.
         let mut pending = Vec::new();
-        if let (Some((p, s)), Some(current)) = (&pair, &file.value)
+        if let (Some((p, s)), Some(_)) = (&pair, &file.value)
             && let Ok((e, key)) = self.claude_target(&config, p, s).await
         {
             let models = config.models_of(&p.id);
             let spec = self.claude_spec_lookup(&p.id);
             let desired = desired_for(&config, &e, &key, &models, &spec);
-            let state = writer.state()?;
-            pending = superba_config::claude::plan::plan_apply(current, &desired, state.as_ref())
+            pending = writer
+                .plan(ClaudePlanKind::Apply, Some(desired), Some(p.id.clone()))?
+                .changes
                 .into_iter()
-                .map(|c| c.path)
+                .map(|c| c.slot)
                 .collect();
         }
         if !file.status.writable() {
@@ -488,7 +489,7 @@ impl Switcher {
                 key,
                 client_version: None,
                 refresh: req.refresh,
-                source: Some(ModelSource::Auto),
+                source: Some(profile.model_source.unwrap_or(ModelSource::Auto)),
                 standard_base: endpoint.as_ref().map(|e| &e.base_url),
             })
             .await?;
@@ -560,6 +561,7 @@ impl Switcher {
             let router = plan
                 .desired
                 .as_ref()
+                .and_then(|d| d.claude.as_ref())
                 .and_then(|d| d.get(&claude::env_path(ENV_BASE_URL)))
                 .and_then(serde_json::Value::as_str)
                 .is_some_and(crate::claude_router::is_router_url);
@@ -820,14 +822,16 @@ impl Switcher {
             return (Vec::new(), None);
         };
         let owned = state
-            .written
-            .iter()
-            .map(|(p, v)| superba_core::OwnedKey {
+            .files
+            .get("settings.json")
+            .into_iter()
+            .flat_map(|f| &f.slots)
+            .map(|(p, slot)| superba_core::OwnedKey {
                 path: p.clone(),
                 written: if claude::is_secret_path(p) {
                     None
                 } else {
-                    v.as_ref().map(|v| v.to_string())
+                    slot.written.as_ref().map(|v| v.to_string())
                 },
             })
             .collect();

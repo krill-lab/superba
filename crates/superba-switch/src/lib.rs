@@ -1215,6 +1215,40 @@ impl SwitchService for Switcher {
         self.notify_watch_impl().await
     }
 
+    async fn harness_preview(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        settings: superba_core::harness::HarnessSettings,
+    ) -> Result<superba_core::harness::HarnessView> {
+        self.harness_preview_impl(harness, settings).await
+    }
+    async fn harness_models(
+        &self,
+        provider: ProfileId,
+        refresh: bool,
+    ) -> Result<superba_core::ModelList> {
+        self.harness_models_impl(provider, refresh).await
+    }
+    async fn harness_file(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        file: String,
+    ) -> Result<superba_core::harness::HarnessFileDoc> {
+        self.harness_file_impl(harness, file).await
+    }
+    async fn save_harness_file(
+        &self,
+        save: superba_core::harness::HarnessFileSave,
+    ) -> Result<superba_core::harness::HarnessFileDoc> {
+        self.save_harness_file_impl(save).await
+    }
+    async fn harness_backup_contents(&self, id: String) -> Result<superba_core::SecretBytes> {
+        let store = superba_config::codex_files::EditorStore::new(self.deps.ctx.clone());
+        tokio::task::spawn_blocking(move || store.harness_backup_read(&id).map(|(_, bytes)| bytes))
+            .await
+            .map_err(|e| Error::other(e.to_string()))?
+    }
+
     // -- other coding-agent harnesses ([`harness`]) --
 
     async fn harness_list(&self) -> Result<Vec<superba_core::harness::HarnessSummary>> {
@@ -1252,6 +1286,14 @@ impl SwitchService for Switcher {
         self.set_harness_router_token_impl(harness, token).await
     }
 
+    async fn harness_plan_preview(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        settings: superba_core::harness::HarnessSettings,
+    ) -> Result<superba_core::harness::HarnessPlan> {
+        self.harness_plan_preview_impl(harness, settings).await
+    }
+
     async fn harness_plan(
         &self,
         harness: superba_core::harness::HarnessId,
@@ -1273,6 +1315,16 @@ impl SwitchService for Switcher {
         harness: superba_core::harness::HarnessId,
     ) -> Result<Vec<superba_core::harness::HarnessBackup>> {
         self.harness_backups_impl(harness).await
+    }
+
+    async fn harness_restore_reviewed_backup(
+        &self,
+        harness: superba_core::harness::HarnessId,
+        id: String,
+        base_sha256: Option<String>,
+    ) -> Result<superba_core::harness::HarnessApplyReport> {
+        self.harness_restore_reviewed_backup_impl(harness, id, base_sha256)
+            .await
     }
 
     async fn harness_restore_backup(

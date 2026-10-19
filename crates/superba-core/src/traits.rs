@@ -1757,6 +1757,43 @@ pub trait SwitchService: Send + Sync {
         events: Arc<dyn SwitchEvents>,
     ) -> Result<SwitchOutcome>;
 
+    /// Preview unsaved settings without writing settings or tool files.
+    async fn harness_preview(
+        &self,
+        harness: crate::harness::HarnessId,
+        settings: crate::harness::HarnessSettings,
+    ) -> Result<crate::harness::HarnessView> {
+        let _ = (harness, settings);
+        Err(Error::not_implemented("harness preview"))
+    }
+    /// Provider models with explicit errors for failed sources.
+    async fn harness_models(&self, provider: ProfileId, refresh: bool) -> Result<ModelList> {
+        let _ = (provider, refresh);
+        Err(Error::not_implemented("harness models"))
+    }
+    /// Open a recognized configuration file.
+    async fn harness_file(
+        &self,
+        harness: crate::harness::HarnessId,
+        file: String,
+    ) -> Result<crate::harness::HarnessFileDoc> {
+        let _ = (harness, file);
+        Err(Error::not_implemented("harness editor"))
+    }
+    /// Save an explicit edit, validating and backing up before compare-and-swap.
+    async fn save_harness_file(
+        &self,
+        save: crate::harness::HarnessFileSave,
+    ) -> Result<crate::harness::HarnessFileDoc> {
+        let _ = save;
+        Err(Error::not_implemented("harness editor"))
+    }
+    /// Read a file backup for the shared editor's diff preview.
+    async fn harness_backup_contents(&self, id: String) -> Result<crate::SecretBytes> {
+        let _ = id;
+        Err(Error::not_implemented("harness backup"))
+    }
+
     // -- other coding-agent harnesses (dsh, opencode, pi, ZCode, WorkBuddy) --
 
     /// Every harness: found or not, what Superba applied there.
@@ -1809,6 +1846,16 @@ pub trait SwitchService: Send + Sync {
     }
 
     /// Plan writing Superba's provider into a harness for its settings, or
+    /// Preview an apply of unsaved settings; writes neither preferences nor tool files.
+    async fn harness_plan_preview(
+        &self,
+        harness: crate::harness::HarnessId,
+        settings: crate::harness::HarnessSettings,
+    ) -> Result<crate::harness::HarnessPlan> {
+        let _ = (harness, settings);
+        Err(Error::not_implemented("harnesses"))
+    }
+
     /// restoring what the owned entries held before Superba. Never writes.
     async fn harness_plan(
         &self,
@@ -1839,6 +1886,17 @@ pub trait SwitchService: Send + Sync {
         harness: crate::harness::HarnessId,
     ) -> Result<Vec<crate::harness::HarnessBackup>> {
         let _ = harness;
+        Err(Error::not_implemented("harnesses"))
+    }
+
+    /// Restore a backup after a file preview, refusing an intervening edit.
+    async fn harness_restore_reviewed_backup(
+        &self,
+        harness: crate::harness::HarnessId,
+        id: String,
+        base_sha256: Option<String>,
+    ) -> Result<crate::harness::HarnessApplyReport> {
+        let _ = (harness, id, base_sha256);
         Err(Error::not_implemented("harnesses"))
     }
 

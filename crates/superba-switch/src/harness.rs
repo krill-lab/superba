@@ -100,10 +100,42 @@ fn exe_names(base: &str) -> Vec<String> {
 
 /// `<program> --version` (stdin closed: opencode and pi wait for it), first
 /// word that looks like a version.
-async fn version_of(binary: &Path) -> Option<String> {
+async fn version_of(binary: &Path, ctx: &superba_core::LocalContext) -> Option<String> {
+    let scratch = ctx.data_dir.root().join("probes");
+    std::fs::create_dir_all(&scratch).ok()?;
+    let temp = tempfile::Builder::new()
+        .prefix("harness-")
+        .tempdir_in(scratch)
+        .ok()?;
+    let mut command = superba_core::process::command(binary);
+    command.env_clear().current_dir(temp.path());
+    for name in ["PATH", "SystemRoot", "WINDIR", "PATHEXT", "COMSPEC"] {
+        if let Some(value) = ctx.env.var_os(name) {
+            command.env(name, value);
+        }
+    }
+    for name in [
+        "HOME",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        "XDG_CACHE_HOME",
+        "OPENCODE_CONFIG_DIR",
+        "DSH_HOME",
+        "PI_CODING_AGENT_DIR",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+    ] {
+        command.env(name, temp.path());
+    }
+    command.env("PI_SKIP_VERSION_CHECK", "1");
     let out = tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        tokio::process::Command::from(superba_core::process::command(binary))
+        tokio::process::Command::from(command)
             .arg("--version")
             .stdin(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -146,6 +178,7 @@ impl Switcher {
         let local_app = env.var_os("LOCALAPPDATA").map(PathBuf::from);
         let names = |base: &str| exe_names(base);
         let binary = match harness {
+            HarnessId::ClaudeCode => return None,
             HarnessId::Dsh => {
                 let n = names("dsh");
                 let mut extra = Vec::new();
@@ -241,7 +274,7 @@ impl Switcher {
             return Some(i.clone());
         }
         let raw = if runs {
-            version_of(&binary).await
+            version_of(&binary, ctx).await
         } else {
             None
         };
@@ -278,6 +311,11 @@ impl Switcher {
     fn harness_dir_exists(&self, harness: HarnessId) -> bool {
         let ctx = &self.deps.ctx;
         match harness {
+            HarnessId::ClaudeCode => {
+                superba_core::ClaudeHome::resolve(ctx.env.as_ref(), &ctx.home_dir)
+                    .root()
+                    .is_dir()
+            }
             HarnessId::Dsh => superba_config::harness::dsh::dsh_home(ctx).is_dir(),
             HarnessId::OpenCode => superba_config::harness::opencode::config_dir(ctx).is_dir(),
             HarnessId::Pi => superba_config::harness::pi::agent_dir(ctx).is_dir(),
@@ -322,8 +360,22 @@ impl Switcher {
 
     /// Read the shared model sources, respecting the provider's selection.
     async fn harness_models(&self, provider: &ProfileId) -> Result<Vec<superba_core::ModelSpec>> {
+        Ok(self
+            .harness_models_impl(provider.clone(), false)
+            .await?
+            .models
+            .into_iter()
+            .filter(|m| m.supported_in_api && !matches!(m.visibility, ModelVisibility::None))
+            .collect())
+    }
+
+    pub(crate) async fn harness_models_impl(
+        &self,
+        provider: ProfileId,
+        refresh: bool,
+    ) -> Result<superba_core::ModelList> {
         let set = self.deps.profiles.load().await?;
-        let profile = set.profile(provider).ok_or_else(|| Error::NotFound {
+        let profile = set.profile(&provider).ok_or_else(|| Error::NotFound {
             what: format!("provider {provider}"),
         })?;
         let (site, resolved) = self.direct_resolution(&set, profile).await?;
@@ -339,16 +391,21 @@ impl Switcher {
                 base_url: &endpoints.openai_base_url,
                 key,
                 client_version: None,
-                refresh: false,
+                refresh,
                 source: Some(profile.model_source.unwrap_or(ModelSource::Auto)),
                 standard_base: endpoint.as_ref().map(|e| &e.base_url),
             })
             .await?;
-        Ok(list
-            .models
-            .into_iter()
-            .filter(|m| m.supported_in_api && !matches!(m.visibility, ModelVisibility::None))
-            .collect())
+        if list.models.is_empty() {
+            if let Some(error) = list
+                .fallback_reason
+                .as_ref()
+                .or_else(|| list.sources.iter().find_map(|s| s.error.as_ref()))
+            {
+                return Err(error.clone());
+            }
+        }
+        Ok(list)
     }
 
     /// The endpoints `profile` offers (direct).
@@ -409,6 +466,15 @@ impl Switcher {
     pub(crate) async fn harness_target(&self, harness: HarnessId) -> Result<HarnessTarget> {
         let config = self.harness_store().load()?;
         let settings = config.settings(harness);
+        self.harness_target_for(harness, &settings).await
+    }
+
+    async fn harness_target_for(
+        &self,
+        harness: HarnessId,
+        settings: &HarnessSettings,
+    ) -> Result<HarnessTarget> {
+        let config = self.harness_store().load()?;
         let set = self.deps.profiles.load().await?;
         let profile = self.harness_provider(&set, &settings).await?.ok_or_else(|| {
             Error::invalid(format!(
@@ -465,7 +531,7 @@ impl Switcher {
                 (endpoint, token)
             }
         };
-        let specs = self.harness_models(&profile.id).await.unwrap_or_default();
+        let specs = self.harness_models(&profile.id).await?;
         let models: Vec<HarnessModel> = if settings.models.is_empty() {
             specs.iter().map(HarnessModel::from_spec).collect()
         } else {
@@ -490,6 +556,7 @@ impl Switcher {
             options.opencode_major = Some(installed.unwrap_or(OpencodeMajor::V2));
         }
         Ok(HarnessTarget {
+            claude: None,
             harness,
             provider: Some(profile.id.clone()),
             provider_name: profile.name.clone(),
@@ -504,6 +571,7 @@ impl Switcher {
 
     /// [`superba_core::SwitchService::harness_list`].
     pub(crate) async fn harness_list_impl(&self) -> Result<Vec<HarnessSummary>> {
+        let config = self.harness_store().load()?;
         let mut out = Vec::new();
         for h in HarnessId::ALL {
             let install = self.harness_install(h).await;
@@ -512,6 +580,7 @@ impl Switcher {
                 .await
                 .map_err(|e| Error::other(format!("harness task: {e}")))??;
             out.push(HarnessSummary {
+                settings: config.settings(h),
                 harness: h,
                 installed: install.is_some() || self.harness_dir_exists(h),
                 install,
@@ -527,6 +596,15 @@ impl Switcher {
     pub(crate) async fn harness_view_impl(&self, harness: HarnessId) -> Result<HarnessView> {
         let config = self.harness_store().load()?;
         let settings = config.settings(harness);
+        self.harness_preview_impl(harness, settings).await
+    }
+
+    pub(crate) async fn harness_preview_impl(
+        &self,
+        harness: HarnessId,
+        settings: HarnessSettings,
+    ) -> Result<HarnessView> {
+        let config = self.harness_store().load()?;
         let install = self.harness_install(harness).await;
         let mut notes = Vec::new();
         let mut protocols = Vec::new();
@@ -540,7 +618,7 @@ impl Switcher {
                 .filter(|p| harness.speaks(*p))
                 .collect();
         }
-        let target = self.harness_target(harness).await;
+        let target = self.harness_target_for(harness, &settings).await;
         if let Err(e) = &target {
             notes.push(Notice::warning(
                 text("not_ready", "Not ready to apply: {reason}").arg("reason", e.detail()),
@@ -556,15 +634,24 @@ impl Switcher {
             let files = writer.file_views(&options)?;
             let applied = writer.applied()?;
             let pending = match &t2 {
-                Some(t) => writer.pending(t).unwrap_or_default(),
-                None => Vec::new(),
+                Some(t) => writer.pending(t),
+                None => Ok(Vec::new()),
             };
-            let diag = writer.diagnostics(&options).unwrap_or_default();
+            let diag = writer.diagnostics(&options)?;
             Ok::<_, Error>((files, applied, pending, diag))
         })
         .await
         .map_err(|e| Error::other(format!("harness task: {e}")))??;
         notes.extend(diag);
+        let pending = match pending {
+            Ok(pending) => pending,
+            Err(e) => {
+                notes.push(Notice::warning(
+                    text("not_ready", "Not ready to apply: {reason}").arg("reason", e.detail()),
+                ));
+                Vec::new()
+            }
+        };
         Ok(HarnessView {
             harness,
             settings,
@@ -676,11 +763,33 @@ impl Switcher {
         harness: HarnessId,
         kind: HarnessPlanKind,
     ) -> Result<HarnessPlan> {
-        let writer = self.harness_writer(harness);
+        if harness == HarnessId::ClaudeCode {
+            return self.claude_plan_impl(kind).await;
+        }
         let target = match kind {
             HarnessPlanKind::Apply => Some(self.harness_target(harness).await?),
             HarnessPlanKind::Restore => None,
         };
+        self.plan_harness_target(harness, kind, target).await
+    }
+
+    pub(crate) async fn harness_plan_preview_impl(
+        &self,
+        harness: HarnessId,
+        settings: HarnessSettings,
+    ) -> Result<HarnessPlan> {
+        let target = self.harness_target_for(harness, &settings).await?;
+        self.plan_harness_target(harness, HarnessPlanKind::Apply, Some(target))
+            .await
+    }
+
+    async fn plan_harness_target(
+        &self,
+        harness: HarnessId,
+        kind: HarnessPlanKind,
+        target: Option<HarnessTarget>,
+    ) -> Result<HarnessPlan> {
+        let writer = self.harness_writer(harness);
         let source_note = target.as_ref().and_then(|t| {
             (t.endpoint.source == EndpointSource::Router).then(|| {
                 Notice::info(
@@ -716,6 +825,9 @@ impl Switcher {
         plan: HarnessPlan,
         take_over: bool,
     ) -> Result<HarnessApplyReport> {
+        if plan.harness == HarnessId::ClaudeCode {
+            return self.claude_apply_impl(plan, take_over).await;
+        }
         self.refuse_elevated()?;
         let _lock = StateLock::acquire(&self.deps.ctx.data_dir)?;
         let writer = self.harness_writer(plan.harness);
@@ -736,6 +848,23 @@ impl Switcher {
             .map_err(|e| Error::other(format!("harness task: {e}")))?
     }
 
+    pub(crate) async fn harness_restore_reviewed_backup_impl(
+        &self,
+        harness: HarnessId,
+        id: String,
+        base_sha256: Option<String>,
+    ) -> Result<HarnessApplyReport> {
+        self.refuse_elevated()?;
+        let _lock = StateLock::acquire(&self.deps.ctx.data_dir)?;
+        let writer = self.harness_writer(harness);
+        let now = self.deps.clock.now();
+        tokio::task::spawn_blocking(move || {
+            writer.restore_backup_checked(&id, Some(base_sha256.as_deref()), now)
+        })
+        .await
+        .map_err(|e| Error::other(format!("restore task: {e}")))?
+    }
+
     /// [`superba_core::SwitchService::harness_restore_backup`].
     pub(crate) async fn harness_restore_backup_impl(
         &self,
@@ -749,5 +878,32 @@ impl Switcher {
         tokio::task::spawn_blocking(move || writer.restore_backup(&id, now))
             .await
             .map_err(|e| Error::other(format!("harness task: {e}")))?
+    }
+}
+
+impl Switcher {
+    pub(crate) async fn harness_file_impl(
+        &self,
+        harness: HarnessId,
+        file: String,
+    ) -> Result<superba_core::harness::HarnessFileDoc> {
+        let options = self.harness_store().load()?.settings(harness).options;
+        let writer = self.harness_writer(harness);
+        tokio::task::spawn_blocking(move || writer.file_doc(&options, &file))
+            .await
+            .map_err(|e| Error::other(e.to_string()))?
+    }
+    pub(crate) async fn save_harness_file_impl(
+        &self,
+        save: superba_core::harness::HarnessFileSave,
+    ) -> Result<superba_core::harness::HarnessFileDoc> {
+        self.refuse_elevated()?;
+        let _lock = StateLock::acquire(&self.deps.ctx.data_dir)?;
+        let options = self.harness_store().load()?.settings(save.harness).options;
+        let writer = self.harness_writer(save.harness);
+        let now = self.deps.clock.now();
+        tokio::task::spawn_blocking(move || writer.save_file(&options, &save, now))
+            .await
+            .map_err(|e| Error::other(e.to_string()))?
     }
 }

@@ -21,6 +21,7 @@ impl FakeService {
             });
             state.harnesses.push(HarnessSummary {
                 harness: h,
+                settings: HarnessSettings::default(),
                 installed: h != HarnessId::Pi,
                 install: install.clone(),
                 applied_provider: None,
@@ -46,6 +47,7 @@ impl FakeService {
                             HarnessFileStatus::Valid
                         },
                         holds_key: true,
+                        backups: 1,
                     }],
                     protocols: vec![],
                     endpoint: None,

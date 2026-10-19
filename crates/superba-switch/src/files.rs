@@ -353,7 +353,10 @@ impl Switcher {
         }
         let now = d.clock.now();
         let new_sha = sha256_hex(&new);
-        if doc.sha256.as_deref() == Some(new_sha.as_str()) {
+        if doc.sha256.as_deref() == Some(new_sha.as_str())
+            && !(doc.kind == CodexFileKind::ClaudeSettings
+                && matches!(save.reason, SaveReason::Restore { .. }))
+        {
             return Ok(CodexFileSaved {
                 target: doc.target,
                 kind: doc.kind,
@@ -364,6 +367,54 @@ impl Switcher {
                 credential: None,
                 runtime: None,
                 notes: vec![Notice::info(text("switch.codex_files.unchanged"))],
+                saved_at: now,
+            });
+        }
+
+        if doc.kind == CodexFileKind::ClaudeSettings
+            && let SaveReason::Restore { backup } = &save.reason
+        {
+            let store = self.editor_store();
+            let (entry, contents) = store.harness_backup_read(backup)?;
+            if entry.harness != superba_core::harness::HarnessId::ClaudeCode
+                || contents.expose() != new
+            {
+                return Err(Error::invalid(
+                    "The restore must use the selected Claude Code backup's exact contents.",
+                ));
+            }
+            let writer = superba_config::harness::HarnessWriter::new(d.ctx.clone(), entry.harness);
+            let id = backup.clone();
+            let expected = doc.sha256.clone();
+            let report = tokio::task::spawn_blocking(move || {
+                writer.restore_backup_checked(&id, Some(expected.as_deref()), now)
+            })
+            .await
+            .map_err(|e| Error::other(format!("restore task: {e}")))??;
+            let backup = report
+                .files
+                .into_iter()
+                .find_map(|f| f.backup)
+                .map(|b| CodexFileBackup {
+                    id: b.id,
+                    target: TargetId::local(),
+                    target_label: doc.target_label.clone(),
+                    kind: CodexFileKind::ClaudeSettings,
+                    at: b.at,
+                    source: b.source,
+                    size: b.size,
+                    sha256: b.sha256,
+                });
+            return Ok(CodexFileSaved {
+                target: doc.target,
+                kind: doc.kind,
+                path: doc.path,
+                sha256: new_sha,
+                backup,
+                owned_changed: Vec::new(),
+                credential: None,
+                runtime: None,
+                notes: report.notes,
                 saved_at: now,
             });
         }

@@ -138,7 +138,20 @@ pub struct ReadFile {
 impl ReadFile {
     /// Read `file`.
     pub fn read(file: &HarnessFile) -> Result<Self> {
-        let bytes = fsx::read_optional(&file.path)?;
+        let bytes = match fsx::read_optional(&file.path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return Ok(Self {
+                    file: file.clone(),
+                    bytes: None,
+                    sha256: None,
+                    doc: None,
+                    status: HarnessFileStatus::Unreadable {
+                        message: error.to_string(),
+                    },
+                });
+            }
+        };
         Ok(Self::from_bytes(file.clone(), bytes))
     }
 
@@ -184,6 +197,7 @@ impl ReadFile {
             path: self.file.path.clone(),
             status: self.status.clone(),
             holds_key: self.file.holds_key,
+            backups: 0,
         }
     }
 }

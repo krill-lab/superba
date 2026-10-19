@@ -19,6 +19,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 // area's owner edits only its file; `impl SwitchService` below delegates.
 mod claude;
 mod files;
+mod harness;
 mod hosts;
 mod import;
 mod maintenance;
@@ -111,6 +112,7 @@ struct Areas {
     sessions: Mutex<sessions::State>,
     router: Mutex<router::State>,
     hosts: Mutex<hosts::State>,
+    harness: Mutex<harness::State>,
     versions: Mutex<versions::State>,
     selfupdate: Mutex<selfupdate::State>,
     import: Mutex<import::State>,
@@ -1955,7 +1957,8 @@ impl SwitchService for FakeService {
     }
 
     async fn harness_list(&self) -> Result<Vec<superba_core::harness::HarnessSummary>> {
-        Ok(self.areas.maintenance.lock().unwrap().harnesses.clone())
+        let fixtures = self.areas.maintenance.lock().unwrap().harnesses.clone();
+        Ok(if fixtures.is_empty() { harness::list(self) } else { fixtures })
     }
     async fn harness_view(
         &self,
@@ -1968,7 +1971,7 @@ impl SwitchService for FakeService {
             .views
             .get(&h)
             .cloned()
-            .unwrap_or_else(|| Err(Error::other("no fixture")))
+            .unwrap_or_else(|| Ok(self.tool_fixture(h)))
     }
     async fn harness_backups(
         &self,
@@ -2025,6 +2028,55 @@ impl SwitchService for FakeService {
             ok: true,
             message: None,
         })
+    }
+    async fn harness_preview(
+        &self,
+        h: superba_core::harness::HarnessId,
+        settings: superba_core::harness::HarnessSettings,
+    ) -> Result<superba_core::harness::HarnessView> {
+        Ok(harness::preview(self, h, settings))
+    }
+    async fn save_harness_settings(
+        &self,
+        h: superba_core::harness::HarnessId,
+        s: superba_core::harness::HarnessSettings,
+    ) -> Result<superba_core::harness::HarnessView> {
+        Ok(harness::save(self, h, s))
+    }
+    async fn harness_models(&self, _: ProfileId, _: bool) -> Result<ModelList> {
+        harness::models(self)
+    }
+    async fn harness_plan_preview(
+        &self,
+        h: superba_core::harness::HarnessId,
+        _: superba_core::harness::HarnessSettings,
+    ) -> Result<superba_core::harness::HarnessPlan> {
+        Ok(harness::plan(
+            h,
+            superba_core::harness::HarnessPlanKind::Apply,
+        ))
+    }
+
+    async fn harness_plan(
+        &self,
+        h: superba_core::harness::HarnessId,
+        k: superba_core::harness::HarnessPlanKind,
+    ) -> Result<superba_core::harness::HarnessPlan> {
+        Ok(harness::plan(h, k))
+    }
+    async fn harness_apply(
+        &self,
+        p: superba_core::harness::HarnessPlan,
+        take: bool,
+    ) -> Result<superba_core::harness::HarnessApplyReport> {
+        Ok(harness::apply(self, p, take))
+    }
+    async fn harness_file(
+        &self,
+        h: superba_core::harness::HarnessId,
+        f: String,
+    ) -> Result<superba_core::harness::HarnessFileDoc> {
+        harness::file(self, h, f)
     }
 
     async fn claude_view(&self) -> Result<superba_core::ClaudeView> {

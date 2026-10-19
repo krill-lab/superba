@@ -84,12 +84,12 @@ async fn apply_restore_and_the_file_editor_on_settings_json() {
     let token = plan
         .changes
         .iter()
-        .find(|c| c.path == "env.ANTHROPIC_AUTH_TOKEN")
+        .find(|c| c.slot == "env.ANTHROPIC_AUTH_TOKEN")
         .unwrap();
     assert!(!token.after.as_deref().unwrap().contains(KEY));
     assert!(!serde_json::to_string(&plan).unwrap().contains(KEY));
     let report = sw.claude_apply(plan, false).await.unwrap();
-    assert!(report.backup.is_some());
+    assert!(report.files.iter().any(|f| f.backup.is_some()));
     let after: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(after["theme"], "dark");
     assert_eq!(after["permissions"], json!({"defaultMode": "plan"}));
@@ -216,4 +216,96 @@ async fn diagnostics_name_variables_outside_the_file() {
     assert!(d.findings.iter().any(|f| f.id == "claude_settings_absent"));
     // No value of a variable is reported.
     assert!(!serde_json::to_string(&d).unwrap().contains("sk-shell"));
+}
+
+#[tokio::test]
+async fn claude_models_respect_the_shared_provider_source_with_auto_as_default() {
+    use superba_core::{ClaudeModelsRequest, ModelSource};
+    for source in [
+        None,
+        Some(ModelSource::Auto),
+        Some(ModelSource::Codex),
+        Some(ModelSource::Standard),
+    ] {
+        let w = World::new();
+        w.profiles
+            .set
+            .lock()
+            .unwrap()
+            .profiles
+            .iter_mut()
+            .find(|p| p.id == ProfileId::new("work"))
+            .unwrap()
+            .model_source = source;
+        let s = w.switcher();
+        let _ = s
+            .claude_models(ClaudeModelsRequest {
+                provider: Some(ProfileId::new("work")),
+                refresh: true,
+            })
+            .await;
+        assert_eq!(
+            w.prober
+                .model_list_sources
+                .lock()
+                .unwrap()
+                .last()
+                .unwrap()
+                .0,
+            Some(source.unwrap_or(ModelSource::Auto))
+        );
+    }
+}
+
+#[tokio::test]
+async fn claude_and_harness_share_backups_and_the_editor_restore_releases_owned_entries() {
+    use superba_core::harness::HarnessId;
+    let w = world(MapEnv::new());
+    let sw = w.switcher();
+    let path = settings_path(&w);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+    sw.save_claude_config(config()).await.unwrap();
+    let plan = sw.claude_plan(ClaudePlanKind::Apply).await.unwrap();
+    sw.harness_apply(plan, false).await.unwrap();
+    let shared = sw.harness_backups(HarnessId::ClaudeCode).await.unwrap();
+    let original = shared
+        .iter()
+        .find(|b| b.source == superba_core::BackupSource::Original)
+        .unwrap();
+    let backup = sw.codex_file_backup(&original.id).await.unwrap();
+    let doc = sw
+        .codex_file(TargetId::local(), CodexFileKind::ClaudeSettings)
+        .await
+        .unwrap();
+    sw.save_codex_file(CodexFileSave {
+        target: TargetId::local(),
+        kind: CodexFileKind::ClaudeSettings,
+        contents: backup.contents,
+        base_sha256: doc.sha256,
+        reason: SaveReason::Restore {
+            backup: original.id.clone(),
+        },
+        force: false,
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        r#"{"theme":"dark"}"#
+    );
+    assert!(sw.claude_view().await.unwrap().applied.is_none());
+    assert!(
+        sw.codex_file(TargetId::local(), CodexFileKind::ClaudeSettings)
+            .await
+            .unwrap()
+            .owned
+            .is_empty()
+    );
+    let after = sw.harness_backups(HarnessId::ClaudeCode).await.unwrap();
+    assert!(
+        after
+            .iter()
+            .any(|b| matches!(b.source, superba_core::BackupSource::BeforeRestore { .. }))
+    );
 }

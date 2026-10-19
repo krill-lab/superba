@@ -280,7 +280,12 @@ impl Switcher {
             return false;
         };
         let path = env_path(ENV_BASE_URL);
-        let Some(Some(serde_json::Value::String(written))) = state.written.get(&path) else {
+        let Some(serde_json::Value::String(written)) = state
+            .files
+            .get("settings.json")
+            .and_then(|f| f.slots.get(&path))
+            .and_then(|s| s.written.as_ref())
+        else {
             return false;
         };
         if !is_router_url(written) {
@@ -301,7 +306,13 @@ impl Switcher {
             return None;
         }
         let state = self.claude_writer().state().ok()??;
-        let written = state.written.get(&env_path(ENV_BASE_URL))?.clone()?;
+        let written = state
+            .files
+            .get("settings.json")?
+            .slots
+            .get(&env_path(ENV_BASE_URL))?
+            .written
+            .as_ref()?;
         let from = Url::parse(written.as_str()?)
             .ok()?
             .port_or_known_default()?;

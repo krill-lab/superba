@@ -190,6 +190,20 @@ impl EditorStore {
         source: BackupSource,
         at: Timestamp,
     ) -> Result<CodexFileBackup> {
+        if kind == CodexFileKind::ClaudeSettings {
+            let path = superba_core::ClaudeHome::resolve(self.ctx.env.as_ref(), &self.ctx.home_dir)
+                .settings_json();
+            return self
+                .harness_backup(
+                    superba_core::harness::HarnessId::ClaudeCode,
+                    "settings.json",
+                    &path,
+                    bytes,
+                    source,
+                    at,
+                )
+                .map(claude_backup);
+        }
         let rand = uuid::Uuid::new_v4().simple().to_string();
         let id = format!("{}-{}-{}", stamp(at), kind_short(kind), &rand[..4]);
         let home_key = fsx::short_hash(target.as_str().as_bytes());
@@ -296,6 +310,13 @@ impl EditorStore {
             .filter(|b| wants(&b.target, b.kind))
             .collect();
         let local = TargetId::local();
+        if wants(&local, CodexFileKind::ClaudeSettings) {
+            out.extend(
+                self.harness_backups(superba_core::harness::HarnessId::ClaudeCode)?
+                    .into_iter()
+                    .map(claude_backup),
+            );
+        }
         if query.target.as_ref().is_none_or(TargetId::is_local) {
             for (b, _) in self.engine_backups(local_home, local_label)? {
                 if wants(&local, b.kind) {
@@ -412,6 +433,16 @@ impl EditorStore {
                 .find(|e| e.backup.id == id)
                 .map(|e| (e.backup, self.dir().join(e.file)))
         };
+        if found.is_none() {
+            let (backup, contents) = self.harness_backup_read(id)?;
+            if backup.harness != superba_core::harness::HarnessId::ClaudeCode {
+                return Err(not_found());
+            }
+            return Ok(CodexFileBackupContents {
+                backup: claude_backup(backup),
+                contents,
+            });
+        }
         let (backup, path) = found.ok_or_else(not_found)?;
         let contents = self
             .vault
@@ -546,5 +577,20 @@ impl EditorStore {
             });
         }
         Ok((entry.backup, contents))
+    }
+}
+
+/// Projection for the Claude settings editor; the sealed copy and index entry
+/// remain in the shared harness partition.
+fn claude_backup(b: superba_core::harness::HarnessBackup) -> CodexFileBackup {
+    CodexFileBackup {
+        id: b.id,
+        target: TargetId::local(),
+        target_label: "This computer".into(),
+        kind: CodexFileKind::ClaudeSettings,
+        at: b.at,
+        source: b.source,
+        size: b.size,
+        sha256: b.sha256,
     }
 }

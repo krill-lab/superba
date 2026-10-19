@@ -90,6 +90,8 @@ pub fn pi_launch_env(superba_manages_updates: bool) -> Vec<(&'static str, &'stat
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HarnessId {
+    /// Claude Code (configured on its own page, using the shared writer).
+    ClaudeCode,
     /// dsh, the DeepSeek Harness (`$DSH_HOME/profiles/<p>/cordis.patch.yml`).
     Dsh,
     /// opencode, OpenCode 1 or 2 (`~/.config/opencode/opencode.json[c]`).
@@ -107,7 +109,7 @@ pub enum HarnessId {
 }
 
 impl HarnessId {
-    /// Every harness, in display order.
+    /// Lightweight tools, in display order. Claude Code has its own page.
     pub const ALL: [HarnessId; 5] = [
         HarnessId::Dsh,
         HarnessId::OpenCode,
@@ -119,6 +121,7 @@ impl HarnessId {
     /// `dsh`, `opencode`, `pi`, `zcode`, `workbuddy`.
     pub fn as_str(self) -> &'static str {
         match self {
+            HarnessId::ClaudeCode => "claude_code",
             HarnessId::Dsh => "dsh",
             HarnessId::OpenCode => "opencode",
             HarnessId::Pi => "pi",
@@ -130,6 +133,7 @@ impl HarnessId {
     /// Parse [`HarnessId::as_str`] (case-insensitive; a few aliases).
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
+            "claude" | "claude_code" => Some(HarnessId::ClaudeCode),
             "dsh" | "deepseek-harness" | "deepseek" => Some(HarnessId::Dsh),
             "opencode" | "open-code" => Some(HarnessId::OpenCode),
             "pi" => Some(HarnessId::Pi),
@@ -142,6 +146,7 @@ impl HarnessId {
     /// The product's name (not translated).
     pub fn display_name(self) -> &'static str {
         match self {
+            HarnessId::ClaudeCode => "Claude Code",
             HarnessId::Dsh => "dsh",
             HarnessId::OpenCode => "opencode",
             HarnessId::Pi => "pi",
@@ -154,6 +159,7 @@ impl HarnessId {
     pub fn protocols(self) -> &'static [HarnessProtocol] {
         use HarnessProtocol as P;
         match self {
+            HarnessId::ClaudeCode => &[P::Anthropic],
             HarnessId::WorkBuddy => &[P::Chat],
             HarnessId::Dsh | HarnessId::OpenCode | HarnessId::Pi | HarnessId::ZCode => {
                 &[P::Responses, P::Chat, P::Anthropic]
@@ -720,6 +726,8 @@ impl HarnessModel {
 /// serialized, redacted in `Debug`.
 #[derive(Clone, Debug)]
 pub struct HarnessTarget {
+    /// Claude Code's specialized model slots and environment entries.
+    pub claude: Option<crate::claude::ClaudeDesired>,
     /// The harness.
     pub harness: HarnessId,
     /// The Superba provider it was resolved from.

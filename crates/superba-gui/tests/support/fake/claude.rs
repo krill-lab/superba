@@ -107,11 +107,17 @@ pub(super) fn save(fake: &FakeService, config: ClaudeConfig) -> Result<ClaudeVie
 pub(super) fn plan(kind: ClaudePlanKind) -> ClaudePlan {
     ClaudePlan {
         kind,
-        settings_path: PathBuf::from("/home/u/.claude/settings.json"),
+        harness: superba_core::harness::HarnessId::ClaudeCode,
         provider: Some(ProfileId::new("krill")),
-        base_sha256: None,
+        protocol: Some(superba_core::harness::HarnessProtocol::Anthropic),
+        files: vec![superba_core::harness::HarnessPlanFile {
+            key: "settings.json".into(),
+            path: PathBuf::from("/home/u/.claude/settings.json"),
+            base_sha256: None,
+        }],
         changes: vec![ClaudeChange {
-            path: "env.ANTHROPIC_BASE_URL".into(),
+            file: "settings.json".into(),
+            slot: "env.ANTHROPIC_BASE_URL".into(),
             before: None,
             after: Some("https://api.krill-code.net".into()),
             drift: false,
@@ -125,10 +131,18 @@ pub(super) fn plan(kind: ClaudePlanKind) -> ClaudePlan {
 pub(super) fn apply(plan: ClaudePlan) -> ClaudeApplyReport {
     ClaudeApplyReport {
         kind: plan.kind,
-        settings_path: plan.settings_path,
-        sha256: Some("0".repeat(64)),
-        backup: None,
-        changed: plan.changes.into_iter().map(|c| c.path).collect(),
+        harness: plan.harness,
+        files: plan
+            .files
+            .into_iter()
+            .map(|f| superba_core::harness::HarnessWrittenFile {
+                key: f.key,
+                path: f.path,
+                sha256: Some("0".repeat(64)),
+                backup: None,
+            })
+            .collect(),
+        changed: plan.changes.into_iter().map(|c| c.slot).collect(),
         kept: Vec::new(),
         notes: Vec::new(),
     }

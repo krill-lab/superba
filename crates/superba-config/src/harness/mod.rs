@@ -34,6 +34,7 @@
 //! shaped alike), with Claude Code's `CodexFileKind::ClaudeSettings` backups
 //! moving to the harness backup section or vice versa.
 
+pub mod claude;
 pub mod doc;
 pub mod dotenv;
 pub mod dsh;
@@ -124,6 +125,7 @@ pub trait HarnessSpec: Send + Sync {
 /// The writer of `harness`.
 pub fn spec(harness: HarnessId) -> &'static dyn HarnessSpec {
     match harness {
+        HarnessId::ClaudeCode => &claude::ClaudeCode,
         HarnessId::Dsh => &dsh::Dsh,
         HarnessId::OpenCode => &opencode::OpenCode,
         HarnessId::Pi => &pi::Pi,
@@ -299,10 +301,15 @@ impl HarnessWriter {
 
     /// The files for people (targets and previously written ones).
     pub fn file_views(&self, options: &HarnessOptions) -> Result<Vec<HarnessFileView>> {
+        let backups = self.backups()?;
         Ok(self
             .read_files(options)?
             .iter()
-            .map(ReadFile::view)
+            .map(|f| {
+                let mut view = f.view();
+                view.backups = backups.iter().filter(|b| b.file == view.key).count();
+                view
+            })
             .collect())
     }
 
@@ -339,7 +346,7 @@ impl HarnessWriter {
         if apply {
             let t = target.ok_or_else(|| Error::invalid("nothing to apply"))?;
             self.spec.check_key(&t.key)?;
-            if t.models.is_empty() {
+            if t.models.is_empty() && t.harness != HarnessId::ClaudeCode {
                 return Err(Error::invalid(
                     "no models to write: the provider lists none (pick models with --model)",
                 ));
@@ -627,7 +634,7 @@ impl HarnessWriter {
                         &f.file.key,
                         &f.file.path,
                         old,
-                        BackupSource::BeforeSwitch {
+                        BackupSource::BeforeApply {
                             generation: next_generation,
                             profile: plan.provider.clone(),
                         },
@@ -761,6 +768,81 @@ impl HarnessWriter {
         })
     }
 
+    /// Open a recognized configuration file in the editor.
+    pub fn file_doc(
+        &self,
+        options: &HarnessOptions,
+        key: &str,
+    ) -> Result<superba_core::harness::HarnessFileDoc> {
+        let f = self
+            .read_files(options)?
+            .into_iter()
+            .find(|f| f.file.key == key)
+            .ok_or_else(|| Error::NotFound {
+                what: format!("harness file {key}"),
+            })?;
+        Ok(superba_core::harness::HarnessFileDoc {
+            harness: self.harness(),
+            file: f.view(),
+            contents: f.bytes.map(superba_core::SecretBytes::new),
+            sha256: f.sha256,
+        })
+    }
+
+    /// Validate, back up and save a hand edit using the same file transaction.
+    pub fn save_file(
+        &self,
+        options: &HarnessOptions,
+        save: &superba_core::harness::HarnessFileSave,
+        now: Timestamp,
+    ) -> Result<superba_core::harness::HarnessFileDoc> {
+        if save.harness != self.harness() {
+            return Err(Error::invalid("file belongs to another harness"));
+        }
+        let f = self
+            .read_files(options)?
+            .into_iter()
+            .find(|f| f.file.key == save.file)
+            .ok_or_else(|| Error::NotFound {
+                what: format!("harness file {}", save.file),
+            })?;
+        if matches!(
+            f.status,
+            superba_core::harness::HarnessFileStatus::Unreadable { .. }
+        ) {
+            return Err(Error::invalid(
+                "The file cannot be read; reload it before saving.",
+            ));
+        }
+        if f.sha256 != save.base_sha256 {
+            return Err(Error::Conflict {
+                message: "The file changed since it was opened; reload it before saving.".into(),
+            });
+        }
+        let text = std::str::from_utf8(save.contents.expose())
+            .map_err(|_| Error::invalid("not UTF-8 text"))?;
+        let doc = Doc::parse(f.file.format, text)
+            .map_err(|status| Error::invalid(format!("{status:?}")))?;
+        self.spec.check(&[(f.file.clone(), doc.value().clone())])?;
+        if let Some(bytes) = &f.bytes {
+            EditorStore::new(self.ctx.clone()).harness_backup(
+                self.harness(),
+                &save.file,
+                &f.file.path,
+                bytes,
+                BackupSource::BeforeEdit,
+                now,
+            )?;
+        }
+        write_cas(
+            &f.file.path,
+            save.contents.expose(),
+            save.base_sha256.as_deref(),
+            f.file.holds_key,
+        )?;
+        self.file_doc(options, &save.file)
+    }
+
     /// The backups of this harness's files, newest first.
     pub fn backups(&self) -> Result<Vec<HarnessBackup>> {
         EditorStore::new(self.ctx.clone()).harness_backups(self.spec.id())
@@ -769,6 +851,17 @@ impl HarnessWriter {
     /// Put one backed-up file back as a whole (after backing up what is
     /// there); Superba then owns nothing in that file.
     pub fn restore_backup(&self, id: &str, now: Timestamp) -> Result<HarnessApplyReport> {
+        self.restore_backup_checked(id, None, now)
+    }
+
+    /// Restore the reviewed backup only if the current file still has the reviewed hash.
+    /// `None` skips the review check for immediate CLI restores; `Some(None)` expects an absent file.
+    pub fn restore_backup_checked(
+        &self,
+        id: &str,
+        expected: Option<Option<&str>>,
+        now: Timestamp,
+    ) -> Result<HarnessApplyReport> {
         let editor = EditorStore::new(self.ctx.clone());
         let harness = self.spec.id();
         let (backup, contents) = editor.harness_backup_read(id)?;
@@ -780,6 +873,12 @@ impl HarnessWriter {
         let path = backup.path.clone();
         let current = fsx::read_optional(&path)?;
         let sha = current.as_deref().map(fsx::sha256_hex);
+        if expected.is_some_and(|e| e != sha.as_deref()) {
+            return Err(Error::Conflict {
+                message: "The file changed since the backup preview; reload it before restoring."
+                    .into(),
+            });
+        }
         let mut before = None;
         if let Some(old) = &current {
             before = Some(editor.harness_backup(

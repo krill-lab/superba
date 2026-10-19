@@ -171,6 +171,8 @@ pub struct PageStates {
     pub updates: pages::superba::updates::State,
     /// Claude Code (both of its pages share one state).
     pub claude: pages::claude::State,
+    /// Shared tool configuration.
+    pub tools: pages::tools::State,
     /// Superba section navigation and summary.
     pub superba: pages::superba::State,
     /// Notifications.
@@ -197,7 +199,7 @@ impl PageStates {
                     || self.superba.storage.busy(),
                 ..PageStatus::default()
             },
-            Page::Tools => PageStatus::default(),
+            Page::Tools => pages::tools::status(&self.tools),
         }
     }
 
@@ -233,7 +235,7 @@ impl PageStates {
                     pages::notify::command(&mut self.notify, cx, command);
                 }
             }
-            Page::Tools => {}
+            Page::Tools => pages::tools::command(&mut self.tools, cx, command),
         }
     }
 
@@ -274,7 +276,7 @@ impl PageStates {
             Page::ClaudeCode | Page::ClaudeSettings => {
                 pages::claude::show(ui, cx, &mut self.claude, page, out);
             }
-            Page::Tools => pages::tools::show(ui, cx, out),
+            Page::Tools => pages::tools::show(ui, cx, &mut self.tools, out),
             Page::Superba(section) => pages::superba::show(
                 ui,
                 cx,

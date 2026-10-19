@@ -214,7 +214,7 @@ impl Page {
 
     /// Minimum content height before the shell uses its short-window fallback.
     pub fn min_height(self) -> f32 {
-        if self.is_superba() || self == Page::Tools {
+        if self.is_superba() {
             480.0
         } else {
             crate::design::layout::FIT_MIN_HEIGHT

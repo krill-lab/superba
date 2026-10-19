@@ -13,7 +13,7 @@ use std::sync::Arc;
 use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
 use superba_config::ENV_SUPERBA_SECRET_BACKEND;
-use superba_config::claude::{ClaudeConfigStore, ClaudeWriter, json as cjson, plan};
+use superba_config::claude::{ClaudeConfigStore, ClaudeWriter, json as cjson};
 use superba_config::codex_files::EditorStore;
 use superba_core::claude::{
     self, AnthropicPreset, ENV_API_KEY, ENV_AUTH_TOKEN, ENV_BASE_URL, KEY_MODEL, KEY_MODEL_PICKER,
@@ -201,7 +201,10 @@ fn apply_keeps_every_foreign_key_and_its_place() {
     // Only managed paths changed.
     let managed = managed_paths();
     for c in &report.changed {
-        assert!(managed.contains(c), "{c} is not owned");
+        assert!(
+            managed.contains(&c.strip_prefix("settings.json ").unwrap_or(c).to_string()),
+            "{c} is not owned"
+        );
     }
     // Two-space indentation and a final newline; mode 0600 (it holds a key).
     let text = std::fs::read_to_string(env.path()).unwrap();
@@ -283,11 +286,11 @@ fn a_file_superba_created_is_removed_again_by_restore() {
     let env = Env::new();
     assert!(!env.path().exists());
     let plan = env.plan_apply(&models(), AnthropicAuth::Bearer);
-    assert_eq!(plan.base_sha256, None);
+    assert_eq!(plan.files.first().and_then(|f| f.base_sha256.clone()), None);
     env.writer().apply(&plan, false, T0).unwrap();
     assert!(env.path().exists());
     let report = env.restore();
-    assert_eq!(report.sha256, None);
+    assert_eq!(report.files.first().and_then(|f| f.sha256.clone()), None);
     assert!(
         !env.path().exists(),
         "created by Superba, empty again: removed"
@@ -324,11 +327,14 @@ fn drift_is_kept_unless_taken_over_and_stays_drift() {
         .writer()
         .plan(ClaudePlanKind::Apply, Some(d.clone()), None)
         .unwrap();
-    let drift: Vec<_> = plan.drift().map(|c| c.path.clone()).collect();
+    let drift: Vec<_> = plan.drift().map(|c| c.slot.clone()).collect();
     assert_eq!(drift, vec![env_path(ENV_BASE_URL)]);
     // Without take-over it stays the user's...
     let report = env.writer().apply(&plan, false, T0).unwrap();
-    assert_eq!(report.kept, vec![env_path(ENV_BASE_URL)]);
+    assert_eq!(
+        report.kept,
+        vec![format!("settings.json {}", env_path(ENV_BASE_URL))]
+    );
     assert_eq!(env.json()["env"][ENV_BASE_URL], "https://mine.example.org");
     // ...and is still drift the next time.
     let plan = env
@@ -344,7 +350,10 @@ fn drift_is_kept_unless_taken_over_and_stays_drift() {
     v["env"][ENV_BASE_URL] = json!("https://mine.example.org");
     env.write(&String::from_utf8(cjson::print(&v)).unwrap());
     let report = env.restore();
-    assert_eq!(report.kept, vec![env_path(ENV_BASE_URL)]);
+    assert_eq!(
+        report.kept,
+        vec![format!("settings.json {}", env_path(ENV_BASE_URL))]
+    );
     assert_eq!(
         env.json(),
         json!({"env": {ENV_BASE_URL: "https://mine.example.org"}})
@@ -376,18 +385,18 @@ fn invalid_json_is_never_written() {
         .writer()
         .plan(ClaudePlanKind::Apply, Some(d), None)
         .unwrap_err();
-    assert!(err.to_string().contains("not valid JSON"), "{err}");
+    assert!(err.to_string().contains("not valid"), "{err}");
     env.write("[1, 2]");
     let file = env.writer().read().unwrap();
     assert_eq!(file.status, ClaudeFileStatus::NotObject);
     // `env` that is not an object is refused too.
     env.write(r#"{"env": "oops"}"#);
-    let plan = env.plan_apply(&models(), AnthropicAuth::Bearer);
-    let err = env.writer().apply(&plan, false, T0).unwrap_err();
-    assert!(
-        err.to_string().contains("\"env\" is not an object"),
-        "{err}"
-    );
+    let d = desired(&endpoint(), &Secret::new(KEY), &models(), &|_| None);
+    let err = env
+        .writer()
+        .plan(ClaudePlanKind::Apply, Some(d), None)
+        .unwrap_err();
+    assert!(err.to_string().contains("env is not an object"), "{err}");
     assert_eq!(env.json(), json!({"env": "oops"}));
 }
 
@@ -447,8 +456,12 @@ fn backups_hold_the_original_and_each_replaced_file() {
     let env = Env::new();
     env.write(FIXTURE);
     let first = env.apply(&models());
-    let backup = first.backup.expect("a backup of the replaced file");
-    assert_eq!(backup.kind, CodexFileKind::ClaudeSettings);
+    let backup = first
+        .files
+        .first()
+        .and_then(|f| f.backup.clone())
+        .expect("a backup of the replaced file");
+    assert_eq!(backup.harness, superba_core::harness::HarnessId::ClaudeCode);
     let mut m = models();
     m.main = Some("gpt-5.6-luna".into());
     env.apply(&m);
@@ -490,7 +503,13 @@ fn backups_hold_the_original_and_each_replaced_file() {
         );
     }
     // So is the state.
-    let state = std::fs::read(env.ctx.data_dir.claude_dir().join("state.enc")).unwrap();
+    let state = std::fs::read(
+        env.ctx
+            .data_dir
+            .harness_dir("claude_code")
+            .join("state.enc"),
+    )
+    .unwrap();
     assert!(!state.windows(KEY.len()).any(|w| w == KEY.as_bytes()));
 }
 
@@ -571,7 +590,7 @@ fn nothing_changes_twice_and_restore_without_state_is_a_no_op() {
     assert!(again.is_empty(), "{:?}", again.changes);
     let report = env.writer().apply(&again, false, T0).unwrap();
     assert!(
-        report.backup.is_none(),
+        report.files.iter().all(|f| f.backup.is_none()),
         "an unchanged file is not rewritten"
     );
 }
@@ -583,7 +602,7 @@ fn plans_show_keys_masked() {
     let token = plan
         .changes
         .iter()
-        .find(|c| c.path == env_path(ENV_AUTH_TOKEN))
+        .find(|c| c.slot == env_path(ENV_AUTH_TOKEN))
         .unwrap();
     assert!(token.secret);
     let shown = token.after.clone().unwrap();
@@ -607,13 +626,24 @@ fn pure_planning_marks_drift_only_for_keys_superba_wrote() {
         &|_| None,
     );
     // Never written by Superba: an ordinary change (shown in the plan).
-    let changes = plan::plan_apply(&current, &d, None);
+    let env = Env::new();
+    env.write(&current.to_string());
+    let changes = env
+        .writer()
+        .plan(ClaudePlanKind::Apply, Some(d), None)
+        .unwrap()
+        .changes;
     let base = changes
         .iter()
-        .find(|c| c.path == env_path(ENV_BASE_URL))
+        .find(|c| c.slot == env_path(ENV_BASE_URL))
         .unwrap();
     assert!(!base.drift);
-    assert_eq!(base.before, Some(json!("https://user.example")));
+    assert!(
+        base.before
+            .as_deref()
+            .unwrap()
+            .contains("https://user.example")
+    );
 }
 
 #[test]

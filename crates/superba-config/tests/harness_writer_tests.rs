@@ -90,6 +90,7 @@ fn models() -> Vec<HarnessModel> {
 
 fn target(h: HarnessId, protocol: HarnessProtocol, base: &str) -> HarnessTarget {
     HarnessTarget {
+        claude: None,
         harness: h,
         provider: Some(ProfileId::new("krill-main")),
         provider_name: "Krill".into(),

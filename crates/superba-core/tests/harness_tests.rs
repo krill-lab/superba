@@ -283,6 +283,7 @@ fn models_from_the_provider_list() {
 
 fn target(route: HarnessRoute) -> HarnessTarget {
     HarnessTarget {
+        claude: None,
         harness: HarnessId::Pi,
         provider: None,
         provider_name: "Krill".into(),

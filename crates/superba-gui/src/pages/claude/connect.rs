@@ -1761,7 +1761,9 @@ fn plan_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State) {
                 "claude.plan.body",
                 &[(
                     "path",
-                    &superba_core::paths::display_path(&plan.settings_path),
+                    &superba_core::paths::display_path(
+                        &state.view.as_ref().expect("loaded view").settings_path,
+                    ),
                 )],
             ),
             cx.pal,
@@ -1777,7 +1779,7 @@ fn plan_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State) {
                         let none = cx.tr.t("claude.plan.absent");
                         for c in &plan.changes {
                             ui.label(
-                                RichText::new(&c.path)
+                                RichText::new(&c.slot)
                                     .font(mono_font(text::CAPTION, Weight::Medium)),
                             );
                             let before = c.before.clone().unwrap_or_else(|| none.clone());

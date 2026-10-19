@@ -405,3 +405,184 @@ async fn a_provider_without_a_key_or_an_unknown_one_is_refused() {
             .any(|n| n.text.key == "switch.harness.not_ready")
     );
 }
+
+#[tokio::test]
+async fn failed_model_lists_are_visible_and_prevent_apply_without_touching_files() {
+    let w = world();
+    let svc = w.switcher();
+    svc.save_harness_settings(HarnessId::Pi, settings("work"))
+        .await
+        .unwrap();
+    let plan = svc
+        .harness_plan(HarnessId::Pi, HarnessPlanKind::Apply)
+        .await
+        .unwrap();
+    svc.harness_apply(plan, false).await.unwrap();
+    let path = w.ctx.home_dir.join(".pi/agent/models.json");
+    let before = std::fs::read(&path).unwrap();
+    *w.prober.model_list.lock().unwrap() = Some(Err(superba_core::Error::other(
+        "model endpoint unavailable",
+    )));
+    let view = svc.harness_view(HarnessId::Pi).await.unwrap();
+    assert!(view.notes.iter().any(|n| {
+        n.text
+            .render_fallback()
+            .contains("model endpoint unavailable")
+    }));
+    let error = svc
+        .harness_plan(HarnessId::Pi, HarnessPlanKind::Apply)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("model endpoint unavailable"));
+    assert_eq!(std::fs::read(path).unwrap(), before);
+}
+
+#[tokio::test]
+async fn preview_never_saves_a_draft_or_changes_configuration_files() {
+    let w = world();
+    let svc = w.switcher();
+    let view = svc
+        .harness_preview(HarnessId::OpenCode, settings("work"))
+        .await
+        .unwrap();
+    assert!(view.endpoint.is_some());
+    assert!(!w.ctx.data_dir.harness_config_json().exists());
+    assert!(view.files.iter().all(|f| !f.path.exists()));
+    assert_eq!(
+        svc.harness_view(HarnessId::OpenCode)
+            .await
+            .unwrap()
+            .settings
+            .provider,
+        None
+    );
+}
+
+#[tokio::test]
+async fn harness_editor_backs_up_valid_edits_refuses_stale_and_invalid_saves() {
+    use superba_core::SecretBytes;
+    use superba_core::harness::HarnessFileSave;
+    let w = world();
+    let svc = w.switcher();
+    svc.save_harness_settings(HarnessId::Pi, settings("work"))
+        .await
+        .unwrap();
+    let plan = svc
+        .harness_plan(HarnessId::Pi, HarnessPlanKind::Apply)
+        .await
+        .unwrap();
+    svc.harness_apply(plan, false).await.unwrap();
+    let doc = svc
+        .harness_file(HarnessId::Pi, "settings.json".into())
+        .await
+        .unwrap();
+    let save = HarnessFileSave {
+        harness: HarnessId::Pi,
+        file: doc.file.key.clone(),
+        base_sha256: doc.sha256.clone(),
+        contents: SecretBytes::new(b"{broken".to_vec()),
+    };
+    assert!(svc.save_harness_file(save).await.is_err());
+    let mut value: Value = serde_json::from_slice(doc.contents.as_ref().unwrap().expose()).unwrap();
+    value["theme"] = json!("light");
+    let save = HarnessFileSave {
+        harness: HarnessId::Pi,
+        file: doc.file.key.clone(),
+        base_sha256: doc.sha256,
+        contents: SecretBytes::new(serde_json::to_vec(&value).unwrap()),
+    };
+    let saved = svc.save_harness_file(save.clone()).await.unwrap();
+    assert!(matches!(
+        svc.save_harness_file(save).await,
+        Err(superba_core::Error::Conflict { .. })
+    ));
+    assert_ne!(
+        saved.contents.unwrap().expose(),
+        doc.contents.unwrap().expose()
+    );
+    let backups = svc.harness_backups(HarnessId::Pi).await.unwrap();
+    assert!(
+        backups
+            .iter()
+            .any(|b| b.source == superba_core::BackupSource::BeforeEdit)
+    );
+    assert!(
+        svc.harness_file(HarnessId::Pi, "../../elsewhere".into())
+            .await
+            .is_err()
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn opencode_version_probe_has_disposable_home_and_data_directories() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::Arc;
+    let mut w = world();
+    let bin = w.ctx.home_dir.join("test-bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("opencode");
+    std::fs::write(&script,"#!/bin/sh\n/bin/mkdir -p \"$HOME/.local/share/opencode/log\"\nprintf log > \"$HOME/.local/share/opencode/log/opencode.log\"\nprintf data > \"$XDG_DATA_HOME/opencode.log\"\nprintf cwd > opencode.log\nprintf '2.0.32\\n'\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    w.ctx.env = Arc::new(
+        superba_core::MapEnv::new()
+            .with("PATH", bin.as_os_str())
+            .with("SUPERBA_SECRET_BACKEND", "file"),
+    );
+    let view = w
+        .switcher()
+        .harness_view(HarnessId::OpenCode)
+        .await
+        .unwrap();
+    assert_eq!(view.install.unwrap().version.as_deref(), Some("2.0.32"));
+    assert!(
+        !w.ctx
+            .home_dir
+            .join(".local/share/opencode/log/opencode.log")
+            .exists()
+    );
+    assert!(!bin.join("opencode.log").exists());
+    assert_eq!(
+        std::fs::read_dir(w.ctx.data_dir.root().join("probes"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn reviewed_backup_restore_refuses_an_edit_after_preview() {
+    let w = world();
+    let sw = w.switcher();
+    let view = sw
+        .save_harness_settings(HarnessId::OpenCode, settings("work"))
+        .await
+        .unwrap();
+    let path = &view.files[0].path;
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "{\"theme\":\"dark\"}").unwrap();
+    let plan = sw
+        .harness_plan(HarnessId::OpenCode, HarnessPlanKind::Apply)
+        .await
+        .unwrap();
+    sw.harness_apply(plan, false).await.unwrap();
+    let doc = sw
+        .harness_file(HarnessId::OpenCode, view.files[0].key.clone())
+        .await
+        .unwrap();
+    let backups = sw.harness_backups(HarnessId::OpenCode).await.unwrap();
+    let backup = backups
+        .iter()
+        .find(|b| b.source == superba_core::BackupSource::Original)
+        .unwrap();
+    std::fs::write(path, "{\"theme\":\"light\"}").unwrap();
+    assert!(
+        sw.harness_restore_reviewed_backup(HarnessId::OpenCode, backup.id.clone(), doc.sha256)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        "{\"theme\":\"light\"}"
+    );
+}

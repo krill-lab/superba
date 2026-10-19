@@ -43,6 +43,8 @@ pub enum HarnessFileStatus {
         /// What is wrong.
         message: String,
     },
+    /// Valid JSON but not an object.
+    NotObject,
     /// It cannot be read.
     Unreadable {
         /// Why.
@@ -70,6 +72,9 @@ pub struct HarnessFileView {
     /// It holds a key in plain text once Superba wrote it.
     #[serde(default)]
     pub holds_key: bool,
+    /// Encrypted backups available in the shared editor.
+    #[serde(default)]
+    pub backups: usize,
 }
 
 /// What Superba applied last (no values: the files hold a key).
@@ -97,6 +102,9 @@ pub struct HarnessApplied {
 /// One harness at a glance.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HarnessSummary {
+    /// Saved settings, so a row reflects its provider and route before opening it.
+    #[serde(default)]
+    pub settings: HarnessSettings,
     /// The harness.
     pub harness: HarnessId,
     /// Found on this computer (program, app or configuration directory).
@@ -288,4 +296,29 @@ pub struct HarnessBackup {
     /// sha256 of the copy.
     #[serde(default)]
     pub sha256: Option<String>,
+}
+
+/// One file opened in the shared configuration editor.
+#[derive(Clone, Debug)]
+pub struct HarnessFileDoc {
+    /// Harness.
+    pub harness: HarnessId,
+    /// File and status.
+    pub file: HarnessFileView,
+    /// Real bytes, never logged.
+    pub contents: Option<crate::SecretBytes>,
+    /// Original hash for compare-and-swap.
+    pub sha256: Option<String>,
+}
+/// An explicit edit, backed up before writing.
+#[derive(Clone, Debug)]
+pub struct HarnessFileSave {
+    /// Harness.
+    pub harness: HarnessId,
+    /// Stable file key, resolved by the writer; not an arbitrary path.
+    pub file: String,
+    /// Hash when the editor opened the file.
+    pub base_sha256: Option<String>,
+    /// Edited bytes, never logged.
+    pub contents: crate::SecretBytes,
 }
