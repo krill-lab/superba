@@ -34,10 +34,13 @@ fn tool_rows_expose_install_file_errors_and_drift_in_both_languages() {
             locale,
             Page::Superba(SuperbaSection::Diagnostics),
         );
-        let t = h.until("installed tools", |t| {
-            t.nodes
-                .keys()
-                .any(|id| t.name(*id).is_some_and(|n| n.starts_with("WorkBuddy,")))
+        // Codex's overview and the other installed tools load independently.
+        let t = h.until("Codex and installed tools", |t| {
+            ["Codex,", "WorkBuddy,"].into_iter().all(|prefix| {
+                t.nodes
+                    .keys()
+                    .any(|id| t.name(*id).is_some_and(|n| n.starts_with(prefix)))
+            })
         });
         let names: Vec<_> = t
             .nodes
