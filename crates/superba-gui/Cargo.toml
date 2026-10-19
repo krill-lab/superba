@@ -44,6 +44,7 @@ open.workspace = true
 resvg.workspace = true
 roxmltree.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 toml.workspace = true
 rfd = { workspace = true, optional = true }
 sys-locale.workspace = true

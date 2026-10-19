@@ -8,6 +8,7 @@ use superba_gui::design::{
 };
 
 struct Gallery {
+    fonts: Option<fonts::InstalledFonts>,
     zh: bool,
     dark: bool,
     selected: usize,
@@ -159,6 +160,9 @@ impl Gallery {
 
 impl eframe::App for Gallery {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        if let Some(fonts) = &mut self.fonts {
+            fonts.poll(ui.ctx());
+        }
         let pal = Palette::of(ui.ctx());
         egui::Frame::new()
             .fill(pal.bg)
@@ -224,7 +228,8 @@ impl eframe::App for Gallery {
 fn main() -> eframe::Result {
     let args: Vec<_> = std::env::args().collect();
     let has = |flag| args.iter().any(|s| s == flag);
-    let gallery = Gallery {
+    let mut gallery = Gallery {
+        fonts: None,
         zh: has("--zh"),
         dark: has("--dark"),
         selected: 1,
@@ -253,7 +258,7 @@ fn main() -> eframe::Result {
                     Theme::Light
                 }),
             );
-            fonts::install(&cc.egui_ctx);
+            gallery.fonts = Some(fonts::install(&cc.egui_ctx));
             cc.egui_ctx.set_pixels_per_point(1.0);
             Ok(Box::new(gallery))
         }),

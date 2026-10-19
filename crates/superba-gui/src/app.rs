@@ -15,7 +15,7 @@ use superba_core::{
 
 use crate::cadence::{self, Cadence, Due};
 use crate::design::backdrop::{self, Backdrop};
-use crate::design::fonts::{self, FontReport};
+use crate::design::fonts::{self, InstalledFonts};
 use crate::design::layout;
 use crate::design::style;
 use crate::design::tokens::{Palette, size};
@@ -65,7 +65,7 @@ macro_rules! cx {
             data: &$app.data,
             busy: $busy,
             now: Timestamp::now(),
-            fonts: &$app.fonts,
+            fonts: $app.fonts.report(),
             service: &$app.service,
             log: &$app.log,
         }
@@ -315,7 +315,7 @@ pub struct SuperbaApp {
     applied_theme: Option<Option<egui::Theme>>,
     toasts: Toasts<ToastAction>,
     log: Vec<LogLine>,
-    fonts: FontReport,
+    fonts: InstalledFonts,
     started: Instant,
     /// The shell's own reads (overview, watchdog, hosts, update check) and the
     /// window events for the environment monitor.
@@ -2008,6 +2008,7 @@ impl SuperbaApp {
 impl eframe::App for SuperbaApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.fonts.poll(&ctx);
         self.handle_instance_requests();
         self.handle_replies(&ctx);
         self.tray_tick(&ctx);
@@ -2154,6 +2155,7 @@ impl eframe::App for SuperbaApp {
     /// handled and the router watchdog keeps ticking; nothing else is read and
     /// the window is not woken up for anything else.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.fonts.poll(ctx);
         let visible = ctx.input(|i| i.viewport().visible()).unwrap_or(true);
         if visible {
             // `ui` follows in this pass and does all of it.

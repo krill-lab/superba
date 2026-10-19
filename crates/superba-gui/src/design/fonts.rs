@@ -367,19 +367,34 @@ fn read_face(face: &CjkFace, geist: &[u8]) -> Option<FontData> {
     let index = face.index;
     #[cfg(target_os = "macos")]
     let (bytes, index) = macos::renderable_face(bytes, face)?;
+    Some(face_data(bytes, index, face, geist))
+}
+
+fn face_data(bytes: Vec<u8>, index: u32, face: &CjkFace, geist: &[u8]) -> FontData {
     let tweak = cjk_tweak(&bytes, index, face.weight, &face.family, geist);
-    Some(FontData::from_blob(Arc::new(bytes), index).tweak(tweak))
+    FontData::from_blob(Arc::new(bytes), index).tweak(tweak)
 }
 
 mod alignment;
+#[cfg(any(target_os = "macos", test))]
+mod cache;
+mod loading;
 #[cfg(target_os = "macos")]
 mod macos;
+pub use loading::InstalledFonts;
 #[cfg(any(target_os = "macos", test))]
 mod sfnt;
 use alignment::cjk_tweak;
 
 /// Build the font definitions: Geist weights first, the CJK faces as fallbacks.
 pub fn definitions(report: &FontReport) -> FontDefinitions {
+    definitions_with(report, read_face)
+}
+
+fn definitions_with(
+    report: &FontReport,
+    mut read: impl FnMut(&CjkFace, &[u8]) -> Option<FontData>,
+) -> FontDefinitions {
     let mut defs = FontDefinitions::empty();
     let mut add = |name: &str, data: FontData| {
         defs.font_data.insert(name.to_owned(), Arc::new(data));
@@ -396,15 +411,15 @@ pub fn definitions(report: &FontReport) -> FontDefinitions {
     let regular = report
         .cjk_regular
         .as_ref()
-        .and_then(|face| read_face(face, GEIST_REGULAR));
+        .and_then(|face| read(face, GEIST_REGULAR));
     let medium = report
         .cjk_medium
         .as_ref()
-        .and_then(|face| read_face(face, GEIST_MEDIUM));
+        .and_then(|face| read(face, GEIST_MEDIUM));
     let bold = report
         .cjk_bold
         .as_ref()
-        .and_then(|face| read_face(face, GEIST_SEMIBOLD));
+        .and_then(|face| read(face, GEIST_SEMIBOLD));
     let has_regular = regular.is_some();
     let has_medium = medium.is_some();
     let has_bold = bold.is_some();
@@ -497,15 +512,22 @@ pub fn drawable(text: &str) -> String {
     kept.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Discover fonts and install them into `ctx`. Returns what was found.
-pub fn install(ctx: &egui::Context) -> FontReport {
+/// Install fonts without blocking the first frame on CoreText conversion.
+/// Call [`InstalledFonts::poll`] before laying out each frame.
+pub fn install(ctx: &egui::Context) -> InstalledFonts {
     let report = discover_cjk();
     #[cfg(target_os = "macos")]
-    let (report, definitions) = macos::definitions_with_fallback(report);
+    {
+        let cache = superba_switch::detect_context()
+            .ok()
+            .map(|context| cache::FontCache::new(context.data_dir.cache_dir().join("fonts")));
+        macos::install(ctx, report, cache)
+    }
     #[cfg(not(target_os = "macos"))]
-    let definitions = definitions(&report);
-    ctx.set_fonts(definitions);
-    report
+    {
+        let definitions = definitions(&report);
+        InstalledFonts::new(ctx, report, definitions)
+    }
 }
 
 /// True if `path` looks like a serif CJK face (used only as a last resort).

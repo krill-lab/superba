@@ -29,13 +29,16 @@ struct Gallery {
     service: Arc<dyn SwitchService>,
     pages: PageStates,
     settings: Settings,
-    fonts: fonts::FontReport,
+    fonts: Option<fonts::InstalledFonts>,
     tr: Tr,
     frames: usize,
     output: Option<PathBuf>,
 }
 impl eframe::App for Gallery {
     fn ui(&mut self, ui: &mut Ui, _: &mut eframe::Frame) {
+        if let Some(fonts) = &mut self.fonts {
+            fonts.poll(ui.ctx());
+        }
         let pal = Palette::of(ui.ctx());
         let page = Page::Superba(SuperbaSection::Updates);
         let cx = Cx {
@@ -44,7 +47,7 @@ impl eframe::App for Gallery {
             data: &self.data,
             busy: false,
             now: Timestamp::now(),
-            fonts: &self.fonts,
+            fonts: self.fonts.as_ref().expect("fonts installed").report(),
             service: &self.service,
             log: &[],
         };
@@ -61,7 +64,7 @@ impl eframe::App for Gallery {
             data: &self.data,
             busy: false,
             now: Timestamp::now(),
-            fonts: &self.fonts,
+            fonts: self.fonts.as_ref().expect("fonts installed").report(),
             service: &self.service,
             log: &[],
         };
@@ -191,7 +194,7 @@ fn main() -> eframe::Result {
         service,
         pages,
         settings: Settings::default(),
-        fonts: fonts::FontReport::default(),
+        fonts: None,
         tr: Tr::new(if has("--zh") {
             Locale::ZhCn
         } else {
@@ -227,7 +230,7 @@ fn main() -> eframe::Result {
                 }),
             );
             let mut gallery = gallery;
-            gallery.fonts = fonts::install(&cc.egui_ctx);
+            gallery.fonts = Some(fonts::install(&cc.egui_ctx));
             cc.egui_ctx.set_pixels_per_point(1.0);
             Ok(Box::new(gallery))
         }),

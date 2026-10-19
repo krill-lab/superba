@@ -1,6 +1,6 @@
 //! CoreText bridge for macOS 26's PingFang UI `hvgl` collection. Fontations
 //! cannot decode that private outline format. Ask the OS for the selected
-//! face/weight's quadratic paths and expose them to egui as an in-memory TTF.
+//! face/weight's quadratic paths and cache a local static TTF for egui.
 
 use std::{collections::BTreeMap, ffi::c_void, ptr};
 
@@ -15,7 +15,8 @@ use core_foundation::{
 use skrifa::{FontRef, MetadataProvider, Tag, raw::TableProvider, string::StringId};
 
 use super::{
-    CjkFace,
+    CjkFace, FontReport, InstalledFonts,
+    cache::FontCache,
     sfnt::{self, Glyph, Point, put16, put32},
 };
 
@@ -341,10 +342,16 @@ pub(super) fn renderable_face(bytes: Vec<u8>, face: &CjkFace) -> Option<(Vec<u8>
 
 /// A future OS may change the private format. Try the next installed family
 /// when conversion fails, and report the font actually supplied to egui.
-pub(super) fn definitions_with_fallback(
+#[cfg(test)]
+pub(super) fn definitions_with_fallback(report: FontReport) -> (FontReport, egui::FontDefinitions) {
+    with_fallback(report, super::definitions)
+}
+
+fn with_fallback(
     mut report: super::FontReport,
+    mut load: impl FnMut(&FontReport) -> egui::FontDefinitions,
 ) -> (super::FontReport, egui::FontDefinitions) {
-    let mut definitions = super::definitions(&report);
+    let mut definitions = load(&report);
     if definitions.font_data.contains_key("cjk-regular") || report.cjk_regular.is_none() {
         return (report, definitions);
     }
@@ -352,29 +359,119 @@ pub(super) fn definitions_with_fallback(
     for path in super::candidate_paths() {
         let _ = db.load_font_file(path);
     }
-    db.load_system_fonts();
+    let mut scanned_system = false;
+    let mut failed_paths = Vec::new();
     while let Some(failed) = &report.cjk_regular {
         tracing::warn!(family = %failed.family, "CJK font could not be loaded; trying the next family");
-        let ids: Vec<_> = db
-            .faces()
-            .filter(|face| match &face.source {
-                fontdb::Source::File(path) | fontdb::Source::SharedFile(path, _) => {
-                    path == &failed.path
-                }
-                fontdb::Source::Binary(_) => false,
-            })
-            .map(|face| face.id)
-            .collect();
-        for id in ids {
-            db.remove_face(id);
-        }
+        failed_paths.push(failed.path.clone());
+        remove_paths(&mut db, &failed_paths);
         report = super::pick_cjk(&db);
-        definitions = super::definitions(&report);
+        if report.cjk_regular.is_none() && !scanned_system {
+            db.load_system_fonts();
+            scanned_system = true;
+            remove_paths(&mut db, &failed_paths);
+            report = super::pick_cjk(&db);
+        }
+        definitions = load(&report);
         if definitions.font_data.contains_key("cjk-regular") {
             break;
         }
     }
     (report, definitions)
+}
+
+fn remove_paths(db: &mut fontdb::Database, paths: &[std::path::PathBuf]) {
+    let ids: Vec<_> = db
+        .faces()
+        .filter(|face| match &face.source {
+            fontdb::Source::File(path) | fontdb::Source::SharedFile(path, _) => {
+                paths.contains(path)
+            }
+            fontdb::Source::Binary(_) => false,
+        })
+        .map(|face| face.id)
+        .collect();
+    for id in ids {
+        db.remove_face(id);
+    }
+}
+
+fn cached_definitions(
+    report: &FontReport,
+    cache: Option<&FontCache>,
+    convert: bool,
+) -> (egui::FontDefinitions, bool) {
+    let mut deferred = false;
+    let definitions = super::definitions_with(report, |face, geist| {
+        if let Some(bytes) = cache.and_then(|cache| cache.read(face)) {
+            return Some(super::face_data(bytes, 0, face, geist));
+        }
+        let bytes = std::fs::read(&face.path).ok()?;
+        let font = FontRef::from_index(&bytes, face.index).ok()?;
+        if font.table_data(Tag::new(b"hvgl")).is_none() {
+            return Some(super::face_data(bytes, face.index, face, geist));
+        }
+        if !convert {
+            deferred = true;
+            return None;
+        }
+        // Re-read under the cache's metadata check so an OS font update during
+        // conversion cannot publish a stale font under the updated source key.
+        let encode = || renderable_face(std::fs::read(&face.path).ok()?, face).map(|f| f.0);
+        let bytes = match cache {
+            Some(cache) => cache.convert(face, encode),
+            None => encode(),
+        }?;
+        Some(super::face_data(bytes, 0, face, geist))
+    });
+    (definitions, deferred)
+}
+
+pub(super) fn install(
+    ctx: &egui::Context,
+    report: FontReport,
+    cache: Option<FontCache>,
+) -> InstalledFonts {
+    let started = std::time::Instant::now();
+    if let Some(cache) = &cache {
+        cache.prune();
+    }
+    let (ready, deferred) = cached_definitions(&report, cache.as_ref(), false);
+    if !deferred && (ready.font_data.contains_key("cjk-regular") || report.cjk_regular.is_none()) {
+        tracing::debug!(
+            elapsed_ms = started.elapsed().as_millis(),
+            "CJK fonts loaded without conversion"
+        );
+        return InstalledFonts::new(ctx, report, ready);
+    }
+    // Never convert on the UI thread, including while trying another family.
+    // Discard partial hits so all weights switch to the preferred family together.
+    let (fallback, definitions) = with_fallback(report.clone(), |candidate| {
+        if candidate == &report {
+            return super::bundled_definitions();
+        }
+        let (definitions, deferred) = cached_definitions(candidate, cache.as_ref(), false);
+        if deferred {
+            super::bundled_definitions()
+        } else {
+            definitions
+        }
+    });
+    let mut installed = InstalledFonts::new(ctx, fallback.clone(), definitions);
+    if deferred {
+        installed.defer(ctx, move || {
+            let started = std::time::Instant::now();
+            let (loaded, definitions) = with_fallback(report, |candidate| {
+                cached_definitions(candidate, cache.as_ref(), true).0
+            });
+            tracing::debug!(
+                elapsed_ms = started.elapsed().as_millis(),
+                "CJK font conversion finished"
+            );
+            (loaded != fallback).then_some((loaded, definitions))
+        });
+    }
+    installed
 }
 
 #[cfg(test)]

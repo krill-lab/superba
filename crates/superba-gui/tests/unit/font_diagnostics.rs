@@ -5,7 +5,7 @@ use superba_gui::{
         fonts::{CjkFace, FontReport},
     },
     i18n::Tr,
-    pages::{Cx, Data, diagnostics},
+    pages::{Cx, Data, superba::diagnostics},
 };
 
 #[test]
@@ -34,7 +34,8 @@ fn diagnostics_displays_pingfang_ui_family_in_both_languages() {
             service: &service,
             log: &[],
         };
-        let text = harness.settle(&mut |ui| diagnostics::show(ui, &cx, &mut Vec::new()));
+        let mut state = diagnostics::State::default();
+        let text = harness.settle(&mut |ui| diagnostics::show(ui, &cx, &mut state, &mut Vec::new()));
         assert!(text.iter().any(|(s, _)| s.starts_with("PingFang UI SC · ")));
     }
 }

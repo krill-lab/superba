@@ -4780,6 +4780,7 @@ dependencies = [
  "rfd",
  "roxmltree",
  "serde_json",
+ "sha2",
  "skrifa",
  "superba-catalog",
  "superba-cli",
