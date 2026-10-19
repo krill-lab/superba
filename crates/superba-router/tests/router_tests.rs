@@ -107,7 +107,7 @@ async fn refuses_a_missing_or_wrong_router_token() {
 }
 
 #[tokio::test]
-async fn fails_over_on_connection_refused_and_opens_the_breaker() {
+async fn fails_over_on_connect_errors_and_opens_the_breaker() {
     let good = upstream(Mode::Json(200, OK)).await;
     let r = start(test_config(vec![member(
         "krill",
@@ -122,11 +122,10 @@ async fn fails_over_on_connection_refused_and_opens_the_breaker() {
     let st = r.status().await;
     let a = &st.members[0].lines[0];
     assert_eq!(a.state, LineState::Open);
-    // A closed loopback port is refused at once on Unix ("connect failed"); on
-    // Windows the refusal only arrives after the SYN retries, past the 1 s test
-    // timeout, so the same dead line reads "connect timeout" there.
+    // The reserved, non-listening port is refused at once on Linux. On macOS
+    // and Windows, SYN retries can last past the 1 s test connect timeout.
     let error = a.last_error.as_deref().unwrap();
-    if cfg!(windows) {
+    if cfg!(any(windows, target_os = "macos")) {
         assert!(error.starts_with("connect "), "{error}");
     } else {
         assert!(error.starts_with("connect failed"), "{error}");
@@ -318,10 +317,11 @@ async fn all_lines_down_answers_router_unavailable() {
     assert_eq!(v["error"]["type"], "router_unavailable");
     let msg = v["error"]["message"].as_str().unwrap();
     assert!(msg.starts_with("Superba local router: no line reachable"));
-    // See fails_over_on_connection_refused_and_opens_the_breaker for Windows.
+    // See fails_over_on_connect_errors_and_opens_the_breaker for platform timing.
     assert!(
         msg.contains("krill/a: connect failed")
-            || (cfg!(windows) && msg.contains("krill/a: connect timeout")),
+            || (cfg!(any(windows, target_os = "macos"))
+                && msg.contains("krill/a: connect timeout")),
         "{msg}"
     );
     assert!(msg.contains("site/c: HTTP 503"), "{msg}");

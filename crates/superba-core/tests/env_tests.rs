@@ -17,7 +17,25 @@ fn posix_blocks_export_values_with_shell_metacharacters_escaped() {
             "{MARKER_BEGIN}\n{MARKER_NOTE}\n{assignment}\nexport EMPTY=\"\"\n{MARKER_END}\n"
         );
         assert_eq!(block, expected, "{shell:?}");
+        assert_eq!(export_value(assignment, "NAME").as_deref(), Some(value));
     }
+}
+
+#[test]
+fn certificate_paths_survive_shell_block_round_trips() {
+    for shell in [ShellKind::Bash, ShellKind::Fish] {
+        for value in [r"C:\Users\Jane Doe\codex-ca.pem", r"/home/a$b/ca\root.pem"] {
+            let block = render_block(&shell, &[("CODEX_CA_CERTIFICATE", value)]);
+            let parsed = block
+                .lines()
+                .find_map(|line| export_value(line, "CODEX_CA_CERTIFICATE"));
+            assert_eq!(parsed.as_deref(), Some(value), "{shell:?}");
+        }
+    }
+    assert_eq!(
+        export_value(r"export NAME='C:\Users\Jane Doe\ca.pem'", "NAME").as_deref(),
+        Some(r"C:\Users\Jane Doe\ca.pem")
+    );
 }
 
 #[test]

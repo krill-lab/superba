@@ -381,7 +381,8 @@ async fn router_certificate_environment_preserves_user_roots_and_restores_on_dis
         superba_core::RestartKind::FullAppRestart { .. }
     ));
     assert!(plan.certificate_env.is_some());
-    assert_eq!(execute(&sw, plan).await.status, OutcomeStatus::Switched);
+    let outcome = execute(&sw, plan).await;
+    assert_eq!(outcome.status, OutcomeStatus::Switched, "{outcome:?}");
     let paths = superba_router::RouterPaths::new(&w.ctx.data_dir);
     let bundle = std::fs::read_to_string(paths.client_certificate_pem()).unwrap();
     assert!(bundle.contains(&std::fs::read_to_string(other.certificate_pem()).unwrap()));

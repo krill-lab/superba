@@ -399,10 +399,10 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
     }
 }
 
-/// A port nothing listens on (connection refused).
+/// A reserved port nothing listens on (refused or a connect timeout).
 pub fn dead_port() -> u16 {
-    // Reserve without listening: a connection is refused, and another parallel
-    // test cannot reuse the port between choosing it and sending the request.
+    // Reserve without listening so another parallel test cannot reuse it.
+    // Linux refuses immediately; macOS and Windows may wait for SYN retries.
     static RESERVED: std::sync::OnceLock<std::sync::Mutex<Vec<tokio::net::TcpSocket>>> =
         std::sync::OnceLock::new();
     let socket = tokio::net::TcpSocket::new_v4().unwrap();

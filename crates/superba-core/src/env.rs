@@ -157,12 +157,31 @@ pub fn export_value(line: &str, name: &str) -> Option<String> {
         .unwrap_or(rest)
         .trim()
         .trim_end_matches(';');
-    let unquoted = rest
-        .strip_prefix('"')
-        .and_then(|r| r.strip_suffix('"'))
-        .or_else(|| rest.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')))
-        .unwrap_or(rest);
-    (!unquoted.is_empty()).then(|| unquoted.to_owned())
+    let unquoted = if let Some(value) = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
+        // Undo the literal escapes emitted by render_block. Without this,
+        // reading a CA path and writing it again doubles its backslashes and
+        // the environment edit can no longer replay its planned contents.
+        let mut chars = value.chars().peekable();
+        let mut literal = String::new();
+        while let Some(c) = chars.next() {
+            if c == '\\'
+                && chars
+                    .peek()
+                    .is_some_and(|c| matches!(c, '"' | '\\' | '$' | '`'))
+            {
+                literal.push(chars.next().expect("peeked escape"));
+            } else {
+                literal.push(c);
+            }
+        }
+        literal
+    } else {
+        rest.strip_prefix('\'')
+            .and_then(|r| r.strip_suffix('\''))
+            .unwrap_or(rest)
+            .to_owned()
+    };
+    (!unquoted.is_empty()).then_some(unquoted)
 }
 
 /// What we know about a variable in some process's environment.
