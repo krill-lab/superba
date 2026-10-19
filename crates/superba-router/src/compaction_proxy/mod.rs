@@ -29,6 +29,10 @@ pub(crate) use http::{Keys, Prepared, error, finish, prepare};
 /// Copyright OpenAI, Apache-2.0; see THIRD_PARTY_NOTICES.md.
 pub const COMPACT_PROMPT: &str = include_str!("prompt.md");
 
+/// Conservative output budget for L2 requests without a caller limit. Some
+/// standard Responses providers cannot resolve Codex's omitted output limit.
+pub const DEFAULT_OUTPUT_TOKENS: u64 = 4096;
+
 /// Explicit, verified synthetic model supplied by the catalog layer. Endpoints
 /// come from the member's standard Responses configuration, never from a request.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,8 +157,13 @@ impl Transaction {
         let mut input = request["input"].as_array().expect("validated").clone();
         sanitize_input(&mut input);
         input.push(json!({"role":"user","content":[{"type":"input_text","text":COMPACT_PROMPT}]}));
+        let output_tokens = request["max_output_tokens"]
+            .as_u64()
+            .filter(|n| *n > 0)
+            .unwrap_or(DEFAULT_OUTPUT_TOKENS)
+            .min(DEFAULT_OUTPUT_TOKENS);
         // No tools, hidden state, metadata or trigger is sent to the summarizer.
-        *request = json!({"model":tx.model,"instructions":request.get("instructions").cloned().unwrap_or(json!("")),"input":input,"tools":[],"stream":true,"store":false});
+        *request = json!({"model":tx.model,"instructions":request.get("instructions").cloned().unwrap_or(json!("")),"input":input,"tools":[],"stream":true,"store":false,"max_output_tokens":output_tokens});
         Ok(tx)
     }
 

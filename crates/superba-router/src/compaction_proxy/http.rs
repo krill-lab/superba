@@ -144,6 +144,9 @@ pub(crate) async fn prepare(
         None
     };
     if synthetic {
+        if req["max_output_tokens"].is_null() {
+            req["max_output_tokens"] = json!(super::DEFAULT_OUTPUT_TOKENS);
+        }
         if let Some(input) = req["input"].as_array_mut() {
             super::sanitize_input(input);
         }

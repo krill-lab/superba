@@ -12,7 +12,12 @@ Without the merged catalog, callers can supply explicit
 The merged catalog always takes precedence over that seam.
 
 A trigger starts an ordinary streaming Responses request to the selected model,
-using Codex's unmodified local compact prompt. The complete response is bounded
+using Codex's unmodified local compact prompt. Synthetic requests without an
+output limit use a conservative 4096-token budget; explicit ordinary request
+limits are preserved. Summary requests use at most 4096 output tokens and
+respect a lower caller limit. This avoids provider failures when Codex omits
+the output limit. An incomplete summary remains an error.
+The complete response is bounded
 at 2 MiB and five minutes. Empty, refused, malformed, incomplete and broken
 responses fail visibly. A successful answer yields exactly one compaction item,
 with actual upstream usage. HTTP failures remain errors. No partial summary or

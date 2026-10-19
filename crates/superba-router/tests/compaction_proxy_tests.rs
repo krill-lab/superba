@@ -806,3 +806,36 @@ async fn mixed_slug_does_not_promote_unsupported_native_compaction() {
     );
     router.handle.shutdown();
 }
+
+#[tokio::test]
+async fn synthetic_output_budget_is_bounded_and_preserves_explicit_and_native_limits() {
+    let up = upstream(Mode::Json(200, SUMMARY)).await;
+    let mut cfg = config(&up);
+    cfg.members[0].compaction = CompactionSupport::Native;
+    let router = start(cfg).await;
+    let budget = superba_router::compaction_proxy::DEFAULT_OUTPUT_TOKENS;
+    for (model, trigger, supplied, expected) in [
+        ("deepseek-test", false, None, Some(budget)),
+        ("deepseek-test", false, Some(8000), Some(8000)),
+        ("deepseek-test", true, None, Some(budget)),
+        ("deepseek-test", true, Some(8000), Some(budget)),
+        ("deepseek-test", true, Some(512), Some(512)),
+        ("gpt-native", true, None, None),
+        ("gpt-native", false, Some(8000), Some(8000)),
+    ] {
+        let mut req = request();
+        req["model"] = json!(model);
+        if !trigger {
+            req["input"].as_array_mut().unwrap().pop();
+        }
+        if let Some(limit) = supplied {
+            req["max_output_tokens"] = json!(limit);
+        }
+        let resp = post(&router, req).await;
+        assert_eq!(resp.status(), 200);
+        resp.bytes().await.unwrap();
+        let sent: Value = serde_json::from_slice(&up.seen().last().unwrap().body).unwrap();
+        assert_eq!(sent["max_output_tokens"].as_u64(), expected);
+    }
+    router.handle.shutdown();
+}
