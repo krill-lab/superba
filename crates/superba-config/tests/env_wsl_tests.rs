@@ -218,3 +218,58 @@ async fn a_launch_adds_only_the_missing_forwarding_and_a_restore_removes_it() {
         assert!(e.persister.plan_launch(VAR, VALUE).await.unwrap().is_noop());
     }
 }
+
+#[tokio::test]
+async fn router_certificate_path_is_translated_and_original_trust_is_restored() {
+    let cert = "CODEX_CA_CERTIFICATE";
+    let e = env(
+        EnvPlatform::Windows,
+        Some("USERPROFILE/p:CODEX_CA_CERTIFICATE/u"),
+    );
+    e.run_in_wsl(true);
+    e.native
+        .set(&EnvLocation::WindowsUserEnv, cert, r"C:\company\ca.pem")
+        .unwrap();
+    let plan = e
+        .persister
+        .plan(
+            cert,
+            EnvOp::Set {
+                value: r"C:\Superba\router\codex-ca.pem".into(),
+                take_over_foreign: false,
+            },
+        )
+        .await
+        .unwrap();
+    let applied = e.persister.apply(&plan).await.unwrap();
+    assert_eq!(
+        e.wslenv().as_deref(),
+        Some("USERPROFILE/p:CODEX_CA_CERTIFICATE/p")
+    );
+    e.persister.revert(&applied).await.unwrap();
+    assert_eq!(
+        e.wslenv().as_deref(),
+        Some("USERPROFILE/p:CODEX_CA_CERTIFICATE/u")
+    );
+    assert_eq!(
+        e.native
+            .get(&EnvLocation::WindowsUserEnv, cert)
+            .unwrap()
+            .as_deref(),
+        Some(r"C:\company\ca.pem")
+    );
+    e.persister.apply(&plan).await.unwrap();
+    let clear = e.persister.plan(cert, EnvOp::Clear).await.unwrap();
+    e.persister.apply(&clear).await.unwrap();
+    assert_eq!(
+        e.wslenv().as_deref(),
+        Some("USERPROFILE/p:CODEX_CA_CERTIFICATE/u")
+    );
+    assert_eq!(
+        e.native
+            .get(&EnvLocation::WindowsUserEnv, cert)
+            .unwrap()
+            .as_deref(),
+        Some(r"C:\company\ca.pem")
+    );
+}

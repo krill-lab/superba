@@ -755,18 +755,47 @@ impl ShellEnvPersister {
         // 4. "Run Codex in WSL": `WSLENV` forwards the variable into WSL while
         //    Superba persists it; the entry goes again with the value.
         let mut wsl_forward = false;
-        if self.platform == EnvPlatform::Windows && var == superba_core::codex::ENV_AUTHAPI_BASE_URL
+        if self.platform == EnvPlatform::Windows
+            && matches!(
+                var,
+                superba_core::codex::ENV_AUTHAPI_BASE_URL | "CODEX_CA_CERTIFICATE"
+            )
         {
             let loc = EnvLocation::WslEnvForward;
             let managed = vs.native_originals.contains_key(&location_key(&loc));
             let cur = self.native_get(&loc, var)?;
             let forward = matches!(op, EnvOp::Set { .. }) && self.app_runs_codex_in_wsl();
             let want = if forward {
-                superba_core::wsl::wslenv_with(cur.as_deref(), var).or_else(|| cur.clone())
+                if var == "CODEX_CA_CERTIFICATE" {
+                    // Windows paths must become /mnt/... inside the app's WSL
+                    // Codex, while the native app keeps the Windows path.
+                    let without = cur
+                        .as_deref()
+                        .and_then(|s| superba_core::wsl::wslenv_without(s, var));
+                    Some(match without {
+                        Some(s) => format!("{s}:{var}/p"),
+                        None => format!("{var}/p"),
+                    })
+                } else {
+                    superba_core::wsl::wslenv_with(cur.as_deref(), var).or_else(|| cur.clone())
+                }
             } else if managed {
                 match cur.as_deref() {
                     Some(c) if superba_core::wsl::wslenv_names(c, var) => {
-                        superba_core::wsl::wslenv_without(c, var)
+                        let without = superba_core::wsl::wslenv_without(c, var);
+                        let previous = vs
+                            .native_originals
+                            .get(&location_key(&loc))
+                            .and_then(|v| v.as_deref())
+                            .and_then(|v| {
+                                v.split(':')
+                                    .find(|part| part.split('/').next() == Some(var))
+                            });
+                        match (without, previous) {
+                            (Some(rest), Some(entry)) => Some(format!("{rest}:{entry}")),
+                            (None, Some(entry)) => Some(entry.to_owned()),
+                            (rest, None) => rest,
+                        }
                     }
                     _ => cur.clone(),
                 }
@@ -1030,9 +1059,10 @@ impl ShellEnvPersister {
                 (EnvLocation::WslEnvForward, _) => {
                     // Ours while our entry is in it.
                     let key = location_key(&e.location);
-                    if e.after
-                        .as_deref()
-                        .is_some_and(|a| superba_core::wsl::wslenv_names(a, &plan.var))
+                    if matches!(plan.op, EnvOp::Set { .. })
+                        && e.after
+                            .as_deref()
+                            .is_some_and(|a| superba_core::wsl::wslenv_names(a, &plan.var))
                     {
                         vs.native_originals
                             .entry(key)

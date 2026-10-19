@@ -48,6 +48,16 @@ impl RouterPaths {
         self.dir.join("secrets.json")
     }
 
+    /// The router's public TLS certificate, trusted only by Codex.
+    pub fn certificate_pem(&self) -> PathBuf {
+        self.dir.join("certificate.pem")
+    }
+
+    /// The Codex trust bundle: router certificate plus existing custom roots.
+    pub fn client_certificate_pem(&self) -> PathBuf {
+        self.dir.join("codex-ca.pem")
+    }
+
     /// `runtime.json`.
     pub fn runtime_json(&self) -> PathBuf {
         self.dir.join("runtime.json")

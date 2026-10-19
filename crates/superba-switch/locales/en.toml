@@ -334,6 +334,7 @@ pat_no_catalog = "With a personal access token Codex reads the provider's live m
 preflight_failed = "{binary} refused the generated model catalog: {reason}"
 suffix_model = "The speed tier travels in the model name {model}."
 tier_not_offered = "The selected model does not offer this speed tier; it runs at Standard."
+keep_router = "Codex keeps {model}, the model it runs with now: router members may have different default models. To use another model, set one on the profile (Models page, or spb profile edit --model)."
 keep_api_key = "Codex keeps {model}, the model it runs with now: with an API key (also through the router) Codex and the ChatGPT app would choose a default model of their own. To use another model, set one on the profile (Models page, or spb profile edit --model)."
 keep_pat_default = "Codex keeps {model}, the model it runs with now; with the personal access token it would change to {default}, the default model of “{site}”. To use another model, set one on the profile (Models page, or spb profile edit --model)."
 pat_default = "With the personal access token Codex runs {model}, the default model of “{site}”. To use another model, set one on the profile (Models page, or spb profile edit --model)."

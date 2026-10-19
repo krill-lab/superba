@@ -128,7 +128,16 @@ pub(crate) fn is_router_health(answer: &str, instance_id: &str) -> bool {
 /// endpoints, API key mode) pointed at `origin` with `token`.
 pub(crate) fn routed(base: &ResolvedProfile, origin: &Origin, token: &Secret) -> ResolvedProfile {
     let mut r = base.clone();
-    if let ResolvedMode::Token { endpoints, key, .. } = &mut r.mode {
+    if let ResolvedMode::Token {
+        endpoints,
+        key,
+        auth,
+        ..
+    } = &mut r.mode
+    {
+        // A separately managed WSL home uses its own token and does not inherit
+        // the Windows user's certificate bundle.
+        *auth = superba_core::AuthMode::ApiKey;
         *endpoints = ResolvedEndpoints {
             origin: origin.clone(),
             openai_base_url: origin.join(ROUTER_BASE_PATH),

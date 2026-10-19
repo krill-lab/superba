@@ -424,7 +424,7 @@ fn render_plan(
             out.notice(notice)?;
         }
     }
-    if let Some(env) = &plan.env {
+    for env in plan.env.iter().chain(plan.certificate_env.iter()) {
         preview::environment(env, args, rt, out)?;
     }
     if let Some(migration) = &plan.migration {

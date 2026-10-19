@@ -366,6 +366,7 @@ fn plan(from: Option<&str>, to: &str, keys: &[&str]) -> SwitchPlan {
             releases_ownership: false,
         }),
         env: None,
+        certificate_env: None,
         migration: None,
         remotes: vec![],
         active_threads: vec![],

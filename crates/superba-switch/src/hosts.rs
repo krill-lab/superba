@@ -908,6 +908,7 @@ impl Switcher {
             restarts,
             config: None,
             env: None,
+            certificate_env: None,
             migration: None,
             remotes,
             active_threads,

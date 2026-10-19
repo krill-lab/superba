@@ -185,7 +185,7 @@ async fn a_member_set_to_pat_for_direct_switches_stays_routable() {
     on.intent = superba_core::SwitchIntent::Router { enable: true };
     let plan = sw.plan(on).await.unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::ApiKey));
+    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
     assert_eq!(plan.to.label.key, "switch.destination.router");
     sw.router_set_enabled(true).await.unwrap();
     // The direct choice is untouched by the router.

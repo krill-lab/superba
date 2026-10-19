@@ -205,7 +205,7 @@ async fn turning_the_router_on_keeps_the_model_the_pat_ran_and_says_so() {
 
     let plan = sw.plan(router(true)).await.unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::ApiKey));
+    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
     assert_eq!(planned_model(&plan).as_deref(), Some("gpt-6.1-sol"));
     let row = model_row(&sw, &plan)
         .await
@@ -213,15 +213,15 @@ async fn turning_the_router_on_keeps_the_model_the_pat_ran_and_says_so() {
     assert_eq!(row.from, None);
     assert_eq!(row.to.as_deref(), Some("\"gpt-6.1-sol\""));
     assert_eq!(row.reason, ChangeReason::KeptModel);
-    assert_eq!(notice_keys(&plan), ["switch.models.keep_api_key"]);
+    assert_eq!(notice_keys(&plan), ["switch.models.keep_router"]);
     assert_eq!(
-        notice(&plan, "switch.models.keep_api_key", Locale::En),
-        "Codex keeps gpt-6.1-sol, the model it runs with now: with an API key (also through \
-         the router) Codex and the ChatGPT app would choose a default model of their own. To use \
-         another model, set one on the profile (Models page, or spb profile edit --model)."
+        notice(&plan, "switch.models.keep_router", Locale::En),
+        "Codex keeps gpt-6.1-sol, the model it runs with now: router members may have different \
+         default models. To use another model, set one on the profile (Models page, or \
+         spb profile edit --model)."
     );
     assert!(
-        notice(&plan, "switch.models.keep_api_key", Locale::ZhCn)
+        notice(&plan, "switch.models.keep_router", Locale::ZhCn)
             .starts_with("Codex 继续使用当前的模型 gpt-6.1-sol："),
     );
     // The PAT's list was read at the line config.toml names, with the key.
@@ -464,6 +464,7 @@ fn the_scope_is_a_change_of_form_on_the_same_site_with_no_model() {
             kept: None,
             dest_site: &KRILL,
             dest_auth: AuthMode::ApiKey,
+            dest_routed: false,
             dest_sets_model: false,
             left: None,
         }

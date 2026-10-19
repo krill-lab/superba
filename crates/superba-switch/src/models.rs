@@ -1113,7 +1113,7 @@ impl Switcher {
 
     /// The auth mode the app would most likely use for `profile` (display only:
     /// the applied mode when it is applied, else the profile's choice; router
-    /// mode is API key).
+    /// mode uses a local PAT).
     fn likely_auth(
         profile: &Profile,
         site: &Site,
@@ -1121,7 +1121,7 @@ impl Switcher {
         routed: bool,
     ) -> AuthMode {
         if routed {
-            return AuthMode::ApiKey;
+            return AuthMode::Pat;
         }
         if let Some(a) = state.and_then(|s| s.active.as_ref())
             && a.profile_id.as_ref() == Some(&profile.id)

@@ -167,7 +167,7 @@ fn process(pid: u32, cmdline: &[&str]) -> ProcessInfo {
     }
 }
 
-fn full_restart_reasons() -> [FullRestartReason; 8] {
+fn full_restart_reasons() -> [FullRestartReason; 9] {
     [
         FullRestartReason::NoCdp,
         FullRestartReason::NoBridge,
@@ -177,6 +177,7 @@ fn full_restart_reasons() -> [FullRestartReason; 8] {
         FullRestartReason::SessionMigration,
         FullRestartReason::PlatformNoHot,
         FullRestartReason::Requested,
+        FullRestartReason::CertificateTrustChanged,
     ]
 }
 

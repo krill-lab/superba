@@ -197,6 +197,7 @@ fn every_full_restart_reason_has_complete_translations() {
         FullRestartReason::SessionMigration,
         FullRestartReason::PlatformNoHot,
         FullRestartReason::Requested,
+        FullRestartReason::CertificateTrustChanged,
     ]
     .into_iter()
     .map(FullRestartReason::text)

@@ -127,6 +127,8 @@ pub enum FullRestartReason {
     /// The user asked for it (`SwitchIntent::RestartApp`: reopen the app through
     /// Superba so it gets CDP and the current line's auth address).
     Requested,
+    /// The main app must inherit the changed router certificate trust bundle.
+    CertificateTrustChanged,
 }
 
 impl FullRestartReason {
@@ -160,6 +162,10 @@ impl FullRestartReason {
             Self::PlatformNoHot => (
                 "restart.reason.platform_no_hot",
                 "Hot switching is not supported on this platform yet.",
+            ),
+            Self::CertificateTrustChanged => (
+                "restart.reason.certificate_trust_changed",
+                "ChatGPT must restart to use the updated local router certificate settings.",
             ),
             Self::Requested => (
                 "restart.reason.requested",
@@ -711,6 +717,10 @@ pub struct SwitchPlan {
     /// Local env change.
     #[serde(default)]
     pub env: Option<EnvPlan>,
+    /// Codex's additive certificate bundle for the local router, including its
+    /// restoration when leaving router mode.
+    #[serde(default)]
+    pub certificate_env: Option<EnvPlan>,
     /// Session migration.
     #[serde(default)]
     pub migration: Option<MigrationPlan>,

@@ -37,6 +37,7 @@ fn hot_plan() -> SwitchPlan {
         restarts: vec![],
         config: None,
         env: None,
+        certificate_env: None,
         migration: None,
         remotes: vec![],
         active_threads: vec![],

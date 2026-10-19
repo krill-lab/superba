@@ -98,6 +98,7 @@ pub(crate) struct Generation {
     pub claude: Option<crate::claude::rt::ClaudeRt>,
     /// The OpenAI ingress of this configuration.
     pub openai: crate::openai::rt::OpenAiRt,
+    pub catalog: crate::catalog::Catalog,
 }
 
 impl Generation {
@@ -170,6 +171,7 @@ impl Generation {
             http,
             ws,
             probe,
+            catalog: crate::catalog::Catalog::default(),
         })
     }
 

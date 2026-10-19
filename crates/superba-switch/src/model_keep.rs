@@ -17,7 +17,7 @@
 //!   `listModelsData.defaultModel ?? "gpt-5.5"`). Superba cannot predict that
 //!   choice.
 //!
-//! So turning the router on (Codex in API-key mode against the local router)
+//! Historically turning the router on with API-key authentication
 //! moved the app from the provider's default (`gpt-6.1-sol`) to `gpt-5.5`
 //! without a word, and a relay without capacity for that model left the turn
 //! retrying for minutes.
@@ -68,6 +68,8 @@ pub enum ModelForm {
     /// An API key (direct or through the router): Codex's bundled list or the
     /// catalog file, with the desktop app's own choice of a default.
     ApiKey,
+    /// A router can select a different member, with a different default.
+    Router,
 }
 
 impl ModelForm {
@@ -116,8 +118,10 @@ pub struct ScopeInput<'a> {
     pub kept: Option<&'a str>,
     /// The destination's site.
     pub dest_site: &'a superba_core::SiteId,
-    /// The destination's auth mode for the local home (API key when routed).
+    /// The destination's auth mode for the local home.
     pub dest_auth: AuthMode,
+    /// The destination uses the local router, whose member may change.
+    pub dest_routed: bool,
     /// The destination sets a model itself (profile, mapped or replacement name).
     pub dest_sets_model: bool,
     /// The `model` value `config.toml` keeps when the destination sets none
@@ -131,15 +135,34 @@ pub struct ScopeInput<'a> {
 /// be dropped.
 pub fn keep_scope(i: ScopeInput<'_>) -> Option<KeepScope> {
     let active = i.state.active.as_ref()?;
-    scope_of(ScopeFacts {
-        same_site: i.state.handed_off.is_none() && active.site_id.as_ref() == Some(i.dest_site),
-        auth: active.auth_mode,
-        dest_auth: i.dest_auth,
-        model: i.state.model.as_deref(),
-        kept: i.kept,
-        dest_sets_model: i.dest_sets_model,
-        left: i.left,
-    })
+    let from = if i
+        .state
+        .openai_base_url
+        .as_deref()
+        .is_some_and(crate::router::is_router_url)
+    {
+        ModelForm::Router
+    } else {
+        ModelForm::of(active.auth_mode?)?
+    };
+    let to = if i.dest_routed {
+        ModelForm::Router
+    } else {
+        ModelForm::of(i.dest_auth)?
+    };
+    scope_of_forms(
+        ScopeFacts {
+            same_site: i.state.handed_off.is_none() && active.site_id.as_ref() == Some(i.dest_site),
+            auth: active.auth_mode,
+            dest_auth: i.dest_auth,
+            model: i.state.model.as_deref(),
+            kept: i.kept,
+            dest_sets_model: i.dest_sets_model,
+            left: i.left,
+        },
+        from,
+        to,
+    )
 }
 
 /// What [`scope_of`] decides on: how one Codex home (this computer's or a WSL
@@ -164,11 +187,13 @@ pub struct ScopeFacts<'a> {
 
 /// The rule of [`keep_scope`] on plain facts (pure).
 pub fn scope_of(f: ScopeFacts<'_>) -> Option<KeepScope> {
+    scope_of_forms(f, ModelForm::of(f.auth?)?, ModelForm::of(f.dest_auth)?)
+}
+
+fn scope_of_forms(f: ScopeFacts<'_>, from: ModelForm, to: ModelForm) -> Option<KeepScope> {
     if f.dest_sets_model || f.left.is_some() || !f.same_site {
         return None;
     }
-    let from = ModelForm::of(f.auth?)?;
-    let to = ModelForm::of(f.dest_auth)?;
     let kept = f.kept.map(str::to_owned);
     // A model in config.toml that Superba did not keep: the user's own, or the
     // profile's, since removed from the profile (the user chose Codex's default).
@@ -209,11 +234,11 @@ pub fn decide(scope: &KeepScope, facts: &KeepFacts, site: &LocalizedText) -> Kee
     let before = match (&scope.kept, scope.from) {
         (Some(m), _) => Some(m.clone()),
         (None, ModelForm::ProviderList) => facts.provider_default.clone(),
-        (None, ModelForm::ApiKey) => None,
+        (None, ModelForm::ApiKey | ModelForm::Router) => None,
     };
     let after = match scope.to {
         ModelForm::ProviderList => facts.provider_default.clone(),
-        ModelForm::ApiKey => None,
+        ModelForm::ApiKey | ModelForm::Router => None,
     };
     match (before, after) {
         (Some(b), Some(a)) if a == b => KeepDecision::Nothing,
@@ -228,6 +253,10 @@ pub fn decide(scope: &KeepScope, facts: &KeepFacts, site: &LocalizedText) -> Kee
         },
         (Some(b), None) if scope.to == ModelForm::ApiKey => KeepDecision::Keep {
             notice: Notice::info(text("switch.models.keep_api_key").arg("model", &b)),
+            model: b,
+        },
+        (Some(b), None) if scope.to == ModelForm::Router => KeepDecision::Keep {
+            notice: Notice::info(text("switch.models.keep_router").arg("model", &b)),
             model: b,
         },
         // Back to the personal access token, its list unread.
@@ -419,7 +448,7 @@ pub(crate) struct KeepInput<'a> {
     pub state: &'a ConfigState,
     pub set: &'a superba_core::ProfileSet,
     pub site: &'a Site,
-    /// The destination's auth mode for the local home (API key when routed).
+    /// The destination's auth mode for the local home.
     pub dest_auth: AuthMode,
     /// The destination's direct endpoints and key (`None` when routed).
     pub direct: Option<(&'a url::Url, &'a Secret)>,
@@ -444,6 +473,7 @@ impl Switcher {
             kept: kept.as_deref(),
             dest_site: &i.site.id,
             dest_auth: i.dest_auth,
+            dest_routed: i.direct.is_none(),
             dest_sets_model: i.resolved.model.model.is_some(),
             left: i.left,
         }) else {

@@ -520,6 +520,7 @@ fn entry(w: &World, id: &str, status: JournalStatus) -> JournalEntry {
             backups: Vec::new(),
             applied_at: Timestamp(T0),
         }),
+        certificate_env: None,
         migration: None,
         remotes: Vec::new(),
         remote_failures: Vec::new(),

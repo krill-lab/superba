@@ -104,6 +104,7 @@ enum TurnWait {
 struct Written {
     config: Option<ApplyReport>,
     env: Option<EnvApplied>,
+    certificate_env: Option<EnvApplied>,
     migration: Option<MigrationReceipt>,
     /// A model catalog file this execution created (removed on rollback).
     catalog: Option<std::path::PathBuf>,
@@ -111,7 +112,10 @@ struct Written {
 
 impl Written {
     fn any(&self) -> bool {
-        self.config.is_some() || self.env.is_some() || self.migration.is_some()
+        self.config.is_some()
+            || self.env.is_some()
+            || self.certificate_env.is_some()
+            || self.migration.is_some()
     }
 }
 
@@ -194,6 +198,7 @@ impl Switcher {
             summary: plan.to.label.render_fallback(),
             config: None,
             env: None,
+            certificate_env: None,
             migration: None,
             remotes: Vec::new(),
             remote_failures: Vec::new(),
@@ -363,6 +368,7 @@ impl Run<'_> {
     fn finish_journal(&mut self, status: JournalStatus) {
         let recorded = self.entry.config.is_some()
             || self.entry.env.is_some()
+            || self.entry.certificate_env.is_some()
             || self.entry.migration.is_some()
             || !self.entry.remotes.is_empty();
         if !recorded {
@@ -983,6 +989,19 @@ impl Run<'_> {
             }
         }
 
+        if self
+            .pc
+            .endpoints
+            .as_ref()
+            .is_some_and(|e| crate::router::is_router_url(e.openai_base_url.as_str()))
+            && plan
+                .to
+                .auth_mode
+                .is_some_and(superba_core::AuthMode::needs_authapi_env)
+        {
+            self.sw.prepare_router_certificate().await?;
+        }
+
         // The model catalog file exists before config.toml names it
         // (content-addressed: never rewritten under a running app-server).
         // Also when config.toml already names it: a file removed by hand is put
@@ -1064,6 +1083,13 @@ impl Run<'_> {
             None => self.ev.step(SwitchStep::WriteEnv, StepStatus::Skipped),
         }
 
+        if let Some(ep) = plan.certificate_env.as_ref().filter(|e| !e.is_noop()) {
+            let applied = d.env.apply(ep).await?;
+            self.entry.certificate_env = Some(applied.clone());
+            self.written.certificate_env = Some(applied);
+            self.save_journal();
+        }
+
         if full {
             let stopped = ConsumersStopped::new(&home, d.clock.now());
             if let Some(mp) = &plan.migration {
@@ -1140,6 +1166,16 @@ impl Run<'_> {
                 return vec![e];
             }
             self.entry.rollback.migration = true;
+            if let Err(e) = self.journal.write(&self.entry) {
+                return vec![e];
+            }
+        }
+        if let Some(applied) = self.written.certificate_env.take() {
+            if let Err(e) = d.env.revert(&applied).await {
+                self.written.certificate_env = Some(applied);
+                return vec![e];
+            }
+            self.entry.rollback.certificate_env = true;
             if let Err(e) = self.journal.write(&self.entry) {
                 return vec![e];
             }
@@ -1548,11 +1584,12 @@ impl Run<'_> {
         if let Some(o) = origin {
             env.insert(ENV_AUTHAPI_BASE_URL.to_owned(), o);
         }
+        let env_remove = self.sw.prepare_router_launch_env(&mut env).await?;
         let mut options = LaunchOptions {
             install_id: self.pc.install_id.clone(),
             cdp: launch_cdp_mode(self.pc.safe_mode, effective_root()),
             env,
-            env_remove: Vec::new(),
+            env_remove,
             extra_args: Vec::new(),
             home_override: self.session.as_ref().and_then(|s| s.home_override.clone()),
             ready_timeout_ms: 0,

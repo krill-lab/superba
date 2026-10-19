@@ -255,7 +255,6 @@ fn auto_prefers_pat_and_explains_every_fallback() {
     assert!(d.fell_back());
 
     for (cx, reason) in [
-        (cx().router(true), AuthReason::RouterMode),
         (cx().custom_base_url(true), AuthReason::CustomBaseUrl),
         (cx().pat_version_ok(Some(false)), AuthReason::CodexTooOld),
     ] {
@@ -338,22 +337,14 @@ fn manual_choices_never_fall_back() {
     let d = AuthChoice::Pat.decide(&cx.router(true));
     assert_eq!(
         (d.mode, d.reason.clone(), d.choice),
-        (
-            Some(AuthMode::ApiKey),
-            AuthReason::RouterMode,
-            AuthChoice::Pat
-        )
+        (Some(AuthMode::Pat), AuthReason::RouterMode, AuthChoice::Pat)
     );
     assert!(
         !d.fell_back(),
         "a manual choice is not Automatic falling back"
     );
     let d = AuthChoice::Pat.decide(&cx.router(true).caps(&edge));
-    assert_eq!(
-        d.mode,
-        Some(AuthMode::ApiKey),
-        "PAT's edge block is no matter"
-    );
+    assert_eq!(d.mode, Some(AuthMode::Pat), "PAT's edge block is no matter");
 
     let d = AuthChoice::ApiKey.decide(&cx.caps(&edge));
     assert_eq!(

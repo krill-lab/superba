@@ -56,6 +56,7 @@ enum Entry {
 pub struct RouterServer {
     shared: Arc<Shared>,
     listener: TcpListener,
+    tls: Option<tokio_rustls::TlsAcceptor>,
 }
 
 /// Stops a serving router from another task.
@@ -118,6 +119,7 @@ impl RouterServer {
             url: format!("http://{addr}"),
             message: e.to_string(),
         })?;
+        let tls = paths.as_ref().map(crate::tls::acceptor).transpose()?;
         let (shutdown, _) = watch::channel(false);
         let stats = Arc::new(StatsHub::new(paths.clone()));
         let shared = Arc::new(Shared {
@@ -140,7 +142,11 @@ impl RouterServer {
             openai: crate::openai::OpenAiState::default(),
         });
         shared.apply_stats(shared.current().config.stats.as_ref());
-        Ok(Self { shared, listener })
+        Ok(Self {
+            shared,
+            listener,
+            tls,
+        })
     }
 
     /// The bound address (`127.0.0.1:<port>`).
@@ -190,7 +196,11 @@ impl RouterServer {
     /// Serve until shut down. When started from files, publishes `runtime.json`
     /// first and removes it at the end.
     pub async fn serve(self) -> Result<()> {
-        let RouterServer { shared, listener } = self;
+        let RouterServer {
+            shared,
+            listener,
+            tls,
+        } = self;
         if let Some(paths) = &shared.paths {
             RuntimeInfo {
                 pid: std::process::id(),
@@ -259,7 +269,7 @@ impl RouterServer {
             };
             let _ = stream.set_nodelay(true);
             connections.spawn(
-                serve_connection(shared.clone(), stream, slot, entry)
+                accept_connection(shared.clone(), stream, slot, entry, tls.clone())
                     .instrument(tracing::debug_span!("conn", %peer)),
             );
             while connections.try_join_next().is_some() {}
@@ -453,8 +463,47 @@ async fn wsl_listeners(
     }
 }
 
+/// HTTP and TLS share the stable port, so admin clients and other harnesses
+/// keep their HTTP endpoints. Sniffing and TLS handshakes are both bounded.
+async fn accept_connection(
+    shared: Arc<Shared>,
+    stream: TcpStream,
+    slot: ConnSlot,
+    entry: Entry,
+    tls: Option<tokio_rustls::TlsAcceptor>,
+) {
+    if let Some(tls) = tls {
+        let mut first = [0];
+        let peek = std::future::poll_fn(|cx| {
+            let mut buf = tokio::io::ReadBuf::new(&mut first);
+            stream.poll_peek(cx, &mut buf)
+        });
+        match tokio::time::timeout(Duration::from_secs(5), peek).await {
+            Ok(Ok(n)) if n > 0 && first[0] == 22 => {
+                if let Ok(Ok(stream)) =
+                    tokio::time::timeout(Duration::from_secs(5), tls.accept(stream)).await
+                {
+                    serve_connection(shared, Box::new(stream), slot, entry).await;
+                }
+                return;
+            }
+            Ok(Ok(n)) if n > 0 => {}
+            _ => return,
+        }
+    }
+    serve_connection(shared, Box::new(stream), slot, entry).await;
+}
+
+trait ConnectionStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> ConnectionStream for T {}
+
 /// Serve one inbound connection until it closes or the router stops.
-async fn serve_connection(shared: Arc<Shared>, stream: TcpStream, slot: ConnSlot, entry: Entry) {
+async fn serve_connection(
+    shared: Arc<Shared>,
+    stream: Box<dyn ConnectionStream>,
+    slot: ConnSlot,
+    entry: Entry,
+) {
     let mut conn_stop = shared.shutdown.subscribe();
     let mut shed = shared.limits.shed_signal();
     let mut pressure = shared.limits.pressure_signal();
@@ -584,7 +633,7 @@ async fn dispatch(
     mut req: Request<Incoming>,
     entry: Entry,
 ) -> Response<RespBody> {
-    let path = req.uri().path();
+    let path = req.uri().path().to_owned();
     if path.starts_with(ADMIN_PREFIX) {
         // Over a WSL listener only `health` answers (reachability checks).
         if entry == Entry::Wsl && path != format!("{ADMIN_PREFIX}health") {
@@ -596,14 +645,16 @@ async fn dispatch(
         }
         return admin::handle(shared, req).await;
     }
-    let claude = crate::claude::ingress_rest(path);
-    let openai = crate::openai::ingress_rest(path);
-    let gemini = crate::gemini::ingress_rest(path);
+    let claude = crate::claude::ingress_rest(&path);
+    let openai = crate::openai::ingress_rest(&path);
+    let gemini = crate::gemini::ingress_rest(&path);
+    let account = crate::account::handles(&path).then_some(path.clone());
     let Some(rest) = claude
         .clone()
         .or_else(|| openai.clone())
         .or_else(|| gemini.clone())
-        .or_else(|| strip_prefix(path))
+        .or_else(|| strip_prefix(&path))
+        .or_else(|| account.clone())
     else {
         return router_error(
             StatusCode::NOT_FOUND,
@@ -722,10 +773,20 @@ async fn dispatch(
         crate::gemini::handle(shared, req, rest, admission).await
     } else if claude.is_some() {
         crate::claude::handle(shared, req, rest, admission).await
+    } else if let Some(path) = account {
+        let answer = crate::account::response(req.method(), &path);
+        drain(
+            req.into_body(),
+            shared.current().config.tuning.max_body_bytes,
+        )
+        .await;
+        answer
     } else if openai.is_some() {
         crate::openai::handle(shared, req, rest, admission).await
     } else if ws::is_upgrade(&req) {
         ws::proxy_ws(shared, req, rest, admission).await
+    } else if req.method() == http::Method::GET && rest.trim_end_matches('/') == "/models" {
+        crate::catalog::handle(shared, req, rest, admission).await
     } else {
         proxy::proxy_http(shared, req, rest, admission, proxy::Ingress::Codex).await
     }

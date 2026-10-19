@@ -85,20 +85,25 @@ impl AuthChoice {
             mode,
             reason,
         };
-        let resolve_as = if cx.router && self == AuthChoice::Pat {
-            AuthChoice::Auto
-        } else {
-            self
-        };
         let site_pat = cx.site.supports(AuthMode::Pat);
         let site_key = cx.site.supports(AuthMode::ApiKey);
+        if cx.router {
+            return if !site_key {
+                decision(None, AuthReason::NoKeyMode)
+            } else if cx
+                .caps
+                .is_some_and(|c| !c.reachable || !c.allows(AuthMode::ApiKey))
+            {
+                decision(None, AuthReason::LineUnavailable)
+            } else {
+                decision(Some(AuthMode::Pat), AuthReason::RouterMode)
+            };
+        }
         // Facts that rule PAT out before any probe.
         let pat_blocker = if !site_pat {
             Some(AuthReason::SiteApiKeyOnly)
         } else if cx.custom_base_url {
             Some(AuthReason::CustomBaseUrl)
-        } else if cx.router {
-            Some(AuthReason::RouterMode)
         } else if cx.pat_version_ok == Some(false) {
             Some(AuthReason::CodexTooOld)
         } else if cx.line.is_some_and(|l| !l.origin.is_https()) {
@@ -109,7 +114,7 @@ impl AuthChoice {
         let line_down = cx
             .caps
             .is_some_and(|c| !c.reachable || c.codex_path.is_none());
-        match resolve_as {
+        match self {
             AuthChoice::Auto => {
                 if let Some(blocker) = pat_blocker {
                     return if !site_key {

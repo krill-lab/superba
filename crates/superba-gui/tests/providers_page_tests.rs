@@ -162,7 +162,7 @@ fn automatic_authentication_shows_what_the_planner_will_pick() {
         pat_version_ok: Some(true),
         router: true,
     });
-    assert_eq!(routed.mode, Some(AuthMode::ApiKey));
+    assert_eq!(routed.mode, Some(AuthMode::Pat));
     assert_eq!(routed.reason, superba_core::AuthReason::RouterMode);
     // A manual PAT choice is left to the version gate (blocked there, not here).
     let mut manual = profile.clone();
@@ -192,7 +192,7 @@ fn automatic_authentication_shows_what_the_planner_will_pick() {
     );
     assert_eq!(
         (d.mode, d.reason),
-        (Some(AuthMode::ApiKey), superba_core::AuthReason::RouterMode)
+        (Some(AuthMode::Pat), superba_core::AuthReason::RouterMode)
     );
 }
 

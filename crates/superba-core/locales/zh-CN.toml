@@ -27,6 +27,7 @@ unreachable = "线路不可达"
 unknown = "意外的响应（{status}）：{message}"
 
 [restart.reason]
+certificate_trust_changed = "需要重启 ChatGPT，才能使用更新后的本机路由证书设置。"
 no_cdp = "ChatGPT 不是从 Superba 打开的，无法热切。"
 no_bridge = "当前 ChatGPT 版本没有提供重启接口。"
 authapi_missing = "ChatGPT 启动时没有认证地址，热切后会失去登录状态。"

@@ -225,6 +225,7 @@ fn switch_plan(primary: RestartKind) -> SwitchPlan {
         restarts: vec![],
         config: None,
         env: None,
+        certificate_env: None,
         migration: None,
         remotes: vec![],
         active_threads: vec![],

@@ -12,7 +12,7 @@
 //!   the service and waits until it answers. Codex is not touched.
 //! - `spb router enable`: install when needed, persist `enabled`, then a normal
 //!   switch to the applied profile; the planner points the local Codex home at the
-//!   router (API key mode, router token). Remote hosts stay direct.
+//!   router (local PAT and scoped TLS trust).
 //! - Switching to another profile while the router is on moves that profile to
 //!   the front of the members (a router reload; Codex is restarted only if its own
 //!   configuration changes).
@@ -63,7 +63,7 @@ pub const ROUTER_START_WAIT: Duration = Duration::from_secs(30);
 pub struct RouterEndpointInfo {
     /// `openai_base_url` (`http://127.0.0.1:<port>/backend-api/codex`).
     pub base_url: Url,
-    /// The router token Codex authenticates with (API key mode).
+    /// The router token Codex authenticates with.
     pub token: Secret,
     /// Loopback port.
     pub port: u16,
@@ -766,7 +766,7 @@ impl Switcher {
             return true;
         }
         is_router_url(url)
-            && matches!(&state.auth, AuthShape::ApiKey { key_last4 }
+            && matches!(&state.auth, AuthShape::ApiKey { key_last4 } | AuthShape::Pat { key_last4 }
                 if !endpoint.token.is_empty() && *key_last4 == endpoint.token.last4())
     }
 
@@ -1250,7 +1250,7 @@ fn watchdog_request(state: &ConfigState, target: ProfileId, enable: bool) -> Swi
 
 /// `http://127.0.0.1:<port>/backend-api/codex` (any port): the shape of a
 /// router endpoint.
-fn is_router_url(url: &str) -> bool {
+pub(crate) fn is_router_url(url: &str) -> bool {
     let Ok(u) = Url::parse(url) else {
         return false;
     };
@@ -1540,5 +1540,33 @@ impl Switcher {
             self.push_stats(&set).await?;
         }
         self.router_status_impl().await
+    }
+}
+
+impl Switcher {
+    /// Preserve custom roots before replacing their environment variable with
+    /// the router bundle. The environment persister owns restoration of the
+    /// original values and shell lines.
+    pub(crate) async fn prepare_router_certificate(&self) -> Result<()> {
+        let paths = superba_router::RouterPaths::new(&self.deps.ctx.data_dir);
+        let target = paths.client_certificate_pem();
+        let report = self.deps.env.inspect(superba_router::tls::CERT_ENV).await?;
+        let mut sources = Vec::new();
+        for value in report
+            .persisted
+            .iter()
+            .filter_map(|p| p.value.as_deref())
+            .chain(report.foreign_lines.iter().map(|l| l.value.as_str()))
+            .chain(report.process_value.value())
+        {
+            if !value.is_empty() && std::path::Path::new(value) != target {
+                sources.push(PathBuf::from(value));
+            }
+        }
+        let extend = report
+            .superba_value
+            .as_deref()
+            .is_some_and(|v| std::path::Path::new(v) == target);
+        superba_router::tls::prepare_client_bundle(&paths, &sources, extend)
     }
 }

@@ -95,6 +95,8 @@ pub struct RollbackProgress {
     pub migration: bool,
     /// Environment edits were reverted.
     pub env: bool,
+    /// The local router certificate environment was reverted.
+    pub certificate_env: bool,
     /// Configuration was restored.
     pub config: bool,
 }
@@ -121,6 +123,9 @@ pub struct JournalEntry {
     /// Env receipt.
     #[serde(default)]
     pub env: Option<EnvApplied>,
+    /// Router certificate environment receipt.
+    #[serde(default)]
+    pub certificate_env: Option<EnvApplied>,
     /// Session migration receipt.
     #[serde(default)]
     pub migration: Option<MigrationReceipt>,

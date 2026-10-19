@@ -419,6 +419,7 @@ pub fn plan(request: SwitchRequest) -> SwitchPlan {
         restarts: Vec::new(),
         config: None,
         env: None,
+        certificate_env: None,
         migration: None,
         remotes: Vec::new(),
         active_threads: Vec::new(),

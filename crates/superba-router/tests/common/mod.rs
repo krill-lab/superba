@@ -59,6 +59,8 @@ pub enum Mode {
     Json(u16, &'static str),
     /// Status + JSON body + one extra header.
     JsonHeader(u16, &'static str, &'static str, &'static str),
+    /// Status + JSON with several response headers.
+    JsonHeaders(u16, &'static str, Vec<(&'static str, &'static str)>),
     /// SSE: `first`, then (after `gate` is notified, if any) `rest`; with
     /// `break_mid` the stream is broken after `first` instead.
     Sse {
@@ -205,6 +207,13 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
     });
     match mode {
         Mode::Json(status, body) => full(status, body),
+        Mode::JsonHeaders(status, body, headers) => {
+            let mut response = full(status, body);
+            for (name, value) in headers {
+                response.headers_mut().insert(name, value.parse().unwrap());
+            }
+            response
+        }
         Mode::Slow(delay, body) => {
             tokio::time::sleep(delay).await;
             full(200, body)
@@ -392,8 +401,19 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
 
 /// A port nothing listens on (connection refused).
 pub fn dead_port() -> u16 {
-    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    l.local_addr().unwrap().port()
+    // Reserve without listening: a connection is refused, and another parallel
+    // test cannot reuse the port between choosing it and sending the request.
+    static RESERVED: std::sync::OnceLock<std::sync::Mutex<Vec<tokio::net::TcpSocket>>> =
+        std::sync::OnceLock::new();
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let port = socket.local_addr().unwrap().port();
+    RESERVED
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .push(socket);
+    port
 }
 
 pub fn dead_base() -> Url {

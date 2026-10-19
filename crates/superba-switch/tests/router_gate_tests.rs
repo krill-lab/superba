@@ -3,8 +3,7 @@
 //! "成员 · 可以作为成员（有 API key）", yet the Router page kept 开启 disabled.
 //! The service side of the one rule: the gate, the member router mode applies
 //! and the doctor agree, and turning router mode on with Auto auth on a
-//! PAT-capable Krill profile writes the API-key form (router mode is API key
-//! only) without changing the profile's auth choice.
+//! PAT-capable Krill profile writes a local PAT form without changing the profile's auth choice.
 
 #![allow(missing_docs)]
 
@@ -116,7 +115,7 @@ async fn users_state() -> (World, Switcher) {
 }
 
 #[tokio::test]
-async fn a_krill_member_with_its_key_turns_router_mode_on_with_the_api_key_form() {
+async fn a_krill_member_with_its_key_turns_router_mode_on_with_a_local_pat() {
     let (w, sw) = users_state().await;
     let set = sw.profile_set().await.unwrap();
     let sites = sw.sites().await.unwrap();
@@ -144,7 +143,7 @@ async fn a_krill_member_with_its_key_turns_router_mode_on_with_the_api_key_form(
     assert!(text.contains("成员 · 可以作为成员（有 API key）"), "{text}");
     sw.router_set_enabled(false).await.unwrap();
 
-    // Turning router mode on: the routed configuration uses the API-key form
+    // Turning router mode on: the routed configuration uses a local PAT
     // with the router's endpoint and token, whatever Auto picked direct.
     let plan = sw.plan(router_on_request()).await.unwrap();
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
@@ -154,9 +153,9 @@ async fn a_krill_member_with_its_key_turns_router_mode_on_with_the_api_key_form(
     );
     assert_eq!(
         token_mode(&plan),
-        (AuthMode::ApiKey, FakeRouter::base_url(18_431))
+        (AuthMode::Pat, FakeRouter::base_url(18_431))
     );
-    assert_eq!(plan.to.auth_mode, Some(AuthMode::ApiKey));
+    assert_eq!(plan.to.auth_mode, Some(AuthMode::Pat));
     let outcome = execute(&sw, plan).await;
     assert_eq!(outcome.status, OutcomeStatus::Switched, "{outcome:?}");
 
@@ -167,7 +166,7 @@ async fn a_krill_member_with_its_key_turns_router_mode_on_with_the_api_key_form(
     );
     let auth = read(&w, "auth.json");
     let (mode, token) = superba_config::authjson::token_credentials(&auth).unwrap();
-    assert_eq!(mode, AuthMode::ApiKey, "auth.json is the API-key form");
+    assert_eq!(mode, AuthMode::Pat, "auth.json uses the local PAT");
     assert_eq!(token.expose(), ROUTER_TOKEN, "Codex holds the router token");
     assert!(
         !String::from_utf8_lossy(&auth).contains(KEY),
@@ -331,4 +330,135 @@ async fn the_doctor_report_warns_about_a_router_program_on_a_network_share() {
             assert!(text.contains(needle), "{locale:?}: {needle:?} in\n{text}");
         }
     }
+}
+
+#[tokio::test]
+async fn router_certificate_environment_preserves_user_roots_and_restores_on_disable() {
+    use superba_core::EnvPersister;
+    let w = World::new();
+    let other = superba_router::RouterPaths::from_dir(w.ctx.data_dir.root().join("company"));
+    superba_router::tls::prepare_client_bundle(&other, &[], false).unwrap();
+    let original = format!(
+        "export CODEX_CA_CERTIFICATE=\"{}\"\n",
+        other.certificate_pem().display()
+    );
+    std::fs::create_dir_all(&w.ctx.home_dir).unwrap();
+    std::fs::write(w.ctx.home_dir.join(".bashrc"), &original).unwrap();
+    let env = Arc::new(superba_config::ShellEnvPersister::with_platform(
+        w.ctx.clone(),
+        superba_config::EnvPlatform::Linux,
+        Arc::new(superba_config::MemoryNativeEnv::new()),
+    ));
+    let mut deps = w.deps();
+    deps.config = Arc::new(superba_config::TomlConfigEngine::new(w.ctx.clone()));
+    deps.env = env.clone();
+    let sw = Switcher::with_tuning(
+        deps,
+        Tuning {
+            poll: Duration::from_millis(10),
+            verify_timeout: Duration::from_millis(200),
+            launch_verify_timeout: Duration::from_millis(200),
+            stable: Duration::ZERO,
+            reask_after: Duration::from_secs(60),
+            plan_cache: 16,
+            windows_app: false,
+        },
+    );
+    assert_eq!(
+        execute(&sw, sw.plan(req("work")).await.unwrap())
+            .await
+            .status,
+        OutcomeStatus::Switched
+    );
+    sw.router_install(RouterInstallRequest {
+        members: vec![ProfileId::new("work")],
+    })
+    .await
+    .unwrap();
+    let plan = sw.plan(router_on_request()).await.unwrap();
+    assert!(matches!(
+        plan.primary,
+        superba_core::RestartKind::FullAppRestart { .. }
+    ));
+    assert!(plan.certificate_env.is_some());
+    assert_eq!(execute(&sw, plan).await.status, OutcomeStatus::Switched);
+    let paths = superba_router::RouterPaths::new(&w.ctx.data_dir);
+    let bundle = std::fs::read_to_string(paths.client_certificate_pem()).unwrap();
+    assert!(bundle.contains(&std::fs::read_to_string(other.certificate_pem()).unwrap()));
+    assert!(bundle.contains(&std::fs::read_to_string(paths.certificate_pem()).unwrap()));
+    let report = env.inspect(superba_router::tls::CERT_ENV).await.unwrap();
+    assert_eq!(
+        report.superba_value.as_deref(),
+        paths.client_certificate_pem().to_str()
+    );
+    assert_eq!(
+        w.app
+            .launches
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .env
+            .get(superba_router::tls::CERT_ENV)
+            .map(String::as_str),
+        paths.client_certificate_pem().to_str()
+    );
+    let mut disable = router_on_request();
+    disable.intent = SwitchIntent::Router { enable: false };
+    let plan = sw.plan(disable).await.unwrap();
+    assert!(matches!(
+        plan.certificate_env.as_ref().map(|e| &e.op),
+        Some(superba_core::EnvOp::Clear)
+    ));
+    assert_eq!(execute(&sw, plan).await.status, OutcomeStatus::Switched);
+    assert_eq!(
+        env.inspect(superba_router::tls::CERT_ENV)
+            .await
+            .unwrap()
+            .superba_value,
+        None
+    );
+    let bash = std::fs::read_to_string(w.ctx.home_dir.join(".bashrc")).unwrap();
+    assert!(bash.lines().any(|l| l == original.trim_end()), "{bash}");
+    assert!(!bash.contains("codex-ca.pem"));
+}
+
+#[tokio::test]
+async fn interrupted_router_rollback_recovers_the_certificate_environment() {
+    let (w, sw) = users_state().await;
+    *w.app.fail_launch.lock().unwrap() = Some(superba_core::Error::other("test launch failure"));
+    let plan = sw.plan(router_on_request()).await.unwrap();
+    let outcome = execute(&sw, plan).await;
+    assert_ne!(outcome.status, OutcomeStatus::Switched);
+    let journal = superba_switch::journal::SwitchJournal::new(&w.ctx.data_dir);
+    let mut entry = journal
+        .entries()
+        .unwrap()
+        .into_iter()
+        .find(|e| e.certificate_env.is_some())
+        .unwrap();
+    entry.status = superba_switch::journal::JournalStatus::RollingBack;
+    journal.write(&entry).unwrap();
+    w.set_session(None);
+    let recovery = sw.recover().await.unwrap();
+    assert!(
+        recovery
+            .entries
+            .iter()
+            .any(|e| e.action == superba_core::JournalAction::RolledBack)
+    );
+    assert!(
+        journal
+            .entries()
+            .unwrap()
+            .iter()
+            .any(|e| e.certificate_env.is_some() && e.rollback.certificate_env)
+    );
+    assert_eq!(
+        superba_config::authjson::token_credentials(&read(&w, "auth.json"))
+            .unwrap()
+            .0,
+        AuthMode::Pat
+    );
+    assert!(!String::from_utf8_lossy(&read(&w, "config.toml")).contains("127.0.0.1"));
 }

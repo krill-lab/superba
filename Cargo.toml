@@ -66,6 +66,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # --- network
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "http2", "system-proxy"] }
+rcgen = "0.14"
+tokio-rustls = "0.26"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 url = { version = "2.5", features = ["serde"] }
 # local router (superba-router): loopback HTTP/1.1 server with upgrades; already in

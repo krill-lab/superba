@@ -38,7 +38,10 @@ async fn route_codex(w: &World, sw: &Switcher) {
     let plan = sw.plan(req("work")).await.unwrap();
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )

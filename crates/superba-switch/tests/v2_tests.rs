@@ -773,14 +773,14 @@ async fn router_install_builds_members_with_keys_and_refuses_the_official_login(
 }
 
 #[tokio::test]
-async fn router_mode_points_the_local_home_at_the_router_in_api_key_mode() {
+async fn router_mode_points_the_local_home_at_the_router_with_a_local_pat() {
     let w = World::new();
     let sw = w.switcher();
     router_on(&sw).await;
     let plan = sw.plan(req("work")).await.unwrap();
     assert!(!plan.primary.is_blocked(), "{:?}", plan.primary);
     let (auth, base) = token(&plan);
-    assert_eq!(auth, AuthMode::ApiKey);
+    assert_eq!(auth, AuthMode::Pat);
     assert_eq!(base, FakeRouter::base_url(18_431));
     match &desired(&plan).mode {
         ResolvedMode::Token { key, .. } => assert_eq!(key.expose(), ROUTER_TOKEN),
@@ -788,7 +788,8 @@ async fn router_mode_points_the_local_home_at_the_router_in_api_key_mode() {
     }
     assert!(warning_keys(&plan).contains(&"switch.warn.router_mode".to_owned()));
     assert_eq!(plan.to.label.key, "switch.destination.router");
-    assert!(plan.env.is_none(), "no auth API env in router mode");
+    assert!(plan.env.is_some(), "local auth API env in router mode");
+    assert!(plan.certificate_env.is_some());
     assert!(
         !w.calls()
             .iter()
@@ -798,7 +799,10 @@ async fn router_mode_points_the_local_home_at_the_router_in_api_key_mode() {
     // Execute: Codex now goes through the router.
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -830,7 +834,10 @@ async fn switching_profiles_in_router_mode_reorders_members_without_a_restart() 
     let plan = sw.plan(req("work")).await.unwrap();
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -841,7 +848,10 @@ async fn switching_profiles_in_router_mode_reorders_members_without_a_restart() 
     assert_eq!(plan.primary, RestartKind::None, "{:?}", plan.primary);
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -903,7 +913,10 @@ async fn disabling_router_mode_switches_back_to_direct_and_uninstall_needs_it() 
     let plan = sw.plan(req("work")).await.unwrap();
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -916,7 +929,10 @@ async fn disabling_router_mode_switches_back_to_direct_and_uninstall_needs_it() 
     assert!(token(&plan).1.starts_with(OVERSEAS));
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -939,7 +955,10 @@ async fn the_watchdog_falls_back_to_direct_mode_after_the_grace_period() {
     let plan = sw.plan(req("work")).await.unwrap();
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -980,7 +999,10 @@ async fn route_codex(sw: &Switcher) {
     let plan = sw.plan(req("work")).await.unwrap();
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -1144,7 +1166,10 @@ async fn deleting_or_rekeying_a_router_member_updates_the_routers_keys() {
     let plan = sw.plan(off).await.unwrap();
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -1226,7 +1251,10 @@ async fn the_router_intent_stores_router_mode_only_after_the_switch() {
     );
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -1241,7 +1269,10 @@ async fn the_router_intent_stores_router_mode_only_after_the_switch() {
     assert!(token(&plan).1.starts_with(OVERSEAS));
     sw.execute(
         plan,
-        ExecuteOptions::default(),
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
         Arc::new(SafeDefaults),
         Arc::new(NoEvents),
     )
@@ -1275,7 +1306,10 @@ async fn uninstalling_superba_removes_the_local_router_too() {
     let outcome = sw
         .execute(
             plan,
-            ExecuteOptions::default(),
+            ExecuteOptions {
+                allow_full_restart: true,
+                ..ExecuteOptions::default()
+            },
             Arc::new(SafeDefaults),
             Arc::new(NoEvents),
         )

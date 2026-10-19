@@ -1,7 +1,7 @@
 //! # superba-router
 //!
 //! Superba's opt-in local smart router (v2 decision 6): a per-user background
-//! service on `127.0.0.1` that Codex is pointed at in API-key mode. It forwards
+//! service on `127.0.0.1` that local Codex uses with a router-scoped personal access token. It forwards
 //! each request to one of its members — Krill lines and custom OpenAI-compatible
 //! sites, each with its own API key — and fails over across lines and members
 //! before the first response byte. Remote hosts and the official ChatGPT login are
@@ -11,13 +11,16 @@
 //!
 //! | File | Value |
 //! |---|---|
-//! | `config.toml` | `model_provider = "openai"`, `openai_base_url = "http://127.0.0.1:<port>/backend-api/codex"`, no `chatgpt_base_url` |
-//! | `auth.json` | `{"auth_mode":"apikey","OPENAI_API_KEY":"<router token>"}` |
+//! | `config.toml` | `model_provider = "openai"`, `openai_base_url = "http://127.0.0.1:<port>/backend-api/codex"`, `chatgpt_base_url = "https://127.0.0.1:<port>/backend-api/"` |
+//! | `auth.json` | `{"personal_access_token":"<router token>","OPENAI_API_KEY":"<router token>"}` |
 //!
 //! The router requires the router token and replaces `Authorization` with the
 //! chosen member's own key; Codex's credential never reaches a member, and a
-//! Krill key never reaches a custom site. PAT is not offered in router mode
-//! (`chatgpt_base_url` must be https while PAT is in use).
+//! Krill key never reaches a custom site. The local account endpoints supply a
+//! stable router identity; workspace discovery uses loopback TLS. Only Codex
+//! trusts its certificate through `CODEX_CA_CERTIFICATE` (existing custom roots
+//! are preserved); `CODEX_AUTHAPI_BASE_URL` points at the same local port.
+//! Separately managed WSL homes currently use the API-key form.
 //!
 //! ## Behaviour
 //!
@@ -29,6 +32,9 @@
 //!   502/503/504 or an edge interception. Never on 4xx (401/403/429 included) or
 //!   500. No time-to-first-byte timeout. A broken stream aborts the downstream
 //!   response (Codex re-sends) and marks the line suspect.
+//! - **Catalogs**: bounded TTL/ETag cache with single-flight per version/query,
+//!   Retry-After backoff on upstream 429 and stale successful catalogs when allowed;
+//!   upstream JSON including `service_tiers` stays intact.
 //! - **Streaming**: SSE and every other body pass through unbuffered; request
 //!   bodies retain their bytes (`zstd` included) unless private uploads are
 //!   removed, a member maps the model name ([`model_map`]), or the line accepts
@@ -114,12 +120,15 @@ pub mod stats;
 pub mod status;
 pub mod sticky;
 pub mod store;
+pub mod tls;
 pub mod token;
 pub mod translate;
 pub mod transport;
 pub mod watchdog;
 
+mod account;
 mod admin;
+mod catalog;
 mod forward;
 mod probe;
 mod proxy;

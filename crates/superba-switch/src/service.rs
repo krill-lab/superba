@@ -452,11 +452,13 @@ impl Switcher {
             env.insert(ENV_AUTHAPI_BASE_URL.to_owned(), o.as_str());
         }
         self.prepare_launch_env(origin.as_ref()).await;
+        let env_remove = self.prepare_router_launch_env(&mut env).await?;
         let options = self
             .with_pin(LaunchOptions {
                 install_id: set.settings.preferred_app_id.clone(),
                 cdp: launch_cdp_mode(set.settings.safe_mode, effective_root()),
                 env,
+                env_remove,
                 ..LaunchOptions::default()
             })
             .await;
@@ -512,6 +514,73 @@ impl Switcher {
                 tracing::warn!(error = %e, "cannot persist the auth address for the app's start")
             }
         }
+    }
+
+    /// Use the applied router identity and certificate when starting the app.
+    /// Packaged Windows apps take these values from the persisted user environment.
+    pub(crate) async fn prepare_router_launch_env(
+        &self,
+        env: &mut BTreeMap<String, String>,
+    ) -> Result<Vec<String>> {
+        let d = &self.deps;
+        let Ok(state) = d.config.read_state(&d.ctx.codex_home()).await else {
+            return Ok(Vec::new());
+        };
+        if !state.auth.mode().is_some_and(AuthMode::needs_authapi_env)
+            || !state
+                .openai_base_url
+                .as_deref()
+                .is_some_and(crate::router::is_router_url)
+        {
+            // Superba itself may have started while routing was on. Avoid
+            // inheriting its old managed CA path after Clear restored the user.
+            let paths = superba_router::RouterPaths::new(&d.ctx.data_dir);
+            if d.ctx
+                .env
+                .var(superba_router::tls::CERT_ENV)
+                .is_some_and(|v| std::path::Path::new(&v) == paths.client_certificate_pem())
+            {
+                if let Ok(report) = d.env.inspect(superba_router::tls::CERT_ENV).await
+                    && let Some(value) = report
+                        .persisted
+                        .iter()
+                        .filter_map(|p| p.value.as_deref())
+                        .chain(report.foreign_lines.iter().map(|l| l.value.as_str()))
+                        .find(|v| std::path::Path::new(v) != paths.client_certificate_pem())
+                {
+                    env.insert(superba_router::tls::CERT_ENV.into(), value.to_owned());
+                } else {
+                    return Ok(vec![superba_router::tls::CERT_ENV.into()]);
+                }
+            }
+            return Ok(Vec::new());
+        }
+        self.prepare_router_certificate().await?;
+        let base = state
+            .openai_base_url
+            .as_deref()
+            .and_then(|s| url::Url::parse(s).ok())
+            .ok_or_else(|| Error::invalid("invalid router URL"))?;
+        let certificate =
+            superba_router::RouterPaths::new(&d.ctx.data_dir).client_certificate_pem();
+        for (var, value) in [
+            (ENV_AUTHAPI_BASE_URL, base.origin().ascii_serialization()),
+            (
+                superba_router::tls::CERT_ENV,
+                certificate.to_string_lossy().into_owned(),
+            ),
+        ] {
+            env.insert(var.to_owned(), value.clone());
+            match d.env.plan_launch(var, &value).await {
+                Ok(plan) if !plan.is_noop() => {
+                    d.env.apply(&plan).await?;
+                }
+                Ok(_) => {}
+                Err(e) if e.is_not_implemented() => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(Vec::new())
     }
 
     pub(crate) async fn overview_impl(&self) -> Result<Overview> {
@@ -1035,6 +1104,13 @@ impl Switcher {
         {
             d.sessions.rollback(&home, &m.id).await?;
             entry.rollback.migration = true;
+            journal.write(entry)?;
+        }
+        if !entry.rollback.certificate_env
+            && let Some(env) = &entry.certificate_env
+        {
+            d.env.revert(env).await?;
+            entry.rollback.certificate_env = true;
             journal.write(entry)?;
         }
         if !entry.rollback.env

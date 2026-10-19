@@ -522,6 +522,7 @@ impl Switcher {
         };
         let id = uuid::Uuid::new_v4().simple().to_string();
         let plan = SwitchPlan {
+            certificate_env: None,
             id: id.clone(),
             created_at: d.clock.now(),
             request,

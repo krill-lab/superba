@@ -278,7 +278,7 @@ async fn router_on_keeps_the_model_of_a_following_distribution_and_names_it() {
         wsl_notes(&plan, Locale::ZhCn)
     );
     // This computer keeps its model too (bug 58), named once for it.
-    assert_eq!(local_keys(&plan), ["switch.models.keep_api_key"]);
+    assert_eq!(local_keys(&plan), ["switch.models.keep_router"]);
     // The distribution's list was read at its own line with its own Codex.
     let calls = w.prober.model_list_calls.lock().unwrap().clone();
     let versions = w.prober.model_list_versions.lock().unwrap().clone();
@@ -402,7 +402,7 @@ async fn the_distributions_own_model_is_never_replaced_by_this_computers() {
         plan.warnings
     );
     // This computer keeps its own.
-    assert_eq!(local_keys(&plan), ["switch.models.keep_api_key"]);
+    assert_eq!(local_keys(&plan), ["switch.models.keep_router"]);
     execute(&sw, plan).await;
     assert_eq!(wsl_model(&w).as_deref(), Some("gpt-5.6-sol"));
 
@@ -446,7 +446,7 @@ async fn a_distribution_that_stays_direct_keeps_nothing() {
         plan.warnings
     );
     // This computer is routed and keeps its model.
-    assert_eq!(local_keys(&plan), ["switch.models.keep_api_key"]);
+    assert_eq!(local_keys(&plan), ["switch.models.keep_router"]);
 }
 
 #[tokio::test]
@@ -507,7 +507,7 @@ async fn a_distribution_updated_later_keeps_its_model_too() {
         ["switch.models.keep_api_key"]
     );
     // This computer still runs the model it kept.
-    assert_eq!(local_keys(&plan), ["switch.models.keep_api_key"]);
+    assert_eq!(local_keys(&plan), ["switch.models.keep_router"]);
     execute(&sw, plan).await;
     assert_eq!(wsl_model(&w).as_deref(), Some("gpt-6.1-sol"));
 }
@@ -531,10 +531,7 @@ async fn run_codex_in_wsl_names_the_model_kept_for_its_distribution() {
     assert!(!plan.is_blocked(), "{:?}", plan.primary);
     assert_eq!(
         local_keys(&plan),
-        [
-            "switch.models.keep_api_key",
-            "switch.models.keep_legacy_wsl"
-        ]
+        ["switch.models.keep_router", "switch.models.keep_legacy_wsl"]
     );
     let n = plan
         .warnings

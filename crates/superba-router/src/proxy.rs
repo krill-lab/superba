@@ -858,6 +858,11 @@ async fn send(
             request_headers(&parts.headers, false, drop_turn_state, &member.auth),
         )
     };
+    if let Some(route) = parts.extensions.get::<crate::catalog::ValidatorRoute>()
+        && route.0.to_str().ok() != Some(generation.label(c.member, c.line).as_str())
+    {
+        headers.remove(http::header::IF_NONE_MATCH);
+    }
     if ingress == Ingress::OpenAi {
         headers.remove(http::header::ACCEPT_ENCODING);
     }

@@ -518,33 +518,60 @@ impl EnvPersister for FakeEnv {
         })
     }
 
-    async fn inspect(&self, _var: &str) -> Result<EnvReport> {
-        Ok(self.report.lock().unwrap().clone())
+    async fn inspect(&self, var: &str) -> Result<EnvReport> {
+        let mut report = self.report.lock().unwrap().clone();
+        if var == superba_router::tls::CERT_ENV {
+            report.var = var.into();
+            report.persisted.clear();
+            report.process_value = EnvObservation::Unknown;
+            report.superba_value = self
+                .applied
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .find(|(v, _)| v == var)
+                .and_then(|(_, op)| match op {
+                    EnvOp::Set { value, .. } => Some(value.clone()),
+                    _ => None,
+                });
+            report.foreign_lines.clear();
+            report.legacy_lines.clear();
+        }
+        Ok(report)
     }
 
     async fn plan(&self, var: &str, op: EnvOp) -> Result<EnvPlan> {
         self.plans.lock().unwrap().push(op.clone());
-        let edits = match &op {
-            EnvOp::Set { value, .. } => vec![EnvEdit {
-                location: EnvLocation::ShellRc {
-                    path: PathBuf::from("/fake/.zshenv"),
-                    shell: ShellKind::Zsh,
-                },
-                action: EnvEditAction::WriteBlock,
-                preview: format!("export {var}=\"{value}\""),
-                before: None,
-                after: Some("rc-1".into()),
-            }],
-            EnvOp::Clear | EnvOp::RestoreBaseline { .. } => vec![EnvEdit {
-                location: EnvLocation::ShellRc {
-                    path: PathBuf::from("/fake/.zshenv"),
-                    shell: ShellKind::Zsh,
-                },
-                action: EnvEditAction::RemoveBlock,
-                preview: String::new(),
-                before: Some("rc-1".into()),
-                after: None,
-            }],
+        let unchanged_router_env = matches!(&op, EnvOp::Set { value, .. }
+            if (var == superba_router::tls::CERT_ENV || value.starts_with("http://127.0.0.1:"))
+                && self.applied.lock().unwrap().iter().rev().find(|(v, _)| v == var)
+                    .is_some_and(|(_, last)| last == &op));
+        let edits = if unchanged_router_env {
+            Vec::new()
+        } else {
+            match &op {
+                EnvOp::Set { value, .. } => vec![EnvEdit {
+                    location: EnvLocation::ShellRc {
+                        path: PathBuf::from("/fake/.zshenv"),
+                        shell: ShellKind::Zsh,
+                    },
+                    action: EnvEditAction::WriteBlock,
+                    preview: format!("export {var}=\"{value}\""),
+                    before: None,
+                    after: Some("rc-1".into()),
+                }],
+                EnvOp::Clear | EnvOp::RestoreBaseline { .. } => vec![EnvEdit {
+                    location: EnvLocation::ShellRc {
+                        path: PathBuf::from("/fake/.zshenv"),
+                        shell: ShellKind::Zsh,
+                    },
+                    action: EnvEditAction::RemoveBlock,
+                    preview: String::new(),
+                    before: Some("rc-1".into()),
+                    after: None,
+                }],
+            }
         };
         Ok(EnvPlan {
             var: var.into(),

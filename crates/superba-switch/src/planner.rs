@@ -987,6 +987,7 @@ impl Switcher {
         // --- local writes ---------------------------------------------------------
         let mut config_plan = None;
         let mut env_plan: Option<EnvPlan> = None;
+        let mut certificate_env = None;
         let mut extras = BaselineExtras {
             session_distribution: report
                 .as_ref()
@@ -1056,6 +1057,32 @@ impl Switcher {
                 extras.env = snapshots(&r);
                 extras.legacy_env_lines = r.legacy_lines;
             }
+            let certificate_op = if dest.routed {
+                let path =
+                    superba_router::RouterPaths::new(&d.ctx.data_dir).client_certificate_pem();
+                Some(EnvOp::Set {
+                    value: path.to_string_lossy().into_owned(),
+                    // Existing CA roots are merged into the new bundle before this
+                    // edit, and the persister restores these lines on Clear.
+                    take_over_foreign: true,
+                })
+            } else {
+                let managed = d
+                    .env
+                    .inspect(superba_router::tls::CERT_ENV)
+                    .await
+                    .ok()
+                    .is_some_and(|r| r.superba_value.is_some());
+                managed.then_some(EnvOp::Clear)
+            };
+            if let Some(op) = certificate_op {
+                match d.env.plan(superba_router::tls::CERT_ENV, op).await {
+                    Ok(p) if !p.is_noop() => certificate_env = Some(p),
+                    Ok(_) => {}
+                    Err(e) if e.is_not_implemented() => {}
+                    Err(e) => return Err(e),
+                }
+            }
         }
 
         // --- app facts and restart decision (plan 7.1) ------------------------
@@ -1077,52 +1104,59 @@ impl Switcher {
             },
             None => AppFacts::NotRunning,
         };
-        let primary = if !local {
-            if draft.blocks.is_empty() {
-                RestartKind::None
-            } else {
-                RestartKind::Blocked {
-                    reasons: draft.blocks.clone(),
-                }
-            }
-        } else if dest.hand_off {
-            // Nothing of the other tool's is touched and Codex picks up the
-            // configuration at its next start (the other tool restarts it or
-            // asks to).
-            if draft.blocks.is_empty() {
-                RestartKind::None
-            } else {
-                RestartKind::Blocked {
-                    reasons: draft.blocks.clone(),
-                }
-            }
-        } else if dest.restart_app {
-            if !draft.blocks.is_empty() {
-                RestartKind::Blocked {
-                    reasons: draft.blocks.clone(),
-                }
-            } else if session.is_some() {
+        let primary =
+            if local && session.is_some() && certificate_env.is_some() && draft.blocks.is_empty() {
+                // A new app-server inherits the main process's old certificate
+                // bundle. Entering/leaving TLS needs the main process restarted.
                 RestartKind::FullAppRestart {
-                    reason: if cdp_ok {
-                        superba_core::FullRestartReason::Requested
-                    } else {
-                        superba_core::FullRestartReason::NoCdp
-                    },
+                    reason: superba_core::FullRestartReason::CertificateTrustChanged,
+                }
+            } else if !local {
+                if draft.blocks.is_empty() {
+                    RestartKind::None
+                } else {
+                    RestartKind::Blocked {
+                        reasons: draft.blocks.clone(),
+                    }
+                }
+            } else if dest.hand_off {
+                // Nothing of the other tool's is touched and Codex picks up the
+                // configuration at its next start (the other tool restarts it or
+                // asks to).
+                if draft.blocks.is_empty() {
+                    RestartKind::None
+                } else {
+                    RestartKind::Blocked {
+                        reasons: draft.blocks.clone(),
+                    }
+                }
+            } else if dest.restart_app {
+                if !draft.blocks.is_empty() {
+                    RestartKind::Blocked {
+                        reasons: draft.blocks.clone(),
+                    }
+                } else if session.is_some() {
+                    RestartKind::FullAppRestart {
+                        reason: if cdp_ok {
+                            superba_core::FullRestartReason::Requested
+                        } else {
+                            superba_core::FullRestartReason::NoCdp
+                        },
+                    }
+                } else {
+                    RestartKind::None
                 }
             } else {
-                RestartKind::None
-            }
-        } else {
-            decide_local(&LocalFacts {
-                blocks: draft.blocks.clone(),
-                migration: migration.is_some() || dest.rollback_migration.is_some(),
-                current_family: state.auth.family(),
-                target_family: dest.auth.map(AuthMode::family),
-                target_needs_authapi: needs_authapi,
-                app: app_facts,
-                hot_supported: rules::platform_hot_supported(),
-            })
-        };
+                decide_local(&LocalFacts {
+                    blocks: draft.blocks.clone(),
+                    migration: migration.is_some() || dest.rollback_migration.is_some(),
+                    current_family: state.auth.family(),
+                    target_family: dest.auth.map(AuthMode::family),
+                    target_needs_authapi: needs_authapi,
+                    app: app_facts,
+                    hot_supported: rules::platform_hot_supported(),
+                })
+            };
 
         // Router mode: a profile switch that only reorders the router's members
         // needs no restart (the router reloads; Codex keeps pointing at it).
@@ -1130,6 +1164,7 @@ impl Switcher {
             && dest.router_update.is_some()
             && config_plan.as_ref().is_none_or(|c| c.writes_no_files())
             && env_plan.as_ref().is_none_or(|e| e.is_noop())
+            && certificate_env.is_none()
             && migration.is_none()
             && !primary.is_blocked()
         {
@@ -1146,6 +1181,7 @@ impl Switcher {
             && primary.is_hot()
             && config_plan.as_ref().is_some_and(|c| c.writes_no_files())
             && env_plan.as_ref().is_none_or(|e| e.is_noop())
+            && certificate_env.is_none()
             && migration.is_none()
             && app_core_current(&processes, state.active.as_ref())
         {
@@ -1288,6 +1324,7 @@ impl Switcher {
             restarts,
             config: config_plan,
             env: env_plan,
+            certificate_env,
             migration,
             remotes: remote_plans,
             active_threads,
@@ -2023,7 +2060,7 @@ impl Switcher {
                 dest.router_update = None;
             }
             if let (Some(e), Some(token)) = (dest.endpoints.clone(), dest.key.clone()) {
-                dest.resolved = Some(resolved(&e, AuthMode::ApiKey, &token));
+                dest.resolved = Some(resolved(&e, AuthMode::Pat, &token));
             }
             dest.label = text("switch.destination.router").arg_text("site", site.name.clone());
             return Ok(dest);
@@ -2088,8 +2125,7 @@ impl Switcher {
         }
     }
 
-    /// Point the local destination at the router: its endpoint and token (API key
-    /// mode), and the router's member order with `profile` first.
+    /// Point the local destination at the router: its endpoint and local PAT, and the router's member order with `profile` first.
     async fn route_through_router(
         &self,
         profile: &Profile,
@@ -2107,7 +2143,7 @@ impl Switcher {
                 auth_mode: choice.representative_mode(),
             });
         }
-        dest.auth = Some(AuthMode::ApiKey);
+        dest.auth = Some(AuthMode::Pat);
         dest.line = None;
         dest.caps = None;
         dest.env_op = None;
@@ -2146,7 +2182,18 @@ impl Switcher {
                 .arg("port", endpoint.port),
         );
         match ResolvedEndpoints::for_base_url(&endpoint.base_url) {
-            Ok(e) => {
+            Ok(mut e) => {
+                // Inference stays on HTTP loopback (also used by the CLI and
+                // model probes). Workspace discovery uses TLS on the same
+                // listener; Codex requires an HTTPS workspace origin.
+                let mut chatgpt = e.origin.join("/backend-api/");
+                let _ = chatgpt.set_scheme("https");
+                e.chatgpt_base_url = Some(chatgpt);
+                e.authapi_origin = Some(e.origin.clone());
+                dest.env_op = Some(EnvOp::Set {
+                    value: e.origin.as_str(),
+                    take_over_foreign: false,
+                });
                 dest.endpoints = Some(e);
                 dest.key = Some(endpoint.token);
             }
@@ -2591,6 +2638,10 @@ impl Switcher {
                 .and_then(|u| Origin::parse(&u.origin().ascii_serialization()).ok())
                 .or_else(|| Some(endpoints.origin.clone()));
         }
+        if auth.needs_authapi_env() && crate::router::is_router_url(base.as_str()) {
+            dest.routed = true;
+            endpoints.authapi_origin = Some(endpoints.origin.clone());
+        }
         // Only a configured site that owns the restored API origin may receive
         // this key. The prober also checks the launch-time auth origin against it.
         if let Some((site, line)) = sites.iter().find_map(|site| {
@@ -2617,6 +2668,21 @@ impl Switcher {
     }
 
     async fn authapi_health(&self, dest: &Dest, origin: &str) -> AuthApiHealth {
+        if dest.routed {
+            // Never send a local router token to the previously selected
+            // upstream's auth service. Router health was checked above.
+            return if dest
+                .endpoints
+                .as_ref()
+                .is_some_and(|e| e.origin.as_str() == origin)
+            {
+                AuthApiHealth::Healthy
+            } else {
+                AuthApiHealth::Unhealthy {
+                    reason: "the app must use the local router's auth address".into(),
+                }
+            };
+        }
         let (Some(site), Some(key)) = (dest.site.as_ref(), dest.key.as_ref()) else {
             return AuthApiHealth::Unhealthy {
                 reason: "no key to check the auth address with".into(),
