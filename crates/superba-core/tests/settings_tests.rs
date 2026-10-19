@@ -403,6 +403,26 @@ fn line_priority_is_primary_then_unique_backups() {
     assert!(p.line_priority().is_empty());
 }
 
+#[test]
+fn preferring_a_line_preserves_the_effective_order_including_implicit_backups() {
+    let site = superba_core::catalog::krill_site();
+    let mut p = profile_with(AuthMode::Pat);
+    p.set_line_priority(Vec::new());
+    let order = p.ordered_line_ids(&site);
+    assert_eq!(order[0], site.default_line.as_ref().unwrap().clone());
+    let selected = order.last().unwrap().clone();
+    p.prefer_line(&site, selected.clone()).unwrap();
+    let expected = std::iter::once(selected.clone())
+        .chain(order.into_iter().filter(|id| id != &selected))
+        .collect::<Vec<_>>();
+    assert_eq!(p.line_priority(), expected);
+    let before = p.clone();
+    assert!(p.prefer_line(&site, "missing".into()).is_err());
+    assert_eq!(p, before);
+    p.prefer_line(&site, selected).unwrap();
+    assert_eq!(p, before, "selecting the same preference is idempotent");
+}
+
 // ---------------------------------------------------------------------------
 // catalog view
 // ---------------------------------------------------------------------------

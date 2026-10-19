@@ -144,6 +144,8 @@ pub struct MemberStatus {
     pub model_mappings: usize,
     /// Lines in priority order.
     pub lines: Vec<LineStatus>,
+    /// Latest observed upstream in this configuration generation.
+    pub last_route: Option<superba_core::RouterLineRoute>,
 }
 
 /// One line.

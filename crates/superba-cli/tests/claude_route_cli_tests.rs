@@ -120,6 +120,7 @@ async fn router_status_labels_openai_and_gemini_protocol_conversions() {
     use superba_core::{RequestProtocol, RouterMemberView, RouterProtocolRoute};
     let service = FakeService::new();
     service.v2.lock().unwrap().router.members = vec![RouterMemberView {
+        last_route: None,
         profile_id: ProfileId::new("converted"),
         name: "Converted".into(),
         lines: vec![],

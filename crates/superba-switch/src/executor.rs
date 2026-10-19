@@ -2325,7 +2325,24 @@ impl Run<'_> {
             if let Some(p) = set.profiles.iter_mut().find(|p| p.id == update.profile_id) {
                 if let Some(l) = update.line_id {
                     // The chosen line becomes the primary; the others stay backups.
-                    let mut lines = vec![l.clone()];
+                    // A router plan also expands unlisted site lines; persist
+                    // that exact order so the next reload cannot reorder backups.
+                    let mut lines =
+                        self.pc
+                            .router_update
+                            .as_ref()
+                            .and_then(|(_, built)| {
+                                built.config.members.iter().find(|m| {
+                                    m.id == superba_router::members::router_id(p.id.as_str())
+                                })
+                            })
+                            .map(|m| {
+                                m.lines
+                                    .iter()
+                                    .map(|line| superba_core::LineId::new(&line.id))
+                                    .collect()
+                            })
+                            .unwrap_or_else(|| vec![l.clone()]);
                     lines.extend(p.line_priority().into_iter().filter(|x| x != &l));
                     p.set_line_priority(lines);
                 }

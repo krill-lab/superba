@@ -404,6 +404,10 @@ pub struct RouterMemberView {
     /// Native, converted or unavailable routes on the OpenAI/Gemini ingresses.
     #[serde(default)]
     pub protocols: Vec<RouterProtocolRoute>,
+    /// Most recently selected upstream for this member. Concurrent conversations
+    /// can use different lines; this is an observation, not its preferred line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_route: Option<RouterLineRoute>,
 }
 
 /// How a member serves one client protocol through the local router.
@@ -449,6 +453,16 @@ impl RouterProtocolRoute {
             }
         }
     }
+}
+
+/// The latest request whose upstream response headers arrived, since reload.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterLineRoute {
+    /// Line actually used.
+    pub line_id: String,
+    /// Earlier lines with failures that explain using a backup. Kept while
+    /// that conversation stays on the backup, even after a probe recovers them.
+    pub failed_lines: Vec<String>,
 }
 
 /// Router status snapshot.

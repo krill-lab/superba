@@ -224,6 +224,7 @@ pub(crate) fn status(shared: &Shared) -> RouterStatus {
         .iter()
         .map(|m| MemberStatus {
             id: m.cfg.id.clone(),
+            last_route: lock(&m.last_route).clone(),
             name: m.cfg.name.clone(),
             kind: m.cfg.kind,
             websocket: m.cfg.websocket,

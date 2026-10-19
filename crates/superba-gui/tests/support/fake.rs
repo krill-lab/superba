@@ -1708,6 +1708,7 @@ impl SwitchService for FakeService {
                 .iter()
                 .map(|id| RouterMemberView {
                     protocols: Vec::new(),
+                    last_route: None,
                     profile_id: id.clone(),
                     name: s
                         .profiles

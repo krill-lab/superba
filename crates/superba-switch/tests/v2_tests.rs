@@ -23,6 +23,78 @@ fn req(profile: &str) -> SwitchRequest {
     SwitchRequest::profile(ProfileId::new(profile))
 }
 
+#[tokio::test]
+async fn router_line_switch_reloads_even_when_the_provider_order_is_unchanged() {
+    let w = World::new();
+    w.set_session(None);
+    set_profile(&w, |p| {
+        p.set_line_priority(["cn-fast".into(), "cdn".into(), "overseas".into()])
+    });
+    let sw = w.switcher();
+    router_on(&sw).await;
+    let mut request = req("work");
+    request.intent = SwitchIntent::Profile {
+        profile_id: "work".into(),
+        line_id: Some("overseas".into()),
+        auth_mode: None,
+    };
+    let plan = sw.plan(request).await.unwrap();
+    assert!(!plan.is_blocked(), "{plan:?}");
+    assert_eq!(
+        w.router.written.lock().unwrap().last().unwrap().members[0].lines[0].id,
+        "cn-fast",
+        "planning must not apply the line"
+    );
+    let result = sw
+        .execute(
+            plan,
+            ExecuteOptions::default(),
+            Arc::new(SafeDefaults),
+            Arc::new(NoEvents),
+        )
+        .await
+        .unwrap();
+    assert_ne!(result.status, superba_core::OutcomeStatus::Failed);
+    let written = w.router.written.lock().unwrap();
+    let order: Vec<_> = written.last().unwrap().members[0]
+        .lines
+        .iter()
+        .map(|l| l.id.as_str())
+        .collect();
+    assert_eq!(order, ["overseas", "cn-fast", "cdn"]);
+    assert_eq!(
+        w.profiles
+            .set
+            .lock()
+            .unwrap()
+            .profile(&ProfileId::new("work"))
+            .unwrap()
+            .line_id,
+        Some("overseas".into())
+    );
+}
+
+#[tokio::test]
+async fn saving_provider_line_order_rewrites_the_running_router() {
+    let w = World::new();
+    let sw = w.switcher();
+    router_on(&sw).await;
+    let mut profile = sw
+        .profile_set()
+        .await
+        .unwrap()
+        .profile(&ProfileId::new("work"))
+        .unwrap()
+        .clone();
+    profile.set_line_priority(["cdn".into(), "cn-fast".into(), "overseas".into()]);
+    sw.save_profile(profile, None).await.unwrap();
+    assert_eq!(
+        w.router.written.lock().unwrap().last().unwrap().members[0].lines[0].id,
+        "cdn"
+    );
+    assert!(w.calls().iter().any(|c| c.starts_with("router.rewrite")));
+}
+
 fn tuning() -> Tuning {
     Tuning {
         poll: Duration::from_millis(10),

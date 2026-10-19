@@ -2169,14 +2169,29 @@ impl Switcher {
         }
         let mut members = vec![profile.id.clone()];
         members.extend(router.members.iter().filter(|m| *m != &profile.id).cloned());
-        if members != router.members {
+        let line = dest
+            .profile_update
+            .as_ref()
+            .and_then(|u| u.line_id.as_ref());
+        if members != router.members || line.is_some() {
             match d.profiles.load().await {
-                Ok(set) => match self.build_router_members(&set, &members).await {
-                    Ok(built) => dest.router_update = Some((members, built)),
-                    Err(e) => draft.block(BlockReason::RouterUnavailable {
-                        detail: e.to_string(),
-                    }),
-                },
+                Ok(mut set) => {
+                    if let Some(line) = line
+                        && let Some(p) = set.profiles.iter_mut().find(|p| p.id == profile.id)
+                        && let Err(e) = p.prefer_line(site, line.clone())
+                    {
+                        draft.block(BlockReason::RouterUnavailable {
+                            detail: e.to_string(),
+                        });
+                        return;
+                    }
+                    match self.build_router_members(&set, &members).await {
+                        Ok(built) => dest.router_update = Some((members, built)),
+                        Err(e) => draft.block(BlockReason::RouterUnavailable {
+                            detail: e.to_string(),
+                        }),
+                    }
+                }
                 Err(e) => draft.block(BlockReason::RouterUnavailable {
                     detail: e.to_string(),
                 }),

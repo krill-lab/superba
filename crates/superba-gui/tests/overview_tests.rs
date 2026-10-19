@@ -612,6 +612,7 @@ async fn todos_list_problems_first_with_their_fixes_and_nodes() {
             running: true,
             members: vec![RouterMemberView {
                 protocols: Vec::new(),
+                last_route: None,
                 profile_id: "krill".into(),
                 name: "Krill".into(),
                 lines: vec![RouterLineView {
@@ -1028,6 +1029,89 @@ async fn nodes_open_their_pages_and_the_popovers_switch_line_and_tier() {
         )),
         "{out:?}"
     );
+}
+
+#[tokio::test]
+async fn router_popover_shows_preference_failover_and_saves_the_chosen_line() {
+    let mut data = fake_data().await;
+    router_on(&mut data);
+    let id = data.active_profile().unwrap().id.clone();
+    data.profiles
+        .value
+        .as_mut()
+        .unwrap()
+        .profiles
+        .iter_mut()
+        .find(|p| p.id == id)
+        .unwrap()
+        .set_line_priority(["cn-fast".into(), "cdn".into(), "overseas".into()]);
+    let route = superba_core::RouterLineRoute {
+        line_id: "overseas".into(),
+        failed_lines: vec!["cn-fast".into()],
+    };
+    let snap = Snapshot {
+        router: Some(RouterView {
+            running: true,
+            members: vec![RouterMemberView {
+                protocols: Vec::new(),
+                profile_id: id,
+                name: "Krill".into(),
+                lines: vec![],
+                last_route: Some(route),
+            }],
+            ..RouterView::default()
+        }),
+        ..Snapshot::default()
+    };
+    with_cx(&data, Locale::ZhCn, |cx| {
+        let model = hero::model(cx, data.overview.value.as_ref().unwrap(), &[], Some(&snap));
+        assert_eq!(
+            model.current_line.as_deref(),
+            Some("当前：海外线路（国内极速失败后切换）")
+        );
+    });
+    let harness = Harness::new([1280.0, 900.0], egui::Theme::Light);
+    let tr = Tr::new(Locale::ZhCn);
+    let mut state = overview::State::default();
+    state.usage = UsageLoader::preloaded(snap);
+    let mut out = Vec::new();
+    {
+        let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        let texts = harness.settle(&mut f);
+        let r = texts
+            .iter()
+            .find(|(t, _)| t.starts_with("Krill ·"))
+            .unwrap()
+            .1;
+        harness.click_at(egui::pos2(r.max.x + 12.0, r.center().y), &mut f);
+        let texts = harness.settle(&mut f);
+        for expected in [
+            "国内极速（首选）",
+            "当前：海外线路（国内极速失败后切换）",
+            &tr.t("router.preference.choose"),
+            &tr.t("router.preference.recovery"),
+        ] {
+            assert!(
+                texts.iter().any(|(t, _)| t.contains(expected)),
+                "missing {expected}: {texts:?}"
+            );
+        }
+        assert!(harness.click_last_text("海外线路", &mut f));
+    }
+    let saved = out
+        .iter()
+        .find_map(|a| match a {
+            Action::SaveProfile { profile, key: None } => Some(profile),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        saved.line_priority(),
+        ["overseas", "cn-fast", "cdn"]
+            .map(superba_core::LineId::new)
+            .to_vec()
+    );
+    assert!(!out.iter().any(|a| matches!(a, Action::Switch { .. })));
 }
 
 #[tokio::test]

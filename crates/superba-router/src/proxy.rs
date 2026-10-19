@@ -922,6 +922,14 @@ pub(crate) fn on_answer(
 ) {
     let member = &generation.members[c.member];
     let line = &member.lines[c.line];
+    *lock(&member.last_route) = Some(superba_core::RouterLineRoute {
+        line_id: line.cfg.id.clone(),
+        failed_lines: member.lines[..c.line]
+            .iter()
+            .filter(|l| lock(&l.health).last_error().is_some())
+            .map(|l| l.cfg.id.clone())
+            .collect(),
+    });
     line.counters.requests.fetch_add(1, Ordering::Relaxed);
     let reopened = {
         let mut h = lock(&line.health);

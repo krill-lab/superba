@@ -18,6 +18,29 @@ use crate::{ExecArgs, Output, RouterCommand, Runtime, exit, text::text};
 
 pub(super) async fn run(command: &RouterCommand, rt: &Runtime, out: &mut Output) -> Result {
     match command {
+        RouterCommand::Line { provider, line } => {
+            let set = rt.service.profile_set().await?;
+            let id = ProfileId::new(provider);
+            if !set.settings.router.members.contains(&id) {
+                return Err(usage(
+                    out,
+                    text("cli.router.line_not_member").arg("provider", provider),
+                ));
+            }
+            let mut profile = set.profile(&id).cloned().ok_or_else(|| {
+                super::missing(out, text("cli.error.profile_missing").arg("id", provider))
+            })?;
+            let site = super::site(rt, out, profile.site_id.as_str()).await?;
+            profile.prefer_line(&site, superba_core::LineId::new(line))?;
+            let saved = rt.service.save_profile(profile, None).await?;
+            out.line(
+                text("cli.router.line_saved")
+                    .arg("provider", provider)
+                    .arg("line", line),
+            )?;
+            out.value(&saved)?;
+            Ok(exit::OK)
+        }
         RouterCommand::Status => {
             let view = rt.service.router_status().await?;
             render(&view, out)?;

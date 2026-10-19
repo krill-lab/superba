@@ -25,6 +25,84 @@ use superba_router::{MemberKind, ShutdownHandle};
 /// [`InProcess`] starts the router once, where the real services restart it.
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn line_priority_reload_changes_the_same_conversation_and_keeps_the_open_stream() {
+    let _serial = SERIAL.lock().await;
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let first = upstream(Mode::Sse {
+        first: "data: first\n\n",
+        rest: "data: finished\n\n",
+        gate: Some(gate.clone()),
+        break_mid: false,
+    })
+    .await;
+    let second = upstream(Mode::Json(200, r#"{"ok":true}"#)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let data = DataDir::new(dir.path());
+    let service = InProcess::default();
+    let log = service.log.clone();
+    let manager = RouterManager::new(&data, fake_exe(dir.path()), Box::new(service));
+    let mut cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![
+            line("cn-fast", first.base("/up")),
+            line("overseas", second.base("/up")),
+        ],
+    )]);
+    let endpoint = manager
+        .enable(&cfg, keys(), Duration::from_secs(10))
+        .await
+        .unwrap();
+    let http = reqwest::Client::builder().no_proxy().build().unwrap();
+    let send = || {
+        http.post(format!("{}/responses", endpoint.base_url))
+            .bearer_auth(endpoint.token.expose())
+            .header("session-id", "same-conversation")
+            .body("{}")
+            .send()
+    };
+    let mut stream = send().await.unwrap();
+    assert_eq!(route(&stream), "krill/cn-fast");
+    assert_eq!(stream.chunk().await.unwrap().unwrap(), "data: first\n\n");
+    let admin = superba_router::client::AdminClient::from_runtime(manager.paths()).unwrap();
+    let before = admin.status().await.unwrap();
+    cfg.members[0].lines.swap(0, 1);
+    manager.rewrite(&cfg, keys()).await.unwrap();
+    let after = admin.status().await.unwrap();
+    assert_eq!(before.instance_id, after.instance_id);
+    assert_eq!(after.config_generation, before.config_generation + 1);
+    assert!(after.members[0].last_route.is_none());
+    let response = send().await.unwrap();
+    assert_eq!(route(&response), "krill/overseas");
+    assert_eq!(response.text().await.unwrap(), r#"{"ok":true}"#);
+    assert_eq!(
+        admin.status().await.unwrap().members[0]
+            .last_route
+            .as_ref()
+            .unwrap()
+            .line_id,
+        "overseas"
+    );
+    gate.notify_one();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(5), stream.text())
+            .await
+            .unwrap()
+            .unwrap(),
+        "data: finished\n\n"
+    );
+    assert_eq!(*log.lock().unwrap(), ["install"], "no service restart");
+    manager
+        .disable(&Fallback {
+            paths: manager.paths().clone(),
+            log,
+        })
+        .await
+        .unwrap();
+}
+
 /// Runs `superba-router run` in a thread of this process.
 #[derive(Debug, Default)]
 struct InProcess {

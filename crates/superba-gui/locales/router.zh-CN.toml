@@ -518,3 +518,12 @@ routed = "Claude Code 正经由路由"
 pending = "已设为经由路由：请在 Claude Code → 连接与模型 中应用"
 preferred = "Claude Code 的供应商"
 claude_only = "仅 Claude Code"
+
+[router.preference]
+first = "{line}（首选）"
+choose = "选择首选线路；新请求立即生效，已有流不中断。"
+current = "当前：{line}"
+failed_over = "当前：{line}（{failed}失败后切换）"
+observed = "显示这个成员最近收到上游响应头的请求；同时进行的会话可能使用不同线路。"
+waiting = "等待下一次请求"
+recovery = "默认故障冷却 5 秒，失败后倍增至 60 秒。恢复后，新会话优先尝试首选线路；已有会话会保留可用的备用线路，直到闲置 2 小时。调整线路顺序会重置新请求的选择。"

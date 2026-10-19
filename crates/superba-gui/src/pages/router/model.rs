@@ -71,6 +71,8 @@ pub struct MemberView {
     pub kind: MemberKind,
     /// Lines in priority order.
     pub lines: Vec<LineView>,
+    /// Latest observed upstream; separate from the configured priority.
+    pub last_route: Option<superba_core::RouterLineRoute>,
     /// Serves Responses over WebSocket.
     pub websocket: bool,
     /// Number of model mapping entries.

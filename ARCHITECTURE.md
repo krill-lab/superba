@@ -510,6 +510,32 @@ mode is on; `spb router watch` does the same from a terminal. Without either,
 Codex waits on the dead loopback port ("Reconnecting...") until the service
 manager restarts the router.
 
+**Router line preference** (user bug 99). Overview line selection in router
+mode promotes the selected line through `Profile::prefer_line` /
+`set_line_priority`, preserving the other lines' effective order, then saves the
+profile. The Providers page's drag order and `spb router line <provider> <line>`
+use the same profile save and member rewrite. Ordinary `spb switch --line` also
+builds its router update with the selected line, even when member order is
+unchanged. The router reads a rendered `router/config.json`, not profiles.json:
+`RouterManager::rewrite` saves that configuration and calls the existing admin
+reload API, propagating reload failures. Reload replaces the `Arc<Generation>`;
+requests/streams already holding an older generation continue on it. Its new
+generation starts with empty sticky/breaker state.
+
+The default breaker opens immediately on hard connection/stream failures or
+after two consecutive soft failures (502/503/504 or edge interception). Backoff
+starts at 5 s and doubles to 60 s; at expiry a request or the background health
+probe (checked every second) decides recovery. If all eligible lines are open,
+the earliest to reopen is attempted anyway. A successful backup remains pinned
+for that conversation (idle TTL 2 h, refreshed per request); recovery alone
+does not move an active conversation back. New/unpinned conversations try the
+configured preference. Reload, idle expiry or capacity eviction clears a pin.
+The UI explains this and displays the configured priority separately from
+`RouterMemberView::last_route`: the latest response headers observed for that
+member and the failed earlier lines, retained as an explanation after recovery.
+Concurrent conversations can use different lines; this observation is never
+used to decide which line a click promotes.
+
 **Upstream transports per line** (user request 14). `LineProber::probe_transports`
 checks a line without a billed turn: the Responses WebSocket by its handshake
 alone (101 = supported, closed at once with a close frame; 426 or no upgrade =

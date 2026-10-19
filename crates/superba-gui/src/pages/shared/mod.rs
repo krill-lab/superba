@@ -16,6 +16,6 @@ pub mod values;
 
 pub use auth::{AutoFacts, auto_facts, decision, decision_with, switch_action};
 pub use format::{compact, group_thousands, nice_axis};
-pub use lines::{moved, ordered_lines};
+pub use lines::{moved, ordered_lines, priority_text, route_text};
 pub use profile::new_profile;
 pub use providers::{Provider, ProviderId, ProviderKind};

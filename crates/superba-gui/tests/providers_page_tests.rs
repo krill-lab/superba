@@ -50,6 +50,48 @@ fn line_priority_moves_and_orders_lines() {
     assert_eq!(ordered, vec!["cdn", "cn-fast", "overseas"]);
 }
 
+#[test]
+fn preferred_router_line_keeps_other_lines_and_direct_mode_still_switches() {
+    let site = superba_core::catalog::krill_site();
+    let mut profile = shared::new_profile(&site, "Krill".into());
+    profile.set_line_priority(["cn-fast".into(), "cdn".into()]);
+    let mut data = Data {
+        sites: vec![site.clone()],
+        ..Data::default()
+    };
+    let mut set = superba_core::ProfileSet::default();
+    set.settings.router.enabled = true;
+    data.profiles.finish(Ok(set));
+    let Action::SaveProfile {
+        profile: saved,
+        key,
+    } = shared::switch_action(&data, &profile, &"overseas".into())
+    else {
+        panic!("router line selection must save the member preference");
+    };
+    assert!(key.is_none());
+    assert_eq!(
+        saved.line_priority(),
+        ["overseas", "cn-fast", "cdn"]
+            .map(superba_core::LineId::new)
+            .to_vec()
+    );
+    assert_eq!(saved.auth_choice(), profile.auth_choice());
+    assert!(profile.prefer_line(&site, "missing".into()).is_err());
+    assert_eq!(profile.line_id, Some("cn-fast".into()));
+    data.profiles
+        .value
+        .as_mut()
+        .unwrap()
+        .settings
+        .router
+        .enabled = false;
+    assert!(matches!(
+        shared::switch_action(&data, &profile, &"overseas".into()),
+        Action::Switch { .. }
+    ));
+}
+
 fn caps(site: &SiteId, line: &str, pat: bool) -> LineCaps {
     LineCaps {
         site_id: site.clone(),

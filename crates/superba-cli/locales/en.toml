@@ -217,6 +217,7 @@ did_you_mean = "did you mean {suggestion}?"
 runtime = "Cannot start the async runtime."
 
 [cli.help]
+router_line = "Set a member’s preferred line (hot reload; existing streams continue)"
 config_group = "Codex's own config.toml and auth.json: edit by hand, check, list and restore backups"
 config_edit = "Open config.toml or auth.json in $VISUAL / $EDITOR (notepad on Windows), check it when the editor closes, show the diff and save it after a backup"
 config_check = "Check config.toml or auth.json as it is: syntax, settings of the installed Codex, the shape of auth.json"
@@ -599,6 +600,8 @@ bool_or_table = "true / false, or a table"
 unknown = "other"
 
 [cli.router]
+line_not_member = "{provider} is not a router member."
+line_saved = "{provider}: preferred line {line}; saved and applied to the running router."
 claude_routed = "Claude Code through the router"
 claude_members = "Providers for Claude Code"
 claude_only = "Claude Code only"

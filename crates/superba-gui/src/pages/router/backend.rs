@@ -178,6 +178,7 @@ pub fn members(view: &RouterView, sites: &[Site], profiles: &ProfileSet) -> Vec<
             };
             MemberView {
                 id: id.to_string(),
+                last_route: live.and_then(|m| m.last_route.clone()),
                 name: live
                     .map(|m| m.name.clone())
                     .or_else(|| profile.map(|p| p.name.clone()))

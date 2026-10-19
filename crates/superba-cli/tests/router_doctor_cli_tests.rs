@@ -7,6 +7,38 @@ use clap::Parser;
 use common::*;
 use superba_core::{AuthChoice, KeyRef, ProfileId};
 
+#[tokio::test]
+async fn router_line_promotes_the_selected_line_without_planning_a_codex_switch() {
+    let service = FakeService::new();
+    {
+        let mut set = service.profiles.lock().unwrap();
+        set.settings.router.enabled = true;
+        set.settings.router.members = vec!["work".into()];
+        set.profiles
+            .iter_mut()
+            .find(|p| p.id.as_str() == "work")
+            .unwrap()
+            .set_line_priority(["cn-fast".into(), "cdn".into(), "overseas".into()]);
+    }
+    let (code, stdout, stderr) =
+        invoke(service.clone(), &["router", "line", "work", "overseas"]).await;
+    assert_eq!(code, 0, "{stdout}{stderr}");
+    let calls = service.calls();
+    assert!(calls.plans.is_empty());
+    assert_eq!(
+        calls.saves[0].profile.line_priority(),
+        ["overseas", "cn-fast", "cdn"]
+            .map(superba_core::LineId::new)
+            .to_vec()
+    );
+    let (code, _, _) = invoke(service.clone(), &["router", "line", "work", "missing"]).await;
+    assert_ne!(code, 0);
+    assert_eq!(service.calls().saves.len(), 1);
+    let (code, _, _) = invoke(service.clone(), &["router", "line", "original", "overseas"]).await;
+    assert_ne!(code, 0);
+    assert_eq!(service.calls().saves.len(), 1);
+}
+
 fn key(service: &FakeService) {
     let mut set = service.profiles.lock().unwrap();
     let work = set

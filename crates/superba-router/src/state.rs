@@ -69,6 +69,7 @@ pub(crate) struct MemberRt {
     /// `Authorization: Bearer <member key>` (marked sensitive).
     pub auth: HeaderValue,
     pub lines: Vec<LineRt>,
+    pub last_route: Mutex<Option<superba_core::RouterLineRoute>>,
 }
 
 impl std::fmt::Debug for MemberRt {
@@ -136,6 +137,7 @@ impl Generation {
             auth.set_sensitive(true);
             members.push(MemberRt {
                 cfg: m.clone(),
+                last_route: Mutex::new(None),
                 auth,
                 lines: m
                     .lines

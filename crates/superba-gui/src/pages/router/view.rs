@@ -357,6 +357,9 @@ fn kind_text(cx: &Cx<'_>, kind: MemberKind) -> String {
 fn members(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, snapshot: &model::Snapshot) {
     heading(ui, cx, "router.members.title");
     ui.add(egui::Label::new(Text::small(cx.tr.t("router.members.help"), cx.pal)).wrap());
+    if !snapshot.members.is_empty() {
+        ui.add(egui::Label::new(Text::small(cx.tr.t("router.preference.recovery"), cx.pal)).wrap());
+    }
     ui.add_space(4.0);
     divider(ui, cx);
     let busy = state.op.is_some();
@@ -550,6 +553,38 @@ fn member_row(
             ui.label(Text::caption(cx.tr.text(&route.connection_text()), cx.pal));
         });
     }
+    let line_name = |id: &str| {
+        let site = cx
+            .data
+            .profiles
+            .value
+            .as_ref()
+            .and_then(|p| p.profile(&superba_core::ProfileId::new(&m.id)))
+            .and_then(|p| cx.data.site(&p.site_id));
+        site.and_then(|s| {
+            s.line(&superba_core::LineId::new(id))
+                .map(|l| cx.tr.text(&l.name))
+        })
+        .or_else(|| m.lines.iter().find(|l| l.id == id).map(|l| l.name.clone()))
+        .unwrap_or_else(|| id.to_owned())
+    };
+    ui.add(
+        egui::Label::new(Text::small(
+            crate::pages::shared::priority_text(cx.tr, m.lines.iter().map(|l| line_name(&l.id))),
+            cx.pal,
+        ))
+        .wrap(),
+    );
+    if let Some(route) = &m.last_route {
+        ui.add(
+            egui::Label::new(Text::small(
+                crate::pages::shared::route_text(cx.tr, route, line_name),
+                cx.pal,
+            ))
+            .wrap(),
+        )
+        .on_hover_text(cx.tr.t("router.preference.observed"));
+    }
     for line in &m.lines {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
@@ -561,7 +596,7 @@ fn member_row(
                 LineHealth::Unknown => (Status::Idle, "router.line.unknown"),
             };
             ui.add(StatusDot::new(status));
-            ui.label(Text::small(&line.name, cx.pal).color(cx.pal.text));
+            ui.label(Text::small(line_name(&line.id), cx.pal).color(cx.pal.text));
             ui.label(Text::mono_muted(&line.base_url, cx.pal));
             let mut parts = vec![cx.tr.t(key)];
             if let Some(metrics) = &line.metrics {

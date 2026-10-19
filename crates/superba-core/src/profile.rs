@@ -119,6 +119,38 @@ impl Profile {
         self.backup_lines = iter.collect();
     }
 
+    /// Effective failover order: saved lines, then unlisted site lines. With no
+    /// saved line, start at the site's default.
+    pub fn ordered_line_ids(&self, site: &Site) -> Vec<LineId> {
+        let mut lines = self.line_priority();
+        lines.retain(|id| site.line(id).is_some());
+        if lines.is_empty() {
+            lines.extend(site.default_line().map(|line| line.id.clone()));
+        }
+        for line in &site.lines {
+            if !lines.contains(&line.id) {
+                lines.push(line.id.clone());
+            }
+        }
+        lines
+    }
+
+    /// Make a site line preferred, keeping every other line in its effective
+    /// order. The caller saves the profile to apply it to a running router.
+    pub fn prefer_line(&mut self, site: &Site, line: LineId) -> crate::Result<()> {
+        if self.is_builtin() || self.site_id != site.id || site.line(&line).is_none() {
+            return Err(crate::Error::invalid(format!(
+                "line {line} is not available for profile {}",
+                self.id
+            )));
+        }
+        let mut order = self.ordered_line_ids(site);
+        order.retain(|id| id != &line);
+        order.insert(0, line);
+        self.set_line_priority(order);
+        Ok(())
+    }
+
     /// Set the auth choice and mirror it into the `auth_mode` field (key-based
     /// profiles only; built-in profiles are left alone). Writers should use this
     /// instead of assigning [`Profile::auth`] directly.

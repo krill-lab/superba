@@ -17,6 +17,57 @@ const OK: &str = r#"{"ok":true}"#;
 const BODY: &str = r#"{"model":"gpt-x","input":"hello"}"#;
 
 #[tokio::test]
+async fn recovered_preferred_line_serves_new_sessions_while_old_sessions_keep_the_backup() {
+    let primary = upstream(Mode::Json(503, "{} ")).await;
+    let backup = upstream(Mode::Json(200, OK)).await;
+    let mut cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![
+            line("cn-fast", primary.base("/up")),
+            line("overseas", backup.base("/up")),
+        ],
+    )]);
+    cfg.tuning.breaker_threshold = 1;
+    cfg.tuning.breaker_base_ms = 30;
+    cfg.tuning.breaker_max_ms = 30;
+    let r = start(cfg).await;
+    let response = r.post(Some("existing"), BODY).await;
+    assert_eq!(route(&response), "krill/overseas");
+    let selected = r.status().await.members[0].last_route.clone().unwrap();
+    assert_eq!(selected.line_id, "overseas");
+    assert_eq!(selected.failed_lines, ["cn-fast"]);
+    primary.set(Mode::Json(200, OK));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        route(&r.post(Some("existing"), BODY).await),
+        "krill/overseas"
+    );
+    assert_eq!(route(&r.post(Some("new"), BODY).await), "krill/cn-fast");
+    assert!(
+        r.status().await.members[0]
+            .last_route
+            .as_ref()
+            .unwrap()
+            .failed_lines
+            .is_empty()
+    );
+    assert_eq!(
+        route(&r.post(Some("existing"), BODY).await),
+        "krill/overseas"
+    );
+    assert_eq!(
+        r.status().await.members[0]
+            .last_route
+            .as_ref()
+            .unwrap()
+            .failed_lines,
+        ["cn-fast"]
+    );
+}
+
+#[tokio::test]
 async fn forwards_with_the_member_key_and_maps_the_path() {
     let up = upstream(Mode::Json(200, OK)).await;
     let r = start(test_config(vec![member(

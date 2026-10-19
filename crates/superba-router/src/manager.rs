@@ -655,11 +655,8 @@ impl RouterManager {
         member_keys: BTreeMap<String, Secret>,
     ) -> Result<RouterEndpoint> {
         let endpoint = self.write_config(config, member_keys)?;
-        if watchdog::check(&self.paths).await.is_up()
-            && let Ok(client) = AdminClient::from_runtime(&self.paths)
-            && let Err(e) = client.reload().await
-        {
-            tracing::warn!(error = %e, "the local router did not reload its new configuration");
+        if watchdog::check(&self.paths).await.is_up() {
+            AdminClient::from_runtime(&self.paths)?.reload().await?;
         }
         Ok(endpoint)
     }

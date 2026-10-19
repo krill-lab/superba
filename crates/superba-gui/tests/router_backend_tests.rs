@@ -104,6 +104,7 @@ fn members_follow_the_saved_order_with_live_lines_or_the_sites_lines() {
             protocol: superba_core::RequestProtocol::Gemini,
             upstream: Some(superba_core::RequestProtocol::Responses),
         }],
+        last_route: None,
         profile_id: ProfileId::new("acme"),
         name: "Acme".into(),
         lines: vec![RouterLineView {

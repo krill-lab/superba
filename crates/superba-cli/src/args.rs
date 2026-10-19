@@ -767,6 +767,13 @@ pub enum ClaudeConfigCommand {
 /// `spb router`.
 #[derive(Debug, Subcommand)]
 pub enum RouterCommand {
+    #[command(about = english("cli.help.router_line"))]
+    Line {
+        #[arg(value_name = "PROVIDER")]
+        provider: String,
+        #[arg(value_name = "LINE")]
+        line: String,
+    },
     #[command(about = english("cli.help.router_status"))]
     Status,
     #[command(about = english("cli.help.router_install"))]

@@ -78,6 +78,8 @@ pub struct Hero {
     pub router_on: bool,
     /// 供应商 · 线路.
     pub provider: Node,
+    /// Last observed upstream, separate from the configured preference.
+    pub current_line: Option<String>,
     /// 模型 · 速度档.
     pub model: Node,
     /// Probe latency of the applied line (the link into the provider).
@@ -331,6 +333,7 @@ pub fn model(
         router,
         router_on,
         provider,
+        current_line: super::lines::current_text(cx, snap),
         model,
         latency,
         remotes,
@@ -774,7 +777,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
         out.push(action);
     }
     if let Some(c) = &drawn[2].chevron {
-        provider_popover(c, cx, out);
+        provider_popover(c, cx, hero.current_line.as_deref(), out);
     }
     if let Some(c) = &drawn[3].chevron {
         speed_popover(c, cx, out);
@@ -811,13 +814,20 @@ fn launch_button(
 /// The provider node's popover: the applied provider's lines with their
 /// latency (a click plans the switch), the other providers, adding one and the
 /// Providers page.
-fn provider_popover(response: &egui::Response, cx: &Cx<'_>, out: &mut Vec<Action>) {
+fn provider_popover(
+    response: &egui::Response,
+    cx: &Cx<'_>,
+    current: Option<&str>,
+    out: &mut Vec<Action>,
+) {
     egui::Popup::from_toggle_button_response(response)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
         .show(|ui| {
             // A fixed width: rows fill it instead of the popup growing to them.
             ui.set_width(POPOVER_W);
-            hot_note(ui, cx, out);
+            if !cx.data.router_enabled() {
+                hot_note(ui, cx, out);
+            }
             let account = super::account_lines(cx);
             if !account.is_empty() {
                 ui.label(Text::caption(cx.tr.t("overview.hero.account"), cx.pal));
@@ -838,7 +848,13 @@ fn provider_popover(response: &egui::Response, cx: &Cx<'_>, out: &mut Vec<Action
             if let (Some(site), Some(profile)) = (cx.data.active_site(), cx.data.active_profile())
                 && site.lines.len() > 1
             {
-                let active = cx.data.active_state().and_then(|a| a.line_id.clone());
+                let routed = cx.data.router_enabled();
+                let lines = crate::pages::shared::ordered_lines(&site, Some(profile));
+                let active = if routed {
+                    lines.first().map(|l| l.id.clone())
+                } else {
+                    cx.data.active_state().and_then(|a| a.line_id.clone())
+                };
                 ui.label(Text::caption(
                     cx.tr.f(
                         "overview.lines_of",
@@ -849,7 +865,31 @@ fn provider_popover(response: &egui::Response, cx: &Cx<'_>, out: &mut Vec<Action
                     ),
                     cx.pal,
                 ));
-                for line in crate::pages::shared::ordered_lines(&site, Some(profile)) {
+                if routed {
+                    ui.label(Text::small(cx.tr.t("router.preference.choose"), cx.pal));
+                    ui.add(
+                        egui::Label::new(Text::small(
+                            crate::pages::shared::priority_text(
+                                cx.tr,
+                                lines.iter().map(|l| cx.tr.text(&l.name)),
+                            ),
+                            cx.pal,
+                        ))
+                        .wrap(),
+                    );
+                    if let Some(current) = current {
+                        ui.add(egui::Label::new(Text::small(current, cx.pal)).wrap())
+                            .on_hover_text(cx.tr.t("router.preference.observed"));
+                    }
+                    ui.add(
+                        egui::Label::new(Text::caption(
+                            cx.tr.t("router.preference.recovery"),
+                            cx.pal,
+                        ))
+                        .wrap(),
+                    );
+                }
+                for line in lines {
                     let latency = caps_latency(
                         cx.data.site_caps(&site.id, &line.id),
                         cx.data.probing_site(&site.id),
@@ -859,7 +899,14 @@ fn provider_popover(response: &egui::Response, cx: &Cx<'_>, out: &mut Vec<Action
                         ui,
                         !cx.busy && !selected,
                         selected,
-                        cx.tr.text(&line.name),
+                        if routed && selected {
+                            cx.tr.f(
+                                "router.preference.first",
+                                &[("line", &cx.tr.text(&line.name))],
+                            )
+                        } else {
+                            cx.tr.text(&line.name)
+                        },
                         latency_text(cx, latency),
                     ) {
                         out.push(crate::pages::shared::switch_action(

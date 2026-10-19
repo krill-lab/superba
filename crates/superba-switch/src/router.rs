@@ -499,14 +499,7 @@ pub(crate) fn member_line_base(
 /// Line order of a member: the profile's priority, then the site's other lines,
 /// so the router can fail over across every line of the site.
 pub(crate) fn member_lines(site: &Site, profile: &Profile) -> Vec<superba_core::LineId> {
-    let mut lines = profile.line_priority();
-    lines.retain(|l| site.line(l).is_some());
-    for l in &site.lines {
-        if !lines.contains(&l.id) {
-            lines.push(l.id.clone());
-        }
-    }
-    lines
+    profile.ordered_line_ids(site)
 }
 
 impl Switcher {
@@ -1343,6 +1336,9 @@ fn member_view(
         .unwrap_or_default();
     RouterMemberView {
         profile_id: id.clone(),
+        last_route: status
+            .and_then(|s| s.members.iter().find(|m| m.id == rid))
+            .and_then(|m| m.last_route.clone()),
         name: set
             .profile(id)
             .map(|p| p.name.clone())

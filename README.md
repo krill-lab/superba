@@ -88,6 +88,15 @@ Geist look).
   it is on, your traffic goes through that local process. The official ChatGPT
   login is never routed and remote hosts stay direct; if the router dies while
   Superba (or `spb router watch`) runs, it switches Codex back to a direct line.
+  Choosing a line in router mode makes it that member's preferred line. New
+  requests use the new order immediately; open streams continue. The Overview
+  and Router pages show the preferred order separately from the latest actual
+  upstream, including failover. You can also run `spb router line krill overseas`
+  (use your profile id in place of `krill`) or reorder lines on the Providers page.
+  Failed lines normally cool down for 5 seconds, doubling to at most 60 seconds.
+  After recovery, new conversations try the preferred line; an active conversation
+  keeps its working backup until it has been idle for 2 hours. Changing the line
+  order clears these choices for new requests, without interrupting open streams.
 - **Usage.** Recent requests (Surge-style log with session names, provider,
   tokens, cache, cost) and statistics on the **Usage** page and with `spb usage`,
   also without the router: Superba reads the usage Codex writes into its session
@@ -605,6 +614,7 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | `spb switch [--profile P] [--line L] [--auth pat\|apikey]` | plan and execute a switch (the preview lists every changed key and why) |
 | `spb settings list \| get \| set \| reset \| forget \| migrate \| diff` | this computer's Codex settings (`config.toml`); edits are stored with the applied provider, `--profile` for one provider's own settings; checked against the installed Codex |
 | `spb router status \| install \| enable \| disable \| uninstall \| watch` | opt-in local router: failover across lines and sites, this computer only |
+| `spb router line <provider> <line>` | make a member's line preferred; apply to the running router immediately |
 | `spb usage [log] [--provider P] [--source router\|rollout\|ccs\|ai-toolbox]` / `spb usage stats [--by model\|provider\|day\|session] [--source …]` | this computer's Codex requests (the router's log merged with Codex's session files; works without the router); totals per provider (Krill, each custom site) with each of its lines |
 | `spb account [--usage] [--days N] [--refresh]` | balance, plan and expiry; daily cost and per-model usage (Krill) |
 | `spb restore [original\|official\|generation] [--take-over]` | restore (what another tool changed is kept unless `--take-over`) |

@@ -35,27 +35,23 @@ pub struct LineRow {
 
 /// The applied provider's lines in failover order (the profile's line
 /// priority, the router's order while it runs), with what the card shows; the
-/// line in use is the applied one, else (router mode) the first the router
-/// does not skip.
+/// line in use is the applied one, or in router mode the latest observed
+/// upstream. A preference alone does not imply a request used it.
 pub fn rows(cx: &Cx<'_>, site: &Site, snap: Option<&Snapshot>) -> Vec<LineRow> {
     let profile = cx.data.active_profile();
-    let active = cx.data.active_state().and_then(|a| a.line_id.clone());
+    let routed = cx.data.router_enabled();
+    let active = cx
+        .data
+        .active_state()
+        .and_then(|a| a.line_id.clone())
+        .filter(|_| !routed);
     let probing = cx.data.probing_site(&site.id);
     let member = profile.and_then(|p| {
         snap.and_then(|s| s.router.as_ref())
             .and_then(|r| r.members.iter().find(|m| m.profile_id == p.id))
     });
-    let mut lines = crate::pages::shared::ordered_lines(site, profile);
-    // While the router runs, its own order is the failover order.
-    if let Some(m) = member.filter(|m| !m.lines.is_empty()) {
-        lines.sort_by_key(|l| {
-            m.lines
-                .iter()
-                .position(|r| r.id == l.id.as_str())
-                .unwrap_or(usize::MAX)
-        });
-    }
-    let mut rows = lines
+    let lines = crate::pages::shared::ordered_lines(site, profile);
+    lines
         .into_iter()
         .enumerate()
         .map(|(i, line)| {
@@ -73,27 +69,45 @@ pub fn rows(cx: &Cx<'_>, site: &Site, snap: Option<&Snapshot>) -> Vec<LineRow> {
             });
             LineRow {
                 order: i + 1,
-                active: active.as_ref() == Some(&line.id),
+                active: if routed {
+                    member
+                        .and_then(|m| m.last_route.as_ref())
+                        .is_some_and(|r| r.line_id == line.id.as_str())
+                } else {
+                    active.as_ref() == Some(&line.id)
+                },
                 latency: caps_latency(cx.data.site_caps(&site.id, &line.id), probing),
                 skipped,
                 trace,
                 line,
             }
         })
-        .collect::<Vec<_>>();
-    // Through the router no single line is applied: the router sends to the
-    // first line of the order it does not skip.
-    if active.is_none()
-        && cx.data.router_enabled()
-        && let Some(first) = rows.iter_mut().find(|r| !r.skipped)
-    {
-        first.active = true;
-    }
-    rows
+        .collect::<Vec<_>>()
 }
 
-/// The line Codex's requests go to now: the applied line, else (router mode)
-/// the router's first line it does not skip.
+/// Actual latest upstream of this member; never infer it from breaker health.
+pub fn current_text(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Option<String> {
+    if !cx.data.router_enabled() {
+        return None;
+    }
+    let profile = cx.data.active_profile()?;
+    let site = cx.data.active_site()?;
+    let route = snap?
+        .router
+        .as_ref()?
+        .members
+        .iter()
+        .find(|m| m.profile_id == profile.id)?
+        .last_route
+        .as_ref()?;
+    Some(crate::pages::shared::route_text(cx.tr, route, |id| {
+        site.line(&superba_core::LineId::new(id))
+            .map(|l| cx.tr.text(&l.name))
+            .unwrap_or_else(|| id.to_owned())
+    }))
+}
+
+/// The applied direct line or the router's latest observed upstream.
 pub fn effective(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Option<LineRow> {
     let site = cx.data.active_site()?;
     rows(cx, &site, snap).into_iter().find(|r| r.active)
@@ -154,14 +168,29 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<Act
     let rows = rows(cx, &site, snap);
     let routed = super::routed_addr(cx).is_some();
     // Footer: how the order is used.
-    let note = if rows.len() <= 1 {
+    let note = if routed {
+        let priority =
+            crate::pages::shared::priority_text(tr, rows.iter().map(|r| tr.text(&r.line.name)));
+        let current = current_text(cx, snap).unwrap_or_else(|| tr.t("router.preference.waiting"));
+        format!("{priority}\n{current}")
+    } else if rows.len() <= 1 {
         tr.t("overview.lines.single")
-    } else if routed {
-        tr.t("overview.lines.failover_on")
     } else {
         tr.t("overview.lines.failover_off")
     };
-    let note_h = 34.0;
+    let mut job = egui::text::LayoutJob::single_section(
+        note.clone(),
+        egui::TextFormat {
+            font_id: font(text::CAPTION, Weight::Regular),
+            color: cx.pal.text_subtle,
+            ..Default::default()
+        },
+    );
+    job.wrap.max_width = body.width();
+    job.wrap.max_rows = if routed { 4 } else { 2 };
+    let g = ui.painter().layout_job(job);
+    let gh = g.size().y;
+    let note_h = (gh + 8.0).max(34.0);
     let list = Rect::from_min_max(body.min, pos2(body.max.x, body.max.y - note_h));
     let row_h = (list.height() / rows.len().max(1) as f32).clamp(40.0, 60.0);
     let shown = ((list.height() / row_h).floor() as usize).min(rows.len());
@@ -170,7 +199,8 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<Act
             pos2(list.min.x - 8.0, list.min.y + i as f32 * row_h),
             vec2(list.width() + 16.0, row_h - 4.0),
         );
-        if line_row(ui, cx, row, r, routed) && !row.active && !cx.busy {
+        let selected = if routed { row.order == 1 } else { row.active };
+        if line_row(ui, cx, row, r, routed) && !selected && !cx.busy {
             out.push(crate::pages::shared::switch_action(
                 cx.data,
                 profile,
@@ -178,20 +208,20 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<Act
             ));
         }
     }
-    let mut job = egui::text::LayoutJob::single_section(
-        note,
-        egui::TextFormat {
-            font_id: font(text::CAPTION, Weight::Regular),
-            color: cx.pal.text_subtle,
-            ..Default::default()
-        },
-    );
-    job.wrap.max_width = body.width();
-    job.wrap.max_rows = 2;
-    let g = ui.painter().layout_job(job);
-    let gh = g.size().y;
     ui.painter()
         .galley(pos2(body.min.x, body.max.y - gh), g, cx.pal.text_subtle);
+    if routed {
+        ui.interact(
+            Rect::from_min_max(pos2(body.min.x, body.max.y - gh), body.max),
+            ui.scope_id().with("line-order-help"),
+            Sense::hover(),
+        )
+        .on_hover_text(format!(
+            "{note}\n{}\n{}",
+            tr.t("router.preference.recovery"),
+            tr.t("router.preference.observed")
+        ));
+    }
 }
 
 /// One line; returns true when it was clicked.
@@ -223,14 +253,23 @@ fn line_row(ui: &mut Ui, cx: &Cx<'_>, row: &LineRow, r: Rect, routed: bool) -> b
     let over_trace = resp
         .hover_pos()
         .is_some_and(|p| trace_rect.expand(4.0).contains(p));
-    let resp = resp.on_hover_text(if over_trace {
+    let resp = resp.on_hover_text(if routed && !over_trace {
+        cx.tr.t("router.preference.choose")
+    } else if over_trace {
         trace_tip(cx, row.trace.as_ref(), routed)
     } else if row.active {
         cx.tr.f("overview.line.active_tip", &[("host", &host)])
     } else {
         cx.tr.f("overview.line.switch_tip", &[("host", &host)])
     });
-    let name = cx.tr.text(&row.line.name);
+    let name = if routed && row.order == 1 {
+        cx.tr.f(
+            "router.preference.first",
+            &[("line", &cx.tr.text(&row.line.name))],
+        )
+    } else {
+        cx.tr.text(&row.line.name)
+    };
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, row.active, &name));
     let t = hover_t(ui, &resp);
     let p = ui.painter();

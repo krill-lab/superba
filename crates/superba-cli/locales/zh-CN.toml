@@ -217,6 +217,7 @@ did_you_mean = "是不是想用 {suggestion}？"
 runtime = "无法启动异步运行时。"
 
 [cli.help]
+router_line = "设置成员的首选线路（立即生效，已有流不中断）"
 config_group = "Codex 自己的 config.toml 和 auth.json：手动编辑、检查、列出和还原备份"
 config_edit = "在 $VISUAL / $EDITOR（Windows 上为记事本）中打开 config.toml 或 auth.json，编辑器关闭后检查、显示差异，并在备份后保存"
 config_check = "按原样检查 config.toml 或 auth.json：语法、已安装 Codex 的设置项、auth.json 的结构"
@@ -599,6 +600,8 @@ bool_or_table = "true / false，或一个表"
 unknown = "其他"
 
 [cli.router]
+line_not_member = "{provider} 不是路由成员。"
+line_saved = "{provider}：首选线路为 {line}；已保存并应用到运行中的路由。"
 claude_routed = "Claude Code 经由路由"
 claude_members = "Claude Code 的供应商"
 claude_only = "仅 Claude Code"
