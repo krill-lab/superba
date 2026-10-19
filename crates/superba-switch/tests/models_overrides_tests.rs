@@ -4,7 +4,7 @@
 //! dump) and the "applied" values the Models page and `spb models` compare
 //! with; all-models values are capped per model in the file, as Codex caps
 //! `model_context_window`; the bounds the page checks are enforced on save; a
-//! personal access token keeps per-model values out of Codex.
+//! personal access token uses the same catalog overrides.
 
 #![allow(missing_docs)]
 
@@ -337,38 +337,38 @@ async fn save_refuses_values_the_models_page_refuses() {
 }
 
 #[tokio::test]
-async fn a_personal_access_token_keeps_per_model_values_out_of_codex() {
+async fn a_personal_access_token_folds_defaults_without_overwriting_per_model_values() {
     let w = World::new();
     set_profile(&w, |p| {
         p.auth_mode = AuthMode::Pat;
         p.set_auth(AuthChoice::Pat);
         p.model_overrides
-            .insert("gpt-5.5".into(), custom(Some(200_000), None));
+            .insert("gpt-5.5".into(), custom(Some(200_000), Some(150_000)));
         p.model.context_window = Some(300_000);
+        p.model.auto_compact = Some(160_000);
     });
     let sw = switcher(&w);
-    let v = view(&sw).await;
-    assert!(!v.per_model);
-    // Only the all-models key reaches Codex; no catalog file.
+    assert!(view(&sw).await.per_model);
     let plan = switch(&sw).await;
     let desired = plan
         .config
         .as_ref()
         .and_then(|c| c.desired.as_ref())
         .unwrap();
-    assert_eq!(desired.model_catalog, None);
-    assert_eq!(desired.model.context_window, Some(300_000));
+    assert!(desired.model_catalog.is_some());
+    assert_eq!(desired.model.context_window, None);
+    assert_eq!(desired.model.auto_compact, None);
     write_config(&w, &plan);
     let v = view(&sw).await;
-    let applied = v.applied.clone().unwrap();
-    assert_eq!(applied.context_window, Some(300_000));
-    // What Codex uses for gpt-5.5: the all-models value capped at its maximum,
-    // not the saved per-model 200K.
-    let m = spec(&v, "gpt-5.5");
-    assert_eq!(applied.limits(m).window, Some(272_000));
+    let applied = v.applied.as_ref().unwrap();
+    assert_eq!(applied.context_window, None);
     assert_eq!(
-        model_limits(m, None, &v.defaults).pair(),
-        applied.limits(m).pair()
+        applied.limits(spec(&v, "gpt-5.5")).pair(),
+        (Some(200_000), Some(150_000))
+    );
+    assert_eq!(
+        applied.limits(spec(&v, "gpt-6-astra")).pair(),
+        (Some(300_000), Some(160_000))
     );
 }
 

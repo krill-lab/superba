@@ -177,14 +177,13 @@ async fn a_preflight_failure_blocks_the_switch_and_writes_nothing() {
 async fn catalog_triggers_and_where_a_catalog_is_never_written() {
     let w = World::new();
     let sw = w.switcher();
-    // PAT (the default profile): an override gives no catalog, with a note.
+    // PAT (the default profile): per-model overrides produce a catalog.
     set_profile(&w, |p| {
         p.model_overrides
             .insert("gpt-6-astra".into(), window(400_000));
     });
     let plan = sw.plan(req("work")).await.unwrap();
-    assert_eq!(desired(&plan).model_catalog, None);
-    assert!(warning_keys(&plan).contains(&"switch.models.pat_no_catalog".to_owned()));
+    assert!(desired(&plan).model_catalog.is_some());
 
     // API key + Ultrafast needs one.
     set_profile(&w, |p| {
@@ -241,7 +240,7 @@ async fn reasons_are_pure_and_cover_the_picker_and_tier_suffix() {
         catalog_reasons(&p, &site, AuthMode::ApiKey),
         vec![CatalogReason::TierSuffix]
     );
-    // PAT never: the app's own speed menu works there.
+    // PAT speed alone needs no catalog: the app's own speed menu works.
     assert!(catalog_reasons(&p, &site, AuthMode::Pat).is_empty());
     // An upstream name alone edits the model map, not the catalog.
     p.model.speed = None;

@@ -9,9 +9,8 @@
 //! Context windows and compaction thresholds are shown as Codex uses them (the
 //! model's own value, the all-models value or the model's default, with the
 //! source), the same numbers the Models page shows, and checked with the same
-//! bounds (`superba_core::check_*`) before anything is stored. With a personal
-//! access token per-model values are refused: Codex reads the provider's live
-//! list there and only the all-models values apply (decision 4).
+//! bounds (`superba_core::check_*`) before anything is stored. PAT and API-key
+//! profiles both apply per-model values through a generated catalog.
 
 use superba_core::{
     CompactLimit, LimitError, LimitSource, ModelDefaults, ModelLimits, ModelOverride, ModelPicker,
@@ -169,7 +168,7 @@ async fn set(
             || args.hide
             || args.show)
     {
-        return Err(usage(out, text("cli.models.pat_per_model")));
+        return Err(usage(out, text("cli.models.per_model_unavailable")));
     }
     let spec = view.list.model(&args.slug);
     let mut o: ModelOverride = view.overrides.get(&args.slug).cloned().unwrap_or_default();
@@ -402,7 +401,7 @@ fn value_text(out: &Output, value: u64, source: LimitSource) -> String {
 
 /// Where a model's values stand: applied, saved but not applied yet (the
 /// profile is applied; a switch applies them), next switch (another profile),
-/// not used (per-model values with a personal access token).
+/// not used (profiles without catalog support).
 fn state_key(view: &ModelsView, m: &ModelSpec, o: Option<&ModelOverride>) -> &'static str {
     let custom = o.is_some_and(|o| o.context_window.is_some() || o.auto_compact.is_some());
     if custom && !view.per_model {

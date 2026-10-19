@@ -127,8 +127,8 @@ async fn models_dry_run_stores_nothing_and_names_the_catalog_reasons() {
     assert_eq!(doc["service_tier"], "default");
     assert!(service.v3.lock().unwrap().model_edits.is_empty());
     assert!(!service.calls().names.contains(&"plan"));
-    // Applied with PAT in the fixture: no catalog, so no reasons.
-    assert_eq!(doc["catalog_reasons"], serde_json::json!([]));
+    // PAT applies the per-model override through a catalog.
+    assert_eq!(doc["catalog_reasons"], serde_json::json!(["overrides"]));
     let (_, stdout, _) = run(
         &service,
         &["speed", "ultrafast", "--profile", "other", "--dry-run"],

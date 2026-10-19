@@ -553,60 +553,18 @@ async fn a_provider_not_in_use_is_only_saved() {
 }
 
 #[tokio::test]
-async fn with_a_personal_access_token_only_the_all_models_row_reaches_codex() {
+async fn with_a_personal_access_token_per_model_values_can_be_saved_and_applied() {
     let mut page = Page::new(true).await;
-    // A per-model value saved earlier is shown as not used; the row shows what
-    // Codex uses.
-    page.fake
-        .save_models(ModelsEdit {
-            profile_id: Some(ProfileId::new("krill")),
-            set: [(
-                "gpt-5.5".to_owned(),
-                ModelOverride {
-                    context_window: Some(200_000),
-                    ..ModelOverride::default()
-                },
-            )]
-            .into(),
-            ..ModelsEdit::default()
-        })
-        .await
-        .unwrap();
-    page.command("refresh");
-    page.wait(|p, _| p.state.view().is_some_and(|v| !v.overrides.is_empty()));
-    let texts = page.settle();
-    assert!(
-        has(
-            &texts,
-            "Personal access token: only the All models row applies"
-        ),
-        "{}",
-        all(&texts)
-    );
+    page.enter("gpt-5.5", CONTEXT, "200k");
+    assert_eq!(models_page::status(&page.state).pending, 1);
     let row = page.row("gpt-5.5");
-    assert!(row.contains(&"272K".to_owned()), "{row:?}");
-    assert!(row.contains(&"Not used".to_owned()), "{row:?}");
-    // Per-model fields are read-only: typing changes nothing.
-    page.enter("gpt-6-astra", CONTEXT, "100k");
-    assert_eq!(models_page::status(&page.state).pending, 0);
-    // The all-models row works and restarts Codex (the provider is in use).
-    page.enter("All models (default)", CONTEXT, "200k");
-    let row = page.row("gpt-6-astra");
     assert!(row.contains(&"200K".to_owned()), "{row:?}");
-    assert!(row.contains(&"All models".to_owned()), "{row:?}");
     page.click_text("Save & apply");
     page.wait(|p, _| !p.actions.is_empty());
     let actions = page.take_actions();
     assert_eq!(switches(&actions), 1, "{actions:?}");
-    assert_eq!(
-        page.fake
-            .models_edits()
-            .pop()
-            .unwrap()
-            .defaults
-            .and_then(|d| d.context_window),
-        Some(200_000)
-    );
+    let edit = page.fake.models_edits().pop().unwrap();
+    assert_eq!(edit.set["gpt-5.5"].context_window, Some(200_000));
 }
 
 #[tokio::test]

@@ -6,9 +6,8 @@
 //! - **Catalog file** (`model_catalog_json`): written only when the profile needs
 //!   one (default rule, decision 4): a per-model override, the provider picker
 //!   (custom sites), Ultrafast, or Fast/Ultrafast through tier-suffix model names.
-//!   Never for the official login, never in PAT mode (the app's own speed menu
-//!   and live list work there; only the all-models keys are written), never for
-//!   remote hosts in 0.3.
+//!   API-key and PAT profiles both support catalog files. Never for the official
+//!   login or remote hosts.
 //! - The file is generated for the **app's** Codex (pinned or bundled) from that
 //!   binary's own bundled list, preflighted with it (and with the CLI first on the
 //!   PATH when that is another version), written content-addressed to
@@ -130,13 +129,9 @@ pub fn suffix_applies(site: &Site, auth: AuthMode, speed: SpeedTier) -> bool {
 }
 
 /// Reasons a key-based profile needs a catalog file in `auth` mode (empty =
-/// none). Official profiles and PAT never get one (decision 4).
+/// none). Official profiles keep Codex's own catalog.
 pub fn catalog_reasons(profile: &Profile, site: &Site, auth: AuthMode) -> Vec<CatalogReason> {
-    if profile.is_builtin()
-        || site.kind == SiteKind::Official
-        || !auth.uses_key()
-        || auth.needs_authapi_env()
-    {
+    if profile.is_builtin() || site.kind == SiteKind::Official || !auth.uses_key() {
         return Vec::new();
     }
     let mut out = Vec::new();
@@ -147,7 +142,7 @@ pub fn catalog_reasons(profile: &Profile, site: &Site, auth: AuthMode) -> Vec<Ca
         out.push(CatalogReason::ProviderPicker);
     }
     let speed = profile_speed(profile);
-    if speed == SpeedTier::Ultrafast {
+    if speed == SpeedTier::Ultrafast && !auth.needs_authapi_env() {
         out.push(CatalogReason::Ultrafast);
     }
     if suffix_applies(site, auth, speed) {
@@ -848,12 +843,6 @@ impl Switcher {
             out.notes
                 .push(Notice::warning(text("switch.models.catalog_dropped")));
         }
-        if input.auth.needs_authapi_env()
-            && profile.model_overrides.values().any(override_needs_catalog)
-        {
-            out.notes
-                .push(Notice::info(text("switch.models.pat_no_catalog")));
-        }
         if reasons.is_empty() {
             return out;
         }
@@ -1319,9 +1308,6 @@ impl Switcher {
                 ));
             }
         }
-        if pat && !routed && profile.model_overrides.values().any(override_needs_catalog) {
-            notes.push(Notice::info(text("switch.models.pat_no_catalog")));
-        }
         let active = state
             .as_ref()
             .and_then(|s| s.active.as_ref())
@@ -1348,7 +1334,7 @@ impl Switcher {
             speed,
             catalog_file,
             notes,
-            per_model: routed || !pat,
+            per_model: true,
             applied,
         })
     }
@@ -1455,7 +1441,7 @@ impl Switcher {
         // override that reaches Codex, against the window the model ends up with.
         for (slug, o) in &p.model_overrides {
             let touched = edit.set.contains_key(slug);
-            if !touched && (edit.defaults.is_none() || auth.needs_authapi_env()) {
+            if !touched && edit.defaults.is_none() {
                 continue;
             }
             superba_core::check_model_override(spec(slug).as_ref(), o, &p.model)
@@ -1473,12 +1459,6 @@ impl Switcher {
             notes.push(Notice::info(text(
                 "switch.models.catalog_removed_next_switch",
             )));
-        }
-        if auth.needs_authapi_env()
-            && !set.settings.router.enabled
-            && p.model_overrides.values().any(override_needs_catalog)
-        {
-            notes.push(Notice::info(text("switch.models.pat_no_catalog")));
         }
         if routed {
             set.settings.router.catalog.overrides = p.model_overrides.clone();

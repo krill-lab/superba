@@ -74,7 +74,7 @@ impl FakeService {
             .profile(profile)
             .cloned()
             .expect("profile");
-        let per_model = p.auth_mode != AuthMode::Pat;
+        let per_model = p.auth_mode.uses_key();
         let catalog = per_model
             && p.model_overrides
                 .values()
@@ -305,7 +305,7 @@ pub fn view_for(profile: &Profile, site: &Site, now: Timestamp) -> ModelsView {
         speed,
         catalog_file: CatalogFileStatus::NotNeeded,
         notes,
-        per_model: !official && !pat,
+        per_model: !official,
         applied: None,
     }
 }

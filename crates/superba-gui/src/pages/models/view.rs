@@ -604,11 +604,11 @@ fn effect_line(
                         auth: None,
                     });
                 }
-            } else if !view.read_only && !view.per_model {
+            } else if !view.read_only && view.per_model {
                 ui.add(StatusDot::new(Status::Idle));
                 ui.add(
                     egui::Label::new(Text::small(
-                        cx.tr.f("models.pat_scope", &[("provider", &provider)]),
+                        cx.tr.f("models.catalog_scope", &[("provider", &provider)]),
                         cx.pal,
                     ))
                     .truncate(),
@@ -1167,7 +1167,7 @@ fn state_badge(ui: &mut Ui, rc: &RowCx<'_, '_>, state: model::RowState) -> Optio
             "models.state.not_used",
             cx.pal.text_muted,
             cx.tr
-                .f("models.pat_per_model", &[("provider", &provider())]),
+                .f("models.per_model_unavailable", &[("provider", &provider())]),
         ),
     };
     let r = pill(ui, cx, &cx.tr.t(key), color);
@@ -1235,7 +1235,7 @@ struct Shown {
     caption: Option<(String, bool)>,
     /// Tooltip.
     hover: String,
-    /// Per-model values reach Codex (false with a personal access token).
+    /// Per-model values reach Codex (false for profiles without catalog support).
     enabled: bool,
 }
 
@@ -1280,7 +1280,7 @@ fn value_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, field: Field, sho
             "{}\n\n{}",
             shown.hover,
             cx.tr.f(
-                "models.pat_per_model",
+                "models.per_model_unavailable",
                 &[(
                     "provider",
                     &super::provider_name(cx, &rc.saved.view.profile_id)

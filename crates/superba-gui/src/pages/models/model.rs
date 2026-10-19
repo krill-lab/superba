@@ -553,7 +553,7 @@ pub fn applied_limits(saved: &Saved<'_>, spec: &ModelSpec) -> Option<ModelLimits
 }
 
 /// A row's own window / compaction values (pending edits included) that do not
-/// reach Codex: per-model values with a personal access token.
+/// reach Codex: profiles without catalog support.
 pub fn unused_custom(saved: &Saved<'_>, pending: &Pending, slug: &str) -> bool {
     if saved.view.per_model || slug == ALL_MODELS {
         return false;
@@ -577,7 +577,7 @@ pub enum RowState {
     /// Saved custom values of a provider that is not in use: they apply at the
     /// next switch to it.
     NextSwitch,
-    /// Saved per-model values Codex does not use (personal access token).
+    /// Saved per-model values Codex does not use (profile without catalog support).
     NotUsed,
 }
 

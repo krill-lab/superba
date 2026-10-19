@@ -193,7 +193,7 @@ async fn models_set_checks_the_bounds_and_takes_shares_of_the_final_window() {
 }
 
 #[tokio::test]
-async fn a_personal_access_token_refuses_per_model_values() {
+async fn a_profile_without_catalog_support_refuses_per_model_values() {
     let service = service(view_with_overrides(false));
     let (code, stdout, _) = invoke(service.clone(), &["models"]).await;
     assert_eq!(code, 0);
@@ -201,7 +201,7 @@ async fn a_personal_access_token_refuses_per_model_values() {
     assert_eq!(row(&stdout, "gpt-6-astra")[2], "872,000 (all models)");
     assert_eq!(
         row(&stdout, "gpt-6-astra")[5],
-        "not used (personal access token)"
+        "not used (profile does not support per-model settings)"
     );
     let (code, _, stderr) = invoke(
         service.clone(),
@@ -209,7 +209,10 @@ async fn a_personal_access_token_refuses_per_model_values() {
     )
     .await;
     assert_eq!(code, 2);
-    assert!(stderr.contains("With a personal access token"), "{stderr}");
+    assert!(
+        stderr.contains("Per-model settings are unavailable"),
+        "{stderr}"
+    );
     assert!(service.v3.lock().unwrap().model_edits.is_empty());
     // Removing the unused value works.
     let (code, _, stderr) = invoke(

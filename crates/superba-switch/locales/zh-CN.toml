@@ -329,7 +329,6 @@ cli_changed = "模型目录是用终端 Codex {built} 校验的，codex 命令�
 fingerprint = "模型目录文件会改变 Codex 发送的指令：请求将不再与原版 Codex 一致。"
 frozen = "模型列表自 {time} 起固定在目录文件中，每次切换时刷新。"
 no_consumer = "本机没有可用来生成模型目录的 Codex"
-pat_no_catalog = "使用个人访问令牌时，Codex 读取供应商的实时模型列表：按模型的设置不生效，只写入全部模型的上下文窗口和压缩阈值。"
 preflight_failed = "{binary} 拒绝了生成的模型目录：{reason}"
 suffix_model = "速度档通过模型名 {model} 传递。"
 tier_not_offered = "所选模型不提供这个速度档，将以标准档运行。"

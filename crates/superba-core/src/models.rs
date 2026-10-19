@@ -841,9 +841,8 @@ pub struct ModelsView {
     #[serde(default)]
     pub notes: Vec<Notice>,
     /// Per-model context windows and compaction thresholds reach Codex for this
-    /// profile (through a catalog file). `false` with a personal access token
-    /// (decision 4: Codex reads the provider's live list, only the all-models
-    /// values apply) and for the official login.
+    /// profile (through a catalog file), including PAT profiles. `false` for
+    /// the official login.
     pub per_model: bool,
     /// What Codex reads now, when this profile is the applied one (to tell
     /// saved values from applied ones); `None` for other profiles.

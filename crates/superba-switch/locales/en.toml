@@ -330,7 +330,6 @@ cli_changed = "The model catalog was checked with the terminal Codex {built}; th
 fingerprint = "A model catalog file changes the instructions Codex sends: requests no longer look like stock Codex."
 frozen = "The model list is frozen in the catalog file since {time}; it is refreshed at every switch."
 no_consumer = "no local Codex was found to build the model catalog for"
-pat_no_catalog = "With a personal access token Codex reads the provider's live model list: per-model changes are not used, only the all-models context window and compaction."
 preflight_failed = "{binary} refused the generated model catalog: {reason}"
 suffix_model = "The speed tier travels in the model name {model}."
 tier_not_offered = "The selected model does not offer this speed tier; it runs at Standard."

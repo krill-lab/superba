@@ -12,7 +12,7 @@
 //! (`superba_core::check_*`). After a save the row shows the saved value at once
 //! (the view is patched from the saved profile while it reloads) with its state
 //! against what Codex reads now: not applied yet, applied, next switch (another
-//! provider), or not used (per-model values with a personal access token). Only
+//! provider), or not used (profiles without catalog support). Only
 //! a save that changes what the applied provider's Codex reads restarts it, and
 //! the page says so before and after saving.
 //!
