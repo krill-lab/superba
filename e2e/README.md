@@ -273,6 +273,8 @@ SUPERBA_E2E_ENV=/path/to/e2e.env python3 -I e2e/protocol_translation.py \
 `--gemini-upstream-mode fake` uses a local Gemini-format upstream when the test
 relay does not serve that path. The report explicitly records the selected mode.
 The script redacts relay credentials/addresses from logs and removes its client
-homes and router credential/config files at exit. `--scenario` can repeat to
+homes, router credential/config files and usage SQLite databases (including WAL
+files) at exit. Evidence keeps only the sanitized `requests.json` projection.
+`--scenario` can repeat to
 select individual paths. The Rust tests cover all twelve streaming conversion
 directions, native forwarding, capability switches and WebSocket tool continuations.

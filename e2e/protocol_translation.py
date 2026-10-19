@@ -13,6 +13,7 @@ marker, absent from prompts, proves the three CLIs executed a tool and
 continued the conversation with its result.
 """
 import argparse
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 import hashlib
@@ -27,6 +28,7 @@ import sqlite3
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -75,7 +77,8 @@ def main():
     work.mkdir(parents=True, exist_ok=True)
     report = {'model': a.model, 'gemini_upstream': a.gemini_upstream_mode, 'runs': [], 'checks': []}
     path = ':'.join(dict.fromkeys([str(Path(shutil.which('node')).parent), '/usr/local/bin', '/usr/bin', '/bin']))
-    secrets = [key, upstream]
+    secrets = [key, upstream, urllib.parse.urlsplit(upstream).hostname]
+    secrets = [value for value in secrets if value]
 
     def clean(value):
         for secret in sorted(secrets, key=len, reverse=True):
@@ -226,10 +229,14 @@ supports_websockets = false
             log.write_text(clean(log.read_text(errors='replace')))
             dbpath = data / 'router/usage.sqlite3'
             if dbpath.exists():
-                with sqlite3.connect(f'file:{dbpath}?mode=ro', uri=True) as db:
+                with closing(sqlite3.connect(f'file:{dbpath}?mode=ro', uri=True)) as db:
                     db.row_factory = sqlite3.Row
                     rows = [dict(r) for r in db.execute('SELECT harness,protocol,model,status_kind,http_status,input_tokens,output_tokens FROM requests ORDER BY id')]
-                write_private(case / 'requests.json', json.dumps(rows, indent=2))
+                write_private(case / 'requests.json', clean(json.dumps(rows, indent=2)))
+                # The database (and WAL) contains upstream_host and is not
+                # part of the evidence. Keep only the sanitized projection.
+                for database_file in dbpath.parent.glob('usage.sqlite3*'):
+                    database_file.unlink(missing_ok=True)
                 expected = 'claude_code' if harness == 'claude-code' else harness
                 check(bool(rows) and all(r['harness'] == expected for r in rows), scenario + ': router records the correct harness')
                 check(any(r['status_kind'] == 'ok' and r['input_tokens'] and r['output_tokens'] for r in rows), scenario + ': normalized usage is recorded')
