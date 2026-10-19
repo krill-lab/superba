@@ -247,7 +247,7 @@ pub fn show_running() -> bool {
     let Ok(context) = superba_switch::detect_context() else {
         return false;
     };
-    forward(context.data_dir.root(), Request::Show).is_some()
+    forward(context.data_dir.anchor(), Request::Show).is_some()
 }
 
 #[cfg(windows)]

@@ -80,6 +80,25 @@ wizard.body = "Choose the provider, key and line again; existing configuration i
 wizard.run = "Run setup again"
 wizard.title = "Setup wizard"
 
+data.move_note = "Moves all Superba data, including backups and keys. Choose an empty folder on a local disk. The router stops during the move; finish active requests first. Codex’s own sessions stay where they are."
+data.destination = "New data directory (absolute path)"
+data.choose = "Choose…"
+data.move = "Move all data"
+data.moved = "Data is now stored in {path}."
+data.leftovers = "Some old copies remain in {path}. Check them before removing them."
+data.storage = "Storage use"
+data.total = "Superba total"
+data.codex = "Codex: {path} · {total} total, including {sessions} of sessions. Changing Superba’s location does not move these sessions."
+data.sqlite = "Separate Codex SQLite storage: {size}."
+data.partial = "Partial count: some files were inaccessible or links were skipped."
+data.counting = "Counting storage…"
+data.refresh = "Refresh sizes"
+data.max_rows = "Maximum request rows"
+data.cleanup_note = "Clean now removes expired request rows and refetchable caches. Session and configuration backups, imported history, downloaded installers and programs are kept."
+data.clean = "Clean now"
+data.cleaned = "Reclaimed {size}."
+data.retention_here = "Manage request retention in Superba → Data."
+
 [prefs.general]
 title = "General"
 

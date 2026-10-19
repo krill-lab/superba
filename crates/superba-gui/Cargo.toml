@@ -21,7 +21,7 @@ name = "superba"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["file-dialogs"]
 # Native file dialogs (identity files, custom site import).
 file-dialogs = ["dep:rfd"]
 # Screenshot/regression builds only: SUPERBA_CJK_FONT selects a system family.
@@ -32,6 +32,7 @@ superba-core.workspace = true
 superba-config.workspace = true
 superba-cli.workspace = true
 superba-switch.workspace = true
+superba-storage.workspace = true
 superba-catalog.workspace = true
 superba-models.workspace = true
 superba-router.workspace = true

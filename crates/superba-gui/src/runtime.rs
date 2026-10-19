@@ -122,14 +122,20 @@ pub fn original_key_task(
     site: Site,
 ) -> ReadTask<Option<Secret>> {
     ReadTask::start(async move {
-        read_original_key(superba_switch::detect_context()?, &config, &site).await
+        let mut context = superba_switch::detect_context()?;
+        let _guard = superba_storage::DataLock::shared(context.data_dir.anchor())?;
+        context.data_dir = superba_storage::resolve(context.data_dir.anchor())?;
+        read_original_key(context, &config, &site).await
     })
 }
 
 /// Read only a stored key's display suffix; the secret is dropped on the worker.
 pub fn profile_key_task(reference: superba_core::KeyRef) -> ReadTask<Option<String>> {
     ReadTask::start(async move {
-        let deps = superba_switch::SwitcherDeps::with_defaults(superba_switch::detect_context()?);
+        let mut context = superba_switch::detect_context()?;
+        let _guard = superba_storage::DataLock::shared(context.data_dir.anchor())?;
+        context.data_dir = superba_storage::resolve(context.data_dir.anchor())?;
+        let deps = superba_switch::SwitcherDeps::with_defaults(context);
         Ok(Some(deps.secrets.get(&reference).await?.last4()))
     })
 }

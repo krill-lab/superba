@@ -79,6 +79,25 @@ wizard.body = "重新选择供应商、Key 和线路；已有的配置会保留�
 wizard.run = "重新运行设置向导"
 wizard.title = "设置向导"
 
+data.move_note = "迁移全部 Superba 数据，包括备份和密钥。请选择本地磁盘上的空目录。迁移期间会停止路由，请先结束正在进行的请求。Codex 自己的会话位置保持不变。"
+data.destination = "新的数据目录（绝对路径）"
+data.choose = "选择…"
+data.move = "迁移全部数据"
+data.moved = "数据现已保存在 {path}。"
+data.leftovers = "{path} 中还有部分旧副本，请检查后再删除。"
+data.storage = "存储占用"
+data.total = "Superba 总计"
+data.codex = "Codex：{path} · 共 {total}，其中会话 {sessions}。更改 Superba 数据位置不会移动这些会话。"
+data.sqlite = "单独存放的 Codex SQLite 占用：{size}。"
+data.partial = "统计不完整：部分文件无法访问，或已跳过链接。"
+data.counting = "正在统计占用…"
+data.refresh = "刷新占用"
+data.max_rows = "请求记录条数上限"
+data.cleanup_note = "立即清理会删除过期请求记录和可重新获取的缓存。会话与配置备份、导入的历史记录、下载的安装包和程序会保留。"
+data.clean = "立即清理"
+data.cleaned = "已释放 {size}。"
+data.retention_here = "请求记录保留期在“Superba → 数据”中管理。"
+
 [prefs.general]
 title = "通用"
 

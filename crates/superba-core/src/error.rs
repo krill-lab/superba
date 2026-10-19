@@ -198,6 +198,9 @@ impl Error {
         if let Some(text) = self.io_text() {
             return text;
         }
+        if let Some(text) = crate::data::error_text(&self.detail()) {
+            return text;
+        }
         LocalizedText::new(format!("error.{}", self.code()), self.to_string())
             .arg("detail", self.detail())
     }

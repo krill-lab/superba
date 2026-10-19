@@ -22,6 +22,11 @@ pub struct Cli {
 /// Top-level commands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    #[command(about = english("cli.data.help.group"))]
+    Data {
+        #[command(subcommand)]
+        command: DataCommand,
+    },
     #[command(about = english("cli.help.status"))]
     Status,
     #[command(about = english("cli.autostart.help"))]
@@ -163,6 +168,20 @@ pub enum Command {
         #[command(subcommand)]
         command: NotifyCommand,
     },
+}
+
+/// Superba's data location and storage use.
+#[derive(Debug, Subcommand)]
+pub enum DataCommand {
+    #[command(about = english("cli.data.help.where"))]
+    Where,
+    #[command(about = english("cli.data.help.move"))]
+    Move {
+        #[arg(value_name = "DIR", help = english("cli.data.help.directory"))]
+        directory: std::path::PathBuf,
+    },
+    #[command(about = english("cli.data.help.usage"))]
+    Usage,
 }
 
 /// A profile's auth choice (Auto unless changed under Advanced).

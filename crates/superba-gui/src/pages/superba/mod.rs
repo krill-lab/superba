@@ -118,6 +118,8 @@ pub struct State {
     pub diagnostics: diagnostics::State,
     /// All configuration backup stores.
     pub backups: backups::State,
+    /// Data location, disk usage and retention controls.
+    pub storage: super::data::State,
 }
 
 /// Fixed rail, independently scrolling detail, and immediate preference saves.
@@ -240,7 +242,7 @@ pub fn show(
                 }
                 SuperbaSection::Data => {
                     page_header(ui, cx, Page::Superba(selected), |_| {});
-                    data::show(ui, cx, settings, &mut state.backups, out);
+                    data::show(ui, cx, settings, &mut state.backups, &mut state.storage, out);
                 }
                 SuperbaSection::Notify => {
                     page_header(ui, cx, Page::Superba(selected), |_| {});
@@ -266,7 +268,8 @@ pub fn show(
                     m.request_focus(id);
                 });
             }
-        } else if !state.backups.modal()
+        } else if !state.storage.busy()
+            && !state.backups.modal()
             && !notify.modal()
             && !updates::status(updates).modal
             && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))

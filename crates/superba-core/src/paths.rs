@@ -229,12 +229,30 @@ impl CodexHome {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DataDir {
     root: PathBuf,
+    anchor: PathBuf,
 }
 
 impl DataDir {
     /// Use `root` as the data directory.
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        let root = root.into();
+        Self {
+            anchor: root.clone(),
+            root,
+        }
+    }
+
+    /// Data at `root`, located through the small pointer in `anchor`.
+    pub fn at_location(root: impl Into<PathBuf>, anchor: impl Into<PathBuf>) -> Self {
+        Self {
+            root: root.into(),
+            anchor: anchor.into(),
+        }
+    }
+
+    /// Fixed default directory containing the location pointer and coordination lock.
+    pub fn anchor(&self) -> &Path {
+        &self.anchor
     }
 
     /// Root.

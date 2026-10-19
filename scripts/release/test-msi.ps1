@@ -103,6 +103,27 @@ $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($chatLnk)
 Check ($sc.TargetPath -eq (Join-Path $installDir 'superba.exe') -and $sc.Arguments -eq '--launch-chatgpt') "ChatGPT (Superba) runs superba.exe --launch-chatgpt ($($sc.TargetPath) $($sc.Arguments))"
 Check (-not (Test-Path 'HKLM:\Software\Krill\Superba')) 'nothing was written machine-wide'
 
+# GH#15: an install upgrade must keep the fixed pointer and all relocated data.
+# Isolate both applications' homes from the disposable runner's own settings.
+$savedData = $env:SUPERBA_DATA_DIR
+$savedCodex = $env:CODEX_HOME
+$env:SUPERBA_DATA_DIR = Join-Path $work 'data-anchor'
+$env:CODEX_HOME = Join-Path $work 'codex-home'
+$movedData = Join-Path $work '会话 数据'
+New-Item -ItemType Directory -Path $env:SUPERBA_DATA_DIR, $env:CODEX_HOME -Force | Out-Null
+[IO.File]::WriteAllText((Join-Path $env:SUPERBA_DATA_DIR 'fixture.txt'), 'MSI upgrade keeps relocated data')
+$moved = & (Join-Path $installDir 'spb.exe') --json data move $movedData | ConvertFrom-Json
+Check ($LASTEXITCODE -eq 0) 'data move to a path with spaces and Chinese characters'
+$pointerPath = Join-Path $env:SUPERBA_DATA_DIR 'data-location.json'
+$pointerHash = (Get-FileHash -LiteralPath $pointerPath).Hash
+function CheckDataLocation($label) {
+  $location = & (Join-Path $installDir 'spb.exe') --json data where | ConvertFrom-Json
+  Check ($LASTEXITCODE -eq 0 -and $location.directory -eq $moved.location.directory) "${label}: relocated data is still selected"
+  Check ((Get-FileHash -LiteralPath $pointerPath).Hash -eq $pointerHash) "${label}: fixed pointer is unchanged"
+  Check ([IO.File]::ReadAllText((Join-Path $movedData 'fixture.txt')) -eq 'MSI upgrade keeps relocated data') "${label}: relocated contents are unchanged"
+}
+CheckDataLocation 'before upgrade'
+
 # A login-startup entry and a running router from the install folder, to see
 # the upgrade keep the entry (and stop the process) and the removal drop both.
 $rtData = Join-Path $work 'router-data'
@@ -143,10 +164,14 @@ Check ((Get-ItemProperty $runKey).Superba -eq $guiRun) 'upgrade refreshes GUI st
 Check (@(RouterProcs).Count -eq 0) 'upgrade stopped the router of the install'
 & (Join-Path $installDir 'spb.exe') --version | Out-Null
 Check ($LASTEXITCODE -eq 0) 'spb runs after the upgrade'
+CheckDataLocation 'first upgrade'
 
 Msi '/i' $msi3 (Join-Path $work 'upgrade2.log')
 $arp = @(ArpEntries)
 Check ($arp.Count -eq 1 -and $arp[0].DisplayName -eq "Superba $UpgradeVersion2") 'same X.Y.Z pre-release upgrades in place'
+CheckDataLocation 'second upgrade'
+$env:SUPERBA_DATA_DIR = $savedData
+$env:CODEX_HOME = $savedCodex
 
 # --- uninstall ---------------------------------------------------------------
 $proc2 = Start-Process $routerExe -ArgumentList @('supervise', '--data-dir', "`"$rtData`"") -PassThru -WindowStyle Hidden

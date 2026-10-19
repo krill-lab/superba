@@ -29,6 +29,7 @@ pub mod claude;
 mod claude_router;
 pub mod compaction;
 pub mod core_watch;
+mod data;
 pub mod executor;
 mod files;
 pub mod harness;
@@ -36,6 +37,7 @@ pub mod hosts;
 mod import;
 pub mod journal;
 pub mod localtime;
+mod located_service;
 pub mod machine;
 pub mod messages;
 pub mod model_keep;
@@ -111,9 +113,17 @@ pub fn detect_context() -> Result<LocalContext> {
             .data_local_dir()
             .to_path_buf(),
     };
+    let data_dir = if data_dir.is_absolute() {
+        data_dir
+    } else {
+        std::env::current_dir()
+            .map_err(|e| Error::other(e.to_string()))?
+            .join(data_dir)
+    };
+    let data_dir = data_dir.canonicalize().unwrap_or(data_dir);
     Ok(LocalContext::new(
         base.home_dir(),
-        DataDir::new(data_dir),
+        superba_storage::resolve(&data_dir)?,
         env,
     ))
 }
@@ -496,6 +506,13 @@ impl Switcher {
         self
     }
 
+    /// Guard the monitor's background cache writes with the same data lock as
+    /// service calls. Used by the production location-aware service boundary.
+    pub(crate) fn with_data_guard(mut self, data_dir: DataDir) -> Self {
+        self.monitor = monitor::EnvMonitor::guarded(self.deps.app.clone(), data_dir);
+        self
+    }
+
     /// The environment monitor.
     pub fn monitor(&self) -> &monitor::EnvMonitor {
         &self.monitor
@@ -530,7 +547,7 @@ impl Switcher {
 
 /// Production service for `ctx` as a trait object (what the GUI and `spb` hold).
 pub fn default_service(ctx: LocalContext) -> Arc<dyn SwitchService> {
-    Arc::new(Switcher::new(SwitcherDeps::with_defaults(ctx)))
+    Arc::new(located_service::LocatedService::new(ctx))
 }
 
 #[async_trait]

@@ -308,13 +308,6 @@ fn recording_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             .height(row_h)
             .right()
     };
-    let days_labels = [cx.tr.t("recording.usage_days")];
-    let days_w = FormRow::label_width_of(ui, days_labels.iter().map(String::as_str));
-    let retention = |label: &str| {
-        FormRow::new(Text::small(label, cx.pal))
-            .label_width(days_w)
-            .gap(8.0)
-    };
     switch(cx.tr.t("recording.usage")).show(ui, |ui| {
         let mut v = stats.record;
         if ui
@@ -326,23 +319,7 @@ fn recording_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             state.save_stats(cx, next);
         }
     });
-    retention(&days_labels[0]).show(ui, |ui| {
-        let mut days = stats.usage_days;
-        let mut seg = Segmented::new("router-usage-days", &mut days).small();
-        let mut options = vec![30u32, 90, 180];
-        if !options.contains(&stats.usage_days) {
-            options.push(stats.usage_days);
-            options.sort_unstable();
-        }
-        for d in options {
-            seg = seg.option(d, cx.tr.f("recording.days", &[("n", &d)]));
-        }
-        if seg.show(ui).changed() {
-            let mut next = stats.clone();
-            next.usage_days = days;
-            state.save_stats(cx, next);
-        }
-    });
+    ui.label(Text::caption(cx.tr.t("prefs.data.retention_here"), cx.pal));
     if let Some(r) = state.snapshot().and_then(|s| s.recording.clone()) {
         ui.label(Text::caption(recorder_text(cx, &r), cx.pal));
     }

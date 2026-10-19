@@ -101,6 +101,7 @@ pub struct FakeService {
 /// Fake state per page area (`fake/<area>.rs`).
 #[derive(Debug, Default)]
 struct Areas {
+    storage: Mutex<Option<Result<superba_core::data::DataUsage>>>,
     claude: Mutex<claude::State>,
     files: Mutex<files::State>,
     maintenance: Mutex<maintenance::State>,
@@ -136,6 +137,11 @@ struct FakeState {
 }
 
 impl FakeService {
+    /// Fixture returned by the data block's asynchronous storage scan.
+    pub fn set_data_usage(&self, result: Result<superba_core::data::DataUsage>) {
+        *self.areas.storage.lock().unwrap() = Some(result);
+    }
+
     /// Construct an isolated fake world without inspecting the real machine.
     pub fn new(options: FakeOptions) -> Self {
         Self {
@@ -1634,6 +1640,19 @@ impl FakeService {
 
 #[superba_core::async_trait]
 impl SwitchService for FakeService {
+    async fn data_usage(&self) -> Result<superba_core::data::DataUsage> {
+        self.areas
+            .storage
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| Err(Error::not_implemented("data usage")))
+    }
+
+    async fn data_where(&self) -> Result<superba_core::data::DataLocation> {
+        self.data_usage().await.map(|u| u.location)
+    }
+
     async fn overview(&self) -> Result<Overview> {
         self.delay(200).await;
         let s = self.state();

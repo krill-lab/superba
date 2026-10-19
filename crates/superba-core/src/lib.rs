@@ -52,6 +52,7 @@ pub mod codex;
 pub mod codex_files;
 pub mod compaction;
 pub mod config;
+pub mod data;
 pub mod env;
 pub mod error;
 pub mod fdlimit;

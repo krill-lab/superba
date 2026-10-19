@@ -1037,6 +1037,31 @@ impl SwitchDecider for SafeDefaults {
 /// switch flow: plan -> (UI countdown / confirmation) -> execute -> verify.
 #[async_trait]
 pub trait SwitchService: Send + Sync {
+    /// Active data directory and its fixed locator (does not scan session files).
+    async fn data_where(&self) -> Result<crate::data::DataLocation> {
+        Err(Error::not_implemented("data location"))
+    }
+
+    /// Per-category Superba storage and separate Codex session storage.
+    async fn data_usage(&self) -> Result<crate::data::DataUsage> {
+        Err(Error::not_implemented("data usage"))
+    }
+
+    /// Move all Superba data while coordinating writers and the router.
+    async fn data_move(
+        &self,
+        directory: PathBuf,
+        progress: crate::data::DataMoveProgressSink,
+    ) -> Result<crate::data::DataMoveReport> {
+        let _ = (directory, progress);
+        Err(Error::not_implemented("data relocation"))
+    }
+
+    /// Enforce request retention and discard refetchable cache files.
+    async fn data_cleanup(&self) -> Result<crate::data::DataCleanupReport> {
+        Err(Error::not_implemented("data cleanup"))
+    }
+
     /// Overview snapshot (cheap enough to poll every few seconds).
     async fn overview(&self) -> Result<Overview>;
 

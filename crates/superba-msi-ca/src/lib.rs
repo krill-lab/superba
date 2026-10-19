@@ -26,6 +26,9 @@ pub use msi::{CheckInstallFolder, RefreshAutostart, RemoveAutostart};
 /// empty or relative path, for a path where a file sits in place of a folder,
 /// and when no folder above it exists (a missing drive).
 pub fn can_install_into(dir: &Path) -> bool {
+    if superba_storage::validation::validate_directory(dir, &superba_core::ProcessEnv).is_err() {
+        return false;
+    }
     if dir.as_os_str().is_empty() || !dir.is_absolute() {
         return false;
     }

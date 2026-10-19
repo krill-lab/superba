@@ -38,6 +38,7 @@
 //! several pages live in [`shared`] (never import another page's module).
 
 pub mod claude;
+pub mod data;
 pub mod hosts;
 pub mod import;
 pub mod models;
@@ -478,6 +479,8 @@ pub enum Action {
     LoadVersions,
     /// Open Superba's data directory in the file manager.
     OpenDataDir,
+    /// The data pointer changed; refresh shell paths and cached page snapshots.
+    DataLocationChanged(superba_core::data::DataLocation),
     /// Uninstall Superba's changes.
     Uninstall,
     /// Run a command of a page module (see the module contract); the shell

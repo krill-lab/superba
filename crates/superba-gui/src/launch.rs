@@ -155,7 +155,7 @@ pub fn forward_or_launch() -> Handled {
         return Handled::ShowWindow;
     };
     if crate::instance::forward(
-        context.data_dir.root(),
+        context.data_dir.anchor(),
         crate::instance::Request::LaunchChatGpt,
     )
     .is_some()

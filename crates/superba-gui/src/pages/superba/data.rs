@@ -1,5 +1,5 @@
 //! Data location, restore and uninstall.
-use super::{Action, Cx, Page, row, section};
+use super::{Action, Cx, row, section};
 use crate::design::widgets::{Button, Card};
 use egui::Ui;
 use superba_core::{RestoreTarget, Settings};
@@ -9,47 +9,11 @@ pub fn show(
     cx: &Cx<'_>,
     settings: &mut Settings,
     backups: &mut super::backups::State,
+    storage: &mut crate::pages::data::State,
     out: &mut Vec<Action>,
 ) {
     let before = settings.clone();
-    section(ui, cx, &cx.tr.t("prefs.data.title"), None);
-    Card::new().flat().show(ui, |ui| {
-        let dir = cx
-            .data
-            .paths
-            .as_ref()
-            .map(|p| superba_core::paths::display_path(&p.data_dir))
-            .unwrap_or_default();
-        row(ui, cx, &cx.tr.t("prefs.data.dir"), &dir, false, |ui| {
-            if ui
-                .add(
-                    Button::new(cx.tr.t("prefs.data.open_dir"))
-                        .small()
-                        .enabled(cx.data.paths.is_some()),
-                )
-                .clicked()
-            {
-                out.push(Action::OpenDataDir);
-            }
-        });
-        row(
-            ui,
-            cx,
-            &cx.tr.t("prefs.data.requests"),
-            &cx.tr.t("prefs.data.retention_moved"),
-            true,
-            |ui| {
-                if ui
-                    .add(Button::ghost(cx.tr.t("prefs.data.open_router")).small())
-                    .clicked()
-                {
-                    out.push(Action::Go(Page::Router));
-                }
-            },
-        );
-    });
-
-    data_location_section(ui, cx, settings, out);
+    data_location_section(ui, cx, settings, storage, out);
     ui.add_space(24.0);
     super::backups::show(ui, cx, backups, out);
 
@@ -134,9 +98,11 @@ pub fn show(
 /// Mount point for the separate data-location feature (GH#15).
 /// Keep its state and controls in this section when that feature is integrated.
 pub fn data_location_section(
-    _ui: &mut Ui,
-    _cx: &Cx<'_>,
-    _settings: &mut Settings,
-    _out: &mut Vec<Action>,
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    settings: &mut Settings,
+    storage: &mut crate::pages::data::State,
+    out: &mut Vec<Action>,
 ) {
+    crate::pages::data::section_ui(ui, cx, settings, storage, out);
 }

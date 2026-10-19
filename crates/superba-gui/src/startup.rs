@@ -205,6 +205,7 @@ pub fn refuse_other_account(locale: Locale) -> bool {
 #[derive(Clone, Debug)]
 pub struct Reporter {
     logs: PathBuf,
+    anchor: Option<PathBuf>,
     tr: Arc<Tr>,
 }
 
@@ -212,28 +213,61 @@ impl Reporter {
     /// Logs in Superba's data directory (`<data>/logs`; the temp directory when
     /// the data directory is unknown), messages in `locale`.
     pub fn new(locale: Locale) -> Self {
-        let logs = superba_switch::detect_context()
-            .map(|ctx| ctx.data_dir.logs_dir())
-            .unwrap_or_else(|_| std::env::temp_dir().join("Superba"));
-        Self::with_logs_dir(logs, locale)
+        match superba_switch::detect_context() {
+            Ok(ctx) => Self {
+                logs: ctx.data_dir.logs_dir(),
+                anchor: Some(ctx.data_dir.anchor().to_path_buf()),
+                tr: Arc::new(Tr::new(locale)),
+            },
+            Err(_) => Self::with_logs_dir(std::env::temp_dir().join("Superba"), locale),
+        }
     }
 
     /// Logs in `logs`.
     pub fn with_logs_dir(logs: impl Into<PathBuf>, locale: Locale) -> Self {
         Self {
             logs: logs.into(),
+            anchor: None,
             tr: Arc::new(Tr::new(locale)),
         }
     }
 
     /// This run's GUI log.
     pub fn gui_log(&self) -> PathBuf {
-        self.logs.join(GUI_LOG)
+        self.logs_dir().join(GUI_LOG)
     }
 
     /// The crash log.
     pub fn crash_log(&self) -> PathBuf {
-        self.logs.join(CRASH_LOG)
+        self.logs_dir().join(CRASH_LOG)
+    }
+
+    fn logs_dir(&self) -> PathBuf {
+        self.anchor
+            .as_ref()
+            .and_then(|a| superba_storage::resolve(a).ok())
+            .map(|data| data.logs_dir())
+            .unwrap_or_else(|| self.logs.clone())
+    }
+
+    /// A move owns the exclusive location lock. Logging must neither recreate
+    /// the old directory nor hold up crash reporting while a move is in flight.
+    fn write(&self, operation: impl FnOnce(&Path) -> std::io::Result<()>) {
+        let _guard = match &self.anchor {
+            Some(anchor) => match superba_storage::DataLock::shared(anchor) {
+                Ok(guard) => Some(guard),
+                Err(_) => return,
+            },
+            None => None,
+        };
+        let logs = match &self.anchor {
+            Some(anchor) => match superba_storage::resolve(anchor) {
+                Ok(data) => data.logs_dir(),
+                Err(_) => return,
+            },
+            None => self.logs.clone(),
+        };
+        let _ = fs::create_dir_all(&logs).and_then(|()| operation(&logs));
     }
 
     /// Start this run's GUI log (the previous run's is replaced). Best effort.
@@ -245,12 +279,12 @@ impl Reporter {
             std::env::consts::ARCH,
             Timestamp::now().to_rfc3339()
         );
-        let _ = fs::create_dir_all(&self.logs).and_then(|()| fs::write(self.gui_log(), header));
+        self.write(|logs| fs::write(logs.join(GUI_LOG), header));
     }
 
     /// Add a line to this run's GUI log. Best effort.
     pub fn note(&self, line: &str) {
-        let _ = append(&self.gui_log(), &format!("{line}\n"));
+        self.write(|logs| append(&logs.join(GUI_LOG), &format!("{line}\n")));
     }
 
     /// Keep WSL phase timings in the GUI log, including background probes.
@@ -305,11 +339,13 @@ impl Reporter {
 
     /// Append `entry` to the crash log, starting it over when it is too large.
     pub fn write_crash(&self, entry: &str) {
-        let path = self.crash_log();
-        if fs::metadata(&path).is_ok_and(|m| m.len() > CRASH_LOG_LIMIT) {
-            let _ = fs::remove_file(&path);
-        }
-        let _ = fs::create_dir_all(&self.logs).and_then(|()| append(&path, entry));
+        self.write(|logs| {
+            let path = logs.join(CRASH_LOG);
+            if fs::metadata(&path).is_ok_and(|m| m.len() > CRASH_LOG_LIMIT) {
+                let _ = fs::remove_file(&path);
+            }
+            append(&path, entry)
+        });
     }
 
     /// What the user is told when the GUI stopped on a panic with `reason`.

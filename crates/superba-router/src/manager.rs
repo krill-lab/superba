@@ -745,6 +745,42 @@ impl RouterManager {
         self.service.uninstall(&self.spec)
     }
 
+    /// Stop the service and wait for its writer to exit before relocating files.
+    /// Keep configuration, keys, token and port. A failed stop is an error: a
+    /// SQLite file is never copied from a router that may still be writing it.
+    pub async fn stop_for_data_move(&self, wait: Duration) -> Result<()> {
+        let runtime = crate::runtime::RuntimeInfo::load(&self.paths).ok();
+        self.uninstall_service()?;
+        if let Ok(client) = AdminClient::from_runtime(&self.paths) {
+            let _ = client.shutdown().await;
+        }
+        let deadline = Instant::now() + wait;
+        loop {
+            let process_alive = runtime
+                .as_ref()
+                .is_some_and(|r| self.runner.is_router_process(r.pid));
+            if !process_alive && !watchdog::check(&self.paths).await.is_up() {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(Error::Timeout {
+                    what: "data.router.stop".into(),
+                });
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    /// Rebind a service to this data directory and wait for health, using its
+    /// copied configuration unchanged (in particular the token and port).
+    pub async fn install_existing(&self, wait: Duration) -> Result<()> {
+        check_router_exe(&self.spec.exe)?;
+        RouterConfig::load(&self.paths)?;
+        lifecycle_changed();
+        self.service.install(&self.spec)?;
+        self.wait_until_up(wait).await
+    }
+
     /// Router state for the UI (polled every few seconds by the Router page).
     ///
     /// The liveness is asked every time (HTTP on loopback, no process). Asking

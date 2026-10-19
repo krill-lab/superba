@@ -589,7 +589,7 @@ See [SECURITY.md](SECURITY.md#the-local-router) for what the router can see.
 | Router service (Linux: `~/.config/systemd/user/superba-router.service`; macOS: `~/Library/LaunchAgents/com.krill.superba.router.plist`; Windows: the `SuperbaRouter` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`) | only while the local router is installed | `spb router uninstall` / `spb uninstall` |
 | `config.toml` / `auth.json` you edit in Superba (here, on a remote host or in WSL) | only when you save an edit or restore a backup | the file it replaces is backed up first, encrypted, in the data dir (`backups/editor/`, the newest 50 per file); Settings → Edit Codex files → Backups or `spb config restore <id>` |
 | cc-switch / AI Toolbox stores | only when you import from them | read only, never written (a database with pending changes is read from a private copy in Superba's cache, removed right after) |
-| Superba's data dir | always | `~/.local/share/superba` (Linux; `$XDG_DATA_HOME/superba` when set), `~/Library/Application Support/com.krill-code.Superba` (macOS), `%LOCALAPPDATA%\krill-code\Superba\data` (Windows: the local, non-roaming profile); override with `SUPERBA_DATA_DIR` |
+| Superba's data dir | always | `~/.local/share/superba` (Linux; `$XDG_DATA_HOME/superba` when set), `~/Library/Application Support/com.krill-code.Superba` (macOS), `%LOCALAPPDATA%\krill-code\Superba\data` (Windows: the local, non-roaming profile); Preferences → Data or `spb data move` moves it and leaves a small pointer at this fixed location. `SUPERBA_DATA_DIR` overrides the fixed pointer directory. |
 
 Keys you give Superba are stored in the OS keyring (Keychain, Credential
 Manager, Secret Service), or in 0600 files in the data dir when no keyring is
@@ -597,6 +597,10 @@ available. Backups of logins and files are encrypted with ChaCha20-Poly1305.
 
 If a switch is interrupted (crash, power loss), Superba finishes or rolls it
 back the next time it starts (`spb recover` does it explicitly).
+
+[Data location and disk use](docs/data-location.md) describes the storage categories,
+retention, cleanup and relocation guarantees. Codex's own `CODEX_HOME/sessions`
+is measured separately and stays in place when Superba's data moves.
 
 ## CLI reference
 
@@ -606,6 +610,7 @@ accepts `--json` (exactly one JSON document on stdout) and `--locale en|zh-CN`.
 | Command | Purpose |
 |---|---|
 | `spb status` | applied profile, desktop app (install, CDP, auth address), CLI processes, remotes |
+| `spb data where \| move <dir> \| usage` | active Superba directory, verified relocation to an empty local directory, and category sizes with Codex sessions counted separately |
 | `spb lines [--site ID] [--probe]` | lines and their latency / PAT / API key / edge status |
 | `spb key set --profile P (--stdin \| --key-env VAR)` / `spb key check` | store or check a key |
 | `spb profile list \| add \| edit \| remove \| use` | named profiles (site, line order, auth: auto / PAT / API key, key reference, model, `--compaction auto\|native\|unsupported`) |
@@ -639,7 +644,7 @@ nothing), `--remote TARGET` / `--no-local`.
 Exit codes: `0` done, `1` error, `2` usage, `3` blocked, `4` needs an answer or
 confirmation, `5` cancelled.
 
-Environment: `SUPERBA_DATA_DIR` (data dir), `SUPERBA_LOCALE`, `SUPERBA_APP_PATH`
+Environment: `SUPERBA_DATA_DIR` (fixed data/pointer directory), `SUPERBA_LOCALE`, `SUPERBA_APP_PATH`
 (use this desktop app install), `SUPERBA_APP_ARGS` (extra app arguments),
 `SUPERBA_SECRET_BACKEND=keyring|file|auto`, `CODEX_HOME`, `VISUAL` / `EDITOR`
 (`spb config edit`).

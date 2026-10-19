@@ -26,6 +26,7 @@ unimplemented = "warn"
 [workspace.dependencies]
 # --- internal crates
 superba-core = { path = "crates/superba-core", version = "0.1.0" }
+superba-storage = { path = "crates/superba-storage", version = "0.1.0" }
 superba-config = { path = "crates/superba-config", version = "0.1.0" }
 superba-net = { path = "crates/superba-net", version = "0.1.0" }
 superba-sessions = { path = "crates/superba-sessions", version = "0.1.0" }

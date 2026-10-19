@@ -11,6 +11,7 @@ publish.workspace = true
 
 [dependencies]
 superba-core.workspace = true
+superba-storage.workspace = true
 superba-appctl.workspace = true
 superba-catalog.workspace = true
 superba-config.workspace = true

@@ -193,7 +193,8 @@ impl PageStates {
             Page::Superba(_) => PageStatus {
                 modal: self.notify.modal()
                     || pages::superba::updates::status(&self.updates).modal
-                    || self.superba.backups.modal(),
+                    || self.superba.backups.modal()
+                    || self.superba.storage.busy(),
                 ..PageStatus::default()
             },
             Page::Tools => PageStatus::default(),
@@ -473,7 +474,10 @@ impl SuperbaApp {
 
     /// Take requests of later starts of `superba` (GH#7: `--launch-chatgpt`).
     fn listen_for_other_starts(&mut self, ctx: &egui::Context) {
-        let Some(dir) = self.data.paths.as_ref().map(|p| p.data_dir.clone()) else {
+        let Some(dir) = superba_switch::detect_context()
+            .ok()
+            .map(|c| c.data_dir.anchor().to_path_buf())
+        else {
             return;
         };
         let queue = Arc::clone(&self.instance_requests);
@@ -755,6 +759,10 @@ impl SuperbaApp {
     /// Run what the shell's cadence says is due, tell the environment monitor
     /// about the window, and sleep until the next timer (user request 34).
     fn run_cadence(&mut self, ctx: &egui::Context, visible: bool) {
+        if self.pages.superba.storage.busy() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+            return;
+        }
         if !self.data.router_enabled() && !self.data.claude_routed() {
             self.data.router_watch = None;
         }
@@ -846,10 +854,16 @@ impl SuperbaApp {
     // -------------------------------------------------------------------
 
     fn handle_replies(&mut self, ctx: &egui::Context) {
+        let mut actions = Vec::new();
+        self.pages.superba.storage.poll(&mut self.settings, &mut actions);
+        for action in actions {
+            self.handle_action(ctx, action);
+        }
         for reply in self.backend.drain() {
             let now = self.now();
             match reply {
                 Reply::Overview(r) => {
+                    self.pages.superba.storage.check_location(self.service.clone());
                     if let Err(e) = &r
                         && self.data.overview.value.is_none()
                     {
@@ -1538,6 +1552,11 @@ impl SuperbaApp {
     }
 
     fn handle_action(&mut self, ctx: &egui::Context, action: Action) {
+        if self.pages.superba.storage.busy()
+            && !matches!(action, Action::OpenDataDir | Action::DataLocationChanged(_))
+        {
+            return;
+        }
         if let Some(request) = planned_request(&action) {
             let now = self.now();
             self.flow.request(request, now);
@@ -1681,9 +1700,33 @@ impl SuperbaApp {
             }
             Action::OpenDataDir => {
                 if let Some(paths) = &self.data.paths {
-                    let _ = std::fs::create_dir_all(&paths.data_dir);
                     let _ = open::that_detached(&paths.data_dir);
                 }
+            }
+            Action::DataLocationChanged(location) => {
+                if self
+                    .data
+                    .paths
+                    .as_ref()
+                    .is_some_and(|p| p.data_dir == location.directory)
+                {
+                    return;
+                }
+                self.data.paths = Some(pages::DataPaths {
+                    router_db: superba_router::RouterPaths::new(&superba_core::DataDir::new(
+                        &location.directory,
+                    ))
+                    .usage_db(),
+                    data_dir: location.directory.clone(),
+                });
+                self.risk_memory = Some(location.directory.join("gui-hot-risk-seen-v1"));
+                // Forms may contain absolute file-key references from before the
+                // move. Rebuild them before the user can save another edit.
+                let storage = std::mem::take(&mut self.pages.superba.storage);
+                self.pages = PageStates::default();
+                self.pages.superba.storage = storage;
+                self.pages.superba.storage.relocated();
+                self.backend.send(Command::Refresh);
             }
             Action::PageCommand { page, command } => {
                 self.go(page);
@@ -1788,6 +1831,9 @@ impl SuperbaApp {
     // -------------------------------------------------------------------
 
     fn keyboard(&mut self, ctx: &egui::Context) {
+        if self.pages.superba.storage.busy() {
+            return;
+        }
         // Dialogs own Enter / Escape; the flow must not react to them.
         let modal = self.wizard.is_some() || self.pages.any_modal() || self.in_effect.is_open();
         if !modal && ctx.input_mut(|i| i.consume_shortcut(&palette::SHORTCUT)) {
@@ -1939,7 +1985,9 @@ impl SuperbaApp {
             );
             layout::fit_area(&mut area, page.min_height(), |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
-                self.pages.show(page, ui, &cx, &mut self.settings, out);
+                ui.add_enabled_ui(!self.pages.superba.storage.busy(), |ui| {
+                    self.pages.show(page, ui, &cx, &mut self.settings, out);
+                });
             });
         } else {
             // Scroll pages scroll inside the panel (its top edge clips them).
@@ -1959,7 +2007,9 @@ impl SuperbaApp {
                         ui.vertical(|ui| {
                             ui.set_width(width);
                             ui.spacing_mut().item_spacing.y = 8.0;
-                            self.pages.show(page, ui, &cx, &mut self.settings, out);
+                            ui.add_enabled_ui(!self.pages.superba.storage.busy(), |ui| {
+                                self.pages.show(page, ui, &cx, &mut self.settings, out);
+                            });
                             ui.add_space(40.0 + overlay_h);
                         });
                     });

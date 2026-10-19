@@ -4789,6 +4789,7 @@ dependencies = [
  "superba-import",
  "superba-models",
  "superba-router",
+ "superba-storage",
  "superba-switch",
  "superba-versions",
  "sys-locale",
@@ -4841,6 +4842,7 @@ name = "superba-msi-ca"
 version = "0.1.0"
 dependencies = [
  "superba-core",
+ "superba-storage",
  "tempfile",
  "windows-sys 0.61.2",
  "winreg",
@@ -4971,6 +4973,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "superba-storage"
+version = "0.1.0"
+dependencies = [
+ "fs4",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "superba-core",
+ "tempfile",
+ "uuid",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "superba-switch"
 version = "0.1.0"
 dependencies = [
@@ -4995,6 +5012,7 @@ dependencies = [
  "superba-remote",
  "superba-router",
  "superba-sessions",
+ "superba-storage",
  "superba-versions",
  "sys-locale",
  "tempfile",

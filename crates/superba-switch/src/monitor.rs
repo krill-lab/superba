@@ -131,6 +131,7 @@ struct State {
 
 struct Shared {
     app: Arc<dyn AppController>,
+    data_dir: Option<superba_core::DataDir>,
     tuning: MonitorTuning,
     state: Mutex<State>,
     wake: Condvar,
@@ -185,8 +186,22 @@ impl EnvMonitor {
     /// A monitor over `app`'s detection. No thread runs until the first
     /// [`EnvironmentEvent::Shown`].
     pub fn new(app: Arc<dyn AppController>, tuning: MonitorTuning) -> Self {
+        Self::build(app, tuning, None)
+    }
+
+    /// Production monitor: background cache writes participate in data relocation.
+    pub(crate) fn guarded(app: Arc<dyn AppController>, data_dir: superba_core::DataDir) -> Self {
+        Self::build(app, MonitorTuning::default(), Some(data_dir))
+    }
+
+    fn build(
+        app: Arc<dyn AppController>,
+        tuning: MonitorTuning,
+        data_dir: Option<superba_core::DataDir>,
+    ) -> Self {
         let shared = Arc::new(Shared {
             app,
+            data_dir,
             tuning,
             state: Mutex::new(State::default()),
             wake: Condvar::new(),
@@ -292,6 +307,17 @@ impl EnvMonitor {
     pub async fn step(&self, now: Instant) -> Step {
         self.shared.step(now).await
     }
+
+    /// Stop background probes and drain an in-flight probe before moving its
+    /// cache files. The owning service constructs a fresh monitor afterwards.
+    pub async fn stop_and_drain(&self) {
+        {
+            let mut state = self.shared.lock();
+            state.stop = true;
+            self.shared.notify(state);
+        }
+        let _guard = self.shared.detecting.lock().await;
+    }
 }
 
 enum Work {
@@ -337,6 +363,9 @@ impl Shared {
         match work {
             Work::Detect(kind) => {
                 let _guard = self.detecting.lock().await;
+                if self.lock().stop {
+                    return Step::Stopped;
+                }
                 self.detect(kind, now).await;
                 Step::Refreshed(kind)
             }
@@ -344,6 +373,9 @@ impl Shared {
                 let changed = self.check(now);
                 if changed {
                     let _guard = self.detecting.lock().await;
+                    if self.lock().stop {
+                        return Step::Stopped;
+                    }
                     self.detect(RefreshKind::Changed, now).await;
                 }
                 Step::Checked { changed }
@@ -391,6 +423,29 @@ impl Shared {
 
     /// Detect and store the facts. The caller holds `detecting`.
     async fn detect(&self, kind: RefreshKind, now: Instant) {
+        let _data_lock = if let Some(data) = &self.data_dir {
+            match superba_storage::DataLock::shared(data.anchor()).and_then(|lock| {
+                if superba_storage::resolve(data.anchor())? == *data {
+                    Ok(lock)
+                } else {
+                    Err(superba_core::Error::other("data.changed"))
+                }
+            }) {
+                Ok(lock) => Some(lock),
+                Err(_) => {
+                    // A move owns the files, or this monitor belongs to the old
+                    // location. A fresh service will create the next monitor.
+                    let mut state = self.lock();
+                    state.stop = true;
+                    if state.facts.is_none() {
+                        state.facts = Some(Arc::default());
+                    }
+                    return;
+                }
+            }
+        } else {
+            None
+        };
         if kind == RefreshKind::Forced {
             self.app.forget_cached_probes();
         }

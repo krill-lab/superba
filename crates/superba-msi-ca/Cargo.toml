@@ -15,6 +15,10 @@ path = "src/lib.rs"
 # cdylib: the DLL Windows Installer loads; rlib: the tests.
 crate-type = ["cdylib", "rlib"]
 
+[dependencies]
+superba-core.workspace = true
+superba-storage.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 superba-core.workspace = true
 winreg.workspace = true
