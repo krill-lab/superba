@@ -77,6 +77,8 @@ pub struct MemberView {
     pub model_mappings: usize,
     /// A key is stored for the member.
     pub has_key: bool,
+    /// Connection methods and unavailable reasons on OpenAI/Gemini ingresses.
+    pub protocols: Vec<superba_core::RouterProtocolRoute>,
 }
 
 impl MemberView {

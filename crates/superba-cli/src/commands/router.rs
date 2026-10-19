@@ -474,6 +474,16 @@ fn render(view: &RouterView, out: &mut Output) -> Result<()> {
         ],
         rows,
     )?;
+    for member in &view.members {
+        for route in &member.protocols {
+            out.line(format!(
+                "{} · {} · {}",
+                member.name,
+                route.ingress(),
+                out.render(&route.connection_text())
+            ))?;
+        }
+    }
     if let Some(claude) = &view.claude {
         out.field("cli.router.claude_routed", out.boolean(claude.routed))?;
         let rows = claude

@@ -200,3 +200,8 @@ no_anthropic_endpoint = "This provider has no Anthropic endpoint for a direct co
 [openai_routing]
 no_responses_endpoint = "This provider has no OpenAI Responses endpoint or enabled protocol conversion"
 no_chat_endpoint = "This provider has no Chat Completions endpoint or enabled protocol conversion"
+
+[router.protocol]
+translated = "Via protocol conversion"
+native = "Native protocol"
+no_gemini = "This provider has no Gemini endpoint or enabled protocol conversion"

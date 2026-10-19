@@ -194,6 +194,14 @@ async fn router_mode_needs_the_router_and_writes_its_url_and_claude_codes_token(
     // Router page.
     assert!(sw.overview().await.unwrap().claude_routed);
     let router = sw.router_status().await.unwrap();
+    assert!(!router.members.is_empty());
+    for member in &router.members {
+        assert_eq!(member.protocols.len(), 3);
+        assert_eq!(
+            member.protocols[2].protocol,
+            superba_core::RequestProtocol::Gemini
+        );
+    }
     let claude = router.claude.unwrap();
     assert!(claude.routed && claude.route_router);
     assert_eq!(claude.base_url.as_deref(), Some(ROUTER_URL));

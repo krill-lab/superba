@@ -189,6 +189,7 @@ pub fn members(view: &RouterView, sites: &[Site], profiles: &ProfileSet) -> Vec<
                     .filter(|s| s.kind != SiteKind::Krill)
                     .map_or(0, |s| s.model_map.len()),
                 has_key: profile.is_some_and(|p| p.key_ref.is_some()),
+                protocols: live.map(|m| m.protocols.clone()).unwrap_or_default(),
             }
         })
         .collect()

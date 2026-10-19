@@ -1693,6 +1693,7 @@ impl SwitchService for FakeService {
             members: members
                 .iter()
                 .map(|id| RouterMemberView {
+                    protocols: Vec::new(),
                     profile_id: id.clone(),
                     name: s
                         .profiles

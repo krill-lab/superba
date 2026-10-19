@@ -74,6 +74,24 @@ impl GeminiConfig {
 }
 
 impl RouterConfig {
+    /// Eligibility and connection method shown for the OpenAI/Gemini ingresses.
+    pub fn protocol_routes(&self, id: &str) -> Vec<superba_core::RouterProtocolRoute> {
+        use superba_core::{RequestProtocol, RouterProtocolRoute};
+        let view = |p| match p {
+            Protocol::Responses => RequestProtocol::Responses,
+            Protocol::Chat => RequestProtocol::ChatCompletions,
+            Protocol::Messages => RequestProtocol::Messages,
+            Protocol::Gemini => RequestProtocol::Gemini,
+        };
+        [Protocol::Responses, Protocol::Chat, Protocol::Gemini]
+            .into_iter()
+            .map(|p| RouterProtocolRoute {
+                protocol: view(p),
+                upstream: self.upstream_protocol(id, p).map(view),
+            })
+            .collect()
+    }
+
     /// Native Gemini settings, including provider defaults.
     pub fn gemini_member(&self, id: &str) -> Option<GeminiMember> {
         let member = self.member(id)?;

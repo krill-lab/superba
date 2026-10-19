@@ -779,12 +779,13 @@ impl Switcher {
             Liveness::Up(s) => (true, Some(*s), None),
             Liveness::Down { detail } => (false, None, Some(detail)),
         };
+        let config = d.router.configuration();
         let members = set
             .settings
             .router
             .members
             .iter()
-            .map(|id| member_view(&set, id, status.as_ref()))
+            .map(|id| member_view(&set, id, status.as_ref(), config.as_ref()))
             .collect();
         let stats = if running {
             d.router.stats_status().await
@@ -1293,6 +1294,7 @@ fn member_view(
     set: &ProfileSet,
     id: &ProfileId,
     status: Option<&RouterStatus>,
+    config: Option<&superba_router::RouterConfig>,
 ) -> RouterMemberView {
     let rid = router_id(id.as_str());
     let lines = status
@@ -1323,6 +1325,7 @@ fn member_view(
             .map(|p| p.name.clone())
             .unwrap_or_else(|| id.to_string()),
         lines,
+        protocols: config.map(|c| c.protocol_routes(&rid)).unwrap_or_default(),
     }
 }
 

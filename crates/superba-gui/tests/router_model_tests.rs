@@ -5,6 +5,7 @@ use superba_gui::pages::router::model::*;
 
 fn member(healths: &[LineHealth]) -> MemberView {
     MemberView {
+        protocols: Vec::new(),
         id: "relay".into(),
         name: "Example Relay".into(),
         kind: MemberKind::Compatible,

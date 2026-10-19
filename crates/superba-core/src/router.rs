@@ -399,6 +399,54 @@ pub struct RouterMemberView {
     /// Lines in priority order (empty when the router is not running).
     #[serde(default)]
     pub lines: Vec<RouterLineView>,
+    /// Native, converted or unavailable routes on the OpenAI/Gemini ingresses.
+    #[serde(default)]
+    pub protocols: Vec<RouterProtocolRoute>,
+}
+
+/// How a member serves one client protocol through the local router.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterProtocolRoute {
+    /// The protocol the client sends.
+    pub protocol: crate::RequestProtocol,
+    /// Selected upstream protocol; absent when no enabled route exists.
+    pub upstream: Option<crate::RequestProtocol>,
+}
+
+impl RouterProtocolRoute {
+    /// Whether this route uses protocol conversion.
+    pub fn translated(&self) -> bool {
+        self.upstream.is_some_and(|p| p != self.protocol)
+    }
+
+    /// Client-facing ingress label.
+    pub fn ingress(&self) -> &'static str {
+        match self.protocol {
+            crate::RequestProtocol::Responses => "/openai/v1 · Responses",
+            crate::RequestProtocol::ChatCompletions => "/openai/v1 · Chat Completions",
+            crate::RequestProtocol::Gemini => "/gemini/v1beta",
+            crate::RequestProtocol::Messages => "/claude",
+        }
+    }
+
+    /// Connection method or reason this member cannot serve the protocol.
+    pub fn connection_text(&self) -> LocalizedText {
+        if self.translated() {
+            LocalizedText::new("router.protocol.translated", "Via protocol conversion")
+        } else if self.upstream.is_some() {
+            LocalizedText::new("router.protocol.native", "Native protocol")
+        } else {
+            match self.protocol {
+                crate::RequestProtocol::Responses => OpenAiIneligible::NoResponsesEndpoint.text(),
+                crate::RequestProtocol::ChatCompletions => OpenAiIneligible::NoChatEndpoint.text(),
+                crate::RequestProtocol::Messages => ClaudeIneligible::NoProtocolRoute.text(),
+                crate::RequestProtocol::Gemini => LocalizedText::new(
+                    "router.protocol.no_gemini",
+                    "This provider has no Gemini endpoint or enabled protocol conversion",
+                ),
+            }
+        }
+    }
 }
 
 /// Router status snapshot.

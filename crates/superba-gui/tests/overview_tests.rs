@@ -611,6 +611,7 @@ async fn todos_list_problems_first_with_their_fixes_and_nodes() {
             configured: true,
             running: true,
             members: vec![RouterMemberView {
+                protocols: Vec::new(),
                 profile_id: "krill".into(),
                 name: "Krill".into(),
                 lines: vec![RouterLineView {

@@ -100,6 +100,10 @@ fn members_follow_the_saved_order_with_live_lines_or_the_sites_lines() {
     let mut view = RouterView::default();
     view.settings.members = vec![ProfileId::new("acme"), ProfileId::new("krill")];
     view.members = vec![RouterMemberView {
+        protocols: vec![superba_core::RouterProtocolRoute {
+            protocol: superba_core::RequestProtocol::Gemini,
+            upstream: Some(superba_core::RequestProtocol::Responses),
+        }],
         profile_id: ProfileId::new("acme"),
         name: "Acme".into(),
         lines: vec![RouterLineView {
@@ -115,6 +119,8 @@ fn members_follow_the_saved_order_with_live_lines_or_the_sites_lines() {
     let m = members(&view, &sites, &set);
     assert_eq!(m.len(), 2);
     assert_eq!(m[0].id, "acme");
+    assert_eq!(m[0].protocols, view.members[0].protocols);
+    assert!(m[0].protocols[0].translated());
     assert_eq!(m[0].kind, MemberKind::Compatible);
     assert_eq!(m[0].model_mappings, 1);
     assert!(m[0].has_key);

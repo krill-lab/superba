@@ -200,3 +200,8 @@ no_anthropic_endpoint = "该供应商没有用于直连的 Anthropic 端点"
 [openai_routing]
 no_responses_endpoint = "该供应商没有 OpenAI Responses 端点或已启用的协议转换"
 no_chat_endpoint = "该供应商没有 Chat Completions 端点或已启用的协议转换"
+
+[router.protocol]
+translated = "经协议转换"
+native = "原生协议"
+no_gemini = "此供应商没有 Gemini 接口，也没有启用的协议转换"

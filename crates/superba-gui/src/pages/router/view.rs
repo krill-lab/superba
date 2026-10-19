@@ -543,6 +543,13 @@ fn member_row(
             }
         });
     });
+    for route in &m.protocols {
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(26.0);
+            ui.label(Text::caption(route.ingress(), cx.pal));
+            ui.label(Text::caption(cx.tr.text(&route.connection_text()), cx.pal));
+        });
+    }
     for line in &m.lines {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;

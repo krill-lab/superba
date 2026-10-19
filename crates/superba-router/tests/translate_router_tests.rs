@@ -71,6 +71,57 @@ fn config(up: &Anthropic, protocol: Protocol) -> RouterConfig {
     c
 }
 
+#[tokio::test]
+async fn openai_and_gemini_eligibility_distinguishes_native_converted_and_disabled_routes() {
+    use superba_core::{Catalog, Locale};
+    let up = anthropic(Arc::new(|_| Fake::json(200, json!({})))).await;
+    let mut cfg = config(&up, Protocol::Chat);
+    let routes = cfg.protocol_routes("site");
+    assert_eq!(
+        routes.iter().map(|r| r.translated()).collect::<Vec<_>>(),
+        [true, false, true]
+    );
+    for route in [&routes[0], &routes[2]] {
+        assert_eq!(
+            Catalog::new(Locale::ZhCn).text(&route.connection_text()),
+            "经协议转换"
+        );
+        assert_eq!(
+            route.connection_text().render_fallback(),
+            "Via protocol conversion"
+        );
+    }
+    cfg.translation.disabled.extend([
+        Conversion {
+            from: Protocol::Responses,
+            to: Protocol::Chat,
+        },
+        Conversion {
+            from: Protocol::Gemini,
+            to: Protocol::Chat,
+        },
+    ]);
+    let routes = cfg.protocol_routes("site");
+    assert!(routes[0].upstream.is_none());
+    assert!(routes[2].upstream.is_none());
+    assert!(!routes.iter().any(|r| r.translated()));
+    assert!(
+        routes[0]
+            .connection_text()
+            .render_fallback()
+            .contains("no OpenAI Responses")
+    );
+    assert!(
+        routes[2]
+            .connection_text()
+            .render_fallback()
+            .contains("no Gemini")
+    );
+    let native = config(&up, Protocol::Gemini).protocol_routes("site");
+    assert!(native[0].translated() && native[1].translated());
+    assert!(!native[2].translated() && native[2].upstream.is_some());
+}
+
 fn path(p: Protocol, stream: bool) -> &'static str {
     match p {
         Protocol::Messages => "/claude/v1/messages",
@@ -110,7 +161,7 @@ fn stream(p: Protocol) -> &'static str {
         Protocol::Messages => include_str!("fixtures/translate/messages.sse"),
         Protocol::Responses => include_str!("fixtures/translate/responses.sse"),
         Protocol::Chat => include_str!("fixtures/translate/chat.sse"),
-        Protocol::Gemini => include_str!("fixtures/translate/gemini.sse"),
+        Protocol::Gemini => include_str!("fixtures/translate/gemini-partial.sse"),
     }
 }
 
