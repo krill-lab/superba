@@ -20,6 +20,8 @@ use crate::design::widgets::{
 use crate::pages::shared::values;
 use crate::pages::{Action, Cx, Page};
 
+/// Lines of the one-sentence conclusion ("now: … why …").
+const NOW_LINES: usize = 3;
 /// Lines of the Chinese explanation shown before "Show all".
 const ZH_LINES: usize = 9;
 /// Lines of the official English text shown before "Show all".
@@ -29,7 +31,8 @@ const ZH_LINES_WIDE: usize = 5;
 /// The same for the English text.
 const EN_LINES_WIDE: usize = 3;
 
-/// Draw the pane for the selected row.
+/// Draw the pane for the selected row: what is set now and what Codex does with
+/// it, one control, then two folds — why change it, and the technical details.
 pub(super) fn show(
     ui: &mut Ui,
     cx: &Cx<'_>,
@@ -45,43 +48,283 @@ pub(super) fn show(
     let zh = cx.tr.locale() == Locale::ZhCn;
     let width = ui.available_width();
     ui.spacing_mut().item_spacing.y = 6.0;
-    // 1. Names and path.
+    // Which setting: its human name (or the key name, when the catalog has no
+    // name). The key name, the English name and the rest are under "Technical
+    // details".
     let title = e.title_for(zh);
-    if title.is_path {
-        ui.add(
-            egui::Label::new(
-                RichText::new(title.text)
-                    .font(mono_font(text::TITLE, Weight::Semibold))
-                    .color(cx.pal.text),
-            )
-            .wrap(),
-        );
+    let title_font = if title.is_path {
+        mono_font(text::TITLE, Weight::Semibold)
     } else {
-        ui.add(
-            egui::Label::new(
-                RichText::new(title.text)
-                    .font(font(text::TITLE, Weight::Semibold))
-                    .color(cx.pal.text),
-            )
-            .wrap(),
+        font(text::TITLE, Weight::Semibold)
+    };
+    ui.add(
+        egui::Label::new(
+            RichText::new(title.text)
+                .font(title_font)
+                .color(cx.pal.text),
+        )
+        .wrap(),
+    );
+    let risky = match e.stage {
+        Stage::Stable | Stage::Experimental => None,
+        Stage::UnderDevelopment | Stage::Deprecated => Some(Status::Warn),
+        Stage::Removed => Some(Status::Error),
+    };
+    if title.zh_missing || risky.is_some() {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+            if title.zh_missing {
+                ui.add(Badge::new(cx.tr.t("codex_settings.zh_missing")).outline());
+            }
+            if let Some(status) = risky {
+                ui.add(
+                    Badge::new(cx.tr.t(e.stage.label_key()))
+                        .status(status)
+                        .outline(),
+                );
+            }
+        });
+    }
+    // 1. One sentence: what is set now, and what the catalog says Codex does.
+    now_line(ui, cx, &e, &state.pending);
+    behavior(ui, cx, &e, width, zh);
+    if e.runtime_mismatch() {
+        let effective = e.effective.unwrap_or_default();
+        crate::pages::note(
+            ui,
+            cx,
+            Status::Warn,
+            cx.tr.f(
+                "codex_settings.detail.runtime",
+                &[
+                    ("effective", &bool_text(cx, effective)),
+                    ("predicted", &bool_text(cx, !effective)),
+                ],
+            ),
         );
     }
-    let mut second = Vec::new();
-    if zh && let Some(en) = &e.name {
-        second.push(en.clone());
+    // 2. The control itself. It draws no label of its own (the conclusion above
+    //    says what it is), so it is named for AccessKit by the pane's own row
+    //    label plus the entry (user bug 56: an unlabeled `Edit ''`).
+    ui.add_space(2.0);
+    crate::pages::divider(ui, cx);
+    ui.add_space(2.0);
+    let read_only = model.config_error.is_some() || model.profile_id.is_none() || cx.busy;
+    let value_name = format!(
+        "{} · {}",
+        cx.tr.t("codex_settings.detail.value"),
+        e.title_for(cx.tr.locale() == Locale::ZhCn).text
+    );
+    crate::design::a11y::name_unnamed(ui, &value_name, |ui| {
+        if super::editor::wide(&e, &state.pending) {
+            super::editor::wide_value(ui, cx, state, model, &e, read_only, out);
+        } else {
+            editor(ui, cx, state, model, &e, read_only, out);
+        }
+    });
+    if let Some(key) = state.invalid.get(&e.path) {
+        ui.label(Text::small(cx.tr.t(key), cx.pal).color(cx.pal.red));
     }
-    if !title.is_path {
-        second.push(e.path.clone());
+    value_actions(ui, cx, state, model, &e, read_only);
+    // 3. The folds: the explanation, then the technical details.
+    ui.add_space(4.0);
+    crate::pages::divider(ui, cx);
+    ui.add_space(2.0);
+    if fold(ui, &e.path, "why", &cx.tr.t("codex_settings.fold.why")) {
+        explanation(ui, cx, state, &e, width, zh);
     }
-    if !second.is_empty() {
-        ui.add(egui::Label::new(Text::mono_muted(second.join(" · "), cx.pal)).wrap());
+    if fold(ui, &e.path, "tech", &cx.tr.t("codex_settings.fold.tech")) {
+        technical(ui, cx, model, &e, zh, width);
     }
-    // 2. Badges.
+}
+
+/// A fold header: a labelled button, so the keyboard (Tab, then Enter or Space)
+/// and AccessKit get the same name the user sees; the state lives in egui memory.
+fn fold(ui: &mut Ui, path: &str, section: &str, label: &str) -> bool {
+    let id = ui.make_persistent_id(egui::IdSalt::new(("codex-settings-fold", path, section)));
+    let open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    let icon = if open {
+        crate::design::icons::Icon::ChevronDown
+    } else {
+        crate::design::icons::Icon::ChevronRight
+    };
+    let response = ui.add(
+        crate::design::widgets::Button::ghost(label)
+            .trailing(icon)
+            .small(),
+    );
+    let key = response.has_focus()
+        && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space));
+    if response.clicked() || key {
+        let open = !open;
+        ui.data_mut(|d| d.insert_temp(id, open));
+        return open;
+    }
+    open
+}
+
+/// What is set now, in the user's words: the value, or "following Codex's
+/// default" when nothing is written at all.
+fn now_line(ui: &mut Ui, cx: &Cx<'_>, e: &Entry, pending: &super::model::Pending) {
+    let now = match e.value_with(pending) {
+        None => cx.tr.t("codex_settings.detail.now_default"),
+        Some(Value::Bool(b)) => cx.tr.t(if *b {
+            "codex_settings.detail.now_on"
+        } else {
+            "codex_settings.detail.now_off"
+        }),
+        Some(value) => super::model::first_sentence(&super::view::value_text(cx, value)),
+    };
+    let line = cx.tr.f("codex_settings.detail.now", &[("summary", &now)]);
+    ui.add(
+        egui::Label::new(
+            RichText::new(line)
+                .font(font(text::BODY, Weight::Semibold))
+                .color(cx.pal.text),
+        )
+        .wrap(),
+    );
+}
+
+/// The first lines of the catalog explanation: what Codex does because of it.
+fn behavior(ui: &mut Ui, cx: &Cx<'_>, e: &Entry, width: f32, zh: bool) {
+    let text = if zh {
+        e.text.zh.as_deref().or(e.text.en.as_deref())
+    } else {
+        e.text.en.as_deref().or(e.text.zh.as_deref())
+    };
+    if let Some(text) = text {
+        clamped(ui, text, NOW_LINES, cx.pal.text_muted, width);
+    }
+}
+
+/// The "why change it" fold: the full explanation in the window's language; the
+/// English original only ever sits under "Technical details".
+fn explanation(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, e: &Entry, width: f32, zh: bool) {
+    let wide = super::editor::wide(e, &state.pending);
+    let (zh_lines, en_lines) = if wide {
+        (ZH_LINES_WIDE, EN_LINES_WIDE)
+    } else {
+        (ZH_LINES, EN_LINES)
+    };
+    let lines = if zh { zh_lines } else { en_lines };
+    let mut truncated = false;
+    let text = if zh {
+        e.text.zh.as_deref().or(e.text.en.as_deref())
+    } else {
+        e.text.en.as_deref().or(e.text.zh.as_deref())
+    };
+    match text {
+        Some(text) => {
+            truncated |= clamped(ui, text, lines, cx.pal.text, width);
+            if zh && e.text.zh_stale {
+                ui.add(Badge::new(cx.tr.t("codex_settings.zh_stale")).status(Status::Warn));
+            }
+        }
+        None => {
+            let key = if zh {
+                "codex_settings.no_zh"
+            } else {
+                "codex_settings.detail.no_official"
+            };
+            ui.label(
+                Text::small(cx.tr.t(key), cx.pal)
+                    .color(cx.pal.text_subtle)
+                    .italics(),
+            );
+        }
+    }
+    if truncated && link_button(ui, &cx.tr.t("codex_settings.detail.expand"), false).clicked() {
+        state.expanded = Some(e.path.clone());
+    }
+}
+
+/// The "technical details" fold: the key name, the official English text, the
+/// default and the current value with their source, and where the key applies.
+fn technical(ui: &mut Ui, cx: &Cx<'_>, model: &Model, e: &Entry, zh: bool, width: f32) {
+    ui.spacing_mut().item_spacing.y = 4.0;
+    ui.label(Text::caption(cx.tr.t("codex_settings.detail.key"), cx.pal));
+    ui.add(
+        egui::Label::new(
+            RichText::new(&e.path)
+                .font(mono_font(text::SMALL, Weight::Regular))
+                .color(cx.pal.text),
+        )
+        .wrap(),
+    );
+    if zh {
+        ui.add_space(2.0);
+        ui.label(Text::caption(
+            cx.tr.t("codex_settings.detail.official"),
+            cx.pal,
+        ));
+        match (&e.text.en, &e.text.en_note) {
+            (Some(en), _) => {
+                clamped(ui, en, EN_LINES, cx.pal.text_muted, width);
+            }
+            (None, Some(note)) => {
+                clamped(ui, note, EN_LINES, cx.pal.text_muted, width);
+                ui.add(Badge::new(cx.tr.t("codex_settings.contributor_note")).outline())
+                    .on_hover_text(cx.tr.t("codex_settings.contributor_note_hint"));
+            }
+            (None, None) => {
+                ui.label(
+                    Text::small(cx.tr.t("codex_settings.detail.no_official"), cx.pal)
+                        .color(cx.pal.text_subtle)
+                        .italics(),
+                );
+            }
+        }
+    }
+    let chip_w = (width - 104.0).max(80.0);
+    kv(
+        ui,
+        cx,
+        &cx.tr.t("codex_settings.detail.default"),
+        |ui| match &e.default {
+            Some(d) => {
+                values::chip(ui, cx, &super::editor::shown(cx, d), chip_w, true);
+            }
+            None => {
+                ui.label(Text::small(
+                    cx.tr.t("codex_settings.value.codex_decides"),
+                    cx.pal,
+                ));
+            }
+        },
+    );
+    kv(
+        ui,
+        cx,
+        &cx.tr.t("codex_settings.detail.current"),
+        |ui| match &e.file_value {
+            Some(v) => {
+                let source = cx.tr.t(if e.managed {
+                    "codex_settings.detail.source_managed"
+                } else {
+                    "codex_settings.detail.source_file"
+                });
+                let source_w = ui
+                    .painter()
+                    .layout_no_wrap(
+                        source.clone(),
+                        font(text::CAPTION, Weight::Medium),
+                        cx.pal.text_subtle,
+                    )
+                    .size()
+                    .x;
+                let shown = super::editor::shown(cx, v);
+                values::chip(ui, cx, &shown, chip_w - source_w - 8.0, false);
+                ui.label(Text::caption(source, cx.pal));
+            }
+            None => {
+                ui.label(Text::small(cx.tr.t("codex_settings.value.unset"), cx.pal));
+            }
+        },
+    );
+    ui.add_space(2.0);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-        if title.zh_missing {
-            ui.add(Badge::new(cx.tr.t("codex_settings.zh_missing")).outline());
-        }
         let status = match e.stage {
             Stage::Stable => Status::Ok,
             Stage::Experimental => Status::Idle,
@@ -141,133 +384,20 @@ pub(super) fn show(
                 .on_hover_text(cx.tr.t("codex_settings.platform_hint"));
         }
     });
-    if e.runtime_mismatch() {
-        let effective = e.effective.unwrap_or_default();
-        let predicted = !effective;
-        crate::pages::note(
-            ui,
-            cx,
-            Status::Warn,
-            cx.tr.f(
-                "codex_settings.detail.runtime",
-                &[
-                    ("effective", &bool_text(cx, effective)),
-                    ("predicted", &bool_text(cx, predicted)),
-                ],
-            ),
-        );
-    }
-    // 3. Explanation (Chinese first in Chinese) and 4. the official English text,
-    // shorter above an editor that takes the pane's width.
-    let wide = super::editor::wide(&e, &state.pending);
-    let (zh_lines, en_lines) = if wide {
-        (ZH_LINES_WIDE, EN_LINES_WIDE)
-    } else {
-        (ZH_LINES, EN_LINES)
-    };
-    let mut truncated = false;
-    if zh {
-        match &e.text.zh {
-            Some(text) => {
-                truncated |= clamped(ui, text, zh_lines, cx.pal.text, width);
-                if e.text.zh_stale {
-                    ui.add(Badge::new(cx.tr.t("codex_settings.zh_stale")).status(Status::Warn));
-                }
-            }
-            None => {
-                ui.label(Text::small(cx.tr.t("codex_settings.no_zh"), cx.pal).italics());
-            }
-        }
-        ui.add_space(2.0);
-        ui.label(Text::caption(
-            cx.tr.t("codex_settings.detail.official"),
-            cx.pal,
-        ));
-    }
-    match (&e.text.en, &e.text.en_note) {
-        (Some(en), _) => {
-            let color = if zh { cx.pal.text_muted } else { cx.pal.text };
-            truncated |= clamped(ui, en, if zh { en_lines } else { zh_lines }, color, width);
-        }
-        (None, Some(note)) => {
-            truncated |= clamped(ui, note, en_lines, cx.pal.text_muted, width);
-            ui.add(Badge::new(cx.tr.t("codex_settings.contributor_note")).outline())
-                .on_hover_text(cx.tr.t("codex_settings.contributor_note_hint"));
-        }
-        (None, None) => {
-            ui.label(
-                Text::small(cx.tr.t("codex_settings.detail.no_official"), cx.pal)
-                    .color(cx.pal.text_subtle)
-                    .italics(),
-            );
-        }
-    }
-    if truncated && link_button(ui, &cx.tr.t("codex_settings.detail.expand"), false).clicked() {
-        state.expanded = Some(e.path.clone());
-    }
-    ui.add_space(4.0);
-    crate::pages::divider(ui, cx);
-    ui.add_space(4.0);
-    // 5. Editor (or where the key is managed).
-    let read_only = model.config_error.is_some() || model.profile_id.is_none() || cx.busy;
-    if wide {
-        super::editor::wide_value(ui, cx, state, model, &e, read_only, out);
-    } else {
-        kv(ui, cx, &cx.tr.t("codex_settings.detail.value"), |ui| {
-            editor(ui, cx, state, model, &e, read_only, out);
-        });
-    }
-    if let Some(key) = state.invalid.get(&e.path) {
-        ui.label(Text::small(cx.tr.t(key), cx.pal).color(cx.pal.red));
-    }
-    // 6. Default, current, recommendation: one line each, the whole value in the
-    // tooltip.
+}
+
+/// Actions on the value itself, right under the control: the recommended value,
+/// reset to the default, the legacy key's replacement, and the remote hosts.
+fn value_actions(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &mut State,
+    model: &Model,
+    e: &Entry,
+    read_only: bool,
+) {
+    let width = ui.available_width();
     let chip_w = (width - 104.0).max(80.0);
-    kv(
-        ui,
-        cx,
-        &cx.tr.t("codex_settings.detail.default"),
-        |ui| match &e.default {
-            Some(d) => {
-                values::chip(ui, cx, &super::editor::shown(cx, d), chip_w, true);
-            }
-            None => {
-                ui.label(Text::small(
-                    cx.tr.t("codex_settings.value.codex_decides"),
-                    cx.pal,
-                ));
-            }
-        },
-    );
-    kv(
-        ui,
-        cx,
-        &cx.tr.t("codex_settings.detail.current"),
-        |ui| match &e.file_value {
-            Some(v) => {
-                let source = cx.tr.t(if e.managed {
-                    "codex_settings.detail.source_managed"
-                } else {
-                    "codex_settings.detail.source_file"
-                });
-                let source_w = ui
-                    .painter()
-                    .layout_no_wrap(
-                        source.clone(),
-                        font(text::CAPTION, Weight::Medium),
-                        cx.pal.text_subtle,
-                    )
-                    .size()
-                    .x;
-                let shown = super::editor::shown(cx, v);
-                values::chip(ui, cx, &shown, chip_w - source_w - 8.0, false);
-                ui.label(Text::caption(source, cx.pal));
-            }
-            None => {
-                ui.label(Text::small(cx.tr.t("codex_settings.value.unset"), cx.pal));
-            }
-        },
-    );
     if let Some(v) = &e.recommended {
         let differs = e.value_with(&state.pending) != Some(v);
         let mut use_it = false;
@@ -293,7 +423,41 @@ pub(super) fn show(
             state.buffers.remove(&e.path);
         }
     }
-    // 7. Remote hosts (when syncing).
+    if e.value_with(&state.pending).is_some() && e.editable() && !read_only {
+        ui.add_space(4.0);
+        if ui
+            .add(crate::design::widgets::Button::new(cx.tr.t("codex_settings.reset")).small())
+            .on_hover_text(cx.tr.t("codex_settings.reset_hint"))
+            .clicked()
+        {
+            state.pending.set_path(model, &e.path, Change::Unset);
+            state.buffers.remove(&e.path);
+            state.invalid.remove(&e.path);
+        }
+    }
+    if let Some(legacy) = &e.legacy {
+        let t = match (&legacy.canonical, legacy.ignored) {
+            (Some(c), _) => cx.tr.f("codex_settings.legacy.replaced", &[("path", c)]),
+            (None, true) => cx.tr.t("codex_settings.legacy.ignored"),
+            (None, false) => cx.tr.t("codex_settings.legacy.deprecated"),
+        };
+        ui.horizontal_wrapped(|ui| {
+            ui.add(StatusDot::new(Status::Warn));
+            ui.label(Text::small(t, cx.pal));
+            if e.current.is_some()
+                && legacy.canonical.is_some()
+                && state.pending.get(&e.path).is_none()
+                && !read_only
+                && link_button(ui, &cx.tr.t("codex_settings.migrate.one"), false)
+                    .on_hover_text(cx.tr.t("codex_settings.migrate.restore_note"))
+                    .clicked()
+            {
+                for (path, change) in model.migration_changes(e) {
+                    state.pending.set_path(model, &path, change);
+                }
+            }
+        });
+    }
     if !model.hosts.is_empty() {
         kv(ui, cx, &cx.tr.t("codex_settings.detail.remote"), |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -325,43 +489,6 @@ pub(super) fn show(
             .response
             .on_hover_text(cx.tr.t("codex_settings.detail.remote_tip"));
         });
-    }
-    // Legacy key: what replaced it, with a one-click migration.
-    if let Some(legacy) = &e.legacy {
-        let t = match (&legacy.canonical, legacy.ignored) {
-            (Some(c), _) => cx.tr.f("codex_settings.legacy.replaced", &[("path", c)]),
-            (None, true) => cx.tr.t("codex_settings.legacy.ignored"),
-            (None, false) => cx.tr.t("codex_settings.legacy.deprecated"),
-        };
-        ui.horizontal_wrapped(|ui| {
-            ui.add(StatusDot::new(Status::Warn));
-            ui.label(Text::small(t, cx.pal));
-            if e.current.is_some()
-                && legacy.canonical.is_some()
-                && state.pending.get(&e.path).is_none()
-                && !read_only
-                && link_button(ui, &cx.tr.t("codex_settings.migrate.one"), false)
-                    .on_hover_text(cx.tr.t("codex_settings.migrate.restore_note"))
-                    .clicked()
-            {
-                for (path, change) in model.migration_changes(&e) {
-                    state.pending.set_path(model, &path, change);
-                }
-            }
-        });
-    }
-    // 8. Reset.
-    if e.value_with(&state.pending).is_some() && e.editable() && !read_only {
-        ui.add_space(4.0);
-        if ui
-            .add(crate::design::widgets::Button::new(cx.tr.t("codex_settings.reset")).small())
-            .on_hover_text(cx.tr.t("codex_settings.reset_hint"))
-            .clicked()
-        {
-            state.pending.set_path(model, &e.path, Change::Unset);
-            state.buffers.remove(&e.path);
-            state.invalid.remove(&e.path);
-        }
     }
 }
 

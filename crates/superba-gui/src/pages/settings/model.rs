@@ -577,20 +577,22 @@ impl Entry {
         }
     }
 
-    /// The second line of a list row: the path when the title is a name,
-    /// otherwise the first sentence of the explanation (English, or Chinese in
-    /// Chinese).
+    /// The second line of a list row: the first sentence of what the key does,
+    /// in the reader's language. Never the raw key name — that is under the
+    /// detail pane's "technical details", where a reader who wants it finds it.
     pub fn subtitle_for(&self, zh: bool) -> Option<String> {
-        let title = self.title_for(zh);
-        if !title.is_path {
-            return Some(self.path.clone());
-        }
         let text = if zh {
             self.text.zh.as_deref().or(self.text.en.as_deref())
         } else {
-            self.text.en.as_deref().or(self.text.en_note.as_deref())
+            self.text
+                .en
+                .as_deref()
+                .or(self.text.en_note.as_deref())
+                .or(self.text.zh.as_deref())
         }?;
-        Some(super::detail::strip_code_ticks(&first_sentence(text)))
+        let sentence = super::detail::strip_code_ticks(&first_sentence(text));
+        let sentence = sentence.trim().to_owned();
+        (!sentence.is_empty()).then_some(sentence)
     }
 
     /// The first Codex version that knows the key, when a local Codex is older
@@ -831,6 +833,8 @@ impl Model {
     /// searching, else the entries the stage rules show).
     pub fn counts(&self, filter: &Filter, pending: &Pending) -> RailCounts {
         let mut out = RailCounts::default();
+        // The rail counts every entry: an intent chip narrows the list, not the
+        // categories beside it.
         let common = Filter {
             rail: Rail::Common,
             ..Filter::default()
@@ -896,6 +900,9 @@ pub enum Rail {
     Changed,
     /// One catalog category.
     Category(String),
+    /// An intent chip ([`Intent::id`]): the list narrows to that question's few
+    /// keys instead of a category.
+    Intent(&'static str),
 }
 
 /// List filter.
@@ -904,10 +911,65 @@ pub struct Filter {
     /// Search text (case-insensitive, every word must match; searches every
     /// entry, a selected category narrows the results).
     pub query: String,
-    /// Rail selection.
+    /// Rail selection (or the intent chip that stands in for it).
     pub rail: Rail,
     /// Show under-development, deprecated and removed entries and legacy keys.
     pub advanced: bool,
+}
+
+/// An intent shortcut in the settings toolbar: the question a user arrives with
+/// ("why does it keep asking me?"), mapped to the keys that answer it, so the
+/// list can show those few instead of a category of a hundred keys.
+#[derive(Clone, Copy, Debug)]
+pub struct Intent {
+    /// Stable id, kept in [`Rail::Intent`] while the chip is on.
+    pub id: &'static str,
+    /// i18n key of the chip label.
+    pub label: &'static str,
+    /// Entry paths the chip narrows the list to (empty = the chip opens a rail
+    /// instead of filtering, like "restore defaults" opening the changed list).
+    pub paths: &'static [&'static str],
+}
+
+/// The chips, in the order they are drawn.
+pub const INTENTS: [Intent; 6] = [
+    Intent {
+        id: "ask_less",
+        label: "codex_settings.intent.ask_less",
+        paths: &["approval_policy"],
+    },
+    Intent {
+        id: "my_files",
+        label: "codex_settings.intent.my_files",
+        paths: &["sandbox_mode"],
+    },
+    Intent {
+        id: "network",
+        label: "codex_settings.intent.network",
+        // A `config.toml` path, not a UI key (the i18n scan knows the catalog's
+        // paths and leaves them alone).
+        paths: &["sandbox_workspace_write.network_access"],
+    },
+    Intent {
+        id: "model",
+        label: "codex_settings.intent.model",
+        paths: &["model"],
+    },
+    Intent {
+        id: "tokens",
+        label: "codex_settings.intent.tokens",
+        paths: &["model_auto_compact_token_limit", "model_context_window"],
+    },
+    Intent {
+        id: "defaults",
+        label: "codex_settings.intent.defaults",
+        paths: &[],
+    },
+];
+
+/// The intent with `id`.
+pub fn intent(id: &str) -> Option<&'static Intent> {
+    INTENTS.iter().find(|i| i.id == id)
 }
 
 impl Filter {
@@ -938,6 +1000,13 @@ impl Filter {
 
     /// True if `entry` is listed.
     pub fn accepts(&self, entry: &Entry, pending: &Pending) -> bool {
+        // An intent chip replaces the rail and the search text with its own few
+        // keys: the user asked a question, not for a category.
+        if let Rail::Intent(id) = &self.rail
+            && let Some(i) = intent(id)
+        {
+            return i.paths.contains(&entry.path.as_str()) && self.staged(entry, pending);
+        }
         if self.searching() {
             if !self.staged(entry, pending) || !self.matches(entry) {
                 return false;
@@ -960,6 +1029,8 @@ impl Filter {
             }
             Rail::Category(c) => &entry.category == c && self.staged(entry, pending),
             Rail::All => self.staged(entry, pending),
+            // An intent chip is answered before the rail is consulted.
+            Rail::Intent(_) => false,
         }
     }
 }

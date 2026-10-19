@@ -34,6 +34,51 @@ const DOCK_MIN: f32 = 836.0;
 const GAP: f32 = 12.0;
 /// Widest value chip of a list row (user bug 15: it never grows past this).
 const CHIP_W: f32 = 150.0;
+/// Width the six chips need on one wrapped line (the wider English labels); a
+/// window too narrow for that leaves them out instead of giving them a third
+/// line — the rail and the search field still answer the same questions.
+const CHIPS_NEED: f32 = 660.0;
+/// Strip height: the first line (`size::CONTROL`) and a second, slightly lower
+/// line for the intent chips, which are small buttons. The chips answer the
+/// questions a reader arrives with, so they are worth one row of the list at
+/// the 800 px window (11 → 10 rows).
+const STRIP_H: f32 = size::CONTROL + 4.0 + size::CONTROL_SM;
+
+/// The intent chips: the questions a reader arrives with ("why does it keep
+/// asking me?"), answered by narrowing the list to the few keys that decide
+/// them. Each chip is an ordinary button, so Tab reaches it and AccessKit names
+/// it; clicking it again — or typing in the search field — goes back to the
+/// rail.
+fn intents(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+    for i in super::model::INTENTS {
+        let on = state.filter.rail == super::model::Rail::Intent(i.id);
+        let label = cx.tr.t(i.label);
+        let chip = if on {
+            Button::new(label.as_str()).small()
+        } else {
+            Button::ghost(label.as_str()).small()
+        };
+        if ui.add(chip).clicked() {
+            pick_intent(state, &i);
+        }
+    }
+}
+
+/// What a chip does when clicked: it takes the rail's place, so the list shows
+/// its few keys; clicking it again (or picking a rail row) goes back.
+fn pick_intent(state: &mut State, i: &super::model::Intent) {
+    if state.filter.rail == super::model::Rail::Intent(i.id) {
+        state.filter.rail = super::model::Rail::Common;
+        return;
+    }
+    state.filter.query.clear();
+    state.filter.rail = if i.paths.is_empty() {
+        // "Restore defaults": the keys that differ from the default.
+        super::model::Rail::Changed
+    } else {
+        super::model::Rail::Intent(i.id)
+    };
+}
 
 /// Placeholder while the first load runs.
 pub(super) fn loading(ui: &mut Ui, cx: &Cx<'_>) {
@@ -106,7 +151,12 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     };
     let notice = notice(cx, &model, state);
     let body = ui.available_rect_before_wrap();
-    let mut tracks = vec![Track::Fixed(size::CONTROL)];
+    // The strip gets a second line for the intent chips. A window too narrow
+    // for them on one line leaves them out (see [`CHIPS_NEED`]) and keeps the
+    // one-line strip, so the list is not squeezed twice.
+    let chips = body.width() >= CHIPS_NEED;
+    let strip_h = if chips { STRIP_H } else { size::CONTROL + 6.0 };
+    let mut tracks = vec![Track::Fixed(strip_h)];
     if notice.is_some() {
         tracks.push(Track::Fixed(20.0));
     }
@@ -118,7 +168,9 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     } else {
         (rects[0], None, rects[1], rects[2])
     };
-    layout::fixed(ui, strip_r, |ui| strip(ui, cx, state, &model, &mut events));
+    layout::fixed(ui, strip_r, |ui| {
+        strip(ui, cx, state, &model, &mut events, chips)
+    });
     if let (Some(r), Some(n)) = (notice_r, notice) {
         layout::fixed(ui, r, |ui| notice_line(ui, cx, &model, n, out));
     }
@@ -222,9 +274,32 @@ fn sheet(
     }
 }
 
-/// The strip: "This computer ⓘ", provider picker, search, Advanced and the
-/// legacy-key notice.
-fn strip(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, events: &mut Events) {
+/// The strip: the first line ("This computer ⓘ", provider picker, search,
+/// Advanced, legacy-key notice) and, under it when `chips` is set (a window
+/// wide enough for the six labels), the row of intent chips — the questions a
+/// reader arrives with, right above the rail whose categories name Codex's own
+/// taxonomy.
+fn strip(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &mut State,
+    model: &Model,
+    events: &mut Events,
+    chips: bool,
+) {
+    strip_line(ui, cx, state, model, events);
+    if !chips {
+        return;
+    }
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        intents(ui, cx, state);
+    });
+}
+
+/// The first strip line.
+fn strip_line(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, events: &mut Events) {
     ui.horizontal(|ui| {
         ui.set_min_height(size::CONTROL);
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -245,6 +320,10 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, events: &mu
         }
         if search.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             state.filter.query.clear();
+        }
+        if search.changed() && matches!(state.filter.rail, super::model::Rail::Intent(_)) {
+            // Typing is its own question: a chip's few keys stop applying.
+            state.filter.rail = super::model::Rail::Common;
         }
         ui.add(Toggle::new(
             &mut state.filter.advanced,
@@ -533,6 +612,12 @@ fn list(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, docked: bool
     let r = PagedTable::new("codex-settings-list", columns, total, &mut state.table)
         .label(cx.tr.t(crate::pages::Page::Settings.title_key()))
         .row_height(size::ROW_LIST2)
+        // Screen readers hear the key name too (it is not on screen: the row
+        // shows the human name, the key lives in the detail pane's fold).
+        .row_name(|row| {
+            let e = &rows[row];
+            format!("{} · {}", e.title_for(zh).text, e.path)
+        })
         .without_pager()
         .keys_when_idle(true)
         .show(ui, |ui, row, col| {
@@ -568,21 +653,34 @@ fn row_text(
             .circle_filled(marker.center(), 3.0, cx.pal.text);
     }
     let title = e.title_for(zh);
+    // The row leads with the human name (`title_for`). The second line is the
+    // first sentence of the explanation, in the reader's language, never the raw
+    // key: that (and the English original) lives in the detail pane's technical
+    // details. A key the catalog has no name for leads with that sentence
+    // instead (user complaint: a column of snake_case keys reads as a
+    // config.toml mirror, not as settings).
+    let human = e.subtitle_for(zh);
+    let promoted = zh && title.is_path && human.is_some();
+    let (head, head_is_path) = match (promoted, human.clone()) {
+        (true, Some(human)) => (human, false),
+        _ => (title.text.to_owned(), title.is_path),
+    };
+    let sub = human.filter(|s| !s.is_empty() && *s != head);
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 2.0;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            let t = if title.is_path {
-                RichText::new(title.text)
+            let t = if head_is_path {
+                RichText::new(head.as_str())
                     .font(mono_font(text::SMALL, Weight::Medium))
                     .color(cx.pal.text)
             } else {
-                RichText::new(title.text)
+                RichText::new(head.as_str())
                     .font(font(text::BODY, Weight::Medium))
                     .color(cx.pal.text)
             };
             ui.add(egui::Label::new(t).truncate());
-            if title.zh_missing {
+            if title.zh_missing && !promoted {
                 ui.add(Badge::new(cx.tr.t("codex_settings.zh_missing")).outline());
             }
             if e.stage != Stage::Stable {
@@ -598,15 +696,8 @@ fn row_text(
                 ui.add(Badge::new(cx.tr.f("codex_settings.only_on", &[("os", os)])).outline());
             }
         });
-        if let Some(sub) = e.subtitle_for(zh) {
-            let t = if title.is_path {
-                Text::caption(sub, cx.pal)
-            } else {
-                RichText::new(sub)
-                    .font(mono_font(text::CAPTION, Weight::Regular))
-                    .color(cx.pal.text_subtle)
-            };
-            ui.add(egui::Label::new(t).truncate());
+        if let Some(sub) = sub {
+            ui.add(egui::Label::new(Text::caption(sub, cx.pal)).truncate());
         }
     });
     let _ = model;
