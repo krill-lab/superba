@@ -3,7 +3,7 @@
 //! Setup wizard (UX §3.2, plan §5 B5): Krill is pre-selected on a first run, a
 //! re-run pre-selects the applied provider and edits it instead of creating a
 //! duplicate, the custom-site path saves, probes and finishes with the saved
-//! profile, "Skip" writes nothing, and every entry point opens the wizard.
+//! profile, "Skip" discards the draft, and every entry point opens the wizard.
 
 mod support;
 
@@ -323,7 +323,7 @@ async fn the_custom_form_refuses_a_bad_address_without_writing() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn skipping_writes_nothing() {
+async fn skipping_discards_the_unsaved_provider_draft() {
     for key in [None, Some(egui::Key::Escape)] {
         let service = fake(true);
         let data = data_of(&service).await;

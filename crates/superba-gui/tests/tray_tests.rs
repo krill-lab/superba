@@ -842,6 +842,11 @@ fn a_second_start_shows_the_hidden_window() {
     });
     h.close_window();
     assert!(!h.visible(), "hidden in the tray");
+    // A login launch must not undo the user's tray choice on any platform.
+    assert!(instance::forward(&a11y_harness::data_dir(), Request::Autostart).is_some());
+    h.settle();
+    assert!(!h.visible(), "login IPC leaves the existing window hidden");
+    h.take_commands();
     // What a plain `superba` start does first.
     assert!(instance::forward(&a11y_harness::data_dir(), Request::Show).is_some());
     frames_until(&mut h, "the second start showed the window", |h| {
@@ -849,6 +854,9 @@ fn a_second_start_shows_the_hidden_window() {
     });
     assert_eq!(Request::parse("show"), Some(Request::Show));
     assert_eq!(Request::Show.as_str(), "show");
+    let commands = h.take_commands();
+    assert!(commands.contains(&egui::ViewportCommand::Visible(true)));
+    assert!(commands.contains(&egui::ViewportCommand::Focus));
 }
 
 #[test]

@@ -56,18 +56,10 @@ fn poll(ui: &Ui, cx: &Cx<'_>, state: &mut State) {
                 .map(|b| b.len());
             let (bytes, spb) = tokio::task::spawn_blocking(move || {
                 let bytes = dir.as_deref().and_then(directory_bytes);
-                let name = format!("spb{}", std::env::consts::EXE_SUFFIX);
-                let spb = std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(|p| p.join(&name)))
-                    .filter(|p| p.is_file())
-                    .or_else(|| {
-                        std::env::var_os("PATH").and_then(|p| {
-                            std::env::split_paths(&p)
-                                .map(|p| p.join(&name))
-                                .find(|p| p.is_file())
-                        })
-                    });
+                let spb = std::env::current_exe().ok().and_then(|current| {
+                    let ctx = superba_switch::detect_context().ok()?;
+                    superba_config::installation::spb_executable(&current, &ctx)
+                });
                 (bytes, spb)
             })
             .await

@@ -88,6 +88,37 @@ impl EntryStore for FileEntry {
     }
 }
 
+/// A LaunchAgent file plus removal from this login session. Injecting the
+/// command keeps tests away from the user's launchd domain.
+#[derive(Debug)]
+pub struct LaunchAgentEntry {
+    /// Plist in the current user's Library/LaunchAgents.
+    pub file: FileEntry,
+    /// Current login user's id.
+    pub uid: u32,
+    /// Native `/bin/launchctl`, or a test command.
+    pub launchctl: PathBuf,
+}
+impl EntryStore for LaunchAgentEntry {
+    fn location(&self) -> String {
+        self.file.location()
+    }
+    fn read(&self) -> Result<Option<String>> {
+        self.file.read()
+    }
+    fn write(&self, entry: Option<&str>) -> Result<()> {
+        self.file.write(entry)?;
+        if entry.is_none() {
+            // An absent/not-loaded job is already disabled. Bootout errors
+            // must not undo successful removal of the next-login entry.
+            let _ = superba_core::process::command(&self.launchctl)
+                .args(["bootout", &format!("gui/{}/{AGENT_LABEL}", self.uid)])
+                .output();
+        }
+        Ok(())
+    }
+}
+
 /// In-memory registration for service tests on every platform.
 #[derive(Debug, Default)]
 pub struct MemoryEntry(pub Mutex<Option<String>>);
@@ -131,8 +162,15 @@ impl Manager {
         let platform = Platform::current();
         #[cfg(windows)]
         let store: Arc<dyn EntryStore> = Arc::new(windows::RunEntry);
-        #[cfg(not(windows))]
+        #[cfg(all(not(windows), not(target_os = "macos")))]
         let store: Arc<dyn EntryStore> = Arc::new(FileEntry(entry_path(ctx, platform)));
+        #[cfg(target_os = "macos")]
+        let store: Arc<dyn EntryStore> = Arc::new(LaunchAgentEntry {
+            file: FileEntry(entry_path(ctx, platform)),
+            // SAFETY: getuid has no pointer arguments or preconditions.
+            uid: unsafe { libc::getuid() },
+            launchctl: PathBuf::from("/bin/launchctl"),
+        });
         let executable = std::env::current_exe()
             .map_err(|e| Error::other(e.to_string()))
             .and_then(|current| gui_executable(&current, ctx));
@@ -205,34 +243,46 @@ pub fn entry_path(ctx: &LocalContext, platform: Platform) -> PathBuf {
 }
 
 fn gui_executable(current: &Path, ctx: &LocalContext) -> Result<PathBuf> {
-    if cfg!(target_os = "linux")
-        && let Some(appimage) = ctx.env.var_os("APPIMAGE").map(PathBuf::from)
-        && appimage.is_absolute()
-        && appimage.is_file()
+    #[cfg(target_os = "macos")]
     {
-        return Ok(appimage);
+        crate::installation::macos_executable(
+            current,
+            ctx,
+            crate::installation::Executable::Gui,
+            crate::installation::installed_macos_bundle,
+        )
+        .ok_or_else(|| {
+            Error::invalid(
+                "Superba GUI executable not found; install Superba.app or set SUPERBA_GUI_EXE",
+            )
+        })
     }
-    let dir = current
-        .parent()
-        .ok_or_else(|| Error::invalid("executable has no parent"))?;
-    let sibling = dir.join(if cfg!(windows) {
-        "superba.exe"
-    } else {
-        "superba"
-    });
-    if sibling.is_file() {
-        return Ok(sibling);
+    #[cfg(not(target_os = "macos"))]
+    {
+        if cfg!(target_os = "linux")
+            && let Some(appimage) = ctx.env.var_os("APPIMAGE").map(PathBuf::from)
+            && appimage.is_absolute()
+            && appimage.is_file()
+        {
+            return Ok(appimage);
+        }
+        let dir = current
+            .parent()
+            .ok_or_else(|| Error::invalid("executable has no parent"))?;
+        let sibling = dir.join(if cfg!(windows) {
+            "superba.exe"
+        } else {
+            "superba"
+        });
+        if sibling.is_file() {
+            return Ok(sibling);
+        }
+        #[cfg(windows)]
+        if let Some(installed) = windows::installed_gui()? {
+            return Ok(installed);
+        }
+        Ok(sibling)
     }
-    #[cfg(windows)]
-    if let Some(installed) = windows::installed_gui()? {
-        return Ok(installed);
-    }
-    // The DMG also offers a standalone spb next to Superba.app.
-    let bundled = dir.join("Superba.app/Contents/MacOS/superba");
-    if cfg!(target_os = "macos") && bundled.is_file() {
-        return Ok(bundled);
-    }
-    Ok(sibling)
 }
 
 /// Render an entry without executing a shell. Paths with control characters
@@ -271,34 +321,15 @@ pub fn render(platform: Platform, executable: &Path) -> Result<String> {
             ))
         }
         Platform::Mac => {
-            // LaunchServices resolves the bundle by identity after Finder moves
-            // it or an updater replaces it. Unbundled developer builds use the
-            // current executable; their next manual launch refreshes the path.
-            let bundled = executable
-                .ancestors()
-                .any(|p| p.extension().is_some_and(|x| x == "app"));
-            let args = if bundled {
-                // Always deliver --autostart through our IPC path. Without -n,
-                // LaunchServices can send the existing app a reopen event
-                // instead of starting the command that acknowledges silently.
-                vec![
-                    "/usr/bin/open",
-                    "-g",
-                    "-n",
-                    "-b",
-                    BUNDLE_ID,
-                    "--args",
-                    "--autostart",
-                ]
-            } else {
-                vec![text, "--autostart"]
-            };
-            let args = args
+            // Direct launch attributes the login item to Superba and delivers
+            // --autostart through silent IPC without an `open -n` application.
+            // A manual launch refreshes the path after a bundle move.
+            let args = [text, "--autostart"]
                 .into_iter()
                 .map(|s| format!("<string>{}</string>", xml(s)))
                 .collect::<String>();
             Ok(format!(
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>Label</key><string>{AGENT_LABEL}</string><key>ProgramArguments</key><array>{args}</array><key>RunAtLoad</key><true/><key>LimitLoadToSessionType</key><string>Aqua</string></dict></plist>\n"
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>Label</key><string>{AGENT_LABEL}</string><key>AssociatedBundleIdentifiers</key><array><string>{BUNDLE_ID}</string></array><key>ProgramArguments</key><array>{args}</array><key>RunAtLoad</key><true/><key>LimitLoadToSessionType</key><string>Aqua</string></dict></plist>\n"
             ))
         }
     }

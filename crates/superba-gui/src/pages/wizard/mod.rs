@@ -4,13 +4,14 @@
 //! custom OpenAI-compatible site). A re-run pre-selects the applied provider and
 //! edits its profile instead of creating another one. Finishing saves the profile
 //! (key into the secret store) and plans the switch through the normal flow, so
-//! the countdown / confirmation rules apply unchanged; "Skip" writes nothing.
+//! the countdown / confirmation rules apply unchanged.
 //!
 //! A custom site is tested before anything is saved
 //! (`SiteProbeRequest::site`): the credentials step builds a draft of the site
 //! and its profile, the line & models step probes the draft with the typed key,
 //! and only Apply saves the site, the profile and the key (then plans the
-//! switch). Skip or Escape on any step writes nothing.
+//! switch). Skip or Escape saves only the dismissal preference, without
+//! creating providers or writing to a coding tool's configuration.
 //!
 //! The provider step also offers "Import from other tools" (cc-switch, AI
 //! Toolbox; [`crate::pages::import`]), shown in place of the steps: importing

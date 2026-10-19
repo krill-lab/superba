@@ -111,7 +111,7 @@ fn windows_custom_install_directory_is_quoted_and_bounded() {
 }
 
 #[test]
-fn mac_bundle_move_keeps_launchservices_identity() {
+fn mac_bundle_login_runs_the_app_directly_with_bundle_attribution() {
     let a = autostart::render(
         Platform::Mac,
         Path::new("/Applications/Superba.app/Contents/MacOS/superba"),
@@ -122,15 +122,83 @@ fn mac_bundle_move_keeps_launchservices_identity() {
         Path::new("/Users/test/Moved/Superba.app/Contents/MacOS/superba"),
     )
     .unwrap();
-    assert_eq!(a, b);
+    assert_ne!(a, b);
     assert!(a.contains(
-        "<string>/usr/bin/open</string><string>-g</string><string>-n</string><string>-b</string>"
+        "<key>ProgramArguments</key><array><string>/Applications/Superba.app/Contents/MacOS/superba</string><string>--autostart</string></array>"
     ));
-    assert!(a.contains("<string>com.krill-code.superba</string>"));
+    assert!(a.contains("<key>AssociatedBundleIdentifiers</key><array><string>com.krill-code.superba</string></array>"));
+    assert!(!a.contains("/usr/bin/open"));
+    assert!(!a.contains("<string>-n</string>"));
     assert!(a.contains("<string>--autostart</string>"));
     assert!(!a.contains("KeepAlive"));
     let raw = autostart::render(Platform::Mac, Path::new("/opt/a & <b>/superba")).unwrap();
     assert!(raw.contains("/opt/a &amp; &lt;b&gt;/superba"));
+}
+
+#[test]
+fn mac_bundle_move_refreshes_enabled_registration_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    let old = tmp.path().join("Superba.app/Contents/MacOS/superba");
+    std::fs::create_dir_all(old.parent().unwrap()).unwrap();
+    std::fs::write(&old, "binary").unwrap();
+    let store = Arc::new(FileEntry(tmp.path().join("agent.plist")));
+    let original = Manager::with_store(Platform::Mac, store.clone(), Ok(old));
+    original.set_enabled(true).unwrap();
+    std::fs::rename(tmp.path().join("Superba.app"), tmp.path().join("Moved.app")).unwrap();
+    let moved = tmp.path().join("Moved.app/Contents/MacOS/superba");
+    let manager = Manager::with_store(Platform::Mac, store.clone(), Ok(moved.clone()));
+    manager.refresh().unwrap();
+    assert_eq!(
+        store.read().unwrap(),
+        Some(autostart::render(Platform::Mac, &moved).unwrap())
+    );
+    manager.set_enabled(false).unwrap();
+    manager.refresh().unwrap();
+    assert!(store.read().unwrap().is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn mac_disable_boots_out_the_user_job_and_ignores_command_failure() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let command = tmp.path().join("launchctl");
+    // Capture arguments relative to the test executable, avoiding shell path
+    // interpolation even when a temporary directory contains punctuation.
+    std::fs::write(
+        &command,
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$0.args\"\nexit 113\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let file = tmp.path().join("agent.plist");
+    std::fs::write(&file, "registered").unwrap();
+    let store = Arc::new(autostart::LaunchAgentEntry {
+        file: FileEntry(file.clone()),
+        uid: 501,
+        launchctl: command,
+    });
+    let manager = Manager::with_store(Platform::Mac, store, Ok(tmp.path().join("removed-gui")));
+    assert!(!manager.set_enabled(false).unwrap().enabled);
+    assert!(!file.exists());
+    assert_eq!(
+        std::fs::read_to_string(tmp.path().join("launchctl.args")).unwrap(),
+        "bootout\ngui/501/com.krill-code.superba.autostart\n"
+    );
+    manager.set_enabled(false).unwrap();
+}
+
+#[test]
+fn mac_disable_succeeds_when_launchctl_cannot_start() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = autostart::LaunchAgentEntry {
+        file: FileEntry(tmp.path().join("agent.plist")),
+        uid: 501,
+        launchctl: tmp.path().join("absent-launchctl"),
+    };
+    store.write(Some("registered")).unwrap();
+    store.write(None).unwrap();
+    assert!(store.read().unwrap().is_none());
 }
 
 #[test]

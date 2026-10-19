@@ -481,7 +481,7 @@ counters = "路由启动以来：已写入 {written} 行，丢弃 {dropped} 行"
 db_size = "数据库 {size}"
 
 [prices]
-title = "价格（估算费用用）"
+title = "价格（估算费用）"
 table_label = "价格表"
 table = "{source} {rev}"
 table_tip = "OpenAI 官方 API 标价（美元 / 百万 token，含官方公布的 Fast、Flex、Ultrafast 价格），随 Superba 签名发布，并和模型列表一起更新。单个模型的价格在「模型」页设置。"

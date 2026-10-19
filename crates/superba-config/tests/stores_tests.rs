@@ -100,6 +100,7 @@ fn user_set() -> ProfileSet {
         auto_probe: false,
         close_action: Some(CloseAction::Tray),
         start_in_tray: true,
+        wizard_dismissed: true,
         autostart: false,
         preferred_app_id: Some("test-app".into()),
         router: Default::default(),

@@ -73,7 +73,7 @@ core-foundation.workspace = true
 objc2.workspace = true
 objc2-app-kit = { workspace = true, features = ["NSApplication", "NSResponder", "NSRunningApplication", "NSWindow"] }
 # The title bar's double-click setting (src/chrome/macos.rs).
-objc2-foundation = { workspace = true, features = ["NSString", "NSUserDefaults"] }
+objc2-foundation = { workspace = true, features = ["NSString", "NSUserDefaults", "NSProcessInfo"] }
 
 # Renderer: OpenGL (glow) on Linux and macOS (Linux CI and the screenshots run on
 # Xvfb + Mesa llvmpipe).

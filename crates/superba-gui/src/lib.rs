@@ -41,6 +41,8 @@ pub mod i18n;
 pub mod in_effect;
 pub mod instance;
 pub mod launch;
+#[cfg(target_os = "macos")]
+mod macos;
 pub mod movers;
 pub mod notices;
 pub mod pages;
@@ -68,6 +70,8 @@ pub fn service() -> anyhow::Result<Arc<dyn SwitchService>> {
 /// Run the GUI until the window closes. `report` gets this run's renderer and
 /// any retry in [its GUI log](startup::Reporter::gui_log).
 pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    macos::set_application_name();
     let service = service()?;
     // Item 70: the window choices are needed before the window opens (start
     // hidden; on Wayland, a window that must hide opens through XWayland).

@@ -484,6 +484,8 @@ impl SuperbaApp {
         };
         let queue = Arc::clone(&self.instance_requests);
         let repaint = ctx.clone();
+        #[cfg(target_os = "macos")]
+        crate::macos::install_reopen(Arc::clone(&queue), repaint.clone());
         match crate::instance::listen(&dir, move |request| {
             queue
                 .lock()
@@ -511,7 +513,18 @@ impl SuperbaApp {
                 crate::instance::Request::LaunchChatGpt => {
                     self.launch_app(crate::launch::LaunchOrigin::Shortcut);
                 }
-                crate::instance::Request::Show => self.life.show(),
+                crate::instance::Request::Show => {
+                    #[cfg(target_os = "macos")]
+                    {
+                        use superba_config::autostart::LoginStartup;
+                        if let Ok(ctx) = superba_switch::detect_context()
+                            && let Err(e) = superba_config::autostart::Manager::new(&ctx).refresh()
+                        {
+                            tracing::warn!(error = %e, "could not refresh login startup on reopen");
+                        }
+                    }
+                    self.life.show();
+                }
                 crate::instance::Request::Autostart => {}
             }
         }
@@ -1165,7 +1178,9 @@ impl SuperbaApp {
         let has_providers = p.profiles.iter().any(|p| p.builtin.is_none());
         let all_deleted = self.had_providers && !has_providers;
         self.had_providers = has_providers;
-        if self.wizard.is_some() || (self.wizard_dismissed && !all_deleted) {
+        if self.wizard.is_some()
+            || ((self.wizard_dismissed || p.settings.wizard_dismissed) && !all_deleted)
+        {
             return;
         }
         let first_run = !o.baseline_captured && !has_providers;
@@ -2158,6 +2173,12 @@ impl eframe::App for SuperbaApp {
                     WizardOutcome::Close => {
                         self.wizard = None;
                         self.wizard_dismissed = true;
+                        self.settings.wizard_dismissed = true;
+                        if let Some(set) = self.data.profiles.value.as_mut() {
+                            set.settings.wizard_dismissed = true;
+                        }
+                        self.backend
+                            .send(Command::SaveSettings(self.settings.clone()));
                     }
                     WizardOutcome::Finish {
                         site,

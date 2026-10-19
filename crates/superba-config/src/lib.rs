@@ -46,6 +46,7 @@ mod engine;
 mod env;
 mod fsx;
 pub mod harness;
+pub mod installation;
 mod journal;
 mod keystore;
 mod profiles;
