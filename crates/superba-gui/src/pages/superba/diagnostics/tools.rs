@@ -80,7 +80,7 @@ fn file_label(cx: &Cx<'_>, key: &str, status: &HarnessFileStatus) -> (Status, St
                 &[("line", line), ("column", column)],
             ),
         ),
-        HarnessFileStatus::Unreadable { .. } => {
+        HarnessFileStatus::NotObject | HarnessFileStatus::Unreadable { .. } => {
             (Status::Error, cx.tr.t("superba.diagnostics.unreadable"))
         }
     };

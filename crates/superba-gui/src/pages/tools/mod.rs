@@ -50,6 +50,7 @@ impl Selection {
             Self::Claude => "cc",
             _ => match self.harness().expect("tool") {
                 HarnessId::ClaudeCode => "cc",
+                HarnessId::Gemini => "gm",
                 HarnessId::Dsh => "ds",
                 HarnessId::OpenCode => "oc",
                 HarnessId::Pi => "pi",

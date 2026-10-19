@@ -173,19 +173,19 @@ pub(crate) async fn all_models(
         .filter(|m| {
             bound.is_none_or(|id| generation.members[*m].cfg.id == id)
                 && (generation
-                .config
-                .upstream_protocol(
-                    &generation.members[*m].cfg.id,
-                    crate::translate::ir::Protocol::Responses,
-                )
-                .is_some()
-                || generation
                     .config
                     .upstream_protocol(
                         &generation.members[*m].cfg.id,
-                        crate::translate::ir::Protocol::Chat,
+                        crate::translate::ir::Protocol::Responses,
                     )
-                    .is_some())
+                    .is_some()
+                    || generation
+                        .config
+                        .upstream_protocol(
+                            &generation.members[*m].cfg.id,
+                            crate::translate::ir::Protocol::Chat,
+                        )
+                        .is_some())
         })
         .collect();
     let lists =
@@ -268,9 +268,9 @@ pub(crate) async fn resolve(
         .filter(|i| {
             bound.is_none_or(|id| generation.members[*i].cfg.id == id)
                 && generation
-                .config
-                .upstream_protocol(&generation.members[*i].cfg.id, protocol.into())
-                .is_some()
+                    .config
+                    .upstream_protocol(&generation.members[*i].cfg.id, protocol.into())
+                    .is_some()
         })
         .collect();
     if serving.is_empty() {

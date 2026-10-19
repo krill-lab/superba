@@ -36,7 +36,7 @@ fn ids_and_protocols_parse_their_names() {
     assert_eq!(HarnessId::parse("DeepSeek-Harness"), Some(HarnessId::Dsh));
     assert_eq!(HarnessId::parse("claude"), Some(HarnessId::ClaudeCode));
     // Claude shares the writer and backup partition, but keeps its own page.
-    assert_eq!(HarnessId::ALL.len(), 5);
+    assert_eq!(HarnessId::ALL.len(), 6);
     assert!(!HarnessId::ALL.contains(&HarnessId::ClaudeCode));
     for (s, p) in [
         ("openai-responses", HarnessProtocol::Responses),

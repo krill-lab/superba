@@ -192,8 +192,8 @@ impl Switcher {
         let names = |base: &str| exe_names(base);
         let binary = match harness {
             HarnessId::ClaudeCode => return None,
-            HarnessId::Dsh => {
-                let n = names("dsh");
+            HarnessId::Dsh | HarnessId::Gemini => {
+                let n = names(harness.as_str());
                 let mut extra = Vec::new();
                 if let Some(a) = env.var_os("APPDATA") {
                     extra.push(PathBuf::from(a).join("npm"));
@@ -274,7 +274,7 @@ impl Switcher {
         };
         let runs = matches!(
             harness,
-            HarnessId::Dsh | HarnessId::OpenCode | HarnessId::Pi
+            HarnessId::Dsh | HarnessId::OpenCode | HarnessId::Pi | HarnessId::Gemini
         );
         let modified = std::fs::metadata(&binary).and_then(|m| m.modified()).ok();
         if let Some((m, i)) = INSTALLS
@@ -329,6 +329,7 @@ impl Switcher {
                     .root()
                     .is_dir()
             }
+            HarnessId::Gemini => ctx.home_dir.join(".gemini").is_dir(),
             HarnessId::Dsh => superba_config::harness::dsh::dsh_home(ctx).is_dir(),
             HarnessId::OpenCode => superba_config::harness::opencode::config_dir(ctx).is_dir(),
             HarnessId::Pi => superba_config::harness::pi::agent_dir(ctx).is_dir(),
@@ -445,33 +446,30 @@ impl Switcher {
     }
 
     /// Native protocols for direct connections, or protocols the router can serve.
-    fn harness_offered(
+    async fn harness_offered(
         &self,
-        route: HarnessRoute,
+        set: &ProfileSet,
+        profile: &Profile,
+        settings: &HarnessSettings,
         endpoints: &[ProtocolEndpoint],
-    ) -> Vec<HarnessProtocol> {
-        if route == HarnessRoute::Direct {
-            return endpoints.iter().map(|e| e.protocol).collect();
+    ) -> Result<Vec<HarnessProtocol>> {
+        if settings.route == HarnessRoute::Direct {
+            return Ok(endpoints.iter().map(|e| e.protocol).collect());
         }
-        let Some(config) = self.deps.router.configuration() else {
+        if self.deps.router.endpoint().is_err() && settings.router_url.is_some() {
             // An explicitly configured external router owns its capabilities.
-            return HarnessProtocol::ALL.to_vec();
-        };
-        use superba_router::translate::ir::Protocol;
-        HarnessProtocol::ALL
+            return Ok(HarnessProtocol::ALL.to_vec());
+        }
+        let config = self.harness_router_candidate(set, profile).await?;
+        let member = superba_router::members::router_id(profile.id.as_str());
+        Ok(HarnessProtocol::ALL
             .into_iter()
             .filter(|p| {
-                let client = match p {
-                    HarnessProtocol::Responses => Protocol::Responses,
-                    HarnessProtocol::Chat => Protocol::Chat,
-                    HarnessProtocol::Anthropic => Protocol::Messages,
-                };
                 config
-                    .members
-                    .iter()
-                    .any(|m| config.upstream_protocol(&m.id, client).is_some())
+                    .upstream_protocol(&member, crate::harness_router::protocol(*p))
+                    .is_some()
             })
-            .collect()
+            .collect())
     }
 
     /// Everything one apply writes into `harness` for its saved settings.
@@ -496,7 +494,9 @@ impl Switcher {
             ))
         })?;
         let (endpoints, key) = self.harness_endpoints(&set, &profile, &config).await?;
-        let offered = self.harness_offered(settings.route, &endpoints);
+        let offered = self
+            .harness_offered(&set, &profile, settings, &endpoints)
+            .await?;
         let protocol = pick_protocol(harness, settings.protocol, &offered).ok_or_else(|| {
             let wanted = settings
                 .protocol
@@ -639,7 +639,8 @@ impl Switcher {
             && let Ok((eps, _)) = self.harness_endpoints(&set, &p, &config).await
         {
             protocols = self
-                .harness_offered(settings.route, &eps)
+                .harness_offered(&set, &p, &settings, &eps)
+                .await?
                 .into_iter()
                 .filter(|p| harness.speaks(*p))
                 .collect();
@@ -649,6 +650,23 @@ impl Switcher {
             notes.push(Notice::warning(
                 text("not_ready", "Not ready to apply: {reason}").arg("reason", e.detail()),
             ));
+        }
+        if let Ok(t) = &target
+            && t.route == HarnessRoute::Routed
+            && self.deps.router.endpoint().is_ok()
+            && let Some(p) = t.provider.as_ref().and_then(|id| set.profile(id))
+        {
+            let config = self.harness_router_candidate(&set, p).await?;
+            let client = crate::harness_router::protocol(t.endpoint.protocol);
+            if config
+                .upstream_protocol(&superba_router::members::router_id(p.id.as_str()), client)
+                .is_some_and(|upstream| upstream != client)
+            {
+                notes.push(Notice::info(LocalizedText::new(
+                    "router.protocol.translated",
+                    "Via protocol conversion",
+                )));
+            }
         }
         let options = target
             .as_ref()

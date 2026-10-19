@@ -1958,7 +1958,11 @@ impl SwitchService for FakeService {
 
     async fn harness_list(&self) -> Result<Vec<superba_core::harness::HarnessSummary>> {
         let fixtures = self.areas.maintenance.lock().unwrap().harnesses.clone();
-        Ok(if fixtures.is_empty() { harness::list(self) } else { fixtures })
+        Ok(if fixtures.is_empty() {
+            harness::list(self)
+        } else {
+            fixtures
+        })
     }
     async fn harness_view(
         &self,

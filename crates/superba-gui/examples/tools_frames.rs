@@ -108,14 +108,12 @@ fn main() -> eframe::Result {
         native,
         Box::new(move |cc| {
             cc.egui_ctx.set_pixels_per_point(1.0);
-            let app = SuperbaApp::new(
-                cc,
-                Arc::new(fake::FakeService::new(fake::FakeOptions {
-                    fast: true,
-                    ..Default::default()
-                })),
-                opts,
-            )?;
+            let service = Arc::new(fake::FakeService::new(fake::FakeOptions {
+                fast: true,
+                ..Default::default()
+            }));
+            service.routed_tool_fixture(superba_core::harness::HarnessId::Gemini, true);
+            let app = SuperbaApp::new(cc, service, opts)?;
             Ok(Box::new(Capture {
                 app,
                 output: Some(output),

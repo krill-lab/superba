@@ -576,9 +576,13 @@ impl Switcher {
                 .members
                 .extend(claude.openai);
         }
-        self.add_harness_router_members(set, &mut config, &mut keys).await?;
+        config.claude = Some(claude.section);
+        self.add_harness_router_members(set, &mut config, &mut keys)
+            .await?;
         if config.members.is_empty() {
-            return Err(Error::invalid("the router needs at least one member profile"));
+            return Err(Error::invalid(
+                "the router needs at least one member profile",
+            ));
         }
         let ids: Vec<&str> = config.members.iter().map(|m| m.id.as_str()).collect();
         if let Some(openai) = &mut config.openai {
@@ -588,7 +592,6 @@ impl Switcher {
             gemini.members.retain(|id, _| ids.contains(&id.as_str()));
             gemini.order.retain(|id| ids.contains(&id.as_str()));
         }
-        config.claude = Some(claude.section);
         let allowed: Vec<String> = config
             .members
             .iter()

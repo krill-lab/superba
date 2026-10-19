@@ -505,3 +505,125 @@ async fn codex_websocket_uses_http_and_replays_local_continuations() {
     socket.close(None).await.unwrap();
     r.handle.shutdown();
 }
+
+#[tokio::test]
+async fn applied_provider_binding_survives_conversion_for_every_tool_ingress() {
+    use superba_router::token::harness_member_token;
+    for client in [
+        Protocol::Responses,
+        Protocol::Chat,
+        Protocol::Messages,
+        Protocol::Gemini,
+    ] {
+        // Both upstreams speak a different protocol. Only the bound one may receive the request.
+        let upstream = if client == Protocol::Chat {
+            Protocol::Messages
+        } else {
+            Protocol::Chat
+        };
+        let a = anthropic(Arc::new(move |_| Fake::sse(vec![stream(upstream).into()]))).await;
+        let b = anthropic(Arc::new(move |_| Fake::sse(vec![stream(upstream).into()]))).await;
+        let mut cfg = config(&a, upstream);
+        let mut other = config(&b, upstream);
+        let mut m = other.members.remove(0);
+        m.id = "bound".into();
+        cfg.members.push(m);
+        cfg.claude.as_mut().unwrap().members.insert(
+            "bound".into(),
+            other.claude.unwrap().members.remove("site").unwrap(),
+        );
+        cfg.openai.as_mut().unwrap().members.insert(
+            "bound".into(),
+            other.openai.unwrap().members.remove("site").unwrap(),
+        );
+        cfg.gemini.as_mut().unwrap().members.insert(
+            "bound".into(),
+            other.gemini.unwrap().members.remove("site").unwrap(),
+        );
+        let r = start(cfg).await;
+        let token =
+            harness_member_token(ROUTER_TOKEN.as_bytes(), RequestHarness::Gemini, "bound").unwrap();
+        let response = r
+            .http
+            .post(r.url(path(client, true)))
+            .bearer_auth(&token)
+            .header("x-superba-harness-member", "site")
+            .json(&request(client, true))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200, "{client:?}");
+        let body = response.text().await.unwrap();
+        assert!(body.contains("read"), "{body}");
+        assert_eq!(a.seen().len(), 0, "{client:?}");
+        assert_eq!(b.seen().len(), 1, "{client:?}");
+        assert!(!b.seen()[0].headers.contains_key("x-superba-harness-member"));
+        let token =
+            harness_member_token(ROUTER_TOKEN.as_bytes(), RequestHarness::Gemini, "deleted")
+                .unwrap();
+        let response = r
+            .http
+            .post(r.url(path(client, true)))
+            .bearer_auth(token)
+            .json(&request(client, true))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 404, "{client:?}");
+        assert_eq!(a.seen().len(), 0);
+        assert_eq!(b.seen().len(), 1);
+        r.handle.shutdown();
+    }
+}
+
+#[tokio::test]
+async fn gemini_bound_models_and_failed_request_do_not_use_other_providers() {
+    use superba_router::token::harness_member_token;
+    let a = anthropic(Arc::new(|_| Fake::sse(vec![stream(Protocol::Chat).into()]))).await;
+    let b = anthropic(Arc::new(|_| {
+        Fake::json(503, json!({"error":{"message":"offline"}}))
+    }))
+    .await;
+    let mut cfg = config(&a, Protocol::Chat);
+    let mut other = config(&b, Protocol::Chat);
+    let mut m = other.members.remove(0);
+    m.id = "bound".into();
+    cfg.members.push(m);
+    let mut openai = other.openai.unwrap().members.remove("site").unwrap();
+    openai.models = vec![OpenAiModel {
+        id: "bound-only".into(),
+        display_name: None,
+    }];
+    cfg.openai
+        .as_mut()
+        .unwrap()
+        .members
+        .insert("bound".into(), openai);
+    let r = start(cfg).await;
+    let token =
+        harness_member_token(ROUTER_TOKEN.as_bytes(), RequestHarness::Gemini, "bound").unwrap();
+    let response = r
+        .http
+        .get(r.url("/gemini/v1beta/models"))
+        .header("x-goog-api-key", &token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let list: Value = response.json().await.unwrap();
+    assert_eq!(list["models"].as_array().unwrap().len(), 1);
+    assert_eq!(list["models"][0]["name"], "models/bound-only");
+    let response = r
+        .http
+        .post(r.url(path(Protocol::Gemini, true)))
+        .header("x-goog-api-key", token)
+        .json(&request(Protocol::Gemini, true))
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_server_error());
+    let _ = response.text().await.unwrap();
+    assert_eq!(a.seen().len(), 0);
+    assert!(!b.seen().is_empty());
+    r.handle.shutdown();
+}

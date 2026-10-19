@@ -100,3 +100,6 @@ format_failed = "无法格式化这个文件。"
 [config.claude]
 new_sessions = "新开的 Claude Code 会话生效；正在运行的会话保持启动时的设置。"
 restored = "Claude Code 的设置已还原为 Superba 之前的样子（之后被别人改过的键保持不变）。"
+
+[config.harness.gemini]
+restart = "重启 Gemini CLI 后读取用户设置和 .env；项目设置与 Shell 环境变量可能覆盖这些配置。"

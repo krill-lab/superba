@@ -1,17 +1,33 @@
 //! Deterministic tool fixtures and recorded writes; no programs or files are used.
 use super::FakeService;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use superba_core::{harness::*, *};
 
 #[derive(Debug, Default)]
 pub(super) struct State {
     settings: BTreeMap<HarnessId, HarnessSettings>,
     applied: BTreeMap<HarnessId, HarnessApplied>,
+    translated: BTreeSet<HarnessId>,
     pub saves: usize,
     pub writes: usize,
     pub model_failure: bool,
 }
 impl FakeService {
+    pub fn routed_tool_fixture(&self, h: HarnessId, translated: bool) {
+        let mut state = self.areas.harness.lock().unwrap();
+        state.settings.insert(
+            h,
+            HarnessSettings {
+                route: HarnessRoute::Routed,
+                ..Default::default()
+            },
+        );
+        if translated {
+            state.translated.insert(h);
+        } else {
+            state.translated.remove(&h);
+        }
+    }
     pub fn harness_counts(&self) -> (usize, usize) {
         let state = self.areas.harness.lock().unwrap();
         (state.saves, state.writes)
@@ -34,7 +50,7 @@ impl FakeService {
 }
 fn key(h: HarnessId) -> &'static str {
     match h {
-        HarnessId::ClaudeCode => "settings.json",
+        HarnessId::ClaudeCode | HarnessId::Gemini => "settings.json",
         HarnessId::Dsh => "profiles/web/cordis.patch.yml",
         HarnessId::OpenCode => "opencode.jsonc",
         HarnessId::Pi => "models.json",
@@ -62,6 +78,8 @@ pub(super) fn list(fake: &FakeService) -> Vec<HarnessSummary> {
 pub(super) fn preview(fake: &FakeService, h: HarnessId, settings: HarnessSettings) -> HarnessView {
     let protocol = settings.protocol.unwrap_or(if h == HarnessId::WorkBuddy {
         HarnessProtocol::Chat
+    } else if h == HarnessId::Gemini {
+        HarnessProtocol::Gemini
     } else {
         HarnessProtocol::Responses
     });
@@ -79,6 +97,28 @@ pub(super) fn preview(fake: &FakeService, h: HarnessId, settings: HarnessSetting
         }
     };
     let applied = fake.areas.harness.lock().unwrap().applied.get(&h).cloned();
+    let files = if h == HarnessId::Gemini {
+        ["settings.json", ".env"]
+            .into_iter()
+            .map(|name| HarnessFileView {
+                key: name.into(),
+                path: format!("/home/demo/.gemini/{name}").into(),
+                status: HarnessFileStatus::Valid,
+                holds_key: name == ".env",
+                backups: 4,
+            })
+            .collect()
+    } else {
+        vec![HarnessFileView {
+            key: key(h).into(),
+            path: format!("/home/demo/.config/{h}/{}", key(h)).into(),
+            status: HarnessFileStatus::Valid,
+            holds_key: true,
+            backups: 4,
+        }]
+    };
+    let translated = settings.route == HarnessRoute::Routed
+        && fake.areas.harness.lock().unwrap().translated.contains(&h);
     HarnessView {
         harness: h,
         settings,
@@ -94,18 +134,19 @@ pub(super) fn preview(fake: &FakeService, h: HarnessId, settings: HarnessSetting
             ),
             opencode_major: (h == HarnessId::OpenCode).then_some(OpencodeMajor::V2),
         }),
-        files: vec![HarnessFileView {
-            key: key(h).into(),
-            path: format!("/home/demo/.config/{h}/{}", key(h)).into(),
-            status: HarnessFileStatus::Valid,
-            holds_key: true,
-            backups: 4,
-        }],
+        files,
         protocols: h.protocols().to_vec(),
         endpoint: Some(endpoint),
         applied,
         pending: vec![format!("{} provider", key(h))],
-        notes: Vec::new(),
+        notes: if translated {
+            vec![Notice::info(LocalizedText::new(
+                "router.protocol.translated",
+                "Via protocol conversion",
+            ))]
+        } else {
+            vec![]
+        },
     }
 }
 pub(super) fn save(fake: &FakeService, h: HarnessId, settings: HarnessSettings) -> HarnessView {
@@ -134,7 +175,7 @@ pub(super) fn plan(h: HarnessId, kind: HarnessPlanKind) -> HarnessPlan {
         kind,
         harness: h,
         provider: Some("krill".into()),
-        protocol: Some(HarnessProtocol::Responses),
+        protocol: h.protocols().first().copied(),
         files: vec![HarnessPlanFile {
             key: key(h).into(),
             path: format!("/fake/{h}/{}", key(h)).into(),

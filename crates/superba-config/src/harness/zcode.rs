@@ -50,6 +50,7 @@ pub fn api_type(p: HarnessProtocol) -> &'static str {
         HarnessProtocol::Responses => "openai-responses",
         HarnessProtocol::Chat => "openai-chat-completions",
         HarnessProtocol::Anthropic => "anthropic-messages",
+        HarnessProtocol::Gemini => "unsupported",
     }
 }
 

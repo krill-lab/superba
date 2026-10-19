@@ -21,7 +21,6 @@ impl Switcher {
         config: &mut RouterConfig,
         keys: &mut BTreeMap<String, Secret>,
     ) -> Result<()> {
-        let sites = all_sites(set, self.deps.ctx.env.as_ref());
         let saved = superba_config::harness::HarnessConfigStore::new(&self.deps.ctx).load()?;
         let mut needed = BTreeSet::new();
         let active = self
@@ -48,82 +47,133 @@ impl Switcher {
                 needed.insert(id);
             }
         }
-        for profile in set
-            .profiles
-            .iter()
-            .filter(|p| needed.contains(&p.id) && !p.is_builtin() && p.key_ref.is_some())
-        {
-            let Some(site) = sites
-                .iter()
-                .find(|s| s.id == profile.site_id && s.kind != SiteKind::Official)
-            else {
-                continue;
-            };
-            let Ok((endpoints, key)) = self.harness_endpoints(set, profile, &saved).await else {
-                continue;
-            };
-            let id = router_id(profile.id.as_str());
-            if config.member(&id).is_none() {
-                let Ok(path) = member_path(site, profile) else {
-                    continue;
-                };
-                let Ok(mut member) = member_from_site(site, &member_lines(site, profile), &path)
-                else {
-                    continue;
-                };
-                member.id = id.clone();
-                member.name = profile.name.clone();
-                member.model_map = site.model_map.clone();
-                config.tool_only_members.push(id.clone());
-                config.members.push(member);
-            }
-            keys.insert(id.clone(), key);
-            let member = config.member(&id).expect("added provider");
-            let lines = member.lines.clone();
-            let mut openai = OpenAiMember::default();
-            for endpoint in endpoints {
-                let e = crate::claude_router::endpoint_for(&endpoint.base_url, &lines);
-                match endpoint.protocol {
-                    HarnessProtocol::Responses => {
-                        openai.responses = Some(OpenAiEndpoint {
-                            path: Some(e.path),
-                            lines: e.lines,
-                        })
-                    }
-                    HarnessProtocol::Chat => {
-                        openai.chat = Some(OpenAiEndpoint {
-                            path: Some(e.path),
-                            lines: e.lines,
-                        })
-                    }
-                    HarnessProtocol::Anthropic => {
-                        let anth = superba_core::claude::effective_endpoint(site, profile);
-                        config
-                            .claude
-                            .get_or_insert_with(Default::default)
-                            .members
-                            .entry(id.clone())
-                            .or_insert_with(|| ClaudeMember {
-                                anthropic: Some(e),
-                                auth: if anth
-                                    .is_some_and(|e| e.auth == superba_core::AnthropicAuth::Bearer)
-                                {
-                                    AnthropicAuth::Bearer
-                                } else {
-                                    AnthropicAuth::XApiKey
-                                },
-                                ..Default::default()
-                            });
-                    }
-                }
-            }
-            config
-                .openai
-                .get_or_insert_with(Default::default)
-                .members
-                .insert(id, openai);
+        for profile in set.profiles.iter().filter(|p| needed.contains(&p.id)) {
+            self.add_harness_router_provider(set, profile, config, keys)
+                .await?;
         }
         Ok(())
+    }
+
+    /// Add the same provider endpoints for preview and for an actual router rewrite.
+    /// Explicit capability overrides from the stored router configuration win.
+    pub(crate) async fn add_harness_router_provider(
+        &self,
+        set: &ProfileSet,
+        profile: &superba_core::Profile,
+        config: &mut RouterConfig,
+        keys: &mut BTreeMap<String, Secret>,
+    ) -> Result<()> {
+        if profile.is_builtin() || profile.key_ref.is_none() {
+            return Ok(());
+        }
+        let sites = all_sites(set, self.deps.ctx.env.as_ref());
+        let saved = superba_config::harness::HarnessConfigStore::new(&self.deps.ctx).load()?;
+        let Some(site) = sites
+            .iter()
+            .find(|s| s.id == profile.site_id && s.kind != SiteKind::Official)
+        else {
+            return Ok(());
+        };
+        let Ok((endpoints, key)) = self.harness_endpoints(set, profile, &saved).await else {
+            return Ok(());
+        };
+        let id = router_id(profile.id.as_str());
+        if config.member(&id).is_none() {
+            let Ok(path) = member_path(site, profile) else {
+                return Ok(());
+            };
+            let Ok(mut member) = member_from_site(site, &member_lines(site, profile), &path) else {
+                return Ok(());
+            };
+            member.id = id.clone();
+            member.name = profile.name.clone();
+            member.model_map = site.model_map.clone();
+            config.tool_only_members.push(id.clone());
+            config.members.push(member);
+        }
+        keys.insert(id.clone(), key);
+        let member = config.member(&id).expect("added provider");
+        let lines = member.lines.clone();
+        let mut openai = OpenAiMember::default();
+        for endpoint in endpoints {
+            let e = crate::claude_router::endpoint_for(&endpoint.base_url, &lines);
+            match endpoint.protocol {
+                HarnessProtocol::Responses => {
+                    openai.responses = Some(OpenAiEndpoint {
+                        path: Some(e.path),
+                        lines: e.lines,
+                    })
+                }
+                HarnessProtocol::Chat => {
+                    openai.chat = Some(OpenAiEndpoint {
+                        path: Some(e.path),
+                        lines: e.lines,
+                    })
+                }
+                HarnessProtocol::Gemini => {
+                    let base = format!("{}/v1beta", endpoint.base_text());
+                    let url = url::Url::parse(&base)
+                        .map_err(|e| superba_core::Error::invalid(e.to_string()))?;
+                    config
+                        .gemini
+                        .get_or_insert_with(Default::default)
+                        .members
+                        .entry(id.clone())
+                        .or_insert_with(|| superba_router::translate::routing::GeminiMember {
+                            endpoint: Some({
+                                let e = crate::claude_router::endpoint_for(&url, &lines);
+                                OpenAiEndpoint {
+                                    path: Some(e.path),
+                                    lines: e.lines,
+                                }
+                            }),
+                            models: vec![],
+                        });
+                }
+                HarnessProtocol::Anthropic => {
+                    let anth = superba_core::claude::effective_endpoint(site, profile);
+                    config
+                        .claude
+                        .get_or_insert_with(Default::default)
+                        .members
+                        .entry(id.clone())
+                        .or_insert_with(|| ClaudeMember {
+                            anthropic: Some(e),
+                            auth: if anth
+                                .is_some_and(|e| e.auth == superba_core::AnthropicAuth::Bearer)
+                            {
+                                AnthropicAuth::Bearer
+                            } else {
+                                AnthropicAuth::XApiKey
+                            },
+                            ..Default::default()
+                        });
+                }
+            }
+        }
+        config
+            .openai
+            .get_or_insert_with(Default::default)
+            .members
+            .entry(id)
+            .or_insert(openai);
+        Ok(())
+    }
+
+    /// Read-only candidate: the selected provider may not have been applied yet.
+    pub(crate) async fn harness_router_candidate(
+        &self,
+        set: &ProfileSet,
+        profile: &superba_core::Profile,
+    ) -> Result<RouterConfig> {
+        let mut config = self
+            .deps
+            .router
+            .configuration()
+            .unwrap_or_else(|| RouterConfig::new(0, vec![]));
+        self.add_harness_router_provider(set, profile, &mut config, &mut BTreeMap::new())
+            .await?;
+        Ok(config)
     }
 
     /// Ensure the local router serves the reviewed target before files point at it.
@@ -160,7 +210,14 @@ impl Switcher {
             .provider
             .as_ref()
             .ok_or_else(|| superba_core::Error::invalid("The tool has no provider"))?;
-        if built.config.member(&router_id(provider.as_str())).is_none() {
+        if built
+            .config
+            .upstream_protocol(
+                &router_id(provider.as_str()),
+                protocol(target.endpoint.protocol),
+            )
+            .is_none()
+        {
             return Err(superba_core::Error::invalid(
                 "The applied tool provider is unavailable in the router",
             ));
@@ -178,5 +235,16 @@ impl Switcher {
             });
         }
         Ok(())
+    }
+}
+
+/// Shared mapping into the router's native-first protocol capability decision.
+pub(crate) fn protocol(p: HarnessProtocol) -> superba_router::translate::ir::Protocol {
+    use superba_router::translate::ir::Protocol;
+    match p {
+        HarnessProtocol::Responses => Protocol::Responses,
+        HarnessProtocol::Chat => Protocol::Chat,
+        HarnessProtocol::Anthropic => Protocol::Messages,
+        HarnessProtocol::Gemini => Protocol::Gemini,
     }
 }

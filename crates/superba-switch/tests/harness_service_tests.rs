@@ -136,7 +136,7 @@ async fn krill_provider_gives_its_line_for_every_protocol_and_its_models() {
     assert_eq!(p["models"][0]["contextWindow"], 272000);
     // Listed as applied, then restored.
     let list = s.harness_list().await.unwrap();
-    assert_eq!(list.len(), 5);
+    assert_eq!(list.len(), 6);
     let pi = list.iter().find(|x| x.harness == HarnessId::Pi).unwrap();
     assert!(pi.applied);
     assert_eq!(pi.applied_provider, Some(ProfileId::new("work")));
@@ -727,4 +727,228 @@ async fn failing_to_prepare_the_router_does_not_write_tool_files() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn gemini_routed_write_and_restore_share_owned_slots_and_encrypted_backups() {
+    for provider in ["work", "compat"] {
+        let w = world();
+        add_compatible(&w);
+        *w.router.port.lock().unwrap() = Some(18431);
+        let dir = w.ctx.home_dir.join(".gemini");
+        std::fs::create_dir_all(&dir).unwrap();
+        let original = json!({"theme":"dark", "security":{"auth":{"selectedType":"oauth-personal"}}, "model":{"name":"old-model"}});
+        std::fs::write(
+            dir.join("settings.json"),
+            serde_json::to_vec_pretty(&original).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join(".env"),
+            "# preserved\nOTHER=value\nGEMINI_API_KEY=old-key\n",
+        )
+        .unwrap();
+        let sw = w.switcher();
+        let st = HarnessSettings {
+            route: HarnessRoute::Routed,
+            models: vec!["gpt-5.4-mini".into()],
+            ..settings(provider)
+        };
+        let view = sw
+            .save_harness_settings(HarnessId::Gemini, st)
+            .await
+            .unwrap();
+        assert_eq!(view.protocols, [HarnessProtocol::Gemini]);
+        assert_eq!(
+            view.endpoint.unwrap().base_text(),
+            "http://127.0.0.1:18431/gemini"
+        );
+        assert_eq!(
+            view.notes
+                .iter()
+                .any(|n| n.text.key == "router.protocol.translated"),
+            provider == "compat"
+        );
+        let plan = sw
+            .harness_plan(HarnessId::Gemini, HarnessPlanKind::Apply)
+            .await
+            .unwrap();
+        let key_change = plan
+            .changes
+            .iter()
+            .find(|c| c.slot == "GEMINI_API_KEY")
+            .unwrap();
+        assert!(key_change.secret);
+        assert!(!format!("{plan:?}").contains("old-key"));
+        let report = sw.harness_apply(plan, false).await.unwrap();
+        assert_eq!(report.files.len(), 2);
+        let value: Value =
+            serde_json::from_slice(&std::fs::read(dir.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(value["theme"], "dark");
+        assert_eq!(value["security"]["auth"]["selectedType"], "gemini-api-key");
+        assert_eq!(value["model"]["name"], "gpt-5.4-mini");
+        let env = std::fs::read_to_string(dir.join(".env")).unwrap();
+        assert!(env.contains("# preserved\nOTHER=value\n"));
+        let vars = superba_config::harness::dotenv::to_value(&env);
+        assert_eq!(
+            vars["GOOGLE_GEMINI_BASE_URL"],
+            "http://127.0.0.1:18431/gemini"
+        );
+        assert_eq!(vars["GOOGLE_GENAI_API_VERSION"], "v1beta");
+        let source = superba_router::token::verify_source_token(
+            ROUTER_TOKEN.as_bytes(),
+            vars["GEMINI_API_KEY"].as_str().unwrap().as_bytes(),
+        )
+        .unwrap();
+        let presenter = superba_router::token::presenter_of(&source);
+        assert_eq!(presenter.member.as_deref(), Some(provider));
+        assert_eq!(
+            presenter.harness,
+            Some(superba_core::RequestHarness::Gemini)
+        );
+        assert_eq!(
+            sw.harness_backups(HarnessId::Gemini)
+                .await
+                .unwrap()
+                .iter()
+                .filter(|b| b.source == superba_core::BackupSource::Original)
+                .count(),
+            2
+        );
+        let plan = sw
+            .harness_plan(HarnessId::Gemini, HarnessPlanKind::Restore)
+            .await
+            .unwrap();
+        sw.harness_apply(plan, false).await.unwrap();
+        let restored: Value =
+            serde_json::from_slice(&std::fs::read(dir.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(restored, original);
+        let restored_env = std::fs::read_to_string(dir.join(".env")).unwrap();
+        assert_eq!(
+            superba_config::harness::dotenv::to_value(&restored_env),
+            json!({"OTHER":"value","GEMINI_API_KEY":"old-key"})
+        );
+        assert!(restored_env.starts_with("# preserved\n"));
+        assert!(
+            sw.harness_view(HarnessId::Gemini)
+                .await
+                .unwrap()
+                .applied
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn gemini_conversion_switches_are_provider_scoped_and_rechecked_before_write() {
+    use superba_router::translate::{ir::Protocol, routing::Conversion};
+    let w = world();
+    add_compatible(&w);
+    *w.router.port.lock().unwrap() = Some(18431);
+    let sw = w.switcher();
+    let mut st = settings("compat");
+    st.route = HarnessRoute::Routed;
+    sw.save_harness_settings(HarnessId::Gemini, st.clone())
+        .await
+        .unwrap();
+    let plan = sw
+        .harness_plan(HarnessId::Gemini, HarnessPlanKind::Apply)
+        .await
+        .unwrap();
+    // Build both native and converted members, then disable the selected provider's only route.
+    sw.save_harness_settings(
+        HarnessId::Pi,
+        HarnessSettings {
+            route: HarnessRoute::Routed,
+            ..settings("work")
+        },
+    )
+    .await
+    .unwrap();
+    sw.harness_apply(
+        sw.harness_plan(HarnessId::Pi, HarnessPlanKind::Apply)
+            .await
+            .unwrap(),
+        false,
+    )
+    .await
+    .unwrap();
+    {
+        let mut configs = w.router.written.lock().unwrap();
+        let config = configs.last_mut().unwrap();
+        config.translation.disabled.insert(Conversion {
+            from: Protocol::Gemini,
+            to: Protocol::Responses,
+        });
+        assert!(config.upstream_protocol("work", Protocol::Gemini).is_some());
+        assert!(
+            config
+                .upstream_protocol("compat", Protocol::Gemini)
+                .is_none()
+        );
+    }
+    let view = sw.harness_preview(HarnessId::Gemini, st).await.unwrap();
+    assert!(
+        view.protocols.is_empty(),
+        "another provider must not make this provider eligible"
+    );
+    assert!(view.endpoint.is_none());
+    assert!(sw.harness_apply(plan, false).await.is_err());
+    assert!(!w.ctx.home_dir.join(".gemini").exists());
+    let old = w.router.written.lock().unwrap().last().unwrap().clone();
+    // A different tool's rewrite retains all explicit capability switches and endpoint overrides.
+    sw.harness_apply(
+        sw.harness_plan(HarnessId::Pi, HarnessPlanKind::Apply)
+            .await
+            .unwrap(),
+        false,
+    )
+    .await
+    .unwrap();
+    let configs = w.router.written.lock().unwrap();
+    let new = configs.last().unwrap();
+    assert_eq!(new.translation, old.translation);
+    assert_eq!(new.openai, old.openai);
+    assert_eq!(new.gemini, old.gemini);
+}
+
+#[tokio::test]
+async fn gemini_restore_removes_only_created_files_and_refuses_stale_plans() {
+    let w = world();
+    *w.router.port.lock().unwrap() = Some(18431);
+    let sw = w.switcher();
+    sw.save_harness_settings(
+        HarnessId::Gemini,
+        HarnessSettings {
+            route: HarnessRoute::Routed,
+            ..settings("work")
+        },
+    )
+    .await
+    .unwrap();
+    let plan = sw
+        .harness_plan(HarnessId::Gemini, HarnessPlanKind::Apply)
+        .await
+        .unwrap();
+    sw.harness_apply(plan, false).await.unwrap();
+    let restore = sw
+        .harness_plan(HarnessId::Gemini, HarnessPlanKind::Restore)
+        .await
+        .unwrap();
+    let path = w.ctx.home_dir.join(".gemini/.env");
+    let mut env = std::fs::read_to_string(&path).unwrap();
+    env.push_str("OTHER=user-value\n");
+    std::fs::write(&path, &env).unwrap();
+    assert!(sw.harness_apply(restore, false).await.is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), env);
+    sw.harness_apply(
+        sw.harness_plan(HarnessId::Gemini, HarnessPlanKind::Restore)
+            .await
+            .unwrap(),
+        false,
+    )
+    .await
+    .unwrap();
+    assert!(!w.ctx.home_dir.join(".gemini/settings.json").exists());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "OTHER=user-value\n");
 }

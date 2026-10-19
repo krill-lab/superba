@@ -102,3 +102,6 @@ format_failed = "The file could not be formatted."
 [config.claude]
 new_sessions = "New Claude Code sessions use this; running sessions keep what they started with."
 restored = "Claude Code's settings are back to what they were before Superba (keys changed by someone else since were kept)."
+
+[config.harness.gemini]
+restart = "Restart Gemini CLI to load its user settings and .env. Project settings and shell environment variables can override them."

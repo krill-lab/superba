@@ -145,7 +145,11 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
             });
         });
     }
-    for note in &view.notes {
+    for note in view
+        .notes
+        .iter()
+        .filter(|n| n.text.key != "router.protocol.translated")
+    {
         ui.add(egui::Label::new(Text::small(cx.tr.text(&note.text), cx.pal)).wrap());
     }
     if let Some(report) = &state.report
@@ -231,11 +235,12 @@ fn connection(
         let old = protocol;
         let mut control =
             Segmented::new("tool-protocol", &mut protocol).label(cx.tr.t("tools.protocol"));
-        for p in HarnessProtocol::ALL {
+        for p in view.harness.protocols().iter().copied() {
             let name = match p {
                 HarnessProtocol::Responses => "Responses",
                 HarnessProtocol::Chat => "Chat",
                 HarnessProtocol::Anthropic => "Anthropic",
+                HarnessProtocol::Gemini => "Gemini",
             };
             control = if view.protocols.contains(&p) {
                 control.option(Some(p), name)
@@ -248,6 +253,15 @@ fn connection(
             s.protocol = protocol;
         }
     });
+    if let Some(note) = view
+        .notes
+        .iter()
+        .find(|n| n.text.key == "router.protocol.translated")
+    {
+        field(ui, cx, "tools.eligibility", |ui| {
+            ui.label(Text::body(cx.tr.text(&note.text), cx.pal));
+        });
+    }
     field(ui, cx, "tools.route", |ui| {
         Segmented::new("tool-route", &mut s.route)
             .label(cx.tr.t("tools.route"))
@@ -525,115 +539,135 @@ fn summary(ui: &mut Ui, cx: &Cx<'_>, state: &State, out: &mut Vec<Action>) {
     } else {
         cx.data.active_profile()
     };
-    Card::new().flat().show(ui, |ui| {
-        ui.label(Text::strong(cx.tr.t("tools.connection"), cx.pal));
-        if let Some(p) = p {
-            ui.label(format!("{}: {}", cx.tr.t("tools.provider"), p.name));
-            ui.label(format!(
-                "{}: {}",
-                cx.tr.t("tools.authentication"),
-                cx.tr.text(&p.auth_mode.text())
-            ));
-            if let Some(line) = &p.line_id {
-                ui.label(format!(
-                    "{}: {}",
-                    cx.tr.t("tools.line"),
-                    cx.data.line_label(cx.tr, Some(&p.site_id), line)
-                ));
-            }
-            if !claude {
-                ui.label(format!(
-                    "{}: {}",
-                    cx.tr.t("tools.default_model"),
-                    p.model.model.as_deref().unwrap_or("—")
-                ));
-            }
+    let routed = if claude {
+        cx.data.claude_routed()
+    } else {
+        cx.data.router_enabled()
+    };
+    let harness = if claude {
+        superba_core::RequestHarness::ClaudeCode
+    } else {
+        superba_core::RequestHarness::Codex
+    };
+    let stats = cx.data.profiles.value.as_ref().is_some_and(|set| {
+        set.settings.router.stats.line.enabled
+            && set.settings.router.stats.line.harnesses.contains(&harness)
+    });
+    let mut rows: Vec<(String, String)> = Vec::new();
+    let mut row = |key: &str, value: String| rows.push((cx.tr.t(key), value));
+    if let Some(p) = p {
+        row("tools.provider", p.name.clone());
+        row("tools.authentication", cx.tr.text(&p.auth_mode.text()));
+        if let Some(line) = &p.line_id {
+            row(
+                "tools.line",
+                cx.data.line_label(cx.tr, Some(&p.site_id), line),
+            );
         }
-        let routed = if claude {
-            cx.data.claude_routed()
-        } else {
-            cx.data.router_enabled()
-        };
-        ui.label(format!(
-            "{}: {}",
-            cx.tr.t("tools.route"),
-            cx.tr.t(if routed {
-                "tools.routed"
-            } else {
-                "tools.direct"
-            })
-        ));
-        let harness = if claude {
-            superba_core::RequestHarness::ClaudeCode
-        } else {
-            superba_core::RequestHarness::Codex
-        };
-        let stats = cx.data.profiles.value.as_ref().is_some_and(|set| {
-            set.settings.router.stats.line.enabled
-                && set.settings.router.stats.line.harnesses.contains(&harness)
-        });
-        ui.label(cx.tr.t(if stats {
-            "tools.stats_on"
-        } else {
-            "tools.stats_off"
-        }));
-        if !claude
-            && let Some(version) = cx
-                .data
-                .overview
-                .value
-                .as_ref()
-                .and_then(|o| o.cli.terminal_cli())
-                .and_then(|b| b.version.as_ref())
-        {
-            ui.label(format!("Codex {version}"));
+        if !claude {
+            row(
+                "tools.default_model",
+                p.model.model.clone().unwrap_or_else(|| "—".into()),
+            );
         }
-        if claude && let Some(v) = &state.claude {
+    }
+    row(
+        "tools.route",
+        cx.tr.t(if routed {
+            "tools.routed"
+        } else {
+            "tools.direct"
+        }),
+    );
+    row(
+        "tools.statistics",
+        cx.tr.t(if stats {
+            "tools.enabled"
+        } else {
+            "tools.disabled"
+        }),
+    );
+    if claude {
+        if let Some(v) = &state.claude {
             if let Some(e) = v
                 .router_base_url
                 .as_ref()
                 .filter(|_| routed)
                 .or_else(|| v.endpoint.as_ref().map(|e| &e.base_url))
             {
-                ui.add(egui::Label::new(RichText::new(e.as_str()).monospace()).wrap());
+                row("tools.address", e.to_string());
             }
             if let Some(id) = &v.provider {
                 let models = v.config.models_of(id);
                 for slot in superba_core::ClaudeSlot::ALL {
-                    ui.label(format!(
-                        "{slot:?}: {}",
+                    row(
+                        match slot {
+                            superba_core::ClaudeSlot::Opus => "tools.model_opus",
+                            superba_core::ClaudeSlot::Sonnet => "tools.model_sonnet",
+                            superba_core::ClaudeSlot::Haiku => "tools.model_haiku",
+                            superba_core::ClaudeSlot::Fable => "tools.model_fable",
+                            superba_core::ClaudeSlot::Custom => "tools.model_custom",
+                        },
                         models
                             .slots
                             .get(&slot)
-                            .map(|m| m.model.as_str())
-                            .unwrap_or("—")
-                    ));
+                            .map(|m| m.model.clone())
+                            .unwrap_or_else(|| "—".into()),
+                    );
                 }
             }
             if let Some(version) = v.install.as_ref().and_then(|i| i.version.as_ref()) {
-                ui.label(version);
+                row("tools.version", version.to_string());
             }
         }
-        if ui
-            .add(Button::primary(cx.tr.t(if claude {
-                "tools.open_claude"
-            } else {
-                "tools.open_codex"
-            })))
-            .clicked()
-        {
-            out.push(Action::Go(if claude {
-                Page::ClaudeCode
-            } else {
-                Page::Settings
-            }));
-        }
-        if ui
-            .add(Button::ghost(cx.tr.t("tools.open_providers")))
-            .clicked()
-        {
-            out.push(Action::Go(Page::Providers));
-        }
+    } else if let Some(version) = cx
+        .data
+        .overview
+        .value
+        .as_ref()
+        .and_then(|o| o.cli.terminal_cli())
+        .and_then(|b| b.version.as_ref())
+    {
+        row("tools.version", version.to_string());
+    }
+    Card::new().flat().show(ui, |ui| {
+        label(ui, cx, "tools.connection");
+        let value_width = (ui.available_width() - 140.0).max(120.0);
+        egui::Grid::new(("tool-summary-properties", state.selected))
+            .num_columns(2)
+            .spacing([24.0, 6.0])
+            .min_col_width(108.0)
+            .max_col_width(value_width)
+            .show(ui, |ui| {
+                for (key, value) in rows {
+                    ui.label(Text::small(key, cx.pal));
+                    ui.add(egui::Label::new(Text::body(value, cx.pal)).wrap());
+                    ui.end_row();
+                }
+            });
+        ui.add_space(18.0);
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add(Button::primary(cx.tr.t(if claude {
+                    "tools.open_claude"
+                } else {
+                    "tools.open_codex"
+                })))
+                .clicked()
+            {
+                out.push(Action::Go(if claude {
+                    Page::ClaudeCode
+                } else {
+                    Page::Settings
+                }));
+            }
+            if ui
+                .add(Button::ghost(cx.tr.t("tools.open_providers")))
+                .clicked()
+            {
+                out.push(Action::Go(Page::Providers));
+            }
+        });
     });
 }
 /// Shared masked plan review, with an explicit drift choice.

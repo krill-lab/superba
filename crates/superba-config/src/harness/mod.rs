@@ -38,6 +38,7 @@ pub mod claude;
 pub mod doc;
 pub mod dotenv;
 pub mod dsh;
+pub mod gemini;
 pub mod jsonc;
 pub mod opencode;
 pub mod pi;
@@ -126,6 +127,7 @@ pub trait HarnessSpec: Send + Sync {
 pub fn spec(harness: HarnessId) -> &'static dyn HarnessSpec {
     match harness {
         HarnessId::ClaudeCode => &claude::ClaudeCode,
+        HarnessId::Gemini => &gemini::Gemini,
         HarnessId::Dsh => &dsh::Dsh,
         HarnessId::OpenCode => &opencode::OpenCode,
         HarnessId::Pi => &pi::Pi,
@@ -345,6 +347,9 @@ impl HarnessWriter {
         let apply = kind == HarnessPlanKind::Apply;
         if apply {
             let t = target.ok_or_else(|| Error::invalid("nothing to apply"))?;
+            if !t.harness.speaks(t.endpoint.protocol) {
+                return Err(Error::invalid("the tool does not support this protocol"));
+            }
             self.spec.check_key(&t.key)?;
             if t.models.is_empty() && t.harness != HarnessId::ClaudeCode {
                 return Err(Error::invalid(

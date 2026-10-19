@@ -1,5 +1,5 @@
 #![allow(missing_docs)]
-//! M4: seven rows, named controls, isolated drafts, reviewed writes and fit.
+//! M4: eight rows, named controls, isolated drafts, reviewed writes and fit.
 mod a11y_harness;
 mod router_harness;
 mod support;
@@ -32,7 +32,7 @@ fn row(t: &Tree, name: &str) -> egui::accesskit::NodeId {
         .unwrap_or_else(|| panic!("missing row {name}: {}", t.dump()))
 }
 #[test]
-fn seven_rows_and_controls_are_named_in_both_languages_and_sizes() {
+fn eight_rows_and_controls_are_named_in_both_languages_and_sizes() {
     for locale in [Locale::ZhCn, Locale::En] {
         let tr = Tr::new(locale);
         let svc = fake();
@@ -48,6 +48,7 @@ fn seven_rows_and_controls_are_named_in_both_languages_and_sizes() {
                 "pi",
                 "ZCode",
                 "WorkBuddy",
+                "Gemini CLI",
             ] {
                 row(&t, name);
             }
@@ -129,7 +130,7 @@ fn summaries_offer_their_own_pages_and_no_tool_apply() {
     }
 }
 #[test]
-fn all_seven_details_fit_1280_and_960_without_horizontal_overflow() {
+fn all_eight_details_fit_1280_and_960_without_horizontal_overflow() {
     let svc = fake();
     let data = router_harness::data_from(&svc);
     for locale in [Locale::En, Locale::ZhCn] {
@@ -180,4 +181,26 @@ fn dark_theme_preserves_accessible_tool_names() {
     );
     let t = h.until("tools", |t| t.has("gpt-6-astra"));
     assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
+}
+
+#[test]
+fn gemini_row_names_its_route_conversion_and_shared_files() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let svc = fake();
+        svc.routed_tool_fixture(HarnessId::Gemini, true);
+        let mut h = AppHarness::new(svc.clone(), locale, Page::Tools);
+        let t = h.until("loaded", |t| t.has("gpt-6-astra"));
+        h.click_id(row(&t, "Gemini CLI"));
+        let translated = if locale == Locale::ZhCn {
+            "经协议转换"
+        } else {
+            "Via protocol conversion"
+        };
+        let t = h.until("Gemini route", |t| t.has(translated));
+        assert!(t.has_containing("/gemini"), "{}", t.dump());
+        assert!(t.has_containing(".gemini/settings.json"));
+        assert!(t.has_containing(".gemini/.env"));
+        assert!(t.unnamed().is_empty());
+        assert_eq!(svc.harness_counts(), (0, 0));
+    }
 }

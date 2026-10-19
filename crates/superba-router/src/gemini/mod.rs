@@ -62,13 +62,15 @@ pub(crate) async fn handle(
     admission: Admission,
 ) -> Response<RespBody> {
     let generation = shared.current();
+    let bound = crate::forward::bound_member(req.headers()).map(str::to_owned);
     if req.method() == Method::GET && rest.trim_end_matches('/') == "/models" {
         let mut models = Vec::new();
         for (index, member) in generation.members.iter().enumerate() {
-            if generation
-                .config
-                .upstream_protocol(&member.cfg.id, Protocol::Gemini)
-                .is_none()
+            if bound.as_deref().is_some_and(|id| member.cfg.id != id)
+                || generation
+                    .config
+                    .upstream_protocol(&member.cfg.id, Protocol::Gemini)
+                    .is_none()
             {
                 continue;
             }
@@ -191,10 +193,13 @@ pub(crate) async fn handle(
     let targets: Vec<Target> = order
         .into_iter()
         .filter(|i| {
-            generation
-                .config
-                .upstream_protocol(&generation.members[*i].cfg.id, Protocol::Gemini)
-                .is_some()
+            bound
+                .as_deref()
+                .is_none_or(|id| generation.members[*i].cfg.id == id)
+                && generation
+                    .config
+                    .upstream_protocol(&generation.members[*i].cfg.id, Protocol::Gemini)
+                    .is_some()
         })
         .map(|member| Target {
             member,

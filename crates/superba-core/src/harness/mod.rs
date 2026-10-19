@@ -53,6 +53,8 @@ pub const ROUTER_OPENAI_PATH: &str = "/openai/v1";
 /// The router's Anthropic Messages ingress (the client appends
 /// `/v1/messages`).
 pub const ROUTER_ANTHROPIC_PATH: &str = "/claude";
+/// Gemini SDK root (the client appends `/v1beta`).
+pub const ROUTER_GEMINI_PATH: &str = "/gemini";
 
 /// The variable dsh reads Superba's key from (`apiKeyEnv`), written to
 /// `$DSH_HOME/.env`: the headless profile reads neither `.credentials.yaml`
@@ -90,6 +92,8 @@ pub fn pi_launch_env(superba_manages_updates: bool) -> Vec<(&'static str, &'stat
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HarnessId {
+    /// Gemini CLI (`~/.gemini/settings.json` and `.env`).
+    Gemini,
     /// Claude Code (configured on its own page, using the shared writer).
     ClaudeCode,
     /// dsh, the DeepSeek Harness (`$DSH_HOME/profiles/<p>/cordis.patch.yml`).
@@ -110,18 +114,20 @@ pub enum HarnessId {
 
 impl HarnessId {
     /// Lightweight tools, in display order. Claude Code has its own page.
-    pub const ALL: [HarnessId; 5] = [
+    pub const ALL: [HarnessId; 6] = [
         HarnessId::Dsh,
         HarnessId::OpenCode,
         HarnessId::Pi,
         HarnessId::ZCode,
         HarnessId::WorkBuddy,
+        HarnessId::Gemini,
     ];
 
     /// `dsh`, `opencode`, `pi`, `zcode`, `workbuddy`.
     pub fn as_str(self) -> &'static str {
         match self {
             HarnessId::ClaudeCode => "claude_code",
+            HarnessId::Gemini => "gemini",
             HarnessId::Dsh => "dsh",
             HarnessId::OpenCode => "opencode",
             HarnessId::Pi => "pi",
@@ -133,6 +139,7 @@ impl HarnessId {
     /// Parse [`HarnessId::as_str`] (case-insensitive; a few aliases).
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
+            "gemini" | "gemini-cli" => Some(HarnessId::Gemini),
             "claude" | "claude_code" => Some(HarnessId::ClaudeCode),
             "dsh" | "deepseek-harness" | "deepseek" => Some(HarnessId::Dsh),
             "opencode" | "open-code" => Some(HarnessId::OpenCode),
@@ -147,6 +154,7 @@ impl HarnessId {
     pub fn display_name(self) -> &'static str {
         match self {
             HarnessId::ClaudeCode => "Claude Code",
+            HarnessId::Gemini => "Gemini CLI",
             HarnessId::Dsh => "dsh",
             HarnessId::OpenCode => "opencode",
             HarnessId::Pi => "pi",
@@ -160,6 +168,7 @@ impl HarnessId {
         use HarnessProtocol as P;
         match self {
             HarnessId::ClaudeCode => &[P::Anthropic],
+            HarnessId::Gemini => &[P::Gemini],
             HarnessId::WorkBuddy => &[P::Chat],
             HarnessId::Dsh | HarnessId::OpenCode | HarnessId::Pi | HarnessId::ZCode => {
                 &[P::Responses, P::Chat, P::Anthropic]
@@ -189,14 +198,17 @@ pub enum HarnessProtocol {
     Chat,
     /// Anthropic Messages (`POST <root>/v1/messages`).
     Anthropic,
+    /// Gemini generateContent (`POST <root>/v1beta/models/<id>:generateContent`).
+    Gemini,
 }
 
 impl HarnessProtocol {
     /// Every protocol.
-    pub const ALL: [HarnessProtocol; 3] = [
+    pub const ALL: [HarnessProtocol; 4] = [
         HarnessProtocol::Responses,
         HarnessProtocol::Chat,
         HarnessProtocol::Anthropic,
+        HarnessProtocol::Gemini,
     ];
 
     /// `responses`, `chat`, `anthropic`.
@@ -205,6 +217,7 @@ impl HarnessProtocol {
             HarnessProtocol::Responses => "responses",
             HarnessProtocol::Chat => "chat",
             HarnessProtocol::Anthropic => "anthropic",
+            HarnessProtocol::Gemini => "gemini",
         }
     }
 
@@ -213,6 +226,7 @@ impl HarnessProtocol {
     /// `anthropic-messages`, `messages`).
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
+            "gemini" => Some(HarnessProtocol::Gemini),
             "responses" | "openai-responses" | "response" => Some(HarnessProtocol::Responses),
             "chat"
             | "chat-completions"
@@ -228,7 +242,7 @@ impl HarnessProtocol {
 
     /// An OpenAI protocol (base URL ends in `/v1`).
     pub fn is_openai(self) -> bool {
-        !matches!(self, HarnessProtocol::Anthropic)
+        matches!(self, HarnessProtocol::Responses | HarnessProtocol::Chat)
     }
 
     /// "OpenAI Responses", "Chat Completions", "Anthropic Messages".
@@ -237,6 +251,7 @@ impl HarnessProtocol {
             HarnessProtocol::Responses => "OpenAI Responses",
             HarnessProtocol::Chat => "Chat Completions",
             HarnessProtocol::Anthropic => "Anthropic Messages",
+            HarnessProtocol::Gemini => "Gemini",
         }
     }
 }
@@ -567,16 +582,23 @@ pub fn provider_endpoints(
         ),
     };
     push(HarnessProtocol::Anthropic, anthropic, source);
+    if site.kind == SiteKind::Krill {
+        push(
+            HarnessProtocol::Gemini,
+            Some(origin.clone()),
+            EndpointSource::Krill,
+        );
+    }
     out
 }
 
 /// The local router's ingress for `protocol` at `router_url` (its base URL):
 /// `/openai/v1` for the OpenAI protocols, `/claude` for Anthropic Messages.
 pub fn routed_endpoint(router_url: &Url, protocol: HarnessProtocol) -> Option<ProtocolEndpoint> {
-    let path = if protocol.is_openai() {
-        ROUTER_OPENAI_PATH
-    } else {
-        ROUTER_ANTHROPIC_PATH
+    let path = match protocol {
+        HarnessProtocol::Responses | HarnessProtocol::Chat => ROUTER_OPENAI_PATH,
+        HarnessProtocol::Anthropic => ROUTER_ANTHROPIC_PATH,
+        HarnessProtocol::Gemini => ROUTER_GEMINI_PATH,
     };
     Some(ProtocolEndpoint {
         protocol,

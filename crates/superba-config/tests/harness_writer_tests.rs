@@ -267,7 +267,7 @@ fn pi_refuses_a_models_file_its_schema_rejects() {
 #[test]
 fn pi_schema_accepts_what_superba_writes_for_every_protocol() {
     let schema: Value = serde_json::from_str(pi::MODELS_SCHEMA).unwrap();
-    for p in HarnessProtocol::ALL {
+    for p in HarnessId::Pi.protocols().iter().copied() {
         let t = target(HarnessId::Pi, p, "https://line.example/codex/v1");
         let doc = json!({ "providers": { "superba": pi::provider_entry(&t) } });
         superba_config::harness::schema::check(&schema, &doc).unwrap();

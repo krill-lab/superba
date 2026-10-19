@@ -60,6 +60,7 @@ pub fn package(major: OpencodeMajor, p: HarnessProtocol) -> &'static str {
         (OpencodeMajor::V1, HarnessProtocol::Responses) => "@ai-sdk/openai",
         (OpencodeMajor::V1, HarnessProtocol::Chat) => "@ai-sdk/openai-compatible",
         (OpencodeMajor::V1, HarnessProtocol::Anthropic) => "@ai-sdk/anthropic",
+        (_, HarnessProtocol::Gemini) => "unsupported",
     }
 }
 
