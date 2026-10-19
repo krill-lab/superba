@@ -275,7 +275,7 @@ fn a_router_program_on_a_network_share_is_flagged_under_the_service() {
     let mut state = State::with_backend(Arc::new(OnNetworkShare(SystemRouter::for_service(
         service.clone(),
     ))));
-    let f = h.until(
+    let f = h.until_scrolled(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
         |f| f.has("路由程序在网络共享上"),
     );
@@ -290,14 +290,14 @@ fn a_router_program_on_a_network_share_is_flagged_under_the_service() {
     let mut state = State::with_backend(Arc::new(OnNetworkShare(SystemRouter::for_service(
         service.clone(),
     ))));
-    h.until(
+    h.until_scrolled(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
         |f| f.has("The router program is on a network share") && f.has("MSI"),
     );
     // A local program: no warning.
     let mut h = Harness::new([1280.0, 800.0], Locale::ZhCn, service.clone(), true);
     let mut state = page(&service);
-    let f = h.until(
+    let f = h.until_scrolled(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
         |f| f.has("成员（按优先级）"),
     );

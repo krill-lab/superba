@@ -25,6 +25,7 @@ use superba_gui::design::widgets::Toasts;
 use superba_gui::i18n::Tr;
 use superba_gui::notices;
 use superba_gui::pages::Page;
+use superba_gui::pages::router::requests::Col;
 use support::fake::{FakeOptions, FakeService};
 
 const LOCALES: [Locale; 2] = [Locale::En, Locale::ZhCn];
@@ -295,8 +296,10 @@ fn usage_banner_rows_cells_and_detail_tabs_are_readable_and_invokable() {
         for (role, name) in [
             (Role::TextInput, tr.t("requests.search")),
             (Role::RadioGroup, tr.t("requests.range.name")),
+            (Role::ComboBox, tr.t("requests.col.harness")),
             (Role::ComboBox, tr.t("requests.col.provider")),
             (Role::ComboBox, tr.t("requests.col.model")),
+            (Role::ComboBox, tr.t("requests.col.host")),
             (Role::ComboBox, tr.t("requests.col.status")),
             (Role::ComboBox, tr.t("requests.col.client")),
         ] {
@@ -312,7 +315,7 @@ fn usage_banner_rows_cells_and_detail_tabs_are_readable_and_invokable() {
             .find(Some(Role::Table), &tr.t("usage.tab.recent"))
             .unwrap_or_else(|| panic!("no request table:\n{}", t.dump()));
         assert!(t.node(table).row_count().is_some_and(|n| n > 0));
-        for col in ["date", "session", "status", "cost"] {
+        for col in ["date", "harness", "model", "session", "status", "cost"] {
             let name = tr.t(&format!("requests.col.{col}"));
             let header = t
                 .find(Some(Role::ColumnHeader), &name)
@@ -325,17 +328,19 @@ fn usage_banner_rows_cells_and_detail_tabs_are_readable_and_invokable() {
         let rows = t.with_role(Role::Row);
         let first = rows[0];
         let name = t.name(first).unwrap();
-        let cells: Vec<String> = t
+        let cells: std::collections::BTreeMap<usize, String> = t
             .node(first)
             .children()
             .iter()
             .filter(|c| t.node(**c).role() == Role::Cell)
-            .filter_map(|c| t.name(*c))
+            .filter_map(|c| t.node(*c).column_index().zip(t.name(*c)))
             .collect();
         assert!(cells.len() >= 10, "{locale:?}: cells {cells:?}");
-        // time, session, status, model, cost
-        let (time, session) = (&cells[1], &cells[2]);
+        // Hidden columns keep their table index in AccessKit.
+        let cell = |col| &cells[&Col::ALL.iter().position(|c| *c == col).unwrap()];
+        let (time, session) = (cell(Col::Date), cell(Col::Session));
         assert!(name.starts_with(&format!("{time}, {session}, ")), "{name}");
+        assert!(name.contains(cell(Col::Harness)), "the tool is in {name:?}");
         assert!(name.contains("gpt-"), "the model is in {name:?}");
         assert!(name.contains(&tr.t("requests.col.cost")), "{name}");
         assert!(t.node(first).supports_action(Action::Click));

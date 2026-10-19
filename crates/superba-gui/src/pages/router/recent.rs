@@ -354,11 +354,6 @@ impl Recent {
             self.apply(&p);
         }
         self.detail.poll();
-        if self.facets.poll()
-            && let Some(f) = self.facets.value.as_mut()
-        {
-            names().relabel_buckets(&mut f.members);
-        }
         if let Some(task) = &self.export
             && let Some(result) = task.poll()
         {
@@ -449,6 +444,11 @@ pub(super) fn load(cx: &Cx<'_>, state: &mut State) {
 }
 
 pub(super) fn load_facets(cx: &Cx<'_>, r: &mut Recent, range: Range) {
+    r.facets.poll();
+    if let Some(f) = r.facets.value.as_mut() {
+        requests::ProviderNames::new(cx.tr, cx.data.profiles.value.as_ref(), &cx.data.sites)
+            .relabel_buckets(&mut f.members);
+    }
     let now = cx.now;
     if r.facets_range != Some(range) {
         r.facets.invalidate();

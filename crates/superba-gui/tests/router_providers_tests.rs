@@ -13,6 +13,7 @@ use std::sync::Arc;
 use egui::Rect;
 use router_harness::{Frame, Harness};
 use superba_core::{Locale, RequestGrouping, StatsGroupBy, provider_line_key};
+use superba_gui::i18n::Tr;
 use superba_gui::pages::router::{self, State, Tab};
 use support::fake::{FakeOptions, FakeService};
 
@@ -63,6 +64,9 @@ fn the_source_list_groups_by_provider_with_krills_lines_under_it() {
             |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
             |f| f.has("登录页样式"),
         );
+        let grouping = Tr::new(locale).t("requests.group.session_short");
+        h.click_at(leftmost(&f, &grouping).center());
+        let f = h.settle(|ui, cx, out| router::show_usage(ui, cx, &mut state, out));
         h.click_at(leftmost(&f, tab).center());
         let f = h.until(
             |ui, cx, out| router::show_usage(ui, cx, &mut state, out),

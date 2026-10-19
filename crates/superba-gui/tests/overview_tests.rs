@@ -1221,7 +1221,13 @@ async fn the_usage_page_shows_one_session_for_the_overview_link() {
     assert_eq!(state.tab, Tab::Recent);
     assert!(state.search.is_empty());
     assert_eq!(state.recent.grouping, RequestGrouping::Session);
-    assert_eq!(state.recent.group.as_deref(), Some("019a-beta"));
+    assert_eq!(
+        state.recent.group,
+        Some(superba_core::harness_group_key(
+            superba_core::RequestHarness::Codex,
+            "019a-beta"
+        ))
+    );
     assert_eq!(state.recent.model, None, "other filters cleared");
     assert_eq!(
         state.recent.range.duration(),

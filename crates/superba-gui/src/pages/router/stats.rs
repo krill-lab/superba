@@ -21,7 +21,7 @@ use super::requests::{self, Range, cost_cell, hit_rate, hourly_buckets, success_
 use super::{State, mode, prices, recent};
 use crate::design::fonts::{Weight, font};
 use crate::design::layout::{self, Track};
-use crate::design::tokens::text;
+use crate::design::tokens::{size, text};
 use crate::design::widgets::{Button, Dropdown, PagedState, PagedTable, Segmented, Table, Text};
 use crate::pages::shared::format::compact;
 use crate::pages::{Action, Cx, error_text};
@@ -186,9 +186,14 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     let compare = prices::providers(cx)
         .into_iter()
         .find(|(_, _, usage)| *usage);
+    let controls_height = 2.0 * size::CONTROL_SM + 6.0 + ui.spacing().item_spacing.y;
     layout::rows(
         ui,
-        &[Track::Fixed(62.0), Track::Fixed(150.0), Track::Fill],
+        &[
+            Track::Fixed(controls_height),
+            Track::Fixed(150.0),
+            Track::Fill,
+        ],
         10.0,
         |ui, i| match i {
             0 => controls(ui, cx, state),
@@ -455,6 +460,7 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     PagedTable::new("router-stats-table", table, rows.len(), &mut s.table)
         .label(cx.tr.t("usage.tab.stats"))
         .header(headers)
+        .truncate_headers()
         .right_aligned(&(1..11).collect::<Vec<_>>())
         .show(ui, |ui, row, col| {
             let (line, cells) = &rows[row];

@@ -135,6 +135,7 @@ pub struct PagedTable<'a> {
     id: Id,
     table: Table,
     header: Option<Vec<String>>,
+    truncate_headers: bool,
     row_height: f32,
     total: usize,
     state: &'a mut PagedState,
@@ -159,6 +160,7 @@ impl<'a> PagedTable<'a> {
             id: Id::unique(("superba-paged-table", id_salt)),
             table,
             header: None,
+            truncate_headers: false,
             row_height: size::ROW,
             total,
             state,
@@ -196,6 +198,12 @@ impl<'a> PagedTable<'a> {
     /// Caption header row (28 px).
     pub fn header(mut self, labels: Vec<String>) -> Self {
         self.header = Some(labels);
+        self
+    }
+
+    /// Keep long headers inside their column, with the full text on hover.
+    pub fn truncate_headers(mut self) -> Self {
+        self.truncate_headers = true;
         self
     }
 
@@ -310,21 +318,50 @@ impl<'a> PagedTable<'a> {
         if let Some(labels) = &self.header {
             let r = Rect::from_min_size(rect.min, vec2(rect.width(), header_h));
             for (i, (col, label)) in self.table.cells(r).iter().zip(labels).enumerate() {
-                let (x, align) = if self.right_aligned.contains(&i) {
-                    (col.max.x, egui::Align2::RIGHT_CENTER)
+                let truncated = if self.truncate_headers {
+                    let galley = super::log_table::elided(
+                        ui,
+                        label,
+                        font(text::CAPTION, Weight::Medium),
+                        pal.text_subtle,
+                        col.width(),
+                    );
+                    let x = if self.right_aligned.contains(&i) {
+                        col.max.x - galley.size().x
+                    } else {
+                        col.min.x
+                    };
+                    let truncated = galley.elided;
+                    ui.painter()
+                        .with_clip_rect(col.intersect(ui.clip_rect()))
+                        .galley(
+                            egui::pos2(x, col.center().y - galley.size().y / 2.0),
+                            galley,
+                            pal.text_subtle,
+                        );
+                    truncated
                 } else {
-                    (col.min.x, egui::Align2::LEFT_CENTER)
+                    let (x, align) = if self.right_aligned.contains(&i) {
+                        (col.max.x, egui::Align2::RIGHT_CENTER)
+                    } else {
+                        (col.min.x, egui::Align2::LEFT_CENTER)
+                    };
+                    ui.painter().text(
+                        egui::pos2(x, col.center().y),
+                        align,
+                        label,
+                        font(text::CAPTION, Weight::Medium),
+                        pal.text_subtle,
+                    );
+                    false
                 };
-                ui.painter().text(
-                    egui::pos2(x, col.center().y),
-                    align,
-                    label,
-                    font(text::CAPTION, Weight::Medium),
-                    pal.text_subtle,
-                );
+                let response = ui.interact(*col, self.id.with(("header", i)), Sense::hover());
                 if a11y && !label.is_empty() {
-                    ui.interact(*col, self.id.with(("header", i)), Sense::hover())
+                    response
                         .widget_info(|| WidgetInfo::labeled(egui::Role::ColumnHeader, true, label));
+                }
+                if truncated {
+                    response.on_hover_text(label);
                 }
             }
             ui.painter()

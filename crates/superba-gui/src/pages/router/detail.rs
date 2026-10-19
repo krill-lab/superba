@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 
 use egui::{Rect, ScrollArea, Sense, Ui, pos2, vec2};
 use superba_core::{
-    RequestClient, RequestDetail, RequestKind, RequestRow, RequestSource, RequestTransport,
-    SessionTitle,
+    RequestClient, RequestDetail, RequestKind, RequestProtocol, RequestRow, RequestSource,
+    RequestTransport, SessionTitle,
 };
 
 use super::requests::{
@@ -115,9 +115,11 @@ pub fn cards(
 ) -> Vec<Card> {
     let client = tr.text(&row.client_text());
     let transport = requests::transport_text(tr, row.transport);
-    let path = match (row.transport, row.request_kind) {
-        (RequestTransport::WebSocket, _) => "WS response.create".to_owned(),
-        (_, Some(RequestKind::Compaction)) => "POST /responses/compact".to_owned(),
+    let path = match (row.protocol, row.transport, row.request_kind) {
+        (RequestProtocol::Messages, _, _) => "POST /messages".to_owned(),
+        (RequestProtocol::ChatCompletions, _, _) => "POST /chat/completions".to_owned(),
+        (_, RequestTransport::WebSocket, _) => "WS response.create".to_owned(),
+        (_, _, Some(RequestKind::Compaction)) => "POST /responses/compact".to_owned(),
         _ => "POST /responses".to_owned(),
     };
     // Rollout rows: where they come from instead of the transport the rollout

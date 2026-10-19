@@ -119,6 +119,30 @@ fn recent_and_stats_filters_use_the_same_tool_model_provider_and_host() {
 }
 
 #[test]
+fn stats_loads_model_and_host_choices_without_visiting_recent_requests() {
+    let mut h = Harness::new([960.0, 640.0], Locale::En, fake(), true);
+    let mut state = State::default();
+    state.tab = Tab::Stats;
+    state.stats.by = StatsGroupBy::Harness;
+    let f = h.until(
+        |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
+        |f| f.has("Claude Code"),
+    );
+    h.click_at(f.find("All models").unwrap().center());
+    h.settle(|ui, cx, out| router::show_usage(ui, cx, &mut state, out));
+    let f = h.until(
+        |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
+        |f| f.has("gpt-5.4-mini"),
+    );
+    h.click_at(f.find("gpt-5.4-mini").unwrap().center());
+    let f = h.settle(|ui, cx, out| router::show_usage(ui, cx, &mut state, out));
+    assert_eq!(state.recent.model.as_deref(), Some("gpt-5.4-mini"));
+    h.click_at(f.find("All hosts").unwrap().center());
+    let f = h.settle(|ui, cx, out| router::show_usage(ui, cx, &mut state, out));
+    assert!(f.has("Ubuntu"), "{}", f.all_text());
+}
+
+#[test]
 fn usage_filters_and_ingresses_fit_both_locales_and_window_sizes() {
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
@@ -138,12 +162,31 @@ fn usage_filters_and_ingresses_fit_both_locales_and_window_sizes() {
                 );
                 assert!(f.has(&tr.t("requests.filter.all_tools")));
                 assert!(f.has(&tr.t("requests.filter.all_hosts")));
+                if tab == Tab::Stats {
+                    let y = f.find(&tr.t("requests.col.model")).unwrap().center().y;
+                    let mut headers: Vec<_> = f
+                        .texts
+                        .iter()
+                        .filter(|(_, rect)| (rect.center().y - y).abs() < 1.0)
+                        .collect();
+                    headers.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
+                    for pair in headers.windows(2) {
+                        assert!(
+                            pair[0].1.right() <= pair[1].1.left(),
+                            "{locale:?} {size:?}: overlapping headers {pair:?}"
+                        );
+                    }
+                }
                 for (rect, clip) in &f.outlines {
                     if rect.height() >= 26.0 && rect.height() <= 33.0 && rect.intersects(*clip) {
                         assert!(
                             rect.right() <= f.rect.right() + 1.0,
                             "{rect:?} outside {:?}",
                             f.rect
+                        );
+                        assert!(
+                            rect.top() >= clip.top() - 1.0 && rect.bottom() <= clip.bottom() + 1.0,
+                            "{locale:?} {size:?} {tab:?}: control {rect:?} clipped by {clip:?}"
                         );
                     }
                 }
@@ -168,6 +211,18 @@ fn tools_can_be_multiselected_and_read_by_assistive_technology() {
     h.resize([960.0, 640.0]);
     let tree = h.until("Usage rows", |t| t.has_containing("haiku → gpt-5.4-mini"));
     assert!(tree.unnamed().is_empty(), "{}", tree.dump());
+    let row = tree
+        .with_role(Role::Row)
+        .into_iter()
+        .find(|id| {
+            tree.name(*id)
+                .is_some_and(|n| n.contains("haiku → gpt-5.4-mini"))
+        })
+        .unwrap();
+    h.click_id(row);
+    h.until("Messages request details", |t| {
+        t.has_containing("POST /messages")
+    });
     h.click(Some(Role::ComboBox), "Tool");
     h.click(Some(Role::CheckBox), "Claude Code");
     // A multi-select menu stays open, making a second selection possible.
