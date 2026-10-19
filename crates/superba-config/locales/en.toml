@@ -100,6 +100,5 @@ format_changed = "Formatting would change what the file means; it was left as it
 format_failed = "The file could not be formatted."
 
 [config.claude]
-nothing_owned = "Superba manages nothing in settings.json: there is nothing to restore."
 new_sessions = "New Claude Code sessions use this; running sessions keep what they started with."
 restored = "Claude Code's settings are back to what they were before Superba (keys changed by someone else since were kept)."

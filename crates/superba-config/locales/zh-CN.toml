@@ -98,6 +98,5 @@ format_changed = "格式化会改变文件的含义，因此保持原样未改�
 format_failed = "无法格式化这个文件。"
 
 [config.claude]
-nothing_owned = "Superba 没有管理 settings.json 里的任何键，无需还原。"
 new_sessions = "新开的 Claude Code 会话生效；正在运行的会话保持启动时的设置。"
 restored = "Claude Code 的设置已还原为 Superba 之前的样子（之后被别人改过的键保持不变）。"

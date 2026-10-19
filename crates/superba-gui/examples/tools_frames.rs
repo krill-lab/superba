@@ -17,6 +17,8 @@ struct Capture {
     started: Instant,
     row: usize,
     clicked: u8,
+    frames: u32,
+    selected_at: Option<u32>,
 }
 impl eframe::App for Capture {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -24,7 +26,11 @@ impl eframe::App for Capture {
     }
     fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
         self.app.raw_input_hook(ctx, input);
-        if self.started.elapsed() > Duration::from_millis(750) && self.clicked < 2 {
+        self.frames += 1;
+        if self.started.elapsed() > Duration::from_millis(750)
+            && self.frames >= 10
+            && self.clicked < 2
+        {
             let row = self.row as f32;
             let pos = egui::pos2(
                 330.0,
@@ -38,11 +44,15 @@ impl eframe::App for Capture {
                 modifiers: Default::default(),
             });
             self.clicked += 1;
+            if self.clicked == 2 {
+                self.selected_at = Some(self.frames);
+            }
         }
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.app.ui(ui, frame);
         if self.started.elapsed() > Duration::from_secs(2)
+            && self.selected_at.is_some_and(|f| self.frames > f + 6)
             && let Some(path) = self.output.take()
         {
             let ctx = ui.ctx().clone();
@@ -112,6 +122,8 @@ fn main() -> eframe::Result {
                 started: Instant::now(),
                 row,
                 clicked: 0,
+                frames: 0,
+                selected_at: None,
             }))
         }),
     )

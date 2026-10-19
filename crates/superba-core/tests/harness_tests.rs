@@ -26,7 +26,7 @@ fn krill() -> Site {
 
 #[test]
 fn ids_and_protocols_parse_their_names() {
-    for h in HarnessId::ALL {
+    for h in HarnessId::ALL.into_iter().chain([HarnessId::ClaudeCode]) {
         assert_eq!(HarnessId::parse(h.as_str()), Some(h));
         assert_eq!(
             serde_json::to_value(h).unwrap(),
@@ -34,7 +34,10 @@ fn ids_and_protocols_parse_their_names() {
         );
     }
     assert_eq!(HarnessId::parse("DeepSeek-Harness"), Some(HarnessId::Dsh));
-    assert_eq!(HarnessId::parse("claude"), None);
+    assert_eq!(HarnessId::parse("claude"), Some(HarnessId::ClaudeCode));
+    // Claude shares the writer and backup partition, but keeps its own page.
+    assert_eq!(HarnessId::ALL.len(), 5);
+    assert!(!HarnessId::ALL.contains(&HarnessId::ClaudeCode));
     for (s, p) in [
         ("openai-responses", HarnessProtocol::Responses),
         ("openai-completions", HarnessProtocol::Chat),
