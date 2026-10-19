@@ -1,10 +1,11 @@
-//! Frame-terminating WebSocket relay, used while the configuration has a
-//! `stats` section (spike RS 4.6).
+//! Frame-terminating WebSocket relay. Private fields are always removed;
+//! request tracking and stats-line shaping require a `stats` section.
 //!
 //! Both legs are terminated with tokio-tungstenite (no per-message deflate: the
 //! extension header is dropped both ways, verified to be accepted by Codex).
 //!
-//! - client → member: each `response.create` text frame is peeked (originator
+//! - client → member: private top-level fields are removed first. With stats,
+//!   each `response.create` text frame is peeked (originator
 //!   from the handshake, turn metadata from `client_metadata`), stripped of
 //!   earlier stats lines, and queued as a tracked request; every other frame
 //!   passes unchanged.
@@ -504,6 +505,16 @@ fn removed_of(
 /// A client frame: track and strip `response.create`, pass everything else.
 fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Client {
     let bytes: Bytes = t.clone().into();
+    // Privacy shaping is independent of recording and applies before a
+    // frame can be forwarded or retained for a retry.
+    let t = crate::openai::shape::shape_top(&bytes, &crate::openai::shape::is_private_field, false)
+        .and_then(|s| String::from_utf8(s.body).ok())
+        .map(Utf8Bytes::from)
+        .unwrap_or(t);
+    let bytes: Bytes = t.clone().into();
+    if ctx.generation.config.stats.is_none() {
+        return Client::Forward(Message::Text(t));
+    }
     if sniff_type(&bytes) != Some("response.create") {
         return Client::Forward(Message::Text(t));
     }

@@ -115,7 +115,8 @@ pub(crate) fn upgrade(
                     let request = serde_json::from_str::<Value>(&text)
                         .map_err(|_| Invalid::new("WebSocket request is not JSON"));
                     let result = match request {
-                        Ok(request) => {
+                        Ok(mut request) => {
+                            crate::openai::shape::drop_private(&mut request);
                             serve(
                                 &shared,
                                 &generation,

@@ -1,26 +1,14 @@
 //! WebSocket passthrough for `GET …/responses` upgrades.
 //!
-//! The handshake is dialled to a member line first (HTTP/1.1, the member's key
-//! replacing Codex's credential); dial failures, 502/503/504 and edge
-//! interceptions fail over to the next line, then to other WebSocket-capable
-//! members. A 101 from the member is passed back to Codex (its
-//! `Sec-WebSocket-Accept` / extensions included) and the two upgraded connections
-//! are joined byte for byte, so frames, ping/pong and per-message deflate pass
-//! through untouched. An open socket is pinned to its line for life: Codex chains
-//! `previous_response_id` on it, so it is never re-routed; when either side
-//! closes, the other is closed and Codex reconnects with the full input.
+//! The upstream handshake is completed before upgrading the client. Both
+//! WebSocket legs terminate here so top-level private request fields are
+//! removed even when statistics are disabled. Per-message deflate is not
+//! negotiated; other frames retain their contents. A socket stays pinned
+//! to its line for its lifetime. Refused or unavailable WebSocket routes
+//! return 426 so Codex can retry over HTTP.
 //!
-//! Any other member answer (426, 401, 403, ...) is passed through; a 426 also
-//! keeps that line out of later handshakes for a while ([`crate::transport`]),
-//! as does a 426 found by Superba's probe. When the preferred member has no
-//! WebSocket support, every line of it refused WebSocket, or no member line can
-//! be dialled, the router answers 426 itself and Codex switches that session to
-//! HTTP at once.
-//!
-//! While the configuration has a `stats` section the socket is not joined byte
-//! for byte: `Sec-WebSocket-Extensions` is dropped both ways (no per-message
-//! deflate) and [`crate::ws_relay`] terminates both legs to read and adjust
-//! frames (request log, stats line, strip of earlier lines).
+//! With a `stats` section, [`crate::ws_relay`] also tracks requests, strips
+//! earlier stats lines and adds the configured line to responses.
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -128,7 +116,6 @@ pub(crate) async fn proxy_ws(
         );
     }
 
-    let relay_frames = generation.config.stats.is_some();
     let mut failures = Vec::new();
     for c in order {
         let member = &generation.members[c.member];
@@ -137,10 +124,8 @@ pub(crate) async fn proxy_ws(
         let url = join_path(&line.cfg.base_url, &rest, parts.uri.query());
         let drop_turn_state = pin.is_some_and(|p| p.member != c.member);
         let mut headers = request_headers(&parts.headers, true, drop_turn_state, &member.auth);
-        if relay_frames {
-            // Frames must be readable: no per-message deflate on either leg.
-            headers.remove(SEC_WEBSOCKET_EXTENSIONS);
-        }
+        // Privacy shaping requires readable frames on every connection.
+        headers.remove(SEC_WEBSOCKET_EXTENSIONS);
         let started = Instant::now();
         let result = generation.ws.get(url).headers(headers).send().await;
         let resp = match result {
@@ -211,9 +196,7 @@ pub(crate) async fn proxy_ws(
             return out;
         }
         let mut headers = response_headers(resp.headers(), true);
-        if relay_frames {
-            headers.remove(SEC_WEBSOCKET_EXTENSIONS);
-        }
+        headers.remove(SEC_WEBSOCKET_EXTENSIONS);
         set_route(&mut headers, &label);
         let upstream_io = match resp.upgrade().await {
             Ok(io) => io,
@@ -242,7 +225,7 @@ pub(crate) async fn proxy_ws(
                 let counters = &tunnel_gen.members[m].lines[l].counters;
                 counters.active_websockets.fetch_add(1, Ordering::Relaxed);
                 match on_upgrade.await {
-                    Ok(downstream) if relay_frames => {
+                    Ok(downstream) => {
                         let ctx = crate::ws_relay::RelayCtx {
                             shared: tunnel_shared.clone(),
                             generation: tunnel_gen.clone(),
@@ -251,16 +234,6 @@ pub(crate) async fn proxy_ws(
                             failovers: std::sync::atomic::AtomicU32::new(failovers),
                         };
                         crate::ws_relay::relay(TokioIo::new(downstream), upstream_io, ctx).await;
-                    }
-                    Ok(downstream) => {
-                        let mut down = TokioIo::new(downstream);
-                        let mut up = upstream_io;
-                        match tokio::io::copy_bidirectional(&mut down, &mut up).await {
-                            Ok((to_up, to_down)) => {
-                                tracing::debug!(to_up, to_down, "websocket closed");
-                            }
-                            Err(e) => tracing::debug!(error = %e, "websocket ended"),
-                        }
                     }
                     Err(e) => tracing::debug!(error = %e, "downstream upgrade failed"),
                 }

@@ -173,6 +173,25 @@ fn invalid_json() -> Box<Response<RespBody>> {
     ))
 }
 
+/// Inspect every Codex Responses body, even without statistics. Keep its
+/// original bytes/encoding when no private fields occur; otherwise forward
+/// the shaped identity body. Unreadable encodings fail closed.
+pub(crate) fn strip_private_request(
+    headers: &mut HeaderMap,
+    body: Bytes,
+    limit: usize,
+) -> Result<Bytes, Box<Response<RespBody>>> {
+    let mut decoded_headers = headers.clone();
+    let plain = body::decode(&mut decoded_headers, body.clone(), limit)?;
+    crate::stats::strip::split_object(&plain).ok_or_else(invalid_json)?;
+    if let Some(shaped) = shape::shape_top(&plain, &shape::is_private_field, false) {
+        *headers = decoded_headers;
+        Ok(Bytes::from(shaped.body))
+    } else {
+        Ok(body)
+    }
+}
+
 /// Parse an already decoded JSON object.
 fn parse_body(body: &[u8]) -> Result<serde_json::Value, Box<Response<RespBody>>> {
     let value: serde_json::Value = serde_json::from_slice(body).map_err(|_| invalid_json())?;

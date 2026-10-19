@@ -155,6 +155,14 @@ pub(crate) async fn proxy_http(
             );
         }
     };
+    let body = if !openai && is_responses_path(&parts.method, &rest) {
+        match crate::openai::strip_private_request(&mut parts.headers, body, limit) {
+            Ok(body) => body,
+            Err(response) => return *response,
+        }
+    } else {
+        body
+    };
     // The OpenAI ingress always reads the request (its facts route it, and
     // it is shaped whether or not it is recorded).
     let mut openai_meta = None;
