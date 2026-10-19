@@ -8,7 +8,7 @@ recorded under the legacy provider id `krill` (rollout files of a chosen size
 and their `state_5.sqlite` rows). For each theme and language it opens the
 Sessions page, clicks "Migrate to openai…", confirms the full restart and
 captures the window every `--every` seconds while the sessions move; with
-`--reduce-motion` the Preferences choice is set first. While capturing it also
+`--reduce-motion` the Superba → Appearance choice is set first. While capturing it also
 samples the CPU time of Superba's UI thread (the main thread) and of the whole
 process.
 

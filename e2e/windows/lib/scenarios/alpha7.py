@@ -181,6 +181,9 @@ def tool_install(t, tool, name):
     run = t.run
     flows.ensure(run, t, "configured")
     with t.step(f"{name}: install from Superba > Updates without elevation") as s:
+        if tool == "dsh":
+            node = run.agent.exec("where.exe", ["node"], timeout=30)
+            s.check(node["code"] != 0, "dsh standalone case: Node is absent from the snapshot PATH")
         baseline = tool_row(run, s, tool, "before-install")
         s.check(not baseline["installs"], "test snapshot starts without this tool")
         u.superba("updates")
@@ -195,8 +198,7 @@ def tool_install(t, tool, name):
         u.reveal(name_re="^" + re.escape(name) + r",", type="Button")
         s.shot("tool-installed")
         s.ui_dump("tool-installed")
-        s.manual("No UAC prompt; ZCode/WorkBuddy installer signature verified in the operation log. "
-                 "For dsh, repeat on a snapshot with no Node and confirm the standalone variant.")
+        s.manual("No UAC prompt; ZCode/WorkBuddy installer signature verified in the operation log.")
     with t.step(f"{name}: uninstall from the same update row, keeping user data") as s:
         row_selector = {"name_re": "^" + re.escape(name) + r",", "type": "Button"}
         u.reveal(**row_selector)

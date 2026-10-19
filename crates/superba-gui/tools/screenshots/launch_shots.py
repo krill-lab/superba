@@ -20,7 +20,7 @@ Krill profile applied with a PAT) and opens the desktop app given with
    Superba.
 3. No Superba window: `superba --launch-chatgpt` opens ChatGPT through
    Superba and shows no window.
-4. `launch-prefs-*`: Preferences with "Open ChatGPT through Superba when
+4. `launch-general-*`: Superba → General with "Open ChatGPT through Superba when
    Superba starts".
 
 Light and dark, English and Chinese, 1280x800. Like shoot.py it re-runs itself
@@ -263,10 +263,10 @@ def main():
         check(ok, "ChatGPT was opened through Superba")
         shoot.log("status after superba --launch-chatgpt:\n" + out.strip())
 
-        # 4. Preferences.
+        # 4. Superba → General.
         for theme, lang in VARIANTS:
             short = "zh" if lang == "zh-CN" else "en"
-            s.shot(f"launch-prefs-{theme}-{short}", "general", theme, lang, 6.0, None, SIZE)
+            s.shot(f"launch-general-{theme}-{short}", "general", theme, lang, 6.0, None, SIZE)
     finally:
         s.close()
     if FAILURES:

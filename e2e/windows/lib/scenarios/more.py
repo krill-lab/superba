@@ -885,14 +885,18 @@ def w61(t):
         time.sleep(2)
         for key in ("neutral", "mint", "sky", "sand", "lavender"):
             label = u.L(f"settings.background.{key}")
-            if u.exists(name=label):
-                u.act("invoke", name=label)
-                time.sleep(1)
-                u.page("overview")
-                time.sleep(1.5)
-                s.shot(f"background-{key}")
-                u.superba("appearance")
-                time.sleep(1)
+            u.reveal(name=label, type="RadioButton")
+            u.act("invoke", name=label, type="RadioButton")
+            s.check(u.wait(name=label, type="RadioButton").get("selected"), f"background {key} selected")
+            u.page("overview")
+            time.sleep(1.5)
+            s.shot(f"background-{key}")
+            u.superba("appearance")
+        u.reveal(key="prefs.motion.title", type="Button")
+        motion = u.wait(key="prefs.motion.title", type="Button")
+        if motion.get("toggle") != "On":
+            u.act("toggle", key="prefs.motion.title", type="Button")
+        s.check(u.wait(key="prefs.motion.title", type="Button").get("toggle") == "On", "reduce motion enabled")
         s.manual("background-*.png and theme tours: soft background, readable contrast in both themes (bugs 24/27)")
 
 

@@ -220,7 +220,7 @@ def run(r):
         r.launch(theme=theme, lang=lang, page="general")
         time.sleep(6)
         r.scroll_to_window_section()
-        r.shot(f"prefs-window-{theme}-{'zh' if lang == 'zh-CN' else 'en'}")
+        r.shot(f"general-window-{theme}-{'zh' if lang == 'zh-CN' else 'en'}")
         r.stop_gui()
     item_count = len(r.registered())
     check(item_count >= 4, f"every start registered a tray item ({item_count})")
@@ -293,7 +293,7 @@ def run(r):
         r.launch(theme=theme, lang=lang, page="general")
         time.sleep(6)
         r.scroll_to_window_section()
-        r.shot(f"prefs-window-no-tray-{theme}-{'zh' if lang == 'zh-CN' else 'en'}")
+        r.shot(f"general-window-no-tray-{theme}-{'zh' if lang == 'zh-CN' else 'en'}")
         r.close_window()
         check(r.wait("exited", lambda: r.gui.poll() is not None),
               "without a tray host the close button quits")

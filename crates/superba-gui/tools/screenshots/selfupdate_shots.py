@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Screenshots of Superba's own update UI, from the real `superba` binary.
 
-Shows the Updates page's Superba section in three states (up to date, update
+Shows Superba → Updates in three states (up to date, update
 available, the release page cannot be read) and the Overview to-do item, at
 1280x800 in light and dark, English and Chinese.
 
@@ -54,7 +54,7 @@ Thanks to everyone who reported problems!
 def release(version, notes):
     assets = [{"name": "SHA256SUMS.txt", "size": 400}]
     for name in (f"superba-{version}-macos-universal.zip",
-                 f"superba-{version}-windows-x86_64.zip",
+                 f"superba-{version}-windows-x86_64.msi",
                  f"superba-{version}-linux-x86_64.tar.gz",
                  f"superba-{version}-linux-aarch64.tar.gz",
                  f"spb-{version}-linux-x86_64-musl.tar.gz"):

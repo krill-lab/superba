@@ -73,7 +73,7 @@ def default_msi():
 
 
 def cmd_list(opts):
-    rows = sorted(REGISTRY.values(), key=lambda s: s.id)
+    rows = sorted(REGISTRY.values(), key=lambda s: int(s.id[1:]))
     for s in rows:
         if opts.area and s.area != opts.area:
             continue
@@ -144,7 +144,7 @@ def run_one(run, sc):
 
 def cmd_run(opts):
     if opts.all:
-        ids = [i for i in ALL_ORDER if i in REGISTRY] + sorted(set(REGISTRY) - set(ALL_ORDER))
+        ids = [i for i in ALL_ORDER if i in REGISTRY] + sorted(set(REGISTRY) - set(ALL_ORDER), key=lambda i: int(i[1:]))
     else:
         ids = [i.upper() for i in opts.ids]
     unknown = [i for i in ids if i not in REGISTRY]

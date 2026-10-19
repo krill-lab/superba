@@ -1,5 +1,5 @@
 {
-  "_comment": "Window coordinates (1280x800) of the Updates page's version pickers with updates_pickers.py's mock world, per language. pin_*: page as opened; cli_* and remote_*: after `scroll` (page at its end). *_shown: the field once its box is ticked (wider). Re-measure with --probe after layout changes.",
+  "_comment": "Window coordinates (1280x800) of Superba → Updates version pickers with updates_pickers.py's mock world, per language. pin_*: page as opened; cli_* and remote_*: after `scroll` (page at its end). *_shown: the field once its box is ticked (wider). Re-measure with --probe after layout changes.",
   "zh-CN": {
     "pin_box": [357, 432],
     "pin_field": [560, 432],

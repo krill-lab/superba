@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Screenshots of the Updates page's version pickers (pre-release, bundled and
+"""Screenshots of Superba → Updates version pickers (pre-release, bundled and
 current tags; the "Include pre-releases" box in front of its dropdown).
 
 Reuses shoot.py's Session (isolated HOME under /tmp, throwaway CA, local mock

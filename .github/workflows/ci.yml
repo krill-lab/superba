@@ -44,6 +44,8 @@ jobs:
           rustup toolchain install 1.98 --profile minimal --component rustfmt
           rustup default 1.98
       - run: cargo fmt --all -- --check
+      - name: Windows harness regression checks (no VM)
+        run: python3 -m unittest discover -s e2e/windows/tests -v
 
   clippy:
     if: ${{ !inputs.msi_only && !inputs.dmg_only }}

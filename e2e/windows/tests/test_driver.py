@@ -12,7 +12,7 @@ sys.path.insert(0, str(HERE / "lib"))
 import flows
 from strings import Strings
 from ui import Ui, UiError, SUPERBA_SECTIONS
-from runner import T, Scenario, status_of, PASS, WARN
+from runner import T, Scenario, SkipScenario, status_of, PASS, WARN
 
 spec = importlib.util.spec_from_file_location("windows_run", HERE / "run.py")
 windows_run = importlib.util.module_from_spec(spec)
@@ -48,6 +48,16 @@ class DriverTests(unittest.TestCase):
             for section in SUPERBA_SECTIONS:
                 self.assertTrue(u.L("superba.title" if section == "home" else f"superba.section.{section}"))
             self.assertTrue(u.L("superba.tools.title"))
+
+    def test_new_scenarios_do_not_install_tools_before_integration(self):
+        from scenarios.alpha7 import require_alpha7
+        u = self.ui()
+        u.s.table.pop("tools.apply", None)
+        t = SimpleNamespace(run=u.run, skip=Mock(side_effect=SkipScenario("waiting for integration")))
+        with patch("scenarios.alpha7.flows.ensure") as ensure:
+            with self.assertRaises(SkipScenario):
+                require_alpha7(t)
+            ensure.assert_not_called()
 
     @patch("ui.time.sleep")
     def test_toast_after_empty_frames_is_polled(self, sleep):
