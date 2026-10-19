@@ -17,9 +17,9 @@ Geist look).
 
 ![Overview](docs/screenshots/overview-dark-en.png)
 
-| Countdown before a hot switch | Providers: lines, authentication, key |
+| Superba: updates, data and preferences | Providers: lines, authentication, key |
 |---|---|
-| ![Countdown](docs/screenshots/countdown-dark-en.png) | ![Providers](docs/screenshots/providers-dark-en.png) |
+| ![Superba](docs/screenshots/superba-dark-en.png) | ![Providers](docs/screenshots/providers-dark-en.png) |
 | **Usage and cost (Krill)** | **Command palette (Cmd/Ctrl+K)** |
 | ![Usage](docs/screenshots/usage-dark-en.png) | ![Palette](docs/screenshots/palette-dark-en.png) |
 

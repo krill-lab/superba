@@ -90,6 +90,7 @@ def main():
     a.out.mkdir(parents=True, exist_ok=True)
     enter_namespace()
     args = SimpleNamespace(display=a.display, sizes=[SIZE], app_dir=None, keep=a.keep,
+                           no_router_log=False, rollouts=False, router_on=False,
                            bin_dir=a.bin_dir, out=a.out)
     s = shoot.Session(args)
     try:
@@ -97,17 +98,14 @@ def main():
             shutil.copy2(a.bin_dir / name, s.bin / name)
         args.bin_dir = s.bin
         s.start_xvfb()
+        s.start_relay()
+        s.write_sites()
+        s.provision()
         seed(s, s.bin / "spb")
-        def skip_wizard(s):
-            # No provider yet: the setup wizard comes first; "Skip setup" is
-            # at the top right of the window.
-            shoot.focus(s)
-            s.input.click(SIZE[0] - 345, 50)
-            time.sleep(1.0)
+        s.check_paths()
 
         def open_with(query, scroll=0):
             def act(s):
-                skip_wizard(s)
                 shoot.palette_action(query)(s)
                 s.input.key("Return")
                 time.sleep(1.2)

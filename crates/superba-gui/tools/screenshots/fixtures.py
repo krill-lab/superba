@@ -2,7 +2,7 @@
 """Fixture databases for Superba screenshots (Python 3.11, stdlib only).
 
 Writes, into an isolated home only:
-- `<data dir>/router/usage.sqlite3`: a router request log (schema version 2 of
+- `<data dir>/router/usage.sqlite3`: a router request log (the current schema of
   `superba_router::store`, numbers only, like the real recorder writes) with a
   few sessions over the last two days and a working-hours rhythm over the six
   days before (the Overview's 7 x 24 heat-strip and its delta against
@@ -38,33 +38,21 @@ import json
 import os
 import queue
 import random
+import re
 import sqlite3
 import subprocess
 import threading
 import time
 from pathlib import Path
 
-USAGE_SCHEMA = """
-CREATE TABLE IF NOT EXISTS requests (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  started_ms INTEGER NOT NULL,
-  ttfb_ms INTEGER, first_event_ms INTEGER, first_token_ms INTEGER, duration_ms INTEGER,
-  member_id TEXT NOT NULL, member_name TEXT NOT NULL, line_id TEXT, line_name TEXT,
-  upstream_host TEXT, failovers INTEGER NOT NULL DEFAULT 0,
-  transport TEXT NOT NULL, originator TEXT, client TEXT NOT NULL,
-  request_kind TEXT, thread_source TEXT, thread_id TEXT, turn_id TEXT, prompt_cache_key TEXT,
-  model TEXT, upstream_model TEXT, response_model TEXT,
-  service_tier TEXT, response_service_tier TEXT,
-  status_kind TEXT NOT NULL, status_code TEXT, status_http INTEGER, http_status INTEGER, error TEXT,
-  input_tokens INTEGER, cached_tokens INTEGER, cache_write_tokens INTEGER,
-  output_tokens INTEGER, reasoning_tokens INTEGER,
-  tps_milli INTEGER, cost_micros INTEGER, price_rev TEXT,
-  injected INTEGER NOT NULL DEFAULT 0, stripped INTEGER NOT NULL DEFAULT 0,
-  upstream_request_id TEXT, attempts TEXT, log TEXT,
-  sent_ms INTEGER, last_delta_ms INTEGER
-);
-CREATE INDEX IF NOT EXISTS requests_time ON requests(started_ms);
-"""
+# Keep fixtures readable when the router changes its deliberately disposable log.
+# Read the schema owned by the real recorder instead of maintaining a second copy.
+STORE = Path(__file__).resolve().parents[4] / "crates/superba-router/src/store.rs"
+store_source = STORE.read_text()
+USAGE_SCHEMA = re.search(r'pub\(crate\) const USAGE_SCHEMA: &str = "(.*?)";',
+                         store_source, re.S).group(1)
+SCHEMA_VERSION = int(re.search(r'pub const SCHEMA_VERSION: i64 = (\d+);', store_source).group(1))
+
 
 # (thread id, title, client, model, tier)
 SESSIONS = [
@@ -404,7 +392,7 @@ def write_usage(data_dir, now_ms, upstream):
         db.unlink()
     conn = sqlite3.connect(db)
     conn.executescript(USAGE_SCHEMA)
-    conn.execute("PRAGMA user_version = 2")
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     rows = usage_rows(now_ms, upstream)
     cols = list(rows[0].keys())
     conn.executemany(

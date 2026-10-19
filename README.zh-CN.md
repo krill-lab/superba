@@ -15,9 +15,9 @@ Superba 是一个小巧的桌面启动器（附带无界面 CLI），用来把
 
 ![概览](docs/screenshots/overview-dark-zh.png)
 
-| 热切换前的倒计时 | 供应商：线路、认证方式、Key |
+| Superba：更新、数据和设置 | 供应商：线路、认证方式、Key |
 |---|---|
-| ![倒计时](docs/screenshots/countdown-light-zh.png) | ![供应商](docs/screenshots/providers-light-zh.png) |
+| ![Superba](docs/screenshots/superba-light-zh.png) | ![供应商](docs/screenshots/providers-light-zh.png) |
 | **用量与花费（Krill）** | **命令面板（Cmd/Ctrl+K）** |
 | ![用量](docs/screenshots/usage-dark-zh.png) | ![命令面板](docs/screenshots/palette-light-zh.png) |
 

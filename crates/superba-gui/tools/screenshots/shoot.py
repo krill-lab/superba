@@ -674,9 +674,9 @@ def main():
             shots.append((f"palette-light-zh{tail}", "overview", "light", "zh-CN", 6.0,
                           palette_action("over"), size))
             shots.append((f"wizard-dark-en{tail}", "overview", "dark", "en", 6.0,
-                          wizard_action("setup"), size))
+                          wizard_action("onboarding"), size))
             shots.append((f"wizard-light-zh{tail}", "overview", "light", "zh-CN", 6.0,
-                          wizard_action("setup"), size))
+                          wizard_action("onboarding"), size))
             if args.app_dir:
                 shots.append((f"countdown-dark-en{tail}", "overview", "dark", "en", 7.0,
                               countdown_action("cdn"), size))
