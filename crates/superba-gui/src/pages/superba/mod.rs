@@ -242,7 +242,14 @@ pub fn show(
                 }
                 SuperbaSection::Data => {
                     page_header(ui, cx, Page::Superba(selected), |_| {});
-                    data::show(ui, cx, settings, &mut state.backups, &mut state.storage, out);
+                    data::show(
+                        ui,
+                        cx,
+                        settings,
+                        &mut state.backups,
+                        &mut state.storage,
+                        out,
+                    );
                 }
                 SuperbaSection::Notify => {
                     page_header(ui, cx, Page::Superba(selected), |_| {});

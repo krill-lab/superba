@@ -39,6 +39,16 @@ impl SwitchService for LocatedService {
         service.save_settings(settings).await
     }
 
+    async fn autostart_status(&self) -> Result<autostart::AutostartStatus> {
+        let (service, _lock) = self.read().await?;
+        service.autostart_status().await
+    }
+
+    async fn set_autostart(&self, enabled: bool) -> Result<autostart::AutostartStatus> {
+        let (service, _lock) = self.read().await?;
+        service.set_autostart(enabled).await
+    }
+
     async fn save_site(&self, site: Site) -> Result<Site> {
         let (service, _lock) = self.read().await?;
         service.save_site(site).await
@@ -275,6 +285,26 @@ impl SwitchService for LocatedService {
     async fn install_codex(&self, request: InstallRequest) -> Result<InstallReport> {
         let (service, _lock) = self.read().await?;
         service.install_codex(request).await
+    }
+
+    async fn install_codex_controlled(
+        &self,
+        request: InstallRequest,
+        control: Arc<UpdateControl>,
+    ) -> Result<InstallReport> {
+        let (service, _lock) = self.read().await?;
+        service.install_codex_controlled(request, control).await
+    }
+
+    async fn self_update_install_controlled(
+        &self,
+        request: SelfUpdateInstallRequest,
+        control: Arc<UpdateControl>,
+    ) -> Result<SelfUpdateReport> {
+        let (service, _lock) = self.read().await?;
+        service
+            .self_update_install_controlled(request, control)
+            .await
     }
 
     async fn rollback_codex(&self, target: InstallTarget) -> Result<InstallReport> {
@@ -527,6 +557,15 @@ impl SwitchService for LocatedService {
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan> {
         let (service, _lock) = self.read().await?;
         service.plan(request).await
+    }
+
+    async fn plan_with_events(
+        &self,
+        request: SwitchRequest,
+        events: Arc<dyn SwitchEvents>,
+    ) -> Result<SwitchPlan> {
+        let (service, _lock) = self.read().await?;
+        service.plan_with_events(request, events).await
     }
 
     async fn execute(

@@ -149,7 +149,9 @@ fn palette_opens_and_focuses_every_setting_without_changing_it() {
                 t.nodes
                     .get(&t.focus)
                     .and_then(|n| n.bounds())
-                    .is_some_and(|r| r.y0 >= 50.0 && r.y1 <= 626.0)
+                    // The longer data section can end at a fractional scroll
+                    // offset. Match the half-pixel tolerance of the fit tests.
+                    .is_some_and(|r| r.y0 >= 49.5 && r.y1 <= 626.5)
             });
             let label = tr.t(superba::search::label_key(key));
             assert_eq!(

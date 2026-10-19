@@ -5,7 +5,11 @@ use router_harness::Harness;
 use std::sync::Arc;
 use superba_core::data::{DataCategoryUsage, DataLocation, DataUsage};
 use superba_core::{Locale, Settings};
-use superba_gui::pages::{Action, data};
+use superba_gui::{
+    app::PageStates,
+    i18n::Tr,
+    pages::{Action, Page, SuperbaSection, data, superba},
+};
 use support::fake::{FakeOptions, FakeService};
 
 #[test]
@@ -34,7 +38,9 @@ fn data_block_shows_separate_usage_retention_and_actions_in_both_languages() {
         };
         service.set_data_usage(Ok(usage.clone()));
         state.usage = Some(usage);
-        let frame = h.frame(|ui, cx, out| data::section_ui(ui, cx, &mut settings, &mut state, out));
+        let frame = h.frame(|ui, cx, out| {
+            superba::data::data_location_section(ui, cx, &mut settings, &mut state, out)
+        });
         for expected in [
             "/fixture/superba",
             "/fixture/codex",
@@ -80,4 +86,75 @@ fn directory_rejections_render_in_the_selected_language() {
     let mut settings = Settings::default();
     let frame = h.frame(|ui, cx, out| data::body_ui(ui, cx, &mut settings, &mut state, out));
     assert!(frame.has("可用空间不足"), "{}", frame.all_text());
+}
+
+#[test]
+fn superba_data_page_has_one_location_block_and_keeps_backups_reachable() {
+    for locale in Locale::ALL {
+        let tr = Tr::new(locale);
+        for dark in [false, true] {
+            for size in [[960.0, 640.0], [1280.0, 800.0]] {
+                let service = Arc::new(FakeService::new(FakeOptions::default()));
+                let page = Page::Superba(SuperbaSection::Data);
+                let mut h = Harness::new(size, locale, service, true).min_height(page.min_height());
+                if dark {
+                    h = h.dark();
+                }
+                let mut pages = PageStates::default();
+                let mut settings = Settings::default();
+                let frame = h.settle(|ui, cx, out| pages.show(page, ui, cx, &mut settings, out));
+                for key in ["prefs.data.dir", "prefs.data.move"] {
+                    assert_eq!(
+                        frame
+                            .texts
+                            .iter()
+                            .filter(|(text, _)| text == &tr.t(key))
+                            .count(),
+                        1,
+                        "{locale:?} {dark} {size:?} {key}: {}",
+                        frame.all_text()
+                    );
+                }
+                assert!(!frame.has(&tr.t("prefs.data.retention_moved")));
+                let mut frames = vec![frame];
+                for _ in 0..12 {
+                    let rect = frames[0].rect;
+                    h.scroll_at(
+                        egui::pos2(rect.right() - 40.0, rect.center().y),
+                        egui::vec2(0.0, -240.0),
+                    );
+                    frames
+                        .push(h.settle(|ui, cx, out| pages.show(page, ui, cx, &mut settings, out)));
+                    if frames
+                        .last()
+                        .unwrap()
+                        .has(&tr.t("settings.uninstall.title"))
+                    {
+                        break;
+                    }
+                }
+                for key in [
+                    "prefs.data.requests",
+                    "prefs.data.clean",
+                    "superba.backups.title",
+                    "prefs.restore.title",
+                    "settings.uninstall.title",
+                ] {
+                    assert!(
+                        frames.iter().any(|f| f.has(&tr.t(key))),
+                        "{locale:?} {dark} {size:?}: missing {key}"
+                    );
+                }
+                for frame in frames {
+                    assert!(frame.fits() && !frame.scrolled, "{size:?}: {frame:?}");
+                    for (text, rect) in &frame.texts {
+                        assert!(
+                            rect.right() <= frame.rect.right() + 1.0,
+                            "{size:?}: {text} overflows at {rect:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

@@ -855,7 +855,10 @@ impl SuperbaApp {
 
     fn handle_replies(&mut self, ctx: &egui::Context) {
         let mut actions = Vec::new();
-        self.pages.superba.storage.poll(&mut self.settings, &mut actions);
+        self.pages
+            .superba
+            .storage
+            .poll(&mut self.settings, &mut actions);
         for action in actions {
             self.handle_action(ctx, action);
         }
@@ -863,7 +866,10 @@ impl SuperbaApp {
             let now = self.now();
             match reply {
                 Reply::Overview(r) => {
-                    self.pages.superba.storage.check_location(self.service.clone());
+                    self.pages
+                        .superba
+                        .storage
+                        .check_location(self.service.clone());
                     if let Err(e) = &r
                         && self.data.overview.value.is_none()
                     {

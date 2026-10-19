@@ -323,6 +323,9 @@ pub fn body_ui(
 
     ui.add_space(12.0);
     Card::new().flat().show(ui, |ui| {
+        let title = cx.tr.t("prefs.data.requests");
+        let heading = ui.label(Text::strong(&title, cx.pal));
+        super::superba::search::anchor(ui, "prefs.data.requests", &title, heading.rect);
         let mut stats = state
             .desired_stats
             .clone()

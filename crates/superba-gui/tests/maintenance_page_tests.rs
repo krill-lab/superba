@@ -188,7 +188,7 @@ fn loaded_maintenance_pages_fit_960_and_1280_in_both_themes_and_languages() {
                             if section == SuperbaSection::Diagnostics {
                                 f.has("dsh")
                             } else {
-                                f.has(&tr.t("superba.backups.view"))
+                                f.has(&tr.t("prefs.data.move"))
                             }
                         },
                     );
@@ -197,7 +197,7 @@ fn loaded_maintenance_pages_fit_960_and_1280_in_both_themes_and_languages() {
                         assert!(f.has(&tr.t(entry.title_key())), "missing rail {entry:?}");
                     }
                     let mut frames = vec![f];
-                    for _ in 0..6 {
+                    for _ in 0..12 {
                         let rect = frames[0].rect;
                         h.scroll_at(
                             egui::pos2(rect.right() - 40.0, rect.center().y),

@@ -1,6 +1,6 @@
 # Data location and disk use
 
-Preferences → Data shows Superba's storage by category, Codex's storage separately,
+Superba → Data shows Superba's storage by category, Codex's storage separately,
 request retention, and **Clean now**. Choose an empty local directory and **Move all
 data** to relocate Superba, including its backups, settings and file-backed keys.
 Finish active requests first: the router is stopped while the data is copied and

@@ -95,8 +95,7 @@ pub fn show(
     }
 }
 
-/// Mount point for the separate data-location feature (GH#15).
-/// Keep its state and controls in this section when that feature is integrated.
+/// Independent data-location controls, storage use, retention and cleanup.
 pub fn data_location_section(
     ui: &mut Ui,
     cx: &Cx<'_>,
