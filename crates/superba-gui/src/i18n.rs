@@ -13,7 +13,7 @@ use std::fmt::Display;
 use superba_core::{Catalog, Locale, LocalizedText};
 
 /// UI catalog areas, in loading order.
-pub const UI_AREAS: [&str; 16] = [
+pub const UI_AREAS: [&str; 17] = [
     "shell",
     "overview",
     "wizard",
@@ -34,7 +34,7 @@ pub const UI_AREAS: [&str; 16] = [
 ];
 
 /// English UI catalog files as `(area, TOML source)`.
-const UI_EN: [(&str, &str); 16] = [
+const UI_EN: [(&str, &str); 17] = [
     ("shell", include_str!("../locales/shell.en.toml")),
     ("overview", include_str!("../locales/overview.en.toml")),
     ("wizard", include_str!("../locales/wizard.en.toml")),
@@ -61,7 +61,7 @@ const UI_EN: [(&str, &str); 16] = [
 ];
 
 /// Simplified Chinese UI catalog files as `(area, TOML source)`.
-const UI_ZH_CN: [(&str, &str); 16] = [
+const UI_ZH_CN: [(&str, &str); 17] = [
     ("shell", include_str!("../locales/shell.zh-CN.toml")),
     ("overview", include_str!("../locales/overview.zh-CN.toml")),
     ("wizard", include_str!("../locales/wizard.zh-CN.toml")),

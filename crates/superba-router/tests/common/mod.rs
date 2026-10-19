@@ -33,8 +33,8 @@ use tokio_tungstenite::tungstenite::protocol::Role;
 use url::Url;
 
 pub mod anthropic;
-pub mod claude;
 pub mod ciphers;
+pub mod claude;
 pub mod responses;
 
 pub const ROUTER_TOKEN: &str = "sbr_test_router_token_0123456789abcdef";

@@ -238,6 +238,8 @@ const CORE_EN_FILES: &[(&str, &str)] = &[
     (
         "core.claude.en.toml",
         include_str!("../locales/core.claude.en.toml"),
+    ),
+    (
         "core.notify.en.toml",
         include_str!("../locales/core.notify.en.toml"),
     ),
@@ -291,6 +293,8 @@ const CORE_ZH_CN_FILES: &[(&str, &str)] = &[
     (
         "core.claude.zh-CN.toml",
         include_str!("../locales/core.claude.zh-CN.toml"),
+    ),
+    (
         "core.notify.zh-CN.toml",
         include_str!("../locales/core.notify.zh-CN.toml"),
     ),
