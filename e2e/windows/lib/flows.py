@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from agent import AgentError
-from app import App, AppError
+from app import FIRST_START_S, App, AppError
 from session import BASE_SNAPSHOT, GUEST_DL, HARNESS_ENV
 from ui import Ui, UiError
 from vm import REPO, psq
@@ -270,6 +270,8 @@ def gui_log(run):
 # How much longer a switch may stay paused while ChatGPT finishes its first-start Windows
 # setup (it creates its sandbox, minutes on a fresh VM; the switch goes on by itself after).
 APP_SETUP_EXTRA_S = 480
+# How long the harness waits for that setup before a scenario's next switch (first_start_setup).
+APP_SETUP_WAIT_S = 900
 
 
 def wait_switch_done(run, s, u, timeout=240, force_quit=True):
@@ -335,6 +337,34 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
         raise UiError(f"the switch stayed paused for running turns ({round(time.time() - t0)} s): {lines}; "
                       f"phases seen {seen}")
     raise UiError(f"the switch did not finish within {timeout} s; phases seen {seen}")
+
+
+def applied(run, label="status"):
+    """What Superba applied last, from `spb status --json`: {generation, profile_id, line_id}
+    (empty when nothing is applied or the status failed)."""
+    r = run.spb_json("status", timeout=120, label=label)
+    active = ((r.get("json") or {}).get("active") or {}) if r["code"] == 0 else {}
+    return {k: active.get(k) for k in ("generation", "profile_id", "line_id")}
+
+
+def wait_applied(run, before, line_id=None, timeout=60, u=None):
+    """Until Superba applied a new configuration (a generation above `before`'s, on
+    `line_id` when given): the proof that a switch completed, whatever its overlay showed.
+    Returns (done, after, pause lines the GUI showed meanwhile)."""
+    end = time.time() + timeout
+    after, pause = {}, []
+    while True:
+        after = applied(run, "status-after-switch")
+        gen0, gen1 = before.get("generation") or 0, after.get("generation") or 0
+        if gen1 > gen0 and (line_id is None or after.get("line_id") == line_id):
+            return True, after, pause
+        if u is not None:
+            rx = re.compile(u.R("banner.waiting.title"))
+            here = u.L("banner.waiting.this_computer")
+            pause = [n for n in u.texts() if rx.match(n) or n.startswith(here + " ·")] or pause
+        if time.time() >= end:
+            return False, after, pause
+        time.sleep(3)
 
 
 def wizard_krill(run, t, prefix="", line="a", lang="en"):
@@ -421,6 +451,37 @@ def wizard_krill(run, t, prefix="", line="a", lang="en"):
         if run.state["auth_mode"] == "pat":
             s.check(env == net.line_url(line), f"HKCU CODEX_AUTHAPI_BASE_URL = line {line} (PAT)")
         run.state.update(configured=True, line=line, main_pid=m["pid"])
+    # The ChatGPT this switch opened starts its first-start Windows setup now (also without
+    # the onboarding): every later switch would pause for it.
+    first_start_setup(run, t, prefix)
+
+
+def first_start_setup(run, t, prefix=""):
+    """ChatGPT's first-start Windows setup (codex-windows-sandbox-setup.exe creating its
+    sandbox) has finished, so a scenario's next switch does not pause for it: `spb switch`
+    without --wait-turn would exit 5 ("Cancelled; nothing was changed"), the GUI would offer
+    "Switch when they finish" / "Force switch". Detected the way Superba does (the process,
+    superba-appctl procs::app_setup_pids). Done once per VM state after a setup was seen to
+    finish; without one it is checked again (after the wizard's restart and once the app is
+    ready). Pauses for running turns are not affected (W13 and the WSL busy scenarios)."""
+    if run.state.get("app_setup_done"):
+        return
+    with t.step(prefix + "ChatGPT's first-start Windows setup finished (before the next switch)") as s:
+        info = app(run).wait_first_start_setup(APP_SETUP_WAIT_S)
+        s.save("first-start-setup.json", info)
+        if info["setup"]:
+            pids = ", ".join(f"{pid} (started {v['started']})" for pid, v in info["setup"].items())
+            s.info(f"codex-windows-sandbox-setup.exe seen: {pids}; waited {info.get('secs')} s; app-servers during "
+                   f"{info.get('during')}, after {info.get('servers')}"
+                   + ("" if info.get("restarted") is not False else " (no new app-server)"))
+        else:
+            s.info(f"no codex-windows-sandbox-setup.exe running (app-servers {info.get('servers')}, "
+                   f"checked for {info.get('secs')} s)")
+        if info.get("consent"):
+            s.info(f"UAC prompt(s) open meanwhile (consent.exe {info['consent']})")
+        s.check(info["ok"], f"no first-start setup left: {info.get('why') or 'ok'}")
+        if info["setup"]:
+            run.state["app_setup_done"] = True
 
 
 def app_ready(run, t, prefix=""):
@@ -433,7 +494,7 @@ def app_ready(run, t, prefix=""):
         # A fresh ChatGPT first finishes its Windows setup (blank window / "Finishing Windows
         # setup", minutes on a new VM): that time is not part of the onboarding budget.
         try:
-            steps, p = a.onboarding(150, setup_timeout=420)
+            steps, p = a.onboarding(150, setup_timeout=FIRST_START_S)
         except Exception:
             s.save("app-diagnose.json", a.diagnose())
             raise
@@ -441,12 +502,15 @@ def app_ready(run, t, prefix=""):
             s.info(f"waited {a.setup_waited} s for ChatGPT's first-start setup")
         s.info(f"onboarding answered: {steps}")
         s.check(p["composer"] and not p["login"], "composer shown, not the sign-in page")
-        ready = a.composer_ready(420)
+        ready = a.composer_ready(FIRST_START_S)
         if not ready:
-            s.check(False, "composer usable (the app's first-start 'Finishing Windows setup' did not finish in 7 min)")
+            s.save("app-diagnose.json", a.diagnose())
+            s.check(False, f"composer usable within {FIRST_START_S} s (the app's first-start 'Finishing Windows"
+                           f" setup'): {a.composer_error}")
         a.shot(t.evdir / f"{t.seq():02d}-app-ready.png")
         s.add_evidence(t.evdir / f"{t._seq:02d}-app-ready.png")
         run.state["app_ready"] = True
+    first_start_setup(run, t, prefix)
     set_model(run, t, prefix)
 
 

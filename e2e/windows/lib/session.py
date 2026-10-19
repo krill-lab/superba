@@ -168,9 +168,13 @@ class Run:
             if self.vm.pool_held:
                 self.log(f"== pool.sh release {self.vm.id} (restores {FINAL_SNAPSHOT}, leaves it stopped)")
                 self.vm.release()
-            else:
+            elif getattr(self.opts, "held", False):
                 self.log(f"== restoring {FINAL_SNAPSHOT} on VM {self.vm.id} (the lock stays with its holder)")
                 self.vm.restore(FINAL_SNAPSHOT)
+            else:
+                # Never acquired (e.g. interrupted while queueing for the pool): the VM id is only
+                # the default, and another run may hold that VM. Leave it alone.
+                self.log(f"== no VM was acquired by this run: nothing to give back (VM {self.vm.id} not touched)")
         except VmError as e:
             self.log(f"giving the VM back failed: {e}")
 

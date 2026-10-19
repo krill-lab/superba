@@ -45,10 +45,22 @@ class AppError(RuntimeError):
     pass
 
 
+# How long ChatGPT's first start may take to become usable ("Finishing Windows setup":
+# it creates its sandbox; minutes on a fresh VM): the onboarding's extra budget and the
+# composer's.
+FIRST_START_S = 420
+
+# The desktop app's first-start sandbox setup helper: while one runs, a switch pauses
+# ("ChatGPT is finishing its Windows setup (creating its sandbox)"); Superba detects it by
+# this executable name (superba-appctl procs::app_setup_pids / SANDBOX_SETUP_EXE).
+SANDBOX_SETUP_RE = r"^codex-windows-sandbox-setup\.exe$"
+
+
 class App:
     def __init__(self, run):
         self.run = run
         self.setup_waited = 0
+        self.composer_error = None
 
     @property
     def agent(self):
@@ -241,24 +253,131 @@ class App:
     def new_chat(self):
         return self.click_text(["New chat", "New thread"])
 
-    def composer_ready(self, timeout=300):
+    FOCUS_JS = ("(() => { const el = document.querySelector('.ProseMirror'); if (!el) return false;"
+                " el.focus(); return document.activeElement === el || el.contains(document.activeElement); })()")
+
+    def composer_ready(self, timeout=FIRST_START_S, call_s=30):
         """Until the composer takes the focus (on a first start the Windows app keeps it
-        disabled while "Finishing Windows setup" creates its sandbox, minutes)."""
-        end = time.time() + timeout
+        disabled while "Finishing Windows setup" creates its sandbox, minutes).
+
+        The renderer may not answer at all meanwhile (a Runtime.evaluate over 30 s during the
+        first-start setup, the app restarting its core or itself): such a try is retried with
+        a new CDP connection (the agent connects per call and finds the debugging port and
+        the page again), waiting for a new main process when the old one is gone, until
+        `timeout` in all. False when it never became usable (self.composer_error = why)."""
+        t0 = time.time()
+        end = t0 + timeout
+        tries = errors = 0
+        self.composer_error = None
         while True:
-            ok = self.eval("(() => { const el = document.querySelector('.ProseMirror'); if (!el) return false;"
-                           " el.focus(); return document.activeElement === el || el.contains(document.activeElement); })()")
-            if ok:
-                return True
+            tries += 1
+            try:
+                if self.eval(self.FOCUS_JS, timeout=max(5, min(call_s, end - time.time()))):
+                    if errors:
+                        self.run.log(f"  composer usable after {tries} tries / {time.time() - t0:.0f} s"
+                                     f" ({errors} renderer errors)")
+                    return True
+                self.composer_error = "the composer is not focusable"
+            except (AgentError, AppError) as e:
+                errors += 1
+                self.composer_error = f"renderer did not answer: {e}"
+                self.run.log(f"  composer check {tries} ({time.time() - t0:.0f} s): {str(e)[:300]}; trying again")
+                try:
+                    if not self.main():
+                        self.run.log("  ChatGPT's main process is gone: waiting for it to come back")
+                        self.wait_main(max(1, min(90, end - time.time())))
+                except AgentError as e2:
+                    self.run.log(f"  process list failed: {e2}")
             if time.time() >= end:
                 return False
             time.sleep(3)
 
+    # ------------------------------------------------------------- first-start setup
+    def setup_procs(self):
+        """The running sandbox setup helpers (any session: the app's sandbox service may run
+        it elevated)."""
+        return self.agent.procs(SANDBOX_SETUP_RE)
+
+    def wait_first_start_setup(self, timeout=900, settle=45, log=None):
+        """Until ChatGPT's first-start Windows setup has finished, the way Superba sees it: no
+        codex-windows-sandbox-setup.exe runs (a switch meanwhile pauses, "ChatGPT is finishing
+        its Windows setup"). When one ran, also until the app restarted its Codex core at its
+        end (a new app-server; at most 120 s) and the composer is usable again.
+
+        "No setup" must hold for `settle` s with the same app-servers: a core that just started
+        may not have spawned the setup yet. Returns a dict: ok, secs, setup (pid -> started,
+        parent, session, cmdline), app-servers during / after, consent (UAC prompts seen: the
+        harness answers none) and, when not ok, why."""
+        log = log or self.run.log
+        t0 = time.time()
+        end = t0 + timeout
+        seen = {}
+        consent = set()
+        during = set()
+        setup_end = None
+        stable, stable_since = None, None
+        info = {"ok": False, "setup": seen}
+        last_error = None
+        while True:
+            now = time.time()
+            try:
+                procs = self.setup_procs()
+                servers = frozenset(p["pid"] for p in self.app_servers())
+                uac = [p["pid"] for p in self.agent.procs(r"^consent\.exe$")]
+            except (AgentError, AppError) as e:
+                last_error = e
+                log(f"  first-start setup check failed: {e}; trying again")
+                procs, servers, uac = None, None, []
+            for p in procs or ():
+                if p["pid"] not in seen:
+                    seen[p["pid"]] = {"started": p.get("started"), "parent": p.get("ppid"),
+                                      "session": p.get("session"), "cmdline": (p.get("cmdline") or "")[:300]}
+                    log(f"  ChatGPT's first-start Windows setup runs: codex-windows-sandbox-setup.exe pid {p['pid']}"
+                        f" (parent {p.get('ppid')}, session {p.get('session')}, started {p.get('started')})")
+            for pid in uac:
+                if pid not in consent:
+                    consent.add(pid)
+                    log(f"  a UAC prompt is open (consent.exe pid {pid}); the harness answers none")
+            info.update(consent=sorted(consent), during=sorted(during))
+            if procs:
+                during |= servers
+                setup_end, stable, stable_since = None, None, None
+            elif procs is not None:
+                if seen and setup_end is None:
+                    setup_end = now
+                    log(f"  the first-start setup ended after ~{now - t0:.0f} s of waiting; app-servers {sorted(servers)}")
+                if servers != stable:
+                    stable, stable_since = servers, now
+                restarted = bool(servers - during) or not during
+                settled = now - stable_since >= settle
+                if settled and (not seen or restarted or now - setup_end >= 120):
+                    info.update(servers=sorted(servers), restarted=restarted if seen else None)
+                    if not seen:
+                        info.update(ok=True, secs=round(now - t0))
+                        return info
+                    if not restarted:
+                        log(f"  no new app-server {now - setup_end:.0f} s after the setup ended (still {sorted(servers)})")
+                    ready = self.composer_ready(max(30, min(180, end - time.time())))
+                    info.update(ok=ready, secs=round(time.time() - t0),
+                                why=None if ready else f"composer not usable after the setup: {self.composer_error}")
+                    return info
+            if now >= end:
+                running = sorted(p["pid"] for p in procs or ())
+                info.update(secs=round(now - t0), why=(
+                    f"codex-windows-sandbox-setup.exe still running after {now - t0:.0f} s: pids {running}" if running
+                    else f"the app did not settle (app-servers {sorted(servers or ())})"
+                    + (f"; last error: {last_error}" if last_error else "")))
+                return info
+            time.sleep(3)
+
     def send_turn(self, prompt, wait_ready=300):
         if not self.composer_ready(wait_ready):
-            text = self.body_text()
-            raise AppError("composer not focusable" + (" (app still 'Finishing Windows setup')"
-                                                        if "Finishing Windows setup" in text else ""))
+            try:
+                text = self.body_text()
+            except (AgentError, AppError):
+                text = ""
+            raise AppError(f"composer not usable: {self.composer_error}" + (" (app still 'Finishing Windows setup')"
+                                                                           if "Finishing Windows setup" in text else ""))
         for ev in ({"type": "rawKeyDown", "key": "a", "code": "KeyA", "windowsVirtualKeyCode": 65, "modifiers": 2,
                     "commands": ["selectAll"]},
                    {"type": "keyUp", "key": "a", "code": "KeyA", "windowsVirtualKeyCode": 65, "modifiers": 2},

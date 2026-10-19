@@ -59,6 +59,12 @@ UI Automation dumps, saved files), `transcripts/` (every `spb` call) and `net/` 
   prerequisites (`installed` → `superba` → `configured` → `app_ready` → `turn` → `router_on`,
   `lib/flows.py`) run when the VM state lacks them. A failed scenario makes the next one start from
   the base snapshot again.
+- **ChatGPT's first start**: the app the wizard's switch opens runs its one-time Windows sandbox
+  setup (`codex-windows-sandbox-setup.exe`, "Finishing Windows setup"), and a switch meanwhile
+  pauses (`spb switch` without `--wait-turn` exits 5). `flows.first_start_setup` waits for it the
+  way Superba detects it (that process; up to 15 min, then until the app restarted its Codex core)
+  after the wizard's switch and once the app is ready, so a scenario's next switch never runs into
+  it. Pauses for running turns (W13, the WSL busy scenarios) are not affected.
 
 ## Debugging a session by hand
 

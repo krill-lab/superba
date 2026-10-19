@@ -3,7 +3,7 @@
 - A throwaway CA + 127.0.0.1 server certificate (e2e/lib/mkcert.sh); the CA is
   imported into the guest's LocalMachine\\Root, which Superba (rustls platform
   verifier), the desktop app (Chromium) and Codex use on Windows.
-- `mock`: crates/superba-gui/tools/screenshots/mockrelay.py on host loopback
+- `mock`: e2e/lib/windows_mockrelay.py on host loopback
   (whoami, accounts/check, models, billing, usage, Responses that answer "pong"),
   with a random fake key.
 - `real`: logging line forwarders (e2e/lib/linefwd.py, needs aiohttp) in front of
@@ -29,7 +29,7 @@ from vm import REPO, free_port, psq
 
 MKCERT = REPO / "e2e" / "lib" / "mkcert.sh"
 LINEFWD = REPO / "e2e" / "lib" / "linefwd.py"
-MOCKRELAY = REPO / "crates" / "superba-gui" / "tools" / "screenshots" / "mockrelay.py"
+MOCKRELAY = REPO / "e2e" / "lib" / "windows_mockrelay.py"
 CATALOG_RS = REPO / "crates" / "superba-core" / "src" / "catalog.rs"
 GUEST_TLS = r"C:\Users\Public\wintest\tls"
 

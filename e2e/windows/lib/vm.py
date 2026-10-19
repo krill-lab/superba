@@ -100,9 +100,9 @@ class Vm:
                              text=True, check=True).stdout
         return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
 
-    def ssh_opts(self, batch=True):
+    def ssh_opts(self, batch=True, connect_timeout=10):
         return ["-p", str(self.ssh_port), "-i", self.key, "-o", f"BatchMode={'yes' if batch else 'no'}",
-                "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new",
+                "-o", f"ConnectTimeout={connect_timeout}", "-o", "StrictHostKeyChecking=accept-new",
                 "-o", f"UserKnownHostsFile={self.known_hosts}", "-o", "LogLevel=ERROR",
                 "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=8"]
 
@@ -196,22 +196,73 @@ class Vm:
     def create_snapshot(self, name):
         self.helper("snapshot.sh", "create", name, timeout=1800)
 
-    def wait_ssh(self, timeout=300):
-        end = time.time() + timeout
-        while time.time() < end:
-            r = subprocess.run(["ssh", *self.ssh_opts(), "-o", "ConnectTimeout=5", self.target, "exit 0"],
-                               capture_output=True, timeout=30)
-            if r.returncode == 0:
-                return
+    def wait_ssh(self, timeout=300, probe_s=30):
+        """Until `ssh … exit 0` succeeds. Right after a snapshot restore the guest's sshd may
+        accept the connection and then hang in the banner / key exchange (seen on VM 3 and 5):
+        a probe that does not answer within probe_s is a failed try, not the end of the
+        scenario. Every try is logged; the overall budget is `timeout`."""
+        t0 = time.time()
+        end = t0 + timeout
+        tries = 0
+        last = None
+        while True:
+            tries += 1
+            started = time.time()
+            limit = max(5, min(probe_s, end - started))
+            try:
+                r = subprocess.run(["ssh", *self.ssh_opts(connect_timeout=5), self.target, "exit 0"],
+                                   capture_output=True, text=True, timeout=limit, errors="replace")
+                if r.returncode == 0:
+                    self.log(f"guest SSH answers (try {tries}, {time.time() - t0:.0f} s)")
+                    return
+                last = f"exit {r.returncode}: {r.stderr.strip()[-200:] or 'no message'}"
+            except subprocess.TimeoutExpired:
+                last = f"no answer within {limit:.0f} s (hung banner / key exchange)"
+            self.log(f"guest SSH try {tries} failed after {time.time() - started:.0f} s: {last}")
+            if time.time() + 4 >= end:
+                raise VmError(f"guest SSH not reachable after {tries} tries in {time.time() - t0:.0f} s: {last}")
             time.sleep(4)
-        raise VmError("guest SSH not reachable")
+
+    # ssh / scp failed before the session was set up (exit 255 / scp's "lost connection" with
+    # one of these pre-authentication messages), so the remote command never ran: safe to try
+    # again. Failures of an established session ("client_loop: …", "Read from remote host …",
+    # "Connection to … closed by remote host") are not retried.
+    TRANSPORT_ERRORS = ("banner exchange", "kex_exchange_identification", "Connection refused",
+                        "Connection timed out", "Connection closed by 127.0.0.1 port",
+                        "Connection reset by 127.0.0.1 port", "No route to host")
+    SESSION_ERRORS = ("client_loop", "Read from remote host", "closed by remote host")
+
+    def _transport_failed(self, rc, stderr):
+        err = stderr or ""
+        return (rc == 255 or (rc != 0 and "lost connection" in err)) \
+            and any(m in err for m in self.TRANSPORT_ERRORS) and not any(m in err for m in self.SESSION_ERRORS)
+
+    def _ssh_run(self, cmd, timeout, what, retry_s=120, **kw):
+        """subprocess.run for ssh/scp, tried again (logged) while it fails at the transport
+        level (sshd still settling after a restore), for up to retry_s."""
+        end = time.time() + retry_s
+        tries = 0
+        while True:
+            tries += 1
+            r = subprocess.run(cmd, capture_output=True, timeout=timeout, **kw)
+            err = r.stderr if isinstance(r.stderr, str) else (r.stderr or b"").decode("utf-8", "replace")
+            if not self._transport_failed(r.returncode, err) or time.time() + 5 >= end:
+                if tries > 1:
+                    self.log(f"{what}: {'ok' if r.returncode == 0 else f'exit {r.returncode}'} on try {tries}")
+                return r
+            self.log(f"{what}: SSH transport failed (try {tries}, exit {r.returncode}): {err.strip()[-200:]}; trying again")
+            time.sleep(5)
 
     def wait_desktop(self, timeout=180):
         """Until explorer runs in an active console session (auto-logon done)."""
         end = time.time() + timeout
         while time.time() < end:
-            r = self.ps("$e = Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1;"
-                        " if ($e) { $e.SessionId } else { 'none' }", check=False, timeout=60)
+            try:
+                r = self.ps("$e = Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1;"
+                            " if ($e) { $e.SessionId } else { 'none' }", check=False, timeout=60)
+            except subprocess.TimeoutExpired:
+                self.log("wait_desktop: the guest did not answer within 60 s; trying again")
+                continue
             if r.returncode == 0 and r.stdout.strip().isdigit():
                 return int(r.stdout.strip())
             time.sleep(4)
@@ -233,8 +284,7 @@ class Vm:
         if len(enc) < 7000:
             cmd = ["ssh", *self.ssh_opts(), target,
                    f"powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {enc}"]
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                               encoding="utf-8", errors="replace")
+            r = self._ssh_run(cmd, timeout, "guest PowerShell", text=True, encoding="utf-8", errors="replace")
         else:
             tmp = REPO / "e2e" / ".work" / "windows"
             tmp.mkdir(parents=True, exist_ok=True)
@@ -243,10 +293,10 @@ class Vm:
             try:
                 remote = f"C:/Users/Public/wintest-{local.name}"
                 self.scp_to(local, remote, user=user)
-                r = subprocess.run(["ssh", *self.ssh_opts(), target,
-                                    f"powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {remote};"
-                                    f" $c = $LASTEXITCODE; Remove-Item -Force {remote}; exit $c"],
-                                   capture_output=True, text=True, timeout=timeout, encoding="utf-8", errors="replace")
+                r = self._ssh_run(["ssh", *self.ssh_opts(), target,
+                                   f"powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {remote};"
+                                   f" $c = $LASTEXITCODE; Remove-Item -Force {remote}; exit $c"],
+                                  timeout, "guest PowerShell", text=True, encoding="utf-8", errors="replace")
             finally:
                 local.unlink(missing_ok=True)
         if check and r.returncode != 0:
@@ -255,13 +305,15 @@ class Vm:
 
     def scp_to(self, local, remote, user=None):
         target = f"{user}@127.0.0.1" if user else self.target
-        subprocess.run(["scp", *self.scp_opts(), "-r", str(local), f"{target}:{remote}"],
-                       check=True, capture_output=True, timeout=1800)
+        cmd = ["scp", *self.scp_opts(), "-r", str(local), f"{target}:{remote}"]
+        r = self._ssh_run(cmd, 1800, f"scp to {remote}")
+        if r.returncode != 0:
+            raise subprocess.CalledProcessError(r.returncode, cmd, r.stdout, r.stderr)
 
     def scp_from(self, remote, local):
         Path(local).parent.mkdir(parents=True, exist_ok=True)
-        r = subprocess.run(["scp", *self.scp_opts(), "-r", f"{self.target}:{remote}", str(local)],
-                           capture_output=True, text=True, timeout=1800)
+        r = self._ssh_run(["scp", *self.scp_opts(), "-r", f"{self.target}:{remote}", str(local)],
+                          1800, f"scp from {remote}", text=True, errors="replace")
         if r.returncode != 0:
             raise VmError(f"scp from {remote} failed: {r.stderr.strip()[-400:]}")
 
@@ -278,13 +330,18 @@ class Vm:
         work = REPO / "e2e" / ".work" / "windows"
         work.mkdir(parents=True, exist_ok=True)
         errf = work / f"tunnel-{time.time_ns()}.log"
-        with open(errf, "w") as err:
-            p = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                 stderr=err, start_new_session=detach)
-        time.sleep(1.5)
-        if p.poll() is not None:
-            raise VmError(f"ssh tunnel failed: {errf.read_text(errors='replace')[-400:]}")
-        return p
+        for attempt in range(1, 6):
+            with open(errf, "w") as err:
+                p = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                     stderr=err, start_new_session=detach)
+            time.sleep(1.5)
+            if p.poll() is None:
+                return p
+            msg = errf.read_text(errors="replace")[-400:]
+            if attempt == 5 or not self._transport_failed(p.returncode, msg):
+                raise VmError(f"ssh tunnel failed: {msg}")
+            self.log(f"ssh tunnel: SSH transport failed (try {attempt}): {msg.strip()[-200:]}; trying again")
+            time.sleep(5)
 
     def screen(self, out):
         """Raw framebuffer through the QEMU monitor (works without the agent)."""

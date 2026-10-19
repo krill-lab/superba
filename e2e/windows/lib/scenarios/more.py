@@ -1020,18 +1020,33 @@ def w73(t):
     flows.app_ready(run, t)
     with t.step("Hot line switch from the elevated Superba (GUI)") as s:
         a = App(run)
+        target = "b" if run.state.get("line", "a") == "a" else "a"
+        before = flows.applied(run, "status-before-switch")
+        s.info(f"applied before: {before}")
         m0 = a.main()
+        sv0 = [p["pid"] for p in a.app_servers(m0)]
         u.page("overview")
         u.click(name="Switch provider or line")
         time.sleep(1)
-        u.act("invoke", name_re=rf"^Test {run.net.line_id('b')}\b", type="Button")
-        flows.wait_switch_done(run, s, u, timeout=120)
-        m1 = a.main()
-        s.check(m1 and m0 and m1["pid"] == m0["pid"], "main process kept (hot restart)")
+        u.act("invoke", name_re=rf"^Test {run.net.line_id(target)}\b", type="Button")
+        phases, _ = flows.wait_switch_done(run, s, u, timeout=120)
+        s.info(f"phases: {phases}")
+        # The switch must have completed (a new generation on the target line) before an
+        # unchanged main process means "hot restart": with no switch at all it is unchanged too.
+        done, after, pause = flows.wait_applied(run, before, run.net.line_id(target), timeout=90, u=u)
+        if not done:
+            s.ui_dump("switch-not-applied")
+        s.check(done, f"the switch completed: generation {before.get('generation')} -> {after.get('generation')},"
+                      f" line {before.get('line_id')} -> {after.get('line_id')}"
+                      + (f"; the GUI showed {pause}" if pause else ""))
         cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
-        s.check(run.net.line_url("b") in cfg, "config.toml on line b")
-        run.state["line"] = "b"
-    flows.turn(run, t, "E2E-ELEV", expect_line="b")
+        s.check(run.net.line_url(target) in cfg, f"config.toml on line {target}")
+        m1 = a.main()
+        sv1 = [p["pid"] for p in a.wait_app_server(60, exclude=sv0)]
+        s.check(m1 and m0 and m1["pid"] == m0["pid"], f"main process kept (hot restart): {m0 and m0['pid']} -> {m1 and m1['pid']}")
+        s.check(sv1 and not set(sv1) & set(sv0), f"the Codex core restarted: app-server {sv0} -> {sv1}")
+        run.state["line"] = target
+    flows.turn(run, t, "E2E-ELEV", expect_line=target)
 
 
 SYSTEM_TASK_PS = r"""
