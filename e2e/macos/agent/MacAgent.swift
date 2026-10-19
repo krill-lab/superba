@@ -191,6 +191,14 @@ func foreground(_ args: Args) throws -> AXUIElement {
     }
     app.activate(options: [.activateAllWindows])
     _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+    let root = AXUIElementCreateApplication(app.processIdentifier)
+    let deadline = Date().addingTimeInterval(3)
+    while attribute(root, kAXFrontmostAttribute) as? Bool != true {
+        if Date() >= deadline {
+            throw AgentFailure("FOCUS_ERROR", "Target application did not become frontmost")
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+    }
     return window
 }
 
@@ -226,6 +234,7 @@ func permissions(_ prompt: Bool = false) -> Args {
                 "For screenshots also allow it in Screen & System Audio Recording. Restart the command after allowing it."]
 }
 
+@MainActor
 func screenshot(_ args: Args) async throws -> Any {
     guard CGPreflightScreenCaptureAccess() else {
         throw AgentFailure("TCC_SCREEN_CAPTURE", "Screen recording permission is missing; see permissions command")
@@ -258,6 +267,7 @@ func screenshot(_ args: Args) async throws -> Any {
             "width": cgImage.width, "height": cgImage.height]
 }
 
+@MainActor
 func dispatch(_ command: String, _ args: Args) async throws -> Any {
     if command == "ping" || command == "permissions" {
         return permissions(args["prompt"] as? Bool ?? false)
@@ -303,7 +313,11 @@ func dispatch(_ command: String, _ args: Args) async throws -> Any {
 
 @main
 struct MacAgent {
+    @MainActor
     static func main() async {
+        // Initialize the WindowServer connection on the main thread before SCK.
+        // A bare async CLI can otherwise hit CGS_REQUIRE_INIT during capture.
+        NSApplication.shared.setActivationPolicy(.prohibited)
         let start = Date()
         var response: Args
         do {

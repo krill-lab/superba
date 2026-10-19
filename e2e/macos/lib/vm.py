@@ -1,6 +1,7 @@
 """SSH transport and exclusive local lease. No connection details in the repo."""
 
 import base64
+import hashlib
 import json
 import os
 import shlex
@@ -137,6 +138,9 @@ fi
         if result.returncode:
             # Compiler diagnostics only; this command never has secrets in scope.
             raise VmError("MacAgent compilation failed:\n" + result.stderr[-8000:])
+        return {"source_sha256": hashlib.sha256((here / "agent/MacAgent.swift").read_bytes()).hexdigest(),
+                "executable": self.root + "/agent/MacAgent", "exit": result.returncode,
+                "diagnostics": result.stderr}
 
 
 def configured_vm():

@@ -212,7 +212,8 @@ class Runner:
 
     def run(self, ids):
         try:
-            self.vm.prepare()
+            build = self.vm.prepare()
+            (self.out / "agent-build.json").write_text(self.redactor.json(build))
             disk = self.vm.rpc("disk")
             disk["build_minimum_bytes"] = 25 * 1024**3
             disk["development_build_allowed"] = disk["free_bytes"] >= disk["build_minimum_bytes"]

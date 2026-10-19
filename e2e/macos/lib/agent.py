@@ -23,7 +23,7 @@ class Agent:
         try:
             response = json.loads(result.stdout)
         except ValueError:
-            raise AgentError("MacAgent did not return a JSON response") from None
+            raise AgentError(f"MacAgent did not return JSON (exit {result.returncode})") from None
         if not response.get("ok"):
             error = response.get("error", "MacAgent failed")
             if response.get("code", "").startswith("TCC_"):

@@ -41,6 +41,8 @@ SIP, or reset anyone's permissions. A missing permission produces `BLOCKED` and
 no scenario begins. The public API contracts are documented by Apple:
 [AXIsProcessTrustedWithOptions](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions)
 and [SCScreenshotManager](https://developer.apple.com/documentation/screencapturekit/scscreenshotmanager).
+The agent initializes [NSApplication.shared](https://developer.apple.com/documentation/appkit/nsapplication/shared)
+on the main thread to establish its WindowServer connection before capturing.
 
 ## Build or select a DMG
 

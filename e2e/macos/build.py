@@ -106,42 +106,47 @@ def main():
     vm, lease = configured_vm()
     lease.wait = opts.wait_lock
     with lease:
-        if shutil.disk_usage(REPO).free < 30 * 1024**3:
-            raise Blocked("Host filesystem has less than 30 GiB free")
-        free = int(vm.shell("/bin/df -k /Users/Shared | /usr/bin/awk 'NR==2 {print $4}'").stdout.strip()) * 1024
-        if free < MIN_BYTES or opts.ci_only:
-            reason = f"VM has {free / 1024**3:.1f} GiB free; build requires at least 25 GiB"
-            (out / "disk-check.txt").write_text(reason + "\n")
-            print(reason + "; selecting CI DMG" if not opts.ci_only else "CI-only requested")
+        return execute_build(vm, opts, ref, out)
+
+
+def execute_build(vm, opts, ref, out):
+    """Build while the caller holds the VM lease (also usable by a test batch)."""
+    if shutil.disk_usage(REPO).free < 30 * 1024**3:
+        raise Blocked("Host filesystem has less than 30 GiB free")
+    free = int(vm.shell("/bin/df -k /Users/Shared | /usr/bin/awk 'NR==2 {print $4}'").stdout.strip()) * 1024
+    if free < MIN_BYTES or opts.ci_only:
+        reason = f"VM has {free / 1024**3:.1f} GiB free; build requires at least 25 GiB"
+        (out / "disk-check.txt").write_text(reason + "\n")
+        print(reason + "; selecting CI DMG" if not opts.ci_only else "CI-only requested")
+        download_ci(ref, out, opts.ci_run)
+        return 0
+    destination = vm.root + "/build/" + ref
+    with tempfile.TemporaryDirectory(prefix="macos-archive-", dir=out) as staging:
+        staging = Path(staging)
+        archive = staging / "source.tar"
+        local(["git", "archive", "--format=tar", "--output", str(archive), ref], cwd=REPO)
+        tree = staging / "src"
+        tree.mkdir()
+        extract_archive(archive, tree)
+        vm.shell("mkdir -p " + shlex.quote(destination))
+        local(["rsync", "-az", "--delete", "--exclude=.private", "--exclude=.secrets",
+               "-e", str(REPO / "e2e/macos/rsync-ssh.py"), str(tree) + "/", "vm:" + destination + "/"])
+    # Run the reviewed driver from this checkout, while building the archived ref.
+    vm.put(REPO / "e2e/macos/guest/build.sh", destination + "/macos-e2e-build.sh")
+    command = shlex.join(["/bin/bash", destination + "/macos-e2e-build.sh", destination])
+    result = vm.shell(command, timeout=7200, check=False)
+    (out / "build.log").write_text(result.stdout + result.stderr)
+    if result.returncode:
+        if result.returncode == 75:
             download_ci(ref, out, opts.ci_run)
             return 0
-        destination = vm.root + "/build/" + ref
-        with tempfile.TemporaryDirectory(prefix="macos-archive-", dir=out) as staging:
-            staging = Path(staging)
-            archive = staging / "source.tar"
-            local(["git", "archive", "--format=tar", "--output", str(archive), ref], cwd=REPO)
-            tree = staging / "src"
-            tree.mkdir()
-            extract_archive(archive, tree)
-            vm.shell("mkdir -p " + shlex.quote(destination))
-            local(["rsync", "-az", "--delete", "--exclude=.private", "--exclude=.secrets",
-                   "-e", str(REPO / "e2e/macos/rsync-ssh.py"), str(tree) + "/", "vm:" + destination + "/"])
-        # Run the reviewed driver from this checkout, while building the archived ref.
-        vm.put(REPO / "e2e/macos/guest/build.sh", destination + "/macos-e2e-build.sh")
-        command = shlex.join(["/bin/bash", destination + "/macos-e2e-build.sh", destination])
-        result = vm.shell(command, timeout=7200, check=False)
-        (out / "build.log").write_text(result.stdout + result.stderr)
-        if result.returncode:
-            if result.returncode == 75:
-                download_ci(ref, out, opts.ci_run)
-                return 0
-            raise VmError("Guest build failed; see build.log")
-        remote = destination + "/dist/superba-dev-arm64.dmg"
-        local_dmg = out / "superba-dev-arm64.dmg"
-        vm.get(remote, local_dmg)
-        result = {"mode": "vm-build", "ref": ref, "dmg": str(local_dmg), "guest_source": destination}
-        (out / "build.json").write_text(json.dumps(result, indent=2) + "\n")
-        print(json.dumps(result, indent=2))
+        raise VmError("Guest build failed; see build.log")
+    remote = destination + "/dist/superba-dev-arm64.dmg"
+    local_dmg = out / "superba-dev-arm64.dmg"
+    vm.get(remote, local_dmg)
+    result = {"mode": "vm-build", "ref": ref, "dmg": str(local_dmg), "guest_source": destination}
+    (out / "build.json").write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps(result, indent=2))
     return 0
 
 
