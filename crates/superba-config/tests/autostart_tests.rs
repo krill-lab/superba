@@ -123,7 +123,9 @@ fn mac_bundle_move_keeps_launchservices_identity() {
     )
     .unwrap();
     assert_eq!(a, b);
-    assert!(a.contains("<string>/usr/bin/open</string><string>-g</string><string>-b</string>"));
+    assert!(a.contains(
+        "<string>/usr/bin/open</string><string>-g</string><string>-n</string><string>-b</string>"
+    ));
     assert!(a.contains("<string>com.krill-code.superba</string>"));
     assert!(a.contains("<string>--autostart</string>"));
     assert!(!a.contains("KeepAlive"));

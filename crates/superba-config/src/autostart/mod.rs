@@ -278,9 +278,13 @@ pub fn render(platform: Platform, executable: &Path) -> Result<String> {
                 .ancestors()
                 .any(|p| p.extension().is_some_and(|x| x == "app"));
             let args = if bundled {
+                // Always deliver --autostart through our IPC path. Without -n,
+                // LaunchServices can send the existing app a reopen event
+                // instead of starting the command that acknowledges silently.
                 vec![
                     "/usr/bin/open",
                     "-g",
+                    "-n",
                     "-b",
                     BUNDLE_ID,
                     "--args",

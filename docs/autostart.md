@@ -22,7 +22,7 @@ the CLI or the GUI settings notification.
 | Platform | Registration | Why |
 | --- | --- | --- |
 | Windows | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `Superba` | The standard per-user login mechanism; independent of the router's `SuperbaRouter` value. It runs the quoted, absolute `superba.exe` path with `--autostart`. |
-| macOS | `~/Library/LaunchAgents/com.krill-code.superba.autostart.plist` | A user LaunchAgent works with the app bundle and unbundled developer builds without an administrator or a separate login helper. The packaged app uses `/usr/bin/open -g -b com.krill-code.superba --args --autostart`; LaunchServices resolves its identity when Finder moves or an updater replaces the bundle. |
+| macOS | `~/Library/LaunchAgents/com.krill-code.superba.autostart.plist` | A user LaunchAgent works with the app bundle and unbundled developer builds without an administrator or a separate login helper. The packaged app uses `/usr/bin/open -g -n -b com.krill-code.superba --args --autostart`; LaunchServices resolves its identity when Finder moves or an updater replaces the bundle. |
 | Linux | `$XDG_CONFIG_HOME/autostart/superba.desktop`, normally `~/.config/autostart/superba.desktop` | The XDG desktop-session convention works across desktop environments. The absolute executable path is quoted and desktop field codes are escaped. AppImage registrations use the original image, not its temporary mount. |
 
 The Windows Run command has a documented 260-character limit; enabling reports
@@ -35,6 +35,10 @@ If Superba is already running, authenticated single-instance IPC acknowledges
 the login request without raising its window. A process-lifetime lock also
 prevents duplicate windows during simultaneous starts. A manual second start
 still brings the existing window forward.
+
+On macOS, `open -n` delivers the login flag through a new process, which exits
+after the existing instance acknowledges it. This avoids sending the running
+app a system reopen event that could show its window.
 
 Normal GUI launches refresh an existing enabled registration after an update
 or portable installation move. Updates restart the installed GUI, which performs
