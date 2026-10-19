@@ -306,7 +306,14 @@ pub fn show(
                                 });
                         }
                         SuperbaTab::Data => {
-                            data::show(ui, cx, settings, &mut state.backups, &mut state.storage, out);
+                            data::show(
+                                ui,
+                                cx,
+                                settings,
+                                &mut state.backups,
+                                &mut state.storage,
+                                out,
+                            );
                         }
                     }
                     ui.add_space(40.0);

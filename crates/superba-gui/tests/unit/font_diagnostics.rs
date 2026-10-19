@@ -35,7 +35,8 @@ fn diagnostics_displays_pingfang_ui_family_in_both_languages() {
             log: &[],
         };
         let mut state = diagnostics::State::default();
-        let text = harness.settle(&mut |ui| diagnostics::show(ui, &cx, &mut state, &mut Vec::new()));
+        let text =
+            harness.settle(&mut |ui| diagnostics::show(ui, &cx, &mut state, &mut Vec::new()));
         assert!(text.iter().any(|(s, _)| s.starts_with("PingFang UI SC · ")));
     }
 }
