@@ -1,0 +1,22 @@
+# macOS scenario matrix
+
+Run `python3 e2e/macos/run.py list`. Each ID gets a fresh HOME and mandatory
+cleanup; cases do not inherit a previous case's pass or state. Live results live
+in the selected output directory, never in this table.
+
+| ID | Coverage | Observable assertions / evidence | Prerequisites / Windows counterpart |
+|---|---|---|---|
+| M01 | DMG installation, first launch and custom-provider wizard | Native arm64 app, first-run AX title and PNG, wizard applies endpoint to temporary Codex home, no raw key in profile metadata, restore removes endpoint | Permitted AX + capture; W01/W02/W04; shared wizard steps |
+| M02 | Line switch with installed desktop app | Two endpoints, switch result, config endpoint, same isolated desktop PID, before/after PNG | Installed ChatGPT/Codex, isolated hot-switch path; absent app or required full restart is BLOCKED; W10/W11 |
+| M03 | Router enabled and disabled | Codex loopback endpoint, owned LaunchAgent, request reaches fixture, direct endpoint restored, job and listener removed, PNGs | Router helper in DMG; W30/W33/W36. Real mode omits fixture inference |
+| M04 | Claude Code config apply/restore | Endpoint/key/slot written, unrelated settings preserved, original JSON restored, Claude page PNGs | Superba Claude writer; no Claude installation or inference required |
+| M05 | Notification hooks | Codex hook command installed/restored, async Claude Stop fragment, hook delivers to local sink, reply text excluded, notification-page PNG | No external chat credentials; GH#12 |
+| M06 | GUI login startup after real reboot | Product GUI autostart plist, isolated env, changed kernel boot time, auto-login, running GUI job, off removes registration, finalizer unloads | Build with `autostart`, explicit `--allow-reboot`, passwordless sudo and auto-login |
+| M07 | Data-location move (GH#15) | Persistent pointer used by fresh CLI, data at destination, providers survive cold start, data-page PNG | Build containing `spb data`; older build is BLOCKED; no env override masking the pointer |
+| M08 | DMG overwrite upgrade | Distinct source hashes, app replaced, provider JSON and sentinel unchanged, new app launches | `--upgrade-dmg` is a second artifact; packaging upgrade, not schema migration |
+| M09 | Restore/uninstall cleanup | Byte-identical original Codex config, no service or temporary LaunchAgents, finalizer removes owned app/processes/HOME | W40/W41/W42 |
+
+All cases require a free VM lease. Missing TCC permission blocks the selected
+cases before any app or secret is installed. After each case, `cleanup.ok` is a
+required result. A cleanup failure makes that case FAIL and stops the sequence.
+M06 is deliberately not exercised by the M01–M04 command.

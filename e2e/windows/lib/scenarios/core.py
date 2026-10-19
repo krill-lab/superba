@@ -43,6 +43,8 @@ def w01(t):
 @scenario("W02", "Skip setup writes nothing", area="wizard", conflicts=("configured", "wizard_seen"),
           needs=("installed",))
 def w02(t):
+    from e2e.shared.desktop_flows import wizard_skip
+
     run = t.run
     u = U(t)
     with t.step("Skip setup leaves Codex untouched") as s:
@@ -50,8 +52,7 @@ def w02(t):
         before = flows.inventory(run)
         flows.start_superba(run, s)
         s.check(u.exists(timeout=30, key="wizard.skip"), "wizard with 'Skip setup'")
-        u.click(key="wizard.skip")
-        time.sleep(2)
+        wizard_skip(u)
         s.check(not u.exists(key="wizard.detect.title"), "wizard closed")
         after = flows.inventory(run)
         s.check(before["config_sha"] == after["config_sha"], "config.toml unchanged")
