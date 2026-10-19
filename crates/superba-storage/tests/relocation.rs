@@ -233,7 +233,12 @@ fn rejects_overlaps_nonempty_relative_file_home_and_codex_destinations() {
         nonempty.clone(),
         file,
         Path::new("relative").into(),
-        ctx.home_dir.join("../other"),
+        // PathBuf::join normalizes `..` for verbatim Windows paths; preserve
+        // the user's raw spelling so the validator actually sees ParentDir.
+        std::path::PathBuf::from(format!(
+            "{}/../other",
+            superba_core::paths::display_path(&ctx.home_dir)
+        )),
     ] {
         assert!(
             PreparedMove::prepare(&ctx, &target).is_err(),

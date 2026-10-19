@@ -251,6 +251,9 @@ impl PreparedMove {
             if expected != verified.finalize() {
                 return Err(Error::other("data.verify"));
             }
+            // Windows cannot atomically replace a destination still held by the
+            // verification reader. Metadata rewriting below replaces the file.
+            drop(check);
             // Keep executable bits for downloaded programs. Never make private
             // data readable by a wider set of users than its original mode.
             #[cfg(unix)]
