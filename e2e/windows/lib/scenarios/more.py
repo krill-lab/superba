@@ -927,10 +927,19 @@ def w62(t):
                 s.shot("960x640-superba-navigation")
                 s.ui_dump("960x640-superba-navigation")
     with t.step("Smaller than the minimum is refused") as s:
-        U(t).resize(700, 500)
-        time.sleep(1)
-        got = U(t).window()
-        s.check(got["rect"][2] >= 940 and got["rect"][3] >= 600, f"window stays at least the minimum: {got['rect']}", soft=True)
+        u = U(t)
+        try:
+            u.resize(700, 500)
+            time.sleep(1)
+            got = u.window()
+            s.check(got["rect"][2] >= 940 and got["rect"][3] >= 600,
+                    f"window stays at least the minimum: {got['rect']}", soft=True)
+            s.shot("minimum-size-attempt")
+            s.ui_dump("minimum-size-attempt")
+        finally:
+            # The programmatic resize can leave the window below its normal
+            # minimum. Keep later scenarios independent of this stress check.
+            u.resize(1280, 800)
         s.manual("every page at each size: no clipped borders/focus rings (bugs 2, 8, 9), detail cards fit "
                  "(bug 10), label+control rows aligned (bug 19), Models columns fit at 960 (bug 25)")
 

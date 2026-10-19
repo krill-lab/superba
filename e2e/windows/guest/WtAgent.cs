@@ -611,7 +611,10 @@ public static class WtAgent
         string how = action;
         object p;
         IntPtr win = ResolveWindow(a, false);
-        if (win != IntPtr.Zero) Foreground(win);
+        // A native popup menu is not itself a foreground window. Its UIA
+        // InvokePattern can run without activation; mouse fallbacks still
+        // validate the foreground window in ClickElement.
+        if (win != IntPtr.Zero && (action != "invoke" || B(a, "foreground", true))) Foreground(win);
         switch (action)
         {
             case "invoke":

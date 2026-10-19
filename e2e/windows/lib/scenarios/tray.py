@@ -136,7 +136,7 @@ def w64(t):
             s.check(u.L(key) in names, f"menu item {u.L(key)!r}")
         s.check(any(n.startswith("Router: ") for n in names), "the router's state is listed")
         s.shot("tray-menu", full=True)
-        run.agent.call("uia.act", hwnd=m["hwnd"], name=u.L("tray.menu.open"), type="MenuItem", raw=True)
+        run.agent.call("uia.act", hwnd=m["hwnd"], name=u.L("tray.menu.open"), type="MenuItem", raw=True, foreground=False)
         s.check(wait(lambda: superba_visible(run)), "'Open Superba' shows the window")
         s.shot("shown-from-menu")
 
@@ -160,7 +160,7 @@ def w64(t):
         run.agent.call("window", process_re="^superba$", close=True)
         wait(lambda: not superba_visible(run))
         m = open_menu(run, s)
-        run.agent.call("uia.act", hwnd=m["hwnd"], name=u.L("tray.menu.quit"), type="MenuItem", raw=True)
+        run.agent.call("uia.act", hwnd=m["hwnd"], name=u.L("tray.menu.quit"), type="MenuItem", raw=True, foreground=False)
         s.check(wait(lambda: not run.agent.procs(r"^superba\.exe$"), timeout=20), "superba.exe exited")
         s.check(bool(run.agent.procs(r"^superba-router\.exe$")), "superba-router.exe still runs")
         bar, icon = tray_icon(run, timeout=3)

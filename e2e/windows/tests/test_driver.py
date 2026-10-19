@@ -76,11 +76,26 @@ class DriverTests(unittest.TestCase):
     @patch("flows.time.time", side_effect=range(100))
     def test_toast_seen_while_overlay_closes_survives_next_tree_query(self, clock, sleep):
         u = self.ui()
-        toast = u.L("toast.switched", line="Test", secs="2")
+        toast = u.L("shell.switched", line="Test")
         u.texts = Mock(side_effect=[[u.L("banner.planning"), toast], ["Overview"]])
         _, names = flows.wait_switch_done(u.run, Mock(), u)
         self.assertEqual(flows.switch_result(u, names), [toast])
         self.assertEqual(u.texts.call_count, 2)
+
+    def test_rendered_switch_results_in_both_languages(self):
+        cases = [("shell.switched", {"line": "Test"}),
+                 ("shell.reapplied", {"dest": "Test"}),
+                 ("shell.router_on", {}), ("shell.router_off", {}),
+                 ("shell.host_synced", {"host": "Ubuntu-WSL1"}),
+                 ("toast.written_only", {}), ("toast.written_not_running", {})]
+        for lang in ("en", "zh-CN"):
+            for key, args in cases:
+                with self.subTest(lang=lang, key=key):
+                    u = self.ui(lang)
+                    title = u.L(key, **args)
+                    u.texts = Mock(side_effect=[[], [title]])
+                    with patch("ui.time.sleep"):
+                        self.assertEqual(flows.switch_result(u), [title])
 
     def test_still_running_is_named_immediately_when_force_quit_disallowed(self):
         for lang in ("en", "zh-CN"):

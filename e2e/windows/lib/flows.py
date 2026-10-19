@@ -365,7 +365,12 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
 
 
 def switch_result_patterns(u):
-    return [u.R("toast.switched"), u.R("toast.partial"), r"(?i)failed|rolled back|失败|已回滚"]
+    # Applied::title renders shell.*; toast.switched is the activity-log line
+    # with elapsed time and is not the visible success toast.
+    keys = ("shell.switched", "shell.reapplied", "shell.router_on", "shell.router_off",
+            "shell.host_synced", "toast.partial", "toast.written_only", "toast.written_not_running",
+            "toast.written_launch_failed", "toast.reopened_unverified")
+    return [u.R(key) for key in keys] + [r"(?i)failed|rolled back|失败|已回滚"]
 
 
 def switch_result(u, initial=(), timeout=8):
