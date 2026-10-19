@@ -71,6 +71,7 @@ pub struct FakeConfig {
     /// Rendered restore destination, independent of the live configuration.
     pub restored_files: Mutex<Option<CodexFiles>>,
     pub restored_auth_mode: Mutex<Option<AuthMode>>,
+    pub recent_models: Mutex<Vec<String>>,
 }
 
 /// Owned-key changes the fake reports: the base URL of token modes and every
@@ -166,6 +167,7 @@ impl FakeConfig {
             last_desired: Mutex::new(None),
             restored_files: Mutex::new(None),
             restored_auth_mode: Mutex::new(None),
+            recent_models: Mutex::new(Vec::new()),
         }
     }
 
@@ -194,6 +196,27 @@ fn mode_name(d: &ResolvedProfile) -> String {
 
 #[async_trait]
 impl ConfigEngine for FakeConfig {
+    async fn recent_models(&self, _home: &CodexHome) -> Result<Vec<String>> {
+        Ok(self.recent_models.lock().unwrap().clone())
+    }
+
+    async fn repair_recent_models(
+        &self,
+        _home: &CodexHome,
+        replacements: &BTreeMap<String, String>,
+    ) -> Result<usize> {
+        push(&self.log, "config:repair_recent_models");
+        let mut recent = self.recent_models.lock().unwrap();
+        let mut changed = 0;
+        for model in recent.iter_mut() {
+            if let Some(target) = replacements.get(model) {
+                *model = target.clone();
+                changed += 1;
+            }
+        }
+        Ok(changed)
+    }
+
     fn render(&self, _input: &RenderInput<'_>) -> Result<RenderedFiles> {
         Err(Error::not_implemented("fake render"))
     }

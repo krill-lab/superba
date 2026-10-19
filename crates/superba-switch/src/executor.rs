@@ -442,6 +442,38 @@ impl Run<'_> {
         self.entry.status = JournalStatus::Committed;
         self.save_journal();
 
+        if !self.pc.recent_model_replacements.is_empty() {
+            if self.opts.write_only && self.session.is_some() {
+                self.notices
+                    .push(Notice::warning(text("switch.models.recent_deferred")));
+            } else {
+                // The app was stopped by this switch, or was not running. Refuse
+                // to race another app opened between planning and this point.
+                match self.sw.deps.app.running_session().await {
+                    Ok(Some(_)) => self
+                        .notices
+                        .push(Notice::warning(text("switch.models.recent_deferred"))),
+                    Ok(None) => match self
+                        .sw
+                        .deps
+                        .config
+                        .repair_recent_models(&self.pc.home, &self.pc.recent_model_replacements)
+                        .await
+                    {
+                        Ok(count) => self
+                            .ev
+                            .log(Severity::Info, Switcher::recent_models_note(count)),
+                        Err(e) => self.notices.push(Notice::warning(
+                            text("switch.models.recent_failed").arg("detail", e.to_string()),
+                        )),
+                    },
+                    Err(e) => self.notices.push(Notice::warning(
+                        text("switch.models.recent_failed").arg("detail", e.to_string()),
+                    )),
+                }
+            }
+        }
+
         if write_only {
             if plan.migration.is_some() {
                 self.notices

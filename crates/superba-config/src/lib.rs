@@ -38,6 +38,7 @@ mod env;
 mod fsx;
 mod journal;
 mod keystore;
+mod model_history;
 mod profiles;
 mod render;
 mod secrets;

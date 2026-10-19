@@ -27,6 +27,7 @@ unreachable = "Line unreachable"
 unknown = "Unexpected answer ({status}): {message}"
 
 [restart.reason]
+recent_models = "Recent model names from the previous provider must be repaired while ChatGPT is closed."
 no_cdp = "ChatGPT was not opened from Superba, so it cannot be hot-switched."
 no_bridge = "This ChatGPT version does not expose the restart bridge."
 authapi_missing = "ChatGPT was started without the auth API address; a hot switch would lose the login."

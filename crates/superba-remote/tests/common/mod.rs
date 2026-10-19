@@ -130,6 +130,18 @@ const KEYS: [&str; 3] = [
 
 #[async_trait]
 impl ConfigEngine for FakeEngine {
+    async fn recent_models(&self, _home: &CodexHome) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    async fn repair_recent_models(
+        &self,
+        _home: &CodexHome,
+        _replacements: &std::collections::BTreeMap<String, String>,
+    ) -> Result<usize> {
+        Err(Error::not_implemented("remote fake recent-model repair"))
+    }
+
     fn render(&self, input: &RenderInput<'_>) -> Result<RenderedFiles> {
         let cur_cfg = input
             .files

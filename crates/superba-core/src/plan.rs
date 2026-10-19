@@ -110,6 +110,8 @@ impl RestartKind {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum FullRestartReason {
+    /// Recent model names from another provider need repair with the app stopped.
+    RecentModels,
     /// The app was not launched with a CDP port (not opened through Superba).
     NoCdp,
     /// CDP is up but `electronBridge.sendMessageFromView` is missing.
@@ -133,6 +135,10 @@ impl FullRestartReason {
     /// Display text for the confirmation dialog.
     pub fn text(self) -> LocalizedText {
         let (key, en) = match self {
+            Self::RecentModels => (
+                "restart.reason.recent_models",
+                "Recent model names from the previous provider must be repaired while ChatGPT is closed.",
+            ),
             Self::NoCdp => (
                 "restart.reason.no_cdp",
                 "ChatGPT was not opened from Superba, so it cannot be hot-switched.",

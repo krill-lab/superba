@@ -540,7 +540,7 @@ impl TomlConfigEngine {
         let original = match desired.mode {
             ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => {
                 let mut o = self.original_files(hs, files)?;
-                if o.auth_json.as_ref().is_some_and(&is_signed_out) {
+                if o.auth_json.as_ref().is_some_and(is_signed_out) {
                     o.auth_json = None;
                 }
                 Some(o)
@@ -551,7 +551,7 @@ impl TomlConfigEngine {
         let generation = match desired.mode {
             ResolvedMode::Generation { generation } => {
                 let mut g = self.generation_snapshot(hs, generation)?;
-                if g.auth_json.as_ref().is_some_and(&is_signed_out) {
+                if g.auth_json.as_ref().is_some_and(is_signed_out) {
                     g.auth_json = None;
                 }
                 if let Some(file) = drop_missing_catalog(root, &mut g) {
@@ -1621,6 +1621,23 @@ fn short_id(id: &str) -> String {
 
 #[async_trait]
 impl ConfigEngine for TomlConfigEngine {
+    async fn recent_models(&self, home: &CodexHome) -> Result<Vec<String>> {
+        let home = home.clone();
+        self.run(move |_| crate::model_history::recent_models(&home))
+            .await
+    }
+
+    async fn repair_recent_models(
+        &self,
+        home: &CodexHome,
+        replacements: &std::collections::BTreeMap<String, String>,
+    ) -> Result<usize> {
+        let home = home.clone();
+        let replacements = replacements.clone();
+        self.run(move |this| crate::model_history::repair(&this.ctx, &home, &replacements))
+            .await
+    }
+
     fn render(&self, input: &RenderInput<'_>) -> Result<RenderedFiles> {
         let last_written = input.last_written.unwrap_or(&[]);
         render::render(&Inputs {

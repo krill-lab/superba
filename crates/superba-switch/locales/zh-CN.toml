@@ -312,6 +312,10 @@ version_unknown = "{host} 上的 Codex 版本未知，不会为它过滤任何�
 not_ssh = "{host} 是{kind}：ChatGPT app 不通过 SSH 连接它，Superba 无法切换它，已跳过。"
 
 [switch.models]
+recent_repair = "为当前 Krill 连接修复 {count} 个最近模型名称，并保留加密备份。"
+recent_deferred = "ChatGPT 仍在运行，尚未修复最近模型名称。请允许重启客户端后重新切换。"
+recent_failed = "无法修复最近模型名称：{detail}"
+legacy_model = "使用 {model}，替换上一个连接的模型名称 {old}。"
 service_tier_old_codex = "{consumer} 的 Codex 版本为 {version}，只认 service_tier = \"fast\" 或 \"flex\"；为了让它仍能读取 config.toml，Superba 不写入 service_tier = \"{tier}\"。"
 catalog_unrepaired = "Codex {now} 不接受模型目录文件 {file}，Superba 也无法改写配置（{reason}）。修复前 Codex 无法启动：请重新切换到这个供应商一次，或从 {config} 中删除 model_catalog_json 这一行。"
 repair_no_profile = "当前没有应用任何供应商"

@@ -313,6 +313,10 @@ version_unknown = "The Codex version on {host} is unknown: nothing is filtered o
 not_ssh = "{host} ({kind}): the ChatGPT app does not reach it over SSH, so Superba cannot switch it; skipped."
 
 [switch.models]
+recent_repair = "Repair {count} recent model names for this Krill connection, keeping an encrypted backup."
+recent_deferred = "Recent model names were not repaired because ChatGPT is still running. Switch again with an app restart."
+recent_failed = "Recent model names could not be repaired: {detail}"
+legacy_model = "Use {model} instead of the previous connection's model name {old}."
 service_tier_old_codex = "{consumer} runs Codex {version}, which reads only service_tier = \"fast\" or \"flex\"; Superba leaves out service_tier = \"{tier}\" so that this Codex can still load config.toml."
 catalog_unrepaired = "Codex {now} refuses the model catalog file {file}, and Superba could not rewrite the configuration ({reason}). Codex will not start until this is fixed: switch to this provider again, or delete the model_catalog_json line from {config}."
 repair_no_profile = "no provider is applied"

@@ -190,6 +190,19 @@ pub trait ConfigEngine: Send + Sync {
         let _ = home;
         Ok(Vec::new())
     }
+
+    /// Model identifiers in the desktop app's recent-model preferences. Read-only;
+    /// missing preferences return an empty list, malformed data is an error.
+    async fn recent_models(&self, home: &CodexHome) -> Result<Vec<String>>;
+
+    /// Replace explicitly mapped recent-model identifiers while the desktop app
+    /// is stopped. Preserve every other preference and encrypt a backup first.
+    /// The caller holds the switch lock and has checked that the app is stopped.
+    async fn repair_recent_models(
+        &self,
+        home: &CodexHome,
+        replacements: &BTreeMap<String, String>,
+    ) -> Result<usize>;
 }
 
 /// Persists environment variables for future processes (plan 6.1, 9.9):

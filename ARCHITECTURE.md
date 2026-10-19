@@ -26,6 +26,15 @@ Windows installer's folder check, embedded in the MSI and never installed;
 
 ## 1. Crate map and ownership
 
+Legacy Magpie Krill recent-model IDs are repaired only when a Krill profile's
+real model endpoint confirms the corresponding bare ID. Planning records exact
+replacements, adds a full-restart requirement when the app is running, and never
+writes preferences. After applying configuration, the executor verifies the app
+is stopped before the config engine replaces only the recent-model IDs in
+`.codex-global-state.json`. The engine encrypts a backup, checks the original
+hash before atomic publication and preserves effort, service tier and unrelated
+preferences. Write-only switches defer this step while the app is running.
+
 ```
                        superba-core  (types + traits only)
         ┌──────────┬────────┼─────────┬────────────┬─────────────┬───────────────┬──────────────┐

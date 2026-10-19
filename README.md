@@ -82,6 +82,11 @@ Geist look).
   endpoints of any key-based site; Krill also shows the account e-mail, daily
   cost and per-model usage (fetched on demand: Krill allows 10 usage requests an
   hour).
+- **Legacy Krill model names.** When switching, stale `krill/…`, `krill-usage/…`
+  and `krill-balance/…` recent-model names are converted only when the destination
+  catalog confirms the corresponding bare model ID. This requires closing the
+  desktop app; preferences are backed up encrypted before the narrow repair.
+  A write-only switch defers the repair while the app is running.
 - **Local router (opt-in, off by default).** A small per-user background process
   on `127.0.0.1` that forwards this computer's Codex requests to Krill lines and
   your other sites with per-request failover and conversation stickiness. While

@@ -92,6 +92,8 @@ pub(crate) struct PlanContext {
     /// (target, its `CODEX_HOME`, the model or `None`), recorded after that
     /// distribution's apply.
     pub kept_host_models: Vec<KeptHostModel>,
+    /// Verified stale recent model IDs, repaired only with the desktop app stopped.
+    pub recent_model_replacements: BTreeMap<String, String>,
 }
 
 /// The model a plan keeps in one WSL distribution (user bug 63).
@@ -139,6 +141,7 @@ impl PlanContext {
             wsl_pending: Vec::new(),
             kept_model: None,
             kept_host_models: Vec::new(),
+            recent_model_replacements: BTreeMap::new(),
         }
     }
 }
@@ -957,7 +960,7 @@ impl Switcher {
         // --- model catalog (plan 4 #17) ---------------------------------------
         let model_check = if local && draft.blocks.is_empty() {
             let left = model_left_to_config(&state, &set, &sites, baseline.as_ref());
-            self.check_model(&request, left, &mut dest, &mut draft)
+            self.check_model(&request, &set, left, &mut dest, &mut draft)
                 .await
         } else {
             None
@@ -1150,6 +1153,37 @@ impl Switcher {
             && app_core_current(&processes, state.active.as_ref())
         {
             RestartKind::None
+        } else {
+            primary
+        };
+
+        // The desktop app keeps recent models independently from config.toml.
+        // It must be closed for a preference repair, including in safe mode.
+        let recent_model_replacements =
+            if local && !dest.hand_off && dest.auth.is_some_and(AuthMode::uses_key) {
+                match self
+                    .recent_model_replacements(&home, dest.profile_id.as_ref(), &set)
+                    .await
+                {
+                    Ok(replacements) => replacements,
+                    Err(e) => {
+                        draft.skipped("recent model names", &e);
+                        BTreeMap::new()
+                    }
+                }
+            } else {
+                BTreeMap::new()
+            };
+        if !recent_model_replacements.is_empty() {
+            draft.info(Self::recent_models_note(recent_model_replacements.len()));
+        }
+        let primary = if !recent_model_replacements.is_empty()
+            && session.is_some()
+            && !primary.is_blocked()
+        {
+            RestartKind::FullAppRestart {
+                reason: superba_core::FullRestartReason::RecentModels,
+            }
         } else {
             primary
         };
@@ -1347,6 +1381,7 @@ impl Switcher {
                 wsl_pending,
                 kept_model,
                 kept_host_models,
+                recent_model_replacements,
             },
         );
         Ok(plan)
@@ -2420,6 +2455,7 @@ impl Switcher {
     async fn check_model(
         &self,
         request: &SwitchRequest,
+        set: &ProfileSet,
         left_to_config: Option<String>,
         dest: &mut Dest,
         draft: &mut Draft,
@@ -2428,6 +2464,38 @@ impl Switcher {
             // The router maps Codex's model name per member and serves the
             // members' own catalogs: `config.toml` keeps the Codex name, so a
             // failover never sends one member's name to another.
+            let current = dest
+                .resolved
+                .as_ref()?
+                .model
+                .model
+                .clone()
+                .or(left_to_config)?;
+            match self
+                .verified_krill_replacements(
+                    dest.profile_id.as_ref(),
+                    set,
+                    std::slice::from_ref(&current),
+                )
+                .await
+            {
+                Ok(replacements) => {
+                    if let Some(canonical) = replacements.get(&current) {
+                        dest.resolved.as_mut()?.model.model = Some(canonical.clone());
+                        draft.info(
+                            text("switch.models.legacy_model")
+                                .arg("old", &current)
+                                .arg("model", canonical),
+                        );
+                        return Some(ModelCheck {
+                            current: Some(canonical.clone()),
+                            available: true,
+                            suggestions: Vec::new(),
+                        });
+                    }
+                }
+                Err(error) => draft.skipped("legacy model name", &error),
+            }
             return None;
         }
         let site = dest.site.as_ref()?;
@@ -2472,6 +2540,23 @@ impl Switcher {
         if models.iter().any(|m| m.id == current) {
             return Some(ModelCheck {
                 current: Some(current),
+                available: true,
+                suggestions: Vec::new(),
+            });
+        }
+        if site.kind == SiteKind::Krill
+            && let Some(canonical) =
+                crate::model_history::krill_replacements(std::slice::from_ref(&current), &models)
+                    .get(&current)
+        {
+            resolved.model.model = Some(canonical.clone());
+            draft.info(
+                text("switch.models.legacy_model")
+                    .arg("old", &current)
+                    .arg("model", canonical),
+            );
+            return Some(ModelCheck {
+                current: Some(canonical.clone()),
                 available: true,
                 suggestions: Vec::new(),
             });
