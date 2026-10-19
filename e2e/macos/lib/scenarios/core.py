@@ -185,6 +185,7 @@ def notifications(t):
 def autostart(t):
     if not t.runner.opts.allow_reboot:
         raise Blocked("M06 needs --allow-reboot and a VM with GUI auto-login")
+    t.rpc("reboot_ready")
     t.install()
     if t.spb("autostart", "--help", ok=False)["code"]:
         raise Blocked("This DMG predates spb autostart; use an integrated build")
@@ -197,6 +198,7 @@ def autostart(t):
     item = t.rpc("login_item", path=plist)
     t.save("login-item.json", item)
     before = t.rpc("service", label=label)["boot"]
+    t.save("reboot-preflight.json", t.rpc("reboot_ready"))
     # Reboot, not logout or a simulated process restart. The run marker survives.
     try:
         t.runner.vm.shell("sudo -n /sbin/reboot", check=False, timeout=15)

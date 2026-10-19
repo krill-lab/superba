@@ -130,6 +130,9 @@ the one-shot launcher is allowed to exit after starting the GUI. It invokes
 `superba autostart on/off` through the app's embedded CLI so executable discovery
 does not depend on where the standalone `spb` was copied. Builds predating the
 autostart command are BLOCKED. M03 separately checks the router's service.
+M06 checks for running Rust builds/tests before setup and immediately before
+rebooting. Background CI may share the VM without holding the GUI lease; those
+jobs must finish first, or M06 is BLOCKED without rebooting.
 
 Results are `report.json`, `report.md`, `run.log`, and per-case CLI transcripts,
 AX dumps, window PNGs, assertions and cleanup results. Text is scrubbed before

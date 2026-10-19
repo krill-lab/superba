@@ -281,6 +281,17 @@ class GuestSafetyTests(unittest.TestCase):
         cls.guest = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.guest)
 
+    def test_background_ci_blocks_reboot_without_echoing_arguments(self):
+        rows = [{"pid": 42, "command": "/ci/bin/cargo test --token secret-input"},
+                {"pid": 43, "command": "/ci/target/debug/deps/unit-abcd --nocapture"}]
+        with patch.object(self.guest, "processes", return_value=rows):
+            with self.assertRaises(self.guest.Blocked) as error:
+                self.guest.reboot_ready()
+        self.assertIn("cargo", str(error.exception))
+        self.assertNotIn("secret-input", str(error.exception))
+        with patch.object(self.guest, "processes", return_value=[]):
+            self.assertEqual(self.guest.reboot_ready(), {"ready": True})
+
     def test_paths_cannot_escape_session(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "session"

@@ -128,6 +128,21 @@ def preflight():
             "boot": checked(["/usr/sbin/sysctl", "-n", "kern.boottime"]).strip()}
 
 
+def reboot_ready():
+    # Headless CI can share the VM without holding its GUI lease. Reboot must
+    # wait for those jobs too; never include their potentially sensitive argv.
+    busy = set()
+    for row in processes():
+        executable = row["command"].split(" ", 1)[0]
+        name = Path(executable).name
+        if name in ("cargo", "rustc", "rustdoc", "xcodebuild", "swiftc") or (
+                "/target" in executable and "/deps/" in executable):
+            busy.add(name)
+    if busy:
+        raise Blocked("Build/test jobs must finish before reboot: " + ", ".join(sorted(busy)))
+    return {"ready": True}
+
+
 def create():
     info = preflight()
     if info["console"] in ("root", "loginwindow"):
@@ -329,6 +344,8 @@ def dispatch(op, args):
     if op == "disk":
         return {"free_bytes": shutil.disk_usage(ROOT).free}
     root = session(args)
+    if op == "reboot_ready":
+        return reboot_ready()
     if op == "install":
         return install(root, args["dmg"], args.get("upgrade", False))
     if op == "start":
