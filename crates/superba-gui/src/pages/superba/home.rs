@@ -136,10 +136,7 @@ pub fn show(
         ui.add(Badge::new(text).status(status));
         if let Some(at) = cx.data.selfupdate.value.as_ref().and_then(|v| v.checked_at) {
             ui.label(Text::small(
-                cx.tr.f(
-                    "superba.home.checked",
-                    &[("time", &crate::pages::clock_time(at, false))],
-                ),
+                cx.tr.f("superba.home.checked", &[("age", &cx.ago(at))]),
                 cx.pal,
             ));
         }
@@ -238,6 +235,7 @@ pub fn show(
     });
     ui.horizontal_wrapped(|ui| {
         ui.label(Text::small(cx.tr.t("settings.about.license"), cx.pal));
+        ui.label(Text::small("·", cx.pal));
         ui.label(Text::small(cx.tr.t("settings.about.fonts"), cx.pal));
     });
 }

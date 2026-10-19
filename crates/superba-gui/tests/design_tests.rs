@@ -58,6 +58,46 @@ fn button_text_meets_primary_and_danger_contrast() {
 }
 
 #[test]
+fn off_toggle_track_and_knob_have_readable_contrast() {
+    for theme in [Theme::Light, Theme::Dark] {
+        let ctx = egui::Context::default();
+        ctx.set_theme(theme);
+        let pal = Palette::for_theme(theme);
+        let mut off = false;
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.add(Toggle::new(&mut off, "Switch"));
+        });
+        let track = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if r.rect.size() == vec2(36.0, 20.0) => Some(r.fill),
+                _ => None,
+            })
+            .expect("toggle track is painted");
+        let knob = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Circle(c) if c.radius == 7.0 => Some(c.fill),
+                _ => None,
+            })
+            .expect("toggle knob is painted");
+        for bg in [pal.bg, pal.bg_subtle, pal.surface, pal.hover] {
+            assert!(
+                contrast_ratio(track, bg) >= 4.5,
+                "{theme:?}: track against {bg:?}"
+            );
+        }
+        assert!(
+            contrast_ratio(track, knob) >= 4.5,
+            "{theme:?}: knob against track"
+        );
+        output.drop_without_applying_deltas();
+    }
+}
+
+#[test]
 fn contrast_has_known_endpoints_and_is_symmetric() {
     assert!((contrast_ratio(Color32::BLACK, Color32::WHITE) - 21.0).abs() < 0.001);
     for a in [Color32::BLACK, Color32::WHITE, DARK.text, LIGHT.red] {

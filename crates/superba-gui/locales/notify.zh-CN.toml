@@ -4,7 +4,7 @@
 [prefs.notify]
 title = "通知"
 enabled.title = "发送通知"
-enabled.desc = "任务完成、需要你批准或出错时，发一条短消息到手机或群聊。消息会经过所选渠道的服务器。"
+enabled.desc = "任务完成、需要批准或出错时，通知手机或群聊。消息经所选渠道发送。"
 channels.title = "渠道"
 channels.empty = "还没有渠道。可以添加：Telegram、飞书 / Lark、企业微信、钉钉、微信（经 Server酱 或 PushPlus 转发）、Bark、ntfy 或你自己的 Webhook。"
 channels.add = "添加渠道"

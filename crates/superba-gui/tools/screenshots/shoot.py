@@ -579,6 +579,15 @@ def palette_action(query):
     return act
 
 
+def overview_actions(size):
+    """Open the Overview Actions menu without selecting an operation."""
+    def act(s):
+        focus(s)
+        s.input.click(size[0] - 54, 70)
+        s.input.park()
+    return act
+
+
 def wizard_action(query):
     """Open the setup wizard from the palette (a re-run with an existing provider)
     and go to its provider step."""
@@ -658,6 +667,8 @@ def main():
                 suffix = f"{theme}-{'zh' if lang == 'zh-CN' else 'en'}{tail}"
                 for page in PAGES:
                     shots.append((f"{page}-{suffix}", page, theme, lang, 7.0, None, size))
+                shots.append((f"overview-actions-{suffix}", "overview", theme, lang, 7.0,
+                              overview_actions(size), size))
             shots.append((f"palette-dark-en{tail}", "overview", "dark", "en", 6.0,
                           palette_action("cdn"), size))
             shots.append((f"palette-light-zh{tail}", "overview", "light", "zh-CN", 6.0,

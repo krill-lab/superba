@@ -73,6 +73,59 @@ fn every_section_fits_and_keeps_all_rail_items_visible_at_both_sizes() {
 }
 
 #[test]
+fn home_fact_explanations_and_updates_subtitle_are_never_elided() {
+    let data = router_harness::data_from(&service());
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            for window in [[960.0, 640.0], [1280.0, 800.0]] {
+                for (section, keys) in [
+                    (
+                        SuperbaSection::Home,
+                        &[
+                            "superba.home.backups_desc",
+                            "superba.home.router_desc",
+                            "superba.home.cli_desc",
+                        ][..],
+                    ),
+                    (
+                        SuperbaSection::Updates,
+                        &[Page::Superba(SuperbaSection::Updates).subtitle_key()][..],
+                    ),
+                ] {
+                    let mut pages = PageStates::default();
+                    let mut settings = Settings::default();
+                    let report = support::fit::render_fit_min_height(
+                        window,
+                        locale,
+                        theme,
+                        &data,
+                        Page::Superba(section).min_height(),
+                        |ui, cx, out| {
+                            pages.show(Page::Superba(section), ui, cx, &mut settings, out)
+                        },
+                    );
+                    for key in keys {
+                        let expected = tr.t(key);
+                        let (_, rect, elided) = report
+                            .text_shapes
+                            .iter()
+                            .find(|(text, _, _)| text == &expected)
+                            .unwrap_or_else(|| panic!("{key} missing: {}", report.all_text()));
+                        assert!(!elided, "{key} elided at {window:?} {locale:?} {theme:?}");
+                        assert!(
+                            rect.left() >= report.rect.left()
+                                && rect.right() <= report.rect.right() + 0.5,
+                            "{key} outside page: {rect:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn palette_opens_and_focuses_every_setting_without_changing_it() {
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);

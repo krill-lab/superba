@@ -1185,8 +1185,8 @@ impl Cx<'_> {
     }
 }
 
-/// Compact page header: title and one-line subtitle on the left, actions on the
-/// right, then a hairline.
+/// Compact page header: title and subtitle on the left, actions on the right.
+/// Superba sections wrap their subtitles inside the scrolling detail pane.
 pub fn page_header(ui: &mut Ui, cx: &Cx<'_>, page: Page, actions: impl FnOnce(&mut Ui)) {
     // Subtitles may name Codex's current `model_provider` (Sessions).
     let provider = cx
@@ -1211,11 +1211,11 @@ pub fn page_header_with(
     actions: impl FnOnce(&mut Ui),
 ) {
     // A large bold title and a gray subtitle (user request 24, after Surge), no
-    // divider: the page sits in its rounded panel. Exactly `size::PAGE_HEADER`
-    // tall, so Fit pages keep their height budget.
+    // divider: the page sits in its rounded panel. Fit pages budget exactly
+    // `size::PAGE_HEADER`; Superba's scrolling detail pane can grow as needed.
     let top = ui.cursor().min.y;
-    // The actions keep the width they used last frame: a long subtitle is
-    // truncated before them instead of squeezing them (the 960 px window).
+    // The actions keep the width they used last frame so the subtitle cannot
+    // squeeze them at the 960 px window size.
     let actions_id = egui::Id::unique(("superba-page-header-actions", page));
     let actions_w: f32 = ui.data(|d| d.get_temp(actions_id)).unwrap_or(0.0);
     ui.horizontal(|ui| {
@@ -1232,7 +1232,12 @@ pub fn page_header_with(
                     .color(cx.pal.text)
                     .extra_letter_spacing(-0.6),
             );
-            ui.add(egui::Label::new(Text::small(subtitle, cx.pal)).truncate());
+            let label = egui::Label::new(Text::small(subtitle, cx.pal));
+            ui.add(if page.is_superba() {
+                label.wrap()
+            } else {
+                label.truncate()
+            });
         });
         let used = ui
             .with_layout(Layout::right_to_left(Align::Center), |ui| {

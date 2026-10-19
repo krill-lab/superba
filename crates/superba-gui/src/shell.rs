@@ -138,7 +138,7 @@ pub fn sidebar(
                 ui.label(
                     RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
                         .font(mono_font(text::CAPTION - 1.0, Weight::Regular))
-                        .color(cx.pal.text_subtle),
+                        .color(cx.pal.text_muted),
                 );
             });
         });
@@ -165,7 +165,7 @@ pub fn sidebar(
                             egui::Align2::LEFT_CENTER,
                             cx.tr.t(key),
                             font(text::NAV_CAPTION, Weight::Medium),
-                            cx.pal.text_subtle,
+                            cx.pal.text_muted,
                         );
                     }
                     group = Some(p.group());

@@ -469,6 +469,55 @@ fn progress_clamps_values_and_has_no_numeric_value_when_indeterminate() {
 }
 
 #[test]
+fn fact_explanation_wraps_inside_card_and_above_footer() {
+    let explanation =
+        "Codex configuration file backups, kept locally so you can restore your settings.";
+    for theme in [Theme::Light, Theme::Dark] {
+        let ctx = context(theme);
+        for width in [160.0, 220.0, 360.0] {
+            for footer in [false, true] {
+                let mut card_rect = Rect::NOTHING;
+                let mut footer_rect = Rect::NOTHING;
+                let output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width, 600.0))),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let start = ui.next_widget_position();
+                        let mut card = InfoCard::fact("Backups", "12").description(explanation);
+                        if footer {
+                            card = card.link("Manage backups");
+                        }
+                        footer_rect = card.show(ui).rect;
+                        card_rect = Rect::from_min_max(start, ui.min_rect().max);
+                    },
+                );
+                let painted = output
+                    .shapes
+                    .iter()
+                    .find_map(|shape| match &shape.shape {
+                        egui::Shape::Text(t) if t.galley.text() == explanation => Some(t),
+                        _ => None,
+                    })
+                    .expect("complete explanation is painted");
+                assert!(!painted.galley.elided);
+                assert!(painted.galley.rows.len() > 1);
+                let bounds = painted.galley.rect.translate(painted.pos.to_vec2());
+                assert!(
+                    card_rect.shrink(11.0).contains_rect(bounds),
+                    "{card_rect:?}: {bounds:?}"
+                );
+                if footer {
+                    assert!(bounds.bottom() + 4.0 <= footer_rect.top());
+                }
+                output.drop_without_applying_deltas();
+            }
+        }
+    }
+}
+
+#[test]
 fn row_height_and_fact_card_geometry_match_advertised_dimensions() {
     let ctx = context(Theme::Light);
     let mut expanded = false;

@@ -336,7 +336,7 @@ fn info_line(ui: &mut Ui, line: &InfoLine, label_width: f32, pal: &Palette) -> O
     copied
 }
 
-/// A predictable-height summary card.
+/// A summary card that grows to show its complete explanation.
 pub struct FactCard {
     title: String,
     value: String,
@@ -350,7 +350,7 @@ impl FactCard {
         self.shape = shape;
         self
     }
-    /// One-line explanation (full text on hover and in accessibility).
+    /// Explanation, wrapped to the available width.
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.description = description.into();
         self
@@ -360,15 +360,22 @@ impl FactCard {
         self.link = Some(label.into());
         self
     }
-    /// Outer height including the footer.
+    /// Minimum outer height including the footer. Wrapped explanations add height.
     pub fn height(&self) -> f32 {
         96.0 + if self.link.is_some() { 28.0 } else { 0.0 }
     }
-    /// Draw in the exact advertised height. The returned response belongs to
+    /// Draw at least the minimum height. The returned response belongs to
     /// the footer link when present, otherwise to the complete card.
     pub fn show(self, ui: &mut Ui) -> Response {
-        let height = self.height();
         let pal = Palette::of(ui.ctx());
+        let description = ui.painter().layout(
+            self.description.clone(),
+            font(text::CAPTION, Weight::Regular),
+            pal.text_muted,
+            (ui.available_width() - 24.0).max(1.0),
+        );
+        let extra = (description.size().y - LINE_HEIGHT).max(0.0);
+        let height = self.height() + extra;
         let (r, response) =
             ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
         ui.painter()
@@ -401,18 +408,12 @@ impl FactCard {
         let value = ui.painter().layout_no_wrap(fitted, value_font, pal.text);
         ui.painter()
             .galley(content.min + vec2(0.0, 22.0), value, pal.text);
-        let description = elided(
-            ui,
-            &self.description,
-            font(text::CAPTION, Weight::Regular),
-            pal.text_muted,
-            content.width(),
-        );
         ui.painter()
             .galley(content.min + vec2(0.0, 56.0), description, pal.text_muted);
         let response = response.on_hover_text(name);
         if let Some(label) = self.link {
-            let footer = egui::Rect::from_min_max(content.min + vec2(0.0, 80.0), content.max);
+            let footer =
+                egui::Rect::from_min_max(content.min + vec2(0.0, 80.0 + extra), content.max);
             let mut child = ui.new_child(
                 egui::UiBuilder::new()
                     .id_salt(response.id.with("footer"))

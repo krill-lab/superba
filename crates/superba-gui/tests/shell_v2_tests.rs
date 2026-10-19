@@ -463,76 +463,119 @@ async fn scaffold_pages_fit_without_any_scroll_area() {
 async fn the_sidebar_lists_every_page_in_four_groups() {
     use superba_gui::pages::PageStatus;
     let data = fake_data().await;
-    for locale in [Locale::En, Locale::ZhCn] {
-        let tr = Tr::new(locale);
-        let ctx = egui::Context::default();
-        let fonts_report = fonts::FontReport::default();
-        ctx.set_fonts(fonts::definitions(&fonts_report));
-        style::install(&ctx, Some(egui::Theme::Dark));
-        let svc = support::idle_service();
-        let mut texts_seen = BTreeSet::new();
-        for _ in 0..2 {
-            let out = ctx.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(220.0, 800.0),
-                    )),
-                    ..Default::default()
-                },
-                |ui| {
-                    let cx = Cx {
-                        tr: &tr,
-                        pal: Palette::of(ui.ctx()),
-                        data: &data,
-                        busy: false,
-                        now: Timestamp::now(),
-                        fonts: &fonts_report,
-                        service: &svc,
-                        log: &[],
+    for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let tr = Tr::new(locale);
+            let ctx = egui::Context::default();
+            let fonts_report = fonts::FontReport::default();
+            ctx.set_fonts(fonts::definitions(&fonts_report));
+            style::install(&ctx, Some(theme));
+            let svc = support::idle_service();
+            let mut texts_seen = BTreeSet::new();
+            for _ in 0..2 {
+                let out = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(220.0, 800.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let cx = Cx {
+                            tr: &tr,
+                            pal: Palette::of(ui.ctx()),
+                            data: &data,
+                            busy: false,
+                            now: Timestamp::now(),
+                            fonts: &fonts_report,
+                            service: &svc,
+                            log: &[],
+                        };
+                        let mut page = Page::Overview;
+                        let mut actions = Vec::new();
+                        let status = |p: Page| PageStatus {
+                            pending: usize::from(p == Page::Settings),
+                            badge: if p == Page::Hosts {
+                                superba_gui::pages::NavBadge::Count(2)
+                            } else {
+                                superba_gui::pages::NavBadge::None
+                            },
+                            ..PageStatus::default()
+                        };
+                        superba_gui::shell::sidebar(ui, &cx, &mut page, &status, &mut actions);
+                    },
+                );
+                texts_seen = texts(&out);
+                let captions: BTreeSet<_> = [NavGroup::Connect, NavGroup::Codex, NavGroup::Claude]
+                    .into_iter()
+                    .map(|group| tr.t(group.caption_key().unwrap()))
+                    .chain([format!("v{}", env!("CARGO_PKG_VERSION"))])
+                    .collect();
+                for shape in &out.shapes {
+                    let egui::Shape::Text(text) = &shape.shape else {
+                        continue;
                     };
-                    let mut page = Page::Overview;
-                    let mut actions = Vec::new();
-                    let status = |p: Page| PageStatus {
-                        pending: usize::from(p == Page::Settings),
-                        badge: if p == Page::Hosts {
-                            superba_gui::pages::NavBadge::Count(2)
-                        } else {
-                            superba_gui::pages::NavBadge::None
-                        },
-                        ..PageStatus::default()
-                    };
-                    superba_gui::shell::sidebar(ui, &cx, &mut page, &status, &mut actions);
-                },
-            );
-            texts_seen = texts(&out);
-            out.drop_without_applying_deltas();
-        }
-        for page in Page::ALL {
+                    if !captions.contains(text.galley.text()) {
+                        continue;
+                    }
+                    for section in &text.galley.job.sections {
+                        let color = text.override_text_color.unwrap_or_else(|| {
+                            if section.format.color == egui::Color32::PLACEHOLDER {
+                                text.fallback_color
+                            } else {
+                                section.format.color
+                            }
+                        });
+                        use superba_gui::design::backdrop::{Backdrop, Background};
+                        for bg in [
+                            Background::Neutral,
+                            Background::Mint,
+                            Background::Sky,
+                            Background::Sand,
+                            Background::Lavender,
+                        ] {
+                            let backdrop = Backdrop::new(bg, theme == egui::Theme::Dark);
+                            for surface in [backdrop.top, backdrop.bottom, backdrop.glow] {
+                                let ratio =
+                                    superba_gui::design::tokens::contrast_ratio(color, surface);
+                                assert!(
+                                    ratio >= 4.5,
+                                    "{}: {theme:?} {bg:?}, contrast {ratio}",
+                                    text.galley.text()
+                                );
+                            }
+                        }
+                    }
+                }
+                out.drop_without_applying_deltas();
+            }
+            for page in Page::ALL {
+                assert!(
+                    texts_seen.contains(&tr.t(page.nav_key())),
+                    "{page:?} missing in {locale:?}: {texts_seen:?}"
+                );
+            }
+            for group in [NavGroup::Connect, NavGroup::Codex, NavGroup::Claude] {
+                assert!(texts_seen.contains(&tr.t(group.caption_key().unwrap())));
+            }
+            // Superba's own pages are pinned at the bottom without a heading; no
+            // brand and no search field above the pages (user bug 85), the
+            // version below them.
             assert!(
-                texts_seen.contains(&tr.t(page.nav_key())),
-                "{page:?} missing in {locale:?}: {texts_seen:?}"
+                texts_seen.contains("Superba") && !texts_seen.contains(&tr.t("shell.search")),
+                "{texts_seen:?}"
+            );
+            assert!(
+                texts_seen.contains(&format!("v{}", env!("CARGO_PKG_VERSION"))),
+                "{texts_seen:?}"
+            );
+            assert!(texts_seen.contains("2"), "host badge count");
+            assert!(
+                !texts_seen.iter().any(|t| t.contains("krill")),
+                "no provider link in the sidebar footer any more: {texts_seen:?}"
             );
         }
-        for group in [NavGroup::Connect, NavGroup::Codex, NavGroup::Claude] {
-            assert!(texts_seen.contains(&tr.t(group.caption_key().unwrap())));
-        }
-        // Superba's own pages are pinned at the bottom without a heading; no
-        // brand and no search field above the pages (user bug 85), the
-        // version below them.
-        assert!(
-            texts_seen.contains("Superba") && !texts_seen.contains(&tr.t("shell.search")),
-            "{texts_seen:?}"
-        );
-        assert!(
-            texts_seen.contains(&format!("v{}", env!("CARGO_PKG_VERSION"))),
-            "{texts_seen:?}"
-        );
-        assert!(texts_seen.contains("2"), "host badge count");
-        assert!(
-            !texts_seen.iter().any(|t| t.contains("krill")),
-            "no provider link in the sidebar footer any more: {texts_seen:?}"
-        );
     }
 }
 

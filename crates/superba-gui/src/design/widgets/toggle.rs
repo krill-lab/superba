@@ -54,7 +54,7 @@ impl Widget for Toggle<'_> {
             let t = ui
                 .ctx()
                 .animate_bool_with_time(response.id.with("on"), on, ANIM_SECS);
-            let track = pal.active.lerp_to_gamma(pal.primary, t);
+            let track = pal.text_muted.lerp_to_gamma(pal.primary, t);
             let track = if self.enabled {
                 track
             } else {
@@ -65,16 +65,12 @@ impl Widget for Toggle<'_> {
                 rect,
                 radius::PILL,
                 track,
-                Stroke::new(1.0, pal.border.lerp_to_gamma(pal.primary, t)),
+                Stroke::new(1.0, track),
                 StrokeKind::Inside,
             );
             let knob_r = 7.0;
             let x = egui::lerp(rect.left() + 10.0..=rect.right() - 10.0, t);
-            let knob = if pal.dark {
-                pal.text_muted.lerp_to_gamma(pal.on_primary, t)
-            } else {
-                pal.surface
-            };
+            let knob = pal.surface.lerp_to_gamma(pal.on_primary, t);
             painter.circle_filled(pos2(x, rect.center().y), knob_r, knob);
             if focused {
                 focus_ring(painter, rect, radius::PILL, pal);

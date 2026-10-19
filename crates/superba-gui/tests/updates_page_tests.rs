@@ -40,6 +40,35 @@ fn loaded(f: &Frame) -> bool {
     f.has("26.1013.31256")
 }
 
+#[test]
+fn header_and_superba_row_share_the_same_check_time() {
+    use superba_core::{SelfUpdateStatus, SelfUpdateView, Timestamp};
+    for locale in [Locale::En, Locale::ZhCn] {
+        let mut h = harness(fake(), locale);
+        h.data.selfupdate.finish(Ok(SelfUpdateView {
+            current: "0.1.0".into(),
+            status: SelfUpdateStatus::UpToDate,
+            checked_at: Some(Timestamp::from_millis(
+                Timestamp::now().as_millis() - 360_000,
+            )),
+            ..Default::default()
+        }));
+        let mut state = State::default();
+        let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
+        let tr = superba_gui::i18n::Tr::new(locale);
+        let age = tr.f("time.minutes_ago", &[("n", &6)]);
+        let label = tr.f("updates.checked", &[("age", &age)]);
+        assert_eq!(
+            f.texts.iter().filter(|(text, _)| text == &label).count(),
+            2,
+            "header and Superba row must both show {label}: {}",
+            f.all_text()
+        );
+        let now_label = tr.f("updates.checked", &[("age", &tr.t("time.just_now"))]);
+        assert!(!f.has(&now_label));
+    }
+}
+
 fn harness(service: Arc<FakeService>, locale: Locale) -> Harness {
     Harness::new([1280.0, 2400.0], locale, service, false)
 }

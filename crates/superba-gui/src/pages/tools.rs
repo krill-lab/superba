@@ -14,7 +14,7 @@ pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
         ui.add_space(12.0);
         ui.horizontal_wrapped(|ui| {
             for (page, key) in [
-                (Page::Settings, "nav.settings"),
+                (Page::Settings, "superba.tools.codex_settings"),
                 (Page::ClaudeCode, "nav.claude_code"),
             ] {
                 if ui.add(Button::new(cx.tr.t(key))).clicked() {

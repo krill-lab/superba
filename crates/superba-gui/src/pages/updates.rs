@@ -591,7 +591,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     {
         state.persist_pending = None;
     }
-    let checked = state.view.value.as_ref().and_then(|v| v.checked_at);
+    let checked = cx.data.selfupdate.value.as_ref().and_then(|v| v.checked_at);
     let checking = state.view.loading() || cx.data.selfupdate.loading;
     page_header(
         ui,
