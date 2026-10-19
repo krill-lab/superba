@@ -39,7 +39,7 @@ use crate::design::icons::Icon;
 use crate::design::tokens::text;
 use crate::design::widgets::{Button, IconButton, Latency, Text};
 use crate::runtime::ReadTask;
-pub use cards::{GAP, Grid, layout};
+pub use cards::{GAP, Grid, hero_height, layout, layout_with};
 pub use lines::LineRow;
 pub use sessions::{host_label, usage_command};
 pub use today::{delta_text, figure};
@@ -57,6 +57,9 @@ pub const TITLE_ROW: f32 = 40.0;
 pub struct State {
     /// The user chose "I already have a configuration" on the setup card.
     pub empty_dismissed: bool,
+    /// The hero shows the request path: the first screen is the conclusion and
+    /// the reader asked for the detail behind it (user request 30).
+    pub hero_detail: bool,
     /// The request log and router snapshot.
     pub usage: UsageLoader,
     /// Diagnostics were asked for once (findings feed 待办 and the markers).
@@ -180,13 +183,21 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     let todos = todo::todos(cx, snap);
     let hero_model = hero::model(cx, overview, &todos, snap);
     let area = ui.available_rect_before_wrap();
-    let g = layout(area);
+    // Folded, the hero gives the space back to the cards (user request 30).
+    let hero_h = if state.hero_detail {
+        cards::hero_height(area)
+    } else {
+        hero::COLLAPSED
+    };
+    let g = cards::layout_with(area, hero_h);
     let used = g.sessions.max.y.max(g.todo.max.y) - area.min.y;
     ui.allocate_rect(
         Rect::from_min_size(area.min, vec2(area.width(), used)),
         Sense::hover(),
     );
-    hero::show(ui, cx, &hero_model, g.hero, out);
+    if hero::show(ui, cx, &hero_model, g.hero, state.hero_detail, out) {
+        state.hero_detail = !state.hero_detail;
+    }
     let mut dismissed = false;
     if is_empty(cx) && !state.empty_dismissed {
         let left = g.today.union(g.sessions);

@@ -37,17 +37,34 @@ pub struct Grid {
     pub todo: Rect,
 }
 
+/// The height of the hero in `area` with the request path open: the share of
+/// the page it has always taken, clamped to the hero's own height (and to the
+/// natural page height inside a scroll area).
+pub fn hero_height(area: Rect) -> f32 {
+    let h = if area.height().is_finite() {
+        area.height().max(600.0)
+    } else {
+        712.0
+    };
+    (h * 0.19).clamp(super::hero::HEIGHT, 152.0).floor()
+}
+
 /// Lay the hero and the cards out in `area`. The left column takes two thirds
 /// of the width; its rows split lower than the right column's, so the four
 /// cards never line up into a plain table.
 pub fn layout(area: Rect) -> Grid {
+    layout_with(area, hero_height(area))
+}
+
+/// Lay the hero and the cards out in `area`, the hero taking `hero_h`: folded,
+/// the conclusion and the cards move up and the grid still fills the page.
+pub fn layout_with(area: Rect, hero_h: f32) -> Grid {
     // Inside a scroll area the height is unbounded: keep the natural size.
     let h = if area.height().is_finite() {
         area.height().max(600.0)
     } else {
         712.0
     };
-    let hero_h = (h * 0.19).clamp(super::hero::HEIGHT, 152.0).floor();
     let w = area.width();
     let left_w = ((w - GAP) * 2.0 / 3.0).floor();
     let right_w = w - GAP - left_w;
