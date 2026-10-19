@@ -88,7 +88,7 @@ fn every_section_fits_and_keeps_all_five_tabs_on_one_line() {
 
 #[test]
 fn brand_header_keeps_version_channel_and_status_on_one_line() {
-    use superba_core::{SelfUpdateStatus, SelfUpdateView, Timestamp};
+    use superba_core::{SelfUpdateStatus, SelfUpdateView, Timestamp, UpdateChannel};
     let mut data = router_harness::data_from(&service());
     data.selfupdate.finish(Ok(SelfUpdateView {
         current: env!("CARGO_PKG_VERSION").into(),
@@ -98,60 +98,77 @@ fn brand_header_keeps_version_channel_and_status_on_one_line() {
         )),
         ..Default::default()
     }));
-    for locale in [Locale::En, Locale::ZhCn] {
-        let tr = Tr::new(locale);
-        for theme in [egui::Theme::Light, egui::Theme::Dark] {
-            for window in [[960.0, 640.0], [1280.0, 800.0]] {
-                let mut pages = PageStates::default();
-                let mut settings = Settings::default();
-                let report = support::fit::render_fit_min_height(
-                    window,
-                    locale,
-                    theme,
-                    &data,
-                    Page::Superba(SuperbaSection::Home).min_height(),
-                    |ui, cx, out| {
-                        pages.show(
-                            Page::Superba(SuperbaSection::Home),
-                            ui,
-                            cx,
-                            &mut settings,
-                            out,
-                        )
-                    },
-                );
-                let title = report
-                    .text_shapes
-                    .iter()
-                    .find(|(s, _, _)| s == "Superba")
-                    .unwrap()
-                    .1;
-                for label in [
-                    format!("v{}", env!("CARGO_PKG_VERSION")),
-                    tr.t("updates.superba.channel_stable"),
-                ] {
+    let default_channel = if env!("CARGO_PKG_VERSION_PRE").is_empty() {
+        UpdateChannel::Stable
+    } else {
+        UpdateChannel::Preview
+    };
+    for (configured, expected) in [
+        (None, default_channel),
+        (Some(UpdateChannel::Stable), UpdateChannel::Stable),
+        (Some(UpdateChannel::Preview), UpdateChannel::Preview),
+    ] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let tr = Tr::new(locale);
+            for theme in [egui::Theme::Light, egui::Theme::Dark] {
+                for window in [[960.0, 640.0], [1280.0, 800.0]] {
+                    let mut pages = PageStates::default();
+                    let mut settings = Settings {
+                        update_channel: configured,
+                        ..Settings::default()
+                    };
+                    let report = support::fit::render_fit_min_height(
+                        window,
+                        locale,
+                        theme,
+                        &data,
+                        Page::Superba(SuperbaSection::Home).min_height(),
+                        |ui, cx, out| {
+                            pages.show(
+                                Page::Superba(SuperbaSection::Home),
+                                ui,
+                                cx,
+                                &mut settings,
+                                out,
+                            )
+                        },
+                    );
+                    let title = report
+                        .text_shapes
+                        .iter()
+                        .find(|(s, _, _)| s == "Superba")
+                        .unwrap()
+                        .1;
+                    for label in [
+                        format!("v{}", env!("CARGO_PKG_VERSION")),
+                        tr.t(match expected {
+                            UpdateChannel::Stable => "updates.superba.channel_stable",
+                            UpdateChannel::Preview => "updates.superba.channel_preview",
+                        }),
+                    ] {
+                        let (_, rect, elided) = report
+                            .text_shapes
+                            .iter()
+                            .find(|(s, _, _)| s == &label)
+                            .unwrap_or_else(|| panic!("{label}: {}", report.all_text()));
+                        assert!(!elided);
+                        assert!(
+                            (rect.center().y - title.center().y).abs() < 5.0,
+                            "{label} wrapped at {window:?}: {rect:?} / {title:?}"
+                        );
+                        assert!(rect.right() <= report.rect.right() + 0.5);
+                    }
                     let (_, rect, elided) = report
                         .text_shapes
                         .iter()
-                        .find(|(s, _, _)| s == &label)
-                        .unwrap_or_else(|| panic!("{label}: {}", report.all_text()));
-                    assert!(!elided);
+                        .find(|(s, _, _)| s.starts_with(&tr.t("superba.home.current")))
+                        .unwrap();
                     assert!(
-                        (rect.center().y - title.center().y).abs() < 5.0,
-                        "{label} wrapped at {window:?}: {rect:?} / {title:?}"
+                        !elided && rect.height() < 25.0,
+                        "status wrapped at {window:?}: {rect:?}"
                     );
-                    assert!(rect.right() <= report.rect.right() + 0.5);
+                    assert!((rect.center().y - title.center().y).abs() < 5.0);
                 }
-                let (_, rect, elided) = report
-                    .text_shapes
-                    .iter()
-                    .find(|(s, _, _)| s.starts_with(&tr.t("superba.home.current")))
-                    .unwrap();
-                assert!(
-                    !elided && rect.height() < 25.0,
-                    "status wrapped at {window:?}: {rect:?}"
-                );
-                assert!((rect.center().y - title.center().y).abs() < 5.0);
             }
         }
     }

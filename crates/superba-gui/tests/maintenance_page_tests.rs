@@ -4,7 +4,7 @@ mod a11y_harness;
 mod router_harness;
 mod support;
 
-use a11y_harness::AppHarness;
+use a11y_harness::{AppHarness, Tree};
 use egui::accesskit::{Action as A11yAction, Role};
 use std::sync::Arc;
 use superba_core::{CodexFileKind, Locale, Settings, TargetId, harness::HarnessId};
@@ -15,9 +15,9 @@ use superba_gui::{
 };
 use support::fake::{FakeOptions, FakeService};
 
-fn service() -> Arc<FakeService> {
+fn service(fast: bool) -> Arc<FakeService> {
     let s = Arc::new(FakeService::new(FakeOptions {
-        fast: true,
+        fast,
         first_run: false,
         ..Default::default()
     }));
@@ -25,23 +25,31 @@ fn service() -> Arc<FakeService> {
     s
 }
 
+fn loaded_tool_rows(h: &mut AppHarness, tr: &Tr) -> Tree {
+    // A Claude row can precede the overview and doctor results. Those reads
+    // change the layout and its auto-generated AccessKit ids, so acquire the
+    // action target only after all three independent reads have rendered.
+    h.until("Codex, installed tools and diagnostics", |t| {
+        ["Codex,", "WorkBuddy,"].into_iter().all(|prefix| {
+            t.with_role(Role::Button)
+                .into_iter()
+                .any(|id| t.name(id).is_some_and(|n| n.starts_with(prefix)))
+        }) && t
+            .find(Some(Role::Button), &tr.t("diag.run"))
+            .is_some_and(|id| t.node(id).supports_action(A11yAction::Click))
+    })
+}
+
 #[test]
 fn tool_rows_expose_install_file_errors_and_drift_in_both_languages() {
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
         let mut h = AppHarness::new(
-            service(),
+            service(true),
             locale,
             Page::Superba(SuperbaSection::Diagnostics),
         );
-        // Codex's overview and the other installed tools load independently.
-        let t = h.until("Codex and installed tools", |t| {
-            ["Codex,", "WorkBuddy,"].into_iter().all(|prefix| {
-                t.nodes
-                    .keys()
-                    .any(|id| t.name(*id).is_some_and(|n| n.starts_with(prefix)))
-            })
-        });
+        let t = loaded_tool_rows(&mut h, &tr);
         let names: Vec<_> = t
             .nodes
             .keys()
@@ -91,31 +99,38 @@ fn tool_rows_expose_install_file_errors_and_drift_in_both_languages() {
 
 #[test]
 fn claude_row_keeps_the_endpoint_check() {
-    let mut h = AppHarness::new(
-        service(),
-        Locale::En,
-        Page::Superba(SuperbaSection::Diagnostics),
-    );
-    let t = h.until("Claude row", |t| {
-        t.nodes
-            .keys()
-            .any(|id| t.name(*id).is_some_and(|n| n.starts_with("Claude Code,")))
-    });
-    let id = *t
-        .nodes
-        .keys()
-        .find(|id| t.name(**id).is_some_and(|n| n.starts_with("Claude Code,")))
-        .unwrap();
-    h.act(id, A11yAction::Expand);
-    h.settle();
-    h.click(Some(Role::Button), "Check Claude Code endpoint");
-    let t = h.wait_for(None, "HTTP 200 · 214 ms");
-    assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
+    // Also exercise the real asynchronous loading order, without fast reads.
+    for fast in [true, false] {
+        let mut h = AppHarness::new(
+            service(fast),
+            Locale::En,
+            Page::Superba(SuperbaSection::Diagnostics),
+        );
+        let t = loaded_tool_rows(&mut h, &Tr::new(Locale::En));
+        let id = t
+            .with_role(Role::Button)
+            .into_iter()
+            .find(|id| t.name(*id).is_some_and(|n| n.starts_with("Claude Code,")))
+            .unwrap();
+        assert_eq!(t.node(id).is_expanded(), Some(false));
+        assert!(t.node(id).supports_action(A11yAction::Expand));
+        h.act(id, A11yAction::Expand);
+        let t = h.settle();
+        assert_eq!(
+            t.nodes.get(&id).and_then(|n| n.is_expanded()),
+            Some(true),
+            "Claude row did not expand (fast={fast}):\n{}",
+            t.dump()
+        );
+        h.click(Some(Role::Button), "Check Claude Code endpoint");
+        let t = h.wait_for(None, "HTTP 200 · 214 ms");
+        assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
+    }
 }
 
 #[test]
 fn backup_restore_requires_selection_and_confirmation_and_cancel_writes_nothing() {
-    let s = service();
+    let s = service(true);
     let mut h = AppHarness::new(s.clone(), Locale::En, Page::Superba(SuperbaSection::Data));
     h.click(Some(Role::Button), "Choose a dsh backup to restore");
     assert!(s.harness_restores().is_empty());
@@ -135,7 +150,7 @@ fn backup_restore_requires_selection_and_confirmation_and_cancel_writes_nothing(
 
 #[test]
 fn backup_store_failure_is_visible_while_other_stores_remain_usable() {
-    let s = service();
+    let s = service(true);
     s.fail_harness_backups(HarnessId::Pi);
     let mut h = AppHarness::new(s, Locale::En, Page::Superba(SuperbaSection::Data));
     let t = h.until("failure", |t| t.dump().contains("backup index unreadable"));
@@ -147,7 +162,7 @@ fn backup_store_failure_is_visible_while_other_stores_remain_usable() {
 
 #[test]
 fn backup_deep_link_opens_the_selected_remote_home_instead_of_the_last_editor() {
-    let s = service();
+    let s = service(true);
     let mut h = router_harness::Harness::new([1280.0, 800.0], Locale::En, s, true);
     let mut pages = PageStates::default();
     let mut requested = false;
@@ -177,7 +192,7 @@ fn loaded_maintenance_pages_fit_960_and_1280_in_both_themes_and_languages() {
         for dark in [false, true] {
             for window in [[960.0, 640.0], [1280.0, 800.0]] {
                 for section in [SuperbaSection::Diagnostics, SuperbaSection::Data] {
-                    let mut h = router_harness::Harness::new(window, locale, service(), true)
+                    let mut h = router_harness::Harness::new(window, locale, service(true), true)
                         .min_height(Page::Superba(section).min_height());
                     if dark {
                         h = h.dark();
