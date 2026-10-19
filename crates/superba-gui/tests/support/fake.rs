@@ -2319,10 +2319,7 @@ impl SwitchService for FakeService {
     }
 
     async fn sessions(&self) -> Result<(SessionReport, Vec<MigrationReceipt>)> {
-        let s = self.state();
-        let mut report = s.sessions.clone();
-        report.scanned_at = Timestamp::now();
-        Ok((report, s.history.clone()))
+        sessions::sessions(self).await
     }
 
     async fn doctor(&self) -> Result<Vec<DoctorFinding>> {
@@ -2378,7 +2375,13 @@ impl SwitchService for FakeService {
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan> {
         self.delay(250).await;
         let id = format!("plan-{}", self.next_plan.fetch_add(1, Ordering::Relaxed));
-        self.state().plan(request, id)
+        let mut plan = self.state().plan(request, id)?;
+        if matches!(plan.request.intent, SwitchIntent::RollbackMigration { .. }) {
+            // Like the real service: the rollback ledger is private executor
+            // state, not a new migration in the public preview.
+            plan.migration = None;
+        }
+        Ok(plan)
     }
 
     async fn execute(
@@ -2388,6 +2391,11 @@ impl SwitchService for FakeService {
         decider: Arc<dyn SwitchDecider>,
         events: Arc<dyn SwitchEvents>,
     ) -> Result<SwitchOutcome> {
+        let plan = if matches!(plan.request.intent, SwitchIntent::RollbackMigration { .. }) {
+            self.state().plan(plan.request.clone(), plan.id.clone())?
+        } else {
+            plan
+        };
         if let RestartKind::Blocked { reasons } = &plan.primary {
             return Err(Error::Blocked {
                 reasons: reasons.clone(),

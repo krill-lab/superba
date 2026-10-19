@@ -19,6 +19,11 @@ use super::FakeService;
 /// Fake state of the area (kept for the life of the fake world).
 #[derive(Debug, Default)]
 pub(super) struct State {
+    /// Pause one local snapshot after reading it, to order concurrent scans.
+    local_gate: Option<(
+        std::sync::mpsc::Sender<()>,
+        tokio::sync::oneshot::Receiver<()>,
+    )>,
     /// Hosts whose scan fails ("ssh: connect timed out").
     failing: BTreeSet<TargetId>,
     /// Hosts scanned so far, in order.
@@ -31,6 +36,44 @@ pub(super) struct State {
 }
 
 impl FakeService {
+    /// Start with these local counts and no migration history.
+    pub fn set_session_counts(&self, counts: &[(&str, u32)]) {
+        let mut s = self.state();
+        s.sessions.by_provider = counts
+            .iter()
+            .map(|(provider, count)| {
+                (
+                    (*provider).to_owned(),
+                    ProviderSessions {
+                        threads: *count,
+                        rollouts: *count,
+                        distinct: *count,
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+        s.history.clear();
+    }
+
+    /// Signal when the next local snapshot is captured and hold its delivery
+    /// until the returned sender is released. Later scans can finish first.
+    pub fn gate_next_session_scan(
+        &self,
+    ) -> (
+        std::sync::mpsc::Receiver<()>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let old = self
+            .sessions_area()
+            .local_gate
+            .replace((started_tx, release_rx));
+        assert!(old.is_none(), "a session scan is already gated");
+        (started_rx, release_tx)
+    }
+
     fn sessions_area(&self) -> std::sync::MutexGuard<'_, State> {
         self.areas
             .sessions
@@ -71,6 +114,22 @@ impl FakeService {
     pub fn host_scans(&self) -> Vec<TargetId> {
         self.sessions_area().scans.clone()
     }
+}
+
+/// Body of `SwitchService::sessions`, including the optional snapshot gate.
+pub(super) async fn sessions(fake: &FakeService) -> Result<(SessionReport, Vec<MigrationReceipt>)> {
+    let snapshot = {
+        let s = fake.state();
+        let mut report = s.sessions.clone();
+        report.scanned_at = Timestamp::now();
+        (report, s.history.clone())
+    };
+    let gate = fake.sessions_area().local_gate.take();
+    if let Some((started, release)) = gate {
+        let _ = started.send(());
+        let _ = release.await;
+    }
+    Ok(snapshot)
 }
 
 /// A read-only remote scan of `counts` (provider, sessions).

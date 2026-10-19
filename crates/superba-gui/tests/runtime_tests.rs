@@ -542,6 +542,66 @@ fn hot_switch_forwards_events_then_outcome_then_refreshed_state() {
 }
 
 #[test]
+fn a_session_scan_started_before_migration_cannot_overwrite_the_completed_refresh() {
+    let service = Arc::new(FakeService::new(FakeOptions {
+        fast: true,
+        ..FakeOptions::default()
+    }));
+    service.set_session_counts(&[("krill", 600)]);
+    let backend = Backend::start(service.clone(), Arc::new(|| {})).unwrap();
+    let (started, release) = service.gate_next_session_scan();
+    backend.send(Command::Sessions);
+    started
+        .recv_timeout(TIMEOUT)
+        .expect("old snapshot captured");
+
+    let request = superba_gui::app::planned_request(&superba_gui::pages::Action::MigrateProvider(
+        "krill".into(),
+    ))
+    .unwrap();
+    backend.send(Command::Plan { seq: 1, request });
+    let replies = collect_until(&backend, "migration plan", |r| {
+        matches!(r, Reply::Planned { .. })
+    });
+    let Some(Reply::Planned {
+        result: Ok(plan), ..
+    }) = replies.last()
+    else {
+        panic!("{replies:?}");
+    };
+    backend.send(Command::Execute {
+        plan: Box::new(plan.clone()),
+        options: ExecuteOptions {
+            allow_full_restart: true,
+            ..Default::default()
+        },
+    });
+    assert_eq!(take_outcome(&backend).0.status, OutcomeStatus::Switched);
+
+    let fresh = collect_until(&backend, "automatic session refresh", |r| {
+        matches!(r, Reply::Sessions(_))
+    });
+    let Some(Reply::Sessions(Ok((report, history)))) = fresh.last() else {
+        panic!("{fresh:?}");
+    };
+    assert_eq!(report.hidden_under("openai"), 0);
+    assert_eq!(report.distribution().get("openai"), Some(&600));
+    assert_eq!(history.len(), 1);
+    assert!(!history[0].rolled_back);
+
+    // Deliver the scan that read 600 hidden sessions and an empty ledger before
+    // the migration. It must re-read, even after the fresh snapshot is shown.
+    release.send(()).unwrap();
+    let late = collect_until(&backend, "late scan", |r| matches!(r, Reply::Sessions(_)));
+    let Some(Reply::Sessions(Ok((report, late_history)))) = late.last() else {
+        panic!("{late:?}");
+    };
+    assert_eq!(report.hidden_under("openai"), 0);
+    assert_eq!(report.distribution().get("openai"), Some(&600));
+    assert_eq!(late_history, history);
+}
+
+#[test]
 fn forcing_busy_turns_completes_the_switch() {
     let backend = backend(true);
     execute(&backend, plan(&backend, 1));

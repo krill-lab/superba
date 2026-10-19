@@ -669,7 +669,10 @@ async fn handle(
                 result,
             });
         }
-        Command::Sessions => out.send(Reply::Sessions(service.sessions().await)),
+        Command::Sessions => {
+            let sessions = after_switches(switches, || service.sessions()).await;
+            out.send(Reply::Sessions(sessions));
+        }
         Command::Doctor => {
             out.send(Reply::Doctor(service.doctor().await));
             out.send(Reply::ClaudeDoctor(service.claude_diagnostics().await));
@@ -690,6 +693,13 @@ async fn handle(
             }
         }
         Command::Execute { plan, options } => {
+            // Rollback uses a private ledger in the executor, so its public
+            // plan has no `migration`. Both operations change counts/history.
+            let refresh_sessions = plan.migration.is_some()
+                || matches!(
+                    plan.request.intent,
+                    superba_core::SwitchIntent::RollbackMigration { .. }
+                );
             let decider: Arc<dyn SwitchDecider> = Arc::new(GuiDecider(out.clone()));
             let events: Arc<dyn SwitchEvents> = Arc::new(GuiEvents {
                 out: out.clone(),
@@ -700,9 +710,21 @@ async fn handle(
             switches.fetch_add(1, Ordering::SeqCst);
             out.send(Reply::Executed(result));
             // The switch changed the world: refresh what the pages show.
-            let (o, p) = tokio::join!(service.overview(), service.profile_set());
-            out.send(Reply::Profiles(p));
-            out.send(Reply::Overview(o));
+            tokio::join!(
+                async {
+                    let (o, p) = tokio::join!(service.overview(), service.profile_set());
+                    out.send(Reply::Profiles(p));
+                    out.send(Reply::Overview(o));
+                },
+                async {
+                    if refresh_sessions {
+                        // A failed/cancelled execution may also have moved and
+                        // restored sessions. Read the actual final ledger.
+                        let sessions = after_switches(switches, || service.sessions()).await;
+                        out.send(Reply::Sessions(sessions));
+                    }
+                }
+            );
         }
         Command::SetAutostart(enabled) => {
             out.send(Reply::AutostartSet(service.set_autostart(enabled).await));
