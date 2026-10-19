@@ -343,3 +343,62 @@ async fn sessions_fit_both_sizes_and_locales_for_this_computer_and_a_host() {
         }
     }
 }
+
+/// The fake scans one provider and records one migration, so both tables have a
+/// single page: the provider table then keeps its own height (header + one row +
+/// one blank row = 28 + 2 × 40 = 108 px) instead of stretching to the pane and
+/// pinning a pager to the bottom of ~350 px of white (user complaint).
+#[tokio::test]
+async fn one_provider_row_does_not_stretch_the_table_or_show_a_pager() {
+    let service = fake();
+    let data = data_of(&service).await;
+    let mut state = State::default();
+    for locale in [Locale::ZhCn, Locale::En] {
+        let tr = Tr::new(locale);
+        let report = render_fit(
+            [1280.0, 800.0],
+            locale,
+            egui::Theme::Dark,
+            &data,
+            |ui, cx, out| {
+                sessions::show(ui, cx, &mut state, out);
+            },
+        );
+        // One page is not paging: no range label anywhere on the page.
+        let pager: Vec<&String> = report
+            .texts
+            .iter()
+            .filter(|t| {
+                t.split_once(" / ").is_some_and(|(range, total)| {
+                    range.contains('–') && total.chars().all(|c| c.is_ascii_digit())
+                })
+            })
+            .collect();
+        assert!(pager.is_empty(), "{locale:?}: {pager:?}");
+        // The history follows right after the one-row provider table.
+        let y = |text: &str| {
+            report
+                .text_shapes
+                .iter()
+                .find(|(t, _, _)| t == text)
+                .map(|(_, r, _)| r.min.y)
+        };
+        let header = y(&tr.t("sessions.col.provider"))
+            .unwrap_or_else(|| panic!("{locale:?}: no provider header: {:?}", report.texts));
+        let title = report
+            .text_shapes
+            .iter()
+            .find(|(t, _, _)| t.starts_with("迁移历史 ·") || t.starts_with("Migration history ·"))
+            .map(|(_, r, _)| r.min.y)
+            .unwrap_or_else(|| panic!("{locale:?}: no history title: {:?}", report.texts));
+        assert!(
+            title > header,
+            "{locale:?}: history {title} above the provider table {header}"
+        );
+        assert!(
+            title - header < 220.0,
+            "{locale:?}: the history sits {} px under the provider table (was ~350)",
+            title - header
+        );
+    }
+}

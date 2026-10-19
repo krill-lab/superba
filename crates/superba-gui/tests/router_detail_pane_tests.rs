@@ -51,7 +51,7 @@ fn words(locale: Locale) -> Words {
             tabs: ["通用", "计时"],
             collapse: "收起详情",
             expand: "展开详情",
-            cache_key: "缓存键",
+            cache_key: "缓存标识",
             totals: "合计",
             copy: "复制",
             gone: ["请求头", "响应头", "请求数据", "响应数据"],
@@ -61,7 +61,7 @@ fn words(locale: Locale) -> Words {
             tabs: ["General", "Timing"],
             collapse: "Hide details",
             expand: "Show details",
-            cache_key: "Cache key",
+            cache_key: "Cache ID",
             totals: "Total",
             copy: "Copy",
             gone: [

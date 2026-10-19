@@ -15,6 +15,7 @@ use router_harness::Harness;
 use superba_core::{
     AuthChoice, Locale, ProfileId, RouterInstallRequest, SwitchIntent, SwitchService,
 };
+use superba_gui::i18n::Tr;
 use superba_gui::pages::router::backend::{BoxFut, RouterBackend, SystemRouter};
 use superba_gui::pages::router::model::{Candidate, Snapshot};
 use superba_gui::pages::router::{self, Dialog, State};
@@ -26,6 +27,20 @@ fn fake() -> Arc<FakeService> {
         fast: true,
         ..Default::default()
     }))
+}
+
+/// Copy read from the locale, not pinned in the test. Task-7 renamed
+/// `router.members.title` (成员（按优先级） → 供应商（按使用顺序）) and these waits
+/// kept the old wording, so they sat until the frame limit waiting for text the
+/// page no longer paints. Reading the key keeps a copy change from doing that
+/// again.
+fn zh(key: &str) -> String {
+    Tr::new(Locale::ZhCn).t(key)
+}
+
+/// Same, for keys carrying a `{name}` placeholder.
+fn zh_name(key: &str, name: &str) -> String {
+    Tr::new(Locale::ZhCn).f(key, &[("name", &name)])
 }
 
 /// The user's state (bug 28): the Krill profile without a key, no router member.
@@ -51,13 +66,15 @@ fn without_an_api_key_member_the_page_says_why_and_offers_the_fixes() {
     keyless(&service);
     let mut h = Harness::new([1280.0, 800.0], Locale::ZhCn, service.clone(), true);
     let mut state = State::default();
+    let needs_member = zh("router.eligibility.none");
+    let fill_krill = zh_name("router.eligibility.fill_key", "Krill");
     let f = h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| f.has("开启路由需要至少一个有 API key 的成员。"),
+        |f| f.has(&needs_member),
     );
     assert!(f.has("Krill：还没有填写 API key"), "{}", f.all_text());
     // 为 Krill 填写 API key opens the Providers page key field.
-    h.click_text(&f, "为 Krill 填写 API key");
+    h.click_text(&f, &fill_krill);
     let f = h.frames(4, |ui, cx, out| router::show(ui, cx, &mut state, out));
     assert!(
         f.actions.iter().any(|a| matches!(
@@ -83,9 +100,10 @@ fn without_an_api_key_member_the_page_says_why_and_offers_the_fixes() {
         }
     });
     h.reload(&service);
+    let add_krill = zh_name("router.eligibility.add", "Krill");
     let f = h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| f.has("添加 Krill 为成员"),
+        |f| f.has(&add_krill),
     );
     assert!(
         f.has("Krill：可以作为成员（有 API key）"),
@@ -93,18 +111,14 @@ fn without_an_api_key_member_the_page_says_why_and_offers_the_fixes() {
         f.all_text()
     );
     assert!(!f.has("个人访问令牌"), "{}", f.all_text());
-    h.click_text(&f, "添加 Krill 为成员");
+    h.click_text(&f, &add_krill);
     h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
         |_| members(&service) == ["krill"],
     );
     h.reload(&service);
     let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
-    assert!(
-        !f.has("开启路由需要至少一个有 API key 的成员。"),
-        "{}",
-        f.all_text()
-    );
+    assert!(!f.has(&needs_member), "{}", f.all_text());
 }
 
 /// Krill with its key and Auto auth (the router sends it as an API key).
@@ -168,21 +182,20 @@ fn a_member_set_outside_the_page_unlocks_turn_on_without_a_reload() {
         h.frame(|ui, cx, out| router::show(ui, cx, &mut state, out));
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
+    let members_title = zh("router.members.title");
+    let needs_member = zh("router.eligibility.none");
+    let add_krill = zh_name("router.eligibility.add", "Krill");
     let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
-    assert!(f.has("成员（按优先级）"), "{}", f.all_text());
-    assert!(
-        !f.has("开启路由需要至少一个有 API key 的成员。"),
-        "{}",
-        f.all_text()
-    );
-    assert!(!f.has("添加 Krill 为成员"), "{}", f.all_text());
+    assert!(f.has(&members_title), "{}", f.all_text());
+    assert!(!f.has(&needs_member), "{}", f.all_text());
+    assert!(!f.has(&add_krill), "{}", f.all_text());
     // The palette offers turning it on, not "set up".
     h.frame(|_, cx, _| {
         let titles: Vec<String> = router::palette(cx, &state)
             .into_iter()
             .map(|i| i.title)
             .collect();
-        assert!(titles.contains(&"开启本地路由".to_owned()), "{titles:?}");
+        assert!(titles.contains(&"开启本机加速".to_owned()), "{titles:?}");
     });
     // 开启 is enabled: it starts the router and plans router mode.
     h.click_text(&f, "开启路由…");
@@ -200,17 +213,20 @@ fn adding_krill_from_the_panel_unlocks_turn_on_without_a_reload() {
     keyed_auto(&service);
     let mut h = Harness::new([1280.0, 800.0], Locale::ZhCn, service.clone(), true);
     let mut state = page(&service);
+    let add_krill = zh_name("router.eligibility.add", "Krill");
+    let needs_member = zh("router.eligibility.none");
+    let members_title = zh("router.members.title");
     let f = h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| f.has("添加 Krill 为成员"),
+        |f| f.has(&add_krill),
     );
-    assert!(f.has("开启路由需要至少一个有 API key 的成员。"));
+    assert!(f.has(&needs_member));
     assert!(
         f.has("Krill：可以作为成员（有 API key）"),
         "{}",
         f.all_text()
     );
-    h.click_text(&f, "添加 Krill 为成员");
+    h.click_text(&f, &add_krill);
     // The add asks the shell to reload its data (the palette, the Usage page).
     h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
@@ -220,9 +236,9 @@ fn adding_krill_from_the_panel_unlocks_turn_on_without_a_reload() {
     // No h.reload: the page alone must agree with itself.
     let f = h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| !f.has("开启路由需要至少一个有 API key 的成员。") && f.has("成员（按优先级）"),
+        |f| !f.has(&needs_member) && f.has(&members_title),
     );
-    assert!(!f.has("添加 Krill 为成员"), "{}", f.all_text());
+    assert!(!f.has(&add_krill), "{}", f.all_text());
     h.click_text(&f, "开启路由…");
     h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
@@ -297,9 +313,10 @@ fn a_router_program_on_a_network_share_is_flagged_under_the_service() {
     // A local program: no warning.
     let mut h = Harness::new([1280.0, 800.0], Locale::ZhCn, service.clone(), true);
     let mut state = page(&service);
+    let members_title = zh("router.members.title");
     let f = h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| f.has("成员（按优先级）"),
+        |f| f.has(&members_title),
     );
     assert!(!f.has("网络共享"), "{}", f.all_text());
 }
@@ -326,7 +343,7 @@ fn english_wording_and_the_diagnostics_dialog() {
     let mut state = State::default();
     let f = h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| f.has("Turning on the router needs at least one member with an API key."),
+        |f| f.has("Turning on the router needs at least one provider with an API key."),
     );
     assert!(f.has("Enter an API key for Krill"), "{}", f.all_text());
     // 诊断 from the palette opens the report dialog.

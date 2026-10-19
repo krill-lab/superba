@@ -272,13 +272,14 @@ async fn codex_in_effect_lists_what_each_codex_runs_and_how_to_switch_it() {
     );
     // The app's core is restarted by Superba; the terminal and the editor get
     // their command to copy; the running turn is named with its warning.
-    assert!(has("Restart ChatGPT's Codex core"));
+    // The button's label is a locale value (`in_effect.restart_core`): taken
+    // from the catalogue so a copy change cannot leave this assertion behind.
+    assert!(has(&tr.t("in_effect.restart_core")));
     assert!(has("Copy “codex resume --last”"));
     assert!(has("Copy “Developer: Restart Extension Host”"));
     assert!(contains("Fix the parser"));
-    assert!(has(
-        "A turn is running in it: restarting it now interrupts that turn."
-    ));
+    // `in_effect.interrupts`, from the catalogue (the copy says reply now).
+    assert!(has(&tr.t("in_effect.interrupts")));
     assert!(contains("pid 150"), "the app's core pid: {texts:?}");
     // Stopping asks first, with what it does.
     assert!(h.click_text("Stop…", &mut dialog!(&data, &tr, &mut state, &mut out)));
@@ -298,7 +299,7 @@ async fn codex_in_effect_lists_what_each_codex_runs_and_how_to_switch_it() {
     );
     // Restarting the app's core plans the re-apply of the applied profile.
     assert!(h.click_text(
-        "Restart ChatGPT's Codex core",
+        &tr.t("in_effect.restart_core"),
         &mut dialog!(&data, &tr, &mut state, &mut out)
     ));
     assert!(
@@ -412,7 +413,8 @@ async fn the_close_question_offers_stop_for_me_and_force_is_a_second_question() 
             .any(|t| t.contains("VS Code itself stays open"))
     );
     assert!(texts.iter().any(|t| t.contains("Fix the parser")));
-    assert!(has("Stopping it now loses the output of the running turn."));
+    // `in_effect.busy_warning`, from the catalogue (the copy says "reply" now).
+    assert!(has(&tr.t("in_effect.busy_warning")));
     assert!(has("I closed them — check again"));
     assert!(!has("End them by force"), "force is never offered first");
     assert!(h.click_text("Stop them for me", &mut decision!(&data, &tr, &mut flow)));

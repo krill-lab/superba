@@ -80,11 +80,11 @@ fn linux_offers_a_verified_download_and_the_install_command_without_sudo_by_supe
     let mut state = State::default();
     let f = h.until(|ui, cx, out| updates::show(ui, cx, &mut state, out), loaded);
     for want in [
-        "ChatGPT 桌面 app",
+        "ChatGPT 桌面版",
         "下载 .deb（502 MB）",
         "Linux 版没有自动更新",
         "sudo apt install ./chatgpt_26.1013.31256_amd64.deb",
-        "自带 codex 0.163.0-alpha.10.2",
+        "自带 Codex 0.163.0-alpha.10.2",
     ] {
         assert!(f.has(want), "{want} missing:\n{}", f.all_text());
     }
@@ -160,8 +160,8 @@ fn macos_and_windows_show_their_own_update_paths() {
     );
     assert!(f.has("winget upgrade --id 9PLM9XGG6VKS --source msstore"));
     // Windows: pinning the app's Codex is not offered in 0.3.
-    assert!(f.has("此版本在这个系统上不提供选择 app 使用的 Codex。"));
-    assert!(!f.has("固定版本"));
+    assert!(f.has("此版本在这个系统上不提供选择桌面版使用的 Codex。"));
+    assert!(!f.has("锁定版本"));
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn pin_choices_show_compatibility_and_plan_a_full_restart() {
         ("0.160.0", "较旧"),
         ("0.165.0", "较新"),
         ("0.140.0", "低于 app 最低版本"),
-        ("0.163.0", "与 app 匹配"),
+        ("0.163.0", "与 ChatGPT 版本匹配"),
     ] {
         state.choice = PinChoice::Version;
         state.version = Some(v(version));
@@ -247,7 +247,7 @@ fn cli_rows_follow_their_install_kind() {
         "独立安装",
         "npm",
         "app 自带",
-        "PATH 第 1",
+        "PATH 中第 1 个",
         "复制更新命令",
     ] {
         assert!(f.has(want), "{want} missing:\n{}", f.all_text());
@@ -364,7 +364,7 @@ fn an_app_updated_while_superba_runs_offers_a_reopen() {
     h.frame(|_, cx, out| updates::command(&mut state, cx, "check", out));
     let f = h.until(
         |ui, cx, out| updates::show(ui, cx, &mut state, out),
-        |f| f.has("ChatGPT 已更新，通过 Superba 重新打开以便热切。"),
+        |f| f.has("ChatGPT 已更新。通过 Superba 重新打开，之后切换就不用重启。"),
     );
     let f2 = h.frames(2, |ui, cx, out| updates::show(ui, cx, &mut state, out));
     let _ = f;

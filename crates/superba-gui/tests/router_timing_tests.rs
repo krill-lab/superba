@@ -236,12 +236,12 @@ fn tps_dash_is_explained_and_the_window_shown() {
     assert_eq!(requests::tps(row.tps_milli), "—");
     assert_eq!(
         timing::tps_note(&tr, &row, &d.timing).unwrap(),
-        "TPS 为 —：首个事件到完成只有 12 ms（不足 0.2 秒）"
+        "速度为 —：首个事件到完成只有 12 ms（不足 0.2 秒）"
     );
     let en = Tr::new(Locale::En);
     assert_eq!(
         timing::tps_note(&en, &row, &d.timing).unwrap(),
-        "TPS is —: only 12 ms from the first event to completed (under 0.2 s)"
+        "Speed is —: only 12 ms from the first event to completed (under 0.2 s)"
     );
 }
 
@@ -405,7 +405,7 @@ fn attempts_are_localized_from_their_fields_and_the_raw_log_is_folded() {
     assert!(f.has("路由原始日志（英文）"));
     assert!(!f.has("HTTP 200 after"), "{}", f.all_text());
     assert!(!f.has("stats line added"));
-    assert!(f.has("这条回复已添加统计行"));
+    assert!(f.has("这条回复已添加末尾小字"));
 }
 
 #[test]
@@ -441,7 +441,7 @@ fn the_speed_tier_has_its_own_line_by_name() {
     state.recent.selected = Some(fast.id);
     let f = h.until(
         |ui, cx, out| superba_gui::pages::router::show_usage(ui, cx, &mut state, out),
-        |f| f.has("速度档位"),
+        |f| f.has("速度模式"),
     );
     assert!(f.has("Fast"), "{}", f.all_text());
     assert!(!f.has("priority"), "{}", f.all_text());

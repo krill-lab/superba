@@ -186,6 +186,28 @@ fn string_literals(source: &str) -> Vec<(usize, &str)> {
     literals
 }
 
+/// Whether a literal is UI copy: a dotted lower-case literal that is not one of
+/// Codex's own `config.toml` paths. `looks_like_key` alone cannot tell the two
+/// apart — `sandbox_workspace_write.network_access` is a config path (user bug
+/// 41-level: the settings page named it in the intent chips), and the shipped
+/// catalog is the authority on which paths exist.
+fn is_message_key(text: &str, config_paths: &BTreeSet<String>) -> bool {
+    looks_like_key(text) && !config_paths.contains(text)
+}
+
+/// Every `config.toml` path of the shipped catalog: the settings page's rows,
+/// the keys the page writes and the feature registry's own paths.
+fn config_paths() -> BTreeSet<String> {
+    let store = superba_catalog::CatalogStore::builtin().expect("the shipped catalog");
+    let catalog = store.latest().expect("the latest catalog version");
+    catalog
+        .config_keys
+        .iter()
+        .map(|k| k.path.clone())
+        .chain(catalog.features.iter().map(|f| f.config_path.clone()))
+        .collect()
+}
+
 #[test]
 fn every_literal_gui_message_key_exists_in_an_english_catalog() {
     let mut keys = BTreeSet::new();
@@ -204,10 +226,11 @@ fn every_literal_gui_message_key_exists_in_an_english_catalog() {
     assert!(files.iter().any(|path| path.starts_with(src.join("pages"))));
     let mut found = BTreeSet::new();
     let mut missing = Vec::new();
+    let paths = config_paths();
     for path in files {
         let source = fs::read_to_string(&path).expect("read GUI Rust source");
         for (offset, key) in string_literals(&source) {
-            if looks_like_key(key) {
+            if is_message_key(key, &paths) {
                 found.insert(key.to_owned());
                 if !keys.contains(key) {
                     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
@@ -279,6 +302,21 @@ fn key_scanner_accepts_dotted_keys_and_excludes_files_urls_and_versions() {
         scanned,
         ["nav.overview", "banner.waiting.title", "action.cancel"]
     );
+    // The scan alone reads a Codex config path as a message key; the catalog's
+    // path set is what excludes it — and only the paths that really exist:
+    // a dotted name that is no path stays missing from the catalog.
+    let paths = config_paths();
+    assert!(
+        paths.contains("sandbox_workspace_write.network_access"),
+        "the catalog lists the network-access path"
+    );
+    assert!(looks_like_key("sandbox_workspace_write.network_access"));
+    assert!(!is_message_key(
+        "sandbox_workspace_write.network_access",
+        &paths
+    ));
+    assert!(is_message_key("not.a.real.path", &paths));
+    assert!(is_message_key("nav.overview", &paths));
 }
 
 #[test]

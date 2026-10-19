@@ -29,7 +29,7 @@ fn loaded(f: &Frame) -> bool {
 }
 
 const ZH_COLUMNS: [&str; 13] = [
-    "缓存键",
+    "缓存标识",
     "日期",
     "会话",
     "状态",
@@ -38,13 +38,13 @@ const ZH_COLUMNS: [&str; 13] = [
     "输出",
     "缓存读取",
     "缓存写入",
-    "首字",
+    "首字延迟",
     "完成时间",
-    "TPS",
+    "速度",
     "费用",
 ];
 const EN_COLUMNS: [&str; 13] = [
-    "Cache key",
+    "Cache ID",
     "Date",
     "Session",
     "Status",
@@ -53,9 +53,9 @@ const EN_COLUMNS: [&str; 13] = [
     "Output",
     "Cached",
     "Written",
-    "TTFT",
+    "First token",
     "Elapsed",
-    "TPS",
+    "Speed",
     "Cost",
 ];
 
@@ -165,14 +165,14 @@ fn a_codex_exec_row_never_shows_an_added_stats_line() {
     state.recent.detail_tab = 1;
     let f = h.until(
         |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
-        |f| f.has("统计行：codex exec 从不添加"),
+        |f| f.has("末尾小字：codex exec 从不添加"),
     );
-    assert!(!f.has("这条回复已添加统计行"));
+    assert!(!f.has("这条回复已添加末尾小字"));
     // A desktop answer with the line says so.
     state.recent.selected = Some(7);
     h.until(
         |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
-        |f| f.has("这条回复已添加统计行"),
+        |f| f.has("这条回复已添加末尾小字"),
     );
 }
 
@@ -273,7 +273,11 @@ fn statistics_group_rows_and_show_hourly_then_daily_bars() {
     );
     assert!(!f.has("per day"), "{}", f.all_text());
     assert!(f.has("Success rate"));
-    assert!(f.has("Avg TTFT") && f.has("Avg TPS"), "{}", f.all_text());
+    assert!(
+        f.has("Avg first token") && f.has("Avg speed"),
+        "{}",
+        f.all_text()
+    );
     assert!(f.fits() && !f.scrolled);
     // Numeric headers are right-aligned over their right-aligned values.
     // The table header (the metric toggle above the bars says Cost too).
@@ -326,7 +330,7 @@ fn the_stats_line_preview_follows_the_template_while_typing() {
         |f| f.has("X 87 Y 321"),
     );
     // While a custom template is typed the metric checkboxes are disabled.
-    assert!(f.has("已自定义模板 · 恢复默认后可用勾选"));
+    assert!(f.has("已自定义格式 · 恢复默认后可用勾选"));
     // English default and the italic style.
     let mut h = Harness::new([1280.0, 800.0], Locale::En, fake(), true);
     let mut state = State::default();
@@ -359,7 +363,7 @@ fn stats_line_and_recording_commands_save_settings_without_restarting_codex() {
             "{titles:?}"
         );
         assert!(
-            titles.contains(&"Turn the stats line off".to_owned()),
+            titles.contains(&"Turn the reply footnote off".to_owned()),
             "{titles:?}"
         );
     });

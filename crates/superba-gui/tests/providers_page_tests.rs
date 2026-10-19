@@ -617,7 +617,7 @@ async fn a_custom_site_must_pass_its_test_before_add_and_switch() {
     assert!(!d.saving());
     assert_eq!(
         d.error.as_deref(),
-        Some("Test the site first (with the URL and key above).")
+        Some("Test the site first (with the address and API key above).")
     );
     d.set_report(tested_report());
     assert!(d.tested_ok());
@@ -660,7 +660,7 @@ async fn test_results_show_latency_key_model_count_and_the_responses_call() {
         frames > 2
     });
     assert!(text.contains("210 ms"), "{text}");
-    assert!(text.contains("/v1/models 返回 37 个模型"), "{text}");
+    assert!(text.contains("这个站点提供了 37 个模型"), "{text}");
     // "Responses" with a drawn check mark.
     assert!(text.lines().any(|l| l == "Responses"), "{text}");
 }

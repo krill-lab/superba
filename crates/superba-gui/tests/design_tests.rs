@@ -36,12 +36,14 @@ fn body_and_muted_text_meet_contrast_on_every_background() {
 
 #[test]
 fn subtle_text_meets_secondary_contrast() {
+    // Secondary text is still text: WCAG AA (4.5:1), not the 3:1 large-text
+    // allowance it used to be held to (task-20).
     for (theme, palette) in [("dark", DARK), ("light", LIGHT)] {
         for (name, surface) in [("bg", palette.bg), ("surface", palette.surface)] {
             let ratio = contrast_ratio(palette.text_subtle, surface);
             assert!(
-                ratio >= 3.0,
-                "{theme}: text_subtle on {name} has contrast {ratio}, expected >= 3"
+                ratio >= 4.5,
+                "{theme}: text_subtle on {name} has contrast {ratio}, expected >= 4.5"
             );
         }
     }
@@ -675,6 +677,79 @@ mod v3 {
         s.clamp(0);
         assert_eq!((s.selected, s.page), (None, 0));
         assert!(!s.key(Key::ArrowDown, 0));
+    }
+
+    /// Every text drawn in a frame.
+    fn drawn_texts(out: &egui::FullOutput) -> Vec<String> {
+        out.shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_owned()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn one_page_has_no_pager_at_all() {
+        // Four items at eleven per page: one page, so there is no range label,
+        // no arrows and no page buttons (user complaint: a fixed "1–4 / 4  ‹ 1 ›"
+        // row under every list).
+        let mut page = 0;
+        let one = frame(Theme::Light, 200.0, |ui| {
+            Pager::new("one-page", &mut page, 4, 11)
+                .labels("Previous", "Next")
+                .show(ui);
+        });
+        assert!(drawn_texts(&one).is_empty(), "{:?}", drawn_texts(&one));
+        // Twelve items: two pages, and the pager is there.
+        let mut page = 0;
+        let two = frame(Theme::Light, 200.0, |ui| {
+            Pager::new("two-pages", &mut page, 12, 11)
+                .labels("Previous", "Next")
+                .show(ui);
+        });
+        let texts = drawn_texts(&two);
+        assert!(texts.iter().any(|t| t == "1–11 / 12"), "{texts:?}");
+        assert!(texts.iter().any(|t| t == "2"), "{texts:?}");
+    }
+
+    #[test]
+    fn a_short_paged_table_keeps_its_own_height_and_loses_the_pager_band() {
+        let per_page = std::cell::Cell::new(0usize);
+        let drawn = std::cell::Cell::new(0.0f32);
+        let one = frame(Theme::Light, 600.0, |ui| {
+            let (rect, _) = ui.allocate_exact_size(vec2(900.0, 600.0), Sense::hover());
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+            let mut state = PagedState::default();
+            let r = PagedTable::new("short-table", Table::new(&[1.0]), 1, &mut state)
+                .header(vec!["Name".into()])
+                .shrink()
+                .show(&mut child, |ui, _, _| {
+                    ui.label("row");
+                });
+            per_page.set(r.per_page);
+            drawn.set(child.min_rect().height());
+        });
+        // A one-row table is a header, its row and one blank row — not the whole
+        // 600 px it was given — and its single page reserves no footer band.
+        assert_eq!(per_page.get(), 2);
+        assert_eq!(drawn.get(), size::TABLE_HEADER + 2.0 * size::ROW);
+        assert!(!drawn_texts(&one).iter().any(|t| t.contains(" / ")));
+        // Forty rows: the pager comes back and pages the table.
+        let tall = frame(Theme::Light, 600.0, |ui| {
+            let (rect, _) = ui.allocate_exact_size(vec2(900.0, 600.0), Sense::hover());
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+            let mut state = PagedState::default();
+            PagedTable::new("tall-table", Table::new(&[1.0]), 40, &mut state)
+                .header(vec!["Name".into()])
+                .shrink()
+                .show(&mut child, |ui, _, _| {
+                    ui.label("row");
+                });
+        });
+        let texts = drawn_texts(&tall);
+        assert!(texts.iter().any(|t| t.ends_with(" / 40")), "{texts:?}");
     }
 
     #[test]

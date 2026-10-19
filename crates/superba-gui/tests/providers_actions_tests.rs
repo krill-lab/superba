@@ -354,7 +354,7 @@ async fn the_router_keeps_its_last_member() {
     let page = Page::new(data, service, Locale::En);
     page.settle();
     page.right_click("Krill 2");
-    let why = "This is the local router's only member. Switch to another provider or turn \
+    let why = "This is the local router's only provider. Switch to another provider or turn \
                router mode off first, then delete it.";
     assert!(page.texts().iter().any(|t| t == why));
     page.click_last("Delete…");

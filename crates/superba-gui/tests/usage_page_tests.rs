@@ -34,8 +34,8 @@ fn usage_is_its_own_page_next_to_the_router() {
     assert_eq!(Page::Usage.layout(), PageLayout::Fit);
     let zh = Tr::new(Locale::ZhCn);
     let en = Tr::new(Locale::En);
-    assert_eq!(zh.t(Page::Usage.title_key()), "用量");
-    assert_eq!(en.t(Page::Usage.title_key()), "Usage");
+    assert_eq!(zh.t(Page::Usage.title_key()), "请求记录");
+    assert_eq!(en.t(Page::Usage.title_key()), "Requests");
     assert_eq!(zh.t(Page::Router.title_key()), "路由");
     assert_eq!(en.t(Page::Router.title_key()), "Router");
     // Deep links: `--page usage`, `--page router`.
@@ -47,10 +47,10 @@ fn usage_is_its_own_page_next_to_the_router() {
 #[test]
 fn the_router_page_lands_on_its_settings() {
     for (locale, settings, tabs) in [
-        (Locale::ZhCn, "统计行", ["最近请求", "活动请求"]),
+        (Locale::ZhCn, "末尾小字", ["最近请求", "活动请求"]),
         (
             Locale::En,
-            "Reply stats line",
+            "Reply footnote",
             ["Recent requests", "Active requests"],
         ),
     ] {
@@ -110,7 +110,7 @@ fn active_requests_explain_that_they_need_the_router() {
     state.tab = Tab::Active;
     let f = h.until(
         |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
-        |f| f.has("只有本地路由能看到正在进行的请求"),
+        |f| f.has("只有本机加速能看到正在进行的请求"),
     );
     assert!(f.has("最近请求和统计不需要路由"), "{}", f.all_text());
 }
@@ -134,13 +134,13 @@ fn rollout_rows_are_listed_with_dashes_in_the_router_only_columns() {
     for col in [Col::FirstToken, Col::Tps] {
         let c = requests::cell(&zh, &titles, &rows[0], col, now);
         assert_eq!(c.text, requests::DASH);
-        assert_eq!(c.tooltip.as_deref(), Some("仅本地路由可提供"));
+        assert_eq!(c.tooltip.as_deref(), Some("仅本机加速可提供"));
     }
     let c = requests::cell(&zh, &titles, &rows[0], Col::Provider, now);
     assert!(
         c.tooltip
             .as_deref()
-            .is_some_and(|t| t.contains("线路仅本地路由可提供")),
+            .is_some_and(|t| t.contains("线路仅本机加速可提供")),
         "{:?}",
         c.tooltip
     );
@@ -155,7 +155,7 @@ fn rollout_rows_are_listed_with_dashes_in_the_router_only_columns() {
     let csv = requests::csv(&zh, &titles, &rows);
     assert!(csv.lines().next().unwrap().ends_with("来源"), "{csv}");
     assert!(csv.contains("Codex 会话记录"), "{csv}");
-    assert!(csv.contains("本地路由"), "{csv}");
+    assert!(csv.contains(&zh.t("request_source.router")), "{csv}");
     // The detail pane of a rollout row says where it comes from.
     let mut h = Harness::new([1440.0, 900.0], Locale::ZhCn, service, true);
     let mut state = State::default();
@@ -168,7 +168,7 @@ fn rollout_rows_are_listed_with_dashes_in_the_router_only_columns() {
         |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
         |f| f.has("Codex 会话记录"),
     );
-    assert!(f.has("仅本地路由可提供"), "{}", f.all_text());
+    assert!(f.has("仅本机加速可提供"), "{}", f.all_text());
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn palette_entries_open_the_usage_tabs() {
             }
         }
         assert!(matches!(
-            &find("Turn the stats line on").action,
+            &find("Turn the reply footnote on").action,
             Action::PageCommand {
                 page: Page::Router,
                 ..
@@ -279,5 +279,49 @@ fn the_log_fits_every_window_size_without_cut_filters_or_elided_numbers() {
                 assert!(f.texts.iter().any(|(t, _)| t == h), "{label}: {h} missing");
             }
         }
+    }
+}
+
+/// The narrow-window rule (task-14 item 3), fixed here so it cannot drift: a
+/// narrow table drops the columns that can be derived from others (rank order:
+/// cache write, cache key, TPS, cache read) and never an identity column (date,
+/// session, status, provider) — a row must stay identifiable, and the table
+/// must never be cut down to one column.
+#[test]
+fn a_narrow_table_hides_derived_columns_and_keeps_the_identity_ones() {
+    for c in [Col::Date, Col::Session, Col::Status, Col::Provider] {
+        assert_eq!(c.drop_rank(), None, "{c:?} is an identity column");
+    }
+    let mut ranked: Vec<(u8, Col)> = Col::ALL
+        .iter()
+        .filter_map(|c| c.drop_rank().map(|r| (r, *c)))
+        .collect();
+    ranked.sort_by_key(|(r, _)| *r);
+    assert_eq!(
+        ranked.iter().map(|(_, c)| *c).collect::<Vec<_>>(),
+        vec![Col::CacheWrite, Col::CacheKey, Col::Tps, Col::CacheRead],
+        "the derivable columns, lowest rank first"
+    );
+    assert_eq!(Col::ALL.len() - ranked.len(), 9, "columns that always stay");
+    for locale in [Locale::ZhCn, Locale::En] {
+        let tr = Tr::new(locale);
+        let mut h = Harness::new([960.0, 640.0], locale, fake(), true);
+        let mut state = State::default();
+        let f = h.until(
+            |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
+            |f| f.has("Krill") && f.has(" %"),
+        );
+        for c in [Col::Date, Col::Session, Col::Status, Col::Provider] {
+            let label = tr.t(c.key());
+            assert!(
+                f.texts.iter().any(|(t, _)| t == &label),
+                "{locale:?}: identity column {label:?} missing"
+            );
+        }
+        let shown = Col::ALL
+            .iter()
+            .filter(|c| f.texts.iter().any(|(t, _)| t == &tr.t(c.key())))
+            .count();
+        assert!(shown >= 9, "{locale:?}: only {shown} columns shown");
     }
 }
