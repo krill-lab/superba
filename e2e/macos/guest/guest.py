@@ -111,6 +111,9 @@ def preflight():
     if APP.exists() or APP.is_symlink():
         raise Blocked("/Applications/Superba.app already exists; its owner must remove it before testing")
     real_home = Path.home()
+    user_app = real_home / "Applications/Superba.app"
+    if user_app.exists() or user_app.is_symlink():
+        raise Blocked("Superba already exists in the login user's Applications folder; its owner must remove it")
     existing = list((real_home / "Library/LaunchAgents").glob("*superba*"))
     if existing:
         raise Blocked("Existing Superba login items must be removed by their owner")

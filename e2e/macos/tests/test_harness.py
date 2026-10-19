@@ -292,6 +292,19 @@ class GuestSafetyTests(unittest.TestCase):
         with patch.object(self.guest, "processes", return_value=[]):
             self.assertEqual(self.guest.reboot_ready(), {"ready": True})
 
+    def test_user_app_installation_blocks_before_native_state_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "login-home"
+            app = home / "Applications/Superba.app"
+            app.mkdir(parents=True)
+            with patch.object(Path, "home", return_value=home), \
+                    patch.object(self.guest, "APP", Path(directory) / "system-app"), \
+                    patch.object(self.guest, "command") as command:
+                with self.assertRaises(self.guest.Blocked):
+                    self.guest.preflight()
+            self.assertTrue(app.is_dir())
+            command.assert_not_called()
+
     def test_paths_cannot_escape_session(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "session"
