@@ -242,12 +242,11 @@ async fn next<R: tokio::io::AsyncBufRead + Unpin>(
     lines: &mut Option<tokio::io::Split<R>>,
 ) -> Option<String> {
     match lines {
-        Some(l) => l
-            .next_segment()
-            .await
-            .ok()
-            .flatten()
-            .map(|b| String::from_utf8_lossy(&b).trim_end_matches('\r').to_owned()),
+        Some(l) => l.next_segment().await.ok().flatten().map(|b| {
+            String::from_utf8_lossy(&b)
+                .trim_end_matches('\r')
+                .to_owned()
+        }),
         None => std::future::pending().await,
     }
 }

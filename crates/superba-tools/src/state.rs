@@ -166,6 +166,15 @@ pub struct ToolLock {
     _file: fs::File,
 }
 
+impl Drop for ToolLock {
+    fn drop(&mut self) {
+        // Closing only our descriptor can leave flock held by a concurrent
+        // spawn's inherited descriptor until exec. End the operation's lock
+        // explicitly so the next operation can start immediately.
+        let _ = self._file.unlock();
+    }
+}
+
 impl ToolLock {
     /// Take the lock of `tool`, or fail with [`Error::Locked`].
     pub fn acquire(data: &DataDir, tool: ToolId) -> Result<Self> {
@@ -189,5 +198,27 @@ impl ToolLock {
             }),
             Err(fs::TryLockError::Error(e)) => Err(Error::io(&path, &e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn releasing_an_operation_unlocks_even_with_a_duplicate_handle() {
+        let root = tempfile::tempdir().unwrap();
+        let data = DataDir::new(root.path());
+        let lock = ToolLock::acquire(&data, ToolId::Pi).unwrap();
+        // A concurrent process spawn can inherit the descriptor until exec.
+        // Model that live duplicate without forking the test process.
+        let duplicate = lock._file.try_clone().unwrap();
+        assert!(ToolLock::acquire(&data, ToolId::Pi).is_err());
+        drop(lock);
+        let next = ToolLock::acquire(&data, ToolId::Pi).unwrap();
+        drop(duplicate);
+        assert!(ToolLock::acquire(&data, ToolId::Pi).is_err());
+        drop(next);
+        assert!(ToolLock::acquire(&data, ToolId::Pi).is_ok());
     }
 }
