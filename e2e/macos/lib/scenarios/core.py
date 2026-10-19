@@ -254,6 +254,7 @@ def upgrade(t):
     t.provider()
     t.write(DATA + "/e2e-preserved.txt", "preserve-on-upgrade\n")
     baseline = t.read(DATA + "/profiles.json")
+    t.check(bool(baseline), "Provider configuration exists before the upgrade")
     t.rpc("stop")
     new = t.install(t.runner.opts.upgrade_dmg, upgrade=True)
     t.check(old["dmg_sha256"] != new["dmg_sha256"], "Upgrade uses two distinct DMG artifacts")
