@@ -929,5 +929,15 @@ async fn a_host_being_scanned_spins_in_the_switcher_and_a_failed_scan_offers_ret
     }
     assert_eq!(service.host_scans().len(), 1);
     assert!(h.click_text("Retry", &mut |ui| draw(ui, &mut state)));
+    // Retry schedules a background read; wait for that read to start instead
+    // of assuming the worker ran before the click handler returned.
+    let start = Instant::now();
+    while service.host_scans().len() < 2 {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "Retry did not scan again"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     assert_eq!(service.host_scans().len(), 2, "Retry scans again");
 }

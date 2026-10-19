@@ -34,6 +34,7 @@ url.workspace = true
 # usage import tests build another tool's database
 rusqlite.workspace = true
 tempfile.workspace = true
+toml.workspace = true
 
 [build-dependencies]
 winresource.workspace = true
