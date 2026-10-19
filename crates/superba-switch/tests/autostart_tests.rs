@@ -2,7 +2,7 @@ mod fakes;
 
 use fakes::{ScriptedDecider, World};
 use std::sync::Arc;
-use superba_config::autostart::{EntryStore, Manager, MemoryEntry, Platform};
+use superba_config::autostart::{EntryStore, FileEntry, Manager, MemoryEntry, Platform};
 use superba_core::{
     ExecuteOptions, NoEvents, OutcomeStatus, ProfileId, ProviderRestore, RestoreTarget,
     SwitchIntent, SwitchRequest, SwitchService,
@@ -16,6 +16,33 @@ fn service(w: &World) -> (Switcher, Arc<MemoryEntry>) {
     let mut deps = w.deps();
     deps.autostart = Arc::new(Manager::with_store(Platform::Linux, entry.clone(), Ok(exe)));
     (Switcher::new(deps), entry)
+}
+
+#[tokio::test]
+async fn unreadable_login_entry_does_not_prevent_loading_profiles() {
+    let w = World::new();
+    let entry = w.ctx.home_dir.join(".config/autostart/superba.desktop");
+    std::fs::create_dir_all(&entry).unwrap();
+    let mut expected = {
+        let mut set = w.profiles.set.lock().unwrap();
+        set.settings.autostart = true;
+        set.settings.start_in_tray = true;
+        set.last_selected = Some(ProfileId::new("work"));
+        set.clone()
+    };
+    expected.settings.autostart = false;
+    let mut deps = w.deps();
+    deps.autostart = Arc::new(Manager::with_store(
+        Platform::Linux,
+        Arc::new(FileEntry(entry.clone())),
+        Ok(w.tmp.path().join("superba")),
+    ));
+    let sw = Switcher::new(deps);
+
+    assert!(sw.autostart_status().await.is_err());
+    assert_eq!(sw.profile_set().await.unwrap(), expected);
+    assert_eq!(*w.profiles.saves.lock().unwrap(), 0);
+    assert!(entry.is_dir());
 }
 
 #[tokio::test]

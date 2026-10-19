@@ -544,7 +544,13 @@ impl SwitchService for Switcher {
 
     async fn profile_set(&self) -> Result<ProfileSet> {
         let mut set = self.deps.profiles.load().await?;
-        set.settings.autostart = self.deps.autostart.status()?.enabled;
+        set.settings.autostart = match self.deps.autostart.status() {
+            Ok(status) => status.enabled,
+            Err(error) => {
+                tracing::warn!(error = %error, "login startup status cannot be read; treating it as disabled");
+                false
+            }
+        };
         Ok(set)
     }
 
