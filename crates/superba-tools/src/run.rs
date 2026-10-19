@@ -193,9 +193,40 @@ pub async fn run(
 type Live<'a> = (&'a OpLog, ToolId, ToolStage, &'a dyn ToolProgressSink);
 
 async fn run_inner(cmd: &Cmd, live: Option<Live<'_>>) -> Result<Outcome> {
-    let mut child = cmd.command().spawn().map_err(|e| Error::Process {
-        message: format!("cannot start {}: {e}", cmd.program.display()),
-    })?;
+    let mut command = cmd.command();
+    let deadline = tokio::time::Instant::now() + cmd.timeout;
+    let mut retries = 0;
+    let mut child = loop {
+        if live.as_ref().is_some_and(|l| l.3.cancel_requested()) {
+            return Err(Error::Cancelled);
+        }
+        match command.spawn() {
+            Ok(child) => break child,
+            Err(e)
+                if cfg!(target_os = "linux")
+                    && e.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && retries < 5 =>
+            {
+                // A concurrent fork can inherit the download's CLOEXEC writer
+                // until that child execs, even after we close and rename it.
+                // Only retry this pre-exec failure (10..160 ms backoff); never
+                // re-run a child that started or hide a persistent writer.
+                let next = tokio::time::Instant::now() + Duration::from_millis(10 << retries);
+                tokio::time::sleep_until(next.min(deadline)).await;
+                if tokio::time::Instant::now() >= deadline {
+                    return Err(Error::Timeout {
+                        what: cmd.display(),
+                    });
+                }
+                retries += 1;
+            }
+            Err(e) => {
+                return Err(Error::Process {
+                    message: format!("cannot start {}: {e}", cmd.program.display()),
+                });
+            }
+        }
+    };
     let pid = child.id();
     // Split at `\n` and decode each line lossily: a tool that prints in the
     // console's code page must not end the reading early.
@@ -203,7 +234,6 @@ async fn run_inner(cmd: &Cmd, live: Option<Live<'_>>) -> Result<Outcome> {
     let stderr = child.stderr.take().map(|s| BufReader::new(s).split(b'\n'));
     let (mut out_lines, mut err_lines) = (stdout, stderr);
     let (mut out, mut err) = (String::new(), String::new());
-    let deadline = tokio::time::Instant::now() + cmd.timeout;
     let mut tick = tokio::time::interval(Duration::from_millis(100));
     // A child that exited while something it started still holds the pipes
     // open (a background helper): stop reading shortly after.

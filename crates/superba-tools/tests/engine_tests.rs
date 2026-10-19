@@ -8,6 +8,10 @@
 
 mod support;
 
+#[cfg(target_os = "linux")]
+#[path = "support/inherited_writer.rs"]
+mod inherited_writer;
+
 use std::path::Path;
 use std::sync::Arc;
 
@@ -665,6 +669,68 @@ async fn claude_code_asks_before_removing_an_npm_install_and_refuses_with_disabl
     again.confirmed = true;
     let err = tm.run(again, Arc::new(NoToolProgress)).await.unwrap_err();
     assert!(err.to_string().contains("DISABLE_UPDATES"), "{err}");
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn claude_install_waits_for_an_inherited_download_writer() {
+    use std::future::{Future as _, poll_fn};
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use superba_core::{ToolProgress, ToolProgressSink, ToolStage};
+
+    #[derive(Default)]
+    struct ForkDuringDownload {
+        child: Mutex<Option<inherited_writer::BeforeExec>>,
+        installing: AtomicBool,
+    }
+
+    impl ToolProgressSink for ForkDuringDownload {
+        fn report(&self, progress: ToolProgress) {
+            if progress.stage == ToolStage::Downloading && progress.done == 0 {
+                // transfer() has its real download file open for writing.
+                *self.child.lock().unwrap() = Some(inherited_writer::BeforeExec::start());
+            }
+            if progress.stage == ToolStage::Installing {
+                self.installing.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    let mock = Mock::start().await;
+    claude_routes(&mock);
+    let root = tempfile::tempdir().unwrap();
+    let tm = manager(root.path(), &mock, &[], &[]);
+    let sink = Arc::new(ForkDuringDownload::default());
+    let dest = root
+        .path()
+        .join("home/.local/share/claude/versions/2.1.302");
+    let install = tm.run(req(ToolId::ClaudeCode, ToolOp::Install, None), sink.clone());
+    tokio::pin!(install);
+    let mut released = false;
+    let report = poll_fn(|cx| {
+        let result = install.as_mut().poll(cx);
+        if sink.installing.load(Ordering::SeqCst)
+            && let Some(child) = sink.child.lock().unwrap().take()
+        {
+            // The first spawn has now run. The downloader closed its writer,
+            // but an unrelated child still holds the same inode after rename.
+            assert!(!inherited_writer::has_writer(std::process::id(), &dest));
+            assert!(inherited_writer::has_writer(child.pid, &dest));
+            assert_eq!(std::fs::read(&dest).unwrap(), claude_binary("2.1.302"));
+            drop(child);
+            released = true;
+        }
+        result
+    })
+    .await
+    .unwrap();
+    assert!(released);
+    assert_eq!(report.version.as_deref(), Some("2.1.302"));
+    assert_eq!(
+        std::fs::read_link(root.path().join("home/.local/bin/claude")).unwrap(),
+        dest
+    );
 }
 
 #[tokio::test]
