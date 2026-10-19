@@ -59,6 +59,13 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>) {
             .on_hover_text(tr.t("overview.today.month_tip"));
         }
     });
+    // A card with nothing in it keeps one sentence: no empty progress bar, no
+    // all-gray week and no three zeros saying the same thing twice (task-12 P3).
+    if snap.is_some_and(|s| s.heat.is_empty()) && view.as_ref().is_some_and(TodayView::is_empty) {
+        ui.add_space(((ui.available_height() - 20.0) / 2.0).max(10.0));
+        ui.label(gray(cx, &tr.t("overview.today.empty_line")));
+        return;
+    }
     ui.add_space(2.0);
     kpi_row(ui, cx, view.as_ref(), &tokens);
     ui.add_space(10.0);

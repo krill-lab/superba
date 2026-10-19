@@ -286,13 +286,10 @@ async fn the_hero_and_the_palette_carry_the_action() {
     }
     let tr = Tr::new(Locale::En);
     assert_eq!(tr.t("action.open_app"), "Open ChatGPT with Superba");
-    assert_eq!(
-        tr.t("action.reopen_app"),
-        "Reopen with Superba (enables hot switching)"
-    );
+    assert_eq!(tr.t("action.reopen_app"), "Reopen ChatGPT (slow, 5–10 s)");
     assert_eq!(
         Tr::new(Locale::ZhCn).t("action.reopen_app"),
-        "用 Superba 重新打开（启用热切换）"
+        "重新打开 ChatGPT（慢，5–10 秒）"
     );
 }
 

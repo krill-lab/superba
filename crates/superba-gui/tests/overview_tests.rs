@@ -10,9 +10,9 @@ mod support;
 use egui::Rect;
 use serde_json::json;
 use superba_core::{
-    DoctorFinding, LineCaps, Locale, LocalizedText, RequestClient, RequestRow, RequestTotals,
-    RouterLineHealth, RouterLineView, RouterMemberView, RouterView, RouterWatchState, Severity,
-    SwitchService, Timestamp, Usd, VersionsView,
+    DoctorFinding, HotSwitchStatus, LineCaps, Locale, LocalizedText, RequestClient, RequestRow,
+    RequestTotals, RouterLineHealth, RouterLineView, RouterMemberView, RouterView,
+    RouterWatchState, Severity, SwitchService, Timestamp, Usd, VersionsView,
 };
 use superba_gui::design::Palette;
 use superba_gui::design::widgets::Status;
@@ -722,6 +722,14 @@ async fn the_hero_shows_the_router_as_a_node_only_when_router_mode_is_on() {
         );
         assert!(!h.this.menu && !h.router.menu);
         assert!(h.nodes().iter().all(|n| n.marker.is_none()));
+        // The first screen's verdict: applied but never probed, so testing it
+        // (user request 30).
+        assert!(
+            matches!(h.verdict, hero::Verdict::Probing { .. }),
+            "nothing probed yet: {:?}",
+            h.verdict
+        );
+        assert!(h.verdict.action(cx).is_none(), "nothing to press yet");
     });
     router_on(&mut data);
     let o = data.overview.value.clone().unwrap();
@@ -792,7 +800,202 @@ async fn problem_markers_sit_on_the_nodes_they_concern() {
             h.latency,
             superba_gui::design::widgets::Latency::Unreachable
         );
+        // And the verdict says which provider is not answering and offers the
+        // page that fixes it (user request 30).
+        let hero::Verdict::Unreachable { name } = h.verdict.clone() else {
+            panic!("{:?}", h.verdict);
+        };
+        assert!(name.contains("Krill"), "{name}");
+        assert!(matches!(
+            h.verdict.action(cx),
+            Some(Action::Go(Page::Providers))
+        ));
     });
+}
+
+/// The Overview's first line (user request 30): one plain sentence per state,
+/// naming the fix when there is one.
+#[tokio::test]
+async fn the_first_screen_says_in_one_sentence_what_state_codex_is_in() {
+    let mut data = fake_data().await;
+    let site = data.active_site_id().unwrap().clone();
+    let active = data.overview.value.as_ref().unwrap().active.clone();
+    let zh = Tr::new(Locale::ZhCn);
+    let en = Tr::new(Locale::En);
+
+    // Applied, never probed: it is testing the line now.
+    let o = data.overview.value.clone().unwrap();
+    with_cx(&data, Locale::ZhCn, |cx| {
+        let h = hero::model(cx, &o, &[], None);
+        let hero::Verdict::Probing { name } = h.verdict.clone() else {
+            panic!("{:?}", h.verdict);
+        };
+        assert!(name.contains("Krill"), "{name}");
+        assert_eq!(
+            h.verdict.text(cx),
+            zh.f("overview.verdict.probing", &[("name", &name)])
+        );
+        assert!(h.verdict.action(cx).is_none(), "nothing to press");
+    });
+
+    // The line does not answer: say so and offer the providers page.
+    let c = caps(&data, "overseas", false, 0);
+    data.caps
+        .entry(site.clone())
+        .or_default()
+        .finish(Ok(vec![c]));
+    let o = data.overview.value.clone().unwrap();
+    with_cx(&data, Locale::ZhCn, |cx| {
+        let h = hero::model(cx, &o, &[], None);
+        let hero::Verdict::Unreachable { name } = h.verdict.clone() else {
+            panic!("{:?}", h.verdict);
+        };
+        assert_eq!(
+            h.verdict.text(cx),
+            zh.f("overview.verdict.unreachable", &[("name", &name)])
+        );
+        assert_eq!(h.verdict.status(), Status::Error);
+        assert!(matches!(
+            h.verdict.action(cx),
+            Some(Action::Go(Page::Providers))
+        ));
+        let label = zh.t("overview.verdict.switch_line");
+        assert_eq!(h.verdict.action_label(cx).as_deref(), Some(label.as_str()));
+    });
+    with_cx(&data, Locale::En, |cx| {
+        let h = hero::model(cx, &o, &[], None);
+        let hero::Verdict::Unreachable { name } = h.verdict.clone() else {
+            panic!("{:?}", h.verdict);
+        };
+        assert_eq!(
+            h.verdict.text(cx),
+            en.f("overview.verdict.unreachable", &[("name", &name)])
+        );
+    });
+
+    // The line answers: the conclusion, with its latency and speed.
+    let c = caps(&data, "overseas", true, 820);
+    data.caps
+        .entry(site.clone())
+        .or_default()
+        .finish(Ok(vec![c]));
+    let o = data.overview.value.clone().unwrap();
+    with_cx(&data, Locale::ZhCn, |cx| {
+        let h = hero::model(cx, &o, &[], None);
+        let hero::Verdict::Ok { name, line, ms } = h.verdict.clone() else {
+            panic!("{:?}", h.verdict);
+        };
+        assert_eq!(ms, 820);
+        assert!(name.contains("Krill"), "{name}");
+        let tail = line.as_ref().map_or(String::new(), |l| format!(" · {l}"));
+        assert_eq!(
+            h.verdict.text(cx),
+            zh.f(
+                "overview.verdict.ok",
+                &[("name", &name), ("line", &tail), ("ms", &ms.to_string())]
+            )
+        );
+        assert!(h.verdict.text(cx).contains("820"), "{}", h.verdict.text(cx));
+        assert_eq!(h.verdict.status(), Status::Ok);
+        assert!(h.verdict.action(cx).is_none(), "nothing to press");
+    });
+
+    // Codex is on the official login: nothing to set up.
+    let cfg = data.overview.value.as_mut().unwrap();
+    cfg.config.as_mut().unwrap().handed_off = None;
+    cfg.active.as_mut().unwrap().site_id = Some("official".into());
+    let o = data.overview.value.clone().unwrap();
+    with_cx(&data, Locale::ZhCn, |cx| {
+        let h = hero::model(cx, &o, &[], None);
+        assert_eq!(h.verdict, hero::Verdict::Official);
+        assert_eq!(h.verdict.text(cx), zh.t("overview.verdict.official"));
+        assert!(h.verdict.action(cx).is_none(), "nothing to choose");
+        assert_eq!(h.verdict.status(), Status::Ok);
+    });
+
+    // Nothing applied: pick a provider.
+    data.overview.value.as_mut().unwrap().active = None;
+    let o = data.overview.value.clone().unwrap();
+    with_cx(&data, Locale::ZhCn, |cx| {
+        let h = hero::model(cx, &o, &[], None);
+        assert_eq!(h.verdict, hero::Verdict::NoProvider);
+        assert_eq!(h.verdict.text(cx), zh.t("overview.verdict.no_provider"));
+        assert_eq!(h.verdict.status(), Status::Warn);
+        assert!(matches!(
+            h.verdict.action(cx),
+            Some(Action::Go(Page::Providers))
+        ));
+        let label = zh.t("overview.verdict.choose");
+        assert_eq!(h.verdict.action_label(cx).as_deref(), Some(label.as_str()));
+    });
+
+    // Nothing applied and nothing to choose: the wizard is the only way on.
+    data.profiles.value.as_mut().unwrap().profiles.clear();
+    let o = data.overview.value.clone().unwrap();
+    with_cx(&data, Locale::ZhCn, |cx| {
+        let h = hero::model(cx, &o, &[], None);
+        assert_eq!(h.verdict, hero::Verdict::NoProvider);
+        assert!(matches!(h.verdict.action(cx), Some(Action::StartWizard)));
+        let label = zh.t("overview.verdict.start");
+        assert_eq!(h.verdict.action_label(cx).as_deref(), Some(label.as_str()));
+    });
+
+    // Another tool manages Codex: hand it off and say who.
+    data.overview.value.as_mut().unwrap().active = active;
+    data.overview
+        .value
+        .as_mut()
+        .unwrap()
+        .config
+        .as_mut()
+        .unwrap()
+        .handed_off = Some(superba_core::HandOffInfo {
+        at: Timestamp::now(),
+        to: superba_core::ChangeSource::CcSwitch { provider: None },
+        generation: 8,
+    });
+    let o = data.overview.value.clone().unwrap();
+    with_cx(&data, Locale::ZhCn, |cx| {
+        let h = hero::model(cx, &o, &[], None);
+        assert_eq!(
+            h.verdict,
+            hero::Verdict::HandedOff {
+                tool: "cc-switch".into()
+            }
+        );
+        assert!(
+            h.verdict.text(cx).contains("cc-switch"),
+            "{}",
+            h.verdict.text(cx)
+        );
+        assert!(h.verdict.action(cx).is_none(), "Superba does not interfere");
+    });
+
+    // Every sentence is a sentence: no raw key ever reaches the screen.
+    for verdict in [
+        hero::Verdict::HandedOff {
+            tool: "cc-switch".into(),
+        },
+        hero::Verdict::Official,
+        hero::Verdict::NoProvider,
+        hero::Verdict::Probing {
+            name: "Krill".into(),
+        },
+        hero::Verdict::Unreachable {
+            name: "Krill".into(),
+        },
+        hero::Verdict::Ok {
+            name: "Krill".into(),
+            line: Some("海外直连".into()),
+            ms: 820,
+        },
+    ] {
+        with_cx(&data, Locale::ZhCn, |cx| {
+            let text = verdict.text(cx);
+            assert!(!text.contains("overview."), "{text}");
+            assert!(text.len() > 6, "{text}");
+        });
+    }
 }
 
 /// A closure that draws the overview page (`$state`, `$out`: `&mut` borrows
@@ -904,6 +1107,9 @@ async fn without_requests_the_cards_show_tidy_empty_states() {
         };
         let mut state = overview::State::default();
         state.usage = UsageLoader::preloaded(snap);
+        // The path (and the router's ghost) is the detail behind the
+        // conclusion: unfold it to assert on it (user request 30).
+        state.hero_detail = true;
         let mut out = Vec::new();
         let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
         let all = harness
@@ -913,16 +1119,237 @@ async fn without_requests_the_cards_show_tidy_empty_states() {
             .collect::<Vec<_>>()
             .join("\n");
         for key in [
-            "overview.today.empty",
-            "overview.heat.empty",
+            "overview.today.empty_line",
             "overview.sessions.empty",
+            "overview.sessions.empty_body",
             "overview.lines.failover_off",
             "overview.hero.router_off",
         ] {
             assert!(all.contains(&tr.t(key)), "{key}: {all}");
         }
+        // One sentence instead of an empty bar, a legend of zeros and an
+        // all-gray week saying the same thing three times (task-12 P3).
+        for key in [
+            "overview.today.cached",
+            "overview.today.uncached",
+            "overview.today.output",
+            "overview.heat.empty",
+        ] {
+            assert!(!all.contains(&tr.t(key)), "{key} is gone: {all}");
+        }
+        assert_eq!(
+            all.matches(&tr.t("overview.today.empty_line")).count(),
+            1,
+            "the empty state is one sentence: {all}"
+        );
+        // The empty body says what the reader will see, not how it is read
+        // (task-12 P4).
+        assert!(
+            !tr.t("overview.sessions.empty_body").contains('（')
+                && !tr.t("overview.sessions.empty_body").contains('('),
+            "no implementation aside in the empty body"
+        );
         assert!(!all.contains("$0.00"), "no fake zero: {all}");
     }
+}
+
+#[tokio::test]
+async fn the_first_screen_is_the_conclusion_and_the_path_is_folded_away() {
+    let data = fake_data().await;
+    let harness = Harness::new([1280.0, 800.0], egui::Theme::Light);
+    let tr = Tr::new(Locale::ZhCn);
+    let mut state = overview::State::default();
+    state.usage = UsageLoader::preloaded(busy_snapshot());
+    let mut out = Vec::new();
+    let o = data.overview.value.clone().unwrap();
+    let verdict = with_cx(&data, Locale::ZhCn, |cx| {
+        hero::model(cx, &o, &[], None).verdict.text(cx)
+    });
+    let lines = |texts: &[(String, Rect)]| {
+        texts
+            .iter()
+            .map(|(t, _)| t.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    // Folded (the default): the caption, the conclusion and the toggle — no
+    // nodes and no links (user request 30).
+    assert!(!state.hero_detail, "folded by default");
+    {
+        let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        let folded = lines(&harness.settle(&mut f));
+        assert!(folded.contains(&tr.t("overview.hero.caption")), "{folded}");
+        assert!(folded.contains(&verdict), "{folded}");
+        assert!(folded.contains(&tr.t("overview.hero.detail")), "{folded}");
+        // The router node's detail (the node text) is not drawn while folded;
+        // the path card's own words are a different string.
+        assert!(
+            !folded.contains(&tr.t("overview.hero.router_off")),
+            "{folded}"
+        );
+        assert!(
+            !folded.contains(&tr.t("overview.hero.collapse")),
+            "{folded}"
+        );
+        assert!(!folded.contains("overview."), "untranslated: {folded}");
+        // The toggle is a labelled button: a click brings the path back.
+        assert!(harness.click_text(&tr.t("overview.hero.detail"), &mut f));
+    }
+    assert!(state.hero_detail, "the toggle unfolded the path");
+    {
+        let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        let open = lines(&harness.settle(&mut f));
+        assert!(open.contains(&tr.t("overview.hero.this")), "{open}");
+        assert!(open.contains(&tr.t("overview.hero.router_off")), "{open}");
+        assert!(open.contains(&tr.t("overview.hero.collapse")), "{open}");
+        assert!(!open.contains(&tr.t("overview.hero.detail")), "{open}");
+        // The same chevron folds it away again.
+        assert!(harness.click_text(&tr.t("overview.hero.collapse"), &mut f));
+    }
+    assert!(!state.hero_detail, "the toggle folded the path again");
+    {
+        let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        let folded = lines(&harness.settle(&mut f));
+        assert!(folded.contains(&verdict), "{folded}");
+        assert!(
+            !folded.contains(&tr.t("overview.hero.router_off")),
+            "{folded}"
+        );
+    }
+    assert!(!state.hero_detail, "still folded");
+    // Keyboard: the hero is drawn on its own here, so the chevron is the first
+    // thing Tab reaches and Space works like a click (egui gives every
+    // `Sense::click` widget with focus Enter/Space activation).
+    {
+        let keys = Harness::new([1280.0, 800.0], egui::Theme::Light);
+        let mut detail = false;
+        let mut toggled = false;
+        let mut sink = Vec::new();
+        {
+            let mut f = |ui: &mut egui::Ui| {
+                let svc = support::idle_service();
+                let cx = Cx {
+                    tr: &tr,
+                    pal: Palette::of(ui.ctx()),
+                    data: &data,
+                    busy: false,
+                    now: Timestamp::now(),
+                    fonts: &keys.fonts,
+                    service: &svc,
+                    log: &[],
+                };
+                let h = hero::model(&cx, &o, &[], None);
+                let rect = ui.available_rect_before_wrap();
+                if hero::show(ui, &cx, &h, rect, detail, &mut sink) {
+                    toggled = true;
+                    detail = !detail;
+                }
+            };
+            keys.settle(&mut f);
+            keys.key(egui::Key::Tab, &mut f);
+            keys.key(egui::Key::Space, &mut f);
+            keys.settle(&mut f);
+        }
+        assert!(toggled && detail, "the toggle answers Tab and Space");
+    }
+}
+
+#[tokio::test]
+async fn the_folded_first_screen_keeps_the_action_beside_the_conclusion() {
+    // task-12 P1/P2: one row — the caption, the conclusion, its own action
+    // right behind it and 「详情」 last — and no app action on a first screen
+    // that has nothing to switch.
+    let mut data = fake_data().await;
+    let harness = Harness::new([1280.0, 800.0], egui::Theme::Light);
+    let tr = Tr::new(Locale::ZhCn);
+    let mut out = Vec::new();
+    // The fixture hot-switches, so on its own it offers no app action; ask for
+    // the state in which the first screen really shows one.
+    data.overview.value.as_mut().unwrap().app.hot_switch = HotSwitchStatus::NotRunning;
+    let o = data.overview.value.clone().unwrap();
+    let launch = with_cx(&data, Locale::ZhCn, |cx| {
+        hero::model(cx, &o, &[], None).launch
+    })
+    .expect("the fixture does offer the app action");
+    let pill = tr.t(launch.label_key());
+    let join = |texts: &[(String, Rect)]| {
+        texts
+            .iter()
+            .map(|(t, _)| t.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    // A provider is applied: the app action is on the screen, beside 「详情」.
+    {
+        let mut state = overview::State::default();
+        let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        let text = join(&harness.settle(&mut f));
+        assert!(text.contains(&pill), "{text}");
+        assert!(text.contains(&tr.t("overview.hero.detail")), "{text}");
+        assert!(text.contains(&tr.t("overview.hero.caption")), "{text}");
+    }
+
+    // Nothing applied: the conclusion and its own button are the way on, and
+    // the app action steps aside (task-12 P2).
+    data.overview.value.as_mut().unwrap().active = None;
+    let mut state = overview::State::default();
+    let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+    let all = harness.settle(&mut f);
+    let text = join(&all);
+    assert!(!text.contains(&pill), "the app action steps aside: {text}");
+    let at = |key: &str| {
+        let s = tr.t(key);
+        all.iter()
+            .find(|(t, _)| *t == s)
+            .map(|(_, r)| *r)
+            .unwrap_or_else(|| panic!("{key} is drawn: {text}"))
+    };
+    let caption = at("overview.hero.caption");
+    let sentence = at("overview.verdict.no_provider");
+    let action = at("overview.verdict.choose");
+    let detail = at("overview.hero.detail");
+    // One line: the caption and the conclusion share the row, the action
+    // follows the sentence by at most 24 px, 「详情」 is last (task-12 P1).
+    assert!(
+        (caption.center().y - sentence.center().y).abs() <= 4.0,
+        "{all:?}"
+    );
+    assert!(action.left() > sentence.right(), "{all:?}");
+    assert!(action.left() - sentence.right() <= 24.0, "{all:?}");
+    assert!(detail.left() > action.right(), "{all:?}");
+    let top = caption.top().min(sentence.top()).min(action.top());
+    let bottom = caption.bottom().max(sentence.bottom()).max(action.bottom());
+    assert!(
+        bottom - top <= hero::COLLAPSED,
+        "the folded hero is the row's height: {}",
+        bottom - top
+    );
+
+    // Another tool manages Codex: also nothing to switch, so also no pill.
+    data.overview
+        .value
+        .as_mut()
+        .unwrap()
+        .config
+        .as_mut()
+        .unwrap()
+        .handed_off = Some(superba_core::HandOffInfo {
+        at: Timestamp::now(),
+        to: superba_core::ChangeSource::CcSwitch { provider: None },
+        generation: 8,
+    });
+    let mut state = overview::State::default();
+    let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+    let text = join(&harness.settle(&mut f));
+    assert!(!text.contains(&pill), "handed off: {text}");
+    assert!(
+        text.contains(
+            &tr.t("overview.verdict.handed_off")
+                .replace("{tool}", "cc-switch")
+        ),
+        "{text}"
+    );
 }
 
 #[tokio::test]
@@ -946,6 +1373,8 @@ async fn nodes_open_their_pages_and_the_popovers_switch_line_and_tier() {
     let tr = Tr::new(Locale::ZhCn);
     let mut state = overview::State::default();
     state.usage = UsageLoader::preloaded(busy_snapshot());
+    // The nodes are the hero's detail: unfold the path (user request 30).
+    state.hero_detail = true;
     let mut out = Vec::new();
     let nodes = [
         (
@@ -1055,6 +1484,9 @@ async fn a_recent_session_opens_usage_filtered_to_it() {
 
 #[test]
 fn the_grid_is_two_thirds_and_one_third_with_rows_that_do_not_line_up() {
+    // The folded hero is a conclusion, not a diagram: one row, inside the
+    // 72..88 px budget (task-12 P1).
+    assert!((72.0..=88.0).contains(&hero::COLLAPSED));
     for [w, h] in support::fit::SIZES {
         // The page rectangle below the title row (as `show` gets it).
         let page_w = (w - 220.0 - 64.0).min(1200.0);
@@ -1084,6 +1516,28 @@ fn the_grid_is_two_thirds_and_one_third_with_rows_that_do_not_line_up() {
             g.sessions.height() >= 200.0 && g.todo.height() >= 200.0,
             "{g:?}"
         );
+        // Folded: the cards move up by the difference and still fill the page.
+        let folded = overview::layout_with(area, hero::COLLAPSED);
+        assert_eq!(folded.hero.height(), hero::COLLAPSED);
+        assert!(folded.hero.height() < g.hero.height());
+        assert!(folded.today.min.y < g.today.min.y, "the cards move up");
+        assert!((folded.sessions.max.y - area.max.y).abs() <= 1.0);
+        assert_eq!(folded.hero.width(), area.width());
+        assert_eq!(folded.today.width(), folded.sessions.width());
+        assert_eq!(folded.sessions.max.y, folded.todo.max.y);
+        assert!(
+            folded.sessions.height() >= 200.0 && folded.todo.height() >= 200.0,
+            "{folded:?}"
+        );
+        for r in [
+            folded.hero,
+            folded.today,
+            folded.sessions,
+            folded.lines,
+            folded.todo,
+        ] {
+            assert!(area.expand(0.5).contains_rect(r), "{r:?} in {area:?}");
+        }
     }
 }
 

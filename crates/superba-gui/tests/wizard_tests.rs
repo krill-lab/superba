@@ -81,20 +81,42 @@ async fn the_default_preset_is_preselected_on_a_first_run() {
     assert!(w.presets[0].default);
     assert!(!w.rerun);
     assert_eq!(w.editing, None, "a first run creates the profile");
-    assert_eq!(w.step, Step::Detect);
+    assert_eq!(w.step, Step::Provider, "the first screen is the question");
     assert_eq!(
         w.site.as_ref().map(|s| s.kind),
         Some(SiteKind::Krill),
         "the preset's site with its lines"
     );
-    // Steps: the official login skips "Line & models".
+    // Paths: the presets and the official login fold "Line & models" into the
+    // credentials screen; a custom site keeps it (its draft is tested before
+    // Apply saves it).
     let mut w = w;
+    assert_eq!(
+        Step::path(false),
+        [Step::Provider, Step::Credentials, Step::Confirm]
+    );
+    assert_eq!(
+        Step::path(true),
+        [
+            Step::Provider,
+            Step::Credentials,
+            Step::LineModels,
+            Step::Confirm
+        ]
+    );
     w.step = Step::Credentials;
-    assert_eq!(w.next_step(), Some(Step::LineModels));
-    w.select_preset(&data, catalog::PRESET_OFFICIAL);
+    assert_eq!(w.next_step(), Some(Step::Confirm), "a preset folds it in");
+    assert_eq!(w.prev_step(), Some(Step::Provider));
+    assert_eq!(w.step.path_index(false) + 1, 2, "second of three screens");
+    w.select_preset(&data, catalog::PRESET_CUSTOM);
+    assert_eq!(w.next_step(), Some(Step::LineModels), "a custom site tests");
+    w.step = Step::LineModels;
     assert_eq!(w.next_step(), Some(Step::Confirm));
+    assert_eq!(w.step.path_index(true) + 1, 3, "third of four screens");
     w.step = Step::Confirm;
-    assert_eq!(w.prev_step(), Some(Step::Credentials));
+    assert_eq!(w.prev_step(), Some(Step::LineModels));
+    w.select_preset(&data, catalog::PRESET_OFFICIAL);
+    assert_eq!(w.prev_step(), Some(Step::Credentials), "three screens");
 }
 
 #[tokio::test]
@@ -522,7 +544,19 @@ async fn the_fastest_line_is_preselected_only_on_a_first_run() {
         with_cx(&data, &dyn_service, Locale::ZhCn, |cx| {
             wizard::advance(cx, &mut w, &mut out)
         });
-        assert_eq!(w.step, Step::LineModels);
+        assert_eq!(
+            w.step,
+            Step::Confirm,
+            "a preset folds the line & model screen into credentials"
+        );
+        // The line & model choice lives in the credentials screen's 「高级」
+        // fold. Enter that screen the way the Continue button does, so its
+        // entry work (the probe that picks the fastest line) runs.
+        w.step = Step::Provider;
+        with_cx(&data, &dyn_service, Locale::ZhCn, |cx| {
+            wizard::advance(cx, &mut w, &mut out)
+        });
+        assert_eq!(w.step, Step::Credentials, "the key screen of the preset");
         let mut texts = Vec::new();
         for _ in 0..30 {
             texts = wizard_frames(&harness, &data, &dyn_service, &mut w, Locale::ZhCn, 5);
@@ -530,18 +564,49 @@ async fn the_fastest_line_is_preselected_only_on_a_first_run() {
                 break;
             }
         }
+        let want = if first_run {
+            "已预选最快的线路"
+        } else {
+            "已选中这个供应商当前使用的线路"
+        };
         if first_run {
             assert_eq!(w.line.as_ref(), Some(&fastest), "a new provider: fastest");
-            assert!(texts.iter().any(|t| t.contains("已预选最快的线路")));
         } else {
             assert_eq!(w.line, Some("overseas".into()), "the probe kept it");
-            assert!(
-                texts
-                    .iter()
-                    .any(|t| t.contains("已选中这个供应商当前使用的线路")),
-                "{texts:?}"
-            );
         }
+        assert!(
+            !texts.iter().any(|t| t.contains(want)),
+            "the line copy stays behind the fold: {texts:?}"
+        );
+        // Opening the fold shows the same sentence the old screen showed.
+        let tr = Tr::new(Locale::ZhCn);
+        let label = tr.t("wizard.advanced");
+        let mut draw = |ui: &mut egui::Ui| {
+            let cx = Cx {
+                tr: &tr,
+                pal: Palette::of(ui.ctx()),
+                data: &data,
+                busy: false,
+                now: Timestamp::now(),
+                fonts: &harness.fonts,
+                service: &dyn_service,
+                log: &[],
+            };
+            let _ = wizard::show(ui.ctx(), &cx, &mut w, &mut out);
+        };
+        assert!(
+            harness.click_text(&label, &mut draw),
+            "the 高级 fold is on the credentials screen"
+        );
+        let opened: Vec<String> = harness
+            .frame(Vec::new(), &mut draw)
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect();
+        assert!(
+            opened.iter().any(|t| t.contains(want)),
+            "{want}: {opened:?}"
+        );
     }
 }
 
@@ -561,7 +626,7 @@ async fn a_rerun_keeps_the_auth_choice_and_confirm_shows_old_and_new_values() {
     let mut w = Wizard::start(&data);
     w.step = Step::Confirm;
     let texts = wizard_frames(&harness, &data, &dyn_service, &mut w, Locale::ZhCn, 4);
-    for want in ["与现在相比", "认证方式：PAT（手动选择）"] {
+    for want in ["与现在相比", "登录方式：访问令牌（你手动选的）"] {
         assert!(texts.iter().any(|t| t.contains(want)), "{want}: {texts:?}");
     }
     assert_eq!(
@@ -589,7 +654,7 @@ async fn a_rerun_keeps_the_auth_choice_and_confirm_shows_old_and_new_values() {
     for want in [
         name("overseas"),
         name("cn-fast"),
-        "PAT".to_owned(),
+        "访问令牌".to_owned(),
         "自动（API Key）".to_owned(),
         "Codex 默认".to_owned(),
         "gpt-6-luna".to_owned(),
@@ -615,10 +680,10 @@ async fn detect_counts_the_hosts_the_app_knows_and_how_many_are_online() {
     use superba_gui::design::widgets::Status;
     let service = fake(false);
     let dyn_service: Arc<dyn SwitchService> = service.clone();
-    for (online, locale, want) in [
-        (false, Locale::ZhCn, "app 记录了 2 台远程主机（0 台在线）"),
-        (true, Locale::ZhCn, "app 记录了 2 台远程主机（1 台在线）"),
-        (false, Locale::En, "The app knows 2 remote hosts (0 online)"),
+    for (online, locale) in [
+        (false, Locale::ZhCn),
+        (true, Locale::ZhCn),
+        (false, Locale::En),
     ] {
         let mut data = data_of(&service).await;
         let mut hosts = service.hosts().await.unwrap();
@@ -628,11 +693,22 @@ async fn detect_counts_the_hosts_the_app_knows_and_how_many_are_online() {
         }
         data.hosts.finish(Ok(hosts));
         let tr = Tr::new(locale);
+        // The row's copy comes from the catalog, so a wording fix never forces
+        // a test rewrite — and a wrong key fails here.
+        let want = tr.f(
+            "wizard.detect.remotes",
+            &[("n", &"2"), ("live", &if online { "1" } else { "0" })],
+        );
         let ctx = egui::Context::default();
         let fonts = superba_gui::design::fonts::FontReport::default();
         ctx.set_fonts(superba_gui::design::fonts::definitions(&fonts));
         superba_gui::design::style::install(&ctx, Some(egui::Theme::Light));
         let mut w = Wizard::start(&data);
+        // The detection report folds into the review screen's 「详情」.
+        w.step = Step::Confirm;
+        ctx.data_mut(|d| {
+            d.insert_temp(egui::Id::unique(("wizard-fold", "details")), true);
+        });
         let mut out = Vec::new();
         let mut shapes = Vec::new();
         for _ in 0..2 {
@@ -640,7 +716,7 @@ async fn detect_counts_the_hosts_the_app_knows_and_how_many_are_online() {
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
-                        egui::vec2(1280.0, 900.0),
+                        egui::vec2(1280.0, 1400.0),
                     )),
                     ..Default::default()
                 },
@@ -664,7 +740,7 @@ async fn detect_counts_the_hosts_the_app_knows_and_how_many_are_online() {
         let row = shapes
             .iter()
             .find_map(|s| match &s.shape {
-                egui::Shape::Text(t) if t.galley.text() == want => {
+                egui::Shape::Text(t) if t.galley.text() == want.as_str() => {
                     Some(t.galley.rect.translate(t.pos.to_vec2()))
                 }
                 _ => None,
@@ -704,4 +780,88 @@ async fn detect_counts_the_hosts_the_app_knows_and_how_many_are_online() {
             "{want}: {dot:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn the_first_screen_fits_the_minimum_window() {
+    // The first screen is one question (two cards) plus one disclosure. At the
+    // minimum window nothing is cut off and the footer — what the user does
+    // next — stays visible.
+    use superba_gui::design::tokens::size;
+    use support::fit::render_fit;
+
+    let service = fake(true);
+    let data = data_of(&service).await;
+    for locale in [Locale::ZhCn, Locale::En] {
+        let tr = Tr::new(locale);
+        let mut w = Wizard::start(&data);
+        assert_eq!(w.step, Step::Provider, "the report left the first screen");
+        let report = render_fit(
+            size::MIN_WINDOW,
+            locale,
+            egui::Theme::Light,
+            &data,
+            |ui, cx, out| {
+                let _ = wizard::show(ui.ctx(), cx, &mut w, out);
+            },
+        );
+        assert!(
+            report.whole(&tr.t("wizard.provider.title")),
+            "{locale:?}: {}",
+            report.all_text()
+        );
+        for card in [
+            tr.t("wizard.preset.krill.title"),
+            tr.t("wizard.preset.official.title"),
+        ] {
+            assert!(
+                report.whole(&card),
+                "{locale:?}: no whole card {card:?}: {}",
+                report.all_text()
+            );
+        }
+        assert!(
+            report.whole(&tr.t("wizard.provider.other")),
+            "{locale:?}: no 其它方式: {}",
+            report.all_text()
+        );
+        assert!(
+            report.whole(&tr.t("wizard.continue")),
+            "{locale:?}: the footer is off screen: {}",
+            report.all_text()
+        );
+        assert_eq!(report.beyond_right(), Vec::<&str>::new(), "{locale:?}");
+        let lowest = report
+            .text_shapes
+            .iter()
+            .map(|(_, r, _)| r.max.y)
+            .fold(0.0_f32, f32::max);
+        assert!(
+            lowest <= size::MIN_WINDOW[1] + 0.5,
+            "{locale:?}: text below the window: {lowest}"
+        );
+    }
+}
+
+/// The progress counts the screens the user actually walks: a preset or the
+/// official login walks three, a custom site four (no fake 「第 5 / 5 步」).
+#[tokio::test(flavor = "multi_thread")]
+async fn the_progress_copy_counts_the_screens_of_the_path() {
+    let service = fake(true);
+    let data = data_of(&service).await;
+    let dyn_service: Arc<dyn SwitchService> = service.clone();
+    let harness = Harness::new([1280.0, 800.0], egui::Theme::Light);
+    let mut w = Wizard::start(&data);
+    let texts = wizard_frames(&harness, &data, &dyn_service, &mut w, Locale::ZhCn, 3);
+    assert!(
+        texts.iter().any(|t| t == "第 1 / 3 步"),
+        "a preset walks three screens: {texts:?}"
+    );
+    w.select_preset(&data, superba_core::catalog::PRESET_CUSTOM);
+    w.step = Step::LineModels;
+    let texts = wizard_frames(&harness, &data, &dyn_service, &mut w, Locale::ZhCn, 3);
+    assert!(
+        texts.iter().any(|t| t == "第 3 / 4 步"),
+        "a custom site walks four screens: {texts:?}"
+    );
 }

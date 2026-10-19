@@ -12,9 +12,11 @@ mod support;
 use std::sync::Arc;
 
 use router_harness::Harness;
-use superba_core::{Locale, SwitchService, TargetId};
+use superba_core::{HostKind, Locale, SwitchService, TargetId};
+use superba_gui::i18n::Tr;
 use superba_gui::pages::hosts::{self, State};
 use superba_gui::pages::overview::hero;
+use superba_gui::pages::shared::hosts::kind;
 use superba_gui::pages::{Action, sessions};
 use support::fake::{FakeOptions, FakeService};
 use support::fit::SIZES;
@@ -92,10 +94,19 @@ fn a_device_gets_a_read_only_detail_without_any_ssh_action() {
     );
     state.selected = Some(device());
     let f = h.frames(4, |ui, cx, out| hosts::show(ui, cx, &mut state, out));
+    // The kind's display name and the record source after the dot are locale
+    // values (`hosts.app_record`, and the RemoteControl kind's own text): taken
+    // from the catalogue, so a copy change cannot leave this assertion behind.
+    let zh = Tr::new(Locale::ZhCn);
+    let record = format!(
+        "{} · {}",
+        kind(&zh, HostKind::RemoteControl),
+        zh.t("hosts.app_record")
+    );
     for want in [
         "这台设备通过 ChatGPT 远程控制连接，不走 SSH",
         "复制主机 ID",
-        "远程控制设备 · app 记录",
+        record.as_str(),
     ] {
         assert!(f.has(want), "{want} missing:\n{}", f.all_text());
     }
@@ -186,10 +197,11 @@ fn the_sessions_switcher_names_devices_and_never_scans_them() {
     h.frame(|_, cx, out| sessions::command(&mut state, cx, &format!("host:{}", device()), out));
     let f = h.frames(4, |ui, cx, out| sessions::show(ui, cx, &mut state, out));
     for want in [
-        "Superba 无法读取 Studio Mac 的会话",
-        "它是远程控制设备：ChatGPT app 通过 ChatGPT 而不是 SSH 连接它",
+        "Superba 无法读取 Studio Mac 的会话".to_owned(),
+        // `sessions.read_only_body.remote_control`, from the catalogue.
+        Tr::new(Locale::ZhCn).t("sessions.read_only_body.remote_control"),
     ] {
-        assert!(f.has(want), "{want} missing:\n{}", f.all_text());
+        assert!(f.has(&want), "{want} missing:\n{}", f.all_text());
     }
     assert!(!f.has("正在扫描"), "{}", f.all_text());
     no_raw_id(&f.all_text());

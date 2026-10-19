@@ -3,11 +3,11 @@
 
 [hosts]
 refresh = "重新检测"
-loading = "正在查找 ChatGPT app 记录的主机…"
+loading = "正在查找 ChatGPT 桌面版记录过的主机…"
 load_failed = "无法读取远程主机"
 connected = "已连接"
 not_connected = "未连接"
-app_record = "app 记录"
+app_record = "ChatGPT 记录"
 probed = "检测于 {age}"
 probe = "立即检测"
 probe_failed = "上次检测失败：{detail}"
@@ -15,22 +15,22 @@ not_probed = "尚未检测"
 connection = "连接"
 connection_unknown = "没有配置连接"
 follow = "随本机切换"
-follow_tip = "本机每次切换时，也切换这台主机的连接（直连，不经过路由）。不改动设置；设置请用「同步设置」。"
+follow_tip = "本机每次切换时，也把连接切到这台主机（直接连接，不经过路由）。不改动主机上的设置；设置请用「同步设置」。"
 codex = "Codex"
 codex_missing = "未找到"
 update_hint = "有更新 {version} →"
 sessions_label = "会话"
-hot_label = "热切"
+hot_label = "不重启切换"
 disk_low = "主目录只剩 {mb} MB；安装 Codex 大约需要 600 MB。"
 shared_home = "这个主目录好像和另一台机器共用（网络主目录）；写入会同时影响两边。"
-host_id_tip = "App 主机 ID：{id}"
+host_id_tip = "ChatGPT 主机 ID：{id}"
 copy_id = "复制主机 ID"
 kind_label = "类型"
 
 [hosts.read_only]
 label = "{kind} · 只读"
 remote_control = "这台设备通过 ChatGPT 远程控制连接，不走 SSH。Superba 无法检测它、向它同步设置、让它随本机切换、在上面安装 Codex 或读取它的会话。要管理它，请在那台设备上运行 Superba。"
-other = "ChatGPT app 不通过 SSH 连接这台主机，所以 Superba 无法检测它、向它同步设置、让它随本机切换、在上面安装 Codex 或读取它的会话。"
+other = "ChatGPT 桌面版不通过 SSH 连接这台主机，所以 Superba 无法检测它、向它同步设置、让它随本机切换、在上面安装 Codex 或读取它的会话。"
 
 [hosts.kind]
 standalone = "独立安装"
@@ -56,12 +56,12 @@ needs_probe = "请先检测该主机（能同步哪些设置取决于它的 Code
 open = "查看会话 →"
 
 [hosts.hot]
-ok = "可以（app 记录了 hostId）"
-reconnect = "需要在 app 里重新连接该主机才会生效"
+ok = "可以（ChatGPT 记录过这台主机）"
+reconnect = "需要在 ChatGPT 桌面版里重新连接该主机才会生效"
 
 [hosts.empty]
 title = "没有远程主机"
-body = "ChatGPT 桌面 app 还没有记录任何远程主机。在 app 里添加 SSH 主机后，它会出现在这里。"
+body = "ChatGPT 桌面版还没有记录任何远程主机。在 ChatGPT 里添加 SSH 主机后，它会出现在这里。"
 
 [hosts.palette]
 sync = "同步设置到 {host}"
@@ -70,8 +70,8 @@ sync_detail = "推送本机的 Codex 设置，按该主机的 Codex 版本过滤
 [hosts.syncdlg]
 title = "同步设置到 {host} · codex {version}"
 title_plain = "同步设置到 {host}"
-body = "把这台电脑上供应商「{provider}」的 Codex 设置推送到 {host}。不包含连接（供应商、线路、Key）和模型覆盖。"
-body_plain = "把这台电脑上的 Codex 设置推送到 {host}。不包含连接（供应商、线路、Key）和模型覆盖。"
+body = "把这台电脑上供应商「{provider}」的 Codex 设置推送到 {host}。不包含连接（供应商、线路、API Key）和模型的单独设置。"
+body_plain = "把这台电脑上的 Codex 设置推送到 {host}。不包含连接（供应商、线路、API Key）和模型的单独设置。"
 unreachable = "无法连接 {host}：请确认主机在线、SSH 可以登录，然后重试。"
 loading = "正在和主机对比设置…"
 nothing = "没有需要同步的设置：主机上已经是这些值。"
@@ -83,7 +83,7 @@ conflict = "上次同步后在主机上被改过"
 conflict_badge = "冲突"
 keep_host = "保持不勾选即保留主机上的值"
 unset = "未设置"
-restart = "同步后会热重启 {host} 上的 Codex 内核（约 1 秒；正在生成的回复会中断，Superba 会先等它结束）。"
+restart = "同步后会热重启 {host} 上的 Codex（约 1 秒；正在生成的回复会中断，Superba 会先等它结束）。"
 confirm = "同步 {n} 项"
 
 [hosts.syncdlg.col]
@@ -100,12 +100,12 @@ follows = "随本机切换"
 not_following = "不随本机切换"
 router_label = "本机路由"
 router_loopback = "通过 127.0.0.1 访问（WSL 1 或镜像网络模式）"
-router_nat = "NAT 模式的 WSL 2：其中的 127.0.0.1 指向发行版自身。开启路由访问后，它可以使用本机路由为 WSL 开放的地址（Windows 会请求一次管理员授权来添加防火墙规则）；否则保持直连。"
+router_nat = "NAT 模式的 WSL 2 里，127.0.0.1 指的是发行版自己。允许它使用本机路由后，Superba 会为 WSL 开放一个地址（Windows 会请求一次管理员授权来添加防火墙规则）；否则保持直接连接。"
 router_none = "WSL 网络已关闭，保持直连"
 router_access = "允许使用本机路由"
 router_checking = "正在检查…"
-hot_ok = "app 的 WSL 连接运行时可以热切"
-hot_next = "Codex 下次在其中启动时生效（CLI，或 app 的 WSL 连接）"
+hot_ok = "ChatGPT 的 WSL 连接在运行时可以不重启就切换"
+hot_next = "Codex 下次在其中启动时生效（CLI，或 ChatGPT 的 WSL 连接）"
 list_follow = "{version} · 随本机切换"
 list_alone = "{version} · 不随本机切换"
 running = "运行中"

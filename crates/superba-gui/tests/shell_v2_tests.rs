@@ -235,6 +235,11 @@ async fn the_overview_renders_real_account_data_in_both_themes_and_languages() {
             {
                 let mut actions = Vec::new();
                 let mut account = String::new();
+                // The first screen folds the request path away; this test reads
+                // what the path itself shows (the balance on the provider node),
+                // so the page is unfolded.
+                let mut state = overview::State::default();
+                state.hero_detail = true;
                 let mut run = |ctx: &egui::Context| {
                     ctx.run_ui(
                         egui::RawInput {
@@ -256,7 +261,7 @@ async fn the_overview_renders_real_account_data_in_both_themes_and_languages() {
                                 log: &[],
                             };
                             account = overview::account_lines(&cx).join("\n");
-                            overview::show(ui, &cx, &mut overview::State::default(), &mut actions);
+                            overview::show(ui, &cx, &mut state, &mut actions);
                         },
                     )
                 };
@@ -575,6 +580,13 @@ async fn the_sidebar_lists_every_page_in_four_groups() {
                 !texts_seen.iter().any(|t| t.contains("krill")),
                 "no provider link in the sidebar footer any more: {texts_seen:?}"
             );
+            // The unsaved-changes state is words while the row has room for
+            // them (task-10: a lone 3px dot on its own says nothing).
+            let pending = tr.f("shell.pending_badge", &[("n", &1)]);
+            assert!(
+                texts_seen.contains(&pending),
+                "the pending badge should read {pending:?} in {locale:?}: {texts_seen:?}"
+            );
         }
     }
 }
@@ -651,15 +663,15 @@ fn navigation_texts_and_window_sizes_follow_the_ux_spec() {
     // Router settings and usage are separate pages (user decision 21).
     assert_eq!(en.t("nav.router"), "Router");
     assert_eq!(zh.t("nav.router"), "路由");
-    assert_eq!(en.t("nav.usage"), "Usage");
-    assert_eq!(zh.t("nav.usage"), "用量");
+    assert_eq!(en.t("nav.usage"), "Requests");
+    assert_eq!(zh.t("nav.usage"), "请求记录");
     assert_eq!(zh.t("nav.providers"), "供应商");
     assert_eq!(zh.t("nav.hosts"), "远程主机");
     assert_eq!(zh.t("nav.updates"), "更新");
     // The Sessions subtitle names Codex's current provider.
     assert_eq!(
         zh.f("page.sessions.subtitle", &[("provider", &"openai")]),
-        "ChatGPT 只显示当前 provider（openai）下的会话。每台主机的会话分开管理。"
+        "ChatGPT 只列出当前供应商（openai）的会话；可以在这里把它们迁到别的供应商，每台主机单独管理。"
     );
 }
 
@@ -808,7 +820,11 @@ async fn the_overview_speed_control_offers_listed_tiers_and_plans_a_switch() {
             let harness = Harness::new([1280.0, 800.0], egui::Theme::Dark);
             let tr = Tr::new(locale);
             let mut out = Vec::new();
+            // The tier line and the speed menu hang off the unfolded request
+            // path; the fold/unfold flow itself is covered by overview_tests
+            // and a11y_tests.
             let mut state = overview::State::default();
+            state.hero_detail = true;
             let mut draw = |ui: &mut egui::Ui| {
                 let cx = Cx {
                     tr: &tr,
@@ -876,12 +892,15 @@ async fn the_official_login_hides_the_speed_control_and_shows_its_account_line()
     });
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
+        // The model node's tier line belongs to the unfolded request path.
+        let mut state = overview::State::default();
+        state.hero_detail = true;
         let report = support::fit::render_fit(
             [1280.0, 1400.0],
             locale,
             egui::Theme::Dark,
             &data,
-            |ui, cx, out| overview::show(ui, cx, &mut overview::State::default(), out),
+            |ui, cx, out| overview::show(ui, cx, &mut state, out),
         );
         let all = report.all_text();
         // No speed control: the model node says the app chooses the tier and
@@ -919,7 +938,9 @@ async fn the_overview_lists_other_providers_hosts_and_adds_a_provider() {
     let harness = Harness::new([1280.0, 800.0], egui::Theme::Light);
     let tr = Tr::new(Locale::ZhCn);
     let mut out = Vec::new();
+    // The 本机 node and the remote-host pill are on the unfolded request path.
     let mut state = overview::State::default();
+    state.hero_detail = true;
     let mut draw = |ui: &mut egui::Ui| {
         let cx = Cx {
             tr: &tr,

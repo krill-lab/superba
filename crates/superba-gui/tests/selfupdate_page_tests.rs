@@ -167,11 +167,7 @@ fn other_quiet_states() {
     let mut failed = view(SelfUpdateStatus::CheckFailed, None);
     failed.detail = Some("timed out".into());
     let mut h = harness(fake(), Locale::En, failed);
-    let f = page(
-        &mut h,
-        &mut State::default(),
-        "The update check failed (timed out)",
-    );
+    let f = page(&mut h, &mut State::default(), "The update check failed");
     assert!(f.has("try again later"));
     let mut h = harness(
         fake(),
@@ -259,7 +255,7 @@ fn a_finished_install_that_relaunches_quits_this_process() {
         "{:?}",
         f.actions
     );
-    assert!(f.has("local router was restarted"), "{}", f.all_text());
+    assert!(f.has("local accelerator was restarted"), "{}", f.all_text());
 }
 
 #[test]

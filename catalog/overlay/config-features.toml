@@ -431,7 +431,7 @@ zh_basis = "587d5100d8575d9e"
 ["config:features.multi_agent_v2.enabled"]
 en = ""
 en_hash = ""
-zh_name = "启用多代理 v2"
+zh_name = "启用子代理（同时做多件事）"
 zh = "开启 `multi_agent_v2` 功能（稳定，默认关闭）：基于任务路径的新版多代理路由，开启后优先于 `[agents]` 中的 v1 设置。本节其他设置只在开启后生效。"
 zh_basis = ""
 

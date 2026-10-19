@@ -10,7 +10,7 @@ ultrafast = "Ultrafast"
 [speed_effect]
 applies = "生效"
 via_model_name = "通过模型名 {model} 生效"
-app_forces_standard = "API Key 模式下桌面 app 强制使用标准档"
+app_forces_standard = "API Key 模式下桌面版强制使用标准档"
 not_offered = "该模型不提供这个档位，按标准档运行"
 app_menu = "在 app 自己的速度菜单中设置"
 

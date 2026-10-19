@@ -50,7 +50,7 @@ fn the_thirteen_columns_are_in_the_users_order_with_the_specified_widths() {
     assert_eq!(
         labels,
         [
-            "缓存键",
+            "缓存标识",
             "日期",
             "会话",
             "状态",
@@ -59,9 +59,9 @@ fn the_thirteen_columns_are_in_the_users_order_with_the_specified_widths() {
             "输出",
             "缓存读取",
             "缓存写入",
-            "首字",
+            "首字延迟",
             "完成时间",
-            "TPS",
+            "速度",
             "费用"
         ]
     );
@@ -108,7 +108,7 @@ fn cells_follow_the_token_and_timing_semantics() {
     assert_eq!(c(Col::Status), "取消");
     // A failed-over success says so; an HTTP error shows the code.
     let failover = rows.iter().find(|r| r.failovers > 0).unwrap();
-    assert_eq!(requests::status_cell(&tr, failover).1, "转移");
+    assert_eq!(requests::status_cell(&tr, failover).1, "自动切换");
     let limited = rows.iter().find(|r| r.http_status == Some(429)).unwrap();
     assert_eq!(requests::status_cell(&tr, limited).1, "429");
     // Unknown sessions show the short key; title generation is marked.
@@ -198,7 +198,7 @@ fn csv_has_a_header_full_keys_and_no_content() {
     let csv = requests::csv(&tr, &titles(), &rows);
     let mut lines = csv.lines();
     let header = lines.next().unwrap();
-    assert!(header.starts_with("Cache key,Date,Session,Status,Provider,Input"));
+    assert!(header.starts_with("Cache ID,Date,Session,Status,Provider,Input"));
     assert!(
         header.ends_with(",Model,Client,Line,Upstream host,Source"),
         "{header}"
@@ -453,7 +453,7 @@ fn a_custom_template_disables_the_metric_checkboxes_until_reset() {
     );
     assert_eq!(
         stats_line::template_note(&tr, true),
-        "已自定义模板 · 恢复默认后可用勾选"
+        "已自定义格式 · 恢复默认后可用勾选"
     );
     // Typing the default back is not a custom template.
     let same = stats_line::with_template(
@@ -798,7 +798,7 @@ fn status_cells_are_localized_labels_with_the_code_only_in_the_tooltip() {
     };
     assert_eq!(
         requests::status_detail(&zh, &row),
-        "HTTP 503 · 无可用成员 · router_unavailable"
+        "HTTP 503 · 无可用供应商 · router_unavailable"
     );
     // Short English labels fit the 72 px column.
     let en = Tr::new(Locale::En);

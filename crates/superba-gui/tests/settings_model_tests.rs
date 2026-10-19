@@ -326,16 +326,23 @@ fn counts_cover_common_changed_and_categories_whatever_rail_is_selected() {
 }
 
 #[test]
-fn titles_are_chinese_first_with_the_path_below_and_a_badge_only_without_chinese() {
+fn titles_are_chinese_first_with_a_human_second_line_and_a_badge_only_without_chinese() {
     let mut e = entry("approval_policy", Stage::Stable, Kind::Bool);
-    e.name_zh = Some("审批策略".into());
+    e.name_zh = Some("命令审批".into());
+    e.text.zh = Some("Codex 执行命令前是否询问你：`on-request` 时每次都问。".into());
     e.text.en = Some("Default approval policy for executing commands. More text.".into());
     let t = e.title_for(true);
     assert_eq!(
         (t.text, t.is_path, t.zh_missing),
-        ("审批策略", false, false)
+        ("命令审批", false, false)
     );
-    assert_eq!(e.subtitle_for(true).as_deref(), Some("approval_policy"));
+    // The second line is the explanation's first sentence, never the raw key:
+    // the key lives in the detail pane's "technical details" (user bug 19).
+    assert_eq!(
+        e.subtitle_for(true).as_deref(),
+        Some("Codex 执行命令前是否询问你：on-request 时每次都问。")
+    );
+    assert!(!e.subtitle_for(true).unwrap().contains("approval_policy"));
     // English: no official name, so the path and the first English sentence.
     let t = e.title_for(false);
     assert_eq!(
@@ -356,7 +363,11 @@ fn titles_are_chinese_first_with_the_path_below_and_a_badge_only_without_chinese
     // An official English name is the English title.
     e.name = Some("Approval policy".into());
     assert_eq!(e.title_for(false).text, "Approval policy");
-    assert_eq!(e.subtitle_for(false).as_deref(), Some("approval_policy"));
+    // No explanation in either language: no second line (never the key back).
+    e.text.en = None;
+    e.text.zh = None;
+    assert_eq!(e.subtitle_for(false), None);
+    assert_eq!(e.subtitle_for(true), None);
 }
 
 #[test]

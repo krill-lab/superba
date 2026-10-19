@@ -66,9 +66,22 @@ fn every_page_names_its_controls_in_both_languages() {
     for locale in LOCALES {
         let tr = Tr::new(locale);
         let mut h = AppHarness::new(fake(false), locale, Page::Overview);
+        // The hero opens folded (user request 30): the conclusion and the
+        // "detail" toggle are what a reader sees first, and both must be named.
+        let t = h.wait_for(Some(Role::Button), &tr.t("overview.hero.detail"));
+        assert_named(&format!("{locale:?} Overview (folded)"), &t);
+
+        // Unfolding brings the request path back: its node buttons (This
+        // computer, router, provider, model) stay named and keep their menus.
+        h.click(Some(Role::Button), &tr.t("overview.hero.detail"));
         let this = tr.t("overview.hero.this");
         let t = h.wait_for(Some(Role::Button), &this);
-        assert_named(&format!("{locale:?} Overview"), &t);
+        assert!(
+            t.has(&tr.t("overview.hero.switch_menu")) && t.has(&tr.t("overview.hero.speed_menu")),
+            "{}",
+            t.dump()
+        );
+        assert_named(&format!("{locale:?} Overview › request path"), &t);
 
         // The Overview's menus: More, switch provider or line, speed tier.
         let t = h.click(Some(Role::Button), &tr.t("overview.menu.title"));
@@ -220,10 +233,16 @@ fn the_wizard_names_its_fields_and_takes_a_key_through_accesskit() {
         let tr = Tr::new(locale);
         let mut h = AppHarness::new(fake(true), locale, Page::Overview);
         let next = tr.t("wizard.continue");
+        // Screen 1 asks one question and answers it with two cards: the
+        // recommended relay and the login the user already has.
         let t = h.wait_for(Some(Role::Button), &next);
-        assert_named(&format!("{locale:?} wizard › detect"), &t);
-        let t = h.click(Some(Role::Button), &next);
         assert_named(&format!("{locale:?} wizard › provider"), &t);
+        assert!(
+            t.find(Some(Role::RadioButton), &tr.t("wizard.preset.krill.title"))
+                .is_some(),
+            "{}",
+            t.dump()
+        );
         let t = h.click(Some(Role::Button), &next);
         assert_named(&format!("{locale:?} wizard › key"), &t);
         // The key field is named by the step's title (it was `Edit ''`).
@@ -234,7 +253,8 @@ fn the_wizard_names_its_fields_and_takes_a_key_through_accesskit() {
             t.dump()
         );
         h.set_value(&key, "nb_test_key_0123456789abcdef");
-        let t = h.click(Some(Role::Button), &next);
+        // Line & model are folded into this screen's 「高级」.
+        let t = h.click(Some(Role::Button), &tr.t("wizard.advanced"));
         assert!(
             t.find(Some(Role::ComboBox), &tr.t("wizard.models.title"))
                 .is_some(),
@@ -245,12 +265,40 @@ fn the_wizard_names_its_fields_and_takes_a_key_through_accesskit() {
         let t = h.click(Some(Role::Button), &next);
         assert!(t.has(&tr.t("wizard.apply")), "{}", t.dump());
         assert_named(&format!("{locale:?} wizard › confirm"), &t);
+        // The detection report stays reachable inside 「详情」. The page behind
+        // the wizard can carry a button with the same name, so take the last
+        // match inside the wizard's column: the wizard is drawn over the page.
+        let t = h.wait_for(Some(Role::Button), &tr.t("wizard.details"));
+        let id = *t
+            .find_all(Some(Role::Button), &tr.t("wizard.details"))
+            .into_iter()
+            .filter(|n| {
+                t.node(*n)
+                    .bounds()
+                    .is_some_and(|b| b.x0 >= 299.0 && b.x1 <= 981.0)
+            })
+            .collect::<Vec<_>>()
+            .last()
+            .expect("the wizard's 「详情」");
+        let t = h.click_id(id);
+        assert!(
+            t.has(&tr.t("wizard.detect.title")),
+            "{locale:?}: no detection report:\n{}",
+            t.dump()
+        );
 
-        // The custom site's fields, named by their labels.
+        // The custom site's fields, named by their labels: it lives under
+        // 「其它方式」 on the first screen.
         let back = tr.t("wizard.back");
         h.click(Some(Role::Button), &back);
         h.click(Some(Role::Button), &back);
-        h.click(Some(Role::Button), &back);
+        let t = h.click(Some(Role::Button), &tr.t("wizard.provider.other"));
+        assert!(
+            t.find(Some(Role::RadioButton), &tr.t("wizard.preset.custom.title"))
+                .is_some(),
+            "{}",
+            t.dump()
+        );
         h.click(Some(Role::RadioButton), &tr.t("wizard.preset.custom.title"));
         let t = h.click(Some(Role::Button), &next);
         for (role, name) in [

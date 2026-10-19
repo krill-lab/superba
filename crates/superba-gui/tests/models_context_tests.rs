@@ -224,6 +224,11 @@ impl Page {
     }
 }
 
+/// A text of the English catalog (the locale these tests run in).
+fn en(key: &str) -> String {
+    Tr::new(Locale::En).t(key)
+}
+
 fn find(texts: &Texts, text: &str) -> Option<Rect> {
     texts.iter().find(|(t, _)| t == text).map(|(_, r)| *r)
 }
@@ -257,8 +262,9 @@ fn switches(actions: &[Action]) -> usize {
         .count()
 }
 
-const CONTEXT: &str = "Context window";
-const COMPACT: &str = "Auto-compact";
+const CONTEXT: &str = "Context length";
+const COMPACT: &str = "Auto-trim";
+const SPEED: &str = "Speed mode";
 
 #[test]
 fn token_labels_use_k_and_m_with_the_exact_value_for_tooltips() {
@@ -282,9 +288,12 @@ fn token_labels_use_k_and_m_with_the_exact_value_for_tooltips() {
 #[tokio::test]
 async fn rows_show_what_codex_uses_tagged_default_or_custom() {
     let mut page = Page::new(false).await;
+    // The auto-trim column sits behind "More columns" (task-20) and this suite
+    // is about the compaction values, so the extra columns are on.
+    page.state.more_columns = true;
     // gpt-5.5 lists a 272K window (maximum 272K): Codex compacts at 90 %.
     let row = page.row("gpt-5.5");
-    for text in ["272K", "Default", "max 272K", "244.8K", "at 90%"] {
+    for text in ["272K", "Default", "max 272K", "244.8K", "trims at 90%"] {
         assert!(row.contains(&text.to_owned()), "{text}: {row:?}");
     }
     assert!(!row.contains(&"Custom".to_owned()), "{row:?}");
@@ -297,6 +306,8 @@ async fn rows_show_what_codex_uses_tagged_default_or_custom() {
 #[tokio::test]
 async fn an_edit_is_echoed_at_once_and_stays_while_the_view_reloads() {
     let mut page = Page::new(false).await;
+    // The extra columns carry the compaction values this test reads.
+    page.state.more_columns = true;
     page.enter("gpt-5.5", CONTEXT, "200k");
     let row = page.row("gpt-5.5");
     for text in ["200K", "Custom", "Unsaved", "180K"] {
@@ -321,7 +332,7 @@ async fn an_edit_is_echoed_at_once_and_stays_while_the_view_reloads() {
     assert!(row.contains(&"200K".to_owned()), "{row:?} {}", all(&texts));
     assert!(row.contains(&"Custom".to_owned()), "{row:?}");
     // Saved, not applied yet (Codex restarts to apply it), and the page says why.
-    assert!(row.contains(&"Not applied".to_owned()), "{row:?}");
+    assert!(row.contains(&en("models.state.not_applied")), "{row:?}");
     let actions = page.take_actions();
     assert!(
         toasts(&actions).contains(
@@ -360,6 +371,8 @@ async fn an_edit_is_echoed_at_once_and_stays_while_the_view_reloads() {
 #[tokio::test]
 async fn a_saved_value_survives_a_restart_of_the_page() {
     let mut page = Page::new(false).await;
+    // Auto-trim is behind "More columns" (task-20).
+    page.state.more_columns = true;
     page.enter("gpt-6-astra", CONTEXT, "400k");
     page.enter("gpt-6-astra", COMPACT, "75%");
     page.click_text("Save & apply");
@@ -367,12 +380,17 @@ async fn a_saved_value_survives_a_restart_of_the_page() {
     // A fresh page (Superba restarted) loads the profile store again.
     page.state = State::default();
     page.state.set_price_table(None);
+    // A restart comes back with the default (narrow) column set, but this test
+    // keeps reading the compaction values: show them again.
+    page.state.more_columns = true;
     page.refresh_data().await;
     page.wait(|p, t| p.state.view().is_some() && has(t, "gpt-6-astra"));
     let row = page.row("gpt-6-astra");
-    for text in ["400K", "300K", "at 75%", "Not applied"] {
+    for text in ["400K", "300K", "trims at 75%"] {
         assert!(row.contains(&text.to_owned()), "{text}: {row:?}");
     }
+    // Saved, but Codex still reads the previous values.
+    assert!(row.contains(&en("models.state.not_applied")), "{row:?}");
     assert_eq!(
         row.iter().filter(|t| *t == "Custom").count(),
         2,
@@ -413,6 +431,8 @@ async fn escape_cancels_and_an_empty_field_goes_back_to_the_default() {
 #[tokio::test]
 async fn reset_restores_the_default() {
     let mut page = Page::new(false).await;
+    // The reset icon is the trailing column, past auto-trim and speed.
+    page.state.more_columns = true;
     page.fake
         .save_models(ModelsEdit {
             profile_id: Some(ProfileId::new("krill")),
@@ -435,15 +455,11 @@ async fn reset_restores_the_default() {
             .view()
             .is_some_and(|v| v.overrides.contains_key("gpt-5.5"))
     });
-    // The reset icon is the row's last column, right of the price column.
+    // The reset icon is the row's last column, right of the speed column.
     let texts = page.settle();
-    let price = texts
-        .iter()
-        .find(|(t, _)| t.starts_with("Price"))
-        .map(|(_, r)| *r)
-        .unwrap();
+    let speed = find(&texts, SPEED).unwrap();
     let y = page.cell("gpt-5.5", CONTEXT).y;
-    page.click(pos2(price.min.x + 176.0 + 14.0, y));
+    page.click(pos2(speed.min.x + 132.0 + 14.0, y));
     let row = page.row("gpt-5.5");
     for text in ["272K", "244.8K", "Unsaved"] {
         assert!(row.contains(&text.to_owned()), "{text}: {row:?}");
@@ -458,6 +474,8 @@ async fn reset_restores_the_default() {
 #[tokio::test]
 async fn invalid_values_are_named_and_block_saving() {
     let mut page = Page::new(false).await;
+    // The compaction field this test types into is behind "More columns".
+    page.state.more_columns = true;
     // Above the model's maximum.
     page.enter("gpt-5.5", CONTEXT, "300k");
     let texts = page.settle();
@@ -475,7 +493,7 @@ async fn invalid_values_are_named_and_block_saving() {
     assert!(
         has(
             &texts,
-            "gpt-5.5: The auto-compact limit must be below the context window (200K)"
+            "gpt-5.5: The auto-trim limit must be below the context window (200K)"
         ),
         "{}",
         all(&texts)
@@ -491,7 +509,7 @@ async fn invalid_values_are_named_and_block_saving() {
     assert!(
         has(
             &texts,
-            "gpt-5.5: The auto-compact limit must be below the context window (128K)"
+            "gpt-5.5: The auto-trim limit must be below the context window (128K)"
         ),
         "{}",
         all(&texts)
@@ -549,7 +567,7 @@ async fn a_provider_not_in_use_is_only_saved() {
     );
     let row = page.row("gpt-5.5");
     assert!(row.contains(&"200K".to_owned()), "{row:?}");
-    assert!(row.contains(&"Next switch".to_owned()), "{row:?}");
+    assert!(row.contains(&en("models.state.next_switch")), "{row:?}");
 }
 
 #[tokio::test]
@@ -575,17 +593,10 @@ async fn with_a_personal_access_token_only_the_all_models_row_reaches_codex() {
     page.command("refresh");
     page.wait(|p, _| p.state.view().is_some_and(|v| !v.overrides.is_empty()));
     let texts = page.settle();
-    assert!(
-        has(
-            &texts,
-            "Personal access token: only the All models row applies"
-        ),
-        "{}",
-        all(&texts)
-    );
+    assert!(has(&texts, &en("models.pat_scope")), "{}", all(&texts));
     let row = page.row("gpt-5.5");
     assert!(row.contains(&"272K".to_owned()), "{row:?}");
-    assert!(row.contains(&"Not used".to_owned()), "{row:?}");
+    assert!(row.contains(&en("models.state.not_used")), "{row:?}");
     // Per-model fields are read-only: typing changes nothing.
     page.enter("gpt-6-astra", CONTEXT, "100k");
     assert_eq!(models_page::status(&page.state).pending, 0);
@@ -647,4 +658,75 @@ async fn saved_values_codex_does_not_use_yet_offer_apply_now() {
     );
     page.click_text("Apply now");
     assert_eq!(switches(&page.take_actions()), 1);
+}
+
+#[tokio::test]
+async fn the_table_shows_three_columns_until_more_columns_is_picked() {
+    let mut page = Page::new(false).await;
+    // Three columns by default: the model, the context length and the price —
+    // the three a reader decides with. Auto-trim and speed are behind the "More
+    // columns" switch. The price label is wider than its column, so it is
+    // matched by its start (task-20).
+    let texts = page.settle();
+    for key in ["models.col.model", "models.col.context"] {
+        assert!(has(&texts, &en(key)), "{key}: {}", all(&texts));
+    }
+    assert!(
+        all(&texts).contains(&en("models.col.price")),
+        "{}",
+        all(&texts)
+    );
+    for key in ["models.col.compact", "models.col.speed"] {
+        assert!(!has(&texts, &en(key)), "{key}: {}", all(&texts));
+    }
+    page.click_text(&en("models.more_columns"));
+    let texts = page.settle();
+    for key in ["models.col.compact", "models.col.speed"] {
+        assert!(has(&texts, &en(key)), "{key}: {}", all(&texts));
+    }
+    page.click_text(&en("models.more_columns"));
+    let texts = page.settle();
+    for key in ["models.col.compact", "models.col.speed"] {
+        assert!(!has(&texts, &en(key)), "{key}: {}", all(&texts));
+    }
+}
+
+#[tokio::test]
+async fn every_row_says_what_its_numbers_mean() {
+    let mut page = Page::new(false).await;
+    // gpt-5.5 lists a 272K window: Codex trims at 244.8K, and the row says so
+    // in one line under the slug.
+    let summary = Tr::new(Locale::En).f(
+        "models.summary",
+        &[("window", &"272K"), ("compact", &"244.8K")],
+    );
+    let texts = page.settle();
+    let slug = find(&texts, "gpt-5.5").unwrap();
+    let (line, rect) = texts
+        .iter()
+        .find(|(t, r)| t.ends_with(&summary) && r.center().y > slug.max.y)
+        .map(|(t, r)| (t.clone(), *r))
+        .unwrap_or_else(|| panic!("no line with {summary:?} on gpt-5.5's row: {}", all(&texts)));
+    assert!(
+        rect.max.y <= slug.max.y + 22.0,
+        "the line sits inside the row: {rect:?} {slug:?}"
+    );
+    assert!(
+        line.contains(" · ") && line.len() > summary.len(),
+        "{line:?}"
+    );
+    // Nothing is set on the all-models row: it states the override rule only.
+    assert!(has(&texts, &en("models.all_hint")), "{}", all(&texts));
+    // Setting a default window makes that row state its numbers too.
+    page.enter("All models (default)", CONTEXT, "200k");
+    let expected = Tr::new(Locale::En).f(
+        "models.summary",
+        &[("window", &"200K"), ("compact", &"180K")],
+    );
+    let texts = page.settle();
+    assert!(
+        texts.iter().any(|(t, _)| t.ends_with(&expected)),
+        "{expected:?}: {}",
+        all(&texts)
+    );
 }

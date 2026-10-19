@@ -120,6 +120,12 @@ impl<'a> Pager<'a> {
             *self.page = pages - 1;
         }
         let current = *self.page;
+        // One page is not paging at all (user complaint: a fixed "1–4 / 4  ‹ 1 ›"
+        // row under a four-row list): no range label, no arrows, no border and
+        // no gap, whatever height the caller reserved for the footer.
+        if pages <= 1 {
+            return ui.allocate_response(egui::Vec2::ZERO, Sense::hover());
+        }
         let mut next_page = None;
         let r = ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;

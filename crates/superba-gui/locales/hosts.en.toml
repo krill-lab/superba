@@ -4,11 +4,11 @@
 
 [hosts]
 refresh = "Check again"
-loading = "Looking for the hosts the ChatGPT app knows…"
+loading = "Looking for the hosts the ChatGPT desktop app knows…"
 load_failed = "Remote hosts could not be read"
 connected = "Connected"
 not_connected = "Not connected"
-app_record = "App record"
+app_record = "ChatGPT record"
 probed = "Checked {age}"
 probe = "Check now"
 probe_failed = "The last check failed: {detail}"
@@ -21,17 +21,17 @@ codex = "Codex"
 codex_missing = "Not found"
 update_hint = "Update {version} available →"
 sessions_label = "Sessions"
-hot_label = "Hot restart"
+hot_label = "No-restart switch"
 disk_low = "Only {mb} MB free in the home folder; installing Codex needs about 600 MB."
 shared_home = "This home folder seems to be shared with another machine (network home); a write there affects both."
-host_id_tip = "App host ID: {id}"
+host_id_tip = "ChatGPT host ID: {id}"
 copy_id = "Copy host ID"
 kind_label = "Kind"
 
 [hosts.read_only]
 label = "{kind} · read-only"
 remote_control = "This device is reached through ChatGPT remote control, not SSH. Superba cannot check it, sync settings to it, switch it with this computer, install Codex on it or read its sessions. Run Superba on that device to manage it."
-other = "The ChatGPT app does not reach this host over SSH, so Superba cannot check it, sync settings to it, switch it with this computer, install Codex on it or read its sessions."
+other = "The ChatGPT desktop app does not reach this host over SSH, so Superba cannot check it, sync settings to it, switch it with this computer, install Codex on it or read its sessions."
 
 [hosts.kind]
 standalone = "Standalone"
@@ -57,12 +57,12 @@ needs_probe = "Check this host first (its Codex version decides what can be sync
 open = "View sessions →"
 
 [hosts.hot]
-ok = "Possible (the app recorded a hostId)"
-reconnect = "Reconnect this host in the app for changes to take effect"
+ok = "Possible (ChatGPT has recorded this host)"
+reconnect = "Reconnect this host in the ChatGPT desktop app for changes to take effect"
 
 [hosts.empty]
 title = "No remote hosts"
-body = "The ChatGPT desktop app doesn't know any remote host yet. Hosts you add in the app appear here."
+body = "The ChatGPT desktop app doesn't know any remote host yet. Hosts you add in the desktop app appear here."
 
 [hosts.palette]
 sync = "Sync settings to {host}"
@@ -105,8 +105,8 @@ router_nat = "WSL 2 behind NAT: 127.0.0.1 is the distribution itself. Router acc
 router_none = "WSL networking is off; it stays direct"
 router_access = "Allow router access"
 router_checking = "Checking…"
-hot_ok = "Possible while the app's WSL connection runs"
-hot_next = "Applies when Codex starts there next (the CLI, or the app's WSL connection)"
+hot_ok = "Switching works while ChatGPT's WSL connection is running"
+hot_next = "Applies when Codex starts there next (the CLI, or ChatGPT's WSL connection)"
 list_follow = "{version} · switches with this computer"
 list_alone = "{version} · not switched"
 running = "Running"

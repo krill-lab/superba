@@ -435,7 +435,7 @@ async fn speed_control_offers_only_listed_tiers_and_says_where_the_tier_applies(
     assert!(!text.contains("Ultrafast"), "{text}");
     assert!(text.contains("速度"), "{text}");
     assert!(
-        text.contains("命令行：生效 · 桌面 app：API Key 模式下桌面 app 强制使用标准档"),
+        text.contains("命令行：生效 · 桌面版：API Key 模式下桌面版强制使用标准档"),
         "{text}"
     );
 }
@@ -477,7 +477,7 @@ async fn a_tier_picked_but_not_saved_shows_its_own_effect() {
     let (_, text) = drive(&data, service.clone(), &mut state, Locale::ZhCn, |_, _| {
         true
     });
-    assert!(text.contains("标准：Codex 不发送速度档位"), "{text}");
+    assert!(text.contains("标准：Codex 不发送速度模式"), "{text}");
     let (map, prices) = saved(&view);
     let saved = Saved {
         view: &view,
@@ -492,10 +492,10 @@ async fn a_tier_picked_but_not_saved_shows_its_own_effect() {
         true
     });
     assert!(
-        text.contains("命令行：生效 · 桌面 app：API Key 模式下桌面 app 强制使用标准档"),
+        text.contains("命令行：生效 · 桌面版：API Key 模式下桌面版强制使用标准档"),
         "{text}"
     );
-    assert!(!text.contains("桌面 app：生效"), "{text}");
+    assert!(!text.contains("桌面版：生效"), "{text}");
     let (_, text) = drive(&data, service, &mut state, Locale::En, |_, _| true);
     assert!(
         text.contains(
@@ -533,10 +533,7 @@ async fn speed_tooltips_tell_each_tiers_effect_and_label_the_providers_words() {
         tip.contains("供应商说明：2x speed, increased usage"),
         "{tip}"
     );
-    assert!(
-        tip.contains("API Key 模式下桌面 app 强制使用标准档"),
-        "{tip}"
-    );
+    assert!(tip.contains("API Key 模式下桌面版强制使用标准档"), "{tip}");
     assert!(!tip.contains(&caveat), "{tip}");
     // Tier model names: the caveat and the name, renamed with a pending model.
     api_key_speed(&mut view, true);
@@ -617,6 +614,16 @@ async fn models_fit_both_sizes_and_locales_with_at_least_eleven_rows() {
             let text = report.all_text();
             assert!(text.contains("gpt-6-astra"), "{text}");
             assert!(text.contains("872K"), "max window shown: {text}");
+            // Every row states what its numbers mean (gpt-6-astra: a 272K
+            // window — its maximum is 872K — trimmed at 244.8K).
+            let summary = Tr::new(locale).f(
+                "models.summary",
+                &[("window", &"272K"), ("compact", &"244.8K")],
+            );
+            assert!(
+                text.contains(summary.as_str()),
+                "{size:?} {locale:?}: {text}"
+            );
         }
     }
 }
@@ -660,25 +667,42 @@ async fn models_fit_the_minimum_window_without_cutting_a_column() {
         for slug in ["gpt-6-astra", "gpt-5.6-luna", "gpt-5.5-mini"] {
             assert!(report.whole(slug), "{locale:?}: {slug} elided or missing");
         }
-        for key in [
-            "models.col.model",
-            "models.col.context",
-            "models.col.compact",
-            "models.col.price",
-        ] {
+        for key in ["models.col.model", "models.col.context"] {
             assert!(report.whole(&tr.t(key)), "{locale:?}: header {key}");
         }
+        // The price label is wider than its column, so it is matched by its
+        // start (the drawn galley may elide it).
         assert!(
-            !report.texts.contains(&tr.t("models.col.speed")),
-            "{locale:?}"
+            report.texts.contains(&tr.t("models.col.price")),
+            "{locale:?}: header models.col.price"
         );
-        assert!(
-            report.all_text().contains("GPT-6 Astra · Fast · Ultrafast"),
-            "{locale:?}: {}",
-            report.all_text()
+        // Auto-trim and speed sit behind "More columns": the default three are
+        // the ones a reader decides with — the model, how much context it takes
+        // and what it costs (task-20).
+        for key in ["models.col.speed", "models.col.compact"] {
+            assert!(!report.texts.contains(&tr.t(key)), "{locale:?}: {key}");
+        }
+        // The row states what its numbers mean, on the line under the slug
+        // (gpt-6-astra: a 272K window — its maximum is 872K — trimmed at
+        // 244.8K), whole.
+        let summary = tr.f(
+            "models.summary",
+            &[("window", &"272K"), ("compact", &"244.8K")],
         );
+        let line = report
+            .text_shapes
+            .iter()
+            .find(|(t, _, _)| t.ends_with(&summary))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{locale:?}: no row line with {summary:?}: {}",
+                    report.all_text()
+                )
+            });
+        assert!(!line.2, "{locale:?}: the summary is elided: {}", line.0);
     }
-    // The wide table keeps its speed column.
+    // "More columns" adds the speed and price columns.
+    let en = Tr::new(Locale::En);
     let mut state = State::default();
     state.set_price_table(None);
     state.set_view(view.clone());
@@ -688,11 +712,63 @@ async fn models_fit_the_minimum_window_without_cutting_a_column() {
         egui::Theme::Light,
         &data,
         |ui, cx, out| {
+            state.more_columns = true;
             models_page::show(ui, cx, &mut state, out);
         },
     );
-    assert!(report.whole("Speed tiers"), "{}", report.all_text());
+    assert!(
+        report.whole(&en.t("models.col.speed")),
+        "{}",
+        report.all_text()
+    );
+    assert!(
+        report.whole(&en.t("models.col.compact")),
+        "{}",
+        report.all_text()
+    );
+    assert!(
+        report.texts.contains(&en.t("models.col.price")),
+        "{}",
+        report.all_text()
+    );
     assert_eq!(report.beyond_right(), Vec::<&str>::new());
+    // A narrow table with the extra columns drops the speed column — it is the
+    // last data column, so auto-trim stays put — and the faster tiers stay in
+    // the model cell: nothing runs past the right edge.
+    let mut state = State::default();
+    state.set_price_table(None);
+    state.set_view(view.clone());
+    let report = render_fit(
+        [960.0, 640.0],
+        Locale::En,
+        egui::Theme::Light,
+        &data,
+        |ui, cx, out| {
+            state.more_columns = true;
+            models_page::show(ui, cx, &mut state, out);
+        },
+    );
+    assert_eq!(report.beyond_right(), Vec::<&str>::new());
+    assert!(
+        !report.texts.contains(&en.t("models.col.speed")),
+        "{}",
+        report.all_text()
+    );
+    assert!(
+        report.whole(&en.t("models.col.compact")),
+        "{}",
+        report.all_text()
+    );
+    assert!(
+        report.texts.contains(&en.t("models.col.price")),
+        "{}",
+        report.all_text()
+    );
+    assert!(
+        report.all_text().contains("GPT-6 Astra · Fast · Ultrafast"),
+        "{}",
+        report.all_text()
+    );
 }
 
 #[tokio::test]

@@ -19,7 +19,7 @@ use crate::design::widgets::{
 };
 use crate::flow::{Flow, Run, Stage};
 use crate::pages::{Action, Cx, Page, error_text};
-use crate::pages::{NavBadge, PageStatus};
+use crate::pages::{NavBadge, PageStatus, SuperbaSection};
 
 /// The Superba mark: the application icon (a coral mark on a pearl tile), drawn
 /// from the pre-rendered PNG closest above the physical size so it stays crisp on
@@ -248,6 +248,26 @@ pub fn palette_shortcut_label() -> &'static str {
     }
 }
 
+/// A short badge word, right-aligned at `x` and drawn only while it still clears
+/// `left`: the width it used, or `None` when the row has no room for words (the
+/// caller draws its dot instead, task-10).
+fn badge_text(
+    p: &egui::Painter,
+    x: f32,
+    left: f32,
+    y: f32,
+    words: &str,
+    color: Color32,
+) -> Option<f32> {
+    let g = p.layout_no_wrap(words.to_owned(), font(text::CAPTION, Weight::Medium), color);
+    let w = g.size().x;
+    if x - w < left {
+        return None;
+    }
+    p.galley(pos2(x - w, y - g.size().y / 2.0), g, color);
+    Some(w)
+}
+
 fn nav_item(
     ui: &mut Ui,
     cx: &Cx<'_>,
@@ -263,6 +283,24 @@ fn nav_item(
     // ("Claude Code 设置", not a second "设置").
     let label = cx.tr.t(page.nav_key());
     let name = cx.tr.t(page.sidebar_page().title_key());
+    // Where the row's words end: a badge only takes room that is really free
+    // (task-10). Measured with the same font the row draws with, below.
+    let label_w = ui
+        .painter()
+        .layout_no_wrap(
+            label.clone(),
+            font(
+                text::NAV,
+                if selected {
+                    Weight::Semibold
+                } else {
+                    Weight::Medium
+                },
+            ),
+            Color32::PLACEHOLDER,
+        )
+        .size()
+        .x;
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, &name));
     let t = crate::design::widgets::hover_t(ui, &response);
     // Selected: a soft gray rounded rectangle on the window background.
@@ -301,16 +339,41 @@ fn nav_item(
         ),
         color,
     );
-    // Right edge: the page's badge, then (further left) the amber dot of unsaved
-    // edits.
+    // Right edge: the page's badge, then (further left) what is unsaved here.
+    // Each says what it means in words while the row has room for them, and
+    // falls back to the compact dot when it has not (task-10: a lone dot on its
+    // own says nothing).
+    let row_left = rect.min.x + 40.0 + label_w + 12.0;
     let mut x = rect.max.x - 12.0;
     let mut tip: Option<String> = None;
     match status.badge {
         NavBadge::None => {}
         NavBadge::Dot(s) => {
-            p.circle_filled(pos2(x - 3.0, rect.center().y), 3.0, cx.pal.status(s));
-            x -= 14.0;
-            tip.clone_from(&status.badge_tip);
+            // The two page-level dots name the state they mark.
+            let words = match page {
+                Page::Router => Some("shell.badge.routed_short"),
+                // Updates is a section of the Superba page since upstream's
+                // "consolidate maintenance and preferences" pass.
+                Page::Superba(SuperbaSection::Updates) => Some("shell.badge.update_short"),
+                _ => None,
+            }
+            .map(|key| cx.tr.t(key))
+            .and_then(|words| {
+                badge_text(p, x, row_left, rect.center().y, &words, cx.pal.text_subtle)
+                    .map(|w| (words, w))
+            });
+            match words {
+                Some((words, w)) => {
+                    x -= w + 10.0;
+                    // The tooltip says the same thing the row says.
+                    tip = Some(status.badge_tip.clone().unwrap_or(words));
+                }
+                None => {
+                    p.circle_filled(pos2(x - 3.0, rect.center().y), 3.0, cx.pal.status(s));
+                    x -= 14.0;
+                    tip.clone_from(&status.badge_tip);
+                }
+            }
         }
         NavBadge::Count(n) => {
             let g = p.layout_no_wrap(
@@ -329,15 +392,34 @@ fn nav_item(
         }
     }
     if status.pending > 0 {
-        p.circle_filled(
-            pos2(x - 3.0, rect.center().y),
-            3.0,
+        let words = cx.tr.f("shell.pending_badge", &[("n", &status.pending)]);
+        match badge_text(
+            p,
+            x,
+            row_left,
+            rect.center().y,
+            &words,
             cx.pal.status(Status::Warn),
-        );
-        tip = Some(match tip {
-            Some(t) => format!("{t}\n{}", cx.tr.t("shell.pending_dot")),
-            None => cx.tr.t("shell.pending_dot"),
-        });
+        ) {
+            Some(_) => {
+                // Nothing else is drawn to its left, so `x` need not move.
+                tip = Some(match tip {
+                    Some(t) => format!("{t}\n{words}"),
+                    None => words,
+                });
+            }
+            None => {
+                p.circle_filled(
+                    pos2(x - 3.0, rect.center().y),
+                    3.0,
+                    cx.pal.status(Status::Warn),
+                );
+                tip = Some(match tip {
+                    Some(t) => format!("{t}\n{}", cx.tr.t("shell.pending_dot")),
+                    None => cx.tr.t("shell.pending_dot"),
+                });
+            }
+        }
     }
     if crate::design::widgets::show_focus(&response) {
         crate::design::widgets::focus_ring(p, rect, radius::NAV, cx.pal);
@@ -392,8 +474,14 @@ impl BannerState {
 }
 
 enum HeaderAside {
+    /// Only the header layout test builds this; every stage moved its actions
+    /// into the panel's shared action row (task-10).
+    #[allow(dead_code)]
     Buttons(Vec<Button>),
     Text(String),
+    /// Nothing beside the title: the stage's actions live in the panel's shared
+    /// action row instead (task-10).
+    None,
 }
 
 impl HeaderAside {
@@ -413,6 +501,7 @@ impl HeaderAside {
                     .size()
                     .x
             }
+            Self::None => 0.0,
         }
     }
 
@@ -429,7 +518,151 @@ impl HeaderAside {
                 ui.label(Text::mono_muted(text, pal));
                 Vec::new()
             }
+            Self::None => Vec::new(),
         }
+    }
+}
+
+/// The one action row every switch stage ends with, in the same place and the
+/// same order (task-10): what moves the switch on, then cancel.
+fn action_buttons(ui: &mut Ui, buttons: Vec<Button>) -> Vec<egui::Response> {
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        buttons.into_iter().map(|b| ui.add(b)).collect()
+    })
+    .inner
+}
+
+/// What the shared action row offers this frame. Every stage uses the same
+/// order; a stage simply has fewer answers.
+#[derive(Clone, Copy, Default)]
+struct SwitchActs {
+    /// 「立即切换」 (Enter): do it now.
+    now: bool,
+    /// 「等它跑完自动切」: only while replies are actually running.
+    wait: bool,
+    /// The reader already answered «wait», so the row confirms it instead.
+    wait_done: bool,
+    /// 「撤销这次切换」: only while the flow still allows taking the switch back.
+    undo: bool,
+    /// 「取消」 (Esc).
+    cancel: bool,
+    /// The 「什么会重启？」 disclosure: `Some(open)` draws it first in the same
+    /// row, `None` omits it (before the first switch, or where it has no place).
+    risks: Option<bool>,
+    /// The flow is not ready to take answers yet (the row shows, disabled).
+    enabled: bool,
+}
+
+impl SwitchActs {
+    /// A stage with nothing left to decide: cancel only.
+    fn cancel_only() -> Self {
+        Self {
+            cancel: true,
+            enabled: true,
+            ..Self::default()
+        }
+    }
+
+    /// The two answers of a switch that would interrupt running replies.
+    fn now_or_wait(running: bool) -> Self {
+        Self {
+            now: true,
+            wait: running,
+            cancel: true,
+            enabled: true,
+            ..Self::default()
+        }
+    }
+}
+
+/// Which answer of the shared row was clicked.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SwitchAct {
+    Now,
+    Wait,
+    Undo,
+    Cancel,
+    /// The risk disclosure in the same row (it only flips the panel open).
+    Risks,
+}
+
+/// Draw the shared action row. `now_key` names what switching now says (a
+/// re-apply says "apply", not "switch").
+fn switch_actions(ui: &mut Ui, cx: &Cx<'_>, now_key: &str, acts: SwitchActs) -> Option<SwitchAct> {
+    let tr = cx.tr;
+    let mut buttons = Vec::new();
+    let mut ids = Vec::new();
+    if let Some(open) = acts.risks {
+        let icon = if open {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        };
+        buttons.push(
+            Button::ghost(tr.t("shell.what_restarts"))
+                .small()
+                .icon(icon),
+        );
+        ids.push(SwitchAct::Risks);
+    }
+    if acts.now {
+        // While replies are running, switching now is the destructive answer:
+        // it stays in the same slot but wears the danger style, and waiting is
+        // the emphasised one.
+        let button = if acts.wait {
+            Button::danger(tr.t(now_key)).small().kbd("Enter")
+        } else {
+            Button::primary(tr.t(now_key)).small().kbd("Enter")
+        };
+        buttons.push(button.enabled(acts.enabled));
+        ids.push(SwitchAct::Now);
+    }
+    if acts.wait {
+        let button = if acts.wait_done {
+            Button::primary(tr.t("banner.waiting.will_switch"))
+                .small()
+                .enabled(false)
+        } else {
+            Button::primary(tr.t("banner.waiting.wait"))
+                .small()
+                .enabled(acts.enabled)
+        };
+        buttons.push(button);
+        ids.push(SwitchAct::Wait);
+    }
+    if acts.undo {
+        buttons.push(
+            Button::new(tr.t("decide.undo"))
+                .small()
+                .enabled(acts.enabled),
+        );
+        ids.push(SwitchAct::Undo);
+    }
+    if acts.cancel {
+        buttons.push(
+            Button::new(tr.t("action.cancel"))
+                .small()
+                .kbd("Esc")
+                .enabled(acts.enabled),
+        );
+        ids.push(SwitchAct::Cancel);
+    }
+    let responses = action_buttons(ui, buttons);
+    responses
+        .iter()
+        .zip(ids)
+        .find_map(|(r, id)| r.clicked().then_some(id))
+}
+
+/// The one sentence every switch panel leads with: what the switch does, in the
+/// reader's words (task-10). Details and interruptions follow it.
+fn switch_sentence(cx: &Cx<'_>, plan: &SwitchPlan) -> String {
+    if matches!(plan.primary, RestartKind::FullAppRestart { .. }) {
+        cx.tr.t("confirm.body")
+    } else {
+        cx.tr.t("banner.armed.body")
     }
 }
 
@@ -573,21 +806,22 @@ pub fn banner(
             reapply: is_reapply(&run.plan),
         },
     };
+    // While the flow still offers Undo (the IPC to ChatGPT failed), every
+    // switch stage shows it in the same slot of the action row (task-10).
+    let undo_allowed = flow
+        .run()
+        .and_then(|r| r.decision.as_ref())
+        .is_some_and(|d| !d.is_stale() && d.request.allowed().contains(&Decision::Undo));
     match view {
         BannerView::Planning => {
-            let mut cancel = false;
+            // Nothing to decide yet: the row holds the one way out.
+            let mut act = None;
             banner_card(ui, pal, None, |ui| {
-                let (_, buttons) = banner_header(
-                    ui,
-                    pal,
-                    None,
-                    tr.t("banner.planning"),
-                    HeaderAside::Buttons(vec![Button::ghost(tr.t("action.cancel")).small()]),
-                );
-                cancel = buttons.iter().any(egui::Response::clicked);
+                banner_header(ui, pal, None, tr.t("banner.planning"), HeaderAside::None);
+                act = switch_actions(ui, cx, "banner.switch_now", SwitchActs::cancel_only());
                 ui.ctx().request_repaint();
             });
-            if cancel {
+            if act == Some(SwitchAct::Cancel) {
                 flow.cancel(now);
             }
         }
@@ -596,8 +830,7 @@ pub fn banner(
             secs,
             progress,
         } => {
-            let mut clicked_now = false;
-            let mut clicked_cancel = false;
+            let mut act = None;
             banner_card(ui, pal, Some((progress, false)), |ui| {
                 // Re-applying the provider in use (its connection or settings
                 // changed) says so, and why Codex restarts, instead of "Switching".
@@ -607,44 +840,38 @@ pub fn banner(
                 } else {
                     "banner.armed.title"
                 };
-                let (_, buttons) = banner_header(
+                banner_header(
                     ui,
                     pal,
                     Some((Icon::Bolt, pal.text)),
                     tr.f(title_key, &[("secs", &secs), ("dest", &cx.dest(&plan.to))]),
-                    HeaderAside::Buttons(vec![
-                        Button::primary(tr.t(if reapply.is_some() {
-                            "banner.reapply.now"
-                        } else {
-                            "banner.switch_now"
-                        }))
-                        .small()
-                        .kbd("Enter"),
-                        Button::new(tr.t("action.cancel")).small().kbd("Esc"),
-                    ]),
+                    HeaderAside::None,
                 );
-                clicked_now = buttons[0].clicked();
-                clicked_cancel = buttons[1].clicked();
+                ui.add_space(2.0);
+                // What this switch does, in one sentence (task-10).
+                ui.add(egui::Label::new(Text::body(switch_sentence(cx, &plan), pal)).wrap());
                 if let Some(reason) = &reapply {
                     ui.add(egui::Label::new(Text::small(reason, pal)).wrap());
                 }
-                ui.add_space(2.0);
-                if BannerState::risks_seen(ui.ctx()) {
-                    let icon = if st.show_risks {
-                        Icon::ChevronDown
+                let seen = BannerState::risks_seen(ui.ctx());
+                act = switch_actions(
+                    ui,
+                    cx,
+                    if reapply.is_some() {
+                        "banner.reapply.now"
                     } else {
-                        Icon::ChevronRight
-                    };
-                    if ui
-                        .add(
-                            Button::ghost(tr.t("shell.what_restarts"))
-                                .small()
-                                .icon(icon),
-                        )
-                        .clicked()
-                    {
-                        st.show_risks = !st.show_risks;
-                    }
+                        "banner.switch_now"
+                    },
+                    SwitchActs {
+                        undo: undo_allowed,
+                        // The disclosure rides in the shared row, so the panel
+                        // keeps one shape and one line less (task-10).
+                        risks: seen.then_some(st.show_risks),
+                        ..SwitchActs::now_or_wait(false)
+                    },
+                );
+                // What restarts follows the row that opened it.
+                if seen {
                     if st.show_risks {
                         hot_risk_copy(ui, cx, &plan);
                         plan_notes(ui, cx, &plan, st);
@@ -664,10 +891,14 @@ pub fn banner(
                     st.risk_shown_for = Some(plan.id.clone());
                 }
             });
-            if clicked_now {
-                flow.switch_now(now);
-            } else if clicked_cancel {
-                flow.cancel(now);
+            match act {
+                Some(SwitchAct::Now) => flow.switch_now(now),
+                Some(SwitchAct::Undo) => flow.decide(Decision::Undo),
+                Some(SwitchAct::Risks) => st.show_risks = !st.show_risks,
+                Some(SwitchAct::Cancel) => {
+                    flow.cancel(now);
+                }
+                _ => {}
             }
             ui.ctx().request_repaint();
         }
@@ -676,7 +907,7 @@ pub fn banner(
             busy,
             progress,
         } => {
-            let mut action = None;
+            let mut act = None;
             banner_card(ui, pal, Some((progress, true)), |ui| {
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
@@ -689,6 +920,9 @@ pub fn banner(
                         .wrap(),
                     );
                 });
+                ui.add_space(2.0);
+                // What this switch does, then who it would interrupt.
+                ui.add(egui::Label::new(Text::body(switch_sentence(cx, &plan), pal)).wrap());
                 ui.label(Text::small(
                     tr.f("banner.destination", &[("dest", &cx.dest(&plan.to))]),
                     pal,
@@ -697,32 +931,21 @@ pub fn banner(
                     busy_line(ui, cx, t);
                 }
                 ui.label(Text::muted(tr.t("banner.waiting.body"), pal));
-                ui.add_space(4.0);
-                ui.horizontal_wrapped(|ui| {
-                    if ui
-                        .add(Button::primary(tr.t("banner.waiting.wait")).small())
-                        .clicked()
-                    {
-                        action = Some(0);
-                    }
-                    if ui
-                        .add(Button::danger(tr.t("banner.waiting.force")).small())
-                        .clicked()
-                    {
-                        action = Some(1);
-                    }
-                    if ui
-                        .add(Button::new(tr.t("action.cancel")).small().kbd("Esc"))
-                        .clicked()
-                    {
-                        action = Some(2);
-                    }
-                });
+                act = switch_actions(
+                    ui,
+                    cx,
+                    "banner.switch_now",
+                    SwitchActs {
+                        undo: undo_allowed,
+                        ..SwitchActs::now_or_wait(true)
+                    },
+                );
             });
-            match action {
-                Some(0) => flow.acknowledge_wait(now),
-                Some(1) => flow.switch_now(now),
-                Some(2) => {
+            match act {
+                Some(SwitchAct::Now) => flow.switch_now(now),
+                Some(SwitchAct::Wait) => flow.acknowledge_wait(now),
+                Some(SwitchAct::Undo) => flow.decide(Decision::Undo),
+                Some(SwitchAct::Cancel) => {
                     flow.cancel(now);
                 }
                 _ => {}
@@ -731,29 +954,17 @@ pub fn banner(
         BannerView::Blocked(plan) => {
             let mut close = false;
             let mut alternative = None;
+            let mut undo = false;
             banner_card(ui, pal, None, |ui| {
-                let mut actions: Vec<Button> = plan
-                    .alternatives
-                    .iter()
-                    .map(|alt| Button::primary(tr.text(&alt.label)).small())
-                    .collect();
-                actions.push(Button::new(tr.t("action.close")).small().kbd("Esc"));
-                let (_, buttons) = banner_header(
+                // The title is the sentence here ("cannot switch"); the reasons
+                // follow, and the ways out are the row's answers (task-10).
+                banner_header(
                     ui,
                     pal,
                     Some((Icon::Close, pal.red)),
                     tr.t("banner.blocked.title"),
-                    HeaderAside::Buttons(actions),
+                    HeaderAside::None,
                 );
-                for (i, button) in buttons.iter().enumerate() {
-                    if button.clicked() {
-                        if i == plan.alternatives.len() {
-                            close = true;
-                        } else {
-                            alternative = Some(i);
-                        }
-                    }
-                }
                 ui.add_space(2.0);
                 ui.label(Text::small(
                     tr.f("banner.destination", &[("dest", &cx.dest(&plan.to))]),
@@ -767,17 +978,44 @@ pub fn banner(
                 for w in &plan.warnings {
                     note(ui, pal, w.severity, &cx.localize(&w.text));
                 }
+                let alternatives = plan.alternatives.len();
+                let mut buttons: Vec<Button> = plan
+                    .alternatives
+                    .iter()
+                    .map(|alt| Button::primary(tr.text(&alt.label)).small())
+                    .collect();
+                // The way back, in the same slot as every other stage (task-10).
+                if undo_allowed {
+                    buttons.push(Button::new(tr.t("decide.undo")).small());
+                }
+                buttons.push(Button::new(tr.t("action.close")).small().kbd("Esc"));
+                let buttons = action_buttons(ui, buttons);
+                for (i, button) in buttons.iter().enumerate() {
+                    if button.clicked() {
+                        if i < alternatives {
+                            alternative = Some(i);
+                        } else if i == alternatives && undo_allowed {
+                            undo = true;
+                        } else {
+                            close = true;
+                        }
+                    }
+                }
             });
             if let Some(i) = alternative {
                 flow.take_alternative(i, now);
+            } else if undo {
+                flow.decide(Decision::Undo);
             } else if close {
                 flow.cancel(now);
             }
         }
         BannerView::Choose(plan) => {
-            banner_card(ui, pal, None, |ui| choices(ui, cx, flow, &plan, st, now));
+            banner_card(ui, pal, None, |ui| {
+                choices(ui, cx, flow, &plan, st, now, undo_allowed)
+            });
         }
-        BannerView::WaitingRun => waiting_banner(ui, cx, flow, now),
+        BannerView::WaitingRun => waiting_banner(ui, cx, flow, now, undo_allowed),
         BannerView::Running {
             label,
             steps,
@@ -785,6 +1023,7 @@ pub fn banner(
             failed,
             reapply,
         } => {
+            let mut undo = false;
             banner_card(ui, pal, None, |ui| {
                 banner_header(
                     ui,
@@ -814,7 +1053,23 @@ pub fn banner(
                         step_chip(ui, pal, label, status);
                     }
                 });
+                // The way back, in the same slot as every other stage (task-10).
+                if undo_allowed {
+                    undo = switch_actions(
+                        ui,
+                        cx,
+                        "banner.switch_now",
+                        SwitchActs {
+                            undo: true,
+                            enabled: true,
+                            ..SwitchActs::default()
+                        },
+                    ) == Some(SwitchAct::Undo);
+                }
             });
+            if undo {
+                flow.decide(Decision::Undo);
+            }
             if !failed {
                 ui.ctx().request_repaint();
             }
@@ -1221,7 +1476,7 @@ fn banner_card(
     ui.interact(r.rect, ui.scope_id().with("banner-hover"), Sense::hover())
 }
 
-fn waiting_banner(ui: &mut Ui, cx: &Cx<'_>, flow: &mut Flow, now: Duration) {
+fn waiting_banner(ui: &mut Ui, cx: &Cx<'_>, flow: &mut Flow, now: Duration, undo_allowed: bool) {
     let pal = cx.pal;
     let tr = cx.tr;
     let Some(run) = flow.run() else {
@@ -1236,6 +1491,8 @@ fn waiting_banner(ui: &mut Ui, cx: &Cx<'_>, flow: &mut Flow, now: Duration) {
     let waited = Duration::from_millis(run.waited_ms);
     let can_decide = run.decision.is_some();
     let acknowledged = run.wait_acknowledged;
+    // What this switch does, then who it would interrupt (task-10).
+    let sentence = switch_sentence(cx, &run.plan);
     let mut decision = None;
     let mut ack = false;
     banner_card(ui, pal, Some((0.55, true)), |ui| {
@@ -1252,46 +1509,29 @@ fn waiting_banner(ui: &mut Ui, cx: &Cx<'_>, flow: &mut Flow, now: Duration) {
                 )],
             )),
         );
+        ui.add_space(2.0);
+        ui.add(egui::Label::new(Text::body(sentence.clone(), pal)).wrap());
         for t in &busy {
             busy_line(ui, cx, t);
         }
         ui.label(Text::muted(tr.t("banner.waiting.body"), pal));
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            let primary = if acknowledged {
-                Button::primary(tr.t("banner.waiting.will_switch"))
-                    .small()
-                    .enabled(false)
-            } else {
-                Button::primary(tr.t("banner.waiting.wait"))
-                    .small()
-                    .enabled(can_decide)
-            };
-            if ui.add(primary).clicked() {
-                ack = true;
-            }
-            if ui
-                .add(
-                    Button::danger(tr.t("banner.waiting.force"))
-                        .small()
-                        .enabled(can_decide),
-                )
-                .clicked()
-            {
-                decision = Some(Decision::Force);
-            }
-            if ui
-                .add(
-                    Button::new(tr.t("action.cancel"))
-                        .small()
-                        .kbd("Esc")
-                        .enabled(can_decide),
-                )
-                .clicked()
-            {
-                decision = Some(Decision::Cancel);
-            }
-        });
+        let acts = SwitchActs {
+            now: true,
+            wait: true,
+            wait_done: acknowledged,
+            undo: undo_allowed,
+            cancel: true,
+            risks: None,
+            enabled: can_decide,
+        };
+        match switch_actions(ui, cx, "banner.switch_now", acts) {
+            Some(SwitchAct::Now) => decision = Some(Decision::Force),
+            Some(SwitchAct::Wait) => ack = true,
+            Some(SwitchAct::Undo) => decision = Some(Decision::Undo),
+            Some(SwitchAct::Cancel) => decision = Some(Decision::Cancel),
+            Some(SwitchAct::Risks) => {}
+            None => {}
+        }
     });
     if ack {
         flow.acknowledge_wait(now);
@@ -1402,19 +1642,21 @@ fn choices(
     plan: &SwitchPlan,
     st: &mut BannerState,
     now: Duration,
+    undo_allowed: bool,
 ) {
     let pal = cx.pal;
     let tr = cx.tr;
-    let (_, buttons) = banner_header(
+    let _ = banner_header(
         ui,
         pal,
         Some((Icon::Warning, pal.amber)),
         tr.f("banner.choose.title", &[("dest", &cx.dest(&plan.to))]),
-        HeaderAside::Buttons(vec![Button::new(tr.t("action.cancel")).small().kbd("Esc")]),
+        HeaderAside::None,
     );
-    if buttons.iter().any(egui::Response::clicked) {
-        flow.cancel(now);
-    }
+    // What this switch does, in the same one sentence as every other stage
+    // (task-10); the questions below it are the decisions only this stage has.
+    ui.add_space(2.0);
+    ui.add(egui::Label::new(Text::body(switch_sentence(cx, plan), pal)).wrap());
     let mut accept = Vec::new();
     for choice in &plan.choices {
         ui.add_space(6.0);
@@ -1637,6 +1879,25 @@ fn choices(
             flow.accept_risks(&accept, now);
         }
     }
+    // The way out, in the same order as every other stage (task-10).
+    ui.add_space(6.0);
+    match switch_actions(
+        ui,
+        cx,
+        "banner.switch_now",
+        SwitchActs {
+            undo: undo_allowed,
+            cancel: true,
+            enabled: true,
+            ..SwitchActs::default()
+        },
+    ) {
+        Some(SwitchAct::Undo) => flow.decide(Decision::Undo),
+        Some(SwitchAct::Cancel) => {
+            flow.cancel(now);
+        }
+        _ => {}
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1671,6 +1932,11 @@ pub fn confirm_full(
     // "Reopen ChatGPT with Superba" (GH#7, user bug 61): no switch, nothing to
     // write; the app is closed and opened again through Superba.
     let reopen = matches!(plan.request.intent, SwitchIntent::RestartApp { .. });
+    // The way back, in the same place as every other switch stage (task-10).
+    let undo_allowed = flow
+        .run()
+        .and_then(|r| r.decision.as_ref())
+        .is_some_and(|d| !d.is_stale() && d.request.allowed().contains(&Decision::Undo));
     let resp = dialog(ctx, egui::Id::unique("confirm-full"), 560.0, |ui| {
         ui.label(Text::h2(
             tr.t(if reopen {
@@ -1753,6 +2019,9 @@ pub fn confirm_full(
                     action = Some(10 + i as u8);
                 }
             }
+            if undo_allowed && ui.add(Button::new(tr.t("decide.undo"))).clicked() {
+                action = Some(3);
+            }
             if ui
                 .add(Button::ghost(tr.t("action.cancel")).kbd("Esc"))
                 .clicked()
@@ -1771,6 +2040,7 @@ pub fn confirm_full(
         Some(2) => {
             flow.cancel(now);
         }
+        Some(3) => flow.decide(Decision::Undo),
         Some(n) if n >= 10 => flow.take_alternative(usize::from(n - 10), now),
         _ => {}
     }

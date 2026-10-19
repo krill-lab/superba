@@ -77,13 +77,13 @@ async fn a_chatgpt_superba_did_not_open_is_a_todo_with_the_reopen() {
     for (locale, title, button, reason) in [
         (
             Locale::En,
-            "Hot switching is off",
+            "Restart needed to switch",
             "Reopen",
             "ChatGPT was not opened from Superba, so it cannot be hot-switched.",
         ),
         (
             Locale::ZhCn,
-            "热切换不可用",
+            "要重启才能切换",
             "重新打开",
             "ChatGPT 不是从 Superba 打开的，无法热切。",
         ),
@@ -179,6 +179,23 @@ fn the_overview_shows_it_and_the_reopen_plans_a_full_restart() {
                 .iter()
                 .any(|id| t.node(*id).value().is_some_and(|v| v.starts_with(&title)))
         });
+        // The hero is folded by default: the first screen is the conclusion, so
+        // the node graph — and the marker on "This computer" — is the detail
+        // behind it, reached through the toggle (a plain button, so the same
+        // click works for a keyboard or screen-reader user).
+        assert!(
+            t.find(Some(Role::Button), &tr.t("overview.hero.detail"))
+                .is_some(),
+            "the folded hero offers the detail toggle: {}",
+            t.dump()
+        );
+        assert!(
+            t.find(Some(Role::Button), &tr.t("overview.hero.this"))
+                .is_none(),
+            "the folded hero draws no node graph: {}",
+            t.dump()
+        );
+        let t = h.click(Some(Role::Button), &tr.t("overview.hero.detail"));
         // "This computer" carries the problem (its marker's hover text).
         let this = t
             .find(Some(Role::Button), &tr.t("overview.hero.this"))

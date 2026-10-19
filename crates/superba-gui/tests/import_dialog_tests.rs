@@ -164,7 +164,7 @@ async fn the_dialog_shows_each_tool_with_targets_keys_and_conflicts() {
                 "从其他工具导入",
                 "Krill · 海外线路",
                 "自定义站点 · codex-api.packycode.example · 3 条线路",
-                "Key 在系统钥匙串中（不导入）",
+                "API Key 在系统凭据存储中（不导入）",
                 "已有同名供应商 My Gateway。",
                 "当前使用",
                 "导入 3 个",
@@ -176,7 +176,7 @@ async fn the_dialog_shows_each_tool_with_targets_keys_and_conflicts() {
                 "Import from other tools",
                 "Krill · Overseas",
                 "Custom site · codex-api.packycode.example · 3 lines",
-                "Key in the system keychain (not imported)",
+                "API key in the system credential store (not imported)",
                 "A provider named My Gateway already exists.",
                 "Current",
                 "Import 3",
@@ -397,6 +397,8 @@ async fn the_wizard_offers_import_and_closes_on_the_providers_page_after_importi
         let cx = cx(ui, &tr, &data, &svc, &h.fonts);
         outcome = wizard::show(ui.ctx(), &cx, &mut w, &mut actions);
     };
+    // The import entry lives in the first screen's 「其它方式」 fold.
+    assert!(h.click_text("其它方式", &mut f));
     assert!(h.click_text("从其他工具导入…", &mut f));
     assert!(w.import.is_some());
     // Escape leaves the import view, not the wizard.

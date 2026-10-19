@@ -449,6 +449,59 @@ fn check_popover(window: &Window, page: &str, model: &str, draw: &mut dyn FnMut(
     }
 }
 
+/// The sentence the hero's first screen draws: one of the catalogue's verdict
+/// lines with its placeholders filled in at run time. Matched by the
+/// catalogue's shape, so it holds in both languages and for whatever the
+/// fixture's state is.
+fn verdict_line(tr: &Tr, text: &str) -> bool {
+    [
+        "overview.verdict.handed_off",
+        "overview.verdict.official",
+        "overview.verdict.no_provider",
+        "overview.verdict.probing",
+        "overview.verdict.unreachable",
+        "overview.verdict.ok",
+    ]
+    .iter()
+    .any(|key| shape_matches(&tr.t(key), text))
+}
+
+/// `raw` with every `{placeholder}` cut out: the literal runs around them.
+fn literal_runs(raw: &str) -> Option<Vec<&str>> {
+    let mut runs = Vec::new();
+    let mut rest = raw;
+    while let Some((head, tail)) = rest.split_once('{') {
+        runs.push(head);
+        rest = tail.split_once('}')?.1;
+    }
+    runs.push(rest);
+    Some(runs)
+}
+
+/// `text` is `raw` with something filled into each placeholder.
+fn shape_matches(raw: &str, text: &str) -> bool {
+    let Some(runs) = literal_runs(raw) else {
+        return false;
+    };
+    if runs.len() == 1 {
+        return text == raw;
+    }
+    let (first, last) = (runs[0], runs[runs.len() - 1]);
+    if !text.starts_with(first) || !text.ends_with(last) {
+        return false;
+    }
+    // The runs in between appear in order (they may be empty: two placeholders
+    // stand next to each other in the "ok" line).
+    let mut at = first.len();
+    for run in &runs[1..runs.len() - 1] {
+        match text[at..].find(run) {
+            Some(i) => at += i + run.len(),
+            None => return false,
+        }
+    }
+    true
+}
+
 #[tokio::test]
 async fn the_models_and_overview_pages_show_the_whole_ring() {
     let fake = Arc::new(FakeService::new(FakeOptions {
@@ -498,9 +551,55 @@ async fn the_models_and_overview_pages_show_the_whole_ring() {
                 &mut draw,
             );
 
-            // Overview: the profile's speed.
+            // Overview: the profile's speed. The hero is folded by default (the
+            // first screen is the conclusion), so the model node — and the
+            // popover drawn on it — is there only with the detail open.
             let window = Window::new([1280.0, 800.0], theme);
             let mut state = overview::State::default();
+            // `doctor_asked` is private, so the field is set after the default.
+            state.hero_detail = true;
+            // Folded, the first screen is the conclusion sentence and the node
+            // graph is not drawn at all.
+            let mut folded = overview::State::default();
+            let mut folded_out: Vec<Action> = Vec::new();
+            let folded_texts = window
+                .settle(&mut |ui: &mut egui::Ui| {
+                    let cx = Cx {
+                        tr: &tr,
+                        pal: Palette::of(ui.ctx()),
+                        data: &data,
+                        busy: false,
+                        now: Timestamp::now(),
+                        fonts: &window.fonts,
+                        service: &service,
+                        log: &[],
+                    };
+                    page_frame(ui, Page::Overview, |ui| {
+                        overview::show(ui, &cx, &mut folded, &mut folded_out)
+                    });
+                })
+                .texts()
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<Vec<_>>();
+            assert!(
+                folded_texts.iter().any(|t| verdict_line(&tr, t)),
+                "the folded first screen is the conclusion: {folded_texts:?}"
+            );
+            assert!(
+                folded_texts.contains(&tr.t("overview.hero.caption")),
+                "{folded_texts:?}"
+            );
+            for key in [
+                "overview.hero.this",
+                "overview.hero.router",
+                "overview.hero.default_model",
+            ] {
+                assert!(
+                    !folded_texts.contains(&tr.t(key)),
+                    "the folded hero draws no {key} node: {folded_texts:?}"
+                );
+            }
             let mut out: Vec<Action> = Vec::new();
             let mut draw = |ui: &mut egui::Ui| {
                 let cx = Cx {

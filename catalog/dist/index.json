@@ -1,7 +1,7 @@
 {
   "index_format": 1,
   "catalog_format": 1,
-  "serial": 6,
+  "serial": 10,
   "repo": "openai/codex",
   "latest": "0.163.0",
   "versions": [
@@ -266,8 +266,8 @@
     },
     {
       "path": "overlay/config-approvals.toml",
-      "sha256": "5450d5c537a35f7b9220886eebafe8d884477d6b996a3fe0249f1db82e1b7818",
-      "size": 20399
+      "sha256": "aa61a016a0af13b1f1a48130eb323fc02e9d588d094f60cce11f16260cd44633",
+      "size": 20402
     },
     {
       "path": "overlay/config-apps.toml",
@@ -276,18 +276,18 @@
     },
     {
       "path": "overlay/config-context.toml",
-      "sha256": "be58ad715fdbae57cb48a9d5df62c5610ca2e68621a18baf68623681c81cc47a",
-      "size": 21854
+      "sha256": "70b6d3a24f0863ae8119202ab9200ebad1b544bfbea6d9abc73beb391636b55f",
+      "size": 21866
     },
     {
       "path": "overlay/config-features.toml",
-      "sha256": "5e4a884f6cb2410421cd0ccc3c9932de86a6cbe45af17d0e21523fb9a46cebf1",
-      "size": 41071
+      "sha256": "790c5eac1c38d2b65ad6bf7e57e250347649075465f92a98a285a3df910a0c73",
+      "size": 41092
     },
     {
       "path": "overlay/config-interface.toml",
-      "sha256": "4895e936d8029fdf529badf18b05d0bdbde1c5f89fcb81a115bfbf06230ccc17",
-      "size": 100536
+      "sha256": "d3f1a3b7f4ee4b45058c9ba093e85dd0b2296bf3157e9d200ff4f1e947d3dcb3",
+      "size": 100578
     },
     {
       "path": "overlay/config-mcp.toml",
@@ -296,13 +296,13 @@
     },
     {
       "path": "overlay/config-model.toml",
-      "sha256": "56b7072e6a761d1c6afd6e4024960f0a64e2784159473f81458e5b5582d8d1ed",
-      "size": 5802
+      "sha256": "3a40e9206cba730c58b778a0af3cc488d81e5a244e63a6441ee0625dbc4c46e3",
+      "size": 5808
     },
     {
       "path": "overlay/config-other.toml",
-      "sha256": "e273546e1fbb35a52a04b3d39463447609c240a2a8a20a28639bf9516f15f5d9",
-      "size": 3287
+      "sha256": "cc2d9b5dea0781f2ce26f86c3b691e7a522779ba34ea56b3c0cbfe44f887f74b",
+      "size": 3296
     },
     {
       "path": "overlay/config-provider.toml",
@@ -326,7 +326,7 @@
     },
     {
       "path": "overlay/config-tools.toml",
-      "sha256": "3af3d2e4daa6dbe9e808df00434cb83b6fc532ef9ea588e60b5ded85fb494cca",
+      "sha256": "7d38ea6dbceb7cab629f10d657c6750818aeeb7b682ee086ee1976f18233494c",
       "size": 20053
     },
     {

@@ -8,12 +8,18 @@ use superba_core::Locale;
 use super::State;
 use super::model::{Category, Model, Rail};
 use crate::design::fonts::{Weight, font, mono_font};
+use crate::design::widgets::Text;
 use crate::pages::Cx;
 
 /// Height of one rail item.
 const ITEM_H: f32 = 28.0;
-/// Space between rail items.
-const ITEM_GAP: f32 = 4.0;
+/// Space between rail items. Tight, so that every category still fits under the
+/// strip's intent chips at 1280×800 with the wider English labels (the rail is
+/// what the chips stand next to; a cut list would need the "N more" line).
+const ITEM_GAP: f32 = 2.0;
+/// Height of the "more categories" line drawn under a cut list, plus the space
+/// the layout puts before it.
+const MORE_H: f32 = 26.0;
 
 /// Draw the rail.
 pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model) {
@@ -64,13 +70,19 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model) {
         r.center().y,
         egui::Stroke::new(1.0, cx.pal.border),
     );
-    // Categories that fit the rail; with an unusually long list the rest are
-    // reached through search.
+    // Categories that fit the rail. A window too short for the whole list keeps
+    // the rest in reach of the search field — and says how many are left: a cut
+    // list is never silent. The list stops one item early when the made-up line
+    // would otherwise leave the item below it with no room.
+    let total = model.categories.len();
+    let mut drawn = 0;
     for (i, c) in model.categories.iter().enumerate() {
         let n = counts.categories.get(&c.id).copied().unwrap_or(0);
         let label = category_label(cx, c);
         let on = state.filter.rail == Rail::Category(c.id.clone());
-        if i > 0 && item_height(ui, &label, n, width, on) > ui.available_height() {
+        let room = ui.available_height();
+        let height = item_height(ui, &label, n, width, on);
+        if i > 0 && (height > room || (i + 1 < total && height + ITEM_GAP + MORE_H > room)) {
             break;
         }
         if item(ui, cx, width, &label, n, on) {
@@ -80,8 +92,17 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model) {
                 Rail::Category(c.id.clone())
             });
         }
+        drawn += 1;
+    }
+    if drawn < total {
+        let more = cx.tr.f(
+            "codex_settings.rail.more",
+            &[("n", &(total - drawn).to_string())],
+        );
+        ui.add(egui::Label::new(Text::caption(more, cx.pal)).truncate());
     }
     if let Some(rail) = pick {
+        // The rail is its own question; a chip's few keys stop applying.
         state.filter.rail = rail;
     }
 }

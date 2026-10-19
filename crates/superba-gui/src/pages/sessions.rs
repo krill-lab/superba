@@ -294,17 +294,28 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     };
     header(ui, cx, state, &selected, &provider, out);
     let body = ui.available_rect_before_wrap();
+    // The provider table takes only the height its rows need, and the history
+    // below takes the rest: a one-row provider list must not leave ~350 px of
+    // white with the pager pinned to the bottom of the region (user complaint).
+    // The cap keeps the history one header and one row at the least.
+    let provider_rows = ordered_len(cx, state, &selected, &provider);
+    let gap = 10.0;
+    let room = (body.height() - gap * 5.0).max(0.0);
+    let rest = size::CONTROL + 48.0 + 10.0 + 24.0;
+    let history_min = size::TABLE_HEADER + size::ROW + 4.0;
+    let cap = (room - rest - history_min).max(size::ROW + size::TABLE_HEADER);
+    let provider_h = provider_table_height(provider_rows).min(cap);
     let rows = layout::row_rects(
         body,
         &[
             Track::Fixed(size::CONTROL),
             Track::Fixed(48.0),
             Track::Fixed(10.0),
-            Track::Fill,
+            Track::Fixed(provider_h),
             Track::Fixed(24.0),
             Track::Fill,
         ],
-        10.0,
+        gap,
     );
     layout::fixed(ui, rows[0], |ui| switcher(ui, cx, state, &hosts));
     match &selected {
@@ -561,6 +572,30 @@ fn ordered(report: &SessionReport, current: &str) -> Vec<(String, u32)> {
     providers
 }
 
+/// Height the provider table wants for `rows` rows: its header, the rows and
+/// one blank row. It is a fixed track, so a short list does not stretch.
+fn provider_table_height(rows: usize) -> f32 {
+    size::TABLE_HEADER + (rows + 1) as f32 * (size::ROW + 8.0)
+}
+
+/// Providers in the report on screen now: this computer's scan, or the selected
+/// host's last scan (0 while it is still loading).
+fn ordered_len(cx: &Cx<'_>, state: &State, selected: &Option<HostEntry>, provider: &str) -> usize {
+    match selected {
+        None => cx
+            .data
+            .sessions
+            .value
+            .as_ref()
+            .map_or(0, |(report, _)| ordered(report, provider).len()),
+        Some(h) => state
+            .remote
+            .get(&h.id)
+            .and_then(|s| s.value.as_ref())
+            .map_or(0, |v| ordered(&v.report, provider).len()),
+    }
+}
+
 fn bar(ui: &mut Ui, report: &SessionReport, current: &str) {
     let counts: Vec<u32> = ordered(report, current).iter().map(|(_, c)| *c).collect();
     ui.add(SplitBar::new(&counts));
@@ -711,6 +746,9 @@ fn history(
     PagedTable::new("sessions-history", table, history.len(), paging)
         .label(cx.tr.t("sessions.a11y.history"))
         .header(headers)
+        // A short history keeps its own height instead of filling the pane
+        // (user complaint: white space under a two-row history).
+        .shrink()
         .row_height(size::ROW + 4.0)
         .footer(|ui| {
             ui.add(egui::Label::new(Text::caption(note, cx.pal)).truncate());

@@ -40,7 +40,7 @@ zh_basis = ""
 ["config:model_reasoning_summary"]
 en = ""
 en_hash = ""
-zh_name = "推理摘要"
+zh_name = "思考摘要"
 zh = "请求模型返回推理摘要的方式（Responses API `reasoning.summary`）：`auto`、`concise`（简要）、`detailed`（详细）或 `none`（不要摘要）。未设置时使用模型目录中的默认值。"
 zh_basis = ""
 
@@ -56,7 +56,7 @@ zh_basis = "a145eb61b4db12ac"
 en = "Optional verbosity control for GPT-5 models (Responses API `text.verbosity`)."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
 en_hash = "a2439ce42fdd8318"
-zh_name = "输出详细度"
+zh_name = "回答详细程度"
 zh = "控制 GPT-5 系列模型回复的详细程度（Responses API `text.verbosity`），可选 `low`、`medium`、`high`。只对模型目录标明支持该参数的模型生效，其他模型会忽略它并在日志中警告；未设置时使用模型的默认值。"
 zh_basis = "a2439ce42fdd8318"
 
@@ -79,7 +79,7 @@ zh_basis = "70d523a0ca3c4ee7"
 ["config:plan_mode_reasoning_effort"]
 en = ""
 en_hash = ""
-zh_name = "计划模式推理强度"
+zh_name = "计划模式的思考强度"
 zh = "终端界面（TUI）中计划（Plan）模式专用的推理强度。未设置时使用 Plan 预设的默认值（目前为 `medium`）；设置后（包括 `none`）覆盖该预设，其中 `none` 表示不推理，而不是沿用全局设置。"
 zh_basis = ""
 

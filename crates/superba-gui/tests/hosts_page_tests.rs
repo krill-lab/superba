@@ -12,6 +12,7 @@ use std::sync::Arc;
 use pretty_assertions::assert_eq;
 use router_harness::Harness;
 use superba_core::{HostSyncAction, Locale, SwitchIntent, TargetId};
+use superba_gui::i18n::Tr;
 use superba_gui::pages::hosts::{self, State, sync};
 use superba_gui::pages::{Action, NavBadge};
 use support::fake::{FakeOptions, FakeService};
@@ -71,12 +72,19 @@ fn the_detail_shows_where_the_host_is_its_codex_and_the_sync_summary() {
         "上次同步",
         "本机之后改了 3 项",
         "本机 4 项设置 → 该主机可接收 3 项，1 项需要更新 Codex",
-        "可以（app 记录了 hostId）",
         "随本机切换",
         "查看会话 →",
     ] {
         assert!(f.has(want), "{want} missing:\n{}", f.all_text());
     }
+    // Whether the app can hot-switch this host is a locale value
+    // (`hosts.hot.ok`): from the catalogue, so a copy change cannot leave this
+    // assertion behind.
+    assert!(
+        f.has(&Tr::new(Locale::ZhCn).t("hosts.hot.ok")),
+        "{}",
+        f.all_text()
+    );
     // The sidebar count is the shell's (one source); the page adds none.
     assert_eq!(hosts::status(&state).badge, NavBadge::None);
     assert_eq!(state.unsynced(), 1);
@@ -189,10 +197,17 @@ fn the_sync_dialog_groups_rows_unticks_conflicts_and_plans_a_host_sync() {
         "上次同步写入、本机已不再设置；恢复主机原来的值",
         "冲突",
         "同步 3 项",
-        "同步后会热重启 devbox 上的 Codex 内核",
     ] {
         assert!(f.has(want), "{want} missing:\n{}", f.all_text());
     }
+    // The restart note is a locale value (`hosts.syncdlg.restart`), with the
+    // host's label in it: from the catalogue, so a copy change cannot leave this
+    // assertion behind.
+    assert!(
+        f.has(&Tr::new(Locale::ZhCn).f("hosts.syncdlg.restart", &[("host", &"devbox")])),
+        "{}",
+        f.all_text()
+    );
     // Let the dialog settle (it re-centres once its full size is known), then
     // click like a user would.
     let f = h.frames(3, |ui, cx, out| hosts::show(ui, cx, &mut state, out));
@@ -257,7 +272,8 @@ fn without_hosts_the_empty_state_names_the_app_and_no_ssh_config() {
         |ui, cx, out| hosts::show(ui, cx, &mut state, out),
         |f| f.has("没有远程主机"),
     );
-    assert!(f.has("ChatGPT 桌面 app 还没有记录任何远程主机"));
+    // `hosts.empty.body`, from the catalogue (the copy says 桌面版 now).
+    assert!(f.has(&Tr::new(Locale::ZhCn).t("hosts.empty.body")));
     assert!(!f.has(".ssh"));
     let mut h = Harness::new([1280.0, 800.0], Locale::En, fake(), true);
     let service = fake();
@@ -266,7 +282,7 @@ fn without_hosts_the_empty_state_names_the_app_and_no_ssh_config() {
     let mut state = State::default();
     h2.until(
         |ui, cx, out| hosts::show(ui, cx, &mut state, out),
-        |f| f.has("The ChatGPT desktop app doesn't know any remote host yet."),
+        |f| f.has(&Tr::new(Locale::En).t("hosts.empty.body")),
     );
     let _ = &mut h;
 }
@@ -495,9 +511,15 @@ fn the_connection_names_the_line_with_the_same_origin_not_only_the_same_host() {
     }
     h.data.sites.insert(0, other);
     let mut state = State::default();
+    // The connection line is a locale value (`auth.short.pat` after the site and
+    // the line's name): from the catalogue, so a copy change cannot leave this
+    // assertion behind.
+    let pat = Tr::new(Locale::En).t("auth.short.pat");
+    let krill_line = format!("Krill · Overseas · {pat}");
+    let lab_line = format!("Lab · Lab line · {pat}");
     let f = h.until(
         |ui, cx, out| hosts::show(ui, cx, &mut state, out),
-        |f| f.has("Krill · Overseas · PAT") || f.has("Lab · Lab line · PAT"),
+        |f| f.has(&krill_line) || f.has(&lab_line),
     );
-    assert!(f.has("Krill · Overseas · PAT"), "{}", f.all_text());
+    assert!(f.has(&krill_line), "{}", f.all_text());
 }

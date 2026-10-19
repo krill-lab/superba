@@ -145,6 +145,7 @@ pub struct PagedTable<'a> {
     right_aligned: Vec<usize>,
     label: String,
     row_name: Option<RowNameFn<'a>>,
+    shrink: bool,
 }
 
 impl<'a> PagedTable<'a> {
@@ -169,6 +170,7 @@ impl<'a> PagedTable<'a> {
             right_aligned: Vec::new(),
             label: String::new(),
             row_name: None,
+            shrink: false,
         }
     }
 
@@ -219,6 +221,15 @@ impl<'a> PagedTable<'a> {
         self
     }
 
+    /// Draw only as many rows as there are, plus one blank row, instead of
+    /// filling the whole height the page gave. A short list then keeps its own
+    /// height: a one-row list would otherwise leave a hand-sized hole with the
+    /// pager pinned to its bottom (user complaint about 会话 and 用量).
+    pub fn shrink(mut self) -> Self {
+        self.shrink = true;
+        self
+    }
+
     /// Also handle the navigation keys while nothing has keyboard focus (the
     /// page's main list).
     pub fn keys_when_idle(mut self, on: bool) -> Self {
@@ -235,22 +246,44 @@ impl<'a> PagedTable<'a> {
     /// Draw rows with `cell(ui, row, column)`.
     pub fn show(self, ui: &mut Ui, mut cell: impl FnMut(&mut Ui, usize, usize)) -> PagedResponse {
         let pal = Palette::of(ui.ctx());
-        let rect = ui.available_rect_before_wrap();
+        let mut rect = ui.available_rect_before_wrap();
         let header_h = if self.header.is_some() {
             size::TABLE_HEADER
         } else {
             0.0
         };
-        let footer_h = if self.pager || self.footer_extra.is_some() {
+        // Tiles: n rows take n heights and n - 1 gaps.
+        let gap = self.tile_gap.unwrap_or(0.0);
+        let pitch = self.row_height + gap;
+        let per_page_at = |footer_h: f32| {
+            let list_h = (rect.height() - header_h - footer_h).max(self.row_height);
+            rows_per_page(list_h + gap, pitch)
+        };
+        // The footer band is reserved only when something is drawn in it: with a
+        // single page the pager draws nothing at all (see `Pager::show`), so the
+        // list keeps that height instead of leaving a dead strip under it.
+        let reserved = if self.pager || self.footer_extra.is_some() {
             size::FOOTER
         } else {
             0.0
         };
-        let list_h = (rect.height() - header_h - footer_h).max(self.row_height);
-        // Tiles: n rows take n heights and n - 1 gaps.
-        let gap = self.tile_gap.unwrap_or(0.0);
-        let pitch = self.row_height + gap;
-        let per_page = rows_per_page(list_h + gap, pitch);
+        let pager_draws =
+            self.pager && super::pager::page_count(self.total, per_page_at(reserved)) > 1;
+        let footer_h = if self.footer_extra.is_some() || pager_draws {
+            reserved
+        } else {
+            0.0
+        };
+        let mut per_page = per_page_at(footer_h);
+        // A short list keeps its own height — header, its rows, one blank row —
+        // rather than the whole region it was given (`.shrink()`).
+        if self.shrink {
+            per_page = per_page.min(self.total.saturating_add(1)).max(1);
+            let rows_h =
+                per_page as f32 * self.row_height + per_page.saturating_sub(1) as f32 * gap;
+            let used = (header_h + rows_h + footer_h).min(rect.height());
+            rect = Rect::from_min_size(rect.min, vec2(rect.width(), used));
+        }
         let before = (self.state.page, self.state.selected);
         self.state.resize(per_page, self.total);
 

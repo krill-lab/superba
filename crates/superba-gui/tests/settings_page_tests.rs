@@ -99,20 +99,30 @@ async fn settings_fit_both_sizes_and_locales_with_the_shipped_catalog() {
             assert!(!report.scrolled, "{size:?} {locale:?}");
             assert_eq!(report.scroll_areas, 0, "{size:?} {locale:?}");
             assert!(report.fits(), "{size:?} {locale:?}: {report:?}");
-            let min = if size[1] >= 900.0 { 13 } else { 11 };
+            // The strip's second line (the intent chips above the rail) costs
+            // the list one row at the 800 px window; the chips are what tells a
+            // reader where to start, so they are worth it.
+            let min = if size[1] >= 900.0 { 12 } else { 10 };
             assert!(
                 st.table.per_page >= min,
                 "{size:?} {locale:?}: {} rows",
                 st.table.per_page
             );
             let text = report.all_text();
-            // The first row is selected and its detail pane is docked.
-            let first = st.rows()[0].path.clone();
+            // The first row is selected and its detail pane is docked. The row
+            // shows its human name; the raw key is only in the technical fold.
+            let first = st.rows()[0]
+                .title_for(locale == Locale::ZhCn)
+                .text
+                .to_owned();
             assert!(text.contains(&first), "{text}");
             if locale == Locale::ZhCn {
                 assert!(text.contains("本机"), "{text}");
                 assert!(text.contains("常用"), "{text}");
-                assert!(text.contains("官方说明"), "{text}");
+                // The pane is three layers: a conclusion, the control, two folds.
+                assert!(text.contains("现在："), "{text}");
+                assert!(text.contains("为什么要改这个？"), "{text}");
+                assert!(text.contains("技术详情"), "{text}");
                 assert!(!text.contains("暂缺中文"), "{text}");
             } else {
                 assert!(text.contains("This computer"), "{text}");
@@ -146,7 +156,7 @@ async fn every_entry_shown_without_advanced_has_a_chinese_name_and_explanation()
 }
 
 #[tokio::test]
-async fn rows_are_chinese_first_and_common_is_the_first_rail_item() {
+async fn rows_are_chinese_first_without_key_names_and_common_is_the_first_rail_item() {
     let service = fake();
     let data = data(&service).await;
     let model = model(&data, None);
@@ -163,8 +173,10 @@ async fn rows_are_chinese_first_and_common_is_the_first_rail_item() {
         },
     );
     let text = report.all_text();
-    assert!(text.contains("审批策略"), "{text}");
-    assert!(text.contains("approval_policy"), "{text}");
+    assert!(text.contains("命令审批"), "{text}");
+    // The middle column is the human name and one sentence, never the raw key:
+    // that is under the detail pane's "technical details".
+    assert!(!text.contains("approval_policy"), "{text}");
     assert!(text.contains("已修改"), "{text}");
     assert_eq!(st.rows()[0].path, "approval_policy");
 }
@@ -255,7 +267,7 @@ async fn reserved_keys_link_to_the_page_that_owns_them() {
     let model = model(&data, None);
     for (path, link) in [
         ("model_context_window", "在「模型」页管理 →"),
-        ("service_tier", "由速度档位管理 →"),
+        ("service_tier", "由速度模式管理 →"),
         ("openai_base_url", "由供应商管理 →"),
     ] {
         if model.entry(path).is_none() {
@@ -309,7 +321,10 @@ async fn narrow_windows_show_the_detail_as_a_sheet_over_the_list() {
             settings_page::show(ui, cx, &mut st, out);
         },
     );
-    assert!(report.all_text().contains("取值"), "{}", report.all_text());
+    let text = report.all_text();
+    assert!(text.contains("现在："), "{text}");
+    assert!(text.contains("为什么要改这个？"), "{text}");
+    assert!(text.contains("技术详情"), "{text}");
 }
 
 #[tokio::test]
@@ -336,7 +351,7 @@ async fn palette_titles_are_chinese_names_and_focus_selects_the_row() {
         .iter()
         .find(|i| i.keywords.iter().any(|k| k == "approval_policy"))
         .unwrap();
-    assert_eq!(approval.title, "审批策略");
+    assert_eq!(approval.title, "命令审批");
     assert!(matches!(
         &approval.action,
         Action::PageCommand { command, .. } if command == "focus:approval_policy"
@@ -451,5 +466,274 @@ async fn rail_categories_are_never_cut_and_use_the_width_of_large_windows() {
                 .count();
             assert_eq!(tall, 0, "{size:?}: one line per category");
         }
+    }
+}
+
+#[tokio::test]
+async fn a_cut_rail_says_how_many_categories_it_hides() {
+    // Review: a short window cut the rail mid-list ("功能开…") without a word.
+    // A window too short for every category must say how many are left, and the
+    // number must be the one really hidden.
+    let service = fake();
+    let data = data(&service).await;
+    let model = model(&data, None);
+    let total = model.categories.len();
+    let mut seen_hint = false;
+    for (li, locale) in [Locale::ZhCn, Locale::En].into_iter().enumerate() {
+        let tag = ["zh", "en"][li];
+        let tr = superba_gui::i18n::Tr::new(locale);
+        let labels: Vec<String> = model
+            .categories
+            .iter()
+            .map(|c| match (&c.label_zh, locale) {
+                (Some(zh), Locale::ZhCn) => zh.clone(),
+                _ => {
+                    let key = format!("catalog.category.{}", c.id);
+                    let t = tr.t(&key);
+                    if t == key { c.label.clone() } else { t }
+                }
+            })
+            .collect();
+        // Narrow windows wrap labels to two lines, so the rail is cut even
+        // though the page still fits; the hint has to appear within the page.
+        for width in [960.0, 1120.0, 1280.0] {
+            for height in [760.0, 800.0, 900.0] {
+                let size = [width, height];
+                let mut st = state(model.clone(), Rail::Common);
+                let report = render_fit(size, locale, egui::Theme::Light, &data, |ui, cx, out| {
+                    settings_page::show(ui, cx, &mut st, out);
+                });
+                // The page starts right of the sidebar: rail labels sit in the
+                // first 176 px of the page, the list column starts after them.
+                let rail_right = report.rect.min.x + 176.0;
+                let drawn = labels
+                    .iter()
+                    .filter(|l| {
+                        report
+                            .text_shapes
+                            .iter()
+                            .any(|t| t.0 == **l && t.1.min.x < rail_right)
+                    })
+                    .count();
+                let hint = report.texts.iter().find(|t| {
+                    (t.starts_with("还有 ") && t.contains(" 项"))
+                        || (t.ends_with(" to search") && t.contains(" more · "))
+                });
+                match hint {
+                    Some(hint) => {
+                        seen_hint = true;
+                        let n: usize = hint
+                            .trim_start_matches("还有 ")
+                            .split(' ')
+                            .next()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or_else(|| panic!("no count in {hint:?}"));
+                        assert_eq!(
+                            n,
+                            total - drawn,
+                            "{tag} {size:?}: {hint:?} with {drawn}/{total} drawn"
+                        );
+                    }
+                    None => assert!(
+                        report.scrolled || drawn == total,
+                        "{tag} {size:?}: {drawn}/{total} drawn, no hint"
+                    ),
+                }
+            }
+        }
+    }
+    assert!(seen_hint, "no size cut the rail with a visible hint");
+}
+
+/// The three layers are reachable by pointer: the two folds are ordinary
+/// buttons, so a click opens the technical details and (through the same
+/// widget) the keyboard and AccessKit reach them too.
+#[tokio::test]
+async fn the_detail_pane_folds_open_with_a_click() {
+    let service = fake();
+    let data = data(&service).await;
+    let model = model(&data, None);
+    let mut st = state(model, Rail::Common);
+    st.focus("approval_policy");
+    let h = support::ui::Harness::new([1280.0, 800.0], egui::Theme::Light);
+    let tr = superba_gui::i18n::Tr::new(Locale::ZhCn);
+    let fonts = superba_gui::design::fonts::FontReport::default();
+    let idle = support::idle_service();
+    let mut show = |ui: &mut egui::Ui| {
+        let cx = superba_gui::pages::Cx {
+            tr: &tr,
+            pal: superba_gui::design::Palette::of(ui.ctx()),
+            data: &data,
+            busy: false,
+            now: superba_core::Timestamp::now(),
+            fonts: &fonts,
+            service: &idle,
+            log: &[],
+        };
+        let page = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1280.0, 800.0));
+        let mut area = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(page)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        let mut actions = Vec::new();
+        settings_page::show(&mut area, &cx, &mut st, &mut actions);
+    };
+    let drawn = |texts: &[(String, egui::Rect)]| {
+        texts
+            .iter()
+            .map(|(t, _)| t.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let closed = h.settle(&mut show);
+    let before = drawn(&closed);
+    // Layer 1 states the current value in the user's words; the two folds are
+    // offered, with the raw key, default and English原文 kept inside them.
+    assert!(before.contains("现在："), "{before}");
+    assert!(before.contains("为什么要改这个？"), "{before}");
+    assert!(before.contains("技术详情"), "{before}");
+    assert!(!before.contains("官方说明"), "{before}");
+    // One click on the fold header opens the technical details.
+    assert!(
+        h.click_text("技术详情", &mut show),
+        "the fold header is clickable"
+    );
+    let open = h.settle(&mut show);
+    let after = drawn(&open);
+    assert!(after.contains("官方说明"), "{after}");
+    assert!(after.contains("Default approval policy"), "{after}");
+}
+
+/// The six chips, in the order the rail draws them.
+const INTENT_LABELS: [&str; 6] = [
+    "codex_settings.intent.ask_less",
+    "codex_settings.intent.my_files",
+    "codex_settings.intent.network",
+    "codex_settings.intent.model",
+    "codex_settings.intent.tokens",
+    "codex_settings.intent.defaults",
+];
+
+/// Every chip narrows the list to the keys that decide its question (five of
+/// them; "restore defaults" opens the changed list instead). No chip is empty
+/// and none names a key the catalog does not have.
+#[tokio::test]
+async fn intent_chips_narrow_the_list_to_their_few_keys() {
+    let service = fake();
+    let data = data(&service).await;
+    let model = model(&data, None);
+    let paths: Vec<String> = model.entries.iter().map(|e| e.path.clone()).collect();
+    let mut filtering = 0;
+    for i in superba_gui::pages::settings::model::INTENTS {
+        if i.paths.is_empty() {
+            continue;
+        }
+        filtering += 1;
+        for p in i.paths {
+            assert!(paths.iter().any(|e| e == p), "{}: no key {p}", i.id);
+        }
+        let st = state(model.clone(), Rail::Intent(i.id));
+        let rows: Vec<String> = st.rows().iter().map(|e| e.path.clone()).collect();
+        assert_eq!(rows.len(), i.paths.len(), "{}: {rows:?}", i.id);
+        for p in i.paths {
+            assert!(
+                rows.iter().any(|r| r == p),
+                "{}: missing {p}: {rows:?}",
+                i.id
+            );
+        }
+    }
+    assert_eq!(filtering, 5, "five chips filter; `defaults` opens a rail");
+}
+
+/// The chips are ordinary buttons drawn above the rail: all six are on screen
+/// at the 1280 px window, one click answers its question (the list narrows to
+/// that one key), and a second click goes back to the rail.
+#[tokio::test]
+async fn intent_chips_are_buttons_that_change_the_list() {
+    let service = fake();
+    let data = data(&service).await;
+    let model = model(&data, None);
+    let mut st = state(model, Rail::Common);
+    let h = support::ui::Harness::new([1280.0, 800.0], egui::Theme::Light);
+    let tr = superba_gui::i18n::Tr::new(Locale::ZhCn);
+    let fonts = superba_gui::design::fonts::FontReport::default();
+    let idle = support::idle_service();
+    let mut show = |ui: &mut egui::Ui| {
+        let cx = superba_gui::pages::Cx {
+            tr: &tr,
+            pal: superba_gui::design::Palette::of(ui.ctx()),
+            data: &data,
+            busy: false,
+            now: superba_core::Timestamp::now(),
+            fonts: &fonts,
+            service: &idle,
+            log: &[],
+        };
+        let page = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1280.0, 800.0));
+        let mut area = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(page)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        let mut actions = Vec::new();
+        settings_page::show(&mut area, &cx, &mut st, &mut actions);
+    };
+    let drawn = |texts: &[(String, egui::Rect)]| {
+        texts
+            .iter()
+            .map(|(t, _)| t.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let before = drawn(&h.settle(&mut show));
+    for key in INTENT_LABELS {
+        assert!(before.contains(&tr.t(key)), "{key} missing:\n{before}");
+    }
+    // The Common rail's rows are listed.
+    assert!(before.contains("文件与网络权限"), "{before}");
+    assert!(
+        h.click_text(&tr.t("codex_settings.intent.ask_less"), &mut show),
+        "the chip is clickable"
+    );
+    let asked = drawn(&h.settle(&mut show));
+    assert!(asked.contains("命令审批"), "{asked}");
+    assert!(!asked.contains("文件与网络权限"), "{asked}");
+    // The same chip again goes back to the rail.
+    assert!(h.click_text(&tr.t("codex_settings.intent.ask_less"), &mut show));
+    let back = drawn(&h.settle(&mut show));
+    assert!(back.contains("文件与网络权限"), "{back}");
+}
+
+/// A window too narrow for the six labels leaves the chips out (the rail and
+/// the search field still answer the same questions) and keeps the one-line
+/// strip, so the list is not squeezed twice.
+#[tokio::test]
+async fn narrow_windows_leave_the_intent_chips_out() {
+    // "少问几次" is a chip and nothing else, so its presence is the chip row's.
+    let tr = superba_gui::i18n::Tr::new(Locale::ZhCn);
+    let label = tr.t("codex_settings.intent.ask_less");
+    for (size, chips) in [([1280.0, 800.0], true), ([760.0, 640.0], false)] {
+        let service = fake();
+        let data = data(&service).await;
+        let model = model(&data, None);
+        let mut st = state(model, Rail::Common);
+        let report = render_fit(
+            size,
+            Locale::ZhCn,
+            egui::Theme::Light,
+            &data,
+            |ui, cx, out| {
+                settings_page::show(ui, cx, &mut st, out);
+            },
+        );
+        let text = report.all_text();
+        assert_eq!(
+            text.contains(&label),
+            chips,
+            "{size:?}: {label} should {} be drawn:\n{text}",
+            if chips { "" } else { "not" }
+        );
     }
 }

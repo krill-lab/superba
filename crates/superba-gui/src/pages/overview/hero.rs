@@ -35,6 +35,116 @@ use crate::design::widgets::{
 /// Height of the hero card.
 pub const HEIGHT: f32 = 148.0;
 
+/// Height of the hero card folded: the request path below is the detail, so the
+/// first screen is one row — the caption, the one-sentence conclusion, its own
+/// button and the way to the path (task-12 P1).
+pub const COLLAPSED: f32 = 84.0;
+
+/// The card's inner padding.
+const PAD_X: f32 = 20.0;
+const PAD_Y: f32 = 14.0;
+/// Between the conclusion and its button. 10 px plus the button's own 12 px
+/// padding keeps the drawn words within 24 px of each other (task-12 P1).
+const GAP_ACTION: f32 = 10.0;
+/// Between the controls of the folded row's right cluster.
+const GAP_CLUSTER: f32 = 12.0;
+/// What the conclusion keeps before the app action is dropped, or its button
+/// moves to a row of its own.
+const MIN_SENTENCE: f32 = 160.0;
+
+/// The Overview's first line: one sentence saying whether Codex can work right
+/// now and what comes next. The request path is the detail behind it (the
+/// technical words — router, line, speed tier — stay in the path and its
+/// tooltips).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Verdict {
+    /// Another tool manages Codex (GH#5): Superba is not in the path.
+    HandedOff {
+        /// The tool that manages it.
+        tool: String,
+    },
+    /// Codex is using the official ChatGPT login.
+    Official,
+    /// No provider is set up yet.
+    NoProvider,
+    /// A provider is applied, but its line has never been probed (or is being
+    /// probed now).
+    Probing {
+        /// The provider and site, as the provider node names them.
+        name: String,
+    },
+    /// The applied line does not answer.
+    Unreachable {
+        /// The provider and site, as the provider node names them.
+        name: String,
+    },
+    /// Working: requests run through `name` (on `line`, while the site offers
+    /// more than one) at `ms`.
+    Ok {
+        /// The provider and site, as the provider node names them.
+        name: String,
+        /// The line in use; empty while the site has only one.
+        line: Option<String>,
+        /// Latency of the last probe.
+        ms: u32,
+    },
+}
+
+impl Verdict {
+    /// The sentence, in the UI language.
+    pub fn text(&self, cx: &Cx<'_>) -> String {
+        let tr = cx.tr;
+        match self {
+            Verdict::HandedOff { tool } => tr.f("overview.verdict.handed_off", &[("tool", tool)]),
+            Verdict::Official => tr.t("overview.verdict.official"),
+            Verdict::NoProvider => tr.t("overview.verdict.no_provider"),
+            Verdict::Probing { name } => tr.f("overview.verdict.probing", &[("name", name)]),
+            Verdict::Unreachable { name } => {
+                tr.f("overview.verdict.unreachable", &[("name", name)])
+            }
+            Verdict::Ok { name, line, ms } => {
+                let line = line.as_ref().map_or(String::new(), |l| format!(" · {l}"));
+                tr.f(
+                    "overview.verdict.ok",
+                    &[("name", name), ("line", &line), ("ms", &ms.to_string())],
+                )
+            }
+        }
+    }
+
+    /// The colour of the dot in front of the sentence.
+    pub fn status(&self) -> Status {
+        match self {
+            Verdict::Ok { .. } | Verdict::Official => Status::Ok,
+            Verdict::Probing { .. } => Status::Busy,
+            Verdict::Unreachable { .. } => Status::Error,
+            Verdict::NoProvider => Status::Warn,
+            Verdict::HandedOff { .. } => Status::Idle,
+        }
+    }
+
+    /// What the button beside the sentence does; `None` while things work
+    /// (there is nothing to press) and while another tool owns Codex.
+    pub fn action(&self, cx: &Cx<'_>) -> Option<Action> {
+        match self {
+            Verdict::NoProvider if cx.data.providers().is_empty() => Some(Action::StartWizard),
+            Verdict::NoProvider | Verdict::Unreachable { .. } => Some(Action::Go(Page::Providers)),
+            _ => None,
+        }
+    }
+
+    /// The button's label, translated (the state picks the words).
+    pub fn action_label(&self, cx: &Cx<'_>) -> Option<String> {
+        let key = match self {
+            Verdict::NoProvider if cx.data.providers().is_empty() => "overview.verdict.start",
+            Verdict::NoProvider => "overview.verdict.choose",
+            Verdict::Unreachable { .. } => "overview.verdict.switch_line",
+            _ => return None,
+        };
+        Some(cx.tr.t(key))
+    }
+}
+
 /// Side of a node's icon tile.
 const TILE: f32 = 46.0;
 /// How far the router's ghost rises above the line while router mode is off.
@@ -70,6 +180,8 @@ pub struct Node {
 /// The whole path.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Hero {
+    /// The one-sentence conclusion the first screen leads with.
+    pub verdict: Verdict,
     /// 本机.
     pub this: Node,
     /// 本地路由 (a ghost while router mode is off).
@@ -291,6 +403,30 @@ pub fn model(
         .map(|c| c.checked_at)
         .filter(|t| *t > superba_core::Timestamp::EPOCH);
 
+    // The conclusion the Overview opens with (user request 30): one sentence
+    // answering whether Codex can work right now, with the fix beside it when it
+    // cannot. The path below keeps the technical detail.
+    let verdict = if let Some(h) = overview.config.as_ref().and_then(|c| c.handed_off.as_ref()) {
+        Verdict::HandedOff {
+            tool: crate::external::tool_name(cx, &h.to),
+        }
+    } else if data.official_active() {
+        Verdict::Official
+    } else if let (Some(p), Some(s)) = (profile, &site) {
+        let name = crate::app::provider_name(tr, p, s);
+        let line = in_use
+            .as_ref()
+            .filter(|_| s.lines.len() > 1)
+            .map(|r| tr.text(&r.line.name));
+        match latency {
+            Latency::Ms(ms) => Verdict::Ok { name, line, ms },
+            Latency::Unreachable => Verdict::Unreachable { name },
+            Latency::Unknown | Latency::Probing => Verdict::Probing { name },
+        }
+    } else {
+        Verdict::NoProvider
+    };
+
     // 模型 · 速度档.
     let mut model = node(todos, Spot::Model, Icon::Model);
     // config.toml names no model: Codex uses its default, which the newest
@@ -327,6 +463,7 @@ pub fn model(
     };
 
     Hero {
+        verdict,
         this,
         router,
         router_on,
@@ -647,12 +784,314 @@ fn latency_pill(ui: &Ui, cx: &Cx<'_>, center: Pos2, latency: Latency) -> Rect {
     r
 }
 
-/// Draw the hero card in `rect`.
-pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Action>) {
+/// A one-line galley no wider than `max`, ending in an ellipsis when it has to
+/// be cut (the conclusion never wraps).
+fn one_line(ui: &Ui, s: &str, font_id: egui::FontId, max: f32) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::single_section(
+        s.to_owned(),
+        egui::TextFormat {
+            font_id,
+            color: Color32::PLACEHOLDER,
+            ..Default::default()
+        },
+    );
+    job.wrap.max_width = max.max(60.0);
+    job.wrap.max_rows = 1;
+    job.wrap.break_anywhere = true;
+    job.wrap.overflow_character = Some('…');
+    ui.painter().layout_job(job)
+}
+
+/// The conclusion, with a status dot in front and, when the sentence alone is
+/// not enough, the button that moves it on. Returns the action a click queued;
+/// `right` is where the app button's area starts, so the sentence stays clear of
+/// it.
+fn verdict_row(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, inner: Rect, right: f32) -> Option<Action> {
+    let pal = cx.pal;
+    let top = inner.min.y + 34.0;
+    // The button first: the sentence is measured against what is left.
+    let mut clicked = None;
+    let mut text_right = right;
+    if let (Some(action), Some(label)) = (hero.verdict.action(cx), hero.verdict.action_label(cx)) {
+        let w = ui
+            .painter()
+            .layout_no_wrap(
+                label.clone(),
+                font(text::SMALL + 1.0, Weight::Medium),
+                pal.text,
+            )
+            .size()
+            .x
+            + 24.0;
+        let r = Rect::from_min_size(pos2(right - 24.0 - w, top - 13.0), vec2(w, 26.0));
+        if verdict_action(ui, cx, &label, r) {
+            clicked = Some(action);
+        }
+        text_right = r.min.x - 16.0;
+    }
+    let dot_x = inner.min.x + 3.0;
+    ui.painter()
+        .circle_filled(pos2(dot_x, top), 3.5, pal.status(hero.verdict.status()));
+    let g = one_line(
+        ui,
+        &hero.verdict.text(cx),
+        font(text::BODY + 5.0, Weight::Semibold),
+        text_right - dot_x - 13.0,
+    );
+    ui.painter()
+        .galley(pos2(dot_x + 13.0, top - g.size().y / 2.0), g, pal.text);
+    clicked
+}
+
+/// The folded first screen (task-12 P1): one row — the caption with the
+/// conclusion behind the caption's status dot on the left, the conclusion's own
+/// button right behind the sentence (never more than 24 px away) and, at the far
+/// right, the way to the request path. Returns `true` when the reader asked for
+/// the path.
+fn folded_row(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    hero: &Hero,
+    inner: Rect,
+    launch: Option<(crate::design::widgets::Button, Action, String, egui::Vec2)>,
+    out: &mut Vec<Action>,
+) -> bool {
+    let pal = cx.pal;
+    let mid = inner.center().y;
+    // Right to left first, so the conclusion knows what is left of the row.
+    let (_, toggle_w) = detail_label(ui, cx, false);
+    let toggle = Rect::from_min_size(
+        pos2(inner.max.x - toggle_w, mid - 11.0),
+        vec2(toggle_w, 22.0),
+    );
+    let mut right = toggle.min.x - GAP_CLUSTER;
+    let launch = launch.and_then(|(button, action, tip, size)| {
+        let r = Rect::from_min_size(pos2(right - size.x, mid - size.y / 2.0), size);
+        // Narrow windows keep the conclusion and the path toggle; the app
+        // action stays reachable from the todo list and the menu.
+        (r.min.x > inner.min.x + MIN_SENTENCE + 60.0).then_some((r, button, action, tip))
+    });
+    if let Some((r, ..)) = &launch {
+        right = r.min.x - GAP_CLUSTER;
+    }
+    // When the line in use was last probed.
+    if let Some(at) = hero.probed.filter(|_| !hero.provider.ghost) {
+        let g = ui.painter().layout_no_wrap(
+            cx.tr.f("overview.hero.probed", &[("ago", &cx.ago(at))]),
+            font(text::CAPTION, Weight::Regular),
+            pal.text_subtle,
+        );
+        let x = right - g.size().x;
+        if x > inner.min.x + MIN_SENTENCE + 60.0 {
+            ui.painter()
+                .galley(pos2(x, mid - g.size().y / 2.0), g, pal.text_subtle);
+        }
+    }
+    let toggled = detail_toggle(ui, cx, toggle, &cx.tr.t("overview.hero.detail"), false);
+    // The caption, then the conclusion, on the same line.
+    let cap = ui.painter().layout_no_wrap(
+        cx.tr.t("overview.hero.caption"),
+        font(text::SMALL + 1.0, Weight::Medium),
+        pal.text_muted,
+    );
+    let cap_w = cap.size().x;
+    ui.painter().galley(
+        pos2(inner.min.x, mid - cap.size().y / 2.0),
+        cap,
+        pal.text_muted,
+    );
+    let dot_x = inner.min.x + cap_w + 18.0;
+    let text_x = dot_x + 13.0;
+    // The conclusion's own button follows the sentence, and drops to a row of
+    // its own when the window is too narrow to hold both.
+    let spec = hero.verdict.action(cx).zip(hero.verdict.action_label(cx));
+    let action_w = spec.as_ref().map_or(0.0, |(_, label)| {
+        ui.painter()
+            .layout_no_wrap(
+                label.clone(),
+                font(text::SMALL + 1.0, Weight::Medium),
+                pal.text,
+            )
+            .size()
+            .x
+            + 24.0
+    });
+    let room = right - text_x;
+    let beside = action_w == 0.0 || action_w + GAP_ACTION + MIN_SENTENCE <= room;
+    let max = if beside {
+        room - action_w - GAP_ACTION
+    } else {
+        room
+    };
+    let (row_y, action_y) = if beside {
+        (mid, mid)
+    } else {
+        (mid - 14.0, mid + 14.0)
+    };
+    let g = one_line(
+        ui,
+        &hero.verdict.text(cx),
+        font(text::BODY + 5.0, Weight::Semibold),
+        max,
+    );
+    ui.painter()
+        .circle_filled(pos2(dot_x, row_y), 3.5, pal.status(hero.verdict.status()));
+    ui.painter()
+        .galley(pos2(text_x, row_y - g.size().y / 2.0), g.clone(), pal.text);
+    if let Some((action, label)) = spec {
+        let left = if beside {
+            text_x + g.size().x + GAP_ACTION
+        } else {
+            inner.min.x
+        };
+        if verdict_action(
+            ui,
+            cx,
+            &label,
+            Rect::from_min_size(pos2(left, action_y - 13.0), vec2(action_w, 26.0)),
+        ) {
+            out.push(action);
+        }
+    }
+    if let Some((r, button, action, tip)) = launch
+        && ui.put(r, button).on_hover_text(tip).clicked()
+    {
+        out.push(action);
+    }
+    toggled
+}
+
+/// The conclusion's own button in `rect`: its label, a hover wash, a focus ring,
+/// and whether it was clicked.
+fn verdict_action(ui: &mut Ui, cx: &Cx<'_>, label: &str, rect: Rect) -> bool {
+    let pal = cx.pal;
+    let b = Backdrop::of(ui.ctx());
+    let label = label.to_owned();
+    let g = ui.painter().layout_no_wrap(
+        label.clone(),
+        font(text::SMALL + 1.0, Weight::Medium),
+        pal.text,
+    );
+    let resp = ui
+        .interact(
+            rect,
+            ui.scope_id().with("overview-verdict-action"),
+            Sense::click(),
+        )
+        .on_hover_cursor(CursorIcon::PointingHand);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+    let t = hover_t(ui, &resp);
+    if t > 0.0 {
+        ui.painter().rect_filled(
+            rect,
+            radius::INNER,
+            Color32::TRANSPARENT.lerp_to_gamma(b.hover, t),
+        );
+    }
+    ui.painter().galley(
+        pos2(
+            rect.center().x - g.size().x / 2.0,
+            rect.center().y - g.size().y / 2.0,
+        ),
+        g,
+        pal.text.lerp_to_gamma(pal.text_muted, 1.0 - t),
+    );
+    if show_focus(&resp) {
+        focus_ring(ui.painter(), rect, radius::INNER, pal);
+    }
+    resp.clicked()
+}
+
+/// The fold/unfold control's label and the width of its box.
+fn detail_label(ui: &Ui, cx: &Cx<'_>, detail: bool) -> (String, f32) {
+    let label = cx.tr.t(if detail {
+        "overview.hero.collapse"
+    } else {
+        "overview.hero.detail"
+    });
+    let g = ui.painter().layout_no_wrap(
+        label.clone(),
+        font(text::CAPTION, Weight::Medium),
+        cx.pal.text_muted,
+    );
+    (label, g.size().x + 30.0)
+}
+
+/// The chevron that folds the request path away or brings it back, drawn in
+/// `rect`. Returns `true` when it was clicked.
+fn detail_toggle(ui: &mut Ui, cx: &Cx<'_>, r: Rect, label: &str, detail: bool) -> bool {
+    let pal = cx.pal;
+    let b = Backdrop::of(ui.ctx());
+    let label = label.to_owned();
+    let g = ui.painter().layout_no_wrap(
+        label.clone(),
+        font(text::CAPTION, Weight::Medium),
+        pal.text_muted,
+    );
+    let resp = ui
+        .interact(
+            r,
+            ui.scope_id().with("overview-hero-detail"),
+            Sense::click(),
+        )
+        .on_hover_cursor(CursorIcon::PointingHand);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+    let resp = resp.on_hover_text(cx.tr.t(if detail {
+        "overview.hero.collapse_tip"
+    } else {
+        "overview.hero.detail_tip"
+    }));
+    let t = hover_t(ui, &resp);
+    if t > 0.0 {
+        ui.painter().rect_filled(
+            r,
+            radius::INNER,
+            Color32::TRANSPARENT.lerp_to_gamma(b.hover, t),
+        );
+    }
+    // A chevron pointed down while the path is folded away, up while it is out.
+    let c = pos2(r.min.x + 12.0, r.center().y);
+    let s = Stroke::new(1.6, pal.text_muted.lerp_to_gamma(pal.text, t));
+    let dy = if detail { -2.6 } else { 2.6 };
+    ui.painter().extend([
+        Shape::line_segment([c + vec2(-4.6, -dy), c + vec2(0.0, dy)], s),
+        Shape::line_segment([c + vec2(0.0, dy), c + vec2(4.6, -dy)], s),
+    ]);
+    ui.painter().galley(
+        pos2(r.min.x + 24.0, r.center().y - g.size().y / 2.0),
+        g,
+        pal.text_muted.lerp_to_gamma(pal.text, t),
+    );
+    if show_focus(&resp) {
+        focus_ring(ui.painter(), r, radius::INNER, pal);
+    }
+    resp.clicked()
+}
+
+/// Draw the hero card in `rect`: the caption and the conclusion first, the
+/// request path below them while `detail` is on. Returns `true` when the reader
+/// asked to fold or unfold the path.
+#[must_use]
+pub fn show(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    hero: &Hero,
+    rect: Rect,
+    detail: bool,
+    out: &mut Vec<Action>,
+) -> bool {
     let pal = cx.pal;
     let b = Backdrop::of(ui.ctx());
     crate::design::backdrop::panel(ui.painter(), rect, &b);
-    let inner = rect.shrink2(vec2(20.0, 14.0));
+    let inner = rect.shrink2(vec2(PAD_X, PAD_Y));
+    // GH#7: open or reopen ChatGPT through Superba — a quiet second control,
+    // and only on a first screen that has something to switch (task-12 P2).
+    let launch = launch_button(ui, cx, hero);
+    if !detail {
+        // Folded, the first screen is the conclusion in one row, with the way
+        // to the request path at its far right (task-12 P1).
+        return folded_row(ui, cx, hero, inner, launch, out);
+    }
     ui.painter().text(
         pos2(inner.min.x, inner.min.y + 10.0),
         Align2::LEFT_CENTER,
@@ -660,10 +1099,26 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
         font(text::SMALL + 1.0, Weight::Medium),
         pal.text_muted,
     );
-    // GH#7: open or reopen ChatGPT through Superba, always in reach at the top
-    // right (drawn last, over the nodes' hover areas); the probe time moves to
-    // its left.
-    let launch = launch_button(ui, cx, hero, pos2(inner.max.x, inner.min.y + 10.0));
+    let (toggle_label, toggle_w) = detail_label(ui, cx, detail);
+    let toggled = detail_toggle(
+        ui,
+        cx,
+        Rect::from_center_size(
+            pos2(inner.min.x + 160.0 + toggle_w / 2.0, inner.min.y + 10.0),
+            vec2(toggle_w, 22.0),
+        ),
+        &toggle_label,
+        detail,
+    );
+    // Kept inside the card, clear of its rounded corner.
+    let launch = launch.map(|(button, action, tip, size)| {
+        (
+            Rect::from_min_size(pos2(inner.max.x - size.x, inner.min.y), size),
+            button,
+            action,
+            tip,
+        )
+    });
     let action_left = launch
         .as_ref()
         .map_or(inner.max.x, |(r, ..)| r.min.x - 12.0);
@@ -676,6 +1131,10 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
             font(text::CAPTION, Weight::Regular),
             pal.text_subtle,
         );
+    }
+    // The conclusion, and beside it what to press when it is not good news.
+    if let Some(action) = verdict_row(ui, cx, hero, inner, action_left) {
+        out.push(action);
     }
     let col_w = inner.width() / 4.0;
     let cx_of = |i: usize| inner.min.x + col_w * (i as f32 + 0.5);
@@ -779,33 +1238,42 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
     if let Some(c) = &drawn[3].chevron {
         speed_popover(c, cx, out);
     }
+    toggled
 }
 
-/// The desktop app's action (GH#7), its right edge and vertical centre at
-/// `anchor`: "Open ChatGPT with Superba" while ChatGPT is not running,
-/// "Reopen with Superba" while it runs without hot switching (a full restart,
-/// previewed and confirmed). Where it goes, the button, what a click does and
-/// its hover text; `None` when there is nothing to offer.
+/// The desktop app's action (GH#7): "Open ChatGPT with Superba" while ChatGPT is
+/// not running, or "Reopen with Superba" while it runs without hot switching (a
+/// full restart, previewed and confirmed). The button, what a click does, its
+/// hover text and its measured size; `None` when there is nothing to offer, and
+/// while there is nothing to switch (`verdict` = NoProvider/HandedOff). Quiet
+/// otherwise, so it never competes with the conclusion (task-12 P2).
 fn launch_button(
     ui: &Ui,
     cx: &Cx<'_>,
     hero: &Hero,
-    anchor: Pos2,
-) -> Option<(Rect, crate::design::widgets::Button, Action, String)> {
+) -> Option<(crate::design::widgets::Button, Action, String, egui::Vec2)> {
     let launch = hero.launch?;
+    // Nothing to switch yet: the app action is not the answer to "还不能用"
+    // (task-12 P2).
+    if matches!(
+        &hero.verdict,
+        Verdict::NoProvider | Verdict::HandedOff { .. }
+    ) {
+        return None;
+    }
     let (icon, action) = match launch {
         crate::launch::AppLaunch::Open => (Icon::Play, Action::OpenApp),
         crate::launch::AppLaunch::Reopen(_) => (Icon::Bolt, Action::RestartApp),
     };
     let launching = cx.data.launching_app;
-    let button = crate::design::widgets::Button::primary(cx.tr.t(launch.label_key()))
+    // A quiet button: the conclusion is the loudest thing on the first screen.
+    let button = crate::design::widgets::Button::ghost(cx.tr.t(launch.label_key()))
         .small()
         .icon(icon)
         .loading(launching)
         .enabled(!cx.busy && !launching);
     let size = button.desired_size(ui);
-    let rect = Rect::from_min_size(pos2(anchor.x - size.x, anchor.y - size.y / 2.0), size);
-    Some((rect, button, action, cx.tr.t(launch.tip_key())))
+    Some((button, action, cx.tr.t(launch.tip_key()), size))
 }
 
 /// The provider node's popover: the applied provider's lines with their
