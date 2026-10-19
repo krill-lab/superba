@@ -87,7 +87,7 @@ fn every_section_fits_and_keeps_all_five_tabs_on_one_line() {
 }
 
 #[test]
-fn brand_header_keeps_version_channel_status_and_check_button_on_one_line() {
+fn brand_header_keeps_version_channel_and_status_on_one_line() {
     use superba_core::{SelfUpdateStatus, SelfUpdateView, Timestamp};
     let mut data = router_harness::data_from(&service());
     data.selfupdate.finish(Ok(SelfUpdateView {
@@ -129,7 +129,6 @@ fn brand_header_keeps_version_channel_status_and_check_button_on_one_line() {
                 for label in [
                     format!("v{}", env!("CARGO_PKG_VERSION")),
                     tr.t("updates.superba.channel_stable"),
-                    tr.t("superba.home.check"),
                 ] {
                     let (_, rect, elided) = report
                         .text_shapes
@@ -461,4 +460,92 @@ fn preference_edits_still_emit_an_immediate_save() {
             .iter()
             .any(|a| matches!(a, superba_gui::pages::Action::SaveSettings))
     );
+}
+
+#[test]
+fn tabs_do_not_repeat_page_titles_and_settings_keep_compact_anchor_titles() {
+    let data = router_harness::data_from(&service());
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        for window in [[960.0, 640.0], [1280.0, 800.0]] {
+            for section in [
+                SuperbaSection::Updates,
+                SuperbaSection::Diagnostics,
+                SuperbaSection::Data,
+                SuperbaSection::General,
+            ] {
+                let mut pages = PageStates::default();
+                let mut settings = Settings::default();
+                let report = support::fit::render_fit_min_height(
+                    window,
+                    locale,
+                    egui::Theme::Light,
+                    &data,
+                    Page::Superba(section).min_height(),
+                    |ui, cx, out| pages.show(Page::Superba(section), ui, cx, &mut settings, out),
+                );
+                let name = tr.t(section.title_key());
+                let titles: Vec<_> = report
+                    .text_shapes
+                    .iter()
+                    .filter(|(s, r, _)| s == &name && r.top() < report.rect.top() + 250.0)
+                    .collect();
+                if section == SuperbaSection::Data {
+                    assert!(titles.is_empty(), "duplicate data page title: {titles:?}");
+                } else if section == SuperbaSection::General {
+                    // The directory and one anchor, with no duplicate General subsection.
+                    assert_eq!(titles.len(), 2, "{titles:?}");
+                    assert!(
+                        titles.iter().all(|(_, r, _)| r.height() < 29.0),
+                        "oversized anchor: {titles:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        titles.len(),
+                        1,
+                        "only the tab should carry this title: {titles:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn updates_inventory_uses_the_full_panel_width() {
+    use superba_gui::design::{layout, tokens::size};
+    for locale in [Locale::En, Locale::ZhCn] {
+        for window in [[960.0, 640.0], [1280.0, 800.0], [1440.0, 900.0]] {
+            let mut h = AppHarness::new(service(), locale, Page::Superba(SuperbaSection::Updates));
+            h.resize(window);
+            let tree = h.until("update inventory", |t| {
+                t.with_role(Role::Button)
+                    .into_iter()
+                    .any(|id| t.name(id).is_some_and(|n| n.starts_with("Superba, ")))
+            });
+            let row = tree
+                .with_role(Role::Button)
+                .into_iter()
+                .find(|id| tree.name(*id).is_some_and(|n| n.starts_with("Superba, ")))
+                .unwrap();
+            let rect = tree.node(row).bounds().unwrap();
+            let central = egui::Rect::from_min_max(
+                egui::pos2(size::SIDEBAR, 0.0),
+                egui::pos2(window[0], window[1]),
+            );
+            let panel = layout::page_rect(central, true);
+            assert!(
+                (rect.x0 - f64::from(panel.left())).abs() < 2.0,
+                "{rect:?} / {panel:?}"
+            );
+            assert!(
+                f64::from(panel.right()) - rect.x1 <= 20.0,
+                "inventory leaves unused width: {rect:?} / {panel:?}"
+            );
+            assert!(
+                rect.x1 <= f64::from(panel.right()),
+                "inventory overflows: {rect:?}"
+            );
+        }
+    }
 }

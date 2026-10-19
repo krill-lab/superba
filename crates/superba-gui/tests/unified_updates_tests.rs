@@ -422,7 +422,7 @@ fn accessible_rows_include_each_tool_status_versions_and_error_in_both_languages
 fn collapsed_and_expanded_inventory_stays_inside_the_superba_detail() {
     for locale in [Locale::En, Locale::ZhCn] {
         for theme in [egui::Theme::Light, egui::Theme::Dark] {
-            for window in [[960.0, 640.0], [1280.0, 800.0]] {
+            for window in [[960.0, 640.0], [1280.0, 800.0], [1440.0, 900.0]] {
                 for expand in [
                     None,
                     Some(UpdateItem::App),

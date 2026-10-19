@@ -1085,7 +1085,8 @@ pub(super) fn cli_section(
         let standalone = row.kind == CodexInstallKind::Standalone
             || matches!(row.action, CliUpdateAction::Install { .. });
         let with_picker = standalone && !std::mem::replace(&mut picker_shown, true);
-        if ui.available_width() < 800.0 {
+        // Leave room for the localized copy-command button as well as the columns.
+        if ui.available_width() < 1040.0 {
             let path = display_path(&row.binary.path);
             let shown = crate::design::widgets::value_chip::fit(
                 ui,

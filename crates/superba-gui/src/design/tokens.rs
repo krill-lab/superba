@@ -365,10 +365,10 @@ pub mod chrome {
     pub const CARD_PAD_TOP: f32 = 18.0;
 
     /// Top of the first sidebar row: clear of the traffic lights on macOS, in
-    /// line with the page header elsewhere.
+    /// line with the content card elsewhere.
     pub const NAV_TOP: f32 = match BUTTONS {
         Buttons::TrafficLights => 48.0,
-        Buttons::Caption | Buttons::Round => CARD_TOP + CARD_PAD_TOP,
+        Buttons::Caption | Buttons::Round => CARD_TOP,
     };
 
     /// Size of one Windows caption button (Windows 11: 46 x 32 px at 100 %).

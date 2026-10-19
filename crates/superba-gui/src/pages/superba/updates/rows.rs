@@ -31,31 +31,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     let tools = state.tools.view(cx);
     let entries = super::items::inventory(cx, state, &tools);
     let count = entries.iter().filter(|e| e.status.actionable()).count();
-    if ui.available_width() >= 700.0 {
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(cx.tr.t("superba.section.updates"))
-                    .font(crate::design::fonts::font(
-                        28.0,
-                        crate::design::fonts::Weight::Semibold,
-                    ))
-                    .color(cx.pal.text),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                toolbar(ui, cx, state, &entries, &tools, count, out)
-            });
-        });
-    } else {
-        ui.label(
-            egui::RichText::new(cx.tr.t("superba.section.updates"))
-                .font(crate::design::fonts::font(
-                    28.0,
-                    crate::design::fonts::Weight::Semibold,
-                ))
-                .color(cx.pal.text),
-        );
-        ui.horizontal_wrapped(|ui| toolbar(ui, cx, state, &entries, &tools, count, out));
-    }
+    ui.horizontal_wrapped(|ui| toolbar(ui, cx, state, &entries, &tools, count, out));
     ui.add(
         egui::Label::new(Text::small(
             cx.tr

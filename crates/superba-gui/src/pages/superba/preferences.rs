@@ -1,5 +1,5 @@
 //! One scrollable settings page; the original section bodies stay in their modules.
-use super::{Action, Cx, Page, SuperbaSection, appearance, general, network, page_header};
+use super::{Action, Cx, SuperbaSection, appearance, general, network};
 use crate::design::{
     a11y,
     icons::{self, Icon},
@@ -184,7 +184,9 @@ pub(super) fn show(
             if top <= viewport_top + 12.0 {
                 active = section;
             }
-            page_header(ui, cx, Page::Superba(section), |_| {});
+            ui.label(Text::h2(cx.tr.t(section.title_key()), cx.pal));
+            ui.add(egui::Label::new(Text::small(cx.tr.t(section.subtitle_key()), cx.pal)).wrap());
+            ui.add_space(12.0);
             if jump == Some(section) {
                 // Retain the request through layout passes and any residual
                 // wheel animation until this header actually reaches the top.

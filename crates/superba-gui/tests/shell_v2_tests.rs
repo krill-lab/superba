@@ -410,7 +410,10 @@ async fn every_page_renders_in_its_layout_at_both_window_sizes() {
                 );
                 let all = report.all_text();
                 assert!(
-                    all.contains(&tr.t(page.title_key())),
+                    all.contains(&tr.t(match page {
+                        Page::Superba(section) => section.tab().title_key(),
+                        _ => page.title_key(),
+                    })),
                     "{page:?} at {window:?} ({locale:?}) shows its title: {all}"
                 );
                 assert!(

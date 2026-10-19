@@ -13,7 +13,7 @@ pub mod search;
 pub mod update_settings;
 pub mod updates;
 
-use super::{Action, Cx, Page, page_header, section};
+use super::{Action, Cx, Page, section};
 use crate::design::icons::Icon;
 use crate::design::widgets::{UnderlineTab, UnderlineTabs};
 use egui::{Key, Modifiers, Ui};
@@ -214,7 +214,7 @@ pub fn show(
         state.rendered = Some(selected);
     }
     let before = settings.clone();
-    header::show(ui, cx, settings, out);
+    header::show(ui, cx, settings);
     let tab = selected.tab();
     let mut index = SuperbaTab::ALL.iter().position(|t| *t == tab).unwrap_or(0);
     let labels: Vec<_> = SuperbaTab::ALL
@@ -290,16 +290,7 @@ pub fn show(
                             home::show(ui, cx, &mut state.home, settings, notify, out)
                         }
                         SuperbaTab::Updates => {
-                            ui.scope(|ui| {
-                                // The existing CLI detail uses fixed columns above
-                                // 800 px, including a copy-command button. Keep its
-                                // compact layout until those columns have room;
-                                // section internals are shared with the update work.
-                                if ui.available_width() < 1040.0 {
-                                    ui.set_max_width(ui.available_width().min(820.0));
-                                }
-                                updates::show(ui, cx, updates, out);
-                            });
+                            updates::show(ui, cx, updates, out);
                             ui.add_space(24.0);
                             update_settings::show(ui, cx, settings, out);
                         }
@@ -315,7 +306,6 @@ pub fn show(
                                 });
                         }
                         SuperbaTab::Data => {
-                            page_header(ui, cx, Page::Superba(SuperbaSection::Data), |_| {});
                             data::show(ui, cx, settings, &mut state.backups, &mut state.storage, out);
                         }
                     }

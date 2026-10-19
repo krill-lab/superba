@@ -73,7 +73,6 @@ pub fn autostart_section(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out:
     let mac = cfg!(target_os = "macos");
     let key = |plain: &'static str, on_mac: &'static str| if mac { on_mac } else { plain };
     let unavailable = !matches!(cx.data.tray, crate::tray::TrayStatus::Shown(_));
-    section(ui, cx, &cx.tr.t("prefs.general.title"), None);
     Card::new().flat().show(ui, |ui| {
         row(
             ui,

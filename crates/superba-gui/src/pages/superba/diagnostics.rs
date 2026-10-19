@@ -10,16 +10,16 @@ use superba_core::{CodexProcessKind, EnvObservation, FeedOrigin, Severity};
 
 use crate::design::icons::Icon;
 use crate::design::widgets::{Button, Card, Status, StatusDot, Table, Text};
-use crate::pages::{Action, Cx, Page, empty_state, error_state, kv, page_header, section};
+use crate::pages::{Action, Cx, empty_state, error_state, kv, section};
 
 /// Draw the diagnostics page.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     state.poll(ui, cx);
-    page_header(
-        ui,
-        cx,
-        Page::Superba(crate::pages::SuperbaSection::Diagnostics),
-        |ui| {
+    ui.horizontal(|ui| {
+        ui.add(
+            egui::Label::new(Text::small(cx.tr.t("superba.diagnostics.subtitle"), cx.pal)).wrap(),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui
                 .add(
                     Button::ghost(cx.tr.t("superba.diagnostics.copy"))
@@ -41,8 +41,9 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
             {
                 out.push(Action::RunDoctor);
             }
-        },
-    );
+        });
+    });
+    ui.add_space(8.0);
 
     checks(ui, cx);
     ui.add_space(24.0);

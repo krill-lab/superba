@@ -1,13 +1,13 @@
 //! Shared brand, version and update status above every Superba tab.
-use super::{Action, Cx};
+use super::Cx;
 use crate::design::{
     fonts::{Weight, font},
-    widgets::{Badge, Button, Status, StatusDot, Text},
+    widgets::{Badge, Status, StatusDot, Text},
 };
 use egui::{Align, Layout, Ui};
 use superba_core::{SelfUpdateStatus, Settings, UpdateChannel};
 
-pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &Settings, out: &mut Vec<Action>) {
+pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &Settings) {
     let compact = ui.available_width() < 860.0;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = if compact { 8.0 } else { 12.0 };
@@ -32,16 +32,6 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &Settings, out: &mut Vec<
             .outline(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui
-                .add(
-                    Button::new(cx.tr.t("superba.home.check"))
-                        .small()
-                        .loading(cx.data.selfupdate.loading),
-                )
-                .clicked()
-            {
-                out.push(Action::CheckUpdates);
-            }
             let (status, key) = if cx.data.self_update_offered().is_some() {
                 (Status::Warn, "superba.home.available")
             } else if cx

@@ -68,7 +68,7 @@ fn the_empty_top_moves_the_window_and_nothing_below_it() {
         assert_eq!(sidebar.max.x, size::SIDEBAR);
         assert!(sidebar.max.y <= tokens::NAV_TOP);
         assert!(
-            sidebar.height() >= 40.0,
+            sidebar.height() >= 28.0,
             "a comfortable target: {sidebar:?}"
         );
         // Across the content above the page header, left of the window
@@ -385,5 +385,53 @@ fn a_press_on_a_window_edge_resizes_it_also_where_the_top_moves_it() {
             !commands.contains(&ViewportCommand::StartDrag),
             "{direction:?}"
         );
+    }
+}
+
+#[test]
+fn sidebar_tabs_align_with_the_card_and_remain_visible_at_minimum_size() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        for window in WINDOWS {
+            let mut h = AppHarness::new(fake(), locale, Page::Overview);
+            let tree = h.resize(window);
+            let overview = tree
+                .find(Some(Role::Tab), &tr.t(Page::Overview.title_key()))
+                .unwrap();
+            let first = tree.node(overview).bounds().unwrap();
+            let expected_top = if tokens::BUTTONS == Buttons::TrafficLights {
+                48.0
+            } else {
+                backdrop::panel_rect(central(window)).top()
+            };
+            assert!(
+                (first.y0 - f64::from(expected_top)).abs() < 0.5,
+                "{window:?}: {first:?}"
+            );
+            let drag = chrome::drag_rects(screen(window))[0];
+            assert!(f64::from(drag.bottom()) <= first.y0);
+            let mut previous = first.y0;
+            for page in Page::ALL {
+                let name = tr.t(page.sidebar_page().title_key());
+                let id = tree
+                    .find_all(Some(Role::Tab), &name)
+                    .into_iter()
+                    .find(|id| {
+                        tree.node(*id)
+                            .bounds()
+                            .is_some_and(|r| r.x1 <= f64::from(size::SIDEBAR))
+                    })
+                    .unwrap_or_else(|| panic!("{name}: {}", tree.dump()));
+                let node = tree.node(id);
+                let rect = node.bounds().unwrap();
+                assert!(node.supports_action(egui::accesskit::Action::Click));
+                assert!(
+                    rect.y0 >= previous && rect.y1 <= f64::from(window[1] - tokens::CARD_INSET),
+                    "{name}: {rect:?}"
+                );
+                previous = rect.y1;
+            }
+            assert!(tree.unnamed().is_empty(), "{:?}", tree.unnamed());
+        }
     }
 }
