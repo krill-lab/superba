@@ -41,6 +41,7 @@ pub mod authjson;
 pub mod autostart;
 pub mod claude;
 pub mod codex_files;
+pub mod compaction_keys;
 mod engine;
 mod env;
 mod fsx;

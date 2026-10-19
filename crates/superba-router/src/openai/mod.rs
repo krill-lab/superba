@@ -30,7 +30,7 @@ pub mod meta;
 pub mod shape;
 pub mod tap;
 
-mod body;
+pub(crate) mod body;
 mod chat;
 mod models;
 pub(crate) mod route;

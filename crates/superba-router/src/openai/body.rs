@@ -13,7 +13,7 @@ use crate::state::RespBody;
 
 /// Decode one supported content coding, bounded by the request body's limit.
 /// Unknown, stacked and non-text encodings are refused before forwarding.
-pub(super) fn decode(
+pub(crate) fn decode(
     headers: &mut HeaderMap,
     body: Bytes,
     limit: usize,

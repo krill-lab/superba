@@ -327,6 +327,7 @@ pub(crate) struct Shared {
     /// OpenAI ingress state kept across reloads (model lists, fields members
     /// refused).
     pub openai: crate::openai::OpenAiState,
+    pub compaction_proxy: crate::compaction_proxy::Keys,
 }
 
 impl Shared {

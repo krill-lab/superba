@@ -122,6 +122,7 @@ impl RouterServer {
         let tls = paths.as_ref().map(crate::tls::acceptor).transpose()?;
         let (shutdown, _) = watch::channel(false);
         let stats = Arc::new(StatsHub::new(paths.clone()));
+        let compaction_proxy = crate::compaction_proxy::Keys::new(paths.as_ref());
         let shared = Arc::new(Shared {
             generation: RwLock::new(Arc::new(generation)),
             paths,
@@ -140,6 +141,7 @@ impl RouterServer {
             wsl_bound: Mutex::new(Vec::new()),
             claude: crate::claude::ClaudeState::default(),
             openai: crate::openai::OpenAiState::default(),
+            compaction_proxy,
         });
         shared.apply_stats(shared.current().config.stats.as_ref());
         Ok(Self {

@@ -55,6 +55,15 @@ pub(crate) async fn proxy_ws(
     admission: Admission,
 ) -> Response<RespBody> {
     let generation = shared.current();
+    if generation.config.catalog.is_some()
+        || !generation.config.synthetic_models.is_empty()
+        || shared.compaction_proxy.used()
+    {
+        return refuse(
+            &shared,
+            "router compaction requires complete history over HTTP",
+        );
+    }
     let on_upgrade = hyper::upgrade::on(&mut req);
     let (parts, _body) = req.into_parts();
     // The inbound connection's place: an upgraded socket keeps it.

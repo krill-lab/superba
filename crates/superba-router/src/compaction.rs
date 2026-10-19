@@ -139,7 +139,14 @@ pub fn inspect(json: &[u8]) -> CompactionInput {
         match item.kind.as_deref() {
             Some(COMPACTION_TRIGGER_ITEM) => out.trigger = true,
             Some(k) if is_compaction_item(k) => {
-                if let Some(c) = item.encrypted_content.as_deref().filter(|c| !c.is_empty()) {
+                if let Some(c) = item
+                    .encrypted_content
+                    .as_deref()
+                    .filter(|c| !c.is_empty() && !c.starts_with(crate::compaction_proxy::PREFIX))
+                {
+                    // Router capsules are authenticated and expanded before
+                    // each attempt. They are portable across this owner's
+                    // configured accounts, unlike opaque native ciphertext.
                     out.items.push(fingerprint(c));
                 }
             }

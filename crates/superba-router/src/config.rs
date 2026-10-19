@@ -96,6 +96,9 @@ pub struct RouterConfig {
     /// Directional protocol conversion switches (all enabled by default).
     #[serde(default)]
     pub translation: crate::translate::routing::TranslationConfig,
+    /// Verified L2 model routing records supplied by the catalog layer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub synthetic_models: Vec<crate::compaction_proxy::SyntheticModel>,
 }
 
 /// An address the router may listen on for WSL: a private (RFC 1918) or
@@ -313,6 +316,7 @@ impl RouterConfig {
             openai: None,
             gemini: None,
             translation: Default::default(),
+            synthetic_models: Vec::new(),
         }
     }
 
@@ -351,6 +355,25 @@ impl RouterConfig {
                 return Err(Error::invalid(format!(
                     "{ip} is not a WSL adapter address (only private IPv4 addresses are accepted)"
                 )));
+            }
+        }
+        let mut synthetic_ids = BTreeSet::new();
+        for model in &self.synthetic_models {
+            if !synthetic_ids.insert((&model.slug, &model.member)) {
+                return Err(Error::invalid(
+                    "duplicate synthetic model record for a provider",
+                ));
+            }
+            if model.slug.is_empty()
+                || model.model.is_empty()
+                || self.member(&model.member).is_none()
+                || self
+                    .openai_member(&model.member)
+                    .is_none_or(|m| m.responses.is_none())
+            {
+                return Err(Error::invalid(
+                    "synthetic models require an existing Responses member and nonempty model ids",
+                ));
             }
         }
         let mut ids = BTreeSet::new();

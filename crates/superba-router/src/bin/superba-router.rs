@@ -38,6 +38,13 @@ enum Command {
         #[arg(long, env = "SUPERBA_DATA_DIR")]
         data_dir: PathBuf,
     },
+    /// Rotate the vault key used for new compaction summaries. Existing
+    /// summaries remain readable; a running router reads the new key on demand.
+    RotateCompactionKey {
+        /// Superba data dir containing the compaction vault.
+        #[arg(long, env = "SUPERBA_DATA_DIR")]
+        data_dir: PathBuf,
+    },
     /// Keep `run` alive, restarting it when it exits (service backends without a
     /// supervising service manager).
     Supervise {
@@ -68,6 +75,25 @@ fn main() -> ExitCode {
     raise_open_files_limit();
     match cli.command {
         Command::Run { data_dir } => run(data_dir),
+        Command::RotateCompactionKey { data_dir } => {
+            let ctx = superba_core::LocalContext::new(
+                &data_dir,
+                DataDir::new(&data_dir),
+                Arc::new(superba_core::ProcessEnv),
+            );
+            match superba_config::compaction_keys::CompactionKeyStore::new(ctx).rotate() {
+                Ok(_) => {
+                    println!("Compaction key rotated; existing summaries remain readable.");
+                    ExitCode::SUCCESS
+                }
+                Err(_) => {
+                    eprintln!(
+                        "Cannot rotate the compaction key: the Superba vault is unavailable."
+                    );
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Command::Supervise { data_dir } => supervise_cmd(data_dir),
         Command::Status { data_dir } => status(data_dir),
         Command::Uninstall { data_dir } => uninstall(data_dir),

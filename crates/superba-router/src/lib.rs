@@ -99,6 +99,7 @@ pub mod cipher;
 pub mod claude;
 pub mod client;
 pub mod compaction;
+pub mod compaction_proxy;
 pub mod config;
 pub mod doctor;
 pub mod firewall;

@@ -174,6 +174,40 @@ pub(crate) async fn proxy_http(
     } else {
         (body, None)
     };
+    // The merged catalog is authoritative. The explicit seam is only used
+    // without it, never to replace or filter a mixed native/L2 selection.
+    let (body, catalog_selection) = if generation.config.catalog.is_none()
+        && !generation.config.synthetic_models.is_empty()
+        && is_responses_path(&parts.method, &rest)
+    {
+        let plain = match crate::openai::body::decode(&mut parts.headers, body, limit) {
+            Ok(body) => body,
+            Err(response) => return *response,
+        };
+        let model = meta::peek(&parts.headers, &plain).model;
+        let targets: Vec<_> = generation
+            .config
+            .synthetic_models
+            .iter()
+            .filter(|t| Some(t.slug.as_str()) == model.as_deref())
+            .filter_map(|t| {
+                let member = generation
+                    .members
+                    .iter()
+                    .position(|m| m.cfg.id == t.member)?;
+                Some(crate::merged_catalog::Target {
+                    member,
+                    upstream: t.model.clone(),
+                    standard: true,
+                })
+            })
+            .collect();
+        let selection =
+            (!targets.is_empty()).then_some(crate::merged_catalog::Selection { targets });
+        (plain, selection)
+    } else {
+        (body, catalog_selection)
+    };
     if let Some(selection) = &catalog_selection {
         parts.extensions.insert(selection.clone());
     }
@@ -230,11 +264,17 @@ pub(crate) async fn proxy_http(
     // Remote compaction: a compacted conversation stays with the member that
     // made its compaction item; compaction requests skip members that cannot
     // compact (crate::compaction).
-    let route = compaction::route(
-        &generation.member_facts(),
-        &compaction,
-        &shared.stats.compactions,
-    );
+    let mut facts = generation.member_facts();
+    if let Some(selection) = &catalog_selection {
+        for target in &selection.targets {
+            if target.standard {
+                // Only this selected L2 target can delegate compaction. Other
+                // targets for the same slug retain their native capabilities.
+                facts[target.member].compaction = superba_core::CompactionSupport::Supported;
+            }
+        }
+    }
+    let route = compaction::route(&facts, &compaction, &shared.stats.compactions);
     if let Route::Refuse {
         status,
         code,
@@ -319,27 +359,72 @@ pub(crate) async fn proxy_http(
     };
     note_compaction_route(&shared, &generation, &route, pin, now, order.first());
 
-    // Ciphertexts another provider made (GitHub issue 11): what a member
-    // refused before is left out of its body, and a refusal now leaves out
-    // what it names and goes to the same line once more ([`crate::cipher`]).
-    let ciphers = if is_responses_path(&parts.method, &rest) {
-        CipherBody::read(&parts.headers, &body, limit)
-    } else {
-        None
-    };
-    let mut mapped: HashMap<usize, Bytes> = HashMap::new();
-    // Lines that accept zstd get Responses bodies Codex sent uncompressed
-    // compressed (one compression per member body).
-    let client_zstd = content_encoding(&parts.headers).as_deref() == Some("zstd");
-    let compressible = !openai
-        && catalog_selection.is_none()
-        && transport::compressible_path(&parts.method, &rest)
-        && content_encoding(&parts.headers).is_none()
-        && !body.is_empty();
-    let mut compressed: HashMap<usize, Option<Bytes>> = HashMap::new();
+    let mut preparation_error = None;
     let mut failures: Vec<String> = Vec::new();
     let total = order.len();
     for (i, c) in order.into_iter().enumerate() {
+        let mut parts = parts.clone();
+        let synthetic = catalog_selection
+            .as_ref()
+            .is_some_and(|s| s.standard(c.member));
+        let mut attempt_body = body.clone();
+        if let Some(target) = catalog_selection
+            .as_ref()
+            .and_then(|s| s.targets.iter().find(|t| t.member == c.member))
+            && let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&attempt_body)
+            && value["model"].as_str() != Some(target.upstream.as_str())
+        {
+            value["model"] = serde_json::json!(target.upstream);
+            attempt_body = Bytes::from(serde_json::to_vec(&value).expect("request JSON"));
+        }
+        let proxy_compaction = if is_responses_path(&parts.method, &rest) {
+            match crate::compaction_proxy::prepare(
+                &shared,
+                &generation,
+                &mut parts,
+                attempt_body,
+                synthetic,
+                limit,
+            )
+            .await
+            {
+                Ok(prepared) => prepared,
+                Err(response) => {
+                    // A native target may still accept ciphertext that an L2
+                    // target cannot read. Never send a partially prepared body.
+                    preparation_error = Some(response);
+                    continue;
+                }
+            }
+        } else {
+            crate::compaction_proxy::Prepared::unchanged(attempt_body)
+        };
+        let body = proxy_compaction.body.clone();
+        let attempt_rest = if proxy_compaction.transaction.is_some() {
+            rest.trim_end_matches('/')
+                .strip_suffix("/compact")
+                .unwrap_or(&rest)
+        } else {
+            &rest
+        };
+        // Ciphertexts another provider made (GitHub issue 11): what a member
+        // refused before is left out of its body, and a refusal now leaves out
+        // what it names and goes to the same line once more ([`crate::cipher`]).
+        let ciphers = if is_responses_path(&parts.method, &rest) {
+            CipherBody::read(&parts.headers, &body, limit)
+        } else {
+            None
+        };
+        let mut mapped: HashMap<usize, Bytes> = HashMap::new();
+        // Lines that accept zstd get Responses bodies Codex sent uncompressed
+        // compressed (one compression per member body).
+        let client_zstd = content_encoding(&parts.headers).as_deref() == Some("zstd");
+        let compressible = !openai
+            && catalog_selection.is_none()
+            && transport::compressible_path(&parts.method, &rest)
+            && content_encoding(&parts.headers).is_none()
+            && !body.is_empty();
+        let mut compressed: HashMap<usize, Option<Bytes>> = HashMap::new();
         let member = &generation.members[c.member];
         let line = &member.lines[c.line];
         let label = generation.label(c.member, c.line);
@@ -467,7 +552,7 @@ pub(crate) async fn proxy_http(
                         &shared,
                         &generation,
                         &parts,
-                        (&rest, ingress),
+                        (attempt_rest, ingress),
                         c,
                         (z, send_body),
                         drop_turn_state,
@@ -479,7 +564,7 @@ pub(crate) async fn proxy_http(
                     send(
                         &generation,
                         &parts,
-                        (&rest, ingress),
+                        (attempt_rest, ingress),
                         c,
                         send_body,
                         drop_turn_state,
@@ -608,6 +693,35 @@ pub(crate) async fn proxy_http(
                     (reason, Some(resp.status().as_u16()))
                 }
                 None => {
+                    let resp = match crate::compaction_proxy::finish(
+                        &proxy_compaction,
+                        &generation,
+                        c.member,
+                        resp,
+                    )
+                    .await
+                    {
+                        Ok(response) => response,
+                        Err(failure) => {
+                            shared.event(
+                                RouteEventKind::Compaction,
+                                Some(&member.cfg.id),
+                                Some(&line.cfg.id),
+                                Some(failure.message.clone()),
+                            );
+                            if let Some(t) = tracker {
+                                t.finish(End {
+                                    status: Some(superba_core::RequestStatus::Http {
+                                        status: failure.status,
+                                        code: Some(failure.code.into()),
+                                    }),
+                                    error: Some(failure.message.clone()),
+                                    ..End::default()
+                                });
+                            }
+                            return crate::compaction_proxy::error(failure);
+                        }
+                    };
                     if let (Some(cb), Some(t)) = (&ciphers, &mut tracker) {
                         let sent = cb.sent(&shared.stats.ciphers, &member.cfg.id);
                         t.ciphers_sent(sent.ciphers.into_iter().map(|c| c.fp).collect());
@@ -688,6 +802,18 @@ pub(crate) async fn proxy_http(
         None,
         Some(failures.join("; ")),
     );
+    if let Some(response) = preparation_error {
+        if let Some(t) = tracker {
+            t.finish(End {
+                status: Some(superba_core::RequestStatus::Http {
+                    status: response.status().as_u16(),
+                    code: Some("compaction_prepare_failed".into()),
+                }),
+                ..End::default()
+            });
+        }
+        return *response;
+    }
     // A compacted conversation never fails over to a member that cannot
     // read it: say so instead of a bare "no line reachable".
     let (status, code, message) = match &route {
