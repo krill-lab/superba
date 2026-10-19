@@ -182,6 +182,35 @@ async fn a_krill_member_with_its_key_turns_router_mode_on_with_a_local_pat() {
 }
 
 #[tokio::test]
+async fn local_pat_verification_uses_the_router_origin_with_the_real_prober() {
+    let (w, sw) = users_state().await;
+    let mut config = w.router.written.lock().unwrap().last().unwrap().clone();
+    config.listen_port = 0;
+    config.tuning.active_probes = false;
+    let secrets = superba_router::RouterSecrets {
+        router_token: superba_core::Secret::new(ROUTER_TOKEN),
+        member_keys: config
+            .members
+            .iter()
+            .map(|m| (m.id.clone(), superba_core::Secret::new(KEY)))
+            .collect(),
+    };
+    let server = superba_router::RouterServer::bind(config, secrets)
+        .await
+        .unwrap();
+    *w.router.port.lock().unwrap() = Some(server.local_addr().port());
+    let stop = server.shutdown_handle();
+    let task = tokio::spawn(server.serve());
+    *w.prober.http_authapi.lock().unwrap() = Some(superba_net::HttpLineProber::default());
+    sw.router_set_enabled(false).await.unwrap();
+    let plan = sw.plan(router_on_request()).await.unwrap();
+    let outcome = execute(&sw, plan).await;
+    stop.shutdown();
+    task.await.unwrap().unwrap();
+    assert_eq!(outcome.status, OutcomeStatus::Switched, "{outcome:?}");
+}
+
+#[tokio::test]
 async fn turning_the_router_on_applies_a_member_never_another_profile() {
     let (w, sw) = users_state().await;
     // Another Krill profile with a key, applied, but not a member.

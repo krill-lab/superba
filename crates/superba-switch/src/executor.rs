@@ -1872,11 +1872,37 @@ impl Run<'_> {
         if !self.pc.auth.is_some_and(AuthMode::needs_authapi_env) {
             return skipped(text("switch.verify.not_applicable"));
         }
+        // The local PAT belongs to the router, not its selected member. Scope
+        // verification to the configured router origin, never to the observed
+        // process environment: a stale app must not send this token upstream.
+        let router_site = self
+            .pc
+            .endpoints
+            .as_ref()
+            .filter(|e| crate::router::is_router_url(e.openai_base_url.as_str()))
+            .map(|e| {
+                superba_net::new_compatible_site(
+                    superba_core::SiteId::new("superba-router"),
+                    "Superba local router",
+                    &e.openai_base_url,
+                )
+            })
+            .transpose();
+        let router_site = match router_site {
+            Ok(site) => site,
+            Err(e) => {
+                return CheckResult::Failed {
+                    detail: e.to_string(),
+                };
+            }
+        };
         // Without a configured site that owns the destination (for example a
         // restored legacy tutorial config) the key must not be sent anywhere to
         // check it; skip with the reason instead of failing, otherwise such a
         // restore (and uninstall) could never pass verification.
-        let (Some(site), Some(key)) = (&self.pc.site, &self.pc.key) else {
+        let (Some(site), Some(key)) =
+            (router_site.as_ref().or(self.pc.site.as_ref()), &self.pc.key)
+        else {
             return skipped(text("switch.verify.authapi_credentials_missing"));
         };
         // The new app-server authenticates against the auth address of the app

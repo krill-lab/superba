@@ -724,6 +724,8 @@ pub struct FakeProber {
     pub authapi: Mutex<BTreeMap<String, AuthApiHealth>>,
     pub models: Mutex<std::result::Result<Vec<String>, Error>>,
     pub authapi_checks: Mutex<Vec<String>>,
+    /// Use the real origin guard and HTTP whoami for router verification tests.
+    pub http_authapi: Mutex<Option<superba_net::HttpLineProber>>,
     /// `model_list` answers (`None` = not implemented).
     pub model_list: Mutex<Option<std::result::Result<superba_core::ModelList, Error>>>,
     /// Base URLs `model_list` was called with.
@@ -800,11 +802,15 @@ impl LineProber for FakeProber {
 
     async fn check_authapi(
         &self,
-        _site: &Site,
+        site: &Site,
         origin: &superba_core::Origin,
-        _key: &Secret,
+        key: &Secret,
     ) -> Result<AuthApiHealth> {
         self.authapi_checks.lock().unwrap().push(origin.as_str());
+        let http = self.http_authapi.lock().unwrap().clone();
+        if let Some(http) = http {
+            return http.check_authapi(site, origin, key).await;
+        }
         Ok(self
             .authapi
             .lock()
@@ -2566,6 +2572,7 @@ impl World {
                 authapi: Mutex::new(BTreeMap::new()),
                 models: Mutex::new(Ok(Vec::new())),
                 authapi_checks: Mutex::new(Vec::new()),
+                http_authapi: Mutex::new(None),
                 model_list: Mutex::new(None),
                 model_list_calls: Mutex::new(Vec::new()),
                 model_list_versions: Mutex::new(Vec::new()),
