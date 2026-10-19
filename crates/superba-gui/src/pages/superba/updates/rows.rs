@@ -153,6 +153,9 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     if shown == 0 {
         ui.label(Text::muted(cx.tr.t("updates.list.no_updates"), cx.pal));
     }
+    for note in &tools.notes {
+        ui.add(egui::Label::new(Text::small(note, cx.pal)).wrap());
+    }
     if tools.unavailable > 0 {
         ui.label(Text::caption(
             cx.tr
@@ -177,10 +180,12 @@ fn show_row(
     let status = cx.tr.t(entry.status.key());
     let label = entry.operation.as_ref().map(|op| {
         cx.tr.t(match op {
+            Operation::ToolInstall(_) => "updates.list.install",
             Operation::Cancel => "updates.win.cancel",
             Operation::Change => "updates.list.change",
             Operation::Unskip => "updates.superba.unskip",
             Operation::Check => "updates.list.retry",
+            Operation::DownloadPage(_) => "updates.tools.download_page",
             Operation::OpenInstaller(_) => "updates.app.open_installer",
             _ if entry.status == UpdateStatus::Failed => "updates.list.retry",
             _ if entry.status == UpdateStatus::Missing => "updates.list.install",
@@ -216,7 +221,8 @@ fn show_row(
                 Operation::Change
                 | Operation::Unskip
                 | Operation::Check
-                | Operation::OpenInstaller(_),
+                | Operation::OpenInstaller(_)
+                | Operation::DownloadPage(_),
             ) => ButtonKind::Secondary,
             _ => ButtonKind::Primary,
         };
@@ -228,6 +234,7 @@ fn show_row(
                     | Operation::Unskip
                     | Operation::Check
                     | Operation::OpenInstaller(_)
+                    | Operation::DownloadPage(_)
             )
         );
         row = row
@@ -277,10 +284,15 @@ fn show_row(
         if matches!(
             operation,
             Operation::Tool(_)
+                | Operation::ToolInstall(_)
                 | Operation::SelfUpdate
                 | Operation::Codex { .. }
                 | Operation::AppDownload
         ) && !entry.cautions.is_empty()
+            || matches!(
+                operation,
+                Operation::ToolVersion { .. } | Operation::ToolRemove { .. }
+            )
         {
             state.confirm = Some(Batch {
                 jobs: vec![entry.clone()],
@@ -388,6 +400,10 @@ fn confirmation(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Actio
                     }
                 });
             if removing {
+                ui.add(
+                    egui::Label::new(Text::small(cx.tr.t("updates.tools.kept_note"), cx.pal))
+                        .wrap(),
+                );
                 let tools = state.tools.view(cx);
                 for job in &mut batch.jobs {
                     if let Some(Operation::ToolRemove { id, remove_data }) = &mut job.operation

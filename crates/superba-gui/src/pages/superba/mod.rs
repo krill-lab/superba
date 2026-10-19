@@ -81,7 +81,7 @@ impl SuperbaSection {
     pub fn subtitle_key(self) -> &'static str {
         match self {
             Self::Home => "superba.home.subtitle",
-            Self::Updates => "page.updates.subtitle",
+            Self::Updates => "updates.list.subtitle",
             Self::Diagnostics => "superba.diagnostics.subtitle",
             Self::Data => "superba.data.subtitle",
             Self::General => "superba.general.subtitle",

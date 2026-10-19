@@ -1,4 +1,5 @@
 //! The real Superba update page with isolated fixtures. No real tool is probed.
+//! `--tool-root ROOT` reads actual tool files in ROOT/home with caches in ROOT/data.
 //! `cargo run -p superba-gui --example updates_gallery -- --zh --dark --narrow --output FILE`
 #![allow(dead_code)]
 #[path = "../tests/support/mod.rs"]
@@ -113,6 +114,7 @@ impl eframe::App for Gallery {
             });
         self.frames += 1;
         if self.frames >= 8
+            && !tools.checking
             && let Some(path) = self.output.take()
         {
             let ctx = ui.ctx().clone();
@@ -179,7 +181,31 @@ fn main() -> eframe::Result {
     let mut pages = PageStates::default();
     pages.updates.view.value = Some(versions);
     pages.updates.view.at = Some(Instant::now());
-    pages.updates.tools = Source(Arc::new(DemoTools::default()));
+    pages.updates.tools = if let Some(root) = args.windows(2).find(|a| a[0] == "--tool-root") {
+        // Explicit isolated context: never inherit PATH or the real user home.
+        let root = PathBuf::from(&root[1]);
+        let context = superba_core::LocalContext::new(
+            root.join("home"),
+            superba_core::DataDir::new(root.join("data")),
+            Arc::new(
+                superba_core::MapEnv::new()
+                    .with(
+                        "PATH",
+                        root.join("home/.local/bin").to_string_lossy().as_ref(),
+                    )
+                    .with("SHELL", "/bin/sh"),
+            ),
+        );
+        Source(Arc::new(
+            superba_gui::pages::superba::updates::tools::ServiceTools::new(
+                superba_switch::default_service(context),
+            ),
+        ))
+    } else if has("--service-tools") {
+        Source::default()
+    } else {
+        Source(Arc::new(DemoTools::default()))
+    };
     if has("--expanded") {
         pages.updates.expanded.insert(UpdateItem::AppPin);
         pages.updates.focus = Some(UpdateItem::AppPin);

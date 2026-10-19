@@ -115,6 +115,7 @@ impl ToolsSource for DemoTools {
                 ];
                 ToolRow {
                     entry,
+                    install_cautions: vec![],
                     installs: vec![format!("~/.local/bin/{} · PATH #1", id.as_str())],
                     channels: vec!["stable".into(), "latest".into()],
                     channel: "stable".into(),

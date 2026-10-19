@@ -1,5 +1,8 @@
 //! Tool inventory boundary. The installer adapter supplies snapshots and owns
 //! cooperative cancellation; fixtures implement the same boundary without I/O.
+mod adapter;
+pub use adapter::ServiceTools;
+
 use super::items::{Entry, Operation, UpdateItem, UpdateStatus};
 use crate::design::widgets::{Button, Dropdown, Status, Text, Toggle};
 use crate::pages::{Action, Cx, callout};
@@ -47,6 +50,18 @@ impl ToolId {
             Self::WorkbuddyAi => "workbuddy-ai",
         }
     }
+    /// Corresponding service identity.
+    fn core(self) -> superba_core::ToolId {
+        match self {
+            Self::ClaudeCode => superba_core::ToolId::ClaudeCode,
+            Self::Dsh => superba_core::ToolId::Dsh,
+            Self::Opencode => superba_core::ToolId::Opencode,
+            Self::Pi => superba_core::ToolId::Pi,
+            Self::Zcode => superba_core::ToolId::Zcode,
+            Self::Workbuddy => superba_core::ToolId::Workbuddy,
+            Self::WorkbuddyAi => superba_core::ToolId::WorkbuddyAi,
+        }
+    }
     /// Product name.
     pub fn name(self) -> &'static str {
         match self {
@@ -85,6 +100,8 @@ pub struct ToolRow {
     pub channel: String,
     /// Whether Superba manages the updater; None if not controllable.
     pub managed: Option<bool>,
+    /// Cautions for installing an explicitly chosen version.
+    pub install_cautions: Vec<String>,
     /// Full explanation, PATH notes, vendor policy and last operation log.
     pub notes: Vec<String>,
     /// Log path, if present.
@@ -107,6 +124,8 @@ pub struct Removal {
 pub struct ToolsView {
     /// Supported tools in display order.
     pub rows: Vec<ToolRow>,
+    /// Inventory-wide notices such as disabled online checks or WSL scope.
+    pub notes: Vec<String>,
     /// Tools without a build on this platform; excluded from the list.
     pub unavailable: usize,
     /// An online check is running.
@@ -119,6 +138,8 @@ pub struct ToolsView {
 pub trait ToolsSource: Debug + Send + Sync {
     /// Localized snapshot.
     fn view(&self, cx: &Cx<'_>) -> ToolsView;
+    /// Collect completed operations and their notifications on every page.
+    fn poll(&self, _cx: &Cx<'_>, _out: &mut Vec<Action>) {}
     /// Check every tool online.
     fn check(&self);
     /// Start the row's install/update after its cautions were confirmed.
@@ -133,49 +154,6 @@ pub trait ToolsSource: Debug + Send + Sync {
     fn channel(&self, id: ToolId, channel: String) -> Result<(), String>;
     /// Change ownership of automatic updates.
     fn managed(&self, id: ToolId, enabled: bool) -> Result<(), String>;
-}
-/// No fabricated installation facts are shown by a build without the adapter.
-/// Demo data is explicitly injected by the gallery and tests.
-#[derive(Debug, Default)]
-pub struct PendingTools;
-impl ToolsSource for PendingTools {
-    fn view(&self, cx: &Cx<'_>) -> ToolsView {
-        ToolsView {
-            rows: ToolId::ALL
-                .into_iter()
-                .map(|id| ToolRow {
-                    entry: Entry::new(UpdateItem::Tool(id), id.name(), UpdateStatus::Unknown)
-                        .description(cx.tr.t("updates.list.tools_pending")),
-                    installs: vec![],
-                    channels: vec![],
-                    channel: String::new(),
-                    managed: None,
-                    notes: vec![],
-                    log: None,
-                    versions: vec![],
-                    removal: None,
-                })
-                .collect(),
-            ..Default::default()
-        }
-    }
-    fn check(&self) {}
-    fn start(&self, _: ToolId) -> Result<(), String> {
-        Err("Tool installer is not connected".into())
-    }
-    fn cancel(&self, _: ToolId) {}
-    fn install_version(&self, _: ToolId, _: String) -> Result<(), String> {
-        Err("Tool installer is not connected".into())
-    }
-    fn remove(&self, _: ToolId, _: bool) -> Result<(), String> {
-        Err("Tool installer is not connected".into())
-    }
-    fn channel(&self, _: ToolId, _: String) -> Result<(), String> {
-        Err("Tool installer is not connected".into())
-    }
-    fn managed(&self, _: ToolId, _: bool) -> Result<(), String> {
-        Err("Tool installer is not connected".into())
-    }
 }
 /// Tool detail body, deliberately independent of page headers or scroll areas.
 pub fn section(
@@ -193,34 +171,36 @@ pub fn section(
     for install in &row.installs {
         ui.add(egui::Label::new(Text::mono(install, cx.pal)).wrap());
     }
-    if !row.channels.is_empty() {
-        let mut channel = row.channel.clone();
-        let options: Vec<_> = row
-            .channels
-            .iter()
-            .map(|ch| (ch.clone(), ch.clone()))
-            .collect();
-        ui.horizontal_wrapped(|ui| {
-            ui.label(Text::small(cx.tr.t("updates.list.channel"), cx.pal));
-            Dropdown::new(("tool-channel", id))
-                .label(cx.tr.t("updates.list.channel"))
-                .show_options(ui, &mut channel, &options);
-        });
-        if channel != row.channel {
-            report(source.channel(id, channel), out);
-        }
-    }
-    if let Some(mut managed) = row.managed {
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .add(Toggle::new(&mut managed, cx.tr.t("updates.list.managed")))
-                .changed()
-            {
-                report(source.managed(id, managed), out);
+    ui.add_enabled_ui(row.entry.status != UpdateStatus::Installing, |ui| {
+        if !row.channels.is_empty() {
+            let mut channel = row.channel.clone();
+            let options: Vec<_> = row
+                .channels
+                .iter()
+                .map(|ch| (ch.clone(), adapter::channel_label(cx, id, ch)))
+                .collect();
+            ui.horizontal_wrapped(|ui| {
+                ui.label(Text::small(cx.tr.t("updates.list.channel"), cx.pal));
+                Dropdown::new(("tool-channel", id))
+                    .label(cx.tr.t("updates.list.channel"))
+                    .show_options(ui, &mut channel, &options);
+            });
+            if channel != row.channel {
+                report(source.channel(id, channel), out);
             }
-            ui.label(Text::small(cx.tr.t("updates.list.managed"), cx.pal));
-        });
-    }
+        }
+        if let Some(mut managed) = row.managed {
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add(Toggle::new(&mut managed, cx.tr.t("updates.list.managed")))
+                    .changed()
+                {
+                    report(source.managed(id, managed), out);
+                }
+                ui.label(Text::small(cx.tr.t("updates.list.managed"), cx.pal));
+            });
+        }
+    });
     for caution in &row.entry.cautions {
         callout(ui, cx, Status::Warn, caution);
     }
@@ -255,6 +235,7 @@ pub fn section(
                 {
                     let mut entry = row.entry.clone();
                     entry.latest = Some(selected.clone());
+                    entry.cautions.clone_from(&row.install_cautions);
                     entry.operation = Some(Operation::ToolVersion {
                         id,
                         version: selected.clone(),
@@ -300,7 +281,7 @@ fn report(result: Result<(), String>, out: &mut Vec<Action>) {
 pub struct Source(pub std::sync::Arc<dyn ToolsSource>);
 impl Default for Source {
     fn default() -> Self {
-        Self(std::sync::Arc::new(PendingTools))
+        Self(std::sync::Arc::new(ServiceTools::default()))
     }
 }
 impl std::ops::Deref for Source {

@@ -137,6 +137,8 @@ pub enum Operation {
     },
     /// Tool service install/update.
     Tool(ToolId),
+    /// Install a managed copy beside an existing installation.
+    ToolInstall(ToolId),
     /// Retry the online check.
     Check,
     /// Install the explicitly selected tool version.
@@ -159,6 +161,8 @@ pub enum Operation {
     Unskip,
     /// Cooperatively cancel the row's operation.
     Cancel,
+    /// Open a vendor download page; never part of an update batch.
+    DownloadPage(String),
     /// Open a verified package.
     OpenInstaller(String),
 }

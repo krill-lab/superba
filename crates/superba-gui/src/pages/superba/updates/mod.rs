@@ -406,6 +406,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
 impl State {
     /// Poll on every page so a batch continues while the user navigates away.
     pub fn background(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) {
+        self.tools.poll(cx, out);
         self.poll(cx);
         self.windows.poll(cx);
         self.load(cx);
@@ -537,7 +538,7 @@ impl State {
             Operation::Codex { version, target } => {
                 self.install(cx, version.clone(), target.clone())
             }
-            Operation::Tool(id) => {
+            Operation::Tool(id) | Operation::ToolInstall(id) => {
                 if let Err(text) = self.tools.start(*id) {
                     out.push(Action::Toast {
                         status: Status::Error,
@@ -571,7 +572,9 @@ impl State {
             }
             Operation::Unskip => out.push(Action::SkipSelfUpdate(None)),
             Operation::Cancel => self.cancel(item),
-            Operation::OpenInstaller(path) => out.push(Action::OpenUrl(path.clone())),
+            Operation::OpenInstaller(path) | Operation::DownloadPage(path) => {
+                out.push(Action::OpenUrl(path.clone()))
+            }
         }
     }
 }
