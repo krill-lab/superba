@@ -270,7 +270,7 @@ pub(crate) async fn proxy_http(
             if target.standard {
                 // Only this selected L2 target can delegate compaction. Other
                 // targets for the same slug retain their native capabilities.
-                facts[target.member].compaction = superba_core::CompactionSupport::Supported;
+                facts[target.member].compaction = superba_core::CompactionSupport::Native;
             }
         }
     }
@@ -330,7 +330,12 @@ pub(crate) async fn proxy_http(
                 Ok(targets) => {
                     let allowed: Vec<_> = targets
                         .into_iter()
-                        .filter(|t| route.allows(t.member))
+                        .filter(|t| {
+                            route.allows(t.member)
+                                && catalog_selection.as_ref().is_none_or(|selection| {
+                                    selection.targets.iter().any(|s| s.member == t.member)
+                                })
+                        })
                         .collect();
                     crate::claude::route::attempts(&generation, &allowed, pin, now)
                         .into_iter()
@@ -693,6 +698,27 @@ pub(crate) async fn proxy_http(
                     (reason, Some(resp.status().as_u16()))
                 }
                 None => {
+                    let resp = if converted {
+                        match translate::body::response_with_tools(
+                            resp,
+                            upstream,
+                            Protocol::Responses,
+                            &response_tools,
+                        )
+                        .await
+                        {
+                            Ok(resp) => resp,
+                            Err(e) => {
+                                return translate::body::error(
+                                    Protocol::Responses,
+                                    StatusCode::BAD_GATEWAY,
+                                    &e,
+                                );
+                            }
+                        }
+                    } else {
+                        resp
+                    };
                     let resp = match crate::compaction_proxy::finish(
                         &proxy_compaction,
                         &generation,
@@ -747,27 +773,6 @@ pub(crate) async fn proxy_http(
                         let now = Instant::now();
                         t.answered(c, resp.status().as_u16(), resp.headers(), started, now);
                     }
-                    let resp = if converted {
-                        match translate::body::response_with_tools(
-                            resp,
-                            upstream,
-                            Protocol::Responses,
-                            &response_tools,
-                        )
-                        .await
-                        {
-                            Ok(resp) => resp,
-                            Err(e) => {
-                                return translate::body::error(
-                                    Protocol::Responses,
-                                    StatusCode::BAD_GATEWAY,
-                                    &e,
-                                );
-                            }
-                        }
-                    } else {
-                        resp
-                    };
                     return downstream(
                         shared.clone(),
                         generation.clone(),

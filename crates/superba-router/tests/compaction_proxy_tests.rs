@@ -538,3 +538,271 @@ fn encrypted_function_arguments_cannot_be_silently_summarized_as_plaintext() {
         "compaction_foreign_ciphertext"
     );
 }
+
+fn mixed_catalog_reply(native: bool) -> Mode {
+    Mode::PathReply(Arc::new(move |path, _, body| {
+        if path.ends_with("/models") {
+            return if path == "/native/models" {
+                (
+                    200,
+                    json!({"models":if native {vec![json!({"slug":"deepseek-test","display_name":"Native","context_window":128000,"shell_type":"unified_exec","visibility":"list","supported_reasoning_levels":[],"experimental_supported_tools":[],"supported_in_api":true,"support_verbosity":false,"priority":1,"truncation_policy":{"mode":"bytes","limit":10000},"base_instructions":"Use tools when necessary."})]} else {vec![]}}),
+                )
+            } else {
+                (200, json!({"data":[{"id":"deepseek-test"}]}))
+            };
+        }
+        let req: Value = serde_json::from_slice(body).unwrap();
+        if req["tool_choice"]["type"] == "function" {
+            return (
+                200,
+                json!({"status":"completed","output":[{"type":"function_call","name":"get_probe_value","call_id":"probe","arguments":"{}"}]}),
+            );
+        }
+        if let Some(output) = req["input"]
+            .as_array()
+            .and_then(|a| a.iter().find(|v| v["type"] == "function_call_output"))
+        {
+            return (
+                200,
+                json!({"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":output["output"]}]}]}),
+            );
+        }
+        (200, serde_json::from_str(SUMMARY).unwrap())
+    }))
+}
+
+fn mixed_config(native: &Upstream, synthetic: &Upstream, native_first: bool) -> RouterConfig {
+    let mut members = vec![
+        member(
+            "native",
+            MemberKind::Krill,
+            true,
+            vec![line("one", native.base("/native"))],
+        ),
+        member(
+            "synthetic",
+            MemberKind::Krill,
+            true,
+            vec![line("one", synthetic.base("/native"))],
+        ),
+    ];
+    members[0].compaction = CompactionSupport::Native;
+    members[1].compaction = CompactionSupport::Unsupported;
+    if !native_first {
+        members.reverse();
+    }
+    let mut cfg = test_config(members);
+    cfg.catalog = Some(superba_router::merged_catalog::CatalogConfig {
+        members: ["native", "synthetic"]
+            .into_iter()
+            .map(|id| {
+                (
+                    id.into(),
+                    superba_router::merged_catalog::MemberCatalog {
+                        name: id.into(),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect(),
+        ..Default::default()
+    });
+    // Once catalog selection exists it must win over this obsolete seam.
+    cfg.synthetic_models.push(SyntheticModel {
+        slug: "deepseek-test".into(),
+        member: "native".into(),
+        model: "must-not-win".into(),
+    });
+    cfg
+}
+
+async fn publish_mixed(router: &Router, native: &Upstream, synthetic: &Upstream) {
+    let test: superba_core::RouterModelTest = router
+        .http
+        .post(router.url("/_superba/v1/catalog/test"))
+        .bearer_auth(&router.admin_token)
+        .json(&json!({"model":"synthetic/deepseek-test"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(test.passed, "{}", test.detail);
+    // The L2 side must be independently probed even when the same slug is L1
+    // on the other provider. Only its standard endpoint may receive the probe.
+    let calls: Vec<_> = synthetic
+        .seen()
+        .into_iter()
+        .filter(|s| s.method == "POST")
+        .collect();
+    assert_eq!(calls.len(), 2);
+    assert!(calls.iter().all(|s| s.path == "/v1/responses"));
+    native.seen.lock().unwrap().clear();
+    synthetic.seen.lock().unwrap().clear();
+}
+
+#[tokio::test]
+async fn mixed_slug_native_fails_over_to_synthetic_then_capsule_fails_over_to_native() {
+    let dir = tempfile::tempdir().unwrap();
+    let keys = store(&dir);
+    keys.load().unwrap();
+    let native = upstream(mixed_catalog_reply(true)).await;
+    let synthetic = upstream(mixed_catalog_reply(false)).await;
+    let mut cfg = mixed_config(&native, &synthetic, true);
+    cfg.stats = Some(Default::default());
+    let router = start_files(&cfg, &dir.path().join("data")).await;
+    publish_mixed(&router, &native, &synthetic).await;
+    native.set(Mode::Json(503, r#"{"error":"offline"}"#));
+    synthetic.set(Mode::Json(200, SUMMARY));
+    let resp = router.post(Some("mixed"), &request().to_string()).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(route(&resp), "synthetic/one");
+    let compact = item(&resp.text().await.unwrap());
+    let original: Value = serde_json::from_slice(&native.seen()[0].body).unwrap();
+    assert_eq!(native.seen()[0].path, "/native/responses");
+    assert_eq!(
+        original["input"].as_array().unwrap().last().unwrap()["type"],
+        "compaction_trigger"
+    );
+    assert_eq!(original["previous_response_id"], "must-not-forward");
+    assert!(!original.to_string().contains(COMPACT_PROMPT));
+    let summary: Value = serde_json::from_slice(&synthetic.seen()[0].body).unwrap();
+    assert_eq!(synthetic.seen()[0].path, "/v1/responses");
+    assert_eq!(summary["model"], "deepseek-test");
+    assert_eq!(
+        summary["input"].as_array().unwrap().last().unwrap()["content"][0]["text"],
+        COMPACT_PROMPT
+    );
+    assert!(!summary.to_string().contains("compaction_trigger"));
+    assert!(summary.get("previous_response_id").is_none());
+    let source = Scope::new(
+        "synthetic",
+        format!("Bearer {}", key_of("synthetic")).as_bytes(),
+    );
+    expand(
+        &mut json!({"input":[compact.clone()]}),
+        &keys.load().unwrap(),
+        &[source],
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        expand(
+            &mut json!({"input":[compact.clone()]}),
+            &keys.load().unwrap(),
+            &[Scope::new(
+                "native",
+                format!("Bearer {}", key_of("native")).as_bytes()
+            )],
+            false
+        )
+        .unwrap_err()
+        .code,
+        "compaction_scope_mismatch"
+    );
+
+    // Even with persistent ownership statistics and a sticky L2 session, an
+    // authenticated router capsule can fail over to the recovered native peer.
+    native.set(Mode::Json(200, SUMMARY));
+    synthetic.set(Mode::Json(503, r#"{"error":"offline"}"#));
+    let next = json!({"model":"deepseek-test","stream":true,"input":[compact,{"role":"user","content":"Recall reference"}]});
+    let resp = router.post(Some("mixed"), &next.to_string()).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(route(&resp), "native/one");
+    resp.bytes().await.unwrap();
+    assert_eq!(native.hits(), 2);
+    assert_eq!(synthetic.hits(), 2);
+    for up in [&native, &synthetic] {
+        let sent: Value = serde_json::from_slice(&up.seen()[1].body).unwrap();
+        assert_eq!(sent["input"][0]["role"], "assistant");
+        assert!(sent.to_string().contains("ORCHID-731"));
+        assert!(!sent.to_string().contains(PREFIX));
+    }
+    router.handle.shutdown();
+}
+
+#[tokio::test]
+async fn mixed_slug_synthetic_fails_over_to_native_without_summary_or_header_mutations() {
+    let native = upstream(mixed_catalog_reply(true)).await;
+    let synthetic = upstream(mixed_catalog_reply(false)).await;
+    let router = start(mixed_config(&native, &synthetic, false)).await;
+    publish_mixed(&router, &native, &synthetic).await;
+    synthetic.set(Mode::Json(503, r#"{"error":"offline"}"#));
+    const NATIVE: &str = r#"{"status":"completed","output":[{"type":"compaction","encrypted_content":"native-ciphertext"}]}"#;
+    native.set(Mode::Json(200, NATIVE));
+    let resp = router
+        .http
+        .post(router.url("/backend-api/codex/responses"))
+        .bearer_auth(ROUTER_TOKEN)
+        .header("x-codex-turn-state", "native-state")
+        .json(&request())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert_eq!(route(&resp), "native/one");
+    assert_eq!(
+        resp.json::<Value>().await.unwrap(),
+        serde_json::from_str::<Value>(NATIVE).unwrap()
+    );
+    let sent = &native.seen()[0];
+    assert_eq!(sent.path, "/native/responses");
+    assert_eq!(sent.headers["x-codex-turn-state"], "native-state");
+    let body: Value = serde_json::from_slice(&sent.body).unwrap();
+    assert_eq!(body["input"], request()["input"]);
+    assert_eq!(body["tools"], request()["tools"]);
+    assert_eq!(body["previous_response_id"], "must-not-forward");
+    assert_eq!(synthetic.seen()[0].path, "/v1/responses");
+    assert!(
+        !synthetic.seen()[0]
+            .headers
+            .contains_key("x-codex-turn-state")
+    );
+    router.handle.shutdown();
+}
+
+#[tokio::test]
+async fn mixed_slug_foreign_ciphertext_skips_synthetic_but_remains_intact_for_native() {
+    let native = upstream(mixed_catalog_reply(true)).await;
+    let synthetic = upstream(mixed_catalog_reply(false)).await;
+    let router = start(mixed_config(&native, &synthetic, false)).await;
+    publish_mixed(&router, &native, &synthetic).await;
+    native.set(Mode::Json(200, SUMMARY));
+    let mut req = json!({"model":"deepseek-test","input":[{"type":"compaction","encrypted_content":"native-ciphertext"},{"role":"user","content":"Recall"}]});
+    assert_eq!(post(&router, req.clone()).await.status(), 200);
+    assert_eq!(synthetic.hits(), 0);
+    let sent: Value = serde_json::from_slice(&native.seen()[0].body).unwrap();
+    assert_eq!(sent["input"], req["input"]);
+    req["model"] = json!("synthetic/deepseek-test");
+    let resp = post(&router, req).await;
+    assert_eq!(resp.status(), 400);
+    assert_eq!(
+        resp.json::<Value>().await.unwrap()["error"]["code"],
+        "compaction_foreign_ciphertext"
+    );
+    assert_eq!(synthetic.hits(), 0);
+    assert_eq!(native.hits(), 1, "provider namespace must not fall through");
+    router.handle.shutdown();
+}
+
+#[tokio::test]
+async fn mixed_slug_does_not_promote_unsupported_native_compaction() {
+    let native = upstream(mixed_catalog_reply(true)).await;
+    let synthetic = upstream(mixed_catalog_reply(false)).await;
+    let mut cfg = mixed_config(&native, &synthetic, true);
+    cfg.members[0].compaction = CompactionSupport::Unsupported;
+    let router = start(cfg).await;
+    publish_mixed(&router, &native, &synthetic).await;
+    synthetic.set(Mode::Json(200, SUMMARY));
+    assert_eq!(post(&router, request()).await.status(), 200);
+    assert_eq!(native.hits(), 0);
+    synthetic.set(Mode::Json(503, r#"{"error":"offline"}"#));
+    assert_eq!(post(&router, request()).await.status(), 502);
+    assert_eq!(
+        native.hits(),
+        0,
+        "a synthetic alternative must not enable native compaction"
+    );
+    router.handle.shutdown();
+}

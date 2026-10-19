@@ -1,11 +1,15 @@
 # Synthetic model compaction
 
-The catalog supplies explicit `SyntheticModel { slug, member, model }` records in
-`RouterConfig.synthetic_models`. Multiple members can advertise a bare slug;
-provider-qualified slugs should have one member. Configure that member's standard
-Responses base through `OpenAiMember.responses` (for example `/v1`). No inference
-from model names is used. Native models keep the native remote-compaction path.
-The catalog remains responsible for eligibility and capability probes.
+The merged catalog selects all eligible targets for a slug. Each attempt uses
+that target's `standard` (L2) flag, upstream model and endpoint to prepare its
+own request. A native and a synthetic provider can share a slug and fail over in
+either direction without reusing a summary request or transaction. Another
+provider's L1 catalog never makes a standard-only target native. No inference
+from model names is used; the catalog owns eligibility and capability probes.
+
+Without the merged catalog, callers can supply explicit
+`SyntheticModel { slug, member, model }` records in `RouterConfig.synthetic_models`.
+The merged catalog always takes precedence over that seam.
 
 A trigger starts an ordinary streaming Responses request to the selected model,
 using Codex's unmodified local compact prompt. The complete response is bounded

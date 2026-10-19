@@ -96,7 +96,8 @@ pub struct RouterConfig {
     /// Directional protocol conversion switches (all enabled by default).
     #[serde(default)]
     pub translation: crate::translate::routing::TranslationConfig,
-    /// Verified L2 model routing records supplied by the catalog layer.
+    /// Explicit verified L2 routes for callers without a merged catalog.
+    /// Ignored for selection when `catalog` is configured.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub synthetic_models: Vec<crate::compaction_proxy::SyntheticModel>,
 }

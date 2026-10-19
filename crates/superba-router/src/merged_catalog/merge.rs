@@ -134,18 +134,10 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
     .await;
     fetched.sort_by_key(|(i, _, _)| *i);
     let bundled = builtin(config);
-    let mut known: BTreeSet<String> = bundled
+    let known: BTreeSet<String> = bundled
         .iter()
         .filter_map(|v| v["slug"].as_str().map(str::to_owned))
         .collect();
-    for (_, codex, _) in &fetched {
-        known.extend(
-            codex
-                .entries
-                .iter()
-                .filter_map(|v| v["slug"].as_str().map(str::to_owned)),
-        );
-    }
     let mut rows: BTreeMap<String, RouterCatalogModel> = bundled
         .iter()
         .filter_map(|entry| {
@@ -282,7 +274,9 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
                 continue;
             }
             if known.contains(&id) {
-                // L0 and other members' L1 are authoritative for known ids.
+                // L0 models keep their native fallback. Another member's L1
+                // metadata does not prove this member has a native endpoint;
+                // its standard-only target still needs its own L2 probe.
                 if let Some(row) = rows.get(&id) {
                     let mut row = row.clone();
                     row.sources = vec![proof];
