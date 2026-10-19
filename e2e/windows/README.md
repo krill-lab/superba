@@ -90,7 +90,8 @@ e2e/windows/run.py --vm 3 session down             # restore clean, release the 
 
 ## Alpha.7 regression coverage
 
-The navigation changes and new W91–W101 scenarios are listed in [MATRIX.md](MATRIX.md).
+The 19 navigation destinations and new W91–W101 scenarios are listed in
+[MATRIX.md](MATRIX.md), alongside the adapted update, appearance and notification checks.
 Run the new scenarios after the tool editor, unified update list and installer have
 been integrated into the MSI. Missing dependencies produce SKIP, not PASS.
 
