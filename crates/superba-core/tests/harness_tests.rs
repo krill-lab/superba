@@ -10,6 +10,13 @@ fn u(s: &str) -> Url {
     Url::parse(s).unwrap()
 }
 
+fn profile() -> superba_core::Profile {
+    serde_json::from_value(
+        serde_json::json!({"id":"test", "name":"Test", "site_id":"krill", "auth_mode":"apikey"}),
+    )
+    .unwrap()
+}
+
 fn krill() -> Site {
     catalog::builtin_sites()
         .into_iter()
@@ -46,6 +53,7 @@ fn krill_offers_its_line_for_all_three_protocols() {
     let origin = u("https://api.krill-code.net");
     let eps = provider_endpoints(
         &site,
+        &profile(),
         &origin,
         &u("https://api.krill-code.net/backend-api/codex"),
         None,
@@ -53,15 +61,15 @@ fn krill_offers_its_line_for_all_three_protocols() {
     let get = |p| eps.iter().find(|e| e.protocol == p).unwrap();
     assert_eq!(
         get(HarnessProtocol::Responses).base_text(),
-        "https://api.krill-code.net/codex/v1"
+        "https://api.krill-code.net/v1"
     );
     assert_eq!(
         get(HarnessProtocol::Chat).base_text(),
-        "https://api.krill-code.net/codex/v1"
+        "https://api.krill-code.net/v1"
     );
     assert_eq!(
         get(HarnessProtocol::Anthropic).base_text(),
-        "https://api.krill-code.net/codex"
+        "https://api.krill-code.net"
     );
     assert!(eps.iter().all(|e| e.source == EndpointSource::Krill));
     // Declared endpoints win.
@@ -69,7 +77,7 @@ fn krill_offers_its_line_for_all_three_protocols() {
         chat: Some(u("https://chat.example/v1")),
         anthropic: None,
     };
-    let eps = provider_endpoints(&site, &origin, &origin, Some(&declared));
+    let eps = provider_endpoints(&site, &profile(), &origin, &origin, Some(&declared));
     let chat = eps
         .iter()
         .find(|e| e.protocol == HarnessProtocol::Chat)
@@ -82,8 +90,15 @@ fn krill_offers_its_line_for_all_three_protocols() {
 fn compatible_sites_offer_their_responses_base_and_what_was_declared() {
     let mut site = krill();
     site.kind = SiteKind::Compatible;
+    site.lines.clear();
     let base = u("https://api.example.com/v1");
-    let eps = provider_endpoints(&site, &u("https://api.example.com"), &base, None);
+    let eps = provider_endpoints(
+        &site,
+        &profile(),
+        &u("https://api.example.com"),
+        &base,
+        None,
+    );
     assert_eq!(eps.len(), 1);
     assert_eq!(eps[0].protocol, HarnessProtocol::Responses);
     assert_eq!(eps[0].base_text(), "https://api.example.com/v1");
@@ -91,11 +106,78 @@ fn compatible_sites_offer_their_responses_base_and_what_was_declared() {
         chat: None,
         anthropic: Some(u("https://api.example.com/anthropic")),
     };
-    let eps = provider_endpoints(&site, &u("https://api.example.com"), &base, Some(&declared));
+    let eps = provider_endpoints(
+        &site,
+        &profile(),
+        &u("https://api.example.com"),
+        &base,
+        Some(&declared),
+    );
     assert_eq!(
         eps.iter().map(|e| e.protocol).collect::<Vec<_>>(),
         [HarnessProtocol::Responses, HarnessProtocol::Anthropic]
     );
+}
+
+#[test]
+fn anthropic_uses_the_shared_preset_and_provider_override() {
+    use superba_core::claude::{AnthropicEndpoint, PRESET_KRILL_CODEX, anthropic_preset};
+
+    let site = krill();
+    let origin = u("https://api.krill-code.net");
+    let mut p = profile();
+    for endpoint in [
+        anthropic_preset(PRESET_KRILL_CODEX)
+            .unwrap()
+            .endpoint(Some(&origin))
+            .unwrap(),
+        AnthropicEndpoint::new(u("https://messages.example.com/anthropic")),
+    ] {
+        p.anthropic = Some(endpoint.clone());
+        let eps = provider_endpoints(&site, &p, &origin, &origin, None);
+        let anthropic = eps
+            .iter()
+            .find(|e| e.protocol == HarnessProtocol::Anthropic)
+            .unwrap();
+        assert_eq!(anthropic.base_url, endpoint.base_url);
+        assert_eq!(anthropic.source, EndpointSource::Provider);
+        // OpenAI clients still use the all-models endpoint.
+        assert_eq!(eps[0].base_text(), "https://api.krill-code.net/v1");
+
+        let declared = ProviderProtocols {
+            chat: None,
+            anthropic: Some(u("https://explicit.example.com/messages")),
+        };
+        let eps = provider_endpoints(&site, &p, &origin, &origin, Some(&declared));
+        let anthropic = eps
+            .iter()
+            .find(|e| e.protocol == HarnessProtocol::Anthropic)
+            .unwrap();
+        assert_eq!(anthropic.base_url, declared.anthropic.unwrap());
+        assert_eq!(anthropic.source, EndpointSource::Declared);
+    }
+}
+
+#[test]
+fn compatible_sites_use_the_same_suggested_anthropic_preset_as_claude_code() {
+    let mut site = krill();
+    site.kind = SiteKind::Compatible;
+    site.lines.clear();
+    let mut p = profile();
+    p.base_url_override = Some(u("https://api.deepseek.com/v1"));
+    let eps = provider_endpoints(
+        &site,
+        &p,
+        &u("https://api.deepseek.com"),
+        p.base_url_override.as_ref().unwrap(),
+        None,
+    );
+    let anthropic = eps
+        .iter()
+        .find(|e| e.protocol == HarnessProtocol::Anthropic)
+        .unwrap();
+    assert_eq!(anthropic.base_text(), "https://api.deepseek.com/anthropic");
+    assert_eq!(anthropic.source, EndpointSource::Provider);
 }
 
 #[test]

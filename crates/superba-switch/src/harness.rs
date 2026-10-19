@@ -9,14 +9,6 @@
 //! a per-harness router token from the key store.
 //!
 //! Seams for later work:
-//! - models: the provider's model list as the Models page reads it
-//!   ([`superba_core::SwitchService::models_view`]); the Claude Code branch
-//!   (`cc1`) makes the model sources explicit (Codex list + `/v1/models`,
-//!   merged) — switch [`Switcher::harness_models`] to that list after the
-//!   merge;
-//! - Anthropic endpoints: `superba_core::harness::provider_endpoints`
-//!   (Krill `<line>/codex`, declared ones); after the merge, the provider's
-//!   own `anthropic` endpoint and Claude Code's presets;
 //! - router: [`harness_router_route`] is `None` until the router crate hands
 //!   out per-harness routes and serves `/openai/v1`; until then routed mode
 //!   takes an explicit router URL and token.
@@ -33,8 +25,8 @@ use superba_core::harness::{
     WorkBuddyEdition, pick_protocol, provider_endpoints, routed_endpoint,
 };
 use superba_core::{
-    Error, LocalizedText, ModelVisibility, ModelsViewRequest, Notice, Profile, ProfileId,
-    ProfileSet, ResolvedMode, Result, Secret, SwitchService,
+    Error, LocalizedText, ModelListRequest, ModelSource, ModelVisibility, Notice, Profile,
+    ProfileId, ProfileSet, ResolvedMode, Result, Secret,
 };
 use url::Url;
 
@@ -328,17 +320,31 @@ impl Switcher {
             .cloned())
     }
 
-    /// The provider's models for harnesses (SEAM: the merged model sources
-    /// of the Claude Code branch replace the Models page's list here).
+    /// Read the shared model sources, respecting the provider's selection.
     async fn harness_models(&self, provider: &ProfileId) -> Result<Vec<superba_core::ModelSpec>> {
-        let view = self
-            .models_view(ModelsViewRequest {
-                profile_id: Some(provider.clone()),
+        let set = self.deps.profiles.load().await?;
+        let profile = set.profile(provider).ok_or_else(|| Error::NotFound {
+            what: format!("provider {provider}"),
+        })?;
+        let (site, resolved) = self.direct_resolution(&set, profile).await?;
+        let ResolvedMode::Token { endpoints, key, .. } = &resolved.mode else {
+            return Err(Error::invalid("model sources require an API key"));
+        };
+        let endpoint = superba_core::claude::effective_endpoint(&site, profile);
+        let list = self
+            .deps
+            .prober
+            .model_list(ModelListRequest {
+                site: &site,
+                base_url: &endpoints.openai_base_url,
+                key,
+                client_version: None,
                 refresh: false,
+                source: Some(profile.model_source.unwrap_or(ModelSource::Auto)),
+                standard_base: endpoint.as_ref().map(|e| &e.base_url),
             })
             .await?;
-        Ok(view
-            .list
+        Ok(list
             .models
             .into_iter()
             .filter(|m| m.supported_in_api && !matches!(m.visibility, ModelVisibility::None))
@@ -361,6 +367,7 @@ impl Switcher {
         };
         let list = provider_endpoints(
             &site,
+            profile,
             endpoints.origin.url(),
             &endpoints.openai_base_url,
             config.declared(&profile.id),
@@ -465,7 +472,7 @@ impl Switcher {
         })
     }
 
-    /// [`SwitchService::harness_list`].
+    /// [`superba_core::SwitchService::harness_list`].
     pub(crate) async fn harness_list_impl(&self) -> Result<Vec<HarnessSummary>> {
         let mut out = Vec::new();
         for h in HarnessId::ALL {
@@ -486,7 +493,7 @@ impl Switcher {
         Ok(out)
     }
 
-    /// [`SwitchService::harness_view`].
+    /// [`superba_core::SwitchService::harness_view`].
     pub(crate) async fn harness_view_impl(&self, harness: HarnessId) -> Result<HarnessView> {
         let config = self.harness_store().load()?;
         let settings = config.settings(harness);
@@ -541,7 +548,7 @@ impl Switcher {
         })
     }
 
-    /// [`SwitchService::save_harness_settings`].
+    /// [`superba_core::SwitchService::save_harness_settings`].
     pub(crate) async fn save_harness_settings_impl(
         &self,
         harness: HarnessId,
@@ -575,7 +582,7 @@ impl Switcher {
         self.harness_view_impl(harness).await
     }
 
-    /// [`SwitchService::save_provider_protocols`].
+    /// [`superba_core::SwitchService::save_provider_protocols`].
     pub(crate) async fn save_provider_protocols_impl(
         &self,
         provider: ProfileId,
@@ -601,7 +608,7 @@ impl Switcher {
         store.save(&config)
     }
 
-    /// [`SwitchService::set_harness_router_token`].
+    /// [`superba_core::SwitchService::set_harness_router_token`].
     pub(crate) async fn set_harness_router_token_impl(
         &self,
         harness: HarnessId,
@@ -633,7 +640,7 @@ impl Switcher {
         self.harness_view_impl(harness).await
     }
 
-    /// [`SwitchService::harness_plan`].
+    /// [`superba_core::SwitchService::harness_plan`].
     pub(crate) async fn harness_plan_impl(
         &self,
         harness: HarnessId,
@@ -673,7 +680,7 @@ impl Switcher {
         Ok(plan)
     }
 
-    /// [`SwitchService::harness_apply`].
+    /// [`superba_core::SwitchService::harness_apply`].
     pub(crate) async fn harness_apply_impl(
         &self,
         plan: HarnessPlan,
@@ -688,7 +695,7 @@ impl Switcher {
             .map_err(|e| Error::other(format!("apply task: {e}")))?
     }
 
-    /// [`SwitchService::harness_backups`].
+    /// [`superba_core::SwitchService::harness_backups`].
     pub(crate) async fn harness_backups_impl(
         &self,
         harness: HarnessId,
@@ -699,7 +706,7 @@ impl Switcher {
             .map_err(|e| Error::other(format!("harness task: {e}")))?
     }
 
-    /// [`SwitchService::harness_restore_backup`].
+    /// [`superba_core::SwitchService::harness_restore_backup`].
     pub(crate) async fn harness_restore_backup_impl(
         &self,
         harness: HarnessId,

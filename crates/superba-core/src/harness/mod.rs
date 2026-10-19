@@ -463,9 +463,9 @@ impl HarnessConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EndpointSource {
-    /// The provider's own Responses base URL.
+    /// The provider's own endpoint or suggested preset.
     Provider,
-    /// Krill's line (`<line>/codex/v1` serves all three protocols).
+    /// Krill's line and the shared all-models preset.
     Krill,
     /// Declared for the provider ([`ProviderProtocols`]).
     Declared,
@@ -493,13 +493,6 @@ impl ProtocolEndpoint {
     }
 }
 
-/// Krill's harness path: `<line>/codex/v1` serves the Codex models over
-/// Responses and Chat Completions, `<line>/codex` (+ `/v1/messages`) over
-/// Anthropic Messages (verified with dsh, ZCode, WorkBuddy on the test
-/// relay). Seam: once the merged model sources (Claude Code branch) list
-/// models only `<line>/v1` serves, this may move to `<line>/v1`.
-pub const KRILL_HARNESS_PATH: &str = "/codex";
-
 fn join(origin: &Url, path: &str) -> Option<Url> {
     let base = origin.as_str().trim_end_matches('/');
     Url::parse(&format!("{base}{path}")).ok()
@@ -507,10 +500,12 @@ fn join(origin: &Url, path: &str) -> Option<Url> {
 
 /// The endpoints a provider offers, one per protocol it serves: Krill's line
 /// serves all three; a compatible site its Responses base URL plus what was
-/// declared for it. `origin` is the provider's line origin (Krill) and
-/// `responses_base` its resolved Responses base URL.
+/// declared for it. Anthropic uses the provider's effective Claude Code endpoint
+/// unless a harness endpoint was explicitly declared. `origin` is the resolved
+/// line origin (Krill) and `responses_base` its resolved Responses base URL.
 pub fn provider_endpoints(
     site: &Site,
+    profile: &crate::Profile,
     origin: &Url,
     responses_base: &Url,
     declared: Option<&ProviderProtocols>,
@@ -528,7 +523,11 @@ pub fn provider_endpoints(
     let declared_chat = declared.and_then(|d| d.chat.clone());
     let declared_anthropic = declared.and_then(|d| d.anthropic.clone());
     if site.kind == SiteKind::Krill {
-        let v1 = join(origin, &format!("{KRILL_HARNESS_PATH}/v1"));
+        // The same all-models root as Claude Code's default Krill preset,
+        // with the OpenAI /v1 suffix instead of /v1/messages.
+        let v1 = crate::claude::anthropic_preset(crate::claude::PRESET_KRILL)
+            .and_then(|preset| preset.endpoint(Some(origin)))
+            .and_then(|endpoint| join(&endpoint.base_url, "/v1"));
         push(
             HarnessProtocol::Responses,
             v1.clone(),
@@ -537,21 +536,6 @@ pub fn provider_endpoints(
         match declared_chat {
             Some(u) => push(HarnessProtocol::Chat, Some(u), EndpointSource::Declared),
             None => push(HarnessProtocol::Chat, v1, EndpointSource::Krill),
-        }
-        // SEAM(cc1 merge): Claude Code's Krill presets (`krill`: <line>,
-        // `krill-codex`: <line>/codex) and the provider's own `anthropic`
-        // endpoint replace this.
-        match declared_anthropic {
-            Some(u) => push(
-                HarnessProtocol::Anthropic,
-                Some(u),
-                EndpointSource::Declared,
-            ),
-            None => push(
-                HarnessProtocol::Anthropic,
-                join(origin, KRILL_HARNESS_PATH),
-                EndpointSource::Krill,
-            ),
         }
     } else {
         push(
@@ -564,12 +548,19 @@ pub fn provider_endpoints(
             declared_chat,
             EndpointSource::Declared,
         );
-        push(
-            HarnessProtocol::Anthropic,
-            declared_anthropic,
-            EndpointSource::Declared,
-        );
     }
+    let (anthropic, source) = match declared_anthropic {
+        Some(url) => (Some(url), EndpointSource::Declared),
+        None => (
+            crate::claude::effective_endpoint(site, profile).map(|e| e.base_url),
+            if site.kind == SiteKind::Krill && profile.anthropic.is_none() {
+                EndpointSource::Krill
+            } else {
+                EndpointSource::Provider
+            },
+        ),
+    };
+    push(HarnessProtocol::Anthropic, anthropic, source);
     out
 }
 

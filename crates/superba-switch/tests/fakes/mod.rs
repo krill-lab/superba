@@ -703,6 +703,8 @@ pub struct FakeProber {
     pub model_list_calls: Mutex<Vec<String>>,
     /// The Codex version of each `model_list` call.
     pub model_list_versions: Mutex<Vec<Option<String>>>,
+    /// Explicit source selection and the standard-list endpoint of each call.
+    pub model_list_sources: Mutex<Vec<(Option<superba_core::ModelSource>, Option<Url>)>>,
 }
 
 pub fn good_caps(site: &str, line: &str) -> LineCaps {
@@ -831,6 +833,10 @@ impl LineProber for FakeProber {
             .lock()
             .unwrap()
             .push(request.client_version.map(ToString::to_string));
+        self.model_list_sources
+            .lock()
+            .unwrap()
+            .push((request.source, request.standard_base.cloned()));
         match self.model_list.lock().unwrap().clone() {
             Some(answer) => answer,
             None => Err(superba_core::Error::not_implemented(
@@ -2533,6 +2539,7 @@ impl World {
                 model_list: Mutex::new(None),
                 model_list_calls: Mutex::new(Vec::new()),
                 model_list_versions: Mutex::new(Vec::new()),
+                model_list_sources: Mutex::new(Vec::new()),
             }),
             sessions: Arc::new(FakeSessions {
                 log: log.clone(),

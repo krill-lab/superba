@@ -42,6 +42,58 @@ fn settings(provider: &str) -> HarnessSettings {
 }
 
 #[tokio::test]
+async fn harnesses_use_the_shared_model_source_selection_and_anthropic_base() {
+    use superba_core::ModelSource;
+    use superba_core::claude::AnthropicEndpoint;
+
+    for source in [
+        None,
+        Some(ModelSource::Auto),
+        Some(ModelSource::Codex),
+        Some(ModelSource::Standard),
+    ] {
+        let w = world();
+        let base = Url::parse("https://messages.example.com/anthropic").unwrap();
+        {
+            let mut set = w.profiles.set.lock().unwrap();
+            let p = set
+                .profiles
+                .iter_mut()
+                .find(|p| p.id == ProfileId::new("work"))
+                .unwrap();
+            p.model_source = source;
+            p.anthropic = Some(AnthropicEndpoint::new(base.clone()));
+        }
+        let s = w.switcher();
+        let mut st = settings("work");
+        st.protocol = Some(HarnessProtocol::Anthropic);
+        s.save_harness_settings(HarnessId::Pi, st).await.unwrap();
+        w.prober.model_list_sources.lock().unwrap().clear();
+
+        let plan = s
+            .harness_plan(HarnessId::Pi, HarnessPlanKind::Apply)
+            .await
+            .unwrap();
+        assert_eq!(
+            *w.prober.model_list_sources.lock().unwrap(),
+            vec![(
+                Some(source.unwrap_or(ModelSource::Auto)),
+                Some(base.clone())
+            )],
+        );
+        s.harness_apply(plan, false).await.unwrap();
+        let file: Value = serde_json::from_slice(
+            &std::fs::read(w.ctx.home_dir.join(".pi/agent/models.json")).unwrap(),
+        )
+        .unwrap();
+        let provider = &file["providers"]["superba"];
+        assert_eq!(provider["baseUrl"], base.as_str());
+        assert_eq!(provider["api"], "anthropic-messages");
+        assert_eq!(provider["models"][0]["id"], "gpt-5.6-luna");
+    }
+}
+
+#[tokio::test]
 async fn krill_provider_gives_its_line_for_every_protocol_and_its_models() {
     let w = world();
     let s = w.switcher();
@@ -60,7 +112,7 @@ async fn krill_provider_gives_its_line_for_every_protocol_and_its_models() {
     let e = view.endpoint.unwrap();
     assert_eq!(e.protocol, HarnessProtocol::Responses);
     assert_eq!(e.source, EndpointSource::Krill);
-    assert_eq!(e.base_text(), format!("{OVERSEAS}/codex/v1"));
+    assert_eq!(e.base_text(), format!("{OVERSEAS}/v1"));
     // Apply: the models of the list (hidden ones left out), the provider's key.
     let plan = s
         .harness_plan(HarnessId::Pi, HarnessPlanKind::Apply)
@@ -117,7 +169,7 @@ async fn workbuddy_takes_krills_chat_endpoint_and_chosen_models() {
     )
     .unwrap();
     assert_eq!(v["availableModels"], json!(["gpt-5.4-mini", "by-hand"]));
-    assert_eq!(v["models"][0]["url"], format!("{OVERSEAS}/codex/v1"));
+    assert_eq!(v["models"][0]["url"], format!("{OVERSEAS}/v1"));
     assert_eq!(v["models"][0]["maxInputTokens"], 400000);
     assert!(v["models"][1].get("maxInputTokens").is_none());
 }
