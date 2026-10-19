@@ -750,6 +750,9 @@ impl RouterManager {
     /// SQLite file is never copied from a router that may still be writing it.
     pub async fn stop_for_data_move(&self, wait: Duration) -> Result<()> {
         let runtime = crate::runtime::RuntimeInfo::load(&self.paths).ok();
+        let supervisor = std::fs::read_to_string(self.paths.supervisor_pid())
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok());
         self.uninstall_service()?;
         if let Ok(client) = AdminClient::from_runtime(&self.paths) {
             let _ = client.shutdown().await;
@@ -759,7 +762,8 @@ impl RouterManager {
             let process_alive = runtime
                 .as_ref()
                 .is_some_and(|r| self.runner.is_router_process(r.pid));
-            if !process_alive && !watchdog::check(&self.paths).await.is_up() {
+            let supervisor_alive = supervisor.is_some_and(|pid| self.runner.is_router_process(pid));
+            if !process_alive && !supervisor_alive && !watchdog::check(&self.paths).await.is_up() {
                 return Ok(());
             }
             if Instant::now() >= deadline {

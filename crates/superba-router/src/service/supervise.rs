@@ -98,14 +98,14 @@ fn stop_child(
 
 fn backoff_sleep(
     duration: Duration,
-    stop: &AtomicBool,
+    stop: &dyn Fn() -> bool,
     policy: &SupervisorPolicy,
     now: &dyn Fn() -> Instant,
     sleep: &dyn Fn(Duration),
 ) -> bool {
     let start = now();
     loop {
-        if stopped(stop) {
+        if stop() {
             return true;
         }
         let remaining = duration.saturating_sub(now().saturating_duration_since(start));
@@ -128,11 +128,21 @@ pub fn supervise_with(
     now: &dyn Fn() -> Instant,
     sleep: &dyn Fn(Duration),
 ) -> SuperviseEnd {
+    supervise_until(spawn, &|| stopped(stop), policy, now, sleep)
+}
+
+fn supervise_until(
+    spawn: &mut dyn FnMut() -> io::Result<Box<dyn SupervisedChild>>,
+    stop: &dyn Fn() -> bool,
+    policy: &SupervisorPolicy,
+    now: &dyn Fn() -> Instant,
+    sleep: &dyn Fn(Duration),
+) -> SuperviseEnd {
     let initial = policy.initial_backoff.min(policy.max_backoff);
     let mut backoff = initial;
     let mut failures = 0;
     loop {
-        if stopped(stop) {
+        if stop() {
             return SuperviseEnd::Stopped;
         }
         match spawn() {
@@ -147,7 +157,7 @@ pub fn supervise_with(
                 failures = 0;
                 let started = now();
                 loop {
-                    if stopped(stop) {
+                    if stop() {
                         stop_child(child.as_mut(), policy, now, sleep);
                         return SuperviseEnd::Stopped;
                     }
@@ -229,9 +239,15 @@ pub fn supervise(spec: &ServiceSpec, stop: &AtomicBool) -> Result<SuperviseEnd> 
         tracing::info!(pid = child.id(), "Router started");
         Ok(Box::new(RouterChild(child)))
     };
-    let end = supervise_with(
+    // Removing/replacing the pid file revokes ownership. This lets an ordinary
+    // process of the same user stop a supervisor started while elevated, without
+    // needing permission to terminate that process. Check during both polling
+    // and backoff so it cannot restart a writer after data relocation begins.
+    let revoked =
+        || stopped(stop) || !matches!(read_pid(&spec.pid_file), Ok(Some(pid)) if pid == our_pid);
+    let end = supervise_until(
         &mut spawn,
-        stop,
+        &revoked,
         &SupervisorPolicy::default(),
         &Instant::now,
         &std::thread::sleep,
@@ -240,4 +256,86 @@ pub fn supervise(spec: &ServiceSpec, stop: &AtomicBool) -> Result<SuperviseEnd> 
         remove_file(&spec.pid_file)?;
     }
     Ok(end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+
+    struct Child {
+        pid_file: PathBuf,
+        events: Arc<Mutex<Vec<&'static str>>>,
+        stopped: bool,
+    }
+
+    impl SupervisedChild for Child {
+        fn try_wait(&mut self) -> io::Result<Option<Option<i32>>> {
+            if self.stopped {
+                return Ok(Some(Some(0)));
+            }
+            // An ordinary GUI revokes an elevated supervisor's ownership.
+            std::fs::remove_file(&self.pid_file)?;
+            Ok(None)
+        }
+
+        fn terminate(&mut self) {
+            self.events.lock().unwrap().push("stop child");
+            self.stopped = true;
+        }
+
+        fn kill(&mut self) {
+            panic!("the child stopped gracefully")
+        }
+    }
+
+    #[test]
+    fn revoked_ownership_stops_the_running_child_without_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("supervisor.pid");
+        std::fs::write(&path, "123").unwrap();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let mut spawn = || -> io::Result<Box<dyn SupervisedChild>> {
+            events.lock().unwrap().push("start child");
+            Ok(Box::new(Child {
+                pid_file: path.clone(),
+                events: events.clone(),
+                stopped: false,
+            }))
+        };
+        let revoked = || !matches!(read_pid(&path), Ok(Some(123)));
+        let end = supervise_until(
+            &mut spawn,
+            &revoked,
+            &SupervisorPolicy::default(),
+            &Instant::now,
+            &|_| {},
+        );
+        assert_eq!(end, SuperviseEnd::Stopped);
+        assert_eq!(*events.lock().unwrap(), ["start child", "stop child"]);
+    }
+
+    #[test]
+    fn replaced_ownership_interrupts_restart_backoff() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("supervisor.pid");
+        std::fs::write(&path, "123").unwrap();
+        let mut starts = 0;
+        let mut spawn = || -> io::Result<Box<dyn SupervisedChild>> {
+            starts += 1;
+            std::fs::write(&path, "456").unwrap();
+            Err(io::Error::other("spawn failed"))
+        };
+        let revoked = || !matches!(read_pid(&path), Ok(Some(123)));
+        let end = supervise_until(
+            &mut spawn,
+            &revoked,
+            &SupervisorPolicy::default(),
+            &Instant::now,
+            &|_| panic!("revocation must interrupt backoff immediately"),
+        );
+        assert_eq!(end, SuperviseEnd::Stopped);
+        assert_eq!(starts, 1);
+    }
 }

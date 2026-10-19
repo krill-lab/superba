@@ -211,6 +211,52 @@ fn keys() -> BTreeMap<String, Secret> {
     [("krill".to_owned(), Secret::new(key_of("krill")))].into()
 }
 
+#[tokio::test]
+async fn relocation_waits_for_the_supervisor_even_when_the_router_is_down() {
+    use std::ffi::OsString;
+    use std::path::Path;
+    use superba_router::service::{CommandOutput, CommandRunner};
+
+    #[derive(Debug)]
+    struct StillRunning;
+    impl CommandRunner for StillRunning {
+        fn run(&self, _: &str, _: &[OsString]) -> std::io::Result<CommandOutput> {
+            unreachable!("no process commands expected")
+        }
+        fn spawn_detached(
+            &self,
+            _: &Path,
+            _: &[OsString],
+            _: &[(String, String)],
+            _: &Path,
+        ) -> std::io::Result<u32> {
+            unreachable!("no process creation expected")
+        }
+        fn is_router_process(&self, pid: u32) -> bool {
+            pid == 123
+        }
+        fn terminate(&self, _: u32) -> std::io::Result<()> {
+            unreachable!("service manager owns termination")
+        }
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let manager = RouterManager::new(
+        &DataDir::new(temp.path()),
+        fake_exe(temp.path()),
+        Box::new(InProcess::default()),
+    )
+    .with_diagnostics(Arc::new(StillRunning), false, None);
+    std::fs::create_dir_all(manager.paths().dir()).unwrap();
+    std::fs::write(manager.paths().supervisor_pid(), "123").unwrap();
+    assert!(matches!(
+        manager.stop_for_data_move(Duration::ZERO).await,
+        Err(Error::Timeout { .. })
+    ));
+    std::fs::remove_file(manager.paths().supervisor_pid()).unwrap();
+    manager.stop_for_data_move(Duration::ZERO).await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn enable_update_and_disable() {
     let _serial = SERIAL.lock().await;

@@ -70,7 +70,10 @@ impl DataRouter for SystemDataRouter {
 fn emit(progress: &DataMoveProgressSink, phase: DataMovePhase, bytes: u64) -> Result<()> {
     if progress(DataMoveProgress {
         phase,
-        copied_bytes: if phase == DataMovePhase::Copying {
+        copied_bytes: if matches!(
+            phase,
+            DataMovePhase::Checking | DataMovePhase::Stopping | DataMovePhase::Copying
+        ) {
             0
         } else {
             bytes

@@ -192,17 +192,17 @@ mod windows_tests {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Authorization::{
-        ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW,
-        SDDL_REVISION_1, SE_FILE_OBJECT,
+        ConvertSidToStringSidW, GetNamedSecurityInfoW, SE_FILE_OBJECT,
     };
-    use windows_sys::Win32::Security::DACL_SECURITY_INFORMATION;
+    use windows_sys::Win32::Security::{ACCESS_ALLOWED_ACE, DACL_SECURITY_INFORMATION, GetAce};
 
-    fn dacl(path: &Path) -> String {
+    fn allowed_sids(path: &Path) -> Vec<String> {
         let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut descriptor = std::ptr::null_mut();
-        let mut text = std::ptr::null_mut();
-        // SAFETY: input is NUL-terminated, output pointers receive Windows-owned
-        // allocations. Both allocations are freed after the descriptor is copied.
+        let mut acl = std::ptr::null_mut();
+        let mut sids = Vec::new();
+        // SAFETY: Windows returns a descriptor containing the DACL and ACEs.
+        // Read each SID while the descriptor is alive, then free allocations.
         unsafe {
             assert_eq!(
                 GetNamedSecurityInfoW(
@@ -211,29 +211,34 @@ mod windows_tests {
                     DACL_SECURITY_INFORMATION,
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
-                    std::ptr::null_mut(),
+                    &mut acl,
                     std::ptr::null_mut(),
                     &mut descriptor,
                 ),
                 0,
             );
-            let ok = ConvertSecurityDescriptorToStringSecurityDescriptorW(
-                descriptor,
-                SDDL_REVISION_1,
-                DACL_SECURITY_INFORMATION,
-                &mut text,
-                std::ptr::null_mut(),
-            );
-            LocalFree(descriptor);
-            assert_ne!(ok, 0);
-            let mut length = 0;
-            while *text.add(length) != 0 {
-                length += 1;
+            assert!(!acl.is_null());
+            for index in 0..(*acl).AceCount {
+                let mut ace = std::ptr::null_mut();
+                assert_ne!(GetAce(acl, u32::from(index), &mut ace), 0);
+                let ace = &*ace.cast::<ACCESS_ALLOWED_ACE>();
+                assert_eq!(ace.Header.AceType, 0, "expected an access-allowed ACE");
+                let sid = std::ptr::addr_of!(ace.SidStart).cast_mut().cast();
+                let mut text = std::ptr::null_mut();
+                assert_ne!(ConvertSidToStringSidW(sid, &mut text), 0);
+                let mut length = 0;
+                while *text.add(length) != 0 {
+                    length += 1;
+                }
+                sids.push(String::from_utf16_lossy(std::slice::from_raw_parts(
+                    text, length,
+                )));
+                LocalFree(text.cast());
             }
-            let value = String::from_utf16_lossy(std::slice::from_raw_parts(text, length));
-            LocalFree(text.cast());
-            value
+            LocalFree(descriptor);
         }
+        sids.sort();
+        sids
     }
 
     #[test]
@@ -244,16 +249,12 @@ mod windows_tests {
         let file = path.join("secret.txt");
         fs::write(&file, "fixture").unwrap();
         let user = windows_user_sid().unwrap();
+        let mut expected = vec!["S-1-5-18".to_owned(), user];
+        expected.sort();
         for path in [&path, &file] {
-            let dacl = dacl(path);
-            assert!(dacl.contains(&format!(";;;{user})")), "{dacl}");
-            assert!(dacl.contains(";;;SY)"), "{dacl}");
-            assert!(
-                !dacl.contains(";;;OW)"),
-                "owner may be Administrators: {dacl}"
-            );
-            assert!(!dacl.contains(";;;WD)"), "{dacl}");
-            assert!(!dacl.contains(";;;BU)"), "{dacl}");
+            // SDDL abbreviates the built-in Administrator as LA. Compare the
+            // actual numeric trustees so CI and ordinary user accounts agree.
+            assert_eq!(allowed_sids(path), expected);
         }
     }
 }
