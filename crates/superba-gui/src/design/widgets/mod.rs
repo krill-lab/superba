@@ -57,7 +57,7 @@ pub use toggle::Toggle;
 pub use choice_card::{Choice, ChoiceCard, choice_cards};
 pub use detail_pane::DetailPane;
 pub use dropdown::Dropdown;
-pub use info_card::InfoCard;
+pub use info_card::{FactCard, InfoCard};
 pub use line_tile::{LineTile, tile_columns};
 pub use log_table::LogTable;
 pub use paged_table::{PagedResponse, PagedState, PagedTable, rows_per_page};
@@ -97,3 +97,16 @@ pub mod pill;
 pub use kpi::{Kpi, KpiValue};
 pub use list_row::{ListRow, RowContent, ShareRow, paint_row};
 pub use pill::{NoticePill, StatusPill};
+
+pub mod progress;
+pub mod tile;
+pub use progress::InlineProgress;
+pub use tile::{IconTile, MonogramTile};
+
+pub mod sub_nav;
+pub use sub_nav::{SubNav, SubNavItem};
+
+pub mod attention;
+pub use attention::AttentionRow;
+pub mod update_row;
+pub use update_row::{UpdateGroup, UpdateResponse, UpdateRow, UpdateTile};

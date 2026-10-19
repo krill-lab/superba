@@ -233,6 +233,20 @@ pub mod focus {
 
 /// Fixed sizes from plan 11.1.
 pub mod size {
+    /// Standard section rail width.
+    pub const RAIL: f32 = 164.0;
+    /// Rail width below 760 points of content width.
+    pub const RAIL_NARROW: f32 = 148.0;
+    /// Section navigation row height.
+    pub const RAIL_ROW: f32 = 32.0;
+    /// Brand identity row height.
+    pub const IDENTITY_ROW: f32 = 50.0;
+    /// Wide update row height.
+    pub const UPDATE_ROW: f32 = 44.0;
+    /// Compact update row height.
+    pub const UPDATE_ROW_NARROW: f32 = 50.0;
+    /// Tool selection row height.
+    pub const TOOL_ROW: f32 = 52.0;
     /// Left navigation width.
     pub const SIDEBAR: f32 = 220.0;
     /// Maximum content width of a Scroll page.

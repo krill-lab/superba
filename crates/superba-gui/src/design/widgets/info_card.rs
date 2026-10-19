@@ -92,6 +92,17 @@ pub struct InfoCard<'a> {
 }
 
 impl<'a> InfoCard<'a> {
+    /// A large value with a caption, explanation and optional footer link.
+    pub fn fact(title: impl Into<String>, value: impl Into<String>) -> FactCard {
+        FactCard {
+            title: title.into(),
+            value: value.into(),
+            shape: crate::design::elide::Shape::Prose,
+            description: String::new(),
+            link: None,
+        }
+    }
+
     /// A card titled `title`.
     pub fn new(title: impl Into<String>) -> Self {
         Self {
@@ -323,4 +334,93 @@ fn info_line(ui: &mut Ui, line: &InfoLine, label_width: f32, pal: &Palette) -> O
             .on_hover_text(t);
     }
     copied
+}
+
+/// A predictable-height summary card.
+pub struct FactCard {
+    title: String,
+    value: String,
+    shape: crate::design::elide::Shape,
+    description: String,
+    link: Option<String>,
+}
+impl FactCard {
+    /// How to elide and style the value.
+    pub fn shape(mut self, shape: crate::design::elide::Shape) -> Self {
+        self.shape = shape;
+        self
+    }
+    /// One-line explanation (full text on hover and in accessibility).
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
+        self
+    }
+    /// Localized footer link.
+    pub fn link(mut self, label: impl Into<String>) -> Self {
+        self.link = Some(label.into());
+        self
+    }
+    /// Outer height including the footer.
+    pub fn height(&self) -> f32 {
+        96.0 + if self.link.is_some() { 28.0 } else { 0.0 }
+    }
+    /// Draw in the exact advertised height. The returned response belongs to
+    /// the footer link when present, otherwise to the complete card.
+    pub fn show(self, ui: &mut Ui) -> Response {
+        let height = self.height();
+        let pal = Palette::of(ui.ctx());
+        let (r, response) =
+            ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+        ui.painter()
+            .rect_filled(r, radius::CONTROL + 2, pal.bg_subtle);
+        ui.painter().rect_stroke(
+            r,
+            radius::CONTROL + 2,
+            Stroke::new(1.0, pal.border),
+            egui::StrokeKind::Inside,
+        );
+        let name = format!("{}: {}. {}", self.title, self.value, self.description);
+        crate::design::a11y::text(&response, &name);
+        let content = r.shrink(12.0);
+        let title = elided(
+            ui,
+            &self.title,
+            font(text::CAPTION, Weight::Medium),
+            pal.text_subtle,
+            content.width(),
+        );
+        ui.painter().galley(content.min, title, pal.text_subtle);
+        let value_font = super::value_chip::value_font(self.shape, 22.0);
+        let fitted = super::value_chip::fit(
+            ui,
+            &self.value,
+            &value_font,
+            content.width(),
+            self.shape.ellipsis(),
+        );
+        let value = ui.painter().layout_no_wrap(fitted, value_font, pal.text);
+        ui.painter()
+            .galley(content.min + vec2(0.0, 22.0), value, pal.text);
+        let description = elided(
+            ui,
+            &self.description,
+            font(text::CAPTION, Weight::Regular),
+            pal.text_muted,
+            content.width(),
+        );
+        ui.painter()
+            .galley(content.min + vec2(0.0, 56.0), description, pal.text_muted);
+        let response = response.on_hover_text(name);
+        if let Some(label) = self.link {
+            let footer = egui::Rect::from_min_max(content.min + vec2(0.0, 80.0), content.max);
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt(response.id.with("footer"))
+                    .max_rect(footer),
+            );
+            super::link_button(&mut child, &label, false)
+        } else {
+            response
+        }
+    }
 }

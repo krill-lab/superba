@@ -218,6 +218,7 @@ pub struct ListRow {
     selected: bool,
     height: f32,
     sense: Sense,
+    status: Option<(super::Status, String)>,
 }
 
 impl ListRow {
@@ -228,6 +229,7 @@ impl ListRow {
             selected: false,
             height: 56.0,
             sense: Sense::click(),
+            status: None,
         }
     }
 
@@ -261,6 +263,12 @@ impl ListRow {
         self
     }
 
+    /// State dot at the far right; its meaning is included in the accessible name.
+    pub fn status(mut self, status: super::Status, label: impl Into<String>) -> Self {
+        self.status = Some((status, label.into()));
+        self
+    }
+
     /// Selected (soft gray fill).
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
@@ -291,11 +299,15 @@ impl Widget for ListRow {
         } else {
             response
         };
-        let title = self.content.title.clone();
+        let mut title = self.content.accessible_name();
+        if let Some((_, label)) = &self.status {
+            title.push_str(&format!(", {label}"));
+        }
         let selected = self.selected;
         response.widget_info(|| {
-            egui::WidgetInfo::selected(egui::Role::ListItem, true, selected, &title)
+            egui::WidgetInfo::selected(egui::Role::ListItem, ui.is_enabled(), selected, &title)
         });
+        crate::design::a11y::selectable(&response, egui::Role::ListItem, &title, selected);
         if !ui.is_rect_visible(rect) {
             return response;
         }
@@ -310,7 +322,14 @@ impl Widget for ListRow {
             Color32::TRANSPARENT.lerp_to_gamma(pal.hover, t)
         };
         ui.painter().rect_filled(rect, radius::ROW, fill);
-        paint_row(ui, rect, &self.content);
+        let mut content_rect = rect;
+        if let Some((status, _)) = &self.status {
+            content_rect.max.x -= 20.0;
+            super::StatusDot::new(*status)
+                .size(6.0)
+                .paint_at(ui, pos2(rect.right() - 12.0, rect.center().y));
+        }
+        paint_row(ui, content_rect, &self.content);
         if clickable && show_focus(&response) {
             focus_ring(ui.painter(), rect, radius::ROW, pal);
         }

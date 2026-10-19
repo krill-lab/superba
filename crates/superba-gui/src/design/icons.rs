@@ -13,6 +13,14 @@ use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
 /// Available icons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Icon {
+    /// Superba identity.
+    Superba,
+    /// Tool configuration.
+    Tools,
+    /// Notifications.
+    Bell,
+    /// Backups.
+    Archive,
     /// Dashboard tiles (overview page).
     Overview,
     /// Globe (lines and sites page).
@@ -113,7 +121,11 @@ pub enum Icon {
 
 impl Icon {
     /// Every icon (tests paint each one).
-    pub const ALL: [Icon; 48] = [
+    pub const ALL: [Icon; 52] = [
+        Icon::Superba,
+        Icon::Tools,
+        Icon::Bell,
+        Icon::Archive,
         Icon::Overview,
         Icon::Lines,
         Icon::Targets,
@@ -262,6 +274,41 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
     };
 
     match icon {
+        Icon::Superba => brand(painter, rect, color),
+        Icon::Tools => {
+            line(&[
+                (5.0, 20.0),
+                (14.0, 11.0),
+                (18.0, 11.0),
+                (21.0, 8.0),
+                (18.0, 8.0),
+                (16.0, 6.0),
+                (16.0, 3.0),
+                (13.0, 6.0),
+                (13.0, 10.0),
+                (4.0, 19.0),
+            ]);
+        }
+        Icon::Bell => {
+            line(&[
+                (5.0, 17.0),
+                (7.0, 14.0),
+                (7.0, 8.0),
+                (9.0, 5.0),
+                (15.0, 5.0),
+                (17.0, 8.0),
+                (17.0, 14.0),
+                (19.0, 17.0),
+                (5.0, 17.0),
+            ]);
+            line(&[(10.0, 21.0), (14.0, 21.0)]);
+        }
+        Icon::Archive => {
+            rrect(3.0, 3.0, 18.0, 5.0, 1.0);
+            rrect(5.0, 8.0, 14.0, 13.0, 1.0);
+            line(&[(10.0, 12.0), (14.0, 12.0)]);
+        }
+
         Icon::Overview => {
             rrect(3.5, 3.5, 7.0, 7.0, 2.5);
             rrect(13.5, 3.5, 7.0, 7.0, 2.5);
@@ -629,4 +676,38 @@ pub fn spinner(painter: &Painter, rect: Rect, color: Color32, time: f64) {
         arc(&g, 12.0, 12.0, 9.0, start, start + PI * 1.2),
         Stroke::new(width, color),
     ));
+}
+
+/// Paint the existing Superba silhouette, tinted by the surrounding UI.
+fn brand(painter: &Painter, rect: Rect, color: Color32) {
+    const PNG: &[u8] = include_bytes!("../../../../assets/icon/tray/superba-tray-template-36.png");
+    let id = egui::Id::unique("superba-monochrome-mark");
+    let cached = painter
+        .ctx()
+        .data(|d| d.get_temp::<egui::TextureHandle>(id));
+    let texture = cached.unwrap_or_else(|| {
+        let mut icon = eframe::icon_data::from_png_bytes(PNG).expect("bundled brand image");
+        for pixel in icon.rgba.as_chunks_mut::<4>().0 {
+            pixel[..3].fill(255);
+        }
+        let image = egui::ColorImage::from_rgba_unmultiplied(
+            [icon.width as usize, icon.height as usize],
+            &icon.rgba,
+        );
+        let texture = painter.ctx().load_texture(
+            "superba-monochrome-mark",
+            image,
+            egui::TextureOptions::LINEAR,
+        );
+        painter
+            .ctx()
+            .data_mut(|d| d.insert_temp(id, texture.clone()));
+        texture
+    });
+    painter.image(
+        texture.id(),
+        Grid::new(rect).rect,
+        Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+        color,
+    );
 }

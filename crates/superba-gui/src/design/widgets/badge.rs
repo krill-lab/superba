@@ -20,6 +20,7 @@ pub struct Badge {
     icon: Option<Icon>,
     mono: bool,
     outline: bool,
+    hollow: bool,
 }
 
 impl Badge {
@@ -31,12 +32,21 @@ impl Badge {
             icon: None,
             mono: false,
             outline: false,
+            hollow: false,
         }
     }
 
-    /// Prefix a status dot.
+    /// Prefix a status dot, or a rotating arc for `Busy`.
     pub fn status(mut self, status: Status) -> Self {
         self.status = Some(status);
+        self.hollow = false;
+        self
+    }
+
+    /// Use an empty circle for an absent installation or connection.
+    pub fn hollow(mut self) -> Self {
+        self.hollow = true;
+        self.status = Some(Status::Idle);
         self
     }
 
@@ -76,6 +86,10 @@ impl Widget for Badge {
         let size = vec2(galley.size().x + 16.0 + dot_w + icon_w, 20.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
         crate::design::a11y::text(&response, &self.text);
+        if self.status == Some(Status::Busy) {
+            ui.ctx()
+                .accesskit_node_builder(response.id, |n| n.set_busy());
+        }
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
             if self.outline {
@@ -90,7 +104,20 @@ impl Widget for Badge {
             }
             let mut x = rect.min.x + 8.0;
             if let Some(status) = self.status {
-                painter.circle_filled(pos2(x + 3.0, rect.center().y), 3.0, pal.status(status));
+                let center = pos2(x + 3.0, rect.center().y);
+                if status == Status::Busy {
+                    icons::spinner(
+                        painter,
+                        Rect::from_center_size(center, vec2(10.0, 10.0)),
+                        pal.text_muted,
+                        ui.input(|i| i.time),
+                    );
+                    ui.ctx().request_repaint();
+                } else if self.hollow {
+                    painter.circle_stroke(center, 3.0, Stroke::new(1.0, pal.text_muted));
+                } else {
+                    painter.circle_filled(center, 3.0, pal.status(status));
+                }
                 x += dot_w;
             }
             if let Some(icon) = self.icon {

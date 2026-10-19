@@ -358,3 +358,44 @@ impl SidePane {
         inner
     }
 }
+
+/// Fixed section rail and independently scrolling detail pane.
+pub fn rail_split<L, R>(
+    ui: &mut Ui,
+    rail_w: f32,
+    rail: impl FnOnce(&mut Ui) -> L,
+    detail: impl FnOnce(&mut Ui) -> R,
+) -> (L, R) {
+    let rect = ui.available_rect_before_wrap();
+    let width = rail_w.min((rect.width() - 100.0).max(0.0));
+    let left = Rect::from_min_max(rect.min, pos2(rect.min.x + width, rect.max.y));
+    let right = Rect::from_min_max(pos2(left.max.x + 24.0, rect.min.y), rect.max);
+    let mut rail_ui = ui.new_child(
+        UiBuilder::new()
+            .id_salt("section-rail")
+            .max_rect(left)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    rail_ui.set_clip_rect(pane_clip(left, ui.clip_rect()));
+    let l = rail(&mut rail_ui);
+    let pal = Palette::of(ui.ctx());
+    ui.painter().vline(
+        left.max.x + 12.0,
+        rect.y_range(),
+        Stroke::new(1.0, pal.border),
+    );
+    let mut detail_ui = ui.new_child(
+        UiBuilder::new()
+            .id_salt("section-detail")
+            .max_rect(right)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    detail_ui.set_clip_rect(pane_clip(right, ui.clip_rect()));
+    let r = egui::ScrollArea::vertical()
+        .id_salt("section-detail-scroll")
+        .auto_shrink([false, false])
+        .show(&mut detail_ui, detail)
+        .inner;
+    ui.allocate_rect(rect, Sense::hover());
+    (l, r)
+}
