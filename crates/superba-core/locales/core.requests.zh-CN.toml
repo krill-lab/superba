@@ -10,7 +10,7 @@ other = "其他"
 
 # 请求记录的来源（用量页、CSV、spb usage）。
 [request_source]
-router = "本地路由"
+router = "本机加速"
 rollout = "Codex 会话记录"
 ccs = "从 CC Switch 导入"
 ai_toolbox = "从 AI Toolbox 导入"

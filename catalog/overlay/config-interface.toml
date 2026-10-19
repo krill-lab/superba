@@ -208,7 +208,7 @@ en = "When set to `true`, `AgentReasoningRawContentEvent` events will be shown i
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
 en_hash = "1338374cf5983987"
 zh_name = "显示原始推理内容"
-zh = "设为 `true` 时显示模型的原始推理内容（`AgentReasoningRawContentEvent`），而不只是推理摘要；只有模型或服务商实际返回原始推理时才有内容。默认 `false`；使用 `--oss` 本地模型且未设置此项时默认开启。"
+zh = "设为 `true` 时显示模型的原始推理内容（`AgentReasoningRawContentEvent`），而不只是推理摘要；只有模型或供应商实际返回原始推理时才有内容。默认 `false`；使用 `--oss` 本地模型且未设置此项时默认开启。"
 zh_basis = "1338374cf5983987"
 
 ["config:suppress_unstable_features_warning"]
@@ -627,7 +627,7 @@ en = "Switch to the next available permission mode."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
 en_hash = "fa5063d03dc5c811"
 zh_name = "下一个权限模式"
-zh = "切换到下一个可用的权限模式（审批与沙箱的组合预设）。默认未绑定按键。"
+zh = "切换到下一个可用的权限模式（命令审批和文件与网络权限的成套设置）。默认未绑定按键。"
 zh_basis = "fa5063d03dc5c811"
 
 ["config:tui.keymap.chat.previous_permission_mode"]
@@ -635,7 +635,7 @@ en = "Switch to the previous available permission mode."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
 en_hash = "e91d06a957527100"
 zh_name = "上一个权限模式"
-zh = "切换到上一个可用的权限模式（审批与沙箱的组合预设）。默认未绑定按键。"
+zh = "切换到上一个可用的权限模式（命令审批和文件与网络权限的成套设置）。默认未绑定按键。"
 zh_basis = "e91d06a957527100"
 
 ["config:tui.keymap.chat.prompt_stack_back"]
