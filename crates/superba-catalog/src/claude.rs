@@ -251,7 +251,7 @@ pub const COMMON: &[&str] = &[
 ];
 
 /// Hand-written schemas of structured keys the official schema does not
-/// describe (taken from the installed Claude Code's own schema).
+/// describe (shapes from the installed Claude Code; descriptions are our own).
 fn binary_schema(key: &str) -> Option<Value> {
     let effort = json!(["low", "medium", "high", "xhigh"]);
     match key {
@@ -261,35 +261,35 @@ fn binary_schema(key: &str) -> Option<Value> {
                 "type": "object",
                 "properties": {
                     "effortLevel": {"type": "string", "enum": effort,
-                        "description": "Persisted effort level for this model."},
+                        "description": "Effort level saved for this model."},
                     "maxEffortLevel": {"type": "string", "enum": ["low", "medium", "high", "xhigh", "max"],
-                        "description": "Maximum effort level for this model."},
-                    "autoCompactWindow": {"description": "Auto-compact window for this model, in tokens (100000 to 1000000), or \"auto\"."}
+                        "description": "Highest effort level offered for this model."},
+                    "autoCompactWindow": {"description": "Context size, in tokens, at which this model's conversation is compacted, or \"auto\"."}
                 }
             }
         })),
         "modelPicker" => Some(json!({
             "type": "object",
             "properties": {
-                "options": {"type": "array", "description": "Rows to show in the /model picker, in order.",
+                "options": {"type": "array", "description": "Models listed in /model, in this order.",
                     "items": {"type": "object", "properties": {
                         "model": {"type": "string"}, "label": {"type": "string"},
                         "description": {"type": "string"}, "behavesAs": {"type": "string"}}}},
                 "replaceBuiltInOptions": {"type": "boolean",
-                    "description": "Show only the Default row and these options."}
+                    "description": "Hide the built-in models and list only these."}
             }
         })),
         "spellcheck" => Some(json!({
             "type": "object",
             "properties": {
-                "enabled": {"type": "boolean", "description": "Turn on spell checking of the prompt input (default: false)"},
+                "enabled": {"type": "boolean", "description": "Spell-check the prompt as you type."},
                 "checker": {"type": "string"}
             }
         })),
         "remote" => Some(json!({
             "type": "object",
             "properties": {"defaultEnvironmentId": {"type": "string",
-                "description": "Default environment ID to use for cloud sessions"}}
+                "description": "Environment used by default for cloud sessions."}}
         })),
         _ => None,
     }
@@ -528,7 +528,7 @@ impl ClaudeCatalog {
                 editor: editor_for(&b.key, &kind, schema.as_ref()),
                 kind,
                 deprecated: b.description.starts_with("Deprecated"),
-                en: Some(b.description.clone()),
+                en: (!b.description.is_empty()).then(|| b.description.clone()),
                 name_zh,
                 zh: zh_text,
                 default: None,

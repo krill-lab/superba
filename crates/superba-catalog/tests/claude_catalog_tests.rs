@@ -31,7 +31,13 @@ fn every_key_and_variable_is_listed_with_chinese_text_and_a_group() {
             e.path
         );
         assert!(e.zh.as_deref().is_some_and(|n| !n.is_empty()), "{}", e.path);
-        assert!(e.en.as_deref().is_some_and(|n| !n.is_empty()), "{}", e.path);
+        // Binary-only keys carry no English text: Claude Code's own wording is
+        // not redistributed (catalog/claude/README.md).
+        if e.source != ClaudeSource::Binary {
+            assert!(e.en.as_deref().is_some_and(|n| !n.is_empty()), "{}", e.path);
+        } else {
+            assert!(e.en.is_none(), "{}", e.path);
+        }
     }
     for g in ClaudeGroup::ALL {
         assert!(

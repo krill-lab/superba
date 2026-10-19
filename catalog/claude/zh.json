@@ -8,7 +8,7 @@
   },
   "additionalMarketplaces": {
    "name_zh": "额外插件市场（别名）",
-   "zh": "extraKnownMarketplaces 的别名：此键的读取方式与写成 extraKnownMarketplaces 时完全相同。不要在同一个文件中同时设置两者，如果两者都出现，此键会被忽略并给出警告。Claude Code 更新该文件时，可能会把此键改写为 extraKnownMarketplaces。早于此别名的客户端会忽略它，因此在旧版 Claude Code 仍共用同一份设置期间，优先使用 extraKnownMarketplaces。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "advisorModel": {
@@ -33,7 +33,7 @@
   },
   "allowClaudeInChromeWithManagedMcp": {
    "name_zh": "托管 MCP 下允许 Chrome",
-   "zh": "为 true 时（且需设置在设备托管设置中：MDM、managed-settings.json 文件，或由它们配置的策略助手），内置的 Claude in Chrome MCP 服务器可以与 managed-mcp.json 同时运行，而不会被其独占控制锁定所阻止。deniedMcpServers 和组织的 Claude in Chrome 设置仍然可以阻止它。默认关闭，保持锁定。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "allowedChannelPlugins": {
@@ -48,7 +48,7 @@
   },
   "allowedMarketplaces": {
    "name_zh": "允许的插件市场（别名）",
-   "zh": "strictKnownMarketplaces 的别名（仅限托管设置）：此键的读取方式与写成 strictKnownMarketplaces 时完全相同。不要在同一个文件中同时设置两者，如果两者都出现，此键会被忽略并给出警告。早于此别名的客户端会忽略它，因此当允许列表也必须约束旧版 Claude Code 时，请继续使用 strictKnownMarketplaces。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "allowedMcpServers": {
@@ -58,7 +58,7 @@
   },
   "allowedProviders": {
    "name_zh": "允许的 API 提供商",
-   "zh": "仅限托管设置（managed-settings.json、MDM 或服务端托管）。Claude Code 在本机可以使用的 API 提供商：\"anthropic\"（Anthropic 自有主机上的 Anthropic API，通过 claude.ai 或 Console 登录或 API 密钥访问；与 forceLoginMethod / forceLoginOrgUUID 搭配可强制要求登录）、\"bedrock\"、\"vertex\"、\"foundry\"、\"anthropicAws\"、\"mantle\"（各自指该提供商自己的服务：其区域、FIPS、私有端点和主权云主机）、\"customEndpoint\"（发往其他主机的 Anthropic API 或云提供商 API，例如 LLM 网关：ANTHROPIC_BASE_URL、该提供商的 ANTHROPIC_*_BASE_URL、不是纯名称的 Foundry 资源名，或 Bedrock 下 AWS SDK 的 AWS_ENDPOINT_URL[_BEDROCK[_RUNTIME]]；只放行在同一托管来源的 \"env\" 块中锁定的值），或 \"gateway\"（Cloud 网关登录）。使用未列出提供商的会话会在启动时、登录时以及下一次访问 API 时被拒绝，提示信息会说明是什么选择了该提供商，以及哪个条目可以放行它。设置了列表时，第一方流量的去向（ANTHROPIC_BASE_URL、网关登录）只有在同一托管来源于 \"env\"（或 forceLoginGatewayUrl）中锁定时才会被采用，并且经 claude ssh 隧道进入本机会被拒绝。云提供商的凭证和租户变量，以及网络路径和 TLS 信任（HTTPS_PROXY、NODE_EXTRA_CA_CERTS、CLAUDE_CODE_CERT_STORE）不受此列表评判；请在托管 \"env\" 块中为整个设备群统一设置它们，其值会替换用户的值。若要让整个设备群的 Bedrock 经由网关，请在那里锁定 ANTHROPIC_BEDROCK_BASE_URL（客户端使用的是它，优先于 ~/.aws/config 中的 endpoint_url，而后者不受此列表评判）；AWS SDK 的 AWS_ENDPOINT_URL* 锁定只认可 SDK 自身客户端的去向，绝不能代替 \"bedrock\" 条目。未设置时允许所有提供商；空数组则一个都不允许。只有 managed-settings.json 或 MDM 中的列表才会在本机强制执行：它不能被服务端托管设置放宽或隐藏，并且对每个会话生效。只在管理控制台中设置的列表，只对拉取了服务端托管设置的会话生效，不包括：使用云提供商、其他组织或非 Anthropic 的 ANTHROPIC_BASE_URL 的会话，只用 apiKeyHelper 或 ANTHROPIC_AUTH_TOKEN 认证的会话，Pro/Max 登录，没有 API 密钥的 --bare，或拉取完成之前的首次启动，这些都是用户可控的条件。早于此设置的版本会忽略它；在版本混杂的设备群中，请搭配最低版本策略使用。'claude auth status' 会把 Anthropic API 报告为 apiProvider \"firstParty\"。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "connection"
   },
   "allowManagedHooksOnly": {
@@ -88,7 +88,7 @@
   },
   "appendPlugins": {
    "name_zh": "后置插件顺序",
-   "zh": "托管插件（托管 enabledPlugins 设为 true 的 plugin@marketplace ID），其钩子按列出的顺序在插件中最后运行、位于最内层：列出的最后一个 ID 紧挨在内置插件之上，看到的每个事件都是其他所有插件处理之后的样子。仅从托管设置读取（或者在没有托管设置的机器上，从用户设置读取，用于你自己的插件）；在项目、本地和 --settings 来源中会被忽略。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "askUserQuestionTimeout": {
@@ -108,7 +108,7 @@
   },
   "autoCompactWindow": {
    "name_zh": "自动压缩窗口",
-   "zh": "自动压缩窗口大小。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "output_context"
   },
   "autoConnectIde": {
@@ -118,12 +118,12 @@
   },
   "autoContinueAtUsageLimit": {
    "name_zh": "用量限制后自动继续",
-   "zh": "当 claude.ai 用量限制使会话停止时，等待限制重置后自动继续任务。关闭时，限制对话框会把等待作为一个选项提供。",
+   "zh": "达到 claude.ai 用量上限后是否等待并自动继续。",
    "group": "other"
   },
   "autoDreamEnabled": {
    "name_zh": "后台记忆整理",
-   "zh": "启用后台记忆整理（auto-dream）。设置后会覆盖服务端默认值。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "autoInstallIdeExtension": {
@@ -158,7 +158,7 @@
   },
   "autoUploadSessions": {
    "name_zh": "自动上传会话",
-   "zh": "将本地会话以只读方式镜像到 claude.ai（不支持远程控制）。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "traffic_privacy"
   },
   "availableModels": {
@@ -168,7 +168,7 @@
   },
   "availableModelsMatch": {
    "name_zh": "可用模型匹配方式",
-   "zh": "availableModels 条目如何匹配模型 ID。\"prefix\"（默认）让一个条目同时允许以它为前缀扩展出的任何模型 ID，因此 \"claude-opus-5\" 会允许 \"claude-opus-5-5\"。\"exact\" 保留这种匹配，但模型 ID 条目不再放行其他版本：\"claude-opus-5\" 允许 Opus 5 及其带日期和 -fast 的 ID，但在被列出之前不允许 Opus 5.5 或更新的版本，而 -latest ID 需要一条 -latest 条目。系列别名（\"opus\"）仍然允许整个系列；所指模型随版本或设置而变的别名（best、opusplan、default）会被忽略。使用 \"exact\" 且列表中至少列出一个模型时，Default 选项也只会使用列出的模型；如果没有可用的模型，Claude Code 将无法启动。Haiku 后台模型，以及自行选择模型的钩子和其他辅助请求不受此限制（它们由 deniedModels 覆盖；allowManagedHooksOnly 可限制钩子）。仅从托管设置读取。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "models"
   },
   "awaySummaryEnabled": {
@@ -193,12 +193,12 @@
   },
   "bashEditDiffEnabled": {
    "name_zh": "显示 Bash 文件改动",
-   "zh": "Bash 工具是否显示 Bash 命令所修改文件的差异（PostToolUse 的 Bash 钩子会在 tool_response 中拿到被修改的文件列表）。设为 false 可关闭。默认：当 Bash 工具负责文件编辑时开启。在自动模式和 bypassPermissions 模式之外，只有用户、标志（flag）或策略设置可以开启它。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "bashOutputMaxChars": {
    "name_zh": "Bash 输出字符上限",
-   "zh": "Bash 或 PowerShell 命令成功执行时，Claude 直接接收的输出字符数（默认 30000；取值会被限制在 4000-128000 之间）。超出部分会保存到文件，Claude 只收到一段简短预览和文件路径。设置后它也会取代 BASH_MAX_OUTPUT_LENGTH；后者单独使用时只决定回读窗口的大小。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "output_context"
   },
   "blockedMarketplaces": {
@@ -238,12 +238,12 @@
   },
   "crossSessionInbound": {
    "name_zh": "跨会话入站消息",
-   "zh": "来自其他会话的入站对等消息（你其他会话发出的 SendMessage）：'accept' 直接投递；'hold' 暂扣供你审阅，不让 Claude 据此行动；'refuse' 让此会话退出接收。显式设置的值始终优先。未设置（模式对等）时：仅当发送方会话的权限模式类别与你的一致（bypass↔bypass 或 prompting↔prompting）时，消息才会自动投递；类别不匹配的发送方的消息会被暂扣，等待你批准；未声明类别的发送方的消息，仅在此会话绕过权限确认提示期间才会被暂扣。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "daemonColdStart": {
    "name_zh": "后台服务冷启动",
-   "zh": "没有后台服务在运行时：'transient' 为本次登录会话启动一个；'ask' 询问是否将其持久安装。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "defaultShell": {
@@ -258,17 +258,17 @@
   },
   "deniedModels": {
    "name_zh": "禁用模型列表",
-   "zh": "用户不能选择的模型，即使 availableModels 允许它们。系列别名（\"opus\"）会屏蔽整个系列。模型 ID 会屏蔽该版本的所有写法：日期、-fast 和提供商前缀都会被忽略，因此 \"claude-opus-5-5\" 会屏蔽所有 Opus 5.5 ID，但不会屏蔽 Opus 5。不带次版本号的 ID（\"claude-opus-5\"）还会屏蔽之后的次版本，正如它在 availableModels 中会放行这些版本一样。所指模型随版本或设置而变的别名（best、opusplan、default）会被忽略。Default 选项会越过被屏蔽的模型向下降级；如果 Default 没有可降级到的允许模型，Claude Code 将无法启动。仅从托管设置读取。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "models"
   },
   "desktopSessionCleanupPeriodDays": {
    "name_zh": "桌面会话记录保留上限",
-   "zh": "由桌面宿主端（Claude Desktop、Cowork）创建或最后写入的会话记录的保留上限（天数）；这类会话记录原本不受 cleanupPeriodDays 清理的约束。0（默认）表示没有上限：这类会话记录会一直保留，直到通过其他方式删除。与 cleanupPeriodDays 不同，这里允许设为 0，因为此设置从不禁止写入，只是为这项免删豁免设定上限。该上限是硬性上限：它同样约束生效中的归档宽限期，因此释放标记（release marker）的宽限窗口绝不会让文件保留超过上限。当 cleanupPeriodDays 由组织策略托管时，此设置会被忽略。上限小于或等于 cleanupPeriodDays 时，豁免实际上失效：这些会话记录会按常规的 cleanupPeriodDays 周期过期，因此实际保留期取两者中较长的那个。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "dialogExpiry": {
    "name_zh": "远程对话框超时",
-   "zh": "转发到远程客户端的权限/用户对话框等待回答的最长停留时间，以及被暂扣（HELD）的跨会话消息等待批准的时长；超时后两者都会落到安全的不执行默认结果（取消 / 丢弃并拒绝）。默认为 5m，与一贯沿用的远程对话框截止时间一致；\"never\" 表示不设截止时间。仅限本地的权限确认提示（没有远程客户端）不受影响。设置了 CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS 环境变量时，它会覆盖此设置。仅从受信任的来源读取（绝不从签入仓库的设置文件读取）。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "diffTool": {
@@ -313,7 +313,7 @@
   },
   "disableCommandPluginSources": {
    "name_zh": "禁用命令型插件来源",
-   "zh": "控制 `command` 插件来源，这类插件的目录由在本机运行插件市场声明的命令生成。true：从不安装、更新或重新解析来自命令来源的插件（该命令永远不会运行）。false：明确允许。未设置：跟随 allowManagedHooksOnly，即把钩子执行限制为仅限托管设置的组织，也会同时禁用命令来源。仅从托管设置读取。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "disableDeepLinkRegistration": {
@@ -388,7 +388,7 @@
   },
   "enableWorkflows": {
    "name_zh": "启用工作流",
-   "zh": "为该用户启用或禁用工作流（Workflows）功能。未设置时，在该功能可用后按套餐决定默认值。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "enforceAvailableModels": {
@@ -428,7 +428,7 @@
   },
   "feedbackDrafts": {
    "name_zh": "模型起草的反馈",
-   "zh": "由模型起草的反馈（SendFeedback 工具）。\"notify\"（默认）在草稿进入队列时显示一行提示；\"quiet\" 只显示底栏计数；\"off\" 完全禁用该工具，草稿永远不会进入队列。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "traffic_privacy"
   },
   "feedbackSurveyRate": {
@@ -473,7 +473,7 @@
   },
   "gatewayInternalNetworks": {
    "name_zh": "Cloud 网关内网网段",
-   "zh": "你的 Cloud 网关所在的 IPv4 CIDR 网段（最多 4 个，每个 /8 到 /32，互不重叠）：即组织为内部网络编址所用的公网网段，配置后 /login 才能访问位于其中的网关。网段必须完全位于私有地址空间之外；网关位于私有地址空间时，/login 无需此键即可接受。对于位于所列网段内的网关，/login 只接受直连，并且仅当本机在该连接上的自身地址也位于同一网段内时才接受，因此必须在自身地址位于该网段内的机器上执行 /login（不能经由网段之外的代理服务器、VPN 地址池、容器或 NAT 网段）。这只是防止复制设置文件的一道门槛，并不能证明所在位置。仅从管理员控制的托管设置（MDM / managed-settings.json / 策略助手）读取；在用户、项目和远程下发的设置中会被忽略。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "connection"
   },
   "gcpAuthRefresh": {
@@ -493,7 +493,7 @@
   },
   "idleCompaction": {
    "name_zh": "空闲时压缩",
-   "zh": "设为 false 可阻止 Claude Code 在会话空闲时压缩较长的对话。设为 true 并不会开启空闲压缩。",
+   "zh": "会话空闲时是否自动压缩较长的对话。",
    "group": "output_context"
   },
   "includeCoAuthoredBy": {
@@ -513,12 +513,12 @@
   },
   "isolatePeerMachines": {
    "name_zh": "隔离其他机器的会话",
-   "zh": "SendMessage 通过远程控制（Remote Control）联系另一台机器上的对等会话之前，需要明确批准。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "keybindingFlavor": {
    "name_zh": "按键绑定风格",
-   "zh": "已弃用：不再有任何作用。输入框的按词编辑按键始终遵循 Bash（readline）惯例。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "language": {
@@ -533,17 +533,17 @@
   },
   "managedSourcesBehavior": {
    "name_zh": "托管设置来源组合方式",
-   "zh": "控制各托管设置来源如何组合。\"first-wins\"（默认）：存在的来源中优先级最高的那个（服务端托管 > MDM（托管 plist / HKLM）> managed-settings.json）单独构成托管层。\"merge\"：所有存在的来源按固定优先级 服务端托管 > MDM > managed-settings.json 深度合并：标量取最高来源的值（限制性的布尔值或枚举值，即 allowManaged*Only 锁、disable* 开关和沙箱锁定系列，取任一来源所设的最严格值），数组取并集。以下例外：fallbackModel，限制类允许列表 allowedMcpServers、allowedProviders、availableModels、strictKnownMarketplaces 和 allowedChannelPlugins，以及 sandbox.credentials.awsPairs 和 sandbox.ripgrep（由设置了该项的最高来源整体拥有）；modelOverrides（取设置了它的最高来源的整个映射，若该来源低于设置 availableModels 的来源则丢弃）；managedMcpServers（服务器名称取并集，被两个来源设置的同名项取较高来源的整个条目）；以及只从最高来源读取的键：认证锁定项 forceLoginOrgUUID、forceLoginMethod、forceLoginGatewayUrl 和 gatewayInternalNetworks，凭证助手 apiKeyHelper、awsAuthRefresh、awsCredentialExport、gcpAuthRefresh、otelHeadersHelper 和 proxyAuthHelper，modelPicker、permissions.defaultMode、parentSettingsBehavior 以及 policyHelper 配置（env 仍按键各自取并集）。仅从存在的最高优先级来源读取此设置；只有当所有较低来源都由管理员控制时才应启用它，因为启用后较低来源会贡献 permissions.allow 等条目。HKCU 和 --managed-settings 永远不参与合并。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "maxEffortLevel": {
    "name_zh": "推理强度上限",
-   "zh": "最大推理强度。任何高于它的设置（/effort 或 /model 中的选择、--effort、CLAUDE_CODE_EFFORT_LEVEL、模型默认值）都会被压到此值，适用于所有提供商，包括 Bedrock、Vertex 和 Foundry。与组织按模型设置的推理强度上限组合时，取两者中较低者；跨多个设置文件时取最低值，modelSettings.<model>.maxEffortLevel 会按模型取代它。在客户端强制执行：通过 CLAUDE_CODE_EXTRA_BODY 提供的推理强度不受此限制。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "capabilities"
   },
   "maxProseWidth": {
    "name_zh": "正文最大宽度",
-   "zh": "Claude 回复中正文（段落、标题、列表、引用块）的最大宽度，单位为终端列数。在更宽的终端中，正文会在此宽度处换行，而表格和代码块保持全宽；只是显示时换行，回复文本本身不会增加换行符。最小值为 40。未设置（默认）时使用整个终端宽度。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "minimumVersion": {
@@ -563,17 +563,17 @@
   },
   "modelPicker": {
    "name_zh": "模型选择器定制",
-   "zh": "定制 /model 选择器：一份带自定义标签的有序模型列表，独立于内置模型阵容，也不随 Claude Code 版本更新而变。availableModels 仍然对这些条目生效。仅从托管设置、--settings/SDK 和用户设置读取（不从项目检出中读取）；在这些来源中，定义了 modelPicker 的最高优先级来源直接胜出（不跨来源合并）。通常由企业管理员在托管设置中设置。",
+   "zh": "自定义 /model 列表里显示哪些模型、以什么名字显示。",
    "group": "models"
   },
   "modelPricing": {
    "name_zh": "模型计价覆盖",
-   "zh": "按组织的合同价而不是标价计算用量费用。会影响 Claude Code 报告的所有花费数字（/cost、状态栏、SDK 的 total_cost_usd、--max-budget-usd，以及 OpenTelemetry 费用指标和事件），这些数字仍然只是美元估算，而不是账单（/model 中按每百万 token 标注的价格仍显示标价）。\"overrides\" 将模型 ID 映射到其每百万 token 的美元费率（input、output、cacheRead、cacheWrite，四项均为必填，取值 0 到 10000；cacheWrite 同时用于 5 分钟和 1 小时缓存写入的计价）。匹配的条目严格按所写价格计费，不再额外叠加快速模式和美国数据驻留附加费。Claude Code 自身为内置模型使用的键（其 ID，例如 \"claude-sonnet-4-6\"，或其第一方、Bedrock（带任意区域前缀或不带前缀）、Vertex 或 Foundry ID）会覆盖该模型所有带日期的形式和各提供商形式；其他任何键（网关模型别名，或 Claude Code 自身不使用的写法）只匹配该模型 ID 本身（不区分大小写），并且这种精确匹配优先于内置条目。在 Bedrock 上，应用推理配置文件按其底层模型匹配。无效的条目或倍率会被报告并跳过，其余仍然生效。\"multiplier\" 取值在 (0, 10] 之间，会按比例缩放每一笔计算出的费用，无论该模型是否被覆盖（0.85 = 价格的 85%，1.2 = 120%）。仅从托管设置（服务端托管、MDM / 操作系统策略或 managed-settings.json）读取；或者在这些来源都未设置时，由管理模型提供商的宿主应用提供。在用户、项目、本地和 --settings 来源中会被忽略。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "models"
   },
   "modelSettings": {
    "name_zh": "按模型设置",
-   "zh": "按规范模型名称索引的各模型设置。",
+   "zh": "每个模型单独保存的设置，例如思考强度。",
    "group": "capabilities"
   },
   "otelHeadersHelper": {
@@ -628,7 +628,7 @@
   },
   "precomputeCompactionEnabled": {
    "name_zh": "预先生成压缩摘要",
-   "zh": "在需要之前于后台预先生成压缩摘要。仅在开启自动压缩时适用。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "output_context"
   },
   "preferredNotifChannel": {
@@ -643,7 +643,7 @@
   },
   "prependPlugins": {
    "name_zh": "前置插件顺序",
-   "zh": "托管插件（托管 enabledPlugins 设为 true 的 plugin@marketplace ID），其钩子按列出的顺序最先运行、位于最外层：列出的第一个 ID 先于其他所有插件看到每个事件，并在其他所有插件之后看到每个结果。未在此处或 appendPlugins 中列出的托管插件排在列出的插件之后；其后是用户、项目和插件市场插件；然后是 appendPlugins；最后是内置插件。捆绑的 cc-plugin-sec-default@builtin 会把自己放在最外层（在有托管设置的机器上，以及 Team 和 Enterprise 组织中），除非设置了此列表，此时请把它列在应处的位置，或者将其省略。只要组织中还有机器可能运行它改名之前的版本，就在这里用 sec-default@builtin 来指代它，这是所有版本都能识别的 ID；认识新 ID 的版本两种写法都能读取。其他任何不是已启用托管插件的 ID 都会被跳过；同时列在两个键中的 ID 按前置处理。仅从托管设置读取（或者在没有托管设置的机器上，从用户设置读取，用于你自己的插件）；在项目、本地和 --settings 来源中会被忽略。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "processWrapper": {
@@ -653,17 +653,17 @@
   },
   "promptCacheTtl": {
    "name_zh": "主对话提示词缓存 TTL",
-   "zh": "主对话（交互式、-p 和 SDK 轮次，以及随其内联运行的辅助请求）的提示词缓存 TTL：\"5m\" 或 \"1h\"。未设置时自动选择：在用量限制内的 Claude 订阅为 1 小时；API 密钥、Bedrock、Vertex 或 Foundry 为 5 分钟。1 小时缓存写入按更高费率计费；停顿较久后缓存依然有效。CLAUDE_CODE_PROMPT_CACHE_TTL 环境变量优先。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "output_context"
   },
   "promptSuggestionEnabled": {
    "name_zh": "提示词建议",
-   "zh": "为 false 时禁用提示词建议。未设置或为 true 时启用提示词建议。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "proxyAuthHelper": {
    "name_zh": "代理服务器认证助手",
-   "zh": "输出 Proxy-Authorization 请求头值的 Shell 命令（EAP）。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "connection"
   },
   "prUrlTemplate": {
@@ -673,7 +673,7 @@
   },
   "remote": {
    "name_zh": "云端会话配置",
-   "zh": "云端会话配置。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "remoteControlAtStartup": {
@@ -718,7 +718,7 @@
   },
   "showMessageTimestamps": {
    "name_zh": "显示消息时间戳",
-   "zh": "为每条消息标注其到达时间。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "showThinkingSummaries": {
@@ -768,7 +768,7 @@
   },
   "spellcheck": {
    "name_zh": "输入框拼写检查",
-   "zh": "在输入时为输入框中拼错的单词加下划线，使用已安装的 aspell、hunspell 或 ispell（除非 \"enabled\" 为 true，否则关闭；若都未安装则不起作用）。仅从用户、标志（flag）和托管设置读取（采用其中优先级最高者的整个配置块）；在项目的 .claude/settings.json 和 .claude/settings.local.json 中会被忽略。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "spinnerTipsEnabled": {
@@ -813,7 +813,7 @@
   },
   "subagentPromptCacheTtl": {
    "name_zh": "子代理提示词缓存 TTL",
-   "zh": "主对话之外所有请求（子代理、工作流、后台和辅助请求）的提示词缓存 TTL：\"5m\" 或 \"1h\"。未设置时自动选择（5 分钟，除非 ENABLE_PROMPT_CACHING_1H=1）。CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL 环境变量优先。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "output_context"
   },
   "subagentStatusLine": {
@@ -823,17 +823,17 @@
   },
   "switchModelsOnFlag": {
    "name_zh": "被标记时切换模型",
-   "zh": "当安全防护机制标记某条消息时，自动切换到其他模型以继续对话。关闭时，会话会改为暂停。",
+   "zh": "消息被安全机制标记时，是否自动换一个模型继续。",
    "group": "models"
   },
   "syncClaudeAiPlugins": {
    "name_zh": "同步 claude.ai 插件",
-   "zh": "设为 false 可关闭对你在 claude.ai 上已启用插件的同步。在用户设置（或托管设置）中设置时：不再下载任何内容，之前同步的插件（~/.claude/plugins/synced）会在之后启动的每个会话中隐藏，并在下次启动时移到 ~/.claude/plugins/.trash（在 cleanupPeriodDays 后删除；如果重新启用，会重新下载而不是恢复）。在 .claude/settings.local.json 或 --settings 中设置时：仅针对该工作区或该次调用的会话停止下载并隐藏已同步的插件（不会移动任何文件）。不从项目设置（.claude/settings.json）读取。只认 false：该功能由服务端为你的账号开启，因此设为 true 并不能提前开启它。功能开启期间，已同步的插件会像你自己安装的插件一样在每个会话中加载（你自己安装的同名插件优先），每次启动时重新同步，并在你于 claude.ai 上停用后移除。仅在使用 Claude 账号登录时适用。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "syncClaudeAiSkills": {
    "name_zh": "同步 claude.ai 技能",
-   "zh": "设为 false 可关闭对你在 claude.ai 上已启用技能的同步。在用户设置（或托管设置）中设置时：不再下载任何内容，之前同步的技能（~/.claude/skills/synced）不能再运行，会在之后启动的每个会话中隐藏，并在下次启动时移到 ~/.claude/skills/.trash（在 cleanupPeriodDays 后删除；如果重新启用，会重新下载而不是恢复）。在 .claude/settings.local.json 或 --settings 中设置时：仅针对该工作区或该次调用的会话停止下载，并阻止和隐藏已同步的技能（不会移动任何文件）。不从项目设置（.claude/settings.json）读取。只认 false：该功能由服务端为你的账号开启，因此设为 true 并不能提前开启它。功能开启期间，已同步的技能在每个会话中都可用；会话使用中约每 10 分钟重新同步一次，其他时候频率为其四分之一；在 claude.ai 上停用后会被移除。仅在使用 Claude 账号登录时适用。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "syntaxHighlightingDisabled": {
@@ -843,7 +843,7 @@
   },
   "taskOutputMaxChars": {
    "name_zh": "任务输出字符上限",
-   "zh": "已弃用：不再有任何作用（TaskOutput 工具已移除）。请改用 Read 工具读取后台任务的输出文件。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "output_context"
   },
   "teammateDefaultModel": {
@@ -863,7 +863,7 @@
   },
   "terminalTitleFromRename": {
    "name_zh": "重命名时更新终端标题",
-   "zh": "/rename 是否更新终端标签页标题（默认为 true）。设为 false 可保留自动生成的主题标题。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "theme": {
@@ -873,17 +873,17 @@
   },
   "timeFormat": {
    "name_zh": "时间格式",
-   "zh": "界面中所显示时间的时钟格式：\"auto\"（默认，跟随区域设置）、\"12-hour\"、\"24-hour\"、\"24-hour-utc\"（\"18:05Z\"），或 strftime 格式串，例如 \"%H:%M\"（任何包含 \"%\" 的值；其他值按 \"auto\" 处理）。格式串会替换所有位置的时间；消息时间戳只显示格式串的内容，因此需要日期时请包含 %Y-%m-%d。/config 提供预设选项；格式串需在此处设置。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "timeZone": {
    "name_zh": "时区",
-   "zh": "界面中所显示时间使用的 IANA 时区，例如 \"UTC\" 或 \"Europe/Dublin\"。默认：系统时区。无法识别的名称会回退到系统时区。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "todoFeatureEnabled": {
    "name_zh": "待办任务面板",
-   "zh": "启用待办 / 任务跟踪面板。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "tui": {
@@ -893,7 +893,7 @@
   },
   "ultracode": {
    "name_zh": "ultracode 模式",
-   "zh": "为会话启用 ultracode：在任何推理强度下常驻的动态工作流编排。仅作用于当前会话：通常通过 --settings 或 apply_flag_settings 控制请求提供；交互式开关永远不会将其持久化。需要启用工作流，并使用支持 ultracode 的模型。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   },
   "useAutoModeDuringPlan": {
@@ -953,7 +953,7 @@
   },
   "xaaIdp": {
    "name_zh": "XAA 身份提供方",
-   "zh": "XAA（SEP-990）IdP 连接。只需配置一次，所有启用了 XAA 的 MCP 服务器都会复用它。",
+   "zh": "Claude Code 自带的设置项，官方设置清单未收录，具体含义请以 Claude Code 文档为准。",
    "group": "other"
   }
  },

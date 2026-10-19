@@ -4,52 +4,52 @@
   {
    "key": "additionalMarketplaces",
    "type": "unknown",
-   "description": "Alias for extraKnownMarketplaces: this key is read exactly as if it were spelled extraKnownMarketplaces. Do not set both in one file — if both appear, this key is ignored with a warning. Claude Code may rewrite this key as extraKnownMarketplaces when it updates the file. Clients older than this alias ignore it, so prefer extraKnownMarketplaces while older Claude Code versions still share the same settings."
+   "description": ""
   },
   {
    "key": "allowClaudeInChromeWithManagedMcp",
    "type": "boolean",
-   "description": "When true (and set in device managed settings: MDM, the managed-settings.json file, or a policy helper those configure), the built-in Claude in Chrome MCP server can run alongside managed-mcp.json instead of being blocked by its exclusive-control lockdown. deniedMcpServers and the organization's Claude in Chrome setting still block it. Default off preserves the lockdown."
+   "description": ""
   },
   {
    "key": "allowedMarketplaces",
    "type": "unknown",
-   "description": "Alias for strictKnownMarketplaces (managed settings only): this key is read exactly as if it were spelled strictKnownMarketplaces. Do not set both in one file — if both appear, this key is ignored with a warning. Clients older than this alias ignore it, so keep using strictKnownMarketplaces when the allowlist must also bind older Claude Code versions."
+   "description": ""
   },
   {
    "key": "allowedProviders",
    "type": "unknown",
-   "description": "Managed settings only (managed-settings.json, MDM, or server-managed). The API providers Claude Code may use on this machine: \"anthropic\" (the Anthropic API on Anthropic's own host, via a claude.ai or Console sign-in or an API key; pair it with forceLoginMethod / forceLoginOrgUUID to require a sign-in), \"bedrock\", \"vertex\", \"foundry\", \"anthropicAws\", \"mantle\" (each meaning that provider's own service: its regional, FIPS, private-endpoint and sovereign-cloud hosts), \"customEndpoint\" (the Anthropic API or a cloud provider's API sent to some other host — ANTHROPIC_BASE_URL, that provider's ANTHROPIC_*_BASE_URL, a Foundry resource name that is not a bare name, or for Bedrock the AWS SDK's AWS_ENDPOINT_URL[_BEDROCK[_RUNTIME]] — such as an LLM gateway; admitted only for the value pinned in the \"env\" block of the same managed source), or \"gateway\" (the Cloud gateway sign-in). A session on a provider that is not listed is refused at startup, at login, and when it next contacts the API, with a message naming what selected the provider and the entry that would allow it. Under a list, where first-party traffic goes (ANTHROPIC_BASE_URL, a gateway sign-in) is honored only when the same managed source pins it in \"env\" (or forceLoginGatewayUrl), and a claude ssh tunnel into the machine is refused. A cloud provider's credential and tenancy variables, and the network path and TLS trust (HTTPS_PROXY, NODE_EXTRA_CA_CERTS, CLAUDE_CODE_CERT_STORE), are not judged by this list; set those for the fleet in the managed \"env\" block, whose values replace the user's. To route Bedrock through a gateway for a fleet, pin ANTHROPIC_BEDROCK_BASE_URL there (it is what the clients use, ahead of an endpoint_url in ~/.aws/config, which this list does not judge); the AWS SDK's AWS_ENDPOINT_URL* pins only sanction where the SDK's own clients go and never stand in for the \"bedrock\" entry. Unset allows every provider; an empty array allows none. Only a list in managed-settings.json or MDM is enforcement on the machine: it cannot be widened or hidden by server-managed settings and reaches every session. A list set only in the admin console reaches only sessions that fetch your server-managed settings — not a session on a cloud provider, another organization or a non-Anthropic ANTHROPIC_BASE_URL, one authenticating only with apiKeyHelper or ANTHROPIC_AUTH_TOKEN, a Pro/Max login, --bare without an API key, or a first launch before the fetch lands — all conditions the user controls. Versions that predate this setting ignore it; pair it with a minimum-version policy on a mixed fleet. 'claude auth status' reports the Anthropic API as apiProvider \"firstParty\"."
+   "description": ""
   },
   {
    "key": "appendPlugins",
    "type": "array",
-   "description": "Managed plugins (plugin@marketplace ids that managed enabledPlugins sets true) whose hooks run last among plugins, innermost, in the listed order: the last id listed sits just above the built-in plugins and sees each event as every other plugin left it. Only honored from managed settings (or, on a machine with none, from user settings for your own plugins); ignored in project, local and --settings sources."
+   "description": ""
   },
   {
    "key": "autoCompactWindow",
    "type": "unknown",
-   "description": "Auto-compact window size"
+   "description": ""
   },
   {
    "key": "autoContinueAtUsageLimit",
    "type": "boolean",
-   "description": "When a claude.ai usage limit stops your session, wait for the limit to reset and continue the task automatically. When off, the limit dialog offers the wait as a choice instead."
+   "description": ""
   },
   {
    "key": "autoDreamEnabled",
    "type": "boolean",
-   "description": "Enable background memory consolidation (auto-dream). When set, overrides the server-side default."
+   "description": ""
   },
   {
    "key": "autoUploadSessions",
    "type": "boolean",
-   "description": "Mirror local sessions to claude.ai as view-only (no remote control)"
+   "description": ""
   },
   {
    "key": "availableModelsMatch",
    "type": "enum",
-   "description": "How availableModels entries match model IDs. \"prefix\" (the default) lets an entry also allow any model ID that extends it, so \"claude-opus-5\" allows \"claude-opus-5-5\". \"exact\" keeps that matching but stops a model ID entry from allowing other versions: \"claude-opus-5\" allows Opus 5 and its dated and -fast IDs, but not Opus 5.5 or a later release until it is listed, and a -latest ID needs a -latest entry. Family aliases (\"opus\") still allow the whole family; aliases whose model depends on the release or settings (best, opusplan, default) are ignored. With \"exact\" and a list that names at least one model, the Default option also uses only a listed model; if none can be used, Claude Code will not start. Haiku background models, and hooks and other helper requests that pick their own model, are not restricted (deniedModels covers them; allowManagedHooksOnly limits hooks). Read from managed settings only.",
+   "description": "",
    "enum": [
     "prefix",
     "exact"
@@ -58,22 +58,22 @@
   {
    "key": "bashEditDiffEnabled",
    "type": "boolean",
-   "description": "Whether the Bash tool shows a diff of the files a Bash command changed (PostToolUse Bash hooks get the changed-file list in tool_response). Set to false to turn that off. Default: on when the Bash tool handles file edits. Only user, flag or policy settings can turn it on outside auto and bypassPermissions modes."
+   "description": ""
   },
   {
    "key": "bashOutputMaxChars",
    "type": "number",
-   "description": "How many characters of a successful Bash or PowerShell command's output Claude receives inline (default 30000; values clamp to 4000-128000). Output past this is saved to a file and Claude receives a short preview plus the path. When set, this also replaces BASH_MAX_OUTPUT_LENGTH, which on its own only sizes the read-back window."
+   "description": ""
   },
   {
    "key": "crossSessionInbound",
    "type": "string",
-   "description": "Inbound cross-session peer messages (SendMessage from your other sessions): 'accept' delivers them, 'hold' parks them for your review without letting Claude act, 'refuse' opts this session out. An explicit value always wins. Unset (mode parity): a message auto-delivers only when the sending session's permission-mode class matches yours (bypass↔bypass or prompting↔prompting); a mismatched sender's message is held for your approval; a sender that asserts no class is held only while this session bypasses permission prompts."
+   "description": ""
   },
   {
    "key": "daemonColdStart",
    "type": "enum",
-   "description": "When no background service is running: 'transient' spawns one for this login session; 'ask' offers to install it persistently",
+   "description": "",
    "enum": [
     "transient",
     "ask"
@@ -82,17 +82,17 @@
   {
    "key": "deniedModels",
    "type": "array",
-   "description": "Models users cannot select, even when availableModels allows them. A family alias (\"opus\") blocks that family. A model ID blocks that version in every spelling: dates, -fast and provider prefixes are ignored, so \"claude-opus-5-5\" blocks every Opus 5.5 ID but not Opus 5. An ID with no minor version (\"claude-opus-5\") also blocks later minor versions, as it allows them in availableModels. Aliases whose model depends on the release or settings (best, opusplan, default) are ignored. The Default option steps down past a blocked model; if the Default has no allowed model to step down to, Claude Code will not start. Read from managed settings only."
+   "description": ""
   },
   {
    "key": "desktopSessionCleanupPeriodDays",
    "type": "number",
-   "description": "Retention ceiling in days for session transcripts created or last written by a desktop-host surface (Claude Desktop, Cowork), which are otherwise exempt from the cleanupPeriodDays sweep. 0 (the default) means no ceiling: such transcripts are kept until deleted another way. Unlike cleanupPeriodDays, 0 is allowed because this setting never disables writes — it only bounds an exemption from deletion. The ceiling is a hard cap: it also bounds an active archive grace, so the grace window of a release marker never keeps files past the ceiling. Ignored when cleanupPeriodDays is managed by org policy. A ceiling at or below cleanupPeriodDays effectively disables the exemption: those transcripts age out on the regular cleanupPeriodDays schedule, so the effective retention is whichever of the two periods is longer."
+   "description": ""
   },
   {
    "key": "dialogExpiry",
    "type": "enum",
-   "description": "Max time a permission/user dialog forwarded to a remote client stays parked awaiting an answer, and how long a HELD cross-session message awaits approval, before either resolves to its safe no-action default (cancelled / dropped-with-denial). Defaults to 5m to match the long-standing remote-dialog deadline; \"never\" disables the deadline. Local-only permission prompts (no remote client) are unaffected. The CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS env var, when set, overrides this. Read from trusted sources only (never a checked-in repo settings file).",
+   "description": "",
    "enum": [
     "60s",
     "5m",
@@ -103,17 +103,17 @@
   {
    "key": "disableCommandPluginSources",
    "type": "boolean",
-   "description": "Controls the `command` plugin source, whose plugin directory is produced by running a marketplace-declared command on this machine. true: command-sourced plugins are never installed, updated, or re-resolved (the command never runs). false: explicitly allowed. Unset: follows allowManagedHooksOnly — an org that restricts hook execution to managed settings gets command sources disabled too. Only honored from managed settings."
+   "description": ""
   },
   {
    "key": "enableWorkflows",
    "type": "boolean",
-   "description": "Enable or disable the Workflows feature for this user. Unset = default by plan once the feature is available."
+   "description": ""
   },
   {
    "key": "feedbackDrafts",
    "type": "enum",
-   "description": "Model-drafted feedback (the SendFeedback tool). \"notify\" (default) shows a one-line notice when a draft is queued; \"quiet\" shows only the footer counter; \"off\" disables the tool entirely so drafts are never queued.",
+   "description": "",
    "enum": [
     "notify",
     "quiet",
@@ -123,22 +123,22 @@
   {
    "key": "gatewayInternalNetworks",
    "type": "array",
-   "description": "IPv4 CIDR blocks (at most 4, each /8 to /32, not overlapping) your Cloud gateway sits in: the public block your organization numbers its internal network from, which lets /login reach a gateway there. A block must lie entirely outside private space, where /login accepts a gateway without this key. /login accepts a gateway inside a listed block over a direct connection only, and only when this machine's own address on that connection is inside the same block, so /login must happen from a machine whose own address is inside the block (not through a proxy, VPN pool, container or NAT segment outside it). A bar against copied settings files, not proof of location. Honored only from admin-controlled managed settings (MDM / managed-settings.json / policy helper); ignored in user, project, and remote-delivered settings."
+   "description": ""
   },
   {
    "key": "idleCompaction",
    "type": "boolean",
-   "description": "Set to false to stop Claude Code from compacting a long conversation while the session is idle. Setting it to true does not turn idle compaction on."
+   "description": ""
   },
   {
    "key": "isolatePeerMachines",
    "type": "boolean",
-   "description": "Require explicit approval before SendMessage can reach a peer session on another machine via Remote Control"
+   "description": ""
   },
   {
    "key": "keybindingFlavor",
    "type": "enum",
-   "description": "Deprecated: no longer has any effect. The prompt's word-editing keys always follow Bash (readline) conventions.",
+   "description": "",
    "enum": [
     "classic",
     "readline"
@@ -147,7 +147,7 @@
   {
    "key": "managedSourcesBehavior",
    "type": "enum",
-   "description": "Controls how the managed settings sources compose. \"first-wins\" (default): the highest-priority source present (server-managed > MDM (managed plist / HKLM) > managed-settings.json) is the managed tier alone. \"merge\": every present source deep-merges with fixed precedence server-managed > MDM > managed-settings.json — scalars take the highest source's value (a restrictive boolean or enum — the allowManaged*Only locks, the disable* switches, the sandbox lock family — takes the strictest value any source sets) and arrays union, except fallbackModel, the restriction allowlists allowedMcpServers, allowedProviders, availableModels, strictKnownMarketplaces and allowedChannelPlugins, and sandbox.credentials.awsPairs and sandbox.ripgrep (the highest source that sets one owns it whole), modelOverrides (the whole map of the highest source that sets it, dropped when that source sits below the one that sets availableModels), managedMcpServers (server names union; a name set by two sources takes the higher source's whole entry), and the keys taken from the highest source only: the auth pins forceLoginOrgUUID, forceLoginMethod, forceLoginGatewayUrl and gatewayInternalNetworks, the credential helpers apiKeyHelper, awsAuthRefresh, awsCredentialExport, gcpAuthRefresh, otelHeadersHelper and proxyAuthHelper, modelPicker, permissions.defaultMode, parentSettingsBehavior and the policyHelper configuration (env keeps its own per-key union). Honored only from the highest-priority source present; enable it only when every lower source is admin-controlled, since lower sources then contribute entries such as permissions.allow. HKCU and --managed-settings never take part in the merge.",
+   "description": "",
    "enum": [
     "first-wins",
     "merge"
@@ -156,122 +156,122 @@
   {
    "key": "maxEffortLevel",
    "type": "string",
-   "description": "Maximum effort level. Anything above it (an /effort or /model pick, --effort, CLAUDE_CODE_EFFORT_LEVEL, a model default) is clamped to it, on every provider including Bedrock, Vertex and Foundry. Combines with an organization's per-model effort cap by taking the lower of the two; across settings files the lowest value wins, and modelSettings.<model>.maxEffortLevel replaces it per model. Enforced client-side: an effort supplied through CLAUDE_CODE_EXTRA_BODY is not clamped."
+   "description": ""
   },
   {
    "key": "maxProseWidth",
    "type": "number",
-   "description": "Maximum width, in terminal columns, of the prose in Claude's responses (paragraphs, headings, lists, blockquotes). In a wider terminal the prose wraps at this width while tables and code blocks keep the full width; only the display wraps, the response text itself gains no line breaks. Minimum 40. Unset (the default) uses the full terminal width."
+   "description": ""
   },
   {
    "key": "modelPicker",
    "type": "object",
-   "description": "Curate the /model picker: an ordered list of models with your own labels, independent of the built-in lineup and of Claude Code releases. availableModels still applies to these rows. Honored from managed, --settings/SDK, and user settings only (not from a project checkout); the highest-precedence of those that defines modelPicker wins outright (no merging across sources). Typically set in managed settings by enterprise administrators."
+   "description": ""
   },
   {
    "key": "modelPricing",
    "type": "object",
-   "description": "Price usage at your organization's contracted rates instead of list price. Affects every spend figure Claude Code reports — /cost, the status line, the SDK total_cost_usd, --max-budget-usd, and the OpenTelemetry cost metric and events — which remain USD estimates, not an invoice (the per-Mtok price labels in /model stay at list). \"overrides\" maps a model ID to its USD-per-million-token rates (input, output, cacheRead, cacheWrite — all four required, each 0 to 10000; cacheWrite prices both 5-minute and 1-hour cache writes). A matching row is charged exactly as written; fast-mode and US-data-residency surcharges are not added on top. A key Claude Code itself uses for a built-in model — its ID such as \"claude-sonnet-4-6\", or its first-party, Bedrock (any or no region prefix), Vertex or Foundry ID — covers every dated and provider form of that model; any other key — a gateway model alias, or a spelling Claude Code does not itself use — matches that model ID only (case-insensitive), and such an exact match wins over a built-in row. On Bedrock an application inference profile is matched by its backing model. An invalid row or multiplier is reported and skipped; the rest still apply. \"multiplier\" in (0, 10] scales every computed cost, overridden or not (0.85 = 85% of the price, 1.2 = 120%). Only honored from managed settings (server-managed, MDM / OS policy, or managed-settings.json), or — when none of those sets it — when supplied by a host application that manages the model provider; ignored in user, project, local and --settings sources."
+   "description": ""
   },
   {
    "key": "modelSettings",
    "type": "unknown",
-   "description": "Per-model settings keyed by canonical model name."
+   "description": ""
   },
   {
    "key": "precomputeCompactionEnabled",
    "type": "boolean",
-   "description": "Precompute the compaction summary in the background before it is needed. Only applies when auto-compact is on."
+   "description": ""
   },
   {
    "key": "prependPlugins",
    "type": "array",
-   "description": "Managed plugins (plugin@marketplace ids that managed enabledPlugins sets true) whose hooks run first, outermost, in the listed order: the first id listed sees every event before any other plugin and every result after it. Managed plugins not listed here or in appendPlugins follow the listed ones; user, project and marketplace plugins come after those; then appendPlugins; then the built-in plugins. The bundled cc-plugin-sec-default@builtin seats itself outermost (on a machine with managed settings and for Team and Enterprise organizations) unless this list is set, in which case list it where it should sit or leave it out. Name it there as sec-default@builtin, the id every release reads, for as long as any machine in the organization may run a release from before its rename; a release that knows the new id reads either. Any other id that is not an enabled managed plugin is skipped; an id listed in both keys is prepended. Only honored from managed settings (or, on a machine with none, from user settings for your own plugins); ignored in project, local and --settings sources."
+   "description": ""
   },
   {
    "key": "promptCacheTtl",
    "type": "string",
-   "description": "Prompt cache TTL for the main conversation (interactive, -p and SDK turns, plus the helpers that run inline with it): \"5m\" or \"1h\". Unset = automatic: 1 hour on a Claude subscription within its usage limits, 5 minutes on an API key, Bedrock, Vertex or Foundry. 1-hour cache writes are billed at a higher rate; the cache stays warm across longer breaks. The CLAUDE_CODE_PROMPT_CACHE_TTL environment variable takes precedence."
+   "description": ""
   },
   {
    "key": "promptSuggestionEnabled",
    "type": "boolean",
-   "description": "When false, prompt suggestions are disabled. When absent or true, prompt suggestions are enabled."
+   "description": ""
   },
   {
    "key": "proxyAuthHelper",
    "type": "string",
-   "description": "Shell command that outputs a Proxy-Authorization header value (EAP)"
+   "description": ""
   },
   {
    "key": "remote",
    "type": "object",
-   "description": "Cloud session configuration"
+   "description": ""
   },
   {
    "key": "showMessageTimestamps",
    "type": "boolean",
-   "description": "Stamp each message with its arrival time"
+   "description": ""
   },
   {
    "key": "spellcheck",
    "type": "object",
-   "description": "Underline misspelled words in the prompt input as you type, using an installed … or … (off unless \"enabled\" is true; does nothing if none is installed). Read from user, flag and managed settings only (the whole block from the highest-precedence of those applies); ignored in project .claude/settings.json and .claude/settings.local.json."
+   "description": ""
   },
   {
    "key": "subagentPromptCacheTtl",
    "type": "string",
-   "description": "Prompt cache TTL for everything outside the main conversation — subagents, workflows, background and helper requests: \"5m\" or \"1h\". Unset = automatic (5 minutes unless ENABLE_PROMPT_CACHING_1H=1). The CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL environment variable takes precedence."
+   "description": ""
   },
   {
    "key": "switchModelsOnFlag",
    "type": "boolean",
-   "description": "When safeguards flag a message, automatically switch to a different model to keep chatting. When off, your session will pause instead."
+   "description": ""
   },
   {
    "key": "syncClaudeAiPlugins",
    "type": "boolean",
-   "description": "Set to false to turn off syncing of the plugins you have enabled on claude.ai. In your user settings (or managed settings): nothing more is downloaded, previously synced plugins (~/.claude/plugins/synced) are hidden from every session started afterwards and moved to ~/.claude/plugins/.trash at the next launch (deleted after cleanupPeriodDays; re-downloaded, not restored, if you re-enable). In .claude/settings.local.json or --settings: downloads stop and synced plugins are hidden for sessions in that workspace or invocation only (nothing is moved). Not read from project settings (.claude/settings.json). Only false is honored — the feature is enabled server-side for your account, so setting true does not turn it on early. While it is on, synced plugins load in every session like plugins you installed yourself (a plugin you installed with the same name takes precedence), are re-synced at each launch, and are removed when you disable them on claude.ai. Only applies when signed in with your Claude account."
+   "description": ""
   },
   {
    "key": "syncClaudeAiSkills",
    "type": "boolean",
-   "description": "Set to false to turn off syncing of the skills you have enabled on claude.ai. In your user settings (or managed settings): nothing more is downloaded, previously synced skills (~/.claude/skills/synced) can no longer be run, are hidden from every session started afterwards, and are moved to ~/.claude/skills/.trash at the next launch (deleted after cleanupPeriodDays; re-downloaded, not restored, if you re-enable). In .claude/settings.local.json or --settings: downloads stop and synced skills are blocked and hidden for sessions in that workspace or invocation only (nothing is moved). Not read from project settings (.claude/settings.json). Only false is honored — the feature is enabled server-side for your account, so setting true does not turn it on early. While it is on, synced skills are available in every session, re-synced about every 10 minutes while a session is in use and a quarter as often otherwise, and removed when you disable them on claude.ai. Only applies when signed in with your Claude account."
+   "description": ""
   },
   {
    "key": "taskOutputMaxChars",
    "type": "number",
-   "description": "Deprecated: no longer has any effect (the TaskOutput tool was removed). Read a background task's output file with the Read tool instead."
+   "description": ""
   },
   {
    "key": "terminalTitleFromRename",
    "type": "boolean",
-   "description": "Whether /rename updates the terminal tab title (defaults to true). Set to false to keep auto-generated topic titles."
+   "description": ""
   },
   {
    "key": "timeFormat",
    "type": "unknown",
-   "description": "Clock format for times shown in the UI: \"auto\" (default, follows the locale), \"12-hour\", \"24-hour\", \"24-hour-utc\" (\"18:05Z\"), or a strftime pattern such as \"%H:%M\" (any value containing \"%\"; other values read as \"auto\"). A pattern replaces the time everywhere; message timestamps show only the pattern, so include %Y-%m-%d for the date. /config offers the presets; a pattern is set here."
+   "description": ""
   },
   {
    "key": "timeZone",
    "type": "string",
-   "description": "IANA time zone for times shown in the UI, e.g. \"UTC\" or \"Europe/Dublin\". Default: the system time zone. An unknown name falls back to the system time zone."
+   "description": ""
   },
   {
    "key": "todoFeatureEnabled",
    "type": "boolean",
-   "description": "Enable the todo / task tracking panel"
+   "description": ""
   },
   {
    "key": "ultracode",
    "type": "boolean",
-   "description": "Enable ultracode for the session: standing dynamic-workflow orchestration at any effort level. Session-scoped — typically provided via --settings or the apply_flag_settings control request; interactive toggles never persist it. Requires workflows to be enabled and a model that supports ultracode."
+   "description": ""
   },
   {
    "key": "xaaIdp",
    "type": "object",
-   "description": "XAA (SEP-990) IdP connection. Configure once; all XAA-enabled MCP servers reuse this."
+   "description": ""
   }
  ]
 }

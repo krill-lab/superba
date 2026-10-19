@@ -169,7 +169,9 @@ def cmd_binary(args):
         # A template expression in the text (`${list.join(", ")}`) is code.
         d = re.sub(r"\$\{[^}]*\}", "…", d)
         kind, values = kind_of(expr)
-        item = {"key": key, "type": kind, "description": d}
+        # Only the key and its type are taken from the binary: its text is
+        # Anthropic's and is not redistributed (descriptions are our own, in zh.json).
+        item = {"key": key, "type": kind, "description": ""}
         if values:
             item["enum"] = values
         seen[key] = item
