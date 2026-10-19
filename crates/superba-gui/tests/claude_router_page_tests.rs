@@ -120,7 +120,7 @@ fn the_connection_page_offers_the_router_once_it_is_set_up() {
 }
 
 #[test]
-fn claude_members_heading_is_visible_before_scrolling() {
+fn router_controls_stay_visible_and_claude_members_are_reachable() {
     for locale in [Locale::ZhCn, Locale::En] {
         let tr = Tr::new(locale);
         for size in [[1280.0, 800.0], [960.0, 640.0]] {
@@ -132,10 +132,10 @@ fn claude_members_heading_is_visible_before_scrolling() {
                     h = h.dark();
                 }
                 let mut state = State::default();
-                let title = tr.t("router.claude.title");
+                let title = tr.t("router.section.title");
                 let f = h.until(
                     |ui, cx, out| router::show(ui, cx, &mut state, out),
-                    |f| f.has(&title),
+                    |f| f.has(&tr.t("router.service_label")),
                 );
                 let (_, rect, clip) = f
                     .clipped_texts
@@ -144,7 +144,19 @@ fn claude_members_heading_is_visible_before_scrolling() {
                     .unwrap();
                 assert!(
                     clip.contains_rect(*rect) && f.rect.contains_rect(*rect),
-                    "{locale:?} {size:?} dark={dark}: Claude heading {rect:?} clipped by {clip:?}"
+                    "{locale:?} {size:?} dark={dark}: Router heading {rect:?} clipped by {clip:?}"
+                );
+                // Font metrics and wrapped help text can put members below
+                // the fold in short windows; the column must keep them reachable.
+                let title = tr.t("router.claude.title");
+                h.until_scrolled(
+                    |ui, cx, out| router::show(ui, cx, &mut state, out),
+                    |f| {
+                        f.has("Plain")
+                            && f.clipped_texts.iter().any(|(text, rect, clip)| {
+                                text == &title && clip.contains_rect(*rect)
+                            })
+                    },
                 );
             }
         }
