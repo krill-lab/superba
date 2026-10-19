@@ -440,6 +440,11 @@ fn fake_wsl(dir: &Path) -> PathBuf {
          [ \"$WSL_UTF8\" = 1 ] || { echo 'WSL_UTF8 not set' >&2; exit 2; }\n\
          if [ \"$2\" = Missing ]; then printf 'T\\000h\\000e\\000r\\000e\\000 \\000i\\000s\\000 \\000n\\000o\\000 \\000d\\000i\\000s\\000t\\000r\\000o\\000\\n\\000'; exit 255; fi\n\
          shift 5\n\
+         # Resolve Linux executable paths on the Unix test host.\n\
+         case \"$1\" in /bin/true|/bin/sh)\n\
+           program=$(command -v \"${1##*/}\") || exit 127\n\
+           shift; set -- \"$program\" \"$@\";;\n\
+         esac\n\
          exec \"$@\"\n",
         0o755,
     );

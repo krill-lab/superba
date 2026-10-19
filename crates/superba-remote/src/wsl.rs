@@ -813,7 +813,13 @@ mod timeout_tests {
         std::fs::write(
             &staged,
             format!(
-                "#!/bin/sh\ncd {}\n{body}\n",
+                "#!/bin/sh\ncd {}\n{body}\n\
+                 # Resolve Linux executable paths on the Unix test host.\n\
+                 case \"$1\" in /bin/true|/bin/sh)\n\
+                   program=$(command -v \"${{1##*/}}\") || exit 127\n\
+                   shift; set -- \"$program\" \"$@\";;\n\
+                 esac\n\
+                 exec \"$@\"\n",
                 crate::script::sh_quote(&dir.path().display().to_string())
             ),
         )
@@ -828,7 +834,8 @@ mod timeout_tests {
         );
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         let mut shell = WslShell::with_program(path);
-        shell.warmup_timeout = Duration::from_millis(200);
+        // Allow slow CI hosts to launch the helper; stalled attempts sleep much longer.
+        shell.warmup_timeout = Duration::from_secs(5);
         (dir, shell)
     }
 
@@ -855,11 +862,11 @@ mod timeout_tests {
     #[tokio::test]
     async fn warmup_timeout_retries_once_and_success_is_shared_by_clones() {
         let (dir, shell) = fake(
-            "shift 5\nif [ \"$1\" = /bin/true ]; then\n echo warm >> calls\n if [ ! -f warmed ]; then touch warmed; exec sleep 5; fi\nfi\nexec \"$@\"",
+            "shift 5\nif [ \"$1\" = /bin/true ]; then\n echo warm >> calls\n if [ ! -f warmed ]; then touch warmed; exec sleep 30; fi\nfi",
         );
         for shell in [shell.clone(), shell] {
             let out = shell
-                .run(&host(), "echo ready\n", Duration::from_secs(2))
+                .run(&host(), "echo ready\n", Duration::from_secs(5))
                 .await
                 .unwrap();
             assert_eq!(out.stdout, b"ready\n");
@@ -875,12 +882,12 @@ mod timeout_tests {
 
     #[tokio::test]
     async fn probe_timeout_retries_once_and_reports_the_stage() {
-        let (dir, shell) = fake("shift 5\nexec \"$@\"");
+        let (dir, shell) = fake("shift 5");
         let events = Arc::new(Events::default());
-        let script = "# superba-wsl-probe\nSB_N='test'\necho attempt >> calls\necho '@@SBPH:test:files'\nif [ ! -f tried ]; then touch tried; exec sleep 5; fi\necho done\n";
+        let script = "# superba-wsl-probe\nSB_N='test'\necho attempt >> calls\necho '@@SBPH:test:files'\nif [ ! -f tried ]; then touch tried; exec sleep 30; fi\necho done\n";
         let out = crate::operation::with_events(
             events.clone(),
-            shell.run(&host(), script, Duration::from_millis(200)),
+            shell.run(&host(), script, Duration::from_secs(5)),
         )
         .await
         .unwrap();
@@ -897,12 +904,12 @@ mod timeout_tests {
 
     #[tokio::test]
     async fn mutation_timeout_is_never_replayed_and_names_wsl() {
-        let (dir, shell) = fake("shift 5\nexec \"$@\"");
+        let (dir, shell) = fake("shift 5");
         let error = shell
             .run(
                 &host(),
-                "# superba-write\necho written >> calls\nexec sleep 5\n",
-                Duration::from_millis(200),
+                "# superba-write\necho written >> calls\nexec sleep 30\n",
+                Duration::from_secs(5),
             )
             .await
             .unwrap_err();
@@ -921,7 +928,7 @@ mod timeout_tests {
 
     #[tokio::test]
     async fn cancellation_stops_the_probe_child_and_clears_progress() {
-        let (dir, shell) = fake("shift 5\nexec \"$@\"");
+        let (dir, shell) = fake("shift 5");
         let events = Arc::new(Events {
             stop_at_files: true,
             ..Default::default()
