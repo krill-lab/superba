@@ -20,6 +20,7 @@ use serde_json::Value;
 pub struct Invalid(pub String);
 
 impl Invalid {
+    /// Create an error using a description that contains no request content.
     pub fn new(message: impl Into<String>) -> Self {
         Self(message.into())
     }
@@ -33,6 +34,7 @@ impl std::fmt::Display for Invalid {
 
 impl std::error::Error for Invalid {}
 
+/// Decode and resolve function call identities in a native request.
 pub fn decode_request(protocol: Protocol, body: &Value) -> Result<Request, Invalid> {
     let mut request = match protocol {
         Protocol::Messages => anthropic::decode_request(body),
@@ -44,6 +46,7 @@ pub fn decode_request(protocol: Protocol, body: &Value) -> Result<Request, Inval
     Ok(request)
 }
 
+/// Encode the shared request in the selected protocol.
 pub fn encode_request(protocol: Protocol, request: &Request) -> Result<Value, Invalid> {
     match protocol {
         Protocol::Messages => anthropic::encode_request(request),
@@ -53,6 +56,7 @@ pub fn encode_request(protocol: Protocol, request: &Request) -> Result<Value, In
     }
 }
 
+/// Decode a completed native response.
 pub fn decode_response(protocol: Protocol, body: &Value) -> Result<Response, Invalid> {
     match protocol {
         Protocol::Messages => anthropic::decode_response(body),
@@ -62,6 +66,7 @@ pub fn decode_response(protocol: Protocol, body: &Value) -> Result<Response, Inv
     }
 }
 
+/// Encode a completed response in the selected protocol.
 pub fn encode_response(protocol: Protocol, response: &Response) -> Result<Value, Invalid> {
     match protocol {
         Protocol::Messages => anthropic::encode_response(response),
@@ -133,6 +138,7 @@ pub(crate) fn text_content(blocks: &[ir::Block]) -> String {
         .join("\n")
 }
 
+/// Normalize a native error envelope with its HTTP status.
 pub fn decode_error(status: u16, value: &Value) -> ir::ApiError {
     let e = value.get("error").unwrap_or(value);
     let code = e
@@ -152,6 +158,7 @@ pub fn decode_error(status: u16, value: &Value) -> ir::ApiError {
     }
 }
 
+/// Encode a normalized error in the client's protocol.
 pub fn encode_error(protocol: Protocol, e: &ir::ApiError) -> Value {
     use serde_json::json;
     match protocol {

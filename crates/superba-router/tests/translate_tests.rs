@@ -289,3 +289,91 @@ fn compaction_items_and_stored_state_are_not_faked() {
         assert!(translate::decode_request(Protocol::Responses, &v).is_err());
     }
 }
+
+#[test]
+fn responses_embedded_namespaces_and_text_tools_roundtrip() {
+    let wire = json!({"model":"m","input":[
+        {"type":"additional_tools","role":"developer","tools":[{"type":"namespace","name":"local","tools":[
+            {"type":"custom","name":"run","description":"Run text","format":{"type":"text"}},
+            {"type":"function","name":"read","parameters":{"type":"object","properties":{}},"strict":false}
+        ]}]},
+        {"role":"user","content":"Read a file"},
+        {"type":"custom_tool_call","id":"ctc_a","call_id":"call_a","namespace":"local","name":"run","input":"read marker.txt"},
+        {"type":"custom_tool_call_output","call_id":"call_a","output":"contents"},
+        {"type":"function_call","id":"fc_b","call_id":"call_b","namespace":"local","name":"read","arguments":"{}"},
+        {"type":"function_call_output","call_id":"call_b","output":"more"}
+    ]});
+    let request = translate::decode_request(Protocol::Responses, &wire).unwrap();
+    let encoded = translate::encode_request(Protocol::Responses, &request).unwrap();
+    assert_eq!(encoded["input"][1]["type"], "custom_tool_call");
+    assert_eq!(encoded["input"][1]["input"], "read marker.txt");
+    assert_eq!(encoded["input"][2]["type"], "custom_tool_call_output");
+    assert_eq!(
+        translate::decode_request(Protocol::Responses, &encoded).unwrap(),
+        request
+    );
+    let chat = translate::encode_request(Protocol::Chat, &request).unwrap();
+    assert_eq!(
+        chat["tools"][0]["function"]["parameters"]["properties"]["input"]["type"],
+        "string"
+    );
+    assert_eq!(
+        chat["messages"][1]["tool_calls"][0]["function"]["name"],
+        chat["tools"][0]["function"]["name"]
+    );
+}
+
+#[test]
+fn text_tool_stream_restores_native_events_after_split_json_arguments() {
+    let request = translate::decode_request(Protocol::Responses, &json!({"input":[],"tools":[{"type":"namespace","name":"local","tools":[{"type":"custom","name":"run","format":{"type":"text"}}]}]})).unwrap();
+    let tool = &request.tools[0].name;
+    let source = [
+        json!({"id":"reply","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":tool,"arguments":"{\"input\":\"read"}}]}}]}),
+        json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":" marker.txt\"}"}}]},"finish_reason":"tool_calls"}]}),
+    ].into_iter().map(|v| format!("data: {v}\n\n")).collect::<String>() + "data: [DONE]\n\n";
+    let mut converter =
+        Transcoder::new(Protocol::Chat, Protocol::Responses).with_response_tools(&request.tools);
+    let mut bytes = Vec::new();
+    for chunk in source.as_bytes().chunks(7) {
+        bytes.extend(converter.push(chunk).unwrap());
+    }
+    bytes.extend(converter.finish().unwrap());
+    let mut parser = Sse::default();
+    let events: Vec<Value> = parser
+        .push(&bytes)
+        .unwrap()
+        .into_iter()
+        .map(|b| serde_json::from_slice(&b).unwrap())
+        .collect();
+    let delta = events
+        .iter()
+        .find(|v| v["type"] == "response.custom_tool_call_input.delta")
+        .unwrap();
+    assert_eq!(delta["delta"], "read marker.txt");
+    assert!(delta["item_id"].as_str().unwrap().starts_with("ctc_"));
+    let item = &events.last().unwrap()["response"]["output"][0];
+    assert_eq!(item["type"], "custom_tool_call");
+    assert_eq!(item["namespace"], "local");
+    assert_eq!(item["name"], "run");
+    assert_eq!(item["input"], "read marker.txt");
+    assert!(
+        events
+            .iter()
+            .all(|v| v["type"] != "response.function_call_arguments.delta")
+    );
+}
+
+#[test]
+fn generated_responses_item_ids_use_native_type_prefixes() {
+    let r =
+        translate::decode_request(Protocol::Messages, &native_request(Protocol::Messages)).unwrap();
+    let encoded = translate::encode_request(Protocol::Responses, &r).unwrap();
+    let call = encoded["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["type"] == "function_call")
+        .unwrap();
+    assert!(call["id"].as_str().unwrap().starts_with("fc_"));
+    assert_eq!(call["call_id"], "call_a");
+}

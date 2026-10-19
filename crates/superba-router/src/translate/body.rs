@@ -72,6 +72,16 @@ pub(crate) async fn response(
     source: Protocol,
     target: Protocol,
 ) -> Result<UpResponse, Invalid> {
+    response_with_tools(resp, source, target, &[]).await
+}
+
+/// Restore the requesting client's native function identities and formats.
+pub(crate) async fn response_with_tools(
+    resp: UpResponse,
+    source: Protocol,
+    target: Protocol,
+    tools: &[super::ir::Tool],
+) -> Result<UpResponse, Invalid> {
     let (mut parts, body) = resp.into_parts();
     let sse = parts
         .headers
@@ -104,7 +114,7 @@ pub(crate) async fn response(
             UpBody::translated(
                 TranslateBody {
                     inner: body,
-                    codec: Transcoder::new(source, target),
+                    codec: Transcoder::new(source, target).with_response_tools(tools),
                     done: false,
                 }
                 .boxed_unsync(),
@@ -120,11 +130,14 @@ pub(crate) async fn response(
         .to_bytes();
     let value: Value = serde_json::from_slice(&bytes)
         .map_err(|_| Invalid::new("upstream response is not JSON"))?;
-    let converted = if parts.status.is_success() {
+    let mut converted = if parts.status.is_success() {
         super::encode_response(target, &super::decode_response(source, &value)?)?
     } else {
         super::encode_error(target, &super::decode_error(parts.status.as_u16(), &value))
     };
+    if target == Protocol::Responses {
+        super::responses::Bindings::new(tools).response(&mut converted)?;
+    }
     parts.headers.insert(
         http::header::CONTENT_TYPE,
         http::HeaderValue::from_static("application/json"),
@@ -166,8 +179,18 @@ pub(crate) fn request(
     value: &Value,
     model: &str,
 ) -> Result<Bytes, Invalid> {
+    request_with_tools(source, target, value, model).map(|(bytes, _)| bytes)
+}
+
+/// Return the normalized tool definitions alongside the encoded request.
+pub(crate) fn request_with_tools(
+    source: Protocol,
+    target: Protocol,
+    value: &Value,
+    model: &str,
+) -> Result<(Bytes, Vec<super::ir::Tool>), Invalid> {
     let mut r = super::decode_request(source, value)?;
     r.model = model.to_owned();
     let v = super::encode_request(target, &r)?;
-    Ok(Bytes::from(v.to_string()))
+    Ok((Bytes::from(v.to_string()), r.tools))
 }

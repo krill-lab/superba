@@ -130,6 +130,7 @@ fn encode_blocks(content: &[Block], history: bool) -> Result<Vec<Value>, Invalid
         .collect()
 }
 
+/// Decode a native request into the shared conversation representation.
 pub fn decode_request(v: &Value) -> Result<Request, Invalid> {
     let messages = v["messages"]
         .as_array()
@@ -161,6 +162,7 @@ pub fn decode_request(v: &Value) -> Result<Request, Invalid> {
             ));
         }
         r.tools.push(Tool {
+            native: None,
             name: string(t, "name"),
             description: optional_string(t, "description"),
             parameters: t
@@ -191,6 +193,7 @@ pub fn decode_request(v: &Value) -> Result<Request, Invalid> {
     Ok(r)
 }
 
+/// Encode a request, dropping opaque state from foreign model families.
 pub fn encode_request(r: &Request) -> Result<Value, Invalid> {
     let mut messages: Vec<Value> = Vec::new();
     let mut system = encode_blocks(&r.system, true)?;
@@ -319,6 +322,7 @@ pub(crate) fn encode_stop(stop: Option<&StopReason>) -> (Value, Value) {
     }
 }
 
+/// Decode a completed native response and normalize token usage.
 pub fn decode_response(v: &Value) -> Result<Response, Invalid> {
     if v.get("error").is_some() {
         return Ok(Response {
@@ -336,6 +340,7 @@ pub fn decode_response(v: &Value) -> Result<Response, Invalid> {
     })
 }
 
+/// Encode a completed response in this protocol.
 pub fn encode_response(r: &Response) -> Result<Value, Invalid> {
     if let Some(e) = &r.error {
         return Ok(super::encode_error(Protocol::Messages, e));
@@ -347,11 +352,13 @@ pub fn encode_response(r: &Response) -> Result<Value, Invalid> {
 }
 
 #[derive(Default)]
+/// Incremental decoder for this protocol's response events.
 pub struct Decoder {
     usage: Usage,
 }
 
 impl Decoder {
+    /// Decode one native event into zero or more IR events.
     pub fn decode(&mut self, v: &Value) -> Result<Vec<Event>, Invalid> {
         let index = v["index"].as_u64().unwrap_or(0) as usize;
         Ok(match kind(v) {
@@ -367,10 +374,10 @@ impl Decoder {
             }
             "content_block_start" => {
                 let mut block = decode_block(&v["content_block"])?;
-                if let Content::ToolCall { arguments, .. } = &mut block.content {
-                    if arguments == "{}" {
-                        arguments.clear();
-                    }
+                if let Content::ToolCall { arguments, .. } = &mut block.content
+                    && arguments == "{}"
+                {
+                    arguments.clear();
                 }
                 vec![Event::BlockStart { index, block }]
             }
@@ -425,6 +432,7 @@ impl Decoder {
 }
 
 #[derive(Default)]
+/// Incremental encoder for this protocol's response events.
 pub struct Encoder {
     state: Accumulator,
     /// Empty foreign encrypted blocks have no downstream index.
@@ -432,6 +440,7 @@ pub struct Encoder {
 }
 
 impl Encoder {
+    /// Encode one IR event into zero or more native events.
     pub fn encode(&mut self, e: &Event) -> Result<Vec<Value>, Invalid> {
         self.state.push(e)?;
         let mut out = Vec::new();

@@ -7,13 +7,19 @@ use serde_json::Value;
 
 const MAX_EVENT: usize = 16 * 1024 * 1024;
 
+/// A stateful native-protocol decoder.
 pub enum Decoder {
+    /// Anthropic Messages.
     Messages(anthropic::Decoder),
+    /// OpenAI Responses.
     Responses(responses::Decoder),
+    /// OpenAI Chat Completions.
     Chat(chat::Decoder),
+    /// Google Gemini.
     Gemini(gemini::Decoder),
 }
 impl Decoder {
+    /// Construct the selected protocol codec or codec composition.
     pub fn new(protocol: Protocol) -> Self {
         match protocol {
             Protocol::Messages => Self::Messages(Default::default()),
@@ -22,6 +28,7 @@ impl Decoder {
             Protocol::Gemini => Self::Gemini(Default::default()),
         }
     }
+    /// Decode one native event into the IR.
     pub fn decode(&mut self, v: &Value) -> Result<Vec<Event>, Invalid> {
         match self {
             Self::Messages(d) => d.decode(v),
@@ -38,13 +45,19 @@ impl Decoder {
         }
     }
 }
+/// A stateful native-protocol encoder.
 pub enum Encoder {
+    /// Anthropic Messages.
     Messages(anthropic::Encoder),
+    /// OpenAI Responses.
     Responses(responses::Encoder),
+    /// OpenAI Chat Completions.
     Chat(chat::Encoder),
+    /// Google Gemini.
     Gemini(gemini::Encoder),
 }
 impl Encoder {
+    /// Construct the selected protocol codec or codec composition.
     pub fn new(protocol: Protocol) -> Self {
         match protocol {
             Protocol::Messages => Self::Messages(Default::default()),
@@ -53,6 +66,7 @@ impl Encoder {
             Protocol::Gemini => Self::Gemini(Default::default()),
         }
     }
+    /// Encode one IR event into native events.
     pub fn encode(&mut self, e: &Event) -> Result<Vec<Value>, Invalid> {
         match self {
             Self::Messages(d) => d.encode(e),
@@ -70,6 +84,7 @@ pub struct Sse {
     data: Vec<u8>,
 }
 impl Sse {
+    /// Consume an arbitrary byte chunk and return all newly completed output.
     pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Vec<u8>>, Invalid> {
         self.buffer.extend_from_slice(bytes);
         let mut out = Vec::new();
@@ -104,24 +119,27 @@ impl Sse {
         }
         Ok(out)
     }
+    /// Finish framing at EOF; a transcoder also rejects incomplete responses.
     pub fn finish(&mut self) -> Result<Vec<Vec<u8>>, Invalid> {
         self.push(b"\n\n")
     }
 }
 
+/// Write one native JSON event with the required SSE event name.
 pub fn frame(protocol: Protocol, v: &Value, out: &mut Vec<u8>) {
-    if matches!(protocol, Protocol::Messages | Protocol::Responses) {
-        if let Some(kind) = v["type"].as_str() {
-            out.extend_from_slice(b"event: ");
-            out.extend_from_slice(kind.as_bytes());
-            out.push(b'\n');
-        }
+    if matches!(protocol, Protocol::Messages | Protocol::Responses)
+        && let Some(kind) = v["type"].as_str()
+    {
+        out.extend_from_slice(b"event: ");
+        out.extend_from_slice(kind.as_bytes());
+        out.push(b'\n');
     }
     out.extend_from_slice(b"data: ");
     out.extend_from_slice(v.to_string().as_bytes());
     out.extend_from_slice(b"\n\n");
 }
 
+/// Compose native codecs through the IR while retaining incremental state.
 pub struct Transcoder {
     parser: Sse,
     decoder: Decoder,
@@ -130,6 +148,14 @@ pub struct Transcoder {
     ended: bool,
 }
 impl Transcoder {
+    /// Restore Responses text tools and namespaces using the request's tools.
+    pub fn with_response_tools(mut self, tools: &[super::ir::Tool]) -> Self {
+        if let Encoder::Responses(encoder) = self.encoder {
+            self.encoder = Encoder::Responses(encoder.with_tools(tools));
+        }
+        self
+    }
+    /// Construct the selected protocol codec or codec composition.
     pub fn new(source: Protocol, target: Protocol) -> Self {
         Self {
             parser: Default::default(),
@@ -139,6 +165,7 @@ impl Transcoder {
             ended: false,
         }
     }
+    /// Consume an arbitrary byte chunk and return all newly completed output.
     pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Invalid> {
         let frames = self.parser.push(bytes)?;
         self.frames(frames)
@@ -176,6 +203,7 @@ impl Transcoder {
         }
         Ok(out)
     }
+    /// Finish framing at EOF; a transcoder also rejects incomplete responses.
     pub fn finish(&mut self) -> Result<Vec<u8>, Invalid> {
         let frames = self.parser.finish()?;
         let mut out = self.frames(frames)?;

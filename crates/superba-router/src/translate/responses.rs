@@ -1,5 +1,9 @@
 //! OpenAI Responses codec. Item ids and function call ids are distinct.
 
+#[path = "responses_tools.rs"]
+mod tools;
+pub(crate) use tools::Bindings;
+
 use super::ir::*;
 use super::{Invalid, array, kind, number, optional_string, role, role_name, string};
 use serde_json::{Value, json};
@@ -25,11 +29,10 @@ fn content(v: &Value) -> Result<Vec<Block>, Invalid> {
                     Content::Image(m)
                 }
                 "input_file" => Content::File(Media::from_url(
-                    &p.get("file_data")
+                    p.get("file_data")
                         .or_else(|| p.get("file_url"))
                         .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
+                        .unwrap_or_default(),
                 )),
                 _ => return Err(Invalid::new("unsupported Responses content part")),
             }))
@@ -62,15 +65,23 @@ fn reasoning(v: &Value) -> Block {
 fn input_item(v: &Value) -> Result<Message, Invalid> {
     let (role, content) = match kind(v) {
         "" | "message" => (role(&string(v, "role"))?, content(&v["content"])?),
-        "function_call" => (
+        "function_call" | "custom_tool_call" => (
             Role::Assistant,
             vec![Block::new(Content::ToolCall {
                 id: string(v, "call_id"),
-                name: string(v, "name"),
-                arguments: string(v, "arguments"),
+                name: tools::name(
+                    &string(v, "name"),
+                    v["namespace"].as_str(),
+                    kind(v) == "custom_tool_call",
+                ),
+                arguments: if kind(v) == "custom_tool_call" {
+                    json!({"input":v["input"]}).to_string()
+                } else {
+                    string(v, "arguments")
+                },
             })],
         ),
-        "function_call_output" => (
+        "function_call_output" | "custom_tool_call_output" => (
             Role::User,
             vec![Block::new(Content::ToolResult {
                 call_id: string(v, "call_id"),
@@ -95,6 +106,7 @@ fn input_item(v: &Value) -> Result<Message, Invalid> {
     Ok(Message { role, content })
 }
 
+/// Decode a native request into the shared conversation representation.
 pub fn decode_request(v: &Value) -> Result<Request, Invalid> {
     if v.get("previous_response_id").is_some_and(|v| !v.is_null())
         || v.get("conversation").is_some_and(|v| !v.is_null())
@@ -126,6 +138,10 @@ pub fn decode_request(v: &Value) -> Result<Request, Invalid> {
             .as_array()
             .ok_or_else(|| Invalid::new("input must be text or an array"))?;
         for item in input {
+            if kind(item) == "additional_tools" {
+                tools::decode(array(item, "tools"), None, &mut r.tools)?;
+                continue;
+            }
             let m = input_item(item)?;
             if m.role == Role::System {
                 r.system.extend(m.content);
@@ -134,22 +150,7 @@ pub fn decode_request(v: &Value) -> Result<Request, Invalid> {
             }
         }
     }
-    for t in array(v, "tools") {
-        if kind(t) != "function" {
-            return Err(Invalid::new(
-                "only function tools can be translated from Responses",
-            ));
-        }
-        r.tools.push(Tool {
-            name: string(t, "name"),
-            description: optional_string(t, "description"),
-            parameters: t
-                .get("parameters")
-                .cloned()
-                .unwrap_or_else(|| json!({"type":"object","properties":{}})),
-            strict: t["strict"].as_bool(),
-        });
-    }
+    tools::decode(array(v, "tools"), None, &mut r.tools)?;
     r.tool_choice = match v["tool_choice"].as_str() {
         Some("auto") => Some(ToolChoice::Auto),
         Some("required") => Some(ToolChoice::Required),
@@ -204,7 +205,12 @@ pub(crate) fn encode_item(
     index: usize,
     history: bool,
 ) -> Result<Option<Value>, Invalid> {
-    let id = format!("item_{index}");
+    let prefix = match &block.content {
+        Content::ToolCall { .. } => "fc",
+        Content::Reasoning { .. } => "rs",
+        _ => "msg",
+    };
+    let id = format!("{prefix}_{index}");
     Ok(Some(match &block.content {
         Content::ToolCall {
             id: call,
@@ -248,6 +254,7 @@ pub(crate) fn encode_item(
     }))
 }
 
+/// Encode a request, dropping opaque state from foreign model families.
 pub fn encode_request(r: &Request) -> Result<Value, Invalid> {
     let mut input = Vec::new();
     if !r.system.is_empty() {
@@ -291,21 +298,11 @@ pub fn encode_request(r: &Request) -> Result<Value, Invalid> {
         v["parallel_tool_calls"] = p.into();
     }
     if !r.tools.is_empty() {
-        v["tools"] = Value::Array(
-            r.tools
-                .iter()
-                .map(|t| {
-                    let mut v = json!({"type":"function","name":t.name,"parameters":t.parameters});
-                    if let Some(d) = &t.description {
-                        v["description"] = d.clone().into();
-                    }
-                    if let Some(s) = t.strict {
-                        v["strict"] = s.into();
-                    }
-                    v
-                })
-                .collect(),
-        );
+        v["tools"] = Value::Array(tools::encode(&r.tools));
+    }
+    let mut bindings = Bindings::new(&r.tools);
+    for item in v["input"].as_array_mut().expect("request input") {
+        bindings.item(item)?;
     }
     if let Some(c) = &r.tool_choice {
         v["tool_choice"] = match c {
@@ -376,6 +373,7 @@ pub(crate) fn encode_usage(u: Usage) -> Value {
     v
 }
 
+/// Decode a completed native response and normalize token usage.
 pub fn decode_response(v: &Value) -> Result<Response, Invalid> {
     if v.get("error").is_some_and(|e| !e.is_null()) {
         return Ok(Response {
@@ -417,6 +415,7 @@ pub fn decode_response(v: &Value) -> Result<Response, Invalid> {
     })
 }
 
+/// Encode a completed response in this protocol.
 pub fn encode_response(r: &Response) -> Result<Value, Invalid> {
     if let Some(e) = &r.error {
         return Ok(
@@ -440,6 +439,7 @@ pub fn encode_response(r: &Response) -> Result<Value, Invalid> {
 }
 
 #[derive(Default)]
+/// Incremental decoder for this protocol's response events.
 pub struct Decoder {
     blocks: BTreeMap<(usize, usize), usize>,
     ended_blocks: BTreeSet<usize>,
@@ -468,6 +468,7 @@ impl Decoder {
         }
     }
 
+    /// Decode one native event into zero or more IR events.
     pub fn decode(&mut self, v: &Value) -> Result<Vec<Event>, Invalid> {
         let mut out = Vec::new();
         let oi = v["output_index"].as_u64().unwrap_or(0) as usize;
@@ -609,20 +610,29 @@ impl Decoder {
         Ok(out)
     }
 
+    /// Whether the stream has already received a terminal event.
     pub fn ended(&self) -> bool {
         self.ended
     }
 }
 
 #[derive(Default)]
+/// Incremental encoder for this protocol's response events.
 pub struct Encoder {
     state: Accumulator,
     sequence: u64,
     items: BTreeMap<usize, Value>,
     closed: BTreeSet<usize>,
+    bindings: Bindings,
 }
 
 impl Encoder {
+    pub(crate) fn with_tools(mut self, tools: &[Tool]) -> Self {
+        self.bindings = Bindings::new(tools);
+        self
+    }
+
+    /// Encode one IR event into zero or more native events.
     pub fn encode(&mut self, e: &Event) -> Result<Vec<Value>, Invalid> {
         self.state.push(e)?;
         let mut out = Vec::new();
@@ -633,7 +643,7 @@ impl Encoder {
                 let delta=match &mut initial.content {Content::Text(t)=>Some(Delta::Text(std::mem::take(t))),Content::Reasoning {text,..}=>Some(Delta::Reasoning(std::mem::take(text))),Content::ToolCall {arguments,..}=>Some(Delta::Arguments(std::mem::take(arguments))),_=>None};
                 // Empty reasoning items still have a lifecycle and can receive
                 // summary or encrypted content later.
-                let mut item=encode_item(&initial,*index,false)?.unwrap_or_else(||json!({"type":"reasoning","id":format!("item_{index}"),"summary":[]}));
+                let mut item=encode_item(&initial,*index,false)?.unwrap_or_else(||json!({"type":"reasoning","id":format!("rs_{index}"),"summary":[]}));
                 item["status"]="in_progress".into();
                 if item["type"]=="message" {item["content"]=json!([]);}
                 self.items.insert(*index,item.clone());
@@ -653,6 +663,7 @@ impl Encoder {
             Event::Error(e)=>out.push(json!({"type":"response.failed","response":{"id":self.state.response.id,"object":"response","status":"failed","output":[],"error":{"code":e.code,"message":e.message}}})),
             Event::Usage(_) | Event::Stop(_)=>{}
         }
+        let mut out = self.bindings.events(out)?;
         for v in &mut out {
             v["sequence_number"] = self.sequence.into();
             self.sequence += 1;

@@ -253,12 +253,12 @@ where
             .get(model)
             .map(String::as_str)
             .unwrap_or(model);
-        let body = if protocol == Protocol::Responses {
+        let (body, response_tools) = if protocol == Protocol::Responses {
             let mut v = value.clone();
             v["model"] = target.into();
-            Bytes::from(v.to_string())
+            (Bytes::from(v.to_string()), Vec::new())
         } else {
-            super::body::request(Protocol::Responses, protocol, &value, target)?
+            super::body::request_with_tools(Protocol::Responses, protocol, &value, target)?
         };
         let Some(base) = routing::base(&generation.config, c.member, c.line, protocol) else {
             continue;
@@ -310,7 +310,13 @@ where
         crate::proxy::on_answer(shared, generation, c, None, None, status, begun.elapsed());
         let mut resp = up_response(resp);
         if protocol != Protocol::Responses {
-            resp = super::body::response(resp, protocol, Protocol::Responses).await?;
+            resp = super::body::response_with_tools(
+                resp,
+                protocol,
+                Protocol::Responses,
+                &response_tools,
+            )
+            .await?;
         }
         if !status.is_success() {
             let bytes = http_body_util::Limited::new(resp.into_body(), 1024 * 1024)

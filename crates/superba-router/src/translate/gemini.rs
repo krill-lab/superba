@@ -211,6 +211,7 @@ fn encode_parts(blocks: &[Block]) -> Result<Vec<Value>, Invalid> {
         .collect()
 }
 
+/// Decode a native request into the shared conversation representation.
 pub fn decode_request(v: &Value) -> Result<Request, Invalid> {
     let contents = v["contents"]
         .as_array()
@@ -264,6 +265,7 @@ pub fn decode_request(v: &Value) -> Result<Request, Invalid> {
         }
         for t in definitions.into_iter().flatten() {
             r.tools.push(Tool {
+                native: None,
                 name: string(t, "name"),
                 description: optional_string(t, "description"),
                 parameters: t
@@ -318,6 +320,7 @@ pub fn decode_request(v: &Value) -> Result<Request, Invalid> {
 
 /// Model and stream live in the URL, not in generateContent's body. The hub
 /// supplies those two fields to the decoder from the authenticated ingress.
+/// Encode a request, dropping opaque state from foreign model families.
 pub fn encode_request(r: &Request) -> Result<Value, Invalid> {
     let mut contents = Vec::new();
     let mut system = r.system.clone();
@@ -443,6 +446,7 @@ fn encode_stop(s: Option<&StopReason>) -> Value {
     }
 }
 
+/// Decode a completed native response and normalize token usage.
 pub fn decode_response(v: &Value) -> Result<Response, Invalid> {
     if v.get("error").is_some() {
         return Ok(Response {
@@ -488,6 +492,7 @@ pub fn decode_response(v: &Value) -> Result<Response, Invalid> {
     })
 }
 
+/// Encode a completed response in this protocol.
 pub fn encode_response(r: &Response) -> Result<Value, Invalid> {
     if let Some(e) = &r.error {
         return Ok(super::encode_error(Protocol::Gemini, e));
@@ -498,6 +503,7 @@ pub fn encode_response(r: &Response) -> Result<Value, Invalid> {
 }
 
 #[derive(Default)]
+/// Incremental decoder for this protocol's response events.
 pub struct Decoder {
     started: bool,
     next: usize,
@@ -508,6 +514,7 @@ pub struct Decoder {
 }
 
 impl Decoder {
+    /// Decode one native event into zero or more IR events.
     pub fn decode(&mut self, v: &Value) -> Result<Vec<Event>, Invalid> {
         if v.get("error").is_some() {
             self.ended = true;
@@ -595,6 +602,7 @@ impl Decoder {
         }
         Ok(out)
     }
+    /// Finish a protocol stream after its terminal frame or HTTP EOF.
     pub fn finish(&mut self) -> Vec<Event> {
         if std::mem::replace(&mut self.ended, true) {
             vec![]
@@ -608,6 +616,7 @@ impl Decoder {
 }
 
 #[derive(Default)]
+/// Incremental encoder for this protocol's response events.
 pub struct Encoder {
     state: Accumulator,
     sent: BTreeMap<usize, bool>,
@@ -617,6 +626,7 @@ impl Encoder {
     fn chunk(&self, parts: Vec<Value>) -> Value {
         json!({"responseId":self.state.response.id,"modelVersion":self.state.response.model,"candidates":[{"index":0,"content":{"role":"model","parts":parts}}]})
     }
+    /// Encode one IR event into zero or more native events.
     pub fn encode(&mut self, e: &Event) -> Result<Vec<Value>, Invalid> {
         self.state.push(e)?;
         let mut out = Vec::new();

@@ -324,6 +324,7 @@ pub(crate) async fn proxy_http(
             .upstream_protocol(&member.cfg.id, Protocol::Responses)
             .unwrap_or(Protocol::Responses);
         let converted = upstream != Protocol::Responses && is_responses_path(&parts.method, &rest);
+        let mut response_tools = Vec::new();
         let mut resent = false;
         let (result, compression, started) = loop {
             let send_body = match mapped.get(&c.member) {
@@ -392,8 +393,16 @@ pub(crate) async fn proxy_http(
                     }
                 };
                 let model = value["model"].as_str().unwrap_or_default();
-                match translate::body::request(Protocol::Responses, upstream, &value, model) {
-                    Ok(b) => b,
+                match translate::body::request_with_tools(
+                    Protocol::Responses,
+                    upstream,
+                    &value,
+                    model,
+                ) {
+                    Ok((b, tools)) => {
+                        response_tools = tools;
+                        b
+                    }
                     Err(e) => {
                         return translate::body::error(
                             Protocol::Responses,
@@ -594,7 +603,14 @@ pub(crate) async fn proxy_http(
                         t.answered(c, resp.status().as_u16(), resp.headers(), started, now);
                     }
                     let resp = if converted {
-                        match translate::body::response(resp, upstream, Protocol::Responses).await {
+                        match translate::body::response_with_tools(
+                            resp,
+                            upstream,
+                            Protocol::Responses,
+                            &response_tools,
+                        )
+                        .await
+                        {
                             Ok(resp) => resp,
                             Err(e) => {
                                 return translate::body::error(
