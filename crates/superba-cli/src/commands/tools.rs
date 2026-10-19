@@ -271,11 +271,12 @@ fn confirm(
 }
 
 async fn operate(mut req: ToolRequest, yes: bool, rt: &Runtime, out: &mut Output) -> Result {
-    let view = rt.service.tools(false).await?;
-    let row = view
-        .row(req.tool)
-        .cloned()
-        .ok_or_else(|| Error::not_implemented(req.tool.display_name()))?;
+    // Only this tool's row (an empty change writes nothing): no lookups of
+    // the other tools' newest versions before the operation starts.
+    let row = rt
+        .service
+        .tool_settings(req.tool, ToolSettingsChange::default())
+        .await?;
     if let ToolSupport::Link { url } = &row.support {
         out.line(
             text("cli.tools.link_only_hint")
