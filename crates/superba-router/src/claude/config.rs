@@ -4,9 +4,8 @@
 //! request log); this section says which of them serve Claude Code and which
 //! models go where. Requests are passed through to each member's Anthropic
 //! Messages endpoint (`<origin><path>`, what one would set as
-//! `ANTHROPIC_BASE_URL`; `/v1/messages` is appended). A member without one is
-//! not eligible ([`ClaudeIneligible::NoAnthropicEndpoint`]): there is no
-//! protocol conversion yet.
+//! `ANTHROPIC_BASE_URL`; `/v1/messages` is appended). Members without one use an enabled conversion selected by
+//! [`RouterConfig::upstream_protocol`].
 //!
 //! - **Routes**: requested model (exact or `*` glob) → targets in failover
 //!   order (member, upstream model name). Without a matching route a model
@@ -94,7 +93,7 @@ pub struct ClaudeModel {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ClaudeMember {
-    /// Its Anthropic Messages endpoint (`None`: not eligible).
+    /// Its native Anthropic Messages endpoint; absent endpoints may use conversion.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anthropic: Option<Endpoint>,
     /// How its key is sent.

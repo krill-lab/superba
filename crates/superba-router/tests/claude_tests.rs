@@ -366,12 +366,20 @@ async fn routes_aliases_and_provider_adjustments_shape_the_request() {
 }
 
 #[tokio::test]
-async fn unknown_models_and_members_without_an_anthropic_endpoint_are_refused() {
+async fn members_without_an_enabled_protocol_route_are_refused() {
     let up = anthropic(streaming(&["x"])).await;
     let (m, mut c) = claude_member("openai-only", &up);
     c.anthropic = None;
     c.models = listed(&["gpt-5.5"]);
-    let r = start(claude_config(vec![(m, c)])).await;
+    let mut cfg = claude_config(vec![(m, c)]);
+    use superba_router::translate::{ir::Protocol, routing::Conversion};
+    for to in [Protocol::Responses, Protocol::Chat, Protocol::Gemini] {
+        cfg.translation.disabled.insert(Conversion {
+            from: Protocol::Messages,
+            to,
+        });
+    }
+    let r = start(cfg).await;
     let resp = post(
         &r,
         "/claude/v1/messages",

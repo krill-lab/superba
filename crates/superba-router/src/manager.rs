@@ -501,6 +501,14 @@ impl RouterManager {
             openai.retain_members(&ids);
             config.openai = Some(openai);
         }
+        if config.gemini.is_none()
+            && let Some(mut gemini) = stored.as_ref().and_then(|s| s.gemini.clone())
+        {
+            let ids: Vec<&str> = config.members.iter().map(|m| m.id.as_str()).collect();
+            gemini.members.retain(|id, _| ids.contains(&id.as_str()));
+            gemini.order.retain(|id| ids.contains(&id.as_str()));
+            config.gemini = Some(gemini);
+        }
         if config.stats.is_none() {
             config.stats = Some(stored.and_then(|s| s.stats).unwrap_or_default());
         }

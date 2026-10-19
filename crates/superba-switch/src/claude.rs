@@ -354,7 +354,7 @@ impl Switcher {
         }
         let endpoint = effective_endpoint(site, profile).ok_or_else(|| {
             Error::invalid(format!(
-                "provider {} has no Anthropic endpoint: Claude Code cannot use it (protocol translation comes in 0.1.2)",
+                "provider {} has no Anthropic endpoint: direct connections require an Anthropic endpoint; use the local router for protocol conversion",
                 profile.name
             ))
         })?;
@@ -497,7 +497,8 @@ impl Switcher {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .insert(profile.id.clone(), list.clone());
-        let all_usable = endpoint.as_ref().is_some_and(serves_codex_list);
+        let all_usable =
+            config.route == ClaudeRoute::Router || endpoint.as_ref().is_some_and(serves_codex_list);
         Ok(ClaudeModelsView {
             provider: profile.id.clone(),
             rows: rows_for(&list.models, &models.extra_models, all_usable),

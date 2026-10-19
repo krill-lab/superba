@@ -13,8 +13,8 @@
 //! the first byte, on connect errors, 502/503/504/529 and edge interceptions.
 //! Codex's routes are not affected.
 //!
-//! Only members with an Anthropic Messages endpoint are eligible
-//! ([`superba_core::ClaudeIneligible`]); there is no protocol conversion.
+//! Native Anthropic endpoints pass through unchanged. Other members use enabled
+//! IR conversions; [`superba_core::ClaudeIneligible`] explains unavailable routes.
 
 pub mod catalog;
 pub mod config;

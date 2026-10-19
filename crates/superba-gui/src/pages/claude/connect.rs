@@ -1,8 +1,7 @@
 //! Claude Code · connection and models (user bug 79).
 //!
 //! - **Provider**: Claude Code's own provider (default: the one Codex uses);
-//!   only a provider with an Anthropic endpoint can be picked (protocol
-//!   translation comes in 0.1.2). **Route**: direct, or the local router (off
+//!   direct connections need an Anthropic endpoint; the local router can convert protocols. **Route**: direct, or the local router (off
 //!   until the router serves Claude Code: [`superba_core::ClaudeView::router_base_url`]).
 //! - **Endpoint**: the provider's Anthropic base URL and how the key is sent,
 //!   from a verified preset or typed (saved with the provider).
@@ -768,7 +767,7 @@ fn provider_picker(
             for (p, endpoint) in &list {
                 let label = provider_label(cx, p);
                 let on = !follows && config.provider.as_ref() == Some(&p.id);
-                if endpoint.is_some() {
+                if endpoint.is_some() || config.route == ClaudeRoute::Router {
                     if ui.selectable_label(on, label).clicked() {
                         pick = Some(Some(p.id.clone()));
                     }
@@ -793,8 +792,12 @@ fn provider_picker(
     {
         ui.add(
             egui::Label::new(Text::caption(
-                cx.tr
-                    .text(&superba_core::ClaudeIneligible::NoAnthropicEndpoint.text()),
+                if config.route == ClaudeRoute::Router {
+                    cx.tr.t("claude_routing.translated")
+                } else {
+                    cx.tr
+                        .text(&superba_core::ClaudeIneligible::NoAnthropicEndpoint.text())
+                },
                 cx.pal,
             ))
             .wrap(),

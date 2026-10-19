@@ -140,7 +140,7 @@ impl RouterConfig {
     ) -> std::result::Result<(), superba_core::ClaudeIneligible> {
         self.upstream_protocol(id, Protocol::Messages)
             .map(|_| ())
-            .ok_or(superba_core::ClaudeIneligible::NoAnthropicEndpoint)
+            .ok_or(superba_core::ClaudeIneligible::NoProtocolRoute)
     }
 }
 

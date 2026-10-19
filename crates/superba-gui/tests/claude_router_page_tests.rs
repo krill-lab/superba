@@ -40,6 +40,7 @@ fn claude_view() -> RouterClaudeView {
                 name: "Krill".into(),
                 endpoint: Some("https://api.krill-code.net".into()),
                 ineligible: None,
+                translated: false,
                 preferred: true,
                 claude_only: false,
             },
@@ -47,7 +48,8 @@ fn claude_view() -> RouterClaudeView {
                 profile_id: ProfileId::new("plain"),
                 name: "Plain".into(),
                 endpoint: None,
-                ineligible: Some(ClaudeIneligible::NoAnthropicEndpoint),
+                ineligible: Some(ClaudeIneligible::NoProtocolRoute),
+                translated: false,
                 preferred: false,
                 claude_only: true,
             },
@@ -80,7 +82,7 @@ fn the_router_page_lists_claude_codes_providers_with_their_reason() {
         // The window chrome reduces the column's visible height. The last
         // member's reason may be below the fold; it must remain reachable
         // by scrolling the router column.
-        let reason = tr.text(&ClaudeIneligible::NoAnthropicEndpoint.text());
+        let reason = tr.text(&ClaudeIneligible::NoProtocolRoute.text());
         h.scroll_at(f.find("Plain").unwrap().center(), egui::vec2(0.0, -160.0));
         h.until(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
@@ -115,4 +117,72 @@ fn the_connection_page_offers_the_router_once_it_is_set_up() {
     let via = tr.f("claude.route.via", &[("url", &URL)]);
     let t = h.until("router address", |t| t.has_containing(&via));
     assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
+}
+
+#[test]
+fn converted_members_show_the_connection_method() {
+    for locale in [Locale::ZhCn, Locale::En] {
+        let tr = Tr::new(locale);
+        let service = fake();
+        let mut view = claude_view();
+        view.members[1].ineligible = None;
+        view.members[1].translated = true;
+        service.set_claude_router(Some(url::Url::parse(URL).unwrap()), Some(view));
+        let mut h = Harness::new([1280.0, 1000.0], locale, service, true);
+        let mut state = State::default();
+        let label = tr.t("claude_routing.translated");
+        let f = h.until(
+            |ui, cx, out| router::show(ui, cx, &mut state, out),
+            |f| f.has("Plain"),
+        );
+        h.scroll_at(f.find("Plain").unwrap().center(), egui::vec2(0.0, -160.0));
+        h.until(
+            |ui, cx, out| router::show(ui, cx, &mut state, out),
+            |f| f.has(&label),
+        );
+    }
+}
+
+#[test]
+fn the_connection_caption_distinguishes_conversion_from_a_missing_direct_endpoint() {
+    for locale in [Locale::ZhCn, Locale::En] {
+        for route in [ClaudeRoute::Direct, ClaudeRoute::Router] {
+            let service = fake();
+            service.edit_profiles(|set| {
+                let mut provider = set
+                    .profiles
+                    .iter()
+                    .find(|p| p.id.as_str() == "krill")
+                    .unwrap()
+                    .clone();
+                provider.id = ProfileId::new("plain");
+                provider.name = "Plain".into();
+                provider.site_id = "plain-site".into();
+                provider.anthropic = None;
+                provider.base_url_override =
+                    Some(url::Url::parse("https://plain.example/v1").unwrap());
+                set.profiles.push(provider);
+            });
+            service.set_claude_router(Some(url::Url::parse(URL).unwrap()), Some(claude_view()));
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                use superba_core::SwitchService;
+                let mut config = service.claude_view().await.unwrap().config;
+                config.provider = Some(ProfileId::new("plain"));
+                config.route = route;
+                service.save_claude_config(config).await.unwrap();
+            });
+            let tr = Tr::new(locale);
+            let label = if route == ClaudeRoute::Router {
+                tr.t("claude_routing.translated")
+            } else {
+                tr.text(&ClaudeIneligible::NoAnthropicEndpoint.text())
+            };
+            let mut h = AppHarness::new(service, locale, Page::ClaudeCode);
+            h.until("provider connection method", |t| t.has_containing(&label));
+        }
+    }
 }

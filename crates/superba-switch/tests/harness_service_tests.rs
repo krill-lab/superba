@@ -203,7 +203,10 @@ async fn compatible_sites_offer_responses_until_more_endpoints_are_declared() {
         .await
         .unwrap_err()
         .to_string();
-    assert!(err.contains("no translation until 0.1.2"), "{err}");
+    assert!(
+        err.contains("direct connections need a native endpoint"),
+        "{err}"
+    );
     s.save_provider_protocols(
         ProfileId::new("compat"),
         ProviderProtocols {
@@ -232,6 +235,74 @@ async fn compatible_sites_offer_responses_until_more_endpoints_are_declared() {
     st.protocol = Some(HarnessProtocol::Responses);
     assert!(
         s.save_harness_settings(HarnessId::WorkBuddy, st)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn workbuddy_uses_a_responses_member_through_an_enabled_chat_conversion() {
+    use superba_core::RouterInstallRequest;
+    use superba_router::translate::{ir::Protocol, routing::Conversion};
+
+    let w = world();
+    add_compatible(&w);
+    let s = w.switcher();
+    s.router_install(RouterInstallRequest {
+        members: vec![ProfileId::new("compat")],
+    })
+    .await
+    .unwrap();
+    let mut st = settings("compat");
+    st.route = HarnessRoute::Routed;
+    st.router_url = Some(Url::parse("http://127.0.0.1:18431").unwrap());
+    s.save_harness_settings(HarnessId::WorkBuddy, st)
+        .await
+        .unwrap();
+    s.set_harness_router_token(
+        HarnessId::WorkBuddy,
+        Some(Secret::new("rt-workbuddy-translation")),
+    )
+    .await
+    .unwrap();
+    let view = s.harness_view(HarnessId::WorkBuddy).await.unwrap();
+    assert_eq!(view.protocols, [HarnessProtocol::Chat]);
+    assert_eq!(
+        view.endpoint.unwrap().base_text(),
+        "http://127.0.0.1:18431/openai/v1"
+    );
+    let plan = s
+        .harness_plan(HarnessId::WorkBuddy, HarnessPlanKind::Apply)
+        .await
+        .unwrap();
+    assert_eq!(plan.protocol, Some(HarnessProtocol::Chat));
+    s.harness_apply(plan, false).await.unwrap();
+    let text = std::fs::read_to_string(w.ctx.home_dir.join(".workbuddy/models.json")).unwrap();
+    let written: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        written["models"][0]["url"],
+        "http://127.0.0.1:18431/openai/v1"
+    );
+    assert!(!text.contains("sk-compat-key-1234"));
+
+    // Turning this direction off removes it from both the view and apply.
+    w.router
+        .written
+        .lock()
+        .unwrap()
+        .last_mut()
+        .unwrap()
+        .translation
+        .disabled
+        .insert(Conversion {
+            from: Protocol::Chat,
+            to: Protocol::Responses,
+        });
+    let view = s.harness_view(HarnessId::WorkBuddy).await.unwrap();
+    assert!(view.protocols.is_empty());
+    assert!(view.endpoint.is_none());
+    assert!(
+        s.harness_plan(HarnessId::WorkBuddy, HarnessPlanKind::Apply)
             .await
             .is_err()
     );

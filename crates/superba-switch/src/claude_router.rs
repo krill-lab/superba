@@ -5,8 +5,7 @@
 //! - **Section** ([`Switcher::claude_router_section`], part of every router
 //!   configuration Superba writes): while Claude Code's route is the router,
 //!   its members are Claude Code's own provider first, then the router's member
-//!   profiles; only providers with an Anthropic endpoint ([`ClaudeIneligible`]
-//!   otherwise). Each one's endpoint becomes a path below its lines' origin
+//!   profiles; native endpoints or enabled IR conversions determine eligibility. Each one's endpoint becomes a path below its lines' origin
 //!   (every line keeps failing over) or, on another host, that URL for every
 //!   line; Bearer / `x-api-key` as the provider sends it. A provider that is
 //!   not a router member joins as a Claude-only member (Codex never uses it).
@@ -52,6 +51,8 @@ pub(crate) struct ClaudeSection {
     pub extra: Vec<MemberConfig>,
     /// Their keys.
     pub keys: BTreeMap<String, Secret>,
+    /// Native OpenAI endpoints for extra members used through conversion.
+    pub openai: BTreeMap<String, superba_router::openai::OpenAiMember>,
 }
 
 /// Background id patterns of Claude Code per slot.
@@ -91,29 +92,31 @@ fn endpoint_for(base: &Url, lines: &[LineConfig]) -> Endpoint {
 
 /// A Claude-only member for a provider that is not a router member: its site's
 /// lines when it has a Codex path, else one line at its Anthropic endpoint.
-fn claude_only_member(site: &Site, profile: &Profile, base: &Url) -> MemberConfig {
+fn claude_only_member(site: &Site, profile: &Profile, base: Option<&Url>) -> Option<MemberConfig> {
     let path = crate::router::member_path(site, profile).ok();
     let from_site = path
         .and_then(|p| member_from_site(site, &crate::router::member_lines(site, profile), &p).ok());
-    let mut member = from_site.unwrap_or_else(|| MemberConfig {
-        id: String::new(),
-        name: String::new(),
-        kind: MemberKind::Compatible,
-        lines: vec![LineConfig {
-            id: "anthropic".into(),
-            name: base.host_str().unwrap_or("anthropic").to_owned(),
-            base_url: base.clone(),
-            probe_url: None,
-            zstd: None,
-            websocket: None,
-        }],
-        websocket: false,
-        model_map: BTreeMap::new(),
-        compaction: Default::default(),
-    });
+    let mut member = from_site.or_else(|| {
+        base.map(|base| MemberConfig {
+            id: String::new(),
+            name: String::new(),
+            kind: MemberKind::Compatible,
+            lines: vec![LineConfig {
+                id: "anthropic".into(),
+                name: base.host_str().unwrap_or("anthropic").to_owned(),
+                base_url: base.clone(),
+                probe_url: None,
+                zstd: None,
+                websocket: None,
+            }],
+            websocket: false,
+            model_map: BTreeMap::new(),
+            compaction: Default::default(),
+        })
+    })?;
     member.id = router_id(profile.id.as_str());
     member.name = profile.name.clone();
-    member
+    Some(member)
 }
 
 impl Switcher {
@@ -173,9 +176,7 @@ impl Switcher {
             if site.kind == SiteKind::Official {
                 continue;
             }
-            let Some(endpoint) = effective_endpoint(site, profile) else {
-                continue;
-            };
+            let endpoint = effective_endpoint(site, profile);
             let rid = router_id(id.as_str());
             let (lines, claude_only) = match codex.iter().find(|m| m.id == rid) {
                 Some(m) => (m.lines.clone(), false),
@@ -187,7 +188,22 @@ impl Switcher {
                     if key.is_empty() {
                         continue;
                     }
-                    let member = claude_only_member(site, profile, &endpoint.base_url);
+                    let Some(member) =
+                        claude_only_member(site, profile, endpoint.as_ref().map(|e| &e.base_url))
+                    else {
+                        continue;
+                    };
+                    if endpoint.is_none() {
+                        let native = self
+                            .deps
+                            .router
+                            .configuration()
+                            .and_then(|c| c.openai_member(&member.id))
+                            .unwrap_or_else(|| {
+                                superba_router::openai::OpenAiMember::default_for(&member, true)
+                            });
+                        out.openai.insert(member.id.clone(), native);
+                    }
                     let lines = member.lines.clone();
                     out.keys.insert(member.id.clone(), key);
                     out.extra.push(member);
@@ -198,10 +214,10 @@ impl Switcher {
             out.section.members.insert(
                 rid.clone(),
                 SectionMember {
-                    anthropic: Some(endpoint_for(&endpoint.base_url, &lines)),
-                    auth: match endpoint.auth {
-                        AnthropicAuth::Bearer => RouterAuth::Bearer,
-                        AnthropicAuth::ApiKey => RouterAuth::XApiKey,
+                    anthropic: endpoint.as_ref().map(|e| endpoint_for(&e.base_url, &lines)),
+                    auth: match endpoint.as_ref().map(|e| e.auth) {
+                        Some(AnthropicAuth::Bearer) => RouterAuth::Bearer,
+                        _ => RouterAuth::XApiKey,
                     },
                     models: models
                         .extra_models
@@ -363,6 +379,10 @@ impl Switcher {
         let base_url = crate::claude::claude_router_route(self.deps.router.as_ref())
             .await
             .map(|r| r.base_url.to_string());
+        let built = self
+            .build_router_members(set, &set.settings.router.members)
+            .await
+            .ok();
         let members = order
             .iter()
             .filter_map(|id| {
@@ -371,12 +391,20 @@ impl Switcher {
                     .iter()
                     .find(|s| s.id == profile.site_id)
                     .and_then(|s| effective_endpoint(s, profile));
+                let protocol = built.as_ref().and_then(|b| {
+                    b.config.upstream_protocol(
+                        &router_id(id.as_str()),
+                        superba_router::translate::ir::Protocol::Messages,
+                    )
+                });
                 Some(RouterClaudeMember {
                     profile_id: id.clone(),
                     name: profile.name.clone(),
-                    ineligible: endpoint
+                    ineligible: protocol
                         .is_none()
-                        .then_some(ClaudeIneligible::NoAnthropicEndpoint),
+                        .then_some(ClaudeIneligible::NoProtocolRoute),
+                    translated: protocol
+                        .is_some_and(|p| p != superba_router::translate::ir::Protocol::Messages),
                     endpoint: endpoint.map(|e| e.base_text()),
                     preferred: preferred.as_ref() == Some(id),
                     claude_only: !set.settings.router.members.contains(id),

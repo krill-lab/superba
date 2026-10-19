@@ -18,6 +18,7 @@ use http::HeaderMap;
 use serde_json::{Value, json};
 use superba_core::{OpenAiIneligible, RequestHarness as H, RequestProtocol};
 use superba_router::openai::{OpenAiMember, OpenAiModel, OpenAiProtocol};
+use superba_router::translate::{ir::Protocol, routing::Conversion};
 
 async fn post(
     r: &Router,
@@ -365,13 +366,17 @@ async fn store_false_is_added_only_when_the_tool_does_not_say() {
 }
 
 #[tokio::test]
-async fn chat_goes_only_to_members_with_a_chat_endpoint() {
+async fn disabled_translation_limits_chat_to_native_members() {
     let a = anthropic(Arc::new(|_| responses_ok())).await;
     let b = anthropic(Arc::new(|_| chat_ok())).await;
-    let cfg = config(
+    let mut cfg = config(
         vec![compatible("a", &a), compatible("b", &b)],
         vec![("b", chat_entry(false))],
     );
+    cfg.translation.disabled.insert(Conversion {
+        from: Protocol::Chat,
+        to: Protocol::Responses,
+    });
     let r = start(cfg).await;
     let token = token_of(H::WorkBuddy);
     let resp = post(
@@ -404,7 +409,12 @@ async fn chat_goes_only_to_members_with_a_chat_endpoint() {
 #[tokio::test]
 async fn without_a_chat_member_the_router_names_each_members_reason() {
     let a = anthropic(Arc::new(|_| chat_ok())).await;
-    let r = start(config(vec![compatible("site", &a)], vec![])).await;
+    let mut cfg = config(vec![compatible("site", &a)], vec![]);
+    cfg.translation.disabled.insert(Conversion {
+        from: Protocol::Chat,
+        to: Protocol::Responses,
+    });
+    let r = start(cfg).await;
     let resp = post(
         &r,
         "/openai/v1/chat/completions",
@@ -464,14 +474,11 @@ fn eligibility_follows_the_members_kind_and_entries() {
     assert_eq!(e("k", OpenAiProtocol::Responses), Ok(()));
     assert_eq!(e("k", OpenAiProtocol::Chat), Ok(()));
     assert_eq!(e("c", OpenAiProtocol::Responses), Ok(()));
-    assert_eq!(
-        e("c", OpenAiProtocol::Chat),
-        Err(OpenAiIneligible::NoChatEndpoint)
-    );
+    assert_eq!(e("c", OpenAiProtocol::Chat), Ok(()));
     assert_eq!(
         e("d", OpenAiProtocol::Responses),
-        Err(OpenAiIneligible::NoResponsesEndpoint),
-        "reserved for Claude Code"
+        Ok(()),
+        "Anthropic is available through conversion"
     );
     assert_eq!(
         e("nobody", OpenAiProtocol::Chat),

@@ -970,6 +970,9 @@ impl FakeRouter {
 
 #[async_trait]
 impl RouterControl for FakeRouter {
+    fn configuration(&self) -> Option<RouterConfig> {
+        self.written.lock().unwrap().last().cloned()
+    }
     fn endpoint(&self) -> Result<RouterEndpointInfo> {
         self.info()
     }

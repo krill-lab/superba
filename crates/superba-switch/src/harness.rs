@@ -4,7 +4,7 @@
 //!
 //! A harness uses one Superba provider (default: the one Codex uses) and
 //! one protocol that the provider offers and the harness speaks (no
-//! translation until 0.1.2). Direct mode writes the provider's endpoint and
+//! conversion for direct connections). Direct mode writes the provider's endpoint and
 //! key; routed mode writes the local router's ingress for that protocol and
 //! a per-harness router token from the key store.
 //!
@@ -375,6 +375,36 @@ impl Switcher {
         Ok((list, key.clone()))
     }
 
+    /// Native protocols for direct connections, or protocols the router can serve.
+    fn harness_offered(
+        &self,
+        route: HarnessRoute,
+        endpoints: &[ProtocolEndpoint],
+    ) -> Vec<HarnessProtocol> {
+        if route == HarnessRoute::Direct {
+            return endpoints.iter().map(|e| e.protocol).collect();
+        }
+        let Some(config) = self.deps.router.configuration() else {
+            // An explicitly configured external router owns its capabilities.
+            return HarnessProtocol::ALL.to_vec();
+        };
+        use superba_router::translate::ir::Protocol;
+        HarnessProtocol::ALL
+            .into_iter()
+            .filter(|p| {
+                let client = match p {
+                    HarnessProtocol::Responses => Protocol::Responses,
+                    HarnessProtocol::Chat => Protocol::Chat,
+                    HarnessProtocol::Anthropic => Protocol::Messages,
+                };
+                config
+                    .members
+                    .iter()
+                    .any(|m| config.upstream_protocol(&m.id, client).is_some())
+            })
+            .collect()
+    }
+
     /// Everything one apply writes into `harness` for its saved settings.
     pub(crate) async fn harness_target(&self, harness: HarnessId) -> Result<HarnessTarget> {
         let config = self.harness_store().load()?;
@@ -388,13 +418,13 @@ impl Switcher {
             ))
         })?;
         let (endpoints, key) = self.harness_endpoints(&set, &profile, &config).await?;
-        let offered: Vec<HarnessProtocol> = endpoints.iter().map(|e| e.protocol).collect();
+        let offered = self.harness_offered(settings.route, &endpoints);
         let protocol = pick_protocol(harness, settings.protocol, &offered).ok_or_else(|| {
             let wanted = settings
                 .protocol
                 .map_or_else(|| "any protocol it speaks".to_owned(), |p| p.label().to_owned());
             Error::invalid(format!(
-                "{} cannot use provider {} with {wanted}: the provider offers {}, {} speaks {} (no translation until 0.1.2; declare more endpoints with spb harness endpoints)",
+                "{} cannot use provider {} with {wanted}: the provider offers {}, {} speaks {} (direct connections need a native endpoint; use the local router for protocol conversion or declare endpoints with spb harness endpoints)",
                 harness.display_name(),
                 profile.name,
                 offered.iter().map(|p| p.label()).collect::<Vec<_>>().join(", "),
@@ -504,9 +534,9 @@ impl Switcher {
         if let Ok(Some(p)) = self.harness_provider(&set, &settings).await
             && let Ok((eps, _)) = self.harness_endpoints(&set, &p, &config).await
         {
-            protocols = eps
-                .iter()
-                .map(|e| e.protocol)
+            protocols = self
+                .harness_offered(settings.route, &eps)
+                .into_iter()
                 .filter(|p| harness.speaks(*p))
                 .collect();
         }

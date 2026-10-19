@@ -455,10 +455,10 @@ fn claude_members(ui: &mut Ui, cx: &Cx<'_>, claude: &superba_core::RouterClaudeV
                 ui.add(Badge::new(cx.tr.t("router.claude.claude_only")).outline());
             }
         });
-        let detail = match (m.ineligible, &m.endpoint) {
-            (Some(reason), _) => Text::caption(cx.tr.text(&reason.text()), cx.pal),
-            (None, Some(e)) => Text::mono_muted(e.clone(), cx.pal),
-            (None, None) => Text::caption(String::new(), cx.pal),
+        let detail = if m.ineligible.is_none() && !m.translated {
+            Text::mono_muted(m.endpoint.clone().unwrap_or_default(), cx.pal)
+        } else {
+            Text::caption(cx.tr.text(&m.connection_text()), cx.pal)
         };
         ui.horizontal(|ui| {
             ui.add_space(18.0);

@@ -86,6 +86,10 @@ pub struct RouterServiceInfo {
 /// manager; tests: a fake).
 #[async_trait]
 pub trait RouterControl: Send + Sync + std::fmt::Debug {
+    /// Stored protocol capabilities, used when rebuilding member settings.
+    fn configuration(&self) -> Option<RouterConfig> {
+        None
+    }
     /// Endpoint of the stored configuration (reads files only).
     fn endpoint(&self) -> Result<RouterEndpointInfo>;
     /// Write the configuration, install and start the service, wait until it
@@ -254,6 +258,9 @@ impl superba_router::watchdog::DirectModeFallback for AlreadyDirect {
 
 #[async_trait]
 impl RouterControl for SystemRouterControl {
+    fn configuration(&self) -> Option<RouterConfig> {
+        RouterConfig::load(self.manager.paths()).ok()
+    }
     async fn restart(&self) -> Result<()> {
         self.manager.restart(ROUTER_START_WAIT).await
     }
@@ -547,7 +554,39 @@ impl Switcher {
             ));
         }
         let mut config = RouterConfig::new(0, out);
+        if let Some(stored) = self.deps.router.configuration() {
+            config.openai = stored.openai;
+            config.gemini = stored.gemini;
+            config.translation = stored.translation;
+        }
+        if !claude.openai.is_empty() {
+            config
+                .openai
+                .get_or_insert_with(Default::default)
+                .members
+                .extend(claude.openai);
+        }
+        let ids: Vec<&str> = config.members.iter().map(|m| m.id.as_str()).collect();
+        if let Some(openai) = &mut config.openai {
+            openai.retain_members(&ids);
+        }
+        if let Some(gemini) = &mut config.gemini {
+            gemini.members.retain(|id, _| ids.contains(&id.as_str()));
+            gemini.order.retain(|id| ids.contains(&id.as_str()));
+        }
         config.claude = Some(claude.section);
+        let allowed: Vec<String> = config
+            .members
+            .iter()
+            .filter(|m| config.claude_eligibility(&m.id).is_ok())
+            .map(|m| m.id.clone())
+            .collect();
+        if let Some(section) = &mut config.claude {
+            for route in &mut section.routes {
+                route.targets.retain(|t| allowed.contains(&t.member));
+            }
+            section.routes.retain(|r| !r.targets.is_empty());
+        }
         config.validate()?;
         Ok(BuiltMembers { config, keys })
     }

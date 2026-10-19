@@ -586,7 +586,13 @@ async fn responses_get_their_own_line_for_tools_that_have_it_on() {
 #[tokio::test]
 async fn a_refusal_is_recorded_with_its_reason() {
     let up = anthropic(Arc::new(|_| chat_ok())).await;
-    let run = start_recording(config(vec![compatible("site", &up)], vec![]), stats(vec![])).await;
+    let mut cfg = config(vec![compatible("site", &up)], vec![]);
+    use superba_router::translate::{ir::Protocol, routing::Conversion};
+    cfg.translation.disabled.insert(Conversion {
+        from: Protocol::Chat,
+        to: Protocol::Responses,
+    });
+    let run = start_recording(cfg, stats(vec![])).await;
     let resp = post(
         &run.router,
         "/openai/v1/chat/completions",

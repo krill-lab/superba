@@ -293,6 +293,8 @@ pub struct RouterInstallRequest {
 pub enum ClaudeIneligible {
     /// The provider has no Anthropic Messages endpoint.
     NoAnthropicEndpoint,
+    /// No native endpoint or enabled conversion can serve this member.
+    NoProtocolRoute,
 }
 
 impl ClaudeIneligible {
@@ -301,15 +303,18 @@ impl ClaudeIneligible {
         match self {
             ClaudeIneligible::NoAnthropicEndpoint => LocalizedText::new(
                 "claude_routing.no_anthropic_endpoint",
-                "This provider has no Anthropic endpoint; protocol conversion comes in 0.1.2",
+                "This provider has no Anthropic endpoint for a direct connection",
+            ),
+            ClaudeIneligible::NoProtocolRoute => LocalizedText::new(
+                "claude_routing.no_protocol_route",
+                "This provider has no Anthropic endpoint or enabled protocol conversion",
             ),
         }
     }
 }
 
 /// Why a provider cannot serve a request on the router's OpenAI ingress
-/// (`/openai/v1`, the other coding tools). Until protocol conversion exists
-/// (0.1.2) a request goes only to providers that serve its protocol.
+/// (`/openai/v1`, the other coding tools), including enabled conversions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
@@ -327,11 +332,11 @@ impl OpenAiIneligible {
         match self {
             OpenAiIneligible::NoResponsesEndpoint => LocalizedText::new(
                 "openai_routing.no_responses_endpoint",
-                "This provider serves no OpenAI Responses endpoint through the router; protocol conversion comes in 0.1.2",
+                "This provider has no OpenAI Responses endpoint or enabled protocol conversion",
             ),
             OpenAiIneligible::NoChatEndpoint => LocalizedText::new(
                 "openai_routing.no_chat_endpoint",
-                "This provider has no Chat Completions endpoint; protocol conversion comes in 0.1.2",
+                "This provider has no Chat Completions endpoint or enabled protocol conversion",
             ),
         }
     }
@@ -469,12 +474,29 @@ pub struct RouterClaudeMember {
     /// Why it cannot serve Claude Code (`None`: it serves it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ineligible: Option<ClaudeIneligible>,
+    /// An enabled conversion serves this provider's Claude Code requests.
+    #[serde(default)]
+    pub translated: bool,
     /// It is Claude Code's own provider.
     #[serde(default)]
     pub preferred: bool,
     /// It serves only Claude Code (not a Codex member of the router).
     #[serde(default)]
     pub claude_only: bool,
+}
+
+impl RouterClaudeMember {
+    /// The connection method or reason it cannot serve Claude Code.
+    pub fn connection_text(&self) -> LocalizedText {
+        match self.ineligible {
+            Some(reason) => reason.text(),
+            None if self.translated => {
+                LocalizedText::new("claude_routing.translated", "Via protocol conversion")
+            }
+            None => LocalizedText::new("", "{endpoint}")
+                .arg("endpoint", self.endpoint.as_deref().unwrap_or_default()),
+        }
+    }
 }
 
 impl RouterView {

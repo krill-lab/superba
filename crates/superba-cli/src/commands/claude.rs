@@ -195,11 +195,7 @@ async fn print_router(
         return Ok(());
     };
     for m in &claude.members {
-        let state = match (m.ineligible, &m.endpoint) {
-            (Some(reason), _) => out.render(&reason.text()),
-            (None, Some(e)) => e.clone(),
-            (None, None) => String::new(),
-        };
+        let state = out.render(&m.connection_text());
         let mark = if m.ineligible.is_some() { "✗" } else { "✓" };
         let role = if m.preferred {
             format!(" ({})", out.label("cli.claude.route.preferred"))

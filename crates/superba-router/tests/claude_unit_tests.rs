@@ -90,7 +90,7 @@ fn router_with(claude: ClaudeConfig) -> superba_router::RouterConfig {
 }
 
 #[test]
-fn only_members_with_an_anthropic_endpoint_are_eligible() {
+fn routed_eligibility_uses_enabled_conversions_and_direct_eligibility_is_native() {
     let mut c = ClaudeConfig::default();
     c.members.insert(
         "ds".into(),
@@ -118,7 +118,7 @@ fn only_members_with_an_anthropic_endpoint_are_eligible() {
     );
     router_with(c.clone()).validate().unwrap();
 
-    // A route to an ineligible member is refused.
+    // A Responses member can serve Claude through conversion by default.
     let mut bad = c.clone();
     bad.routes.push(ClaudeRoute {
         model: "gpt-*".into(),
@@ -127,8 +127,20 @@ fn only_members_with_an_anthropic_endpoint_are_eligible() {
             model: None,
         }],
     });
-    let e = router_with(bad).validate().unwrap_err().to_string();
-    assert!(e.contains("no Anthropic endpoint"), "{e}");
+    let mut router = router_with(bad);
+    assert_eq!(router.claude_eligibility("oa"), Ok(()));
+    router.validate().unwrap();
+    use superba_router::translate::{ir::Protocol, routing::Conversion};
+    router.translation.disabled.insert(Conversion {
+        from: Protocol::Messages,
+        to: Protocol::Responses,
+    });
+    assert_eq!(
+        router.claude_eligibility("oa"),
+        Err(ClaudeIneligible::NoProtocolRoute)
+    );
+    let e = router.validate().unwrap_err().to_string();
+    assert!(e.contains("no enabled protocol route"), "{e}");
 
     // Members, paths, lines and aliases are checked.
     let mut bad = c.clone();

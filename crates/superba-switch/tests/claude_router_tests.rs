@@ -19,9 +19,9 @@ use fakes::*;
 use serde_json::Value;
 use superba_core::claude::AnthropicEndpoint;
 use superba_core::{
-    ClaudeConfig, ClaudeIneligible, ClaudeModels, ClaudePlanKind, ClaudeRoute, ClaudeSlot, DataDir,
-    LocalContext, MapEnv, ProfileId, RequestHarness, RouterInstallRequest, RouterWatchState,
-    Severity, SlotModel, SwitchService,
+    ClaudeConfig, ClaudeModels, ClaudePlanKind, ClaudeRoute, ClaudeSlot, DataDir, LocalContext,
+    MapEnv, ProfileId, RequestHarness, RouterInstallRequest, RouterWatchState, Severity, SlotModel,
+    SwitchService,
 };
 use superba_router::claude::AnthropicAuth as RouterAuth;
 use superba_switch::Switcher;
@@ -252,12 +252,12 @@ async fn a_provider_only_claude_code_uses_joins_the_router_and_others_show_why_n
     let section = written.claude.unwrap();
     assert_eq!(
         section.order,
-        ["deepseek", "work"],
+        ["deepseek", "work", "plain"],
         "its own provider first"
     );
     assert!(
-        !section.members.contains_key("plain"),
-        "no Anthropic endpoint"
+        section.members["plain"].anthropic.is_none(),
+        "Responses-only member is served through conversion"
     );
     let ds = &section.members["deepseek"];
     assert!(ds.claude_only);
@@ -268,20 +268,28 @@ async fn a_provider_only_claude_code_uses_joins_the_router_and_others_show_why_n
         .find(|r| r.model == "gpt-6-sol")
         .unwrap();
     let targets: Vec<&str> = route.targets.iter().map(|t| t.member.as_str()).collect();
-    assert_eq!(targets, ["deepseek", "work"]);
+    assert_eq!(targets, ["deepseek", "work", "plain"]);
 
     let claude = sw.router_status().await.unwrap().claude.unwrap();
-    let names: Vec<(&str, Option<ClaudeIneligible>, bool)> = claude
+    let names: Vec<(&str, Option<superba_core::ClaudeIneligible>, bool)> = claude
         .members
         .iter()
         .map(|m| (m.profile_id.as_str(), m.ineligible, m.claude_only))
         .collect();
+    assert!(
+        claude
+            .members
+            .iter()
+            .find(|m| m.profile_id.as_str() == "plain")
+            .unwrap()
+            .translated
+    );
     assert_eq!(
         names,
         [
             ("deepseek", None, true),
             ("work", None, false),
-            ("plain", Some(ClaudeIneligible::NoAnthropicEndpoint), false),
+            ("plain", None, false),
         ]
     );
 }
@@ -374,4 +382,78 @@ async fn claude_code_follows_a_router_that_moved_to_another_port() {
         settings(&w)["env"]["ANTHROPIC_BASE_URL"],
         "http://127.0.0.1:19440/claude"
     );
+}
+
+#[tokio::test]
+async fn conversion_switches_and_endpoints_survive_member_rewrites() {
+    use superba_router::openai::OpenAiEndpoint;
+    use superba_router::translate::{
+        ir::Protocol,
+        routing::{Conversion, GeminiConfig, GeminiMember},
+    };
+    let w = world();
+    add_provider(&w, "plain", None);
+    let sw = w.switcher();
+    install(&sw, &["work", "plain"]).await;
+    let conversion = Conversion {
+        from: Protocol::Messages,
+        to: Protocol::Responses,
+    };
+    {
+        let mut written = w.router.written.lock().unwrap();
+        let cfg = written.last_mut().unwrap();
+        cfg.translation.disabled.insert(conversion);
+        cfg.gemini = Some(GeminiConfig {
+            members: [(
+                "work".into(),
+                GeminiMember {
+                    endpoint: Some(OpenAiEndpoint::at("/v1beta")),
+                    ..Default::default()
+                },
+            )]
+            .into(),
+            ..Default::default()
+        });
+    }
+    sw.save_claude_config(config(ClaudeRoute::Router))
+        .await
+        .unwrap();
+    let cfg = w.router.written.lock().unwrap().last().cloned().unwrap();
+    assert!(cfg.translation.disabled.contains(&conversion));
+    assert!(cfg.gemini_member("work").unwrap().endpoint.is_some());
+    assert!(cfg.claude_eligibility("plain").is_err());
+    let view = sw.router_status().await.unwrap().claude.unwrap();
+    let plain = view
+        .members
+        .iter()
+        .find(|m| m.profile_id.as_str() == "plain")
+        .unwrap();
+    assert_eq!(
+        plain.ineligible,
+        Some(superba_core::ClaudeIneligible::NoProtocolRoute)
+    );
+    assert!(!plain.translated);
+}
+
+#[tokio::test]
+async fn a_responses_only_preferred_provider_can_join_for_claude_code() {
+    let w = world();
+    add_provider(&w, "plain", None);
+    let sw = w.switcher();
+    install(&sw, &["work"]).await;
+    let mut c = config(ClaudeRoute::Router);
+    c.provider = Some(ProfileId::new("plain"));
+    sw.save_claude_config(c).await.unwrap();
+    apply(&sw).await;
+    let cfg = w.router.written.lock().unwrap().last().cloned().unwrap();
+    assert!(!cfg.serves_codex("plain"));
+    assert!(cfg.claude_eligibility("plain").is_ok());
+    let view = sw.router_status().await.unwrap().claude.unwrap();
+    let plain = view
+        .members
+        .iter()
+        .find(|m| m.profile_id.as_str() == "plain")
+        .unwrap();
+    assert!(plain.translated && plain.claude_only && plain.ineligible.is_none());
+    assert_eq!(settings(&w)["env"]["ANTHROPIC_BASE_URL"], ROUTER_URL);
 }

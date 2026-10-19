@@ -9,9 +9,9 @@
 //! | `POST /openai/v1/chat/completions` | streamed or not ([`chat`]), with its own stats line ([`tap`]) |
 //! | `GET /openai/v1/models[/<id>]` | the members' models, OpenAI shape ([`models`]) |
 //!
-//! Pass-through only (protocol conversion is 0.1.2): a request goes to the
-//! members that serve its protocol ([`config`], [`route`]); members without it
-//! are not eligible ([`superba_core::OpenAiIneligible`]). A Responses
+//! Native protocols pass through unchanged. Enabled IR conversions let members
+//! serve additional client protocols ([`config`], [`route`]); unavailable routes
+//! carry [`superba_core::OpenAiIneligible`]. A Responses
 //! WebSocket is not served here (no tool needs one: they all default to HTTP
 //! streaming) and is answered 426, so a client falls back to HTTP.
 //!

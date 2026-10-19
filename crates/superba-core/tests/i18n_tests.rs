@@ -306,7 +306,20 @@ fn every_usage_text_has_complete_translations_and_arguments() {
 
 #[test]
 fn claude_routing_reasons_have_complete_translations() {
-    let texts = vec![superba_core::ClaudeIneligible::NoAnthropicEndpoint.text()];
+    let texts = vec![
+        superba_core::ClaudeIneligible::NoAnthropicEndpoint.text(),
+        superba_core::ClaudeIneligible::NoProtocolRoute.text(),
+        superba_core::RouterClaudeMember {
+            profile_id: superba_core::ProfileId::new("translated"),
+            name: "Translated".into(),
+            endpoint: None,
+            ineligible: None,
+            translated: true,
+            preferred: false,
+            claude_only: false,
+        }
+        .connection_text(),
+    ];
     assert_catalog_contract("claude_routing.", &texts);
 }
 
@@ -749,6 +762,7 @@ fn every_requests_area_text_has_complete_translations() {
         superba_core::RequestProtocol::Responses,
         superba_core::RequestProtocol::ChatCompletions,
         superba_core::RequestProtocol::Messages,
+        superba_core::RequestProtocol::Gemini,
     ]
     .iter()
     .map(|p| p.text())

@@ -14,7 +14,7 @@
 //! Without an `openai` section every member serves these defaults; a member
 //! listed in [`OpenAiConfig::members`] serves exactly what its entry says. A
 //! member without the protocol of a request is not eligible
-//! ([`OpenAiIneligible`]): there is no protocol conversion until 0.1.2.
+//! ([`OpenAiIneligible`]) unless an enabled IR conversion can serve it.
 
 use std::collections::BTreeMap;
 
@@ -106,10 +106,10 @@ pub struct OpenAiModel {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OpenAiMember {
-    /// Its Responses endpoint (`None`: not eligible for Responses).
+    /// Its native Responses endpoint; absent endpoints may use conversion.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub responses: Option<OpenAiEndpoint>,
-    /// Its Chat Completions endpoint (`None`: not eligible for Chat).
+    /// Its native Chat Completions endpoint; absent endpoints may use conversion.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat: Option<OpenAiEndpoint>,
     /// Top-level request fields removed before a request goes to it (a strict

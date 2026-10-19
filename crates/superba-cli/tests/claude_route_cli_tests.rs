@@ -63,6 +63,7 @@ async fn status_lists_claude_codes_providers_on_the_router_with_their_reason() {
                 name: "Work".into(),
                 endpoint: Some("https://api.krill-code.net".into()),
                 ineligible: None,
+                translated: false,
                 preferred: true,
                 claude_only: false,
             },
@@ -70,7 +71,17 @@ async fn status_lists_claude_codes_providers_on_the_router_with_their_reason() {
                 profile_id: ProfileId::new("plain"),
                 name: "Plain".into(),
                 endpoint: None,
-                ineligible: Some(ClaudeIneligible::NoAnthropicEndpoint),
+                ineligible: Some(ClaudeIneligible::NoProtocolRoute),
+                translated: false,
+                preferred: false,
+                claude_only: false,
+            },
+            RouterClaudeMember {
+                profile_id: ProfileId::new("converted"),
+                name: "Converted".into(),
+                endpoint: None,
+                ineligible: None,
+                translated: true,
                 preferred: false,
                 claude_only: false,
             },
@@ -88,13 +99,18 @@ async fn status_lists_claude_codes_providers_on_the_router_with_their_reason() {
     );
     assert!(
         out.contains(
-            "✗ Plain  This provider has no Anthropic endpoint; protocol conversion comes in 0.1.2"
+            "✗ Plain  This provider has no Anthropic endpoint or enabled protocol conversion"
         ),
         "{out}"
     );
     // spb router status shows them too.
+    assert!(
+        out.contains("✓ Converted  Via protocol conversion"),
+        "{out}"
+    );
     let (code, out, _) = invoke(service, &["router", "status"]).await;
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("Providers for Claude Code"), "{out}");
     assert!(out.contains("Plain (plain)"), "{out}");
+    assert!(out.contains("Via protocol conversion"), "{out}");
 }

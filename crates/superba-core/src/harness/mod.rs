@@ -8,8 +8,8 @@
 //! (`superba_config::harness`).
 //!
 //! - [`HarnessId`]: which harness; [`HarnessProtocol`]: the wire protocol it
-//!   speaks to the provider (one per apply: there is no translation until
-//!   0.1.2, so only endpoints of the same protocol are offered).
+//!   speaks on one connection. Direct mode requires a matching native endpoint;
+//!   routed mode can use the local router's enabled protocol conversions.
 //! - [`HarnessSettings`] / [`HarnessConfig`]: what Superba wants each harness
 //!   to use (`<data>/harnesses.json`), and the Chat Completions / Anthropic
 //!   endpoints declared for providers that do not have them built in.

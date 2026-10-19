@@ -482,11 +482,7 @@ fn render(view: &RouterView, out: &mut Output) -> Result<()> {
             .map(|m| {
                 vec![
                     format!("{} ({})", m.name, m.profile_id),
-                    match (m.ineligible, &m.endpoint) {
-                        (Some(reason), _) => out.render(&reason.text()),
-                        (None, Some(e)) => e.clone(),
-                        (None, None) => out.none(),
-                    },
+                    out.render(&m.connection_text()),
                     out.boolean(m.claude_only),
                 ]
             })

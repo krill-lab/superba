@@ -190,7 +190,7 @@ async fn a_provider_without_an_anthropic_endpoint_is_refused() {
     assert_eq!(view.provider, Some(ProfileId::new("other")), "{view:?}");
     assert_eq!(view.endpoint, None);
     let err = sw.claude_plan(ClaudePlanKind::Apply).await.unwrap_err();
-    assert!(err.to_string().contains("0.1.2"), "{err}");
+    assert!(err.to_string().contains("use the local router"), "{err}");
 }
 
 #[tokio::test]
