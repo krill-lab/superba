@@ -245,6 +245,8 @@ fn windows_path_lists() {
 fn unix_path_hints_per_shell() {
     let home = Path::new("/home/u");
     let dir = home.join(".local/bin");
+    // PATH is parsed by the host OS even when the hint is for a Unix shell.
+    let path = std::env::join_paths(["/usr/bin", "/bin"]).unwrap();
     for (shell, file, line) in [
         (
             "/bin/zsh",
@@ -268,13 +270,16 @@ fn unix_path_hints_per_shell() {
         ),
     ] {
         let env = MapEnv::new()
-            .with("PATH", "/usr/bin:/bin")
+            .with("PATH", path.clone())
             .with("SHELL", shell);
         let h = unix_hint(&env, home, &dir, false).unwrap();
         assert_eq!((h.file.as_str(), h.line.as_str()), (file, line), "{shell}");
     }
     let env = MapEnv::new()
-        .with("PATH", "/home/u/.local/bin:/usr/bin")
+        .with(
+            "PATH",
+            std::env::join_paths([dir.as_path(), Path::new("/usr/bin")]).unwrap(),
+        )
         .with("SHELL", "/bin/zsh");
     assert!(
         unix_hint(&env, home, &dir, false).is_none(),
