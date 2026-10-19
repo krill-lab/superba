@@ -302,7 +302,9 @@ class App:
         """Until ChatGPT's first-start Windows setup has finished, the way Superba sees it: no
         codex-windows-sandbox-setup.exe runs (a switch meanwhile pauses, "ChatGPT is finishing
         its Windows setup"). When one ran, also until the app restarted its Codex core at its
-        end (a new app-server; at most 120 s) and the composer is usable again.
+        end (a new app-server; at most 120 s). The composer is checked by app_ready
+        after answering onboarding: after the wizard's first switch, the onboarding
+        may still hide it even though the sandbox is ready.
 
         "No setup" must hold for `settle` s with the same app-servers: a core that just started
         may not have spawned the setup yet. Returns a dict: ok, secs, setup (pid -> started,
@@ -349,7 +351,7 @@ class App:
                 if servers != stable:
                     stable, stable_since = servers, now
                 restarted = bool(servers - during) or not during
-                settled = now - stable_since >= settle
+                settled = bool(servers) and now - stable_since >= settle
                 if settled and (not seen or restarted or now - setup_end >= 120):
                     info.update(servers=sorted(servers), restarted=restarted if seen else None)
                     if not seen:
@@ -357,9 +359,7 @@ class App:
                         return info
                     if not restarted:
                         log(f"  no new app-server {now - setup_end:.0f} s after the setup ended (still {sorted(servers)})")
-                    ready = self.composer_ready(max(30, min(180, end - time.time())))
-                    info.update(ok=ready, secs=round(time.time() - t0),
-                                why=None if ready else f"composer not usable after the setup: {self.composer_error}")
+                    info.update(ok=True, secs=round(time.time() - t0))
                     return info
             if now >= end:
                 running = sorted(p["pid"] for p in procs or ())

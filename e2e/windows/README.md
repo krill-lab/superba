@@ -50,11 +50,14 @@ UI Automation dumps, saved files), `transcripts/` (every `spb` call) and `net/` 
   `crates/*/locales/*.toml` (`lib/strings.py`), in English or Chinese.
 - **Desktop app**: through the debugging port Superba opened (onboarding, composer, sidebar state,
   app screenshots), `lib/app.py`.
-- **Network** (`lib/net.py`): `mock` = `crates/superba-gui/tools/screenshots/mockrelay.py` with a
+- **Network** (`lib/net.py`): `mock` = `e2e/lib/windows_mockrelay.py` with a
   fake key; `real` = `e2e/lib/linefwd.py` forwarders in front of the test relay. Both on host
   loopback with a throwaway CA, reverse-forwarded into the guest (`https://127.0.0.1:<port>`); the CA
   goes into the guest's `LocalMachine\Root`, the built-in Krill production origins are blocked in the
   guest's hosts file, and the test lines reach the Krill preset through `SUPERBA_TEST_LINES`.
+  The Windows wrapper reuses the screenshot relay and emits the complete final-answer Responses
+  event sequence, including item/part creation and completion, for the router's stats line.
+  Run `python3 e2e/lib/windows_mockrelay.py --self-test` to check both relay contracts.
 - **Scenarios** (`lib/scenarios/`): functions that record steps and checks (`lib/runner.py`);
   prerequisites (`installed` → `superba` → `configured` → `app_ready` → `turn` → `router_on`,
   `lib/flows.py`) run when the VM state lacks them. A failed scenario makes the next one start from

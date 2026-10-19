@@ -2,6 +2,7 @@
 """Windows e2e relay with a complete Responses stream."""
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 source = Path(__file__).resolve().parents[2] / "crates/superba-gui/tools/screenshots/mockrelay.py"
@@ -48,6 +49,37 @@ def responses_stream(model, created_at):
     return b"".join(b"event: " + e["type"].encode() + b"\ndata: " + json_bytes(e) + b"\n\n"
                     for e in events)
 
-if __name__ == "__main__":
+def self_test():
+    """The final-answer item and done events used by the router's stats line."""
+    events = [json.loads(line[6:]) for line in responses_stream("test-model", 123).splitlines()
+              if line.startswith(b"data: ")]
+    assert [event["type"] for event in events] == list(RESPONSE_EVENTS)
+    assert [event["sequence_number"] for event in events] == list(range(len(events)))
+    by_type = {event["type"]: event for event in events}
+    added = by_type["response.output_item.added"]["item"]
+    done = by_type["response.output_item.done"]["item"]
+    completed = events[-1]["response"]
+    assert added["phase"] == "final_answer" and added["id"] == done["id"]
+    assert done == completed["output"][0]
+    text = done["content"][0]["text"]
+    for kind, field in (("response.output_text.delta", "delta"), ("response.output_text.done", "text")):
+        assert by_type[kind][field] == text
+        assert by_type[kind]["item_id"] == added["id"]
+    assert by_type["response.content_part.done"]["part"] == done["content"][0]
+    assert completed["usage"]["total_tokens"] == 13
+    print("Windows Responses stream self-test ok")
+
+
+def main(argv=None):
+    if relay.parse_args(argv).self_test:
+        # Check the unchanged screenshot relay with its original stream contract,
+        # then check the Windows stream contract separately.
+        relay.self_test()
+        self_test()
+        return 0
     relay.responses_stream = responses_stream
-    raise SystemExit(relay.main())
+    return relay.main(argv)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
