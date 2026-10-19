@@ -508,6 +508,8 @@ pub enum Action {
     },
     /// Open the command palette.
     OpenPalette,
+    /// Search only settings in the command palette.
+    OpenSettingsPalette,
 }
 
 /// Loaded data with loading / error state.

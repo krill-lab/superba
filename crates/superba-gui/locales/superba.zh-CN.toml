@@ -102,3 +102,8 @@ backups.confirm_body = "这会替换整个文件，包括在 Superba 之外做�
 backups.confirm = "还原这个文件"
 backups.cancel = "取消"
 diagnostics.subtitle = "检查项、编码工具、Codex 进程、环境和活动日志。"
+
+tab.home = "概况"
+tab.settings = "设置"
+tab.data = "数据"
+settings.jump = "跳到："

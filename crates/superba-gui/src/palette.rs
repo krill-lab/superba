@@ -32,6 +32,7 @@ pub struct CommandPalette {
     selected: usize,
     focus: bool,
     scroll_to_selected: bool,
+    settings_only: bool,
 }
 
 /// Rank of `item` for `query` (`None` = no match; lower is better).
@@ -96,9 +97,16 @@ impl CommandPalette {
     /// Open with an empty query.
     pub fn open(&mut self) {
         self.open = true;
+        self.settings_only = false;
         self.query.clear();
         self.selected = 0;
         self.focus = true;
+    }
+
+    /// Open a search restricted to settings, even with an empty query.
+    pub fn open_settings(&mut self) {
+        self.open();
+        self.settings_only = true;
     }
 
     /// Open with `query` typed in (tests, screenshot tooling).
@@ -137,6 +145,14 @@ impl CommandPalette {
             return None;
         }
         let pal = Palette::of(ctx);
+        let items = if self.settings_only {
+            items
+                .into_iter()
+                .filter(|item| item.group == PaletteGroup::Settings)
+                .collect()
+        } else {
+            items
+        };
         let mut results = filter(&self.query, items);
         if self.selected >= results.len() {
             self.selected = results.len().saturating_sub(1);
@@ -214,7 +230,11 @@ impl CommandPalette {
                                         ui.set_min_height(24.0);
                                         ui.add_space(18.0);
                                         ui.label(Text::caption(
-                                            tr.t(item.group.caption_key()),
+                                            tr.t(if self.settings_only {
+                                                "superba.tab.settings"
+                                            } else {
+                                                item.group.caption_key()
+                                            }),
                                             pal,
                                         ));
                                     });

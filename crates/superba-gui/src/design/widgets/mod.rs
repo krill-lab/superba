@@ -106,6 +106,9 @@ pub use tile::{IconTile, MonogramTile};
 pub mod sub_nav;
 pub use sub_nav::{SubNav, SubNavItem};
 
+pub mod underline_tabs;
+pub use underline_tabs::{UnderlineTab, UnderlineTabs};
+
 pub mod attention;
 pub use attention::AttentionRow;
 pub mod update_row;

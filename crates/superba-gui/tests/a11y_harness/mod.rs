@@ -518,21 +518,30 @@ impl AppHarness {
     /// Go to `page` through its sidebar tab, the way a screen reader user does.
     pub fn go(&mut self, page: Page, tr: &superba_gui::i18n::Tr) -> Tree {
         if let Page::Superba(section) = page {
-            if !self.frame().has(&tr.t("superba.section.general")) {
-                self.click(Some(Role::Tab), &tr.t("superba.title"));
+            use superba_gui::pages::superba::SuperbaTab;
+            let tab = section.tab();
+            if self.frame().find(Some(Role::TabList), "Superba").is_none() {
+                self.click(Some(Role::Tab), "Superba");
             }
-            if section == superba_gui::pages::SuperbaSection::Home {
-                // The sidebar and identity tab share the brand name. Invoke
-                // the identity row (the latter) explicitly.
-                let t = self.frame();
-                let id = t
-                    .with_role(Role::Tab)
-                    .into_iter()
-                    .rfind(|id| t.name(*id).as_deref() == Some("Superba"))
-                    .unwrap();
-                self.act(id, Action::Click);
-                return self.settle();
+            // Overview and Settings also name main-sidebar pages; select within
+            // the Superba tab list by taking its later matching tab.
+            let name = tr.t(tab.title_key());
+            let tree = self.frame();
+            let id = tree
+                .find_all(Some(Role::Tab), &name)
+                .into_iter()
+                .last()
+                .unwrap();
+            self.act(id, Action::Click);
+            self.settle();
+            if tab == SuperbaTab::Settings {
+                self.click(Some(Role::Button), &tr.t(section.title_key()));
+                return self.until("settings anchor", |tree| {
+                    tree.find(Some(Role::Button), &tr.t(section.title_key()))
+                        .is_some_and(|id| tree.node(id).is_selected() == Some(true))
+                });
             }
+            return self.settle();
         }
         let name = tr.t(page.title_key());
         self.click(Some(Role::Tab), &name)

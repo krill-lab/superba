@@ -1535,7 +1535,7 @@ impl SuperbaApp {
             self.pages.hosts.entered();
         }
         if let Page::Superba(section) = page {
-            self.pages.superba.last = section;
+            self.pages.superba.enter(section);
             if self.page != page {
                 self.pages.superba.focus = None;
             }
@@ -1775,6 +1775,7 @@ impl SuperbaApp {
                 self.toasts.push(toast);
             }
             Action::OpenPalette => self.palette.open(),
+            Action::OpenSettingsPalette => self.palette.open_settings(),
         }
     }
 

@@ -462,8 +462,13 @@ fn collapsed_and_expanded_inventory_stays_inside_the_superba_detail() {
                     );
                     assert!(
                         report.beyond_right().is_empty(),
-                        "{window:?} {locale:?} {expand:?}: {:?}",
-                        report.beyond_right()
+                        "{window:?} {locale:?} {expand:?}, page {:?}: {:?}",
+                        report.rect,
+                        report
+                            .text_shapes
+                            .iter()
+                            .filter(|(_, r, _)| r.max.x > report.rect.max.x + 0.5)
+                            .collect::<Vec<_>>()
                     );
                 }
             }

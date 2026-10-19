@@ -186,15 +186,15 @@ fn loaded_maintenance_pages_fit_960_and_1280_in_both_themes_and_languages() {
                         |ui, cx, out| pages.show(page, ui, cx, &mut settings, out),
                         |f| {
                             if section == SuperbaSection::Diagnostics {
-                                f.has("dsh")
+                                f.has(&tr.t("superba.diagnostics.codex_valid"))
                             } else {
                                 f.has(&tr.t("prefs.data.move"))
                             }
                         },
                     );
                     assert!(f.fits() && !f.scrolled, "{section:?} {window:?}: {f:?}");
-                    for entry in SuperbaSection::ALL {
-                        assert!(f.has(&tr.t(entry.title_key())), "missing rail {entry:?}");
+                    for entry in superba_gui::pages::superba::SuperbaTab::ALL {
+                        assert!(f.has(&tr.t(entry.title_key())), "missing tab {entry:?}");
                     }
                     let mut frames = vec![f];
                     for _ in 0..12 {
@@ -227,7 +227,7 @@ fn loaded_maintenance_pages_fit_960_and_1280_in_both_themes_and_languages() {
                             .flat_map(|f| &f.clipped_texts)
                             .filter(|(text, rect, clip)| {
                                 text == &note
-                                    && clip.height() >= 60.0
+                                    && clip.height() >= rect.height() + 12.0
                                     && rect.center().y > clip.top()
                             })
                             .collect();
@@ -235,7 +235,7 @@ fn loaded_maintenance_pages_fit_960_and_1280_in_both_themes_and_languages() {
                         for (_, rect, clip) in visible_notes {
                             assert!(
                                 rect.bottom() <= clip.bottom() + 0.5,
-                                "third line clipped inside tool row: {rect:?} {clip:?}"
+                                "note clipped inside tool row: {rect:?} {clip:?}"
                             );
                         }
                     }

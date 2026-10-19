@@ -1,5 +1,5 @@
 #![allow(missing_docs)]
-//! M2 navigation, minimum window, focus deep links and immediate settings saves.
+//! Tabbed Superba shell, anchored settings, minimum window and accessible navigation.
 mod a11y_harness;
 #[path = "unit/font_diagnostics.rs"]
 mod font_diagnostics;
@@ -13,7 +13,10 @@ use superba_core::{Locale, Settings, SwitchService};
 use superba_gui::{
     app::PageStates,
     i18n::Tr,
-    pages::{Page, SuperbaSection, superba},
+    pages::{
+        Page, SuperbaSection,
+        superba::{self, SuperbaTab},
+    },
 };
 use support::fake::{FakeOptions, FakeService};
 
@@ -26,7 +29,7 @@ fn service() -> Arc<FakeService> {
 }
 
 #[test]
-fn every_section_fits_and_keeps_all_rail_items_visible_at_both_sizes() {
+fn every_section_fits_and_keeps_all_five_tabs_on_one_line() {
     let data = router_harness::data_from(&service());
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
@@ -50,12 +53,13 @@ fn every_section_fits_and_keeps_all_rail_items_visible_at_both_sizes() {
                         report.fits() && !report.scrolled,
                         "{section:?} {locale:?} {window:?}: {report:?}"
                     );
-                    for entry in SuperbaSection::ALL {
+                    let mut tab_y: Option<f32> = None;
+                    for entry in SuperbaTab::ALL {
                         let label = tr.t(entry.title_key());
                         let r = report
                             .text_shapes
                             .iter()
-                            .find(|(s, r, _)| s == &label && r.left() < report.rect.left() + 165.0)
+                            .find(|(s, r, _)| s == &label && r.top() < report.rect.top() + 110.0)
                             .unwrap_or_else(|| {
                                 panic!(
                                     "{entry:?} missing in {section:?} at {window:?}: {}",
@@ -64,11 +68,91 @@ fn every_section_fits_and_keeps_all_rail_items_visible_at_both_sizes() {
                             });
                         assert!(
                             r.1.bottom() <= report.rect.bottom(),
-                            "rail {entry:?} outside viewport: {r:?}"
+                            "tab {entry:?} outside viewport: {r:?}"
                         );
-                        assert!(!r.2, "rail label elided: {label}");
+                        assert!(!r.2, "tab label elided: {label}");
+                        assert!(
+                            r.1.left() >= report.rect.left() && r.1.right() <= report.rect.right(),
+                            "{entry:?} outside page: {r:?}"
+                        );
+                        if let Some(y) = tab_y {
+                            assert!((r.1.center().y - y).abs() < 1.0, "tabs wrapped");
+                        }
+                        tab_y = Some(r.1.center().y);
                     }
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn brand_header_keeps_version_channel_status_and_check_button_on_one_line() {
+    use superba_core::{SelfUpdateStatus, SelfUpdateView, Timestamp};
+    let mut data = router_harness::data_from(&service());
+    data.selfupdate.finish(Ok(SelfUpdateView {
+        current: env!("CARGO_PKG_VERSION").into(),
+        status: SelfUpdateStatus::UpToDate,
+        checked_at: Some(Timestamp::from_millis(
+            Timestamp::now().as_millis() - 180_000,
+        )),
+        ..Default::default()
+    }));
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            for window in [[960.0, 640.0], [1280.0, 800.0]] {
+                let mut pages = PageStates::default();
+                let mut settings = Settings::default();
+                let report = support::fit::render_fit_min_height(
+                    window,
+                    locale,
+                    theme,
+                    &data,
+                    Page::Superba(SuperbaSection::Home).min_height(),
+                    |ui, cx, out| {
+                        pages.show(
+                            Page::Superba(SuperbaSection::Home),
+                            ui,
+                            cx,
+                            &mut settings,
+                            out,
+                        )
+                    },
+                );
+                let title = report
+                    .text_shapes
+                    .iter()
+                    .find(|(s, _, _)| s == "Superba")
+                    .unwrap()
+                    .1;
+                for label in [
+                    format!("v{}", env!("CARGO_PKG_VERSION")),
+                    tr.t("updates.superba.channel_stable"),
+                    tr.t("superba.home.check"),
+                ] {
+                    let (_, rect, elided) = report
+                        .text_shapes
+                        .iter()
+                        .find(|(s, _, _)| s == &label)
+                        .unwrap_or_else(|| panic!("{label}: {}", report.all_text()));
+                    assert!(!elided);
+                    assert!(
+                        (rect.center().y - title.center().y).abs() < 5.0,
+                        "{label} wrapped at {window:?}: {rect:?} / {title:?}"
+                    );
+                    assert!(rect.right() <= report.rect.right() + 0.5);
+                }
+                let (_, rect, elided) = report
+                    .text_shapes
+                    .iter()
+                    .find(|(s, _, _)| s.starts_with(&tr.t("superba.home.current")))
+                    .unwrap();
+                assert!(
+                    !elided && rect.height() < 25.0,
+                    "status wrapped at {window:?}: {rect:?}"
+                );
+                assert!((rect.center().y - title.center().y).abs() < 5.0);
             }
         }
     }
@@ -175,65 +259,180 @@ fn palette_opens_and_focuses_every_setting_without_changing_it() {
 }
 
 #[test]
-fn rail_arrows_keep_focus_and_right_and_escape_move_between_panes() {
+fn tabs_have_names_roles_and_keyboard_navigation_into_the_panel() {
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
         let mut h = AppHarness::new(service(), locale, Page::Superba(SuperbaSection::General));
         h.resize([960.0, 640.0]);
-        let t = h.wait_for(Some(Role::Tab), &tr.t(SuperbaSection::General.title_key()));
-        h.act(
-            t.find(Some(Role::Tab), &tr.t(SuperbaSection::General.title_key()))
-                .unwrap(),
-            egui::accesskit::Action::Focus,
-        );
+        let t = h.settle();
+        let list = t
+            .find(Some(Role::TabList), "Superba")
+            .expect("named tab list");
+        let tabs: Vec<_> = t
+            .node(list)
+            .children()
+            .iter()
+            .filter(|id| t.node(**id).role() == Role::Tab)
+            .copied()
+            .collect();
+        assert_eq!(tabs.len(), 5, "{}", t.dump());
+        for (id, tab) in tabs.iter().zip(SuperbaTab::ALL) {
+            assert_eq!(t.name(*id), Some(tr.t(tab.title_key())));
+            assert!(t.node(*id).supports_action(egui::accesskit::Action::Click));
+        }
+        h.act(tabs[2], egui::accesskit::Action::Focus);
         h.settle();
-        let t = h.key(egui::Key::ArrowDown);
+        let t = h.key(egui::Key::ArrowRight);
         assert_eq!(
             t.name(t.focus),
-            Some(tr.t(SuperbaSection::Appearance.title_key()))
+            Some(tr.t(SuperbaTab::Diagnostics.title_key()))
         );
         assert_eq!(t.node(t.focus).is_selected(), Some(true));
-        let t = h.key(egui::Key::ArrowRight);
+        let t = h.key(egui::Key::ArrowDown);
         assert_eq!(t.node(t.focus).role(), Role::Group, "{}", t.dump());
         let t = h.key(egui::Key::Tab);
-        assert_ne!(
-            t.node(t.focus).role(),
-            Role::Tab,
-            "Tab enters the detail: {}",
-            t.dump()
-        );
+        assert_ne!(t.node(t.focus).role(), Role::Tab, "{}", t.dump());
         let t = h.key(egui::Key::Escape);
         assert_eq!(t.node(t.focus).role(), Role::Tab);
         assert_eq!(
             t.name(t.focus),
-            Some(tr.t(SuperbaSection::Appearance.title_key()))
+            Some(tr.t(SuperbaTab::Diagnostics.title_key()))
         );
-        let t = h.key(egui::Key::ArrowUp);
+        let t = h.key(egui::Key::ArrowLeft);
         assert_eq!(
             t.name(t.focus),
-            Some(tr.t(SuperbaSection::General.title_key()))
+            Some(tr.t(SuperbaTab::Settings.title_key()))
         );
+        let t = h.key(egui::Key::Home);
+        assert_eq!(t.name(t.focus), Some(tr.t(SuperbaTab::Home.title_key())));
+        let t = h.key(egui::Key::End);
+        assert_eq!(t.name(t.focus), Some(tr.t(SuperbaTab::Data.title_key())));
+    }
+}
+
+fn at_anchor(t: &a11y_harness::Tree, tr: &Tr, section: SuperbaSection) -> bool {
+    let name = tr.t(section.title_key());
+    let active = t
+        .find(Some(Role::Button), &name)
+        .is_some_and(|id| t.node(id).is_selected() == Some(true));
+    let header = t.find_all(Some(Role::Label), &name).into_iter().any(|id| {
+        t.node(id)
+            .bounds()
+            .is_some_and(|r| r.y0 > 150.0 && r.y1 < 350.0)
+    });
+    active && header
+}
+
+#[test]
+fn every_settings_deep_link_opens_its_anchor_in_the_settings_tab() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        for section in [
+            SuperbaSection::General,
+            SuperbaSection::Appearance,
+            SuperbaSection::Network,
+            SuperbaSection::Notify,
+        ] {
+            for window in [[960.0, 640.0], [1280.0, 800.0]] {
+                let mut h = AppHarness::new(service(), locale, Page::Superba(section));
+                h.resize(window);
+                let t = h.until("initial deep link", |t| at_anchor(t, &tr, section));
+                assert!(
+                    t.find(
+                        Some(Role::TabPanel),
+                        &tr.t(SuperbaTab::Settings.title_key())
+                    )
+                    .is_some()
+                );
+                assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
+            }
+        }
     }
 }
 
 #[test]
-fn sidebar_remembers_section_and_comma_opens_general() {
+fn jump_directory_tracks_scroll_and_sidebar_and_comma_restore_anchors() {
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
-        let mut h = AppHarness::new(service(), locale, Page::Overview);
-        h.go(Page::Superba(SuperbaSection::Network), &tr);
+        let mut h = AppHarness::new(service(), locale, Page::Superba(SuperbaSection::General));
+        h.resize([960.0, 640.0]);
+        for section in [
+            SuperbaSection::Notify,
+            SuperbaSection::Appearance,
+            SuperbaSection::Network,
+        ] {
+            h.click(Some(Role::Button), &tr.t(section.title_key()));
+            h.until("jump", |t| at_anchor(t, &tr, section));
+        }
+        h.scroll_page(-1200.0);
+        h.until("scroll spy", |t| {
+            t.find(
+                Some(Role::Button),
+                &tr.t(SuperbaSection::Notify.title_key()),
+            )
+            .is_some_and(|id| t.node(id).is_selected() == Some(true))
+        });
         h.go(Page::Overview, &tr);
-        let t = h.click(Some(Role::Tab), "Superba");
-        let network = t
-            .find(Some(Role::Tab), &tr.t(SuperbaSection::Network.title_key()))
-            .unwrap();
-        assert_eq!(t.node(network).is_selected(), Some(true), "{}", t.dump());
-        let t = h.shortcut(egui::Key::Comma);
-        let general = t
-            .find(Some(Role::Tab), &tr.t(SuperbaSection::General.title_key()))
-            .unwrap();
-        assert_eq!(t.node(general).is_selected(), Some(true), "{}", t.dump());
-        assert!(t.has(&tr.t("settings.safe_mode.title")));
+        h.click(Some(Role::Tab), "Superba");
+        h.until("sidebar restores anchor", |t| {
+            at_anchor(t, &tr, SuperbaSection::Notify)
+        });
+        h.shortcut(egui::Key::Comma);
+        h.until("comma opens general", |t| {
+            at_anchor(t, &tr, SuperbaSection::General)
+        });
+        // The current Page can already be General after manually scrolling away.
+        h.click(
+            Some(Role::Button),
+            &tr.t(SuperbaSection::Notify.title_key()),
+        );
+        h.until("notify again", |t| {
+            at_anchor(t, &tr, SuperbaSection::Notify)
+        });
+        h.shortcut(egui::Key::Comma);
+        h.until("same-page comma", |t| {
+            at_anchor(t, &tr, SuperbaSection::General)
+        });
+    }
+}
+
+fn modal_has(t: &a11y_harness::Tree, name: &str) -> bool {
+    let dialog = t
+        .with_role(Role::Dialog)
+        .into_iter()
+        .next()
+        .expect("palette dialog");
+    let mut nodes = vec![dialog];
+    while let Some(id) = nodes.pop() {
+        if t.name(id).as_deref() == Some(name) {
+            return true;
+        }
+        nodes.extend(t.node(id).children());
+    }
+    false
+}
+
+#[test]
+fn settings_search_entry_only_lists_settings_and_global_shortcut_resets_scope() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let mut h = AppHarness::new(service(), locale, Page::Superba(SuperbaSection::General));
+        let t = h.click(Some(Role::Button), &tr.t("superba.search"));
+        assert!(modal_has(&t, &tr.t("superba.tab.settings")));
+        for key in [
+            "palette.group.navigate",
+            "palette.group.switch",
+            "palette.group.commands",
+        ] {
+            assert!(!modal_has(&t, &tr.t(key)), "{key}: {}", t.dump());
+        }
+        h.set_value(&tr.t("palette.placeholder"), "prefs.data.dir");
+        h.key(egui::Key::Enter);
+        h.until("search across tabs", |t| {
+            t.name(t.focus) == Some(tr.t("prefs.data.dir"))
+        });
+        let t = h.shortcut(egui::Key::K);
+        assert!(t.has(&tr.t("palette.group.switch")), "{}", t.dump());
     }
 }
 
@@ -242,6 +441,7 @@ fn preference_edits_still_emit_an_immediate_save() {
     let mut h = router_harness::Harness::new([960.0, 640.0], Locale::En, service(), true);
     let mut pages = PageStates::default();
     let mut settings = Settings::default();
+    settings.reduce_motion = true;
     let page = Page::Superba(SuperbaSection::Appearance);
     let f = h.settle(|ui, cx, out| pages.show(page, ui, cx, &mut settings, out));
     h.click_text(&f, "Light");

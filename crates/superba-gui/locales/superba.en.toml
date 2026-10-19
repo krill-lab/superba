@@ -102,3 +102,8 @@ backups.confirm_body = "This replaces the whole file, including changes made out
 backups.confirm = "Restore this file"
 backups.cancel = "Cancel"
 diagnostics.subtitle = "Checks, coding tools, Codex processes, environment and activity log."
+
+tab.home = "Overview"
+tab.settings = "Settings"
+tab.data = "Data"
+settings.jump = "Jump to:"

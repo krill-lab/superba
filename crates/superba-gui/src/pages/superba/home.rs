@@ -1,8 +1,6 @@
 //! The application home: version, attention, local facts, recent log and about.
 use super::{Action, Cx, Page, SuperbaSection, section};
-use crate::design::widgets::{
-    AttentionRow, Badge, Button, Card, InfoCard, Status, Text, link_button,
-};
+use crate::design::widgets::{AttentionRow, Card, InfoCard, Status, Text, link_button};
 use crate::design::{elide::Shape, icons::Icon};
 use crate::pages::{
     notify,
@@ -10,7 +8,7 @@ use crate::pages::{
 };
 use crate::runtime::{ReadTask, task};
 use egui::Ui;
-use superba_core::{SelfUpdateStatus, Settings, codex_files::CodexFileBackupQuery};
+use superba_core::{Settings, codex_files::CodexFileBackupQuery};
 
 /// Repository and About links.
 pub const PROJECT_URL: &str = "https://github.com/krill-lab/superba";
@@ -96,56 +94,6 @@ pub fn show(
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(100));
     }
-    ui.horizontal(|ui| {
-        crate::shell::brand_mark(ui, cx.pal, 56.0);
-        ui.add_space(8.0);
-        ui.vertical(|ui| {
-            ui.label(Text::title("Superba", cx.pal));
-            ui.horizontal_wrapped(|ui| {
-                ui.label(Text::mono_muted(
-                    format!("v{}", env!("CARGO_PKG_VERSION")),
-                    cx.pal,
-                ));
-                let channel = settings.update_channel_for(env!("CARGO_PKG_VERSION"));
-                let key = if channel == superba_core::UpdateChannel::Stable {
-                    "updates.superba.channel_stable"
-                } else {
-                    "updates.superba.channel_preview"
-                };
-                ui.add(Badge::new(cx.tr.t(key)).outline());
-            });
-        });
-    });
-    ui.add_space(8.0);
-    ui.horizontal_wrapped(|ui| {
-        let (status, text) = match cx.data.selfupdate.value.as_ref().map(|v| &v.status) {
-            Some(SelfUpdateStatus::UpToDate) => (Status::Ok, cx.tr.t("superba.home.current")),
-            _ if cx.data.self_update_offered().is_some() => {
-                (Status::Warn, cx.tr.t("superba.home.available"))
-            }
-            _ => (Status::Idle, cx.tr.t("superba.home.check_hint")),
-        };
-        ui.add(Badge::new(text).status(status));
-        if let Some(at) = cx.data.selfupdate.value.as_ref().and_then(|v| v.checked_at) {
-            ui.label(Text::small(
-                cx.tr.f("superba.home.checked", &[("age", &cx.ago(at))]),
-                cx.pal,
-            ));
-        }
-        if ui
-            .add(
-                Button::new(cx.tr.t("superba.home.check"))
-                    .icon(Icon::Refresh)
-                    .small()
-                    .loading(cx.data.selfupdate.loading),
-            )
-            .clicked()
-        {
-            out.push(Action::CheckUpdates);
-        }
-    });
-    ui.add(egui::Label::new(Text::small(cx.tr.t("superba.home.subtitle"), cx.pal)).wrap());
-    ui.add_space(20.0);
     section(ui, cx, &cx.tr.t("superba.home.attention"), None);
     let todos: Vec<_> = todo::todos(cx, None)
         .into_iter()
