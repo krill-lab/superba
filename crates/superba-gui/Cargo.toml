@@ -24,6 +24,8 @@ path = "src/main.rs"
 default = []
 # Native file dialogs (identity files, custom site import).
 file-dialogs = ["dep:rfd"]
+# Screenshot/regression builds only: SUPERBA_CJK_FONT selects a system family.
+font-test = []
 
 [dependencies]
 superba-core.workspace = true
@@ -37,6 +39,7 @@ superba-versions.workspace = true
 anyhow.workspace = true
 egui.workspace = true
 fontdb.workspace = true
+skrifa.workspace = true
 open.workspace = true
 resvg.workspace = true
 roxmltree.workspace = true
@@ -64,6 +67,7 @@ winit.workspace = true
 
 # macOS: a window hidden to the menu bar leaves the Dock (activation policy).
 [target.'cfg(target_os = "macos")'.dependencies]
+core-foundation.workspace = true
 objc2.workspace = true
 objc2-app-kit = { workspace = true, features = ["NSApplication", "NSResponder", "NSRunningApplication", "NSWindow"] }
 # The title bar's double-click setting (src/chrome/macos.rs).

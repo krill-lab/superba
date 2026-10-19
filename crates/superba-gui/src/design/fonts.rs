@@ -12,7 +12,7 @@
 //!   then well-known paths (Noto Sans CJK, Source Han Sans, WenQuanYi), then a full
 //!   `fontdb` system scan. Serif CJK faces (Noto Serif CJK) are a last resort.
 //! - macOS: PingFang (`/System/Library/Fonts` or the `AssetsV2` mobile-asset
-//!   location), Hiragino Sans GB, STHeiti; then a system scan.
+//!   location), the system's PingFang UI, Hiragino Sans GB, STHeiti; then a system scan.
 //! - Windows: Microsoft YaHei UI / YaHei (`msyh.ttc`, bold `msyhbd.ttc`), DengXian,
 //!   SimHei; then a system scan.
 //!
@@ -22,7 +22,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use egui::{FontData, FontDefinitions, FontFamily, FontId, FontTweak};
+use egui::{FontData, FontDefinitions, FontFamily, FontId};
 
 /// Geist Regular (400).
 pub const GEIST_REGULAR: &[u8] = include_bytes!("../../assets/fonts/Geist-Regular.ttf");
@@ -92,7 +92,7 @@ pub struct CjkFace {
     pub path: PathBuf,
     /// Face index inside a collection.
     pub index: u32,
-    /// OpenType weight (400 regular, 500 medium, 700 bold).
+    /// OpenType weight (400 regular, 500 medium, 700 bold), or a `wght` axis value.
     pub weight: u16,
 }
 
@@ -120,6 +120,9 @@ impl FontReport {
 /// Preferred CJK families, best first. Serif families are last-resort fallbacks.
 pub const CJK_FAMILIES: &[&str] = &[
     "PingFang SC",
+    "PingFang UI SC",
+    ".PingFang SC",
+    ".PingFang UI SC",
     "Microsoft YaHei UI",
     "Microsoft YaHei",
     "Noto Sans CJK SC",
@@ -178,6 +181,7 @@ pub fn candidate_paths() -> Vec<PathBuf> {
         out.push(PathBuf::from("/System/Library/Fonts/PingFang.ttc"));
         out.extend(macos_asset_fonts("PingFang.ttc"));
         for p in [
+            "/System/Library/PrivateFrameworks/FontServices.framework/Versions/A/Resources/Reserved/PingFangUI.ttc",
             "/System/Library/Fonts/Hiragino Sans GB.ttc",
             "/System/Library/Fonts/STHeiti Light.ttc",
             "/System/Library/Fonts/STHeiti Medium.ttc",
@@ -264,6 +268,10 @@ fn macos_asset_fonts(file: &str) -> Vec<PathBuf> {
 /// Pick the first preferred CJK family with a regular face, plus real medium
 /// (500–599) and bold (600+) faces of that family when available.
 pub fn pick_cjk(db: &fontdb::Database) -> FontReport {
+    pick_cjk_families(db, CJK_FAMILIES)
+}
+
+fn pick_cjk_families(db: &fontdb::Database, families: &[&str]) -> FontReport {
     let faces_of = |name: &str| -> Vec<CjkFace> {
         db.faces()
             .filter(|face| face.style == fontdb::Style::Normal)
@@ -273,13 +281,37 @@ pub fn pick_cjk(db: &fontdb::Database) -> FontReport {
                     fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => p.clone(),
                     fontdb::Source::Binary(_) => return None,
                 };
-                Some(CjkFace {
-                    family: name.to_owned(),
+                // Private UI collections can expose a hidden family name (a
+                // leading dot), or reuse PingFang SC. Keep diagnostics explicit.
+                let family = if path.file_name().is_some_and(|p| p == "PingFangUI.ttc") {
+                    "PingFang UI SC"
+                } else {
+                    name
+                };
+                let candidate = CjkFace {
+                    family: family.to_owned(),
                     path,
                     index: face.index,
                     weight: face.weight.0,
+                };
+                let range = db
+                    .with_face_data(face.id, alignment::weight_range)
+                    .flatten();
+                Some(if let Some((min, max)) = range {
+                    // Recent PingFang UI collections store variable faces whose
+                    // OS/2 default weight is 500. Instantiate their real weight
+                    // axis rather than rendering all three UI weights at 500.
+                    [400_u16, 500, 700]
+                        .map(|weight| CjkFace {
+                            weight: weight.clamp(min, max),
+                            ..candidate.clone()
+                        })
+                        .to_vec()
+                } else {
+                    vec![candidate]
                 })
             })
+            .flatten()
             .collect()
     };
     let closest = |faces: &[CjkFace], wanted: u16, accept: &dyn Fn(u16) -> bool| {
@@ -289,7 +321,7 @@ pub fn pick_cjk(db: &fontdb::Database) -> FontReport {
             .min_by_key(|f| f.weight.abs_diff(wanted))
             .cloned()
     };
-    for name in CJK_FAMILIES {
+    for name in families {
         let faces = faces_of(name);
         let Some(regular) = closest(&faces, 400, &|w| w <= 500) else {
             continue;
@@ -312,6 +344,15 @@ pub fn discover_cjk() -> FontReport {
             let _ = db.load_font_file(&path);
         }
     }
+    #[cfg(feature = "font-test")]
+    if let Ok(family) = std::env::var("SUPERBA_CJK_FONT") {
+        // Only test builds honor the override; normal releases always discover
+        // fonts automatically. Never load a font supplied by an arbitrary path.
+        if CJK_FAMILIES.contains(&family.as_str()) {
+            db.load_system_fonts();
+            return pick_cjk_families(&db, &[&family]);
+        }
+    }
     let report = pick_cjk(&db);
     if report.cjk_regular.is_some() {
         return report;
@@ -320,20 +361,22 @@ pub fn discover_cjk() -> FontReport {
     pick_cjk(&db)
 }
 
-fn read_face(face: &CjkFace) -> Option<FontData> {
+fn read_face(face: &CjkFace, geist: &[u8]) -> Option<FontData> {
     let bytes = std::fs::read(&face.path).ok()?;
-    Some(FontData::from_blob(Arc::new(bytes), face.index).tweak(cjk_tweak()))
+    #[cfg(not(target_os = "macos"))]
+    let index = face.index;
+    #[cfg(target_os = "macos")]
+    let (bytes, index) = macos::renderable_face(bytes, face)?;
+    let tweak = cjk_tweak(&bytes, index, face.weight, &face.family, geist);
+    Some(FontData::from_blob(Arc::new(bytes), index).tweak(tweak))
 }
 
-/// Size/baseline tweak that makes CJK glyphs sit on Geist's baseline with a similar
-/// optical size.
-fn cjk_tweak() -> FontTweak {
-    FontTweak {
-        scale: 0.96,
-        y_offset_factor: 0.02,
-        ..FontTweak::default()
-    }
-}
+mod alignment;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(any(target_os = "macos", test))]
+mod sfnt;
+use alignment::cjk_tweak;
 
 /// Build the font definitions: Geist weights first, the CJK faces as fallbacks.
 pub fn definitions(report: &FontReport) -> FontDefinitions {
@@ -350,9 +393,18 @@ pub fn definitions(report: &FontReport) -> FontDefinitions {
         FontData::from_static(GEIST_MONO_MEDIUM),
     );
 
-    let regular = report.cjk_regular.as_ref().and_then(read_face);
-    let medium = report.cjk_medium.as_ref().and_then(read_face);
-    let bold = report.cjk_bold.as_ref().and_then(read_face);
+    let regular = report
+        .cjk_regular
+        .as_ref()
+        .and_then(|face| read_face(face, GEIST_REGULAR));
+    let medium = report
+        .cjk_medium
+        .as_ref()
+        .and_then(|face| read_face(face, GEIST_MEDIUM));
+    let bold = report
+        .cjk_bold
+        .as_ref()
+        .and_then(|face| read_face(face, GEIST_SEMIBOLD));
     let has_regular = regular.is_some();
     let has_medium = medium.is_some();
     let has_bold = bold.is_some();
@@ -448,7 +500,11 @@ pub fn drawable(text: &str) -> String {
 /// Discover fonts and install them into `ctx`. Returns what was found.
 pub fn install(ctx: &egui::Context) -> FontReport {
     let report = discover_cjk();
-    ctx.set_fonts(definitions(&report));
+    #[cfg(target_os = "macos")]
+    let (report, definitions) = macos::definitions_with_fallback(report);
+    #[cfg(not(target_os = "macos"))]
+    let definitions = definitions(&report);
+    ctx.set_fonts(definitions);
     report
 }
 

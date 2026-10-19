@@ -1,6 +1,8 @@
 #![allow(missing_docs)]
 //! M2 navigation, minimum window, focus deep links and immediate settings saves.
 mod a11y_harness;
+#[path = "unit/font_diagnostics.rs"]
+mod font_diagnostics;
 mod router_harness;
 mod support;
 

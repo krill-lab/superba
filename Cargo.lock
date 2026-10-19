@@ -4764,6 +4764,7 @@ name = "superba-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "core-foundation 0.10.1",
  "eframe",
  "egui",
  "fontdb",
@@ -4779,6 +4780,7 @@ dependencies = [
  "rfd",
  "roxmltree",
  "serde_json",
+ "skrifa",
  "superba-catalog",
  "superba-cli",
  "superba-config",

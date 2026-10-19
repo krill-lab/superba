@@ -137,6 +137,9 @@ wgpu = { version = "30", default-features = false, features = ["std", "dx12"] }
 egui = "0.37"
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
 fontdb = "0.24"
+# Match egui's metric selection (OS/2 vs hhea) when aligning fallback fonts.
+skrifa = "0.44"
+core-foundation = "0.10"
 open = "5"
 # the session migration scene: SVG parts rasterized once (no text, fonts or raster images)
 resvg = { version = "0.45", default-features = false }
