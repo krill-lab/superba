@@ -349,10 +349,18 @@ pub fn inventory(cx: &Cx<'_>, state: &State, tools: &ToolsView) -> Vec<Entry> {
         } else {
             UpdateStatus::Unknown
         };
-        app.description = cx.tr.t(if vendor {
-            "updates.list.app_vendor"
+        app.description = cx.tr.t(if app.status == UpdateStatus::Missing {
+            "updates.app.not_installed"
         } else {
-            "updates.app.linux_note"
+            match v.app.action {
+                Some(AppUpdateAction::LinuxPackage { .. }) => "updates.app.linux_note",
+                Some(AppUpdateAction::MacSparkle { .. }) => "updates.app.mac_note",
+                Some(
+                    AppUpdateAction::WindowsStore { .. } | AppUpdateAction::WindowsPackage { .. },
+                ) => "updates.list.app_vendor",
+                _ if app.status == UpdateStatus::Current => "updates.app.up_to_date",
+                _ => "updates.app.latest_unknown",
+            }
         });
         app.operation = if vendor {
             None

@@ -141,6 +141,174 @@ fn one_inventory_drives_status_filter_count_and_batch_eligibility() {
         );
     });
 }
+
+#[test]
+fn app_without_an_update_action_describes_only_known_state() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        for action in [None, Some(AppUpdateAction::None)] {
+            for (installed, latest, status, key) in [
+                (
+                    false,
+                    false,
+                    UpdateStatus::Missing,
+                    "updates.app.not_installed",
+                ),
+                (
+                    false,
+                    true,
+                    UpdateStatus::Missing,
+                    "updates.app.not_installed",
+                ),
+                (
+                    true,
+                    false,
+                    UpdateStatus::Unknown,
+                    "updates.app.latest_unknown",
+                ),
+                (true, true, UpdateStatus::Current, "updates.app.up_to_date"),
+            ] {
+                let (service, data, mut state, tools) = prepared();
+                let app = &mut state.view.value.as_mut().unwrap().app;
+                app.action = action.clone();
+                app.update_available = false;
+                if !installed {
+                    app.install = None;
+                }
+                if !latest {
+                    app.latest = None;
+                }
+                with_cx(&data, &service, locale, |cx| {
+                    let row = items::inventory(cx, &state, &tools.view(cx))
+                        .into_iter()
+                        .find(|e| e.id == UpdateItem::App)
+                        .unwrap();
+                    assert_eq!(row.status, status);
+                    assert_eq!(row.description, cx.tr.t(key));
+                    assert_eq!(
+                        row.operation,
+                        (status == UpdateStatus::Unknown).then_some(Operation::Check)
+                    );
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn app_descriptions_follow_known_platform_actions_and_missing_installs() {
+    let linux = fake().versions_view().app.action.unwrap();
+    let actions = [
+        (linux, "updates.app.linux_note", UpdateStatus::Available),
+        (
+            AppUpdateAction::MacSparkle { package: None },
+            "updates.app.mac_note",
+            UpdateStatus::Vendor,
+        ),
+        (
+            AppUpdateAction::WindowsStore {
+                store_url: "ms-windows-store://pdp/?ProductId=example".into(),
+                command: "winget upgrade --id example --source msstore".into(),
+            },
+            "updates.list.app_vendor",
+            UpdateStatus::Vendor,
+        ),
+        (
+            AppUpdateAction::WindowsPackage {
+                package: None,
+                source: Default::default(),
+                store_url: None,
+                command: None,
+                native_arch: Some("x64".into()),
+                installed_arch: Some("x64".into()),
+            },
+            "updates.list.app_vendor",
+            UpdateStatus::Vendor,
+        ),
+    ];
+    for locale in [Locale::En, Locale::ZhCn] {
+        for (action, key, status) in &actions {
+            for installed in [true, false] {
+                let (service, data, mut state, tools) = prepared();
+                let app = &mut state.view.value.as_mut().unwrap().app;
+                app.action = Some(action.clone());
+                if !installed {
+                    app.install = None;
+                }
+                with_cx(&data, &service, locale, |cx| {
+                    let row = items::inventory(cx, &state, &tools.view(cx))
+                        .into_iter()
+                        .find(|e| e.id == UpdateItem::App)
+                        .unwrap();
+                    assert_eq!(
+                        row.status,
+                        if installed {
+                            *status
+                        } else {
+                            UpdateStatus::Missing
+                        }
+                    );
+                    assert_eq!(
+                        row.description,
+                        cx.tr.t(if installed {
+                            key
+                        } else {
+                            "updates.app.not_installed"
+                        })
+                    );
+                    assert_eq!(
+                        row.operation,
+                        matches!(action, AppUpdateAction::LinuxPackage { .. })
+                            .then_some(Operation::AppDownload)
+                    );
+                    assert!(!row.description.contains("was checked"));
+                    assert!(!row.description.contains("已按发布的校验值核对"));
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn app_verification_message_requires_a_completed_download() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let (service, data, mut state, tools) = prepared();
+        let Some(AppUpdateAction::LinuxPackage { package, command }) =
+            state.view.value.as_ref().unwrap().app.action.clone()
+        else {
+            panic!("expected Linux fixture");
+        };
+        state.download_error = Some("checksum mismatch".into());
+        with_cx(&data, &service, locale, |cx| {
+            let row = items::inventory(cx, &state, &tools.view(cx))
+                .into_iter()
+                .find(|e| e.id == UpdateItem::App)
+                .unwrap();
+            assert_eq!(row.status, UpdateStatus::Failed);
+            assert_eq!(row.description, "checksum mismatch");
+            assert_eq!(row.operation, Some(Operation::AppDownload));
+        });
+        state.download_error = None;
+        state.downloaded = Some(superba_core::AppDownloadReport {
+            package,
+            path: "chatgpt.deb".into(),
+            sha256: "a".repeat(64),
+            command: Some(command),
+            windows: None,
+        });
+        with_cx(&data, &service, locale, |cx| {
+            let row = items::inventory(cx, &state, &tools.view(cx))
+                .into_iter()
+                .find(|e| e.id == UpdateItem::App)
+                .unwrap();
+            assert_eq!(row.description, cx.tr.t("updates.list.package_ready"));
+            assert_eq!(
+                row.operation,
+                Some(Operation::OpenInstaller("chatgpt.deb".into()))
+            );
+        });
+    }
+}
+
 #[test]
 fn a_remote_error_keeps_the_last_version_without_offering_an_install() {
     let (service, data, mut state, tools) = prepared();
