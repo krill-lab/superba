@@ -787,8 +787,12 @@ one: all default to HTTP streaming).
   cached tokens; `prompt_tokens_details.cached_tokens`, DeepSeek's
   `prompt_cache_hit_tokens`, Moonshot's `cached_tokens`).
 - **Request shaping** (`openai::shape`). dsh's `dsh_*` top-level fields (its
-  session-log upload) never leave the router, on this ingress and on the Claude
-  Code ingress. `store: false` is added to a Responses request that does not
+  session-log upload) never leave the router, including Codex HTTP and WebSocket
+  paths, whether statistics are enabled or disabled. Codex HTTP bodies are
+  inspected after bounded decompression; unchanged bodies retain their encoding,
+  and unreadable bodies fail locally. Native WebSockets always terminate frames
+  without per-message deflate so privacy shaping cannot be bypassed.
+  On the OpenAI ingress, `store: false` is added to a Responses request that does not
   say (ZCode) and does not continue a stored response (`previous_response_id`),
   toward every member: Responses defaults to storing the conversation at
   upstreams that store (OpenAI, Azure, gateways), and every member serves

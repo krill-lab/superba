@@ -114,3 +114,30 @@ async fn status_lists_claude_codes_providers_on_the_router_with_their_reason() {
     assert!(out.contains("Plain (plain)"), "{out}");
     assert!(out.contains("Via protocol conversion"), "{out}");
 }
+
+#[tokio::test]
+async fn router_status_labels_openai_and_gemini_protocol_conversions() {
+    use superba_core::{RequestProtocol, RouterMemberView, RouterProtocolRoute};
+    let service = FakeService::new();
+    service.v2.lock().unwrap().router.members = vec![RouterMemberView {
+        profile_id: ProfileId::new("converted"),
+        name: "Converted".into(),
+        lines: vec![],
+        protocols: [RequestProtocol::Responses, RequestProtocol::Gemini]
+            .map(|protocol| RouterProtocolRoute {
+                protocol,
+                upstream: Some(RequestProtocol::ChatCompletions),
+            })
+            .to_vec(),
+    }];
+    let (code, out, err) = invoke(service, &["router", "status"]).await;
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        out.contains("Converted · /openai/v1 · Responses · Via protocol conversion"),
+        "{out}"
+    );
+    assert!(
+        out.contains("Converted · /gemini/v1beta · Via protocol conversion"),
+        "{out}"
+    );
+}

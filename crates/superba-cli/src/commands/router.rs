@@ -476,12 +476,12 @@ fn render(view: &RouterView, out: &mut Output) -> Result<()> {
     )?;
     for member in &view.members {
         for route in &member.protocols {
-            out.line(format!(
-                "{} · {} · {}",
-                member.name,
-                route.ingress(),
-                out.render(&route.connection_text())
-            ))?;
+            out.line(
+                superba_core::LocalizedText::new("", "{member} · {ingress} · {connection}")
+                    .arg("member", &member.name)
+                    .arg("ingress", route.ingress())
+                    .arg_text("connection", route.connection_text()),
+            )?;
         }
     }
     if let Some(claude) = &view.claude {

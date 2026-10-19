@@ -879,10 +879,10 @@ async fn harness_routes_name_the_ingress_and_a_token_the_router_accepts() {
 }
 
 #[tokio::test]
-async fn codex_paths_are_not_changed_by_the_ingress() {
+async fn codex_paths_keep_their_native_endpoint_and_public_fields() {
     let up = anthropic(Arc::new(|_| responses_ok())).await;
     let r = start(config(vec![krill("k", &up)], vec![])).await;
-    let body = request_body("gpt-5.6-luna", "a", json!({"dsh_x": 1}));
+    let body = request_body("gpt-5.6-luna", "a", json!({"public_extra": 1}));
     let resp = r
         .http
         .post(r.url("/backend-api/codex/responses"))

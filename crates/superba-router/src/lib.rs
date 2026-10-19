@@ -30,16 +30,17 @@
 //!   500. No time-to-first-byte timeout. A broken stream aborts the downstream
 //!   response (Codex re-sends) and marks the line suspect.
 //! - **Streaming**: SSE and every other body pass through unbuffered; request
-//!   bodies are forwarded byte for byte (`zstd` included) unless a member maps
-//!   the model name ([`model_map`]) or the line accepts zstd and Codex sent the
-//!   body uncompressed.
+//!   bodies retain their bytes (`zstd` included) unless private uploads are
+//!   removed, a member maps the model name ([`model_map`]), or the line accepts
+//!   zstd and Codex sent the body uncompressed.
 //! - **Transports per line** ([`transport`]): Responses request bodies are
 //!   zstd-compressed for lines Superba's probe found to accept zstd, sent again
 //!   uncompressed (and remembered) when a line refuses one; WebSocket
 //!   handshakes skip lines that answered 426. HTTP turns are never upgraded to
 //!   an upstream WebSocket (see [`transport`] for why).
-//! - **WebSocket**: passthrough pinned per connection; failover only at the
-//!   handshake; 426 locally for members without WebSocket.
+//! - **WebSocket**: pinned per connection; failover only at the handshake.
+//!   Native Responses frames always pass through the bounded relay (without
+//!   per-message deflate) so private uploads are removed even without stats.
 //! - **Remote compaction** ([`compaction`]): a compacted conversation goes
 //!   only to the member that made its `compaction` item (no failover to
 //!   members that cannot read it); compaction requests and compacted
@@ -63,8 +64,8 @@
 //!   configuration has a `stats` section): one row per Responses request in
 //!   `usage.sqlite3` (numbers only, never headers or bodies), the
 //!   optional reply stats line, and the strip of earlier stats lines from every
-//!   outgoing request. WebSockets are then relayed frame by frame (no
-//!   per-message deflate) so `response.create` frames and events can be read.
+//!   outgoing request. WebSocket `response.create` frames and events use the
+//!   same optional recording and stats-line logic.
 //! - **Claude Code** ([`claude`]): Anthropic Messages under `/claude/v1/*` on
 //!   the same port, passed through to members with an Anthropic endpoint, with
 //!   the same failover, stickiness, health, limits, request log and stats line.

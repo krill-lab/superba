@@ -342,7 +342,25 @@ fn every_router_line_health_has_complete_translations() {
     .iter()
     .map(|h| h.text())
     .collect();
-    assert_catalog_contract("router.", &texts);
+    assert_catalog_contract("router.line.", &texts);
+}
+
+#[test]
+fn router_protocol_connection_methods_have_complete_translations() {
+    use superba_core::{RequestProtocol, RouterProtocolRoute};
+    let texts = [
+        Some(RequestProtocol::Gemini),
+        Some(RequestProtocol::Responses),
+        None,
+    ]
+    .map(|upstream| {
+        RouterProtocolRoute {
+            protocol: RequestProtocol::Gemini,
+            upstream,
+        }
+        .connection_text()
+    });
+    assert_catalog_contract("router.protocol.", &texts);
 }
 
 #[test]
