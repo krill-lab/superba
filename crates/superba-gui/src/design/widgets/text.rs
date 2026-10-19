@@ -138,19 +138,18 @@ pub fn kbd(ui: &mut Ui, key: &str) -> Response {
 /// caller handles the click).
 pub fn link_button(ui: &mut Ui, label: &str, external: bool) -> Response {
     let pal = Palette::of(ui.ctx());
-    let response = ui
-        .add(
-            Label::new(
-                RichText::new(label)
-                    .font(font(text::SMALL, Weight::Medium))
-                    .color(pal.link),
-            )
-            .sense(Sense::click()),
-        )
-        .on_hover_cursor(CursorIcon::PointingHand);
-    let mut ring = response.rect;
+    let galley = ui.painter().layout(
+        label.to_owned(),
+        font(text::SMALL, Weight::Medium),
+        pal.link,
+        ui.available_width(),
+    );
+    let (pos, galley, response) = Label::new(galley).sense(Sense::click()).layout_in_ui(ui);
+    let response = response.on_hover_cursor(CursorIcon::PointingHand);
+    let text_rect = galley.rect.translate(pos.to_vec2());
+    let mut ring = text_rect;
     if external {
-        let r = response.rect;
+        let r = text_rect;
         let icon_rect = egui::Rect::from_min_size(
             egui::pos2(r.max.x + 3.0, r.center().y - 6.0),
             vec2(12.0, 12.0),
@@ -163,13 +162,16 @@ pub fn link_button(ui: &mut Ui, label: &str, external: bool) -> Response {
         focus_ring(ui.painter(), ring, radius::INNER, pal);
     }
     if response.hovered() {
-        let r = response.rect;
-        ui.painter().hline(
-            r.x_range(),
-            r.max.y - 1.0,
-            egui::Stroke::new(1.0, pal.link.gamma_multiply(0.6)),
-        );
+        for row in &galley.rows {
+            let r = row.rect_without_leading_space().translate(pos.to_vec2());
+            ui.painter().hline(
+                r.x_range(),
+                r.max.y - 1.0,
+                egui::Stroke::new(1.0, pal.link.gamma_multiply(0.6)),
+            );
+        }
     }
+    ui.painter().galley(pos, galley, pal.link);
     let l = label.to_owned();
     response.widget_info(|| WidgetInfo::labeled(egui::Role::Link, true, &l));
     response

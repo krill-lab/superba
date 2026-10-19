@@ -760,7 +760,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
     for (i, d) in drawn.iter().enumerate() {
         if d.clicked {
             out.push(match i {
-                0 => Action::Go(Page::Updates),
+                0 => Action::Go(Page::Superba(crate::pages::SuperbaSection::Updates)),
                 1 => Action::Go(Page::Router),
                 2 if hero.provider.ghost && cx.data.providers().is_empty() => Action::StartWizard,
                 2 => Action::Go(Page::Providers),

@@ -119,18 +119,18 @@ def main():
 
         for lang in ("en", "zh-CN"):
             suffix = "en" if lang == "en" else "zh"
-            s.shot(f"notify-{suffix}", "preferences", "light", lang,
+            s.shot(f"notify-{suffix}", "notify", "light", lang,
                    actions=open_with("notification settings"), size=SIZE)
-            s.shot(f"notify-more-{suffix}", "preferences", "light", lang,
+            s.shot(f"notify-more-{suffix}", "notify", "light", lang,
                    actions=open_with("notification settings", scroll=9), size=SIZE)
-            s.shot(f"notify-add-{suffix}", "preferences", "light", lang,
+            s.shot(f"notify-add-{suffix}", "notify", "light", lang,
                    actions=open_with("add notification channel"), size=SIZE)
 
             wechat = open_with("add serverchan channel")
 
-            s.shot(f"notify-add-wechat-{suffix}", "preferences", "light", lang,
+            s.shot(f"notify-add-wechat-{suffix}", "notify", "light", lang,
                    actions=wechat, size=SIZE)
-        s.shot("notify-dark-zh", "preferences", "dark", "zh-CN",
+        s.shot("notify-dark-zh", "notify", "dark", "zh-CN",
                actions=open_with("notification settings"), size=SIZE)
     finally:
         s.close()

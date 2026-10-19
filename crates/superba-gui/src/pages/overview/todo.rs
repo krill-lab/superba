@@ -57,8 +57,10 @@ pub enum TodoKind {
     SuperbaUpdate,
     /// A newer desktop app.
     AppUpdate,
-    /// A newer Codex CLI.
-    CliUpdate,
+    /// An available or failed coding-tool update, identified by install target.
+    ToolUpdate(String),
+    /// Enabled notifications cannot reach a missing or untrusted hook.
+    NotifyHooks,
     /// GH#5: another tool changed what Superba manages.
     ExternalChange,
 }
@@ -82,7 +84,7 @@ impl Todo {
     /// The button's label (translated).
     pub fn fix_label(&self, cx: &Cx<'_>) -> String {
         cx.tr.t(match self.kind {
-            TodoKind::SuperbaUpdate | TodoKind::AppUpdate | TodoKind::CliUpdate => {
+            TodoKind::SuperbaUpdate | TodoKind::AppUpdate | TodoKind::ToolUpdate(_) => {
                 "overview.todo.fix.update"
             }
             TodoKind::LineUnreachable => "overview.todo.fix.probe",
@@ -116,14 +118,20 @@ impl Todo {
             TodoKind::PinMismatch
             | TodoKind::SuperbaUpdate
             | TodoKind::AppUpdate
-            | TodoKind::CliUpdate => Action::Go(Page::Updates),
+            | TodoKind::ToolUpdate(_) => {
+                Action::Go(Page::Superba(crate::pages::SuperbaSection::Updates))
+            }
             TodoKind::Unpriced => Action::Go(Page::Models),
             TodoKind::OldConfig => Action::ShowRuntime,
             TodoKind::PlainKeys | TodoKind::Finding(_) | TodoKind::Notice => {
-                Action::Go(Page::Diagnostics)
+                Action::Go(Page::Superba(crate::pages::SuperbaSection::Diagnostics))
             }
             TodoKind::ExternalChange => Action::ShowExternal,
             TodoKind::HotSwitchOff => Action::RestartApp,
+            TodoKind::NotifyHooks => Action::PageCommand {
+                page: Page::Superba(crate::pages::SuperbaSection::Notify),
+                command: "focus:prefs.notify.hooks.title".into(),
+            },
         }
     }
 }
@@ -386,6 +394,36 @@ pub fn todos(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Vec<Todo> {
         ));
     }
 
+    // Maintenance shared with the Superba home. Failed installs take priority
+    // over offers for the same target; successful retries clear their result.
+    for (target, error) in &data.tool_update_errors {
+        let name = target.strip_prefix("remote:").and_then(|id| {
+            data.hosts
+                .value
+                .as_ref()?
+                .iter()
+                .find(|h| h.host.target_id.as_str() == id)
+                .map(|h| h.host.label.clone())
+        });
+        let tool = name.map_or_else(|| "Codex".to_owned(), |name| format!("Codex · {name}"));
+        push(todo(
+            TodoKind::ToolUpdate(target.clone()),
+            Status::Error,
+            tr.f("superba.todo.tool_failed", &[("tool", &tool)]),
+            Some(error.clone()),
+            Some(Spot::ThisComputer),
+        ));
+    }
+    if data.notify_hooks_attention {
+        push(todo(
+            TodoKind::NotifyHooks,
+            Status::Warn,
+            tr.t("superba.home.hooks"),
+            Some(tr.t("superba.home.hooks_desc")),
+            Some(Spot::ThisComputer),
+        ));
+    }
+
     // Offers: updates (Superba first).
     if let Some(release) = data.self_update_offered() {
         push(todo(
@@ -413,12 +451,14 @@ pub fn todos(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Vec<Todo> {
                 None,
             ));
         }
-        if let Some(version) = v.cli.iter().find_map(|r| match &r.action {
-            superba_core::CliUpdateAction::None => None,
-            _ => r.latest.clone(),
-        }) {
+        if !data.tool_update_errors.contains_key("local")
+            && let Some(version) = v.cli.iter().find_map(|r| match &r.action {
+                superba_core::CliUpdateAction::None => None,
+                _ => r.latest.clone(),
+            })
+        {
             push(todo(
-                TodoKind::CliUpdate,
+                TodoKind::ToolUpdate("local".into()),
                 Status::Idle,
                 tr.f("overview.todo.cli_update", &[("version", &version)]),
                 None,

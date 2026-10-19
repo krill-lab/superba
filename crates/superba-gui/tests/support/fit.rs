@@ -85,6 +85,18 @@ pub fn render_fit(
     locale: Locale,
     theme: egui::Theme,
     data: &Data,
+    show: impl FnMut(&mut egui::Ui, &Cx<'_>, &mut Vec<Action>),
+) -> FitReport {
+    render_fit_min_height(window, locale, theme, data, layout::FIT_MIN_HEIGHT, show)
+}
+
+/// Render using the page's own minimum height, as the application shell does.
+pub fn render_fit_min_height(
+    window: [f32; 2],
+    locale: Locale,
+    theme: egui::Theme,
+    data: &Data,
+    min_height: f32,
     mut show: impl FnMut(&mut egui::Ui, &Cx<'_>, &mut Vec<Action>),
 ) -> FitReport {
     let ctx = egui::Context::default();
@@ -131,7 +143,7 @@ pub fn render_fit(
                         .max_rect(page)
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
-                let fit = layout::fit_area(&mut area, layout::FIT_MIN_HEIGHT, |ui| {
+                let fit = layout::fit_area(&mut area, min_height, |ui| {
                     ui.spacing_mut().item_spacing.y = 8.0;
                     show(ui, &cx, &mut actions);
                     ui.min_rect().max.y

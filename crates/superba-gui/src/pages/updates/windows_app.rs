@@ -419,7 +419,9 @@ pub fn show(
     kv(ui, cx, &cx.tr.t("updates.win.source_label"), |ui| {
         ui.label(Text::small(cx.tr.t(source_key(offer.source)), cx.pal));
         if link_button(ui, &cx.tr.t("updates.win.change_source"), true).clicked() {
-            out.push(Action::Go(Page::Preferences));
+            out.push(Action::Go(Page::Superba(
+                crate::pages::SuperbaSection::Network,
+            )));
         }
     });
     if state.cancelled {
@@ -427,7 +429,13 @@ pub fn show(
     }
     if let Some(e) = &state.error {
         callout(ui, cx, Status::Error, e);
-        ui.add(egui::Label::new(Text::caption(cx.tr.t("updates.win.failed_hint"), cx.pal)).wrap());
+        ui.add(
+            egui::Label::new(Text::caption(
+                cx.tr.t("superba.network.package_failed_hint"),
+                cx.pal,
+            ))
+            .wrap(),
+        );
     }
     if let Some(w) = &windows {
         report_rows(ui, cx, state, w, out);

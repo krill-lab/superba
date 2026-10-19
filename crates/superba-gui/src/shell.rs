@@ -96,7 +96,7 @@ pub fn sidebar(
     ui.spacing_mut().item_spacing.y = NAV_GAP;
 
     // Superba's own pages sit at the bottom.
-    let pinned = |p: Page| p.group() == crate::pages::NavGroup::Superba;
+    let pinned = |p: Page| p.is_superba();
     let main: Vec<Page> = Page::ALL.into_iter().filter(|p| !pinned(*p)).collect();
     let footer: Vec<Page> = Page::ALL.into_iter().filter(|p| pinned(*p)).collect();
     let metrics = if ui.available_height() >= NavMetrics::FULL.needed(&main, footer.len()) {
@@ -112,7 +112,14 @@ pub fn sidebar(
             ui.spacing_mut().item_spacing.y = NAV_GAP;
             ui.add_space(FOOTER_ABOVE);
             for p in footer.iter().copied() {
-                if nav_item(ui, cx, p, *page == p, &status(p), metrics.row) {
+                if nav_item(
+                    ui,
+                    cx,
+                    p,
+                    *page == p || (page.is_superba() && p.is_superba()),
+                    &status(p),
+                    metrics.row,
+                ) {
                     *page = p;
                 }
             }
@@ -163,7 +170,14 @@ pub fn sidebar(
                     }
                     group = Some(p.group());
                 }
-                if nav_item(ui, cx, p, *page == p, &status(p), metrics.row) {
+                if nav_item(
+                    ui,
+                    cx,
+                    p,
+                    *page == p || (page.is_superba() && p.is_superba()),
+                    &status(p),
+                    metrics.row,
+                ) {
                     *page = p;
                 }
             }
@@ -248,7 +262,7 @@ fn nav_item(
     // The row shows the short label; its accessible name is the page title
     // ("Claude Code 设置", not a second "设置").
     let label = cx.tr.t(page.nav_key());
-    let name = cx.tr.t(page.title_key());
+    let name = cx.tr.t(page.sidebar_page().title_key());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, &name));
     let t = crate::design::widgets::hover_t(ui, &response);
     // Selected: a soft gray rounded rectangle on the window background.
@@ -262,7 +276,7 @@ fn nav_item(
     p.rect_filled(rect, radius::NAV, fill);
     let color = cx.pal.text;
     // The selected page's icon in the brand coral (the app icon's mark).
-    let icon_color = if selected {
+    let icon_color = if selected && !page.is_superba() {
         crate::design::tokens::brand::coral(cx.pal.dark)
     } else {
         cx.pal.text_muted.lerp_to_gamma(cx.pal.text, t)

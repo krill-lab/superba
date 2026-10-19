@@ -41,9 +41,9 @@ superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
   --theme T     dark or light (default: preferences / system)
   --lang L      en or zh-CN (default: preferences / system)
   --size WxH    initial window size in points, e.g. 1280x800
-  --page NAME   open a page first: overview providers models router usage
-                settings sessions hosts claude-code claude-settings updates
-                diagnostics preferences
+  --page NAME   open a page first: overview tools providers models router usage
+                settings sessions hosts claude-code claude-settings superba
+                updates diagnostics data general appearance network notify
   --launch-chatgpt
                 open ChatGPT through Superba (so it can be hot-switched); a
                 running Superba window does it, else no window opens unless
@@ -55,8 +55,9 @@ superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
 Subcommands (status, switch, restore, ...) behave like `spb`; see `superba --help`.";
 
 /// Flag names of the pages, in navigation order.
-pub const PAGE_NAMES: [(Page, &str); 13] = [
+pub const PAGE_NAMES: [(Page, &str); 19] = [
     (Page::Overview, "overview"),
+    (Page::Tools, "tools"),
     (Page::Providers, "providers"),
     (Page::Models, "models"),
     (Page::Router, "router"),
@@ -66,9 +67,32 @@ pub const PAGE_NAMES: [(Page, &str); 13] = [
     (Page::Hosts, "hosts"),
     (Page::ClaudeCode, "claude-code"),
     (Page::ClaudeSettings, "claude-settings"),
-    (Page::Updates, "updates"),
-    (Page::Diagnostics, "diagnostics"),
-    (Page::Preferences, "preferences"),
+    (Page::Superba(crate::pages::SuperbaSection::Home), "superba"),
+    (
+        Page::Superba(crate::pages::SuperbaSection::Updates),
+        "updates",
+    ),
+    (
+        Page::Superba(crate::pages::SuperbaSection::Diagnostics),
+        "diagnostics",
+    ),
+    (Page::Superba(crate::pages::SuperbaSection::Data), "data"),
+    (
+        Page::Superba(crate::pages::SuperbaSection::General),
+        "general",
+    ),
+    (
+        Page::Superba(crate::pages::SuperbaSection::Appearance),
+        "appearance",
+    ),
+    (
+        Page::Superba(crate::pages::SuperbaSection::Network),
+        "network",
+    ),
+    (
+        Page::Superba(crate::pages::SuperbaSection::Notify),
+        "notify",
+    ),
 ];
 
 /// Parse a page name.

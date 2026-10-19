@@ -44,7 +44,9 @@ pub mod import;
 pub mod models;
 pub mod notify;
 pub mod overview;
-pub mod preferences;
+pub mod superba;
+pub mod tools;
+pub use superba::SuperbaSection;
 pub mod providers;
 pub mod router;
 pub mod sessions;
@@ -77,6 +79,8 @@ use crate::i18n::Tr;
 pub enum Page {
     /// Overview: the active provider, its lines, this computer, remote hosts.
     Overview,
+    /// Shared configuration for the other coding tools.
+    Tools,
     /// Providers: connection (lines, auth, key), sites, account and usage.
     Providers,
     /// Models of the active provider, per-model context window and compaction,
@@ -101,13 +105,8 @@ pub enum Page {
     /// Claude Code's `settings.json` (catalog of its keys and environment
     /// variables, the file editor).
     ClaudeSettings,
-    /// Versions of the desktop app and Codex (local and remote), app Codex
-    /// pin, and Superba itself.
-    Updates,
-    /// Diagnostics: checks, environment, processes, the activity log.
-    Diagnostics,
-    /// Superba's own preferences.
-    Preferences,
+    /// Superba maintenance and preferences, with a section deep link.
+    Superba(SuperbaSection),
 }
 
 /// Sidebar groups (UX §2.1).
@@ -121,9 +120,6 @@ pub enum NavGroup {
     Codex,
     /// Claude Code on this computer.
     Claude,
-    /// Superba itself: updates, diagnostics, preferences (pinned at the
-    /// bottom of the sidebar).
-    Superba,
 }
 
 impl NavGroup {
@@ -134,7 +130,6 @@ impl NavGroup {
             NavGroup::Connect => Some("nav.group.connect"),
             NavGroup::Codex => Some("nav.group.codex"),
             NavGroup::Claude => Some("nav.group.claude"),
-            NavGroup::Superba => Some("nav.group.superba"),
         }
     }
 }
@@ -151,9 +146,10 @@ pub enum PageLayout {
 }
 
 impl Page {
-    /// All pages in navigation order.
-    pub const ALL: [Page; 13] = [
+    /// Sidebar destinations; Superba sections share one pinned entry.
+    pub const ALL: [Page; 12] = [
         Page::Overview,
+        Page::Tools,
         Page::Providers,
         Page::Models,
         Page::Router,
@@ -163,37 +159,67 @@ impl Page {
         Page::Hosts,
         Page::ClaudeCode,
         Page::ClaudeSettings,
-        Page::Updates,
-        Page::Diagnostics,
-        Page::Preferences,
+        Page::Superba(SuperbaSection::Home),
     ];
+
+    /// Every independently addressable page, including all Superba sections.
+    pub const DESTINATIONS: [Page; 19] = [
+        Page::Overview,
+        Page::Tools,
+        Page::Providers,
+        Page::Models,
+        Page::Router,
+        Page::Usage,
+        Page::Settings,
+        Page::Sessions,
+        Page::Hosts,
+        Page::ClaudeCode,
+        Page::ClaudeSettings,
+        Page::Superba(SuperbaSection::Home),
+        Page::Superba(SuperbaSection::Updates),
+        Page::Superba(SuperbaSection::Diagnostics),
+        Page::Superba(SuperbaSection::Data),
+        Page::Superba(SuperbaSection::General),
+        Page::Superba(SuperbaSection::Appearance),
+        Page::Superba(SuperbaSection::Network),
+        Page::Superba(SuperbaSection::Notify),
+    ];
+
+    /// The one pinned sidebar entry.
+    pub fn is_superba(self) -> bool {
+        matches!(self, Self::Superba(_))
+    }
+
+    /// Canonical target used for the sidebar badge and accessible name.
+    pub fn sidebar_page(self) -> Self {
+        if self.is_superba() {
+            Self::Superba(SuperbaSection::Home)
+        } else {
+            self
+        }
+    }
 
     /// Sidebar group.
     pub fn group(self) -> NavGroup {
         match self {
-            Page::Overview => NavGroup::Main,
+            Page::Overview | Page::Tools | Page::Superba(_) => NavGroup::Main,
             Page::Providers | Page::Models | Page::Router | Page::Usage => NavGroup::Connect,
             Page::Settings | Page::Sessions | Page::Hosts => NavGroup::Codex,
             Page::ClaudeCode | Page::ClaudeSettings => NavGroup::Claude,
-            Page::Updates | Page::Diagnostics | Page::Preferences => NavGroup::Superba,
         }
     }
 
     /// Fit or Scroll.
     pub fn layout(self) -> PageLayout {
-        match self {
-            // The Overview is a dashboard: its cards share the window's height.
-            Page::Overview
-            | Page::Providers
-            | Page::Models
-            | Page::Router
-            | Page::Usage
-            | Page::Settings
-            | Page::Sessions
-            | Page::Hosts
-            | Page::ClaudeCode
-            | Page::ClaudeSettings => PageLayout::Fit,
-            Page::Updates | Page::Diagnostics | Page::Preferences => PageLayout::Scroll,
+        PageLayout::Fit
+    }
+
+    /// Minimum content height before the shell uses its short-window fallback.
+    pub fn min_height(self) -> f32 {
+        if self.is_superba() || self == Page::Tools {
+            480.0
+        } else {
+            crate::design::layout::FIT_MIN_HEIGHT
         }
     }
 
@@ -202,6 +228,7 @@ impl Page {
     pub fn title_key(self) -> &'static str {
         match self {
             Page::Overview => "nav.overview",
+            Page::Tools => "superba.tools.title",
             Page::Providers => "nav.providers",
             Page::Models => "nav.models",
             Page::Router => "nav.router",
@@ -211,9 +238,7 @@ impl Page {
             Page::Hosts => "nav.hosts",
             Page::ClaudeCode => "nav.claude_code",
             Page::ClaudeSettings => "nav.claude_settings",
-            Page::Updates => "nav.updates",
-            Page::Diagnostics => "nav.diagnostics",
-            Page::Preferences => "nav.preferences",
+            Page::Superba(section) => section.title_key(),
         }
     }
 
@@ -221,6 +246,7 @@ impl Page {
     /// group caption says the rest ("设置" under "Claude Code").
     pub fn nav_key(self) -> &'static str {
         match self {
+            Page::Superba(_) => "superba.title",
             Page::ClaudeCode => "nav.short.claude_code",
             Page::ClaudeSettings => "nav.short.claude_settings",
             other => other.title_key(),
@@ -231,6 +257,7 @@ impl Page {
     pub fn subtitle_key(self) -> &'static str {
         match self {
             Page::Overview => "page.overview.subtitle",
+            Page::Tools => "superba.tools.subtitle",
             Page::Providers => "page.providers.subtitle",
             Page::Models => "page.models.subtitle",
             Page::Router => "page.router.subtitle",
@@ -240,9 +267,7 @@ impl Page {
             Page::Hosts => "page.hosts.subtitle",
             Page::ClaudeCode => "page.claude_code.subtitle",
             Page::ClaudeSettings => "page.claude_settings.subtitle",
-            Page::Updates => "page.updates.subtitle",
-            Page::Diagnostics => "page.diagnostics.subtitle",
-            Page::Preferences => "page.preferences.subtitle",
+            Page::Superba(section) => section.subtitle_key(),
         }
     }
 
@@ -250,6 +275,7 @@ impl Page {
     pub fn icon(self) -> Icon {
         match self {
             Page::Overview => Icon::Overview,
+            Page::Tools => Icon::Tools,
             Page::Providers => Icon::Plug,
             Page::Models => Icon::Model,
             Page::Router => Icon::Route,
@@ -259,9 +285,7 @@ impl Page {
             Page::Hosts => Icon::Server,
             Page::ClaudeCode => Icon::Cloud,
             Page::ClaudeSettings => Icon::Terminal,
-            Page::Updates => Icon::Download,
-            Page::Diagnostics => Icon::Probe,
-            Page::Preferences => Icon::Gear,
+            Page::Superba(_) => Icon::Superba,
         }
     }
 }
@@ -586,6 +610,10 @@ pub struct Data {
     pub paths: Option<DataPaths>,
     /// ChatGPT is being opened through Superba (GH#7; the hero's button spins).
     pub launching_app: bool,
+    /// Last failed Codex installs by install target; shared by both home pages.
+    pub tool_update_errors: BTreeMap<String, String>,
+    /// Enabled notifications have missing, untrusted or unreadable hooks.
+    pub notify_hooks_attention: bool,
 }
 
 /// Superba's own paths, shown on Diagnostics and opened from Preferences.
@@ -638,6 +666,20 @@ impl Data {
         let latest = view.latest.as_ref()?;
         (view.offered() && self.selfupdate_later.as_deref() != Some(latest.version.as_str()))
             .then_some(latest)
+    }
+
+    /// Number of installed components with an offered update. Tool rows are
+    /// added by the unified updater when its data source is integrated.
+    pub fn update_count(&self) -> u32 {
+        u32::from(self.self_update_offered().is_some())
+            + self.versions.value.as_ref().map_or(0, |v| {
+                u32::from(v.app.update_available)
+                    + u32::from(
+                        v.cli
+                            .iter()
+                            .any(|r| !matches!(r.action, CliUpdateAction::None)),
+                    )
+            })
     }
 
     /// A newer Superba, ChatGPT app or a newer Codex CLI for an installed binary

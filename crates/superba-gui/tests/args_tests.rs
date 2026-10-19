@@ -178,14 +178,14 @@ fn page_names_round_trip_cover_every_page_and_appear_in_usage() {
         assert_eq!(parse_page(&name.to_ascii_uppercase()), Some(page));
         assert!(words.contains(name), "USAGE omits page {name}");
     }
-    assert_eq!(names.len(), Page::ALL.len());
+    assert_eq!(names.len(), Page::DESTINATIONS.len());
     // Names of pages that no longer exist are unknown.
-    for name in ["connection", "sites", "targets"] {
+    for name in ["connection", "sites", "targets", "preferences", "more"] {
         assert_eq!(parse_page(name), None, "{name}");
         let error = parse(&["--page", name]).unwrap_err();
         assert!(error.contains("unknown page"), "{name}: {error}");
     }
-    for page in Page::ALL {
+    for page in Page::DESTINATIONS {
         assert!(
             PAGE_NAMES.iter().any(|(p, _)| *p == page),
             "{page:?} has no name"

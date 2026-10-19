@@ -217,7 +217,7 @@ def run(r):
 
     # 1. Preferences → Window with a tray.
     for theme, lang in (("light", "en"), ("dark", "zh-CN"), ("dark", "en"), ("light", "zh-CN")):
-        r.launch(theme=theme, lang=lang, page="preferences")
+        r.launch(theme=theme, lang=lang, page="general")
         time.sleep(6)
         r.scroll_to_window_section()
         r.shot(f"prefs-window-{theme}-{'zh' if lang == 'zh-CN' else 'en'}")
@@ -290,7 +290,7 @@ def run(r):
     # 6. No tray host.
     r.stop_host()
     for theme, lang in (("light", "en"), ("dark", "zh-CN")):
-        r.launch(theme=theme, lang=lang, page="preferences")
+        r.launch(theme=theme, lang=lang, page="general")
         time.sleep(6)
         r.scroll_to_window_section()
         r.shot(f"prefs-window-no-tray-{theme}-{'zh' if lang == 'zh-CN' else 'en'}")

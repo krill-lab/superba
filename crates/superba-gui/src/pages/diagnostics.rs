@@ -11,19 +11,24 @@ use crate::design::widgets::{Button, Card, Status, StatusDot, Table, Text};
 
 /// Draw the diagnostics page.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
-    page_header(ui, cx, Page::Diagnostics, |ui| {
-        if ui
-            .add(
-                Button::new(cx.tr.t("diag.run"))
-                    .icon(Icon::Refresh)
-                    .small()
-                    .loading(cx.data.doctor.loading),
-            )
-            .clicked()
-        {
-            out.push(Action::RunDoctor);
-        }
-    });
+    page_header(
+        ui,
+        cx,
+        Page::Superba(crate::pages::SuperbaSection::Diagnostics),
+        |ui| {
+            if ui
+                .add(
+                    Button::new(cx.tr.t("diag.run"))
+                        .icon(Icon::Refresh)
+                        .small()
+                        .loading(cx.data.doctor.loading),
+                )
+                .clicked()
+            {
+                out.push(Action::RunDoctor);
+            }
+        },
+    );
 
     checks(ui, cx);
     ui.add_space(24.0);

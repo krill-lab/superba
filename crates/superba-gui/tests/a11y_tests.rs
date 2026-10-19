@@ -89,7 +89,7 @@ fn every_page_names_its_controls_in_both_languages() {
         h.key(egui::Key::Escape);
 
         // Every page through its sidebar tab.
-        for page in Page::ALL {
+        for page in Page::DESTINATIONS {
             h.go(page, &tr);
             let t = h.until(&format!("{locale:?} {page:?} loaded"), |t| loaded(page, t));
             assert_named(&format!("{locale:?} {page:?}"), &t);

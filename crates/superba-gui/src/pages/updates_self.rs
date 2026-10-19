@@ -338,7 +338,7 @@ fn quiet_line(cx: &Cx<'_>, view: &SelfUpdateView) -> Option<String> {
             "updates.superba.check_failed",
             &[("reason", &view.detail.clone().unwrap_or_default())],
         ),
-        SelfUpdateStatus::OnlineChecksOff => cx.tr.t("updates.superba.online_off"),
+        SelfUpdateStatus::OnlineChecksOff => cx.tr.t("superba.network.online_off"),
         SelfUpdateStatus::NotChecked => cx.tr.t("updates.superba.not_checked"),
         _ => return None,
     })

@@ -113,6 +113,10 @@ impl SuperbaApp {
             TrayEvent::Activate | TrayEvent::Action(TrayAction::Open) => self.show_window(ctx),
             TrayEvent::HostLost => self.life.tray_lost(),
             TrayEvent::HostBack => {}
+            TrayEvent::Action(TrayAction::Superba(section)) => {
+                self.show_window(ctx);
+                self.handle_action(ctx, Action::Go(Page::Superba(section)));
+            }
             TrayEvent::Action(TrayAction::Quit) => self.life.quit(),
             TrayEvent::Action(TrayAction::Switch { profile, line }) => {
                 self.handle_action(

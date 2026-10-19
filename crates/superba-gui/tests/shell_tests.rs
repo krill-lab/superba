@@ -299,7 +299,7 @@ fn sidebar_texts(window: [f32; 2], locale: Locale) -> Vec<(String, Rect)> {
 #[test]
 fn the_sidebar_never_draws_pages_under_the_pinned_ones_at_the_minimum_window() {
     // Review ux-visual #2: at 960x640 Updates was drawn over the pinned Diagnostics.
-    use superba_gui::pages::{NavGroup, Page};
+    use superba_gui::pages::Page;
     for locale in [Locale::ZhCn, Locale::En] {
         let tr = Tr::new(locale);
         // Two rows may share a label ("Settings" of Codex and of Claude
@@ -322,14 +322,11 @@ fn the_sidebar_never_draws_pages_under_the_pinned_ones_at_the_minimum_window() {
             let texts = sidebar_texts(window, locale);
             let pinned: Vec<Rect> = Page::ALL
                 .into_iter()
-                .filter(|p| p.group() == NavGroup::Superba)
+                .filter(|p| p.is_superba())
                 .map(|p| rect_of(&texts, p))
                 .collect();
             let top_pinned = pinned.iter().map(|r| r.min.y).fold(f32::INFINITY, f32::min);
-            for page in Page::ALL
-                .into_iter()
-                .filter(|p| p.group() != NavGroup::Superba)
-            {
+            for page in Page::ALL.into_iter().filter(|p| !p.is_superba()) {
                 let r = rect_of(&texts, page);
                 // Labels sit centred in their rows: a whole row gap between the
                 // last page and the first pinned one, and no overlap at all.

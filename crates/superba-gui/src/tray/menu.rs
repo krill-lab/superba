@@ -44,6 +44,8 @@ pub enum TrayAction {
     /// Open the Router page, where router mode is turned on (it checks the
     /// members first).
     RouterPage,
+    /// Open a Superba section in the window.
+    Superba(crate::pages::SuperbaSection),
     /// Quit Superba (the router keeps running as its own service).
     Quit,
 }
@@ -203,6 +205,20 @@ pub fn build(tr: &Tr, data: &Data, busy: bool) -> TrayMenu {
         items.extend(router);
     }
     items.push(TrayItem::Separator);
+    items.push(TrayItem::Submenu {
+        label: tr.t("superba.title"),
+        enabled: true,
+        items: crate::pages::SuperbaSection::ALL
+            .into_iter()
+            .map(|section| {
+                TrayItem::action(
+                    tr.t(section.title_key()),
+                    TrayAction::Superba(section),
+                    true,
+                )
+            })
+            .collect(),
+    });
     items.push(TrayItem::action(
         tr.t("tray.menu.quit"),
         TrayAction::Quit,

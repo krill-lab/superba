@@ -170,7 +170,10 @@ fn the_windows_row_offers_the_installer_its_source_and_the_store() {
         |ui, cx, out| updates::show(ui, cx, &mut state, out),
         |f| !f.actions.is_empty(),
     );
-    assert!(matches!(f.actions[0], Action::Go(Page::Preferences)));
+    assert!(matches!(
+        f.actions[0],
+        Action::Go(Page::Superba(superba_gui::pages::SuperbaSection::Network))
+    ));
 
     // English, and the other source settings.
     windows_view(&service, WindowsAppSource::StoreMirrorOnly);
@@ -312,7 +315,7 @@ fn failures_are_explained() {
         |ui, cx, out| updates::show(ui, cx, &mut state, out),
         |f| f.has("browser check"),
     );
-    assert!(f.has("可以在 偏好设置 → 网络 中更换安装包来源，或改用 Microsoft Store。"));
+    assert!(f.has("可以在 Superba → 网络 中更换安装包来源，或改用 Microsoft Store。"));
     assert!(!f.has("打开安装程序"));
 
     // Opening can fail too (App Installer missing).
@@ -344,7 +347,7 @@ fn preferences_choose_the_windows_package_source() {
     let mut h = harness(service, Locale::ZhCn);
     let mut settings = Settings::default();
     let f = h.frames(2, |ui, cx, _out| {
-        superba_gui::pages::preferences::windows_app_source_row(ui, cx, &mut settings)
+        superba_gui::pages::superba::network::windows_app_source_row(ui, cx, &mut settings)
     });
     for want in [
         "ChatGPT 安装包来源",
@@ -361,7 +364,7 @@ fn preferences_choose_the_windows_package_source() {
     );
     h.click_text(&f, "仅 Store 镜像");
     h.frames(5, |ui, cx, _out| {
-        superba_gui::pages::preferences::windows_app_source_row(ui, cx, &mut settings)
+        superba_gui::pages::superba::network::windows_app_source_row(ui, cx, &mut settings)
     });
     assert_eq!(
         settings.network.windows_app_source,

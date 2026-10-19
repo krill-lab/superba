@@ -21,7 +21,7 @@ use superba_gui::pages::updates::{self, State};
 use superba_gui::pages::updates_self::{
     NoteLine, channel_line, inline, no_downgrade_note, note_lines,
 };
-use superba_gui::pages::{Action, NavBadge, Page, preferences};
+use superba_gui::pages::{Action, NavBadge, Page, superba::update_settings};
 use support::fake::{FakeOptions, FakeService};
 
 fn fake() -> Arc<FakeService> {
@@ -456,7 +456,7 @@ fn the_sidebar_updates_entry_gets_a_dot_naming_the_version() {
     assert!(
         shell_badges(&tr, &data)
             .iter()
-            .all(|(p, ..)| *p != Page::Updates)
+            .all(|(p, ..)| *p != Page::Superba(superba_gui::pages::SuperbaSection::Home))
     );
     data.selfupdate.finish(Ok(view(
         SelfUpdateStatus::Available,
@@ -465,11 +465,11 @@ fn the_sidebar_updates_entry_gets_a_dot_naming_the_version() {
     let badges = shell_badges(&tr, &data);
     let (_, badge, tip) = badges
         .iter()
-        .find(|(p, ..)| *p == Page::Updates)
+        .find(|(p, ..)| *p == Page::Superba(superba_gui::pages::SuperbaSection::Home))
         .cloned()
         .unwrap();
-    assert_eq!(badge, NavBadge::Dot(Status::Idle));
-    assert_eq!(tip, "Superba 0.2.0 可更新");
+    assert_eq!(badge, NavBadge::Count(1));
+    assert_eq!(tip, "有 1 项可更新");
 }
 
 #[test]
@@ -492,7 +492,10 @@ fn the_overview_todo_offers_the_update_and_opens_the_updates_page() {
                 "{}",
                 t.title
             );
-            assert!(matches!(t.fix(cx), Action::Go(Page::Updates)));
+            assert!(matches!(
+                t.fix(cx),
+                Action::Go(Page::Superba(superba_gui::pages::SuperbaSection::Updates))
+            ));
             assert!(t.spot.is_none(), "offers mark no hero node");
         });
         // Put off: gone.
@@ -518,7 +521,7 @@ fn the_palette_has_a_superba_update_command_that_opens_the_page_and_checks() {
             let items = updates::palette(cx, &State::default());
             let item = items.iter().find(|i| i.title == title).expect(title);
             assert!(
-                matches!(&item.action, Action::PageCommand { page: Page::Updates, command } if command == "check_superba"),
+                matches!(&item.action, Action::PageCommand { page: Page::Superba(superba_gui::pages::SuperbaSection::Updates), command } if command == "check_superba"),
                 "{:?}",
                 item.action
             );
@@ -564,9 +567,8 @@ fn preferences_has_the_two_update_choices_with_the_right_defaults() {
     ] {
         let mut h = Harness::new([1280.0, 2600.0], locale, fake(), false);
         let mut settings = Settings::default();
-        let mut notify = superba_gui::pages::notify::State::default();
         let f = h.until(
-            |ui, cx, out| preferences::show(ui, cx, &mut settings, &mut notify, out),
+            |ui, cx, out| update_settings::show(ui, cx, &mut settings, out),
             |f| f.has(auto),
         );
         for want in [channel, stable, preview] {
@@ -582,14 +584,13 @@ fn picking_a_channel_in_preferences_saves_it() {
         update_channel: Some(UpdateChannel::Stable),
         ..Settings::default()
     };
-    let mut notify = superba_gui::pages::notify::State::default();
     let f = h.until(
-        |ui, cx, out| preferences::show(ui, cx, &mut settings, &mut notify, out),
+        |ui, cx, out| update_settings::show(ui, cx, &mut settings, out),
         |f| f.has("Update channel"),
     );
     h.click_text(&f, "Preview");
     let f = h.until(
-        |ui, cx, out| preferences::show(ui, cx, &mut settings, &mut notify, out),
+        |ui, cx, out| update_settings::show(ui, cx, &mut settings, out),
         |f| f.actions.iter().any(|a| matches!(a, Action::SaveSettings)),
     );
     assert!(!f.actions.is_empty());

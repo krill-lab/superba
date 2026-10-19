@@ -266,7 +266,7 @@ def main():
         # 4. Preferences.
         for theme, lang in VARIANTS:
             short = "zh" if lang == "zh-CN" else "en"
-            s.shot(f"launch-prefs-{theme}-{short}", "preferences", theme, lang, 6.0, None, SIZE)
+            s.shot(f"launch-prefs-{theme}-{short}", "general", theme, lang, 6.0, None, SIZE)
     finally:
         s.close()
     if FAILURES:

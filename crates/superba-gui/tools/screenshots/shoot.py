@@ -84,8 +84,9 @@ LINES = [
     ("overseas", "line.krill.overseas", "Overseas", 96),
     ("cdn", "line.krill.cdn", "Multi-carrier CDN", 154),
 ]
-PAGES = ["overview", "providers", "models", "router", "usage", "settings", "sessions",
-         "hosts", "updates", "diagnostics", "preferences"]
+PAGES = ["overview", "tools", "providers", "models", "router", "usage", "settings", "sessions",
+         "hosts", "claude-code", "claude-settings", "superba", "updates", "diagnostics",
+         "data", "general", "appearance", "network", "notify"]
 VARIANTS = [("dark", "en"), ("light", "en"), ("dark", "zh-CN"), ("light", "zh-CN")]
 # Extra screen beyond the largest window: the parked pointer sits there.
 PARK_MARGIN = 8

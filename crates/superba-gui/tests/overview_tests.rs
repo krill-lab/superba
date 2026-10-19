@@ -668,16 +668,18 @@ async fn todos_list_problems_first_with_their_fixes_and_nodes() {
             assert!(matches!(fix(&TodoKind::LineUnreachable), Action::Probe(s) if s == site));
             assert!(matches!(
                 fix(&TodoKind::PinMismatch),
-                Action::Go(Page::Updates)
+                Action::Go(Page::Superba(superba_gui::pages::SuperbaSection::Updates))
             ));
             assert!(matches!(
                 fix(&TodoKind::AppUpdate),
-                Action::Go(Page::Updates)
+                Action::Go(Page::Superba(superba_gui::pages::SuperbaSection::Updates))
             ));
             assert!(matches!(fix(&TodoKind::Unpriced), Action::Go(Page::Models)));
             assert!(matches!(
                 fix(&TodoKind::PlainKeys),
-                Action::Go(Page::Diagnostics)
+                Action::Go(Page::Superba(
+                    superba_gui::pages::SuperbaSection::Diagnostics
+                ))
             ));
             for t in &todos {
                 assert!(!t.fix_label(cx).contains("overview."), "{:?}", t.kind);
@@ -946,7 +948,10 @@ async fn nodes_open_their_pages_and_the_popovers_switch_line_and_tier() {
     state.usage = UsageLoader::preloaded(busy_snapshot());
     let mut out = Vec::new();
     let nodes = [
-        (tr.t("overview.hero.this"), Page::Updates),
+        (
+            tr.t("overview.hero.this"),
+            Page::Superba(superba_gui::pages::SuperbaSection::Updates),
+        ),
         (tr.t("overview.hero.router"), Page::Router),
     ];
     {
@@ -1138,4 +1143,47 @@ async fn the_usage_page_shows_one_session_for_the_overview_link() {
         std::time::Duration::from_secs(7 * 86_400),
         "the seven days the card covers"
     );
+}
+
+#[test]
+fn maintenance_todos_share_tool_update_failures_and_notification_deep_links() {
+    let mut data = Data {
+        notify_hooks_attention: true,
+        ..Default::default()
+    };
+    data.tool_update_errors
+        .insert("local".into(), "download interrupted".into());
+    for locale in [Locale::En, Locale::ZhCn] {
+        with_cx(&data, locale, |cx| {
+            let todos = todo::todos(cx, None);
+            let update = todos
+                .iter()
+                .find(|t| matches!(t.kind, TodoKind::ToolUpdate(_)))
+                .unwrap();
+            assert_eq!(update.status, Status::Error);
+            assert_eq!(update.detail.as_deref(), Some("download interrupted"));
+            assert!(matches!(
+                update.fix(cx),
+                Action::Go(Page::Superba(superba_gui::pages::SuperbaSection::Updates))
+            ));
+            let hook = todos
+                .iter()
+                .find(|t| t.kind == TodoKind::NotifyHooks)
+                .unwrap();
+            assert_eq!(hook.status, Status::Warn);
+            assert!(
+                matches!(hook.fix(cx), Action::PageCommand { page: Page::Superba(superba_gui::pages::SuperbaSection::Notify), command } if command == "focus:prefs.notify.hooks.title")
+            );
+            assert!(!hook.title.contains("superba."));
+            assert!(
+                todos.iter().position(|t| t.kind == update.kind)
+                    < todos.iter().position(|t| t.kind == hook.kind)
+            );
+        });
+    }
+    data.notify_hooks_attention = false;
+    data.tool_update_errors.clear();
+    with_cx(&data, Locale::En, |cx| {
+        assert!(todo::todos(cx, None).is_empty())
+    });
 }

@@ -171,7 +171,9 @@ pub struct PageStates {
     pub updates: pages::updates::State,
     /// Claude Code (both of its pages share one state).
     pub claude: pages::claude::State,
-    /// Preferences → Notifications.
+    /// Superba section navigation and summary.
+    pub superba: pages::superba::State,
+    /// Notifications.
     pub notify: pages::notify::State,
 }
 
@@ -186,14 +188,13 @@ impl PageStates {
             Page::Settings => pages::settings::status(&self.settings),
             Page::Sessions => pages::sessions::status(&self.sessions),
             Page::Hosts => pages::hosts::status(&self.hosts),
-            Page::Updates => pages::updates::status(&self.updates),
             Page::ClaudeCode | Page::ClaudeSettings => pages::claude::status(&self.claude, page),
             Page::Overview => pages::overview::status(&self.overview),
-            Page::Preferences => PageStatus {
-                modal: self.notify.modal(),
+            Page::Superba(_) => PageStatus {
+                modal: self.notify.modal() || pages::updates::status(&self.updates).modal,
                 ..PageStatus::default()
             },
-            Page::Diagnostics => PageStatus::default(),
+            Page::Tools => PageStatus::default(),
         }
     }
 
@@ -212,15 +213,22 @@ impl PageStates {
             Page::Settings => pages::settings::command(&mut self.settings, cx, command, out),
             Page::Sessions => pages::sessions::command(&mut self.sessions, cx, command, out),
             Page::Hosts => pages::hosts::command(&mut self.hosts, cx, command, out),
-            Page::Updates => pages::updates::command(&mut self.updates, cx, command, out),
             Page::ClaudeCode | Page::ClaudeSettings => {
                 pages::claude::command(&mut self.claude, page, cx, command, out);
             }
             Page::Overview => pages::overview::command(&mut self.overview, cx, command, out),
-            Page::Preferences => pages::notify::command(&mut self.notify, cx, command),
-            Page::Diagnostics => {
-                tracing::debug!(?page, %command, "page has no commands");
+            Page::Superba(section) => {
+                if let Some(key) = command.strip_prefix("focus:") {
+                    if pages::superba::search::ROWS.contains(&(section, key)) {
+                        self.superba.focus = Some(key.to_owned());
+                    }
+                } else if section == pages::SuperbaSection::Updates {
+                    pages::updates::command(&mut self.updates, cx, command, out);
+                } else if section == pages::SuperbaSection::Notify {
+                    pages::notify::command(&mut self.notify, cx, command);
+                }
             }
+            Page::Tools => {}
         }
     }
 
@@ -236,6 +244,7 @@ impl PageStates {
         items.extend(pages::updates::palette(cx, &self.updates));
         items.extend(pages::claude::palette(cx, &self.claude));
         items.extend(pages::notify::palette(cx));
+        items.extend(pages::superba::search::palette(cx));
         items
     }
 
@@ -257,12 +266,20 @@ impl PageStates {
             Page::Settings => pages::settings::show(ui, cx, &mut self.settings, out),
             Page::Sessions => pages::sessions::show(ui, cx, &mut self.sessions, out),
             Page::Hosts => pages::hosts::show(ui, cx, &mut self.hosts, out),
-            Page::Updates => pages::updates::show(ui, cx, &mut self.updates, out),
             Page::ClaudeCode | Page::ClaudeSettings => {
                 pages::claude::show(ui, cx, &mut self.claude, page, out);
             }
-            Page::Diagnostics => pages::diagnostics::show(ui, cx, out),
-            Page::Preferences => pages::preferences::show(ui, cx, prefs, &mut self.notify, out),
+            Page::Tools => pages::tools::show(ui, cx, out),
+            Page::Superba(section) => pages::superba::show(
+                ui,
+                cx,
+                section,
+                &mut self.superba,
+                prefs,
+                &mut self.notify,
+                &mut self.updates,
+                out,
+            ),
         }
     }
 }
@@ -1462,6 +1479,12 @@ impl SuperbaApp {
             // the page was not shown (user bug 68).
             self.pages.hosts.entered();
         }
+        if let Page::Superba(section) = page {
+            self.pages.superba.last = section;
+            if self.page != page {
+                self.pages.superba.focus = None;
+            }
+        }
         self.page = page;
         if !self.entered {
             // Loads wait for the first overview (it names the applied site).
@@ -1485,7 +1508,9 @@ impl SuperbaApp {
                 self.data.sessions.start();
                 self.backend.send(Command::Sessions);
             }
-            Page::Diagnostics if self.data.doctor.value.is_none() && !self.data.doctor.loading => {
+            Page::Superba(pages::SuperbaSection::Diagnostics | pages::SuperbaSection::Home)
+                if self.data.doctor.value.is_none() && !self.data.doctor.loading =>
+            {
                 self.data.doctor.start();
                 self.data.claude_diag.start();
                 self.backend.send(Command::Doctor);
@@ -1719,7 +1744,9 @@ impl SuperbaApp {
         match a {
             ToastAction::OpenApp => self.launch_app(crate::launch::LaunchOrigin::Window),
             ToastAction::FullRestart => self.request(SwitchIntent::RestartApp { install_id: None }),
-            ToastAction::ViewLog => self.go(Page::Diagnostics),
+            ToastAction::ViewLog => {
+                self.go(Page::Superba(crate::pages::SuperbaSection::Diagnostics))
+            }
             ToastAction::OpenPath(path) => {
                 let _ = open::that_detached(path);
             }
@@ -1748,6 +1775,10 @@ impl SuperbaApp {
         }
         if modal || self.palette.is_open() {
             return;
+        }
+        let preferences = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Comma);
+        if ctx.input_mut(|i| i.consume_shortcut(&preferences)) {
+            self.go(Page::Superba(pages::SuperbaSection::General));
         }
         // Page shortcuts: Ctrl/Cmd+F focuses the page search, Ctrl/Cmd+S saves the
         // pending edits of the page.
@@ -1796,6 +1827,34 @@ impl SuperbaApp {
         let now = self.now();
         let busy = self.flow.is_running() || self.flow.is_planning();
         let pal = Palette::of(ui.ctx());
+        if matches!(
+            self.page,
+            Page::Overview | Page::Superba(pages::SuperbaSection::Home)
+        ) {
+            let cx = cx!(self, pal, busy);
+            let reading_hooks =
+                pages::notify::poll(&cx, &mut self.settings, &mut self.pages.notify, out);
+            // An install may finish after the user leaves Updates.
+            self.pages.updates.poll(&cx);
+            if reading_hooks || self.pages.updates.busy() {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        }
+        self.data.notify_hooks_attention =
+            self.settings.notify.enabled && self.pages.notify.needs_attention();
+        self.data.tool_update_errors = self
+            .pages
+            .updates
+            .results
+            .iter()
+            .filter_map(|(target, result)| {
+                result
+                    .as_ref()
+                    .err()
+                    .map(|error| (target.clone(), error.clone()))
+            })
+            .collect();
         let cx = cx!(self, pal, busy);
         let full = ui.available_rect_before_wrap();
         let fit = self.page.layout() == PageLayout::Fit;
@@ -1840,10 +1899,10 @@ impl SuperbaApp {
             let mut area = ui.new_child(
                 UiBuilder::new()
                     .max_rect(page_rect)
-                    .id_salt(("page", page as u8))
+                    .id_salt(("page", page.sidebar_page()))
                     .layout(Layout::top_down(Align::Min)),
             );
-            layout::fit_area(&mut area, layout::FIT_MIN_HEIGHT, |ui| {
+            layout::fit_area(&mut area, page.min_height(), |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
                 self.pages.show(page, ui, &cx, &mut self.settings, out);
             });
@@ -1856,7 +1915,7 @@ impl SuperbaApp {
                     .layout(Layout::top_down(Align::Min)),
             );
             ScrollArea::vertical()
-                .id_salt(("page", self.page as u8))
+                .id_salt(("page", self.page))
                 .auto_shrink([false, false])
                 .show(&mut area, |ui| {
                     ui.add_space(size::PAGE_TOP - (area_rect.min.y - full.min.y));
@@ -1959,6 +2018,9 @@ impl eframe::App for SuperbaApp {
                 };
                 shell::sidebar(ui, &cx, &mut page, &status, &mut actions);
                 if page != self.page {
+                    if page.is_superba() && !self.page.is_superba() {
+                        page = Page::Superba(self.pages.superba.last);
+                    }
                     actions.push(Action::Go(page));
                 }
             });
@@ -2363,20 +2425,21 @@ pub fn shell_badges(tr: &Tr, data: &Data) -> Vec<(Page, pages::NavBadge, String)
             tr.f("shell.badge.unsynced", &[("n", &unsynced)]),
         ));
     }
-    if let Some(release) = data.self_update_offered() {
+    let count = data.update_count();
+    if count > 0 {
         out.push((
-            Page::Updates,
-            pages::NavBadge::Dot(Status::Idle),
-            tr.f(
-                "shell.badge.superba_update",
-                &[("version", &release.version)],
-            ),
+            Page::Superba(pages::SuperbaSection::Home),
+            pages::NavBadge::Count(count),
+            tr.f("superba.updates_count", &[("n", &count)]),
         ));
-    } else if data.update_available() {
+    } else if data.doctor.value.as_ref().is_some_and(|rows| {
+        rows.iter()
+            .any(|r| r.severity != superba_core::Severity::Info)
+    }) {
         out.push((
-            Page::Updates,
-            pages::NavBadge::Dot(Status::Idle),
-            tr.t("shell.badge.update"),
+            Page::Superba(pages::SuperbaSection::Home),
+            pages::NavBadge::Dot(Status::Warn),
+            tr.t("superba.diagnostics_attention"),
         ));
     }
     out

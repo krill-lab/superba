@@ -17,7 +17,7 @@ use superba_core::{
     NotifyHooks, NotifyReport, NotifySecrets, Secret, SendOptions, Settings, Timestamp,
 };
 
-use super::preferences::row;
+use super::superba::{row, search};
 use super::{Action, Cx, Page, PaletteGroup, PaletteItem, error_text, section};
 use crate::design::icons::Icon;
 use crate::design::widgets::{
@@ -43,6 +43,7 @@ pub struct State {
     quiet_to: Option<String>,
     /// Scroll the section into view on the next frame (palette, commands).
     scroll_to: bool,
+    show_all: bool,
 }
 
 /// The add / edit dialog.
@@ -137,6 +138,18 @@ impl State {
         self.hooks = Some(hooks);
     }
 
+    /// Missing or untrusted hooks, after a successful read.
+    pub fn needs_attention(&self) -> bool {
+        self.hooks.as_ref().is_some_and(|h| {
+            h.hooks.iter().any(|r| {
+                matches!(
+                    r.state,
+                    HookState::Missing | HookState::Untrusted | HookState::Unreadable
+                )
+            })
+        })
+    }
+
     /// A dialog is open.
     pub fn modal(&self) -> bool {
         self.editor.is_some() || self.delete.is_some()
@@ -169,7 +182,7 @@ pub fn palette(cx: &Cx<'_>) -> Vec<PaletteItem> {
             keywords,
             group: PaletteGroup::Commands,
             action: Action::PageCommand {
-                page: Page::Preferences,
+                page: Page::Superba(crate::pages::SuperbaSection::Notify),
                 command: command.into(),
             },
         }
@@ -238,9 +251,14 @@ fn kind_label(cx: &Cx<'_>, kind: ChannelKind) -> String {
 }
 
 /// Poll the background work; returns whether something still runs.
-fn poll(cx: &Cx<'_>, settings: &mut Settings, state: &mut State, out: &mut Vec<Action>) -> bool {
+pub(crate) fn poll(
+    cx: &Cx<'_>,
+    settings: &mut Settings,
+    state: &mut State,
+    out: &mut Vec<Action>,
+) -> bool {
     let mut running = false;
-    let shown = settings.notify.enabled || !settings.notify.channels.is_empty();
+    let shown = settings.notify.enabled || !settings.notify.channels.is_empty() || state.show_all;
     if shown && state.hooks.is_none() && state.hooks_task.is_none() && state.hooks_error.is_none() {
         let s = cx.service.clone();
         state.hooks_task = Some(task(async move { s.notify_hooks().await }));
@@ -442,6 +460,9 @@ pub fn body_ui(
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(100));
     }
+    if std::mem::take(&mut state.scroll_to) {
+        ui.scroll_to_cursor(Some(Align::TOP));
+    }
     body(ui, cx, settings, state, out);
 }
 
@@ -471,7 +492,8 @@ fn body(
     // Unused (off, no channel): the switch and "Add channel" only, so the
     // page stays short for people who do not want notifications.
     let on = settings.notify.enabled;
-    if on || !settings.notify.channels.is_empty() {
+    if on || !settings.notify.channels.is_empty() || search::pending(ui.ctx()) || state.show_all {
+        state.show_all = true;
         ui.add_space(12.0);
         ui.add_enabled_ui(on, |ui| {
             events_card(ui, cx, settings);
@@ -480,6 +502,7 @@ fn body(
             ui.add_space(12.0);
             hooks_card(ui, cx, state, out);
         });
+        search::flush_disabled(ui);
     }
     editor_dialog(ui, cx, state);
     delete_dialog(ui, cx, state);
@@ -487,7 +510,13 @@ fn body(
 
 fn channels(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, state: &mut State) {
     ui.add_space(8.0);
-    ui.label(Text::strong(cx.tr.t("prefs.notify.channels.title"), cx.pal));
+    let r = ui.label(Text::strong(cx.tr.t("prefs.notify.channels.title"), cx.pal));
+    search::anchor(
+        ui,
+        "prefs.notify.channels.title",
+        &cx.tr.t("prefs.notify.channels.title"),
+        r.rect,
+    );
     ui.add_space(4.0);
     if settings.notify.channels.is_empty() {
         ui.add(
@@ -641,15 +670,17 @@ fn events_card(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings) {
                 "prefs.notify.events.update_available",
             ),
         ];
+        let columns = if ui.available_width() < 600.0 { 1 } else { 2 };
         egui::Grid::new("notify-events")
-            .num_columns(4)
+            .num_columns(columns * 2)
             .spacing([12.0, 10.0])
             .show(ui, |ui| {
                 for (i, (value, key)) in items.into_iter().enumerate() {
                     let label = cx.tr.t(key);
-                    ui.add(Toggle::new(value, label.clone()));
+                    let r = ui.add(Toggle::new(value, label.clone()));
+                    search::anchor(ui, key, &label, r.rect);
                     ui.label(Text::small(label, cx.pal).color(cx.pal.text));
-                    if i % 2 == 1 {
+                    if (i + 1) % columns == 0 {
                         ui.end_row();
                     }
                 }
@@ -701,8 +732,9 @@ fn content_card(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, state: &mut S
     Card::new().flat().show(ui, |ui| {
         ui.label(Text::strong(cx.tr.t("prefs.notify.content.title"), cx.pal));
         ui.add_space(4.0);
+        let columns = if ui.available_width() < 600.0 { 1 } else { 2 };
         egui::Grid::new("notify-content")
-            .num_columns(4)
+            .num_columns(columns * 2)
             .spacing([12.0, 10.0])
             .show(ui, |ui| {
                 let items: [(&mut bool, &str); 3] = [
@@ -712,9 +744,10 @@ fn content_card(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, state: &mut S
                 ];
                 for (i, (value, key)) in items.into_iter().enumerate() {
                     let label = cx.tr.t(key);
-                    ui.add(Toggle::new(value, label.clone()));
+                    let r = ui.add(Toggle::new(value, label.clone()));
+                    search::anchor(ui, key, &label, r.rect);
                     ui.label(Text::small(label, cx.pal).color(cx.pal.text));
-                    if i % 2 == 1 {
+                    if (i + 1) % columns == 0 {
                         ui.end_row();
                     }
                 }
@@ -828,7 +861,13 @@ fn hooks_card(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>
     let busy = state.hook_op.is_some();
     let mut request = None;
     Card::new().flat().show(ui, |ui| {
-        ui.label(Text::strong(cx.tr.t("prefs.notify.hooks.title"), cx.pal));
+        let r = ui.label(Text::strong(cx.tr.t("prefs.notify.hooks.title"), cx.pal));
+        search::anchor(
+            ui,
+            "prefs.notify.hooks.title",
+            &cx.tr.t("prefs.notify.hooks.title"),
+            r.rect,
+        );
         ui.add(egui::Label::new(Text::small(cx.tr.t("prefs.notify.hooks.desc"), cx.pal)).wrap());
         ui.add_space(4.0);
         let Some(hooks) = &state.hooks else {

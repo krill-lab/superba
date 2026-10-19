@@ -179,7 +179,7 @@ fn todo_icon(ui: &Ui, cx: &Cx<'_>, t: &Todo) -> (Icon, Color32) {
         Status::Error => (Icon::Warning, cx.pal.red),
         Status::Warn => (Icon::Warning, cx.pal.amber),
         _ => match t.kind {
-            super::todo::TodoKind::AppUpdate | super::todo::TodoKind::CliUpdate => {
+            super::todo::TodoKind::AppUpdate | super::todo::TodoKind::ToolUpdate(_) => {
                 (Icon::Download, Backdrop::of(ui.ctx()).chart[0])
             }
             _ => (Icon::Info, cx.pal.text_muted),
@@ -256,7 +256,9 @@ pub fn todo_card(ui: &mut Ui, cx: &Cx<'_>, todos: &[Todo], out: &mut Vec<Action>
             focus_ring(ui.painter(), row, radius::ROW, cx.pal);
         }
         if resp.clicked() {
-            out.push(Action::Go(Page::Diagnostics));
+            out.push(Action::Go(Page::Superba(
+                crate::pages::SuperbaSection::Diagnostics,
+            )));
         }
     }
 }

@@ -769,3 +769,58 @@ mod v3 {
         assert!(pane.clone().dock_below(900.0).docked(996.0));
     }
 }
+
+#[test]
+fn hovered_links_underline_the_text_even_in_a_wide_justified_layout() {
+    for width in [240.0, 800.0] {
+        let ctx = egui::Context::default();
+        let mut hit = Rect::NOTHING;
+        for hovering in [false, true] {
+            let mut input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(width, 120.0))),
+                ..Default::default()
+            };
+            if hovering {
+                input.events.push(egui::Event::PointerMoved(hit.center()));
+            }
+            let output = ctx.run_ui(input, |root| {
+                egui::CentralPanel::default().show(root, |ui| {
+                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
+                        ui.set_min_width(width - 16.0);
+                        hit = link_button(ui, "Release notes", false).rect;
+                    });
+                });
+            });
+            if hovering {
+                let underline = output
+                    .shapes
+                    .iter()
+                    .find_map(|s| match &s.shape {
+                        egui::epaint::Shape::LineSegment { points, .. }
+                            if points[0].y == points[1].y =>
+                        {
+                            Some(points)
+                        }
+                        _ => None,
+                    })
+                    .expect("hover underline");
+                let text = output
+                    .shapes
+                    .iter()
+                    .find_map(|s| match &s.shape {
+                        egui::epaint::Shape::Text(t) if t.galley.text() == "Release notes" => {
+                            Some(t)
+                        }
+                        _ => None,
+                    })
+                    .expect("link text");
+                assert!((underline[1].x - underline[0].x - text.galley.size().x).abs() < 1.0);
+                assert!(
+                    underline[1].x - underline[0].x < hit.width() - 20.0,
+                    "underline={underline:?}, hit={hit:?}"
+                );
+            }
+            output.drop_without_applying_deltas();
+        }
+    }
+}

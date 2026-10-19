@@ -279,7 +279,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
                 .clicked()
                 {
                     out.push(Action::PageCommand {
-                        page: Page::Updates,
+                        page: Page::Superba(crate::pages::SuperbaSection::Updates),
                         command: format!("focus:{id}"),
                     });
                 }

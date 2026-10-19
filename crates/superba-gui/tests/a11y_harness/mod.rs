@@ -471,6 +471,23 @@ impl AppHarness {
         self.settle()
     }
 
+    /// Resize the content rectangle and settle the layout.
+    pub fn resize(&mut self, size: [f32; 2]) -> Tree {
+        self.screen = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size[0], size[1]));
+        self.settle()
+    }
+
+    /// Press a platform command shortcut.
+    pub fn shortcut(&mut self, key: egui::Key) -> Tree {
+        self.input(vec![vec![Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        }]])
+    }
+
     /// Press `key`.
     pub fn key(&mut self, key: egui::Key) -> Tree {
         self.pending.push_back(vec![Event::Key {
@@ -485,6 +502,23 @@ impl AppHarness {
 
     /// Go to `page` through its sidebar tab, the way a screen reader user does.
     pub fn go(&mut self, page: Page, tr: &superba_gui::i18n::Tr) -> Tree {
+        if let Page::Superba(section) = page {
+            if !self.frame().has(&tr.t("superba.section.general")) {
+                self.click(Some(Role::Tab), &tr.t("superba.title"));
+            }
+            if section == superba_gui::pages::SuperbaSection::Home {
+                // The sidebar and identity tab share the brand name. Invoke
+                // the identity row (the latter) explicitly.
+                let t = self.frame();
+                let id = t
+                    .with_role(Role::Tab)
+                    .into_iter()
+                    .rfind(|id| t.name(*id).as_deref() == Some("Superba"))
+                    .unwrap();
+                self.act(id, Action::Click);
+                return self.settle();
+            }
+        }
         let name = tr.t(page.title_key());
         self.click(Some(Role::Tab), &name)
     }

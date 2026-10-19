@@ -458,7 +458,7 @@ impl State {
         }));
     }
 
-    fn poll(&mut self, cx: &Cx<'_>) {
+    pub(crate) fn poll(&mut self, cx: &Cx<'_>) {
         let finished = self.view.poll();
         if finished && std::mem::take(&mut self.refreshing) {
             self.notify_shell = true;
@@ -593,27 +593,32 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     }
     let checked = state.view.value.as_ref().and_then(|v| v.checked_at);
     let checking = state.view.loading() || cx.data.selfupdate.loading;
-    page_header(ui, cx, Page::Updates, |ui| {
-        if ui
-            .add(
-                Button::new(cx.tr.t("updates.check"))
-                    .icon(Icon::Refresh)
-                    .small()
-                    .loading(checking)
-                    .enabled(!checking),
-            )
-            .clicked()
-        {
-            state.check();
-            out.push(Action::CheckSelfUpdate);
-        }
-        if let Some(t) = checked {
-            ui.label(Text::caption(
-                cx.tr.f("updates.checked", &[("age", &cx.ago(t))]),
-                cx.pal,
-            ));
-        }
-    });
+    page_header(
+        ui,
+        cx,
+        Page::Superba(crate::pages::SuperbaSection::Updates),
+        |ui| {
+            if ui
+                .add(
+                    Button::new(cx.tr.t("updates.check"))
+                        .icon(Icon::Refresh)
+                        .small()
+                        .loading(checking)
+                        .enabled(!checking),
+                )
+                .clicked()
+            {
+                state.check();
+                out.push(Action::CheckSelfUpdate);
+            }
+            if let Some(t) = checked {
+                ui.label(Text::caption(
+                    cx.tr.f("updates.checked", &[("age", &cx.ago(t))]),
+                    cx.pal,
+                ));
+            }
+        },
+    );
     // Superba itself comes first and does not wait for the other versions.
     icon_section(ui, cx, Icon::Bolt, &cx.tr.t("updates.superba.title"));
     super::updates_self::show(ui, cx, &mut state.superba, out);
@@ -1688,7 +1693,7 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
         ],
         group: PaletteGroup::Commands,
         action: Action::PageCommand {
-            page: Page::Updates,
+            page: Page::Superba(crate::pages::SuperbaSection::Updates),
             command: "check_superba".into(),
         },
     }];
@@ -1698,7 +1703,7 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
         keywords: vec!["update".into(), "version".into(), "更新".into()],
         group: PaletteGroup::Commands,
         action: Action::PageCommand {
-            page: Page::Updates,
+            page: Page::Superba(crate::pages::SuperbaSection::Updates),
             command: "check".into(),
         },
     });
@@ -1713,7 +1718,7 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
             keywords: vec!["codex".into(), "cli".into(), "update".into()],
             group: PaletteGroup::Commands,
             action: Action::PageCommand {
-                page: Page::Updates,
+                page: Page::Superba(crate::pages::SuperbaSection::Updates),
                 command: "update_cli".into(),
             },
         });

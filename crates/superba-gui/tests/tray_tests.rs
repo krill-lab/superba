@@ -368,6 +368,7 @@ fn the_menu_lists_open_the_current_line_switching_chatgpt_router_and_quit() {
                 tr.t("tray.router.off"),
                 tr.t("tray.router.turn_on"),
                 "---".into(),
+                "Superba >".into(),
                 tr.t("tray.menu.quit"),
             ],
             "{locale:?}"
@@ -495,7 +496,7 @@ fn the_menu_follows_chatgpt_the_router_and_a_running_switch() {
     for (label, action, enabled) in m.actions() {
         let always = matches!(
             action,
-            TrayAction::Open | TrayAction::Quit | TrayAction::RouterPage
+            TrayAction::Open | TrayAction::Quit | TrayAction::RouterPage | TrayAction::Superba(_)
         );
         assert_eq!(enabled, always, "{label}");
     }
@@ -736,7 +737,10 @@ fn without_a_tray_closing_quits_and_preferences_says_why() {
     assert!(h.app().tray_menu().is_none());
 
     // Preferences → Window: both rows disabled, the reason shown.
-    let t = h.go(Page::Preferences, &tr);
+    let t = h.go(
+        Page::Superba(superba_gui::pages::SuperbaSection::General),
+        &tr,
+    );
     assert!(t.has(&tr.t("tray.prefs.section")), "{}", t.dump());
     assert!(t.has_containing(&tr.t(Unavailable::Off.reason_key())));
     for key in ["tray.prefs.close.tray", "tray.prefs.close.tray_mac"] {
@@ -755,7 +759,10 @@ fn preferences_saves_the_choice_and_start_in_the_tray_hides_at_once() {
         TrayOption::Simulated(Sink::default()),
         false,
     );
-    let t = h.go(Page::Preferences, &tr);
+    let t = h.go(
+        Page::Superba(superba_gui::pages::SuperbaSection::General),
+        &tr,
+    );
     assert!(t.has(&tr.t("tray.prefs.close.title")), "{}", t.dump());
     if !cfg!(target_os = "macos") {
         // Not chosen yet: the description says Superba will ask.
@@ -941,4 +948,22 @@ fn switching_from_the_tray_and_a_question_brings_the_hidden_window_back() {
     frames_until(&mut h, "the Router page shows", |h| h.visible());
     let t = h.settle();
     assert!(t.has(&tr.t("page.router.subtitle")), "{}", t.dump());
+}
+
+#[test]
+fn superba_tray_sections_show_the_window_and_open_the_requested_section() {
+    let sink = Sink::default();
+    let service = fake();
+    let mut h = app(service, TrayOption::Simulated(sink.clone()), false);
+    let tr = Tr::new(Locale::En);
+    for section in superba_gui::pages::SuperbaSection::ALL {
+        sink.push(TrayEvent::Action(TrayAction::Superba(section)));
+        let t = h.until(section.id(), |t| {
+            t.find_all(Some(Role::Tab), &tr.t(section.title_key()))
+                .iter()
+                .any(|id| t.node(*id).is_selected() == Some(true))
+        });
+        assert!(h.visible());
+        assert!(t.unnamed().is_empty(), "{}", t.dump());
+    }
 }

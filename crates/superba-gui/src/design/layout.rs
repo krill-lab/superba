@@ -366,6 +366,17 @@ pub fn rail_split<L, R>(
     rail: impl FnOnce(&mut Ui) -> L,
     detail: impl FnOnce(&mut Ui) -> R,
 ) -> (L, R) {
+    rail_split_with_id(ui, rail_w, "section-detail", rail, detail)
+}
+
+/// A section rail whose detail keeps independent scroll and widget state per id.
+pub fn rail_split_with_id<L, R>(
+    ui: &mut Ui,
+    rail_w: f32,
+    detail_id: impl egui::AsIdSalt,
+    rail: impl FnOnce(&mut Ui) -> L,
+    detail: impl FnOnce(&mut Ui) -> R,
+) -> (L, R) {
     let rect = ui.available_rect_before_wrap();
     let width = rail_w.min((rect.width() - 100.0).max(0.0));
     let left = Rect::from_min_max(rect.min, pos2(rect.min.x + width, rect.max.y));
@@ -386,7 +397,7 @@ pub fn rail_split<L, R>(
     );
     let mut detail_ui = ui.new_child(
         UiBuilder::new()
-            .id_salt("section-detail")
+            .id_salt(detail_id)
             .max_rect(right)
             .layout(Layout::top_down(Align::Min)),
     );

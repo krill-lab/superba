@@ -72,7 +72,11 @@ fn palette_keeps_group_order_and_caps_results() {
 
 #[test]
 fn pages_are_grouped_and_every_label_is_translated() {
-    let groups: Vec<NavGroup> = Page::ALL.iter().map(|p| p.group()).collect();
+    let groups: Vec<NavGroup> = Page::ALL
+        .iter()
+        .filter(|p| !p.is_superba())
+        .map(|p| p.group())
+        .collect();
     // Groups are contiguous in navigation order.
     let mut seen = Vec::new();
     for g in groups {
@@ -88,46 +92,18 @@ fn pages_are_grouped_and_every_label_is_translated() {
             NavGroup::Connect,
             NavGroup::Codex,
             NavGroup::Claude,
-            NavGroup::Superba
         ]
     );
+    assert_eq!(Page::ALL.len(), 12);
+    assert_eq!(Page::ALL[1], Page::Tools);
     assert_eq!(
-        Page::ALL,
-        [
-            Page::Overview,
-            Page::Providers,
-            Page::Models,
-            Page::Router,
-            Page::Usage,
-            Page::Settings,
-            Page::Sessions,
-            Page::Hosts,
-            Page::ClaudeCode,
-            Page::ClaudeSettings,
-            Page::Updates,
-            Page::Diagnostics,
-            Page::Preferences,
-        ]
+        Page::ALL[11],
+        Page::Superba(superba_gui::pages::SuperbaSection::Home)
     );
-    // Fit pages (UX §2.3) never scroll at page level.
-    let fit: Vec<Page> = Page::ALL
-        .into_iter()
-        .filter(|p| p.layout() == PageLayout::Fit)
-        .collect();
-    assert_eq!(
-        fit,
-        [
-            Page::Overview,
-            Page::Providers,
-            Page::Models,
-            Page::Router,
-            Page::Usage,
-            Page::Settings,
-            Page::Sessions,
-            Page::Hosts,
-            Page::ClaudeCode,
-            Page::ClaudeSettings
-        ]
+    assert!(
+        Page::DESTINATIONS
+            .iter()
+            .all(|p| p.layout() == PageLayout::Fit)
     );
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
@@ -136,12 +112,7 @@ fn pages_are_grouped_and_every_label_is_translated() {
                 assert_ne!(tr.t(key), key, "{key} missing in {locale:?}");
             }
         }
-        for g in [
-            NavGroup::Connect,
-            NavGroup::Codex,
-            NavGroup::Claude,
-            NavGroup::Superba,
-        ] {
+        for g in [NavGroup::Connect, NavGroup::Codex, NavGroup::Claude] {
             let key = g.caption_key().unwrap();
             assert_ne!(tr.t(key), key);
         }
@@ -427,7 +398,7 @@ async fn every_page_renders_in_its_layout_at_both_window_sizes() {
     for window in support::fit::SIZES {
         for locale in [Locale::En, Locale::ZhCn] {
             let tr = Tr::new(locale);
-            for page in Page::ALL {
+            for page in Page::DESTINATIONS {
                 let mut states = PageStates::default();
                 let mut prefs = superba_core::Settings::default();
                 let report = support::fit::render_fit(
@@ -550,7 +521,7 @@ async fn the_sidebar_lists_every_page_in_four_groups() {
         // brand and no search field above the pages (user bug 85), the
         // version below them.
         assert!(
-            !texts_seen.contains("Superba") && !texts_seen.contains(&tr.t("shell.search")),
+            texts_seen.contains("Superba") && !texts_seen.contains(&tr.t("shell.search")),
             "{texts_seen:?}"
         );
         assert!(
@@ -697,9 +668,9 @@ async fn sidebar_badges_come_from_the_shells_own_data() {
     let (_, hosts, tip) = find(Page::Hosts).unwrap();
     assert_eq!(hosts, NavBadge::Count(1), "hosts with something to sync");
     assert_eq!(tip, "1 台主机有未同步的设置");
-    let (_, update, tip) = find(Page::Updates).unwrap();
-    assert_eq!(update, NavBadge::Dot(Status::Idle));
-    assert_eq!(tip, "有可用更新");
+    let (_, update, tip) = find(Page::Superba(superba_gui::pages::SuperbaSection::Home)).unwrap();
+    assert_eq!(update, NavBadge::Count(1));
+    assert_eq!(tip, "有 1 项可更新");
 
     // A newer CLI for an installed binary also counts.
     let mut versions = superba_core::VersionsView::default();
