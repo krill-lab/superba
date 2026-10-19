@@ -794,6 +794,7 @@ def wait_msi_version(run, version, timeout=420):
 @scenario("W52", "Superba self-update via the MSI from an older version", area="updates",
           conflicts=("installed",), bugs=(30, 44))
 def w52(t):
+    import hashlib
     run = t.run
     if not run.old_msi:
         t.skip("needs --old-msi (the older MSI to start from); the MSI under test is the update")
@@ -806,9 +807,10 @@ def w52(t):
             flows.install(run, t, prefix="[old] ")
         finally:
             run.msi = new_msi
+            # The report names the MSI under test, not the older bootstrap MSI.
+            run.state["msi_sha256"] = hashlib.sha256(new_msi.read_bytes()).hexdigest()
         s.info(f"older Superba {run.state.get('version')} installed; update target {tag}")
     with t.step("Mock release (loopback) with the newer MSI and SHA256SUMS.txt") as s:
-        import hashlib
         rel = run.root / "work-w52"
         rel.mkdir(exist_ok=True)
         asset = rel / f"superba-{tag[1:]}-windows-x86_64.msi"
@@ -845,6 +847,7 @@ def w52(t):
             s.save("version-after-update.json", probe)
             s.check(probe["code"] == 0 and ver == f"spb {tag[1:]}",
                     f"spb --version after the update: {ver!r} (exit {probe['code']})")
+            run.state["version"] = tag[1:]
             s.info(f"mock release requests: {srv.hits}")
             inv = flows.inventory(run)
             s.save("inventory-after-update.json", inv)
