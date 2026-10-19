@@ -33,6 +33,11 @@ def install_wizard(t):
 @scenario("M02", "Line switching with an installed ChatGPT/Codex desktop app", "W10/W11")
 def desktop_switch(t):
     t.install()
+    if not t.rpc("desktop_installed"):
+        t.launch()
+        desktop_flows.wizard_detect(t.ui)
+        t.shot("desktop-not-installed")
+        raise Blocked("ChatGPT/Codex desktop app is not installed; no app was downloaded")
     t.baseline()
     first, first_url, _ = t.provider("mac-a")
     second, second_url, _ = t.provider("mac-b", (t.start_fixture() + "/alternate/v1", "sk-e2e-macos-second"))

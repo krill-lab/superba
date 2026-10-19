@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from e2e.macos.build import extract_archive
 from e2e.macos.lib.agent import Agent
-from e2e.macos.lib.runner import Case, Scenario
+from e2e.macos.lib.runner import Case, Runner, Scenario
 from e2e.macos.lib.security import Redactor, load_env
 from e2e.macos.lib.ui import Ui
 from e2e.macos.lib.vm import Blocked, Lease, Vm, VmError
@@ -192,6 +192,32 @@ class CleanupTests(unittest.TestCase):
             for path in Path(directory).rglob("*"):
                 if path.is_file():
                     self.assertNotIn("secret-fixture", path.read_text())
+
+    def test_tcc_blocks_all_cases_before_install_or_secret_copy(self):
+        from e2e.macos.lib import scenarios  # noqa: F401
+
+        operations = []
+
+        def rpc(op, **_):
+            operations.append(op)
+            self.assertEqual(op, "disk")
+            return {"free_bytes": 17 * 1024**3}
+
+        def denied():
+            raise Blocked("Accessibility permission required for MacAgent")
+
+        with tempfile.TemporaryDirectory() as directory:
+            opts = types.SimpleNamespace(out=directory, env=None)
+            vm = types.SimpleNamespace(root="/Users/Shared/test", prepare=lambda: None, rpc=rpc)
+            runner = Runner(vm, opts)
+            runner.agent = types.SimpleNamespace(preflight=denied)
+            self.assertEqual(runner.run(["M01", "M02", "M03", "M04"]), 2)
+            report = json.loads((Path(directory) / "report.json").read_text())
+            self.assertEqual(report["counts"]["BLOCKED"], 4)
+            self.assertEqual(report["counts"]["PASS"], 0)
+            self.assertEqual(operations, ["disk"])
+            disk = json.loads((Path(directory) / "disk-check.json").read_text())
+            self.assertFalse(disk["development_build_allowed"])
 
     def test_log_read_error_does_not_skip_cleanup(self):
         with tempfile.TemporaryDirectory() as directory:

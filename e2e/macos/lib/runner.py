@@ -213,6 +213,12 @@ class Runner:
     def run(self, ids):
         try:
             self.vm.prepare()
+            disk = self.vm.rpc("disk")
+            disk["build_minimum_bytes"] = 25 * 1024**3
+            disk["development_build_allowed"] = disk["free_bytes"] >= disk["build_minimum_bytes"]
+            (self.out / "disk-check.json").write_text(self.redactor.json(disk))
+            self.log(f"VM free space: {disk['free_bytes'] / 1024**3:.1f} GiB; "
+                     + ("development build allowed" if disk["development_build_allowed"] else "use CI DMG (below 25 GiB)"))
             permissions = self.agent.preflight()
             (self.out / "permissions.json").write_text(self.redactor.json(permissions))
         except Blocked as error:
