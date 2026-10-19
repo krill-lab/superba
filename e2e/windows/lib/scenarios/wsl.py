@@ -85,11 +85,18 @@ def w82(t):
     flows.wsl_keepalive(run)  # a stopped distribution is never started by a switch
     with t.step("Baseline of the distribution before Superba's first switch") as s:
         ensure_wsl_baseline(run, s)
+        probe = flows.wsl(run, "id -un; codex --version")
+        s.save("wsl-before-first-switch.json", probe)
+        s.check(probe["code"] == 0 and flows.wsl_running(run),
+                f"WSL is running before the first switch: shell/version exit {probe['code']} in {probe['ms']} ms")
     flows.wizard_krill(run, t)
     with t.step("The distribution followed the switch") as s:
         out = wsl_show(run)
         s.save("wsl-after-switch.txt", out)
         line = run.net.line_url(run.state.get("line", "a"))
+        if line not in out:
+            remote = run.spb("remote", "probe", HOST, timeout=180, label="wsl-probe-after-first-switch")
+            s.save("remote-probe-after-first-switch.json", remote)
         s.check(line in out, f"distribution config.toml points at {line}")
         s.check("600 " in out, "auth.json mode 0600")
         if run.state.get("auth_mode") == "pat":
@@ -103,7 +110,8 @@ def w82(t):
         u = U(t)
         flows.start_superba(run, s)
         u.page("hosts")
-        time.sleep(4)
+        s.check(bool(u.has_text(r"\d+\.\d+\.\d+.*[/\\]codex\b", timeout=90)),
+                "the WSL Codex version finished loading")
         s.shot("hosts-wsl")
         s.ui_dump("hosts-wsl")
         s.check(bool(u.has_text(re.escape(D))), f"{D} on the Remote hosts page")
@@ -112,12 +120,27 @@ def w82(t):
     # app stuck on "Finishing Windows setup" twice (user bug 59).
     flows.app_ready(run, t)
     with t.step("A line switch updates the distribution too") as s:
+        # Verify the test keep-alive again after first-start setup and onboarding.
+        # This case exercises a running distribution; W88 covers a stopped one.
+        old_pid = run.state.get("wsl_keepalive")
+        before_running = flows.wsl_running(run)
+        pid = flows.wsl_keepalive(run)
+        running = flows.wsl_running(run)
+        s.save("wsl-before-line-switch.json", {"previous_keepalive_pid": old_pid, "keepalive_pid": pid,
+                                             "running_before": before_running, "running": running})
+        s.info(f"WSL before the line switch: running {before_running} -> {running}, keep-alive {old_pid} -> {pid}")
+        s.check(running, "the distribution is running before the line switch")
         other = "b" if run.state.get("line", "a") == "a" else "a"
         r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", timeout=300,
                     label="switch-wsl")
         s.save("switch.txt", r["stdout"] + r["stderr"])
         s.check(r["code"] == 0, f"switch exit {r['code']} [{r['transcript']}]")
-        s.check(run.net.line_url(other) in wsl_config(run), f"distribution config.toml on line {other}")
+        config = flows.wsl(run, "cat ~/.codex/config.toml")
+        s.save("wsl-after-line-switch.json", config)
+        if run.net.line_url(other) not in config["stdout"]:
+            s.save("superba-gui.log", flows.gui_log(run))
+        s.check(config["code"] == 0 and run.net.line_url(other) in config["stdout"],
+                f"distribution config.toml on line {other}")
         run.state["line"] = other
 
 

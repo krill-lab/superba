@@ -72,6 +72,9 @@ UI Automation dumps, saved files), `transcripts/` (every `spb` call) and `net/` 
   Codex's real exit status and the mock answer, and checks a new successful request row for the
   distribution. A failed WSL config write also saves the GUI log and a separate remote probe;
   the scenario fails without reapplying the switch, so a product timeout remains visible.
+- **WSL line switching (W82)**: checks the distribution is still running after first-start setup
+  and onboarding, renews its test keep-alive before the switch, and saves the state and resulting
+  config. Superba deliberately leaves stopped distributions unchanged; W88 covers that case.
 
 ## Debugging a session by hand
 
