@@ -11,7 +11,8 @@
 //!
 //! Body (re-serialised only when something changes): the upstream model name,
 //! the member's `drop_fields` removed, and `role: "system"` messages folded
-//! into user text for members that do not take them.
+//! into user text for members that do not take them. dsh's private `dsh_*`
+//! fields are removed before ([`crate::openai::shape`]).
 
 use bytes::Bytes;
 use http::header::{ACCEPT_ENCODING, AUTHORIZATION, CONTENT_LENGTH, HOST};

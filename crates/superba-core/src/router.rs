@@ -307,6 +307,36 @@ impl ClaudeIneligible {
     }
 }
 
+/// Why a provider cannot serve a request on the router's OpenAI ingress
+/// (`/openai/v1`, the other coding tools). Until protocol conversion exists
+/// (0.1.2) a request goes only to providers that serve its protocol.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum OpenAiIneligible {
+    /// The provider serves no OpenAI Responses endpoint through the router
+    /// (it is reserved for Claude Code, or its Responses endpoint is off).
+    NoResponsesEndpoint,
+    /// The provider has no Chat Completions endpoint.
+    NoChatEndpoint,
+}
+
+impl OpenAiIneligible {
+    /// Display text.
+    pub fn text(self) -> LocalizedText {
+        match self {
+            OpenAiIneligible::NoResponsesEndpoint => LocalizedText::new(
+                "openai_routing.no_responses_endpoint",
+                "This provider serves no OpenAI Responses endpoint through the router; protocol conversion comes in 0.1.2",
+            ),
+            OpenAiIneligible::NoChatEndpoint => LocalizedText::new(
+                "openai_routing.no_chat_endpoint",
+                "This provider has no Chat Completions endpoint; protocol conversion comes in 0.1.2",
+            ),
+        }
+    }
+}
+
 /// Health of one router line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -54,6 +54,11 @@ client_on_host = "{client} · {host}"
 [request_harness]
 codex = "Codex"
 claude_code = "Claude Code"
+dsh = "dsh"
+opencode = "opencode"
+pi = "pi"
+zcode = "ZCode"
+workbuddy = "WorkBuddy"
 unknown = "其他工具"
 
 # 请求的 API 协议（工具使用的协议、发往上游的协议）。

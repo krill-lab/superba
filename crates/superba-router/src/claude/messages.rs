@@ -101,8 +101,11 @@ pub(super) async fn messages(
         );
     };
     let stripped = line::strip_request(&mut req);
+    // dsh's session-log upload and plugin list (its DeepSeek route) never
+    // leave the router ([`crate::openai::shape`]).
+    let private = crate::openai::shape::drop_private(&mut req);
     let identity = !parts.headers.contains_key(CONTENT_ENCODING);
-    let original = (stripped == 0 && identity).then_some(&raw);
+    let original = (stripped == 0 && private.is_empty() && identity).then_some(&raw);
     let served = route::alias(&generation, &requested);
     let mut meta = meta::claude_meta(&parts.headers, &req, &requested, &served);
     meta.stripped = stripped;
@@ -111,6 +114,14 @@ pub(super) async fn messages(
             .stats
             .track(generation.clone(), meta.clone(), t0, started_ms)
     });
+    if !private.is_empty()
+        && let Some(t) = &mut tracker
+    {
+        t.note(format!(
+            "{} left out (never sent upstream)",
+            private.join(", ")
+        ));
+    }
     let resolution = match route::resolve(&shared, &generation, &requested).await {
         Ok(r) => r,
         Err((status, kind, message)) => {
@@ -351,7 +362,7 @@ impl Answer {
         }
         let tap = tracker.map(|t| {
             let mode = if sse {
-                Mode::Anthropic(Box::new(AnthropicSse::new(self.t0, line)))
+                Mode::Events(Box::new(AnthropicSse::new(self.t0, line)))
             } else {
                 Mode::json(status.as_u16())
             };

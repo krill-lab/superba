@@ -719,6 +719,83 @@ shortage, 502 `api_error` when no line answered).
   so (`RouterView::notes`, `RouterWatch::notes`); a router that moved to another
   port gets `settings.json` pointed at it again.
 
+**OpenAI ingress for the other coding tools** (multi-harness §1–§3;
+`superba_router::openai`). The same process and port serve OpenAI Responses and
+Chat Completions under `/openai/v1` (`baseURL = http://127.0.0.1:<port>/openai/v1`,
+`superba_router::openai::base_url`) for dsh, opencode, pi, ZCode, WorkBuddy and
+other OpenAI-compatible clients: `POST /openai/v1/responses` (streamed or not),
+`POST /openai/v1/chat/completions` (streamed or not), `GET /openai/v1/models[/<id>]`.
+Codex's prefixes are unchanged (`/v1` stays Codex's alias). The token comes as a
+bearer or as `x-api-key` (WorkBuddy sends both); neither reaches a member.
+Errors are OpenAI-shaped. A Responses WebSocket is answered 426 (no tool needs
+one: all default to HTTP streaming).
+
+- **Members and eligibility** (`openai::config`). Pass-through only (protocol
+  conversion is 0.1.2): a request goes to the members that serve its protocol,
+  each at its own endpoint (the `…/v1` base a tool would be given). Defaults:
+  a Krill member serves Responses and Chat at `<origin>/codex/v1`; a compatible
+  site serves Responses at its line base URL (what Codex uses); a member
+  reserved for Claude Code serves neither. `RouterConfig::openai` (`None`: all
+  defaults) overrides a member (`responses` / `chat` endpoints — a path below
+  each line's origin, the line base, or full URLs per line — `drop_fields`,
+  `models`) and the order. `RouterConfig::openai_eligibility(id, protocol)` →
+  `superba_core::OpenAiIneligible::{NoResponsesEndpoint, NoChatEndpoint}` is the
+  reason the router and tool pages show; a request no member serves is
+  answered 404 `no_provider` naming each member's reason.
+- **Routing** (`openai::route`). The members that serve the protocol, in the
+  ingress's order; with more than one, those whose model list names the model
+  (Superba's list, else the member's own `GET <base>/models`, shared cache with
+  the Claude Code ingress), then unknown lists, then the rest — the upstream
+  decides about a model nobody lists. A request waits at most 1.5 s for lists
+  not read yet. Stickiness by the tool's session × model; failover before the
+  first byte on connect errors, 502/503/504 and edge interceptions.
+- **Responses** go through Codex's Responses path (`proxy::proxy_http` with
+  `Ingress::OpenAi`): the same failover, breakers, compaction ownership and
+  encrypted-content handling (GitHub issue 11), the request log and the
+  Responses stats line; bodies are never zstd-compressed for these tools and
+  `Accept-Encoding` is not forwarded (the answer is read for the log).
+- **Chat Completions** (`openai::chat`, `openai::tap`): the member's model
+  mapping, `drop_fields`, and the extra reasoning fields ZCode sends at once
+  (`thinking`, `enable_thinking`, `reasoning`, `reasoning_effort`): a 400 / 422
+  naming one sends the request once more to the same line without it, and it
+  stays left out for that member. Usage is normalised (`prompt_tokens` include
+  cached tokens; `prompt_tokens_details.cached_tokens`, DeepSeek's
+  `prompt_cache_hit_tokens`, Moonshot's `cached_tokens`).
+- **Request shaping** (`openai::shape`). dsh's `dsh_*` top-level fields (its
+  session-log upload) never leave the router, on this ingress and on the Claude
+  Code ingress. `store: false` is added to a Responses request that does not
+  say (ZCode) and does not continue a stored response (`previous_response_id`),
+  toward every member: Responses defaults to storing the conversation at
+  upstreams that store (OpenAI, Azure, gateways), and every member serves
+  Codex, which always sends `store: false`, so every member accepts it.
+- **Request log** (`openai::meta`). Harness by the tool's own harness token
+  (`RequestHarness::{Dsh, OpenCode, Pi, ZCode, WorkBuddy}`, ids `dsh`,
+  `opencode`, `pi`, `zcode`, `workbuddy`), the `User-Agent` only as the
+  fallback (pi's `session_id` header has Codex's name, so headers never decide
+  the tool); version from the `User-Agent` (`deepseek-harness/…`,
+  `opencode/…` and `opencode/<channel>/<v>/<client>`, `ZCode/…`, `WorkBuddy/…`;
+  pi sends none). Session / turn / agent: dsh and pi `session_id`; opencode
+  `x-opencode-session-id` (parent header → subagent); ZCode `x-session-id`,
+  `x-zcode-trace-id` (turn), `x-zcode-session-type` / `x-zcode-query-source`;
+  WorkBuddy `X-Conversation-ID`, `X-Conversation-Request-ID` (turn),
+  `X-Agent-Type`; else the body's `prompt_cache_key`. Requests without tools
+  are background work (titles). Upstream response ids (`resp_…`, `chatcmpl-…`)
+  and request ids are recorded.
+- **Stats line** (`openai::line`). Per-harness switch, off by default for these
+  tools (`StatsLineSettings::harnesses`). Main conversation only, never
+  structured output. Responses: the Responses tap's own injection. Chat: the
+  chunk that ends the answer with `finish_reason: "stop"` is held until the
+  usage chunk (or `[DONE]`), then the line goes into the final `delta.content`
+  (a chunk of its own, or appended to that chunk's text); never when the answer
+  calls tools or has several choices; a whole answer gets it at the end of its
+  message. Later requests have it stripped from assistant messages on both
+  protocols.
+- **Seam for the switch service** (`superba_router::harness::route`): a tool's
+  root URL, its protocol's ingress base URL and its harness token, as
+  `superba_switch::claude::claude_router_route` is for Claude Code. The
+  harness writers (t2) map their `HarnessId` with
+  `RequestHarness::from_id(id.as_str())`.
+
 Lifecycle, the same in `spb` and the GUI (both only through `SwitchService`):
 
 | Step | `spb` | GUI | Service |

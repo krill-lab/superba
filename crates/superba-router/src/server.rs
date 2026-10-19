@@ -137,6 +137,7 @@ impl RouterServer {
             stats_retry: Mutex::new(None),
             wsl_bound: Mutex::new(Vec::new()),
             claude: crate::claude::ClaudeState::default(),
+            openai: crate::openai::OpenAiState::default(),
         });
         shared.apply_stats(shared.current().config.stats.as_ref());
         Ok(Self { shared, listener })
@@ -596,7 +597,12 @@ async fn dispatch(
         return admin::handle(shared, req).await;
     }
     let claude = crate::claude::ingress_rest(path);
-    let Some(rest) = claude.clone().or_else(|| strip_prefix(path)) else {
+    let openai = crate::openai::ingress_rest(path);
+    let Some(rest) = claude
+        .clone()
+        .or_else(|| openai.clone())
+        .or_else(|| strip_prefix(path))
+    else {
         return router_error(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -613,9 +619,9 @@ async fn dispatch(
         .get(AUTHORIZATION)
         .and_then(|v| bearer(v.as_bytes()));
     // Claude Code sends its token as a bearer (`ANTHROPIC_AUTH_TOKEN`) or as
-    // `x-api-key` (`ANTHROPIC_API_KEY`).
-    let api_key = claude
-        .is_some()
+    // `x-api-key` (`ANTHROPIC_API_KEY`); on the OpenAI ingress WorkBuddy sends
+    // both.
+    let api_key = (claude.is_some() || openai.is_some())
         .then(|| req.headers().get(crate::claude::API_KEY_HEADER))
         .flatten()
         .map(|v| v.as_bytes().trim_ascii())
@@ -651,6 +657,13 @@ async fn dispatch(
             );
         }
         shared.totals.rejected.fetch_add(1, Ordering::Relaxed);
+        if openai.is_some() {
+            return router_error(
+                StatusCode::UNAUTHORIZED,
+                "router_auth",
+                "missing or wrong router token (the tool's API key must be the token Superba wrote for it)",
+            );
+        }
         return router_error(
             StatusCode::UNAUTHORIZED,
             "router_auth",
@@ -668,39 +681,60 @@ async fn dispatch(
             drain(req.into_body(), limit).await;
             return crate::claude::error::local_busy(&message);
         }
-        Err(Busy) => return busy(&shared, req, &rest, t0, started_ms).await,
+        Err(Busy) => {
+            let ingress = match openai {
+                Some(_) => proxy::Ingress::OpenAi,
+                None => proxy::Ingress::Codex,
+            };
+            return busy(&shared, req, (&rest, ingress), t0, started_ms).await;
+        }
     };
     if claude.is_some() {
         crate::claude::handle(shared, req, rest, admission).await
+    } else if openai.is_some() {
+        crate::openai::handle(shared, req, rest, admission).await
     } else if ws::is_upgrade(&req) {
         ws::proxy_ws(shared, req, rest, admission).await
     } else {
-        proxy::proxy_http(shared, req, rest, admission).await
+        proxy::proxy_http(shared, req, rest, admission, proxy::Ingress::Codex).await
     }
 }
 
 /// 503 `local_router_busy` for a request that got no admission: recorded like
-/// any Responses request, its body drained first (closing on an unread body
-/// would reset the connection before Codex reads the answer).
+/// any Responses (or, on the OpenAI ingress, Chat Completions) request, its
+/// body drained first (closing on an unread body would reset the connection
+/// before the client reads the answer).
 async fn busy(
     shared: &Arc<Shared>,
     req: Request<Incoming>,
-    rest: &str,
+    (rest, ingress): (&str, proxy::Ingress),
     t0: Instant,
     started_ms: i64,
 ) -> Response<RespBody> {
     let message = shared.local_busy();
     let generation = shared.current();
     let (parts, body) = req.into_parts();
-    if generation.config.stats.is_some() && proxy::is_responses_path(&parts.method, rest) {
+    let facts = match ingress {
+        proxy::Ingress::Codex => proxy::is_responses_path(&parts.method, rest)
+            .then(|| meta::from_headers(&parts.headers)),
+        proxy::Ingress::OpenAi => {
+            let p = rest.trim_end_matches('/');
+            let protocol = match p {
+                "/responses" => Some(crate::openai::OpenAiProtocol::Responses),
+                "/chat/completions" => Some(crate::openai::OpenAiProtocol::Chat),
+                _ => None,
+            };
+            protocol
+                .filter(|_| parts.method == http::Method::POST)
+                .map(|pr| crate::openai::meta::from_headers(&parts.headers, pr))
+        }
+    };
+    if generation.config.stats.is_some()
+        && let Some(facts) = facts
+    {
         shared
             .stats
-            .track(
-                generation.clone(),
-                meta::from_headers(&parts.headers),
-                t0,
-                started_ms,
-            )
+            .track(generation.clone(), facts, t0, started_ms)
             .finish(End {
                 status: Some(superba_core::RequestStatus::Http {
                     status: 503,

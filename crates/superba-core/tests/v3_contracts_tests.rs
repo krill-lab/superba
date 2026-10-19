@@ -610,7 +610,41 @@ fn harnesses_come_from_the_user_agent_and_round_trip_their_ids() {
         Some((H::Codex, Some("0.162.0".into())))
     );
     assert_eq!(H::from_user_agent("Codex Desktop"), Some((H::Codex, None)));
+    // The other coding tools (harness research: what each sends).
+    let tools: [(&str, H, Option<&str>); 7] = [
+        (
+            "deepseek-harness/0.2.1-rc.2 (+https://github.com/deepseek-ai/deepseek-harness)",
+            H::Dsh,
+            Some("0.2.1-rc.2"),
+        ),
+        (
+            "opencode/1.19.3 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+            H::OpenCode,
+            Some("1.19.3"),
+        ),
+        ("opencode/latest/2.0.32/cli", H::OpenCode, Some("2.0.32")),
+        ("pi (linux 6.1.0-34-amd64; x64)", H::Pi, None),
+        (
+            "ZCode/3.15.3 ai-sdk/provider-utils/4.0.27 runtime/node.js/24",
+            H::ZCode,
+            Some("3.15.3"),
+        ),
+        (
+            "CLI/2.161.0 WorkBuddy/2.161.0",
+            H::WorkBuddy,
+            Some("2.161.0"),
+        ),
+        ("ZCode/0.16.9", H::ZCode, Some("0.16.9")),
+    ];
+    for (ua, harness, version) in tools {
+        assert_eq!(
+            H::from_user_agent(ua),
+            Some((harness, version.map(str::to_owned))),
+            "{ua}"
+        );
+    }
     assert_eq!(H::from_user_agent("curl/8.5.0"), None);
+    assert_eq!(H::from_user_agent("pip/24.0"), None);
     assert_eq!(H::from_user_agent(""), None);
     for h in H::ALL {
         assert_eq!(H::from_id(h.id()), Some(h));
@@ -622,6 +656,17 @@ fn harnesses_come_from_the_user_agent_and_round_trip_their_ids() {
     let back: RequestRow = serde_json::from_value(serde_json::to_value(&claude).unwrap()).unwrap();
     assert_eq!(back.harness, H::ClaudeCode);
     assert_eq!(claude.client_text().key, "request_harness.claude_code");
+    // Stored names (request log, JSON) of the other tools.
+    for (h, name) in [
+        (H::Dsh, "dsh"),
+        (H::OpenCode, "opencode"),
+        (H::Pi, "pi"),
+        (H::ZCode, "zcode"),
+        (H::WorkBuddy, "workbuddy"),
+    ] {
+        assert_eq!(serde_json::to_value(h).unwrap(), serde_json::json!(name));
+        assert_eq!(h.id(), name);
+    }
 }
 
 #[test]

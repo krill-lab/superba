@@ -193,3 +193,8 @@ half_open = "重试中"
 # 供应商不能用于 Claude Code 的原因（Claude Code 页面、路由）。
 [claude_routing]
 no_anthropic_endpoint = "该供应商没有 Anthropic 端点；协议转换将在 0.1.2 提供"
+
+# 供应商不能通过路由的 OpenAI 入口（/openai/v1）服务某个工具的原因（路由、工具页面）。
+[openai_routing]
+no_responses_endpoint = "该供应商在路由中没有 OpenAI Responses 端点；协议转换将在 0.1.2 提供"
+no_chat_endpoint = "该供应商没有 Chat Completions 端点；协议转换将在 0.1.2 提供"

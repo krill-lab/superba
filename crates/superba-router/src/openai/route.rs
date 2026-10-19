@@ -1,0 +1,202 @@
+//! Which members serve a request on the OpenAI ingress, and in which order
+//! their lines are tried.
+//!
+//! 1. The members that serve the request's protocol ([`OpenAiProtocol`]), in
+//!    the ingress's order; the others are not eligible, and when none is
+//!    left the router answers with each member's reason.
+//! 2. With more than one: those whose model list names the model (Superba's
+//!    list, else the member's own `/models`; a model-mapping entry counts),
+//!    then those whose list is unknown, then the rest. The upstream decides
+//!    about a model nobody lists: lists are often incomplete, and a local
+//!    refusal would hide what the upstream would answer. A request waits at
+//!    most [`LIST_WAIT`] for lists not read yet; a slower list counts as
+//!    unknown for it and keeps loading for later requests.
+//!
+//! Attempt order ([`crate::claude::route::attempts`]): the conversation's
+//! pinned line (session × model), that member's other lines, then the other
+//! targets with their lines; open breakers skipped unless every line is open.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use super::config::OpenAiProtocol;
+use crate::claude::catalog::{Listed, get_list};
+use crate::claude::route::Target;
+use crate::config::join_path;
+use crate::state::{Generation, Shared};
+use crate::stats::meta::RequestMeta;
+use http::HeaderMap;
+
+/// How long a request waits for the model lists that decide its order.
+pub const LIST_WAIT: Duration = Duration::from_millis(1500);
+
+/// A refusal: status, error code, message.
+pub(crate) type Refusal = (u16, &'static str, String);
+
+/// The stickiness key of a request (its session and model).
+pub(crate) fn sticky_key(meta: &RequestMeta) -> Option<String> {
+    let session = meta.session_id.as_deref()?;
+    Some(format!(
+        "openai:{session}:{}",
+        meta.model.as_deref().unwrap_or("")
+    ))
+}
+
+/// The member's model list: Superba's, else its own `/models`.
+async fn list_of(
+    shared: &Shared,
+    generation: &Arc<Generation>,
+    member: usize,
+) -> Option<Arc<Vec<Listed>>> {
+    let o = &generation.openai.members[member];
+    if !o.cfg.models.is_empty() {
+        return Some(Arc::new(
+            o.cfg
+                .models
+                .iter()
+                .map(|m| Listed {
+                    id: m.id.clone(),
+                    display_name: m.display_name.clone(),
+                })
+                .collect(),
+        ));
+    }
+    shared
+        .openai
+        .catalog
+        .lists_via(generation, member, "OpenAI", || fetch(generation, member))
+        .await
+}
+
+/// `GET <base>/models` of member `member` (its Responses base, else its Chat
+/// base; the first line that answers).
+async fn fetch(generation: &Generation, member: usize) -> Result<Vec<Listed>, String> {
+    let o = &generation.openai.members[member];
+    let bases = o
+        .bases(OpenAiProtocol::Responses)
+        .or_else(|| o.bases(OpenAiProtocol::Chat))
+        .ok_or("serves no OpenAI protocol")?;
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        http::header::AUTHORIZATION,
+        generation.members[member].auth.clone(),
+    );
+    let mut last_error = String::from("no line");
+    for base in bases {
+        match get_list(generation, &join_path(base, "/models", None), &headers).await {
+            Ok(list) => return Ok(list),
+            Err(e) => last_error = e,
+        }
+    }
+    Err(last_error)
+}
+
+/// The lists of `members`, those not there within `wait` as unknown (their
+/// reads go on and fill the cache).
+async fn lists_within(
+    shared: &Arc<Shared>,
+    generation: &Arc<Generation>,
+    members: &[usize],
+    wait: Duration,
+) -> Vec<Option<Arc<Vec<Listed>>>> {
+    let deadline = tokio::time::Instant::now() + wait;
+    let reads: Vec<_> = members
+        .iter()
+        .map(|m| {
+            let (s, g, m) = (shared.clone(), generation.clone(), *m);
+            tokio::spawn(async move { list_of(&s, &g, m).await })
+        })
+        .collect();
+    let mut out = Vec::with_capacity(reads.len());
+    for read in reads {
+        out.push(match tokio::time::timeout_at(deadline, read).await {
+            Ok(Ok(list)) => list,
+            _ => None,
+        });
+    }
+    out
+}
+
+/// Every model the ingress's members list, each with the first member that
+/// lists it (the `/models` answer).
+pub(crate) async fn all_models(
+    shared: &Shared,
+    generation: &Arc<Generation>,
+) -> Vec<(Listed, usize)> {
+    let members: Vec<usize> = generation
+        .openai
+        .order
+        .iter()
+        .copied()
+        .filter(|m| {
+            let o = &generation.openai.members[*m];
+            o.responses.is_some() || o.chat.is_some()
+        })
+        .collect();
+    let lists =
+        futures_util::future::join_all(members.iter().map(|m| list_of(shared, generation, *m)))
+            .await;
+    let mut out: Vec<(Listed, usize)> = Vec::new();
+    for (member, list) in members.into_iter().zip(lists) {
+        for l in list.iter().flat_map(|l| l.iter()) {
+            match out.iter_mut().find(|(x, _)| x.id == l.id) {
+                Some((x, _)) if x.display_name.is_none() => {
+                    x.display_name.clone_from(&l.display_name)
+                }
+                Some(_) => {}
+                None => out.push((l.clone(), member)),
+            }
+        }
+    }
+    out
+}
+
+/// Why no member serves `protocol`: each member's reason.
+fn nobody(generation: &Generation, protocol: OpenAiProtocol) -> String {
+    let reason = protocol.ineligible().text().render_fallback();
+    let names: Vec<String> = generation
+        .members
+        .iter()
+        .map(|m| format!("{}: {reason}", m.cfg.name))
+        .collect();
+    format!(
+        "no provider of the local router serves {} ({})",
+        protocol.request_protocol().text().render_fallback(),
+        names.join("; ")
+    )
+}
+
+/// The targets of a request for `model` (`None`: the body names none)
+/// speaking `protocol`.
+pub(crate) async fn resolve(
+    shared: &Arc<Shared>,
+    generation: &Arc<Generation>,
+    protocol: OpenAiProtocol,
+    model: Option<&str>,
+) -> Result<Vec<Target>, Refusal> {
+    let serving = generation.openai.serving(protocol);
+    if serving.is_empty() {
+        return Err((404, "no_provider", nobody(generation, protocol)));
+    }
+    let target = |member: usize| Target {
+        member,
+        model: model.unwrap_or_default().to_owned(),
+    };
+    let Some(model) = model.filter(|_| serving.len() > 1) else {
+        return Ok(serving.into_iter().map(target).collect());
+    };
+    let lists = lists_within(shared, generation, &serving, LIST_WAIT).await;
+    let (mut listing, mut unknown, mut rest) = (Vec::new(), Vec::new(), Vec::new());
+    for (member, list) in serving.into_iter().zip(lists) {
+        let mapped = generation.members[member].cfg.model_map.get(model);
+        match list {
+            _ if mapped.is_some() => listing.push(target(member)),
+            Some(l) if l.iter().any(|m| m.id == model) => listing.push(target(member)),
+            Some(_) => rest.push(target(member)),
+            None => unknown.push(target(member)),
+        }
+    }
+    listing.append(&mut unknown);
+    listing.append(&mut rest);
+    Ok(listing)
+}

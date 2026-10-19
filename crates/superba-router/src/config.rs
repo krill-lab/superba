@@ -30,7 +30,9 @@ pub const CONFIG_FORMAT: u32 = 1;
 /// the remainder appended to each line's base URL.
 pub const ROUTER_BASE_PATH: &str = "/backend-api/codex";
 
-/// Alternative prefix for OpenAI-style clients (`http://127.0.0.1:<port>/v1`).
+/// Alternative prefix for OpenAI-style clients (`http://127.0.0.1:<port>/v1`),
+/// served like [`ROUTER_BASE_PATH`] (Codex's path). The other coding tools
+/// use the OpenAI ingress ([`crate::openai::PREFIX`]).
 pub const ROUTER_V1_PATH: &str = "/v1";
 
 /// Hosts of the official ChatGPT login. The official login is never a router
@@ -77,6 +79,11 @@ pub struct RouterConfig {
     /// for every model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<crate::claude::ClaudeConfig>,
+    /// The OpenAI ingress (`/openai/v1/*`, the other coding tools): which
+    /// members serve Responses and Chat Completions where. `None`: every
+    /// member serves its defaults ([`crate::openai::config`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openai: Option<crate::openai::OpenAiConfig>,
 }
 
 /// An address the router may listen on for WSL: a private (RFC 1918) or
@@ -289,6 +296,7 @@ impl RouterConfig {
             stats: None,
             wsl_listen: Vec::new(),
             claude: None,
+            openai: None,
         }
     }
 
@@ -373,6 +381,9 @@ impl RouterConfig {
         }
         if let Some(claude) = &self.claude {
             claude.validate(self)?;
+        }
+        if let Some(openai) = &self.openai {
+            openai.validate(self)?;
         }
         Ok(())
     }

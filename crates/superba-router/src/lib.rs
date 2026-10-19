@@ -68,6 +68,11 @@
 //! - **Claude Code** ([`claude`]): Anthropic Messages under `/claude/v1/*` on
 //!   the same port, passed through to members with an Anthropic endpoint, with
 //!   the same failover, stickiness, health, limits, request log and stats line.
+//! - **The other coding tools** ([`openai`]): OpenAI Responses and Chat
+//!   Completions under `/openai/v1/*` on the same port (dsh, opencode, pi,
+//!   ZCode, WorkBuddy), passed through to the members that serve the
+//!   protocol, with the same machinery; each tool has its own harness token
+//!   ([`harness`]).
 //! - **Logging**: never keys, tokens, bodies, thread ids or query strings.
 //!
 //! ## Files
@@ -90,12 +95,14 @@ pub mod compaction;
 pub mod config;
 pub mod doctor;
 pub mod firewall;
+pub mod harness;
 pub mod health;
 pub mod limits;
 pub mod manager;
 pub mod members;
 pub mod model_map;
 pub mod outage;
+pub mod openai;
 pub mod paths;
 pub mod port;
 pub mod runtime;
@@ -125,6 +132,7 @@ pub use config::{
 };
 pub use forward::ROUTE_HEADER;
 pub use health::LineState;
+pub use openai::OpenAiConfig;
 pub use paths::RouterPaths;
 pub use runtime::RuntimeInfo;
 pub use server::{RouterServer, ShutdownHandle};

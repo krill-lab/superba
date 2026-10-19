@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bytes::{Bytes, BytesMut};
 use http_body::{Body, Frame, SizeHint};
@@ -13,18 +13,41 @@ use serde::Deserialize;
 use superba_core::{InflightPhase, RequestStatus};
 
 use super::hub::{End, Tracker};
-use super::tap::SseTap;
+use super::tap::{SseTap, TapSummary};
 use super::usage::{Usage, UsageWire};
 
 /// Largest JSON answer inspected for usage / error codes.
 const JSON_CAP: usize = 4 * 1024 * 1024;
 
+/// An event stream tap of another protocol than Responses (Anthropic
+/// Messages on the Claude Code ingress, Chat Completions on the OpenAI
+/// ingress): it passes events on, may hold some back for the stats line, and
+/// measures the answer.
+pub(crate) trait EventTap: Send {
+    /// Process one chunk; `out` receives the bytes to send now.
+    fn push_at(&mut self, chunk: Bytes, clock: &mut dyn FnMut() -> Instant, out: &mut Vec<Bytes>);
+    /// The stream ended: send what is held or incomplete.
+    fn finish(&mut self, out: &mut Vec<Bytes>);
+    /// The measurements so far.
+    fn summary(&self) -> TapSummary;
+    /// Events are being held.
+    fn holding(&self) -> bool;
+    /// Output deltas so far.
+    fn deltas(&self) -> u64;
+    /// `t0` → first output, once seen.
+    fn first_token(&self) -> Option<Duration>;
+    /// The tap may change the stream (it has a line setup).
+    fn may_inject(&self) -> bool;
+    /// The event a complete stream ends with (`message_stop`, `[DONE]`).
+    fn terminal(&self) -> &'static str;
+}
+
 /// What the wrapper does with the bytes.
 pub(crate) enum Mode {
     /// An SSE stream through the tap.
     Sse(Box<SseTap>),
-    /// An Anthropic Messages stream through its tap (Claude Code ingress).
-    Anthropic(Box<crate::claude::tap::AnthropicSse>),
+    /// Another protocol's event stream through its tap.
+    Events(Box<dyn EventTap>),
     /// A JSON answer, copied (capped) for its usage or error code.
     Json {
         /// The copy.
@@ -71,7 +94,7 @@ impl<B: Body> TapBody<B> {
     pub fn new(inner: B, mode: Mode, tracker: Tracker) -> Self {
         let rewrites = match &mode {
             Mode::Sse(t) => t.tap().may_inject(),
-            Mode::Anthropic(t) => t.may_inject(),
+            Mode::Events(t) => t.may_inject(),
             _ => false,
         };
         let expected = inner.size_hint().exact();
@@ -107,7 +130,7 @@ impl<B: Body> TapBody<B> {
                     t.inflight().update(phase, tap.deltas(), tap.first_token());
                 }
             }
-            Mode::Anthropic(tap) => {
+            Mode::Events(tap) => {
                 let mut out = Vec::new();
                 tap.push_at(data, &mut Instant::now, &mut out);
                 self.queue.extend(out);
@@ -154,16 +177,17 @@ impl<B: Body> TapBody<B> {
                     json_id: None,
                 }
             }
-            Mode::Anthropic(tap) => {
+            Mode::Events(tap) => {
                 let mut out = Vec::new();
                 tap.finish(&mut out);
                 self.queue.extend(out);
                 let summary = tap.summary();
                 let status = summary.outcome.is_none().then_some(RequestStatus::Broken);
+                let terminal = tap.terminal();
                 End {
                     error: status
                         .as_ref()
-                        .map(|_| "the stream ended before message_stop".to_owned()),
+                        .map(|_| format!("the stream ended before {terminal}")),
                     summary: Some(summary),
                     status,
                     json_usage: None,
@@ -202,7 +226,7 @@ impl<B: Body> TapBody<B> {
     fn on_error(&mut self, detail: String) {
         let summary = match &self.mode {
             Mode::Sse(tap) => Some(tap.tap().summary()),
-            Mode::Anthropic(tap) => Some(tap.summary()),
+            Mode::Events(tap) => Some(tap.summary()),
             _ => None,
         };
         if let Some(t) = self.tracker.take() {
@@ -310,8 +334,7 @@ where
         // The SSE tap may still release held bytes at the end; other answers
         // pass unchanged, so the inner body knows.
         self.ended
-            || (!matches!(self.mode, Mode::Sse(_) | Mode::Anthropic(_))
-                && self.inner.is_end_stream())
+            || (!matches!(self.mode, Mode::Sse(_) | Mode::Events(_)) && self.inner.is_end_stream())
     }
 
     fn size_hint(&self) -> SizeHint {
@@ -339,7 +362,7 @@ impl<B: Body> Drop for TapBody<B> {
         if let Some(t) = self.tracker.take() {
             let summary = match &self.mode {
                 Mode::Sse(tap) => Some(tap.tap().summary()),
-                Mode::Anthropic(tap) => Some(tap.summary()),
+                Mode::Events(tap) => Some(tap.summary()),
                 _ => None,
             };
             t.finish(End {

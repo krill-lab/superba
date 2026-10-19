@@ -35,6 +35,7 @@ use url::Url;
 pub mod anthropic;
 pub mod ciphers;
 pub mod claude;
+pub mod openai;
 pub mod responses;
 
 pub const ROUTER_TOKEN: &str = "sbr_test_router_token_0123456789abcdef";

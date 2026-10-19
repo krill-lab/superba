@@ -42,6 +42,19 @@ use crate::status::RouteEventKind;
 use crate::sticky::{Pin, session_key};
 use crate::transport;
 
+/// The ingress a Responses request came in on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Ingress {
+    /// Codex's own paths (`/backend-api/codex`, `/v1`): every member at its
+    /// line base URL, Codex's request facts, stickiness and stats line.
+    Codex,
+    /// The OpenAI ingress (`/openai/v1/responses`, the other coding tools):
+    /// the members that serve Responses at their Responses endpoint, the
+    /// tools' facts and shaping ([`crate::openai`]); bodies are never
+    /// compressed for them and the answer is asked for unencoded.
+    OpenAi,
+}
+
 /// True for the Responses endpoints whose requests are recorded (`POST
 /// …/responses`, `POST …/responses/compact`).
 pub(crate) fn is_responses_path(method: &Method, rest: &str) -> bool {
@@ -89,13 +102,16 @@ fn prepare(headers: &HeaderMap, body: Bytes, limit: usize) -> (Bytes, meta::Requ
     }
 }
 
-/// Proxy one HTTP request whose path below the router prefix is `rest`.
+/// Proxy one HTTP request whose path below the router prefix is `rest`,
+/// received on `ingress`.
 pub(crate) async fn proxy_http(
     shared: Arc<Shared>,
     req: Request<Incoming>,
     rest: String,
     admission: Admission,
+    ingress: Ingress,
 ) -> Response<RespBody> {
+    let openai = ingress == Ingress::OpenAi;
     let t0 = Instant::now();
     let started_ms = now_ms();
     let generation = shared.current();
@@ -108,12 +124,14 @@ pub(crate) async fn proxy_http(
         Ok(collected) => collected.to_bytes(),
         Err(e) if e.is::<http_body_util::LengthLimitError>() => {
             if tracked {
-                let t = shared.stats.track(
-                    generation.clone(),
-                    meta::from_headers(&parts.headers),
-                    t0,
-                    started_ms,
-                );
+                let m = match openai {
+                    true => crate::openai::meta::from_headers(
+                        &parts.headers,
+                        crate::openai::OpenAiProtocol::Responses,
+                    ),
+                    false => meta::from_headers(&parts.headers),
+                };
+                let t = shared.stats.track(generation.clone(), m, t0, started_ms);
                 t.finish(End {
                     status: Some(superba_core::RequestStatus::Http {
                         status: 413,
@@ -136,7 +154,25 @@ pub(crate) async fn proxy_http(
             );
         }
     };
-    let (body, mut tracker, compaction) = if tracked {
+    // The OpenAI ingress always reads the request (its facts route it, and
+    // it is shaped whether or not it is recorded).
+    let mut openai_meta = None;
+    let (body, mut tracker, compaction) = if openai {
+        let (body, m, notes) = crate::openai::prepare_responses(&parts.headers, body, limit);
+        let compaction = m.compaction.clone();
+        let mut t = tracked.then(|| {
+            shared
+                .stats
+                .track(generation.clone(), m.clone(), t0, started_ms)
+        });
+        if let Some(t) = &mut t {
+            for n in notes {
+                t.note(n);
+            }
+        }
+        openai_meta = Some(m);
+        (body, t, compaction)
+    } else if tracked {
         let (body, m) = prepare(&parts.headers, body, limit);
         let compaction = m.compaction.clone();
         let t = shared.stats.track(generation.clone(), m, t0, started_ms);
@@ -148,7 +184,10 @@ pub(crate) async fn proxy_http(
         (body, None, CompactionInput::default())
     };
 
-    let key = session_key(&parts.headers);
+    let key = match &openai_meta {
+        Some(m) => crate::openai::route::sticky_key(m),
+        None => session_key(&parts.headers),
+    };
     let now = Instant::now();
     let pin = key
         .as_deref()
@@ -189,15 +228,55 @@ pub(crate) async fn proxy_http(
             message,
         );
     }
-    let order = candidates(
-        &View {
-            generation: &generation,
-            websocket_only: false,
-            route: &route,
-        },
-        pin,
-        now,
-    );
+    let order = match &openai_meta {
+        None => candidates(
+            &View {
+                generation: &generation,
+                websocket_only: false,
+                route: &route,
+            },
+            pin,
+            now,
+        ),
+        Some(m) => {
+            match crate::openai::route::resolve(
+                &shared,
+                &generation,
+                crate::openai::OpenAiProtocol::Responses,
+                m.model.as_deref(),
+            )
+            .await
+            {
+                Ok(targets) => {
+                    let allowed: Vec<_> = targets
+                        .into_iter()
+                        .filter(|t| route.allows(t.member))
+                        .collect();
+                    crate::claude::route::attempts(&generation, &allowed, pin, now)
+                        .into_iter()
+                        .map(|a| a.c)
+                        .collect()
+                }
+                Err((status, code, message)) => {
+                    if let Some(t) = tracker {
+                        t.finish(End {
+                            status: Some(superba_core::RequestStatus::Http {
+                                status,
+                                code: Some(code.into()),
+                            }),
+                            error: Some(message.chars().take(300).collect()),
+                            ..End::default()
+                        });
+                    }
+                    return router_error(
+                        StatusCode::from_u16(status).unwrap_or(StatusCode::NOT_FOUND),
+                        code,
+                        &message,
+                    );
+                }
+            }
+        }
+    };
     note_compaction_route(&shared, &generation, &route, pin, now, order.first());
 
     // Ciphertexts another provider made (GitHub issue 11): what a member
@@ -212,7 +291,8 @@ pub(crate) async fn proxy_http(
     // Lines that accept zstd get Responses bodies Codex sent uncompressed
     // compressed (one compression per member body).
     let client_zstd = content_encoding(&parts.headers).as_deref() == Some("zstd");
-    let compressible = transport::compressible_path(&parts.method, &rest)
+    let compressible = !openai
+        && transport::compressible_path(&parts.method, &rest)
         && content_encoding(&parts.headers).is_none()
         && !body.is_empty();
     let mut compressed: HashMap<usize, Option<Bytes>> = HashMap::new();
@@ -231,7 +311,7 @@ pub(crate) async fn proxy_http(
             let send_body = match mapped.get(&c.member) {
                 Some(b) => b.clone(),
                 None => {
-                    let (b, left_out) = member_body(
+                    let (mut b, left_out) = member_body(
                         &shared,
                         &body,
                         ciphers.as_ref(),
@@ -245,6 +325,24 @@ pub(crate) async fn proxy_http(
                             member.cfg.id,
                             r.describe()
                         ));
+                    }
+                    if openai
+                        && let Some((dropped, fields)) = crate::openai::member_responses_body(
+                            &generation,
+                            c.member,
+                            &b,
+                            &parts.headers,
+                        )
+                    {
+                        b = dropped;
+                        if let (Some(t), false) = (&mut tracker, resent) {
+                            for f in fields {
+                                t.note(format!(
+                                    "{}: field {f} left out for this provider",
+                                    member.cfg.id
+                                ));
+                            }
+                        }
                     }
                     mapped.insert(c.member, b.clone());
                     b
@@ -271,7 +369,7 @@ pub(crate) async fn proxy_http(
                         &shared,
                         &generation,
                         &parts,
-                        &rest,
+                        (&rest, ingress),
                         c,
                         (z, send_body),
                         drop_turn_state,
@@ -283,7 +381,7 @@ pub(crate) async fn proxy_http(
                     send(
                         &generation,
                         &parts,
-                        &rest,
+                        (&rest, ingress),
                         c,
                         send_body,
                         drop_turn_state,
@@ -441,7 +539,7 @@ pub(crate) async fn proxy_http(
                         &label,
                         resp,
                         (active, admission),
-                        tracker,
+                        (tracker, ingress),
                     );
                 }
             },
@@ -573,7 +671,7 @@ async fn send_zstd(
     shared: &Shared,
     generation: &Generation,
     parts: &Parts,
-    rest: &str,
+    rest: (&str, Ingress),
     c: Candidate,
     (zstd, plain): (Bytes, Bytes),
     drop_turn_state: bool,
@@ -621,7 +719,7 @@ async fn send_zstd(
 async fn send(
     generation: &Generation,
     parts: &Parts,
-    rest: &str,
+    (rest, ingress): (&str, Ingress),
     c: Candidate,
     body: Bytes,
     drop_turn_state: bool,
@@ -629,8 +727,19 @@ async fn send(
 ) -> Result<reqwest::Response, reqwest::Error> {
     let member = &generation.members[c.member];
     let line = &member.lines[c.line];
-    let url = join_path(&line.cfg.base_url, rest, parts.uri.query());
+    let base = match ingress {
+        Ingress::Codex => &line.cfg.base_url,
+        Ingress::OpenAi => generation.openai.members[c.member]
+            .bases(crate::openai::OpenAiProtocol::Responses)
+            .and_then(|b| b.get(c.line))
+            .unwrap_or(&line.cfg.base_url),
+    };
+    let url = join_path(base, rest, parts.uri.query());
     let mut headers = request_headers(&parts.headers, false, drop_turn_state, &member.auth);
+    if ingress == Ingress::OpenAi {
+        // The answer is read for the request log.
+        headers.remove(http::header::ACCEPT_ENCODING);
+    }
     if zstd {
         headers.insert(CONTENT_ENCODING, http::HeaderValue::from_static("zstd"));
     }
@@ -715,7 +824,7 @@ fn downstream(
     label: &str,
     resp: UpResponse,
     (active, admission): (GaugeGuard, Admission),
-    tracker: Option<Tracker>,
+    (tracker, ingress): (Option<Tracker>, Ingress),
 ) -> Response<RespBody> {
     let status = resp.status();
     let mut headers = response_headers(resp.headers(), false);
@@ -738,7 +847,10 @@ fn downstream(
                 .to_ascii_lowercase();
             let mode =
                 if status == StatusCode::OK && ct.starts_with("text/event-stream") && !encoded {
-                    let line = t.line_setup();
+                    let line = match ingress {
+                        Ingress::Codex => t.line_setup(),
+                        Ingress::OpenAi => t.line_setup_if(crate::openai::line::allowed),
+                    };
                     if line.is_some() {
                         // The stats line changes the length.
                         headers.remove(CONTENT_LENGTH);
@@ -851,7 +963,7 @@ fn member_body(
 
 /// Read an answer of at most [`REFUSAL_READ_LIMIT`] bytes; the answer comes
 /// back whole either way, with its bytes when it ended within the limit.
-async fn read_small(resp: UpResponse) -> (UpResponse, Option<Bytes>) {
+pub(crate) async fn read_small(resp: UpResponse) -> (UpResponse, Option<Bytes>) {
     let (head, mut body) = resp.into_parts();
     let mut buf = bytes::BytesMut::new();
     let deadline = tokio::time::Instant::now() + REFUSAL_READ_TIMEOUT;

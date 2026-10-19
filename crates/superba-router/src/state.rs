@@ -96,6 +96,8 @@ pub(crate) struct Generation {
     pub sticky: Mutex<StickyTable>,
     /// The Claude Code ingress of this configuration.
     pub claude: Option<crate::claude::rt::ClaudeRt>,
+    /// The OpenAI ingress of this configuration.
+    pub openai: crate::openai::rt::OpenAiRt,
 }
 
 impl Generation {
@@ -150,6 +152,7 @@ impl Generation {
             .as_ref()
             .map(|c| crate::claude::rt::ClaudeRt::build(c, &config.members, secrets))
             .transpose()?;
+        let openai = crate::openai::rt::OpenAiRt::build(&config);
         let http = build_client(&config, ClientKind::Http, budget)?;
         let ws = build_client(&config, ClientKind::WebSocket, budget)?;
         let probe = build_client(&config, ClientKind::Probe, budget)?;
@@ -163,6 +166,7 @@ impl Generation {
             config,
             members,
             claude,
+            openai,
             http,
             ws,
             probe,
@@ -309,6 +313,9 @@ pub(crate) struct Shared {
     /// Claude Code ingress state kept across reloads (model lists,
     /// `count_tokens` support).
     pub claude: crate::claude::ClaudeState,
+    /// OpenAI ingress state kept across reloads (model lists, fields members
+    /// refused).
+    pub openai: crate::openai::OpenAiState,
 }
 
 impl Shared {

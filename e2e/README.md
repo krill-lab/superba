@@ -114,6 +114,27 @@ SUPERBA_E2E_ENV=/path/to/e2e.env python3 -I e2e/claude_harness.py \
     --bin target/debug [--claude /path/to/claude] OUT_DIR
 ```
 
+### The other coding tools through the router
+
+`openai_router.py` runs real dsh (Responses), OpenCode 2 (Responses and Chat
+Completions) and pi (Responses) in a temporary home that is bind-mounted over
+the real one in an unprivileged user + mount + PID namespace, each configured
+with its own harness token and the router's OpenAI ingress
+(`http://127.0.0.1:<port>/openai/v1`), through a `superba-router` started from
+a temporary data directory to the test relay as a Krill member, with an
+unreachable first member so the first request fails over: a plain prompt per
+tool and protocol (stats line on), a continued conversation (the line stripped
+from the history), file reads with OpenCode's and pi's tools,
+`/openai/v1/models`, and the request log (harness by token, version, protocol,
+session ids, usage, upstream ids, injected / stripped lines). About a minute;
+Python 3, `unshare` and the three tools (Node ≥ 22.19 for dsh).
+
+```sh
+SUPERBA_E2E_ENV=/path/to/e2e.env python3 -I e2e/openai_router.py \
+    --router target/debug/superba-router --dsh /path/to/dsh \
+    --opencode /path/to/opencode --pi /path/to/pi [--node-dir DIR] OUT_DIR
+```
+
 ## How it is wired
 
 - **Namespace.** The driver runs itself, the desktop app, `superba`, `spb`, the

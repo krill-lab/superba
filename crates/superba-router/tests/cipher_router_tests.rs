@@ -461,3 +461,19 @@ async fn a_200_whose_stream_fails_proves_nothing_was_read() {
         "{sent:?}"
     );
 }
+
+/// A genuine 400 to a request that carries ciphertexts is read whole to see
+/// whether it is a refusal, then passed on as it came (the replayed answer's
+/// size hint once made the connection fail).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn http_a_genuine_400_to_a_conversation_with_ciphertexts_is_passed_on() {
+    const BAD: &str = r#"{"error":{"message":"Invalid value for 'tools'.","type":"invalid_request_error","param":"tools","code":null}}"#;
+    let up = upstream(Mode::Json(400, BAD)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let paths = RouterPaths::new(&DataDir::new(dir.path()));
+    let r = router(&up, &paths, vec!["main"]).await;
+    let resp = post(&r, &conversation()).await;
+    assert_eq!(resp.status(), 400);
+    assert_eq!(resp.text().await.unwrap(), BAD);
+    assert_eq!(up.hits(), 1);
+}

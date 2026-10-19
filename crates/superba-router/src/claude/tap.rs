@@ -366,3 +366,30 @@ impl AnthropicSse {
         }
     }
 }
+
+impl crate::stats::body::EventTap for AnthropicSse {
+    fn push_at(&mut self, chunk: Bytes, clock: &mut dyn FnMut() -> Instant, out: &mut Vec<Bytes>) {
+        AnthropicSse::push_at(self, chunk, clock, out);
+    }
+    fn finish(&mut self, out: &mut Vec<Bytes>) {
+        AnthropicSse::finish(self, out);
+    }
+    fn summary(&self) -> TapSummary {
+        AnthropicSse::summary(self)
+    }
+    fn holding(&self) -> bool {
+        AnthropicSse::holding(self)
+    }
+    fn deltas(&self) -> u64 {
+        AnthropicSse::deltas(self)
+    }
+    fn first_token(&self) -> Option<Duration> {
+        AnthropicSse::first_token(self)
+    }
+    fn may_inject(&self) -> bool {
+        AnthropicSse::may_inject(self)
+    }
+    fn terminal(&self) -> &'static str {
+        "message_stop"
+    }
+}

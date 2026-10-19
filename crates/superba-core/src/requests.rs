@@ -219,23 +219,49 @@ pub enum RequestHarness {
     Codex,
     /// Claude Code.
     ClaudeCode,
+    /// dsh, the DeepSeek Harness.
+    Dsh,
+    /// opencode (OpenCode 1 or 2).
+    #[serde(rename = "opencode")]
+    OpenCode,
+    /// pi.
+    Pi,
+    /// ZCode (Z.ai).
+    #[serde(rename = "zcode")]
+    ZCode,
+    /// WorkBuddy (Tencent; China and international builds).
+    #[serde(rename = "workbuddy")]
+    WorkBuddy,
     /// A client that could not be identified.
     Unknown,
 }
 
 impl RequestHarness {
     /// Every harness, in display order.
-    pub const ALL: [RequestHarness; 3] = [
+    pub const ALL: [RequestHarness; 8] = [
         RequestHarness::Codex,
         RequestHarness::ClaudeCode,
+        RequestHarness::Dsh,
+        RequestHarness::OpenCode,
+        RequestHarness::Pi,
+        RequestHarness::ZCode,
+        RequestHarness::WorkBuddy,
         RequestHarness::Unknown,
     ];
 
-    /// Stable id (`codex`, `claude-code`, `unknown`), as tokens and `spb` name it.
+    /// Stable id (`codex`, `claude-code`, `dsh`, `opencode`, `pi`, `zcode`,
+    /// `workbuddy`, `unknown`), as tokens and `spb` name it. The ids of the
+    /// other coding tools are the harness ids of their configuration
+    /// (`spb harness`).
     pub fn id(self) -> &'static str {
         match self {
             RequestHarness::Codex => "codex",
             RequestHarness::ClaudeCode => "claude-code",
+            RequestHarness::Dsh => "dsh",
+            RequestHarness::OpenCode => "opencode",
+            RequestHarness::Pi => "pi",
+            RequestHarness::ZCode => "zcode",
+            RequestHarness::WorkBuddy => "workbuddy",
             RequestHarness::Unknown => "unknown",
         }
     }
@@ -252,34 +278,72 @@ impl RequestHarness {
             RequestHarness::ClaudeCode => {
                 LocalizedText::new("request_harness.claude_code", "Claude Code")
             }
+            RequestHarness::Dsh => LocalizedText::new("request_harness.dsh", "dsh"),
+            RequestHarness::OpenCode => LocalizedText::new("request_harness.opencode", "opencode"),
+            RequestHarness::Pi => LocalizedText::new("request_harness.pi", "pi"),
+            RequestHarness::ZCode => LocalizedText::new("request_harness.zcode", "ZCode"),
+            RequestHarness::WorkBuddy => {
+                LocalizedText::new("request_harness.workbuddy", "WorkBuddy")
+            }
             RequestHarness::Unknown => LocalizedText::new("request_harness.unknown", "Other tool"),
         }
     }
 
     /// The harness and its version named by a `User-Agent` value (the
-    /// fallback when the router token does not say): `claude-cli/2.1.302
-    /// (external, cli)` is Claude Code 2.1.302, `codex_cli_rs/0.162.0 (…)` and
-    /// `Codex Desktop/…` are Codex.
+    /// fallback when the router token does not say):
+    ///
+    /// | `User-Agent` | Harness, version |
+    /// |---|---|
+    /// | `claude-cli/2.1.302 (external, cli)` | Claude Code 2.1.302 |
+    /// | `codex_cli_rs/0.162.0 (…)`, `Codex Desktop/…` | Codex |
+    /// | `deepseek-harness/0.2.1-rc.2 (+https://…)` | dsh 0.2.1-rc.2 |
+    /// | `opencode/1.19.3 ai-sdk/…`, `opencode/latest/2.0.32/cli` | opencode 1.19.3, 2.0.32 |
+    /// | `pi (linux 6.1.0; x64)` | pi (it sends no version) |
+    /// | `ZCode/3.15.3 ai-sdk/…` | ZCode 3.15.3 |
+    /// | `CLI/2.161.0 WorkBuddy/2.161.0` | WorkBuddy 2.161.0 (its engine) |
     pub fn from_user_agent(user_agent: &str) -> Option<(RequestHarness, Option<String>)> {
-        let product = user_agent.trim().split([' ', '(']).next()?;
+        let ua = user_agent.trim();
+        // WorkBuddy's engine names itself after a generic first product.
+        if let Some(v) = ua.split_whitespace().find_map(|t| {
+            t.get(..10)
+                .filter(|p| p.eq_ignore_ascii_case("workbuddy/"))
+                .map(|_| &t[10..])
+        }) {
+            return Some((RequestHarness::WorkBuddy, clean_version(Some(v))));
+        }
+        let product = ua.split([' ', '(']).next()?;
         let (name, version) = match product.split_once('/') {
             Some((n, v)) => (n, Some(v)),
             None => (product, None),
         };
         let name = name.to_ascii_lowercase();
-        let harness = if name == "claude-cli" || name == "claude-code" {
-            RequestHarness::ClaudeCode
-        } else if name.starts_with("codex") {
-            RequestHarness::Codex
-        } else {
-            return None;
+        let harness = match name.as_str() {
+            "claude-cli" | "claude-code" => RequestHarness::ClaudeCode,
+            "deepseek-harness" => RequestHarness::Dsh,
+            "opencode" => RequestHarness::OpenCode,
+            "zcode" => RequestHarness::ZCode,
+            "pi" => RequestHarness::Pi,
+            n if n.starts_with("codex") => RequestHarness::Codex,
+            _ => return None,
         };
-        let version = version
-            .map(str::trim)
-            .filter(|v| !v.is_empty() && v.len() <= 64)
-            .map(str::to_owned);
-        Some((harness, version))
+        // `opencode/<channel>/<version>/<client>`: the segment that is a
+        // version.
+        let version = version.map(|v| match v.contains('/') {
+            true => v
+                .split('/')
+                .find(|s| s.starts_with(|c: char| c.is_ascii_digit()))
+                .unwrap_or(""),
+            false => v,
+        });
+        Some((harness, clean_version(version)))
     }
+}
+
+/// A version from a `User-Agent`: trimmed, non-empty, at most 64 characters.
+fn clean_version(v: Option<&str>) -> Option<String> {
+    v.map(str::trim)
+        .filter(|v| !v.is_empty() && v.len() <= 64)
+        .map(str::to_owned)
 }
 
 /// The API protocol a tool spoke to the router.

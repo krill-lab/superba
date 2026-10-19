@@ -56,6 +56,11 @@ client_on_host = "{client} · {host}"
 [request_harness]
 codex = "Codex"
 claude_code = "Claude Code"
+dsh = "dsh"
+opencode = "opencode"
+pi = "pi"
+zcode = "ZCode"
+workbuddy = "WorkBuddy"
 unknown = "Other tool"
 
 # The API protocol of a request (what the tool spoke, what went upstream).

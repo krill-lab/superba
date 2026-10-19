@@ -193,3 +193,8 @@ half_open = "Retrying"
 # Why a provider cannot serve Claude Code (Claude Code pages, router).
 [claude_routing]
 no_anthropic_endpoint = "This provider has no Anthropic endpoint; protocol conversion comes in 0.1.2"
+
+# Why a provider cannot serve a tool on the router's OpenAI ingress (/openai/v1; router, tools).
+[openai_routing]
+no_responses_endpoint = "This provider serves no OpenAI Responses endpoint through the router; protocol conversion comes in 0.1.2"
+no_chat_endpoint = "This provider has no Chat Completions endpoint; protocol conversion comes in 0.1.2"

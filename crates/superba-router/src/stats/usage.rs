@@ -10,6 +10,11 @@
 //! | `input_tokens_details.cache_write_tokens` (Codex ≥ 0.150), else `cache_creation_tokens` | cache write, subset |
 //! | top-level `cache_read_input_tokens` / `cache_creation_input_tokens` (Anthropic style) | additive: added to `input_tokens` |
 //! | `prompt_tokens` / `completion_tokens` (+ `prompt_tokens_details.cached_tokens`) | Chat Completions fallback |
+//! | `prompt_cache_hit_tokens` (DeepSeek), top-level `cached_tokens` (Moonshot) | Chat cache reads when `prompt_tokens_details` has none, subset of `prompt_tokens` |
+//!
+//! Chat Completions `prompt_tokens` include cached tokens (OpenAI semantics);
+//! a provider that reports more cached than prompt tokens counts them apart,
+//! and they are added.
 
 use serde::Deserialize;
 
@@ -73,27 +78,44 @@ pub(crate) struct UsageWire {
     completion_tokens: Option<u64>,
     prompt_tokens_details: Option<Details>,
     completion_tokens_details: Option<Details>,
+    prompt_cache_hit_tokens: Option<u64>,
+    cached_tokens: Option<u64>,
 }
 
 impl UsageWire {
     fn normalise(self) -> Option<Usage> {
+        let mut chat = false;
         let (input, output, in_details, out_details) = match (self.input_tokens, self.output_tokens)
         {
             (None, None) => match (self.prompt_tokens, self.completion_tokens) {
                 (None, None) => return None,
-                (i, o) => (
-                    i,
-                    o,
-                    self.prompt_tokens_details,
-                    self.completion_tokens_details,
-                ),
+                (i, o) => {
+                    chat = true;
+                    (
+                        i,
+                        o,
+                        self.prompt_tokens_details,
+                        self.completion_tokens_details,
+                    )
+                }
             },
             (i, o) => (i, o, self.input_tokens_details, self.output_tokens_details),
         };
         let in_details = in_details.unwrap_or_default();
+        let cached = match chat {
+            true => in_details
+                .cached_tokens
+                .or(self.prompt_cache_hit_tokens)
+                .or(self.cached_tokens),
+            false => in_details.cached_tokens,
+        };
+        let mut input = input.unwrap_or(0);
+        if chat && let Some(c) = cached.filter(|c| *c > input) {
+            input = input.saturating_add(c);
+        }
         let mut usage = Usage {
-            input: input.unwrap_or(0),
-            cached: in_details.cached_tokens,
+            input,
+            cached,
             cache_write: in_details
                 .cache_write_tokens
                 .or(in_details.cache_creation_tokens),

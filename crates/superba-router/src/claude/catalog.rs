@@ -102,6 +102,25 @@ impl Catalog {
         generation: &Arc<Generation>,
         index: usize,
     ) -> Option<Arc<Vec<Listed>>> {
+        self.lists_via(generation, index, "Claude Code", || {
+            fetch(generation, index)
+        })
+        .await
+    }
+
+    /// The list of member `index` read by `fetch` when none is fresh
+    /// (`what` names the ingress in the log).
+    pub async fn lists_via<F, Fut>(
+        &self,
+        generation: &Arc<Generation>,
+        index: usize,
+        what: &str,
+        fetch: F,
+    ) -> Option<Arc<Vec<Listed>>>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<Vec<Listed>, String>>,
+    {
         let id = generation.members[index].cfg.id.clone();
         let slot = lock(&self.slots).entry(id.clone()).or_default().clone();
         let mut entry = slot.lock().await;
@@ -111,10 +130,10 @@ impl Catalog {
                 return e.models.clone();
             }
         }
-        let models = match fetch(generation, index).await {
+        let models = match fetch().await {
             Ok(list) => Some(Arc::new(list)),
             Err(reason) => {
-                tracing::info!(member = %id, %reason, "Claude Code model list unavailable");
+                tracing::info!(member = %id, %reason, ingress = what, "model list unavailable");
                 None
             }
         };
@@ -128,7 +147,7 @@ impl Catalog {
 }
 
 /// `GET url` with `headers`, following pages; the models or why not.
-async fn get_list(
+pub(crate) async fn get_list(
     generation: &Generation,
     url: &Url,
     headers: &HeaderMap,

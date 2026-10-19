@@ -44,9 +44,16 @@ pub const CODEX_HOST_HEADER: &str = "x-superba-codex-host";
 /// into the request log; never forwarded.
 pub const HARNESS_HEADER: &str = "x-superba-harness";
 
-/// Request headers never forwarded to a member: codex's credential is replaced
-/// by the member's own key, and ChatGPT account routing belongs to PAT mode.
-const DROPPED_REQUEST: &[&str] = &["chatgpt-account-id", CODEX_HOST_HEADER, HARNESS_HEADER];
+/// Request headers never forwarded to a member: the client's credential
+/// (`Authorization`, and `x-api-key`, which WorkBuddy and ZCode also send) is
+/// replaced by the member's own key, and ChatGPT account routing belongs to
+/// PAT mode.
+const DROPPED_REQUEST: &[&str] = &[
+    "chatgpt-account-id",
+    "x-api-key",
+    CODEX_HOST_HEADER,
+    HARNESS_HEADER,
+];
 
 /// Turn routing token issued by one provider; meaningless to another.
 pub const TURN_STATE_HEADER: &str = "x-codex-turn-state";
@@ -381,11 +388,13 @@ impl Body for UpBody {
             .map(Body::size_hint)
             .unwrap_or_else(|| SizeHint::with_exact(0));
         if let Some(p) = &self.prefix {
+            // The upper bound first: `set_lower` refuses a value above the
+            // current upper bound (a replayed body has an exact 0 behind it).
             let n = p.len() as u64;
-            hint.set_lower(hint.lower() + n);
             if let Some(u) = hint.upper() {
                 hint.set_upper(u + n);
             }
+            hint.set_lower(hint.lower() + n);
         }
         hint
     }

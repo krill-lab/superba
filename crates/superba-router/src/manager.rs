@@ -461,7 +461,8 @@ impl RouterManager {
     /// (recording on, stats line off, no prices) when none is stored; only
     /// [`RouterManager::configure`] or a `config` with `stats` changes it. A
     /// `config` without `claude` keeps the stored Claude Code section for the
-    /// members it still has; `Some` (also an empty section) replaces it.
+    /// members it still has; `Some` (also an empty section) replaces it. The
+    /// OpenAI ingress's `openai` section is kept the same way.
     pub fn write_config(
         &self,
         config: &RouterConfig,
@@ -491,6 +492,14 @@ impl RouterManager {
             let ids: Vec<&str> = config.members.iter().map(|m| m.id.as_str()).collect();
             claude.retain_members(&ids);
             config.claude = Some(claude);
+        }
+        // The same for the OpenAI ingress's section.
+        if config.openai.is_none()
+            && let Some(mut openai) = stored.as_ref().and_then(|s| s.openai.clone())
+        {
+            let ids: Vec<&str> = config.members.iter().map(|m| m.id.as_str()).collect();
+            openai.retain_members(&ids);
+            config.openai = Some(openai);
         }
         if config.stats.is_none() {
             config.stats = Some(stored.and_then(|s| s.stats).unwrap_or_default());

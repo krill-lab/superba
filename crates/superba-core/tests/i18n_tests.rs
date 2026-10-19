@@ -311,6 +311,15 @@ fn claude_routing_reasons_have_complete_translations() {
 }
 
 #[test]
+fn openai_routing_reasons_have_complete_translations() {
+    let texts = vec![
+        superba_core::OpenAiIneligible::NoResponsesEndpoint.text(),
+        superba_core::OpenAiIneligible::NoChatEndpoint.text(),
+    ];
+    assert_catalog_contract("openai_routing.", &texts);
+}
+
+#[test]
 fn every_router_line_health_has_complete_translations() {
     let texts: Vec<_> = [
         RouterLineHealth::Healthy,
