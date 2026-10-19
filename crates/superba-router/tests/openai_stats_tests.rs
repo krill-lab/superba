@@ -65,6 +65,17 @@ fn bodies(up: &common::claude::Anthropic, path: &str) -> Vec<Value> {
 
 #[tokio::test]
 async fn successful_requests_explain_every_member_excluded_by_protocol() {
+    exclusions_respect_conversion(false).await;
+}
+
+#[tokio::test]
+async fn convertible_members_are_not_reported_as_excluded() {
+    exclusions_respect_conversion(true).await;
+}
+
+async fn exclusions_respect_conversion(enabled: bool) {
+    use superba_router::translate::{ir::Protocol, routing::Conversion};
+
     let up = anthropic(Arc::new(|s| {
         if s.path.ends_with("/chat/completions") {
             chat_ok()
@@ -73,33 +84,42 @@ async fn successful_requests_explain_every_member_excluded_by_protocol() {
         }
     }))
     .await;
-    let run = start_recording(
-        config(
-            vec![
-                compatible("responses", &up),
-                compatible("chat", &up),
-                compatible("neither", &up),
-                krill("both", &up),
-            ],
-            vec![
-                ("chat", chat_entry(false)),
-                ("neither", superba_router::openai::OpenAiMember::default()),
-            ],
-        ),
-        stats(vec![]),
-    )
-    .await;
+    let mut cfg = config(
+        vec![
+            compatible("responses", &up),
+            compatible("chat", &up),
+            compatible("neither", &up),
+            krill("both", &up),
+        ],
+        vec![
+            ("chat", chat_entry(false)),
+            ("neither", superba_router::openai::OpenAiMember::default()),
+        ],
+    );
+    if !enabled {
+        cfg.translation.disabled.extend([
+            Conversion {
+                from: Protocol::Chat,
+                to: Protocol::Responses,
+            },
+            Conversion {
+                from: Protocol::Responses,
+                to: Protocol::Chat,
+            },
+        ]);
+    }
+    let run = start_recording(cfg, stats(vec![])).await;
     for (path, body, expected, excluded) in [
         (
             "/openai/v1/responses",
             request_body("m", "history", json!({})),
-            "This provider serves no OpenAI Responses endpoint",
+            "This provider has no OpenAI Responses endpoint or enabled protocol conversion",
             ["chat", "neither"],
         ),
         (
             "/openai/v1/chat/completions",
             chat_body("m", "history", true),
-            "This provider has no Chat Completions endpoint",
+            "This provider has no Chat Completions endpoint or enabled protocol conversion",
             ["responses", "neither"],
         ),
     ] {
@@ -121,10 +141,19 @@ async fn successful_requests_explain_every_member_excluded_by_protocol() {
             .iter()
             .find(|l| l.starts_with("excluded providers: "))
             .unwrap();
+        let excluded = if enabled {
+            &excluded[1..]
+        } else {
+            &excluded[..]
+        };
         for id in excluded {
             assert!(reason.contains(&format!("({id}): {expected}")), "{reason}");
         }
         assert!(!reason.contains("(both)"));
+        if enabled {
+            assert!(!reason.contains("(chat)"), "{reason}");
+            assert!(!reason.contains("(responses)"), "{reason}");
+        }
         assert!(
             detail
                 .attempts

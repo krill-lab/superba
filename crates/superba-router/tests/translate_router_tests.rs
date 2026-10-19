@@ -190,6 +190,53 @@ integration!(gemini_responses, Gemini, Responses);
 integration!(gemini_chat, Gemini, Chat);
 
 #[tokio::test]
+async fn compressed_openai_requests_translate_after_private_fields_are_removed() {
+    use std::io::Write;
+
+    for client in [Protocol::Responses, Protocol::Chat] {
+        for upstream in Protocol::ALL.into_iter().filter(|p| *p != client) {
+            let up = anthropic(Arc::new(move |_| Fake::sse(vec![stream(upstream).into()]))).await;
+            let r = start(config(&up, upstream)).await;
+            let mut body = request(client, true);
+            body["dsh_session_log"] = json!({"events": ["private conversation"]});
+            body["dsh_future_field"] = json!("also private");
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder
+                .write_all(&serde_json::to_vec(&body).unwrap())
+                .unwrap();
+            let response = r
+                .http
+                .post(r.url(path(client, true)))
+                .bearer_auth(ROUTER_TOKEN)
+                .header("content-encoding", "gzip")
+                .body(encoder.finish().unwrap())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200, "{client:?}->{upstream:?}");
+            let answer = response.text().await.unwrap();
+            assert!(
+                answer.contains("call_a"),
+                "{client:?}->{upstream:?}: {answer}"
+            );
+            let seen = up.seen();
+            assert_eq!(seen.len(), 1);
+            assert!(!seen[0].headers.contains_key("content-encoding"));
+            assert_eq!(
+                seen[0].headers["content-length"],
+                seen[0].body.len().to_string()
+            );
+            let wire: Value = serde_json::from_slice(&seen[0].body).unwrap();
+            assert!(!wire.to_string().contains("private"));
+            let ir = translate::decode_request(upstream, &wire).unwrap();
+            assert_eq!(ir.messages[0].content, vec![Block::text("Hello")]);
+            r.handle.shutdown();
+        }
+    }
+}
+
+#[tokio::test]
 async fn native_gemini_is_byte_preserving_and_query_key_is_not_forwarded() {
     let body = " { \"contents\" : [{\"role\":\"user\",\"parts\":[{\"text\":\"hello\"}]}], \"futureField\":true } ";
     let answer = " { \"candidates\" : [] , \"futureAnswer\" : true } ";

@@ -232,7 +232,12 @@ pub(crate) fn note_excluded(
         .openai
         .order
         .iter()
-        .filter(|i| generation.openai.members[**i].bases(protocol).is_none())
+        .filter(|i| {
+            generation
+                .config
+                .upstream_protocol(&generation.members[**i].cfg.id, protocol.into())
+                .is_none()
+        })
         .map(|i| {
             let member = &generation.members[*i].cfg;
             format!("{} ({}): {reason}", member.name, member.id)
