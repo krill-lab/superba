@@ -378,7 +378,7 @@ impl Harness {
         }
     }
 
-    /// Find content below the ingress card by scrolling the left settings column.
+    /// Find content below the fold by scrolling the left settings column.
     pub fn until_scrolled(
         &mut self,
         mut show: impl FnMut(&mut egui::Ui, &Cx<'_>, &mut Vec<Action>),

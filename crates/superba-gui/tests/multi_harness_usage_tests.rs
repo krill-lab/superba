@@ -199,8 +199,10 @@ fn usage_filters_and_ingresses_fit_both_locales_and_window_sizes() {
                 f.rect,
                 f.scrolled
             );
-            assert!(f.has(&tr.t("router.ingress.title")));
-            assert!(f.has(&tr.t("router.ingress.openai")));
+            h.until_scrolled(
+                |ui, cx, out| router::show(ui, cx, &mut state, out),
+                |f| f.has(&tr.t("router.ingress.title")) && f.has(&tr.t("router.ingress.openai")),
+            );
         }
     }
 }

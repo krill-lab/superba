@@ -120,6 +120,38 @@ fn the_connection_page_offers_the_router_once_it_is_set_up() {
 }
 
 #[test]
+fn claude_members_heading_is_visible_before_scrolling() {
+    for locale in [Locale::ZhCn, Locale::En] {
+        let tr = Tr::new(locale);
+        for size in [[1280.0, 800.0], [960.0, 640.0]] {
+            for dark in [false, true] {
+                let service = fake();
+                service.set_claude_router(Some(url::Url::parse(URL).unwrap()), Some(claude_view()));
+                let mut h = Harness::new(size, locale, service, true);
+                if dark {
+                    h = h.dark();
+                }
+                let mut state = State::default();
+                let title = tr.t("router.claude.title");
+                let f = h.until(
+                    |ui, cx, out| router::show(ui, cx, &mut state, out),
+                    |f| f.has(&title),
+                );
+                let (_, rect, clip) = f
+                    .clipped_texts
+                    .iter()
+                    .find(|(text, _, _)| text == &title)
+                    .unwrap();
+                assert!(
+                    clip.contains_rect(*rect) && f.rect.contains_rect(*rect),
+                    "{locale:?} {size:?} dark={dark}: Claude heading {rect:?} clipped by {clip:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn converted_members_show_the_connection_method() {
     for locale in [Locale::ZhCn, Locale::En] {
         let tr = Tr::new(locale);

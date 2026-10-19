@@ -29,9 +29,9 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         scroll_column(ui, ("router-settings-col", i), |ui| {
             ui.spacing_mut().item_spacing.y = 6.0;
             if i == 0 {
-                super::ingress::show(ui, cx, state);
-                section_gap(ui, cx);
                 view::router_column(ui, cx, state, out);
+                section_gap(ui, cx);
+                super::ingress::show(ui, cx, state);
                 section_gap(ui, cx);
                 prices::section(ui, cx, state);
             } else {
