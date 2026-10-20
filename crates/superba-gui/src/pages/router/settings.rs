@@ -150,6 +150,7 @@ fn stats_line_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     if !mode(cx).is_router() {
         // Why switching it on changes nothing yet, before the switch.
         crate::pages::note(ui, cx, Status::Warn, cx.tr.t("stats_line.needs_router"));
+        ui.add_space(space::S);
     }
     crate::pages::superba::row(ui, cx, &cx.tr.t("stats_line.enabled"), &desc, false, |ui| {
         let mut on = stats.line.enabled;

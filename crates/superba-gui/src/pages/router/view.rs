@@ -21,6 +21,7 @@ use crate::pages::{Action, Cx, divider, error_text, kv, note, section, section_w
 /// column is `kv`'s (user bug 25: a hard-coded 128 px indent put 安装并启动
 /// 6 px left of the value column).
 fn value_row(ui: &mut Ui, id: &str, gap: f32, add: impl FnOnce(&mut Ui)) {
+    // Not tokens: the label width and gap of `kv`, whose value column this is.
     let label_w = (ui.available_width() * 0.3).clamp(90.0, 128.0);
     FormRow::default()
         .label_width(label_w)
@@ -385,6 +386,7 @@ fn add_member(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, snapshot: &model::Sna
             Dropdown::new("router-add-member")
                 .label(cx.tr.t("router.members.candidate"))
                 .selected_text(selected)
+                // Not a token: a provider name fits in 320 pt; wider reads as a text field.
                 .fixed_width((ui.available_width() - add_w).clamp(0.0, 320.0))
                 .show_ui(ui, |ui| {
                     for (i, c) in snapshot.candidates.iter().enumerate() {

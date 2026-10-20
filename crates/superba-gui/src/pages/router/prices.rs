@@ -475,8 +475,12 @@ pub fn section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             && valid.is_none()
             && !t.trim().is_empty()
         {
-            // Under the row being edited, before the next provider.
-            ui.label(Text::caption(cx.tr.t("prices.invalid"), cx.pal).color(cx.pal.red));
+            // Under the row being edited, before the next provider, at the
+            // cells' left padding (under the provider's name).
+            ui.horizontal(|ui| {
+                ui.add_space(space::M);
+                ui.label(Text::caption(cx.tr.t("prices.invalid"), cx.pal).color(cx.pal.red));
+            });
         }
         if focus {
             state.prefs.prices.focus = false;
@@ -653,6 +657,8 @@ pub(super) fn table_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, close: &
             table.header(ui, &headers.map(|h| cx.tr.t(h)));
             egui::ScrollArea::vertical()
                 .id_salt("router-price-table")
+                // Not a token: the rows scroll under the pinned title, header and
+                // 关闭 so the dialog fits a 640 pt window.
                 .max_height(320.0)
                 .show(ui, |ui| {
                     for (i, row) in rows.iter().enumerate() {

@@ -197,14 +197,18 @@ fn translation(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     }
     let conversions = state.snapshot.as_ref().and_then(|s| s.translation.clone());
     let Some(conversions) = conversions else {
-        FormRow::new(Text::small(cx.tr.t("router.ingress.translation"), cx.pal))
-            .label_width(0.0)
-            .show(ui, |ui| {
-                ui.label(Text::caption(
-                    cx.tr.t("router.ingress.translation_unknown"),
-                    cx.pal,
-                ));
-            });
+        // The disclosure's label (13 pt medium, muted) and why it cannot open.
+        FormRow::new(
+            Text::small(cx.tr.t("router.ingress.translation"), cx.pal)
+                .font(font(text::SMALL, Weight::Medium)),
+        )
+        .label_width(0.0)
+        .show(ui, |ui| {
+            ui.label(
+                Text::small(cx.tr.t("router.ingress.translation_unknown"), cx.pal)
+                    .color(cx.pal.text_subtle),
+            );
+        });
         return;
     };
     let enabled = conversions.iter().filter(|c| c.enabled).count();
@@ -240,7 +244,24 @@ fn conversion_matrix(
     headers.extend(to.iter().map(|p| cx.tr.text(&p.text())));
     let mut weights = vec![1.4];
     weights.extend(to.iter().map(|_| 1.0));
-    let table = Table::new(&weights);
+    // Every column at least as wide as its header ("Anthropic Messages" ran
+    // into "Gemini" at 960 pt) and the first as its row names; the rest is shared.
+    let width = |text: &str, f: egui::FontId| {
+        ui.painter()
+            .layout_no_wrap(text.to_owned(), f, egui::Color32::PLACEHOLDER)
+            .size()
+            .x
+    };
+    let caption = font(text::CAPTION, Weight::Medium);
+    let mut min_widths: Vec<f32> = headers
+        .iter()
+        .map(|h| width(h, caption.clone()) + space::M)
+        .collect();
+    min_widths[0] = from
+        .iter()
+        .map(|p| width(&cx.tr.text(&p.text()), font(text::SMALL, Weight::Regular)) + space::M)
+        .fold(min_widths[0], f32::max);
+    let table = Table::new(&weights).min_widths(&min_widths);
     table.header(ui, &headers);
     let enabled = state.op.is_none() && state.error.is_none();
     for (r, client) in from.iter().enumerate() {

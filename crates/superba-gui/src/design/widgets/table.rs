@@ -73,8 +73,10 @@ impl Table {
         self.columns(rect, 12.0)
     }
 
-    /// Header row with caption labels ([`size::TABLE_HEADER`] high). Screen
-    /// readers see each non-empty label as a column header.
+    /// Header row with caption labels ([`size::TABLE_HEADER`] high). A label
+    /// wider than its column is shortened with "…" (full text on hover), so it
+    /// never runs into the next column. Screen readers see each non-empty label
+    /// as a column header.
     pub fn header(&self, ui: &mut Ui, labels: &[String]) {
         let pal = Palette::of(ui.ctx());
         let (rect, response) = ui.allocate_exact_size(
@@ -83,21 +85,35 @@ impl Table {
         );
         let a11y = crate::design::a11y::enabled(ui);
         for (i, (col, label)) in self.columns(rect, 12.0).iter().zip(labels).enumerate() {
-            let (x, align) = if self.is_right(i) {
-                (col.max.x, egui::Align2::RIGHT_CENTER)
-            } else {
-                (col.min.x, egui::Align2::LEFT_CENTER)
-            };
-            ui.painter().text(
-                pos2(x, col.center().y),
-                align,
+            if label.is_empty() {
+                continue;
+            }
+            let galley = super::log_table::elided(
+                ui,
                 label,
                 font(text::CAPTION, Weight::Medium),
                 pal.text_subtle,
+                // A column sized to its label must not shorten it by rounding.
+                col.width() + 1.0,
             );
-            if a11y && !label.is_empty() {
-                ui.interact(*col, response.id.with(("header", i)), Sense::hover())
-                    .widget_info(|| WidgetInfo::labeled(egui::Role::ColumnHeader, true, label));
+            let size = galley.size();
+            let x = if self.is_right(i) {
+                col.max.x - size.x
+            } else {
+                col.min.x
+            };
+            let elided = galley.elided;
+            ui.painter().galley(
+                pos2(x, col.center().y - size.y / 2.0),
+                galley,
+                pal.text_subtle,
+            );
+            if a11y || elided {
+                let cell = ui.interact(*col, response.id.with(("header", i)), Sense::hover());
+                cell.widget_info(|| WidgetInfo::labeled(egui::Role::ColumnHeader, true, label));
+                if elided {
+                    cell.on_hover_text(label);
+                }
             }
         }
         ui.painter().hline(
