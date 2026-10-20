@@ -68,7 +68,7 @@ def fake_login():
 def select_official(y):
     def act(s):
         shoot.focus(s)
-        s.input.click(160, y)
+        s.input.click(380, y)
         time.sleep(1.5)
         s.input.park()
     return act

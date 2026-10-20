@@ -11,6 +11,8 @@
 use egui::Ui;
 use superba_core::{AuthMode, AuthShape, ProfileId, RouterView, Timestamp};
 
+use crate::design::fonts::{Weight, font};
+use crate::design::tokens::text;
 use crate::design::widgets::{Button, FormRow, Status, StatusDot, Text, Toggle};
 use crate::pages::{Action, Cx};
 use crate::runtime::ReadTask;
@@ -116,15 +118,22 @@ pub(crate) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut MixedLogin, out: &mut V
     let config = overview.and_then(|o| o.config.as_ref());
     let stash = overview.and_then(|o| o.login_stash.as_ref());
     let label = cx.tr.t("providers.mixed.toggle");
-    let changed = FormRow::new(Text::small(&label, cx.pal))
-        .hint(Text::small(cx.tr.t("providers.mixed.hint"), cx.pal))
+    let changed = FormRow::new(Text::small(&label, cx.pal).font(font(text::SMALL, Weight::Medium)))
+        .label_width(0.0)
         .right()
-        .wrap()
         .show(ui, |ui| {
             ui.add(Toggle::new(&mut on, &label).enabled(!cx.busy && state.task.is_none()))
                 .changed()
         })
         .inner;
+    // The help spans the whole width (a hint under the control column is
+    // squeezed at 960 px).
+    ui.add(
+        egui::Label::new(
+            Text::small(cx.tr.t("providers.mixed.hint"), cx.pal).color(cx.pal.text_subtle),
+        )
+        .wrap(),
+    );
     if changed {
         state.pending = Some(on);
         let service = cx.service.clone();
