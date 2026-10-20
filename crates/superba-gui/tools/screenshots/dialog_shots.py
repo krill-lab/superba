@@ -16,7 +16,8 @@ Shots, at every --sizes entry, dark and light, English and Chinese:
 - router-off-<size>-<theme>-<lang>: the dialog as it opens;
 - router-off-scrolled-...: after scrolling its body to the end (--scroll);
 - router-off-expanded-...: with the notes and the model group expanded
-  (--expand; only builds that have the grouped notices accept it);
+  (--expand; only builds that have the grouped notices accept it), and
+  router-off-expanded-scrolled-... scrolled to the end (--expand --scroll);
 - preview-...: the hot-switch preview overlay with the same notices
   (--preview; only builds that have the grouped notices).
 
@@ -141,6 +142,9 @@ def main():
                 if a.expand:
                     shot(a, inp, home, f"router-off-expanded-{tail}", size, theme, lang,
                          extra=["--expand", "1"])
+                if a.expand and a.scroll:
+                    shot(a, inp, home, f"router-off-expanded-scrolled-{tail}", size, theme, lang,
+                         extra=["--expand", "1"], after=scroll_body)
                 if a.preview:
                     shot(a, inp, home, f"preview-{tail}", size, theme, lang,
                          extra=["--scenario", "preview"])

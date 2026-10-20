@@ -166,7 +166,7 @@ pub fn dialog_body<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
             // A thin bar that stays visible while there is more to scroll.
             let scroll = &mut ui.spacing_mut().scroll;
             scroll.floating_allocated_width = space::S;
-            scroll.dormant_handle_opacity = 0.6;
+            scroll.dormant_handle_opacity = 0.4;
             ScrollArea::vertical()
                 .id_salt(slot.id.with("dialog-body"))
                 .max_height(max)
