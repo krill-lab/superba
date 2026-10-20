@@ -95,6 +95,68 @@ async fn saving_provider_line_order_rewrites_the_running_router() {
     assert!(w.calls().iter().any(|c| c.starts_with("router.rewrite")));
 }
 
+#[tokio::test]
+async fn disabling_a_provider_line_rewrites_the_running_router_without_it() {
+    let w = World::new();
+    let sw = w.switcher();
+    router_on(&sw).await;
+    let mut profile = sw
+        .profile_set()
+        .await
+        .unwrap()
+        .profile(&ProfileId::new("work"))
+        .unwrap()
+        .clone();
+    let site = superba_core::catalog::krill_site();
+    profile
+        .set_line_disabled(&site, &"overseas".into(), true)
+        .unwrap();
+    sw.save_profile(profile.clone(), None).await.unwrap();
+    let ids = |w: &World| -> Vec<String> {
+        w.router.written.lock().unwrap().last().unwrap().members[0]
+            .lines
+            .iter()
+            .map(|l| l.id.clone())
+            .collect()
+    };
+    assert!(!ids(&w).contains(&"overseas".to_owned()), "{:?}", ids(&w));
+    assert_eq!(ids(&w).len(), 2);
+    assert!(w.calls().iter().any(|c| c.starts_with("router.rewrite")));
+    // Enabling it again puts it back at its place in the order.
+    profile
+        .set_line_disabled(&site, &"overseas".into(), false)
+        .unwrap();
+    sw.save_profile(profile.clone(), None).await.unwrap();
+    assert_eq!(ids(&w).len(), 3);
+    assert_eq!(ids(&w)[0], "overseas");
+}
+
+#[tokio::test]
+async fn a_direct_switch_never_uses_a_disabled_line() {
+    let w = World::new();
+    let sw = w.switcher();
+    let mut profile = sw
+        .profile_set()
+        .await
+        .unwrap()
+        .profile(&ProfileId::new("work"))
+        .unwrap()
+        .clone();
+    let site = superba_core::catalog::krill_site();
+    profile
+        .set_line_disabled(&site, &"cdn".into(), true)
+        .unwrap();
+    sw.save_profile(profile, None).await.unwrap();
+    let mut request = req("work");
+    request.intent = SwitchIntent::Profile {
+        profile_id: "work".into(),
+        line_id: Some("cdn".into()),
+        auth_mode: None,
+    };
+    let err = sw.plan(request).await.unwrap_err();
+    assert!(err.to_string().contains("disabled"), "{err}");
+}
+
 fn tuning() -> Tuning {
     Tuning {
         poll: Duration::from_millis(10),

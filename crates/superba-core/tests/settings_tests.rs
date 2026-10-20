@@ -888,3 +888,26 @@ fn router_model_list_defaults_to_codex_and_ignores_the_alpha7_prefix_flag() {
     }
     assert_eq!(CatalogMode::parse("provider"), None);
 }
+
+#[test]
+fn disabled_lines_keep_their_place_but_leave_the_enabled_order() {
+    let site = superba_core::catalog::krill_site();
+    let mut p = profile_with(AuthMode::ApiKey);
+    let order = p.ordered_line_ids(&site);
+    let off = order[0].clone();
+    p.set_line_disabled(&site, &off, true).unwrap();
+    assert!(p.is_line_disabled(&off));
+    assert_eq!(p.ordered_line_ids(&site), order, "the order is unchanged");
+    assert_eq!(p.enabled_line_ids(&site), order[1..]);
+    assert!(
+        p.prefer_line(&site, off.clone()).is_err(),
+        "never preferred"
+    );
+    p.set_line_disabled(&site, &order[1], true).unwrap();
+    let before = p.clone();
+    assert!(p.set_line_disabled(&site, &order[2], true).is_err());
+    assert_eq!(p, before, "the last enabled line stays");
+    assert!(p.set_line_disabled(&site, &"missing".into(), true).is_err());
+    p.set_line_disabled(&site, &off, false).unwrap();
+    assert_eq!(p.enabled_line_ids(&site), [off, order[2].clone()]);
+}

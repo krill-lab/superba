@@ -307,6 +307,7 @@ fn krill(id: &str, name: &str, line: Option<&str>) -> Profile {
         site_id: SiteId::new(catalog::KRILL_SITE_ID),
         line_id: line.map(LineId::new),
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         auth_mode: superba_core::AuthMode::Pat,
         auth: AuthChoice::Auto,
         key_ref: None,

@@ -27,6 +27,7 @@ fn profile_round_trip_preserves_optional_model_url_and_key_reference() {
         site_id: "compatible".into(),
         line_id: Some("primary".into()),
         backup_lines: vec!["backup".into()],
+        disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
         auth: AuthChoice::ApiKey,
         key_ref: Some(KeyRef::Env {
@@ -493,4 +494,20 @@ fn timestamps_serialize_as_signed_millisecond_integers() {
             json!(millis)
         );
     }
+}
+
+#[test]
+fn disabled_lines_round_trip_and_default_to_none() {
+    let mut profile: Profile = serde_json::from_value(json!({
+        "id":"k", "name":"K", "site_id":"krill", "auth_mode":"apikey",
+        "line_id":"overseas", "backup_lines":["cn_fast"]
+    }))
+    .unwrap();
+    assert!(profile.disabled_lines.is_empty(), "old profiles load");
+    let plain = serde_json::to_value(&profile).unwrap();
+    assert!(plain.get("disabled_lines").is_none(), "omitted when empty");
+    profile.disabled_lines.insert("cdn".into());
+    let encoded = json_round_trip!(Profile, profile);
+    assert_eq!(encoded["disabled_lines"], json!(["cdn"]));
+    assert_eq!(encoded["line_id"], "overseas", "the order is kept apart");
 }

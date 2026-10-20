@@ -287,6 +287,7 @@ fn krill_profile(line: LineId, auth: AuthMode) -> Profile {
         model: ModelDefaults::default(),
         auth: superba_core::AuthChoice::from_mode(auth),
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         codex_settings: Default::default(),
     }
 }

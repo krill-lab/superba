@@ -98,6 +98,7 @@ async fn add(args: &ProfileAddArgs, rt: &Runtime, out: &mut Output) -> Result {
         site_id: site.id.clone(),
         line_id: None,
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
         auth: AuthChoice::ApiKey,
         key_ref: args
@@ -131,6 +132,8 @@ async fn edit(args: &ProfileEditArgs, rt: &Runtime, out: &mut Output) -> Result 
     let nothing = args.name.is_none()
         && args.lines.is_empty()
         && !args.auto_line
+        && args.disable_lines.is_empty()
+        && args.enable_lines.is_empty()
         && args.auth.is_none()
         && args.model.is_none()
         && args.effort.is_none()
@@ -156,6 +159,17 @@ async fn edit(args: &ProfileEditArgs, rt: &Runtime, out: &mut Output) -> Result 
         profile.set_line_priority(std::iter::empty());
     } else if !args.lines.is_empty() {
         profile.set_line_priority(args.lines.iter().map(LineId::new));
+    }
+    if !args.disable_lines.is_empty() || !args.enable_lines.is_empty() {
+        // Enable first, so `--enable-line a --disable-line b` can swap the
+        // only enabled line.
+        let site = super::site(rt, out, profile.site_id.as_str()).await?;
+        for line in &args.enable_lines {
+            profile.set_line_disabled(&site, &LineId::new(line), false)?;
+        }
+        for line in &args.disable_lines {
+            profile.set_line_disabled(&site, &LineId::new(line), true)?;
+        }
     }
     if let Some(choice) = args.auth {
         profile.set_auth(choice.into());
@@ -261,7 +275,13 @@ fn row(profile: &Profile, selected: bool, out: &Output) -> Vec<String> {
         } else {
             lines
                 .iter()
-                .map(ToString::to_string)
+                .map(|l| {
+                    if profile.is_line_disabled(l) {
+                        format!("{l} ({})", out.label("cli.value.line_disabled"))
+                    } else {
+                        l.to_string()
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(" > ")
         },

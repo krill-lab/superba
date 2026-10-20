@@ -51,6 +51,7 @@ fn existing() -> (Site, Profile) {
         site_id: site.id.clone(),
         line_id: Some(LineId::new("default")),
         backup_lines: vec![LineId::new("backup")],
+        disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
         auth: AuthChoice::ApiKey,
         key_ref: Some(KeyRef::Keyring {

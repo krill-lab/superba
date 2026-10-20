@@ -56,6 +56,7 @@ impl World {
             site_id: site.id.clone(),
             line_id: None,
             backup_lines: Vec::new(),
+            disabled_lines: Default::default(),
             auth_mode: AuthMode::ApiKey,
             auth: AuthChoice::ApiKey,
             key_ref: None,
