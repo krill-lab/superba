@@ -287,24 +287,9 @@ fn router_actions_and_lower_settings_remain_reachable_when_narrow() {
             for text in [tr.t("router.banner.turn_on"), add] {
                 visible_text(&f, &text);
             }
-            assert!(
-                !f.texts
-                    .iter()
-                    .any(|(text, _)| text == &tr.t("stats_line.title")),
-                "Advanced starts closed"
-            );
-            let title = tr.t("router.advanced.title");
-            let f = h.until_scrolled(
-                |ui, cx, out| router::show(ui, cx, &mut state, out),
-                |f| {
-                    f.clipped_texts
-                        .iter()
-                        .any(|(text, rect, clip)| text == &title && clip.contains_rect(*rect))
-                },
-            );
-            h.click_text(&f, &title);
-            h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
-            for key in ["stats_line.title", "router.doctor.open"] {
+            // 「高级」 is a plain section (user bug 116); 诊断 sits under the
+            // status line.
+            for key in ["router.doctor.open", "stats_line.title"] {
                 let f = h.until_scrolled(
                     |ui, cx, out| router::show(ui, cx, &mut state, out),
                     |f| {

@@ -17,6 +17,7 @@ mode_label = "Router mode"
 title = "Router"
 
 [usage.tab]
+routing = "Routing"
 recent = "Recent requests"
 active = "Active requests"
 stats = "Statistics"
@@ -29,6 +30,7 @@ off_tip = "Codex writes every model request's usage into its session files (CODE
 settings = "Open Router"
 
 [usage.palette]
+open_routing = "Open the routing log"
 open_recent = "Open recent requests"
 open_active = "Open active requests"
 open_stats = "Open usage statistics"
@@ -169,6 +171,7 @@ close = "Close"
 hint = "Everything about the local router in one block: copy it into a support request (it contains no keys)."
 
 [requests]
+search_clear = "Clear search"
 search = "Search sessions, models, cache keys…"
 remote_note = "SSH hosts' requests are not listed: they do not go through the local router and their session files stay on the host. Requests a WSL distribution sends through the router name the distribution."
 total = "Total"
@@ -577,6 +580,7 @@ token_unknown = "Token status unknown"
 count_hint = "Local router records grouped by tool and request protocol; requests while recording is paused are excluded."
 translation = "Protocol conversion"
 translation_state = "Protocol conversion · {enabled}/{total} enabled"
+translation_count = "{enabled}/{total} enabled"
 translation_unknown = "Conversion settings unavailable. Configure the router first."
 translation_hint = "Client protocol → upstream protocol. Each change is saved and reloaded by a running router; a stopped router applies it on next start. Native endpoints take priority. These switches allow conversion; model readiness is shown in the member list."
 no_address = "Address not configured"
@@ -588,4 +592,40 @@ col.recent = "Last 24 h"
 
 [router.advanced]
 title = "Advanced"
-caption = "Reply stats line · Prices · Recording · Service"
+caption = "Reply stats line · Prices · Recording"
+
+[usage.routing]
+loading = "Reading the routing log…"
+empty = "No request went through the local router in this period. With the router on, each request is listed here with the member and line chosen, every failover and any protocol conversion."
+none_matching = "No request matches the filters."
+filter_label = "Show"
+count = "{n} requests · {failovers} failed over · {converted} converted"
+local = "Answered locally"
+local_count = "Side calls the router answered itself since it started: {n} ({routes})"
+local_tip = "ChatGPT backend side calls (plugins, usage, telemetry…) are answered by the router itself (x-superba-route: local), never sent to a member and not logged one by one. Counts by path:"
+converted = "{from} → {to}"
+failovers = "{n} line switches"
+fallback = "Fell back to another provider · {n} hops"
+
+[usage.routing.filter]
+all = "All"
+failover = "Failed over"
+failed = "Failed"
+
+[router.failover]
+title = "Failover and recovery"
+caption = "How a failing line is left, when it is tried again and how long a conversation stays on its line. Changes are saved at once and a running router reloads them; Codex needs no restart."
+unknown = "These settings are unavailable until the router is set up. Turn it on or add a member first."
+seconds = " s"
+minutes = " min"
+cooldown = "First cooldown"
+cooldown_hint = "How long a failed line is skipped; doubles on each further failure."
+max_cooldown = "Longest cooldown"
+max_cooldown_hint = "The cap of the doubling."
+statuses = "Fail over on these statuses"
+statuses_hint = "A chosen status is retried on the next line (or member) and counts against the line; the others are passed to the tool as they are. Connection errors, broken streams and edge interceptions always fail over."
+status = "{code}"
+sticky = "Conversation idle time"
+sticky_hint = "A conversation stays on its line; idle longer than this, its next request starts again from the preferred member."
+return = "Return to the preferred member"
+return_hint = "On: once the preferred member's line has recovered, a conversation that moved to a fallback member goes back on its next request. Off (default): it stays on the fallback until it has been idle, so it does not flap."

@@ -1,8 +1,8 @@
 #![allow(missing_docs)]
 //! Claude Code through the local router in the GUI (user request 79): the
 //! 本地路由 choice on 连接与模型 is offered once the router is set up and shows
-//! the router's address; the Router page lists Claude Code's providers with
-//! the reason one cannot serve it.
+//! the router's address and each provider's connection method; the Router
+//! page no longer has a Claude Code section of its own (user bug 117).
 
 mod a11y_harness;
 mod router_harness;
@@ -57,37 +57,28 @@ fn claude_view() -> RouterClaudeView {
     }
 }
 
+/// Claude Code has no section of its own on the Router page any more (user
+/// bug 117): its entry point is listed under 入口 and its providers, route and
+/// connection method are on its 连接与模型 page.
 #[test]
-fn the_router_page_lists_claude_codes_providers_with_their_reason() {
+fn the_router_page_has_no_separate_claude_code_section() {
     for locale in [Locale::ZhCn, Locale::En] {
         let tr = Tr::new(locale);
         let service = fake();
         service.set_claude_router(Some(url::Url::parse(URL).unwrap()), Some(claude_view()));
-        let mut h = Harness::new([1280.0, 900.0], locale, service.clone(), true);
+        let mut h = Harness::new([1280.0, 900.0], locale, service, true);
         let mut state = State::default();
-        let title = tr.t("router.claude.routed");
         let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| f.has(&title) && f.has("Plain"),
+            |f| f.has(&tr.t("recording.title")),
         );
-        assert!(f.has(URL), "{}", f.all_text());
-        assert!(f.has("Plain"), "{}", f.all_text());
-        assert!(f.has(&tr.t("router.claude.preferred")), "{}", f.all_text());
-        assert!(
-            f.has(&tr.t("router.claude.claude_only")),
-            "{}",
-            f.all_text()
-        );
-        assert!(f.has("https://api.krill-code.net"), "{}", f.all_text());
-        // The window chrome reduces the column's visible height. The last
-        // member's reason may be below the fold; it must remain reachable
-        // by scrolling the router column.
-        let reason = tr.text(&ClaudeIneligible::NoProtocolRoute.text());
-        h.scroll_at(f.find("Plain").unwrap().center(), egui::vec2(0.0, -160.0));
-        h.until(
-            |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| f.has(&reason),
-        );
+        for gone in [
+            tr.t("router.claude.title"),
+            tr.t("router.claude.routed"),
+            tr.t("router.claude.claude_only"),
+        ] {
+            assert!(!f.has(&gone), "{locale:?}: {gone}\n{}", f.all_text());
+        }
     }
 }
 
@@ -117,74 +108,6 @@ fn the_connection_page_offers_the_router_once_it_is_set_up() {
     let via = tr.f("claude.route.via", &[("url", &URL)]);
     let t = h.until("router address", |t| t.has_containing(&via));
     assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
-}
-
-#[test]
-fn router_controls_stay_visible_and_claude_members_are_reachable() {
-    for locale in [Locale::ZhCn, Locale::En] {
-        let tr = Tr::new(locale);
-        for size in [[1280.0, 800.0], [960.0, 640.0]] {
-            for dark in [false, true] {
-                let service = fake();
-                service.set_claude_router(Some(url::Url::parse(URL).unwrap()), Some(claude_view()));
-                let mut h = Harness::new(size, locale, service, true);
-                if dark {
-                    h = h.dark();
-                }
-                let mut state = State::default();
-                let title = tr.t("router.members.title");
-                let f = h.until(
-                    |ui, cx, out| router::show(ui, cx, &mut state, out),
-                    |f| f.has(&tr.t("router.members.title")),
-                );
-                let (_, rect, clip) = f
-                    .clipped_texts
-                    .iter()
-                    .find(|(text, _, _)| text == &title)
-                    .unwrap();
-                assert!(
-                    clip.contains_rect(*rect) && f.rect.contains_rect(*rect),
-                    "{locale:?} {size:?} dark={dark}: Router heading {rect:?} clipped by {clip:?}"
-                );
-                // Font metrics and wrapped help text can put members below
-                // the fold in short windows; the column must keep them reachable.
-                let title = tr.t("router.claude.title");
-                h.until_scrolled(
-                    |ui, cx, out| router::show(ui, cx, &mut state, out),
-                    |f| {
-                        f.has("Plain")
-                            && f.clipped_texts.iter().any(|(text, rect, clip)| {
-                                text == &title && clip.contains_rect(*rect)
-                            })
-                    },
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn converted_members_show_the_connection_method() {
-    for locale in [Locale::ZhCn, Locale::En] {
-        let tr = Tr::new(locale);
-        let service = fake();
-        let mut view = claude_view();
-        view.members[1].ineligible = None;
-        view.members[1].translated = true;
-        service.set_claude_router(Some(url::Url::parse(URL).unwrap()), Some(view));
-        let mut h = Harness::new([1280.0, 1000.0], locale, service, true);
-        let mut state = State::default();
-        let label = tr.t("claude_routing.translated");
-        let f = h.until(
-            |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| f.has("Plain"),
-        );
-        h.scroll_at(f.find("Plain").unwrap().center(), egui::vec2(0.0, -160.0));
-        h.until(
-            |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| f.has(&label),
-        );
-    }
 }
 
 #[test]

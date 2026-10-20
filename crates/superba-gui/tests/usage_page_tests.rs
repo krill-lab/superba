@@ -41,7 +41,10 @@ fn usage_is_its_own_page_next_to_the_router() {
     // Deep links: `--page usage`, `--page router`.
     assert_eq!(superba_gui::args::parse_page("usage"), Some(Page::Usage));
     assert_eq!(superba_gui::args::parse_page("router"), Some(Page::Router));
-    assert_eq!(Tab::ALL, [Tab::Recent, Tab::Active, Tab::Stats]);
+    assert_eq!(
+        Tab::ALL,
+        [Tab::Recent, Tab::Routing, Tab::Active, Tab::Stats]
+    );
 }
 
 #[test]

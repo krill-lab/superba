@@ -42,6 +42,11 @@ pub trait RouterBackend: Send + Sync {
             ))
         })
     }
+    /// Persist the failover and recovery rules and reload a running router.
+    fn set_failover(&self, failover: superba_core::RouterFailover) -> BoxFut<()> {
+        let _ = failover;
+        Box::pin(async { Err(Error::not_implemented("router failover settings")) })
+    }
     /// Reorder the members (profile ids in the new priority order).
     fn set_order(&self, ids: Vec<String>) -> BoxFut<()>;
     /// Add a profile as a member (the service copies its key for the router).
@@ -337,6 +342,7 @@ pub fn live(status: &RouterStatus, members: &[MemberView]) -> Live {
             })
             .collect(),
         local: status.local.view(),
+        local_answers: status.local_answers.clone(),
     }
 }
 
@@ -442,6 +448,7 @@ impl RouterBackend for SystemRouter {
                 port: view.port,
                 token_ready: view.token_ready,
                 translation: view.translation,
+                failover: view.failover,
                 recording: view.stats.clone(),
                 network_exe: this.network_exe.clone(),
                 claude: view.claude.clone(),
@@ -460,6 +467,11 @@ impl RouterBackend for SystemRouter {
     fn set_conversion(&self, conversion: superba_core::RouterConversion) -> BoxFut<()> {
         let service = self.service.clone();
         Box::pin(async move { service.router_set_conversion(conversion).await.map(|_| ()) })
+    }
+
+    fn set_failover(&self, failover: superba_core::RouterFailover) -> BoxFut<()> {
+        let service = self.service.clone();
+        Box::pin(async move { service.router_set_failover(failover).await.map(|_| ()) })
     }
 
     fn add_member(&self, candidate: Candidate) -> BoxFut<()> {

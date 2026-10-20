@@ -398,8 +398,67 @@ def write_usage(data_dir, now_ms, upstream):
     conn.executemany(
         f"INSERT INTO requests ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
         [tuple(r[c] for c in cols) for r in rows])
+    for r in routing_rows(now_ms, upstream):
+        cols = list(r.keys())
+        conn.execute(
+            f"INSERT INTO requests ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
+            tuple(r[c] for c in cols))
     conn.commit()
     conn.close()
+
+
+def routing_rows(now_ms, upstream):
+    """Three recent requests for the Usage page's 路由 tab (user bug 116): a
+    Claude Code request converted from Anthropic Messages to the Responses API
+    that failed over twice (Krill's China Express 429, Overseas 502) and was
+    answered by Example API; a Codex request that switched lines within Krill;
+    and one every line refused."""
+    def attempt(member, line, status, outcome, ms, upstream_protocol="responses"):
+        return {"member_id": member, "line_name": line, "upstream_host": upstream,
+                "status": status, "outcome": outcome, "elapsed_ms": ms,
+                "upstream_protocol": upstream_protocol}
+
+    thread, _title, client, model, tier = SESSIONS[0]
+    common = {
+        "sent_ms": 2, "first_event_ms": None, "first_token_ms": None, "last_delta_ms": None,
+        "transport": "http", "originator": ORIGINATORS[client], "client": client,
+        "request_kind": "turn", "thread_source": "user", "thread_id": thread,
+        "prompt_cache_key": thread, "model": model, "upstream_model": model,
+        "response_model": model, "service_tier": None, "response_service_tier": "default",
+        "price_rev": "mock-1", "injected": 0, "stripped": 0, "log": json.dumps([]),
+        "upstream_host": upstream,
+    }
+    ok = {"status_kind": "ok", "status_code": None, "status_http": None, "http_status": 200,
+          "input_tokens": 42_000, "cached_tokens": 38_000, "cache_write_tokens": 0,
+          "output_tokens": 640, "reasoning_tokens": 120, "tps_milli": 92_000,
+          "cost_micros": 18_400}
+    return [
+        {**common, **ok, "started_ms": now_ms - 12_000, "ttfb_ms": 1_380, "duration_ms": 8_900,
+         "member_id": "example-api", "member_name": "Example API", "line_id": "default",
+         "line_name": None, "failovers": 2, "harness": "claude_code", "protocol": "messages",
+         "requested_model": "claude-sonnet-4-5", "turn_id": f"{thread[:8]}-route-1",
+         "attempts": json.dumps([
+             attempt("krill", "China Express", 429, "HTTP 429", 140),
+             attempt("krill", "Overseas", 502, "HTTP 502", 310),
+             attempt("example-api", None, 200, "answered", 930)])},
+        {**common, **ok, "started_ms": now_ms - 26_000, "ttfb_ms": 760, "duration_ms": 6_200,
+         "member_id": "krill", "member_name": "Krill", "line_id": "overseas",
+         "line_name": "Overseas", "failovers": 1, "turn_id": f"{thread[:8]}-route-2",
+         "attempts": json.dumps([
+             attempt("krill", "China Express", None, "connect error", 4_000),
+             attempt("krill", "Overseas", 200, "answered", 760)])},
+        {**common, "started_ms": now_ms - 33_000, "ttfb_ms": None, "duration_ms": 9_050,
+         "member_id": "krill", "member_name": "Krill", "line_id": None,
+         "line_name": "Overseas", "failovers": 2, "turn_id": f"{thread[:8]}-route-3",
+         "status_kind": "http", "status_code": "router_unavailable", "status_http": 503,
+         "http_status": 503, "input_tokens": None, "cached_tokens": None,
+         "cache_write_tokens": None, "output_tokens": None, "reasoning_tokens": None,
+         "tps_milli": None, "cost_micros": None,
+         "attempts": json.dumps([
+             attempt("krill", "China Express", 503, "HTTP 503", 220),
+             attempt("krill", "Overseas", None, "connect error", 4_000),
+             attempt("example-api", None, 504, "HTTP 504", 4_800)])},
+    ]
     db.chmod(0o600)
     return len(rows)
 

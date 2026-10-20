@@ -16,6 +16,7 @@ mode_label = "路由模式"
 title = "路由"
 
 [usage.tab]
+routing = "路由"
 recent = "最近请求"
 active = "活动请求"
 stats = "统计"
@@ -28,6 +29,7 @@ off_tip = "Codex 会把每次模型请求的用量写进会话记录（CODEX_HOM
 settings = "打开路由"
 
 [usage.palette]
+open_routing = "打开路由记录"
 open_recent = "打开最近请求"
 open_active = "打开活动请求"
 open_stats = "打开用量统计"
@@ -168,6 +170,7 @@ close = "关闭"
 hint = "本地路由的全部情况都在这一段里：复制后发给客服即可（不含任何 Key）。"
 
 [requests]
+search_clear = "清除搜索"
 search = "搜索会话、模型、缓存键…"
 remote_note = "SSH 主机的请求不在这里显示：它们不经过本地路由，会话记录也留在主机上。WSL 发行版经本机路由的请求会标出发行版。"
 total = "合计"
@@ -576,6 +579,7 @@ token_unknown = "令牌状态未知"
 count_hint = "按工具和请求协议统计本地路由记录；暂停记录期间的请求不计入。"
 translation = "协议转换"
 translation_state = "协议转换 · 已开启 {enabled}/{total} 个方向"
+translation_count = "已开启 {enabled}/{total} 个方向"
 translation_unknown = "暂时无法读取转换设置，请先配置路由。"
 translation_hint = "客户端协议 → 上游协议。修改后立即保存，运行中的路由会重新加载；已停止的路由在下次启动时应用。优先使用原生端点。开关仅允许转换，模型是否可用请看成员列表。"
 no_address = "尚未配置地址"
@@ -587,4 +591,40 @@ col.recent = "最近 24 小时"
 
 [router.advanced]
 title = "高级"
-caption = "回复统计行 · 价格 · 记录 · 后台服务"
+caption = "回复统计行 · 价格 · 记录"
+
+[usage.routing]
+loading = "正在读取路由记录…"
+empty = "这段时间没有经过本机路由的请求。路由开启后，每个请求在这里列出选中的成员与线路、每一次故障转移和协议转换。"
+none_matching = "没有符合筛选条件的请求。"
+filter_label = "显示"
+count = "{n} 个请求 · {failovers} 个故障转移 · {converted} 个协议转换"
+local = "本地应答"
+local_count = "路由启动以来自己应答的旁路调用：{n} 次（{routes}）"
+local_tip = "ChatGPT 后台的旁路调用（插件、用量、遥测等）由路由直接应答（x-superba-route: local），不发给任何成员，也不逐条记录。按路径计数："
+converted = "{from} → {to}"
+failovers = "线路切换 {n} 次"
+fallback = "换到后备供应商 · {n} 次"
+
+[usage.routing.filter]
+all = "全部"
+failover = "故障转移"
+failed = "失败"
+
+[router.failover]
+title = "故障转移与恢复"
+caption = "线路出错时怎样换线、多久后再试，会话在线路上停留多久。修改后立即保存，运行中的路由会重新加载，无需重启 Codex。"
+unknown = "暂时无法读取这些设置，请先开启路由或添加成员。"
+seconds = " 秒"
+minutes = " 分钟"
+cooldown = "首次冷却"
+cooldown_hint = "线路失败后暂停使用的时间；再次失败时翻倍。"
+max_cooldown = "最长冷却"
+max_cooldown_hint = "冷却翻倍的上限。"
+statuses = "这些状态码换线重试"
+statuses_hint = "选中的状态码会换到下一条线路（或下一个成员）重试，并计为线路故障；未选中的原样返回给工具。连接失败、流中断和边缘拦截总会换线。"
+status = "{code}"
+sticky = "会话停留时间"
+sticky_hint = "会话固定在一条线路上，闲置超过这个时间后，下次请求重新从首选成员开始。"
+return = "恢复后回到首选成员"
+return_hint = "开启：首选成员的线路恢复后，已转到后备成员的会话下次请求就回到首选成员。关闭（默认）：会话留在后备成员上，直到闲置超时，避免来回切换。"

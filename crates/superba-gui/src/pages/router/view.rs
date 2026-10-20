@@ -1,39 +1,21 @@
 //! The router's members in priority order with their line order and line
-//! details, the fixes when no member can carry traffic, Claude Code's members,
-//! and (in Advanced) the service, the router process and its recent events.
+//! details, the fixes when no member can carry traffic, and the service and
+//! router process under the status line.
 
 use egui::{Align, Layout, Ui};
 
-use super::model::{self, LineHealth, Live, MemberKind, MemberView, Mode};
+use super::model::{self, LineHealth, Live, MemberKind, MemberView};
 use super::{Op, State, mode};
 use crate::design::elide::Shape;
+use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
-use crate::design::tokens::{size, space};
+use crate::design::tokens::{size, space, text};
 use crate::design::widgets::value_chip::ValueChip;
 use crate::design::widgets::{
     Badge, Button, Disclosure, Dropdown, FormRow, IconButton, Status, StatusDot, Table, Text,
     link_button,
 };
-use crate::pages::{Action, Cx, divider, error_text, kv, note, section, section_with};
-
-/// A row of controls in the value column of the `kv` rows above it (the
-/// service's buttons, the live counters), wrapping when narrow. The label
-/// column is `kv`'s (user bug 25: a hard-coded 128 px indent put 安装并启动
-/// 6 px left of the value column).
-fn value_row(ui: &mut Ui, id: &str, gap: f32, add: impl FnOnce(&mut Ui)) {
-    // Not tokens: the label width and gap of `kv`, whose value column this is.
-    let label_w = (ui.available_width() * 0.3).clamp(90.0, 128.0);
-    FormRow::default()
-        .label_width(label_w)
-        .gap(6.0)
-        .height(size::CONTROL_SM)
-        .wrap()
-        .id_salt(id)
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            add(ui);
-        });
-}
+use crate::pages::{Action, Cx, divider, error_text, note, section};
 
 /// Width of `text` in `font`, for table columns sized to their content.
 fn text_width(ui: &Ui, text: &str, font: egui::FontId) -> f32 {
@@ -110,212 +92,208 @@ pub(super) fn members_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: 
     } else {
         super::eligibility::panel(ui, cx, state, out);
     }
-    Disclosure::new("router-member-rules", cx.tr.t("router.members.rules")).show(ui, |ui| {
-        ui.add(egui::Label::new(Text::small(cx.tr.t("router.members.help"), cx.pal)).wrap());
-        ui.add(egui::Label::new(Text::small(cx.tr.t("router.preference.recovery"), cx.pal)).wrap());
-        ui.add_space(space::XS);
-    });
-    if let Some(claude) = snapshot.as_ref().and_then(|s| s.claude.as_ref()) {
-        ui.add_space(space::XL);
-        claude_members(ui, cx, claude);
-    }
 }
 
-/// Maintenance controls keep their names and behavior in Advanced.
-pub(super) fn service_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
-    section(ui, cx, &cx.tr.t("router.service_label"), None);
-    if let Some(snapshot) = state.snapshot.clone() {
-        service_and_status(ui, cx, state, &snapshot, &mode(cx));
-        if let Ok(live) = &snapshot.live
-            && !live.events.is_empty()
-        {
-            ui.add_space(space::S);
-            events(ui, cx, live);
-        }
-    }
-}
-
-fn service_and_status(
-    ui: &mut Ui,
-    cx: &Cx<'_>,
-    state: &mut State,
-    snapshot: &model::Snapshot,
-    mode: &Mode,
-) {
+/// The service and the router process under the status line (user bug 116):
+/// one wrapped line of facts (the service's state and manager, the process,
+/// its address, version and counters) and one of small actions (install or
+/// reinstall, restart, 诊断, uninstall), indented to the status text. The
+/// actions keep their names (e2e drivers and screen readers).
+pub(super) fn service_strip(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+    let Some(snapshot) = state.snapshot.clone() else {
+        return;
+    };
+    let mode = mode(cx);
     let busy = state.op.as_ref().map(|(op, _)| *op);
-    // Service.
-    kv(
-        ui,
-        cx,
-        &cx.tr.t("router.service.state"),
-        |ui| match &snapshot.service {
-            Some(s) => {
-                let (status, key) = match (s.installed, s.running) {
-                    (false, _) => (Status::Idle, "router.service.not_installed"),
-                    (true, Some(true)) => (Status::Ok, "router.service.running"),
-                    (true, Some(false)) => (Status::Error, "router.service.stopped"),
-                    (true, None) => (Status::Warn, "router.service.installed"),
-                };
-                ui.add(Badge::new(cx.tr.t(key)).status(status));
-                let mut tip = vec![s.backend.clone()];
-                if let Some(pid) = s.pid {
-                    tip.push(format!("pid {pid}"));
+    // The status dot (8 pt and its margin) and the gap after it.
+    let indent = 10.0 + space::S;
+    let caption = |ui: &mut Ui, key: &str| {
+        ui.label(
+            Text::caption(cx.tr.t(key), cx.pal)
+                .font(font(text::CAPTION, Weight::Medium))
+                .color(cx.pal.text_subtle),
+        );
+    };
+    // Indented to the status text, also where a narrow window wraps the facts.
+    ui.horizontal_top(|ui| {
+        ui.add_space(indent - ui.spacing().item_spacing.x);
+        ui.vertical(|ui| {
+            ui.horizontal_wrapped(|ui| {
+                // Each fact is one unit: the strip wraps between them, never inside one.
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.spacing_mut().item_spacing.x = space::S;
+                caption(ui, "router.service_label");
+                match &snapshot.service {
+                    Some(s) => {
+                        let (status, key) = match (s.installed, s.running) {
+                            (false, _) => (Status::Idle, "router.service.not_installed"),
+                            (true, Some(true)) => (Status::Ok, "router.service.running"),
+                            (true, Some(false)) => (Status::Error, "router.service.stopped"),
+                            (true, None) => (Status::Warn, "router.service.installed"),
+                        };
+                        let mut tip = vec![s.backend.clone()];
+                        if let Some(pid) = s.pid {
+                            tip.push(format!("pid {pid}"));
+                        }
+                        if let Some(detail) = &s.detail {
+                            tip.push(detail.clone());
+                        }
+                        let tip = tip.join(" · ");
+                        ui.add(Badge::new(cx.tr.t(key)).status(status))
+                            .on_hover_text(&tip);
+                        ui.label(Text::small(&s.backend, cx.pal))
+                            .on_hover_text(&tip);
+                    }
+                    None => {
+                        ui.label(Text::small(cx.tr.t("router.service.none"), cx.pal));
+                    }
                 }
-                if let Some(detail) = &s.detail {
-                    tip.push(detail.clone());
+                ui.add_space(space::S);
+                caption(ui, "router.process");
+                match &snapshot.live {
+                    Ok(live) => {
+                        ui.add(Badge::new(cx.tr.t("router.live.up")).status(Status::Ok));
+                        // An address: monospace.
+                        ui.label(Text::mono_muted(&live.listen, cx.pal));
+                        ui.label(Text::small(format!("v{}", live.version), cx.pal));
+                        for (key, value) in live_counters(live) {
+                            let mut job = egui::text::LayoutJob::default();
+                            job.append(
+                                &cx.tr.t(key),
+                                0.0,
+                                egui::TextFormat::simple(
+                                    font(text::CAPTION, Weight::Medium),
+                                    cx.pal.text_subtle,
+                                ),
+                            );
+                            job.append(
+                                &value,
+                                space::XS,
+                                egui::TextFormat::simple(
+                                    font(text::SMALL, Weight::Regular),
+                                    cx.pal.text,
+                                ),
+                            );
+                            // Each counter is one unit: a narrow window wraps between
+                            // them, never inside one.
+                            ui.add(egui::Label::new(job).extend());
+                        }
+                    }
+                    Err(reason) => {
+                        let status = if mode.is_router() {
+                            Status::Error
+                        } else {
+                            Status::Idle
+                        };
+                        ui.add(Badge::new(cx.tr.t("router.live.down")).status(status))
+                            .on_hover_text(reason);
+                    }
                 }
-                ui.label(Text::small(&s.backend, cx.pal))
-                    .on_hover_text(tip.join(" · "));
-            }
-            None => {
-                ui.label(Text::small(cx.tr.t("router.service.none"), cx.pal));
-            }
-        },
-    );
-    if let Some(s) = &snapshot.service {
-        value_row(ui, "router-service-actions", space::XS, |ui| {
-            let label = if s.installed {
-                "router.service.reinstall"
-            } else {
-                "router.service.install"
-            };
-            if ui
-                .add(
-                    Button::ghost(cx.tr.t(label))
-                        .small()
-                        .loading(busy == Some(Op::Install))
-                        .enabled(busy.is_none() && !snapshot.members.is_empty()),
-                )
-                .on_hover_text(cx.tr.t("router.service.install_hint"))
-                // egui shows no hover text on disabled widgets.
-                .on_disabled_hover_text(cx.tr.t("router.needs_member"))
-                .clicked()
-            {
-                state.start(cx, Op::Install, |b| b.install());
-            }
-            if s.installed
-                && ui
+            });
+            ui.horizontal_wrapped(|ui| {
+                // Each fact is one unit: the strip wraps between them, never inside one.
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.spacing_mut().item_spacing.x = space::XS;
+                if let Some(s) = &snapshot.service {
+                    let label = if s.installed {
+                        "router.service.reinstall"
+                    } else {
+                        "router.service.install"
+                    };
+                    if ui
+                        .add(
+                            Button::ghost(cx.tr.t(label))
+                                .small()
+                                .loading(busy == Some(Op::Install))
+                                .enabled(busy.is_none() && !snapshot.members.is_empty()),
+                        )
+                        .on_hover_text(cx.tr.t("router.service.install_hint"))
+                        // egui shows no hover text on disabled widgets.
+                        .on_disabled_hover_text(cx.tr.t("router.needs_member"))
+                        .clicked()
+                    {
+                        state.start(cx, Op::Install, |b| b.install());
+                    }
+                    if s.installed
+                        && ui
+                            .add(
+                                Button::ghost(cx.tr.t("router.service.restart"))
+                                    .small()
+                                    .loading(busy == Some(Op::Restart))
+                                    .enabled(busy.is_none()),
+                            )
+                            .clicked()
+                    {
+                        state.start(cx, Op::Restart, |b| b.restart());
+                    }
+                }
+                if ui
                     .add(
-                        Button::ghost(cx.tr.t("router.service.restart"))
+                        Button::ghost(cx.tr.t("router.doctor.open"))
+                            .icon(Icon::Diagnostics)
                             .small()
-                            .loading(busy == Some(Op::Restart))
-                            .enabled(busy.is_none()),
+                            .loading(state.doctor.loading()),
                     )
+                    .on_hover_text(cx.tr.t("router.doctor.hint"))
                     .clicked()
-            {
-                state.start(cx, Op::Restart, |b| b.restart());
-            }
-            if ui
-                .add(
-                    Button::ghost(cx.tr.t("router.doctor.open"))
-                        .icon(Icon::Diagnostics)
-                        .small()
-                        .loading(state.doctor.loading()),
-                )
-                .on_hover_text(cx.tr.t("router.doctor.hint"))
-                .clicked()
-            {
-                super::doctor::open(state, cx);
-            }
-            if s.installed
-                && ui
-                    .add(
-                        Button::ghost(cx.tr.t("router.service.uninstall"))
-                            .small()
-                            .loading(busy == Some(Op::Uninstall))
-                            .enabled(busy.is_none() && !mode.is_router()),
-                    )
-                    .on_hover_text(cx.tr.t("router.service.uninstall_hint"))
-                    .on_disabled_hover_text(cx.tr.t("router.service.uninstall_hint"))
-                    .clicked()
-            {
-                state.start(cx, Op::Uninstall, |b| b.uninstall());
-            }
+                {
+                    super::doctor::open(state, cx);
+                }
+                if let Some(s) = &snapshot.service
+                    && s.installed
+                    && ui
+                        .add(
+                            Button::ghost(cx.tr.t("router.service.uninstall"))
+                                .small()
+                                .loading(busy == Some(Op::Uninstall))
+                                .enabled(busy.is_none() && !mode.is_router()),
+                        )
+                        .on_hover_text(cx.tr.t("router.service.uninstall_hint"))
+                        .on_disabled_hover_text(cx.tr.t("router.service.uninstall_hint"))
+                        .clicked()
+                {
+                    state.start(cx, Op::Uninstall, |b| b.uninstall());
+                }
+            });
         });
-    }
-    // Process.
-    kv(ui, cx, &cx.tr.t("router.process"), |ui| {
-        match &snapshot.live {
-            Ok(live) => {
-                ui.add(Badge::new(cx.tr.t("router.live.up")).status(Status::Ok));
-                // An address: monospace.
-                ui.label(Text::mono_muted(&live.listen, cx.pal));
-                ui.label(Text::small(format!("v{}", live.version), cx.pal));
-            }
-            Err(reason) => {
-                let status = if mode.is_router() {
-                    Status::Error
-                } else {
-                    Status::Idle
-                };
-                ui.add(Badge::new(cx.tr.t("router.live.down")).status(status))
-                    .on_hover_text(reason);
-            }
-        }
     });
-    if let Ok(live) = &snapshot.live {
-        let mut stats = vec![
-            ("router.live.uptime", model::duration_text(live.uptime_ms)),
-            (
-                "router.live.requests",
-                model::count_text(live.totals.requests),
-            ),
-            (
-                "router.live.active",
-                model::count_text(live.totals.active_requests),
-            ),
-            (
-                "router.live.failovers",
-                model::count_text(live.totals.failovers),
-            ),
-        ];
-        if live.totals.unavailable > 0 {
-            stats.push((
-                "router.live.unavailable",
-                model::count_text(live.totals.unavailable),
-            ));
-        }
+}
+
+/// The process's counters: uptime, requests, in flight, failovers, the
+/// unavailable answers (when any), pinned sessions and local capacity.
+fn live_counters(live: &Live) -> Vec<(&'static str, String)> {
+    let mut stats = vec![
+        ("router.live.uptime", model::duration_text(live.uptime_ms)),
+        (
+            "router.live.requests",
+            model::count_text(live.totals.requests),
+        ),
+        (
+            "router.live.active",
+            model::count_text(live.totals.active_requests),
+        ),
+        (
+            "router.live.failovers",
+            model::count_text(live.totals.failovers),
+        ),
+    ];
+    if live.totals.unavailable > 0 {
         stats.push((
-            "router.live.sessions",
-            live.totals.sticky_sessions.to_string(),
+            "router.live.unavailable",
+            model::count_text(live.totals.unavailable),
         ));
-        if live.local.max_concurrent > 0 {
-            stats.push((
-                "router.live.capacity",
-                format!("{} / {}", live.local.in_flight, live.local.max_concurrent),
-            ));
-        }
-        value_row(ui, "router-live-stats", space::S, |ui| {
-            // Each counter is one unit: a narrow column wraps between them,
-            // never between a counter's name and its value.
-            for (key, value) in stats {
-                let mut job = egui::text::LayoutJob::default();
-                job.append(
-                    &cx.tr.t(key),
-                    0.0,
-                    egui::TextFormat::simple(
-                        crate::design::fonts::font(
-                            crate::design::tokens::text::CAPTION,
-                            crate::design::fonts::Weight::Medium,
-                        ),
-                        cx.pal.text_subtle,
-                    ),
-                );
-                job.append(
-                    &value,
-                    space::XS,
-                    egui::TextFormat::simple(
-                        crate::design::fonts::font(
-                            crate::design::tokens::text::SMALL,
-                            crate::design::fonts::Weight::Regular,
-                        ),
-                        cx.pal.text,
-                    ),
-                );
-                ui.add(egui::Label::new(job).extend());
-            }
-        });
     }
+    stats.push((
+        "router.live.sessions",
+        live.totals.sticky_sessions.to_string(),
+    ));
+    if live.local.max_concurrent > 0 {
+        stats.push((
+            "router.live.capacity",
+            format!("{} / {}", live.local.in_flight, live.local.max_concurrent),
+        ));
+    }
+    stats
 }
 
 /// A recent local shortage: requests got 503 `local_router_busy` because this
@@ -421,70 +399,6 @@ fn add_member(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, snapshot: &model::Sna
         );
     }
     ui.add_space(space::XS);
-}
-
-/// Claude Code's providers on the router (its own first), each with its
-/// Anthropic endpoint or why it cannot serve Claude Code.
-fn claude_members(ui: &mut Ui, cx: &Cx<'_>, claude: &superba_core::RouterClaudeView) {
-    let (status, key) = if claude.routed {
-        (Status::Ok, "router.claude.routed")
-    } else {
-        (Status::Warn, "router.claude.pending")
-    };
-    section_with(
-        ui,
-        cx,
-        &cx.tr.t("router.claude.title"),
-        Some(&cx.tr.t("router.claude.help")),
-        |ui| {
-            ui.add(Badge::new(cx.tr.t(key)).status(status));
-        },
-    );
-    if let Some(url) = &claude.base_url {
-        FormRow::new(Text::small(cx.tr.t("router.claude.address"), cx.pal))
-            .label_width(0.0)
-            .show(ui, |ui| {
-                ui.add(
-                    ValueChip::new(url, Shape::Url)
-                        .plain()
-                        .size(crate::design::tokens::text::SMALL)
-                        .max_width(ui.available_width()),
-                );
-            });
-    }
-    divider(ui, cx);
-    for m in &claude.members {
-        ui.add_space(space::S);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = space::S;
-            let ok = m.ineligible.is_none();
-            ui.add(StatusDot::new(if ok { Status::Ok } else { Status::Idle }));
-            ui.label(Text::strong(&m.name, cx.pal));
-            if m.preferred {
-                ui.add(Badge::new(cx.tr.t("router.claude.preferred")).outline());
-            }
-            if m.claude_only {
-                ui.add(Badge::new(cx.tr.t("router.claude.claude_only")).outline());
-            }
-        });
-        indented(ui, |ui| {
-            if m.ineligible.is_none() && !m.translated {
-                let endpoint = m.endpoint.clone().unwrap_or_default();
-                ui.add(
-                    ValueChip::new(&endpoint, Shape::Url)
-                        .plain()
-                        .size(crate::design::tokens::text::SMALL)
-                        .max_width(ui.available_width()),
-                );
-            } else {
-                ui.add(
-                    egui::Label::new(Text::small(cx.tr.text(&m.connection_text()), cx.pal)).wrap(),
-                );
-            }
-        });
-        ui.add_space(space::S);
-        divider(ui, cx);
-    }
 }
 
 /// Where a member's second and later lines start: under its name, past the
@@ -782,61 +696,4 @@ fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&
         });
     }
     ui.add_space(space::XS);
-}
-
-/// The router's recent events (newest first, at most 30) as a table: when,
-/// what, which member / line, and the detail.
-fn events(ui: &mut Ui, cx: &Cx<'_>, live: &Live) {
-    let n = live.events.len().min(30);
-    Disclosure::new(
-        "router-events",
-        format!("{} ({n})", cx.tr.t("router.events.title")),
-    )
-    .show(ui, |ui| {
-        let headers = [
-            cx.tr.t("router.events.col.time"),
-            cx.tr.t("router.events.col.event"),
-            cx.tr.t("router.events.col.target"),
-            cx.tr.t("router.events.col.detail"),
-        ];
-        let table = Table::new(&[0.8, 1.4, 1.2, 1.6]);
-        table.header(ui, &headers);
-        let now_ms = superba_core::Timestamp::now().as_millis() as u64;
-        for (i, e) in live.events.iter().rev().take(30).enumerate() {
-            let target: Vec<&str> = [e.member.as_deref(), e.line.as_deref()]
-                .into_iter()
-                .flatten()
-                .collect();
-            table.row(ui, size::ROW, i + 1 == n, |ui, col| match col {
-                0 => {
-                    ui.label(Text::small(
-                        cx.tr.f(
-                            "router.events.ago",
-                            &[(
-                                "time",
-                                &model::duration_text(now_ms.saturating_sub(e.at_ms)),
-                            )],
-                        ),
-                        cx.pal,
-                    ));
-                }
-                1 => {
-                    ui.add(StatusDot::new(if e.severe {
-                        Status::Warn
-                    } else {
-                        Status::Idle
-                    }));
-                    ui.label(Text::small(cx.tr.t(e.kind_key), cx.pal).color(cx.pal.text));
-                }
-                2 => {
-                    ui.label(Text::small(target.join(" / "), cx.pal));
-                }
-                _ => {
-                    if let Some(d) = &e.detail {
-                        ui.label(Text::small(d, cx.pal)).on_hover_text(d);
-                    }
-                }
-            });
-        }
-    });
 }

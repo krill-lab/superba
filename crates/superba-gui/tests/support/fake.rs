@@ -1730,6 +1730,7 @@ impl SwitchService for FakeService {
         Ok(RouterView {
             settings: s.profiles.settings.router.clone(),
             translation: self.router_translation(),
+            failover: (!members.is_empty()).then(|| self.router_failover()),
             configured: !members.is_empty(),
             installed: s.router_installed,
             running: s.router_installed,
@@ -1760,6 +1761,13 @@ impl SwitchService for FakeService {
 
     async fn router_set_conversion(&self, conversion: RouterConversion) -> Result<RouterView> {
         self.edit_router_conversion(conversion).await
+    }
+
+    async fn router_set_failover(
+        &self,
+        failover: superba_core::RouterFailover,
+    ) -> Result<RouterView> {
+        self.edit_router_failover(failover).await
     }
 
     async fn router_install(&self, request: RouterInstallRequest) -> Result<RouterView> {

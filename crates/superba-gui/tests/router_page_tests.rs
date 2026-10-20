@@ -34,7 +34,8 @@ fn open_advanced(h: &mut Harness, state: &mut State, locale: Locale) {
                 .any(|(text, rect, clip)| text == &title && clip.contains_rect(*rect))
         },
     );
-    h.click_text(&frame, &title);
+    // 「高级」 is a plain section since user bug 116: in view is enough.
+    let _ = frame;
     h.settle(|ui, cx, out| router::show(ui, cx, state, out));
 }
 
@@ -486,25 +487,35 @@ fn the_price_table_in_use_can_be_viewed() {
 }
 
 #[test]
-fn service_buttons_remain_aligned_in_the_advanced_group() {
-    // User bug 25 stays fixed when maintenance moves into Advanced.
+fn service_facts_and_buttons_line_up_under_the_status_line() {
+    // User bug 25 stays fixed now that the service sits under the status line
+    // (user bug 116): its facts and its buttons start at the status text.
     for locale in [Locale::En, Locale::ZhCn] {
         let mut h = Harness::new([1280.0, 800.0], locale, fake(), true);
         let mut state = State::default();
-        open_advanced(&mut h, &mut state, locale);
         let tr = superba_gui::i18n::Tr::new(locale);
         let install = tr.t("router.service.install");
-        let f = h.until_scrolled(
+        let f = h.until(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
             |f| f.has(&install),
         );
-        // A small button's text starts 12 px into it; a status badge's 20 px
-        // (8 px padding and the dot): both rectangles start at the value column.
-        let button = f.find(&install).unwrap().min.x - 12.0;
-        let badge = f.find(&tr.t("router.service.not_installed")).unwrap().min.x - 20.0;
+        // A small button's text starts 12 px into it.
+        let button = f.find(&install).unwrap();
+        let caption = f.find(&tr.t("router.service_label")).unwrap();
         assert!(
-            (button - badge).abs() < 0.5,
-            "{locale:?}: button at {button}, value column at {badge}"
+            (button.min.x - 12.0 - caption.min.x).abs() < 0.5,
+            "{locale:?}: button at {}, facts at {}",
+            button.min.x - 12.0,
+            caption.min.x
+        );
+        assert!(
+            caption.max.y <= button.min.y,
+            "{locale:?}: facts above the buttons"
+        );
+        let members = f.find(&tr.t("router.members.title")).unwrap();
+        assert!(
+            button.max.y < members.min.y,
+            "{locale:?}: above the members"
         );
         assert_eq!(f.scroll_areas, 1, "one scroll area for all router settings");
     }

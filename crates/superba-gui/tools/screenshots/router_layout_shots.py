@@ -16,10 +16,9 @@ Two states (--states):
 For every state, size, theme and language one window is opened and shot at the
 top (`router-<state>-<size>-<theme>-<lang>.png`). With --details the expanders
 of the member section are opened by their visible text and shot again
-(`…-details.png`). With --advanced the window is scrolled to the end, the
-「高级」 / "Advanced" disclosure (the page's last line) is clicked and the
-expanded section is shot page by page (`…-adv1.png`, `…-adv2.png`, …) until
-the end of the page, where the router's event log is opened too; with
+(`…-details.png`). With --advanced the whole page is shot page by page from
+the top (`…-adv1.png`, `…-adv2.png`, …) until the end (「高级」 and 「协议转换」
+are plain sections since user bug 116, nothing is opened); with
 --edit-price the first price ratio's 编辑 is clicked on the way and an invalid
 value typed. Expanders and buttons are found on the screen with tesseract
 (eng + chi_sim), so the driver follows the layout instead of fixed coordinates.
@@ -181,19 +180,8 @@ def capture(s, args, name, theme, lang, size):
             grab(s, path, size)
             shots.append(path)
         if args.advanced:
-            s.input.scroll(content_x, size[1] - 80, 60)
-            s.input.park()
-            time.sleep(0.6)
-            # Collapsed, 「高级」 is the last line of the page: scrolled to the end,
-            # its header line (32 pt) sits above the column's bottom space (24 pt)
-            # and the card's bottom inset (14 pt). Its chevron is at the page's
-            # left edge (card padding 28 pt, 18 pt below 760 pt of content). OCR
-            # misreads the semibold heading, so the position is computed.
-            pad = 18 if size[0] - 220 < 760 else 28
-            x, y = 220 + pad + 8, size[1] - 14 - 24 - 16
-            s.input.click(x, y)
-            s.input.park()
-            time.sleep(0.8)
+            # 「高级」 is a plain section since user bug 116: nothing to open,
+            # the page is shot from the top down.
             # Pages of the expanded section: a notch (about 80 pt) less than the
             # column under the header.
             notches = int(os.environ.get("ROUTER_SHOTS_NOTCHES", "0")) or max(2, (size[1] - 200) // 80)

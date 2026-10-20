@@ -597,6 +597,15 @@ def overview_actions(size):
     return act
 
 
+def palette_go(query):
+    """Run the first palette entry matching `query` (a Usage tab, ...)."""
+    def act(s):
+        palette_action(query)(s)
+        s.input.key("Return")
+        time.sleep(1.5)
+    return act
+
+
 def wizard_action(query):
     """Open the setup wizard from the palette (a re-run with an existing provider)
     and go to its provider step."""
@@ -678,6 +687,9 @@ def main():
                     shots.append((f"{page}-{suffix}", page, theme, lang, 7.0, None, size))
                 shots.append((f"overview-actions-{suffix}", "overview", theme, lang, 7.0,
                               overview_actions(size), size))
+                # The Usage page's 路由 tab (user bug 116).
+                shots.append((f"usage-routing-{suffix}", "usage", theme, lang, 7.0,
+                              palette_go("routing"), size))
             shots.append((f"palette-dark-en{tail}", "overview", "dark", "en", 6.0,
                           palette_action("cdn"), size))
             shots.append((f"palette-light-zh{tail}", "overview", "light", "zh-CN", 6.0,

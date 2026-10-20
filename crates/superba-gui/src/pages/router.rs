@@ -3,12 +3,16 @@
 //! - 路由 / Router ([`show`]): the local smart router's SETTINGS only (opt-in,
 //!   v2 decision 6). The page header carries the one on / off action; under it
 //!   one scrolling column (`settings.rs`): a status line saying plainly whether
-//!   Codex traffic goes through the local process, the members and their line
-//!   order (`view.rs`), the entry points (`ingress.rs`), then the closed
-//!   「高级」 group: the reply stats line (`stats_line.rs`), prices
-//!   (`prices.rs`), recording and the service. Opening 路由 always lands here.
-//! - 用量 / Usage ([`show_usage`]): tabs 最近请求 / 活动请求 / 统计 with a search
-//!   on the right.
+//!   Codex traffic goes through the local process with the service and the
+//!   router process under it, the members and their line order (`view.rs`),
+//!   the entry points and protocol conversion (`ingress.rs`), the failover and
+//!   recovery rules (`failover.rs`), then 「高级」: the reply stats line
+//!   (`stats_line.rs`), prices (`prices.rs`) and recording. No section is
+//!   collapsed (user bug 116). Opening 路由 always lands here.
+//! - 用量 / Usage ([`show_usage`]): tabs 最近请求 / 路由 / 活动请求 / 统计 with a
+//!   search on the right.
+//!   - 路由 (`routing.rs`): each routed request's lines tried, failovers,
+//!     protocol conversion and the router's local answers.
 //!   - 最近请求 (`recent.rs`): source list (按会话 / 按供应商), the 13-column log
 //!     with totals, toolbar and the detail pane (`detail.rs`: 通用 and 计时).
 //!   - 活动请求 (`active.rs`): requests in flight from the router's admin API
@@ -30,11 +34,13 @@ pub mod db;
 mod detail;
 pub mod doctor;
 pub mod eligibility;
+mod failover;
 pub mod ingress;
 pub mod model;
 pub mod prices;
 mod recent;
 pub mod requests;
+pub mod routing;
 mod settings;
 mod stats;
 pub mod stats_line;
@@ -65,6 +71,9 @@ pub enum Tab {
     /// 最近请求.
     #[default]
     Recent,
+    /// 路由: how each routed request went (lines tried, conversion, local
+    /// answers).
+    Routing,
     /// 活动请求.
     Active,
     /// 统计.
@@ -73,12 +82,13 @@ pub enum Tab {
 
 impl Tab {
     /// All tabs in order.
-    pub const ALL: [Tab; 3] = [Tab::Recent, Tab::Active, Tab::Stats];
+    pub const ALL: [Tab; 4] = [Tab::Recent, Tab::Routing, Tab::Active, Tab::Stats];
 
     /// i18n key of the label.
     pub fn key(self) -> &'static str {
         match self {
             Tab::Recent => "usage.tab.recent",
+            Tab::Routing => "usage.tab.routing",
             Tab::Active => "usage.tab.active",
             Tab::Stats => "usage.tab.stats",
         }
@@ -88,6 +98,7 @@ impl Tab {
     pub fn command(self) -> &'static str {
         match self {
             Tab::Recent => "recent",
+            Tab::Routing => "routing",
             Tab::Active => "active",
             Tab::Stats => "stats",
         }
@@ -106,6 +117,8 @@ enum Op {
     Uninstall,
     /// Start (or repair) the service, then plan turning router mode on.
     Start,
+    /// Save the failover and recovery rules.
+    Failover,
 }
 
 /// A dialog of the page.
@@ -137,6 +150,8 @@ pub struct State {
     op_error: Option<String>,
     conversion_error: Option<String>,
     pick: Option<usize>,
+    /// Failover rules being saved (shown until the next snapshot has them).
+    failover_draft: Option<superba_core::RouterFailover>,
     /// The router-mode switch to plan once [`Op::Start`] has finished.
     then_plan: Option<superba_core::SwitchRequest>,
     /// A switch ready to be planned (handed to the switch flow by `show`).
@@ -152,6 +167,8 @@ pub struct State {
     pub active: active::Active,
     /// 统计.
     pub stats: stats::Stats,
+    /// 路由.
+    pub routing: routing::Routing,
     /// Router settings (edits in progress).
     pub prefs: settings::Prefs,
     /// Recent recorded request counts for the ingress card.
@@ -245,6 +262,9 @@ impl State {
             self.loaded_at = Some(Instant::now());
             match result {
                 Ok(s) => {
+                    if self.op.is_none() {
+                        self.failover_draft = None;
+                    }
                     self.snapshot = Some(s);
                     self.error = None;
                 }
@@ -446,7 +466,8 @@ fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: b
         || state.titles.loading()
         || state.recent.loading()
         || state.active.loading()
-        || state.stats.loading();
+        || state.stats.loading()
+        || state.routing.loading();
     ui.ctx().request_repaint_after(if busy {
         Duration::from_millis(100)
     } else if usage && state.tab == Tab::Active {
@@ -457,8 +478,8 @@ fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: b
 }
 
 /// Draw the Router page: the header with the one on / off action, then one
-/// scrolling column with the status, members, entry points and the collapsed
-/// Advanced group (`settings.rs`).
+/// scrolling column with the status, members, entry points, failover rules
+/// and Advanced (`settings.rs`).
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     tick(ui, cx, state, out, false);
     page_header(ui, cx, Page::Router, |ui| switch_button(ui, cx, state, out));
@@ -491,6 +512,7 @@ pub fn show_usage(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
     let rect = ui.available_rect_before_wrap();
     crate::design::layout::fixed(ui, rect, |ui| match state.tab {
         Tab::Recent => recent::show(ui, cx, state, out),
+        Tab::Routing => routing::show(ui, cx, state, out),
         Tab::Active => active::show(ui, cx, state, out),
         Tab::Stats => stats::show(ui, cx, state, out),
     });
@@ -676,7 +698,7 @@ fn tab_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             seg = seg.option(t, cx.tr.t(t.key()));
         }
         seg.show(ui);
-        if matches!(state.tab, Tab::Recent | Tab::Active) {
+        if matches!(state.tab, Tab::Recent | Tab::Routing | Tab::Active) {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let edit = egui::TextEdit::singleline(&mut state.search)
                     .hint_text(cx.tr.t("requests.search"))
@@ -688,6 +710,14 @@ fn tab_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                     r.request_focus();
                 }
                 if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    state.search.clear();
+                }
+                // Clearable without the keyboard (Esc in the field does the same).
+                if !state.search.is_empty()
+                    && ui
+                        .add(Button::ghost(cx.tr.t("requests.search_clear")).small())
+                        .clicked()
+                {
                     state.search.clear();
                 }
             });
@@ -822,7 +852,7 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
         action: page_command(Page::Router, "doctor"),
     });
     let stats = state.stats_settings(cx);
-    let entries: [(Page, &str, &str, Vec<String>); 5] = [
+    let entries: [(Page, &str, &str, Vec<String>); 6] = [
         (
             Page::Usage,
             "usage.palette.open_recent",
@@ -833,6 +863,18 @@ pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
                 "usage".into(),
                 "请求记录".into(),
                 "用量".into(),
+            ],
+        ),
+        (
+            Page::Usage,
+            "usage.palette.open_routing",
+            "tab:routing",
+            vec![
+                "routing".into(),
+                "failover".into(),
+                "conversion".into(),
+                "路由".into(),
+                "故障转移".into(),
             ],
         ),
         (
@@ -942,7 +984,7 @@ pub fn usage_command(state: &mut State, cx: &Cx<'_>, command: &str, _out: &mut V
     }
     match command {
         "search" => {
-            if !matches!(state.tab, Tab::Recent | Tab::Active) {
+            if !matches!(state.tab, Tab::Recent | Tab::Routing | Tab::Active) {
                 state.tab = Tab::Recent;
             }
             state.focus_search = true;
