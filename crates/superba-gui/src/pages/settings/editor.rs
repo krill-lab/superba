@@ -33,7 +33,9 @@ use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::Icon;
 use crate::design::tokens::{radius, text};
 use crate::design::widgets::value_chip::fit;
-use crate::design::widgets::{Badge, Button, IconButton, Text, Toggle, dialog, link_button};
+use crate::design::widgets::{
+    Badge, Button, IconButton, Text, Toggle, dialog, dialog_body, link_button,
+};
 use crate::pages::shared::values::{self, Shown};
 use crate::pages::{Action, Cx};
 
@@ -1017,135 +1019,137 @@ fn editor_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, model: &Mo
                 ui.add(Badge::new(cx.tr.t("codex_settings.editor.read_only")).outline());
             }
         });
-        ui.add(egui::Label::new(Text::mono_muted(&ed.path, cx.pal)).truncate());
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            ui.add(Toggle::new(
-                &mut ed.wrap,
-                cx.tr.t("codex_settings.editor.wrap"),
-            ));
-            ui.label(Text::small(cx.tr.t("codex_settings.editor.wrap"), cx.pal));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui
-                    .add(
-                        IconButton::new(Icon::Copy, cx.tr.t("codex_settings.detail.copy"))
-                            .size(24.0),
-                    )
-                    .clicked()
-                {
-                    copy = Some(ed.buffer.clone());
-                }
-                let (lines, chars) = ed.counts();
-                ui.label(Text::caption(
-                    cx.tr.f(
-                        "codex_settings.editor.count",
-                        &[("lines", &lines), ("chars", &chars)],
-                    ),
-                    cx.pal,
+        dialog_body(ui, |ui| {
+            ui.add(egui::Label::new(Text::mono_muted(&ed.path, cx.pal)).truncate());
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.add(Toggle::new(
+                    &mut ed.wrap,
+                    cx.tr.t("codex_settings.editor.wrap"),
                 ));
-            });
-        });
-        let wrap = ed.wrap;
-        let color = cx.pal.text;
-        let mono = mono_font(text::SMALL, Weight::Regular);
-        let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
-            let mut job = LayoutJob::simple(
-                buf.as_str().to_owned(),
-                mono.clone(),
-                color,
-                if wrap { wrap_width } else { f32::INFINITY },
-            );
-            job.keep_trailing_whitespace = true;
-            ui.fonts_mut(|f| f.layout_job(job))
-        };
-        egui::Frame::new()
-            .stroke(egui::Stroke::new(1.0, cx.pal.border))
-            .corner_radius(radius::CONTROL)
-            .inner_margin(egui::Margin::same(4))
-            .show(ui, |ui| {
-                let scroll = if wrap {
-                    egui::ScrollArea::vertical()
-                } else {
-                    egui::ScrollArea::both()
-                };
-                scroll
-                    .id_salt("codex-settings-editor-text")
-                    .max_height(height)
-                    .min_scrolled_height(height)
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let w = ui.available_width();
-                        let rows = (height / 18.0) as usize;
-                        let resp = if ed.read_only {
-                            let mut view: &str = ed.buffer.as_str();
-                            ui.add(
-                                TextEdit::multiline(&mut view)
-                                    .id(Id::unique("codex-settings-editor-field"))
-                                    .layouter(&mut layouter)
-                                    .desired_width(w)
-                                    .desired_rows(rows)
-                                    .frame(egui::Frame::NONE),
-                            )
-                            .accessible_name(ed.title.clone())
-                        } else {
-                            ui.add(
-                                TextEdit::multiline(&mut ed.buffer)
-                                    .id(Id::unique("codex-settings-editor-field"))
-                                    .layouter(&mut layouter)
-                                    .desired_width(w)
-                                    .desired_rows(rows)
-                                    .lock_focus(true)
-                                    .hint_text(cx.tr.t("codex_settings.editor.empty_hint"))
-                                    .frame(egui::Frame::NONE),
-                            )
-                            .accessible_name(ed.title.clone())
-                        };
-                        if !ed.focused {
-                            resp.request_focus();
-                            ed.focused = true;
-                        }
-                    });
-            });
-        // The default, for comparison.
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            ui.allocate_ui_with_layout(
-                vec2(64.0, 18.0),
-                Layout::left_to_right(Align::Center),
-                |ui| {
-                    ui.set_min_width(64.0);
-                    ui.label(Text::small(
-                        cx.tr.t("codex_settings.detail.default"),
+                ui.label(Text::small(cx.tr.t("codex_settings.editor.wrap"), cx.pal));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui
+                        .add(
+                            IconButton::new(Icon::Copy, cx.tr.t("codex_settings.detail.copy"))
+                                .size(24.0),
+                        )
+                        .clicked()
+                    {
+                        copy = Some(ed.buffer.clone());
+                    }
+                    let (lines, chars) = ed.counts();
+                    ui.label(Text::caption(
+                        cx.tr.f(
+                            "codex_settings.editor.count",
+                            &[("lines", &lines), ("chars", &chars)],
+                        ),
                         cx.pal,
                     ));
-                },
-            );
-            match &ed.default {
-                Some(d) => {
-                    let mut job = LayoutJob::single_section(
-                        d.clone(),
-                        egui::TextFormat {
-                            font_id: mono_font(text::CAPTION, Weight::Regular),
-                            color: cx.pal.text_muted,
-                            ..Default::default()
-                        },
-                    );
-                    job.wrap = TextWrapping {
-                        max_width: ui.available_width(),
-                        max_rows: 3,
-                        break_anywhere: true,
-                        overflow_character: Some('…'),
+                });
+            });
+            let wrap = ed.wrap;
+            let color = cx.pal.text;
+            let mono = mono_font(text::SMALL, Weight::Regular);
+            let mut layouter = |ui: &Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+                let mut job = LayoutJob::simple(
+                    buf.as_str().to_owned(),
+                    mono.clone(),
+                    color,
+                    if wrap { wrap_width } else { f32::INFINITY },
+                );
+                job.keep_trailing_whitespace = true;
+                ui.fonts_mut(|f| f.layout_job(job))
+            };
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(1.0, cx.pal.border))
+                .corner_radius(radius::CONTROL)
+                .inner_margin(egui::Margin::same(4))
+                .show(ui, |ui| {
+                    let scroll = if wrap {
+                        egui::ScrollArea::vertical()
+                    } else {
+                        egui::ScrollArea::both()
                     };
-                    let r = ui.label(job);
-                    crate::design::widgets::value_chip::value_tooltip(r, d, Shape::of(d));
+                    scroll
+                        .id_salt("codex-settings-editor-text")
+                        .max_height(height)
+                        .min_scrolled_height(height)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            let w = ui.available_width();
+                            let rows = (height / 18.0) as usize;
+                            let resp = if ed.read_only {
+                                let mut view: &str = ed.buffer.as_str();
+                                ui.add(
+                                    TextEdit::multiline(&mut view)
+                                        .id(Id::unique("codex-settings-editor-field"))
+                                        .layouter(&mut layouter)
+                                        .desired_width(w)
+                                        .desired_rows(rows)
+                                        .frame(egui::Frame::NONE),
+                                )
+                                .accessible_name(ed.title.clone())
+                            } else {
+                                ui.add(
+                                    TextEdit::multiline(&mut ed.buffer)
+                                        .id(Id::unique("codex-settings-editor-field"))
+                                        .layouter(&mut layouter)
+                                        .desired_width(w)
+                                        .desired_rows(rows)
+                                        .lock_focus(true)
+                                        .hint_text(cx.tr.t("codex_settings.editor.empty_hint"))
+                                        .frame(egui::Frame::NONE),
+                                )
+                                .accessible_name(ed.title.clone())
+                            };
+                            if !ed.focused {
+                                resp.request_focus();
+                                ed.focused = true;
+                            }
+                        });
+                });
+            // The default, for comparison.
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.allocate_ui_with_layout(
+                    vec2(64.0, 18.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        ui.set_min_width(64.0);
+                        ui.label(Text::small(
+                            cx.tr.t("codex_settings.detail.default"),
+                            cx.pal,
+                        ));
+                    },
+                );
+                match &ed.default {
+                    Some(d) => {
+                        let mut job = LayoutJob::single_section(
+                            d.clone(),
+                            egui::TextFormat {
+                                font_id: mono_font(text::CAPTION, Weight::Regular),
+                                color: cx.pal.text_muted,
+                                ..Default::default()
+                            },
+                        );
+                        job.wrap = TextWrapping {
+                            max_width: ui.available_width(),
+                            max_rows: 3,
+                            break_anywhere: true,
+                            overflow_character: Some('…'),
+                        };
+                        let r = ui.label(job);
+                        crate::design::widgets::value_chip::value_tooltip(r, d, Shape::of(d));
+                    }
+                    None => {
+                        ui.label(Text::small(
+                            cx.tr.t("codex_settings.value.codex_decides"),
+                            cx.pal,
+                        ));
+                    }
                 }
-                None => {
-                    ui.label(Text::small(
-                        cx.tr.t("codex_settings.value.codex_decides"),
-                        cx.pal,
-                    ));
-                }
-            }
+            });
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -1216,20 +1220,17 @@ fn rows_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, model: &Mode
             ))
             .truncate(),
         );
-        ui.add(egui::Label::new(Text::mono_muted(&e.path, cx.pal)).truncate());
-        let height = (ctx.content_rect().height() - 300.0).clamp(160.0, 420.0);
-        egui::ScrollArea::vertical()
-            .id_salt("codex-settings-rows-list")
-            .max_height(height)
-            .auto_shrink([false, true])
-            .show(ui, |ui| match &e.kind {
+        dialog_body(ui, |ui| {
+            ui.add(egui::Label::new(Text::mono_muted(&e.path, cx.pal)).truncate());
+            match &e.kind {
                 Kind::List { item } => list_rows(ui, cx, state, &e, item, enabled, None),
                 Kind::Map { value } => map_rows_ui(ui, cx, state, &e, value, enabled, None),
                 _ => {}
-            });
-        if let Some(key) = state.invalid.get(&e.path) {
-            ui.label(Text::small(cx.tr.t(key), cx.pal).color(cx.pal.red));
-        }
+            }
+            if let Some(key) = state.invalid.get(&e.path) {
+                ui.label(Text::small(cx.tr.t(key), cx.pal).color(cx.pal.red));
+            }
+        });
         ui.horizontal(|ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui

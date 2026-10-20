@@ -24,7 +24,7 @@ use crate::design::widgets::token_field::{
 };
 use crate::design::widgets::{
     Button, Dropdown, IconButton, PagedTable, PendingAction, PendingBar, PendingLabels, SpeedTiers,
-    Status, StatusDot, Table, Text, TierText, Toggle, dialog,
+    Status, StatusDot, Table, Text, TierText, Toggle, dialog, dialog_body,
 };
 use crate::i18n::Tr;
 use crate::pages::shared::providers::{self, Provider, ProviderKind};
@@ -1753,31 +1753,28 @@ fn diff_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, saved: &Save
     let mut close = false;
     let r = dialog(ctx, egui::Id::unique("models-diff"), 560.0, |ui| {
         ui.label(Text::h2(cx.tr.t("models.diff.title"), cx.pal));
-        if lines.is_empty() {
-            ui.label(Text::small(cx.tr.t("models.diff.empty"), cx.pal));
-        }
-        egui::ScrollArea::vertical()
-            .id_salt("models-diff-list")
-            .max_height(360.0)
-            .show(ui, |ui| {
-                for l in &lines {
-                    let who = if l.slug.is_empty() {
-                        cx.tr.t("models.all")
-                    } else {
-                        l.slug.clone()
-                    };
-                    let value =
-                        |v: &Option<String>| v.clone().unwrap_or_else(|| cx.tr.t("models.default"));
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(Text::mono(who, cx.pal));
-                        ui.label(Text::small(field_label(cx, l.field), cx.pal));
-                        ui.label(Text::mono_muted(
-                            format!("{} → {}", value(&l.before), value(&l.after)),
-                            cx.pal,
-                        ));
-                    });
-                }
-            });
+        dialog_body(ui, |ui| {
+            if lines.is_empty() {
+                ui.label(Text::small(cx.tr.t("models.diff.empty"), cx.pal));
+            }
+            for l in &lines {
+                let who = if l.slug.is_empty() {
+                    cx.tr.t("models.all")
+                } else {
+                    l.slug.clone()
+                };
+                let value =
+                    |v: &Option<String>| v.clone().unwrap_or_else(|| cx.tr.t("models.default"));
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(Text::mono(who, cx.pal));
+                    ui.label(Text::small(field_label(cx, l.field), cx.pal));
+                    ui.label(Text::mono_muted(
+                        format!("{} → {}", value(&l.before), value(&l.after)),
+                        cx.pal,
+                    ));
+                });
+            }
+        });
         ui.add_space(8.0);
         if ui
             .add(Button::new(cx.tr.t("models.diff.close")).kbd("Esc"))
@@ -1811,40 +1808,42 @@ fn price_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, saved: &Sav
             cx.tr.f("models.price.title", &[("model", &d.slug)]),
             cx.pal,
         ));
-        ui.add(egui::Label::new(Text::small(cx.tr.t("models.price.body"), cx.pal)).wrap());
-        if let Some((p, _)) = &table {
-            ui.label(Text::caption(
-                cx.tr.f("models.price.table", &[("price", &price_text(p))]),
-                cx.pal,
-            ));
-        }
-        for (label, value) in [
-            ("models.price.input", &mut d.input),
-            ("models.price.cached", &mut d.cached),
-            ("models.price.output", &mut d.output),
-        ] {
-            ui.horizontal(|ui| {
-                let (rect, _) = ui.allocate_exact_size(vec2(150.0, 24.0), Sense::hover());
-                ui.painter().text(
-                    rect.left_center(),
-                    egui::Align2::LEFT_CENTER,
-                    cx.tr.t(label),
-                    font(text::SMALL, Weight::Regular),
-                    cx.pal.text_muted,
-                );
-                ui.add(
-                    TextEdit::singleline(value)
-                        .id(egui::Id::unique(("models-price-field", label)))
-                        .font(egui::TextStyle::Monospace)
-                        .desired_width(120.0)
-                        .margin(vec2(8.0, 4.0)),
-                )
-                .accessible_name(cx.tr.t(label));
-            });
-        }
-        if let Some(e) = &d.error {
-            ui.label(Text::small(e, cx.pal).color(cx.pal.red));
-        }
+        dialog_body(ui, |ui| {
+            ui.add(egui::Label::new(Text::small(cx.tr.t("models.price.body"), cx.pal)).wrap());
+            if let Some((p, _)) = &table {
+                ui.label(Text::caption(
+                    cx.tr.f("models.price.table", &[("price", &price_text(p))]),
+                    cx.pal,
+                ));
+            }
+            for (label, value) in [
+                ("models.price.input", &mut d.input),
+                ("models.price.cached", &mut d.cached),
+                ("models.price.output", &mut d.output),
+            ] {
+                ui.horizontal(|ui| {
+                    let (rect, _) = ui.allocate_exact_size(vec2(150.0, 24.0), Sense::hover());
+                    ui.painter().text(
+                        rect.left_center(),
+                        egui::Align2::LEFT_CENTER,
+                        cx.tr.t(label),
+                        font(text::SMALL, Weight::Regular),
+                        cx.pal.text_muted,
+                    );
+                    ui.add(
+                        TextEdit::singleline(value)
+                            .id(egui::Id::unique(("models-price-field", label)))
+                            .font(egui::TextStyle::Monospace)
+                            .desired_width(120.0)
+                            .margin(vec2(8.0, 4.0)),
+                    )
+                    .accessible_name(cx.tr.t(label));
+                });
+            }
+            if let Some(e) = &d.error {
+                ui.label(Text::small(e, cx.pal).color(cx.pal.red));
+            }
+        });
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if ui

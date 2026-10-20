@@ -4,12 +4,12 @@
 //! request. Opened from the service row, from "查看原因" under a failed start,
 //! and from the command palette.
 
-use egui::{Align, Layout, ScrollArea, Ui};
+use egui::{Align, Layout, Ui};
 use superba_core::{Error, RouterDoctorReport};
 
 use super::{Dialog, State};
 use crate::design::icons::Icon;
-use crate::design::widgets::{Button, Status, Text};
+use crate::design::widgets::{Button, Status, Text, dialog_body};
 use crate::pages::{Cx, error_text, note};
 use crate::runtime::ReadTask;
 
@@ -103,27 +103,22 @@ pub fn dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, close: &mut bool) {
             }
         });
     });
-    ui.add(egui::Label::new(Text::small(cx.tr.t("router.doctor.hint"), cx.pal)).wrap());
-    match (&state.doctor.result, state.doctor.loading()) {
-        (_, true) => {
-            ui.label(Text::muted(cx.tr.t("router.doctor.running"), cx.pal));
+    dialog_body(ui, |ui| {
+        ui.add(egui::Label::new(Text::small(cx.tr.t("router.doctor.hint"), cx.pal)).wrap());
+        match (&state.doctor.result, state.doctor.loading()) {
+            (_, true) => {
+                ui.label(Text::muted(cx.tr.t("router.doctor.running"), cx.pal));
+            }
+            (Some(Ok(report)), false) => {
+                let body = text(cx, report);
+                ui.add(
+                    egui::Label::new(Text::mono(body, cx.pal).size(11.5))
+                        .wrap()
+                        .selectable(true),
+                );
+            }
+            (Some(Err(e)), false) => note(ui, cx, Status::Error, error_text(cx.tr, e)),
+            (None, false) => {}
         }
-        (Some(Ok(report)), false) => {
-            let body = text(cx, report);
-            // A fixed height: the dialog is sized while the report loads.
-            ScrollArea::vertical()
-                .max_height(440.0)
-                .min_scrolled_height(440.0)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::Label::new(Text::mono(body, cx.pal).size(11.5))
-                            .wrap()
-                            .selectable(true),
-                    );
-                });
-        }
-        (Some(Err(e)), false) => note(ui, cx, Status::Error, error_text(cx.tr, e)),
-        (None, false) => {}
-    }
+    });
 }

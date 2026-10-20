@@ -21,7 +21,7 @@ written = "Model catalog file written for Codex {version}"
 failed = "Model catalog file not written: {reason}"
 
 [models_note]
-generic_template = "{model}: no catalog entry is known; Codex's settings for unknown models are used"
+generic_template = "{model}: not in the built-in catalog of this Codex version; Codex's settings for unknown models are used"
 generic_without_prompt = "{model}: the generic instructions of this Codex version are not available; another model's instructions are used"
 filled_fields = "{model}: fields Codex {version} requires were taken from its built-in catalog ({fields})"
 compact_clamped = "{model}: auto-compact at {limit} tokens is above 90% of the context window; Codex compacts at {effective}"

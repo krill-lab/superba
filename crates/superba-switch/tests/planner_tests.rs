@@ -877,7 +877,14 @@ async fn missing_model_gets_a_replacement_from_the_catalog() {
         mc.suggestions,
         vec!["gpt-old-mini".to_owned(), "gpt-5.5".to_owned()]
     );
-    assert!(warning_keys(&p).contains(&"switch.warn.model_missing".to_owned()));
+    // Another model runs after the switch: a warning, which dialogs never
+    // fold away with the information (user bug 103).
+    assert!(
+        p.warnings
+            .iter()
+            .any(|w| w.text.key == "switch.warn.model_missing"
+                && w.severity == superba_core::Severity::Warning)
+    );
     assert!(p.choices.is_empty());
     // An explicit replacement that is not offered asks again.
     let mut r = req("work");
@@ -887,6 +894,62 @@ async fn missing_model_gets_a_replacement_from_the_catalog() {
         &p.choices[..],
         [PlanChoice::ReplacementModel { .. }]
     ));
+}
+
+/// User bug 103: with the router on, Codex keeps the router's prefixed name of
+/// the model picked (`<provider>/<model>`). Turning the router off checks it
+/// against the line's own list: the line's model of that name replaces it,
+/// not the first model the line lists.
+#[tokio::test]
+async fn a_router_prefixed_model_is_replaced_by_the_same_model_of_the_line() {
+    let w = World::new();
+    w.config.state.lock().unwrap().model = Some("provider/gpt-6.1-sol".into());
+    *w.prober.models.lock().unwrap() = Ok(vec![
+        "gpt-5".into(),
+        "gpt-5.5".into(),
+        "gpt-6-sol".into(),
+        "gpt-6.1-sol".into(),
+    ]);
+    let p = plan(&w, req("work")).await;
+    let mc = p.model_check.as_ref().unwrap();
+    assert!(!mc.available);
+    assert_eq!(mc.suggestions, ["gpt-6.1-sol", "gpt-5", "gpt-5.5"]);
+    let missing = p
+        .warnings
+        .iter()
+        .find(|w| w.text.key == "switch.warn.model_missing")
+        .expect("the replacement is named");
+    assert!(
+        missing
+            .text
+            .args
+            .contains(&("replacement".to_owned(), "gpt-6.1-sol".to_owned()))
+    );
+}
+
+#[test]
+fn suggestions_prefer_the_model_behind_a_router_prefix_then_its_family() {
+    use superba_switch::planner::suggest_models;
+    let line = [
+        "gpt-5",
+        "gpt-5.5",
+        "gpt-6.1-luna",
+        "gpt-6.1-sol",
+        "openai/gpt-oss",
+    ];
+    let s = |current: &str| suggest_models(current, line.iter().copied());
+    assert_eq!(
+        s("intranet/gpt-6.1-sol"),
+        ["gpt-6.1-sol", "gpt-6.1-luna", "gpt-5"]
+    );
+    // Only the provider segment is the prefix: model ids may contain `/`.
+    assert_eq!(
+        s("intranet/openai/gpt-oss"),
+        ["openai/gpt-oss", "gpt-5", "gpt-5.5"]
+    );
+    // Without a prefix: the family first, then the line's order.
+    assert_eq!(s("gpt-6.1-terra"), ["gpt-6.1-luna", "gpt-6.1-sol", "gpt-5"]);
+    assert_eq!(s("o3"), ["gpt-5", "gpt-5.5", "gpt-6.1-luna"]);
 }
 
 // --- consumers and remotes ----------------------------------------------------

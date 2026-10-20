@@ -18,7 +18,7 @@ use super::files_highlight;
 use crate::design::fonts::{Weight, mono_font};
 use crate::design::icons::Icon;
 use crate::design::tokens::{radius, text};
-use crate::design::widgets::{Badge, Button, Status, StatusDot, Text, Toggle, dialog};
+use crate::design::widgets::{Badge, Button, Status, StatusDot, Text, Toggle, dialog, dialog_body};
 use crate::pages::shared::loading;
 use crate::pages::{Action, Cx, Page, page_header_with};
 
@@ -718,120 +718,125 @@ fn review(ctx: &egui::Context, cx: &Cx<'_>, ed: &mut Editor) {
             cx.tr.f("codex_editor.review.title", &[("file", &file)]),
             cx.pal,
         ));
-        ui.add(
-            egui::Label::new(Text::mono_muted(
-                format!("{} · {}", target_label(cx, &doc.target), doc.path),
-                cx.pal,
-            ))
-            .truncate(),
-        );
-        if let Some(SaveReason::Restore { backup }) = &ed.reason {
-            ui.label(Text::small(
-                cx.tr.f("codex_editor.review.restore", &[("id", backup)]),
-                cx.pal,
-            ));
-        }
-        diff_view(ui, cx, "review", &old, &new, diff_h);
-        if ed.masked() {
-            ui.label(Text::small(
-                cx.tr.t("codex_editor.secrets_hidden_diff"),
-                cx.pal,
-            ));
-        }
-        if !owned.is_empty() || credential.is_some() {
-            ui.add_space(4.0);
-            ui.label(Text::strong(
-                cx.tr.t("codex_editor.review.owned_title"),
-                cx.pal,
-            ));
-            let unset = cx.tr.t("codex_editor.unset");
-            for k in &owned {
-                crate::pages::shared::values::change_row(
-                    ui,
-                    cx,
-                    Id::unique(("codex-files-owned", &k.path)),
-                    None,
-                    &k.path,
-                    k.before.as_deref(),
-                    k.after.as_deref(),
-                    None,
-                    &unset,
+        dialog_body(ui, |ui| {
+            ui.add(
+                egui::Label::new(Text::mono_muted(
+                    format!("{} · {}", target_label(cx, &doc.target), doc.path),
+                    cx.pal,
+                ))
+                .truncate(),
+            );
+            if let Some(SaveReason::Restore { backup }) = &ed.reason {
+                ui.label(Text::small(
+                    cx.tr.f("codex_editor.review.restore", &[("id", backup)]),
+                    cx.pal,
+                ));
+            }
+            diff_view(ui, cx, "review", &old, &new, diff_h);
+            if ed.masked() {
+                ui.label(Text::small(
+                    cx.tr.t("codex_editor.secrets_hidden_diff"),
+                    cx.pal,
+                ));
+            }
+            if !owned.is_empty() || credential.is_some() {
+                ui.add_space(4.0);
+                ui.label(Text::strong(
+                    cx.tr.t("codex_editor.review.owned_title"),
+                    cx.pal,
+                ));
+                let unset = cx.tr.t("codex_editor.unset");
+                for k in &owned {
+                    crate::pages::shared::values::change_row(
+                        ui,
+                        cx,
+                        Id::unique(("codex-files-owned", &k.path)),
+                        None,
+                        &k.path,
+                        k.before.as_deref(),
+                        k.after.as_deref(),
+                        None,
+                        &unset,
+                    );
+                }
+                if let Some(c) = &credential {
+                    let before = cx.tr.text(&auth_shape_label(&c.written));
+                    let after = cx.tr.text(&auth_shape_label(&c.live));
+                    crate::pages::shared::values::change_row(
+                        ui,
+                        cx,
+                        Id::unique("codex-files-owned-auth"),
+                        None,
+                        "auth.json",
+                        Some(&before),
+                        Some(&after),
+                        None,
+                        "—",
+                    );
+                }
+                ui.add(
+                    egui::Label::new(Text::small(
+                        cx.tr
+                            .text(&superba_core::codex_files::texts::owned_promise()),
+                        cx.pal,
+                    ))
+                    .wrap(),
                 );
             }
-            if let Some(c) = &credential {
-                let before = cx.tr.text(&auth_shape_label(&c.written));
-                let after = cx.tr.text(&auth_shape_label(&c.live));
-                crate::pages::shared::values::change_row(
-                    ui,
-                    cx,
-                    Id::unique("codex-files-owned-auth"),
-                    None,
-                    "auth.json",
-                    Some(&before),
-                    Some(&after),
-                    None,
-                    "—",
-                );
+            if !forced.is_empty() {
+                ui.add_space(4.0);
+                ui.label(Text::strong(
+                    cx.tr
+                        .f("codex_editor.review.errors", &[("n", &forced.len())]),
+                    cx.pal,
+                ));
+                for p in forced.iter().take(4) {
+                    ui.horizontal(|ui| {
+                        ui.add(StatusDot::new(Status::Error));
+                        ui.label(Text::mono_muted(format!("{}:{}", p.line, p.column), cx.pal));
+                        ui.add(
+                            egui::Label::new(Text::small(cx.localize(&p.message), cx.pal))
+                                .truncate(),
+                        );
+                    });
+                }
+                ui.horizontal(|ui| {
+                    ui.add(Toggle::new(
+                        &mut ed.force,
+                        cx.tr.t("codex_editor.review.force"),
+                    ));
+                    ui.label(Text::small(cx.tr.t("codex_editor.review.force"), cx.pal));
+                });
+            } else if warnings > 0 {
+                ui.label(Text::small(
+                    cx.tr.f("codex_editor.review.warnings", &[("n", &warnings)]),
+                    cx.pal,
+                ));
             }
             ui.add(
-                egui::Label::new(Text::small(
-                    cx.tr
-                        .text(&superba_core::codex_files::texts::owned_promise()),
+                egui::Label::new(Text::muted(cx.tr.t("codex_editor.review.backup"), cx.pal)).wrap(),
+            );
+            ui.add(
+                egui::Label::new(Text::muted(
+                    if doc.target.is_local() {
+                        cx.tr.f("codex_editor.review.restart", &[("file", &file)])
+                    } else {
+                        cx.tr.f(
+                            "codex_editor.review.restart_remote",
+                            &[("file", &file), ("host", &target_label(cx, &doc.target))],
+                        )
+                    },
                     cx.pal,
                 ))
                 .wrap(),
             );
-        }
-        if !forced.is_empty() {
-            ui.add_space(4.0);
-            ui.label(Text::strong(
-                cx.tr
-                    .f("codex_editor.review.errors", &[("n", &forced.len())]),
-                cx.pal,
-            ));
-            for p in forced.iter().take(4) {
-                ui.horizontal(|ui| {
+            if let Some(e) = &ed.save_error {
+                ui.horizontal_top(|ui| {
                     ui.add(StatusDot::new(Status::Error));
-                    ui.label(Text::mono_muted(format!("{}:{}", p.line, p.column), cx.pal));
-                    ui.add(
-                        egui::Label::new(Text::small(cx.localize(&p.message), cx.pal)).truncate(),
-                    );
+                    ui.add(egui::Label::new(Text::small(e, cx.pal)).wrap());
                 });
             }
-            ui.horizontal(|ui| {
-                ui.add(Toggle::new(
-                    &mut ed.force,
-                    cx.tr.t("codex_editor.review.force"),
-                ));
-                ui.label(Text::small(cx.tr.t("codex_editor.review.force"), cx.pal));
-            });
-        } else if warnings > 0 {
-            ui.label(Text::small(
-                cx.tr.f("codex_editor.review.warnings", &[("n", &warnings)]),
-                cx.pal,
-            ));
-        }
-        ui.add(egui::Label::new(Text::muted(cx.tr.t("codex_editor.review.backup"), cx.pal)).wrap());
-        ui.add(
-            egui::Label::new(Text::muted(
-                if doc.target.is_local() {
-                    cx.tr.f("codex_editor.review.restart", &[("file", &file)])
-                } else {
-                    cx.tr.f(
-                        "codex_editor.review.restart_remote",
-                        &[("file", &file), ("host", &target_label(cx, &doc.target))],
-                    )
-                },
-                cx.pal,
-            ))
-            .wrap(),
-        );
-        if let Some(e) = &ed.save_error {
-            ui.horizontal_top(|ui| {
-                ui.add(StatusDot::new(Status::Error));
-                ui.add(egui::Label::new(Text::small(e, cx.pal)).wrap());
-            });
-        }
+        });
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             let can = forced.is_empty() || ed.force;
@@ -879,30 +884,32 @@ fn backups(ctx: &egui::Context, cx: &Cx<'_>, ed: &mut Editor) {
             ),
             cx.pal,
         ));
-        if let Some(e) = &ed.backups_error {
-            ui.horizontal_top(|ui| {
-                ui.add(StatusDot::new(Status::Error));
-                ui.add(egui::Label::new(Text::small(e, cx.pal)).wrap());
-            });
-        }
         match (&ed.preview, &preview) {
             (Some((b, _)), Some(view)) => {
-                ui.label(Text::small(
-                    cx.tr.f(
-                        "codex_editor.backups.diff_title",
-                        &[
-                            ("time", &crate::pages::clock_time(b.at, false)),
-                            ("date", &superba_switch::localtime::local(b.at).date()),
-                            ("source", &cx.tr.text(&b.source.text())),
-                        ],
-                    ),
-                    cx.pal,
-                ));
-                ui.label(Text::small(
-                    cx.tr.t("codex_editor.backups.diff_hint"),
-                    cx.pal,
-                ));
-                diff_view(ui, cx, "backup", &current, view, diff_h);
+                dialog_body(ui, |ui| {
+                    if let Some(e) = &ed.backups_error {
+                        ui.horizontal_top(|ui| {
+                            ui.add(StatusDot::new(Status::Error));
+                            ui.add(egui::Label::new(Text::small(e, cx.pal)).wrap());
+                        });
+                    }
+                    ui.label(Text::small(
+                        cx.tr.f(
+                            "codex_editor.backups.diff_title",
+                            &[
+                                ("time", &crate::pages::clock_time(b.at, false)),
+                                ("date", &superba_switch::localtime::local(b.at).date()),
+                                ("source", &cx.tr.text(&b.source.text())),
+                            ],
+                        ),
+                        cx.pal,
+                    ));
+                    ui.label(Text::small(
+                        cx.tr.t("codex_editor.backups.diff_hint"),
+                        cx.pal,
+                    ));
+                    diff_view(ui, cx, "backup", &current, view, diff_h);
+                });
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui
@@ -923,79 +930,87 @@ fn backups(ctx: &egui::Context, cx: &Cx<'_>, ed: &mut Editor) {
                 });
             }
             _ => {
-                match &ed.backups {
-                    None => {
-                        ui.label(Text::muted(cx.tr.t("codex_editor.backups.loading"), cx.pal));
+                dialog_body(ui, |ui| {
+                    if let Some(e) = &ed.backups_error {
+                        ui.horizontal_top(|ui| {
+                            ui.add(StatusDot::new(Status::Error));
+                            ui.add(egui::Label::new(Text::small(e, cx.pal)).wrap());
+                        });
                     }
-                    Some(list) if list.is_empty() => {
-                        ui.add(
-                            egui::Label::new(Text::muted(
-                                cx.tr.t("codex_editor.backups.empty"),
-                                cx.pal,
-                            ))
-                            .wrap(),
-                        );
-                    }
-                    Some(list) => {
-                        ScrollArea::vertical()
-                            .id_salt("codex-files-backup-list")
-                            .max_height(diff_h + 40.0)
-                            .auto_shrink([false, true])
-                            .show(ui, |ui| {
-                                for b in list {
-                                    let r = ui
-                                        .horizontal(|ui| {
-                                            ui.set_min_height(26.0);
-                                            ui.add_sized(
-                                                vec2(150.0, 20.0),
-                                                egui::Label::new(Text::small(
-                                                    format!(
-                                                        "{} {}",
-                                                        superba_switch::localtime::local(b.at)
-                                                            .date(),
-                                                        crate::pages::clock_time(b.at, false)
-                                                    ),
-                                                    cx.pal,
-                                                )),
-                                            );
-                                            ui.add(
-                                                egui::Label::new(Text::body(
-                                                    cx.tr.text(&b.source.text()),
-                                                    cx.pal,
-                                                ))
-                                                .truncate(),
-                                            );
-                                            ui.with_layout(
-                                                Layout::right_to_left(Align::Center),
-                                                |ui| {
-                                                    ui.label(Text::mono_muted(
-                                                        cx.tr.f(
-                                                            "codex_editor.backups.size",
-                                                            &[("n", &b.size)],
+                    match &ed.backups {
+                        None => {
+                            ui.label(Text::muted(cx.tr.t("codex_editor.backups.loading"), cx.pal));
+                        }
+                        Some(list) if list.is_empty() => {
+                            ui.add(
+                                egui::Label::new(Text::muted(
+                                    cx.tr.t("codex_editor.backups.empty"),
+                                    cx.pal,
+                                ))
+                                .wrap(),
+                            );
+                        }
+                        Some(list) => {
+                            ScrollArea::vertical()
+                                .id_salt("codex-files-backup-list")
+                                .max_height(diff_h + 40.0)
+                                .auto_shrink([false, true])
+                                .show(ui, |ui| {
+                                    for b in list {
+                                        let r = ui
+                                            .horizontal(|ui| {
+                                                ui.set_min_height(26.0);
+                                                ui.add_sized(
+                                                    vec2(150.0, 20.0),
+                                                    egui::Label::new(Text::small(
+                                                        format!(
+                                                            "{} {}",
+                                                            superba_switch::localtime::local(b.at)
+                                                                .date(),
+                                                            crate::pages::clock_time(b.at, false)
                                                         ),
                                                         cx.pal,
-                                                    ));
-                                                },
+                                                    )),
+                                                );
+                                                ui.add(
+                                                    egui::Label::new(Text::body(
+                                                        cx.tr.text(&b.source.text()),
+                                                        cx.pal,
+                                                    ))
+                                                    .truncate(),
+                                                );
+                                                ui.with_layout(
+                                                    Layout::right_to_left(Align::Center),
+                                                    |ui| {
+                                                        ui.label(Text::mono_muted(
+                                                            cx.tr.f(
+                                                                "codex_editor.backups.size",
+                                                                &[("n", &b.size)],
+                                                            ),
+                                                            cx.pal,
+                                                        ));
+                                                    },
+                                                );
+                                            })
+                                            .response
+                                            .interact(Sense::click());
+                                        if r.hovered() {
+                                            ui.painter().rect_filled(
+                                                r.rect,
+                                                radius::CONTROL,
+                                                cx.pal.hover.gamma_multiply(0.5),
                                             );
-                                        })
-                                        .response
-                                        .interact(Sense::click());
-                                    if r.hovered() {
-                                        ui.painter().rect_filled(
-                                            r.rect,
-                                            radius::CONTROL,
-                                            cx.pal.hover.gamma_multiply(0.5),
-                                        );
+                                        }
+                                        if r.clicked() {
+                                            pick = Some(b.id.clone());
+                                        }
+                                        r.on_hover_text(&b.id);
                                     }
-                                    if r.clicked() {
-                                        pick = Some(b.id.clone());
-                                    }
-                                    r.on_hover_text(&b.id);
-                                }
-                            });
-                        ui.label(Text::small(cx.tr.t("codex_editor.backups.hint"), cx.pal));
+                                });
+                            ui.label(Text::small(cx.tr.t("codex_editor.backups.hint"), cx.pal));
+                        }
                     }
-                }
+                });
                 ui.add_space(8.0);
                 if ui
                     .add(Button::ghost(cx.tr.t("codex_editor.close")).kbd("Esc"))
@@ -1030,13 +1045,15 @@ fn discard(ctx: &egui::Context, cx: &Cx<'_>, ed: &mut Editor, next: Next) {
                 .f("codex_editor.discard_dialog.title", &[("file", &file)]),
             cx.pal,
         ));
-        ui.add(
-            egui::Label::new(Text::body(
-                cx.tr.t("codex_editor.discard_dialog.body"),
-                cx.pal,
-            ))
-            .wrap(),
-        );
+        dialog_body(ui, |ui| {
+            ui.add(
+                egui::Label::new(Text::body(
+                    cx.tr.t("codex_editor.discard_dialog.body"),
+                    cx.pal,
+                ))
+                .wrap(),
+            );
+        });
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if ui

@@ -2,6 +2,7 @@
 use super::{Selection, State, provider};
 use crate::design::widgets::{
     Badge, Button, Card, Dropdown, MonogramTile, Pager, Segmented, Status, Text, dialog,
+    dialog_body,
 };
 use crate::pages::{Action, Cx, Page};
 use egui::{RichText, Ui};
@@ -687,31 +688,32 @@ pub fn review(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             } else {
                 "tools.review_apply"
             }));
-            egui::ScrollArea::vertical()
-                .max_height(360.0)
-                .show(ui, |ui| {
-                    for c in &plan.changes {
-                        ui.label(RichText::new(format!("{} · {}", c.file, c.slot)).monospace());
-                        ui.add(
-                            egui::Label::new(Text::small(
-                                format!(
-                                    "{} → {}",
-                                    c.before.as_deref().unwrap_or("—"),
-                                    c.after.as_deref().unwrap_or("—")
-                                ),
-                                cx.pal,
-                            ))
-                            .wrap(),
-                        );
-                    }
-                });
-            for note in &plan.notes {
-                ui.add(egui::Label::new(cx.tr.text(&note.text)).wrap());
-            }
-            if plan.drift().count() > 0 {
-                ui.add(egui::Label::new(cx.tr.t("tools.drift_hint")).wrap());
-                ui.checkbox(&mut state.take_over, cx.tr.t("tools.take_over"));
-            }
+            dialog_body(ui, |ui| {
+                for c in &plan.changes {
+                    ui.label(RichText::new(format!("{} · {}", c.file, c.slot)).monospace());
+                    ui.add(
+                        egui::Label::new(Text::small(
+                            format!(
+                                "{} → {}",
+                                c.before.as_deref().unwrap_or("—"),
+                                c.after.as_deref().unwrap_or("—")
+                            ),
+                            cx.pal,
+                        ))
+                        .wrap(),
+                    );
+                }
+                crate::pages::shared::notices::notice_list(
+                    ui,
+                    cx,
+                    egui::Id::unique("tools-plan-notices"),
+                    &plan.notes,
+                );
+                if plan.drift().count() > 0 {
+                    ui.add(egui::Label::new(cx.tr.t("tools.drift_hint")).wrap());
+                    ui.checkbox(&mut state.take_over, cx.tr.t("tools.take_over"));
+                }
+            });
             ui.horizontal(|ui| {
                 cancel = ui.add(Button::new(cx.tr.t("tools.cancel"))).clicked();
                 apply = ui.add(Button::primary(cx.tr.t("tools.confirm"))).clicked();

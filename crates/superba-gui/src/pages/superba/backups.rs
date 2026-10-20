@@ -5,7 +5,7 @@ use superba_core::harness::{HarnessApplyReport, HarnessBackup, HarnessId};
 use superba_core::{CodexFileBackup, CodexFileBackupQuery, CodexFileKind, Result, Timestamp};
 
 use super::maintenance::{self, Read};
-use crate::design::widgets::{Button, Card, Status, Table, Text, dialog};
+use crate::design::widgets::{Button, Card, Status, Table, Text, dialog, dialog_body};
 use crate::pages::{Action, Cx, Page, error_text, section_with};
 use crate::runtime::ReadTask;
 
@@ -418,28 +418,30 @@ fn restore_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 ),
                 cx.pal,
             ));
-            ui.add(
-                egui::Label::new(Text::body(cx.tr.t("superba.backups.confirm_body"), cx.pal))
+            dialog_body(ui, |ui| {
+                ui.add(
+                    egui::Label::new(Text::body(cx.tr.t("superba.backups.confirm_body"), cx.pal))
+                        .wrap(),
+                );
+                ui.add(
+                    egui::Label::new(Text::mono(
+                        superba_core::paths::display_path(&backup.path),
+                        cx.pal,
+                    ))
                     .wrap(),
-            );
-            ui.add(
-                egui::Label::new(Text::mono(
-                    superba_core::paths::display_path(&backup.path),
+                );
+                ui.label(Text::small(
+                    format!(
+                        "{} · {}",
+                        backup.id,
+                        crate::pages::clock_time(backup.at, true)
+                    ),
                     cx.pal,
-                ))
-                .wrap(),
-            );
-            ui.label(Text::small(
-                format!(
-                    "{} · {}",
-                    backup.id,
-                    crate::pages::clock_time(backup.at, true)
-                ),
-                cx.pal,
-            ));
-            if let Some(e) = &state.restore_error {
-                crate::pages::note(ui, cx, Status::Error, e.clone());
-            }
+                ));
+                if let Some(e) = &state.restore_error {
+                    crate::pages::note(ui, cx, Status::Error, e.clone());
+                }
+            });
             ui.horizontal_wrapped(|ui| {
                 confirm = ui
                     .add(

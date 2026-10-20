@@ -21,7 +21,7 @@ use super::superba::{row, search};
 use super::{Action, Cx, Page, PaletteGroup, PaletteItem, error_text, section};
 use crate::design::icons::Icon;
 use crate::design::widgets::{
-    Badge, Button, Card, Dropdown, KeyInput, Segmented, Status, Text, Toggle, dialog,
+    Badge, Button, Card, Dropdown, KeyInput, Segmented, Status, Text, Toggle, dialog, dialog_body,
 };
 use crate::runtime::{ReadTask, task};
 
@@ -1034,128 +1034,132 @@ fn editor_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                     .f("prefs.notify.editor.edit_title", &[("name", &ed.name)])
             };
             ui.label(Text::title(title, cx.pal));
-            ui.add_space(4.0);
-            if ed.id.is_empty() {
-                ui.label(Text::strong(cx.tr.t("prefs.notify.editor.kind"), cx.pal));
-                let options: Vec<(ChannelKind, String)> = ChannelKind::ALL
-                    .iter()
-                    .map(|k| (*k, kind_label(cx, *k)))
-                    .collect();
-                let before = ed.kind;
-                Dropdown::new("notify-kind")
-                    .label(cx.tr.t("prefs.notify.editor.kind"))
-                    .width(ui.available_width())
-                    .show_options(ui, &mut ed.kind, &options);
-                if ed.kind != before {
-                    ed.params.clear();
-                    ed.secrets.clear();
-                    ed.error = None;
+            dialog_body(ui, |ui| {
+                ui.add_space(4.0);
+                if ed.id.is_empty() {
+                    ui.label(Text::strong(cx.tr.t("prefs.notify.editor.kind"), cx.pal));
+                    let options: Vec<(ChannelKind, String)> = ChannelKind::ALL
+                        .iter()
+                        .map(|k| (*k, kind_label(cx, *k)))
+                        .collect();
+                    let before = ed.kind;
+                    Dropdown::new("notify-kind")
+                        .label(cx.tr.t("prefs.notify.editor.kind"))
+                        .width(ui.available_width())
+                        .show_options(ui, &mut ed.kind, &options);
+                    if ed.kind != before {
+                        ed.params.clear();
+                        ed.secrets.clear();
+                        ed.error = None;
+                    }
                 }
-            }
-            let route = cx.localize(&ed.kind.route_note());
-            let color = if ed.kind.third_party_relay() {
-                cx.pal.amber
-            } else {
-                cx.pal.text_subtle
-            };
-            ui.add(egui::Label::new(Text::small(route, cx.pal).color(color)).wrap());
-            ui.add(
-                egui::Label::new(Text::small(
-                    cx.tr
-                        .t(&format!("prefs.notify.editor.help.{}", ed.kind.id())),
-                    cx.pal,
-                ))
-                .wrap(),
-            );
-            ui.add_space(4.0);
-            ui.label(Text::strong(cx.tr.t("prefs.notify.editor.name"), cx.pal));
-            ui.add(
-                TextEdit::singleline(&mut ed.name)
-                    .hint_text(cx.tr.t("prefs.notify.editor.name_hint"))
-                    .desired_width(f32::INFINITY)
-                    .margin(vec2(12.0, 8.0)),
-            );
-            for f in ed.kind.fields() {
-                let mut label = cx.localize(&f.label());
-                if !f.required {
-                    label = format!("{label} · {}", cx.tr.t("prefs.notify.editor.optional"));
-                }
-                ui.label(Text::strong(label, cx.pal));
-                if f.secret {
-                    let hint = match ed.hints.get(f.key) {
-                        Some(h) => cx.tr.f("prefs.notify.editor.secret_saved", &[("hint", h)]),
-                        None => String::new(),
-                    };
-                    let value = ed.secrets.entry(f.key.to_owned()).or_default();
-                    let reveal = ed.reveal.entry(f.key.to_owned()).or_default();
-                    KeyInput::new(
-                        ("notify-secret", f.key),
-                        value,
-                        reveal,
-                        hint,
-                        cx.tr.t("prefs.notify.editor.reveal"),
-                    )
-                    .show(ui);
+                let route = cx.localize(&ed.kind.route_note());
+                let color = if ed.kind.third_party_relay() {
+                    cx.pal.amber
                 } else {
-                    let hint = f
-                        .default
-                        .map(|d| cx.tr.f("prefs.notify.editor.default", &[("value", &d)]))
-                        .unwrap_or_default();
-                    let value = ed.params.entry(f.key.to_owned()).or_default();
-                    ui.add(
-                        TextEdit::singleline(value)
-                            .font(egui::TextStyle::Monospace)
-                            .hint_text(hint)
-                            .desired_width(f32::INFINITY)
-                            .margin(vec2(12.0, 8.0)),
-                    );
+                    cx.pal.text_subtle
+                };
+                ui.add(egui::Label::new(Text::small(route, cx.pal).color(color)).wrap());
+                ui.add(
+                    egui::Label::new(Text::small(
+                        cx.tr
+                            .t(&format!("prefs.notify.editor.help.{}", ed.kind.id())),
+                        cx.pal,
+                    ))
+                    .wrap(),
+                );
+                ui.add_space(4.0);
+                ui.label(Text::strong(cx.tr.t("prefs.notify.editor.name"), cx.pal));
+                ui.add(
+                    TextEdit::singleline(&mut ed.name)
+                        .hint_text(cx.tr.t("prefs.notify.editor.name_hint"))
+                        .desired_width(f32::INFINITY)
+                        .margin(vec2(12.0, 8.0)),
+                );
+                for f in ed.kind.fields() {
+                    let mut label = cx.localize(&f.label());
+                    if !f.required {
+                        label = format!("{label} · {}", cx.tr.t("prefs.notify.editor.optional"));
+                    }
+                    ui.label(Text::strong(label, cx.pal));
+                    if f.secret {
+                        let hint = match ed.hints.get(f.key) {
+                            Some(h) => cx.tr.f("prefs.notify.editor.secret_saved", &[("hint", h)]),
+                            None => String::new(),
+                        };
+                        let value = ed.secrets.entry(f.key.to_owned()).or_default();
+                        let reveal = ed.reveal.entry(f.key.to_owned()).or_default();
+                        KeyInput::new(
+                            ("notify-secret", f.key),
+                            value,
+                            reveal,
+                            hint,
+                            cx.tr.t("prefs.notify.editor.reveal"),
+                        )
+                        .show(ui);
+                    } else {
+                        let hint = f
+                            .default
+                            .map(|d| cx.tr.f("prefs.notify.editor.default", &[("value", &d)]))
+                            .unwrap_or_default();
+                        let value = ed.params.entry(f.key.to_owned()).or_default();
+                        ui.add(
+                            TextEdit::singleline(value)
+                                .font(egui::TextStyle::Monospace)
+                                .hint_text(hint)
+                                .desired_width(f32::INFINITY)
+                                .margin(vec2(12.0, 8.0)),
+                        );
+                    }
                 }
-            }
-            ui.add_space(4.0);
-            ui.add(
-                egui::Label::new(Text::caption(
-                    cx.tr.t("prefs.notify.editor.secret_note"),
-                    cx.pal,
-                ))
-                .wrap(),
-            );
-            if let Some(e) = &ed.error {
-                ui.add(egui::Label::new(Text::small(e, cx.pal).color(cx.pal.red)).wrap());
-            }
+                ui.add_space(4.0);
+                ui.add(
+                    egui::Label::new(Text::caption(
+                        cx.tr.t("prefs.notify.editor.secret_note"),
+                        cx.pal,
+                    ))
+                    .wrap(),
+                );
+                if let Some(e) = &ed.error {
+                    ui.add(egui::Label::new(Text::small(e, cx.pal).color(cx.pal.red)).wrap());
+                }
+            });
             ui.add_space(8.0);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui
-                    .add(
-                        Button::primary(cx.tr.t("prefs.notify.editor.save_test"))
-                            .small()
-                            .loading(saving)
-                            .enabled(!saving),
-                    )
-                    .clicked()
-                {
-                    save = Some(true);
-                }
-                if ui
-                    .add(
-                        Button::new(cx.tr.t("prefs.notify.editor.save"))
-                            .small()
-                            .enabled(!saving),
-                    )
-                    .clicked()
-                {
-                    save = Some(false);
-                }
-                if ui
-                    .add(
-                        Button::ghost(cx.tr.t("action.cancel"))
-                            .kbd("Esc")
-                            .small()
-                            .enabled(!saving),
-                    )
-                    .clicked()
-                {
-                    close = true;
-                }
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui
+                        .add(
+                            Button::primary(cx.tr.t("prefs.notify.editor.save_test"))
+                                .small()
+                                .loading(saving)
+                                .enabled(!saving),
+                        )
+                        .clicked()
+                    {
+                        save = Some(true);
+                    }
+                    if ui
+                        .add(
+                            Button::new(cx.tr.t("prefs.notify.editor.save"))
+                                .small()
+                                .enabled(!saving),
+                        )
+                        .clicked()
+                    {
+                        save = Some(false);
+                    }
+                    if ui
+                        .add(
+                            Button::ghost(cx.tr.t("action.cancel"))
+                                .kbd("Esc")
+                                .small()
+                                .enabled(!saving),
+                        )
+                        .clicked()
+                    {
+                        close = true;
+                    }
+                });
             });
         },
     );
@@ -1200,33 +1204,37 @@ fn delete_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 .f("prefs.notify.channels.delete_title", &[("name", &name)]),
             cx.pal,
         ));
-        ui.add(
-            egui::Label::new(Text::small(
-                cx.tr.t("prefs.notify.channels.delete_body"),
-                cx.pal,
-            ))
-            .wrap(),
-        );
+        dialog_body(ui, |ui| {
+            ui.add(
+                egui::Label::new(Text::small(
+                    cx.tr.t("prefs.notify.channels.delete_body"),
+                    cx.pal,
+                ))
+                .wrap(),
+            );
+        });
         ui.add_space(8.0);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui
-                .add(Button::danger(cx.tr.t("prefs.notify.channels.delete")).small())
-                .clicked()
-            {
-                let s = cx.service.clone();
-                let id2 = id.clone();
-                state.delete_task = Some((
-                    id.clone(),
-                    task(async move { s.notify_delete_channel(&id2).await }),
-                ));
-                close = true;
-            }
-            if ui
-                .add(Button::ghost(cx.tr.t("action.cancel")).kbd("Esc").small())
-                .clicked()
-            {
-                close = true;
-            }
+        ui.horizontal(|ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui
+                    .add(Button::danger(cx.tr.t("prefs.notify.channels.delete")).small())
+                    .clicked()
+                {
+                    let s = cx.service.clone();
+                    let id2 = id.clone();
+                    state.delete_task = Some((
+                        id.clone(),
+                        task(async move { s.notify_delete_channel(&id2).await }),
+                    ));
+                    close = true;
+                }
+                if ui
+                    .add(Button::ghost(cx.tr.t("action.cancel")).kbd("Esc").small())
+                    .clicked()
+                {
+                    close = true;
+                }
+            });
         });
     });
     if r.should_close() || close {

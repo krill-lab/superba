@@ -6,18 +6,20 @@ use std::time::Duration;
 
 use egui::{Align, Color32, Layout, Panel, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use superba_core::{
-    ConsumerKind, Decision, DecisionRequest, KeyResolution, LegacySessionChoice, MigrationPlan,
-    PlanChoice, ProviderRestore, RestartKind, Severity, StepStatus, SwitchIntent, SwitchPhase,
-    SwitchPlan, SwitchStep, TargetId,
+    ConsumerKind, Decision, DecisionRequest, KeyResolution, LegacySessionChoice, LocalizedText,
+    MigrationPlan, Notice, PlanChoice, ProviderRestore, RestartKind, Severity, StepStatus,
+    SwitchIntent, SwitchPhase, SwitchPlan, SwitchStep, TargetId,
 };
 
 use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::{self, Icon};
-use crate::design::tokens::{Palette, chrome, radius, size, text};
+use crate::design::tokens::{Palette, chrome, radius, size, space, text};
 use crate::design::widgets::{
-    Button, CountdownBar, Dropdown, Status, StatusDot, Text, dialog, link_button,
+    Button, CountdownBar, Dropdown, Status, StatusDot, Text, bounded, dialog, dialog_body,
+    link_button,
 };
 use crate::flow::{Flow, Run, Stage};
+use crate::pages::shared::notices::notice_list;
 use crate::pages::{Action, Cx, Page, error_text};
 use crate::pages::{NavBadge, PageStatus};
 
@@ -585,8 +587,12 @@ pub fn banner(
                     HeaderAside::Buttons(vec![Button::ghost(tr.t("action.cancel")).small()]),
                 );
                 cancel = buttons.iter().any(egui::Response::clicked);
-                for (_, message, _) in flow.remote_progress() {
-                    ui.label(tr.text(message));
+                if !flow.remote_progress().is_empty() {
+                    dialog_body(ui, |ui| {
+                        for (_, message, _) in flow.remote_progress() {
+                            ui.label(tr.text(message));
+                        }
+                    });
                 }
                 ui.ctx().request_repaint();
             });
@@ -628,44 +634,48 @@ pub fn banner(
                 );
                 clicked_now = buttons[0].clicked();
                 clicked_cancel = buttons[1].clicked();
-                if let Some(reason) = &reapply {
-                    ui.add(egui::Label::new(Text::small(reason, pal)).wrap());
-                }
-                ui.add_space(2.0);
-                if BannerState::risks_seen(ui.ctx()) {
-                    let icon = if st.show_risks {
-                        Icon::ChevronDown
-                    } else {
-                        Icon::ChevronRight
-                    };
-                    if ui
-                        .add(
-                            Button::ghost(tr.t("shell.what_restarts"))
-                                .small()
-                                .icon(icon),
-                        )
-                        .clicked()
-                    {
-                        st.show_risks = !st.show_risks;
+                dialog_body(ui, |ui| {
+                    if let Some(reason) = &reapply {
+                        ui.add(egui::Label::new(Text::small(reason, pal)).wrap());
                     }
-                    if st.show_risks {
+                    ui.add_space(2.0);
+                    if BannerState::risks_seen(ui.ctx()) {
+                        let icon = if st.show_risks {
+                            Icon::ChevronDown
+                        } else {
+                            Icon::ChevronRight
+                        };
+                        if ui
+                            .add(
+                                Button::ghost(tr.t("shell.what_restarts"))
+                                    .small()
+                                    .icon(icon),
+                            )
+                            .clicked()
+                        {
+                            st.show_risks = !st.show_risks;
+                        }
+                        if st.show_risks {
+                            hot_risk_copy(ui, cx, &plan);
+                            plan_notes(ui, cx, &plan, st);
+                        } else {
+                            // Routine restart details live in the disclosure. New
+                            // issues (cross-site changes, drift, unsupported versions,
+                            // etc.) must still be visible on every affected switch.
+                            let notices: Vec<Notice> = plan
+                                .warnings
+                                .iter()
+                                .filter(|w| !routine_restart_note(&w.text.key))
+                                .cloned()
+                                .collect();
+                            notice_list(ui, cx, plan_notices_id(&plan), &notices);
+                        }
+                    } else {
                         hot_risk_copy(ui, cx, &plan);
                         plan_notes(ui, cx, &plan, st);
-                    } else {
-                        // Routine restart details live in the disclosure. New
-                        // issues (cross-site changes, drift, unsupported versions,
-                        // etc.) must still be visible on every affected switch.
-                        for warning in &plan.warnings {
-                            if !routine_restart_note(&warning.text.key) {
-                                note(ui, pal, warning.severity, &cx.localize(&warning.text));
-                            }
-                        }
+                        st.risk_shown_for = Some(plan.id.clone());
                     }
-                } else {
-                    hot_risk_copy(ui, cx, &plan);
-                    plan_notes(ui, cx, &plan, st);
-                    st.risk_shown_for = Some(plan.id.clone());
-                }
+                });
             });
             if clicked_now {
                 flow.switch_now(now);
@@ -696,11 +706,12 @@ pub fn banner(
                     tr.f("banner.destination", &[("dest", &cx.dest(&plan.to))]),
                     pal,
                 ));
-                for t in &busy {
-                    busy_line(ui, cx, t);
-                }
-                ui.label(Text::muted(tr.t("banner.waiting.body"), pal));
-                ui.add_space(4.0);
+                dialog_body(ui, |ui| {
+                    for t in &busy {
+                        busy_line(ui, cx, t);
+                    }
+                    ui.label(Text::muted(tr.t("banner.waiting.body"), pal));
+                });
                 ui.horizontal_wrapped(|ui| {
                     if ui
                         .add(Button::primary(tr.t("banner.waiting.wait")).small())
@@ -762,14 +773,15 @@ pub fn banner(
                     tr.f("banner.destination", &[("dest", &cx.dest(&plan.to))]),
                     pal,
                 ));
-                if let RestartKind::Blocked { reasons } = &plan.primary {
-                    for r in reasons {
-                        bullet(ui, pal, &block_text(cx, r));
+                dialog_body(ui, |ui| {
+                    // What blocks the switch first, then the plan's notices.
+                    if let RestartKind::Blocked { reasons } = &plan.primary {
+                        for r in reasons {
+                            bullet(ui, pal, &block_text(cx, r));
+                        }
                     }
-                }
-                for w in &plan.warnings {
-                    note(ui, pal, w.severity, &cx.localize(&w.text));
-                }
+                    notice_list(ui, cx, plan_notices_id(&plan), &plan.warnings);
+                });
             });
             if let Some(i) = alternative {
                 flow.take_alternative(i, now);
@@ -809,17 +821,19 @@ pub fn banner(
                     }),
                 );
                 ui.add_space(4.0);
-                ui.horizontal_wrapped(|ui| {
-                    for (i, (label, status)) in steps.iter().enumerate() {
-                        if i > 0 {
-                            ui.label(Text::small("·", pal));
+                dialog_body(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        for (i, (label, status)) in steps.iter().enumerate() {
+                            if i > 0 {
+                                ui.label(Text::small("·", pal));
+                            }
+                            step_chip(ui, pal, label, status);
                         }
-                        step_chip(ui, pal, label, status);
+                    });
+                    for (_, message, _) in flow.remote_progress() {
+                        ui.label(tr.text(message));
                     }
                 });
-                for (_, message, _) in flow.remote_progress() {
-                    ui.label(tr.text(message));
-                }
                 if flow
                     .remote_progress()
                     .iter()
@@ -924,47 +938,41 @@ fn routine_restart_note(key: &str) -> bool {
     cli_restart_note(key) || remote_restart_note(key) || key == "switch.warn.authapi_line"
 }
 
-/// Situational notes: CLI processes, remote hosts, warnings, key changes.
+/// Situational notes: CLI processes, remote hosts, warnings, key changes. The
+/// notices are grouped and sorted, information collapsed (user bug 103).
 fn plan_notes(ui: &mut Ui, cx: &Cx<'_>, plan: &SwitchPlan, st: &mut BannerState) {
-    let pal = cx.pal;
     let tr = cx.tr;
-    let mut any = false;
     let cli = plan
         .restarts
         .iter()
         .find(|r| r.consumer == ConsumerKind::CliProcesses && !r.pids.is_empty());
     let remotes = remote_labels(cx, plan);
-    if cli.is_some() || !remotes.is_empty() || !plan.warnings.is_empty() {
-        ui.add_space(6.0);
-        any = true;
-    }
+    let mut notices = Vec::new();
     if let Some(c) = cli {
-        note(
-            ui,
-            pal,
-            Severity::Info,
-            &tr.f("banner.note.cli", &[("n", &c.pids.len())]),
-        );
+        notices.push(Notice::info(
+            LocalizedText::new("banner.note.cli", "").arg("n", c.pids.len()),
+        ));
     }
     if !remotes.is_empty() {
-        note(
-            ui,
-            pal,
-            Severity::Warning,
-            &tr.f("banner.note.remotes", &[("hosts", &remotes.join(", "))]),
-        );
+        notices.push(Notice::warning(
+            LocalizedText::new("banner.note.remotes", "").arg("hosts", remotes.join(", ")),
+        ));
     }
-    for w in &plan.warnings {
-        if (cli.is_some() && cli_restart_note(&w.text.key))
-            || (!remotes.is_empty() && remote_restart_note(&w.text.key))
-        {
-            continue;
-        }
-        note(ui, pal, w.severity, &cx.localize(&w.text));
+    notices.extend(
+        plan.warnings
+            .iter()
+            .filter(|w| {
+                !((cli.is_some() && cli_restart_note(&w.text.key))
+                    || (!remotes.is_empty() && remote_restart_note(&w.text.key)))
+            })
+            .cloned(),
+    );
+    if !notices.is_empty() {
+        ui.add_space(space::XS);
+        notice_list(ui, cx, plan_notices_id(plan), &notices);
     }
     let count = change_count(cx, plan);
     if count > 0 {
-        ui.add_space(if any { 2.0 } else { 6.0 });
         let label = if st.show_changes {
             tr.t("banner.hide_changes")
         } else {
@@ -977,6 +985,11 @@ fn plan_notes(ui: &mut Ui, cx: &Cx<'_>, plan: &SwitchPlan, st: &mut BannerState)
             key_changes(ui, cx, plan);
         }
     }
+}
+
+/// Where the switch preview keeps its open notice disclosures.
+pub fn plan_notices_id(plan: &SwitchPlan) -> egui::Id {
+    egui::Id::unique(("plan-notices", &plan.id))
 }
 
 /// Number of rows [`key_changes`] shows.
@@ -1171,8 +1184,9 @@ fn note(ui: &mut Ui, pal: &Palette, severity: Severity, text: &str) {
     });
 }
 
-/// The floating overlay surface; `bar` adds the countdown bar (elapsed fraction,
-/// paused) as a hairline along the top edge.
+/// The floating overlay surface, at most `max_h` high inside its padding (the
+/// part a view draws in [`dialog_body`] scrolls); `bar` adds the countdown bar
+/// (elapsed fraction, paused) as a hairline along the top edge.
 fn banner_card(
     ui: &mut Ui,
     pal: &Palette,
@@ -1202,14 +1216,9 @@ fn banner_card(
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = 6.0;
-            egui::ScrollArea::vertical()
-                .id_salt("switch-overlay-body")
-                .max_height(max_h)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    add(ui);
-                });
+            // Each view draws its long part in a `dialog_body`: the title and
+            // the buttons stay in view while it scrolls (user bug 103).
+            bounded(ui, egui::Id::unique("switch-overlay"), max_h, add);
         })
         .response;
     if let Some((progress, paused)) = bar {
@@ -1258,11 +1267,12 @@ fn waiting_banner(ui: &mut Ui, cx: &Cx<'_>, flow: &mut Flow, now: Duration) {
                 )],
             )),
         );
-        for t in &busy {
-            busy_line(ui, cx, t);
-        }
-        ui.label(Text::muted(tr.t("banner.waiting.body"), pal));
-        ui.add_space(4.0);
+        dialog_body(ui, |ui| {
+            for t in &busy {
+                busy_line(ui, cx, t);
+            }
+            ui.label(Text::muted(tr.t("banner.waiting.body"), pal));
+        });
         ui.horizontal_wrapped(|ui| {
             let primary = if acknowledged {
                 Button::primary(tr.t("banner.waiting.will_switch"))
@@ -1422,218 +1432,221 @@ fn choices(
         flow.cancel(now);
     }
     let mut accept = Vec::new();
-    for choice in &plan.choices {
-        ui.add_space(6.0);
-        match choice {
-            PlanChoice::LegacySessions { providers } => {
-                let (provider, count) = providers
-                    .iter()
-                    .max_by_key(|(_, c)| **c)
-                    .map(|(p, c)| (p.clone(), *c))
-                    .unwrap_or_default();
-                ui.label(Text::strong(
-                    tr.f(
-                        "wizard.legacy.title",
-                        &[("count", &count), ("provider", &provider)],
-                    ),
-                    pal,
-                ));
-                ui.label(Text::small(tr.t("wizard.legacy.migrate_body"), pal));
-                ui.label(Text::small(
-                    tr.f("wizard.legacy.skip_body", &[("count", &count)]),
-                    pal,
-                ));
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(Button::primary(tr.t("wizard.legacy.migrate")).small())
-                        .clicked()
-                    {
-                        flow.answer_legacy_sessions(LegacySessionChoice::Migrate, now);
-                    }
-                    if ui
-                        .add(Button::new(tr.t("wizard.legacy.skip")).small())
-                        .clicked()
-                    {
-                        flow.answer_legacy_sessions(LegacySessionChoice::Skip, now);
-                    }
-                });
-            }
-            PlanChoice::RestoreProvider {
-                baseline_provider,
-                created_during,
-                migrated_in,
-            } => {
-                ui.label(Text::body(
-                    tr.f(
-                        "banner.restore.body",
-                        &[
-                            ("provider", baseline_provider),
-                            ("created", created_during),
-                            ("migrated", migrated_in),
-                        ],
-                    ),
-                    pal,
-                ));
-                ui.label(Text::body(tr.t("banner.restore.reverse_note"), pal));
-                ui.label(Text::muted(tr.t("banner.restore.keep_note"), pal));
-                ui.horizontal_wrapped(|ui| {
-                    if ui
-                        .add(Button::primary(tr.t("banner.restore.reverse")).small())
-                        .clicked()
-                    {
-                        flow.answer_restore_provider(
-                            ProviderRestore::Baseline {
-                                reverse_migrate: true,
-                            },
-                            now,
-                        );
-                    }
-                    if ui
-                        .add(Button::new(tr.t("banner.restore.keep")).small())
-                        .clicked()
-                    {
-                        flow.answer_restore_provider(ProviderRestore::KeepOpenai, now);
-                    }
-                    if ui
-                        .add(Button::new(tr.t("banner.restore.exact")).small())
-                        .clicked()
-                    {
-                        flow.answer_restore_provider(
-                            ProviderRestore::Baseline {
-                                reverse_migrate: false,
-                            },
-                            now,
-                        );
-                    }
-                });
-            }
-            PlanChoice::ReplacementModel {
-                current,
-                suggestions,
-            } => {
-                if st.model.is_none() {
-                    st.model = suggestions.first().cloned();
-                }
-                let site = plan
-                    .to
-                    .site_id
-                    .as_ref()
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(Text::body(
-                        tr.f("banner.model.body", &[("site", &site), ("model", current)]),
+    dialog_body(ui, |ui| {
+        for choice in &plan.choices {
+            ui.add_space(6.0);
+            match choice {
+                PlanChoice::LegacySessions { providers } => {
+                    let (provider, count) = providers
+                        .iter()
+                        .max_by_key(|(_, c)| **c)
+                        .map(|(p, c)| (p.clone(), *c))
+                        .unwrap_or_default();
+                    ui.label(Text::strong(
+                        tr.f(
+                            "wizard.legacy.title",
+                            &[("count", &count), ("provider", &provider)],
+                        ),
                         pal,
                     ));
-                    let selected = st.model.clone().unwrap_or_default();
-                    Dropdown::new("replacement-model")
-                        .selected_text(
-                            RichText::new(&selected).font(mono_font(text::SMALL, Weight::Regular)),
-                        )
-                        .show_ui(ui, |ui| {
-                            for s in suggestions {
-                                ui.selectable_value(&mut st.model, Some(s.clone()), s);
-                            }
-                        });
-                    if ui
-                        .add(Button::primary(tr.t("wizard.continue")).small())
-                        .clicked()
-                        && let Some(m) = st.model.clone()
-                    {
-                        flow.answer_model(m, now);
-                    }
-                });
-            }
-            PlanChoice::OwnedKeyConflict {
-                conflicts,
-                auth,
-                source,
-            } => {
-                // GH#5: who changed what Superba manages, and take over / let
-                // that tool manage it / keep its values (not for a credential:
-                // a switch cannot route Codex with another tool's key) / Esc.
-                ui.label(Text::body(
-                    tr.f(
-                        "banner.conflict.body_source",
-                        &[("source", &cx.localize(&source.text()))],
-                    ),
-                    pal,
-                ));
-                for c in conflicts {
-                    crate::pages::shared::values::change_row(
-                        ui,
-                        cx,
-                        egui::Id::unique(("key-conflict", &plan.id, &c.path)),
-                        None,
-                        &c.path,
-                        c.before.as_deref(),
-                        c.after.as_deref(),
-                        None,
-                        "—",
-                    );
-                }
-                if let Some(a) = auth {
-                    crate::external::auth_row(ui, cx, &plan.id, a);
-                }
-                ui.horizontal_wrapped(|ui| {
-                    let mut answer = None;
-                    if ui
-                        .add(Button::primary(tr.t("banner.conflict.take_over")).small())
-                        .clicked()
-                    {
-                        answer = Some(KeyResolution::Overwrite);
-                    }
-                    let hand_off =
-                        crate::external::hand_off_label(cx, source, "banner.conflict.hand_off");
-                    if ui.add(Button::new(hand_off).small()).clicked() {
-                        flow.request(crate::external::hand_off_request(source), now);
-                    }
-                    if auth.is_none()
-                        && ui
-                            .add(Button::new(tr.t("banner.conflict.keep")).small())
+                    ui.label(Text::small(tr.t("wizard.legacy.migrate_body"), pal));
+                    ui.label(Text::small(
+                        tr.f("wizard.legacy.skip_body", &[("count", &count)]),
+                        pal,
+                    ));
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add(Button::primary(tr.t("wizard.legacy.migrate")).small())
                             .clicked()
-                    {
-                        answer = Some(KeyResolution::KeepCurrent);
-                    }
-                    if let Some(a) = answer {
-                        let mut request = plan.request.clone();
-                        for c in conflicts {
-                            request.key_resolutions.insert(c.path.clone(), a);
+                        {
+                            flow.answer_legacy_sessions(LegacySessionChoice::Migrate, now);
                         }
-                        if auth.is_some() {
-                            request
-                                .key_resolutions
-                                .insert(superba_core::AUTH_JSON_PATH.to_owned(), a);
+                        if ui
+                            .add(Button::new(tr.t("wizard.legacy.skip")).small())
+                            .clicked()
+                        {
+                            flow.answer_legacy_sessions(LegacySessionChoice::Skip, now);
                         }
-                        flow.request(request, now);
+                    });
+                }
+                PlanChoice::RestoreProvider {
+                    baseline_provider,
+                    created_during,
+                    migrated_in,
+                } => {
+                    ui.label(Text::body(
+                        tr.f(
+                            "banner.restore.body",
+                            &[
+                                ("provider", baseline_provider),
+                                ("created", created_during),
+                                ("migrated", migrated_in),
+                            ],
+                        ),
+                        pal,
+                    ));
+                    ui.label(Text::body(tr.t("banner.restore.reverse_note"), pal));
+                    ui.label(Text::muted(tr.t("banner.restore.keep_note"), pal));
+                    ui.horizontal_wrapped(|ui| {
+                        if ui
+                            .add(Button::primary(tr.t("banner.restore.reverse")).small())
+                            .clicked()
+                        {
+                            flow.answer_restore_provider(
+                                ProviderRestore::Baseline {
+                                    reverse_migrate: true,
+                                },
+                                now,
+                            );
+                        }
+                        if ui
+                            .add(Button::new(tr.t("banner.restore.keep")).small())
+                            .clicked()
+                        {
+                            flow.answer_restore_provider(ProviderRestore::KeepOpenai, now);
+                        }
+                        if ui
+                            .add(Button::new(tr.t("banner.restore.exact")).small())
+                            .clicked()
+                        {
+                            flow.answer_restore_provider(
+                                ProviderRestore::Baseline {
+                                    reverse_migrate: false,
+                                },
+                                now,
+                            );
+                        }
+                    });
+                }
+                PlanChoice::ReplacementModel {
+                    current,
+                    suggestions,
+                } => {
+                    if st.model.is_none() {
+                        st.model = suggestions.first().cloned();
                     }
-                });
+                    let site = plan
+                        .to
+                        .site_id
+                        .as_ref()
+                        .map(|s| s.to_string())
+                        .unwrap_or_default();
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(Text::body(
+                            tr.f("banner.model.body", &[("site", &site), ("model", current)]),
+                            pal,
+                        ));
+                        let selected = st.model.clone().unwrap_or_default();
+                        Dropdown::new("replacement-model")
+                            .selected_text(
+                                RichText::new(&selected)
+                                    .font(mono_font(text::SMALL, Weight::Regular)),
+                            )
+                            .show_ui(ui, |ui| {
+                                for s in suggestions {
+                                    ui.selectable_value(&mut st.model, Some(s.clone()), s);
+                                }
+                            });
+                        if ui
+                            .add(Button::primary(tr.t("wizard.continue")).small())
+                            .clicked()
+                            && let Some(m) = st.model.clone()
+                        {
+                            flow.answer_model(m, now);
+                        }
+                    });
+                }
+                PlanChoice::OwnedKeyConflict {
+                    conflicts,
+                    auth,
+                    source,
+                } => {
+                    // GH#5: who changed what Superba manages, and take over / let
+                    // that tool manage it / keep its values (not for a credential:
+                    // a switch cannot route Codex with another tool's key) / Esc.
+                    ui.label(Text::body(
+                        tr.f(
+                            "banner.conflict.body_source",
+                            &[("source", &cx.localize(&source.text()))],
+                        ),
+                        pal,
+                    ));
+                    for c in conflicts {
+                        crate::pages::shared::values::change_row(
+                            ui,
+                            cx,
+                            egui::Id::unique(("key-conflict", &plan.id, &c.path)),
+                            None,
+                            &c.path,
+                            c.before.as_deref(),
+                            c.after.as_deref(),
+                            None,
+                            "—",
+                        );
+                    }
+                    if let Some(a) = auth {
+                        crate::external::auth_row(ui, cx, &plan.id, a);
+                    }
+                    ui.horizontal_wrapped(|ui| {
+                        let mut answer = None;
+                        if ui
+                            .add(Button::primary(tr.t("banner.conflict.take_over")).small())
+                            .clicked()
+                        {
+                            answer = Some(KeyResolution::Overwrite);
+                        }
+                        let hand_off =
+                            crate::external::hand_off_label(cx, source, "banner.conflict.hand_off");
+                        if ui.add(Button::new(hand_off).small()).clicked() {
+                            flow.request(crate::external::hand_off_request(source), now);
+                        }
+                        if auth.is_none()
+                            && ui
+                                .add(Button::new(tr.t("banner.conflict.keep")).small())
+                                .clicked()
+                        {
+                            answer = Some(KeyResolution::KeepCurrent);
+                        }
+                        if let Some(a) = answer {
+                            let mut request = plan.request.clone();
+                            for c in conflicts {
+                                request.key_resolutions.insert(c.path.clone(), a);
+                            }
+                            if auth.is_some() {
+                                request
+                                    .key_resolutions
+                                    .insert(superba_core::AUTH_JSON_PATH.to_owned(), a);
+                            }
+                            flow.request(request, now);
+                        }
+                    });
+                }
+                PlanChoice::ForeignEnv { lines } => {
+                    ui.label(Text::body(
+                        tr.f("banner.foreign_env", &[("n", &lines.len())]),
+                        pal,
+                    ));
+                    accept.push(choice.clone());
+                }
+                PlanChoice::UnknownVersion { consumer } => {
+                    ui.label(Text::body(
+                        tr.f("banner.unknown_version", &[("consumer", consumer)]),
+                        pal,
+                    ));
+                    accept.push(choice.clone());
+                }
+                PlanChoice::SharedHome { targets } => {
+                    let names: Vec<&str> = targets.iter().map(|t| t.as_str()).collect();
+                    ui.label(Text::body(
+                        tr.f("banner.shared_home", &[("hosts", &names.join(", "))]),
+                        pal,
+                    ));
+                    accept.push(choice.clone());
+                }
+                _ => {}
             }
-            PlanChoice::ForeignEnv { lines } => {
-                ui.label(Text::body(
-                    tr.f("banner.foreign_env", &[("n", &lines.len())]),
-                    pal,
-                ));
-                accept.push(choice.clone());
-            }
-            PlanChoice::UnknownVersion { consumer } => {
-                ui.label(Text::body(
-                    tr.f("banner.unknown_version", &[("consumer", consumer)]),
-                    pal,
-                ));
-                accept.push(choice.clone());
-            }
-            PlanChoice::SharedHome { targets } => {
-                let names: Vec<&str> = targets.iter().map(|t| t.as_str()).collect();
-                ui.label(Text::body(
-                    tr.f("banner.shared_home", &[("hosts", &names.join(", "))]),
-                    pal,
-                ));
-                accept.push(choice.clone());
-            }
-            _ => {}
         }
-    }
+    });
     if !accept.is_empty() {
         ui.add_space(4.0);
         if ui
@@ -1657,6 +1670,11 @@ pub fn migration_sessions(m: &MigrationPlan) -> u32 {
     } else {
         u32::try_from(m.items.len()).unwrap_or(u32::MAX)
     }
+}
+
+/// Where the full-restart confirmation keeps its open notice disclosures.
+pub fn confirm_notices_id(plan: &SwitchPlan) -> egui::Id {
+    egui::Id::unique(("confirm-full-notices", &plan.id))
 }
 
 /// The full-restart confirmation (plan 7.3 ConfirmFull).
@@ -1693,50 +1711,50 @@ pub fn confirm_full(
         if let Some(reason) = reapply_reason(cx, &plan) {
             ui.add(egui::Label::new(Text::small(reason, pal)).wrap());
         }
-        ui.add_space(8.0);
-        if let RestartKind::FullAppRestart { reason } = &plan.primary {
-            ui.horizontal_top(|ui| {
-                ui.label(Text::strong(tr.t("confirm.reason"), pal));
-                ui.add(egui::Label::new(Text::body(tr.text(&reason.text()), pal)).wrap());
-            });
-        }
-        if let Some(m) = &plan.migration {
-            note(
-                ui,
-                pal,
-                Severity::Warning,
-                &tr.f("confirm.migration", &[("n", &migration_sessions(m))]),
-            );
-        }
-        ui.add(egui::Label::new(Text::muted(tr.t("confirm.body"), pal)).wrap());
-        // Running turns (GH#7): the restart waits for them, and says so now.
-        if !plan.active_threads.is_empty() && plan.primary.interrupts_turns() {
-            ui.add_space(4.0);
-            note(
-                ui,
-                pal,
-                Severity::Warning,
-                &tr.f("confirm.turns", &[("n", &plan.active_threads.len())]),
-            );
-            for t in &plan.active_threads {
-                busy_line(ui, cx, t);
+        dialog_body(ui, |ui| {
+            ui.add_space(space::XS);
+            if let RestartKind::FullAppRestart { reason } = &plan.primary {
+                ui.horizontal_top(|ui| {
+                    ui.label(Text::strong(tr.t("confirm.reason"), pal));
+                    ui.add(egui::Label::new(Text::body(tr.text(&reason.text()), pal)).wrap());
+                });
             }
-        }
-        for w in &plan.warnings {
-            note(ui, pal, w.severity, &cx.localize(&w.text));
-        }
-        if !plan.cleanup.is_empty() {
-            ui.add_space(4.0);
-            ui.label(Text::strong(tr.t("confirm.cleanup"), pal));
-            for c in &plan.cleanup {
-                bullet(ui, pal, &tr.text(c));
+            if let Some(m) = &plan.migration {
+                note(
+                    ui,
+                    pal,
+                    Severity::Warning,
+                    &tr.f("confirm.migration", &[("n", &migration_sessions(m))]),
+                );
             }
-        }
-        if change_count(cx, &plan) > 0 {
-            ui.add_space(4.0);
-            key_changes(ui, cx, &plan);
-        }
-        ui.add_space(12.0);
+            ui.add(egui::Label::new(Text::muted(tr.t("confirm.body"), pal)).wrap());
+            // Running turns (GH#7): the restart waits for them, and says so now.
+            if !plan.active_threads.is_empty() && plan.primary.interrupts_turns() {
+                ui.add_space(space::XS);
+                note(
+                    ui,
+                    pal,
+                    Severity::Warning,
+                    &tr.f("confirm.turns", &[("n", &plan.active_threads.len())]),
+                );
+                for t in &plan.active_threads {
+                    busy_line(ui, cx, t);
+                }
+            }
+            notice_list(ui, cx, confirm_notices_id(&plan), &plan.warnings);
+            if !plan.cleanup.is_empty() {
+                ui.add_space(space::XS);
+                ui.label(Text::strong(tr.t("confirm.cleanup"), pal));
+                for c in &plan.cleanup {
+                    bullet(ui, pal, &tr.text(c));
+                }
+            }
+            if change_count(cx, &plan) > 0 {
+                ui.add_space(space::XS);
+                key_changes(ui, cx, &plan);
+            }
+        });
+        ui.add_space(space::XS);
         ui.horizontal_wrapped(|ui| {
             if ui
                 .add(Button::primary(tr.t(if reopen {
@@ -1865,62 +1883,66 @@ pub fn decision_dialog(ctx: &egui::Context, cx: &Cx<'_>, flow: &mut Flow, now: D
         };
         ui.label(Text::h2(tr.t(title), pal));
         ui.add(egui::Label::new(Text::muted(tr.t(body), pal)).wrap());
-        match &request {
-            DecisionRequest::IpcFailed { error } => {
-                ui.label(Text::mono_muted(error_text(tr, error), pal));
-            }
-            DecisionRequest::VerificationFailed { verification } => {
-                let rows = [
-                    ("verify.process", &verification.process),
-                    ("verify.files", &verification.files),
-                    ("verify.auth", &verification.auth),
-                    ("verify.line", &verification.line),
-                    ("verify.renderer", &verification.renderer),
-                ];
-                for (key, r) in rows {
-                    ui.horizontal_wrapped(|ui| {
-                        let (st, detail) = match r {
-                            superba_core::CheckResult::Passed => (Status::Ok, String::new()),
-                            superba_core::CheckResult::Failed { detail } => {
-                                (Status::Error, detail.clone())
-                            }
-                            superba_core::CheckResult::Skipped { reason } => {
-                                (Status::Idle, reason.clone())
-                            }
-                            superba_core::CheckResult::Pending => (Status::Idle, String::new()),
-                        };
-                        ui.add(StatusDot::new(st));
-                        ui.label(Text::body(tr.t(key), pal));
-                        if !detail.is_empty() {
-                            ui.label(Text::small(detail, pal));
-                        }
-                    });
+        // The details (process lists, a quit report) scroll; the rollback
+        // countdown and the answers stay in view.
+        dialog_body(ui, |ui| {
+            match &request {
+                DecisionRequest::IpcFailed { error } => {
+                    ui.label(Text::mono_muted(error_text(tr, error), pal));
                 }
+                DecisionRequest::VerificationFailed { verification } => {
+                    let rows = [
+                        ("verify.process", &verification.process),
+                        ("verify.files", &verification.files),
+                        ("verify.auth", &verification.auth),
+                        ("verify.line", &verification.line),
+                        ("verify.renderer", &verification.renderer),
+                    ];
+                    for (key, r) in rows {
+                        ui.horizontal_wrapped(|ui| {
+                            let (st, detail) = match r {
+                                superba_core::CheckResult::Passed => (Status::Ok, String::new()),
+                                superba_core::CheckResult::Failed { detail } => {
+                                    (Status::Error, detail.clone())
+                                }
+                                superba_core::CheckResult::Skipped { reason } => {
+                                    (Status::Idle, reason.clone())
+                                }
+                                superba_core::CheckResult::Pending => (Status::Idle, String::new()),
+                            };
+                            ui.add(StatusDot::new(st));
+                            ui.label(Text::body(tr.t(key), pal));
+                            if !detail.is_empty() {
+                                ui.label(Text::small(detail, pal));
+                            }
+                        });
+                    }
+                }
+                DecisionRequest::ForceQuit { pids, report } if report.left.is_empty() => {
+                    ui.label(Text::mono_muted(
+                        pids.iter()
+                            .map(|p| p.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        pal,
+                    ));
+                }
+                // User bug 53: which of the app's processes still run, what was tried.
+                DecisionRequest::ForceQuit { report, .. }
+                | DecisionRequest::AppStillRunning { report } => {
+                    quit_report(ui, cx, report);
+                }
+                DecisionRequest::CloseConsumers { processes, busy }
+                | DecisionRequest::ForceStop { processes, busy } => {
+                    crate::in_effect::process_list(ui, cx, processes, busy);
+                }
+                DecisionRequest::UnknownRemoteActivity { targets } => {
+                    let names: Vec<&str> = targets.iter().map(|t| t.as_str()).collect();
+                    ui.label(Text::mono_muted(names.join(", "), pal));
+                }
+                _ => {}
             }
-            DecisionRequest::ForceQuit { pids, report } if report.left.is_empty() => {
-                ui.label(Text::mono_muted(
-                    pids.iter()
-                        .map(|p| p.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    pal,
-                ));
-            }
-            // User bug 53: which of the app's processes still run, what was tried.
-            DecisionRequest::ForceQuit { report, .. }
-            | DecisionRequest::AppStillRunning { report } => {
-                quit_report(ui, cx, report);
-            }
-            DecisionRequest::CloseConsumers { processes, busy }
-            | DecisionRequest::ForceStop { processes, busy } => {
-                crate::in_effect::process_list(ui, cx, processes, busy);
-            }
-            DecisionRequest::UnknownRemoteActivity { targets } => {
-                let names: Vec<&str> = targets.iter().map(|t| t.as_str()).collect();
-                ui.label(Text::mono_muted(names.join(", "), pal));
-            }
-            _ => {}
-        }
+        });
         if recovery {
             ui.add_space(4.0);
             if let Some(remaining) = remaining {

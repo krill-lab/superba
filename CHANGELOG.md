@@ -15,6 +15,16 @@ Changes since [v0.1.1-alpha.7](https://github.com/krill-lab/superba/releases/tag
   remote connection uses the selected router instead of returning to login.
 - Quote notification hook commands correctly on Windows when executable,
   configuration or hook paths contain spaces.
+- Dialogs never grow taller than the window: the title and the buttons stay in
+  view and the content between them scrolls. Turning the router off no longer
+  produces a confirmation whose buttons are off screen.
+- Plan notices are grouped and sorted: repeated notices of one kind become one
+  line with a count and an expander ("32 models are not in the built-in
+  catalog of this Codex version"), blocking notices and warnings come first,
+  and informational notes are collapsed.
+- Turning the router off keeps the model picked through a router provider
+  prefix (`provider/gpt-6.1-sol` becomes `gpt-6.1-sol`) instead of falling
+  back to the first model the line lists, and says so as a warning.
 
 ### Limits of this preview
 

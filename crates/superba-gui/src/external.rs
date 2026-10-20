@@ -13,7 +13,7 @@ use superba_core::{
     auth_shape_label,
 };
 
-use crate::design::widgets::{Button, Text, dialog};
+use crate::design::widgets::{Button, Text, dialog, dialog_body};
 use crate::pages::{Action, Cx};
 
 /// Dialog state between frames.
@@ -176,23 +176,27 @@ pub fn show(ctx: &egui::Context, cx: &Cx<'_>, state: &mut ExternalDialog, out: &
     let mut close = false;
     let response = dialog(ctx, egui::Id::unique("external-change"), 620.0, |ui| {
         ui.label(Text::h2(tr.t("external.title"), pal));
-        ui.add(
-            egui::Label::new(Text::body(
-                tr.f(
-                    "external.body",
-                    &[("source", &source), ("n", &change.count())],
-                ),
-                pal,
-            ))
-            .wrap(),
-        );
-        for e in &change.evidence {
-            ui.add(egui::Label::new(Text::small(cx.localize(e), pal).color(pal.text_muted)).wrap());
-        }
-        ui.add_space(4.0);
-        rows(ui, cx, "dialog", change);
-        ui.add_space(4.0);
-        ui.add(egui::Label::new(Text::muted(tr.t("external.promise"), pal)).wrap());
+        dialog_body(ui, |ui| {
+            ui.add(
+                egui::Label::new(Text::body(
+                    tr.f(
+                        "external.body",
+                        &[("source", &source), ("n", &change.count())],
+                    ),
+                    pal,
+                ))
+                .wrap(),
+            );
+            for e in &change.evidence {
+                ui.add(
+                    egui::Label::new(Text::small(cx.localize(e), pal).color(pal.text_muted)).wrap(),
+                );
+            }
+            ui.add_space(4.0);
+            rows(ui, cx, "dialog", change);
+            ui.add_space(4.0);
+            ui.add(egui::Label::new(Text::muted(tr.t("external.promise"), pal)).wrap());
+        });
         ui.add_space(12.0);
         ui.horizontal_wrapped(|ui| {
             if let Some(p) = &profile

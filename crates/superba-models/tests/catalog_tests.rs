@@ -388,6 +388,82 @@ fn openai_list_uses_the_consumer_entry_then_feed_then_generic_and_only_line_tier
     assert!(note_keys(&f).contains(&"models_note.generic_template".to_owned()));
 }
 
+/// User bug 103: turning the router off listed one "generic settings" note per
+/// gpt-5.x name of the relay's `/v1/models`. Names are compared exactly with
+/// the consumer's own dump, and the dump decides: the desktop app's Codex
+/// (0.162.0-alpha.17.2; 0.163.0-alpha.10.2 bundles the same list) has no
+/// entry for any of the older names. Earlier Codex versions had some of them,
+/// and with such a consumer exactly those match.
+#[test]
+fn generic_notes_name_exactly_the_listed_models_the_consumer_does_not_bundle() {
+    const RELAY: [&str; 12] = [
+        "gpt-5",
+        "gpt-5-codex",
+        "gpt-5.1-codex-max",
+        "gpt-5.2",
+        "gpt-5.3-codex",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.5",
+        "gpt-5.5-pro",
+        "gpt-5.6",
+        "gpt-5.6-sol",
+        "gpt-6.1-sol",
+    ];
+    let generic = |version: &str| -> Vec<String> {
+        let list = RELAY.iter().map(|m| ModelSpec::new(*m)).collect();
+        let f = Case::new(version, CatalogSource::OpenAiList(list))
+            .build()
+            .unwrap();
+        assert_eq!(
+            f.slugs, RELAY,
+            "{version}: every listed model is in the file"
+        );
+        let notes: Vec<String> = f
+            .notes
+            .iter()
+            .filter(|n| n.text.key == "models_note.generic_template")
+            .map(|n| n.text.args[0].1.clone())
+            .collect();
+        // Exactly the names the dump lacks.
+        let dump = bundled(version);
+        let missing: Vec<String> = RELAY
+            .iter()
+            .filter(|m| !dump.entries.iter().any(|e| e["slug"] == **m))
+            .map(|m| (*m).to_owned())
+            .collect();
+        assert_eq!(notes, missing, "{version}");
+        notes
+    };
+    assert_eq!(
+        generic("0.162.0-alpha.17.2"),
+        [
+            "gpt-5",
+            "gpt-5-codex",
+            "gpt-5.1-codex-max",
+            "gpt-5.2",
+            "gpt-5.3-codex",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-5.5-pro",
+            "gpt-5.6",
+        ]
+    );
+    assert_eq!(
+        generic("0.140.0"),
+        [
+            "gpt-5",
+            "gpt-5-codex",
+            "gpt-5.1-codex-max",
+            "gpt-5.5-pro",
+            "gpt-5.6",
+            "gpt-5.6-sol",
+            "gpt-6.1-sol",
+        ]
+    );
+    generic("0.150.1");
+}
+
 #[test]
 fn feed_source_keeps_bundled_entries_and_feed_tiers() {
     let feed = vec![

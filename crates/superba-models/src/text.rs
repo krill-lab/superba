@@ -7,7 +7,7 @@ pub(crate) fn generic_template(model: &str) -> Notice {
     Notice::info(
         LocalizedText::new(
             "models_note.generic_template",
-            "{model}: no catalog entry is known; Codex's settings for unknown models are used",
+            "{model}: not in the built-in catalog of this Codex version; Codex's settings for unknown models are used",
         )
         .arg("model", model),
     )

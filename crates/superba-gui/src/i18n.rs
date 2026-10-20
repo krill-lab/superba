@@ -135,6 +135,11 @@ impl Tr {
         self.catalog.get(key).unwrap_or(key).to_owned()
     }
 
+    /// Whether a catalog has `key` (keys built at run time, e.g. per notice kind).
+    pub fn has(&self, key: &str) -> bool {
+        self.catalog.get(key).is_some()
+    }
+
     /// Translate a UI key and substitute `{name}` arguments.
     pub fn f(&self, key: &str, args: &[(&str, &dyn Display)]) -> String {
         let mut text = LocalizedText::new(key, key);

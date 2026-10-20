@@ -15,7 +15,7 @@ use crate::design::layout::{self, Track};
 use crate::design::tokens::{radius, size, text};
 use crate::design::widgets::{
     Badge, Button, Dropdown, PagedTable, Pager, PendingAction, PendingBar, PendingLabels, Status,
-    StatusDot, Table, Text, Toggle, dialog,
+    StatusDot, Table, Text, Toggle, dialog, dialog_body,
 };
 use crate::pages::shared::{loading, providers, values};
 use crate::pages::{Action, Cx};
@@ -719,31 +719,29 @@ fn diff_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, model: &Mode
                 .f("codex_settings.pending.title", &[("n", &lines.len())]),
             cx.pal,
         ));
-        ui.add(
-            egui::Label::new(Text::small(cx.tr.t("codex_settings.pending.note"), cx.pal)).wrap(),
-        );
-        egui::ScrollArea::vertical()
-            .id_salt("codex-settings-diff-list")
-            .max_height(320.0)
-            .show(ui, |ui| {
-                for line in &lines {
-                    if diff_row(ui, cx, model, line) {
-                        drop = Some(line.path.clone());
-                    }
-                }
-            });
-        let migrating = lines
-            .iter()
-            .any(|l| l.after.is_none() && model.entry(&l.path).is_some_and(|e| e.legacy.is_some()));
-        if migrating {
+        dialog_body(ui, |ui| {
             ui.add(
-                egui::Label::new(Text::caption(
-                    cx.tr.t("codex_settings.migrate.restore_note"),
-                    cx.pal,
-                ))
-                .wrap(),
+                egui::Label::new(Text::small(cx.tr.t("codex_settings.pending.note"), cx.pal))
+                    .wrap(),
             );
-        }
+            for line in &lines {
+                if diff_row(ui, cx, model, line) {
+                    drop = Some(line.path.clone());
+                }
+            }
+            let migrating = lines.iter().any(|l| {
+                l.after.is_none() && model.entry(&l.path).is_some_and(|e| e.legacy.is_some())
+            });
+            if migrating {
+                ui.add(
+                    egui::Label::new(Text::caption(
+                        cx.tr.t("codex_settings.migrate.restore_note"),
+                        cx.pal,
+                    ))
+                    .wrap(),
+                );
+            }
+        });
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             let blocked = super::source::blocked_reason(cx, model);

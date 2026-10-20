@@ -20,7 +20,9 @@ use superba_core::{
 
 use super::{Action, Cx, error_text};
 use crate::design::icons::Icon;
-use crate::design::widgets::{Badge, Button, Segmented, Status, StatusDot, Text, dialog};
+use crate::design::widgets::{
+    Badge, Button, Segmented, Status, StatusDot, Text, dialog, dialog_body,
+};
 use crate::runtime::ReadTask;
 
 /// What the dialog wants its host to do.
@@ -357,10 +359,9 @@ pub fn show_dialog(
     out: &mut Vec<Action>,
 ) -> ImportOutcomeUi {
     let mut outcome = ImportOutcomeUi::Continue;
-    // The list takes what the window leaves besides the title, intro and footer.
-    let list_height = (ctx.content_rect().height() - 300.0).max(200.0);
+    // The dialog's body scrolls (title and buttons stay): no inner limit.
     let response = dialog(ctx, egui::Id::unique("providers-import"), 720.0, |ui| {
-        outcome = body(ui, cx, d, out, list_height);
+        outcome = body(ui, cx, d, out, f32::INFINITY);
     });
     if outcome == ImportOutcomeUi::Continue && response.should_close() && !d.busy() {
         outcome = if d.report.is_some() {
@@ -373,7 +374,7 @@ pub fn show_dialog(
 }
 
 /// The dialog's content (title, sources, footer) in `ui`; `list_height` caps the
-/// scrolling list.
+/// scrolling list (the wizard's page; in the dialog its body scrolls instead).
 pub fn body(
     ui: &mut Ui,
     cx: &Cx<'_>,
@@ -399,37 +400,39 @@ pub fn body(
         return report_view(ui, cx, d, list_height);
     }
     let mut outcome = ImportOutcomeUi::Continue;
-    match &d.scan {
-        None => {
-            ui.add_space(16.0);
-            ui.horizontal(|ui| {
-                ui.add(StatusDot::new(Status::Busy).pulse(true));
-                ui.label(Text::muted(cx.tr.t("import_dialog.scanning"), cx.pal));
-            });
-            ui.add_space(16.0);
-        }
-        Some(Err(e)) => {
-            ui.label(Text::body(error_text(cx.tr, e), cx.pal).color(cx.pal.red));
-        }
-        Some(Ok(scan)) => {
-            let scan = scan.clone();
-            ScrollArea::vertical()
-                .id_salt("import-list")
-                .max_height(list_height)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    for (i, source) in scan.sources.iter().enumerate() {
-                        if i > 0 {
-                            ui.add_space(10.0);
-                        }
-                        source_section(ui, cx, d, source);
-                    }
+    dialog_body(ui, |ui| {
+        match &d.scan {
+            None => {
+                ui.add_space(16.0);
+                ui.horizontal(|ui| {
+                    ui.add(StatusDot::new(Status::Busy).pulse(true));
+                    ui.label(Text::muted(cx.tr.t("import_dialog.scanning"), cx.pal));
                 });
+                ui.add_space(16.0);
+            }
+            Some(Err(e)) => {
+                ui.label(Text::body(error_text(cx.tr, e), cx.pal).color(cx.pal.red));
+            }
+            Some(Ok(scan)) => {
+                let scan = scan.clone();
+                ScrollArea::vertical()
+                    .id_salt("import-list")
+                    .max_height(list_height)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        for (i, source) in scan.sources.iter().enumerate() {
+                            if i > 0 {
+                                ui.add_space(10.0);
+                            }
+                            source_section(ui, cx, d, source);
+                        }
+                    });
+            }
         }
-    }
-    if let Some(e) = &d.error {
-        ui.label(Text::small(e.clone(), cx.pal).color(cx.pal.red));
-    }
+        if let Some(e) = &d.error {
+            ui.label(Text::small(e.clone(), cx.pal).color(cx.pal.red));
+        }
+    });
     ui.add_space(10.0);
     ui.horizontal(|ui| {
         let n = d.effective_count();
@@ -937,43 +940,47 @@ fn report_view(
     let Some(report) = d.report.clone() else {
         return outcome;
     };
-    ui.label(Text::body(
-        cx.tr
-            .f("import_dialog.result.summary", &[("n", &report.imported())]),
-        cx.pal,
-    ));
-    ui.label(Text::small(
-        cx.tr.t("import_dialog.result.not_switched"),
-        cx.pal,
-    ));
-    ui.add_space(6.0);
-    ScrollArea::vertical()
-        .id_salt("import-report")
-        .max_height(list_height)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            for item in &report.items {
-                let (status, text) = outcome_text(cx, &item.outcome);
-                ui.horizontal(|ui| {
-                    ui.add(StatusDot::new(status));
-                    ui.label(Text::strong(item.name.clone(), cx.pal));
-                    ui.label(Text::caption(item.source.name(), cx.pal));
-                });
-                ui.horizontal_wrapped(|ui| {
-                    ui.add_space(16.0);
-                    ui.label(Text::small(text, cx.pal));
-                });
+    dialog_body(ui, |ui| {
+        ui.label(Text::body(
+            cx.tr
+                .f("import_dialog.result.summary", &[("n", &report.imported())]),
+            cx.pal,
+        ));
+        ui.label(Text::small(
+            cx.tr.t("import_dialog.result.not_switched"),
+            cx.pal,
+        ));
+        ui.add_space(6.0);
+        ScrollArea::vertical()
+            .id_salt("import-report")
+            .max_height(list_height)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                for item in &report.items {
+                    let (status, text) = outcome_text(cx, &item.outcome);
+                    ui.horizontal(|ui| {
+                        ui.add(StatusDot::new(status));
+                        ui.label(Text::strong(item.name.clone(), cx.pal));
+                        ui.label(Text::caption(item.source.name(), cx.pal));
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_space(16.0);
+                        ui.label(Text::small(text, cx.pal));
+                    });
+                }
+            });
+    });
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add(Button::primary(cx.tr.t("import_dialog.finish")).kbd("Enter"))
+                .clicked()
+                || ui.input(|i| i.key_pressed(egui::Key::Enter))
+            {
+                outcome = d.outcome_done();
             }
         });
-    ui.add_space(10.0);
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if ui
-            .add(Button::primary(cx.tr.t("import_dialog.finish")).kbd("Enter"))
-            .clicked()
-            || ui.input(|i| i.key_pressed(egui::Key::Enter))
-        {
-            outcome = d.outcome_done();
-        }
     });
     outcome
 }

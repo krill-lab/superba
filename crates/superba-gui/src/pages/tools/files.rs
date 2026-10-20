@@ -1,6 +1,6 @@
 //! Harness partition of the GH#9 editor: protected contents, shared diff view,
 //! encrypted backups and compare-and-swap saves through the harness service.
-use crate::design::widgets::{Button, Text, dialog};
+use crate::design::widgets::{Button, Text, dialog, dialog_body};
 use crate::pages::shared::loading::Latest;
 use crate::pages::{Cx, error_text};
 use crate::runtime::{ReadTask, task};
@@ -313,18 +313,20 @@ pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, ed: &mut Editor) {
             560.0_f32.min(ui.ctx().content_rect().width() - 64.0),
             |ui| {
                 ui.heading(cx.tr.t("tools.review_save"));
-                if protected {
-                    ui.label(cx.tr.t("tools.protected_file"));
-                } else {
-                    crate::pages::settings::files_view::diff_view(
-                        ui,
-                        cx,
-                        "harness-edit",
-                        &ed.original,
-                        &ed.buffer,
-                        300.0,
-                    );
-                }
+                dialog_body(ui, |ui| {
+                    if protected {
+                        ui.label(cx.tr.t("tools.protected_file"));
+                    } else {
+                        crate::pages::settings::files_view::diff_view(
+                            ui,
+                            cx,
+                            "harness-edit",
+                            &ed.original,
+                            &ed.buffer,
+                            300.0,
+                        );
+                    }
+                });
                 ui.horizontal(|ui| {
                     cancel = ui.add(Button::new(cx.tr.t("tools.cancel"))).clicked();
                     save = ui.add(Button::primary(cx.tr.t("tools.confirm"))).clicked();

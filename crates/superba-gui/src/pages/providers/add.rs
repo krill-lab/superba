@@ -22,7 +22,7 @@ use crate::design::icons::Icon;
 use crate::design::widgets::FormRow;
 use crate::design::widgets::{
     Badge, Button, Choice, KeyInput as KeyField, Status, StatusDot, Text, choice_cards, dialog,
-    link_button,
+    dialog_body, link_button,
 };
 use crate::pages::shared::providers::ProviderId;
 use crate::pages::shared::{auto_facts, decision_with, new_profile};
@@ -409,55 +409,59 @@ fn choose(
             }
         })
         .collect();
-    choice_cards(ui, &mut d.pick, &items);
-    ui.add_space(12.0);
-    ui.horizontal(|ui| {
-        if ui
-            .add(
-                Button::ghost(cx.tr.t("providers.add.import"))
-                    .icon(Icon::Download)
-                    .small(),
-            )
-            .on_hover_text(cx.tr.t("providers.add.import_tip"))
-            .clicked()
-        {
-            d.open_import = true;
-        }
+    dialog_body(ui, |ui| {
+        choice_cards(ui, &mut d.pick, &items);
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            if ui
+                .add(
+                    Button::ghost(cx.tr.t("providers.add.import"))
+                        .icon(Icon::Download)
+                        .small(),
+                )
+                .on_hover_text(cx.tr.t("providers.add.import_tip"))
+                .clicked()
+            {
+                d.open_import = true;
+            }
+        });
     });
     ui.add_space(4.0);
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if ui
-            .add(Button::primary(cx.tr.t("providers.add.continue")).kbd("Enter"))
-            .clicked()
-            || ui.input(|i| i.key_pressed(egui::Key::Enter))
-        {
-            match d.pick.as_str() {
-                catalog::PRESET_OFFICIAL => {
-                    *select = Some(ProviderId::Profile(superba_core::ProfileId::new(
-                        catalog::PROFILE_OFFICIAL,
-                    )));
-                }
-                catalog::PRESET_CUSTOM => {
-                    d.step = AddStep::Custom;
-                    d.focused = false;
-                }
-                _ => {
-                    let base = d
-                        .preset()
-                        .map(|p| preset_text(cx, &p).0)
-                        .unwrap_or_default();
-                    d.name = form::unique_name(&base, &taken_names(cx));
-                    d.step = AddStep::Preset;
-                    d.focused = false;
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add(Button::primary(cx.tr.t("providers.add.continue")).kbd("Enter"))
+                .clicked()
+                || ui.input(|i| i.key_pressed(egui::Key::Enter))
+            {
+                match d.pick.as_str() {
+                    catalog::PRESET_OFFICIAL => {
+                        *select = Some(ProviderId::Profile(superba_core::ProfileId::new(
+                            catalog::PROFILE_OFFICIAL,
+                        )));
+                    }
+                    catalog::PRESET_CUSTOM => {
+                        d.step = AddStep::Custom;
+                        d.focused = false;
+                    }
+                    _ => {
+                        let base = d
+                            .preset()
+                            .map(|p| preset_text(cx, &p).0)
+                            .unwrap_or_default();
+                        d.name = form::unique_name(&base, &taken_names(cx));
+                        d.step = AddStep::Preset;
+                        d.focused = false;
+                    }
                 }
             }
-        }
-        if ui
-            .add(Button::ghost(cx.tr.t("action.cancel")).kbd("Esc"))
-            .clicked()
-        {
-            *close = true;
-        }
+            if ui
+                .add(Button::ghost(cx.tr.t("action.cancel")).kbd("Esc"))
+                .clicked()
+            {
+                *close = true;
+            }
+        });
     });
 }
 
@@ -478,140 +482,145 @@ fn preset_step(
     };
     let site = cx.data.site(&preset.site.id).unwrap_or(preset.site.clone());
     let busy = d.saving();
-    ui.add_enabled_ui(!busy, |ui| {
-        let l = field_label(ui, cx, &cx.tr.t("sites.form.name"));
-        ui.add(
-            TextEdit::singleline(&mut d.name)
-                .id(egui::Id::unique("providers-add-name"))
-                .desired_width(f32::INFINITY)
-                .margin(vec2(12.0, 8.0)),
-        )
-        .labelled_by(l.id);
-        let l = field_label(ui, cx, &cx.tr.t("providers.row.key"));
-        let placeholder = preset
-            .key_placeholder
-            .clone()
-            .unwrap_or_else(|| cx.tr.t("connection.key.placeholder_compatible"));
-        let r = KeyField::new(
-            "providers-add-key",
-            &mut d.key,
-            &mut d.reveal,
-            placeholder,
-            cx.tr.t("lines.key.reveal"),
-        )
-        .show(ui)
-        .labelled_by(l.id);
-        if !d.focused {
-            r.request_focus();
-            d.focused = true;
-        }
-        if let Some(home) = &site.homepage {
-            let row_h = ui.spacing().interact_size.y;
-            FormRow::unlabeled().height(row_h).show(ui, |ui| {
-                ui.label(Text::small(cx.tr.t("providers.add.get_key"), cx.pal));
-                let host = home.host_str().unwrap_or(home.as_str()).to_owned();
-                if link_button(ui, &host, true).clicked() {
-                    out.push(Action::OpenUrl(home.to_string()));
-                }
-            });
-        }
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            let has_key = !d.key.trim().is_empty();
-            let checking = d.check_task.is_some();
-            if ui
-                .add(
-                    Button::ghost(cx.tr.t("providers.key.check_all"))
-                        .icon(Icon::Bolt)
-                        .small()
-                        .loading(checking)
-                        .enabled(has_key && !checking),
-                )
-                .on_hover_text(cx.tr.t("lines.key.cost"))
-                .clicked()
-            {
-                let lines = site
-                    .lines
-                    .iter()
-                    .map(|l| {
-                        let caps = cx.data.site_caps(&site.id, &l.id);
-                        let mode = decision_with(&site, Some(l), caps, None, auto_facts(cx.data))
-                            .mode
-                            .unwrap_or(AuthMode::ApiKey);
-                        (l.id.clone(), mode)
-                    })
-                    .collect();
-                d.error = None;
-                d.check_task = Some(crate::runtime::task(ops::check_lines(
-                    cx.service.clone(),
-                    site.id.clone(),
-                    lines,
-                    KeyInput::Secret(Secret::new(d.key.trim())),
-                )));
+    dialog_body(ui, |ui| {
+        ui.add_enabled_ui(!busy, |ui| {
+            let l = field_label(ui, cx, &cx.tr.t("sites.form.name"));
+            ui.add(
+                TextEdit::singleline(&mut d.name)
+                    .id(egui::Id::unique("providers-add-name"))
+                    .desired_width(f32::INFINITY)
+                    .margin(vec2(12.0, 8.0)),
+            )
+            .labelled_by(l.id);
+            let l = field_label(ui, cx, &cx.tr.t("providers.row.key"));
+            let placeholder = preset
+                .key_placeholder
+                .clone()
+                .unwrap_or_else(|| cx.tr.t("connection.key.placeholder_compatible"));
+            let r = KeyField::new(
+                "providers-add-key",
+                &mut d.key,
+                &mut d.reveal,
+                placeholder,
+                cx.tr.t("lines.key.reveal"),
+            )
+            .show(ui)
+            .labelled_by(l.id);
+            if !d.focused {
+                r.request_focus();
+                d.focused = true;
             }
-        });
-        if let Some(checks) = &d.checks {
-            for (line, _, r) in checks {
-                let name = site
-                    .line(line)
-                    .map(|l| cx.tr.text(&l.name))
-                    .unwrap_or_else(|| line.to_string());
-                ui.horizontal(|ui| {
-                    match r {
-                        Ok(k) => {
-                            ui.add(StatusDot::new(key_access_status(&k.access)));
-                            ui.label(Text::small(
-                                format!("{name} · {}", cx.tr.text(&k.access.text())),
-                                cx.pal,
-                            ));
-                        }
-                        Err(e) => {
-                            ui.add(StatusDot::new(Status::Error));
-                            ui.label(Text::small(
-                                format!("{name} · {}", error_text(cx.tr, e)),
-                                cx.pal,
-                            ));
-                        }
-                    };
+            if let Some(home) = &site.homepage {
+                let row_h = ui.spacing().interact_size.y;
+                FormRow::unlabeled().height(row_h).show(ui, |ui| {
+                    ui.label(Text::small(cx.tr.t("providers.add.get_key"), cx.pal));
+                    let host = home.host_str().unwrap_or(home.as_str()).to_owned();
+                    if link_button(ui, &host, true).clicked() {
+                        out.push(Action::OpenUrl(home.to_string()));
+                    }
                 });
             }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let has_key = !d.key.trim().is_empty();
+                let checking = d.check_task.is_some();
+                if ui
+                    .add(
+                        Button::ghost(cx.tr.t("providers.key.check_all"))
+                            .icon(Icon::Bolt)
+                            .small()
+                            .loading(checking)
+                            .enabled(has_key && !checking),
+                    )
+                    .on_hover_text(cx.tr.t("lines.key.cost"))
+                    .clicked()
+                {
+                    let lines = site
+                        .lines
+                        .iter()
+                        .map(|l| {
+                            let caps = cx.data.site_caps(&site.id, &l.id);
+                            let mode =
+                                decision_with(&site, Some(l), caps, None, auto_facts(cx.data))
+                                    .mode
+                                    .unwrap_or(AuthMode::ApiKey);
+                            (l.id.clone(), mode)
+                        })
+                        .collect();
+                    d.error = None;
+                    d.check_task = Some(crate::runtime::task(ops::check_lines(
+                        cx.service.clone(),
+                        site.id.clone(),
+                        lines,
+                        KeyInput::Secret(Secret::new(d.key.trim())),
+                    )));
+                }
+            });
+            if let Some(checks) = &d.checks {
+                for (line, _, r) in checks {
+                    let name = site
+                        .line(line)
+                        .map(|l| cx.tr.text(&l.name))
+                        .unwrap_or_else(|| line.to_string());
+                    ui.horizontal(|ui| {
+                        match r {
+                            Ok(k) => {
+                                ui.add(StatusDot::new(key_access_status(&k.access)));
+                                ui.label(Text::small(
+                                    format!("{name} · {}", cx.tr.text(&k.access.text())),
+                                    cx.pal,
+                                ));
+                            }
+                            Err(e) => {
+                                ui.add(StatusDot::new(Status::Error));
+                                ui.label(Text::small(
+                                    format!("{name} · {}", error_text(cx.tr, e)),
+                                    cx.pal,
+                                ));
+                            }
+                        };
+                    });
+                }
+            }
+        });
+        switch_after(ui, cx, d, !busy);
+        if let Some(e) = &d.error {
+            ui.add(egui::Label::new(Text::small(e, cx.pal).color(cx.pal.red)).wrap());
         }
     });
-    switch_after(ui, cx, d, !busy);
-    if let Some(e) = &d.error {
-        ui.add(egui::Label::new(Text::small(e, cx.pal).color(cx.pal.red)).wrap());
-    }
     ui.add_space(12.0);
     let mut add = None;
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        let ready = !d.key.trim().is_empty() && !d.name.trim().is_empty() && !busy;
-        let switch = d.switch_after;
-        if ui
-            .add(
-                Button::primary(add_label(cx, switch))
-                    .loading(busy)
-                    .enabled(ready && !(switch && cx.busy)),
-            )
-            .clicked()
-        {
-            add = Some(switch);
-        }
-        if ui
-            .add(Button::ghost(cx.tr.t("providers.add.back")).enabled(!busy))
-            .clicked()
-        {
-            d.step = AddStep::Choose;
-        }
-        if ui
-            .add(
-                Button::ghost(cx.tr.t("action.cancel"))
-                    .kbd("Esc")
-                    .enabled(!busy),
-            )
-            .clicked()
-        {
-            *close = true;
-        }
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let ready = !d.key.trim().is_empty() && !d.name.trim().is_empty() && !busy;
+            let switch = d.switch_after;
+            if ui
+                .add(
+                    Button::primary(add_label(cx, switch))
+                        .loading(busy)
+                        .enabled(ready && !(switch && cx.busy)),
+                )
+                .clicked()
+            {
+                add = Some(switch);
+            }
+            if ui
+                .add(Button::ghost(cx.tr.t("providers.add.back")).enabled(!busy))
+                .clicked()
+            {
+                d.step = AddStep::Choose;
+            }
+            if ui
+                .add(
+                    Button::ghost(cx.tr.t("action.cancel"))
+                        .kbd("Esc")
+                        .enabled(!busy),
+                )
+                .clicked()
+            {
+                *close = true;
+            }
+        });
     });
     if let Some(switch) = add {
         d.start_save(cx, switch);
@@ -621,7 +630,8 @@ fn preset_step(
 fn custom_step(ui: &mut Ui, cx: &Cx<'_>, d: &mut AddDialog, close: &mut bool) {
     let busy = d.saving();
     let testing = d.test.is_some();
-    ui.add_enabled_ui(!busy, |ui| {
+    dialog_body(ui, |ui| {
+        ui.add_enabled_ui(!busy, |ui| {
         let l = field_label(ui, cx, &cx.tr.t("sites.form.name"));
         let r = ui
             .add(
@@ -702,44 +712,47 @@ fn custom_step(ui: &mut Ui, cx: &Cx<'_>, d: &mut AddDialog, close: &mut bool) {
             }
         }
     });
-    switch_after(ui, cx, d, !busy);
-    if let Some(e) = &d.error {
-        ui.add(egui::Label::new(Text::small(e, cx.pal).color(cx.pal.red)).wrap());
-    }
+        switch_after(ui, cx, d, !busy);
+        if let Some(e) = &d.error {
+            ui.add(egui::Label::new(Text::small(e, cx.pal).color(cx.pal.red)).wrap());
+        }
+    });
     ui.add_space(12.0);
     let mut add = None;
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        let switch = d.switch_after;
-        // Saving alone needs no test; switching to the site needs a passed one.
-        let untested = switch && !d.tested_ok();
-        let r = ui.add(
-            Button::primary(add_label(cx, switch))
-                .loading(busy)
-                .enabled(!busy && !untested && !(switch && cx.busy)),
-        );
-        if untested {
-            r.clone()
-                .on_disabled_hover_text(cx.tr.t("providers.add.test_first"));
-        }
-        if r.clicked() {
-            add = Some(switch);
-        }
-        if ui
-            .add(Button::ghost(cx.tr.t("providers.add.back")).enabled(!busy))
-            .clicked()
-        {
-            d.step = AddStep::Choose;
-        }
-        if ui
-            .add(
-                Button::ghost(cx.tr.t("action.cancel"))
-                    .kbd("Esc")
-                    .enabled(!busy),
-            )
-            .clicked()
-        {
-            *close = true;
-        }
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let switch = d.switch_after;
+            // Saving alone needs no test; switching to the site needs a passed one.
+            let untested = switch && !d.tested_ok();
+            let r = ui.add(
+                Button::primary(add_label(cx, switch))
+                    .loading(busy)
+                    .enabled(!busy && !untested && !(switch && cx.busy)),
+            );
+            if untested {
+                r.clone()
+                    .on_disabled_hover_text(cx.tr.t("providers.add.test_first"));
+            }
+            if r.clicked() {
+                add = Some(switch);
+            }
+            if ui
+                .add(Button::ghost(cx.tr.t("providers.add.back")).enabled(!busy))
+                .clicked()
+            {
+                d.step = AddStep::Choose;
+            }
+            if ui
+                .add(
+                    Button::ghost(cx.tr.t("action.cancel"))
+                        .kbd("Esc")
+                        .enabled(!busy),
+                )
+                .clicked()
+            {
+                *close = true;
+            }
+        });
     });
     if let Some(switch) = add {
         d.start_save(cx, switch);

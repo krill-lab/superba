@@ -13,7 +13,7 @@ use superba_switch::session_events::{session_count, session_percent, session_sta
 use super::pose::Pose;
 use super::render::{self, SceneCache, View};
 use crate::design::tokens::Palette;
-use crate::design::widgets::{Button, Text, dialog};
+use crate::design::widgets::{Button, Text, dialog, dialog_body};
 use crate::flow::{Flow, SessionsRun};
 use crate::pages::Cx;
 
@@ -97,12 +97,14 @@ pub fn show(
                 "movers.title.migrate"
             };
             ui.label(Text::h2(tr.t(title), pal));
-            let scene_w = width
-                .min((screen.height() - CHROME_HEIGHT) * render::aspect())
-                .max(MIN_SCENE_WIDTH.min(width));
-            scene_card(ui, pal, state, &pose, scene_w, &|key| tr.t(key));
-            ui.add_space(4.0);
-            progress(ui, cx, p, view.elapsed);
+            dialog_body(ui, |ui| {
+                let scene_w = width
+                    .min((screen.height() - CHROME_HEIGHT) * render::aspect())
+                    .max(MIN_SCENE_WIDTH.min(width));
+                scene_card(ui, pal, state, &pose, scene_w, &|key| tr.t(key));
+                ui.add_space(4.0);
+                progress(ui, cx, p, view.elapsed);
+            });
             ui.add_space(4.0);
             stop = controls(ui, cx, &view.sessions);
         },
