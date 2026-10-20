@@ -135,6 +135,9 @@ async fn render_log(
                         (superba_core::RequestSource::Rollout, _) => {
                             out.render(&text("cli.requests.source.rollout"))
                         }
+                        (superba_core::RequestSource::ClaudeTranscript, _) => {
+                            out.render(&superba_core::RequestSource::ClaudeTranscript.text())
+                        }
                         _ => out.render(&text("cli.requests.source.router")),
                     };
                     // The Codex host when it is not this computer (WSL, user bug 45).

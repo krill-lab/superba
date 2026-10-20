@@ -1158,6 +1158,30 @@ impl RouterControl for FakeRouter {
             .collect())
     }
 
+    async fn claude_requests_for(
+        &self,
+        from: Option<Timestamp>,
+        to: Option<Timestamp>,
+        sessions: Vec<String>,
+        responses: Vec<String>,
+    ) -> Result<Vec<superba_core::RequestRow>> {
+        let page = self.page.lock().unwrap();
+        Ok(page
+            .rows
+            .iter()
+            .filter(|r| r.harness == superba_core::RequestHarness::ClaudeCode)
+            .filter(|r| {
+                r.response_id
+                    .as_ref()
+                    .is_some_and(|id| responses.contains(id))
+                    || (from.is_none_or(|f| r.started_at >= f)
+                        && to.is_none_or(|t| r.started_at < t)
+                        && r.session_id.as_ref().is_some_and(|s| sessions.contains(s)))
+            })
+            .cloned()
+            .collect())
+    }
+
     async fn clear_requests(
         &self,
         request: &superba_core::ClearRequest,

@@ -195,6 +195,19 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
         let _ = (from, to, threads);
         Ok(Vec::new())
     }
+    /// Claude Code rows started in `[from, to)` of these sessions, plus any
+    /// Claude Code row with one of these response ids: what Claude Code
+    /// transcript rows are matched against (empty without a request log).
+    async fn claude_requests_for(
+        &self,
+        from: Option<superba_core::Timestamp>,
+        to: Option<superba_core::Timestamp>,
+        sessions: Vec<String>,
+        responses: Vec<String>,
+    ) -> Result<Vec<superba_core::RequestRow>> {
+        let _ = (from, to, sessions, responses);
+        Ok(Vec::new())
+    }
     /// Grouped aggregates.
     async fn request_stats(&self, query: &StatsQuery) -> Result<RequestStats> {
         let _ = query;
@@ -402,6 +415,21 @@ impl RouterControl for SystemRouterControl {
         let paths = self.manager.paths().clone();
         blocking(move || {
             superba_router::store::Reader::open(&paths)?.rows_for_threads(from, to, &threads)
+        })
+        .await
+    }
+
+    async fn claude_requests_for(
+        &self,
+        from: Option<superba_core::Timestamp>,
+        to: Option<superba_core::Timestamp>,
+        sessions: Vec<String>,
+        responses: Vec<String>,
+    ) -> Result<Vec<superba_core::RequestRow>> {
+        let paths = self.manager.paths().clone();
+        blocking(move || {
+            superba_router::store::Reader::open(&paths)?
+                .claude_rows_for(from, to, &sessions, &responses)
         })
         .await
     }
@@ -1462,6 +1490,15 @@ impl Switcher {
                 extra.extend(rows);
                 truncated |= t;
             }
+            if wants(RequestSource::ClaudeTranscript) {
+                match self.claude_rows(query.from, query.to).await {
+                    Ok((rows, t)) => {
+                        extra.extend(rows);
+                        truncated |= t;
+                    }
+                    Err(e) => tracing::warn!(error = %e, "Claude Code transcripts not read"),
+                }
+            }
             if query.source.is_none_or(|s| s.imported_from().is_some()) {
                 match self.imported_rows(query.from, query.to).await {
                     Ok((rows, t)) => {
@@ -1488,9 +1525,13 @@ impl Switcher {
     }
 
     pub(crate) async fn router_request_impl(&self, id: i64) -> Result<RequestDetail> {
-        // Imported rows have the lowest ids, rollout rows the other negative ones.
+        // Imported rows have the lowest ids, then Claude Code transcript
+        // rows, rollout rows the other negative ones.
         if id < crate::usage_import::ID_LIMIT {
             return self.imported_detail(id).await;
+        }
+        if id < superba_sessions::claude_usage::ID_CEIL {
+            return self.claude_detail(id).await;
         }
         if id < 0 {
             return self.rollout_detail(id).await;
@@ -1515,6 +1556,11 @@ impl Switcher {
                 .rollout_rows(query.from, query.to)
                 .await
                 .unwrap_or_default();
+            extra.extend(rows);
+        }
+        if wants(RequestSource::ClaudeTranscript)
+            && let Ok((rows, _)) = self.claude_rows(query.from, query.to).await
+        {
             extra.extend(rows);
         }
         let imported = query.source.is_none_or(|s| s.imported_from().is_some());

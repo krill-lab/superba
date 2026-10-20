@@ -51,6 +51,10 @@ use crate::util::parse_rfc3339_ms;
 pub const MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
 /// Most rows the index keeps (newest files first).
 pub const MAX_ROWS: usize = 200_000;
+/// Rollout row ids are `-2^61 ..= -1` (Claude Code transcript rows lie below,
+/// imported rows below `-2^62`).
+pub const ROLLOUT_ID_FLOOR: i64 = -(1 << 61);
+const ROLLOUT_ID_MASK: u64 = 0x1fff_ffff_ffff_ffff;
 /// Directory depth searched below `sessions/` (`YYYY/MM/DD/`).
 const WALK_MAX_DEPTH: usize = 8;
 /// A file whose modification time is this much older than the range start is
@@ -143,15 +147,18 @@ pub struct RolloutPage {
 
 /// What [`read_lines`] stopped at.
 #[derive(Debug, Default)]
-struct ReadOutcome {
+pub(crate) struct ReadOutcome {
     /// Bytes consumed (up to and including the last complete line's `\n`).
-    consumed: u64,
+    pub(crate) consumed: u64,
 }
 
 /// Feed every complete line of `reader` to `f` (without the `\n`, with a
 /// trailing `\r` removed). A last line without `\n` is not consumed; lines
 /// longer than [`MAX_LINE_BYTES`] are skipped without buffering them.
-fn read_lines(reader: impl Read, mut f: impl FnMut(&[u8])) -> std::io::Result<ReadOutcome> {
+pub(crate) fn read_lines(
+    reader: impl Read,
+    mut f: impl FnMut(&[u8]),
+) -> std::io::Result<ReadOutcome> {
     let mut reader = BufReader::with_capacity(64 * 1024, reader);
     let mut line: Vec<u8> = Vec::new();
     let mut skipping = false;
@@ -406,7 +413,7 @@ fn row_id(parts: &[&str]) -> i64 {
             h = h.wrapping_mul(0x0000_0100_0000_01b3);
         }
     }
-    -((h & 0x3fff_ffff_ffff_ffff) as i64) - 1
+    -((h & ROLLOUT_ID_MASK) as i64) - 1
 }
 
 /// Current turn.
