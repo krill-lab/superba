@@ -45,8 +45,13 @@ fn no_tool_installed_shows_no_tool_entry() {
     for locale in [Locale::ZhCn, Locale::En] {
         let tr = Tr::new(locale);
         let mut h = AppHarness::new(fake(&[]), locale, Page::Overview);
-        let t = h.until("sidebar", |t| t.find(Some(Role::Tab), &tr.t("nav.usage")).is_some());
-        let t = { let _ = t; h.settle() };
+        let t = h.until("sidebar", |t| {
+            t.find(Some(Role::Tab), &tr.t("nav.usage")).is_some()
+        });
+        let t = {
+            let _ = t;
+            h.settle()
+        };
         assert!(tool_tabs(&t, &tr).is_empty(), "{}", t.dump());
     }
 }
@@ -64,11 +69,20 @@ fn exactly_the_installed_tools_show_in_order_and_open_their_page() {
     );
     // Every entry has a name (its title).
     for hh in installed {
-        assert!(t.find(Some(Role::Tab), &tr.t(Page::Tool(hh).title_key())).is_some());
+        assert!(
+            t.find(Some(Role::Tab), &tr.t(Page::Tool(hh).title_key()))
+                .is_some()
+        );
     }
     // Clicking one opens that tool's page: its title and its detail.
-    let t = h.click(Some(Role::Tab), &tr.t(Page::Tool(HarnessId::Dsh).title_key()));
-    let t = { let _ = t; h.until("dsh page", |t| t.has(&tr.t("page.tool.subtitle"))) };
+    let t = h.click(
+        Some(Role::Tab),
+        &tr.t(Page::Tool(HarnessId::Dsh).title_key()),
+    );
+    let t = {
+        let _ = t;
+        h.until("dsh page", |t| t.has(&tr.t("page.tool.subtitle")))
+    };
     assert!(t.has(&tr.t("page.tool.subtitle")), "{}", t.dump());
 }
 

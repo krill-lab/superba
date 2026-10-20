@@ -2,10 +2,9 @@
 use super::{Action, Cx, SuperbaSection, appearance, general, network};
 use crate::design::{
     a11y,
-    icons::{self, Icon},
     widgets::{Text, focus_ring, show_focus},
 };
-use egui::{Align, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Align, Rect, Sense, Ui, pos2, vec2};
 use superba_core::Settings;
 
 pub(super) const SECTIONS: [SuperbaSection; 4] = [
@@ -56,35 +55,16 @@ pub(super) fn toolbar(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
 /// contain the typed words are hidden (the command palette is gone, user
 /// request 118).
 fn search_entry(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
-    let label = cx.tr.t("superba.search");
     let width = 280.0_f32.min(ui.available_width());
-    let (rect, _) = ui.allocate_exact_size(vec2(width, 32.0), Sense::hover());
-    ui.painter().rect_filled(rect, 6, cx.pal.bg_subtle);
-    ui.painter()
-        .rect_stroke(rect, 6, Stroke::new(1.0, cx.pal.border), StrokeKind::Inside);
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), vec2(16.0, 16.0)),
-        Icon::Search,
-        cx.pal.text_muted,
-    );
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink2(vec2(34.0, 0.0)))
-            .layout(egui::Layout::left_to_right(Align::Center)),
-    );
-    let edit = a11y::name_unnamed(&mut child, &label, |ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut state.filter)
-                .id(egui::Id::unique("superba-settings-filter"))
-                .frame(egui::Frame::NONE)
-                .hint_text(&label)
-                .desired_width(f32::INFINITY),
-        )
-    });
-    if edit.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        state.filter.clear();
-    }
+    crate::design::widgets::SearchField::new(
+        &mut state.filter,
+        "superba-settings-filter",
+        cx.tr.t("superba.search"),
+        cx.tr.t("action.clear_search"),
+    )
+    .width(width)
+    .height(32.0)
+    .show(ui);
 }
 
 /// Whether `query`'s words all occur in one of `fields` (case-insensitive).

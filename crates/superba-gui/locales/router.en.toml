@@ -552,7 +552,10 @@ current = "Current: {line}"
 failed_over = "Current: {line} (after {failed} failed)"
 observed = "The latest request to receive upstream headers for this member. Concurrent conversations can use different lines."
 waiting = "Waiting for the next request"
-recovery = "Default failure cooldown: 5 s, doubling up to 60 s. New conversations try the preferred line after recovery. Existing conversations keep a working backup until 2 h idle; changing the line order resets this choice for new requests."
+recovery = "Failure cooldown: {cooldown} s, doubling up to {max} s. New conversations try the preferred line after recovery. Existing conversations keep a working backup until {idle} idle; changing the line order resets this choice for new requests."
+recovery_return = "Failure cooldown: {cooldown} s, doubling up to {max} s. Once the preferred line recovers, new and existing conversations return to it (a conversation idle for {idle} chooses again); changing the line order resets this choice for new requests."
+hours = "{n} h"
+minutes = "{n} min"
 
 [requests.host]
 local = "This computer"

@@ -237,11 +237,7 @@ impl Env<'_> {
     fn package_manager_dirs(&self, so_far: &SearchDirs) -> Vec<PathBuf> {
         let windows = self.os == Os::Windows;
         let npm_bin = |prefix: PathBuf| {
-            if windows {
-                prefix
-            } else {
-                prefix.join("bin")
-            }
+            if windows { prefix } else { prefix.join("bin") }
         };
         let mut out = Vec::new();
         for var in ["NPM_CONFIG_PREFIX", "npm_config_prefix"] {
@@ -393,7 +389,9 @@ fn query(program: &Path, args: &[&str], dirs: &SearchDirs) -> Option<String> {
         "{}|{}|{}",
         program.display(),
         args.join(" "),
-        path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
+        path.as_ref()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default()
     );
     cached(&key, || {
         let mut c = superba_core::process::command(program);
@@ -597,7 +595,8 @@ impl Overrides {
         if let Some(dir) = file.parent() {
             std::fs::create_dir_all(dir).map_err(|e| Error::io(dir, &e))?;
         }
-        let text = serde_json::to_vec_pretty(&o).map_err(|e| Error::parse(file.display().to_string(), e))?;
+        let text = serde_json::to_vec_pretty(&o)
+            .map_err(|e| Error::parse(file.display().to_string(), e))?;
         crate::fsx::write_atomic(&file, &text)
     }
 }

@@ -4,7 +4,7 @@
 //! the footer (pager under the list, pending bar), plus the diff and the long
 //! explanation dialogs.
 
-use egui::{Align, Layout, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, Layout, RichText, Sense, Ui, vec2};
 use superba_core::Locale;
 
 use super::State;
@@ -230,21 +230,18 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, events: &mu
         ui.spacing_mut().item_spacing.x = 8.0;
         scope_label(ui, cx, model);
         provider_picker(ui, cx, model.profile_id.as_ref(), false, events);
-        let search = ui
-            .add(
-                TextEdit::singleline(&mut state.filter.query)
-                    .id(egui::Id::unique("codex-settings-search"))
-                    .hint_text(cx.tr.t("codex_settings.search"))
-                    .desired_width(220.0)
-                    .margin(vec2(10.0, 6.0)),
-            )
-            .accessible_name(cx.tr.t("codex_settings.search"));
+        let search = crate::design::widgets::SearchField::new(
+            &mut state.filter.query,
+            "codex-settings-search",
+            cx.tr.t("codex_settings.search"),
+            cx.tr.t("action.clear_search"),
+        )
+        .width(220.0)
+        .margin(vec2(10.0, 6.0))
+        .show(ui);
         if state.focus_search {
             search.request_focus();
             state.focus_search = false;
-        }
-        if search.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            state.filter.query.clear();
         }
         ui.add(Toggle::new(
             &mut state.filter.advanced,

@@ -23,7 +23,10 @@ fn env(root: &Path, path: &[&Path], extra: &[(&str, String)]) -> MapEnv {
     let mut m = MapEnv::new()
         .with(
             "PATH",
-            std::env::join_paths(path).unwrap().to_string_lossy().as_ref(),
+            std::env::join_paths(path)
+                .unwrap()
+                .to_string_lossy()
+                .as_ref(),
         )
         .with(
             "SUPERBA_SEARCH_ROOT",
@@ -117,7 +120,10 @@ fn pnpm_and_bun_homes_are_searched() {
             ("BUN_INSTALL", bun.display().to_string()),
         ],
     );
-    assert_eq!(find(t.path(), Os::Linux, &e, "pi").unwrap().path, pnpm.join("pi"));
+    assert_eq!(
+        find(t.path(), Os::Linux, &e, "pi").unwrap().path,
+        pnpm.join("pi")
+    );
     assert_eq!(
         find(t.path(), Os::Linux, &e, "opencode").unwrap().path,
         bun.join("bin/opencode")
@@ -141,7 +147,10 @@ fn macos_homebrew_is_searched_without_it_on_path() {
     assert_eq!(l.source, Source::Homebrew);
     let (cask, is_cask, v) =
         superba_tools::tools::common::homebrew_of(&l.path).expect("Caskroom target");
-    assert_eq!((cask.as_str(), is_cask, v.as_str()), ("claude-code", true, "2.1.304"));
+    assert_eq!(
+        (cask.as_str(), is_cask, v.as_str()),
+        ("claude-code", true, "2.1.304")
+    );
 }
 
 #[test]
@@ -149,10 +158,17 @@ fn windows_cmd_shims_are_found_with_pathext() {
     let t = tempfile::tempdir().unwrap();
     let dir = t.path().join("AppData/Roaming/npm");
     version_script(&dir.join("dsh.cmd"), "0.2.1");
-    let e = env(t.path(), &[], &[
-        ("APPDATA", t.path().join("AppData/Roaming").display().to_string()),
-        ("PATHEXT", ".COM;.EXE;.BAT;.CMD".into()),
-    ]);
+    let e = env(
+        t.path(),
+        &[],
+        &[
+            (
+                "APPDATA",
+                t.path().join("AppData/Roaming").display().to_string(),
+            ),
+            ("PATHEXT", ".COM;.EXE;.BAT;.CMD".into()),
+        ],
+    );
     let l = find(t.path(), Os::Windows, &e, "dsh").unwrap();
     assert_eq!(l.path, dir.join("dsh.cmd"));
     assert_eq!(l.source, Source::Default);
@@ -176,7 +192,10 @@ fn the_chosen_path_wins_and_is_checked_with_version() {
     let l = find(t.path(), Os::Linux, &e, "dsh").unwrap();
     assert_eq!((l.path, l.source), (chosen, Source::Override));
     Overrides::set(&data, "dsh", None).unwrap();
-    assert_eq!(find(t.path(), Os::Linux, &e, "dsh").unwrap().source, Source::Path);
+    assert_eq!(
+        find(t.path(), Os::Linux, &e, "dsh").unwrap().source,
+        Source::Path
+    );
 }
 
 #[test]
@@ -204,7 +223,11 @@ fn manager(root: &Path, mock: &Mock, os: Os, path: &[&Path]) -> ToolManager {
     let ctx = superba_core::LocalContext::new(
         &home,
         superba_core::DataDir::new(root.join("data")),
-        Arc::new(env(root, path, &[("SUPERBA_BREW_LOCK_WAIT_MS", "10".into())])),
+        Arc::new(env(
+            root,
+            path,
+            &[("SUPERBA_BREW_LOCK_WAIT_MS", "10".into())],
+        )),
     );
     ToolManager::with(
         &ctx,
@@ -218,7 +241,10 @@ fn manager(root: &Path, mock: &Mock, os: Os, path: &[&Path]) -> ToolManager {
 #[tokio::test]
 async fn dsh_in_a_moved_npm_prefix_is_detected_and_a_chosen_path_is_used() {
     let mock = Mock::start().await;
-    mock.route("/npm/-/package/@deepseek-ai/dsh/dist-tags", Route::ok(json!({"latest": "0.2.1"}).to_string()));
+    mock.route(
+        "/npm/-/package/@deepseek-ai/dsh/dist-tags",
+        Route::ok(json!({"latest": "0.2.1"}).to_string()),
+    );
     let t = tempfile::tempdir().unwrap();
     let prefix = t.path().join("D/npm-global");
     let pkg = prefix.join("lib/node_modules/@deepseek-ai/dsh");
@@ -288,20 +314,32 @@ async fn dsh_in_a_moved_npm_prefix_is_detected_and_a_chosen_path_is_used() {
 #[tokio::test]
 async fn nothing_found_says_where_superba_looked() {
     let mock = Mock::start().await;
-    mock.route("/npm/-/package/@deepseek-ai/dsh/dist-tags", Route::ok(json!({"latest": "0.2.1"}).to_string()));
+    mock.route(
+        "/npm/-/package/@deepseek-ai/dsh/dist-tags",
+        Route::ok(json!({"latest": "0.2.1"}).to_string()),
+    );
     let t = tempfile::tempdir().unwrap();
     let m = manager(t.path(), &mock, Os::Linux, &[Path::new("/x/bin")]);
     let row = m.row(ToolId::Dsh, false).await.unwrap();
     assert!(row.installs.is_empty());
-    assert!(row.searched.iter().any(|s| s.starts_with("PATH: /x/bin")), "{:?}", row.searched);
+    assert!(
+        row.searched.iter().any(|s| s.starts_with("PATH: /x/bin")),
+        "{:?}",
+        row.searched
+    );
 }
 
 #[tokio::test]
 async fn homebrews_dsh_formula_is_not_deepseeks_dsh() {
     let mock = Mock::start().await;
-    mock.route("/npm/-/package/@deepseek-ai/dsh/dist-tags", Route::ok(json!({"latest": "0.2.1"}).to_string()));
+    mock.route(
+        "/npm/-/package/@deepseek-ai/dsh/dist-tags",
+        Route::ok(json!({"latest": "0.2.1"}).to_string()),
+    );
     let t = tempfile::tempdir().unwrap();
-    let cellar = t.path().join("sysroot/opt/homebrew/Cellar/dsh/0.25.10/bin/dsh");
+    let cellar = t
+        .path()
+        .join("sysroot/opt/homebrew/Cellar/dsh/0.25.10/bin/dsh");
     version_script(&cellar, "dsh 0.25.10");
     let bin = t.path().join("sysroot/opt/homebrew/bin");
     std::fs::create_dir_all(&bin).unwrap();
@@ -398,7 +436,10 @@ async fn macos_installs_updates_and_removes_with_homebrew() {
     .await
     .unwrap();
     assert_eq!(
-        m.row(ToolId::Opencode, false).await.unwrap().installed_version(),
+        m.row(ToolId::Opencode, false)
+            .await
+            .unwrap()
+            .installed_version(),
         Some("2.2.0")
     );
     m.run(
@@ -416,8 +457,14 @@ async fn macos_installs_updates_and_removes_with_homebrew() {
     assert_eq!(lines[1], "install opencode NO_AUTO_UPDATE=1", "{calls}"); // unknown
     assert!(lines[2].starts_with("update"), "{calls}");
     assert_eq!(lines[3], "install opencode NO_AUTO_UPDATE=1", "{calls}");
-    assert!(lines.iter().any(|l| l.starts_with("upgrade opencode")), "{calls}");
-    assert!(lines.iter().any(|l| l.starts_with("uninstall opencode")), "{calls}");
+    assert!(
+        lines.iter().any(|l| l.starts_with("upgrade opencode")),
+        "{calls}"
+    );
+    assert!(
+        lines.iter().any(|l| l.starts_with("uninstall opencode")),
+        "{calls}"
+    );
 }
 
 #[tokio::test]

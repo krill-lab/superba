@@ -438,7 +438,7 @@ fn header(
         Mode::Direct { .. } => cx.tr.t("providers.lines.order_hint"),
         Mode::Router { .. } => format!(
             "{}\n{}",
-            cx.tr.t("router.preference.recovery"),
+            crate::pages::router::recovery_text(cx.tr, cx.data.router_failover.as_ref()),
             cx.tr.t("router.preference.observed")
         ),
     };

@@ -696,25 +696,17 @@ fn tab_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         seg.show(ui);
         if matches!(state.tab, Tab::Recent | Tab::Routing | Tab::Active) {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let edit = egui::TextEdit::singleline(&mut state.search)
-                    .hint_text(cx.tr.t("requests.search"))
-                    .desired_width(260.0);
-                // Named by what it searches (its only visible label is the hint).
-                let r = ui.add(edit).accessible_name(cx.tr.t("requests.search"));
+                let r = crate::design::widgets::SearchField::new(
+                    &mut state.search,
+                    "usage-requests-search",
+                    cx.tr.t("requests.search"),
+                    cx.tr.t("requests.search_clear"),
+                )
+                .width(260.0_f32.min(ui.available_width()))
+                .show(ui);
                 if state.focus_search {
                     state.focus_search = false;
                     r.request_focus();
-                }
-                if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    state.search.clear();
-                }
-                // Clearable without the keyboard (Esc in the field does the same).
-                if !state.search.is_empty()
-                    && ui
-                        .add(Button::ghost(cx.tr.t("requests.search_clear")).small())
-                        .clicked()
-                {
-                    state.search.clear();
                 }
             });
         }
@@ -790,6 +782,39 @@ pub fn status(state: &State) -> PageStatus {
 /// Dialogs of the Usage page (the two pages share the dialog slot).
 pub fn usage_status(state: &State) -> PageStatus {
     status(state)
+}
+
+/// The recovery rules as one sentence, from the saved failover settings (the
+/// defaults until the router's configuration has been read): the Overview's
+/// and Providers' line-order help.
+pub fn recovery_text(
+    tr: &crate::i18n::Tr,
+    failover: Option<&superba_core::RouterFailover>,
+) -> String {
+    let f = failover.cloned().unwrap_or_default();
+    let idle = if f.sticky_idle_minutes % 60 == 0 {
+        tr.f(
+            "router.preference.hours",
+            &[("n", &(f.sticky_idle_minutes / 60))],
+        )
+    } else {
+        tr.f(
+            "router.preference.minutes",
+            &[("n", &f.sticky_idle_minutes)],
+        )
+    };
+    tr.f(
+        if f.return_to_preferred {
+            "router.preference.recovery_return"
+        } else {
+            "router.preference.recovery"
+        },
+        &[
+            ("cooldown", &f.cooldown_secs),
+            ("max", &f.max_cooldown_secs),
+            ("idle", &idle),
+        ],
+    )
 }
 
 /// Commands both pages understand: `refresh` reloads, `stats_line:on|off` and

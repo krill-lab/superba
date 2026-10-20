@@ -77,11 +77,20 @@ pub const PAGE_NAMES: [(Page, &str); 25] = [
     (Page::ClaudeCode, "claude-code"),
     (Page::ClaudeSettings, "claude-settings"),
     (Page::Tool(superba_core::harness::HarnessId::Dsh), "dsh"),
-    (Page::Tool(superba_core::harness::HarnessId::OpenCode), "opencode"),
+    (
+        Page::Tool(superba_core::harness::HarnessId::OpenCode),
+        "opencode",
+    ),
     (Page::Tool(superba_core::harness::HarnessId::Pi), "pi"),
     (Page::Tool(superba_core::harness::HarnessId::ZCode), "zcode"),
-    (Page::Tool(superba_core::harness::HarnessId::WorkBuddy), "workbuddy"),
-    (Page::Tool(superba_core::harness::HarnessId::Gemini), "gemini"),
+    (
+        Page::Tool(superba_core::harness::HarnessId::WorkBuddy),
+        "workbuddy",
+    ),
+    (
+        Page::Tool(superba_core::harness::HarnessId::Gemini),
+        "gemini",
+    ),
     (Page::Superba(crate::pages::SuperbaSection::Home), "superba"),
     (
         Page::Superba(crate::pages::SuperbaSection::Updates),

@@ -532,7 +532,9 @@ pub fn show_one(
     let body = ui.available_rect_before_wrap();
     let rects = layout::row_rects(body, &[Track::Fill, Track::Fixed(size::FOOTER)], space::S);
     let mut detail_out = Vec::new();
-    layout::fixed(ui, rects[0], |ui| detail::show(ui, cx, state, &mut detail_out));
+    layout::fixed(ui, rects[0], |ui| {
+        detail::show(ui, cx, state, &mut detail_out)
+    });
     out.extend(detail_out);
     if let Some(rect) = rects.get(1) {
         ui.painter().hline(

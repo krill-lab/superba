@@ -41,7 +41,13 @@ fn end_of(row: &RequestRow) -> Timestamp {
 pub fn row(a: &Attribution, r: &ClaudeRequest) -> RequestRow {
     // Price through the rollout path (same lookup, ratio and basis).
     let member_id = ProfileId::new(MEMBER_ID);
-    let priced = a.price(&member_id, Some(r.model.as_str()), Some(r.usage), None, r.started_at);
+    let priced = a.price(
+        &member_id,
+        Some(r.model.as_str()),
+        Some(r.usage),
+        None,
+        r.started_at,
+    );
     let (cost, price_rev) = match priced {
         Some((c, basis)) => (Some(c), basis),
         None => (None, None),

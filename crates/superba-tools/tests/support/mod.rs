@@ -386,7 +386,10 @@ pub fn context(root: &Path, extra_path: &[&Path]) -> superba_core::LocalContext 
     let env = superba_core::MapEnv::new()
         .with("PATH", path.to_string_lossy().as_ref())
         .with("SHELL", "/bin/sh")
-        .with("SUPERBA_SEARCH_ROOT", root.join("sysroot").to_string_lossy().as_ref());
+        .with(
+            "SUPERBA_SEARCH_ROOT",
+            root.join("sysroot").to_string_lossy().as_ref(),
+        );
     superba_core::LocalContext::new(
         &home,
         superba_core::DataDir::new(root.join("data")),

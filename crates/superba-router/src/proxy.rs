@@ -793,33 +793,33 @@ async fn proxy_request(
                 resp.status(),
                 resp.headers(),
             )
-                .or_else(|| {
-                    // The official plan's own window is spent (or its login
-                    // was refused): another member may still serve.
-                    (member.cfg.kind == crate::MemberKind::Official
-                        && i + 1 < total
-                        && (crate::official::plan_limit(resp.status())
-                            || resp.status() == StatusCode::UNAUTHORIZED))
-                        .then(|| {
-                            format!(
-                                "official ChatGPT {} (HTTP {})",
-                                if resp.status() == StatusCode::UNAUTHORIZED {
-                                    "login refused"
-                                } else {
-                                    "plan limit reached"
-                                },
-                                resp.status().as_u16()
-                            )
-                        })
-                })
-                .or_else(|| {
-                    empty_responses_answer(&rest, resp.status(), resp.headers()).then(|| {
+            .or_else(|| {
+                // The official plan's own window is spent (or its login
+                // was refused): another member may still serve.
+                (member.cfg.kind == crate::MemberKind::Official
+                    && i + 1 < total
+                    && (crate::official::plan_limit(resp.status())
+                        || resp.status() == StatusCode::UNAUTHORIZED))
+                    .then(|| {
                         format!(
-                            "intercepted by the line's edge (HTTP {} with an empty body)",
+                            "official ChatGPT {} (HTTP {})",
+                            if resp.status() == StatusCode::UNAUTHORIZED {
+                                "login refused"
+                            } else {
+                                "plan limit reached"
+                            },
                             resp.status().as_u16()
                         )
                     })
-                }) {
+            })
+            .or_else(|| {
+                empty_responses_answer(&rest, resp.status(), resp.headers()).then(|| {
+                    format!(
+                        "intercepted by the line's edge (HTTP {} with an empty body)",
+                        resp.status().as_u16()
+                    )
+                })
+            }) {
                 Some(reason) => {
                     if resp.status() == StatusCode::UNAUTHORIZED
                         && let (Some(v), Some(t)) = (

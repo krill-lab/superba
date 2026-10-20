@@ -38,6 +38,7 @@
 #![forbid(unsafe_code)]
 
 pub mod browse;
+pub mod claude_usage;
 mod engine;
 pub mod export;
 mod guard;
@@ -48,7 +49,6 @@ mod progress;
 mod rollout;
 mod sqlite;
 mod text;
-pub mod claude_usage;
 pub mod titles;
 pub mod usage;
 mod util;

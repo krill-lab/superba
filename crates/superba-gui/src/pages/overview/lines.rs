@@ -220,7 +220,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<Act
         )
         .on_hover_text(format!(
             "{note}\n{}\n{}",
-            tr.t("router.preference.recovery"),
+            crate::pages::router::recovery_text(tr, cx.data.router_failover.as_ref()),
             tr.t("router.preference.observed")
         ));
     }

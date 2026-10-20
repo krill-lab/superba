@@ -307,8 +307,7 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
                         ui.allocate_exact_size(vec2(inner_w - 4.0, ENTRY_HEIGHT), Sense::hover());
                     let sel = selected.as_deref() == Some(e.key.as_str());
                     let kind = if e.child { Kind::Child } else { Kind::Entry };
-                    let mut resp =
-                        entry(
+                    let mut resp = entry(
                         ui,
                         id.with(("e", i)),
                         r,
@@ -323,7 +322,10 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
                         crate::pages::shared::tool_label::paint(
                             ui,
                             m,
-                            pos2(r.min.x + 6.0 + crate::pages::shared::tool_label::TILE / 2.0, r.center().y),
+                            pos2(
+                                r.min.x + 6.0 + crate::pages::shared::tool_label::TILE / 2.0,
+                                r.center().y,
+                            ),
                         );
                     }
                     if let Some(t) = &e.tooltip {

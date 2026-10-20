@@ -120,7 +120,11 @@ mod tests {
                 assert!(!svg.contains("<script"), "{}", l.monogram);
                 let img = rasterize(svg, 40).expect(l.monogram);
                 assert_eq!(img.size, [40, 40]);
-                assert!(img.pixels.iter().any(|p| p.a() > 0), "{} is blank", l.monogram);
+                assert!(
+                    img.pixels.iter().any(|p| p.a() > 0),
+                    "{} is blank",
+                    l.monogram
+                );
             }
         }
     }

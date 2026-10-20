@@ -11,7 +11,9 @@ pub mod pi;
 pub mod workbuddy;
 pub mod zcode;
 
-use superba_core::{Error, Notice, Result, ToolId, ToolInstallKind, ToolOp, ToolReport, ToolUpdater};
+use superba_core::{
+    Error, Notice, Result, ToolId, ToolInstallKind, ToolOp, ToolReport, ToolUpdater,
+};
 
 use crate::descriptor::{Descriptor, Level};
 use crate::platform::Os;
@@ -22,14 +24,20 @@ use crate::{Ctx, Detected, Op};
 pub async fn detect(cx: &Ctx, desc: &Descriptor, st: &ToolState) -> Detected {
     let mut det = detect_tool(cx, desc, st).await;
     if let Some(cmd) = desc.command {
-        det.command_path = crate::locate::Overrides::load(&cx.data).paths.get(cmd).cloned();
+        det.command_path = crate::locate::Overrides::load(&cx.data)
+            .paths
+            .get(cmd)
+            .cloned();
         let (found, searched) = cx.locate(cmd);
         if det.installs.is_empty() {
             det.searched = searched.summary();
         } else if let Some(l) = &found
             && l.source != crate::locate::Source::Path
             && l.source != crate::locate::Source::Override
-            && det.installs.first().is_some_and(|i| common::same_file(&i.path, &l.path, cx.platform.os))
+            && det
+                .installs
+                .first()
+                .is_some_and(|i| common::same_file(&i.path, &l.path, cx.platform.os))
         {
             det.notes.push(Notice::info(
                 common::text(
@@ -64,8 +72,18 @@ fn with_homebrew(cx: &Ctx, desc: &Descriptor, det: &mut Detected) {
             (Some(p), Some(_)) => {
                 det.brew = Some(p);
                 det.blocked = None;
-                common::text("tools.brew.default", "Installs with Homebrew: brew install {args}")
-                    .arg("args", if p.cask { format!("--cask {}", p.name) } else { p.name.to_owned() })
+                common::text(
+                    "tools.brew.default",
+                    "Installs with Homebrew: brew install {args}",
+                )
+                .arg(
+                    "args",
+                    if p.cask {
+                        format!("--cask {}", p.name)
+                    } else {
+                        p.name.to_owned()
+                    },
+                )
             }
             (Some(_), None) => common::text(
                 "tools.brew.missing",

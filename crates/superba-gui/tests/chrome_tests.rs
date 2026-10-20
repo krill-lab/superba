@@ -413,7 +413,10 @@ fn sidebar_tabs_align_with_the_card_and_remain_visible_at_minimum_size() {
             let mut previous = first.y0;
             // The tools' entries show only when installed (user request 114;
             // sidebar_tools_tests).
-            for page in Page::ALL.into_iter().filter(|p| !matches!(p, Page::Tool(_))) {
+            for page in Page::ALL
+                .into_iter()
+                .filter(|p| !matches!(p, Page::Tool(_)))
+            {
                 let name = tr.t(page.sidebar_page().title_key());
                 let id = tree
                     .find_all(Some(Role::Tab), &name)

@@ -648,7 +648,10 @@ impl ToolManager {
         }
         if let Some(path) = &change.command_path {
             let command = desc.command.ok_or_else(|| {
-                Error::invalid(format!("{} has no command to point at", tool.display_name()))
+                Error::invalid(format!(
+                    "{} has no command to point at",
+                    tool.display_name()
+                ))
             })?;
             if path.as_os_str().is_empty() {
                 locate::Overrides::set(&cx.data, command, None)?;

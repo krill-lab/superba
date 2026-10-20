@@ -885,7 +885,10 @@ pub(super) fn provider_popover(
                     }
                     ui.add(
                         egui::Label::new(Text::caption(
-                            cx.tr.t("router.preference.recovery"),
+                            crate::pages::router::recovery_text(
+                                cx.tr,
+                                cx.data.router_failover.as_ref(),
+                            ),
                             cx.pal,
                         ))
                         .wrap(),

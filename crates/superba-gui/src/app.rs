@@ -1929,6 +1929,15 @@ impl SuperbaApp {
                 ui.ctx().request_repaint();
             }
         }
+        if let Some(f) = self
+            .pages
+            .router
+            .snapshot()
+            .and_then(|s| s.failover.as_ref())
+            && self.data.router_failover.as_ref() != Some(f)
+        {
+            self.data.router_failover = Some(f.clone());
+        }
         self.data.notify_hooks_attention =
             self.settings.notify.enabled && self.pages.notify.needs_attention();
         self.data.tool_update_errors = self

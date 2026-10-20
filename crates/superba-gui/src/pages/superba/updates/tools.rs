@@ -76,7 +76,10 @@ impl ToolId {
     }
     /// A command-line tool (its program can be chosen).
     pub fn has_command(self) -> bool {
-        matches!(self, Self::ClaudeCode | Self::Dsh | Self::Opencode | Self::Pi)
+        matches!(
+            self,
+            Self::ClaudeCode | Self::Dsh | Self::Opencode | Self::Pi
+        )
     }
     /// Legible two-letter icon.
     pub fn monogram(self) -> &'static str {
@@ -197,7 +200,11 @@ pub fn section(
         ui.add(egui::Label::new(Text::small(method, cx.pal)).wrap());
     }
     if let Some(path) = &row.command_path {
-        install_line(ui, cx, &cx.tr.f("updates.list.chosen_path", &[("path", path)]));
+        install_line(
+            ui,
+            cx,
+            &cx.tr.f("updates.list.chosen_path", &[("path", path)]),
+        );
     }
     if row.choose_path {
         ui.add_enabled_ui(row.entry.status != UpdateStatus::Installing, |ui| {

@@ -95,13 +95,20 @@ fn locked(out: &run::Outcome) -> bool {
 
 fn unknown(out: &run::Outcome) -> bool {
     let t = format!("{}\n{}", out.stdout, out.stderr).to_ascii_lowercase();
-    t.contains("no available formula") || t.contains("no cask with this name")
+    t.contains("no available formula")
+        || t.contains("no cask with this name")
         || t.contains("no available cask")
 }
 
 /// Run `brew <verb> [--cask] <name>`, waiting for a lock and updating brew
 /// once when it does not know the package.
-async fn brew_run(op: &Op<'_>, brew: &Path, verb: &str, pkg: Package, stage: ToolStage) -> Result<()> {
+async fn brew_run(
+    op: &Op<'_>,
+    brew: &Path,
+    verb: &str,
+    pkg: Package,
+    stage: ToolStage,
+) -> Result<()> {
     let cx = op.cx;
     let mut cmd = cx
         .cmd(brew)
@@ -120,7 +127,8 @@ async fn brew_run(op: &Op<'_>, brew: &Path, verb: &str, pkg: Package, stage: Too
             return Ok(());
         }
         if locked(&out) && attempt < 3 {
-            op.log.line("brew is busy (another brew holds its lock); waiting");
+            op.log
+                .line("brew is busy (another brew holds its lock); waiting");
             let ms = cx
                 .env
                 .var("SUPERBA_BREW_LOCK_WAIT_MS")
@@ -143,7 +151,8 @@ async fn brew_run(op: &Op<'_>, brew: &Path, verb: &str, pkg: Package, stage: Too
             message: format!(
                 "{} ended with {}: {}",
                 cmd.display(),
-                out.code.map_or("a signal".into(), |c| format!("exit code {c}")),
+                out.code
+                    .map_or("a signal".into(), |c| format!("exit code {c}")),
                 out.tail(6)
             ),
         });
@@ -166,8 +175,9 @@ pub async fn run(op: &Op<'_>, pkg: Package) -> Result<ToolReport> {
     if op.req.op == ToolOp::Install
         && let Some(v) = &op.req.version
     {
-        op.log
-            .line(format!("Homebrew installs its current version (asked for {v})"));
+        op.log.line(format!(
+            "Homebrew installs its current version (asked for {v})"
+        ));
     }
     // Never `--zap`: it trashes the tool's settings.
     brew_run(op, &brew, verb, pkg, stage).await?;

@@ -89,7 +89,10 @@ fn every_page_names_its_controls_in_both_languages() {
         // Every page through its sidebar tab.
         // A tool's page is reached from its entry, shown only when the tool
         // is installed (sidebar_tools_tests).
-        for page in Page::DESTINATIONS.into_iter().filter(|p| !matches!(p, Page::Tool(_))) {
+        for page in Page::DESTINATIONS
+            .into_iter()
+            .filter(|p| !matches!(p, Page::Tool(_)))
+        {
             h.go(page, &tr);
             let t = h.until(&format!("{locale:?} {page:?} loaded"), |t| loaded(page, t));
             assert_named(&format!("{locale:?} {page:?}"), &t);

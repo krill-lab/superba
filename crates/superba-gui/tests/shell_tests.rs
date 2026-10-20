@@ -380,7 +380,10 @@ fn the_sidebar_never_draws_pages_under_the_pinned_ones_at_the_minimum_window() {
                 .map(|(_, r)| r.center().y)
                 .unwrap()
         };
-        assert_eq!(y(Page::Models) - y(Page::Providers), size::NAV_ROW + size::NAV_GAP);
+        assert_eq!(
+            y(Page::Models) - y(Page::Providers),
+            size::NAV_ROW + size::NAV_GAP
+        );
         // And the compact rows at 960x640.
         let texts = sidebar_texts_with(size::MIN_WINDOW, locale, false);
         let y = |page: Page| {

@@ -323,7 +323,11 @@ fn entry(ui: &mut Ui, cx: &Cx<'_>, row: &RequestRow, names: &[(String, String)])
             Text::small(requests::date_cell(row.started_at, cx.now), cx.pal)
                 .color(cx.pal.text_muted),
         );
-        ui.label(Text::small(cx.tr.text(&row.client_text()), cx.pal).color(cx.pal.text));
+        crate::pages::shared::tool_label::tool_label(
+            ui,
+            crate::pages::shared::tool_label::monogram(row.harness),
+            Text::small(cx.tr.text(&row.client_text()), cx.pal).color(cx.pal.text),
+        );
         ui.label(Text::small(requests::model_text(row), cx.pal).color(cx.pal.text));
         ui.add(Badge::new(text).status(status));
         if let Some(to) = row.converted_to() {

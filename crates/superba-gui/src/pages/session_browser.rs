@@ -450,25 +450,18 @@ fn filters(ui: &mut Ui, cx: &Cx<'_>, b: &mut Browser) {
     let mut provider = b.provider.clone();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = space::S;
-        let name = cx.tr.t("sessions.browse.search");
         let width = SEARCH_W.min(ui.available_width() * 0.4);
-        let r = ui.add_sized(
-            [width, size::CONTROL_SM],
-            egui::TextEdit::singleline(&mut b.search)
-                .hint_text(cx.tr.t("sessions.browse.search_hint"))
-                .align(egui::Align2::LEFT_CENTER),
-        );
-        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &name));
-        if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            b.search.clear();
-        }
-        if !b.search.is_empty()
-            && ui
-                .add(Button::ghost(cx.tr.t("sessions.browse.clear_search")).small())
-                .clicked()
-        {
-            b.search.clear();
-        }
+        crate::design::widgets::SearchField::new(
+            &mut b.search,
+            "sessions-browse-search",
+            cx.tr.t("sessions.browse.search_hint"),
+            cx.tr.t("sessions.browse.clear_search"),
+        )
+        .width(width)
+        .height(size::CONTROL_SM)
+        .margin(egui::vec2(6.0, 2.0))
+        .show(ui)
+        .accessible_name(cx.tr.t("sessions.browse.search"));
         let label = |h: &Option<String>| match h {
             None => cx.tr.t("sessions.browse.all_hosts"),
             Some(h) => host_label(cx, h),

@@ -10,7 +10,7 @@
 //! Superba manages are read-only here (the connection page owns them). The
 //! file editor of the Codex settings page opens `settings.json` itself.
 
-use egui::{Align, Layout, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, Layout, RichText, Sense, Ui, vec2};
 use superba_catalog::claude::{ClaudeGroup, ClaudeSource};
 use superba_core::{
     CodexFileDoc, CodexFileKind, CodexFileSave, CodexFileSaved, Locale, SaveReason, SecretBytes,
@@ -455,21 +455,18 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, path: Option<String>) 
     ui.horizontal(|ui| {
         ui.set_min_height(size::CONTROL);
         ui.spacing_mut().item_spacing.x = 8.0;
-        let search = ui
-            .add(
-                TextEdit::singleline(&mut s.filter.query)
-                    .id(egui::Id::unique("claude-settings-search"))
-                    .hint_text(cx.tr.t("claude.settings.search"))
-                    .desired_width(240.0)
-                    .margin(vec2(10.0, 6.0)),
-            )
-            .accessible_name(cx.tr.t("claude.settings.search"));
+        let search = crate::design::widgets::SearchField::new(
+            &mut s.filter.query,
+            "claude-settings-search",
+            cx.tr.t("claude.settings.search"),
+            cx.tr.t("action.clear_search"),
+        )
+        .width(240.0)
+        .margin(vec2(10.0, 6.0))
+        .show(ui);
         if s.focus_search {
             search.request_focus();
             s.focus_search = false;
-        }
-        if search.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            s.filter.query.clear();
         }
         ui.add(Toggle::new(
             &mut s.filter.deprecated,

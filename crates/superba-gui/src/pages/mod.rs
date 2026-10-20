@@ -52,9 +52,9 @@ pub mod settings;
 pub mod shared;
 pub mod wizard;
 
-use superba_core::harness::HarnessId;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
+use superba_core::harness::HarnessId;
 
 use egui::{Align, Layout, RichText, Sense, Stroke, Ui, vec2};
 use superba_core::{
@@ -586,6 +586,9 @@ pub struct Data {
     pub account: Load<superba_core::AccountReport>,
     /// Last router watchdog state (while router mode is on).
     pub router_watch: Option<superba_core::RouterWatchState>,
+    /// The router's saved failover and recovery rules, from the Router
+    /// page's last snapshot (`None`: not read yet; the defaults apply).
+    pub router_failover: Option<superba_core::RouterFailover>,
     /// Whether the tray icon is shown (Preferences → Window; item 70).
     pub tray: crate::tray::TrayStatus,
     /// Settings diff of the latest plan: (plan id, preview).

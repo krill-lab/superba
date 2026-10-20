@@ -37,9 +37,10 @@ pub fn name(cx: &Cx<'_>, h: RequestHarness) -> String {
     }
 }
 
-/// Two-letter monogram of a tool ("cx", "cc", "oc", "··").
+/// Two-letter monogram of a tool ("cx", "cc", "oc", "··"): the shared tool
+/// label's identity, so the official icons follow the rest of the app.
 pub fn monogram(h: RequestHarness) -> &'static str {
-    selection(h).map_or("··", Selection::monogram)
+    crate::pages::shared::tool_label::monogram(h).unwrap_or("··")
 }
 
 /// The Tools page command that selects the tool.
