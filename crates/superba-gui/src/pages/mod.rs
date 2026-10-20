@@ -214,8 +214,9 @@ impl Page {
 
     /// Minimum content height before the shell uses its short-window fallback.
     pub fn min_height(self) -> f32 {
-        if self.is_superba() || self == Self::Router {
-            // These settings pages already scroll their own body. Keep the
+        if self.is_superba() || self == Self::Router || self == Self::Providers {
+            // These pages already scroll their own body (Providers: the
+            // detail pane, when its tab is taller than the pane). Keep the
             // header fixed and avoid a second scroll area at 960×640.
             480.0
         } else {

@@ -8,7 +8,8 @@ use superba_core::{KeyInput, Profile, ProfileId, RestoreTarget};
 
 use super::{State, Tab, actions, form, ops};
 use crate::design::fonts::{Weight, font};
-use crate::design::tokens::text;
+use crate::design::layout;
+use crate::design::tokens::{size, text};
 use crate::design::widgets::{Badge, Button, Segmented, Status, Text, dialog, link_button};
 use crate::pages::shared::providers::{Provider, ProviderKind};
 use crate::pages::shared::{auto_facts, decision_with, ordered_lines};
@@ -58,10 +59,71 @@ pub(super) fn show(
         state.tab = tab;
     });
     ui.add_space(12.0);
-    match state.tab {
+    let id = egui::Id::unique(("providers-detail-tab", p.id.command(), state.tab));
+    // The Account tab fills its height (a paged table): it keeps the height it
+    // has at the Fit minimum and scrolls below that; the Connection tab scrolls
+    // when its rows are taller than the pane.
+    let min = match state.tab {
+        Tab::Connection => 0.0,
+        Tab::Account => size::FIT_MIN_BODY - (ui.cursor().min.y - ui.max_rect().min.y),
+    };
+    overflow_scroll(ui, id, min, |ui| match state.tab {
         Tab::Connection => super::connection::show(ui, cx, state, p, out),
         Tab::Account => super::account::show(ui, cx, state, p),
+    });
+}
+
+/// How tall a tab was and whether it scrolled (egui temp data per tab).
+#[derive(Clone, Copy, Debug, Default)]
+struct Overflow {
+    height: f32,
+    scrolling: bool,
+}
+
+/// Draw `add` in the rest of the pane; in a vertical scroll area only while it
+/// needs more than that: its height last frame, or `min` for a tab that fills
+/// what it gets (it then gets `min`). The Fit sizes keep a pane without a
+/// scroll area; a short window (960×640) cuts nothing off at the bottom.
+fn overflow_scroll(ui: &mut Ui, id: egui::Id, min: f32, add: impl FnOnce(&mut Ui)) {
+    let room = ui.available_height();
+    let last: Overflow = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
+    let need = last.height.max(min);
+    // A few points of hysteresis: a tab just at the edge does not flip.
+    let scrolling = if last.scrolling {
+        need > room - 8.0
+    } else {
+        need > room + 0.5
+    };
+    let height = if scrolling {
+        egui::ScrollArea::vertical()
+            .id_salt(id)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                if min > 0.0 {
+                    let rect = egui::Rect::from_min_size(
+                        ui.cursor().min,
+                        egui::vec2(ui.available_width(), min.max(room)),
+                    );
+                    layout::fixed(ui, rect, add);
+                } else {
+                    add(ui);
+                }
+            })
+            .content_size
+            .y
+    } else {
+        ui.scope(add).response.rect.height()
+    };
+    let flips = if scrolling {
+        height.max(min) <= room - 8.0
+    } else {
+        height.max(min) > room + 0.5
+    };
+    if flips {
+        ui.ctx().request_repaint();
     }
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(id, Overflow { height, scrolling }));
 }
 
 /// Name, badges, homepage and the actions.

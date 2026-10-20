@@ -14,7 +14,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use egui::{Align, Layout, RichText, Ui};
+use egui::{RichText, Ui};
 use superba_core::{
     CompactionChoice, CompactionRequest, CompactionSource, CompactionSupport, Profile,
     ProviderCompaction, TransportRefresh,
@@ -147,32 +147,12 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, p: &Provider, out: &mut Vec<Action>
     let mut toggle = false;
     let mut check = false;
     let label = cx.tr.t("providers.row.compaction");
-    super::connection::row(ui, cx, &label, |ui: &mut Ui| {
-        let support = value
-            .as_ref()
-            .map_or(CompactionSupport::Unknown, |v| v.support);
-        ui.add(StatusDot::new(if checking {
-            Status::Busy
-        } else {
-            status_of(support)
-        }));
-        ui.label(
-            RichText::new(cx.tr.text(&support.text()))
-                .font(font(text::SMALL, Weight::Medium))
-                .color(cx.pal.text),
-        );
-        let source = value
-            .as_ref()
-            .map(|v| source_text(cx, v))
-            .unwrap_or_default();
-        if !source.is_empty() {
-            let tip = value.as_ref().and_then(|v| tooltip(cx, v));
-            let r = ui.add(egui::Label::new(Text::small(format!("· {source}"), cx.pal)).truncate());
-            if let Some(tip) = tip {
-                r.on_hover_text(tip);
-            }
-        }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+    // Change and Check keep their size; the source note is shortened.
+    super::connection::row_split(
+        ui,
+        cx,
+        &label,
+        |ui: &mut Ui| {
             let label = if open {
                 cx.tr.t("providers.compaction.hide_choice")
             } else {
@@ -195,8 +175,35 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, p: &Provider, out: &mut Vec<Action>
             {
                 check = true;
             }
-        });
-    });
+        },
+        |ui: &mut Ui| {
+            let support = value
+                .as_ref()
+                .map_or(CompactionSupport::Unknown, |v| v.support);
+            ui.add(StatusDot::new(if checking {
+                Status::Busy
+            } else {
+                status_of(support)
+            }));
+            ui.label(
+                RichText::new(cx.tr.text(&support.text()))
+                    .font(font(text::SMALL, Weight::Medium))
+                    .color(cx.pal.text),
+            );
+            let source = value
+                .as_ref()
+                .map(|v| source_text(cx, v))
+                .unwrap_or_default();
+            if !source.is_empty() {
+                let tip = value.as_ref().and_then(|v| tooltip(cx, v));
+                let r =
+                    ui.add(egui::Label::new(Text::small(format!("· {source}"), cx.pal)).truncate());
+                if let Some(tip) = tip {
+                    r.on_hover_text(tip);
+                }
+            }
+        },
+    );
     if toggle || check {
         let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
         if toggle {

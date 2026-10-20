@@ -5,7 +5,8 @@
 //! selected entry's name, a double click or F2); the detail shows a provider's
 //! header (kind, in use, homepage, "switch to this provider", Test and Delete,
 //! which asks for confirmation) and
-//! the tabs **Connection** (lines by priority with latency and auth availability,
+//! the tabs **Connection** (lines with the one in use, switching and the order
+//! as the mode makes them work, latency and auth availability; [`lines`]),
 //! the automatic auth decision, the key, a models and a settings summary) and
 //! **Account & usage** (balance, and for sites with a usage API the daily cost
 //! and per-model usage, fetched only when the tab opens without data or on
@@ -26,6 +27,7 @@ mod compaction;
 mod connection;
 mod detail;
 pub mod form;
+mod lines;
 mod list;
 pub mod ops;
 mod transports;
@@ -122,6 +124,8 @@ pub struct State {
     pub(crate) check_task: Option<(ProviderId, ReadTask<LineChecks>)>,
     /// Sites whose lines the page asked to probe (once each).
     pub(crate) probed: BTreeSet<SiteId>,
+    /// The router's latest upstream per member, while router-mode lines show.
+    pub(crate) router: lines::RouterLive,
     /// Models summaries per profile.
     pub(crate) models: HashMap<ProfileId, superba_core::Result<ModelsView>>,
     /// Running models load.

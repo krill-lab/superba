@@ -1,14 +1,15 @@
-//! The Connection tab of a provider (UX §3.3): lines by priority with latency,
-//! WebSocket / zstd support ([`super::transports`]), auth availability and the
-//! key check per line (a custom site: its base URL, editable inline), the automatic authentication decision with the manual
+//! The Connection tab of a provider (UX §3.3): its lines ([`super::lines`]:
+//! the line in use, switching and the order, latency, WebSocket / zstd support,
+//! auth availability and the key check per line; a custom site: its base URL,
+//! editable inline), the automatic authentication decision with the manual
 //! choice under Advanced, the key (masked, where it is stored, check on all
 //! lines, replace), and summaries of the provider's models and Codex settings
 //! with links to the Models and Settings pages.
 
-use egui::{Align, Layout, RichText, Sense, Stroke, TextEdit, Ui, vec2};
+use egui::{Align, Layout, RichText, Sense, TextEdit, Ui, vec2};
 use superba_core::{
-    AuthChoice, AuthMode, AuthReason, KeyAccess, KeyInput, KeyRef, Line, LineCaps, LineId,
-    ModelListSource, Profile, Secret, Site, SiteKind,
+    AuthChoice, AuthMode, AuthReason, KeyAccess, KeyInput, KeyRef, Line, LineCaps, ModelListSource,
+    Profile, Secret, Site, SiteKind,
 };
 
 use super::{KeyEdit, State, form, ops};
@@ -16,14 +17,12 @@ use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::{self, Icon};
 use crate::design::tokens::text;
 use crate::design::widgets::{
-    Button, IconButton, KeyInput as KeyField, Latency, LatencyBadge, Segmented, Status, StatusDot,
-    Text, link_button,
+    Button, KeyInput as KeyField, Latency, LatencyBadge, Segmented, Status, StatusDot, Text,
+    link_button,
 };
 use crate::pages::shared::providers::{Provider, ProviderKind};
-use crate::pages::shared::{auto_facts, decision_with, moved, new_profile, ordered_lines};
-use crate::pages::{
-    Action, Cx, Page, divider, elided, error_text, key_access_status, note, pat_status,
-};
+use crate::pages::shared::{auto_facts, decision_with, new_profile, ordered_lines};
+use crate::pages::{Action, Cx, Page, divider, elided, error_text, key_access_status};
 
 /// Width of the labels of the summary rows.
 const LABEL_W: f32 = 72.0;
@@ -51,7 +50,7 @@ pub(super) fn show(
     if p.kind == ProviderKind::Custom {
         base_url(ui, cx, state, p);
     } else {
-        lines(ui, cx, state, p, out);
+        super::lines::show(ui, cx, state, p, out);
     }
     ui.add_space(6.0);
     divider(ui, cx);
@@ -81,186 +80,26 @@ pub(super) fn row(ui: &mut Ui, cx: &Cx<'_>, label: &str, content: impl FnOnce(&m
         });
 }
 
-/// Lines in priority order with latency, auth availability and key checks.
-fn lines(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Vec<Action>) {
-    let site = &p.site;
-    let profile = p.profile.as_ref();
-    let lines = ordered_lines(site, profile);
-    let many = lines.len() > 1;
-    let probing = cx.data.probing_site(&site.id);
-    ui.horizontal(|ui| {
+/// A summary row with actions on the right: the actions are laid out first
+/// and keep their size, the text left of them is shortened instead (at
+/// 960×640 a long reason or summary never squeezes a link into wrapping).
+pub(super) fn row_split(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    label: &str,
+    actions: impl FnOnce(&mut Ui),
+    content: impl FnOnce(&mut Ui),
+) {
+    row(ui, cx, label, |ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui
-                .add(
-                    Button::ghost(cx.tr.t("action.probe"))
-                        .icon(Icon::Refresh)
-                        .small()
-                        .loading(probing)
-                        .enabled(!probing),
-                )
-                .clicked()
-            {
-                out.push(Action::Probe(site.id.clone()));
-                super::transports::refresh(ui, cx, p);
-            }
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.add(
-                    egui::Label::new(Text::strong(cx.tr.t("providers.lines.title"), cx.pal)).wrap(),
-                );
-            });
+            actions(ui);
+            ui.with_layout(Layout::left_to_right(Align::Center), content);
         });
     });
-    if let Some(e) = cx.data.caps.get(&site.id).and_then(|l| l.error.as_ref()) {
-        note(ui, cx, Status::Error, error_text(cx.tr, e));
-    }
-    let ids: Vec<LineId> = lines.iter().map(|l| l.id.clone()).collect();
-    let n = lines.len();
-    let mut reorder = None;
-    for (i, line) in lines.iter().enumerate() {
-        if i > 0 {
-            divider(ui, cx);
-        }
-        let caps = cx.data.site_caps(&site.id, &line.id);
-        ui.horizontal(|ui| {
-            ui.set_min_height(LINE_H);
-            ui.spacing_mut().item_spacing.x = 8.0;
-            rank(ui, cx, i);
-            let name_w = (ui.available_width() * 0.32).clamp(120.0, 220.0);
-            ui.allocate_ui_with_layout(vec2(name_w, 40.0), Layout::top_down(Align::Min), |ui| {
-                ui.set_width(name_w);
-                ui.spacing_mut().item_spacing.y = 1.0;
-                elided(ui, Text::strong(cx.tr.text(&line.name), cx.pal));
-                elided(ui, Text::mono_muted(line.origin.host(), cx.pal));
-            });
-            let latency = match caps {
-                None if probing => Latency::Probing,
-                None => Latency::Unknown,
-                Some(c) if !c.reachable => Latency::Unreachable,
-                Some(c) => c.latency_ms.map_or(Latency::Unknown, Latency::Ms),
-            };
-            ui.add_sized(
-                [80.0, 22.0],
-                LatencyBadge::new(latency).name(crate::pages::overview::latency_text(cx, latency)),
-            );
-            super::transports::badges(ui, cx, p, &line.id);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-                if many {
-                    if ui
-                        .add(
-                            IconButton::new(Icon::ArrowDown, cx.tr.t("connection.lines.down"))
-                                .size(24.0)
-                                .enabled(profile.is_some() && i + 1 < n && !cx.busy),
-                        )
-                        .clicked()
-                    {
-                        reorder = Some((i, i + 1));
-                    }
-                    if ui
-                        .add(
-                            IconButton::new(Icon::ArrowUp, cx.tr.t("connection.lines.up"))
-                                .size(24.0)
-                                .enabled(profile.is_some() && i > 0 && !cx.busy),
-                        )
-                        .clicked()
-                    {
-                        reorder = Some((i, i - 1));
-                    }
-                    ui.add_space(8.0);
-                }
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    availability(ui, cx, state, p, line, caps);
-                });
-            });
-        });
-    }
-    if let Some((from, to)) = reorder
-        && let Some(profile) = profile
-    {
-        let mut changed = profile.clone();
-        changed.set_line_priority(moved(ids, from, to));
-        out.push(Action::SaveProfile {
-            profile: Box::new(changed),
-            key: None,
-        });
-    }
-    // Per-line notices (edge interception, PAT unavailable), one line each.
-    let primary = lines.first().map(|l| l.id.clone());
-    for caps in lines
-        .iter()
-        .filter_map(|l| cx.data.site_caps(&site.id, &l.id))
-        .filter(|c| c.detail.as_ref().is_some_and(|d| d.key != "probe.ok"))
-        .filter(|c| {
-            Some(&c.line_id) != primary.as_ref()
-                || !c.detail.as_ref().is_some_and(|d| is_pat_detail(&d.key))
-        })
-    {
-        let name = site
-            .line(&caps.line_id)
-            .map(|l| cx.tr.text(&l.name))
-            .unwrap_or_else(|| caps.line_id.to_string());
-        let detail = caps
-            .detail
-            .as_ref()
-            .map(|d| cx.localize(d))
-            .unwrap_or_default();
-        ui.horizontal(|ui| {
-            ui.add(StatusDot::new(pat_status(caps)));
-            let text = cx.tr.f(
-                "providers.lines.note",
-                &[("line", &name), ("detail", &detail)],
-            );
-            ui.add(egui::Label::new(Text::small(text.clone(), cx.pal)).truncate())
-                .on_hover_text(text);
-        });
-    }
-    super::transports::footer(ui, cx, p);
-}
-
-/// Probe details that only say why PAT is unavailable on a line.
-fn is_pat_detail(key: &str) -> bool {
-    matches!(
-        key,
-        "probe.pat_edge_blocked" | "probe.pat_unavailable" | "probe.pat_needs_https"
-    )
-}
-
-fn rank(ui: &mut Ui, cx: &Cx<'_>, i: usize) {
-    let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
-    let first = i == 0;
-    ui.painter().circle(
-        r.center(),
-        10.0,
-        if first {
-            cx.pal.primary
-        } else {
-            cx.pal.surface
-        },
-        Stroke::new(
-            1.0,
-            if first {
-                cx.pal.primary
-            } else {
-                cx.pal.border_strong
-            },
-        ),
-    );
-    ui.painter().text(
-        r.center(),
-        egui::Align2::CENTER_CENTER,
-        (i + 1).to_string(),
-        font(text::CAPTION, Weight::Semibold),
-        if first {
-            cx.pal.on_primary
-        } else {
-            cx.pal.text_muted
-        },
-    );
 }
 
 /// What a line offers (PAT and API key, API key only) and the key check result.
-fn availability(
+pub(super) fn availability(
     ui: &mut Ui,
     cx: &Cx<'_>,
     state: &State,
@@ -456,39 +295,12 @@ fn auth(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Vec
     let primary = lines.first();
     let caps = primary.and_then(|l| cx.data.site_caps(&site.id, &l.id));
     let d = decision_with(site, primary, caps, profile, auto_facts(cx.data));
-    row(ui, cx, &cx.tr.t("providers.row.auth"), |ui| {
-        let status = match d.mode {
-            None => Status::Error,
-            Some(_) if d.fell_back() => Status::Idle,
-            Some(_) => Status::Ok,
-        };
-        ui.add(StatusDot::new(status));
-        let mode = d
-            .mode
-            .map(|m| cx.auth_short(m))
-            .unwrap_or_else(|| cx.tr.t("connection.auth.none"));
-        let main = if d.reason == AuthReason::Manual {
-            cx.tr.f("connection.auth.manual", &[("mode", &mode)])
-        } else {
-            format!("{} → {mode}", cx.tr.text(&d.choice.text()))
-        };
-        ui.label(
-            RichText::new(main)
-                .font(font(text::SMALL, Weight::Medium))
-                .color(cx.pal.text),
-        );
-        if d.reason != AuthReason::Manual {
-            let line = primary.map(|l| cx.tr.text(&l.name)).unwrap_or_default();
-            let reason = cx.tr.f(
-                "connection.auth.reason",
-                &[("line", &line), ("reason", &cx.localize(&d.reason.text()))],
-            );
-            let r = ui.add(egui::Label::new(Text::small(format!("· {reason}"), cx.pal)).truncate());
-            if let Some(detail) = d.reason.detail() {
-                r.on_hover_text(cx.localize(detail));
-            }
-        }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+    // Advanced keeps its size; a long reason (router mode) is shortened.
+    row_split(
+        ui,
+        cx,
+        &cx.tr.t("providers.row.auth"),
+        |ui| {
             let label = if state.advanced {
                 cx.tr.t("connection.auth.hide_advanced")
             } else {
@@ -497,8 +309,45 @@ fn auth(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Vec
             if link_button(ui, &label, false).clicked() {
                 state.advanced = !state.advanced;
             }
-        });
-    });
+        },
+        |ui| {
+            let status = match d.mode {
+                None => Status::Error,
+                Some(_) if d.fell_back() => Status::Idle,
+                Some(_) => Status::Ok,
+            };
+            ui.add(StatusDot::new(status));
+            let mode = d
+                .mode
+                .map(|m| cx.auth_short(m))
+                .unwrap_or_else(|| cx.tr.t("connection.auth.none"));
+            let main = if d.reason == AuthReason::Manual {
+                cx.tr.f("connection.auth.manual", &[("mode", &mode)])
+            } else {
+                format!("{} → {mode}", cx.tr.text(&d.choice.text()))
+            };
+            ui.label(
+                RichText::new(main)
+                    .font(font(text::SMALL, Weight::Medium))
+                    .color(cx.pal.text),
+            );
+            if d.reason != AuthReason::Manual {
+                let line = primary.map(|l| cx.tr.text(&l.name)).unwrap_or_default();
+                let reason = cx.tr.f(
+                    "connection.auth.reason",
+                    &[("line", &line), ("reason", &cx.localize(&d.reason.text()))],
+                );
+                let text = format!("· {reason}");
+                let r = ui.add(egui::Label::new(Text::small(&text, cx.pal)).truncate());
+                // The whole reason on hover, then its detail.
+                let tip = match d.reason.detail() {
+                    Some(detail) => format!("{reason}\n{}", cx.localize(detail)),
+                    None => reason,
+                };
+                r.on_hover_text(tip);
+            }
+        },
+    );
     if state.advanced {
         let mut choice = profile.map_or(AuthChoice::Auto, Profile::auth_choice);
         let before = choice;
@@ -564,22 +413,11 @@ fn key(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Vec<
             .then(|| cx.data.active_key_last4().map(str::to_owned))
             .flatten()
             .or_else(|| crate::pages::profile_key_suffix(ui, cx, Some(profile)));
-        row(ui, cx, &cx.tr.t("providers.row.key"), |ui| {
-            let (icon, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
-            icons::paint(ui.painter(), icon, Icon::Key, cx.pal.text_muted);
-            ui.label(
-                RichText::new(format!("{}{}", key_prefix(site), last4.unwrap_or_default()))
-                    .font(mono_font(text::SMALL, Weight::Medium))
-                    .color(cx.pal.text),
-            );
-            let where_key = match stored {
-                Some(KeyRef::Keyring { .. }) => cx.tr.t("lines.key.in_keyring"),
-                Some(KeyRef::File { .. }) => cx.tr.t("lines.key.in_file"),
-                Some(KeyRef::Env { var }) => cx.tr.f("lines.key.in_env", &[("var", var)]),
-                _ => String::new(),
-            };
-            ui.add(egui::Label::new(Text::small(where_key, cx.pal)).truncate());
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        row_split(
+            ui,
+            cx,
+            &cx.tr.t("providers.row.key"),
+            |ui| {
                 if ui
                     .add(Button::new(cx.tr.t("providers.key.replace")).small())
                     .clicked()
@@ -611,8 +449,24 @@ fn key(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Vec<
                         KeyInput::Profile(profile.id.clone()),
                     );
                 }
-            });
-        });
+            },
+            |ui| {
+                let (icon, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+                icons::paint(ui.painter(), icon, Icon::Key, cx.pal.text_muted);
+                ui.label(
+                    RichText::new(format!("{}{}", key_prefix(site), last4.unwrap_or_default()))
+                        .font(mono_font(text::SMALL, Weight::Medium))
+                        .color(cx.pal.text),
+                );
+                let where_key = match stored {
+                    Some(KeyRef::Keyring { .. }) => cx.tr.t("lines.key.in_keyring"),
+                    Some(KeyRef::File { .. }) => cx.tr.t("lines.key.in_file"),
+                    Some(KeyRef::Env { var }) => cx.tr.f("lines.key.in_env", &[("var", var)]),
+                    _ => String::new(),
+                };
+                elided(ui, Text::small(where_key, cx.pal));
+            },
+        );
         return;
     }
     // The editor (no key yet, or replacing).
@@ -725,37 +579,45 @@ fn models(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, profile: &Profile, out: &
             &[("model", &default), ("overrides", &overrides)],
         ),
     };
-    row(ui, cx, &cx.tr.t("providers.row.models"), |ui| {
-        ui.add(egui::Label::new(Text::small(text, cx.pal).color(cx.pal.text)).truncate());
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+    row_split(
+        ui,
+        cx,
+        &cx.tr.t("providers.row.models"),
+        |ui| {
             if link_button(ui, &cx.tr.t("providers.models.manage"), false).clicked() {
                 out.push(Action::PageCommand {
                     page: Page::Models,
                     command: format!("profile:{}", profile.id),
                 });
             }
-        });
-    });
+        },
+        |ui| {
+            elided(ui, Text::small(text, cx.pal).color(cx.pal.text));
+        },
+    );
 }
 
 /// "27 Codex settings are written with this provider  Open settings →".
 fn settings(ui: &mut Ui, cx: &Cx<'_>, profile: &Profile, out: &mut Vec<Action>) {
     let n = profile.codex_settings.len();
-    row(ui, cx, &cx.tr.t("providers.row.settings"), |ui| {
-        ui.add(
-            egui::Label::new(
-                Text::small(cx.tr.f("providers.settings.summary", &[("n", &n)]), cx.pal)
-                    .color(cx.pal.text),
-            )
-            .truncate(),
-        );
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+    row_split(
+        ui,
+        cx,
+        &cx.tr.t("providers.row.settings"),
+        |ui| {
             if link_button(ui, &cx.tr.t("providers.settings.open"), false).clicked() {
                 out.push(Action::PageCommand {
                     page: Page::Settings,
                     command: format!("profile:{}", profile.id),
                 });
             }
-        });
-    });
+        },
+        |ui| {
+            elided(
+                ui,
+                Text::small(cx.tr.f("providers.settings.summary", &[("n", &n)]), cx.pal)
+                    .color(cx.pal.text),
+            );
+        },
+    );
 }
