@@ -1206,6 +1206,7 @@ fn still_running(pids: &[(u32, &str)]) -> superba_core::QuitReport {
             superba_core::QuitStep::ClosedWindows,
             superba_core::QuitStep::Waited { ms: 5_000 },
             superba_core::QuitStep::Ended {
+                failed_names: Vec::new(),
                 ended: 14,
                 failed: 1,
             },

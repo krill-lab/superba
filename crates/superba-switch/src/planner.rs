@@ -1441,7 +1441,12 @@ impl Switcher {
                 let routed_now = superba_core::router::codex_uses_router(
                     state,
                     set.settings.router.enabled,
-                    self.deps.router.endpoint().ok().as_ref().map(|e| &e.base_url),
+                    self.deps
+                        .router
+                        .endpoint()
+                        .ok()
+                        .as_ref()
+                        .map(|e| &e.base_url),
                 );
                 let model = resolved.model.model.clone();
                 if let (Some(distro), Some(model)) = (&dest.legacy_wsl, model)

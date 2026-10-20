@@ -43,6 +43,9 @@ pub struct ProcEntry {
     pub ppid: Option<u32>,
     /// Executable path.
     pub exe: Option<PathBuf>,
+    /// Image name as the process list gives it (`codex.exe`), readable even
+    /// when the process itself cannot be opened (another account's process).
+    pub name: Option<String>,
     /// Full argv.
     pub argv: Vec<String>,
     /// Start time (native milliseconds on Windows, seconds elsewhere).
@@ -681,6 +684,20 @@ pub struct ReadOpts {
     pub environ: bool,
 }
 
+/// Windows: whether a process belongs to another account (pure part of
+/// [`snapshot_os`]). `same_owner` is `None` when its owner cannot be read;
+/// such a process that cannot even be opened for its image path is not one
+/// Superba can control either (the Codex Windows sandbox runs commands as its
+/// own accounts under the app's Codex; alpha.8 W89 counted two such
+/// processes, nameless and Access is denied, as "could not be ended" and the
+/// switch timed out on them).
+pub fn foreign_on_windows(know_ours: bool, same_owner: Option<bool>, opened: bool) -> bool {
+    match same_owner {
+        Some(same) => !same,
+        None => know_ours && !opened,
+    }
+}
+
 /// Take an OS snapshot of all processes visible to this user.
 pub fn snapshot_os(opts: ReadOpts) -> Vec<ProcEntry> {
     use sysinfo::{ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
@@ -714,9 +731,8 @@ pub fn snapshot_os(opts: ReadOpts) -> Vec<ProcEntry> {
                 None
             };
             #[cfg(not(windows))]
-            let started_at = (p.start_time() > 0).then(|| {
-                Timestamp::from_millis(i64::try_from(p.start_time()).unwrap_or(0) * 1000)
-            });
+            let started_at = (p.start_time() > 0)
+                .then(|| Timestamp::from_millis(i64::try_from(p.start_time()).unwrap_or(0) * 1000));
             #[cfg(windows)]
             let started_at = crate::osproc::creation_time(p.pid().as_u32()).filter(|t| {
                 // Do not associate an already replaced process with metadata
@@ -727,6 +743,7 @@ pub fn snapshot_os(opts: ReadOpts) -> Vec<ProcEntry> {
                 pid: p.pid().as_u32(),
                 ppid: p.parent().map(|pp| pp.as_u32()),
                 exe: p.exe().map(Path::to_path_buf),
+                name: Some(p.name().to_string_lossy().into_owned()).filter(|n| !n.is_empty()),
                 argv,
                 started_at,
                 env,
@@ -734,7 +751,11 @@ pub fn snapshot_os(opts: ReadOpts) -> Vec<ProcEntry> {
                 #[cfg(not(windows))]
                 foreign_user: foreign_user(p),
                 #[cfg(windows)]
-                foreign_user: matches!((our_uid, p.user_id()), (Some(ours), Some(owner)) if ours != owner),
+                foreign_user: foreign_on_windows(
+                    our_uid.is_some(),
+                    our_uid.zip(p.user_id()).map(|(o, w)| o == w),
+                    p.exe().is_some(),
+                ),
                 cwd: opts
                     .environ
                     .then(|| p.cwd().map(Path::to_path_buf))

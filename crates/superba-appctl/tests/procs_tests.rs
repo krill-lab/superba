@@ -26,6 +26,7 @@ fn env(pairs: &[(&str, &str)]) -> Option<BTreeMap<String, String>> {
 fn entry(pid: u32, ppid: u32, cmd: &str) -> ProcEntry {
     let argv = argv(cmd);
     ProcEntry {
+        name: None,
         pid,
         ppid: Some(ppid),
         exe: argv.first().map(PathBuf::from),

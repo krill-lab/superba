@@ -6,7 +6,7 @@
 
 use pretty_assertions::assert_eq;
 use superba_appctl::procs::ProcEntry;
-use superba_appctl::quit::{QUIT_APP_JS, descendants, kill_targets};
+use superba_appctl::quit::{QUIT_APP_JS, descendants, kill_targets, named_pids, role_of};
 
 fn entry(pid: u32, ppid: u32) -> ProcEntry {
     ProcEntry {
@@ -208,6 +208,7 @@ fn attempts_merge_in_order() {
     let mut second = QuitAttempt::new(
         QuitOutcome::TimedOut,
         vec![QuitStep::Ended {
+            failed_names: Vec::new(),
             ended: 2,
             failed: 1,
         }],
@@ -297,4 +298,62 @@ fn a_reused_or_missing_root_does_not_add_unrelated_children_to_the_recorded_tree
         merge_tree(&recorded, &[foreign_root, entries[1].clone()], 10, at(10)),
         recorded
     );
+}
+
+/// alpha.8 W89: two processes under the app's Codex that Superba could not
+/// open (no image name, no owner, Access is denied) were counted as the app's
+/// and "could not be ended", twice, and the switch timed out. A process of
+/// another account, or one whose owner and image are both unreadable, is not
+/// one of the app's processes Superba ends.
+#[test]
+fn processes_superba_cannot_open_are_not_the_apps_to_end() {
+    use superba_appctl::procs::foreign_on_windows;
+    assert!(!foreign_on_windows(true, Some(true), true), "ours");
+    assert!(
+        foreign_on_windows(true, Some(false), true),
+        "another account"
+    );
+    assert!(
+        foreign_on_windows(true, None, false),
+        "unreadable owner and image"
+    );
+    assert!(
+        !foreign_on_windows(true, None, true),
+        "an image without an owner"
+    );
+    assert!(
+        !foreign_on_windows(false, None, false),
+        "our own account unknown"
+    );
+
+    let mut sandboxed = entry(5620, 8244);
+    sandboxed.foreign_user = true;
+    let mut child = entry(8660, 5620);
+    child.foreign_user = true;
+    let entries = vec![entry(10, 1), entry(8244, 10), sandboxed, child];
+    let got: Vec<u32> = descendants(&entries, 10)
+        .into_iter()
+        .map(|(p, _)| p)
+        .collect();
+    assert_eq!(got, vec![8244]);
+}
+
+/// The forced-quit step names the processes it could not end, with the name
+/// the process list gives even when the process cannot be opened.
+#[test]
+fn processes_that_could_not_be_ended_are_named() {
+    let mut a = entry(5620, 8244);
+    a.name = Some("codex-command-runner.exe".into());
+    let mut b = entry(8660, 5620);
+    b.exe = Some(std::path::PathBuf::from("/opt/x/codex.exe"));
+    let entries = vec![a.clone(), b];
+    assert_eq!(
+        named_pids([5620, 8660, 1], &entries),
+        [
+            "codex-command-runner.exe (pid 5620)",
+            "codex.exe (pid 8660)",
+            "pid 1"
+        ]
+    );
+    assert_eq!(role_of(&a, 10), "codex-command-runner.exe");
 }

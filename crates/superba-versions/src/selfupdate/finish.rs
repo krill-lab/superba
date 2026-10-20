@@ -363,8 +363,7 @@ impl SecondStage<'_> {
         // msiexec rejects verbatim `\\?\C:\…` paths with 1619 (alpha.8):
         // hand it the plain form.
         let msi = superba_core::paths::plain_path(msi);
-        let mut args: Vec<OsString> =
-            vec!["/i".into(), msi.into_os_string(), "/passive".into()];
+        let mut args: Vec<OsString> = vec!["/i".into(), msi.into_os_string(), "/passive".into()];
         if let Some(dir) = self.args.log.as_deref().and_then(Path::parent) {
             args.push("/L*V".into());
             args.push(

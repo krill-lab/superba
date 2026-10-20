@@ -363,6 +363,24 @@ pub async fn attempt(
     forced(session, steps, children).await
 }
 
+/// `pids` named for people (`codex.exe (pid 5620)`), with the image name the
+/// process list in `entries` gives, `pid 5620` when it has none.
+pub fn named_pids(pids: impl IntoIterator<Item = u32>, entries: &[ProcEntry]) -> Vec<String> {
+    pids.into_iter()
+        .map(|pid| {
+            let e = entries.iter().find(|e| e.pid == pid);
+            let name = e
+                .and_then(|e| e.exe.as_deref().and_then(Path::file_name))
+                .map(|n| n.to_string_lossy().into_owned())
+                .or_else(|| e.and_then(|e| e.name.clone()));
+            match name {
+                Some(n) => format!("{n} (pid {pid})"),
+                None => format!("pid {pid}"),
+            }
+        })
+        .collect()
+}
+
 /// The forced part of [`attempt`].
 async fn forced(
     session: &AppSession,
@@ -372,6 +390,7 @@ async fn forced(
     let mut tree = children;
     let mut end_errors = BTreeMap::new();
     let mut terminated: Vec<u32> = Vec::new();
+    let mut seen: Vec<ProcEntry> = Vec::new();
     // Windows: end the whole tree (renderers, GPU and utility processes, the
     // Codex app-server), main process first so it starts nothing new.
     // Elsewhere the main process only (Chromium's helpers follow it).
@@ -379,6 +398,7 @@ async fn forced(
         let targets: Vec<(u32, Option<Timestamp>)> = if cfg!(windows) {
             let entries = procs::snapshot_os(procs::ReadOpts { environ: false });
             tree = merge_tree(&tree, &entries, session.main_pid, session.started_at);
+            seen = entries;
             let alive = |p, s| procs::liveness(p, s) == Liveness::Alive;
             let mut out = Vec::new();
             for pid in kill_targets(session.main_pid, session.started_at, &tree, &alive) {
@@ -409,6 +429,7 @@ async fn forced(
         steps.push(QuitStep::Ended {
             ended: u32::try_from(ended.len()).unwrap_or(u32::MAX),
             failed: u32::try_from(errors.len()).unwrap_or(u32::MAX),
+            failed_names: named_pids(errors.keys().copied(), &seen),
         });
         for pid in ended {
             end_errors.remove(&pid);
@@ -489,6 +510,7 @@ pub fn role_of(entry: &ProcEntry, main_pid: u32) -> String {
         .or_else(|| entry.argv.first().map(Path::new))
         .and_then(|x| x.file_name())
         .map(|n| n.to_string_lossy().into_owned())
+        .or_else(|| entry.name.clone())
         .unwrap_or_else(|| "?".into())
 }
 
@@ -594,6 +616,7 @@ pub async fn end_listed(listed: &[LingeringProcess]) -> QuitAttempt {
         vec![QuitStep::Ended {
             ended: u32::try_from(ended.len()).unwrap_or(u32::MAX),
             failed: u32::try_from(errors.len()).unwrap_or(u32::MAX),
+            failed_names: named_pids(errors.keys().copied(), &entries),
         }],
     );
     done.tree = all;

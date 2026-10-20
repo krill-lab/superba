@@ -51,6 +51,7 @@ fn connection() -> Vec<String> {
 
 fn entry(pid: u32, ppid: u32, argv: Vec<String>, env: &[(&str, &str)]) -> ProcEntry {
     ProcEntry {
+        name: None,
         pid,
         ppid: Some(ppid),
         exe: argv.first().map(PathBuf::from),

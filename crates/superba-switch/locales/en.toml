@@ -138,6 +138,7 @@ step_closed_windows = "closed its windows"
 step_signalled = "sent a quit request"
 step_waited = "waited {seconds} s"
 step_ended = "ended processes by force: {ended} ended, {failed} could not be ended"
+step_ended_named = "ended processes by force: {ended} ended, {failed} could not be ended ({names})"
 with_hint = "{line} {hint}"
 access_denied = "Windows refused to end some of them (access denied). They may still be exiting, or their permissions may differ from Superba's. Wait briefly and retry, or quit ChatGPT from its icon in the notification area (right-click, Quit). If it was started as administrator, start Superba the same way."
 

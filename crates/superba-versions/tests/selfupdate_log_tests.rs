@@ -527,5 +527,8 @@ fn msiexec_never_gets_a_verbatim_path() {
         msiexec[1],
         r"C:\Users\me\AppData\Local\Superba\downloads\superba-0.2.0-windows-x86_64.msi"
     );
-    assert!(msiexec.iter().all(|a| !a.starts_with(r"\\?\")), "{msiexec:?}");
+    assert!(
+        msiexec.iter().all(|a| !a.starts_with(r"\\?\")),
+        "{msiexec:?}"
+    );
 }
