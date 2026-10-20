@@ -53,7 +53,7 @@ pub enum CatalogReadiness {
     Pending,
     /// The latest tool probe failed.
     Failed,
-    /// The member cannot serve native Responses.
+    /// No native Responses endpoint or enabled conversion route.
     NeedsTranslation,
 }
 
@@ -80,6 +80,16 @@ pub struct CatalogProvenance {
     pub evidence: String,
     /// Observation time, Unix milliseconds.
     pub observed_at: u64,
+}
+
+impl CatalogProvenance {
+    /// Inference reaches a non-Responses endpoint through the router codecs.
+    pub fn translated(&self) -> bool {
+        matches!(
+            self.protocol.as_str(),
+            "chat_completions" | "anthropic_messages" | "gemini"
+        )
+    }
 }
 
 /// One row in the Models page, including models withheld from Codex.

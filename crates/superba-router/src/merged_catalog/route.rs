@@ -117,7 +117,7 @@ pub(crate) async fn select(
             return Err(Box::new(router_error(
                 StatusCode::CONFLICT,
                 "model_not_verified",
-                "model is pending, failed its tool probe, or requires protocol translation; test it on the Models page",
+                "model is pending, failed its tool probe, or has no enabled protocol route; test it on the Models page",
             )));
         }
         if let Some(members) = &pinned {

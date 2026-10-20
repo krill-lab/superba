@@ -53,6 +53,16 @@ pub(super) fn standard_base(g: &Generation, member: usize, line: usize) -> Url {
     base
 }
 
+pub(super) fn responses_protocol(
+    g: &Generation,
+    member: usize,
+) -> Option<crate::translate::ir::Protocol> {
+    g.config.upstream_protocol(
+        &g.members[member].cfg.id,
+        crate::translate::ir::Protocol::Responses,
+    )
+}
+
 pub(super) fn native_responses(g: &Generation, member: usize) -> bool {
     g.openai.members[member].responses.is_some()
 }

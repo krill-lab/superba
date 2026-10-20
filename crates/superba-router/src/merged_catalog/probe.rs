@@ -3,11 +3,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
+use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use superba_core::{CatalogLayer, RouterModelTest};
 
 use super::{cache, probe_key, snapshot};
-use crate::config::join_path;
 use crate::state::{Generation, Shared, lock, unix_ms};
 
 pub(crate) async fn test(shared: &Arc<Shared>, model: &str) -> RouterModelTest {
@@ -39,8 +40,8 @@ pub(crate) async fn test(shared: &Arc<Shared>, model: &str) -> RouterModelTest {
         return failure("provider is no longer configured");
     };
     let standard = proof.layer == CatalogLayer::Synthesized;
-    if standard && !cache::native_responses(&g, member) {
-        return failure("this model requires protocol translation");
+    if standard && cache::responses_protocol(&g, member).is_none() {
+        return failure("no enabled protocol route for Responses; enable protocol conversion");
     }
     let key = probe_key(member, &proof.upstream_id);
     let slot = {
@@ -60,7 +61,7 @@ pub(crate) async fn test(shared: &Arc<Shared>, model: &str) -> RouterModelTest {
         return previous;
     }
     let attempted = if standard {
-        two_turns(&g, member, &proof.upstream_id).await
+        two_turns(shared, &g, member, &proof.upstream_id).await
     } else {
         // Native models test the same public ingress used by Codex, including
         // namespace selection, per-line failover and request recording.
@@ -95,23 +96,21 @@ pub(crate) async fn test(shared: &Arc<Shared>, model: &str) -> RouterModelTest {
     report
 }
 
-async fn two_turns(g: &Generation, member: usize, model: &str) -> Result<(), String> {
+async fn two_turns(
+    shared: &Arc<Shared>,
+    g: &Arc<Generation>,
+    member: usize,
+    model: &str,
+) -> Result<(), String> {
     let m = &g.members[member];
     let mut error = "no provider line available".to_string();
     for line in 0..m.lines.len() {
-        let endpoint = join_path(&cache::standard_base(g, member, line), "/responses", None);
         let tool = json!({"type":"function","name":"get_probe_value","description":"Read the probe value.",
             "parameters":{"type":"object","properties":{},"required":[],"additionalProperties":false},"strict":true});
         let input = json!([{"role":"user","content":"Call get_probe_value, then return only its exact result."}]);
         let request = json!({"model":model,"input":input,"tools":[tool],"tool_choice":{"type":"function","name":"get_probe_value"},
             "max_output_tokens":512,"stream":true,"store":false});
-        let first = send(
-            g.http
-                .post(endpoint.clone())
-                .header(http::header::AUTHORIZATION, m.auth.clone())
-                .json(&request),
-        )
-        .await;
+        let first = routed(shared, g, member, line, model, &request).await;
         let first = match first {
             Ok(v) => v,
             Err(e) => {
@@ -147,14 +146,7 @@ async fn two_turns(g: &Generation, member: usize, model: &str) -> Result<(), Str
         conversation.extend(output.iter().cloned());
         conversation.push(json!({"type":"function_call_output","call_id":call_id,"output":token}));
         let second = json!({"model":model,"input":conversation,"tools":[tool],"tool_choice":"auto","max_output_tokens":512,"stream":true,"store":false});
-        match send(
-            g.http
-                .post(endpoint)
-                .header(http::header::AUTHORIZATION, m.auth.clone())
-                .json(&second),
-        )
-        .await
-        {
+        match routed(shared, g, member, line, model, &second).await {
             Ok(answer) if output_text(&answer).contains(&token) => return Ok(()),
             Ok(_) => error = "probe response did not contain the tool's result".into(),
             Err(e) => error = e,
@@ -176,21 +168,7 @@ async fn send(request: reqwest::RequestBuilder) -> Result<Value, String> {
             ));
         }
         let bytes = cache::read_bounded(response).await?;
-        let parsed = serde_json::from_slice::<Value>(&bytes)
-            .ok()
-            .or_else(|| {
-                String::from_utf8_lossy(&bytes)
-                    .lines()
-                    .filter_map(|l| l.strip_prefix("data:"))
-                    .filter_map(|s| serde_json::from_str::<Value>(s.trim()).ok())
-                    .find(|v| v["type"] == "response.completed")
-                    .map(|v| v["response"].clone())
-            })
-            .ok_or_else(|| "probe returned no completed Responses object".to_string())?;
-        if parsed["status"] != "completed" || !parsed["output"].is_array() {
-            return Err("probe did not complete".into());
-        }
-        Ok(parsed)
+        completed(&bytes)
     })
     .await
     .map_err(|_| "probe timed out".to_string())?
@@ -205,4 +183,63 @@ fn output_text(value: &Value) -> String {
         .filter_map(|v| v["text"].as_str())
         .collect::<Vec<_>>()
         .join("")
+}
+
+async fn routed(
+    shared: &Arc<Shared>,
+    g: &Arc<Generation>,
+    member: usize,
+    line: usize,
+    model: &str,
+    request: &Value,
+) -> Result<Value, String> {
+    tokio::time::timeout(Duration::from_secs(45), async {
+        let response = crate::proxy::probe_http(
+            shared.clone(),
+            g.clone(),
+            member,
+            line,
+            model,
+            Bytes::from(request.to_string()),
+        )
+        .await;
+        if !response.status().is_success() {
+            return Err(format!(
+                "probe returned HTTP {}",
+                response.status().as_u16()
+            ));
+        }
+        let mut body = response.into_body();
+        let mut bytes = Vec::new();
+        while let Some(frame) = body.frame().await {
+            let frame = frame.map_err(|_| "probe stream failed".to_string())?;
+            if let Ok(data) = frame.into_data() {
+                if bytes.len().saturating_add(data.len()) > cache::MAX_BYTES {
+                    return Err("probe exceeded its size limit".into());
+                }
+                bytes.extend_from_slice(&data);
+            }
+        }
+        completed(&bytes)
+    })
+    .await
+    .map_err(|_| "probe timed out".to_string())?
+}
+
+fn completed(bytes: &[u8]) -> Result<Value, String> {
+    let parsed = serde_json::from_slice::<Value>(bytes)
+        .ok()
+        .or_else(|| {
+            String::from_utf8_lossy(bytes)
+                .lines()
+                .filter_map(|l| l.strip_prefix("data:"))
+                .filter_map(|s| serde_json::from_str::<Value>(s.trim()).ok())
+                .find(|v| v["type"] == "response.completed")
+                .map(|v| v["response"].clone())
+        })
+        .ok_or_else(|| "probe returned no completed Responses object".to_string())?;
+    if parsed["status"] != "completed" || !parsed["output"].is_array() {
+        return Err("probe did not complete".into());
+    }
+    Ok(parsed)
 }

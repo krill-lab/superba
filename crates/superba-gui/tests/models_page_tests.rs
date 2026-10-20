@@ -71,7 +71,7 @@ async fn merged_catalog_controls_fit_and_show_pending_evidence() {
                 key_scope: "opaque-scope".into(),
                 upstream_id: slug.clone(),
                 endpoint: "https://example.test/v1/models".into(),
-                protocol: "responses".into(),
+                protocol: "chat_completions".into(),
                 layer: superba_core::CatalogLayer::Synthesized,
                 evidence: "pending".into(),
                 observed_at: 1,
@@ -94,6 +94,14 @@ async fn merged_catalog_controls_fit_and_show_pending_evidence() {
                     "Not verified"
                 } else {
                     "待验证"
+                }),
+                "{text}"
+            );
+            assert!(
+                text.contains(if locale == Locale::En {
+                    "Via protocol conversion"
+                } else {
+                    "经协议转换"
                 }),
                 "{text}"
             );
