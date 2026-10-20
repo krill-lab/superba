@@ -159,15 +159,24 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     let narrow = ui.available_width() < NARROW_STRIP;
     page_header(ui, cx, Page::Models, |ui| {
         let loading = state.task.is_some();
-        refresh = ui
-            .add(
+        // A narrow header keeps the filter field: refresh becomes its icon.
+        refresh = if narrow {
+            ui.add(
+                IconButton::new(Icon::Refresh, cx.tr.t("models.refresh"))
+                    .size(size::CONTROL_SM)
+                    .enabled(!loading && state.view.is_some()),
+            )
+            .clicked()
+        } else {
+            ui.add(
                 Button::new(cx.tr.t("models.refresh"))
                     .icon(Icon::Refresh)
                     .small()
                     .loading(loading && state.refreshing)
                     .enabled(!loading && state.view.is_some()),
             )
-            .clicked();
+            .clicked()
+        };
         // Through the router the list is the members' merged list; which of a
         // provider's own lists is read does not apply (the mode row does).
         if !state
@@ -1905,7 +1914,14 @@ fn bottom(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let (status, line, all) = note_text(cx, view);
-            let r = ui.add(egui::Label::new(Text::caption(line, cx.pal)).truncate());
+            // The dot keeps its room; a long note elides instead.
+            let room = (ui.available_width() - space::L).max(0.0);
+            let r = ui
+                .scope(|ui| {
+                    ui.set_max_width(room);
+                    ui.add(egui::Label::new(Text::caption(line, cx.pal)).truncate())
+                })
+                .inner;
             if !all.is_empty() {
                 r.on_hover_text(all.join("\n"));
             }
