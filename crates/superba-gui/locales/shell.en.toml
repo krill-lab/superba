@@ -5,6 +5,7 @@
 [action]
 cancel = "Cancel"
 close = "Close"
+clear_search = "Clear search"
 details = "Details"
 full_restart = "Full restart…"
 full_restart_app = "Fully restart ChatGPT"

@@ -119,3 +119,6 @@ pub mod disclosure;
 pub use disclosure::{Disclosure, DisclosureResponse};
 pub mod update_row;
 pub use update_row::{UpdateGroup, UpdateResponse, UpdateRow, UpdateTile};
+
+pub mod search_field;
+pub use search_field::SearchField;

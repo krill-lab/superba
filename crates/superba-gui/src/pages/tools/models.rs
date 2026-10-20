@@ -271,12 +271,15 @@ pub fn chooser(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action
                     if let Some(p) = cx.data.profile(&id) {
                         source(ui, cx, p, out);
                     }
-                    let r = ui.add_sized(
-                        [ui.available_width(), size::CONTROL_SM],
-                        egui::TextEdit::singleline(&mut state.search)
-                            .hint_text(cx.tr.t("tools.search"))
-                            .align(egui::Align2::LEFT_CENTER),
-                    );
+                    let r = crate::design::widgets::SearchField::new(
+                        &mut state.search,
+                        "tools-model-search",
+                        cx.tr.t("tools.search"),
+                        cx.tr.t("action.clear_search"),
+                    )
+                    .height(size::CONTROL_SM)
+                    .margin(egui::vec2(6.0, 2.0))
+                    .show(ui);
                     r.widget_info(|| {
                         egui::WidgetInfo::labeled(
                             egui::Role::TextInput,

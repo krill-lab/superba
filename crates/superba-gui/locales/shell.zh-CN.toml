@@ -4,6 +4,7 @@
 [action]
 cancel = "取消"
 close = "关闭"
+clear_search = "清除搜索"
 details = "详情"
 full_restart = "完全重启…"
 full_restart_app = "完全重启 ChatGPT"
