@@ -60,7 +60,10 @@ pub(super) fn badge(cx: &Cx<'_>, row: &RouterCatalogModel) -> String {
         CatalogReadiness::Failed => Some("models.catalog.failed"),
         CatalogReadiness::NeedsTranslation => Some("models.catalog.translation"),
     };
-    let label = cx.tr.t(layer_key(layer));
+    let mut label = cx.tr.t(layer_key(layer));
+    if row.sources.iter().any(|s| s.translated()) {
+        label.push_str(&format!(" · {}", cx.tr.t("models.catalog.converted")));
+    }
     state.map_or_else(
         || label.clone(),
         |key| format!("{label} · {}", cx.tr.t(key)),
@@ -131,6 +134,7 @@ pub(super) fn controls(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
     let Some(catalog) = &view.router_catalog else {
         return;
     };
+    ui.label(cx.tr.t("models.catalog.eligibility"));
     let mut settings = catalog.settings.clone();
     let mut save = false;
     ui.horizontal_wrapped(|ui| {

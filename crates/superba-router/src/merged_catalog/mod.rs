@@ -235,6 +235,18 @@ pub(crate) fn inherit_probes(old: &Generation, new: &Generation) {
             || before.cfg.model_map != member.cfg.model_map
             || before.cfg.lines != member.cfg.lines
             || old.openai.members[j].cfg != new.openai.members[i].cfg
+            || old.config.translation != new.config.translation
+            || old
+                .config
+                .claude
+                .as_ref()
+                .and_then(|c| c.members.get(&member.cfg.id))
+                != new
+                    .config
+                    .claude
+                    .as_ref()
+                    .and_then(|c| c.members.get(&member.cfg.id))
+            || old.config.gemini_member(&member.cfg.id) != new.config.gemini_member(&member.cfg.id)
         {
             continue;
         }

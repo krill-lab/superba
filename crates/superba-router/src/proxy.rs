@@ -112,17 +112,92 @@ pub(crate) async fn proxy_http(
     admission: Admission,
     ingress: Ingress,
 ) -> Response<RespBody> {
+    let req = req.map(ProxyBody::Incoming);
+    proxy_request(shared, req, rest, admission, ingress, None).await
+}
+
+enum ProxyBody {
+    Incoming(Incoming),
+    Buffered(Bytes),
+}
+
+/// Only the authenticated catalog test constructs this route. It bypasses
+/// publication, never request preparation, conversion or response handling.
+struct ProbeRoute {
+    generation: Arc<Generation>,
+    target: crate::merged_catalog::Target,
+    line: usize,
+}
+
+pub(crate) fn probe_http(
+    shared: Arc<Shared>,
+    generation: Arc<Generation>,
+    member: usize,
+    line: usize,
+    model: &str,
+    body: Bytes,
+) -> futures_util::future::BoxFuture<'static, Response<RespBody>> {
+    let model = model.to_owned();
+    Box::pin(async move {
+        let admission = match shared.limits.admit(std::time::Duration::ZERO).await {
+            Ok(admission) => admission,
+            Err(_) => return local_busy("the router is busy; retry the model test"),
+        };
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/backend-api/codex/responses")
+            .header(CONTENT_TYPE, "application/json")
+            .body(ProxyBody::Buffered(body))
+            .expect("probe request");
+        proxy_request(
+            shared,
+            req,
+            "/responses".into(),
+            admission,
+            Ingress::Codex,
+            Some(ProbeRoute {
+                generation,
+                target: crate::merged_catalog::Target {
+                    member,
+                    upstream: model,
+                    standard: true,
+                },
+                line,
+            }),
+        )
+        .await
+    })
+}
+
+async fn proxy_request(
+    shared: Arc<Shared>,
+    req: Request<ProxyBody>,
+    rest: String,
+    admission: Admission,
+    ingress: Ingress,
+    probe: Option<ProbeRoute>,
+) -> Response<RespBody> {
     let openai = ingress == Ingress::OpenAi;
     let t0 = Instant::now();
     let started_ms = now_ms();
-    let generation = shared.current();
+    let generation = probe
+        .as_ref()
+        .map(|p| p.generation.clone())
+        .unwrap_or_else(|| shared.current());
     shared.totals.requests.fetch_add(1, Ordering::Relaxed);
     let active = GaugeGuard::new(shared.clone(), |t| &t.active_requests);
     let (mut parts, body) = req.into_parts();
     let limit = generation.config.tuning.max_body_bytes;
     let tracked = generation.config.stats.is_some() && is_responses_path(&parts.method, &rest);
-    let body = match Limited::new(body, limit).collect().await {
-        Ok(collected) => collected.to_bytes(),
+    let collected = match body {
+        ProxyBody::Incoming(body) => Limited::new(body, limit)
+            .collect()
+            .await
+            .map(|c| c.to_bytes()),
+        ProxyBody::Buffered(body) => Ok(body),
+    };
+    let body = match collected {
+        Ok(body) => body,
         Err(e) if e.is::<http_body_util::LengthLimitError>() => {
             if tracked {
                 let m = match openai {
@@ -163,7 +238,14 @@ pub(crate) async fn proxy_http(
     } else {
         body
     };
-    let (body, catalog_selection) = if !openai
+    let (body, catalog_selection) = if let Some(probe) = &probe {
+        (
+            body,
+            Some(crate::merged_catalog::Selection {
+                targets: vec![probe.target.clone()],
+            }),
+        )
+    } else if !openai
         && generation.config.catalog.is_some()
         && is_responses_path(&parts.method, &rest)
     {
@@ -176,7 +258,8 @@ pub(crate) async fn proxy_http(
     };
     // The merged catalog is authoritative. The explicit seam is only used
     // without it, never to replace or filter a mixed native/L2 selection.
-    let (body, catalog_selection) = if generation.config.catalog.is_none()
+    let (body, catalog_selection) = if probe.is_none()
+        && generation.config.catalog.is_none()
         && !generation.config.synthetic_models.is_empty()
         && is_responses_path(&parts.method, &rest)
     {
@@ -303,7 +386,7 @@ pub(crate) async fn proxy_http(
             message,
         );
     }
-    let order = match &openai_meta {
+    let mut order = match &openai_meta {
         None if catalog_selection.is_some() => catalog_selection
             .as_ref()
             .expect("selection")
@@ -362,6 +445,9 @@ pub(crate) async fn proxy_http(
             }
         }
     };
+    if let Some(probe) = &probe {
+        order.retain(|c| c.member == probe.target.member && c.line == probe.line);
+    }
     note_compaction_route(&shared, &generation, &route, pin, now, order.first());
 
     let mut preparation_error = None;

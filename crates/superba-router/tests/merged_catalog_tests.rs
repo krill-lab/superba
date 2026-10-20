@@ -384,7 +384,7 @@ async fn overrides_affect_published_values_and_prefix_visibility_does_not_change
 }
 
 #[tokio::test]
-async fn chat_only_models_are_marked_as_needing_translation() {
+async fn disabled_conversion_models_are_marked_as_needing_translation() {
     let up = upstream(responder(200, 200, true)).await;
     let mut cfg = config(&[("krill", &up)]);
     cfg.openai = Some(superba_router::openai::OpenAiConfig {
@@ -398,6 +398,16 @@ async fn chat_only_models_are_marked_as_needing_translation() {
         .into(),
         ..Default::default()
     });
+    for to in superba_router::translate::ir::Protocol::ALL {
+        if to != superba_router::translate::ir::Protocol::Responses {
+            cfg.translation
+                .disabled
+                .insert(superba_router::translate::routing::Conversion {
+                    from: superba_router::translate::ir::Protocol::Responses,
+                    to,
+                });
+        }
+    }
     let r = start(cfg).await;
     let view = report(&r).await;
     assert!(
@@ -405,7 +415,7 @@ async fn chat_only_models_are_marked_as_needing_translation() {
             .iter()
             .any(|m| m.entry["slug"] == "deepseek-test"
                 && m.readiness == CatalogReadiness::NeedsTranslation
-                && m.sources.iter().all(|s| s.protocol == "chat_completions"))
+                && m.sources.iter().all(|s| s.protocol == "unavailable"))
     );
     assert!(!probe(&r, "deepseek-test").await.passed);
     assert!(!listed(&models(&r).await, "deepseek-test"));

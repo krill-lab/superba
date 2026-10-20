@@ -12,6 +12,7 @@ use superba_core::{
 
 use super::{CatalogConfig, Snapshot, Target, cache, probe_key};
 use crate::state::{Generation, lock, unix_ms};
+use crate::translate::ir::Protocol;
 
 /// Conservative tool/metadata defaults. Context sizes are operating budgets,
 /// not claims of the provider's maximum; upstream metadata and L4 take priority.
@@ -127,6 +128,11 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
             cache::fetch(g, member, false, query),
             cache::fetch(g, member, true, query)
         );
+        // A Codex-shaped list cannot establish native Responses support.
+        let mut codex = codex;
+        if !cache::native_responses(g, member) {
+            codex.entries.clear();
+        }
         (member, codex, standard)
     }))
     .buffer_unordered(6)
@@ -215,14 +221,12 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
             key_scope: scope.clone(),
             upstream_id: id.into(),
             endpoint: status.endpoint.clone(),
-            protocol: if layer == CatalogLayer::Codex || cache::native_responses(g, member) {
-                "responses"
-            } else if g.openai.members[member].chat.is_some() {
-                "chat_completions"
-            } else if g.claude.as_ref().and_then(|c| c.member(member)).is_some() {
-                "anthropic_messages"
-            } else {
-                "unknown"
+            protocol: match cache::responses_protocol(g, member) {
+                Some(Protocol::Responses) => "responses",
+                Some(Protocol::Chat) => "chat_completions",
+                Some(Protocol::Messages) => "anthropic_messages",
+                Some(Protocol::Gemini) => "gemini",
+                None => "unavailable",
             }
             .into(),
             layer,
@@ -273,12 +277,21 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
                 }
                 continue;
             }
-            if known.contains(&id) {
+            if known.contains(&id) && cache::native_responses(g, member) {
                 // L0 models keep their native fallback. Another member's L1
                 // metadata does not prove this member has a native endpoint;
                 // its standard-only target still needs its own L2 probe.
                 if let Some(row) = rows.get(&id) {
                     let mut row = row.clone();
+                    if !authoritative.contains(&id) {
+                        row.entry = bundled
+                            .iter()
+                            .find(|e| e["slug"] == id)
+                            .expect("bundled id")
+                            .clone();
+                    }
+                    row.readiness = CatalogReadiness::Ready;
+                    row.detail = None;
                     row.sources = vec![proof];
                     apply(
                         &mut row.entry,
@@ -307,7 +320,7 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
                 unix_ms().saturating_sub(r.tested_at)
                     < Duration::from_secs(if r.passed { 86400 } else { 600 }).as_millis() as u64
             });
-            let readiness = if !cache::native_responses(g, member) {
+            let readiness = if cache::responses_protocol(g, member).is_none() {
                 CatalogReadiness::NeedsTranslation
             } else {
                 match &result {
@@ -339,8 +352,9 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
             };
             match rows.get_mut(&id) {
                 Some(bare) => {
-                    if bare.readiness != CatalogReadiness::Ready
-                        && row.readiness == CatalogReadiness::Ready
+                    if (bare.readiness != CatalogReadiness::Ready
+                        && row.readiness == CatalogReadiness::Ready)
+                        || bare.sources.iter().all(|s| s.provider == "builtin")
                     {
                         bare.entry = row.entry.clone();
                         bare.readiness = row.readiness;
@@ -365,7 +379,7 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
         // member gets a namespace even when an upstream list is unavailable.
         for entry in &bundled {
             let id = entry["slug"].as_str().expect("bundled id").to_owned();
-            if local.contains_key(&id) {
+            if local.contains_key(&id) || !cache::native_responses(g, member) {
                 continue;
             }
             let mut entry = entry.clone();
@@ -418,9 +432,21 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
     // A bare name takes overrides from its first actual target (the normal
     // router order); prefixed names retain the selected provider's choices.
     for (id, row) in &mut rows {
-        if let Some(target) = routes.get(id).and_then(|r| r.first())
-            && let Some(choices) = config.members.get(&g.members[target.member].cfg.id)
-        {
+        if let Some(target) = routes.get(id).and_then(|r| r.first()) {
+            let choices = config
+                .members
+                .get(&g.members[target.member].cfg.id)
+                .cloned()
+                .unwrap_or_default();
+            row.readiness = CatalogReadiness::Ready;
+            row.detail = None;
+            if !target.standard && known.contains(id) && !authoritative.contains(id) {
+                row.entry = bundled
+                    .iter()
+                    .find(|e| e["slug"] == *id)
+                    .expect("bundled id")
+                    .clone();
+            }
             apply(&mut row.entry, choices.overrides.get(id), &choices.defaults);
         }
     }
@@ -428,6 +454,9 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
         targets.sort_by_key(|t| t.member);
         targets.dedup_by_key(|t| t.member);
     }
+    rows.retain(|id, row| {
+        routes.contains_key(id) || row.sources.iter().any(|s| s.provider != "builtin")
+    });
     let mut models: Vec<_> = rows.into_values().chain(prefixed).collect();
     for row in &mut models {
         let id = row.entry["slug"].as_str().unwrap_or_default().to_owned();
