@@ -31,6 +31,9 @@ use crate::pages::{Action, Cx, divider};
 
 /// Rows read at most.
 const LIMIT: u32 = 300;
+/// Where the hops start: past the status dot (8 pt and its margin) and the
+/// gap after it.
+const INDENT: f32 = 10.0 + space::S;
 /// Reload period while the router is on.
 const LIVE: Duration = Duration::from_secs(5);
 
@@ -351,11 +354,6 @@ fn entry(ui: &mut Ui, cx: &Cx<'_>, row: &RequestRow, names: &[(String, String)])
     let hops = hops(row, &name_of);
     let mut job = egui::text::LayoutJob::default();
     let small = |w| font(text::SMALL, w);
-    job.append(
-        "",
-        14.0 + space::S,
-        egui::TextFormat::simple(small(Weight::Regular), cx.pal.text),
-    );
     for (i, h) in hops.iter().enumerate() {
         if i > 0 {
             job.append(
@@ -401,12 +399,24 @@ fn entry(ui: &mut Ui, cx: &Cx<'_>, row: &RequestRow, names: &[(String, String)])
             );
         }
     }
-    ui.add(egui::Label::new(job).wrap());
+    // Indented under the status dot, also on the lines a narrow window wraps.
+    indented(ui, |ui| {
+        ui.add(egui::Label::new(job).wrap());
+    });
     if let Some(reason) = requests::status_reason(cx.tr, row).filter(|_| row.status.is_error()) {
-        ui.horizontal(|ui| {
-            ui.add_space(14.0 + space::S);
+        indented(ui, |ui| {
             ui.add(egui::Label::new(Text::caption(reason, cx.pal)).wrap());
         });
     }
     ui.add_space(space::XS);
+}
+
+/// `add` in a column starting at [`INDENT`], wrapped text included.
+fn indented(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
+    egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: INDENT as i8,
+            ..egui::Margin::ZERO
+        })
+        .show(ui, add);
 }

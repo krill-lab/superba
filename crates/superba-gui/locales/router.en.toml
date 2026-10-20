@@ -604,8 +604,8 @@ local = "Answered locally"
 local_count = "Side calls the router answered itself since it started: {n} ({routes})"
 local_tip = "ChatGPT backend side calls (plugins, usage, telemetry…) are answered by the router itself (x-superba-route: local), never sent to a member and not logged one by one. Counts by path:"
 converted = "{from} → {to}"
-failovers = "{n} line switches"
-fallback = "Fell back to another provider · {n} hops"
+failovers = "Switched lines · {n}"
+fallback = "Fell back to another provider · {n} {n|failover|failovers}"
 
 [usage.routing.filter]
 all = "All"
