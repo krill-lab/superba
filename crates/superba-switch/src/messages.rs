@@ -464,7 +464,7 @@ pub fn app_still_running(report: &superba_core::QuitReport) -> LocalizedText {
 }
 
 /// True when Windows refused to end one of the processes (access denied,
-/// os error 5): it runs as administrator or as another user.
+/// os error 5). This alone does not establish the process's owner or elevation.
 pub fn quit_access_denied(report: &superba_core::QuitReport) -> bool {
     report
         .left

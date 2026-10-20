@@ -57,7 +57,7 @@ pub enum EndResult {
     StillRunning,
     /// Could not be ended.
     Failed {
-        /// `open`, `terminate` or `wait`.
+        /// `identity`, `open`, `terminate` or `wait`.
         stage: &'static str,
         /// OS error text.
         error: String,
@@ -87,14 +87,27 @@ impl EndResult {
 
 /// Start times recorded with second resolution (sysinfo) match a creation
 /// time within this slack.
+#[cfg(not(windows))]
 const SLACK_MS: i64 = crate::procs::START_TIME_SLACK_MS;
 
 /// True when `created` (from the OS now) is the process recorded as `started`.
 pub fn same_process(started: Option<Timestamp>, created: Option<Timestamp>) -> bool {
     match (started, created) {
+        // Windows snapshots use the native creation time, so a PID reused even
+        // within sysinfo's two-second slack must not match the old process.
+        #[cfg(windows)]
+        (Some(a), Some(b)) => a == b,
+        #[cfg(not(windows))]
         (Some(a), Some(b)) => (a.as_millis() - b.as_millis()).abs() <= SLACK_MS,
         _ => true,
     }
+}
+
+/// Native creation time for Windows snapshots, before a PID can be selected
+/// for termination. Unknown identity must never authorize ending a process.
+#[cfg(windows)]
+pub(crate) fn creation_time(pid: u32) -> Option<Timestamp> {
+    imp::creation_time(pid)
 }
 
 /// Facts about `pid` (see the module docs).
@@ -130,12 +143,15 @@ mod imp {
         WAIT_TIMEOUT,
     };
     use windows_sys::Win32::System::Threading::{
-        GetProcessInformation, GetProcessTimes, OpenProcess, PROCESS_NAME_WIN32,
-        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, ProcessMachineTypeInfo,
-        QueryFullProcessImageNameW, TerminateProcess, WaitForSingleObject,
+        GetCurrentProcess, GetProcessInformation, GetProcessTimes, OpenProcess, OpenProcessToken,
+        PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+        ProcessMachineTypeInfo, QueryFullProcessImageNameW, TerminateProcess, WaitForSingleObject,
     };
 
     use super::{EndResult, ProcFacts};
+    use windows_sys::Win32::Security::{
+        EqualSid, GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser,
+    };
 
     /// `SYNCHRONIZE` standard access right (waiting on the process handle).
     const SYNCHRONIZE: u32 = 0x0010_0000;
@@ -204,6 +220,52 @@ mod imp {
         filetime_ms(c)
     }
 
+    fn user(h: HANDLE) -> Result<Vec<usize>, String> {
+        let mut token = std::ptr::null_mut();
+        // SAFETY: the process handle is valid and token is a valid out pointer.
+        if unsafe { OpenProcessToken(h, TOKEN_QUERY, &mut token) } == 0 {
+            return Err(last_error().1);
+        }
+        let token = Handle(token);
+        let mut size = 0;
+        // SAFETY: a null buffer asks for its required size.
+        unsafe { GetTokenInformation(token.0, TokenUser, std::ptr::null_mut(), 0, &mut size) };
+        if size == 0 {
+            return Err(last_error().1);
+        }
+        // TOKEN_USER contains pointers, so the storage must be aligned.
+        let mut data = vec![0_usize; (size as usize).div_ceil(std::mem::size_of::<usize>())];
+        // SAFETY: aligned writable buffer with at least size bytes.
+        if unsafe {
+            GetTokenInformation(
+                token.0,
+                TokenUser,
+                data.as_mut_ptr().cast(),
+                size,
+                &mut size,
+            )
+        } == 0
+        {
+            return Err(last_error().1);
+        }
+        Ok(data)
+    }
+
+    fn owned_by_us(h: &Handle) -> Result<bool, String> {
+        let theirs = user(h.0)?;
+        // SAFETY: GetCurrentProcess has no preconditions; the returned pseudo
+        // handle is borrowed, never closed.
+        let ours = user(unsafe { GetCurrentProcess() })?;
+        // SAFETY: both buffers were filled with TOKEN_USER by Windows and stay
+        // alive while their embedded SID pointers are compared.
+        Ok(unsafe {
+            EqualSid(
+                (*(theirs.as_ptr().cast::<TOKEN_USER>())).User.Sid,
+                (*(ours.as_ptr().cast::<TOKEN_USER>())).User.Sid,
+            ) != 0
+        })
+    }
+
     /// `PROCESS_MACHINE_INFORMATION` (declared here: the windows-sys type sits
     /// behind a feature the workspace does not enable).
     #[repr(C)]
@@ -263,6 +325,11 @@ mod imp {
         }
     }
 
+    pub(super) fn creation_time(pid: u32) -> Option<Timestamp> {
+        let h = open(pid, PROCESS_QUERY_LIMITED_INFORMATION).ok()?;
+        created(&h)
+    }
+
     pub(super) fn facts(pid: u32) -> ProcFacts {
         match open(pid, PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
             .or_else(|_| open(pid, PROCESS_QUERY_LIMITED_INFORMATION))
@@ -301,11 +368,33 @@ mod imp {
                 };
             }
         };
-        if !super::same_process(started, created(&h)) {
+        let created = created(&h);
+        if !super::same_process(started, created) {
             return EndResult::Reused;
         }
         if running(&h) == Some(false) {
             return EndResult::AlreadyGone;
+        }
+        if started.is_none() || created.is_none() {
+            return EndResult::Failed {
+                stage: "identity",
+                error: "process creation time is unknown; left alone".into(),
+            };
+        }
+        match owned_by_us(&h) {
+            Ok(true) => {}
+            Ok(false) => {
+                return EndResult::Failed {
+                    stage: "identity",
+                    error: "process belongs to another Windows user; left alone".into(),
+                };
+            }
+            Err(error) => {
+                return EndResult::Failed {
+                    stage: "identity",
+                    error,
+                };
+            }
         }
         // SAFETY: valid handle opened with PROCESS_TERMINATE.
         if unsafe { TerminateProcess(h.0, 1) } == 0 {

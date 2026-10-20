@@ -139,7 +139,7 @@ step_signalled = "sent a quit request"
 step_waited = "waited {seconds} s"
 step_ended = "ended processes by force: {ended} ended, {failed} could not be ended"
 with_hint = "{line} {hint}"
-access_denied = "Windows refused to end some of them (access denied): they run as administrator or as another user. Quit ChatGPT from its icon in the notification area (right-click, Quit), or start Superba the same way ChatGPT was started, then try again."
+access_denied = "Windows refused to end some of them (access denied). They may still be exiting, or their permissions may differ from Superba's. Wait briefly and retry, or quit ChatGPT from its icon in the notification area (right-click, Quit). If it was started as administrator, start Superba the same way."
 
 [switch.choice]
 legacy_sessions = "You have {count} sessions under provider “{provider}”. They will be hidden after the switch unless they are migrated."

@@ -45,7 +45,7 @@ pub struct ProcEntry {
     pub exe: Option<PathBuf>,
     /// Full argv.
     pub argv: Vec<String>,
-    /// Start time (second resolution on most platforms).
+    /// Start time (native milliseconds on Windows, seconds elsewhere).
     pub started_at: Option<Timestamp>,
     /// `KEY=VALUE` environment; `None` when unreadable or clobbered.
     pub env: Option<BTreeMap<String, String>>,
@@ -687,13 +687,18 @@ pub fn snapshot_os(opts: ReadOpts) -> Vec<ProcEntry> {
     let mut sys = System::new();
     let mut kind = ProcessRefreshKind::nothing()
         .with_cmd(UpdateKind::Always)
-        .with_exe(UpdateKind::Always);
+        .with_exe(UpdateKind::Always)
+        .with_user(UpdateKind::Always);
     if opts.environ {
         kind = kind
             .with_environ(UpdateKind::Always)
             .with_cwd(UpdateKind::Always);
     }
     sys.refresh_processes_specifics(ProcessesToUpdate::All, true, kind);
+    #[cfg(windows)]
+    let our_uid = sys
+        .process(sysinfo::Pid::from_u32(std::process::id()))
+        .and_then(|p| p.user_id());
     sys.processes()
         .values()
         .filter(|p| p.thread_kind().is_none())
@@ -708,17 +713,28 @@ pub fn snapshot_os(opts: ReadOpts) -> Vec<ProcEntry> {
             } else {
                 None
             };
-            let start = p.start_time();
+            #[cfg(not(windows))]
+            let started_at = (p.start_time() > 0).then(|| {
+                Timestamp::from_millis(i64::try_from(p.start_time()).unwrap_or(0) * 1000)
+            });
+            #[cfg(windows)]
+            let started_at = crate::osproc::creation_time(p.pid().as_u32()).filter(|t| {
+                // Do not associate an already replaced process with metadata
+                // collected by sysinfo before this native query.
+                t.as_millis() / 1000 == i64::try_from(p.start_time()).unwrap_or(0)
+            });
             ProcEntry {
                 pid: p.pid().as_u32(),
                 ppid: p.parent().map(|pp| pp.as_u32()),
                 exe: p.exe().map(Path::to_path_buf),
                 argv,
-                started_at: (start > 0)
-                    .then(|| Timestamp::from_millis(i64::try_from(start).unwrap_or(0) * 1000)),
+                started_at,
                 env,
                 zombie: matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead),
+                #[cfg(not(windows))]
                 foreign_user: foreign_user(p),
+                #[cfg(windows)]
+                foreign_user: matches!((our_uid, p.user_id()), (Some(ours), Some(owner)) if ours != owner),
                 cwd: opts
                     .environ
                     .then(|| p.cwd().map(Path::to_path_buf))
@@ -737,10 +753,7 @@ fn foreign_user(p: &sysinfo::Process) -> bool {
     p.user_id().is_some_and(|uid| **uid != me)
 }
 
-/// Windows: processes of other users are not readable without elevation (their
-/// executable path stays unknown), so no uid comparison is needed to keep them
-/// out of the app-main detection.
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn foreign_user(_p: &sysinfo::Process) -> bool {
     false
 }
@@ -801,6 +814,22 @@ pub enum Liveness {
 pub const START_TIME_SLACK_MS: i64 = 2_000;
 
 /// Check whether `pid` (started at `started_at`, if known) still runs.
+#[cfg(windows)]
+pub fn liveness(pid: u32, started_at: Option<Timestamp>) -> Liveness {
+    let facts = crate::osproc::facts(pid);
+    if facts.gone
+        || facts.running == Some(false)
+        || !crate::osproc::same_process(started_at, facts.created)
+    {
+        Liveness::Gone
+    } else {
+        // An unreadable process is not evidence that it exited.
+        Liveness::Alive
+    }
+}
+
+/// Check the process table on platforms without Windows process handles.
+#[cfg(not(windows))]
 pub fn liveness(pid: u32, started_at: Option<Timestamp>) -> Liveness {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
     let mut sys = System::new();

@@ -169,7 +169,7 @@ fn lingering_lists_the_live_part_of_the_tree() {
     ];
     // Recorded at the start: 11 (alive), 12 (alive), 15 (gone since).
     let recorded = vec![(11, at(11)), (12, at(12)), (15, at(15))];
-    let mut tree: Vec<u32> = merge_tree(&recorded, &entries, 10)
+    let mut tree: Vec<u32> = merge_tree(&recorded, &entries, 10, at(10))
         .into_iter()
         .map(|(p, _)| p)
         .collect();
@@ -260,5 +260,41 @@ fn ending_a_process_checks_its_start_and_reports_the_result() {
     assert_eq!(
         osproc::end(pid, started, Duration::from_millis(100)),
         EndResult::AlreadyGone
+    );
+}
+
+#[test]
+fn descendants_exclude_foreign_users_and_children_of_a_reused_parent_pid() {
+    let root = proc_with(10, 1, &["app"]);
+    let mut foreign = proc_with(11, 10, &["helper"]);
+    foreign.foreign_user = true;
+    let mut stale = proc_with(12, 10, &["unrelated"]);
+    stale.started_at = at(2);
+    let entries = [
+        root,
+        foreign,
+        stale,
+        proc_with(13, 10, &["renderer"]),
+        proc_with(14, 11, &["other-user-child"]),
+    ];
+    assert_eq!(descendants(&entries, 10), vec![(13, at(13))]);
+    assert!(superba_appctl::quit::merge_tree(&[], &entries, 10, at(50)).is_empty());
+}
+
+#[test]
+fn a_reused_or_missing_root_does_not_add_unrelated_children_to_the_recorded_tree() {
+    use superba_appctl::quit::merge_tree;
+    let recorded = [(12, at(12))];
+    let entries = [
+        proc_with(10, 1, &["other-app"]),
+        proc_with(11, 10, &["helper"]),
+    ];
+    assert_eq!(merge_tree(&recorded, &entries, 10, at(50)), recorded);
+    assert_eq!(merge_tree(&recorded, &entries[1..], 10, at(10)), recorded);
+    let mut foreign_root = entries[0].clone();
+    foreign_root.foreign_user = true;
+    assert_eq!(
+        merge_tree(&recorded, &[foreign_root, entries[1].clone()], 10, at(10)),
+        recorded
     );
 }

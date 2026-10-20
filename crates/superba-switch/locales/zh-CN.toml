@@ -138,7 +138,7 @@ step_signalled = "发送了退出请求"
 step_waited = "等待了 {seconds} 秒"
 step_ended = "强制结束了 {ended} 个进程（{failed} 个无法结束）"
 with_hint = "{line}{hint}"
-access_denied = "Windows 拒绝结束其中的进程（拒绝访问）：它们以管理员或其他用户身份运行。请在通知区域的 ChatGPT 图标上右键选择“退出”，或者用与 ChatGPT 相同的方式（例如同样以管理员身份）启动 Superba，然后再试一次。"
+access_denied = "Windows 拒绝结束其中的进程（拒绝访问）。它们可能仍在退出，也可能与 Superba 的权限不同。请稍等后重试，或在通知区域的 ChatGPT 图标上右键选择“退出”。如果 ChatGPT 是以管理员身份启动的，请用同样的方式启动 Superba。"
 
 [switch.choice]
 legacy_sessions = "你有 {count} 个会话属于 provider「{provider}」。切换后如果不迁移，它们会暂时看不见。"

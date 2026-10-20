@@ -14,8 +14,9 @@
 //!   began and found again right before ending them, so a helper started in
 //!   between goes too), each ended with `TerminateProcess` only while it is
 //!   still the process recorded ([`crate::osproc`]); what is still alive after
-//!   [`KILL_WAIT`] is ended once more. A forced quit without CDP does not wait
-//!   for windows to close again.
+//!   [`KILL_WAIT`] is retried only if termination was not accepted. Accepted
+//!   requests get a bounded wait for Windows to finish them. A forced quit
+//!   without CDP does not wait for windows to close again.
 //!
 //! Exit is "real" when the pid is gone, a zombie, or reused (start time differs).
 //!
@@ -46,9 +47,14 @@ pub const QUIT_APP_JS: &str = "(() => { const b = window.electronBridge; \
 /// running; waiting the whole graceful timeout for it is pointless.
 pub const WINDOWS_CLOSE_ONLY_WAIT: Duration = Duration::from_secs(5);
 
-/// How long a forced quit waits for the main process after ending the tree,
-/// per round (two rounds: what is still alive after the first is ended again).
+/// How long a forced quit waits per round when no Windows termination request
+/// was accepted (at most two rounds).
 pub const KILL_WAIT: Duration = Duration::from_secs(5);
+
+/// Windows termination is asynchronous. Allow pending I/O / sandbox teardown
+/// to finish after an accepted request, without issuing TerminateProcess again
+/// (which can return access denied for a process already terminating).
+pub const TERMINATION_WAIT: Duration = Duration::from_secs(30);
 
 /// Ask the process to quit (platform specific; best effort).
 pub fn request_quit(session: &AppSession) -> bool {
@@ -113,8 +119,18 @@ pub fn descendants(
     let mut out = Vec::new();
     let mut parents = vec![main_pid];
     while let Some(parent) = parents.pop() {
-        for e in entries.iter().filter(|e| e.ppid == Some(parent)) {
-            if !out.iter().any(|(pid, _)| *pid == e.pid) {
+        let Some(parent_entry) = entries.iter().find(|e| e.pid == parent && !e.foreign_user) else {
+            continue;
+        };
+        let parent_started = parent_entry.started_at;
+        for e in entries
+            .iter()
+            .filter(|e| e.ppid == Some(parent) && !e.foreign_user)
+        {
+            // Windows retains a dead parent's PID, which can subsequently be
+            // reused. An older process cannot be this parent's child.
+            let older = matches!((e.started_at, parent_started), (Some(c), Some(p)) if c < p);
+            if e.pid != main_pid && !older && !out.iter().any(|(pid, _)| *pid == e.pid) {
                 out.push((e.pid, e.started_at));
                 parents.push(e.pid);
             }
@@ -129,8 +145,17 @@ pub fn merge_tree(
     recorded: &[(u32, Option<Timestamp>)],
     entries: &[ProcEntry],
     main_pid: u32,
+    main_started: Option<Timestamp>,
 ) -> Vec<(u32, Option<Timestamp>)> {
     let mut out = recorded.to_vec();
+    if !entries.iter().any(|e| {
+        e.pid == main_pid
+            && !e.foreign_user
+            && (!cfg!(windows) || (main_started.is_some() && e.started_at.is_some()))
+            && osproc::same_process(main_started, e.started_at)
+    }) {
+        return out;
+    }
     for (pid, started) in descendants(entries, main_pid) {
         if !out.iter().any(|(p, _)| *p == pid) {
             out.push((pid, started));
@@ -279,7 +304,7 @@ pub async fn attempt(
         return QuitAttempt::new(QuitOutcome::NotRunning, steps);
     }
     let entries = procs::snapshot_os(procs::ReadOpts { environ: false });
-    let children = descendants(&entries, session.main_pid);
+    let children = merge_tree(&[], &entries, session.main_pid, session.started_at);
     let request = match requested {
         Some(r) => r,
         // A forced quit without CDP goes straight to ending the tree: closing
@@ -353,10 +378,13 @@ async fn forced(
     for round in 0..2 {
         let targets: Vec<(u32, Option<Timestamp>)> = if cfg!(windows) {
             let entries = procs::snapshot_os(procs::ReadOpts { environ: false });
-            tree = merge_tree(&tree, &entries, session.main_pid);
+            tree = merge_tree(&tree, &entries, session.main_pid, session.started_at);
             let alive = |p, s| procs::liveness(p, s) == Liveness::Alive;
             let mut out = Vec::new();
             for pid in kill_targets(session.main_pid, session.started_at, &tree, &alive) {
+                if terminated.contains(&pid) {
+                    continue;
+                }
                 let started = if pid == session.main_pid {
                     session.started_at
                 } else {
@@ -390,9 +418,21 @@ async fn forced(
         }
         end_errors.extend(errors);
         let since = tokio::time::Instant::now();
-        if wait_exit(session, KILL_WAIT).await {
+        let mut waiting = tree.clone();
+        waiting.push((session.main_pid, session.started_at));
+        let timeout = if cfg!(windows) && !terminated.is_empty() {
+            TERMINATION_WAIT
+        } else {
+            KILL_WAIT
+        };
+        let exited = if cfg!(windows) {
+            wait_children_exit(&waiting, timeout).await
+        } else {
+            wait_exit(session, timeout).await
+        };
+        if exited {
             steps.push(waited(since));
-            if !wait_children_exit(&tree, CHILD_EXIT_GRACE).await {
+            if !cfg!(windows) && !wait_children_exit(&tree, CHILD_EXIT_GRACE).await {
                 tracing::warn!(
                     main = session.main_pid,
                     "app child processes still running after kill"
@@ -407,6 +447,14 @@ async fn forced(
             };
         }
         steps.push(waited(since));
+        // There is nothing more to send when all live targets already have an
+        // accepted request. A timeout still reports them as pending; it never
+        // pretends that they exited or advises elevation for this state.
+        if waiting.iter().all(|(pid, started)| {
+            terminated.contains(pid) || procs::liveness(*pid, *started) == Liveness::Gone
+        }) {
+            break;
+        }
     }
     QuitAttempt {
         outcome: QuitOutcome::TimedOut,
@@ -454,7 +502,7 @@ pub fn lingering(
     alive: &dyn Fn(u32, Option<Timestamp>) -> bool,
 ) -> Vec<(ProcEntry, Option<Timestamp>)> {
     let mut wanted: Vec<(u32, Option<Timestamp>)> = vec![(session.main_pid, session.started_at)];
-    for (pid, started) in merge_tree(tree, entries, session.main_pid) {
+    for (pid, started) in merge_tree(tree, entries, session.main_pid, session.started_at) {
         if !wanted.iter().any(|(p, _)| *p == pid) {
             wanted.push((pid, started));
         }
@@ -489,7 +537,10 @@ pub fn report(session: &AppSession, attempt: &QuitAttempt) -> QuitReport {
         .filter_map(|(e, started)| {
             let facts = osproc::facts(e.pid);
             // Exited since the snapshot (short-lived helpers such as git).
-            if facts.gone {
+            if facts.gone
+                || facts.running == Some(false)
+                || !osproc::same_process(started, facts.created)
+            {
                 return None;
             }
             Some(LingeringProcess {
