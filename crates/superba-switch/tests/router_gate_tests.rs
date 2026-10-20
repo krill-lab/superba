@@ -730,3 +730,119 @@ async fn windows_router_uninstall_keeps_authapi_changed_after_planning() {
 async fn windows_router_uninstall_preserves_direct_pat_authapi() {
     windows_router_uninstall_env(None, None, true).await;
 }
+
+fn catalog_row(
+    id: &str,
+    layers: &[(&str, superba_core::CatalogLayer)],
+) -> superba_core::RouterCatalogModel {
+    superba_core::RouterCatalogModel {
+        entry: serde_json::json!({"slug": id, "display_name": id, "context_window": 64000,
+            "visibility": "list", "supported_in_api": true}),
+        sources: layers
+            .iter()
+            .map(|(provider, layer)| superba_core::CatalogProvenance {
+                provider: (*provider).into(),
+                provider_name: (*provider).into(),
+                provider_slug: (*provider).into(),
+                key_scope: "scope".into(),
+                upstream_id: id.into(),
+                endpoint: "https://example.test/v1/models".into(),
+                protocol: "responses".into(),
+                layer: *layer,
+                evidence: "test".into(),
+                observed_at: 1,
+                readiness: Some(superba_core::CatalogReadiness::Ready),
+                alias: Some(format!("{provider}/{id}")),
+            })
+            .collect(),
+        readiness: superba_core::CatalogReadiness::Ready,
+        detail: None,
+    }
+}
+
+#[tokio::test]
+async fn routed_models_show_one_row_per_model_and_free_estimated_windows() {
+    use superba_core::CatalogLayer::{Codex, StandardKnown, Synthesized};
+    let (w, sw) = users_state().await;
+    sw.router_set_enabled(true).await.unwrap();
+    *w.router.catalog.lock().unwrap() = Some(superba_core::RouterCatalogView {
+        models: vec![
+            catalog_row("gpt-5.5", &[("krill", Codex), ("office", StandardKnown)]),
+            catalog_row("deepseek-x", &[("office", Synthesized)]),
+        ],
+        aliases: [("krill/gpt-5.5".to_string(), "gpt-5.5".to_string())].into(),
+        ..Default::default()
+    });
+    let view = sw
+        .models_view(superba_core::ModelsViewRequest {
+            profile_id: Some(ProfileId::new("work")),
+            refresh: false,
+        })
+        .await
+        .unwrap();
+    let slugs: Vec<_> = view.list.models.iter().map(|m| m.slug.as_str()).collect();
+    assert_eq!(slugs, ["gpt-5.5", "deepseek-x"], "aliases are never rows");
+    let gpt = view.list.model("gpt-5.5").unwrap();
+    assert!(!gpt.estimated_context_window);
+    assert_eq!(gpt.max_window(), Some(64000));
+    let deepseek = view.list.model("deepseek-x").unwrap();
+    assert!(deepseek.estimated_context_window);
+    // A family estimate does not cap the user's window.
+    assert_eq!(deepseek.max_window(), None);
+    assert!(view.router_catalog.is_some());
+    // An empty catalog (Codex mode with only converted providers) is a
+    // valid answer: the page keeps its router controls and shows no error.
+    *w.router.catalog.lock().unwrap() = Some(superba_core::RouterCatalogView::default());
+    let view = sw
+        .models_view(superba_core::ModelsViewRequest {
+            profile_id: Some(ProfileId::new("work")),
+            refresh: false,
+        })
+        .await
+        .unwrap();
+    assert!(view.router_catalog.is_some());
+    assert!(view.list.models.is_empty());
+    assert!(
+        view.notes
+            .iter()
+            .all(|n| n.severity == superba_core::Severity::Info),
+        "{:?}",
+        view.notes
+    );
+}
+
+#[tokio::test]
+async fn router_model_list_mode_is_saved_and_handed_to_the_router() {
+    let (w, sw) = users_state().await;
+    sw.router_set_enabled(true).await.unwrap();
+    let mut settings = sw.profile_set().await.unwrap().settings.router.catalog;
+    assert_eq!(settings.mode, superba_core::CatalogMode::Codex);
+    settings.mode = superba_core::CatalogMode::Prefixed;
+    sw.save_router_catalog(settings).await.unwrap();
+    let set = sw.profile_set().await.unwrap();
+    assert_eq!(
+        set.settings.router.catalog.mode,
+        superba_core::CatalogMode::Prefixed
+    );
+    let written = w.router.written.lock().unwrap();
+    let catalog = written.last().unwrap().catalog.as_ref().unwrap();
+    assert_eq!(catalog.settings.mode, superba_core::CatalogMode::Prefixed);
+}
+
+#[tokio::test]
+async fn the_mode_is_a_preference_before_the_router_has_members() {
+    let w = World::new();
+    let sw = switcher(&w);
+    let mut settings = sw.profile_set().await.unwrap().settings.router.catalog;
+    settings.mode = superba_core::CatalogMode::Extended;
+    sw.save_router_catalog(settings).await.unwrap();
+    let set = sw.profile_set().await.unwrap();
+    assert_eq!(
+        set.settings.router.catalog.mode,
+        superba_core::CatalogMode::Extended
+    );
+    assert!(
+        w.router.written.lock().unwrap().is_empty(),
+        "the router is untouched"
+    );
+}

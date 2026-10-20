@@ -167,6 +167,10 @@ fn config(ups: &[(&str, &Anthropic, Protocol)]) -> RouterConfig {
             .collect(),
     );
     cfg.catalog = Some(CatalogConfig {
+        settings: superba_core::RouterCatalogSettings {
+            mode: superba_core::CatalogMode::Prefixed,
+            ..Default::default()
+        },
         bundled: vec![native_entry("gpt-test")],
         members: ups
             .iter()
@@ -180,7 +184,6 @@ fn config(ups: &[(&str, &Anthropic, Protocol)]) -> RouterConfig {
                 )
             })
             .collect(),
-        ..Default::default()
     });
     cfg.openai = Some(OpenAiConfig {
         members: ups

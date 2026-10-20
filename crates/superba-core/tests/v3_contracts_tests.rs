@@ -65,6 +65,7 @@ fn astra() -> ModelSpec {
         supported_in_api: true,
         priority: Some(1),
         context_window: Some(272_000),
+        estimated_context_window: false,
         max_context_window: Some(872_000),
         effective_context_window_percent: Some(95),
         auto_compact_token_limit: None,

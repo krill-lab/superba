@@ -218,10 +218,12 @@ impl Page {
             || self == Self::Router
             || self == Self::ClaudeCode
             || self == Self::Tools
+            || self == Self::Models
         {
             // These settings pages already scroll their own body (Tools: its
-            // list and its detail). Keep the header and footer fixed and avoid
-            // a second scroll area at 960×640.
+            // list and its detail; Models: its table pages instead). Keep the
+            // header and footer fixed and avoid a second scroll area at 960×640,
+            // where the pager would fall off the card.
             480.0
         } else {
             crate::design::layout::FIT_MIN_HEIGHT

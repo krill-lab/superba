@@ -21,6 +21,7 @@ pub struct Badge {
     mono: bool,
     outline: bool,
     hollow: bool,
+    clickable: bool,
 }
 
 impl Badge {
@@ -33,6 +34,7 @@ impl Badge {
             mono: false,
             outline: false,
             hollow: false,
+            clickable: false,
         }
     }
 
@@ -68,6 +70,13 @@ impl Badge {
         self.outline = true;
         self
     }
+
+    /// A chip that opens something (details, a menu): it takes clicks, shows
+    /// the pointing hand and a hover fill, and is a button to screen readers.
+    pub fn clickable(mut self) -> Self {
+        self.clickable = true;
+        self
+    }
 }
 
 impl Widget for Badge {
@@ -84,23 +93,48 @@ impl Widget for Badge {
         let dot_w = if self.status.is_some() { 12.0 } else { 0.0 };
         let icon_w = if self.icon.is_some() { ICON + 4.0 } else { 0.0 };
         let size = vec2(galley.size().x + 16.0 + dot_w + icon_w, 20.0);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
-        crate::design::a11y::text(&response, &self.text);
+        let sense = if self.clickable {
+            Sense::click()
+        } else {
+            Sense::hover()
+        };
+        let (rect, response) = ui.allocate_exact_size(size, sense);
+        let response = if self.clickable {
+            let enabled = ui.is_enabled();
+            let text = self.text.clone();
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, &text));
+            if enabled {
+                response.on_hover_cursor(egui::CursorIcon::PointingHand)
+            } else {
+                response
+            }
+        } else {
+            crate::design::a11y::text(&response, &self.text);
+            response
+        };
         if self.status == Some(Status::Busy) {
             ui.ctx()
                 .accesskit_node_builder(response.id, |n| n.set_busy());
         }
         if ui.is_rect_visible(rect) {
+            let t = if self.clickable {
+                super::hover_t(ui, &response)
+            } else {
+                0.0
+            };
             let painter = ui.painter();
             if self.outline {
                 painter.rect_stroke(
                     rect,
                     radius::PILL,
-                    Stroke::new(1.0, pal.border),
+                    Stroke::new(1.0, pal.border.lerp_to_gamma(pal.border_strong, t)),
                     StrokeKind::Inside,
                 );
             } else {
-                painter.rect_filled(rect, radius::PILL, pal.hover);
+                painter.rect_filled(rect, radius::PILL, pal.hover.lerp_to_gamma(pal.active, t));
+            }
+            if self.clickable && super::show_focus(&response) {
+                super::focus_ring(painter, rect, radius::PILL, pal);
             }
             let mut x = rect.min.x + 8.0;
             if let Some(status) = self.status {

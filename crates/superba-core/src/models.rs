@@ -310,6 +310,11 @@ pub struct ModelSpec {
     /// Context window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
+    /// [`ModelSpec::context_window`] is an operating estimate from the model's
+    /// family (the router knew nothing about the id), not the provider's limit:
+    /// it does not cap what an override may set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub estimated_context_window: bool,
     /// Largest window an override may set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_context_window: Option<u64>,
@@ -360,6 +365,7 @@ impl Default for ModelSpec {
             supported_in_api: true,
             priority: None,
             context_window: None,
+            estimated_context_window: false,
             max_context_window: None,
             effective_context_window_percent: None,
             auto_compact_token_limit: None,
@@ -477,6 +483,7 @@ impl ModelSpec {
                 .unwrap_or(true),
             priority: o.get("priority").and_then(serde_json::Value::as_i64),
             context_window: count("context_window"),
+            estimated_context_window: false,
             max_context_window: count("max_context_window"),
             effective_context_window_percent: count("effective_context_window_percent")
                 .and_then(|p| u8::try_from(p).ok()),
@@ -502,6 +509,9 @@ impl ModelSpec {
     /// listed window (the larger of the two when an upstream lists both the
     /// wrong way round).
     pub fn max_window(&self) -> Option<u64> {
+        if self.estimated_context_window {
+            return self.max_context_window;
+        }
         match (self.max_context_window, self.context_window) {
             (Some(max), Some(window)) => Some(max.max(window)),
             (max, window) => max.or(window),

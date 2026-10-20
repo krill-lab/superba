@@ -127,6 +127,11 @@ pub struct Wizard {
     pub line_chosen: bool,
     /// Default model (`None` = Codex's default).
     pub model: Option<String>,
+    /// The router model list: which models Codex lists once the local router
+    /// is on. Saved by Finish when changed; Cancel keeps the saved one.
+    pub catalog_mode: superba_core::CatalogMode,
+    /// The saved router model list (what Finish compares with).
+    pub(crate) saved_catalog_mode: superba_core::CatalogMode,
     /// Answer for sessions under a legacy provider.
     pub legacy: Option<LegacySessionChoice>,
     pub(crate) probe: Option<ReadTask<SiteProbeReport>>,
@@ -170,6 +175,12 @@ impl Wizard {
     pub fn start(data: &Data) -> Self {
         let presets = catalog::presets();
         let rerun = !data.providers().is_empty();
+        let saved_mode = data
+            .profiles
+            .value
+            .as_ref()
+            .map(|set| set.settings.router.catalog.mode)
+            .unwrap_or_default();
         let active_site = data.active_site();
         let preset = match &active_site {
             Some(site) if rerun || site.kind == SiteKind::Official => preset_of(site).to_owned(),
@@ -194,6 +205,8 @@ impl Wizard {
             line: None,
             line_chosen: false,
             model: None,
+            catalog_mode: saved_mode,
+            saved_catalog_mode: saved_mode,
             legacy: Some(LegacySessionChoice::Migrate),
             probe: None,
             probe_for: None,
@@ -375,6 +388,9 @@ pub enum WizardOutcome {
         key: Option<Secret>,
         /// Switch request.
         request: Box<SwitchRequest>,
+        /// A changed router model list to save after the profile (a
+        /// preference: it does not turn the router on).
+        catalog_mode: Option<superba_core::CatalogMode>,
     },
 }
 
@@ -697,6 +713,7 @@ pub fn finish(cx: &Cx<'_>, w: &Wizard, out: &mut Vec<Action>) -> WizardOutcome {
         profile: Box::new(profile),
         key,
         request: Box::new(request),
+        catalog_mode: (w.catalog_mode != w.saved_catalog_mode).then_some(w.catalog_mode),
     }
 }
 

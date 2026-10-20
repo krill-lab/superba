@@ -217,6 +217,8 @@ did_you_mean = "是不是想用 {suggestion}？"
 runtime = "无法启动异步运行时。"
 
 [cli.help]
+models_mode = "查看或设置路由模型列表：本地路由提供给 Codex 的模型"
+models_mode_value = "codex：仅 Codex 模型（默认）；extended：再加上供应商的模型；prefixed：再为每个供应商提供固定入口"
 router_line = "设置成员的首选线路（立即生效，已有流不中断）"
 config_group = "Codex 自己的 config.toml 和 auth.json：手动编辑、检查、列出和还原备份"
 config_edit = "在 $VISUAL / $EDITOR（Windows 上为记事本）中打开 config.toml 或 auth.json，编辑器关闭后检查、显示差异，并在备份后保存"
@@ -648,6 +650,8 @@ ran_short = "! 路由在本机资源上吃紧：出现 {files} 次「打开的�
 last_file_limit = "最近一次「打开的文件太多」"
 
 [cli.models]
+mode = "路由模型列表"
+alias = "固定入口"
 profile = "配置档"
 source_label = "模型列表"
 fallback = "无法获取供应商的列表"
@@ -703,6 +707,7 @@ official = "Codex 自带的列表（官方登录，只读）"
 other = "其他"
 
 [cli.models.col]
+providers = "供应商"
 model = "模型"
 name = "名称"
 context = "上下文"

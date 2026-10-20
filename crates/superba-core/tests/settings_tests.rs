@@ -855,3 +855,36 @@ fn every_settings_text_is_in_both_core_catalogs() {
     );
     assert_eq!(AuthMode::ApiKey.text().render_fallback(), "API key");
 }
+
+#[test]
+fn router_model_list_defaults_to_codex_and_ignores_the_alpha7_prefix_flag() {
+    use superba_core::{CatalogMode, RouterCatalogSettings, Settings};
+    assert_eq!(RouterCatalogSettings::default().mode, CatalogMode::Codex);
+    // alpha.7 wrote `show_prefixed` (true by default); no mode is derived from it.
+    for old in [
+        r#"{"show_prefixed":true,"provider_slugs":{"office":"office"}}"#,
+        r#"{"show_prefixed":false}"#,
+        "{}",
+    ] {
+        let s: RouterCatalogSettings = serde_json::from_str(old).unwrap();
+        assert_eq!(s.mode, CatalogMode::Codex, "{old}");
+    }
+    let saved = Settings::default();
+    assert_eq!(saved.router.catalog.mode, CatalogMode::Codex);
+    for mode in CatalogMode::ALL {
+        let s = RouterCatalogSettings {
+            mode,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(
+            json.contains(&format!("\"mode\":\"{}\"", mode.as_str())),
+            "{json}"
+        );
+        assert!(!json.contains("show_prefixed"));
+        let back: RouterCatalogSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, s);
+        assert_eq!(CatalogMode::parse(mode.as_str()), Some(mode));
+    }
+    assert_eq!(CatalogMode::parse("provider"), None);
+}

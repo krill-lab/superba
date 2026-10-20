@@ -1,8 +1,8 @@
 //! The model page and the router use the same catalog and override choices.
 
 use superba_core::{
-    Error, ModelList, ModelListKind, ModelListSource, ProfileSet, Result, RouterCatalogSettings,
-    RouterCatalogView,
+    CatalogLayer, ModelList, ModelListKind, ModelListSource, ProfileSet, Result,
+    RouterCatalogSettings, RouterCatalogView,
 };
 use superba_router::merged_catalog::{CatalogConfig, MemberCatalog};
 
@@ -67,6 +67,11 @@ impl Switcher {
     ) -> Result<()> {
         let mut set = self.deps.profiles.load().await?;
         set.settings.router.catalog = settings;
+        // Without Codex members the list is a preference for later (the setup
+        // wizard asks before the router is on): nothing to validate or reload.
+        if set.settings.router.members.is_empty() {
+            return self.deps.profiles.save(&set).await;
+        }
         // Validate against concrete members before persisting the user's names.
         self.build_router_members(&set, &set.settings.router.members)
             .await?;
@@ -74,25 +79,42 @@ impl Switcher {
         self.resync_router_members(&set).await
     }
 
+    /// The router's merged list as the Models page shows it: one row per
+    /// canonical model (never one per provider alias). An empty list is a
+    /// valid answer (Codex mode with only converted providers), not an error:
+    /// the page still offers the mode that would show their models.
     pub(crate) async fn routed_models(&self) -> Result<(ModelList, RouterCatalogView)> {
         let report = self.deps.router.catalog().await?;
-        if report.models.is_empty() {
-            return Err(Error::other("the router has no merged model catalog"));
-        }
         let mut members = Vec::new();
+        for source in &report.sources {
+            if let Some(name) = report
+                .models
+                .iter()
+                .flat_map(|m| &m.sources)
+                .find(|p| p.provider == source.provider)
+                .map(|p| p.provider_name.clone())
+                .filter(|n| !members.contains(n))
+            {
+                members.push(name);
+            }
+        }
         let models = report
             .models
             .iter()
             .filter_map(|row| {
                 let mut spec = crate::models::spec_from_entry(&row.entry)?;
+                // A family estimate must not cap what the user may set.
+                spec.estimated_context_window = row.estimated();
                 for proof in &row.sources {
-                    if proof.provider != "builtin" && !members.contains(&proof.provider_name) {
+                    if !members.contains(&proof.provider_name) {
                         members.push(proof.provider_name.clone());
                     }
                     let kind = match proof.layer {
-                        superba_core::CatalogLayer::Codex => Some(ModelListKind::Codex),
-                        superba_core::CatalogLayer::Standard => Some(ModelListKind::Standard),
-                        _ => None,
+                        CatalogLayer::Codex => Some(ModelListKind::Codex),
+                        CatalogLayer::Standard
+                        | CatalogLayer::StandardKnown
+                        | CatalogLayer::Synthesized => Some(ModelListKind::Standard),
+                        CatalogLayer::Builtin => None,
                     };
                     if let Some(kind) = kind
                         && !spec.lists.contains(&kind)

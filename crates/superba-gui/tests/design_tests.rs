@@ -864,3 +864,83 @@ fn hovered_links_underline_the_text_even_in_a_wide_justified_layout() {
         }
     }
 }
+
+/// Badge::clickable is a button (a provider chip opens its menu) and
+/// IconButton::checked a named check box (show / hide a model in Codex).
+#[test]
+fn clickable_badges_and_toggle_icon_buttons() {
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let report = FontReport::default();
+    ctx.set_fonts(fonts::definitions(&report));
+    superba_gui::design::style::install(&ctx, Some(Theme::Light));
+    let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 200.0));
+    let mut chip = Rect::NOTHING;
+    let mut clicked = false;
+    let run = |events: Vec<egui::Event>, clicked: &mut bool, chip: &mut Rect| {
+        let out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                ui.horizontal(|ui| {
+                    let r = ui.add(Badge::new("Krill").clickable());
+                    *chip = r.rect;
+                    *clicked |= r.clicked();
+                    ui.add(IconButton::new(Icon::Eye, "Show gpt-5.5").checked(true));
+                    ui.add(IconButton::new(Icon::EyeOff, "Hide gpt-5.4").checked(false));
+                });
+            },
+        );
+        let nodes = out
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .map(|u| {
+                u.nodes
+                    .iter()
+                    .map(|(_, n)| {
+                        (
+                            n.role(),
+                            n.label().unwrap_or_default().to_owned(),
+                            n.toggled().map(|t| t == egui::accesskit::Toggled::True),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        out.drop_without_applying_deltas();
+        nodes
+    };
+    run(Vec::new(), &mut clicked, &mut chip);
+    let nodes = run(Vec::new(), &mut clicked, &mut chip);
+    use egui::accesskit::Role;
+    assert!(
+        nodes.contains(&(Role::Button, "Krill".into(), None)),
+        "{nodes:?}"
+    );
+    assert!(
+        nodes.contains(&(Role::CheckBox, "Show gpt-5.5".into(), Some(true))),
+        "{nodes:?}"
+    );
+    assert!(
+        nodes.contains(&(Role::CheckBox, "Hide gpt-5.4".into(), Some(false))),
+        "{nodes:?}"
+    );
+    let at = chip.center();
+    let press = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    run(
+        vec![egui::Event::PointerMoved(at), press(true)],
+        &mut clicked,
+        &mut chip,
+    );
+    run(vec![press(false)], &mut clicked, &mut chip);
+    assert!(clicked, "a clickable badge takes clicks");
+}

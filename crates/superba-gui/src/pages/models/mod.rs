@@ -24,6 +24,7 @@ mod catalog;
 pub mod model;
 mod view;
 
+pub use catalog::{chip_lines, mode_help, mode_label, valid_slug};
 pub use view::speed_tooltip;
 
 use std::collections::{BTreeMap, HashMap};
@@ -70,15 +71,16 @@ struct SaveDone {
 /// Page-local state, kept across navigation.
 #[derive(Default)]
 pub struct State {
-    /// Filter the merged list by its source layer.
+    /// Filter the router's list by where a provider's metadata came from.
     pub catalog_source: Option<superba_core::CatalogLayer>,
-    /// Filter the merged list by provider id.
+    /// Filter the router's list by provider (member id).
     pub catalog_provider: Option<String>,
+    /// Provider slugs being edited (member id -> draft) while the editor is open.
     catalog_slugs: BTreeMap<String, String>,
-    catalog_test: Option<ReadTask<superba_core::RouterModelTest>>,
+    /// The model (canonical id or alias) under test and the test.
+    catalog_test: Option<(String, ReadTask<superba_core::RouterModelTest>)>,
+    /// A router list setting (mode, slugs, visibility) being saved.
     catalog_save: Option<ReadTask<()>>,
-    catalog_result: Option<superba_core::RouterModelTest>,
-    catalog_error: Option<String>,
     /// Provider chosen in the picker (`None` = the applied one).
     profile: Option<ProfileId>,
     /// Loaded view.
@@ -243,16 +245,36 @@ impl State {
 
     /// Poll the background work; true while something runs.
     fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) -> bool {
-        if let Some(task) = &self.catalog_test
+        if let Some((model, task)) = &self.catalog_test
             && let Some(result) = task.poll()
         {
+            let model = model.clone();
             self.catalog_test = None;
             match result {
                 Ok(result) => {
-                    self.catalog_result = Some(result);
+                    out.push(Action::Toast {
+                        status: if result.passed {
+                            Status::Ok
+                        } else {
+                            Status::Error
+                        },
+                        text: cx.tr.f(
+                            if result.passed {
+                                "models.router.test_passed"
+                            } else {
+                                "models.router.test_failed"
+                            },
+                            &[("model", &model), ("detail", &result.detail)],
+                        ),
+                    });
+                    // A pass can publish the model: show its new state.
+                    self.task = None;
                     self.load(cx, true);
                 }
-                Err(error) => self.catalog_error = Some(super::error_text(cx.tr, &error)),
+                Err(error) => out.push(Action::Toast {
+                    status: Status::Error,
+                    text: super::error_text(cx.tr, &error),
+                }),
             }
         }
         if let Some(task) = &self.catalog_save
@@ -262,9 +284,13 @@ impl State {
             match result {
                 Ok(()) => {
                     self.catalog_slugs.clear();
+                    self.task = None;
                     self.load(cx, true);
                 }
-                Err(error) => self.catalog_error = Some(super::error_text(cx.tr, &error)),
+                Err(error) => out.push(Action::Toast {
+                    status: Status::Error,
+                    text: super::error_text(cx.tr, &error),
+                }),
             }
         }
         let profiles_ready = cx.data.profiles.value.is_some() || cx.data.profiles.error.is_some();
