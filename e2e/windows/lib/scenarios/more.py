@@ -575,11 +575,9 @@ def legacy_sessions_tar(work, codex_home_win, n=600, kb=48, seed=7):
     return tar, rows
 
 
-@scenario("W22", "Sessions: 600 legacy sessions, migration with progress and animation, undo", area="sessions",
-          needs=("configured",), bugs=(31, 33, 16))
-def w22(t):
+def w22_fixture(t):
+    """The same real files/rows for full W22 and isolated migration retries."""
     run = t.run
-    u = U(t)
     a = App(run)
     work = Path(run.root / "work-w22")
     work.mkdir(exist_ok=True)
@@ -601,6 +599,15 @@ def w22(t):
         fixture_paths = {row["rollout_path"].casefold() for row in rows}
         s.check(fixture_paths <= hashes_before.keys(), "all 600 fixture rollout files are present")
         before = scan_sessions(run, s, "before")
+    return before, hashes_before, fixture_paths
+
+
+@scenario("W22", "Sessions: 600 legacy sessions, migration with progress and animation, undo", area="sessions",
+          needs=("configured",), bugs=(31, 33, 16))
+def w22(t):
+    run = t.run
+    u = U(t)
+    before, hashes_before, fixture_paths = w22_fixture(t)
     with t.step("Sessions page: migrate with progress and the animation") as s:
         flows.start_superba(run, s)
         u.page("sessions")

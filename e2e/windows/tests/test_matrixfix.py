@@ -184,6 +184,20 @@ class MatrixTests(unittest.TestCase):
         wait_migration(self.run, self.step, u, stop=True)
         self.run.vm.scp_from.assert_called_once()
 
+    def test_slow_screenshot_cannot_delay_stop_past_completion(self):
+        u = self.ui()
+        u.texts = Mock(side_effect=[['Migrating sessions', 'Migrated 289 of 600 sessions', 'Now: file'],
+                                   ['Stopping the migration'], ['Migration history', 'Rolled back']])
+
+        def click(*args, **kwargs):
+            self.assertLess(self.clock.now, 3, 'the migration would finish before a delayed click')
+
+        u.click_at.side_effect = click
+        self.run.agent.shot.side_effect = lambda *a, **kw: self.clock.sleep(4)
+        wait_migration(self.run, self.step, u, stop=True)
+        u.click_at.assert_called_once_with(60, 35, relative=False)
+        self.assertEqual(self.run.agent.shot.call_count, 1)
+
     def test_stop_needs_one_visible_enabled_button_in_the_same_progress_snapshot(self):
         for buttons in ([], [dict(name='Stop and undo', type='Button', enabled=False,
                                  rect=[10, 20, 100, 30])]):

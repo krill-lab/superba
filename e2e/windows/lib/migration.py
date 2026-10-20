@@ -74,8 +74,6 @@ def wait_migration(run, s, u, total=600, restore=False, stop=False, timeout=300)
             observations.append({"t": round(time.monotonic() - start, 1), "count": count,
                                  "active": active, "current": current, "texts": names,
                                  "read_seconds": round(read_seconds, 3)})
-            if count and active and len([o for o in observations if o["count"]]) <= 6:
-                capture(f"{'restoring' if restore else 'migrating'}-{len(observations)}")
             if stop and not stopped and active and count and 0 < count[0] < count[1]:
                 buttons = [e for e in snapshot if e["name"] == u.L("movers.stop")
                            and e["type"] == "Button" and e["enabled"] and e.get("rect")]
@@ -83,9 +81,17 @@ def wait_migration(run, s, u, total=600, restore=False, stop=False, timeout=300)
                         "Stop and undo is enabled during actual migration progress")
                 s.save("before-stop-and-undo.json", snapshot)
                 rect = buttons[0]["rect"]
+                observations[-1]["stop_requested_t"] = round(time.monotonic() - start, 3)
                 u.click_at(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2, relative=False)
                 observations[-1]["stop_clicked"] = True
+                observations[-1]["stop_returned_t"] = round(time.monotonic() - start, 3)
                 stopped = True
+            if count and active and len([o for o in observations if o["count"]]) <= 6:
+                # Even a local screenshot can block for seconds. Stop must use
+                # the fresh progress snapshot before any capture delays it.
+                name = ("after-stop-and-undo" if observations[-1].get("stop_clicked")
+                        else f"{'restoring' if restore else 'migrating'}-{len(observations)}")
+                capture(name)
             # WMI's full process inventory can block for seconds even over the
             # agent connection. This command reads only native handle counts.
             observations[-1]["handles"] = run.agent.call("proc.handles", name="superba")
