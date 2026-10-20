@@ -50,6 +50,9 @@ pub struct HostState {
     /// Last update.
     #[serde(default)]
     pub updated_at: Timestamp,
+    /// Last managed WSL Codex CA bundle hash. A foreign file is never replaced.
+    #[serde(default)]
+    pub router_ca_sha256: Option<String>,
 }
 
 /// Status of a journal record.
@@ -92,6 +95,9 @@ pub struct JournalEntry {
     /// Generation before the apply.
     #[serde(default)]
     pub prev_generation: u64,
+    /// CA ownership before this write, restored by rollback.
+    #[serde(default)]
+    pub prev_router_ca_sha256: Option<String>,
     /// Failure detail.
     #[serde(default)]
     pub detail: Option<String>,

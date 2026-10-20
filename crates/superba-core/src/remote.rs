@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthShape;
 use crate::codex::CodexVersion;
-use crate::config::{AuthChange, FileWrite, KeyChange, PlannedFile, ResolvedProfile};
+use crate::config::{AuthChange, FileChange, FileWrite, KeyChange, PlannedFile, ResolvedProfile};
 use crate::env::{EnvApplied, EnvObservation, EnvPlan, ShellKind};
 use crate::error::Error;
 use crate::i18n::{LocalizedText, Notice};
@@ -135,6 +135,9 @@ pub struct RemotePlan {
     /// Remote env change (PAT only).
     #[serde(default)]
     pub env: Option<EnvPlan>,
+    /// Codex-only CA bundle, included in the same atomic write as the config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<RemoteCertificatePlan>,
     /// Reasons this host cannot be switched (others continue).
     #[serde(default)]
     pub blocked: Vec<BlockReason>,
@@ -162,6 +165,33 @@ pub struct RemoteApplyReport {
     /// Env edits performed.
     #[serde(default)]
     pub env: Option<EnvApplied>,
+    /// Receipt for the Codex-only CA bundle (including its removal).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<Box<RemoteCertificateWrite>>,
+}
+
+/// A managed remote certificate bundle; bytes are omitted from serialization.
+#[derive(Clone, Debug, Serialize)]
+pub struct RemoteCertificatePlan {
+    /// Absolute POSIX path inside the managed Codex home.
+    pub path: String,
+    /// Contents expected before the write.
+    pub before_sha256: Option<String>,
+    /// New public certificate bundle or removal.
+    pub change: FileChange,
+}
+
+/// Hash-checked rollback information for a remote certificate bundle.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteCertificateWrite {
+    /// Absolute POSIX path.
+    pub path: String,
+    /// Previous hash (`None` = absent).
+    pub before_sha256: Option<String>,
+    /// Written hash (`None` = removed).
+    pub after_sha256: Option<String>,
+    /// Remote backup, when a previous file existed.
+    pub backup: Option<String>,
 }
 
 /// What [`crate::RemoteHosts::verify`] checks against.

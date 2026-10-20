@@ -1,6 +1,5 @@
 //! User bug 63 (follow-up of bug 58): Codex inside a WSL distribution that
-//! follows this computer chooses its model by the same rules, and router mode
-//! puts it in API-key mode too. Without a model in the distribution's
+//! follows this computer chooses its model by the same rules. Without a model in the distribution's
 //! `config.toml` turning the router on moved its Codex from the provider's
 //! default to a default of its own, and nothing in the plan said so.
 //!
@@ -262,11 +261,8 @@ async fn router_on_keeps_the_model_of_a_following_distribution_and_names_it() {
     assert_eq!(
         notes,
         [(
-            "switch.models.keep_api_key".to_owned(),
-            "WSL: Ubuntu: Codex keeps gpt-6.1-sol, the model it runs with now: with an API key \
-             (also through the router) Codex and the ChatGPT app would choose a default model of \
-             their own. To use another model, set one on the profile (Models page, or spb profile \
-             edit --model)."
+            "switch.models.keep_router".to_owned(),
+            "WSL: Ubuntu: Codex keeps gpt-6.1-sol, the model it runs with now: router members may have different default models. To use another model, set one on the profile (Models page, or spb profile edit --model)."
                 .to_owned()
         )]
     );
@@ -504,7 +500,7 @@ async fn a_distribution_updated_later_keeps_its_model_too() {
             .into_iter()
             .map(|(k, _)| k)
             .collect::<Vec<_>>(),
-        ["switch.models.keep_api_key"]
+        ["switch.models.keep_router"]
     );
     // This computer still runs the model it kept.
     assert_eq!(local_keys(&plan), ["switch.models.keep_router"]);

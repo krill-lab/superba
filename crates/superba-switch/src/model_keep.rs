@@ -170,7 +170,7 @@ pub struct ScopeFacts<'a> {
     pub same_site: bool,
     /// Its auth mode now (`None` = not known).
     pub auth: Option<AuthMode>,
-    /// Its auth mode after the switch (API key when routed).
+    /// Its auth mode after the switch.
     pub dest_auth: AuthMode,
     /// The `model` its `config.toml` names now.
     pub model: Option<&'a str>,
@@ -692,20 +692,42 @@ impl Switcher {
         } else {
             Vec::new()
         };
-        let Some(scope) = scope_of(ScopeFacts {
-            same_site: host_on_site(
-                i.state.openai_base_url.as_deref(),
-                i.site,
-                applied_site,
-                &router_endpoints,
-            ),
-            auth: i.state.auth.mode(),
-            dest_auth: *auth,
-            model: model.as_deref(),
-            kept: kept.as_deref(),
-            dest_sets_model: i.resolved.model.model.is_some(),
-            left: None,
-        }) else {
+        let from = if i.state.openai_base_url.as_deref().is_some_and(|base| {
+            router_endpoints.iter().any(|endpoint| {
+                endpoint.as_str().trim_end_matches('/') == base.trim_end_matches('/')
+            })
+        }) {
+            ModelForm::Router
+        } else if let Some(form) = i.state.auth.mode().and_then(ModelForm::of) {
+            form
+        } else {
+            return KeepDecision::Nothing;
+        };
+        let to = if endpoints.ca_certificate.is_some() {
+            ModelForm::Router
+        } else if let Some(form) = ModelForm::of(*auth) {
+            form
+        } else {
+            return KeepDecision::Nothing;
+        };
+        let Some(scope) = scope_of_forms(
+            ScopeFacts {
+                same_site: host_on_site(
+                    i.state.openai_base_url.as_deref(),
+                    i.site,
+                    applied_site,
+                    &router_endpoints,
+                ),
+                auth: i.state.auth.mode(),
+                dest_auth: *auth,
+                model: model.as_deref(),
+                kept: kept.as_deref(),
+                dest_sets_model: i.resolved.model.model.is_some(),
+                left: None,
+            },
+            from,
+            to,
+        ) else {
             return KeepDecision::Nothing;
         };
         let mut facts = KeepFacts::default();

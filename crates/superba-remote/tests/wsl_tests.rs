@@ -135,6 +135,174 @@ fn have_bash() -> bool {
     Path::new("/usr/bin/bash").is_file()
 }
 
+fn certificate() -> String {
+    rcgen::generate_simple_self_signed(vec!["localhost".into()])
+        .unwrap()
+        .cert
+        .pem()
+}
+
+fn routed_profile() -> superba_core::ResolvedProfile {
+    let mut desired = token_profile("https://127.0.0.1:17242", AuthMode::Pat, KEY);
+    if let superba_core::ResolvedMode::Token { endpoints, .. } = &mut desired.mode {
+        endpoints.ca_certificate = Some(superba_core::SecretBytes::new(certificate().into_bytes()));
+    }
+    desired
+}
+
+#[tokio::test]
+async fn wsl_router_trust_preserves_user_roots_and_restores_or_rolls_back_atomically() {
+    let env = setup("/bin/bash");
+    let host = distro("Ubuntu");
+    let user_ca = env.home.join("user roots 中文.pem");
+    let user_pem = certificate();
+    write(&user_ca, &user_pem, 0o600);
+    let profile_path = env.home.join(".profile");
+    let original = format!(
+        "{}export CODEX_CA_CERTIFICATE=\"{}\"\n",
+        read(&profile_path),
+        user_ca.display()
+    );
+    write(&profile_path, &original, 0o644);
+    let bashrc = read(&env.home.join(".bashrc"));
+    let desired = routed_profile();
+    let plan = env.hosts.plan_apply(&host, &desired).await.unwrap();
+    assert!(plan.certificate.is_some());
+    assert!(
+        !env.home.join(".codex/.superba/router-ca.pem").exists(),
+        "preview never writes"
+    );
+    let report = env.hosts.apply(&host, &plan).await.unwrap();
+    let bundle_path = env.home.join(".codex/.superba/router-ca.pem");
+    let bundle = read(&bundle_path);
+    assert!(bundle.contains(&user_pem));
+    assert_eq!(bundle.matches("-----BEGIN CERTIFICATE-----").count(), 2);
+    assert_eq!(
+        std::fs::metadata(&bundle_path)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    assert!(read(&profile_path).contains(&format!(
+        "CODEX_CA_CERTIFICATE=\"{}\"",
+        bundle_path.display()
+    )));
+    assert!(report.certificate.is_some());
+    assert!(read(&user_ca) == user_pem, "user roots remain untouched");
+    let repeat = env.hosts.plan_apply(&host, &desired).await.unwrap();
+    assert!(
+        repeat.certificate.is_none(),
+        "repeated routing does not grow the bundle"
+    );
+    let settings = env
+        .hosts
+        .plan_apply_scoped(&host, &desired, superba_core::RemoteApplyScope::Settings)
+        .await
+        .unwrap();
+    assert!(settings.certificate.is_none() && settings.env.is_none());
+    env.hosts.rollback(&host, &report).await.unwrap();
+    assert!(!bundle_path.exists());
+    assert_eq!(read(&profile_path), original);
+    assert_eq!(read(&env.home.join(".bashrc")), bashrc);
+
+    let plan = env.hosts.plan_apply(&host, &desired).await.unwrap();
+    env.hosts.apply(&host, &plan).await.unwrap();
+    let mut restore = desired.clone();
+    restore.mode = superba_core::ResolvedMode::Original {
+        provider: superba_core::ProviderRestore::Baseline {
+            reverse_migrate: false,
+        },
+    };
+    let plan = env.hosts.plan_apply(&host, &restore).await.unwrap();
+    let report = env.hosts.apply(&host, &plan).await.unwrap();
+    assert!(!bundle_path.exists());
+    assert_eq!(read(&profile_path), original);
+    assert_eq!(read(&env.home.join(".bashrc")), bashrc);
+    env.hosts.rollback(&host, &report).await.unwrap();
+    assert_eq!(read(&bundle_path), bundle);
+}
+
+#[tokio::test]
+async fn leaving_wsl_routing_for_direct_pat_restores_the_user_ca() {
+    let env = setup("/bin/bash");
+    let host = distro("Ubuntu");
+    let user_ca = env.home.join("root.pem");
+    write(&user_ca, &certificate(), 0o600);
+    let profile_path = env.home.join(".profile");
+    let original = format!(
+        "{}export CODEX_CA_CERTIFICATE=\"{}\"\n",
+        read(&profile_path),
+        user_ca.display()
+    );
+    write(&profile_path, &original, 0o644);
+    let plan = env
+        .hosts
+        .plan_apply(&host, &routed_profile())
+        .await
+        .unwrap();
+    env.hosts.apply(&host, &plan).await.unwrap();
+    let direct = token_profile(ORIGIN, AuthMode::Pat, KEY);
+    let plan = env.hosts.plan_apply(&host, &direct).await.unwrap();
+    env.hosts.apply(&host, &plan).await.unwrap();
+    assert!(!env.home.join(".codex/.superba/router-ca.pem").exists());
+    assert!(read(&profile_path).contains(&format!(
+        "\nexport CODEX_CA_CERTIFICATE=\"{}\"",
+        user_ca.display()
+    )));
+    assert!(!read(&profile_path).contains(": # [superba] export CODEX_CA_CERTIFICATE"));
+    assert_eq!(
+        env.hosts.probe(&host).await.unwrap().authapi_env.value(),
+        Some(ORIGIN)
+    );
+}
+
+#[tokio::test]
+async fn wsl_router_refuses_foreign_bundles_and_invalid_or_missing_user_roots() {
+    for case in ["foreign", "missing", "invalid", "private"] {
+        let env = setup("/bin/bash");
+        let host = distro("Ubuntu");
+        let profile_path = env.home.join(".profile");
+        if case == "foreign" {
+            write(
+                &env.home.join(".codex/.superba/router-ca.pem"),
+                &certificate(),
+                0o600,
+            );
+        } else {
+            let source = env.home.join("user.pem");
+            if case != "missing" {
+                let text = if case == "private" {
+                    format!("{}\n-----BEGIN {}-----\n", certificate(), "PRIVATE KEY")
+                } else {
+                    "invalid".into()
+                };
+                write(&source, &text, 0o600);
+            }
+            write(
+                &profile_path,
+                &format!(
+                    "{}export CODEX_CA_CERTIFICATE=\"{}\"\n",
+                    read(&profile_path),
+                    source.display()
+                ),
+                0o644,
+            );
+        }
+        let original = read(&profile_path);
+        assert!(
+            env.hosts
+                .plan_apply(&host, &routed_profile())
+                .await
+                .is_err(),
+            "{case}"
+        );
+        assert_eq!(read(&profile_path), original);
+        assert!(!env.home.join(".codex/auth.json").exists());
+    }
+}
+
 #[tokio::test]
 async fn routed_wsl_prepares_the_legacy_apps_authapi_even_with_api_key_auth() {
     if !have_bash() {

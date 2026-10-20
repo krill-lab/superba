@@ -31,6 +31,10 @@ pub struct ResolvedEndpoints {
     pub authapi_origin: Option<Origin>,
     /// The Codex path used.
     pub codex_path: CodexPath,
+    /// Public router certificate to install in a managed WSL home. Never a
+    /// private key, and never serialized into profiles or journals.
+    #[serde(skip)]
+    pub ca_certificate: Option<SecretBytes>,
 }
 
 impl ResolvedEndpoints {
@@ -58,6 +62,7 @@ impl ResolvedEndpoints {
                 .then(|| chatgpt_base_url(origin)),
             authapi_origin: mode.needs_authapi_env().then(|| origin.clone()),
             codex_path: path,
+            ca_certificate: None,
         })
     }
 
@@ -70,6 +75,7 @@ impl ResolvedEndpoints {
             chatgpt_base_url: None,
             authapi_origin: None,
             codex_path: CodexPath::AsIs,
+            ca_certificate: None,
         })
     }
 }

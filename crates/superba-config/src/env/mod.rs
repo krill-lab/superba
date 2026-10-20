@@ -764,7 +764,11 @@ impl ShellEnvPersister {
             let loc = EnvLocation::WslEnvForward;
             let managed = vs.native_originals.contains_key(&location_key(&loc));
             let cur = self.native_get(&loc, var)?;
-            let forward = matches!(op, EnvOp::Set { .. }) && self.app_runs_codex_in_wsl();
+            // A routed WSL host also needs trust during startup, before its
+            // login shell selects its own Linux bundle. Forward Windows CA
+            // paths even when the app's legacy WSL setting is off.
+            let forward = matches!(op, EnvOp::Set { .. })
+                && (var == "CODEX_CA_CERTIFICATE" || self.app_runs_codex_in_wsl());
             let want = if forward {
                 if var == "CODEX_CA_CERTIFICATE" {
                     // Windows paths must become /mnt/... inside the app's WSL

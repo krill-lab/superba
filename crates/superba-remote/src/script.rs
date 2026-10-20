@@ -275,6 +275,7 @@ sb_machine_id() {
 }
 sb_env_of() {
   if [ -r "/proc/$1/environ" ]; then
+    sb_put "caenv.$1" "$(tr '\000' '\n' < "/proc/$1/environ" | sed -n 's/^CODEX_CA_CERTIFICATE=//p' | head -n 1)"
     if tr '\000' '\n' < "/proc/$1/environ" 2>/dev/null | grep -q '^CODEX_AUTHAPI_BASE_URL='; then
       sb_put "env.$1" "$(tr '\000' '\n' < "/proc/$1/environ" | sed -n 's/^CODEX_AUTHAPI_BASE_URL=//p' | head -n 1)"
     else
@@ -304,6 +305,10 @@ sb_put login 1
 printf '@@SBCH:%s:%s\n' "$SB_N" "${CODEX_HOME:-$HOME/.codex}"
 sb_put codex_home "${CODEX_HOME:-$HOME/.codex}"
 if [ "${CODEX_AUTHAPI_BASE_URL+set}" = set ]; then sb_put authapi "$CODEX_AUTHAPI_BASE_URL"; else sb_put authapi_absent 1; fi
+if [ -n "${CODEX_CA_CERTIFICATE:-}" ]; then
+  sb_put ca_path "$CODEX_CA_CERTIFICATE"
+  sb_file ca_source "$CODEX_CA_CERTIFICATE"
+fi
 if sb_cx=$(command -v codex 2>/dev/null); then
   sb_put codex_path "$sb_cx"
 "#,
@@ -438,6 +443,7 @@ sb_put disk_free "$(df -Pk "${HOME:-/}" 2>/dev/null | awk 'NR == 2 { print $4 }'
     if flavor == Flavor::Wsl {
         body.push_str(
             "if [ -x /usr/bin/bash ]; then sb_put app_bash 1; else sb_put app_bash 0; fi\n\
+             sb_file router_ca \"$ch/.superba/router-ca.pem\"\n\
              sb_file route /proc/net/route\n",
         );
     }

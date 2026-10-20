@@ -3176,8 +3176,12 @@ impl Switcher {
                 && let Some(local) = dest.resolved.as_ref()
             {
                 match self.wsl_route(host, state).await {
-                    crate::wsl::WslRoute::Routed { origin, token } => {
-                        resolved = crate::wsl::routed(local, &origin, &token);
+                    crate::wsl::WslRoute::Routed {
+                        origin,
+                        token,
+                        certificate,
+                    } => {
+                        resolved = crate::wsl::routed(local, &origin, &token, &certificate);
                         if dest.legacy_wsl.as_deref() == host.wsl_distro().as_deref()
                             && let (
                                 ResolvedMode::Token {
@@ -3188,9 +3192,8 @@ impl Switcher {
                                 },
                             ) = (&local.mode, &mut resolved.mode)
                         {
-                            // The WSL home stays API-key authenticated. Its rc
-                            // files also run before the legacy local PAT core,
-                            // so leaving an old direct auth export breaks it.
+                            // Both WSL consumers use PAT. The rc files also run
+                            // before the legacy core reading the Windows home.
                             remote.authapi_origin = local.authapi_origin.clone();
                         }
                         if dest.kept_model {

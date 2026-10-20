@@ -155,14 +155,14 @@ async fn legacy_router_auth_environment_is_written_before_the_app_reopens() {
     else {
         panic!("token mode");
     };
-    assert_eq!(*auth, superba_core::AuthMode::ApiKey);
+    assert_eq!(*auth, superba_core::AuthMode::Pat);
     assert_eq!(
         endpoints.authapi_origin.as_ref().map(|o| o.as_str()),
         Some(format!(
             "http://127.0.0.1:{}",
             w.router.endpoint().unwrap().port
         )),
-        "the WSL API-key home must also prepare its local legacy PAT consumer"
+        "the WSL PAT home must also prepare its local legacy PAT consumer"
     );
     w.log.lock().unwrap().clear();
     let outcome = execute(&sw, plan).await;
@@ -356,7 +356,11 @@ async fn a_normal_wsl_host_still_switches_after_the_local_app() {
     else {
         panic!("token")
     };
-    assert!(endpoints.authapi_origin.is_none());
+    assert_eq!(
+        endpoints.authapi_origin.as_ref().unwrap().as_str(),
+        "http://127.0.0.1:18431"
+    );
+    assert!(endpoints.ca_certificate.is_some());
     w.log.lock().unwrap().clear();
     assert_eq!(execute(&sw, plan).await.status, OutcomeStatus::Switched);
     let calls = w.calls();

@@ -229,18 +229,18 @@ impl RouterServer {
         );
         drop(generation);
         tokio::spawn(health_loop(shared.clone()));
-        let (wsl_tx, mut wsl_rx) = tokio::sync::mpsc::channel::<(TcpStream, SocketAddr)>(64);
+        let (wsl_tx, mut wsl_rx) = tokio::sync::mpsc::channel::<WslConnection>(64);
         tokio::spawn(wsl_listeners(shared.clone(), wsl_tx));
         let mut stop = shared.shutdown.subscribe();
         let mut connections = tokio::task::JoinSet::new();
         loop {
-            let (stream, peer, entry) = tokio::select! {
+            let (stream, peer, entry, connection_tls) = tokio::select! {
                 wsl = wsl_rx.recv() => match wsl {
-                    Some((stream, peer)) => (stream, peer, Entry::Wsl),
+                    Some((stream, peer, tls)) => (stream, peer, Entry::Wsl, tls),
                     None => continue,
                 },
                 accepted = listener.accept() => match accepted {
-                    Ok((stream, peer)) => (stream, peer, Entry::Loopback),
+                    Ok((stream, peer)) => (stream, peer, Entry::Loopback, tls.clone()),
                     Err(e) => {
                         if file_limit_in(&e).is_some() {
                             // No descriptor for the connection: it stays in
@@ -272,7 +272,7 @@ impl RouterServer {
             };
             let _ = stream.set_nodelay(true);
             connections.spawn(
-                accept_connection(shared.clone(), stream, slot, entry, tls.clone())
+                accept_connection(shared.clone(), stream, slot, entry, connection_tls)
                     .instrument(tracing::debug_span!("conn", %peer)),
             );
             while connections.try_join_next().is_some() {}
@@ -402,10 +402,9 @@ fn wsl_peer(ip: IpAddr) -> bool {
 /// loop. An address that cannot be bound yet (WSL's VM not started) is tried
 /// again every [`WSL_LISTEN_TICK`]; a listener whose address went away (its
 /// accept fails) is dropped and bound again later.
-async fn wsl_listeners(
-    shared: Arc<Shared>,
-    tx: tokio::sync::mpsc::Sender<(TcpStream, SocketAddr)>,
-) {
+type WslConnection = (TcpStream, SocketAddr, Option<tokio_rustls::TlsAcceptor>);
+
+async fn wsl_listeners(shared: Arc<Shared>, tx: tokio::sync::mpsc::Sender<WslConnection>) {
     let port = shared.listen.port();
     let mut stop = shared.shutdown.subscribe();
     let mut running: BTreeMap<Ipv4Addr, tokio::task::JoinHandle<()>> = BTreeMap::new();
@@ -425,6 +424,18 @@ async fn wsl_listeners(
             let addr = SocketAddr::from((ip, port));
             match TcpListener::bind(addr).await {
                 Ok(listener) => {
+                    let tls = match shared
+                        .paths
+                        .as_ref()
+                        .map(|p| crate::tls::wsl_acceptor(p, ip))
+                        .transpose()
+                    {
+                        Ok(tls) => tls,
+                        Err(e) => {
+                            tracing::warn!(%addr, error = %e, "cannot prepare WSL TLS listener");
+                            continue;
+                        }
+                    };
                     tracing::info!(%addr, "listening for WSL");
                     let tx = tx.clone();
                     running.insert(
@@ -433,7 +444,7 @@ async fn wsl_listeners(
                             loop {
                                 match listener.accept().await {
                                     Ok(conn) => {
-                                        if tx.send(conn).await.is_err() {
+                                        if tx.send((conn.0, conn.1, tls.clone())).await.is_err() {
                                             return;
                                         }
                                     }

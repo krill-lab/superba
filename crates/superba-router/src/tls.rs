@@ -35,17 +35,56 @@ impl Drop for Identity {
 /// Ensure a stable identity exists, then load it for the loopback listener.
 /// The certificate and key are published together, before the public PEM.
 pub(crate) fn acceptor(paths: &RouterPaths) -> Result<TlsAcceptor> {
-    let file = paths.dir().join("tls-identity.json");
+    identity_acceptor(paths, None)
+}
+
+/// A separate stable identity for each WSL NAT listener. Its SAN is the actual
+/// adapter address; changing adapters does not invalidate the loopback identity.
+pub(crate) fn wsl_acceptor(
+    paths: &RouterPaths,
+    address: std::net::Ipv4Addr,
+) -> Result<TlsAcceptor> {
+    if !crate::config::wsl_listen_allowed(address) {
+        return Err(Error::invalid("invalid WSL TLS listener address"));
+    }
+    identity_acceptor(paths, Some(address))
+}
+
+/// The public certificate of a running router listener, for distribution to
+/// WSL. Only the listener creates identities, avoiding concurrent key creation.
+pub fn wsl_certificate(paths: &RouterPaths, address: std::net::Ipv4Addr) -> Result<Vec<u8>> {
+    let path = if address.is_loopback() {
+        paths.certificate_pem()
+    } else if crate::config::wsl_listen_allowed(address) {
+        paths.dir().join(format!("certificate-wsl-{address}.pem"))
+    } else {
+        return Err(Error::invalid("invalid WSL TLS listener address"));
+    };
+    std::fs::read(&path).map_err(|e| Error::io(&path, &e))
+}
+
+fn identity_acceptor(
+    paths: &RouterPaths,
+    address: Option<std::net::Ipv4Addr>,
+) -> Result<TlsAcceptor> {
+    let (file, public, names) = match address {
+        Some(address) => (
+            paths.dir().join(format!("tls-wsl-{address}.json")),
+            paths.dir().join(format!("certificate-wsl-{address}.pem")),
+            vec![address.to_string()],
+        ),
+        None => (
+            paths.dir().join("tls-identity.json"),
+            paths.certificate_pem(),
+            vec!["localhost".into(), "127.0.0.1".into(), "::1".into()],
+        ),
+    };
     let identity: Identity = match std::fs::read(&file) {
         Ok(bytes) => serde_json::from_slice(&Zeroizing::new(bytes))
             .map_err(|_| Error::invalid("invalid router TLS identity"))?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let certified = rcgen::generate_simple_self_signed(vec![
-                "localhost".into(),
-                "127.0.0.1".into(),
-                "::1".into(),
-            ])
-            .map_err(|_| Error::other("cannot create router TLS identity"))?;
+            let certified = rcgen::generate_simple_self_signed(names)
+                .map_err(|_| Error::other("cannot create router TLS identity"))?;
             let identity = Identity {
                 certificate: certified.cert.pem(),
                 key: certified.signing_key.serialize_pem(),
@@ -69,7 +108,6 @@ pub(crate) fn acceptor(paths: &RouterPaths) -> Result<TlsAcceptor> {
         .with_no_client_auth()
         .with_single_cert(vec![certificate], key)
         .map_err(|_| Error::invalid("router TLS certificate does not match its private key"))?;
-    let public = paths.certificate_pem();
     if std::fs::read(&public).ok().as_deref() != Some(identity.certificate.as_bytes()) {
         write_private(&public, identity.certificate.as_bytes())?;
     }
@@ -129,4 +167,64 @@ pub fn prepare_client_bundle(
         write_private(&target, &bundle)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio_rustls::{
+        TlsConnector,
+        rustls::{ClientConfig, RootCertStore, pki_types::ServerName},
+    };
+
+    async fn connect(acceptor: TlsAcceptor, pem: &[u8], name: &'static str) -> bool {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            acceptor.accept(stream).await.is_ok()
+        });
+        let mut roots = RootCertStore::empty();
+        roots
+            .add(CertificateDer::from_pem_slice(pem).unwrap())
+            .unwrap();
+        let config = ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let result = TlsConnector::from(Arc::new(config))
+            .connect(
+                ServerName::try_from(name).unwrap(),
+                TcpStream::connect(address).await.unwrap(),
+            )
+            .await
+            .is_ok();
+        server.await.unwrap();
+        result
+    }
+
+    #[tokio::test]
+    async fn wsl_nat_identity_matches_only_its_address_and_keeps_loopback_stable() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RouterPaths::from_dir(dir.path());
+        let _ = acceptor(&paths).unwrap();
+        let loopback = wsl_certificate(&paths, std::net::Ipv4Addr::LOCALHOST).unwrap();
+        let address = "172.25.80.1".parse().unwrap();
+        let tls = wsl_acceptor(&paths, address).unwrap();
+        let pem = wsl_certificate(&paths, address).unwrap();
+        assert!(connect(tls.clone(), &pem, "172.25.80.1").await);
+        assert!(!connect(tls.clone(), &pem, "172.25.80.2").await);
+        assert!(!connect(tls, &loopback, "172.25.80.1").await);
+        let tls = wsl_acceptor(&paths, address).unwrap();
+        assert_eq!(wsl_certificate(&paths, address).unwrap(), pem);
+        assert_eq!(
+            wsl_certificate(&paths, std::net::Ipv4Addr::LOCALHOST).unwrap(),
+            loopback
+        );
+        assert!(connect(tls, &pem, "172.25.80.1").await);
+        assert!(wsl_acceptor(&paths, "8.8.8.8".parse().unwrap()).is_err());
+        assert!(!String::from_utf8_lossy(&pem).contains("PRIVATE KEY"));
+    }
 }

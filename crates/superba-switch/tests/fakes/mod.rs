@@ -900,6 +900,7 @@ pub const ROUTER_TOKEN: &str = "sbr-local-router-token-0001";
 #[derive(Debug)]
 pub struct FakeRouter {
     pub log: Log,
+    paths: superba_router::RouterPaths,
     /// Port of the stored configuration (`None` = not configured).
     pub port: Mutex<Option<u16>>,
     /// The router answers.
@@ -936,9 +937,10 @@ pub struct FakeRouter {
 }
 
 impl FakeRouter {
-    fn new(log: Log) -> Self {
+    fn new(log: Log, paths: superba_router::RouterPaths) -> Self {
         Self {
             log,
+            paths,
             port: Mutex::new(None),
             up: Mutex::new(false),
             installed: Mutex::new(false),
@@ -1026,6 +1028,7 @@ impl RouterControl for FakeRouter {
             return Err(e);
         }
         self.record("install", &config, &keys);
+        superba_router::tls::prepare_client_bundle(&self.paths, &[], false)?;
         self.leave_taken_port();
         let mut port = self.port.lock().unwrap();
         if port.is_none() {
@@ -1158,6 +1161,17 @@ impl RouterControl for FakeRouter {
     }
 
     async fn set_wsl_listen(&self, addresses: Vec<std::net::Ipv4Addr>) -> Result<bool> {
+        for address in &addresses {
+            // This fake has no sockets; use its public fixture for the planner.
+            // The router's TLS tests verify the real address/SAN handshake.
+            std::fs::copy(
+                self.paths.certificate_pem(),
+                self.paths
+                    .dir()
+                    .join(format!("certificate-wsl-{address}.pem")),
+            )
+            .unwrap();
+        }
         push(
             &self.log,
             format!(
@@ -2143,6 +2157,7 @@ impl RemoteHosts for FakeRemote {
             key_changes,
             auth_change: None,
             env: None,
+            certificate: None,
             blocked: self
                 .blocked
                 .lock()
@@ -2184,6 +2199,7 @@ impl RemoteHosts for FakeRemote {
             applied_at: Timestamp(T0),
             files: Vec::new(),
             env: None,
+            certificate: None,
         })
     }
 
@@ -2649,7 +2665,10 @@ impl World {
                 openai_base_url: Mutex::new(None),
                 mirror: Mutex::new(false),
             }),
-            router: Arc::new(FakeRouter::new(log.clone())),
+            router: Arc::new(FakeRouter::new(
+                log.clone(),
+                superba_router::RouterPaths::new(&ctx.data_dir),
+            )),
             v3: v3::V3 {
                 versions: Arc::new(v3::FakeVersions::new(
                     log.clone(),

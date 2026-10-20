@@ -45,6 +45,7 @@
 //!   hashes equal to what was written. The restart IPC itself is sent locally by
 //!   `AppController::hot_restart` with the host's `hostId`.
 
+mod certificate;
 pub mod discover;
 pub mod envrc;
 mod files;
@@ -81,7 +82,7 @@ use superba_core::{
     ResolvedProfile, Result, SecretBytes, SessionReport, StashScope, SystemClock, TurnActivity,
 };
 
-use crate::envrc::{RcPlan, plan_env_for, shell_supported};
+use crate::envrc::{RcPlan, plan_env_with_certificate, shell_supported};
 use crate::probe::{RemoteMarker, Snapshot, parse_pids, snapshot_from_records};
 use crate::records::{FileRead, Records};
 use crate::script::{Expect, FileOp, Flavor, Mode, REMOTE_DIR, WriteSpec, backup_name, new_nonce};
@@ -469,8 +470,25 @@ impl SshRemoteHosts {
                 change: rendered.config_toml.clone(),
             },
         ];
+        let mut certificate_path = None;
+        if host.kind == superba_core::HostKind::Wsl && scope != RemoteApplyScope::Settings {
+            let certificate = match &desired.mode {
+                ResolvedMode::Token { endpoints, .. } => endpoints.ca_certificate.as_ref(),
+                _ => None,
+            };
+            c.certificate = self.plan_certificate(host, snap, st, certificate).await?;
+            certificate_path = certificate.map(|_| certificate::bundle_path(snap));
+            if certificate.is_none() && st.router_ca_sha256.is_some() && env_op.is_none() {
+                env_op = Some(EnvOp::Clear);
+            }
+        }
         if let Some(op) = &env_op {
-            match plan_env_for(&env_shells(host, state), &snap.rc, op) {
+            match plan_env_with_certificate(
+                &env_shells(host, state),
+                &snap.rc,
+                op,
+                certificate_path.as_deref(),
+            ) {
                 Ok(rc) => {
                     if !rc.edits.is_empty() {
                         c.env = Some(EnvPlan {
@@ -573,6 +591,31 @@ impl SshRemoteHosts {
 
         let mut ops: Vec<FileOp> = Vec::new();
         let mut writes: Vec<FileWrite> = Vec::new();
+        let certificate = if let Some(p) = &c.certificate {
+            let new = match &p.change {
+                FileChange::Write { contents, .. } => Some(contents.expose().to_vec()),
+                FileChange::Remove => None,
+                FileChange::Unchanged => unreachable!("only changed certificates are planned"),
+            };
+            let before = snap.router_ca.bytes();
+            let receipt = superba_core::RemoteCertificateWrite {
+                path: p.path.clone(),
+                before_sha256: p.before_sha256.clone(),
+                after_sha256: new.as_deref().map(sha256_hex),
+                backup: before.map(|_| rjoin(&backup_dir, &backup_name(&p.path))),
+            };
+            // Trust is installed before the credentials/rc block can use it.
+            ops.push(FileOp {
+                path: p.path.clone(),
+                expect: before.map_or(Expect::Absent, |b| Expect::Bytes(b.expose().to_vec())),
+                new,
+                mode: Mode::Private,
+                backup: before.is_some(),
+            });
+            Some(Box::new(receipt))
+        } else {
+            None
+        };
         // auth.json first, then config.toml (the engine's order), then rc files.
         for pf in &c.files {
             let current = match pf.kind {
@@ -641,6 +684,7 @@ impl SshRemoteHosts {
             applied_at: now,
             files: writes,
             env,
+            certificate,
         };
         if ops.is_empty() {
             return Ok(WriteOutcome::Written(report));
@@ -674,6 +718,7 @@ impl SshRemoteHosts {
             report: Some(report.clone()),
             prev_last_written: st.last_written.clone(),
             prev_generation: st.generation,
+            prev_router_ca_sha256: st.router_ca_sha256.clone(),
             detail: None,
         };
         store.write_journal(&entry).await?;
@@ -766,6 +811,7 @@ impl SshRemoteHosts {
             key_changes: c.rendered.key_changes,
             auth_change: c.rendered.auth_change,
             env: c.env,
+            certificate: c.certificate,
             blocked: c.blocked,
             warnings,
             scope,
@@ -813,6 +859,7 @@ struct Computed {
     files: Vec<PlannedFile>,
     env: Option<EnvPlan>,
     rc: RcPlan,
+    certificate: Option<superba_core::RemoteCertificatePlan>,
     blocked: Vec<BlockReason>,
     new_baseline: Option<Baseline>,
     /// Paths of the captured baseline (their recorded value never changes).
@@ -1059,11 +1106,21 @@ impl SshRemoteHosts {
                 WriteOutcome::Written(report) => {
                     // Ownership is recorded even when no byte changed (a key
                     // taken over or released at the value it already had).
-                    let written = !report.files.is_empty() || report.env.is_some();
+                    let written = !report.files.is_empty()
+                        || report.env.is_some()
+                        || report.certificate.is_some();
                     let saved = async {
                         let mut st = store.load_state().await?;
                         if written {
                             st.generation += 1;
+                        }
+                        if let Some(certificate) = &report.certificate {
+                            st.router_ca_sha256 = certificate.after_sha256.clone();
+                        } else if host.kind == superba_core::HostKind::Wsl
+                            && plan.scope != RemoteApplyScope::Settings
+                            && !matches!(&desired.mode, ResolvedMode::Token { endpoints, .. } if endpoints.ca_certificate.is_some())
+                        {
+                            st.router_ca_sha256 = None;
                         }
                         st.user_values = next_user_values(
                             &st.user_values,
@@ -1134,6 +1191,15 @@ impl SshRemoteHosts {
                 },
             })
             .collect();
+        if let Some(certificate) = &report.certificate {
+            items.push(Item {
+                path: certificate.path.clone(),
+                before: certificate.before_sha256.clone(),
+                after: certificate.after_sha256.clone(),
+                backup: certificate.backup.clone(),
+                mode: Mode::Private,
+            });
+        }
         if let Some(env) = &report.env {
             let mut seen = BTreeSet::new();
             for e in &env.edits {
@@ -1320,6 +1386,7 @@ impl SshRemoteHosts {
             let mut st = store.load_state().await?;
             st.last_written = entry.prev_last_written.clone();
             st.generation = entry.prev_generation;
+            st.router_ca_sha256 = entry.prev_router_ca_sha256.clone();
             st.updated_at = self.clock.now();
             store.save_state(&st).await?;
             entry.status = JournalStatus::RolledBack;
@@ -1370,12 +1437,15 @@ impl SshRemoteHosts {
     ) -> Result<RemoteVerification> {
         let started = std::time::Instant::now();
         let total = Duration::from_millis(request.timeout_ms);
-        let paths: Vec<String> = request
+        let mut paths: Vec<String> = request
             .report
             .files
             .iter()
             .map(|f| f.path.to_string_lossy().into_owned())
             .collect();
+        if let Some(certificate) = &request.report.certificate {
+            paths.push(certificate.path.clone());
+        }
         let previous: BTreeSet<u32> = request.previous_app_server_pids.iter().copied().collect();
         loop {
             let nonce = new_nonce();
@@ -1417,6 +1487,24 @@ impl SshRemoteHosts {
                 };
                 if !ok {
                     mismatched.push(f.path.to_string_lossy().into_owned());
+                }
+            }
+            if let Some(certificate) = &request.report.certificate {
+                let read = recs.file(&format!("f.{}", request.report.files.len()));
+                let ok = match (read, &certificate.after_sha256) {
+                    (Some(FileRead::Bytes(b)), Some(want)) => &sha256_hex(b.expose()) == want,
+                    (Some(FileRead::Absent), None) => true,
+                    _ => false,
+                };
+                if !ok {
+                    mismatched.push(certificate.path.clone());
+                }
+                if certificate.after_sha256.is_some()
+                    && !new.iter().any(|pid| {
+                        recs.get(&format!("caenv.{pid}")) == Some(certificate.path.as_str())
+                    })
+                {
+                    mismatched.push("CODEX_CA_CERTIFICATE of the new WSL app-server".into());
                 }
             }
             let files_match = mismatched.is_empty();

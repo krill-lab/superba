@@ -36,6 +36,11 @@ pub struct Snapshot {
     pub login_ok: bool,
     /// `ConfigEngine::inspect_files` of the current files.
     pub inspected: std::result::Result<ConfigState, Error>,
+    /// Effective Codex CA path and file, read inside the app's login shell.
+    pub ca_path: Option<String>,
+    pub ca_source: FileRead,
+    /// Managed bundle under this Codex home.
+    pub router_ca: FileRead,
 }
 
 impl Snapshot {
@@ -279,6 +284,9 @@ pub fn snapshot_from_records(
         rc,
         login_ok,
         inspected,
+        ca_path: recs.get_raw_nonempty("ca_path").map(str::to_owned),
+        ca_source: recs.file("ca_source").cloned().unwrap_or(FileRead::Absent),
+        router_ca: recs.file("router_ca").cloned().unwrap_or(FileRead::Absent),
     })
 }
 

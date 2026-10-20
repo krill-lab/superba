@@ -221,12 +221,18 @@ async fn a_launch_adds_only_the_missing_forwarding_and_a_restore_removes_it() {
 
 #[tokio::test]
 async fn router_certificate_path_is_translated_and_original_trust_is_restored() {
+    for legacy in [false, true] {
+        certificate_path_and_restore(legacy).await;
+    }
+}
+
+async fn certificate_path_and_restore(legacy: bool) {
     let cert = "CODEX_CA_CERTIFICATE";
     let e = env(
         EnvPlatform::Windows,
         Some("USERPROFILE/p:CODEX_CA_CERTIFICATE/u"),
     );
-    e.run_in_wsl(true);
+    e.run_in_wsl(legacy);
     e.native
         .set(&EnvLocation::WindowsUserEnv, cert, r"C:\company\ca.pem")
         .unwrap();

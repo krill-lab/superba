@@ -38,6 +38,9 @@ use superba_core::{EnvEdit, EnvEditAction, EnvLocation, EnvOp, Error, Notice, Re
 
 use crate::util::{rjoin, sha256_hex};
 
+/// Codex's additive CA bundle; only the application trusts it.
+pub const CERT_ENV: &str = "CODEX_CA_CERTIFICATE";
+
 /// Directory an rc file is relative to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RcBase {
@@ -267,7 +270,7 @@ pub fn restore_legacy(body: &str) -> Option<String> {
     let (indent, rest) = body.split_at(indent_len);
     let rest = rest.strip_prefix(": ").unwrap_or(rest);
     let original = rest.strip_prefix(LEGACY_COMMENT_PREFIX)?;
-    export_value(original, ENV_AUTHAPI_BASE_URL)?;
+    export_value(original, ENV_AUTHAPI_BASE_URL).or_else(|| export_value(original, CERT_ENV))?;
     Some(format!("{indent}{original}"))
 }
 
@@ -290,6 +293,18 @@ pub fn plan_env(shell: &ShellKind, files: &[RcFile], op: &EnvOp) -> Result<RcPla
 /// `/usr/bin/bash -l` and the user's own login shell for the Codex CLI). The
 /// first shell must be supported; others that are not are left out.
 pub fn plan_env_for(shells: &[ShellKind], files: &[RcFile], op: &EnvOp) -> Result<RcPlan> {
+    plan_env_with_certificate(shells, files, op, None)
+}
+
+/// Plan PAT environment and optional Codex-only trust together. Existing CA
+/// exports are neutralised only while the managed bundle includes their roots,
+/// and restored when leaving routing (including a switch to another PAT).
+pub fn plan_env_with_certificate(
+    shells: &[ShellKind],
+    files: &[RcFile],
+    op: &EnvOp,
+    certificate: Option<&str>,
+) -> Result<RcPlan> {
     let shell = shells.first().cloned().unwrap_or(ShellKind::Sh);
     let mut work: Vec<FileWork<'_>> = Vec::new();
     let mut warnings = Vec::new();
@@ -325,7 +340,25 @@ pub fn plan_env_for(shells: &[ShellKind], files: &[RcFile], op: &EnvOp) -> Resul
                     let body = line.trim_end_matches(['\n', '\r']);
                     let eol = &line[body.len()..];
                     if !in_block(&w.text, offset) {
-                        if legacy_krill_export_value(body).is_some() {
+                        if certificate.is_none()
+                            && let Some(orig) = restore_legacy(body)
+                            && export_value(&orig, CERT_ENV).is_some()
+                        {
+                            out.push_str(&orig);
+                            out.push_str(eol);
+                            w.edits.push((
+                                EnvEditAction::UncommentLegacyLine {
+                                    line_no: idx + 1,
+                                    original: orig.clone(),
+                                },
+                                orig,
+                            ));
+                            offset += line.len();
+                            continue;
+                        }
+                        if legacy_krill_export_value(body).is_some()
+                            || (certificate.is_some() && export_value(body, CERT_ENV).is_some())
+                        {
                             let new = neutralise_legacy(body, w.file.spec.fish);
                             out.push_str(&new);
                             out.push_str(eol);
@@ -375,7 +408,11 @@ pub fn plan_env_for(shells: &[ShellKind], files: &[RcFile], op: &EnvOp) -> Resul
                     )));
                 };
                 let dialect = file_shell(&w.file.spec);
-                let block = render_block(&dialect, &[(ENV_AUTHAPI_BASE_URL, value.as_str())]);
+                let mut values = vec![(ENV_AUTHAPI_BASE_URL, value.as_str())];
+                if let Some(certificate) = certificate {
+                    values.push((CERT_ENV, certificate));
+                }
+                let block = render_block(&dialect, &values);
                 let new = place(&remove_block(&w.text), &block, placement);
                 if new != w.text {
                     w.text = new;

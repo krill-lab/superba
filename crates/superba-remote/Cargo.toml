@@ -18,12 +18,14 @@ serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+tokio-rustls.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # The WSL distribution list (HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss)
 winreg.workspace = true
 
 [dev-dependencies]
+rcgen.workspace = true
 pretty_assertions.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
