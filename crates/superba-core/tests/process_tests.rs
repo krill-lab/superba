@@ -68,11 +68,7 @@ fn no_command_new_outside_the_helper() {
         }
         let text = fs::read_to_string(&file).unwrap();
         for (line_no, line) in non_test_lines(&text) {
-            let code = line.split("//").next().unwrap_or_default();
-            // clap's `Command::new` builds a CLI definition, not a process.
-            let spawns = code.contains("Command::new(") && !code.contains("clap::Command");
-            let shell = code.contains("\"powershell") || code.contains("\"pwsh");
-            if (spawns && !is_clap_file(&text)) || shell && !is_allowed_shell(&file) {
+            if is_process_launch(&file, &text, line) {
                 offenders.push(format!("{}:{line_no}: {}", file.display(), line.trim()));
             }
         }
@@ -82,6 +78,63 @@ fn no_command_new_outside_the_helper() {
         "build child processes with superba_core::process::command (hidden console window on Windows):\n{}",
         offenders.join("\n")
     );
+}
+
+fn is_process_launch(file: &Path, text: &str, line: &str) -> bool {
+    let code = line.split("//").next().unwrap_or_default();
+    // clap's `Command::new` builds a CLI definition, not a process.
+    let spawns = code.contains("Command::new(") && !code.contains("clap::Command");
+    let shell = code.contains("\"powershell") || code.contains("\"pwsh");
+    (spawns && !is_clap_file(text))
+        || (shell && !is_allowed_shell(file) && !is_generated_hook_launcher(file, code))
+}
+
+fn is_generated_hook_launcher(file: &Path, code: &str) -> bool {
+    // This constant is serialized into another tool's hook configuration. It
+    // does not start a child process. Keep the exemption to this declaration,
+    // never the whole module or arbitrary constants containing shell commands.
+    file.ends_with("superba-notify/src/hooks/windows.rs")
+        && code.trim()
+            == r#"const LAUNCHER: &str = "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ";"#
+}
+
+#[test]
+fn generated_hook_launcher_is_data_only_in_its_own_module() {
+    let hook = Path::new("superba-notify/src/hooks/windows.rs");
+    let declaration = r#"const LAUNCHER: &str = "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ";"#;
+    assert!(!is_process_launch(hook, declaration, declaration));
+    assert!(is_process_launch(
+        Path::new("superba-other/src/windows.rs"),
+        declaration,
+        declaration,
+    ));
+    for code in [
+        declaration.replace("LAUNCHER", "OTHER"),
+        declaration.replace("const LAUNCHER", "let launcher"),
+        declaration.replace("-EncodedCommand", "-Command"),
+        format!("{declaration} Command::new(program);"),
+    ] {
+        assert!(is_process_launch(hook, &code, &code), "{code}");
+    }
+}
+
+#[test]
+fn hook_exemption_keeps_process_and_shell_launch_guards() {
+    let hook = Path::new("superba-notify/src/hooks/windows.rs");
+    for code in [
+        r#"Command::new("program");"#,
+        r#"std::process::Command::new(LAUNCHER);"#,
+        r#"std::process::Command::new("powershell.exe");"#,
+        r#"command("powershell.exe");"#,
+        r#"command("pwsh");"#,
+    ] {
+        assert!(is_process_launch(hook, code, code), "{code}");
+    }
+    let fallback = Path::new("superba-appctl/src/install.rs");
+    let hidden = r#"superba_core::process::command("powershell.exe");"#;
+    assert!(!is_process_launch(fallback, hidden, hidden));
+    let direct = r#"std::process::Command::new("powershell.exe");"#;
+    assert!(is_process_launch(fallback, direct, direct));
 }
 
 fn is_clap_file(text: &str) -> bool {
