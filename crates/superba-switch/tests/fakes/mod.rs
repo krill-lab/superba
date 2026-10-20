@@ -1411,6 +1411,7 @@ pub struct FakeApp {
     pub end_reports: Mutex<VecDeque<superba_core::QuitReport>>,
     pub fail_launch: Mutex<Option<Error>>,
     pub launches: Mutex<Vec<LaunchOptions>>,
+    pub hot_restart_sessions: Mutex<Vec<u32>>,
     pub renderer: Mutex<RendererState>,
     /// Successive renderer reads; successful reads also update `renderer`.
     pub renderer_states: Mutex<VecDeque<Result<RendererState>>>,
@@ -1620,10 +1621,14 @@ impl AppController for FakeApp {
 
     async fn hot_restart(
         &self,
-        _session: &AppSession,
+        session: &AppSession,
         request: &HotRestartRequest,
     ) -> Result<HotRestartOutcome> {
         push(&self.log, format!("app.hot_restart {}", request.host_id));
+        self.hot_restart_sessions
+            .lock()
+            .unwrap()
+            .push(session.main_pid);
         {
             let mut f = self.fail_hot_restart.lock().unwrap();
             if *f > 0 {
@@ -1858,6 +1863,9 @@ pub struct FakeRemote {
     pub version: Mutex<Option<CodexVersion>>,
     pub shared_home: Mutex<bool>,
     pub fail_apply: Mutex<BTreeMap<String, Error>>,
+    pub authapi_env: Mutex<EnvObservation>,
+    /// Simulate an rc export that still wins after a successful write.
+    pub preserve_authapi: Mutex<bool>,
     pub verify_ok: Mutex<BTreeMap<String, bool>>,
     pub busy: Mutex<BTreeMap<String, Vec<ThreadActivity>>>,
     pub incomplete: Mutex<Vec<String>>,
@@ -2099,6 +2107,7 @@ impl RemoteHosts for FakeRemote {
             state.auth = a;
         }
         state.openai_base_url = self.openai_base_url.lock().unwrap().clone();
+        state.authapi_env = self.authapi_env.lock().unwrap().clone();
         if *self.idle.lock().unwrap() {
             state.app_server_pids.clear();
         }
@@ -2156,6 +2165,19 @@ impl RemoteHosts for FakeRemote {
             && let Some(desired) = &plan.desired
         {
             self.mirror_apply(desired);
+        }
+        if !*self.preserve_authapi.lock().unwrap()
+            && let Some(ResolvedProfile {
+                mode:
+                    superba_core::ResolvedMode::Token {
+                        auth, endpoints, ..
+                    },
+                ..
+            }) = &plan.desired
+            && (auth.needs_authapi_env() || host.kind == superba_core::HostKind::Wsl)
+            && let Some(origin) = &endpoints.authapi_origin
+        {
+            *self.authapi_env.lock().unwrap() = EnvObservation::Present(origin.as_str());
         }
         Ok(RemoteApplyReport {
             target_id: host.target_id.clone(),
@@ -2522,6 +2544,7 @@ impl World {
             end_reports: Mutex::new(VecDeque::new()),
             fail_launch: Mutex::new(None),
             launches: Mutex::new(Vec::new()),
+            hot_restart_sessions: Mutex::new(Vec::new()),
             renderer: Mutex::new(RendererState {
                 url: "app://-/index.html#/thread/t1".into(),
                 on_login_page: false,
@@ -2600,6 +2623,8 @@ impl World {
                 version: Mutex::new(Some(CodexVersion::new(0, 162, 0))),
                 shared_home: Mutex::new(false),
                 fail_apply: Mutex::new(BTreeMap::new()),
+                authapi_env: Mutex::new(EnvObservation::Absent),
+                preserve_authapi: Mutex::new(false),
                 verify_ok: Mutex::new(BTreeMap::new()),
                 busy: Mutex::new(BTreeMap::new()),
                 incomplete: Mutex::new(Vec::new()),

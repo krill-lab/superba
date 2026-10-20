@@ -92,6 +92,8 @@ pub(crate) struct PlanContext {
     /// (target, its `CODEX_HOME`, the model or `None`), recorded after that
     /// distribution's apply.
     pub kept_host_models: Vec<KeptHostModel>,
+    /// The local app's login shell lives in this WSL distribution.
+    pub legacy_wsl: Option<String>,
 }
 
 /// The model a plan keeps in one WSL distribution (user bug 63).
@@ -139,6 +141,7 @@ impl PlanContext {
             wsl_pending: Vec::new(),
             kept_model: None,
             kept_host_models: Vec::new(),
+            legacy_wsl: None,
         }
     }
 }
@@ -1384,6 +1387,7 @@ impl Switcher {
                 wsl_pending,
                 kept_model,
                 kept_host_models,
+                legacy_wsl: dest.legacy_wsl,
             },
         );
         Ok(plan)
@@ -3172,6 +3176,21 @@ impl Switcher {
                 match self.wsl_route(host, state).await {
                     crate::wsl::WslRoute::Routed { origin, token } => {
                         resolved = crate::wsl::routed(local, &origin, &token);
+                        if dest.legacy_wsl.as_deref() == host.wsl_distro().as_deref()
+                            && let (
+                                ResolvedMode::Token {
+                                    endpoints: local, ..
+                                },
+                                ResolvedMode::Token {
+                                    endpoints: remote, ..
+                                },
+                            ) = (&local.mode, &mut resolved.mode)
+                        {
+                            // The WSL home stays API-key authenticated. Its rc
+                            // files also run before the legacy local PAT core,
+                            // so leaving an old direct auth export breaks it.
+                            remote.authapi_origin = local.authapi_origin.clone();
+                        }
                         if dest.kept_model {
                             local_kept = resolved.model.model.take();
                             resolved.model.model = base.model.model.clone();

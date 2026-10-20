@@ -7,6 +7,7 @@
 //! written) -> Restarting (turns re-checked right before the IPC) or Launching ->
 //! Verifying (process, hashes, whoami, line, renderer) -> NavRestore / Recovery /
 //! RollbackRestart -> remote hosts in parallel -> Done.
+//! A local legacy WSL dependency is applied before Restarting / Launching.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -144,6 +145,8 @@ struct Run<'a> {
     /// When this execution last launched the app (the window of the core
     /// check after a relaunch runs from here).
     launched_at: Option<Instant>,
+    /// The legacy local app's WSL dependency, applied before its restart.
+    early_remotes: Vec<RemoteOutcome>,
 }
 
 /// How the local part ended.
@@ -230,6 +233,7 @@ impl Switcher {
             thread_before_quit: None,
             session,
             pin_verified: None,
+            early_remotes: Vec::new(),
         };
         let local = match run.local().await {
             Ok(l) => l,
@@ -249,14 +253,13 @@ impl Switcher {
                 return Err(e);
             }
         };
-        let remotes = if matches!(
+        let mut remotes = run.early_remotes.clone();
+        if !matches!(
             local.status,
             OutcomeStatus::Cancelled | OutcomeStatus::RolledBack | OutcomeStatus::Failed
         ) {
-            Vec::new()
-        } else {
-            run.remotes().await
-        };
+            remotes.extend(run.remotes(None).await);
+        }
         let mut status = local.status;
         if remotes.iter().any(|r| r.status == OutcomeStatus::Failed)
             && matches!(status, OutcomeStatus::Switched | OutcomeStatus::WrittenOnly)
@@ -467,6 +470,16 @@ impl Run<'_> {
             && (matches!(primary, RestartKind::FullAppRestart { .. })
                 || plan.migration.is_some()
                 || self.pc.rollback_migration.is_some());
+        // Resolve the dependency before quitting or writing. Follow-off and
+        // stopped distributions must not be silently taken over or started.
+        let legacy_dependency = if !write_only
+            && ((full && self.session.is_some()) || primary.is_hot() || self.pc.restart_app)
+        {
+            self.legacy_wsl_dependency(full || self.pc.restart_app)
+                .await?
+        } else {
+            None
+        };
         if full && let Some(result) = self.quit_for_full_restart().await? {
             return Ok(result);
         }
@@ -483,6 +496,29 @@ impl Run<'_> {
         }
         self.entry.status = JournalStatus::Committed;
         self.save_journal();
+
+        if let Some(target) = legacy_dependency {
+            self.early_remotes = self.remotes(Some(&target)).await;
+            if self
+                .early_remotes
+                .iter()
+                .any(|r| r.status == OutcomeStatus::Failed)
+            {
+                // Keep the written local destination for an explicit retry,
+                // but never start it against the old WSL authentication env.
+                // The failed dependency makes the final outcome Partial.
+                self.notices.push(Notice::danger(
+                    text("switch.wsl.legacy_restart_skipped")
+                        .arg_text("host", superba_core::target_title(&target)),
+                ));
+                return Ok(LocalResult {
+                    status: OutcomeStatus::WrittenOnly,
+                    restart: RestartKind::None,
+                    verification: None,
+                    returned_to: None,
+                });
+            }
+        }
 
         if write_only {
             if plan.migration.is_some() {
@@ -517,6 +553,80 @@ impl Run<'_> {
                 })
             }
         }
+    }
+
+    /// A legacy local core reads the Windows files, but its login bash reads
+    /// the distribution's exports. Only an already-authorized host write may
+    /// prepare those exports; an independent home must already be compatible.
+    async fn legacy_wsl_dependency(&self, launching: bool) -> Result<Option<TargetId>> {
+        let Some(distro) = self.pc.legacy_wsl.as_deref() else {
+            return Ok(None);
+        };
+        let Some(expected) = self
+            .pc
+            .endpoints
+            .as_ref()
+            .and_then(|e| e.authapi_origin.as_ref())
+        else {
+            return Ok(None);
+        };
+        let fail = |message: &str| Error::Wsl {
+            distro: distro.to_owned(),
+            message: message.to_owned(),
+        };
+        let d = self.deps();
+        d.remote.wsl_running().await?;
+        let host = d.remote.discover(&self.pc.home, &[], &[]).await?
+            .into_iter().find(|h| h.wsl_distro().as_deref() == Some(distro))
+            .ok_or_else(|| fail("Cannot prepare the local app's WSL authentication environment: distribution not found."))?;
+        if host.wsl.as_ref().and_then(superba_core::WslDistro::running) == Some(false) {
+            return Err(fail(
+                "The local app's WSL distribution is stopped. Start it and retry the switch; it has not been started or changed.",
+            ));
+        }
+        if let Some(plan) = self
+            .plan
+            .remotes
+            .iter()
+            .find(|p| p.target_id == host.target_id)
+        {
+            if !plan.blocked.is_empty() {
+                return Err(Error::Blocked {
+                    reasons: plan.blocked.clone(),
+                });
+            }
+            let origin = plan.desired.as_ref().and_then(|p| match &p.mode {
+                superba_core::ResolvedMode::Token { endpoints, .. } => {
+                    endpoints.authapi_origin.as_ref()
+                }
+                _ => None,
+            });
+            if origin != Some(expected) {
+                return Err(fail(
+                    "The local app and the WSL home need different authentication environments. Check the WSL router connection before retrying; neither home has been changed.",
+                ));
+            }
+            return Ok(Some(host.target_id));
+        }
+        let state = d.remote.probe(&host).await?;
+        let expected = expected.as_str();
+        let matches = match state.authapi_env {
+            superba_core::EnvObservation::Present(ref value) => value == &expected,
+            superba_core::EnvObservation::Absent => {
+                launching
+                    || self
+                        .session
+                        .as_ref()
+                        .is_some_and(|s| s.authapi_env.value() == Some(expected.as_str()))
+            }
+            superba_core::EnvObservation::Unknown => false,
+        };
+        if !matches {
+            return Err(fail(
+                "The independent WSL login environment does not match the local app's destination. Update it or enable following before retrying; its configuration has not been changed.",
+            ));
+        }
+        Ok(None)
     }
 
     /// Current turn activity of the local app and the plan's remote hosts.
@@ -1153,6 +1263,55 @@ impl Run<'_> {
         self.entry.updated_at = d.clock.now();
         if let Err(e) = self.journal.write(&self.entry) {
             return vec![e];
+        }
+        // The legacy WSL dependency was written after the local files. Undo
+        // its receipt first, so a failed/cancelled hot switch restores both.
+        for outcome in self.early_remotes.clone() {
+            let Some(index) = self
+                .entry
+                .remotes
+                .iter()
+                .position(|r| r.target_id == outcome.target_id && !r.rolled_back)
+            else {
+                continue;
+            };
+            let Some(host) = self
+                .pc
+                .hosts
+                .iter()
+                .find(|h| h.target_id == outcome.target_id)
+            else {
+                continue;
+            };
+            if let Err(e) = d
+                .remote
+                .rollback(host, &self.entry.remotes[index].report)
+                .await
+            {
+                return vec![e];
+            }
+            self.entry.remotes[index].rolled_back = true;
+            if !self.app_was_quit
+                && let (Some(session), Some(id)) = (&self.session, host.host_id.as_deref())
+                && self
+                    .plan
+                    .remotes
+                    .iter()
+                    .any(|p| p.target_id == host.target_id && !p.state.app_server_pids.is_empty())
+            {
+                let _ = d
+                    .app
+                    .hot_restart(session, &HotRestartRequest::remote(id))
+                    .await;
+            }
+            for early in &mut self.early_remotes {
+                if early.target_id == outcome.target_id {
+                    early.status = OutcomeStatus::RolledBack;
+                }
+            }
+            if let Err(e) = self.journal.write(&self.entry) {
+                return vec![e];
+            }
         }
         if let Some(receipt) = self.written.migration.take() {
             let stopped = ConsumersStopped::new(&home, d.clock.now());
@@ -2016,7 +2175,11 @@ impl Run<'_> {
         out
     }
 
-    async fn remotes(&mut self) -> Vec<RemoteOutcome> {
+    async fn remotes(&mut self, only: Option<&TargetId>) -> Vec<RemoteOutcome> {
+        let selected = |id: &TargetId| {
+            only.is_none_or(|wanted| wanted == id)
+                && !self.early_remotes.iter().any(|r| &r.target_id == id)
+        };
         let mut outcomes: Vec<RemoteOutcome> = self
             .plan
             .restarts
@@ -2025,7 +2188,7 @@ impl Run<'_> {
                 (
                     superba_core::ConsumerKind::Remote { target_id },
                     RestartKind::Blocked { reasons },
-                ) => Some(RemoteOutcome {
+                ) if selected(target_id) => Some(RemoteOutcome {
                     target_id: target_id.clone(),
                     status: OutcomeStatus::Failed,
                     error: Some(Error::Blocked {
@@ -2035,12 +2198,18 @@ impl Run<'_> {
                 _ => None,
             })
             .collect();
-        let work = self.remote_hosts_to_apply();
+        let work: Vec<_> = self
+            .remote_hosts_to_apply()
+            .into_iter()
+            .filter(|(h, _)| selected(&h.target_id))
+            .collect();
         if work.is_empty() {
             return outcomes;
         }
         let d = self.deps().clone();
-        let session = self.session.clone();
+        // A full restart has closed this session. Its WSL connections will
+        // read the prepared files when the app opens them again.
+        let session = self.session.clone().filter(|_| !self.app_was_quit);
         let expected_authapi = self
             .pc
             .endpoints
@@ -2051,6 +2220,7 @@ impl Run<'_> {
         let journal = SwitchJournal::new(&d.ctx.data_dir);
         let rollback_target = self.pc.rollback_remote.clone();
         let ev = &self.ev;
+        let verify_login_env = only.is_some();
         let futs = work.into_iter().map(|(host, plan)| {
             let d = d.clone();
             let session = session.clone();
@@ -2061,7 +2231,7 @@ impl Run<'_> {
                 .map(|desired| match &desired.mode {
                     superba_core::ResolvedMode::Token {
                         auth, endpoints, ..
-                    } if auth.needs_authapi_env() => {
+                    } if auth.needs_authapi_env() || verify_login_env => {
                         endpoints.authapi_origin.as_ref().map(|o| o.as_str())
                     }
                     _ => None,
@@ -2083,6 +2253,7 @@ impl Run<'_> {
                             session.as_ref(),
                             expected_authapi,
                             timeout_ms,
+                            verify_login_env,
                         )
                         .await
                     }
@@ -2598,12 +2769,27 @@ async fn remote_apply(
     session: Option<&AppSession>,
     expected_authapi: Option<String>,
     timeout_ms: u64,
+    verify_login_env: bool,
 ) -> RemoteResult {
     let report = d
         .remote
         .apply(host, plan)
         .await
         .map_err(|e| remote_failure(e, None, true))?;
+    if verify_login_env && let Some(expected) = &expected_authapi {
+        let checked = match d.remote.probe(host).await {
+            Ok(state) if state.authapi_env.value() == Some(expected.as_str()) => Ok(()),
+            Ok(_) => Err(Error::Wsl {
+                distro: host.wsl_distro().unwrap_or_default(),
+                message: "The login shell still overrides the local app's authentication environment after writing. The app has not been restarted.".into(),
+            }),
+            Err(e) => Err(e),
+        };
+        if let Err(error) = checked {
+            let rolled_back = d.remote.rollback(host, &report).await.is_ok();
+            return Err(remote_failure(error, Some(report), rolled_back));
+        }
+    }
     let (Some(host_id), Some(session)) = (host.host_id.as_deref(), session) else {
         // Written; applies when the host is reconnected in the app.
         return Ok((OutcomeStatus::WrittenOnly, Some(report)));

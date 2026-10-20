@@ -136,6 +136,55 @@ fn have_bash() -> bool {
 }
 
 #[tokio::test]
+async fn routed_wsl_prepares_the_legacy_apps_authapi_even_with_api_key_auth() {
+    if !have_bash() {
+        return;
+    }
+    let env = setup("/bin/bash");
+    let host = distro("Ubuntu");
+    let old = token_profile(ORIGIN, AuthMode::Pat, KEY);
+    let plan = env.hosts.plan_apply(&host, &old).await.unwrap();
+    env.hosts.apply(&host, &plan).await.unwrap();
+    let mut routed = token_profile("http://127.0.0.1:17242", AuthMode::ApiKey, KEY);
+    let ordinary = env.hosts.plan_apply(&host, &routed).await.unwrap();
+    assert!(
+        ordinary.env.is_none(),
+        "an independent WSL API-key home keeps its env"
+    );
+    if let superba_core::ResolvedMode::Token { endpoints, .. } = &mut routed.mode {
+        // The local legacy app reads the Windows home with PAT credentials,
+        // but its login bash reads these same rc files first.
+        endpoints.authapi_origin = Some(endpoints.origin.clone());
+    }
+    let settings = env
+        .hosts
+        .plan_apply_scoped(&host, &routed, superba_core::RemoteApplyScope::Settings)
+        .await
+        .unwrap();
+    assert!(
+        settings.env.is_none(),
+        "settings sync still leaves authentication alone"
+    );
+    let plan = env.hosts.plan_apply(&host, &routed).await.unwrap();
+    let report = env.hosts.apply(&host, &plan).await.unwrap();
+    let seen = env.hosts.probe(&host).await.unwrap();
+    assert_eq!(seen.authapi_env.value(), Some("http://127.0.0.1:17242"));
+    assert!(report.env.is_some(), "the old PAT export must be replaced");
+    env.hosts.rollback(&host, &report).await.unwrap();
+    assert_eq!(
+        env.hosts.probe(&host).await.unwrap().authapi_env.value(),
+        Some(ORIGIN)
+    );
+    let direct = token_profile("https://example.com", AuthMode::Pat, KEY);
+    let plan = env.hosts.plan_apply(&host, &direct).await.unwrap();
+    env.hosts.apply(&host, &plan).await.unwrap();
+    assert_eq!(
+        env.hosts.probe(&host).await.unwrap().authapi_env.value(),
+        Some("https://example.com")
+    );
+}
+
+#[tokio::test]
 async fn the_probe_sees_what_the_apps_login_bash_sees() {
     if !have_bash() {
         return;

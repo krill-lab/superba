@@ -531,14 +531,28 @@ fn entry(w: &World, id: &str, status: JournalStatus) -> JournalEntry {
 #[tokio::test]
 async fn recovery_rolls_back_interrupted_writes_and_completes_committed_ones() {
     let w = World::new();
+    let host = remote_host("devbox", Some("h-dev"));
+    w.remote.hosts.lock().unwrap().push(host.clone());
     let journal = SwitchJournal::new(&w.ctx.data_dir);
-    journal
-        .write(&entry(&w, "a", JournalStatus::Applying))
-        .unwrap();
-    journal
-        .write(&entry(&w, "b", JournalStatus::Committed))
-        .unwrap();
-    journal.write(&entry(&w, "c", JournalStatus::Done)).unwrap();
+    for (id, status) in [
+        ("a", JournalStatus::Applying),
+        ("b", JournalStatus::Committed),
+        ("c", JournalStatus::Done),
+        ("d", JournalStatus::Partial),
+    ] {
+        let mut e = entry(&w, id, status);
+        e.remotes.push(superba_switch::journal::RemoteReceipt {
+            target_id: host.target_id.clone(),
+            report: superba_core::RemoteApplyReport {
+                target_id: host.target_id.clone(),
+                applied_at: Timestamp(T0),
+                files: Vec::new(),
+                env: None,
+            },
+            rolled_back: false,
+        });
+        journal.write(&e).unwrap();
+    }
 
     // An unfinished entry blocks new switches until recovery ran.
     let p = w
@@ -567,6 +581,16 @@ async fn recovery_rolls_back_interrupted_writes_and_completes_committed_ones() {
     assert!(calls.contains(&"config.recover".to_owned()));
     assert_eq!(calls.iter().filter(|c| *c == "config.rollback").count(), 1);
     assert_eq!(calls.iter().filter(|c| *c == "env.revert").count(), 1);
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|c| *c == "remote.rollback devbox")
+            .count(),
+        1
+    );
+    for e in journal.entries().unwrap() {
+        assert_eq!(e.remotes[0].rolled_back, e.id == "a");
+    }
     assert!(journal.unfinished().unwrap().is_empty());
     // Running it again is a no-op.
     assert!(w.switcher().recover().await.unwrap().entries.is_empty());

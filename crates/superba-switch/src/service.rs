@@ -1100,6 +1100,35 @@ impl Switcher {
     ) -> Result<()> {
         let d = &self.deps;
         let home = superba_core::CodexHome::new(entry.codex_home.clone());
+        // A legacy WSL dependency can have been written before the local
+        // restart. An interrupted undo must restore it before the local home.
+        if entry.remotes.iter().any(|r| !r.rolled_back) {
+            d.remote.wsl_running().await?;
+            let hosts = d.remote.discover(&home, &[], &[]).await?;
+            for index in (0..entry.remotes.len()).rev() {
+                let receipt = &entry.remotes[index];
+                if receipt.rolled_back {
+                    continue;
+                }
+                let host = hosts
+                    .iter()
+                    .find(|h| h.target_id == receipt.target_id)
+                    .ok_or_else(|| Error::NotFound {
+                        what: receipt.target_id.to_string(),
+                    })?;
+                if host.wsl.as_ref().and_then(superba_core::WslDistro::running) == Some(false) {
+                    return Err(Error::Wsl {
+                        distro: host.wsl_distro().unwrap_or_default(),
+                        message:
+                            "Start the distribution to finish rolling back the local app's switch."
+                                .into(),
+                    });
+                }
+                d.remote.rollback(host, &receipt.report).await?;
+                entry.remotes[index].rolled_back = true;
+                journal.write(entry)?;
+            }
+        }
         if !entry.rollback.migration
             && let Some(m) = &entry.migration
         {

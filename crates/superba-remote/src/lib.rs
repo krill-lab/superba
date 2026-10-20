@@ -386,7 +386,14 @@ impl SshRemoteHosts {
                 auth, endpoints, ..
             } => {
                 // A settings sync never touches the connection (PAT env included).
-                if auth.needs_authapi_env() && scope != RemoteApplyScope::Settings {
+                // A WSL API-key home may share its login shell with the local
+                // legacy desktop app, which reads Windows PAT credentials.
+                // Its explicit auth origin must be ready before that app starts.
+                let local_wsl_auth =
+                    host.kind == superba_core::HostKind::Wsl && endpoints.authapi_origin.is_some();
+                if (auth.needs_authapi_env() || local_wsl_auth)
+                    && scope != RemoteApplyScope::Settings
+                {
                     let origin = endpoints
                         .authapi_origin
                         .as_ref()

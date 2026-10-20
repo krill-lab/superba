@@ -1949,6 +1949,36 @@ fn remote_req(keys: &[&str]) -> SwitchRequest {
 }
 
 #[tokio::test(start_paused = true)]
+async fn full_restart_uses_the_fresh_app_session_for_connected_remotes() {
+    let w = no_cdp_world();
+    *w.remote.hosts.lock().unwrap() = vec![remote_host("devbox", Some("h-dev"))];
+    let (o, _) = run(
+        &w,
+        remote_req(&["devbox"]),
+        allow_full(),
+        ScriptedDecider::with(&[]),
+    )
+    .await;
+    assert_eq!(o.status, OutcomeStatus::Switched);
+    assert_eq!(o.remotes[0].status, OutcomeStatus::Switched);
+    let calls = w.calls();
+    let launched = calls
+        .iter()
+        .position(|c| c.starts_with("app.launch "))
+        .unwrap();
+    let applied = calls
+        .iter()
+        .position(|c| c == "remote.apply devbox")
+        .unwrap();
+    let restarted = calls
+        .iter()
+        .position(|c| c == "app.hot_restart h-dev")
+        .unwrap();
+    assert!(launched < applied && applied < restarted, "{calls:#?}");
+    assert_eq!(*w.app.hot_restart_sessions.lock().unwrap(), vec![200]);
+}
+
+#[tokio::test(start_paused = true)]
 async fn remote_hosts_switch_in_parallel_and_a_failure_is_partial() {
     let w = World::new();
     *w.remote.hosts.lock().unwrap() = vec![
@@ -1998,6 +2028,13 @@ async fn remote_hosts_switch_in_parallel_and_a_failure_is_partial() {
         2
     );
     assert!(notice_keys(&o).contains(&"switch.done.partial".to_owned()));
+    let journal = SwitchJournal::new(&w.ctx.data_dir);
+    let before = journal.entries().unwrap();
+    assert_eq!(before[0].status, JournalStatus::Partial);
+    w.log.lock().unwrap().clear();
+    assert!(w.switcher().recover().await.unwrap().entries.is_empty());
+    assert!(!w.calls().iter().any(|c| c.starts_with("remote.rollback")));
+    assert_eq!(journal.entries().unwrap(), before);
 }
 
 #[tokio::test(start_paused = true)]
