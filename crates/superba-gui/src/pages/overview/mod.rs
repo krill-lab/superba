@@ -1,5 +1,12 @@
-//! Overview (user request 27): an original composition around what Superba is
-//! for — where Codex's traffic goes and what it costs.
+//! Overview (user request 27, 118): an original composition around what
+//! Superba is for — where every coding tool's traffic goes and what it costs.
+//!
+//! - With one tool (Codex) the route hero below; with several, one lane per
+//!   tool ([`lanes`], [`tools`]): tool → 本地路由 | 直连 → provider → model, the
+//!   rarely used tools folded into 「+N」.
+//! - 今日, the heat-strip and 最近会话 count every tool in the request log
+//!   (router, Codex rollouts, Claude Code transcripts); 今日 adds a chip per
+//!   tool.
 //!
 //! - A route hero across the top ([`hero`]): 本机 → 本地路由 → 供应商 · 线路 →
 //!   模型 · 速度档, the latency on the link into the provider, problem markers
@@ -19,10 +26,12 @@
 
 mod cards;
 pub mod hero;
+pub mod lanes;
 mod lines;
 mod sessions;
 mod today;
 pub mod todo;
+pub mod tools;
 pub mod usage;
 
 use std::time::{Duration, Instant};
@@ -39,7 +48,7 @@ use crate::design::icons::Icon;
 use crate::design::tokens::text;
 use crate::design::widgets::{Button, Latency, Text};
 use crate::runtime::ReadTask;
-pub use cards::{GAP, Grid, layout};
+pub use cards::{GAP, Grid, layout, layout_with};
 pub use lines::LineRow;
 pub use sessions::{host_label, usage_command};
 pub use today::{delta_text, figure};
@@ -162,20 +171,50 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     let snap = state.usage.value.as_ref();
     let todos = todo::todos(cx, snap);
     let hero_model = hero::model(cx, overview, &todos, snap);
+    let routes = tools::routes(
+        cx,
+        snap,
+        if hero_model.provider.ghost {
+            ""
+        } else {
+            &hero_model.provider.title
+        },
+        if hero_model.model.ghost {
+            ""
+        } else {
+            &hero_model.model.title
+        },
+    );
     let area = ui.available_rect_before_wrap();
-    let g = layout(area);
+    // One tool: the single-tool hero; several: one lane per tool.
+    let multi = routes.len() > 1;
+    // 今日 makes room for its per-tool chips.
+    let chips = snap.is_some_and(|s| s.tools_today.len() > 1) && !is_empty(cx);
+    let extra = if chips { tools::CHIP_ROW + 4.0 } else { 0.0 };
+    let g = if multi {
+        let tall = cards::page_height(area) >= 660.0;
+        let lanes = routes.len().min(if tall { 4 } else { 3 });
+        let hero_h = lanes::height(lanes, if tall { 182.0 } else { hero::HEIGHT });
+        layout_with(area, Some(hero_h), extra)
+    } else {
+        layout_with(area, None, extra)
+    };
     let used = g.sessions.max.y.max(g.todo.max.y) - area.min.y;
     ui.allocate_rect(
         Rect::from_min_size(area.min, vec2(area.width(), used)),
         Sense::hover(),
     );
-    hero::show(ui, cx, &hero_model, g.hero, out);
+    if multi {
+        lanes::show(ui, cx, &hero_model, &routes, g.hero, out);
+    } else {
+        hero::show(ui, cx, &hero_model, g.hero, out);
+    }
     let mut dismissed = false;
     if is_empty(cx) && !state.empty_dismissed {
         let left = g.today.union(g.sessions);
         cards::card(ui, left, |ui| setup_card(ui, cx, &mut dismissed, out));
     } else {
-        cards::card(ui, g.today, |ui| today::show(ui, cx, snap));
+        cards::card(ui, g.today, |ui| today::show(ui, cx, snap, out));
         cards::card(ui, g.sessions, |ui| sessions::show(ui, cx, snap, out));
     }
     cards::card(ui, g.lines, |ui| lines::show(ui, cx, snap, out));

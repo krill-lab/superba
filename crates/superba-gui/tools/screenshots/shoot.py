@@ -412,6 +412,12 @@ class Session:
         if self.args.no_router_log:
             # Rows of the Usage page then come from the rollouts only.
             (data / "router" / "usage.sqlite3").unlink(missing_ok=True)
+        if self.args.tools > 1 and not self.args.no_router_log:
+            # Other coding tools' requests (the Overview's lanes and chips).
+            p = self.run([sys.executable, "-I", str(HERE / "tools_usage.py"),
+                          "--data-dir", str(data), "--home", str(self.home),
+                          "--tools", str(self.args.tools)])
+            log(f"tools: {p.stdout.strip()}")
         if self.args.rollouts:
             p = self.run([sys.executable, "-I", str(HERE / "rollouts.py"),
                           "--codex-home", str(self.home / ".codex"),
@@ -425,8 +431,12 @@ class Session:
             spb = str(self.args.bin_dir / "spb")
             p = self.run([spb, "router", "enable", "--member", "krill", "--yes",
                           "--write-only"], check=False)
-            log(f"spb router enable rc={p.returncode}")
+            log(f"spb router enable rc={p.returncode} {p.stderr.strip()[:300]}")
             if p.returncode == 0:
+                if self.args.tools > 1:
+                    # Claude Code through the router too (the Overview's lanes).
+                    p = self.run([spb, "claude", "route", "router"], check=False)
+                    log(f"spb claude route router rc={p.returncode} {p.stderr.strip()[:200]}")
                 return
             # Older builds: point Codex at a local router by hand.
             cfg = self.home / ".codex" / "config.toml"
@@ -628,6 +638,8 @@ def main():
                     help="write Codex rollout files (rollouts.py) for the Usage page")
     ap.add_argument("--no-router-log", action="store_true",
                     help="no router request log (Usage rows from the rollouts only)")
+    ap.add_argument("--tools", type=int, default=1,
+                    help="coding tools with requests, Codex included (tools_usage.py; 1 = Codex only)")
     ap.add_argument("--router-on", action="store_true",
                     help="point Codex at a local router (router mode on, nothing runs)")
     ap.add_argument("--sizes", default=",".join(f"{w}x{h}" for w, h in SIZES),

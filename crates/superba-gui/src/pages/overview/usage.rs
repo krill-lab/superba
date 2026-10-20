@@ -6,18 +6,25 @@
 //! 30-minute trace per router line and the models without a price.
 //!
 //! Sources: `SwitchService::router_requests` returns the local router's rows
-//! merged with the model requests read from Codex's rollout files
-//! ([`RequestRow::source`]), so everything but the line traces works without
-//! the router. Nothing is invented: without rows the cards show their empty
-//! states.
+//! (every tool that goes through it, tagged with its harness) merged with the
+//! model requests read from Codex's rollout files and Claude Code's
+//! transcripts ([`RequestRow::source`]), so everything but the line traces
+//! works without the router. Tools that bypass the router and keep no
+//! transcript Superba reads (opencode, pi, dsh, ...) are counted only when
+//! routed. Nothing is invented: without rows the cards show their empty
+//! states, and an unknown price stays unknown.
+//!
+//! The snapshot also carries what the request path draws per tool: the
+//! harness summaries (route, provider, model) and Claude Code's view.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use superba_core::harness::HarnessSummary;
 use superba_core::{
-    RequestClient, RequestQuery, RequestRow, RequestSource, RequestTotals, Result, RouterView,
-    SwitchService, Timestamp,
+    ClaudeView, RequestClient, RequestHarness, RequestQuery, RequestRow, RequestSource,
+    RequestTotals, Result, RouterView, SwitchService, Timestamp,
 };
 
 /// Days in the heat-strip (today included).
@@ -67,6 +74,15 @@ pub struct Snapshot {
     pub unpriced: Vec<String>,
     /// The router's status (`None` when it could not be read).
     pub router: Option<RouterView>,
+    /// Use per tool since local midnight, largest first.
+    pub tools_today: Vec<ToolUsage>,
+    /// Use per tool over the seven days, largest first (lane order).
+    pub tools_week: Vec<ToolUsage>,
+    /// The coding tools other than Codex and Claude Code (route, provider,
+    /// model); empty when they could not be read.
+    pub harnesses: Vec<HarnessSummary>,
+    /// Claude Code's configuration (`None` when it could not be read).
+    pub claude: Option<ClaudeView>,
     /// When it was read.
     pub at: Timestamp,
     /// Local UTC offset at `at`, seconds.
@@ -141,14 +157,23 @@ pub async fn load(
         heat.complete_since = rows.last().map(|r| r.started_at);
     }
     let mut sessions = recent_sessions(&rows, RECENT_SESSIONS);
-    let keys: Vec<String> = sessions.iter().map(|s| s.key.clone()).collect();
+    // Names come from Codex's state database: only Codex sessions have one.
+    let keys: Vec<String> = sessions
+        .iter()
+        .filter(|s| s.harness == RequestHarness::Codex)
+        .map(|s| s.id().to_owned())
+        .collect();
     if !keys.is_empty()
         && let Ok(titles) = service.session_titles(keys).await
     {
         for s in &mut sessions {
-            s.title = titles.get(&s.key).map(|t| t.title.clone());
+            if s.harness == RequestHarness::Codex {
+                s.title = titles.get(s.id()).map(|t| t.title.clone());
+            }
         }
     }
+    let harnesses = service.harness_list().await.unwrap_or_default();
+    let claude = service.claude_view().await.ok();
     Ok(Snapshot {
         today: today.totals,
         yesterday_same: yesterday_same.totals,
@@ -159,6 +184,10 @@ pub async fn load(
         traces: line_traces(&rows, now),
         unpriced: unpriced_models(&rows),
         router,
+        tools_today: tool_usage(&rows, today_start, now),
+        tools_week: tool_usage(&rows, week_start, now),
+        harnesses,
+        claude,
         at: now,
         offset_secs,
     })
@@ -169,16 +198,16 @@ pub fn row_tokens(row: &RequestRow) -> u64 {
     row.input_tokens.unwrap_or(0) + row.output_tokens.unwrap_or(0)
 }
 
-/// The session a row belongs to: its prompt cache key, else its thread id.
-pub fn session_key(row: &RequestRow) -> Option<&str> {
-    row.prompt_cache_key
-        .as_deref()
-        .or(row.thread_id.as_deref())
-        .filter(|k| !k.is_empty())
+/// The session a row belongs to, qualified by its tool
+/// ([`RequestRow::session_group_key`]: a Codex and a Claude Code session never
+/// merge).
+pub fn session_key(row: &RequestRow) -> Option<String> {
+    row.session_group_key()
 }
 
 /// A short form of a session key: the first eight characters of its last part.
 pub fn short_key(key: &str) -> String {
+    let key = superba_core::split_harness_key(key).map_or(key, |(_, id)| id);
     let tail = key.rsplit(':').next().unwrap_or(key);
     tail.chars().take(8).collect()
 }
@@ -426,11 +455,18 @@ pub struct SessionSummary {
     pub model: Option<String>,
     /// Client of the newest request.
     pub client: RequestClient,
+    /// The tool.
+    pub harness: RequestHarness,
     /// Requests.
     pub requests: u64,
 }
 
 impl SessionSummary {
+    /// The tool's own session id (the key without its tool).
+    pub fn id(&self) -> &str {
+        superba_core::split_harness_key(&self.key).map_or(self.key.as_str(), |(_, id)| id)
+    }
+
     /// The name to show: the title, else the short key.
     pub fn label(&self) -> String {
         self.title
@@ -442,7 +478,7 @@ impl SessionSummary {
 
 /// The `n` sessions whose last request is newest, newest first.
 pub fn recent_sessions(rows: &[RequestRow], n: usize) -> Vec<SessionSummary> {
-    let mut map: BTreeMap<&str, (SessionSummary, Timestamp)> = BTreeMap::new();
+    let mut map: BTreeMap<String, (SessionSummary, Timestamp)> = BTreeMap::new();
     for row in rows {
         let Some(key) = session_key(row) else {
             continue;
@@ -450,10 +486,10 @@ pub fn recent_sessions(rows: &[RequestRow], n: usize) -> Vec<SessionSummary> {
         let end = row.duration_ms.map_or(row.started_at, |d| {
             row.started_at.saturating_add(Duration::from_millis(d))
         });
-        let (s, newest) = map.entry(key).or_insert_with(|| {
+        let (s, newest) = map.entry(key.clone()).or_insert_with(|| {
             (
                 SessionSummary {
-                    key: key.to_owned(),
+                    key,
                     title: None,
                     last: end,
                     tokens: 0,
@@ -461,6 +497,7 @@ pub fn recent_sessions(rows: &[RequestRow], n: usize) -> Vec<SessionSummary> {
                     unpriced: false,
                     model: row.model.clone(),
                     client: row.client,
+                    harness: row.harness,
                     requests: 0,
                 },
                 row.started_at,
@@ -575,4 +612,70 @@ pub fn unpriced_models(rows: &[RequestRow]) -> Vec<String> {
     let mut out: Vec<(&str, u64)> = tokens.into_iter().collect();
     out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
     out.into_iter().map(|(m, _)| m.to_owned()).collect()
+}
+
+// ---------------------------------------------------------------------------
+// Per tool
+// ---------------------------------------------------------------------------
+
+/// One tool's use over a period.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ToolUsage {
+    /// The tool.
+    pub harness: RequestHarness,
+    /// Requests.
+    pub requests: u64,
+    /// Input + output tokens.
+    pub tokens: u64,
+    /// Known cost, micro-dollars (only meaningful when `priced`).
+    pub cost_micros: i64,
+    /// Some request had a price.
+    pub priced: bool,
+    /// Requests with usage but no price.
+    pub unpriced: u64,
+}
+
+impl ToolUsage {
+    /// The known cost; `None` when no request had a price (never zero for
+    /// unknown).
+    pub fn cost(&self) -> Option<i64> {
+        self.priced.then_some(self.cost_micros)
+    }
+}
+
+/// Use per tool of the rows started in `[from, to]`, largest first: by cost
+/// when any tool is priced, then by tokens, then by requests; ties keep the
+/// tools' display order.
+pub fn tool_usage(rows: &[RequestRow], from: Timestamp, to: Timestamp) -> Vec<ToolUsage> {
+    let mut map: BTreeMap<RequestHarness, ToolUsage> = BTreeMap::new();
+    for row in rows {
+        if row.started_at < from || row.started_at > to {
+            continue;
+        }
+        let t = map.entry(row.harness).or_insert_with(|| ToolUsage {
+            harness: row.harness,
+            ..ToolUsage::default()
+        });
+        t.requests += 1;
+        t.tokens += row_tokens(row);
+        match row.cost {
+            Some(c) => {
+                t.cost_micros += c.micros();
+                t.priced = true;
+            }
+            None if row.input_tokens.is_some() => t.unpriced += 1,
+            None => {}
+        }
+    }
+    let mut out: Vec<ToolUsage> = map.into_values().collect();
+    let order = |h: RequestHarness| RequestHarness::ALL.iter().position(|x| *x == h);
+    out.sort_by(|a, b| {
+        b.cost()
+            .unwrap_or(-1)
+            .cmp(&a.cost().unwrap_or(-1))
+            .then(b.tokens.cmp(&a.tokens))
+            .then(b.requests.cmp(&a.requests))
+            .then(order(a.harness).cmp(&order(b.harness)))
+    });
+    out
 }
