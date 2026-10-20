@@ -947,7 +947,7 @@ public static class WtAgent
         string nameRe = S(a, "name_re", null);
         List<Dictionary<string, object>> o = new List<Dictionary<string, object>>();
         using (ManagementObjectSearcher q = new ManagementObjectSearcher(
-            "SELECT ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine, CreationDate, SessionId FROM Win32_Process"))
+            "SELECT ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine, CreationDate, SessionId, HandleCount FROM Win32_Process"))
         {
             foreach (ManagementObject m in q.Get())
             {
@@ -960,6 +960,7 @@ public static class WtAgent
                 i["path"] = Convert.ToString(m["ExecutablePath"]);
                 i["cmdline"] = Convert.ToString(m["CommandLine"]);
                 i["session"] = Convert.ToInt64(m["SessionId"]);
+                i["handles"] = Convert.ToInt64(m["HandleCount"]);
                 string cd = Convert.ToString(m["CreationDate"]);
                 if (!string.IsNullOrEmpty(cd)) i["started"] = ManagementDateTimeConverter.ToDateTime(cd).ToUniversalTime().ToString("o");
                 o.Add(i);

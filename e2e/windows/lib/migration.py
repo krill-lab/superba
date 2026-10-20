@@ -2,6 +2,7 @@
 import re
 import time
 
+from session import GUEST_SHOTS
 from ui import UiError
 from vm import psq
 
@@ -40,9 +41,17 @@ def wait_migration(run, s, u, total=600, restore=False, stop=False, timeout=300)
     post-flow scan/hash checks establish the data outcome independently.
     """
     start = time.monotonic()
-    observations, errors = [], []
+    observations, errors, captures = [], [], []
     seen_active = stopped = confirmed = False
-    pid = (run.agent.procs(r"^superba\.exe$") or [{}])[0].get("pid")
+
+    def capture(name):
+        # Capture now, transfer after the flow: SCP/SSH setup can take several
+        # seconds, longer than the moving stage or the chance to click Stop.
+        host = s.t.evdir / f"{s.t.seq():02d}-{name}.png"
+        guest = GUEST_SHOTS + "\\" + host.name
+        run.agent.shot(guest, process_re="^superba$")
+        captures.append((guest, host))
+
     try:
         while time.monotonic() - start < timeout:
             names = u.texts()
@@ -59,17 +68,21 @@ def wait_migration(run, s, u, total=600, restore=False, stop=False, timeout=300)
                 continue
             count = next((c for n in names if (c := migration_count(u.s, n, total, restore))), None)
             current = next((n for n in names if re.fullmatch(u.R("movers.now"), n)), None)
-            handles = run.vm.ps(f"(Get-Process -Id {pid}).HandleCount", check=False).stdout.strip() if pid else ""
             observations.append({"t": round(time.monotonic() - start, 1), "count": count,
-                                 "active": active, "current": current, "handles": handles})
+                                 "active": active, "current": current, "texts": names})
             if count and active and len([o for o in observations if o["count"]]) <= 6:
-                s.shot(f"{'restoring' if restore else 'migrating'}-{len(observations)}")
+                capture(f"{'restoring' if restore else 'migrating'}-{len(observations)}")
             if stop and not stopped and active and count and 0 < count[0] < count[1]:
                 s.check(u.exists(key="movers.stop", type="Button", enabled=True),
                         "Stop and undo is enabled during actual migration progress")
                 s.ui_dump("before-stop-and-undo")
                 u.click(key="movers.stop", type="Button")
                 stopped = True
+            # The existing desktop-agent connection avoids an SSH + PowerShell
+            # startup on every UI poll. Keep handles as independent diagnostics.
+            processes = run.agent.procs(r"^superba\.exe$")
+            observations[-1]["handles"] = [{"pid": p["pid"], "handles": p.get("handles")}
+                                            for p in processes]
             if seen_active and not active:
                 break
             time.sleep(1)
@@ -78,6 +91,9 @@ def wait_migration(run, s, u, total=600, restore=False, stop=False, timeout=300)
     finally:
         s.save("progress-and-handles.json", observations)
         s.save("migration-errors.json", errors)
+        for guest, host in captures:
+            run.vm.scp_from(guest.replace("\\", "/"), host)
+            s.add_evidence(host)
     s.check(not errors, f"no lock / EMFILE error (bug 31): {errors!r}")
     if not restore:
         s.check(any(o["active"] and o["count"] and 0 < o["count"][0] < total for o in observations),

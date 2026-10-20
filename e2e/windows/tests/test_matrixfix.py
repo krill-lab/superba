@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -50,9 +51,13 @@ class MatrixTests(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         self.run = SimpleNamespace(strings={lang: Strings(lang) for lang in ('en', 'zh-CN')},
-                                   agent=Mock(), state={}, session_snapshot='wintest')
+                                   agent=Mock(), vm=Mock(), state={}, session_snapshot='wintest')
         self.run.agent.procs.return_value = []
         self.step = checking_step()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.step.t.evdir = Path(directory.name)
+        self.step.t.seq.side_effect = iter(range(1, 100))
 
     def ui(self, lang='en'):
         u = Ui(self.run, lang)
@@ -116,6 +121,49 @@ class MatrixTests(unittest.TestCase):
         wait_migration(self.run, self.step, u, stop=True)
         u.click.assert_called_once_with(key='movers.stop', type='Button')
         self.assertEqual(self.clock.now, 2)
+
+    def test_slow_ssh_diagnostics_and_transfers_cannot_hide_moving_progress(self):
+        u = self.ui()
+        observed = []
+
+        def texts():
+            count = int(self.clock.now) * 200
+            names = (['Migrating sessions', f'Migrated {count} of 600 sessions', 'Now: file']
+                     if count < 600 else ['Migration history', 'Done'])
+            observed.append(names)
+            return names
+
+        u.texts = Mock(side_effect=texts)
+        self.run.vm = Mock()
+        self.run.vm.ps.side_effect = lambda *a, **kw: self.clock.sleep(9)
+        self.run.agent.procs.return_value = [dict(pid=42, handles=575)]
+
+        def transfer(*args):
+            self.assertEqual(observed[-1], ['Migration history', 'Done'])
+            self.clock.sleep(9)
+
+        self.run.vm.scp_from.side_effect = transfer
+        wait_migration(self.run, self.step, u)
+        self.run.vm.ps.assert_not_called()
+        samples = self.step.save.call_args_list[0].args[1]
+        self.assertEqual([x['count'] for x in samples], [(0, 600), (200, 600), (400, 600), None])
+        self.assertTrue(all(x['handles'] == [dict(pid=42, handles=575)] for x in samples))
+        self.assertEqual(self.run.agent.shot.call_count, 3)
+        self.assertEqual(self.run.vm.scp_from.call_count, 3)
+
+    def test_stop_is_clicked_before_any_screenshot_file_transfer(self):
+        u = self.ui()
+        u.texts = Mock(side_effect=[['Migrating sessions', 'Migrated 299 of 600 sessions', 'Now: file'],
+                                   ['Stopping the migration'], ['Migration history', 'Rolled back']])
+        self.run.vm = Mock()
+
+        def transfer(*args):
+            u.click.assert_called_once_with(key='movers.stop', type='Button')
+            self.assertEqual(u.texts.call_count, 3)
+
+        self.run.vm.scp_from.side_effect = transfer
+        wait_migration(self.run, self.step, u, stop=True)
+        self.run.vm.scp_from.assert_called_once()
 
     def test_data_proof_rejects_unmigrated_files_and_incomplete_undo(self):
         count = dict(threads=600, rollouts=600, distinct=600)
