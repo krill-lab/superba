@@ -100,6 +100,14 @@ pub struct RouterConfig {
     /// Ignored for selection when `catalog` is configured.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub synthetic_models: Vec<crate::compaction_proxy::SyntheticModel>,
+    /// Mixed login: Codex keeps the user's official ChatGPT login and presents
+    /// its access token here ([`crate::official`]). `None`: only router tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub official_client: Option<crate::official::OfficialClientConfig>,
+    /// OAuth token endpoint for stored official logins (tests point it at a
+    /// fake); `None` = [`crate::official::OFFICIAL_TOKEN_URL`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub official_token_url: Option<Url>,
 }
 
 /// An address the router may listen on for WSL: a private (RFC 1918) or
@@ -115,7 +123,7 @@ fn default_true() -> bool {
     true
 }
 
-/// Kind of a member. The official ChatGPT login has no variant on purpose.
+/// Kind of a member.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemberKind {
@@ -123,6 +131,10 @@ pub enum MemberKind {
     Krill,
     /// A custom OpenAI-compatible Responses API site.
     Compatible,
+    /// The user's own official ChatGPT login (`chatgpt.com/backend-api/codex`,
+    /// [`crate::official`]): Codex only, never shared with other tools.
+    #[serde(rename = "official_chatgpt")]
+    Official,
 }
 
 impl MemberKind {
@@ -209,6 +221,7 @@ impl MemberConfig {
         self.websocket = match self.kind {
             MemberKind::Krill => self.lines.iter().any(|l| l.websocket != Some(false)),
             MemberKind::Compatible => self.lines.iter().any(|l| l.websocket == Some(true)),
+            MemberKind::Official => true,
         };
     }
 }
@@ -318,6 +331,8 @@ impl RouterConfig {
             gemini: None,
             translation: Default::default(),
             synthetic_models: Vec::new(),
+            official_client: None,
+            official_token_url: None,
         }
     }
 
@@ -325,6 +340,13 @@ impl RouterConfig {
     pub fn serves_codex(&self, id: &str) -> bool {
         !self.tool_only_members.iter().any(|m| m == id)
             && !self.claude.as_ref().is_some_and(|c| c.claude_only(id))
+    }
+
+    /// The OAuth token endpoint of stored official logins.
+    pub fn official_token_url(&self) -> Url {
+        self.official_token_url.clone().unwrap_or_else(|| {
+            Url::parse(crate::official::OFFICIAL_TOKEN_URL).expect("valid constant URL")
+        })
     }
 
     /// Look up a member.
@@ -395,7 +417,11 @@ impl RouterConfig {
                         l.id, m.id
                     )));
                 }
-                check_upstream_url(&l.base_url)?;
+                if m.kind == MemberKind::Official {
+                    check_official_url(&l.base_url)?;
+                } else {
+                    check_upstream_url(&l.base_url)?;
+                }
                 if let Some(p) = &l.probe_url {
                     check_upstream_url(p)?;
                 }
@@ -467,6 +493,8 @@ pub struct RouterSecrets {
     pub router_token: Secret,
     /// Member id → that member's API key.
     pub member_keys: BTreeMap<String, Secret>,
+    /// Official member id → its stored ChatGPT login ([`crate::official`]).
+    pub official_tokens: BTreeMap<String, crate::official::OfficialTokens>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -474,6 +502,8 @@ struct SecretsWire {
     format: u32,
     router_token: String,
     member_keys: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    official_tokens: BTreeMap<String, crate::official::OfficialTokens>,
 }
 
 impl Drop for SecretsWire {
@@ -481,6 +511,10 @@ impl Drop for SecretsWire {
         self.router_token.zeroize();
         for v in self.member_keys.values_mut() {
             v.zeroize();
+        }
+        for t in self.official_tokens.values_mut() {
+            t.access_token.zeroize();
+            t.refresh_token.zeroize();
         }
     }
 }
@@ -491,6 +525,7 @@ impl RouterSecrets {
         Self {
             router_token: Secret::new(token::generate(token::ROUTER_TOKEN_PREFIX)),
             member_keys,
+            official_tokens: BTreeMap::new(),
         }
     }
 
@@ -506,7 +541,13 @@ impl RouterSecrets {
                 message: "the router token is empty".into(),
             });
         }
-        for m in &config.members {
+        // An official member needs no key: it uses the mixed-login client's
+        // token or its stored login.
+        for m in config
+            .members
+            .iter()
+            .filter(|m| m.kind != MemberKind::Official)
+        {
             match self.member_keys.get(&m.id) {
                 Some(k) if !k.is_empty() => {}
                 _ => {
@@ -523,7 +564,7 @@ impl RouterSecrets {
     pub fn load(paths: &RouterPaths) -> Result<Self> {
         let path = paths.secrets_json();
         let bytes = fs::read(&path).map_err(|e| Error::io(&path, &e))?;
-        let wire: SecretsWire = serde_json::from_slice(&bytes).map_err(|_| Error::Secret {
+        let mut wire: SecretsWire = serde_json::from_slice(&bytes).map_err(|_| Error::Secret {
             // The parser message could quote file content: keep it out.
             message: "router secrets.json is not valid".into(),
         })?;
@@ -539,6 +580,7 @@ impl RouterSecrets {
                 .iter()
                 .map(|(k, v)| (k.clone(), Secret::new(v.as_str())))
                 .collect(),
+            official_tokens: std::mem::take(&mut wire.official_tokens),
         })
     }
 
@@ -552,6 +594,7 @@ impl RouterSecrets {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.expose().to_owned()))
                 .collect(),
+            official_tokens: self.official_tokens.clone(),
         };
         let mut bytes = serde_json::to_vec_pretty(&wire)
             .map_err(|e| Error::other(format!("serialize router secrets: {e}")))?;
@@ -573,6 +616,33 @@ fn check_id(what: &str, id: &str) -> Result<()> {
     } else {
         Err(Error::invalid(format!(
             "{what} id {id:?} must be 1-64 characters of a-z, 0-9, '.', '_' or '-'"
+        )))
+    }
+}
+
+/// Upstream rule of an official member: `https://chatgpt.com/backend-api/codex`,
+/// or a loopback URL (tests and local forwarders).
+pub fn check_official_url(url: &Url) -> Result<()> {
+    let loopback = match url.host() {
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        Some(url::Host::Domain(d)) => d.eq_ignore_ascii_case("localhost"),
+        None => false,
+    };
+    let official = url.scheme() == "https"
+        && url.host_str() == Some("chatgpt.com")
+        && url.port().is_none()
+        && url.path().trim_end_matches('/') == "/backend-api/codex";
+    if (official || (loopback && matches!(url.scheme(), "http" | "https")))
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+    {
+        Ok(())
+    } else {
+        Err(Error::invalid(format!(
+            "{url}: an official ChatGPT member must use {}",
+            crate::official::OFFICIAL_CODEX_BASE
         )))
     }
 }

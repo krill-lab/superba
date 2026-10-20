@@ -118,6 +118,7 @@ pub mod manager;
 pub mod members;
 pub mod merged_catalog;
 pub mod model_map;
+pub mod official;
 pub mod openai;
 pub mod outage;
 pub mod paths;

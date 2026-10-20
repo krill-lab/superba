@@ -509,6 +509,11 @@ impl RouterManager {
             gemini.order.retain(|id| ids.contains(&id.as_str()));
             config.gemini = Some(gemini);
         }
+        // Mixed login is set on its own (`set_official_client`); a members
+        // rewrite keeps it.
+        if config.official_client.is_none() {
+            config.official_client = stored.as_ref().and_then(|s| s.official_client.clone());
+        }
         if config.stats.is_none() {
             config.stats = Some(stored.and_then(|s| s.stats).unwrap_or_default());
         }
@@ -517,6 +522,17 @@ impl RouterManager {
             Ok(old) if !old.router_token.is_empty() => RouterSecrets {
                 router_token: old.router_token,
                 member_keys,
+                // A stored official login is the router's own (refreshed in
+                // place); keep it while its member exists.
+                official_tokens: old
+                    .official_tokens
+                    .into_iter()
+                    .filter(|(id, _)| {
+                        config
+                            .member(id)
+                            .is_some_and(|m| m.kind == crate::MemberKind::Official)
+                    })
+                    .collect(),
             },
             _ => RouterSecrets::generate(member_keys),
         };
@@ -737,6 +753,31 @@ impl RouterManager {
         }
         let client = AdminClient::from_runtime(&self.paths)?;
         client.reload().await?;
+        Ok(true)
+    }
+
+    /// Accept (or stop accepting) the user's own ChatGPT login from local
+    /// Codex (mixed login, [`crate::official`]). A running router reloads.
+    /// Returns whether the stored configuration changed.
+    pub async fn set_official_client(
+        &self,
+        client: Option<crate::official::OfficialClientConfig>,
+    ) -> Result<bool> {
+        let mut config = RouterConfig::load(&self.paths).map_err(|e| match e {
+            Error::Io { .. } => Error::NotFound {
+                what: "the local router configuration (enable the router first)".into(),
+            },
+            other => other,
+        })?;
+        if config.official_client == client {
+            return Ok(false);
+        }
+        config.official_client = client;
+        config.validate()?;
+        config.save(&self.paths)?;
+        if watchdog::check(&self.paths).await.is_up() {
+            AdminClient::from_runtime(&self.paths)?.reload().await?;
+        }
         Ok(true)
     }
 
