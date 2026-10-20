@@ -40,50 +40,67 @@ fn fixture() {
     }
 }
 
-/// Disable SeDebugPrivilege in this test process's token (a no-op when the
-/// token does not hold it).
-fn drop_debug_privilege() {
-    use windows_sys::Win32::Foundation::LUID;
-    use windows_sys::Win32::Security::{
-        AdjustTokenPrivileges, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, TOKEN_ADJUST_PRIVILEGES,
-        TOKEN_PRIVILEGES, TOKEN_QUERY,
-    };
-    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-    let name: Vec<u16> = "SeDebugPrivilege\0".encode_utf16().collect();
-    // SAFETY: valid out pointers, a NUL-terminated name, and a token handle
-    // closed once after use.
-    unsafe {
-        let mut token = std::ptr::null_mut();
-        assert_ne!(
-            OpenProcessToken(
-                GetCurrentProcess(),
-                TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
-                &mut token
-            ),
-            0
-        );
-        let mut luid = LUID {
-            LowPart: 0,
-            HighPart: 0,
+/// Impersonates this process's own token on the calling thread with
+/// SeDebugPrivilege disabled, until dropped. Thread-local: tests running in
+/// parallel keep the process token as it is.
+struct WithoutDebugPrivilege;
+
+impl WithoutDebugPrivilege {
+    fn new() -> Self {
+        use windows_sys::Win32::Foundation::LUID;
+        use windows_sys::Win32::Security::{
+            AdjustTokenPrivileges, ImpersonateSelf, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW,
+            SecurityImpersonation, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
         };
-        if LookupPrivilegeValueW(std::ptr::null(), name.as_ptr(), &mut luid) != 0 {
-            let privileges = TOKEN_PRIVILEGES {
-                PrivilegeCount: 1,
-                Privileges: [LUID_AND_ATTRIBUTES {
-                    Luid: luid,
-                    Attributes: 0,
-                }],
-            };
-            AdjustTokenPrivileges(
-                token,
-                0,
-                &privileges,
-                0,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+        use windows_sys::Win32::System::Threading::{GetCurrentThread, OpenThreadToken};
+        let name: Vec<u16> = "SeDebugPrivilege\0".encode_utf16().collect();
+        // SAFETY: valid out pointers, a NUL-terminated name, and a thread
+        // token handle closed once after use; RevertToSelf runs on drop.
+        unsafe {
+            assert_ne!(ImpersonateSelf(SecurityImpersonation), 0);
+            let mut token = std::ptr::null_mut();
+            assert_ne!(
+                OpenThreadToken(
+                    GetCurrentThread(),
+                    TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+                    0,
+                    &mut token
+                ),
+                0
             );
+            let mut luid = LUID {
+                LowPart: 0,
+                HighPart: 0,
+            };
+            if LookupPrivilegeValueW(std::ptr::null(), name.as_ptr(), &mut luid) != 0 {
+                let privileges = TOKEN_PRIVILEGES {
+                    PrivilegeCount: 1,
+                    Privileges: [LUID_AND_ATTRIBUTES {
+                        Luid: luid,
+                        Attributes: 0,
+                    }],
+                };
+                AdjustTokenPrivileges(
+                    token,
+                    0,
+                    &privileges,
+                    0,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                );
+            }
+            CloseHandle(token);
         }
-        CloseHandle(token);
+        Self
+    }
+}
+
+impl Drop for WithoutDebugPrivilege {
+    fn drop(&mut self) {
+        // SAFETY: ends this thread's impersonation started in `new`.
+        unsafe {
+            windows_sys::Win32::Security::RevertToSelf();
+        }
     }
 }
 
@@ -306,9 +323,12 @@ fn a_real_access_denied_is_preserved_and_the_process_is_left_running() {
     }
     // An elevated runner (GitHub's Windows images) holds SeDebugPrivilege
     // enabled, which bypasses the deny ACE and turns this into an accepted
-    // kill. Drop it so the open meets the DACL as an ordinary user's would.
-    drop_debug_privilege();
-    let result = osproc::end(child.0.id(), session.started_at, Duration::ZERO);
+    // kill. Drop it (on this thread) so the open meets the DACL as an
+    // ordinary user's would.
+    let result = {
+        let _plain = WithoutDebugPrivilege::new();
+        osproc::end(child.0.id(), session.started_at, Duration::ZERO)
+    };
     let osproc::EndResult::Failed { stage, error } = result else {
         panic!("{result:?}")
     };
