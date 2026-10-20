@@ -49,7 +49,10 @@ pub struct CatalogConfig {
     pub members: BTreeMap<String, MemberCatalog>,
 }
 
-/// Clean a profile or site name into an ASCII provider namespace.
+/// Clean a name into an ASCII provider namespace: lower-case letters, digits
+/// and single hyphens, at most 48 characters. Empty when nothing is left (a
+/// name in another script); [`CatalogConfig::slugs`] then falls back to the
+/// domain and to a number, never to a shared placeholder.
 pub fn provider_slug(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars() {
@@ -62,12 +65,53 @@ pub fn provider_slug(name: &str) -> String {
             break;
         }
     }
-    let out = out.trim_end_matches('-');
-    if out.is_empty() {
-        "provider".into()
-    } else {
-        out.into()
+    out.trim_end_matches('-').to_owned()
+}
+
+/// Second-level labels under a country code that are part of the public
+/// suffix (`co.uk`, `com.cn`). A short list, not the Public Suffix List: the
+/// slug can always be edited.
+const SECOND_LEVEL: [&str; 10] = [
+    "co", "com", "net", "org", "ac", "gov", "edu", "ne", "or", "go",
+];
+
+/// The provider part of a URL's domain: `api.foo.com` -> `foo`,
+/// `foo.com.cn` -> `foo`, `api.foo.co.uk` -> `foo`. IP addresses, `localhost`,
+/// single-label hosts and punycode labels have none.
+pub fn domain_slug(url: &url::Url) -> Option<String> {
+    let url::Host::Domain(host) = url.host()? else {
+        return None;
+    };
+    let labels: Vec<&str> = host.trim_end_matches('.').split('.').collect();
+    if labels.len() < 2 {
+        return None;
     }
+    let n = labels.len();
+    let suffix = if n >= 3 && labels[n - 1].len() == 2 && SECOND_LEVEL.contains(&labels[n - 2]) {
+        2
+    } else {
+        1
+    };
+    let label = labels.get(n.checked_sub(suffix + 1)?)?;
+    if label.starts_with("xn--") {
+        return None;
+    }
+    Some(provider_slug(label)).filter(|s| !s.is_empty())
+}
+
+/// Names Krill reserves for its own members.
+fn reserved(slug: &str) -> bool {
+    matches!(slug, "krill" | "krill-usage" | "krill-balance")
+}
+
+/// The placeholder alpha.7 generated for names without ASCII letters
+/// (`provider`, `provider-2`). A saved copy of it is dropped, not kept: the
+/// user asked for no compatibility path for these aliases.
+fn legacy_placeholder(slug: &str) -> bool {
+    slug == "provider"
+        || slug
+            .strip_prefix("provider-")
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
 impl CatalogConfig {
@@ -87,7 +131,7 @@ impl CatalogConfig {
                     "provider slugs must be unique lowercase letters, digits and hyphens",
                 ));
             }
-            if matches!(slug.as_str(), "krill" | "krill-usage" | "krill-balance")
+            if reserved(slug)
                 && config
                     .member(id)
                     .is_some_and(|m| m.kind != crate::MemberKind::Krill)
@@ -108,32 +152,54 @@ impl CatalogConfig {
         Ok(())
     }
 
-    /// Stable unique slugs; priority reordering does not rename providers.
+    /// The display name of a member: the profile's name, else the member's.
+    pub fn member_name<'a>(&'a self, member: &'a crate::MemberConfig) -> &'a str {
+        self.members
+            .get(&member.id)
+            .map(|p| p.name.as_str())
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or(&member.name)
+    }
+
+    /// Stable unique slugs by member id. In order: the user's saved slug, an
+    /// all-ASCII name, the main part of the domain, `p<n>` (the member's
+    /// position among the members sorted by id). Priority reordering never
+    /// renames a provider; colliding names get `-2`, `-3`.
     pub fn slugs(&self, config: &RouterConfig) -> BTreeMap<String, String> {
-        let mut out: BTreeMap<String, String> = self
-            .settings
-            .provider_slugs
-            .iter()
-            .filter(|(id, _)| config.member(id).is_some())
-            .map(|(id, name)| (id.clone(), name.clone()))
-            .collect();
-        let mut used: BTreeSet<String> = out.values().cloned().collect();
         let mut members: Vec<_> = config.members.iter().collect();
         members.sort_by(|a, b| a.id.cmp(&b.id));
-        for m in members {
+        let mut out = BTreeMap::new();
+        for m in &members {
+            let Some(slug) = self.settings.provider_slugs.get(&m.id) else {
+                continue;
+            };
+            let name = self.member_name(m);
+            if legacy_placeholder(slug) && provider_slug(name).is_empty() {
+                continue;
+            }
+            if !slug.is_empty() && provider_slug(slug) == *slug {
+                out.insert(m.id.clone(), slug.clone());
+            }
+        }
+        let mut used: BTreeSet<String> = out.values().cloned().collect();
+        for (index, m) in members.iter().enumerate() {
             if out.contains_key(&m.id) {
                 continue;
             }
-            let name = self
-                .members
-                .get(&m.id)
-                .map(|p| p.name.as_str())
-                .filter(|n| !n.is_empty())
-                .unwrap_or(&m.name);
-            let mut base = provider_slug(name);
-            if m.kind != crate::MemberKind::Krill
-                && matches!(base.as_str(), "krill" | "krill-usage" | "krill-balance")
-            {
+            let name = self.member_name(m).trim();
+            let mut base = if name.is_ascii() {
+                provider_slug(name)
+            } else {
+                String::new()
+            };
+            if base.is_empty() {
+                base = m
+                    .lines
+                    .iter()
+                    .find_map(|l| domain_slug(&l.base_url))
+                    .unwrap_or_else(|| format!("p{}", index + 1));
+            }
+            if m.kind != crate::MemberKind::Krill && reserved(&base) {
                 base.push_str("-provider");
             }
             let mut slug = base.clone();
@@ -151,17 +217,33 @@ impl CatalogConfig {
     }
 }
 
-#[derive(Clone)]
+/// One provider that can serve a model.
+#[derive(Clone, Debug)]
 pub(crate) struct Target {
     pub member: usize,
+    /// The id sent upstream (exact spelling).
     pub upstream: String,
+    /// Reached through the standard endpoint and checked by a tool probe; the
+    /// router may run compaction for it (catB). A Codex-catalog entry and the
+    /// installed Codex's own models on a native endpoint are not.
     pub standard: bool,
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct Snapshot {
+    /// The management view: one row per canonical model.
     pub view: RouterCatalogView,
+    /// Ready targets by requested name (canonical ids and provider aliases),
+    /// in member order. Independent of the mode: a name a session already
+    /// uses keeps routing after the mode changes.
     pub routes: BTreeMap<String, Vec<Target>>,
+    /// Every target, ready or not, by requested name (the Models page test).
+    pub targets: BTreeMap<String, Vec<Target>>,
+    /// Rows by requested name, aliases included (tests and unknown-name checks).
+    pub all: BTreeMap<String, superba_core::RouterCatalogModel>,
+    /// What `/models` returns: the mode's ready canonical entries, then the
+    /// pinned aliases in prefixed mode.
+    pub published: Vec<Value>,
 }
 
 /// Per-generation caches. Each upstream slot and probe is single-flight.
@@ -187,16 +269,9 @@ pub(crate) async fn response(
     query: &str,
 ) -> http::Response<crate::state::RespBody> {
     use sha2::{Digest, Sha256};
-    use superba_core::CatalogReadiness;
     let snap = snapshot(g, query).await;
-    let entries: Vec<_> = snap
-        .view
-        .models
-        .iter()
-        .filter(|m| m.readiness == CatalogReadiness::Ready)
-        .map(|m| &m.entry)
-        .collect();
-    let bytes = serde_json::to_vec(&serde_json::json!({"models":entries})).expect("catalog JSON");
+    let bytes =
+        serde_json::to_vec(&serde_json::json!({"models":snap.published})).expect("catalog JSON");
     let etag = format!("\"{}\"", hex::encode(Sha256::digest(&bytes)));
     let mut out = http::Response::new(crate::forward::full(bytes::Bytes::from(bytes)));
     out.headers_mut().insert(

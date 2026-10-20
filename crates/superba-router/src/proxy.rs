@@ -135,6 +135,7 @@ pub(crate) fn probe_http(
     member: usize,
     line: usize,
     model: &str,
+    standard: bool,
     body: Bytes,
 ) -> futures_util::future::BoxFuture<'static, Response<RespBody>> {
     let model = model.to_owned();
@@ -160,7 +161,7 @@ pub(crate) fn probe_http(
                 target: crate::merged_catalog::Target {
                     member,
                     upstream: model,
-                    standard: true,
+                    standard,
                 },
                 line,
             }),

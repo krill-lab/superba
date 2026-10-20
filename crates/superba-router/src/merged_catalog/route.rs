@@ -99,7 +99,15 @@ pub(crate) async fn select(
         Some(s) => s,
         None => snapshot(g, "client_version=0.163.0").await,
     };
-    let (bare, pinned) = namespace(g, &model);
+    let (bare, pinned) = namespace(g, &snap, &model);
+    if pinned.as_ref().is_some_and(Vec::is_empty) {
+        return Err(Box::new(router_error(
+            StatusCode::NOT_FOUND,
+            "unknown_provider",
+            "unknown provider namespace",
+        )));
+    }
+    // An alias has its own single target; a bare id fails over in member order.
     let mut targets = snap
         .routes
         .get(&model)
@@ -109,9 +117,7 @@ pub(crate) async fn select(
     if let Some(members) = &pinned {
         targets.retain(|t| members.contains(&t.member));
     }
-    let known = snap.view.models.iter().any(|m| {
-        m.entry["slug"].as_str() == Some(bare) || m.entry["slug"].as_str() == Some(&model)
-    });
+    let known = snap.all.contains_key(bare) || snap.all.contains_key(&model);
     if targets.is_empty() {
         if known {
             return Err(Box::new(router_error(
@@ -120,24 +126,19 @@ pub(crate) async fn select(
                 "model is pending, failed its tool probe, or has no enabled protocol route; test it on the Models page",
             )));
         }
-        if let Some(members) = &pinned {
-            if members.is_empty() {
-                return Err(Box::new(router_error(
-                    StatusCode::NOT_FOUND,
-                    "unknown_provider",
-                    "unknown provider namespace",
-                )));
+        match &pinned {
+            // A model the pinned provider does not list goes to it unchanged.
+            Some(members) => {
+                targets = members
+                    .iter()
+                    .map(|member| Target {
+                        member: *member,
+                        upstream: bare.into(),
+                        standard: false,
+                    })
+                    .collect();
             }
-            targets = members
-                .iter()
-                .map(|member| Target {
-                    member: *member,
-                    upstream: bare.into(),
-                    standard: false,
-                })
-                .collect();
-        } else {
-            return Ok((body, None));
+            None => return Ok((body, None)),
         }
     }
     let upstream = targets.first().map(|t| t.upstream.as_str()).unwrap_or(bare);
@@ -146,15 +147,28 @@ pub(crate) async fn select(
     Ok((Bytes::from(bytes), Some(Selection { targets })))
 }
 
-/// Exact configured namespaces win; the historical Krill spellings can only
-/// target Krill members and never fall through to unrelated providers.
-fn namespace<'a>(g: &Generation, model: &'a str) -> (&'a str, Option<Vec<usize>>) {
+/// The requested name and the members it is pinned to. A real upstream id
+/// (slashes included) is taken as it is; `slug/id` pins the member with that
+/// slug; the historical Krill spellings pin Krill members only. Any other
+/// prefix pins nothing (an empty list: unknown namespace).
+fn namespace<'a>(
+    g: &Generation,
+    snap: &super::Snapshot,
+    model: &'a str,
+) -> (&'a str, Option<Vec<usize>>) {
     let Some((prefix, bare)) = model.split_once('/') else {
         return (model, None);
     };
     let Some(config) = &g.config.catalog else {
         return (model, None);
     };
+    if snap
+        .all
+        .get(model)
+        .is_some_and(|row| row.sources.iter().any(|p| p.upstream_id == model))
+    {
+        return (model, None);
+    }
     let slugs = config.slugs(&g.config);
     let matching: Vec<_> = g
         .members
@@ -192,12 +206,9 @@ fn namespace<'a>(g: &Generation, model: &'a str) -> (&'a str, Option<Vec<usize>>
             Some(if specific.is_empty() { krill } else { specific }),
         );
     }
-    // Some upstreams use slash-containing ids. A discovered exact id retains
-    // its upstream spelling; an unknown prefix is never sent indiscriminately.
-    if lock(&g.merged_catalog.latest)
-        .as_ref()
-        .is_some_and(|s| s.routes.contains_key(model))
-    {
+    // Some upstreams use slash-containing ids that no list named yet; an
+    // unknown prefix is never sent to every provider.
+    if snap.routes.contains_key(model) {
         (model, None)
     } else {
         (bare, Some(Vec::new()))

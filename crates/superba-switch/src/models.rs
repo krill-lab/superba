@@ -324,6 +324,7 @@ pub fn spec_from_entry(entry: &serde_json::Value) -> Option<ModelSpec> {
             .unwrap_or(true),
         priority: o.get("priority").and_then(serde_json::Value::as_i64),
         context_window: n("context_window"),
+        estimated_context_window: false,
         max_context_window: n("max_context_window"),
         effective_context_window_percent: n("effective_context_window_percent")
             .and_then(|v| u8::try_from(v).ok()),

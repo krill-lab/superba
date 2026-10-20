@@ -4,29 +4,72 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Which models the router publishes to Codex (its "router model list").
+///
+/// The mode only decides what Codex's picker is offered. Routing does not
+/// depend on it: a model or pinned alias that a session already uses keeps
+/// working after the mode changes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CatalogMode {
+    /// Exactly the installed Codex's own model identities (L0); provider
+    /// catalogs (L1) only refresh their metadata. The default for everyone.
+    #[default]
+    Codex,
+    /// Codex's models plus the providers' other models. A model that is not
+    /// known to Codex or to a provider's Codex catalog is published only after
+    /// its two-turn tool-call test passed.
+    Extended,
+    /// [`CatalogMode::Extended`] plus one alias per provider that pins the
+    /// model to that provider (`krill/gpt-5.5`, shown as "GPT-5.5 · Krill").
+    Prefixed,
+}
+
+impl CatalogMode {
+    /// Every mode, in the order the pickers list them.
+    pub const ALL: [Self; 3] = [Self::Codex, Self::Extended, Self::Prefixed];
+
+    /// The stable spelling used by `spb models mode` and the settings file.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::Extended => "extended",
+            Self::Prefixed => "prefixed",
+        }
+    }
+
+    /// Parse [`CatalogMode::as_str`].
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.as_str() == value.trim())
+    }
+
+    /// Models outside Codex's own list are published.
+    pub fn extends(self) -> bool {
+        self != Self::Codex
+    }
+
+    /// Pinned provider aliases are published.
+    pub fn prefixes(self) -> bool {
+        self == Self::Prefixed
+    }
+}
+
 /// User choices for the router's model names.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Settings written by alpha.7 carry a `show_prefixed` flag; it is ignored on
+/// purpose (no migration): every configuration starts in [`CatalogMode::Codex`].
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RouterCatalogSettings {
-    /// Offer provider-prefixed names in Codex's picker.
-    pub show_prefixed: bool,
-    /// User-selected provider slugs, keyed by profile id.
+    /// What the router publishes to Codex.
+    pub mode: CatalogMode,
+    /// User-selected provider slugs (the alias namespace), keyed by member id.
     pub provider_slugs: BTreeMap<String, String>,
     /// Explicit picker visibility; true can also reveal an upstream-hidden model.
     pub visibility: BTreeMap<String, bool>,
-    /// Overrides for the merged list, independent of which profile is selected.
+    /// Overrides of the canonical models, keyed by model id; they apply to the
+    /// bare id and to every provider alias of it.
     pub overrides: BTreeMap<String, crate::ModelOverride>,
-}
-
-impl Default for RouterCatalogSettings {
-    fn default() -> Self {
-        Self {
-            show_prefixed: true,
-            provider_slugs: BTreeMap::new(),
-            visibility: BTreeMap::new(),
-            overrides: BTreeMap::new(),
-        }
-    }
 }
 
 /// Origin of a model's metadata.
@@ -39,7 +82,11 @@ pub enum CatalogLayer {
     Codex,
     /// An id in the key's standard model list.
     Standard,
-    /// A Codex entry constructed from a standard id.
+    /// A standard-list id that exactly matches a known Codex model (the
+    /// installed Codex or a provider's Codex catalog): its complete metadata is
+    /// reused. Whether this provider can serve it is checked separately.
+    StandardKnown,
+    /// A Codex entry constructed from a standard id (family defaults).
     Synthesized,
 }
 
@@ -80,6 +127,15 @@ pub struct CatalogProvenance {
     pub evidence: String,
     /// Observation time, Unix milliseconds.
     pub observed_at: u64,
+    /// This provider's own readiness for the model (the row's readiness is
+    /// the best of its providers). `None` from routers before alpha.8.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readiness: Option<CatalogReadiness>,
+    /// The alias that pins the model to this provider (`krill/gpt-5.5`),
+    /// whether or not the current mode publishes it; `None` when it would
+    /// collide with a real upstream id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
 }
 
 impl CatalogProvenance {
@@ -131,6 +187,38 @@ pub struct RouterCatalogView {
     pub models: Vec<RouterCatalogModel>,
     /// One status for each member and list type.
     pub sources: Vec<CatalogSourceStatus>,
+    /// Published provider aliases and the canonical model each pins; never
+    /// rows of their own.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub aliases: BTreeMap<String, String>,
+}
+
+impl RouterCatalogView {
+    /// The row of a canonical model id.
+    pub fn model(&self, id: &str) -> Option<&RouterCatalogModel> {
+        self.models.iter().find(|m| m.id() == id)
+    }
+}
+
+impl RouterCatalogModel {
+    /// The canonical model id (the entry's slug).
+    pub fn id(&self) -> &str {
+        self.entry["slug"].as_str().unwrap_or_default()
+    }
+
+    /// Codex is offered this model (the bare id).
+    pub fn published(&self) -> bool {
+        self.readiness == CatalogReadiness::Ready
+    }
+
+    /// The window is a family estimate: no provider supplied real metadata.
+    pub fn estimated(&self) -> bool {
+        !self.sources.is_empty()
+            && self
+                .sources
+                .iter()
+                .all(|s| s.layer == CatalogLayer::Synthesized)
+    }
 }
 
 /// Result of testing a selected model through the local router.

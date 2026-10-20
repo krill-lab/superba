@@ -933,6 +933,8 @@ pub struct FakeRouter {
     pub move_to: Mutex<u16>,
     /// A move fails with this error.
     pub fail_move: Mutex<Option<Error>>,
+    /// The merged catalog the running router reports (`None` = not supported).
+    pub catalog: Mutex<Option<superba_core::RouterCatalogView>>,
 }
 
 impl FakeRouter {
@@ -957,6 +959,7 @@ impl FakeRouter {
             taken: Mutex::new(None),
             move_to: Mutex::new(19_440),
             fail_move: Mutex::new(None),
+            catalog: Mutex::new(None),
         }
     }
 
@@ -1005,6 +1008,13 @@ impl FakeRouter {
 impl RouterControl for FakeRouter {
     fn configuration(&self) -> Option<RouterConfig> {
         self.written.lock().unwrap().last().cloned()
+    }
+    async fn catalog(&self) -> Result<superba_core::RouterCatalogView> {
+        self.catalog
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| Error::not_implemented("router catalog"))
     }
     async fn set_conversion(&self, conversion: superba_core::RouterConversion) -> Result<()> {
         let mut written = self.written.lock().unwrap();

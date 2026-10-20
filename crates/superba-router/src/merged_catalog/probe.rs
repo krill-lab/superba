@@ -6,11 +6,15 @@ use std::time::Duration;
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
-use superba_core::{CatalogLayer, RouterModelTest};
+use superba_core::RouterModelTest;
 
 use super::{cache, probe_key, snapshot};
 use crate::state::{Generation, Shared, lock, unix_ms};
 
+/// Test a model through the router: each of its providers on its own (a
+/// pinned alias: that provider only), with an explicit summary. Standard-list
+/// targets run the two-turn tool probe whose pass publishes them; native
+/// targets answer one request.
 pub(crate) async fn test(shared: &Arc<Shared>, model: &str) -> RouterModelTest {
     let g = shared.current();
     let snap = snapshot(&g, "client_version=0.163.0").await;
@@ -20,30 +24,67 @@ pub(crate) async fn test(shared: &Arc<Shared>, model: &str) -> RouterModelTest {
         detail: detail.into(),
         tested_at: unix_ms(),
     };
-    let Some(row) = snap
-        .view
-        .models
-        .iter()
-        .find(|m| m.entry["slug"].as_str() == Some(model))
-    else {
+    let (Some(row), Some(targets)) = (snap.all.get(model), snap.targets.get(model)) else {
         return failure("model is absent from the current catalog");
     };
-    let Some(proof) = row
-        .sources
-        .iter()
-        .find(|s| s.layer == CatalogLayer::Synthesized)
-        .or_else(|| row.sources.iter().find(|s| s.provider != "builtin"))
-    else {
+    if targets.is_empty() {
         return failure("no provider listed this model");
+    }
+    let runs = targets.iter().map(|target| {
+        let name = row
+            .sources
+            .iter()
+            .find(|s| {
+                g.members
+                    .get(target.member)
+                    .is_some_and(|m| m.cfg.id == s.provider)
+            })
+            .map_or_else(
+                || g.members[target.member].cfg.name.clone(),
+                |s| s.provider_name.clone(),
+            );
+        let g = g.clone();
+        async move { (name, test_target(shared, &g, target).await) }
+    });
+    let reports = futures_util::future::join_all(runs).await;
+    // Publish passing evidence before another client refreshes /models.
+    snapshot(&g, "client_version=0.163.0").await;
+    let detail = if reports.len() == 1 {
+        reports[0].1.detail.clone()
+    } else {
+        reports
+            .iter()
+            .map(|(name, r)| format!("{name}: {}", r.detail))
+            .collect::<Vec<_>>()
+            .join("; ")
     };
-    let Some(member) = g.members.iter().position(|m| m.cfg.id == proof.provider) else {
-        return failure("provider is no longer configured");
+    RouterModelTest {
+        model: model.into(),
+        passed: reports.iter().all(|(_, r)| r.passed),
+        detail,
+        tested_at: unix_ms(),
+    }
+}
+
+/// One provider's test. Results are kept per member and upstream id, never
+/// per alias, so the bare id and its alias share one piece of evidence.
+async fn test_target(
+    shared: &Arc<Shared>,
+    g: &Arc<Generation>,
+    target: &super::Target,
+) -> RouterModelTest {
+    let model = target.upstream.as_str();
+    let member = target.member;
+    let failure = |detail: &str| RouterModelTest {
+        model: model.into(),
+        passed: false,
+        detail: detail.into(),
+        tested_at: unix_ms(),
     };
-    let standard = proof.layer == CatalogLayer::Synthesized;
-    if standard && cache::responses_protocol(&g, member).is_none() {
+    if target.standard && cache::responses_protocol(g, member).is_none() {
         return failure("no enabled protocol route for Responses; enable protocol conversion");
     }
-    let key = probe_key(member, &proof.upstream_id);
+    let key = probe_key(member, model);
     let slot = {
         lock(&g.merged_catalog.probes)
             .entry(key)
@@ -51,48 +92,42 @@ pub(crate) async fn test(shared: &Arc<Shared>, model: &str) -> RouterModelTest {
             .clone()
     };
     let mut result = slot.lock().await;
-    if standard
+    if target.standard
         && let Some(previous) = result.as_ref()
         && unix_ms().saturating_sub(previous.tested_at)
             < if previous.passed { 86_400_000 } else { 60_000 }
     {
-        let mut previous = previous.clone();
-        previous.model = model.into();
-        return previous;
+        return previous.clone();
     }
-    let attempted = if standard {
-        two_turns(shared, &g, member, &proof.upstream_id).await
+    let attempted = if target.standard {
+        two_turns(shared, g, member, model).await
     } else {
-        // Native models test the same public ingress used by Codex, including
-        // namespace selection, per-line failover and request recording.
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .build();
-        match client {
-            Ok(client) => {
-                let req = client.post(format!("http://127.0.0.1:{}/backend-api/codex/responses", shared.listen.port()))
-                    .bearer_auth(g.router_token.expose()).json(&json!({"model": model, "input": [{"role":"user","content":"Reply with OK."}],
-                        "instructions":"Reply briefly.", "stream":true,"store":false}));
-                send(req).await.map(|_| ())
+        // A native target answers one request on its own lines, through the
+        // same proxy path (conversion and response handling included).
+        let request = json!({"model": model, "input": [{"role":"user","content":"Reply with OK."}],
+            "instructions":"Reply briefly.", "stream":true, "store":false});
+        let mut outcome = Err("no provider line available".to_string());
+        for line in 0..g.members[member].lines.len() {
+            outcome = routed(shared, g, member, line, model, false, &request)
+                .await
+                .map(|_| ());
+            if outcome.is_ok() {
+                break;
             }
-            Err(_) => Err("could not initialize the local test client".into()),
         }
+        outcome
     };
     let report = RouterModelTest {
         model: model.into(),
         passed: attempted.is_ok(),
         detail: match attempted {
-            Ok(()) if standard => "Two-turn function call passed".into(),
+            Ok(()) if target.standard => "Two-turn function call passed".into(),
             Ok(()) => "Response completed through the local router".into(),
             Err(e) => e,
         },
         tested_at: unix_ms(),
     };
     *result = Some(report.clone());
-    drop(result);
-    // Publish the successful evidence before another client refreshes /models.
-    snapshot(&g, "client_version=0.163.0").await;
     report
 }
 
@@ -110,7 +145,7 @@ async fn two_turns(
         let input = json!([{"role":"user","content":"Call get_probe_value, then return only its exact result."}]);
         let request = json!({"model":model,"input":input,"tools":[tool],"tool_choice":{"type":"function","name":"get_probe_value"},
             "max_output_tokens":512,"stream":true,"store":false});
-        let first = routed(shared, g, member, line, model, &request).await;
+        let first = routed(shared, g, member, line, model, true, &request).await;
         let first = match first {
             Ok(v) => v,
             Err(e) => {
@@ -146,32 +181,13 @@ async fn two_turns(
         conversation.extend(output.iter().cloned());
         conversation.push(json!({"type":"function_call_output","call_id":call_id,"output":token}));
         let second = json!({"model":model,"input":conversation,"tools":[tool],"tool_choice":"auto","max_output_tokens":512,"stream":true,"store":false});
-        match routed(shared, g, member, line, model, &second).await {
+        match routed(shared, g, member, line, model, true, &second).await {
             Ok(answer) if output_text(&answer).contains(&token) => return Ok(()),
             Ok(_) => error = "probe response did not contain the tool's result".into(),
             Err(e) => error = e,
         }
     }
     Err(error)
-}
-
-async fn send(request: reqwest::RequestBuilder) -> Result<Value, String> {
-    tokio::time::timeout(Duration::from_secs(45), async {
-        let response = request
-            .send()
-            .await
-            .map_err(|_| "probe connection failed".to_string())?;
-        if !response.status().is_success() {
-            return Err(format!(
-                "probe returned HTTP {}",
-                response.status().as_u16()
-            ));
-        }
-        let bytes = cache::read_bounded(response).await?;
-        completed(&bytes)
-    })
-    .await
-    .map_err(|_| "probe timed out".to_string())?
 }
 
 fn output_text(value: &Value) -> String {
@@ -191,6 +207,7 @@ async fn routed(
     member: usize,
     line: usize,
     model: &str,
+    standard: bool,
     request: &Value,
 ) -> Result<Value, String> {
     tokio::time::timeout(Duration::from_secs(45), async {
@@ -200,6 +217,7 @@ async fn routed(
             member,
             line,
             model,
+            standard,
             Bytes::from(request.to_string()),
         )
         .await;

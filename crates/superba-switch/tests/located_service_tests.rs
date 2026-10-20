@@ -47,7 +47,7 @@ async fn catalog_is_saved_and_model_probe_holds_the_data_lock_until_the_reply() 
     set.settings.router.members.push(profile.id);
     profiles.save(&set).await.unwrap();
     let catalog = RouterCatalogSettings {
-        show_prefixed: false,
+        mode: superba_core::CatalogMode::Extended,
         visibility: [("provider/model".into(), true)].into(),
         ..Default::default()
     };

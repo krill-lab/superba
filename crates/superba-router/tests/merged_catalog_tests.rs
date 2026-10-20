@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use common::*;
 use serde_json::{Value, json};
-use superba_core::{CatalogLayer, CatalogReadiness, ModelOverride, RouterCatalogView};
-use superba_router::merged_catalog::{CatalogConfig, MemberCatalog, provider_slug};
+use superba_core::{CatalogLayer, CatalogMode, CatalogReadiness, ModelOverride, RouterCatalogView};
+use superba_router::merged_catalog::{CatalogConfig, MemberCatalog, domain_slug, provider_slug};
 use superba_router::{MemberKind, RouterConfig};
 
 fn native(id: &str) -> Value {
@@ -62,6 +62,11 @@ fn config(ups: &[(&str, &Upstream)]) -> RouterConfig {
             .collect(),
     );
     config.catalog = Some(CatalogConfig {
+        // Most tests check the pinned aliases; the mode tests set their own.
+        settings: superba_core::RouterCatalogSettings {
+            mode: CatalogMode::Prefixed,
+            ..Default::default()
+        },
         bundled: vec![native("gpt-test"), native("fallback")],
         members: ups
             .iter()
@@ -75,7 +80,6 @@ fn config(ups: &[(&str, &Upstream)]) -> RouterConfig {
                 )
             })
             .collect(),
-        ..Default::default()
     });
     config
 }
@@ -151,7 +155,13 @@ async fn merge_replaces_l0_whole_retains_speed_fields_and_reports_pending_source
     assert_eq!(pending.readiness, CatalogReadiness::Pending);
     assert_eq!(pending.entry["apply_patch_tool_type"], "freeform");
     assert_eq!(pending.entry["context_window"], 96000);
-    assert_eq!(pending.sources.len(), 2);
+    // One source per provider: the layer its metadata came from.
+    assert_eq!(pending.sources.len(), 1);
+    assert_eq!(pending.sources[0].layer, CatalogLayer::Synthesized);
+    assert_eq!(
+        pending.sources[0].readiness,
+        Some(CatalogReadiness::Pending)
+    );
     assert!(
         pending
             .sources
@@ -337,7 +347,7 @@ async fn overrides_affect_published_values_and_prefix_visibility_does_not_change
     let up = upstream(responder(200, 200, true)).await;
     let mut cfg = config(&[("krill", &up)]);
     let c = cfg.catalog.as_mut().unwrap();
-    c.settings.show_prefixed = false;
+    c.settings.mode = CatalogMode::Extended;
     c.members.get_mut("krill").unwrap().overrides.insert(
         "gpt-test".into(),
         ModelOverride {
@@ -374,11 +384,12 @@ async fn overrides_affect_published_values_and_prefix_visibility_does_not_change
             "gpt-test"
         );
     }
+    // An unknown namespace is refused; it never falls back to every provider.
     assert_eq!(
         r.post(None, r#"{"model":"unknown/gpt-test","input":"hello"}"#)
             .await
             .status(),
-        409
+        404
     );
     r.handle.shutdown();
 }
@@ -452,7 +463,7 @@ async fn model_and_admin_endpoints_require_their_own_tokens() {
 #[test]
 fn provider_names_are_ascii_unique_and_stable_across_priority_changes() {
     assert_eq!(provider_slug("  DeepSeek / Team A  "), "deepseek-team-a");
-    assert_eq!(provider_slug("中文"), "provider");
+    assert_eq!(provider_slug("中文"), "");
     let url = "http://127.0.0.1:1234/v1".parse().unwrap();
     let mut cfg = test_config(vec![
         member("b", MemberKind::Compatible, false, vec![line("l", url)]),
@@ -547,7 +558,7 @@ async fn settings_reload_preserves_probes_but_key_changes_invalidate_them() {
     };
     let task = tokio::spawn(server.serve());
     assert!(probe(&r, "deepseek-test").await.passed);
-    cfg.catalog.as_mut().unwrap().settings.show_prefixed = false;
+    cfg.catalog.as_mut().unwrap().settings.mode = CatalogMode::Extended;
     cfg.save(&paths).unwrap();
     assert_eq!(
         r.http
@@ -612,8 +623,9 @@ async fn visibility_override_can_reveal_models_hidden_upstream() {
             .unwrap()
             .clone()
     };
+    // The single row's setting applies to every alias; alias keys are not read.
     assert_eq!(entry("gpt-test")["visibility"], "list");
-    assert_eq!(entry("krill/gpt-test")["visibility"], "hide");
+    assert_eq!(entry("krill/gpt-test")["visibility"], "list");
     assert_eq!(
         entry("gpt-test")["service_tiers"],
         native("gpt-test")["service_tiers"]
@@ -655,4 +667,480 @@ async fn compatible_standard_provider_works_without_a_codex_catalog() {
         "deepseek-test"
     );
     r.handle.shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// Router model list modes (alpha.8): one row per model, the published set of
+// each mode, exact metadata reuse, pinned aliases and canonical overrides.
+// ---------------------------------------------------------------------------
+
+/// A complete Codex entry with its own window, reasoning levels and tiers.
+fn known(id: &str, window: u64) -> Value {
+    let mut entry = native(id);
+    entry["context_window"] = json!(window);
+    entry["supported_reasoning_levels"] =
+        json!([{"effort":"low","description":"Fast"},{"effort":"xhigh","description":"Deep"}]);
+    entry["apply_patch_tool_type"] = json!("freeform");
+    entry
+}
+
+/// Krill-like member: a Codex catalog with one model the installed Codex
+/// does not know. Office-like member: a standard list only.
+fn office_and_krill(krill: &Upstream, office: &Upstream, mode: CatalogMode) -> RouterConfig {
+    let mut cfg = test_config(vec![
+        member(
+            "krill",
+            MemberKind::Krill,
+            false,
+            vec![line("one", krill.base("/backend-api/codex"))],
+        ),
+        member(
+            "office",
+            MemberKind::Compatible,
+            false,
+            vec![line("one", office.base("/v1"))],
+        ),
+    ]);
+    cfg.catalog = Some(CatalogConfig {
+        settings: superba_core::RouterCatalogSettings {
+            mode,
+            ..Default::default()
+        },
+        bundled: vec![native("gpt-test"), known("gpt-5.4-nano", 400_000)],
+        members: [
+            (
+                "krill".to_string(),
+                MemberCatalog {
+                    name: "Krill".into(),
+                    ..Default::default()
+                },
+            ),
+            (
+                "office".to_string(),
+                MemberCatalog {
+                    name: "内网".into(),
+                    ..Default::default()
+                },
+            ),
+        ]
+        .into(),
+    });
+    cfg
+}
+
+fn office_reply(standard: Value) -> Mode {
+    Mode::PathReply(Arc::new(move |path, _, body| {
+        if path == "/v1/models" {
+            return (200, standard.clone());
+        }
+        let req: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+        let output = if let Some(value) = req["input"]
+            .as_array()
+            .and_then(|v| v.iter().find(|v| v["type"] == "function_call_output"))
+        {
+            json!([{"type":"message","role":"assistant","content":[{"type":"output_text","text":value["output"]}]}])
+        } else if req["tool_choice"]["type"] == "function" {
+            json!([{"type":"function_call","call_id":"call_test","name":"get_probe_value","arguments":"{}"}])
+        } else {
+            json!([{"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}])
+        };
+        (
+            200,
+            json!({"id":"resp_office","status":"completed","output":output}),
+        )
+    }))
+}
+
+fn krill_reply() -> Mode {
+    Mode::PathReply(Arc::new(|path, _, _| {
+        if path == "/backend-api/codex/models" {
+            return (
+                200,
+                json!({"models":[native("gpt-test"), known("gpt-l1-only", 600_000)]}),
+            );
+        }
+        if path == "/v1/models" {
+            return (200, json!({"data":[]}));
+        }
+        (
+            200,
+            json!({"id":"resp_krill","status":"completed","output":[
+                {"type":"message","role":"assistant","content":[{"type":"output_text","text":"OK"}]}]}),
+        )
+    }))
+}
+
+fn office_list() -> Value {
+    json!({"data":[{"id":"gpt-test"},{"id":"gpt-5.4-nano"},{"id":"gpt-l1-only"},
+        {"id":"deepseek-x"},{"id":"gpt-9-unknown"}]})
+}
+
+fn slugs_of(v: &Value) -> Vec<String> {
+    v["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["slug"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[tokio::test]
+async fn codex_mode_publishes_exactly_the_installed_codex_models_once() {
+    let krill = upstream(krill_reply()).await;
+    let office = upstream(office_reply(office_list())).await;
+    let r = start(office_and_krill(&krill, &office, CatalogMode::Codex)).await;
+    assert_eq!(slugs_of(&models(&r).await), ["gpt-5.4-nano", "gpt-test"]);
+    let view = report(&r).await;
+    let ids: Vec<_> = view.models.iter().map(|m| m.id().to_owned()).collect();
+    assert_eq!(ids, ["gpt-5.4-nano", "gpt-test"], "one row per model");
+    assert!(view.aliases.is_empty());
+    let row = view.model("gpt-test").unwrap();
+    let layers: Vec<_> = row
+        .sources
+        .iter()
+        .map(|s| (s.provider.as_str(), s.layer))
+        .collect();
+    assert_eq!(
+        layers,
+        [
+            ("krill", CatalogLayer::Codex),
+            ("office", CatalogLayer::StandardKnown)
+        ]
+    );
+    // Aliases are computed (the page shows them) but not published.
+    assert_eq!(row.sources[0].alias.as_deref(), Some("krill/gpt-test"));
+    assert_eq!(row.sources[1].alias.as_deref(), Some("p2/gpt-test"));
+    assert_eq!(view.settings.provider_slugs["office"], "p2");
+    // The mode decides what is offered, not what routes.
+    assert_eq!(
+        r.post(None, r#"{"model":"gpt-l1-only","input":"hello"}"#)
+            .await
+            .status(),
+        200
+    );
+    r.handle.shutdown();
+}
+
+#[tokio::test]
+async fn known_standard_ids_reuse_full_metadata_and_unknown_ids_get_family_budgets() {
+    let krill = upstream(krill_reply()).await;
+    let office = upstream(office_reply(office_list())).await;
+    let r = start(office_and_krill(&krill, &office, CatalogMode::Extended)).await;
+    let view = report(&r).await;
+    // L0 match: the installed Codex's complete entry, ready on a native endpoint.
+    let nano = view.model("gpt-5.4-nano").unwrap();
+    assert_eq!(nano.entry, known("gpt-5.4-nano", 400_000));
+    let office_nano = nano
+        .sources
+        .iter()
+        .find(|s| s.provider == "office")
+        .unwrap();
+    assert_eq!(office_nano.layer, CatalogLayer::StandardKnown);
+    assert_eq!(office_nano.readiness, Some(CatalogReadiness::Ready));
+    assert!(!nano.estimated());
+    // L1 match from another provider: its metadata, but this provider still
+    // has to pass its own tool probe.
+    let l1 = view.model("gpt-l1-only").unwrap();
+    assert_eq!(l1.entry["context_window"], 600_000);
+    assert_eq!(l1.readiness, CatalogReadiness::Ready);
+    let office_l1 = l1.sources.iter().find(|s| s.provider == "office").unwrap();
+    assert_eq!(office_l1.layer, CatalogLayer::StandardKnown);
+    assert_eq!(office_l1.readiness, Some(CatalogReadiness::Pending));
+    // Unknown ids: family operating budgets, never written as a maximum.
+    for (id, window) in [("gpt-9-unknown", 272_000), ("deepseek-x", 64_000)] {
+        let row = view.model(id).unwrap();
+        assert_eq!(row.entry["context_window"], window, "{id}");
+        assert!(row.entry.get("max_context_window").is_none(), "{id}");
+        assert!(row.estimated(), "{id}");
+        assert_eq!(row.readiness, CatalogReadiness::Pending);
+    }
+    let published = slugs_of(&models(&r).await);
+    assert_eq!(published, ["gpt-5.4-nano", "gpt-l1-only", "gpt-test"]);
+    // A passing test publishes a pending model; still no aliases.
+    let test = probe(&r, "deepseek-x").await;
+    assert!(test.passed, "{}", test.detail);
+    let published = slugs_of(&models(&r).await);
+    assert!(published.contains(&"deepseek-x".to_owned()));
+    assert!(published.iter().all(|s| !s.contains('/')));
+    r.handle.shutdown();
+}
+
+#[tokio::test]
+async fn prefixed_mode_adds_pinned_aliases_without_extra_rows() {
+    let krill = upstream(krill_reply()).await;
+    let office = upstream(office_reply(office_list())).await;
+    let r = start(office_and_krill(&krill, &office, CatalogMode::Prefixed)).await;
+    let extended_rows = 5;
+    let view = report(&r).await;
+    assert_eq!(view.models.len(), extended_rows, "aliases are not rows");
+    let published = models(&r).await;
+    let slugs = slugs_of(&published);
+    for alias in [
+        "krill/gpt-test",
+        "p2/gpt-test",
+        "krill/gpt-5.4-nano",
+        "p2/gpt-5.4-nano",
+        "krill/gpt-l1-only",
+    ] {
+        assert!(slugs.contains(&alias.to_owned()), "{alias}: {slugs:?}");
+        assert!(view.aliases.contains_key(alias), "{alias}");
+    }
+    // Unverified targets get no alias until their own test passes.
+    for missing in ["p2/gpt-l1-only", "p2/deepseek-x", "deepseek-x"] {
+        assert!(!slugs.contains(&missing.to_owned()), "{missing}");
+    }
+    let entry = |id: &str| {
+        published["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["slug"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(entry("krill/gpt-test")["display_name"], "GPT-TEST · Krill");
+    assert_eq!(entry("p2/gpt-test")["display_name"], "GPT-TEST · 内网");
+    // The alias keeps everything else of its provider's entry.
+    let mut expected = native("gpt-test");
+    expected["slug"] = json!("krill/gpt-test");
+    expected["display_name"] = json!("GPT-TEST · Krill");
+    assert_eq!(entry("krill/gpt-test"), expected);
+    r.handle.shutdown();
+}
+
+#[tokio::test]
+async fn bare_ids_fail_over_in_member_order_and_aliases_stay_pinned() {
+    let krill = upstream(krill_reply()).await;
+    let office = upstream(office_reply(office_list())).await;
+    let r = start(office_and_krill(&krill, &office, CatalogMode::Prefixed)).await;
+    models(&r).await;
+    krill.set(Mode::Json(503, "{}"));
+    let office_posts = || office.seen().iter().filter(|s| s.method == "POST").count();
+    assert_eq!(
+        r.post(None, r#"{"model":"krill/gpt-test","input":"hi"}"#)
+            .await
+            .status(),
+        502
+    );
+    assert_eq!(office_posts(), 0, "a pinned alias never fails over");
+    assert_eq!(
+        r.post(None, r#"{"model":"gpt-test","input":"hi"}"#)
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        office_posts(),
+        1,
+        "the bare id fails over to the next member"
+    );
+    assert_eq!(
+        r.post(None, r#"{"model":"p2/gpt-test","input":"hi"}"#)
+            .await
+            .status(),
+        200
+    );
+    let last = office.seen().last().unwrap().clone();
+    assert_eq!(last.path, "/v1/responses");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&last.body).unwrap()["model"],
+        "gpt-test"
+    );
+    r.handle.shutdown();
+}
+
+#[tokio::test]
+async fn canonical_overrides_apply_to_the_bare_id_and_every_alias() {
+    let krill = upstream(krill_reply()).await;
+    let office = upstream(office_reply(office_list())).await;
+    let mut cfg = office_and_krill(&krill, &office, CatalogMode::Prefixed);
+    let catalog = cfg.catalog.as_mut().unwrap();
+    // A provider's own setting is the target default ...
+    catalog.members.get_mut("krill").unwrap().overrides.insert(
+        "gpt-test".into(),
+        ModelOverride {
+            context_window: Some(64_000),
+            ..Default::default()
+        },
+    );
+    // ... and the single row's explicit setting wins everywhere.
+    catalog.settings.overrides.insert(
+        "gpt-test".into(),
+        ModelOverride {
+            context_window: Some(100_000),
+            hidden: true,
+            ..Default::default()
+        },
+    );
+    let r = start(cfg).await;
+    let published = models(&r).await;
+    for id in ["gpt-test", "krill/gpt-test", "p2/gpt-test"] {
+        let entry = published["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["slug"] == id)
+            .unwrap();
+        assert_eq!(entry["context_window"], 100_000, "{id}");
+        assert_eq!(entry["visibility"], "hide", "{id}");
+    }
+    r.handle.shutdown();
+}
+
+#[tokio::test]
+async fn single_provider_gets_an_alias_and_real_slash_ids_win_over_generated_ones() {
+    let office = upstream(office_reply(
+        json!({"data":[{"id":"gpt-test"},{"id":"p1/gpt-test"}]}),
+    ))
+    .await;
+    let mut cfg = test_config(vec![member(
+        "office",
+        MemberKind::Compatible,
+        false,
+        vec![line("one", office.base("/v1"))],
+    )]);
+    cfg.catalog = Some(CatalogConfig {
+        settings: superba_core::RouterCatalogSettings {
+            mode: CatalogMode::Prefixed,
+            ..Default::default()
+        },
+        bundled: vec![native("gpt-test")],
+        members: [(
+            "office".to_string(),
+            MemberCatalog {
+                name: "内网".into(),
+                ..Default::default()
+            },
+        )]
+        .into(),
+    });
+    let r = start(cfg).await;
+    let view = report(&r).await;
+    let row = view.model("gpt-test").unwrap();
+    // The generated alias would shadow a real upstream id: not generated.
+    assert_eq!(row.sources[0].alias, None);
+    let real = view.model("p1/gpt-test").unwrap();
+    assert_eq!(real.sources[0].upstream_id, "p1/gpt-test");
+    assert_eq!(real.sources[0].layer, CatalogLayer::Synthesized);
+    assert!(view.aliases.is_empty());
+    r.handle.shutdown();
+    // Without the collision a single provider still gets its alias.
+    let office = upstream(office_reply(json!({"data":[{"id":"gpt-test"}]}))).await;
+    let mut cfg2 = test_config(vec![member(
+        "office",
+        MemberKind::Compatible,
+        false,
+        vec![line("one", office.base("/v1"))],
+    )]);
+    let mut catalog = CatalogConfig {
+        bundled: vec![native("gpt-test")],
+        ..Default::default()
+    };
+    catalog.settings.mode = CatalogMode::Prefixed;
+    cfg2.catalog = Some(catalog);
+    let r = start(cfg2).await;
+    assert!(slugs_of(&models(&r).await).contains(&"office/gpt-test".to_owned()));
+    r.handle.shutdown();
+}
+
+#[tokio::test]
+async fn a_canonical_test_checks_each_provider_and_says_which() {
+    let krill = upstream(krill_reply()).await;
+    let office = upstream(office_reply(office_list())).await;
+    let r = start(office_and_krill(&krill, &office, CatalogMode::Extended)).await;
+    let test = probe(&r, "gpt-l1-only").await;
+    assert!(test.passed, "{}", test.detail);
+    assert!(
+        test.detail.contains("Krill:") && test.detail.contains("内网:"),
+        "{}",
+        test.detail
+    );
+    // The office target passed its tool probe: it is ready now.
+    let view = report(&r).await;
+    let office_l1 = view
+        .model("gpt-l1-only")
+        .unwrap()
+        .sources
+        .iter()
+        .find(|s| s.provider == "office")
+        .unwrap()
+        .clone();
+    assert_eq!(office_l1.readiness, Some(CatalogReadiness::Ready));
+    // A pinned alias tests its provider only.
+    let before = krill.seen().len();
+    assert!(probe(&r, "p2/gpt-test").await.passed);
+    assert_eq!(krill.seen().len(), before);
+    r.handle.shutdown();
+}
+
+#[test]
+fn slugs_use_the_saved_value_an_ascii_name_the_domain_then_a_number() {
+    let at = |url: &str| line("l", url.parse().unwrap());
+    let mut cfg = test_config(vec![
+        member(
+            "a",
+            MemberKind::Compatible,
+            false,
+            vec![at("https://api.foo.com/v1")],
+        ),
+        member(
+            "b",
+            MemberKind::Compatible,
+            false,
+            vec![at("http://10.0.0.7:8080/v1")],
+        ),
+        member(
+            "c",
+            MemberKind::Compatible,
+            false,
+            vec![at("https://llm.bar.com.cn/v1")],
+        ),
+        member(
+            "d",
+            MemberKind::Compatible,
+            false,
+            vec![at("https://api.baz.co.uk/v1")],
+        ),
+        member(
+            "e",
+            MemberKind::Compatible,
+            false,
+            vec![at("https://api.foo.com/v1")],
+        ),
+    ]);
+    for m in &mut cfg.members {
+        m.name = "内网".into();
+    }
+    let mut c = CatalogConfig::default();
+    let slugs = c.slugs(&cfg);
+    assert_eq!(slugs["a"], "foo");
+    assert_eq!(slugs["b"], "p2", "an IP address has no domain");
+    assert_eq!(slugs["c"], "bar");
+    assert_eq!(slugs["d"], "baz");
+    assert_eq!(slugs["e"], "foo-2");
+    // An ASCII name comes first; a saved slug before everything.
+    cfg.members[0].name = "My Relay".into();
+    c.settings
+        .provider_slugs
+        .insert("b".into(), "office".into());
+    // alpha.7's placeholder for a name without ASCII letters is not kept.
+    c.settings
+        .provider_slugs
+        .insert("c".into(), "provider".into());
+    let slugs = c.slugs(&cfg);
+    assert_eq!(slugs["a"], "my-relay");
+    assert_eq!(slugs["b"], "office");
+    assert_eq!(slugs["c"], "bar");
+    assert_eq!(
+        domain_slug(&"http://localhost:3000/v1".parse().unwrap()),
+        None
+    );
+    assert_eq!(
+        domain_slug(&"https://xn--fiq228c.com/v1".parse().unwrap()),
+        None
+    );
+    assert_eq!(
+        domain_slug(&"https://api.deepseek.com/v1".parse().unwrap()).as_deref(),
+        Some("deepseek")
+    );
 }
