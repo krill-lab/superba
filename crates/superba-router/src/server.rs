@@ -142,6 +142,7 @@ impl RouterServer {
             claude: crate::claude::ClaudeState::default(),
             openai: crate::openai::OpenAiState::default(),
             compaction_proxy,
+            local_routes: Mutex::new(BTreeMap::new()),
         });
         shared.apply_stats(shared.current().config.stats.as_ref());
         Ok(Self {
@@ -647,6 +648,13 @@ async fn dispatch(
         }
         return admin::handle(shared, req).await;
     }
+    // ChatGPT backend calls besides model traffic (PAT router mode) are
+    // answered here and never reach a member (crate::local_backend).
+    if !crate::account::handles(&path)
+        && let Some(route) = crate::local_backend::route(req.method(), &path)
+    {
+        return crate::local_backend::answer(&shared, req, route).await;
+    }
     let claude = crate::claude::ingress_rest(&path);
     let openai = crate::openai::ingress_rest(&path);
     let gemini = crate::gemini::ingress_rest(&path);
@@ -784,7 +792,9 @@ async fn dispatch(
     } else if claude.is_some() {
         crate::claude::handle(shared, req, rest, admission).await
     } else if let Some(path) = account {
-        let answer = crate::account::response(req.method(), &path);
+        crate::local_backend::note(&shared, crate::account::label(&path));
+        let mut answer = crate::account::response(req.method(), &path);
+        crate::forward::set_route(answer.headers_mut(), crate::local_backend::LOCAL_ROUTE);
         drain(
             req.into_body(),
             shared.current().config.tuning.max_body_bytes,

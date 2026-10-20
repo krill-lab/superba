@@ -64,6 +64,13 @@
 //!   upstream pool; a local shortage (every admission in use, or "too many open
 //!   files") is answered 503 `local_router_busy` and never counted against a
 //!   line.
+//! - **ChatGPT backend side calls** (`local_backend`): in PAT router mode
+//!   Codex and the ChatGPT app send the router their plugin service
+//!   (`/backend-api/ps/*`, the hosted apps MCP server), usage, analytics,
+//!   telemetry, profile and settings calls. The router answers them itself
+//!   (minimal valid JSON or ChatGPT's 404) and never forwards them; below
+//!   `/backend-api/codex` only model traffic goes to members. The admin
+//!   status counts them per route.
 //! - **Admin API** (`/_superba/v1/*`, per-instance token in `runtime.json`):
 //!   status and metrics ([`status`]), reload, probe, shutdown; [`client`] calls it.
 //! - **Request log and stats line** ([`stats`], [`store`]; only while the
@@ -132,6 +139,7 @@ mod account;
 mod admin;
 mod catalog;
 mod forward;
+mod local_backend;
 mod probe;
 mod proxy;
 mod server;

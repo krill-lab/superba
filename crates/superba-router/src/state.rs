@@ -296,6 +296,7 @@ pub(crate) struct Totals {
     pub unavailable: AtomicU64,
     pub rejected: AtomicU64,
     pub ws_refused: AtomicU64,
+    pub local_answers: AtomicU64,
 }
 
 /// State shared by every connection.
@@ -328,6 +329,9 @@ pub(crate) struct Shared {
     /// refused).
     pub openai: crate::openai::OpenAiState,
     pub compaction_proxy: crate::compaction_proxy::Keys,
+    /// ChatGPT backend calls answered locally, by route
+    /// ([`crate::local_backend`]).
+    pub local_routes: Mutex<std::collections::BTreeMap<&'static str, u64>>,
 }
 
 impl Shared {

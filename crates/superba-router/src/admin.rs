@@ -297,6 +297,7 @@ pub(crate) fn status(shared: &Shared) -> RouterStatus {
             unavailable: t.unavailable.load(Ordering::Relaxed),
             rejected: t.rejected.load(Ordering::Relaxed),
             ws_refused: t.ws_refused.load(Ordering::Relaxed),
+            local_answers: t.local_answers.load(Ordering::Relaxed),
         },
         sticky_sessions,
         recent: lock(&shared.events).iter().cloned().collect(),
@@ -305,6 +306,10 @@ pub(crate) fn status(shared: &Shared) -> RouterStatus {
         wsl_listen: lock(&shared.wsl_bound)
             .iter()
             .map(ToString::to_string)
+            .collect(),
+        local_answers: lock(&shared.local_routes)
+            .iter()
+            .map(|(route, n)| ((*route).to_owned(), *n))
             .collect(),
     }
 }
