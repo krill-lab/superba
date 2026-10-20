@@ -88,9 +88,12 @@ fn is_clap_file(text: &str) -> bool {
     text.contains("use clap::Command") || text.contains("use clap::{") && text.contains("Command")
 }
 
-/// PowerShell may only be named by the hidden, cached `Get-AppxPackage` fallback.
+/// PowerShell may only be named by the hidden, cached `Get-AppxPackage` fallback, and by the
+/// notification hook's command line: a string written into the tools' config files for them to
+/// run, never a process Superba spawns itself.
 fn is_allowed_shell(file: &Path) -> bool {
     file.ends_with("superba-appctl/src/install.rs")
+        || file.ends_with("superba-notify/src/hooks/windows.rs")
 }
 
 #[test]
