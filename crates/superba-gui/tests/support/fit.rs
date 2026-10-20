@@ -46,6 +46,8 @@ pub struct FitReport {
     pub texts: Vec<String>,
     /// Every text shape drawn with its rectangle and whether it was elided.
     pub text_shapes: Vec<(String, Rect, bool)>,
+    /// The clip rectangle of each of [`Self::text_shapes`] (same order).
+    pub text_clips: Vec<Rect>,
     /// Actions the page returned in the second frame.
     pub actions: Vec<Action>,
 }
@@ -67,6 +69,19 @@ impl FitReport {
             .iter()
             .filter(|(_, r, _)| r.max.x > self.rect.max.x + 0.5)
             .map(|(t, _, _)| t.as_str())
+            .collect()
+    }
+
+    /// The texts that can be seen: each text's rectangle cut to its clip
+    /// rectangle, without the texts clipped away entirely.
+    pub fn visible_texts(&self) -> Vec<(&str, Rect)> {
+        self.text_shapes
+            .iter()
+            .zip(&self.text_clips)
+            .filter_map(|((t, r, _), clip)| {
+                let v = r.intersect(*clip);
+                (v.width() > 0.5 && v.height() > 0.5).then_some((t.as_str(), v))
+            })
             .collect()
     }
 
@@ -116,6 +131,7 @@ pub fn render_fit_min_height(
         scroll_areas: 0,
         texts: Vec::new(),
         text_shapes: Vec::new(),
+        text_clips: Vec::new(),
         actions: Vec::new(),
     };
     for frame in 0..2 {
@@ -176,6 +192,12 @@ pub fn render_fit_min_height(
                     )),
                     _ => None,
                 })
+                .collect();
+            report.text_clips = output
+                .shapes
+                .iter()
+                .filter(|s| matches!(s.shape, egui::Shape::Text(_)))
+                .map(|s| s.clip_rect)
                 .collect();
         }
         output.drop_without_applying_deltas();

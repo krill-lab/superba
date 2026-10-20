@@ -31,6 +31,19 @@ fn row(t: &Tree, name: &str) -> egui::accesskit::NodeId {
         })
         .unwrap_or_else(|| panic!("missing row {name}: {}", t.dump()))
 }
+/// The provider's models arrived: the default model shows one of them.
+fn models_loaded(t: &Tree) -> bool {
+    t.with_role(Role::ComboBox)
+        .into_iter()
+        .any(|id| t.node(id).value().is_some_and(|v| v.starts_with("gpt-")))
+}
+/// Open the model chooser of the selected tool and wait for `model`.
+fn open_chooser(h: &mut AppHarness, tr: &Tr, model: &str) -> Tree {
+    h.click(Some(Role::Button), &tr.t("tools.choose_models"));
+    h.until("model chooser", |t| {
+        t.find(Some(Role::CheckBox), model).is_some()
+    })
+}
 #[test]
 fn eight_rows_and_controls_are_named_in_both_languages_and_sizes() {
     for locale in [Locale::ZhCn, Locale::En] {
@@ -39,7 +52,7 @@ fn eight_rows_and_controls_are_named_in_both_languages_and_sizes() {
         let mut h = AppHarness::new(svc.clone(), locale, Page::Tools);
         for width in [1280.0, 960.0] {
             h.resize([width, if width == 960.0 { 640.0 } else { 800.0 }]);
-            let t = h.until("tool model list", |t| t.has("gpt-6-astra"));
+            let t = h.until("tool model list", models_loaded);
             for name in [
                 "Codex",
                 "Claude Code",
@@ -72,19 +85,25 @@ fn drafts_survive_row_changes_and_writes_require_the_review_confirmation() {
     let svc = fake();
     let tr = Tr::new(Locale::En);
     let mut h = AppHarness::new(svc.clone(), Locale::En, Page::Tools);
-    let t = h.until("models", |t| t.has("gpt-6-astra"));
+    h.until("models", models_loaded);
+    let t = open_chooser(&mut h, &tr, "gpt-6-astra");
     let model = t.find(Some(Role::CheckBox), "gpt-6-astra").unwrap();
     h.click_id(model);
+    h.click(Some(Role::Button), &tr.t("tools.done"));
     assert_eq!(svc.harness_counts(), (0, 0));
     let t = h.frame();
     h.click_id(row(&t, "pi"));
     let t = h.frame();
     h.click_id(row(&t, "opencode"));
-    let t = h.until("draft retained", |t| {
-        t.find(Some(Role::CheckBox), "gpt-6-astra").is_some()
-    });
+    h.until("opencode", models_loaded);
+    let t = open_chooser(&mut h, &tr, "gpt-6-astra");
     let node = t.node(t.find(Some(Role::CheckBox), "gpt-6-astra").unwrap());
-    assert_eq!(node.toggled(), Some(egui::accesskit::Toggled::False));
+    assert_eq!(
+        node.toggled(),
+        Some(egui::accesskit::Toggled::False),
+        "the draft survives switching rows"
+    );
+    h.click(Some(Role::Button), &tr.t("tools.done"));
     h.click(Some(Role::Button), &tr.t("tools.diff"));
     let t = h.until("review", |t| t.has(&tr.t("tools.review_apply")));
     assert!(t.has(&tr.t("tools.take_over")), "{}", t.dump());
@@ -110,14 +129,14 @@ fn model_failure_is_visible_and_fetch_models_retries() {
     });
     svc.fail_harness_models(false);
     h.click(Some(Role::Button), "Fetch models");
-    h.until("retry models", |t| t.has("gpt-6-astra"));
+    h.until("retry models", models_loaded);
     assert_eq!(svc.harness_counts(), (0, 0));
 }
 #[test]
 fn summaries_offer_their_own_pages_and_no_tool_apply() {
     let tr = Tr::new(Locale::En);
     let mut h = AppHarness::new(fake(), Locale::En, Page::Tools);
-    h.until("loaded", |t| t.has("gpt-6-astra"));
+    h.until("loaded", models_loaded);
     for (name, key) in [
         ("Codex", "tools.open_codex"),
         ("Claude Code", "tools.open_claude"),
@@ -179,7 +198,7 @@ fn dark_theme_preserves_accessible_tool_names() {
             ..Default::default()
         },
     );
-    let t = h.until("tools", |t| t.has("gpt-6-astra"));
+    let t = h.until("tools", models_loaded);
     assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
 }
 
@@ -189,7 +208,7 @@ fn gemini_row_names_its_route_conversion_and_shared_files() {
         let svc = fake();
         svc.routed_tool_fixture(HarnessId::Gemini, true);
         let mut h = AppHarness::new(svc.clone(), locale, Page::Tools);
-        let t = h.until("loaded", |t| t.has("gpt-6-astra"));
+        let t = h.until("loaded", models_loaded);
         h.click_id(row(&t, "Gemini CLI"));
         let translated = if locale == Locale::ZhCn {
             "经协议转换"
@@ -202,5 +221,29 @@ fn gemini_row_names_its_route_conversion_and_shared_files() {
         assert!(t.has_containing(".gemini/.env"));
         assert!(t.unnamed().is_empty());
         assert_eq!(svc.harness_counts(), (0, 0));
+    }
+}
+
+#[test]
+fn arrow_keys_move_the_selection_one_row_at_a_time() {
+    let mut h = AppHarness::new(fake(), Locale::En, Page::Tools);
+    let t = h.until("loaded", models_loaded);
+    let codex = row(&t, "Codex");
+    h.act(codex, egui::accesskit::Action::Focus);
+    h.settle();
+    let names = ["Claude Code", "dsh", "opencode", "pi"];
+    for name in names {
+        let t = h.key(egui::Key::ArrowDown);
+        let selected: Vec<_> = t
+            .with_role(Role::ListItem)
+            .into_iter()
+            .filter(|id| t.node(*id).is_selected() == Some(true))
+            .filter_map(|id| t.name(id))
+            .collect();
+        assert_eq!(selected.len(), 1, "{selected:?}");
+        assert!(
+            selected[0].starts_with(&format!("{name},")),
+            "{name}: {selected:?}"
+        );
     }
 }

@@ -2,10 +2,17 @@
 //! drafts until Apply; merely following Codex never writes a tool's files.
 pub mod detail;
 pub mod files;
+pub mod form;
 pub mod list;
+pub mod models;
 
 use super::{Action, Cx, Page, PageStatus, error_text, page_header};
-use crate::design::widgets::{Button, PendingAction, PendingBar, PendingLabels, Text};
+use crate::design::icons::Icon;
+use crate::design::layout::{self, Track};
+use crate::design::tokens::{size, space};
+use crate::design::widgets::{
+    Button, PendingAction, PendingBar, PendingLabels, Status, StatusDot, Text,
+};
 use crate::pages::shared::loading::Latest;
 use crate::runtime::{ReadTask, task};
 use std::collections::BTreeMap;
@@ -86,10 +93,10 @@ pub struct State {
     pub models: BTreeMap<ProfileId, ModelList>,
     /// Model load (only the latest provider may answer).
     pub model_load: Latest<ProfileId, ModelList>,
-    /// Model search.
+    /// Model search in the chooser dialog.
     pub search: String,
-    /// Model page.
-    pub model_page: usize,
+    /// The model chooser dialog is open.
+    pub models_open: bool,
     /// Preview before a write, with secrets masked by the service.
     pub plan: Option<HarnessPlan>,
     plan_task: Option<ReadTask<HarnessPlan>>,
@@ -133,7 +140,6 @@ impl State {
             self.drafts.insert(h, settings);
         }
         self.preview = None;
-        self.model_page = 0;
     }
     /// An apply or plan is running.
     pub fn busy(&self) -> bool {
@@ -295,7 +301,91 @@ pub fn provider(cx: &Cx<'_>, settings: &HarnessSettings) -> Option<ProfileId> {
         .clone()
         .or_else(|| cx.data.active_profile().map(|p| p.id.clone()))
 }
-/// Draw the tools page and its sticky pending bar.
+/// What a tool's list row, header badge and footer say about it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolState {
+    /// Nothing applied and no draft.
+    NotConfigured,
+    /// A draft, or applied entries that differ from the settings (following
+    /// Codex after a provider switch).
+    Pending,
+    /// Someone changed entries Superba manages since it wrote them.
+    Changed,
+    /// A configuration file cannot be read or is not valid.
+    Invalid,
+    /// Applied and in step with the settings.
+    Applied,
+}
+
+impl ToolState {
+    /// The state from its facts, most urgent first: an invalid file, changed
+    /// entries, a draft or stale entries, applied, nothing. Entries a first
+    /// apply would write do not make a tool "pending" before anything was applied.
+    pub fn of(applied: bool, draft: bool, out_of_sync: bool, drift: bool, invalid: bool) -> Self {
+        if invalid {
+            Self::Invalid
+        } else if drift {
+            Self::Changed
+        } else if draft || (applied && out_of_sync) {
+            Self::Pending
+        } else if applied {
+            Self::Applied
+        } else {
+            Self::NotConfigured
+        }
+    }
+
+    /// Dot and badge status.
+    pub fn status(self) -> Status {
+        match self {
+            Self::NotConfigured => Status::Idle,
+            Self::Pending | Self::Changed | Self::Invalid => Status::Warn,
+            Self::Applied => Status::Ok,
+        }
+    }
+
+    /// i18n key of the label.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::NotConfigured => "tools.not_configured",
+            Self::Pending => "tools.pending_short",
+            Self::Changed => "tools.changed",
+            Self::Invalid => "tools.invalid",
+            Self::Applied => "tools.applied",
+        }
+    }
+}
+
+impl State {
+    /// The state of tool `h` from its summary, saved view and draft.
+    pub fn tool_state(&self, cx: &Cx<'_>, h: HarnessId) -> ToolState {
+        let active = cx.data.active_profile().map(|p| &p.id);
+        let summary = self.summaries.iter().find(|s| s.harness == h);
+        let view = self.views.get(&h);
+        let applied =
+            summary.is_some_and(|s| s.applied) || view.is_some_and(|v| v.applied.is_some());
+        let follows_changed = self.settings(h).provider.is_none()
+            && summary.is_some_and(|s| s.applied && s.applied_provider.as_ref() != active);
+        let out_of_sync = follows_changed || view.is_some_and(|v| !v.pending.is_empty());
+        let drift = summary.is_some_and(|s| s.drift > 0)
+            || view.is_some_and(|v| v.applied.as_ref().is_some_and(|a| !a.drift.is_empty()));
+        let invalid = view.is_some_and(|v| v.files.iter().any(|f| !f.status.writable()));
+        ToolState::of(
+            applied,
+            self.drafts.contains_key(&h),
+            out_of_sync,
+            drift,
+            invalid,
+        )
+    }
+}
+
+/// Width of the tool list: narrower when the page is.
+pub fn rail_width(page_width: f32) -> f32 {
+    if page_width >= 930.0 { 252.0 } else { 206.0 }
+}
+
+/// Draw the tools page: the list, the detail and, for a tool, its footer.
 pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     state.poll(cx);
     if state.busy()
@@ -308,7 +398,14 @@ pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
         ui.ctx().request_repaint_after(Duration::from_millis(60));
     }
     page_header(ui, cx, Page::Tools, |ui| {
-        if ui.add(Button::ghost(cx.tr.t("tools.reload"))).clicked() {
+        if ui
+            .add(
+                Button::ghost(cx.tr.t("tools.reload"))
+                    .icon(Icon::Refresh)
+                    .small(),
+            )
+            .clicked()
+        {
             state.reload(cx);
         }
     });
@@ -319,87 +416,142 @@ pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
         }
         return;
     }
-    let rect = ui.available_rect_before_wrap();
-    let body = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.max.y - 56.0));
-    let rail = if rect.width() >= 930.0 { 252.0 } else { 206.0 };
+    let body = ui.available_rect_before_wrap();
+    let tool = state.selected.harness();
+    let tracks: &[Track] = if tool.is_some() {
+        &[Track::Fill, Track::Fixed(size::FOOTER)]
+    } else {
+        &[Track::Fill]
+    };
+    let rects = layout::row_rects(body, tracks, space::S);
     let rows = list::rows(cx, state);
     let selected = state.selected;
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body).id_salt("tools-body"));
     let mut detail_out = Vec::new();
-    let (pick, _) = crate::design::layout::rail_split_with_id(
-        &mut child,
-        rail,
-        ("tool-detail", selected),
-        |ui| list::show(ui, cx, &rows, selected, out),
-        |ui| detail::show(ui, cx, state, &mut detail_out),
-    );
+    let (pick, _) = layout::fixed(ui, rects[0], |ui| {
+        layout::rail_split_with_id(
+            ui,
+            rail_width(body.width()),
+            ("tool-detail", selected),
+            |ui| {
+                // The list scrolls on its own when the window is short (960x640),
+                // so the footer stays in view.
+                egui::ScrollArea::vertical()
+                    .id_salt("tool-list")
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| list::show(ui, cx, &rows, selected, out))
+                    .inner
+            },
+            |ui| detail::show(ui, cx, state, &mut detail_out),
+        )
+    });
     out.extend(detail_out);
     if let Some(pick) = pick {
         state.selected = pick;
         state.preview = None;
         state.search.clear();
-        state.model_page = 0;
+        state.models_open = false;
     }
-    ui.allocate_rect(body, egui::Sense::hover());
-    ui.separator();
-    ui.horizontal_wrapped(|ui| {
-        if let Some(h) = state.selected.harness() {
-            let pending = state
-                .preview
-                .as_ref()
-                .filter(|v| v.harness == h)
-                .or_else(|| state.views.get(&h))
-                .map_or(0, |v| v.pending.len())
-                .max(usize::from(state.drafts.contains_key(&h)));
-            if ui
-                .add(
-                    Button::ghost(cx.tr.t("tools.restore"))
-                        .small()
-                        .enabled(!state.busy()),
-                )
-                .clicked()
+    if let (Some(h), Some(rect)) = (tool, rects.get(1)) {
+        ui.painter().hline(
+            rect.x_range(),
+            rect.min.y - space::S / 2.0,
+            egui::Stroke::new(1.0, cx.pal.border),
+        );
+        layout::fixed(ui, *rect, |ui| footer(ui, cx, state, h));
+    }
+    models::chooser(ui, cx, state, out);
+    detail::review(ui, cx, state);
+}
+
+/// What the footer says about a tool without a draft.
+pub fn footer_text(state: ToolState, pending: usize) -> (Status, &'static str) {
+    match state {
+        ToolState::NotConfigured => (Status::Idle, "tools.footer_not_applied"),
+        ToolState::Pending if pending > 0 => (Status::Warn, "tools.footer_out_of_sync"),
+        ToolState::Pending => (Status::Warn, "tools.footer_follow"),
+        ToolState::Applied => (Status::Ok, "tools.footer_in_sync"),
+        ToolState::Changed => (Status::Warn, "tools.footer_drift"),
+        ToolState::Invalid => (Status::Warn, "tools.footer_invalid"),
+    }
+}
+
+/// Restore on the left; the pending bar (a draft) or the tool's state and
+/// Apply on the right.
+fn footer(ui: &mut egui::Ui, cx: &Cx<'_>, state: &mut State, h: HarnessId) {
+    let busy = state.busy();
+    let tool_state = state.tool_state(cx, h);
+    let applied = state.views.get(&h).is_some_and(|v| v.applied.is_some())
+        || state.summaries.iter().any(|s| s.harness == h && s.applied);
+    let draft = state.drafts.contains_key(&h);
+    let pending = state
+        .preview
+        .as_ref()
+        .filter(|v| v.harness == h)
+        .or_else(|| state.views.get(&h))
+        .map_or(0, |v| v.pending.len());
+    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        ui.spacing_mut().item_spacing.x = space::S;
+        if ui
+            .add(
+                Button::ghost(cx.tr.t("tools.restore"))
+                    .icon(Icon::Restore)
+                    .small()
+                    .enabled(applied && !busy),
+            )
+            .on_hover_text(cx.tr.t("tools.restore_tip"))
+            .clicked()
+        {
+            state.start_plan(cx, HarnessPlanKind::Restore);
+        }
+        if draft {
+            let count = pending.max(1);
+            match PendingBar::new(
+                count,
+                PendingLabels {
+                    count: cx.tr.f("tools.pending", &[("n", &count)]),
+                    diff: cx.tr.t("tools.diff"),
+                    discard: cx.tr.t("tools.discard"),
+                    save: cx.tr.t("tools.apply"),
+                },
+            )
+            .saving(busy)
+            .show(ui)
             {
-                state.start_plan(cx, HarnessPlanKind::Restore);
-            }
-            if pending > 0 {
-                match PendingBar::new(
-                    pending,
-                    PendingLabels {
-                        count: cx.tr.f("tools.pending", &[("n", &pending)]),
-                        diff: cx.tr.t("tools.diff"),
-                        discard: cx.tr.t("tools.discard"),
-                        save: cx.tr.t("tools.apply"),
-                    },
-                )
-                .saving(state.busy())
-                .show(ui)
-                {
-                    PendingAction::Save | PendingAction::Diff => {
-                        state.start_plan(cx, HarnessPlanKind::Apply)
-                    }
-                    PendingAction::Discard => {
-                        state.drafts.remove(&h);
-                        state.preview = None;
-                        state.preview_load = Default::default();
-                    }
-                    _ => {}
+                PendingAction::Save | PendingAction::Diff => {
+                    state.start_plan(cx, HarnessPlanKind::Apply)
                 }
-            } else {
-                ui.label(Text::small(cx.tr.t("tools.in_sync"), cx.pal));
+                PendingAction::Discard => {
+                    state.drafts.remove(&h);
+                    state.preview = None;
+                    state.preview_load = Default::default();
+                }
+                PendingAction::None => {}
+            }
+        } else {
+            let (status, key) = footer_text(tool_state, pending);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add(
                         Button::primary(cx.tr.t("tools.apply"))
                             .small()
-                            .enabled(!state.busy()),
+                            .loading(busy)
+                            .enabled(!busy),
                     )
                     .clicked()
                 {
                     state.start_plan(cx, HarnessPlanKind::Apply);
                 }
-            }
+                ui.add_space(space::XS);
+                ui.add(
+                    egui::Label::new(
+                        Text::small(cx.tr.f(key, &[("n", &pending)]), cx.pal).color(cx.pal.text),
+                    )
+                    .truncate(),
+                );
+                ui.add(StatusDot::new(status));
+            });
         }
     });
-    detail::review(ui, cx, state);
 }
 /// Shell status includes every tool's draft, including rows not shown.
 pub fn status(state: &State) -> PageStatus {
