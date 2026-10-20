@@ -107,6 +107,15 @@ containing `pool.sh`, `snapshot.sh`, `ssh.sh` and `common.sh`, and pass `--msi P
 The variable changes helper discovery only; scenarios and locale keys still come
 from the current checkout.
 
+Which MSI: the CI `msi-package` job (`gh workflow run ci.yml --ref <branch>`; the
+`msi_only=true` input skips the rest) uploads the `msi-test` artifact. Install
+`superba-<workspace version>-windows-x86_64.msi` from it for acceptance: its product
+version, Add/Remove Programs entry and `spb --version` agree. The artifact's
+`superba-9.0.0-windows-x86_64.msi` holds the same programs under a far newer product
+version, for W52's self-update (`--msi` it with `--old-msi` an older release); the
+harness expects its programs to report the workspace version
+(`flows.program_version`).
+
 Driver-only regression checks (no VM required):
 
 ```sh

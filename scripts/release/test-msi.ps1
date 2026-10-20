@@ -82,6 +82,14 @@ $msi2 = Build $UpgradeVersion 'upgrade1.msi'
 $msi3 = Build $UpgradeVersion2 'upgrade2.msi'
 # Not installed here: a far newer release for trying the self-update by hand.
 $null = Build '9.0.0' 'superba-9.0.0-windows-x86_64.msi'
+# The same programs under the workspace's own version (what spb --version
+# reports): the MSI the Windows acceptance installs, so the installed product,
+# the Add/Remove Programs entry and spb agree (alpha.8 acceptance used the 9.0.0
+# one and saw "spb 0.1.1-alpha.8" in a "Superba 9.0.0" product).
+$cargoToml = Join-Path $here '..\..\Cargo.toml'
+$real = (Select-String -LiteralPath $cargoToml -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+if (-not $real) { Fail "no workspace version in $cargoToml" }
+$null = Build $real "superba-$real-windows-x86_64.msi"
 
 # --- install ---------------------------------------------------------------
 Msi '/i' $msi1 (Join-Path $work 'install.log')

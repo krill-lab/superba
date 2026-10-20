@@ -221,16 +221,27 @@ def tool_install(t, tool, name):
         s.ui_dump("tool-installed")
         s.manual("No UAC prompt; ZCode/WorkBuddy installer signature verified in the operation log.")
     with t.step(f"{name}: uninstall from the same update row, keeping user data") as s:
-        row_selector = {"name_re": "^" + re.escape(name) + r",", "type": "Button"}
+        # The row keeps "Installing" until the GUI's own inventory has the tool
+        # (alpha.8 W101: the CLI saw WorkBuddy installed while its row still
+        # said Installing and had no Uninstall… yet). Wait for the settled row;
+        # "WorkBuddy AI" is another row, hence the comma.
+        installing = u.L("updates.list.installing")
+        row_selector = {"name_re": "^" + re.escape(name) + r",(?!\s*" + re.escape(installing) + ")",
+                        "type": "Button"}
+        u.wait(timeout=300, visible=False, **row_selector)
         u.reveal(**row_selector)
         u.act("expand", **row_selector)
         u.reveal(key="updates.list.remove", type="Button")
         u.click(key="updates.list.remove")
+        # The review dialog (named by its title) has its own "Uninstall…": the
+        # row's button behind the dialog has the same name (alpha.8 W99/W100
+        # clicked it again and nothing was removed).
+        dialog = {"name": u.L("updates.list.confirm_remove"), "type": "Window", "visible": False}
         u.wait(key="updates.list.confirm_remove")
         for checkbox in u.find(key="updates.list.remove_data", type="CheckBox"):
             s.check(checkbox.get("toggle") in ("Off", 0, False), "remove user data is off by default")
         s.shot("uninstall-review")
-        u.click(key="updates.list.remove")
+        u.click(key="updates.list.remove", type="Button", within=dialog)
         wait_install(run, s, tool, False)
         s.shot("tool-uninstalled")
         s.ui_dump("tool-uninstalled")

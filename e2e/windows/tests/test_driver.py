@@ -99,7 +99,7 @@ class DriverTests(unittest.TestCase):
         u = self.ui()
         u.window = Mock(return_value={"rect": [0, 0, 960, 640]})
         button = {"rect": [600, 200, 80, 30]}
-        u.find = Mock(side_effect=lambda **kw: [button] if kw["type"] == "Button"
+        u.find = Mock(side_effect=lambda **kw: [button] if kw["type"] == "TabItem"
                       else [{"rect": [220, 240, 120, 28]}])
         self.assertEqual(u.wait_settings_anchor("notify"), (220, 240, 120, 28))
         self.assertIn("no selected state", u.run.navigation_warnings[0])

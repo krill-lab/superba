@@ -164,7 +164,7 @@ class Ui:
         end = time.monotonic() + timeout
         previous, stable_since = None, None
         while True:
-            buttons = self.find(key=key, type="Button")
+            buttons = self.find(key=key, type="TabItem")
             headings = self.find(key=key, type="Text",
                                  within={"name": self.L("superba.tab.settings"), "type": "Pane", "visible": False})
             window = self.window()

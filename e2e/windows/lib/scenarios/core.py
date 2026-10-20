@@ -464,10 +464,19 @@ def w33(t):
         flows.start_superba(run, s)
         u.page("router")
         time.sleep(1)
-        u.click(key="router.turn_off")
+        a = App(run)
+        before_main = a.main()
+        u.click(key="router.banner.turn_off")
         time.sleep(2)
         u.try_click(key="banner.switch_now")
-        flows.wait_switch_done(run, s, u, timeout=120)
+        # Turning off also changes the router certificate settings: the product
+        # asks for a full restart of ChatGPT (expected, alpha.8 D8).
+        phases, _ = flows.wait_switch_done(run, s, u, timeout=240, router_restart=True)
+        s.info(f"phases: {phases}")
+        if "[full restart: router certificate]" in phases:
+            after_main = a.wait_main(90, not_pid=(before_main or {}).get("pid"))
+            s.check(after_main is not None, "Full restart relaunched the app with a new main process")
+            s.check(a.composer_ready(300), f"composer usable after the full restart: {a.composer_error}")
         cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
         s.check("http://127.0.0.1:%d/backend-api/codex" % (run.state.get("router_port") or 0) not in cfg,
                 "config.toml no longer points at the router")

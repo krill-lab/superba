@@ -756,9 +756,16 @@ def w90(t):
         m1 = (run.state.get("turn_models") or {}).get("E2E-LR1")
         s.check(m1 == m0, f"through the router: {m1!r} (direct: {m0!r})")
     with t.step("spb router disable: back to the PAT, the same model") as s:
+        before = a.main()
         text, local = router_cli(run, s, False, "w90", extra=("--wait-turn",))
         s.check("http://127.0.0.1" not in local, "this computer is back on a line")
+        # Router off changes the router certificate settings: a full restart of
+        # ChatGPT (--yes confirms it; expected, alpha.8 D8). Wait for the new app.
+        if re.search(r"Full restart of ChatGPT", text):
+            s.check(a.wait_main(150, not_pid=(before or {}).get("pid")) is not None,
+                    "the full restart relaunched ChatGPT")
         App(run).onboarding(120)
+        s.check(App(run).composer_ready(300), "composer usable after router off", soft=True)
     flows.turn(run, t, "E2E-LD1", expect_line=run.state["line"], new_chat=True)
     with t.step("The app's turn after the router ran the same model") as s:
         m2 = (run.state.get("turn_models") or {}).get("E2E-LD1")
