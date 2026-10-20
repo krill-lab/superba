@@ -143,7 +143,7 @@ impl Row {
 }
 
 /// One line, whitespace collapsed, at most [`MAX_TITLE_CHARS`] characters.
-fn clean(s: &str) -> String {
+pub(crate) fn clean(s: &str) -> String {
     let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.chars().count() <= MAX_TITLE_CHARS {
         return collapsed;

@@ -620,6 +620,22 @@ def countdown_action(query):
 NS_ENV = "SUPERBA_SHOTS_NS"
 
 
+def sessions_action(kind, size):
+    """Sessions page: right-click the second row (its menu), or open the
+    migration tool from the header button."""
+    def act(s):
+        w = size[0]
+        focus(s)
+        if kind == "menu":
+            s.input.click(330 if w >= 1100 else 320, 244, button=3)
+        else:
+            s.input.click(1060 if w >= 1100 else 780, 76)
+        time.sleep(1.0)
+        if kind == "migrate":
+            s.input.park()
+    return act
+
+
 def enter_namespace():
     """Re-run this script in its own user + PID namespace (Linux), once."""
     if sys.platform != "linux" or os.environ.get(NS_ENV) == "1":
@@ -678,6 +694,9 @@ def main():
                     shots.append((f"{page}-{suffix}", page, theme, lang, 7.0, None, size))
                 shots.append((f"overview-actions-{suffix}", "overview", theme, lang, 7.0,
                               overview_actions(size), size))
+                for kind in ("menu", "migrate"):
+                    shots.append((f"sessions-{kind}-{suffix}", "sessions", theme, lang, 7.0,
+                                  sessions_action(kind, size), size))
             shots.append((f"palette-dark-en{tail}", "overview", "dark", "en", 6.0,
                           palette_action("cdn"), size))
             shots.append((f"palette-light-zh{tail}", "overview", "light", "zh-CN", 6.0,

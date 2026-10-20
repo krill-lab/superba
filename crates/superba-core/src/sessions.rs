@@ -269,3 +269,193 @@ pub struct HostSessions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub migrate_command: Option<String>,
 }
+
+/// The host id the desktop app uses for this computer.
+pub const LOCAL_HOST_ID: &str = "local";
+
+/// One thread of the session browser ([`crate::SwitchService::session_list`]):
+/// a `state_*.sqlite` `threads` row of this computer and/or a row of the
+/// desktop app's `local_thread_catalog` (which also lists remote hosts).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SessionEntry {
+    /// The app's host id (`local`, `remote-ssh-discovered:<alias>`,
+    /// `remote-wsl:<distro>`, ...).
+    pub host_id: String,
+    /// The app's host kind (`local`, `ssh`, `wsl`, `remote-control`), when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_kind: Option<String>,
+    /// Thread id.
+    pub thread_id: String,
+    /// Name, else title, else first user message (one line; may be empty).
+    pub title: String,
+    /// Working directory.
+    pub cwd: String,
+    /// `model_provider`.
+    pub provider: String,
+    /// Model, when recorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Git branch, when recorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_branch: Option<String>,
+    /// Created.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<Timestamp>,
+    /// Last activity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<Timestamp>,
+    /// Codex's `threads.tokens_used`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens_used: Option<u64>,
+    /// Archived.
+    pub archived: bool,
+    /// The rollout file (this computer only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rollout_path: Option<PathBuf>,
+}
+
+impl SessionEntry {
+    /// On this computer.
+    pub fn is_local(&self) -> bool {
+        self.host_id == LOCAL_HOST_ID
+    }
+}
+
+/// The session browser's list.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SessionList {
+    /// Newest activity first.
+    pub entries: Vec<SessionEntry>,
+    /// A source hit its row cap (older threads are not listed).
+    pub truncated: bool,
+    /// When it was read.
+    pub scanned_at: Timestamp,
+    /// Sources that could not be read.
+    pub warnings: Vec<Notice>,
+}
+
+/// What a thread is exported as ([`crate::SwitchService::session_export`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SessionExportFormat {
+    /// Markdown transcript (returned as text, for the clipboard).
+    Markdown,
+    /// A new Claude Code session file (`~/.claude/projects/<slug>/<uuid>.jsonl`).
+    ClaudeCode,
+    /// A new pi session file (`~/.pi/agent/sessions/--<cwd>--/<ts>_<id>.jsonl`).
+    Pi,
+}
+
+/// The result of an export.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SessionExport {
+    /// Markdown: the transcript. Session formats: the command that resumes it.
+    pub text: String,
+    /// The new file (session formats).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathBuf>,
+    /// The new session id (session formats).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Messages written.
+    pub messages: usize,
+}
+
+/// The desktop app's link to a thread, as its own "Copy link" makes it:
+/// `codex://threads/<id>` on this computer, else `?hostId=` with the host id
+/// encoded like JavaScript `URLSearchParams` (`remote-ssh-discovered:bj` →
+/// `remote-ssh-discovered%3Abj`).
+pub fn thread_link(thread_id: &str, host_id: &str) -> String {
+    let base = format!("codex://threads/{thread_id}");
+    if host_id.is_empty() || host_id == LOCAL_HOST_ID {
+        return base;
+    }
+    format!("{base}?hostId={}", form_urlencode(host_id))
+}
+
+/// `application/x-www-form-urlencoded` byte serialization (WHATWG URL, what
+/// `URLSearchParams.toString()` produces): `*-._` and ASCII alphanumerics stay,
+/// space becomes `+`, every other UTF-8 byte is `%XX`.
+pub fn form_urlencode(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'*' | b'-' | b'.' | b'_' => out.push(char::from(byte)),
+            b if b.is_ascii_alphanumeric() => out.push(char::from(b)),
+            b' ' => out.push('+'),
+            b => {
+                out.push('%');
+                out.push(char::from(HEX[usize::from(b >> 4)]));
+                out.push(char::from(HEX[usize::from(b & 15)]));
+            }
+        }
+    }
+    out
+}
+
+/// Fuzzy score of `query` against `text` (higher is better), `None` when the
+/// query's characters do not all occur in order. Case-insensitive; runs of
+/// consecutive characters and matches at word starts score more, gaps cost.
+pub fn fuzzy_score(query: &str, text: &str) -> Option<i32> {
+    let query: Vec<char> = query.chars().flat_map(char::to_lowercase).collect();
+    if query.is_empty() {
+        return Some(0);
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let lower: Vec<char> = chars
+        .iter()
+        .map(|c| c.to_lowercase().next().unwrap_or(*c))
+        .collect();
+    // A contiguous hit is always best: score it directly.
+    let joined: String = lower.iter().collect();
+    let needle: String = query.iter().collect();
+    if let Some(pos) = joined.find(&needle) {
+        let at = joined[..pos].chars().count();
+        let start = at == 0 || !chars[at - 1].is_alphanumeric();
+        return Some(
+            1000 + 10 * query.len() as i32 + if start { 50 } else { 0 } - at.min(50) as i32,
+        );
+    }
+    let mut score = 0i32;
+    let mut qi = 0;
+    let mut last: Option<usize> = None;
+    for (i, c) in lower.iter().enumerate() {
+        if qi == query.len() {
+            break;
+        }
+        if *c != query[qi] {
+            continue;
+        }
+        score += 10;
+        if i == 0 || !chars[i - 1].is_alphanumeric() {
+            score += 8;
+        }
+        match last {
+            Some(l) if l + 1 == i => score += 12,
+            Some(l) => score -= ((i - l - 1) as i32).min(8),
+            None => {}
+        }
+        last = Some(i);
+        qi += 1;
+    }
+    (qi == query.len()).then_some(score)
+}
+
+/// Fuzzy score of a whitespace-separated `query` over several fields with
+/// weights: every term must match some field; a term's best weighted field
+/// score counts. `None` when a term matches nowhere.
+pub fn fuzzy_fields(query: &str, fields: &[(&str, i32)]) -> Option<i32> {
+    let mut total = 0;
+    for term in query.split_whitespace() {
+        let best = fields
+            .iter()
+            .filter_map(|(text, weight)| fuzzy_score(term, text).map(|s| s * weight))
+            .max()?;
+        total += best;
+    }
+    Some(total)
+}

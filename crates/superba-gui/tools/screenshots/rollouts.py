@@ -188,6 +188,47 @@ def synthetic(thread, originator, model, now_ms, rng, hours_ago):
     return r, start
 
 
+# Threads of remote hosts as the desktop app's catalog lists them
+# (`CODEX_HOME/sqlite/codex-dev.db`, `local_thread_catalog`), for the Sessions
+# page: (host id, host kind, thread, title, cwd, minutes ago).
+CATALOG_HOSTS = [
+    ("remote-ssh-discovered:bj", "ssh", "01a158c7-a09e-7cd2-ba08-41459547a695",
+     "Fix the flaky upload test", "/srv/app", 42),
+    ("remote-ssh-discovered:bj", "ssh", "01a15a02-3c4d-7e5f-8a6b-7c8d9e0f1a2b",
+     "Tune nginx caching for the API", "/etc/nginx", 1500),
+    ("remote-wsl:Ubuntu-24.04", "wsl", "01a15b11-2233-7445-8667-889900aabbcc",
+     "Port the build script to WSL", "/home/dev/superba", 300),
+]
+
+CATALOG_DDL = """
+CREATE TABLE IF NOT EXISTS local_thread_catalog (
+  host_id TEXT NOT NULL, thread_id TEXT NOT NULL, display_title TEXT NOT NULL,
+  source_created_at REAL NOT NULL, source_updated_at REAL NOT NULL, cwd TEXT NOT NULL,
+  source_kind TEXT NOT NULL, source_detail TEXT, model_provider TEXT NOT NULL,
+  git_branch TEXT, observation_sequence INTEGER NOT NULL,
+  missing_candidate INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (host_id, thread_id));
+CREATE TABLE IF NOT EXISTS local_thread_catalog_hosts (
+  host_id TEXT PRIMARY KEY, host_kind TEXT NOT NULL);
+"""
+
+
+def write_catalog(codex_home, now_ms):
+    """The app's thread catalog with remote hosts' threads (synthetic)."""
+    db = Path(codex_home) / "sqlite" / "codex-dev.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db)
+    conn.executescript(CATALOG_DDL)
+    for i, (host, kind, thread, title, cwd, ago) in enumerate(CATALOG_HOSTS):
+        t = (now_ms - ago * 60_000) / 1000
+        conn.execute("INSERT OR REPLACE INTO local_thread_catalog_hosts VALUES (?, ?)", (host, kind))
+        conn.execute("INSERT OR REPLACE INTO local_thread_catalog VALUES"
+                     " (?, ?, ?, ?, ?, ?, 'vscode', NULL, 'openai', 'main', ?, 0)",
+                     (host, thread, title, t - 3600, t, cwd, i + 1))
+    conn.commit()
+    conn.close()
+    return len(CATALOG_HOSTS)
+
+
 def backdate_state(data_dir, now_ms):
     path = Path(data_dir) / "state.json"
     if not path.exists():
@@ -238,8 +279,9 @@ def main(argv=None):
         row = fixtures.thread_row(thread, title, start // 1000)
         row["rollout_path"] = str(rollout)
         fixtures.insert_threads(db, [row])
+    catalog = write_catalog(args.codex_home, args.now)
     moved = backdate_state(args.data_dir, args.now) if args.backdate_state and args.data_dir else 0
-    print(f"{written} rollouts, router log {'mirrored' if routed is not None else 'absent'}, "
+    print(f"{written} rollouts, {catalog} catalog threads, router log {'mirrored' if routed is not None else 'absent'}, "
           f"{moved} generations backdated")
 
 

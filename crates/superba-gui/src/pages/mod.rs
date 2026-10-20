@@ -49,6 +49,7 @@ pub mod tools;
 pub use superba::SuperbaSection;
 pub mod providers;
 pub mod router;
+pub mod session_browser;
 pub mod sessions;
 pub mod settings;
 pub mod shared;
@@ -220,12 +221,13 @@ impl Page {
             || self == Self::Tools
             || self == Self::Models
             || self == Self::Providers
+            || self == Self::Sessions
         {
             // These settings pages already scroll their own body (Tools: its
             // list and its detail; Models: its table pages instead; Providers:
             // the detail pane, when its tab is taller than the pane). Keep the
             // header and footer fixed and avoid a second scroll area at 960×640,
-            // where the pager would fall off the card.
+            // where the pager would fall off the card. Sessions: its list pages.
             480.0
         } else {
             crate::design::layout::FIT_MIN_HEIGHT

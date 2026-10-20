@@ -1035,6 +1035,43 @@ impl SwitchService for Switcher {
         .map_err(|e| Error::other(format!("session names: {e}")))?
     }
 
+    async fn session_list(&self) -> Result<superba_core::SessionList> {
+        let home = self.deps.ctx.codex_home();
+        let home_dir = self.deps.ctx.home_dir.clone();
+        tokio::task::spawn_blocking(move || superba_sessions::browse::list(&home, Some(&home_dir)))
+            .await
+            .map_err(|e| Error::other(format!("session list: {e}")))
+    }
+
+    async fn session_export(
+        &self,
+        thread_id: String,
+        format: superba_core::SessionExportFormat,
+    ) -> Result<superba_core::SessionExport> {
+        let home = self.deps.ctx.codex_home();
+        let home_dir = self.deps.ctx.home_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            // The rollout path and title as the list reads them.
+            let list = superba_sessions::browse::list(&home, Some(&home_dir));
+            let entry = list
+                .entries
+                .iter()
+                .find(|e| e.is_local() && e.thread_id == thread_id);
+            let targets = superba_sessions::export::Targets::from_env(&home_dir);
+            superba_sessions::export::export(
+                &home,
+                &thread_id,
+                entry.and_then(|e| e.rollout_path.as_deref()),
+                entry.map(|e| e.title.as_str()).unwrap_or(""),
+                format,
+                &targets,
+                superba_core::Timestamp::now(),
+            )
+        })
+        .await
+        .map_err(|e| Error::other(format!("session export: {e}")))?
+    }
+
     async fn feeds_status(&self) -> Result<superba_core::FeedsStatus> {
         self.feeds_status_impl(false).await
     }

@@ -405,6 +405,20 @@ impl SwitchService for LocatedService {
         service.session_titles(keys).await
     }
 
+    async fn session_list(&self) -> Result<superba_core::SessionList> {
+        let (service, _lock) = self.read().await?;
+        service.session_list().await
+    }
+
+    async fn session_export(
+        &self,
+        thread_id: String,
+        format: superba_core::SessionExportFormat,
+    ) -> Result<superba_core::SessionExport> {
+        let (service, _lock) = self.read().await?;
+        service.session_export(thread_id, format).await
+    }
+
     async fn price_table(&self) -> Result<PriceTable> {
         let (service, _lock) = self.read().await?;
         service.price_table().await
