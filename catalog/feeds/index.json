@@ -1,7 +1,7 @@
 {
   "format": 1,
-  "serial": 2,
-  "generated": "2026-10-17",
+  "serial": 3,
+  "generated": "2026-10-20",
   "files": [
     {
       "path": "app-versions.json",
@@ -20,8 +20,8 @@
     },
     {
       "path": "prices.json",
-      "size": 14769,
-      "sha256": "a4207b3fc2aac8b7a0acdc434ec6065c048d558da3c02b1de8be0da44f2be3a2"
+      "size": 34165,
+      "sha256": "31b56dcf8ec9a275c7337fd58f79562cbe4e0499be745649f419f1e855292d1d"
     },
     {
       "path": "prompts/0fae6672.md",

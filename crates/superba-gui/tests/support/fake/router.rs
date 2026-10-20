@@ -796,6 +796,8 @@ pub(super) async fn set_ui_locale(fake: &FakeService, locale: Locale) -> Result<
 pub(super) async fn price_table(_fake: &FakeService) -> Result<PriceTable> {
     let usd = |v: f64| Usd::from_dollars(v).expect("price");
     let entry = |input: f64, cached: f64, output: f64| PriceEntry {
+        cache_write_1h: None,
+        windows: Vec::new(),
         input: usd(input),
         cached_input: Some(usd(cached)),
         cache_write: None,

@@ -2130,6 +2130,8 @@ pub fn parse_price(d: &PriceDialog) -> Option<PriceEntry> {
         Some(Usd::parse_dollars(&d.cached).filter(|v| v.micros() >= 0)?)
     };
     Some(PriceEntry {
+        cache_write_1h: None,
+        windows: Vec::new(),
         input,
         cached_input: cached,
         cache_write: None,

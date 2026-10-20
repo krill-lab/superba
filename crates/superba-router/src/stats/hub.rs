@@ -770,6 +770,7 @@ impl Tracker {
                 &model_refs,
                 &u,
                 summary.response_tier.as_deref(),
+                Some(self.started_ms),
             )
         });
         let timing = self.timing(&summary, summary.end.unwrap_or_else(|| self.t0.elapsed()));

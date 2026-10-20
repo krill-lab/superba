@@ -254,6 +254,8 @@ async fn pending_edits_count_diff_and_become_one_models_edit() {
         &saved,
         "gpt-5.5",
         Some(PriceEntry {
+            cache_write_1h: None,
+            windows: Vec::new(),
             input: Usd::from_dollars(1.25).unwrap(),
             cached_input: Some(Usd::from_dollars(0.125).unwrap()),
             cache_write: None,

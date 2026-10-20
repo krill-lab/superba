@@ -297,11 +297,14 @@ fn usd(dollars: f64) -> Usd {
 
 fn entry() -> PriceEntry {
     PriceEntry {
+        cache_write_1h: None,
+        windows: Vec::new(),
         input: usd(1.25),
         cached_input: Some(usd(0.125)),
         cache_write: None,
         output: usd(10.0),
         long_context: vec![LongContextPrice {
+            cache_write_1h: None,
             above_input_tokens: 272_000,
             input: usd(2.5),
             cached_input: Some(usd(0.25)),
@@ -317,8 +320,9 @@ fn entry() -> PriceEntry {
 
 #[test]
 fn the_price_formula_uses_micro_dollars() {
-    let c = |u: &Usage, tier: Option<&str>, ratio| cost(&entry(), u, tier, ratio).unwrap();
+    let c = |u: &Usage, tier: Option<&str>, ratio| cost(&entry(), u, tier, ratio, None).unwrap();
     let u = Usage {
+        cache_write_1h: None,
         input: 4002,
         cached: Some(3328),
         cache_write: Some(0),
@@ -342,6 +346,7 @@ fn the_price_formula_uses_micro_dollars() {
     );
     // Cache writes default to the input price.
     let w = Usage {
+        cache_write_1h: None,
         input: 1000,
         cached: None,
         cache_write: Some(1000),
@@ -351,6 +356,7 @@ fn the_price_formula_uses_micro_dollars() {
     assert_eq!(c(&w, None, Multiplier::ONE), Usd::from_micros(1_250));
     // Long-context prices above the threshold.
     let long = Usage {
+        cache_write_1h: None,
         input: 300_000,
         cached: Some(0),
         cache_write: None,
@@ -386,6 +392,7 @@ fn prices_come_from_overrides_then_the_table() {
         .overrides
         .insert("site".into(), [("gpt-x".to_owned(), cheap)].into());
     let u = Usage {
+        cache_write_1h: None,
         input: 4002,
         cached: Some(3328),
         cache_write: Some(0),
@@ -395,14 +402,14 @@ fn prices_come_from_overrides_then_the_table() {
     // The stored basis: the list price's revision and source page; a price set
     // on the Models page is `override`, whatever the table's revision.
     assert_eq!(
-        estimate(&prices, "krill", &["gpt-x"], &u, None),
+        estimate(&prices, "krill", &["gpt-x"], &u, None, None),
         Some((
             Usd::from_micros(442),
             Some("2026-10 https://example.com/pricing".into())
         ))
     );
     assert_eq!(
-        estimate(&prices, "site", &["gpt-x"], &u, None),
+        estimate(&prices, "site", &["gpt-x"], &u, None, None),
         Some((Usd::from_micros(51), Some("override".into())))
     );
     let mut bare = entry();
@@ -410,11 +417,14 @@ fn prices_come_from_overrides_then_the_table() {
     bare.source = None;
     prices.table.entries.insert("gpt-y".into(), bare);
     assert_eq!(
-        estimate(&prices, "krill", &["gpt-y"], &u, None).map(|(_, r)| r),
+        estimate(&prices, "krill", &["gpt-y"], &u, None, None).map(|(_, r)| r),
         Some(Some("2026-10-01".into())),
         "an entry without its own revision takes the table's"
     );
-    assert_eq!(estimate(&prices, "krill", &["unknown"], &u, None), None);
+    assert_eq!(
+        estimate(&prices, "krill", &["unknown"], &u, None, None),
+        None
+    );
     // The upstream name, then response.model, then a tier-suffix base.
     assert!(lookup(&prices, "x", &["alias", "gpt-x"]).is_some());
     assert!(lookup(&prices, "x", &["gpt-x-ultrafast"]).is_some());
@@ -510,4 +520,34 @@ fn router_stats_come_from_superba_settings() {
     assert!(bad.validate().is_ok());
     bad.usage_days = 0;
     assert!(bad.validate().is_err());
+}
+
+/// Anthropic reports one-hour cache writes apart
+/// (`cache_creation.ephemeral_1h_input_tokens`); they are priced at their own
+/// rate (user requirement 115).
+#[test]
+fn anthropic_one_hour_cache_writes_are_read_and_priced() {
+    let u = Usage::from_json(
+        br#"{"input_tokens":100,"cache_read_input_tokens":300,"cache_creation_input_tokens":600,
+            "cache_creation":{"ephemeral_5m_input_tokens":400,"ephemeral_1h_input_tokens":200},
+            "output_tokens":10}"#,
+    )
+    .unwrap();
+    assert_eq!(u.input, 1000);
+    assert_eq!(u.cached, Some(300));
+    assert_eq!(u.cache_write, Some(600));
+    assert_eq!(u.cache_write_1h, Some(200));
+    let mut e = entry();
+    e.input = Usd::from_micros(1_000_000);
+    e.cached_input = Some(Usd::from_micros(100_000));
+    e.cache_write = Some(Usd::from_micros(1_250_000));
+    e.cache_write_1h = Some(Usd::from_micros(2_000_000));
+    e.output = Usd::from_micros(5_000_000);
+    e.long_context.clear();
+    e.tiers.clear();
+    // 100*1 + 300*0.1 + 400*1.25 + 200*2 + 10*5 = 1080 micro-dollars per 1M → 0.00108 USD
+    assert_eq!(
+        cost(&e, &u, None, superba_core::Multiplier::ONE, None),
+        Some(Usd::from_micros(1080))
+    );
 }

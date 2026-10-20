@@ -278,6 +278,7 @@ pub(crate) fn usage(v: &Value) -> Usage {
         reasoning: v
             .pointer("/completion_tokens_details/reasoning_tokens")
             .and_then(Value::as_u64),
+        cache_write_1h: None,
     }
 }
 
