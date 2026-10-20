@@ -1,4 +1,5 @@
-//! The left rail of the settings page (UX §3.6): Common, Changed, a divider,
+//! The left rail of the settings page (UX §3.6): Common, Changed, New in
+//! latest, a divider,
 //! then the catalog categories with counts; while searching, "Search results N"
 //! on top and per-category hit counts (a click narrows the results).
 
@@ -11,9 +12,9 @@ use crate::design::fonts::{Weight, font, mono_font};
 use crate::pages::Cx;
 
 /// Height of one rail item.
-const ITEM_H: f32 = 28.0;
+const ITEM_H: f32 = 26.0;
 /// Space between rail items.
-const ITEM_GAP: f32 = 4.0;
+const ITEM_GAP: f32 = 3.0;
 
 /// Draw the rail.
 pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model) {
@@ -56,6 +57,16 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model) {
             state.filter.rail == Rail::Changed,
         ) {
             pick = Some(Rail::Changed);
+        }
+        if item(
+            ui,
+            cx,
+            width,
+            &cx.tr.t("codex_settings.new"),
+            counts.new,
+            state.filter.rail == Rail::New,
+        ) {
+            pick = Some(Rail::New);
         }
     }
     let (r, _) = ui.allocate_exact_size(vec2(width, 9.0), Sense::hover());
@@ -129,6 +140,7 @@ pub(super) fn needed_width(ui: &Ui, cx: &Cx<'_>, model: &Model) -> f32 {
         .chain([
             cx.tr.t("codex_settings.common"),
             cx.tr.t("codex_settings.changed"),
+            cx.tr.t("codex_settings.new"),
             cx.tr.t("codex_settings.search_results"),
         ])
         .map(|l| {

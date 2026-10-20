@@ -515,8 +515,14 @@ pub(super) fn value_text(cx: &Cx<'_>, v: &Value) -> String {
     }
 }
 
-/// The paged list of two-line rows.
+/// The paged list of two-line rows ("New in latest" is grouped by release).
 fn list(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, docked: bool) {
+    if state.filter.rail == super::model::Rail::New && !state.filter.searching() {
+        if super::news::show(ui, cx, state, model) && !docked {
+            state.sheet_open = true;
+        }
+        return;
+    }
     let rows: Vec<Entry> = state.rows().into_iter().cloned().collect();
     if rows.is_empty() {
         ui.add_space(24.0);
@@ -643,19 +649,22 @@ fn footer(
     let narrow = rect.width() < 900.0;
     let pager_rect = egui::Rect::from_x_y_ranges(list_x.min..=list_x.max, rect.y_range());
     let mut page = state.table.page;
-    let changed = layout::fixed(ui, pager_rect, |ui| {
-        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-            let mut p = Pager::new("codex-settings-pager", &mut page, total, per).labels(
-                cx.tr.t("codex_settings.pager.prev"),
-                cx.tr.t("codex_settings.pager.next"),
-            );
-            if narrow {
-                p = p.compact();
-            }
-            p.show(ui).changed()
-        })
-        .inner
-    });
+    // "New in latest" scrolls its grouped list instead of paging.
+    let grouped = state.filter.rail == super::model::Rail::New && !state.filter.searching();
+    let changed = !grouped
+        && layout::fixed(ui, pager_rect, |ui| {
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                let mut p = Pager::new("codex-settings-pager", &mut page, total, per).labels(
+                    cx.tr.t("codex_settings.pager.prev"),
+                    cx.tr.t("codex_settings.pager.next"),
+                );
+                if narrow {
+                    p = p.compact();
+                }
+                p.show(ui).changed()
+            })
+            .inner
+        });
     if changed {
         state.table.page = page;
         let visible = state.table.visible(total);

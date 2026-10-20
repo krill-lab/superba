@@ -37,6 +37,7 @@ fn entry(path: &str, stage: Stage, kind: Kind) -> Entry {
         owner: None,
         common: None,
         host_support: Vec::new(),
+        new_in: None,
     }
 }
 
