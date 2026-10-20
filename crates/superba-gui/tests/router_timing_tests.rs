@@ -366,6 +366,7 @@ fn attempts_are_localized_from_their_fields_and_the_raw_log_is_folded() {
             outcome: "connect failed: dns error".into(),
             elapsed_ms: Some(120),
             compression: None,
+            upstream_protocol: None,
         },
         superba_core::RequestAttempt {
             member_id: row.member_id.clone(),
@@ -375,6 +376,7 @@ fn attempts_are_localized_from_their_fields_and_the_raw_log_is_folded() {
             outcome: "answered".into(),
             elapsed_ms: Some(520),
             compression: None,
+            upstream_protocol: None,
         },
     ];
     d.log = vec![

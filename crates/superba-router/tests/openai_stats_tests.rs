@@ -685,3 +685,50 @@ async fn a_whole_responses_answer_passes_through_and_is_recorded() {
     assert_eq!(row.upstream_request_id.as_deref(), Some("req_whole"));
     assert!(!row.injected);
 }
+
+/// The row of a converted request keeps every attempt with the protocol it
+/// went upstream in (the Usage page's 路由 tab); a native one says so too.
+#[tokio::test]
+async fn rows_keep_the_attempts_and_the_upstream_protocol() {
+    let up = anthropic(Arc::new(|s| {
+        if s.path.ends_with("/chat/completions") {
+            chat_ok()
+        } else {
+            Fake::sse(vec![sse(&text_answer(), false)])
+        }
+    }))
+    .await;
+    let cfg = config(
+        vec![compatible("chat", &up)],
+        vec![("chat", chat_entry(false))],
+    );
+    let run = start_recording(cfg, stats(vec![])).await;
+    let path = "/openai/v1/responses";
+    let resp = post(
+        &run.router,
+        path,
+        &token_of(H::Dsh),
+        tool_headers(H::Dsh, path),
+        &request_body("m", "history", json!({})),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let _ = resp.text().await.unwrap();
+    let row = &logged(&run.paths, 1).await[0];
+    assert_eq!(row.protocol, superba_core::RequestProtocol::Responses);
+    assert_eq!(row.attempts.len(), 1);
+    assert_eq!(row.attempts[0].outcome, "answered");
+    assert_eq!(
+        row.attempts[0].upstream_protocol,
+        Some(superba_core::RequestProtocol::ChatCompletions)
+    );
+    assert_eq!(
+        row.converted_to(),
+        Some(superba_core::RequestProtocol::ChatCompletions)
+    );
+    let detail = superba_router::Reader::open(&run.paths)
+        .unwrap()
+        .detail(row.id)
+        .unwrap();
+    assert_eq!(detail.attempts, row.attempts);
+}

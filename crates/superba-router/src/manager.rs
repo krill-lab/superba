@@ -713,6 +713,29 @@ impl RouterManager {
         Ok(true)
     }
 
+    /// Persist the failover and recovery rules and reload a running router in
+    /// place (a stopped router reads them on its next start). Returns whether
+    /// a running router reloaded.
+    pub async fn set_failover(&self, failover: &superba_core::RouterFailover) -> Result<bool> {
+        let mut config = RouterConfig::load(&self.paths).map_err(|e| match e {
+            Error::Io { .. } => Error::NotFound {
+                what: "the local router configuration (enable the router first)".into(),
+            },
+            other => other,
+        })?;
+        let before = config.tuning.clone();
+        config.tuning.set_failover(failover)?;
+        if config.tuning == before {
+            return Ok(false);
+        }
+        config.save(&self.paths)?;
+        if !watchdog::check(&self.paths).await.is_up() {
+            return Ok(false);
+        }
+        AdminClient::from_runtime(&self.paths)?.reload().await?;
+        Ok(true)
+    }
+
     /// Listen also on these WSL adapter addresses (user bug 45; the same port,
     /// source tokens only). A running router reloads the configuration; it binds
     /// an address once it exists. Returns whether a running router reloaded.

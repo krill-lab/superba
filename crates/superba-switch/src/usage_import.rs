@@ -472,6 +472,7 @@ fn request_row(source: ImportSource, r: &rusqlite::Row<'_>) -> rusqlite::Result<
         requested_model: None,
         session_id: None,
         agent_kind: None,
+        attempts: Vec::new(),
     })
 }
 

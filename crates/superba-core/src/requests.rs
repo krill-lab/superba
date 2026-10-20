@@ -652,9 +652,24 @@ pub struct RequestRow {
     /// Main conversation, subagent or background work, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_kind: Option<AgentKind>,
+    /// The lines tried, in order, the answering one last (router rows; empty
+    /// for other sources). The same list as [`RequestDetail::attempts`], here
+    /// so the Usage page's 路由 tab can show every hop without a detail read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attempts: Vec<RequestAttempt>,
 }
 
 impl RequestRow {
+    /// The protocol the request reached its upstream in, when it differs from
+    /// the one the tool spoke (a protocol conversion).
+    pub fn converted_to(&self) -> Option<RequestProtocol> {
+        self.attempts
+            .iter()
+            .rev()
+            .find_map(|a| a.upstream_protocol)
+            .filter(|p| *p != self.protocol)
+    }
+
     /// This tool's own session id. Codex can also identify a session by its cache key.
     pub fn session_key(&self) -> Option<&str> {
         self.session_id
@@ -1217,6 +1232,11 @@ pub struct RequestAttempt {
     /// upstream.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compression: Option<RequestCompression>,
+    /// The protocol the request went to this line in (absent in rows recorded
+    /// before it was kept). Differs from [`RequestRow::protocol`] when the
+    /// router converted the request (Anthropic Messages → OpenAI Responses).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_protocol: Option<RequestProtocol>,
 }
 
 /// Everything about one request (the detail pane).

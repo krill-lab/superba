@@ -30,8 +30,8 @@ use super::{line, meta, route};
 use crate::claude::route::{Target, attempts};
 use crate::config::join_path;
 use crate::forward::{
-    Observed, UpResponse, describe_error, failover_status, full, request_headers, response_headers,
-    router_error, set_route, up_response,
+    Observed, UpResponse, describe_error, failover_status_in, full, request_headers,
+    response_headers, router_error, set_route, up_response,
 };
 use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_detail, file_limit_in};
 use crate::proxy::{note_line_down, on_answer, read_small};
@@ -182,9 +182,7 @@ pub(super) async fn chat(
     };
     let key = route::sticky_key(&meta);
     let now = Instant::now();
-    let pin = key
-        .as_deref()
-        .and_then(|k| lock(&generation.sticky).get(k, now));
+    let pin = key.as_deref().and_then(|k| generation.pin(k, now));
     let order = attempts(&generation, &targets, pin, now);
     let mut prepared: HashMap<usize, (Bytes, Vec<String>, Vec<String>)> = HashMap::new();
     let mut failures: Vec<String> = Vec::new();
@@ -312,7 +310,11 @@ pub(super) async fn chat(
                 note_line_down(&shared, &generation, a.c, opened, &reason);
                 (reason, None)
             }
-            Ok(resp) => match failover_status(resp.status(), resp.headers()) {
+            Ok(resp) => match failover_status_in(
+                &generation.config.tuning.failover_statuses,
+                resp.status(),
+                resp.headers(),
+            ) {
                 Some(reason) => {
                     let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
                     note_line_down(&shared, &generation, a.c, opened, &reason);

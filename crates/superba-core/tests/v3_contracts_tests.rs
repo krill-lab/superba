@@ -142,6 +142,7 @@ fn row() -> RequestRow {
         requested_model: None,
         session_id: None,
         agent_kind: None,
+        attempts: Vec::new(),
     }
 }
 
@@ -816,6 +817,7 @@ fn request_pages_details_stats_and_inflight_round_trip() {
             outcome: "502".into(),
             elapsed_ms: Some(40),
             compression: Some(superba_core::RequestCompression::RouterZstd),
+            upstream_protocol: None,
         }],
         log: vec!["failover after 502".into()],
     });

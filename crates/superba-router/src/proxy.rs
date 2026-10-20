@@ -27,7 +27,7 @@ use crate::cipher::{self, Plan, Removed};
 use crate::compaction::{self, CompactionInput, Route};
 use crate::config::join_path;
 use crate::forward::{
-    Observed, UpBody, UpResponse, describe_error, empty_responses_answer, failover_status,
+    Observed, UpBody, UpResponse, describe_error, empty_responses_answer, failover_status_in,
     local_busy, request_headers, response_headers, router_error, set_route, up_response,
 };
 use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_detail, file_limit_in};
@@ -342,9 +342,7 @@ async fn proxy_request(
         None => session_key(&parts.headers),
     };
     let now = Instant::now();
-    let pin = key
-        .as_deref()
-        .and_then(|k| lock(&generation.sticky).get(k, now));
+    let pin = key.as_deref().and_then(|k| generation.pin(k, now));
     // Remote compaction: a compacted conversation stays with the member that
     // made its compaction item; compaction requests skip members that cannot
     // compact (crate::compaction).
@@ -771,7 +769,12 @@ async fn proxy_request(
                 note_line_down(&shared, &generation, c, opened, &reason);
                 (reason, None)
             }
-            Ok(resp) => match failover_status(resp.status(), resp.headers()).or_else(|| {
+            Ok(resp) => match failover_status_in(
+                &generation.config.tuning.failover_statuses,
+                resp.status(),
+                resp.headers(),
+            )
+            .or_else(|| {
                 empty_responses_answer(&rest, resp.status(), resp.headers()).then(|| {
                     format!(
                         "intercepted by the line's edge (HTTP {} with an empty body)",

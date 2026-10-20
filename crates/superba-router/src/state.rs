@@ -104,6 +104,26 @@ pub(crate) struct Generation {
 }
 
 impl Generation {
+    /// The pin of a conversation at `now`. With
+    /// [`crate::config::Tuning::return_to_preferred`] a pin on a fallback member
+    /// is ignored once a line of an earlier member is available again, so the
+    /// conversation goes back to the preferred member.
+    pub fn pin(&self, key: &str, now: Instant) -> Option<crate::sticky::Pin> {
+        let pin = lock(&self.sticky).get(key, now)?;
+        if self.config.tuning.return_to_preferred
+            && self
+                .members
+                .iter()
+                .take(pin.member)
+                .any(|m| m.lines.iter().any(|l| lock(&l.health).is_available(now)))
+        {
+            return None;
+        }
+        Some(pin)
+    }
+}
+
+impl Generation {
     /// Build a generation; validates the configuration and the secrets.
     /// `budget` sizes the upstream connection pool.
     pub fn build(

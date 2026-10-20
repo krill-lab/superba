@@ -40,6 +40,8 @@ pub(super) struct State {
     title_queries: usize,
     translation: Option<superba_router::translate::routing::TranslationConfig>,
     conversion_error: Option<Error>,
+    /// Saved failover rules (`None`: the defaults of a configured router).
+    failover: Option<superba_core::RouterFailover>,
 }
 
 /// `(id, name, title, first user message)` of a fixture thread.
@@ -141,6 +143,7 @@ fn row(
         requested_model: None,
         session_id: None,
         agent_kind: None,
+        attempts: Vec::new(),
     }
 }
 
@@ -281,6 +284,26 @@ fn many_rows(now: Timestamp, n: usize) -> Vec<RequestRow> {
 }
 
 impl FakeService {
+    /// The failover rules a configured router has.
+    pub fn router_failover(&self) -> superba_core::RouterFailover {
+        self.areas
+            .router
+            .lock()
+            .unwrap()
+            .failover
+            .clone()
+            .unwrap_or_default()
+    }
+
+    pub async fn edit_router_failover(
+        &self,
+        failover: superba_core::RouterFailover,
+    ) -> Result<RouterView> {
+        failover.validate()?;
+        self.areas.router.lock().unwrap().failover = Some(failover);
+        self.router_status().await
+    }
+
     pub fn set_router_translation(
         &self,
         translation: Option<superba_router::translate::routing::TranslationConfig>,
@@ -627,6 +650,7 @@ pub(super) async fn router_request(fake: &FakeService, id: i64) -> Result<Reques
             outcome: "502".into(),
             elapsed_ms: Some(120),
             compression: Some(superba_core::RequestCompression::RouterZstd),
+            upstream_protocol: None,
         });
     }
     attempts.push(RequestAttempt {
@@ -638,6 +662,7 @@ pub(super) async fn router_request(fake: &FakeService, id: i64) -> Result<Reques
         elapsed_ms: row.duration_ms,
         compression: (row.transport == superba_core::RequestTransport::Http)
             .then_some(superba_core::RequestCompression::RouterZstd),
+        upstream_protocol: None,
     });
     Ok(RequestDetail {
         timing: RequestTiming {

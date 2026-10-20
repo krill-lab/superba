@@ -1170,6 +1170,13 @@ pub trait SwitchService: Send + Sync {
         ))
     }
 
+    /// Persist the failover and recovery rules and reload a running router.
+    /// Requires an existing router configuration; never starts the service.
+    async fn router_set_failover(&self, failover: crate::RouterFailover) -> Result<RouterView> {
+        let _ = failover;
+        Err(crate::Error::not_implemented("router failover settings"))
+    }
+
     /// Configure the router members (each with its own key), install and start
     /// the router service and wait until it answers. Does not change Codex's
     /// configuration.

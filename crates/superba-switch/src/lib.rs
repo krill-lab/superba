@@ -690,6 +690,16 @@ impl SwitchService for Switcher {
         self.router_status_impl().await
     }
 
+    async fn router_set_failover(
+        &self,
+        failover: superba_core::RouterFailover,
+    ) -> Result<superba_core::RouterView> {
+        self.refuse_elevated()?;
+        failover.validate()?;
+        self.deps.router.set_failover(failover).await?;
+        self.router_status_impl().await
+    }
+
     async fn router_install(
         &self,
         request: superba_core::RouterInstallRequest,

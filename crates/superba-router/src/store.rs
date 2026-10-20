@@ -78,7 +78,10 @@ pub(crate) const ROW_COLUMNS: &str = "id, started_ms, prompt_cache_key, thread_i
      input_tokens, cached_tokens, cache_write_tokens, output_tokens, reasoning_tokens, ttfb_ms, \
      first_token_ms, duration_ms, tps_milli, cost_micros, price_rev, injected, stripped, \
      upstream_request_id, codex_host, harness, harness_version, protocol, requested_model, \
-     session_id, agent_kind, response_id";
+     session_id, agent_kind, response_id, attempts";
+
+/// Index of the `attempts` column in [`ROW_COLUMNS`].
+const ATTEMPTS_COLUMN: usize = 48;
 
 /// Number of [`ROW_COLUMNS`] (the detail fields follow them).
 fn row_column_count() -> usize {
@@ -219,6 +222,10 @@ pub(crate) fn row_from_sql(r: &Row<'_>) -> rusqlite::Result<RequestRow> {
         session_id: r.get(45)?,
         agent_kind: agent_kind.as_deref().and_then(enum_parse),
         response_id: r.get(47)?,
+        attempts: r
+            .get::<_, Option<String>>(ATTEMPTS_COLUMN)?
+            .and_then(|j| serde_json::from_str::<Vec<RequestAttempt>>(&j).ok())
+            .unwrap_or_default(),
     })
 }
 

@@ -5,7 +5,7 @@ mod tap;
 
 use crate::claude::route::{Target, attempts};
 use crate::forward::{
-    Observed, describe_error, failover_status, response_headers, set_route, up_response,
+    Observed, describe_error, failover_status_in, response_headers, set_route, up_response,
 };
 use crate::limits::{Admission, Place, file_limit_detail, file_limit_in};
 use crate::proxy::{note_line_down, on_answer};
@@ -227,9 +227,7 @@ pub(crate) async fn handle(
         .as_deref()
         .map(|s| format!("gemini:{s}:{model}"));
     let now = Instant::now();
-    let pin = key
-        .as_deref()
-        .and_then(|k| lock(&generation.sticky).get(k, now));
+    let pin = key.as_deref().and_then(|k| generation.pin(k, now));
     for a in attempts(&generation, &targets, pin, now) {
         let member = &generation.members[a.c.member];
         let line = &member.lines[a.c.line];
@@ -293,7 +291,11 @@ pub(crate) async fn handle(
             }
             Ok(resp) => resp,
         };
-        if let Some(reason) = failover_status(resp.status(), resp.headers()) {
+        if let Some(reason) = failover_status_in(
+            &generation.config.tuning.failover_statuses,
+            resp.status(),
+            resp.headers(),
+        ) {
             let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
             note_line_down(&shared, &generation, a.c, opened, &reason);
             if let Some(t) = &mut tracker {
