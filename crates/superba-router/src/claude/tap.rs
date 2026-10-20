@@ -37,6 +37,8 @@ pub struct AnthropicUsage {
     pub cache_creation: Option<u64>,
     /// `output_tokens`.
     pub output: Option<u64>,
+    /// `cache_creation.ephemeral_1h_input_tokens`.
+    pub cache_creation_1h: Option<u64>,
 }
 
 impl AnthropicUsage {
@@ -48,6 +50,10 @@ impl AnthropicUsage {
         self.cache_read = n("cache_read_input_tokens").or(self.cache_read);
         self.cache_creation = n("cache_creation_input_tokens").or(self.cache_creation);
         self.output = n("output_tokens").or(self.output);
+        self.cache_creation_1h = u
+            .pointer("/cache_creation/ephemeral_1h_input_tokens")
+            .and_then(Value::as_u64)
+            .or(self.cache_creation_1h);
     }
 
     /// In the router's semantics; `None` without any count.
@@ -61,6 +67,7 @@ impl AnthropicUsage {
             input: self.input.unwrap_or(0) + read + created,
             cached: self.cache_read,
             cache_write: self.cache_creation,
+            cache_write_1h: self.cache_creation_1h,
             output: self.output.unwrap_or(0),
             reasoning: None,
         })

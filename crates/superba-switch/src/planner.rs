@@ -1164,6 +1164,7 @@ impl Switcher {
         // Router mode: a profile switch that only reorders the router's members
         // needs no restart (the router reloads; Codex keeps pointing at it).
         let primary = if local
+            && !request.refresh_models
             && dest.router_update.is_some()
             && config_plan.as_ref().is_none_or(|c| c.writes_no_files())
             && env_plan.as_ref().is_none_or(|e| e.is_noop())
@@ -1181,6 +1182,7 @@ impl Switcher {
         // (it started after the current generation was written). A hot restart
         // would only interrupt running turns.
         let primary = if local
+            && !request.refresh_models
             && primary.is_hot()
             && config_plan.as_ref().is_some_and(|c| c.writes_no_files())
             && env_plan.as_ref().is_none_or(|e| e.is_noop())

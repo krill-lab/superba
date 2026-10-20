@@ -128,7 +128,8 @@ fn apply(entry: &mut Value, ov: Option<&ModelOverride>, defaults: &superba_core:
     }
 }
 
-/// A probe result still counts: a pass for a day, a failure for ten minutes.
+/// A probe result still counts: a pass for [`super::PASS_VALID_MS`], a
+/// failure for ten minutes.
 fn probe_state(g: &Generation, member: usize, id: &str) -> (CatalogReadiness, Option<String>) {
     if cache::responses_protocol(g, member).is_none() {
         return (CatalogReadiness::NeedsTranslation, None);
@@ -144,7 +145,11 @@ fn probe_state(g: &Generation, member: usize, id: &str) -> (CatalogReadiness, Op
     }
     .filter(|r| {
         unix_ms().saturating_sub(r.tested_at)
-            < Duration::from_secs(if r.passed { 86400 } else { 600 }).as_millis() as u64
+            < if r.passed {
+                super::PASS_VALID_MS
+            } else {
+                Duration::from_secs(600).as_millis() as u64
+            }
     });
     match result {
         Some(r) if r.passed => (CatalogReadiness::Ready, None),
@@ -408,6 +413,15 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
         let base = ready.first().copied().unwrap_or(&providers[0]);
         let mut entry = base.entry.clone();
         canonical(settings, &id, &mut entry);
+        // A model the user verified is shown in Codex's picker unless they hid
+        // it themselves (user bug 106: a passed model stayed hidden, from
+        // metadata or a provider-side setting the user never chose here).
+        let verified = ready.iter().any(|f| f.target.standard);
+        let hidden_by_user = settings.visibility.get(&id) == Some(&false)
+            || settings.overrides.get(&id).is_some_and(|o| o.hidden);
+        if verified && !hidden_by_user && !settings.visibility.contains_key(&id) {
+            entry["visibility"] = json!("list");
+        }
         let listed = mode.extends() || official.contains(&id);
         if !ready.is_empty() {
             snap.routes
@@ -426,6 +440,13 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
             };
             let mut pinned = f.entry.clone();
             canonical(settings, &id, &mut pinned);
+            if f.target.standard
+                && f.readiness == CatalogReadiness::Ready
+                && !hidden_by_user
+                && !settings.visibility.contains_key(&id)
+            {
+                pinned["visibility"] = json!("list");
+            }
             pinned["slug"] = json!(alias);
             pinned["display_name"] = json!(format!(
                 "{} · {}",
@@ -460,6 +481,8 @@ pub(super) async fn build(g: &Arc<Generation>, query: &str) -> Snapshot {
         };
         if listed {
             snap.view.models.push(row.clone());
+        } else {
+            snap.view.withheld.push(id.clone());
         }
         snap.all.insert(id, row);
     }

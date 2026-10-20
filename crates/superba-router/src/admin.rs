@@ -198,6 +198,7 @@ pub(crate) fn reload(shared: &Shared) -> Result<u64> {
     let budget = Budget::new(shared.limits.budget.open_files_limit, &config.tuning);
     let generation = Generation::build(number, config, &secrets, &budget)?;
     crate::merged_catalog::inherit_probes(&shared.current(), &generation);
+    crate::merged_catalog::attach_evidence(&generation, Some(paths.dir()));
     shared.install(generation);
     shared.event(
         RouteEventKind::Reloaded,

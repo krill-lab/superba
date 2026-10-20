@@ -128,6 +128,9 @@ async fn test_target(
         tested_at: unix_ms(),
     };
     *result = Some(report.clone());
+    if target.standard {
+        super::record_evidence(g, member, &report);
+    }
     report
 }
 

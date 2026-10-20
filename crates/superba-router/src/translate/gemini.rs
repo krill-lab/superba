@@ -395,6 +395,7 @@ pub(crate) fn usage(v: &Value) -> Usage {
         cache_read: field(v, "cachedContentTokenCount", "cached_content_token_count").as_u64(),
         cache_write: None,
         reasoning,
+        cache_write_1h: None,
     }
 }
 

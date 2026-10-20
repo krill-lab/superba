@@ -4,10 +4,18 @@
 //!
 //! ```text
 //! fresh = input - cached - cache_write      (additive usage normalised first)
-//! rates = the entry's prices for the response's service tier and prompt size
-//! cost  = (fresh*P_in + cached*P_cached + cache_write*P_write + output*P_out) / 1e6
-//!         * profile ratio
+//! rates = the entry's prices for the response's service tier, prompt size
+//!         and request time
+//! cost  = (fresh*P_in + cached*P_cached + (cache_write-1h)*P_write
+//!          + 1h*P_write_1h + output*P_out) / 1e6 * profile ratio
 //! ```
+//!
+//! Which rates apply, first match wins: a service tier with absolute prices
+//! (its own long-context bands, else the Standard band), the highest
+//! long-context band the prompt is above (`input > above_input_tokens`), a
+//! daily time window containing the request's start
+//! ([`superba_core::PriceWindow`], in the provider's time zone, possibly
+//! across midnight), then the base prices.
 //!
 //! Prices are USD per 1M tokens ([`superba_core::PriceEntry`]): OpenAI's list
 //! prices from the built-in feed, unless the user set a price for the model on
@@ -38,10 +46,15 @@ pub struct UsageTokens {
     pub input: u64,
     /// Cached tokens.
     pub cached: u64,
-    /// Cache-write tokens.
+    /// Cache-write tokens (all lifetimes).
     pub cache_write: u64,
+    /// Of `cache_write`, one-hour writes (Anthropic `ephemeral_1h_input_tokens`).
+    pub cache_write_1h: u64,
     /// `output_tokens`.
     pub output: u64,
+    /// When the request started (Unix ms), for time-window prices; `None`
+    /// ignores the windows.
+    pub at_ms: Option<i64>,
 }
 
 impl UsageTokens {
@@ -53,6 +66,7 @@ impl UsageTokens {
             cached: cache_read,
             cache_write,
             output,
+            ..Self::default()
         }
     }
 
@@ -125,24 +139,35 @@ pub struct Rates {
     pub input: Usd,
     /// Cached input.
     pub cached_input: Usd,
-    /// Cache writes.
+    /// Cache writes (five-minute or the only lifetime).
     pub cache_write: Usd,
+    /// One-hour cache writes.
+    pub cache_write_1h: Usd,
     /// Output.
     pub output: Usd,
 }
 
 impl Rates {
     fn new(input: Usd, cached: Option<Usd>, write: Option<Usd>, output: Usd) -> Self {
+        let cache_write = write.unwrap_or(input);
         Rates {
             input,
             cached_input: cached.unwrap_or(input),
-            cache_write: write.unwrap_or(input),
+            cache_write,
+            cache_write_1h: cache_write,
             output,
         }
     }
 
+    fn with_1h(mut self, write_1h: Option<Usd>) -> Self {
+        if let Some(w) = write_1h {
+            self.cache_write_1h = w;
+        }
+        self
+    }
+
     fn band(b: &LongContextPrice) -> Self {
-        Self::new(b.input, b.cached_input, b.cache_write, b.output)
+        Self::new(b.input, b.cached_input, b.cache_write, b.output).with_1h(b.cache_write_1h)
     }
 }
 
@@ -162,6 +187,17 @@ pub fn rates(
     input_tokens: u64,
     service_tier: Option<&str>,
 ) -> (Rates, Multiplier) {
+    rates_at(entry, input_tokens, service_tier, None)
+}
+
+/// [`rates`] for a request that started at `at_ms` (Unix ms): a time window
+/// containing it replaces the base prices (not a long-context band).
+pub fn rates_at(
+    entry: &PriceEntry,
+    input_tokens: u64,
+    service_tier: Option<&str>,
+    at_ms: Option<i64>,
+) -> (Rates, Multiplier) {
     let standard_band = band_for(&entry.long_context, input_tokens);
     if let Some(tier) = canonical_tier(service_tier).and_then(|t| entry.tier_prices.get(t)) {
         let rates = match (band_for(&tier.long_context, input_tokens), standard_band) {
@@ -171,14 +207,17 @@ pub fn rates(
         };
         return (rates, Multiplier::ONE);
     }
-    let rates = match standard_band {
-        Some(b) => Rates::band(b),
-        None => Rates::new(
+    let window = at_ms.and_then(|at| entry.windows.iter().find(|w| w.contains(at)));
+    let rates = match (standard_band, window) {
+        (Some(b), _) => Rates::band(b),
+        (None, Some(w)) => Rates::new(w.input, w.cached_input, w.cache_write, w.output),
+        (None, None) => Rates::new(
             entry.input,
             entry.cached_input,
             entry.cache_write,
             entry.output,
-        ),
+        )
+        .with_1h(entry.cache_write_1h),
     };
     (rates, tier_multiplier(entry, service_tier))
 }
@@ -191,11 +230,13 @@ pub fn cost(
     service_tier: Option<&str>,
     ratio: Multiplier,
 ) -> Result<Usd> {
-    let (r, multiplier) = rates(entry, usage.input, service_tier);
+    let (r, multiplier) = rates_at(entry, usage.input, service_tier, usage.at_ms);
     let part = |tokens: u64, price: Usd| i128::from(tokens) * i128::from(price.micros());
+    let one_hour = usage.cache_write_1h.min(usage.cache_write);
     let total = part(usage.fresh(), r.input)
         + part(usage.cached, r.cached_input)
-        + part(usage.cache_write, r.cache_write)
+        + part(usage.cache_write - one_hour, r.cache_write)
+        + part(one_hour, r.cache_write_1h)
         + part(usage.output, r.output);
     let micros = (total + 500_000).div_euclid(1_000_000);
     let base = Usd::from_micros(micros.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64);

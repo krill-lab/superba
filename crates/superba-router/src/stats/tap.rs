@@ -826,7 +826,12 @@ pub(crate) fn render_line(
         .price
         .as_ref()
         .filter(|_| usage.is_some())
-        .and_then(|p| price::cost(p, &own, tier, line.ratio));
+        .and_then(|p| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as i64);
+            price::cost(p, &own, tier, line.ratio, Some(now))
+        });
     let cost = match (line.turn.cost, own_cost) {
         (None, None) => None,
         (a, b) => Some(Usd::from_micros(

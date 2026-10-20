@@ -115,6 +115,8 @@ impl Attribution {
                 cached: u.cached,
                 cache_write: u.cache_write,
                 output: u.output,
+                at_ms: Some(r.started_at.as_millis()),
+                ..Default::default()
             };
             let ratio = superba_models::price::ratio_of(&self.price_settings, &member_id);
             let cost =

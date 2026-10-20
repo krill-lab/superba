@@ -1454,8 +1454,79 @@ pub struct LongContextPrice {
     /// Cache write (default = this band's `input`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<Usd>,
+    /// One-hour cache write (Anthropic's `ttl: "1h"`; default = this band's
+    /// `cache_write`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<Usd>,
     /// Output.
     pub output: Usd,
+}
+
+/// Prices during a daily time window (DeepSeek's former off-peak discount):
+/// they replace the entry's Standard prices for requests that start inside
+/// the window. A long-context band still wins over a window.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PriceWindow {
+    /// What the window is called on the price page (`off-peak`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Start, `HH:MM` in the provider's time zone (inclusive).
+    pub start: String,
+    /// End, `HH:MM` (exclusive); at or before `start` the window runs past
+    /// midnight.
+    pub end: String,
+    /// The provider's time zone as an offset from UTC in minutes (the price
+    /// page's own zone; `0` for UTC, `480` for Beijing).
+    #[serde(default)]
+    pub utc_offset_minutes: i32,
+    /// ISO weekdays the window applies on, in that zone (1 = Monday ...
+    /// 7 = Sunday); empty = every day. A time after midnight counts for the
+    /// day it falls on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weekdays: Vec<u8>,
+    /// Input.
+    pub input: Usd,
+    /// Cached input (default = `input`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_input: Option<Usd>,
+    /// Cache write (default = `input`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<Usd>,
+    /// Output.
+    pub output: Usd,
+}
+
+impl PriceWindow {
+    /// Minutes after midnight of `HH:MM`.
+    pub fn minute_of(text: &str) -> Option<u32> {
+        let (h, m) = text.trim().split_once(':')?;
+        let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+        (h <= 24 && m < 60 && h * 60 + m <= 24 * 60).then_some(h * 60 + m)
+    }
+
+    /// Whether the instant `unix_ms` falls inside the window.
+    pub fn contains(&self, unix_ms: i64) -> bool {
+        let (Some(start), Some(end)) = (Self::minute_of(&self.start), Self::minute_of(&self.end))
+        else {
+            return false;
+        };
+        let (start, end) = (start % 1440, end % 1440);
+        let local = unix_ms.div_euclid(60_000) + i64::from(self.utc_offset_minutes);
+        let minute = local.rem_euclid(1440) as u32;
+        // 1970-01-01 was a Thursday (ISO 4).
+        let weekday = ((local.div_euclid(1440) + 3).rem_euclid(7) + 1) as u8;
+        if !self.weekdays.is_empty() && !self.weekdays.contains(&weekday) {
+            return false;
+        }
+        if start < end {
+            (start..end).contains(&minute)
+        } else if start > end {
+            minute >= start || minute < end
+        } else {
+            // start == end: the whole day.
+            true
+        }
+    }
 }
 
 /// Absolute prices of one service tier in USD per 1M tokens, copied from the
@@ -1491,11 +1562,17 @@ pub struct PriceEntry {
     /// Cached input (default = `input`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_input: Option<Usd>,
-    /// Cache write (default = `input`).
+    /// Cache write (default = `input`); Anthropic's five-minute write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<Usd>,
+    /// One-hour cache write (Anthropic's `ttl: "1h"`; default = `cache_write`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<Usd>,
     /// Output.
     pub output: Usd,
+    /// Daily time windows with their own prices (off-peak), by request time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub windows: Vec<PriceWindow>,
     /// Long-context tiers, ascending by threshold.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub long_context: Vec<LongContextPrice>,

@@ -433,6 +433,7 @@ fn address(state: &State, mode: &Mode) -> String {
 
 /// Poll background work and schedule the next repaint (both pages).
 fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: bool) {
+    prices::poll_calibration(state);
     state.poll(cx, out);
     if let Some(request) = state.ready_plan.take() {
         out.push(Action::Plan(Box::new(request)));

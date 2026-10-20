@@ -903,11 +903,14 @@ fn price_tables_round_trip_with_optional_fields_skipped() {
     let mut tiers = BTreeMap::new();
     tiers.insert("priority".to_owned(), Multiplier::from_ppm(2_000_000));
     let entry = PriceEntry {
+        cache_write_1h: None,
+        windows: Vec::new(),
         input: usd(1.25),
         cached_input: Some(usd(0.125)),
         cache_write: None,
         output: usd(10.0),
         long_context: vec![LongContextPrice {
+            cache_write_1h: None,
             above_input_tokens: 272_000,
             input: usd(2.5),
             cached_input: None,

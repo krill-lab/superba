@@ -583,6 +583,11 @@ pub struct SwitchRequest {
     /// Thread ids unticked in a migration preview.
     #[serde(default)]
     pub migration_exclude: Vec<String>,
+    /// The router's model list for Codex changed (a router model list mode,
+    /// a model that passed its test): restart the app's Codex core even when
+    /// no file changes, so it fetches the list again at once (user bug 106).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub refresh_models: bool,
 }
 
 impl SwitchRequest {
@@ -602,7 +607,20 @@ impl SwitchRequest {
             key_resolutions: BTreeMap::new(),
             accept_shared_home: false,
             migration_exclude: Vec::new(),
+            refresh_models: false,
         }
+    }
+
+    /// A local re-apply of `profile_id` that restarts Codex's core so it reads
+    /// the router's changed model list (user bug 106).
+    pub fn refresh_models(profile_id: ProfileId) -> Self {
+        let mut request = Self::profile(profile_id);
+        request.targets = TargetSelection {
+            local: true,
+            remotes: Vec::new(),
+        };
+        request.refresh_models = true;
+        request
     }
 }
 

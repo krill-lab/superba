@@ -117,11 +117,26 @@ async fn every_mode_shows_one_row_per_model_with_its_providers() {
                     report.whole(&models_page::mode_label(&tr, mode)),
                     "{at}: mode"
                 );
-                // What the mode does wraps instead of eliding (UI spec §7).
-                assert!(
-                    report.whole(&models_page::mode_help(&tr, mode)),
-                    "{at}: mode help"
-                );
+                // What the mode does wraps instead of eliding (UI spec §7);
+                // in Codex mode, what it leaves out and the one-click fix
+                // (user bug 106).
+                if mode == CatalogMode::Codex {
+                    let n = view.router_catalog.as_ref().unwrap().withheld.len();
+                    assert!(n > 0);
+                    assert!(
+                        report.whole(&tr.f("models.router.withheld_title", &[("n", &n)])),
+                        "{at}: withheld"
+                    );
+                    assert!(
+                        report.whole(&tr.t("models.router.withheld_fix")),
+                        "{at}: fix"
+                    );
+                } else {
+                    assert!(
+                        report.whole(&models_page::mode_help(&tr, mode)),
+                        "{at}: mode help"
+                    );
+                }
                 // The router publishes its own list: no list source picker,
                 // no site picker toggle.
                 assert!(
@@ -453,4 +468,215 @@ fn slugs_the_editor_accepts_are_the_routers() {
     ] {
         assert!(!models_page::valid_slug(bad), "{bad}");
     }
+}
+
+/// User bug 106 (a): the default mode withholds the providers' other models;
+/// the page says how many next to the mode and switches in one click, then
+/// asks Codex to read the new list through the normal apply flow when the
+/// provider is the applied one.
+#[tokio::test]
+async fn codex_mode_says_what_it_withholds_and_switches_in_one_click() {
+    let fake = service();
+    let data = data(&fake).await;
+    let mut view = routed(&fake, CatalogMode::Codex).await;
+    let applied = superba_gui::pages::shared::providers::applied_profile_id(&data).cloned();
+    if let Some(id) = &applied {
+        view.profile_id = id.clone();
+    }
+    assert!(matches!(
+        models_page::guidance(&view, CatalogMode::Codex),
+        Some(models_page::Guidance::Withheld(n)) if n > 0
+    ));
+    fake.set_models_view(view.clone());
+    let tr = Tr::new(Locale::ZhCn);
+    let fix = tr.t("models.router.withheld_fix");
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let mut state = fresh(&view);
+    let expect_refresh = applied.is_some();
+    let actions = drive(&data, service, &mut state, &[fix.as_str()], |_, actions| {
+        !fake.router_catalog_saves().is_empty()
+            && (!expect_refresh || actions.iter().any(|a| matches!(a, Action::Plan(_))))
+    });
+    let saves = fake.router_catalog_saves();
+    assert_eq!(saves.len(), 1, "{saves:?}");
+    assert_eq!(saves[0].mode, CatalogMode::Extended);
+    if expect_refresh {
+        assert!(
+            actions.iter().any(|a| matches!(
+                a,
+                Action::Plan(r) if r.refresh_models && r.targets.local
+            )),
+            "{actions:?}"
+        );
+    }
+    // The other modes withhold nothing.
+    for mode in [CatalogMode::Extended, CatalogMode::Prefixed] {
+        assert_eq!(
+            models_page::guidance(&routed(&fake, mode).await, mode),
+            None
+        );
+    }
+}
+
+/// User bug 106 (d): a direct connection ignores the router model list. Once
+/// the user picked a mode that adds models, the page says so and offers to
+/// turn the local router on (a switch, previewed as usual).
+#[tokio::test]
+async fn a_direct_connection_says_the_mode_needs_the_router() {
+    let fake = service();
+    let mut data = data(&fake).await;
+    let view = fake
+        .models_view(ModelsViewRequest::default())
+        .await
+        .unwrap();
+    assert!(view.router_catalog.is_none() && !view.read_only);
+    // The default mode changes nothing on a direct connection: no notice.
+    assert_eq!(models_page::guidance(&view, CatalogMode::Codex), None);
+    assert_eq!(
+        models_page::guidance(&view, CatalogMode::Extended),
+        Some(models_page::Guidance::Direct)
+    );
+    if let Some(set) = data.profiles.value.as_mut() {
+        set.settings.router.catalog.mode = CatalogMode::Extended;
+    }
+    let tr = Tr::new(Locale::ZhCn);
+    let fix = tr.t("models.router.direct_fix");
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let mut state = fresh(&view);
+    let actions = drive(&data, service, &mut state, &[fix.as_str()], |_, actions| {
+        actions.iter().any(|a| matches!(a, Action::Plan(_)))
+    });
+    assert!(
+        actions.iter().any(|a| matches!(
+            a,
+            Action::Plan(r) if r.intent == superba_core::SwitchIntent::Router { enable: true }
+        )),
+        "{actions:?}"
+    );
+}
+
+/// The search field clears with its × and with Esc.
+#[test]
+fn search_field_clears_with_its_button_and_escape() {
+    use superba_gui::design::widgets::SearchField;
+    let ctx = egui::Context::default();
+    let mut text = String::from("deepseek");
+    let run = |text: &mut String, events: Vec<egui::Event>, focus: bool| {
+        let mut rect = egui::Rect::NOTHING;
+        let out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400.0, 100.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                let r = SearchField::new(text, "test-search", "Search", "Clear")
+                    .width(200.0)
+                    .show(ui);
+                if focus {
+                    r.request_focus();
+                }
+                rect = r.rect;
+            },
+        );
+        out.drop_without_applying_deltas();
+        rect
+    };
+    let rect = run(&mut text, Vec::new(), false);
+    // × sits inside the field's right edge.
+    let at = egui::pos2(rect.right() - 5.0 - 9.0, rect.center().y);
+    run(&mut text, vec![egui::Event::PointerMoved(at)], false);
+    let press = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    run(&mut text, vec![press(true)], false);
+    run(&mut text, vec![press(false)], false);
+    assert_eq!(text, "");
+    // Esc in the focused field.
+    text.push_str("gpt");
+    run(&mut text, Vec::new(), true);
+    run(&mut text, Vec::new(), false);
+    let esc = egui::Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Default::default(),
+    };
+    run(&mut text, vec![esc], false);
+    assert_eq!(text, "");
+}
+
+/// User requirement 115: through the router every row has its price with
+/// where it comes from; at 960 px the price folds into the model cell.
+#[tokio::test]
+async fn routed_rows_show_their_price_and_fold_it_when_narrow() {
+    let fake = service();
+    let data = data(&fake).await;
+    let view = routed(&fake, CatalogMode::Extended).await;
+    let table = fake.price_table().await.unwrap();
+    for (window, wide) in [([1440.0, 900.0], true), ([960.0, 640.0], false)] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let tr = Tr::new(locale);
+            let mut state = fresh(&view);
+            state.set_price_table(Some(table.clone()));
+            // The priced fixture model on the first page.
+            state.query = "astra".into();
+            let report = render_fit_min_height(
+                window,
+                locale,
+                egui::Theme::Light,
+                &data,
+                Page::Models.min_height(),
+                |ui, cx, out| models_page::show(ui, cx, &mut state, out),
+            );
+            let at = format!("{window:?} {locale:?}");
+            assert!(report.fits(), "{at}: {report:?}");
+            assert_eq!(report.beyond_right(), Vec::<&str>::new(), "{at}");
+            assert_eq!(
+                report.texts.contains(&tr.t("models.col.price")),
+                wide,
+                "{at}: price column"
+            );
+            let astra = "5.00 · 0.50 · 40.00";
+            assert!(
+                report.texts.iter().any(|t| t.contains(astra)),
+                "{at}: {:?}",
+                report.texts
+            );
+            // The page's way to the ratios and calibration.
+            assert!(report.whole(&tr.t("models.prices.open")), "{at}");
+        }
+    }
+}
+
+/// 「价格与校准…」 lists each key-based provider's ratio; editing and saving
+/// stores it with the same settings the cost estimates read.
+#[tokio::test]
+async fn price_ratios_are_edited_on_the_models_page() {
+    let fake = service();
+    let data = data(&fake).await;
+    let view = routed(&fake, CatalogMode::Extended).await;
+    fake.set_models_view(view.clone());
+    let tr = Tr::new(Locale::ZhCn);
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let mut state = fresh(&view);
+    let open = tr.t("models.prices.open");
+    let edit = tr.t("prices.edit");
+    let save = tr.t("prices.save");
+    drive(
+        &data,
+        service,
+        &mut state,
+        &[open.as_str(), edit.as_str(), save.as_str()],
+        |_, _| !fake.saved_stats().is_empty(),
+    );
+    assert_eq!(fake.saved_stats().len(), 1);
+    assert!(state.price_tools.open, "the dialog stays open");
 }

@@ -44,7 +44,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
                 ui.add_space(space::M);
                 stats_line_section(ui, cx, state);
                 ui.add_space(space::XL);
-                prices::section(ui, cx, state);
+                prices::moved_row(ui, cx, out);
                 ui.add_space(space::XL);
                 recording_section(ui, cx, state);
                 ui.add_space(space::XL);

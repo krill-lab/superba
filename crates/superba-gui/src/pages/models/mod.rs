@@ -22,9 +22,10 @@
 
 mod catalog;
 pub mod model;
+pub mod prices;
 mod view;
 
-pub use catalog::{chip_lines, mode_help, mode_label, valid_slug};
+pub use catalog::{Guidance, chip_lines, guidance, mode_help, mode_label, valid_slug};
 pub use view::speed_tooltip;
 
 use std::collections::{BTreeMap, HashMap};
@@ -53,6 +54,8 @@ pub struct PriceDialog {
     pub cached: String,
     /// Output price.
     pub output: String,
+    /// Cache-write price (empty = the input price).
+    pub write: String,
     /// Validation message.
     pub error: Option<String>,
 }
@@ -121,6 +124,8 @@ pub struct State {
     pub diff_open: bool,
     /// The price editor is open.
     pub price: Option<PriceDialog>,
+    /// 「价格与校准」: the price table, ratios and calibration.
+    pub price_tools: prices::PriceTools,
     /// Built-in price table (feeds), when loaded.
     prices: Option<PriceTable>,
     /// The price table load ran (or was set).
@@ -252,21 +257,47 @@ impl State {
             self.catalog_test = None;
             match result {
                 Ok(result) => {
+                    // Passed, but the mode keeps it from Codex.
+                    let withheld = result.passed
+                        && self
+                            .view
+                            .as_ref()
+                            .and_then(|v| v.router_catalog.as_ref())
+                            .is_some_and(|c| {
+                                c.settings.mode == superba_core::CatalogMode::Codex
+                                    && c.withheld.contains(&model)
+                            });
                     out.push(Action::Toast {
-                        status: if result.passed {
-                            Status::Ok
-                        } else {
+                        status: if !result.passed {
                             Status::Error
+                        } else if withheld {
+                            Status::Warn
+                        } else {
+                            Status::Ok
                         },
-                        text: cx.tr.f(
-                            if result.passed {
-                                "models.router.test_passed"
-                            } else {
-                                "models.router.test_failed"
-                            },
-                            &[("model", &model), ("detail", &result.detail)],
-                        ),
+                        text: if withheld {
+                            cx.tr
+                                .f("models.router.test_passed_codex_mode", &[("model", &model)])
+                        } else {
+                            cx.tr.f(
+                                if result.passed {
+                                    "models.router.test_passed"
+                                } else {
+                                    "models.router.test_failed"
+                                },
+                                &[("model", &model), ("detail", &result.detail)],
+                            )
+                        },
                     });
+                    // A pass publishes the model: Codex reads the list again
+                    // at once (user bug 106).
+                    if result.passed
+                        && !withheld
+                        && let Some(view) = &self.view
+                        && let Some(refresh) = catalog::refresh_request(cx, view)
+                    {
+                        out.push(refresh);
+                    }
                     // A pass can publish the model: show its new state.
                     self.task = None;
                     self.load(cx, true);
@@ -284,6 +315,13 @@ impl State {
             match result {
                 Ok(()) => {
                     self.catalog_slugs.clear();
+                    // The mode, a visibility or a prefix changed what Codex is
+                    // offered: apply it like any other change (user bug 106).
+                    if let Some(view) = &self.view
+                        && let Some(refresh) = catalog::refresh_request(cx, view)
+                    {
+                        out.push(refresh);
+                    }
                     self.task = None;
                     self.load(cx, true);
                 }

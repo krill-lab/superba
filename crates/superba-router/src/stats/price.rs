@@ -68,12 +68,15 @@ pub fn cost(
     usage: &Usage,
     service_tier: Option<&str>,
     ratio: Multiplier,
+    at_ms: Option<i64>,
 ) -> Option<Usd> {
     let tokens = UsageTokens {
         input: usage.input,
         cached: usage.cached.unwrap_or(0),
         cache_write: usage.cache_write.unwrap_or(0),
+        cache_write_1h: usage.cache_write_1h.unwrap_or(0),
         output: usage.output,
+        at_ms,
     };
     superba_models::price::cost(entry, &tokens, service_tier, ratio).ok()
 }
@@ -87,9 +90,10 @@ pub fn estimate(
     models: &[&str],
     usage: &Usage,
     service_tier: Option<&str>,
+    at_ms: Option<i64>,
 ) -> Option<(Usd, Option<String>)> {
     let (entry, is_override) = quote(prices, member, models)?;
-    let c = cost(entry, usage, service_tier, ratio(prices, member))?;
+    let c = cost(entry, usage, service_tier, ratio(prices, member), at_ms)?;
     let basis = if is_override {
         Some(PriceBasis::Override)
     } else {

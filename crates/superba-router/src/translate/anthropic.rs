@@ -281,6 +281,9 @@ pub(crate) fn usage(v: &Value) -> Usage {
         cache_read: read,
         cache_write: write,
         reasoning: None,
+        cache_write_1h: v
+            .pointer("/cache_creation/ephemeral_1h_input_tokens")
+            .and_then(Value::as_u64),
     }
 }
 

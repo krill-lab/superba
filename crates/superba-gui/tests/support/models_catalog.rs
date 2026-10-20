@@ -151,6 +151,8 @@ pub fn catalog(mode: CatalogMode) -> RouterCatalogView {
         .collect();
     for (priority, m) in MODELS.iter().enumerate() {
         if mode == CatalogMode::Codex && !m.l0 {
+            // Withheld by the mode; the page says how to get them.
+            view.withheld.push(m.id.to_owned());
             continue;
         }
         let tiers = if m.fast {

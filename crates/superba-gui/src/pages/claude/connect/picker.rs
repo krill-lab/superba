@@ -170,14 +170,15 @@ fn toolbar(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, m: &Models<'_>) {
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = space::S;
             let w = FIELD_W.min((ui.available_width() - space::S) / 2.0 - 60.0);
-            ui.add(
-                TextEdit::singleline(&mut state.connect.search)
-                    .id(egui::Id::unique("claude-models-search"))
-                    .hint_text(cx.tr.t("claude.models.search"))
-                    .desired_width(w)
-                    .margin(vec2(10.0, 6.0)),
+            crate::design::widgets::SearchField::new(
+                &mut state.connect.search,
+                "claude-models-search",
+                cx.tr.t("claude.models.search"),
+                cx.tr.t("action.clear_search"),
             )
-            .accessible_name(cx.tr.t("claude.models.search"));
+            .width(w)
+            .margin(vec2(10.0, 6.0))
+            .show(ui);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let id = state.connect.manual.trim().to_owned();
                 let button = ui.add(
