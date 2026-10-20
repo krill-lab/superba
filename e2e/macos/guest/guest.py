@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One JSON request over SSH stdin. All test state is owned by a run marker.
+"""One JSON request over local/SSH stdin. All state is owned by a run marker.
 
 Runs with the CLT Python (3.9+); host code may use Python 3.11. Never log requests.
 """
@@ -147,9 +147,9 @@ def reboot_ready():
     return {"ready": True}
 
 
-def create():
+def create(require_console=True):
     info = preflight()
-    if info["console"] in ("root", "loginwindow"):
+    if require_console and info["console"] in ("root", "loginwindow"):
         raise Blocked("An interactive user must log in first")
     ident = uuid.uuid4().hex
     root = RUNS / ident
@@ -163,11 +163,14 @@ def create():
     return {"session": ident, "root": str(root), "preflight": info}
 
 
-def install(root, dmg, upgrade=False):
+def install(root, dmg, upgrade=False, expected=None):
     dmg = Path(dmg)
     if not dmg.is_file() or not dmg.resolve().is_relative_to(root):
         raise ValueError("DMG must be uploaded inside the session")
     st = state(root)
+    digest = hashlib.sha256(dmg.read_bytes()).hexdigest()
+    if expected and digest != expected["dmg_sha256"]:
+        raise RuntimeError("DMG digest differs from this run's package manifest")
     if APP.exists() and not (upgrade and st["installed"]):
         raise Blocked("Refusing to replace an app not installed by this session")
     mount = root / "mount"
@@ -193,8 +196,25 @@ def install(root, dmg, upgrade=False):
         if "arm64" not in arch.split():
             raise Blocked("DMG does not contain arm64 (CI filenames are not architecture evidence)")
         info = plistlib.loads((APP / "Contents/Info.plist").read_bytes())
+        provenance = None
+        if expected:
+            provenance = json.loads((APP / "Contents/Resources/e2e-build.json").read_text())
+            notices = APP / "Contents/Resources/THIRD-PARTY-NOTICES.txt"
+            cli_version = checked([root / "bin/spb", "--version"], env=environment(root)).strip()
+            if (provenance != expected["build"]
+                    or info.get("CFBundleShortVersionString") != expected["build"]["bundle_version"]
+                    or info.get("CFBundleVersion") != expected["build"]["bundle_version"]
+                    or info.get("SuperbaVersion") != expected["build"]["version"]
+                    or info.get("SuperbaSourceSHA") != expected["build"]["source_sha"]
+                    or cli_version != "spb " + expected["build"]["version"]
+                    or hashlib.sha256(notices.read_bytes()).hexdigest() != expected["build"]["notices_sha256"]):
+                raise RuntimeError("Installed source/version/notices differ from this run's package manifest")
+            for name, wanted in expected["executables"].items():
+                binary = root / "bin/spb" if name == "spb" else APP / "Contents/MacOS" / name
+                if hashlib.sha256(binary.read_bytes()).hexdigest() != wanted:
+                    raise RuntimeError("Installed executable differs from this run's package manifest")
         return {"architecture": arch, "version": info.get("CFBundleShortVersionString"),
-                "dmg_sha256": hashlib.sha256(dmg.read_bytes()).hexdigest(),
+                "provenance": provenance, "dmg_sha256": digest,
                 "superba_sha256": hashlib.sha256((APP / "Contents/MacOS/superba").read_bytes()).hexdigest(),
                 "spb": checked([root / "bin/spb", "--version"], env=environment(root)).strip()}
     finally:
@@ -271,7 +291,8 @@ def desktop_user_data():
                       "WebKit", "Saved Application State", "Logs", "Containers", "Group Containers"):
         parent = Path.home() / "Library" / directory
         for path in parent.iterdir() if parent.is_dir() else ():
-            if (path.name in ("Codex", "ChatGPT") or path.name.startswith("com.openai.codex")
+            if (path.name in ("Codex", "ChatGPT") or path.name.startswith("com.openai.chat")
+                    or path.name.startswith("com.openai.codex")
                     or path.name.startswith("group.com.openai.codex")):
                 result.append(path)
     return result
@@ -366,6 +387,12 @@ def cleanup(root):
             errors.append("could not detach test DMG")
     if st["installed"] and APP.exists():
         shutil.rmtree(APP)
+    if st.get("desktop_installed_by_session") and not remaining:
+        desktop_app = Path(st["desktop_installed_by_session"])
+        if desktop_app != Path("/Applications/ChatGPT.app"):
+            raise ValueError("Unexpected owned desktop installation")
+        if desktop_app.exists():
+            shutil.rmtree(desktop_app)
     if "desktop_data_before" in st:
         if any(str(path) not in st["desktop_data_before"] for path in desktop_user_data()):
             errors.append("test-created desktop user data remains")
@@ -380,14 +407,17 @@ def dispatch(op, args):
     if op == "preflight":
         return preflight()
     if op == "create":
-        return create()
+        return create(args.get("require_console", True))
     if op == "disk":
         return {"free_bytes": shutil.disk_usage(ROOT).free}
     root = session(args)
     if op == "reboot_ready":
         return reboot_ready()
     if op == "install":
-        return install(root, args["dmg"], args.get("upgrade", False))
+        return install(root, args["dmg"], args.get("upgrade", False), args.get("expected"))
+    if op == "install_desktop":
+        import desktop
+        return desktop.install(root, sys.modules[__name__])
     if op == "start":
         return start(root, APP / "Contents/MacOS/superba", args.get("argv", ["--lang", "en"]))
     if op == "spb":
@@ -472,7 +502,6 @@ def dispatch(op, args):
             result = json.load(response)
         return {"id": result.get("id"), "status": result.get("status"), "port": config["listen_port"]}
     if op == "port_closed":
-        import socket
         try:
             with socket.create_connection(("127.0.0.1", int(args["port"])), timeout=1):
                 return False
@@ -483,6 +512,21 @@ def dispatch(op, args):
         return [row for row in processes() if str(root) + "/" in row["command"]]
     if op == "login_item":
         return login_item(root, args["path"])
+    if op == "login_simulate":
+        st = state(root)
+        paths = st["login_plists"]
+        if len(paths) != 1 or str(root) not in Path(paths[0]).read_text():
+            raise ValueError("Login simulation requires this session's isolated product plist")
+        domain = "gui/{}".format(os.getuid())
+        target = domain + "/" + GUI_LABEL
+        loaded = command(["/bin/launchctl", "print", target])
+        if loaded.returncode == 0:
+            if str(root) not in loaded.stdout:
+                raise Blocked("Login service is not owned by this session")
+            checked(["/bin/launchctl", "bootout", target])
+        checked(["/bin/launchctl", "bootstrap", domain, paths[0]])
+        checked(["/bin/launchctl", "kickstart", "-k", target])
+        return {"method": "launchctl bootstrap + kickstart", "rebooted": False}
     if op == "service":
         label = args.get("label", LABEL)
         if label not in (LABEL, GUI_LABEL):
@@ -495,7 +539,10 @@ def dispatch(op, args):
             st = state(root)
             st["pids"].append({"pid": int(pid[1]), "stamp": stamp(pid[1])})
             save(root, st)
-        return {"code": result.returncode, "stdout": result.stdout, "boot":
+        # launchctl print can include the login session's inherited environment.
+        # Return only the ownership/process facts used by the assertions.
+        return {"code": result.returncode, "owned": str(root) in result.stdout,
+                "pid": int(pid[1]) if pid else None, "boot":
                 checked(["/usr/sbin/sysctl", "-n", "kern.boottime"]).strip()}
     if op == "login_state":
         st = state(root)

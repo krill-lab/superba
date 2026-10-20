@@ -1,4 +1,4 @@
-"""WtAgent command envelope over encrypted SSH stdin (one-shot MacAgent)."""
+"""MacAgent command envelope over local or encrypted SSH stdin."""
 
 import json
 import shlex
@@ -40,6 +40,10 @@ class Agent:
             raise Blocked(f"TCC Screen & System Audio Recording permission required for "
                           f"{result['executable']}. " + result["instructions"])
         return result
+
+    def probe(self):
+        # Hosted runners must not wait for an interactive consent dialog.
+        return self.call("permissions", prompt=False)
 
     def windows(self, **sel):
         return self.call("windows", **sel)

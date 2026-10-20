@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run real macOS scenarios through a caller-provided SSH helper."""
+"""Run macOS scenarios locally or through a caller-provided SSH helper."""
 
 import argparse
 import os
@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from e2e.macos.lib import scenarios  # noqa: E402,F401
 from e2e.macos.lib.agent import Agent  # noqa: E402
+from e2e.macos.lib.local import configured_local  # noqa: E402
 from e2e.macos.lib.runner import REGISTRY, Runner  # noqa: E402
 from e2e.macos.lib.vm import Blocked, VmError, configured_vm  # noqa: E402
 
@@ -29,6 +30,10 @@ def main():
     parser.add_argument("--allow-reboot", action="store_true")
     parser.add_argument("--wait-lock", type=int, default=0, help="seconds to wait for another VM user")
     parser.add_argument("--session", help="owned session id for cleanup after an interrupted run")
+    parser.add_argument("--local", action="store_true", help="run on this Mac without SSH or reboot")
+    parser.add_argument("--local-root", help="dedicated temporary directory for this local run")
+    parser.add_argument("--package-manifest", help="expected exact-source DMG provenance JSON")
+    parser.add_argument("--reinstall", action="store_true", help="M08: same-build overwrite, not a version upgrade")
     opts = parser.parse_args()
     if opts.command == "list":
         for case in REGISTRY.values():
@@ -40,14 +45,20 @@ def main():
             parser.error("choose unique scenario IDs (list) or --all")
         if not opts.dmg or not Path(opts.dmg).is_file():
             parser.error("--dmg must name an existing local DMG")
-    vm, lease = configured_vm()
+    if opts.local and opts.allow_reboot:
+        parser.error("--local cannot be combined with --allow-reboot")
+    if opts.reinstall and opts.upgrade_dmg:
+        parser.error("choose --reinstall or --upgrade-dmg")
+    if opts.local and opts.command == "run" and not opts.package_manifest:
+        parser.error("local runs require --package-manifest for exact-source installation checks")
+    vm, lease = configured_local(opts.local_root) if opts.local else configured_vm()
     lease.wait = opts.wait_lock
     with lease:
         if opts.command == "prepare":
             vm.prepare()
-            print(Agent(vm).preflight())
+            print(Agent(vm).probe() if opts.local else Agent(vm).preflight())
         elif opts.command == "permissions":
-            print(Agent(vm).preflight())
+            print(Agent(vm).probe() if opts.local else Agent(vm).preflight())
         elif opts.command == "cleanup":
             if not opts.session:
                 parser.error("cleanup requires --session from the saved session.json")

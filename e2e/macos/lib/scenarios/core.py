@@ -11,10 +11,33 @@ from ..runner import DATA, scenario
 from ..ui import Ui
 from ..vm import Blocked
 
+GUI_CHECKS = {
+    "M01": "First-run wizard AX detection, credential entry and Apply",
+    "M02": "ChatGPT window, desktop hot-switch and renderer verification",
+    "M03": "Router page and before/after UI banners",
+    "M04": "Claude page before/after restoration",
+    "M05": "Notification settings page",
+    "M06": "Autostart window AX inspection (launchd/process checks still attempted)",
+    "M07": "Data settings page after cold GUI restart",
+    "M08": "App window after DMG replacement",
+    "M09": "Restored configuration page before uninstall",
+}
+
 
 @scenario("M01", "DMG install and first-run wizard", "W01/W02/W04")
 def install_wizard(t):
     t.install()
+    if not t.gui:
+        t.baseline()
+        original = t.read("home/.codex/config.toml")
+        name, base, key = t.provider()
+        t.spb("switch", "--profile", name, "--yes", "--write-only")
+        t.check(base in t.read("home/.codex/config.toml"), "CLI applies the chosen endpoint")
+        t.check(key not in (t.read(DATA + "/profiles.json") or ""), "Profile metadata contains no raw key")
+        t.spb("restore", "original", "--yes", "--write-only")
+        t.check(t.read("home/.codex/config.toml") == original, "CLI restores the original configuration")
+        t.shot("cli-install")
+        return
     ui = t.launch()
     desktop_flows.wizard_detect(ui)
     t.shot("first-run")
@@ -35,6 +58,19 @@ def install_wizard(t):
 @scenario("M02", "Line switching with an installed ChatGPT/Codex desktop app", "W10/W11")
 def desktop_switch(t):
     t.install()
+    t.desktop_prerequisite()
+    if not t.gui:
+        t.check(t.rpc("desktop_installed"), "Verified official ChatGPT is installed")
+        t.baseline()
+        first, first_url, _ = t.provider("mac-a")
+        second, second_url, _ = t.provider("mac-b", (t.start_fixture() + "/alternate/v1", "sk-e2e-macos-second"))
+        t.spb("switch", "--profile", first, "--yes", "--write-only")
+        t.spb("switch", "--profile", second, "--yes", "--write-only")
+        config = tomllib.loads(t.read("home/.codex/config.toml"))
+        t.check(config.get("openai_base_url") == second_url and first_url != second_url,
+                "CLI line switch writes the second exact endpoint without logging in")
+        t.shot("cli-desktop-switch")
+        return
     if not t.rpc("desktop_installed"):
         t.launch()
         desktop_flows.wizard_detect(t.ui)
@@ -50,7 +86,7 @@ def desktop_switch(t):
         t.runner.redactor.add("sk-e2e-macos-second")
         t.spb("switch", "--profile", first, "--yes", "--write-only")
         switch = ("switch", "--profile", second)
-    desktop = t.rpc("desktop")  # BLOCKED if absent; never installs a desktop app.
+    desktop = t.rpc("desktop")
     t.save("desktop.json", desktop)
     desktop_ui = Ui(t, process_re="^(ChatGPT|Codex)$", pid=desktop["pid"])
     desktop_ui.wait_window()
@@ -92,6 +128,7 @@ def desktop_switch(t):
 
 
 def pat_desktop_lines(t):
+    t.credentials_used = True
     upstream = t.runner.secrets.get("SUPERBA_E2E_UPSTREAM")
     key = t.runner.secrets.get("SUPERBA_E2E_KEY")
     if not upstream or not key:
@@ -153,10 +190,11 @@ def router_on_off(t):
     t.check(active.hostname == "127.0.0.1" and active.port == router["listen_port"],
             "Codex active endpoint uses the actual router listening port")
     service = t.rpc("service")
-    t.check(service["code"] == 0 and t.root in service["stdout"], "Owned LaunchAgent is loaded")
+    t.check(service["code"] == 0 and service["owned"], "Owned LaunchAgent is loaded")
     t.save("router-service.json", service)
     ui = t.configured_ui()
-    desktop_flows.router_page(ui)
+    if ui:
+        desktop_flows.router_page(ui)
     t.shot("router-on")
     if t.runner.opts.net == "mock":
         result = t.rpc("router_request")
@@ -171,8 +209,9 @@ def router_on_off(t):
     # Capture the externally changed configuration in a fresh GUI process.
     t.rpc("stop")
     ui = t.configured_ui()
-    desktop_flows.router_page(ui)
-    if t.runner.opts.net == "real":
+    if ui:
+        desktop_flows.router_page(ui)
+    if ui and t.runner.opts.net == "real":
         t.check(ui.exists(key="router.banner.off", timeout=15), "Cold-start GUI shows router off")
     else:
         t.save("ui-mode-limitation.txt", "This build identifies any HTTP 127.0.0.1 provider as router mode. "
@@ -203,14 +242,16 @@ def claude_apply_restore(t):
     t.check(env.get("E2E_KEEP") == "present" and written["permissions"] == original["permissions"],
             "Unrelated Claude settings preserved")
     ui = t.configured_ui()
-    desktop_flows.claude_page(ui)
+    if ui:
+        desktop_flows.claude_page(ui)
     t.shot("claude-applied")
     t.spb("claude", "restore", "--yes")
     restored = json.loads(t.read("home/.claude/settings.json"))
     t.check(restored == original, "Original Claude settings restored without managed keys")
     t.rpc("stop")
     ui = t.configured_ui()
-    desktop_flows.claude_page(ui)
+    if ui:
+        desktop_flows.claude_page(ui)
     t.shot("claude-restored")
 
 
@@ -244,15 +285,17 @@ def notifications(t):
     t.spb("notify", "uninstall", "codex")
     t.check(tomllib.loads(t.read("home/.codex/config.toml")) == tomllib.loads(original), "Original Codex notify state restored")
     ui = t.configured_ui()
-    desktop_flows.notification_page(ui)
+    if ui:
+        desktop_flows.notification_page(ui)
     t.shot("notifications")
 
 
-@scenario("M06", "GUI login LaunchAgent survives a real reboot and is removed", "Login startup")
+@scenario("M06", "GUI login LaunchAgent starts and is removed", "Login startup")
 def autostart(t):
-    if not t.runner.opts.allow_reboot:
+    if not t.local and not t.runner.opts.allow_reboot:
         raise Blocked("M06 needs --allow-reboot and a VM with GUI auto-login")
-    t.rpc("reboot_ready")
+    if not t.local:
+        t.rpc("reboot_ready")
     t.install()
     if t.spb("autostart", "--help", ok=False)["code"]:
         raise Blocked("This DMG predates spb autostart; use an integrated build")
@@ -265,17 +308,22 @@ def autostart(t):
     item = t.rpc("login_item", path=plist)
     t.save("login-item.json", item)
     t.configured_ui()
-    t.shot("before-reboot")
+    t.shot("before-login")
     before = t.rpc("service", label=label)["boot"]
-    t.save("reboot-preflight.json", t.rpc("reboot_ready"))
-    # Reboot, not logout or a simulated process restart. The run marker survives.
-    try:
-        t.runner.vm.shell("sudo -n /sbin/reboot", check=False, timeout=15)
-    except Exception:
-        # ssh may be disconnected before sudo can return; a changed boot time is required below.
-        pass
-    after = t.runner.vm.wait_reboot(before)
-    t.check(after != before, "Kernel boot time changed")
+    if t.local:
+        t.rpc("stop")
+        t.ui = None
+        t.save("login-simulation.json", t.rpc("login_simulate"))
+        after = t.rpc("service", label=label)["boot"]
+        t.check(after == before, "Login was simulated without rebooting the runner")
+    else:
+        t.save("reboot-preflight.json", t.rpc("reboot_ready"))
+        try:
+            t.runner.vm.shell("sudo -n /sbin/reboot", check=False, timeout=15)
+        except Exception:
+            pass
+        after = t.runner.vm.wait_reboot(before)
+        t.check(after != before, "Kernel boot time changed")
     deadline = time.monotonic() + 60
     service = t.rpc("service", label=label)
     processes = t.rpc("login_state")
@@ -283,16 +331,17 @@ def autostart(t):
         time.sleep(2)
         service = t.rpc("service", label=label)
         processes = t.rpc("login_state")
-    t.save("service-after-reboot.json", service)
-    t.save("gui-after-reboot.json", processes)
+    t.save("service-after-login.json", service)
+    t.save("gui-after-login.json", processes)
     # An /usr/bin/open LaunchAgent exits after submitting the launch. Require the
     # actual GUI and its HOME, not a permanently running launcher process.
-    t.check(service["code"] == 0 and t.root in service["stdout"], "Product LaunchAgent was loaded at login")
+    t.check(service["code"] == 0 and service["owned"], "Product LaunchAgent was loaded at login")
     t.check(bool(processes) and all(process["isolated"] for process in processes),
-            "Real login started the Superba GUI with the temporary HOME and CODEX_HOME")
-    t.ui = Ui(t, pid=processes[0]["pid"])
-    t.ui.wait_window()
-    t.shot("after-reboot")
+            "Login started the Superba GUI with the temporary HOME and CODEX_HOME")
+    if t.gui:
+        t.ui = Ui(t, pid=processes[0]["pid"])
+        t.ui.wait_window()
+    t.shot("after-login")
     t.spb("autostart", "off", gui=True)
     t.check(not t.read(plist), "Autostart off removes the product registration")
 
@@ -315,14 +364,16 @@ def data_location(t):
     t.check(bool(t.read("home/moved-data/profiles.json")), "Provider data exists at destination")
     t.rpc("stop")
     ui = t.configured_ui()
-    ui.superba("data")
+    if ui:
+        ui.superba("data")
     t.shot("data-moved")
-    t.check("mac-test" in t.spb("profile", "list", "--json")["stdout"], "Providers survive a cold GUI/CLI start")
+    t.check("mac-test" in t.spb("profile", "list", "--json")["stdout"], "Fresh CLI reads the preserved providers")
 
 
 @scenario("M08", "Overwrite DMG upgrade preserves configuration and data", "MSI upgrade")
 def upgrade(t):
-    if not t.runner.opts.upgrade_dmg:
+    reinstall = getattr(t.runner.opts, "reinstall", False)
+    if not t.runner.opts.upgrade_dmg and not reinstall:
         raise Blocked("M08 requires --upgrade-dmg pointing to a second build")
     old = t.install()
     t.provider()
@@ -331,8 +382,12 @@ def upgrade(t):
     t.check(bool(baseline), "Provider configuration exists before the upgrade")
     t.rpc("stop")
     new = t.install(t.runner.opts.upgrade_dmg, upgrade=True)
-    t.check(old["dmg_sha256"] != new["dmg_sha256"], "Upgrade uses two distinct DMG artifacts")
-    t.check(old["superba_sha256"] != new["superba_sha256"], "Upgrade replaces the actual app executable")
+    if reinstall:
+        t.check(old["dmg_sha256"] == new["dmg_sha256"], "Overwrite reinstalls the same exact-source DMG")
+        t.unavailable("Cross-version upgrade: this run verifies same-build overwrite/data preservation only")
+    else:
+        t.check(old["dmg_sha256"] != new["dmg_sha256"], "Upgrade uses two distinct DMG artifacts")
+        t.check(old["superba_sha256"] != new["superba_sha256"], "Upgrade replaces the actual app executable")
     t.check(t.read(DATA + "/profiles.json") == baseline, "Provider configuration survives app replacement")
     t.check(t.read(DATA + "/e2e-preserved.txt") == "preserve-on-upgrade\n", "Existing data survives app replacement")
     t.configured_ui()

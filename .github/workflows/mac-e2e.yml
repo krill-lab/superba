@@ -1,0 +1,109 @@
+name: macOS installed DMG e2e
+
+# Register this file on the default branch before the first manual run.
+# Once registered, workflow_dispatch can select an integration branch via --ref.
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Relay mode (real falls back to mock if either repo secret is absent)'
+        type: choice
+        options: [mock, real]
+        default: mock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_BUILD_JOBS: "6"
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+  CARGO_TERM_COLOR: never
+
+jobs:
+  installed-dmg:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Select Python and Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          python=$(command -v python3)
+          "$python" -c 'import sys; assert sys.version_info >= (3, 11)'
+          printf 'E2E_PYTHON=%s\n' "$python" >> "$GITHUB_ENV"
+          printf 'CARGO_TARGET_DIR=%s/mac-e2e-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          rustup toolchain install 1.98 --profile minimal
+          rustup default 1.98
+          mkdir -p "$RUNNER_TEMP/mac-e2e-artifacts"
+      - name: Build this exact commit with actual notices and verify the DMG
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash e2e/macos/ci-package.sh 2>&1 | tee "$RUNNER_TEMP/mac-e2e-artifacts/package-build.log"
+      - name: Probe AX and capture, install, and run M01–M09 locally
+        env:
+          SUPERBA_E2E_KEY: ${{ inputs.network == 'real' && secrets.KRILL_E2E_KEY || '' }}
+          SUPERBA_E2E_UPSTREAM: ${{ inputs.network == 'real' && secrets.KRILL_E2E_UPSTREAM || '' }}
+          E2E_NETWORK: ${{ inputs.network }}
+          E2E_DMG: ${{ steps.package.outputs.dmg }}
+          E2E_MANIFEST: ${{ steps.package.outputs.manifest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=0
+          "$E2E_PYTHON" e2e/macos/run.py run --local --all --reinstall \
+            --local-root "$RUNNER_TEMP/mac-e2e-local" \
+            --dmg "$E2E_DMG" --package-manifest "$E2E_MANIFEST" \
+            --net "$E2E_NETWORK" --out "$RUNNER_TEMP/mac-e2e-artifacts/results" || result=$?
+          printf '%s\n' "$result" > "$RUNNER_TEMP/mac-e2e-artifacts/harness-exit.txt"
+          if [[ $result == 2 ]]; then
+            echo '::warning::Partial macOS coverage; inspect report.md for each unavailable GUI/upgrade check.'
+          fi
+          # Reduced coverage is reported, but it is not an all-scenarios PASS.
+          [[ $result == 0 || $result == 2 ]]
+      - name: Recover interrupted owned sessions and remove build directories
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=0
+          if [[ -n "${E2E_PYTHON:-}" ]]; then
+            "$E2E_PYTHON" e2e/macos/ci-cleanup.py \
+              --root "$RUNNER_TEMP/mac-e2e-local" --out "$RUNNER_TEMP/mac-e2e-artifacts" || result=$?
+          fi
+          rm -rf -- "$RUNNER_TEMP/mac-e2e-target" "$RUNNER_TEMP/mac-e2e-stage" "$RUNNER_TEMP/mac-e2e-tools"
+          exit "$result"
+      - name: Publish coverage summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          report="$RUNNER_TEMP/mac-e2e-artifacts/results/report.md"
+          if [[ -f "$report" ]]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'macOS e2e did not reach scenario execution; see build/cleanup evidence.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Keep exact-source package, scrubbed logs and screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mac-e2e-${{ matrix.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/mac-e2e-artifacts/
+          if-no-files-found: error
+          retention-days: 7

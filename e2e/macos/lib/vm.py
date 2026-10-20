@@ -165,6 +165,7 @@ class Vm:
         self.put(here / "guest" / "guest.py", self.root + "/guest.py")
         self.put(here / "guest" / "fixture.py", self.root + "/fixture.py")
         self.put(here / "guest" / "line_proxy.py", self.root + "/line_proxy.py")
+        self.put(here / "guest" / "desktop.py", self.root + "/desktop.py")
         self.put(here / "agent" / "MacAgent.swift", self.root + "/agent/MacAgent.swift")
         root = shlex.quote(self.root + "/agent")
         # Preserve the existing executable when unchanged: replacing it can invalidate TCC consent.
