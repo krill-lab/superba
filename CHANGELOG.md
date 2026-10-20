@@ -5,7 +5,24 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
-## [0.1.1-alpha.7] - Unreleased
+## [0.1.1-alpha.8] - Unreleased
+
+Changes since [v0.1.1-alpha.7](https://github.com/krill-lab/superba/releases/tag/v0.1.1-alpha.7).
+
+### Fixed
+
+- Apply WSL routing configuration before restarting the desktop app, so its
+  remote connection uses the selected router instead of returning to login.
+- Quote notification hook commands correctly on Windows when executable,
+  configuration or hook paths contain spaces.
+
+### Limits of this preview
+
+- Windows and macOS packages remain unsigned, as in alpha.7. macOS packages
+  are not notarized.
+- Fast mode availability depends on the model and upstream provider.
+
+## [0.1.1-alpha.7] - 2026-10-20
 
 Changes since [v0.1.1-alpha.6](https://github.com/krill-lab/superba/releases/tag/v0.1.1-alpha.6).
 
