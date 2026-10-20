@@ -219,7 +219,7 @@ impl NavMetrics {
     const TIGHT: Self = Self {
         row: size::NAV_ROW_TIGHT,
         caption: size::NAV_CAPTION[1],
-        caption_gap: 2.0,
+        caption_gap: 0.0,
     };
 
     /// Height of the main list plus the pinned footer (rows, headings, the

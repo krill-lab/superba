@@ -231,12 +231,18 @@ fn the_off_page_guides_to_a_member_in_one_scrolling_column_at_both_sizes() {
                     f.all_text()
                 );
                 let header = f.find(&count).unwrap();
+                // The table ends where the next section (协议转换) starts; a
+                // taller card (macOS) shows the failover numbers below it.
+                let end = f
+                    .find(&tr.t("router.ingress.translation"))
+                    .map_or(f32::INFINITY, |r| r.min.y);
                 let numbers: Vec<_> = f
                     .texts
                     .iter()
                     .filter(|(t, r)| {
                         t.chars().all(|c| c.is_ascii_digit() || c == ',')
                             && r.min.y > header.max.y
+                            && r.max.y < end
                             && r.max.x > header.min.x
                     })
                     .collect();

@@ -293,7 +293,7 @@ pub mod size {
     pub const NAV_ROW_COMPACT: f32 = 30.0;
     /// Sidebar row height when even [`NAV_ROW_COMPACT`] rows do not fit (all
     /// six tools installed at 960x640).
-    pub const NAV_ROW_TIGHT: f32 = 25.0;
+    pub const NAV_ROW_TIGHT: f32 = 24.0;
     /// Space between sidebar rows.
     pub const NAV_GAP: f32 = 2.0;
     /// Icon size in sidebar rows.

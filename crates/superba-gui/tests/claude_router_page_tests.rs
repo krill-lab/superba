@@ -72,8 +72,9 @@ fn the_router_page_has_no_separate_claude_code_section() {
             |ui, cx, out| router::show(ui, cx, &mut state, out),
             |f| f.has(&tr.t("recording.title")),
         );
+        // "Claude Code" itself stays: it names the tool's row under 入口.
         for gone in [
-            tr.t("router.claude.title"),
+            tr.t("router.claude.help"),
             tr.t("router.claude.routed"),
             tr.t("router.claude.claude_only"),
         ] {
