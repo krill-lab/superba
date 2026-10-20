@@ -413,8 +413,17 @@ class Session:
                           "--data-dir", str(data), "--backdate-state"])
             log(f"rollouts: {p.stdout.strip()}")
         if self.args.router_on:
-            # Codex pointed at a local router (what router mode writes); no
-            # router runs, the pages show the configuration and the history.
+            # Router mode on with the provider as its member, written by Superba
+            # itself (`--write-only`: no router runs, the pages show the
+            # configuration and the history). A hand edit of config.toml would
+            # only show Superba's "changed outside Superba" dialog.
+            spb = str(self.args.bin_dir / "spb")
+            p = self.run([spb, "router", "enable", "--member", "krill", "--yes",
+                          "--write-only"], check=False)
+            log(f"spb router enable rc={p.returncode}")
+            if p.returncode == 0:
+                return
+            # Older builds: point Codex at a local router by hand.
             cfg = self.home / ".codex" / "config.toml"
             text = cfg.read_text() if cfg.exists() else ""
             lines = [l for l in text.splitlines() if not l.startswith("openai_base_url")]
