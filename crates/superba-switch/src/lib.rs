@@ -122,7 +122,7 @@ pub fn detect_context() -> Result<LocalContext> {
             .map_err(|e| Error::other(e.to_string()))?
             .join(data_dir)
     };
-    let data_dir = data_dir.canonicalize().unwrap_or(data_dir);
+    let data_dir = superba_core::paths::canonical(&data_dir).unwrap_or(data_dir);
     Ok(LocalContext::new(
         base.home_dir(),
         superba_storage::resolve(&data_dir)?,

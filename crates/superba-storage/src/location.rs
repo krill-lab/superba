@@ -20,9 +20,7 @@ pub struct Pointer {
 /// Resolve only the fixed pointer; never follow a chain of pointers in destinations.
 /// An invalid pointer or an unavailable drive is an error, never a new empty profile.
 pub fn resolve(anchor: &Path) -> Result<DataDir> {
-    let canonical = anchor
-        .canonicalize()
-        .unwrap_or_else(|_| anchor.to_path_buf());
+    let canonical = superba_core::paths::canonical(anchor).unwrap_or_else(|_| anchor.to_path_buf());
     let anchor = canonical.as_path();
     match read_json::<Pointer>(&anchor.join(LOCATION_FILE))? {
         None => Ok(DataDir::new(anchor)),
@@ -108,9 +106,8 @@ pub struct MoveJournal {
 
 impl MoveJournal {
     pub fn read(anchor: &Path) -> Result<Option<Self>> {
-        let canonical = anchor
-            .canonicalize()
-            .unwrap_or_else(|_| anchor.to_path_buf());
+        let canonical =
+            superba_core::paths::canonical(anchor).unwrap_or_else(|_| anchor.to_path_buf());
         let anchor = canonical.as_path();
         let journal: Option<Self> = read_json(&anchor.join(MOVE_FILE))?;
         if let Some(j) = &journal {

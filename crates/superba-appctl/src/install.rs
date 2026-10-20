@@ -844,7 +844,7 @@ fn desktop_targets(programs: Vec<PathBuf>) -> Vec<PathBuf> {
         if !program.is_absolute() {
             continue;
         }
-        let program = fs::canonicalize(&program).unwrap_or(program);
+        let program = superba_core::paths::canonical(&program).unwrap_or(program);
         if let Some(parent) = program
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -1275,7 +1275,7 @@ async fn probe_codex_version(binary: &Path) -> Option<CodexVersion> {
 }
 
 async fn version_of(binary: &Path) -> Option<CodexVersion> {
-    let binary = fs::canonicalize(binary).ok()?;
+    let binary = superba_core::paths::canonical(binary).ok()?;
     let mut command = Command::from(superba_core::process::command(binary));
     command
         .arg("--version")

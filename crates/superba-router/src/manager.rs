@@ -105,7 +105,7 @@ pub fn router_exe_candidates_for(
         }
     };
     push(router_exe_next_to(current_exe));
-    if let Ok(real) = std::fs::canonicalize(current_exe) {
+    if let Ok(real) = superba_core::paths::canonical(current_exe) {
         push(router_exe_next_to(&real));
     }
     if macos {
@@ -216,7 +216,7 @@ pub fn is_network_location(path: &Path) -> bool {
         return true;
     }
     #[cfg(windows)]
-    if let Ok(real) = std::fs::canonicalize(path) {
+    if let Ok(real) = superba_core::paths::canonical(path) {
         return network_path_text(&real.to_string_lossy());
     }
     false

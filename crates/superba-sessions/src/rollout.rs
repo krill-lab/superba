@@ -129,7 +129,7 @@ pub(crate) fn discover(
             if entry.file_type().is_symlink() {
                 // Rewrite the link target (keeping the link) when it is a regular
                 // file; anything else is skipped with a warning.
-                match fs::canonicalize(&path) {
+                match superba_core::paths::canonical(&path) {
                     Ok(target) if target.is_file() => path = target,
                     _ => {
                         warnings.push(text::symlink_skipped(&path));

@@ -102,10 +102,8 @@ pub(crate) async fn move_data(
     // The relocation never rewrites Codex itself. It cannot safely contain the
     // live Codex home in the source or destination tree.
     let codex = ctx.codex_home();
-    let codex_root = codex
-        .root()
-        .canonicalize()
-        .unwrap_or_else(|_| codex.root().to_path_buf());
+    let codex_root =
+        superba_core::paths::canonical(codex.root()).unwrap_or_else(|_| codex.root().to_path_buf());
     if codex_root.starts_with(ctx.data_dir.root()) || ctx.data_dir.root().starts_with(&codex_root) {
         return Err(Error::invalid("data.path.overlap"));
     }
@@ -344,12 +342,15 @@ mod tests {
 
     fn fixture() -> (tempfile::TempDir, LocalContext, PathBuf) {
         let temp = tempfile::tempdir().unwrap();
-        let mut ctx = LocalContext::for_tests(&temp.path().canonicalize().unwrap());
+        let mut ctx =
+            LocalContext::for_tests(&superba_core::paths::canonical(temp.path()).unwrap());
         ctx.env = Arc::new(MapEnv::new().with("SUPERBA_SECRET_BACKEND", "file"));
         fs::create_dir_all(ctx.data_dir.root()).unwrap();
         fs::create_dir_all(&ctx.home_dir).unwrap();
         fs::write(ctx.data_dir.root().join("untouched.bin"), b"original data").unwrap();
-        let target = temp.path().canonicalize().unwrap().join("迁移 目标");
+        let target = superba_core::paths::canonical(temp.path())
+            .unwrap()
+            .join("迁移 目标");
         (temp, ctx, target)
     }
 

@@ -489,7 +489,7 @@ fn ccs_first_write_backup(home: &Path, codex_home: &Path) -> Option<std::path::P
         .join("backups")
         .join("live-first-write");
     let target = codex_home.join("config.toml");
-    let canonical = std::fs::canonicalize(&target).ok();
+    let canonical = superba_core::paths::canonical(&target).ok();
     for entry in std::fs::read_dir(&dir).ok()?.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("source") {
@@ -502,7 +502,7 @@ fn ccs_first_write_backup(home: &Path, codex_home: &Path) -> Option<std::path::P
         let same = named == target
             || canonical
                 .as_deref()
-                .is_some_and(|c| std::fs::canonicalize(named).ok().as_deref() == Some(c));
+                .is_some_and(|c| superba_core::paths::canonical(named).ok().as_deref() == Some(c));
         if same {
             return Some(path.with_extension(""));
         }

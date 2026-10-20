@@ -82,14 +82,12 @@ pub struct PreparedMove {
 impl PreparedMove {
     pub fn prepare(ctx: &LocalContext, destination: &Path) -> Result<Self> {
         let target = validate_directory(destination, ctx.env.as_ref())?;
-        let source = fs::canonicalize(ctx.data_dir.root())
+        let source = superba_core::paths::canonical(ctx.data_dir.root())
             .map_err(|e| Error::io(ctx.data_dir.root(), &e))?;
-        let anchor = fs::canonicalize(ctx.data_dir.anchor())
+        let anchor = superba_core::paths::canonical(ctx.data_dir.anchor())
             .map_err(|e| Error::io(ctx.data_dir.anchor(), &e))?;
-        let home = ctx
-            .home_dir
-            .canonicalize()
-            .unwrap_or_else(|_| ctx.home_dir.clone());
+        let home =
+            superba_core::paths::canonical(&ctx.home_dir).unwrap_or_else(|_| ctx.home_dir.clone());
         let codex = planned_path(ctx.codex_home().root())
             .map(|p| p.0)
             .unwrap_or_else(|_| ctx.codex_home().root().to_path_buf());
@@ -411,7 +409,7 @@ fn rebase_path(text: &str, old: &Path, new: &Path) -> Option<PathBuf> {
     // Earlier data may have used an OS alias (/var on macOS, a non-verbatim
     // drive path on Windows). Resolve existing path fields before prefix matching.
     if path.is_absolute()
-        && let Ok(real) = path.canonicalize()
+        && let Ok(real) = superba_core::paths::canonical(path)
         && let Ok(relative) = real.strip_prefix(old)
     {
         return Some(new.join(relative));
@@ -423,9 +421,7 @@ fn rebase_path(text: &str, old: &Path, new: &Path) -> Option<PathBuf> {
 /// locator, coordination files and GUI endpoint stay at the anchor. A failure is
 /// reported to the user and leaves the journal for a later cleanup attempt.
 pub fn cleanup_source(source: &Path, anchor: &Path) -> Result<()> {
-    let canonical = anchor
-        .canonicalize()
-        .unwrap_or_else(|_| anchor.to_path_buf());
+    let canonical = superba_core::paths::canonical(anchor).unwrap_or_else(|_| anchor.to_path_buf());
     let anchor = canonical.as_path();
     let meta = fs::symlink_metadata(source).map_err(|e| Error::io(source, &e))?;
     if is_link(&meta) {

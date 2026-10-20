@@ -144,7 +144,7 @@ pub fn planned_path(path: &Path) -> Result<(PathBuf, PathBuf)> {
             Err(e) => return Err(Error::io(ancestor, &e)),
         }
     }
-    let real = fs::canonicalize(ancestor).map_err(|e| Error::io(ancestor, &e))?;
+    let real = superba_core::paths::canonical(ancestor).map_err(|e| Error::io(ancestor, &e))?;
     if !real.is_dir() {
         return Err(Error::invalid("data.path.directory"));
     }
@@ -173,7 +173,7 @@ pub fn validate_directory(path: &Path, env: &dyn EnvSource) -> Result<PathBuf> {
     ] {
         if let Some(value) = env.var_os(key) {
             let forbidden = PathBuf::from(value);
-            let forbidden = forbidden.canonicalize().unwrap_or(forbidden);
+            let forbidden = superba_core::paths::canonical(&forbidden).unwrap_or(forbidden);
             let a = superba_core::paths::display_path(&full).to_lowercase();
             let b = superba_core::paths::display_path(&forbidden).to_lowercase();
             if a == b || a.starts_with(&format!("{}\\", b.trim_end_matches('\\'))) {

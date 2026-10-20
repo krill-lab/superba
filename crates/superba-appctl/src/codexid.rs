@@ -142,7 +142,7 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 }
 
 fn path_key(path: &Path) -> String {
-    let path = fs::canonicalize(path).unwrap_or_else(|_| lexical(path));
+    let path = superba_core::paths::canonical(path).unwrap_or_else(|_| lexical(path));
     let text = path.to_string_lossy();
     if cfg!(windows) {
         // canonicalize returns verbatim `\\?\C:\...` paths; a missing file has none.
@@ -221,7 +221,7 @@ pub fn launcher_target(path: &Path) -> Option<PathBuf> {
     // The script's own directory, symlinks resolved first (what launchers that
     // follow `$0` links compute), then as named.
     let mut dirs: Vec<PathBuf> = Vec::new();
-    if let Ok(canonical) = fs::canonicalize(path)
+    if let Ok(canonical) = superba_core::paths::canonical(path)
         && let Some(dir) = canonical.parent()
     {
         dirs.push(dir.to_owned());
@@ -584,9 +584,10 @@ fn substitution(content: &str, vars: &HashMap<String, Value>) -> Option<Value> {
 /// the last three names of a longer path (`ChatGPT.app/…/codex-cli/bin/codex`).
 /// Show the full path next to it (hover, copy).
 pub fn short_path(path: &Path, root: Option<&Path>, home: Option<&Path>) -> String {
-    let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let canonical = superba_core::paths::canonical(path).unwrap_or_else(|_| path.to_path_buf());
     let under = |base: &Path| -> Option<Vec<String>> {
-        let base_canonical = fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
+        let base_canonical =
+            superba_core::paths::canonical(base).unwrap_or_else(|_| base.to_path_buf());
         [path, canonical.as_path()]
             .iter()
             .find_map(|p| {

@@ -223,7 +223,7 @@ pub(crate) fn is_unlockable_share(path: &Path) -> bool {
 /// Best-effort normalization for comparing directories: canonical path when it
 /// exists, otherwise the path with `.`/`..` components folded.
 pub(crate) fn normalize_dir(path: &Path) -> PathBuf {
-    if let Ok(canon) = fs::canonicalize(path) {
+    if let Ok(canon) = superba_core::paths::canonical(path) {
         return canon;
     }
     let mut out = PathBuf::new();

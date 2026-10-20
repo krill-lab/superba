@@ -231,7 +231,7 @@ impl Discovery<'_> {
         if !executable_file(&path) {
             return;
         }
-        let Ok(resolved) = fs::canonicalize(&path) else {
+        let Ok(resolved) = superba_core::paths::canonical(&path) else {
             return;
         };
         if let Some(&index) = self.seen.get(&resolved) {

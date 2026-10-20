@@ -183,7 +183,10 @@ impl Switcher {
     /// signature are still right. Public for tests; `open_app_package` uses it.
     pub async fn open_windows_package(&self, path: PathBuf) -> Result<()> {
         let downloads = self.deps.ctx.data_dir.downloads_dir();
-        let inside = match (path.canonicalize(), downloads.canonicalize()) {
+        let inside = match (
+            superba_core::paths::canonical(&path),
+            superba_core::paths::canonical(&downloads),
+        ) {
             (Ok(p), Ok(d)) => p.parent() == Some(d.as_path()),
             _ => false,
         };

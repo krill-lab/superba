@@ -71,6 +71,43 @@ pub fn display_path_text(text: &str, windows: bool) -> String {
     }
 }
 
+/// `path` without the verbatim prefix `fs::canonicalize` adds on Windows:
+/// `\\?\C:\x` becomes `C:\x` and `\\?\UNC\server\share\x` becomes
+/// `\\server\share\x`, when the plain form means the same file (shorter than
+/// `MAX_PATH`, no component ending in a dot or a space). Other paths, and every
+/// path on other platforms, are returned unchanged.
+pub fn plain_path(path: &Path) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path.to_path_buf();
+    };
+    let plain = if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        let bytes = rest.as_bytes();
+        if bytes.len() < 3 || !bytes[0].is_ascii_alphabetic() || &bytes[1..3] != b":\\" {
+            return path.to_path_buf();
+        }
+        rest.to_owned()
+    } else {
+        return path.to_path_buf();
+    };
+    let awkward = plain
+        .split('\\')
+        .any(|c| c != "." && c != ".." && (c.ends_with('.') || c.ends_with(' ')));
+    if plain.len() >= 260 || awkward {
+        return path.to_path_buf();
+    }
+    PathBuf::from(plain)
+}
+
+/// `fs::canonicalize` in the plain form ([`plain_path`]). Use this, never
+/// `fs::canonicalize`, for any path that may reach another program (a
+/// command line, `msiexec /i`) or a person: Windows programs such as msiexec
+/// reject verbatim paths (error 1619, alpha.8 self-update).
+pub fn canonical(path: impl AsRef<Path>) -> std::io::Result<PathBuf> {
+    std::fs::canonicalize(path).map(|p| plain_path(&p))
+}
+
 /// The real process environment.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ProcessEnv;

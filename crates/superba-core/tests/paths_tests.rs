@@ -204,3 +204,26 @@ fn display_paths_use_one_separator_on_windows() {
     assert_eq!(display_path_text(r"C:\x/y", false), r"C:\x/y");
     assert_eq!(display_path_text("/home/a\\b", false), "/home/a\\b");
 }
+
+/// alpha.8 Windows acceptance (D1, D7): `canonical` never returns the
+/// verbatim `\\?\` form that msiexec refuses (1619) and that showed up in
+/// error messages; `plain_path` strips it only when the plain form is the same
+/// file.
+#[test]
+fn canonical_paths_are_plain() {
+    use superba_core::paths::{canonical, plain_path};
+    let c = canonical(std::env::temp_dir()).unwrap();
+    assert!(!c.to_string_lossy().starts_with(r"\\?\"), "{}", c.display());
+    assert!(c.is_absolute());
+    assert_eq!(
+        plain_path(std::path::Path::new(r"\\?\C:\Users\me\x.msi")),
+        std::path::PathBuf::from(r"C:\Users\me\x.msi")
+    );
+    assert_eq!(
+        plain_path(std::path::Path::new(r"\\?\UNC\srv\share\x")),
+        std::path::PathBuf::from(r"\\srv\share\x")
+    );
+    // A trailing dot only the verbatim form keeps: unchanged.
+    let dotted = std::path::Path::new(r"\\?\C:\dir.\x");
+    assert_eq!(plain_path(dotted), dotted.to_path_buf());
+}

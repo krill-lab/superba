@@ -65,15 +65,17 @@ pub(crate) fn ensure_dir(dir: &Path) -> Result<()> {
 /// Non-links and missing paths are returned unchanged.
 pub(crate) fn resolve_write_target(path: &Path) -> PathBuf {
     match fs::symlink_metadata(path) {
-        Ok(m) if m.file_type().is_symlink() => fs::canonicalize(path).unwrap_or_else(|_| {
-            // Dangling link: write through the link target if it is readable.
-            fs::read_link(path)
-                .map(|t| match path.parent() {
-                    Some(p) if t.is_relative() => p.join(t),
-                    _ => t,
-                })
-                .unwrap_or_else(|_| path.to_path_buf())
-        }),
+        Ok(m) if m.file_type().is_symlink() => {
+            superba_core::paths::canonical(path).unwrap_or_else(|_| {
+                // Dangling link: write through the link target if it is readable.
+                fs::read_link(path)
+                    .map(|t| match path.parent() {
+                        Some(p) if t.is_relative() => p.join(t),
+                        _ => t,
+                    })
+                    .unwrap_or_else(|_| path.to_path_buf())
+            })
+        }
         _ => path.to_path_buf(),
     }
 }
