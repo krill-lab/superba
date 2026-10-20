@@ -82,7 +82,9 @@ impl Switcher {
             let Ok(path) = member_path(site, profile) else {
                 return Ok(());
             };
-            let Ok(mut member) = member_from_site(site, &member_lines(site, profile), &path) else {
+            let Ok(mut member) =
+                member_lines(site, profile).and_then(|lines| member_from_site(site, &lines, &path))
+            else {
                 return Ok(());
             };
             member.id = id.clone();

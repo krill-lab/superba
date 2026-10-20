@@ -24,6 +24,8 @@ pub enum LineHealth {
     Probing,
     /// No live data (router not running).
     Unknown,
+    /// Disabled by the user (user bug 108): not a router line at all.
+    Disabled,
 }
 
 /// Live metrics of one line.
@@ -84,6 +86,14 @@ pub struct MemberView {
 }
 
 impl MemberView {
+    /// Lines the router may use (all but the disabled ones).
+    pub fn enabled_lines(&self) -> usize {
+        self.lines
+            .iter()
+            .filter(|l| l.health != LineHealth::Disabled)
+            .count()
+    }
+
     /// Lines currently taking traffic.
     pub fn healthy_lines(&self) -> usize {
         self.lines

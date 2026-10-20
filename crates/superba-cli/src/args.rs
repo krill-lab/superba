@@ -499,6 +499,10 @@ pub struct ProfileEditArgs {
     pub lines: Vec<String>,
     #[arg(long, help = english("cli.help.auto_line"))]
     pub auto_line: bool,
+    #[arg(long = "disable-line", value_name = "LINE", help = english("cli.help.disable_line"))]
+    pub disable_lines: Vec<String>,
+    #[arg(long = "enable-line", value_name = "LINE", help = english("cli.help.enable_line"))]
+    pub enable_lines: Vec<String>,
     #[arg(long, value_enum, help = english("cli.help.auth_choice"))]
     pub auth: Option<AuthChoiceArg>,
     #[arg(long, help = english("cli.help.model"))]

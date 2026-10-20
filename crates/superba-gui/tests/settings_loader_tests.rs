@@ -25,6 +25,7 @@ fn profile(id: &str, site: &str) -> Profile {
         site_id: SiteId::new(site),
         line_id: None,
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
         auth: AuthChoice::Auto,
         key_ref: Some(KeyRef::Keyring {

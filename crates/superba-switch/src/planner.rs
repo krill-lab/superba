@@ -1990,13 +1990,28 @@ impl Switcher {
                     Some(l) => vec![l.clone()],
                     None => {
                         let mut v = profile.line_priority();
-                        v.retain(|l| site.line(l).is_some());
+                        v.retain(|l| site.line(l).is_some() && !profile.is_line_disabled(l));
                         if v.is_empty() {
-                            v.extend(site.default_line().map(|l| l.id.clone()));
+                            // The site's default, or else its first enabled
+                            // line; a disabled line is never switched to.
+                            v.extend(
+                                site.default_line()
+                                    .map(|l| l.id.clone())
+                                    .filter(|l| !profile.is_line_disabled(l))
+                                    .or_else(|| profile.enabled_line_ids(&site).into_iter().next()),
+                            );
                         }
                         v
                     }
                 };
+                if let Some(l) = &line_override
+                    && profile.is_line_disabled(l)
+                {
+                    return Err(Error::invalid(format!(
+                        "line {l} of provider {} is disabled; enable it before switching to it",
+                        profile.id
+                    )));
+                }
                 if candidates.is_empty() {
                     let missing = line_override.clone().or_else(|| profile.line_id.clone());
                     return Err(Error::NotFound {

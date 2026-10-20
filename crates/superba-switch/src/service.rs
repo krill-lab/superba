@@ -23,6 +23,7 @@ use crate::rules;
 fn router_member_changed(old: &Profile, new: &Profile) -> bool {
     old.site_id != new.site_id
         || old.line_priority() != new.line_priority()
+        || old.disabled_lines != new.disabled_lines
         || old.base_url_override != new.base_url_override
         || old.name != new.name
         || old.key_ref != new.key_ref
@@ -60,6 +61,10 @@ fn preset_match<'a>(
 fn merge_rerun(existing: &Profile, wizard: Profile) -> Profile {
     let mut p = existing.clone();
     p.set_line_priority(wizard.line_priority());
+    // A line the wizard now makes primary is enabled again.
+    if let Some(first) = &wizard.line_id {
+        p.disabled_lines.remove(first);
+    }
     p.auth_mode = wizard.auth_mode;
     p.set_auth(wizard.auth);
     p.base_url_override = wizard.base_url_override;

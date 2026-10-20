@@ -94,8 +94,10 @@ pub(crate) fn endpoint_for(base: &Url, lines: &[LineConfig]) -> Endpoint {
 /// lines when it has a Codex path, else one line at its Anthropic endpoint.
 fn claude_only_member(site: &Site, profile: &Profile, base: Option<&Url>) -> Option<MemberConfig> {
     let path = crate::router::member_path(site, profile).ok();
-    let from_site = path
-        .and_then(|p| member_from_site(site, &crate::router::member_lines(site, profile), &p).ok());
+    let from_site = path.and_then(|p| {
+        let lines = crate::router::member_lines(site, profile).ok()?;
+        member_from_site(site, &lines, &p).ok()
+    });
     let mut member = from_site.or_else(|| {
         base.map(|base| MemberConfig {
             id: String::new(),

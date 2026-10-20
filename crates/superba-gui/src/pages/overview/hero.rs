@@ -849,7 +849,9 @@ fn provider_popover(
                 && site.lines.len() > 1
             {
                 let routed = cx.data.router_enabled();
-                let lines = crate::pages::shared::ordered_lines(&site, Some(profile));
+                // Disabled lines (user bug 108) are never used: not listed.
+                let mut lines = crate::pages::shared::ordered_lines(&site, Some(profile));
+                lines.retain(|l| !profile.is_line_disabled(&l.id));
                 let active = if routed {
                     lines.first().map(|l| l.id.clone())
                 } else {

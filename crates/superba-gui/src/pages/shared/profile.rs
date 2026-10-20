@@ -18,6 +18,7 @@ pub fn new_profile(site: &Site, name: String) -> Profile {
         site_id: site.id.clone(),
         line_id: None,
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         auth_mode: AuthMode::Pat,
         auth: AuthChoice::Auto,
         key_ref: None,

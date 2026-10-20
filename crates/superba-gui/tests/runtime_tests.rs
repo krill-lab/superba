@@ -47,6 +47,7 @@ fn compatible_pair(id: &str) -> (Site, Profile) {
         },
         auth: superba_core::AuthChoice::from_mode(AuthMode::ApiKey),
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         codex_settings: Default::default(),
     };
     (site, profile)

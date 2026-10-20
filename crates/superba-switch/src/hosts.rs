@@ -737,10 +737,9 @@ impl Switcher {
             Some(b) => (ResolvedEndpoints::for_base_url(&b)?, None),
             None => {
                 let line = profile
-                    .line_priority()
+                    .enabled_line_ids(&site)
                     .iter()
                     .find_map(|l| site.line(l))
-                    .or_else(|| site.default_line())
                     .cloned()
                     .ok_or_else(|| Error::NotFound {
                         what: format!("line for site {}", site.id),

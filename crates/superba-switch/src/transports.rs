@@ -140,9 +140,11 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 /// The lines of `profile`'s provider in priority order: the profile's order,
-/// then the site's other lines (what the router fails over across).
+/// then the site's other lines (what the router fails over across), without
+/// the disabled ones: transport checks never dial them.
 pub(crate) fn provider_lines<'a>(site: &'a Site, profile: &Profile) -> Vec<&'a Line> {
-    crate::router::member_lines(site, profile)
+    profile
+        .enabled_line_ids(site)
         .iter()
         .filter_map(|id| site.line(id))
         .collect()

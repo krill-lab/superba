@@ -507,9 +507,19 @@ pub(crate) fn member_line_base(
 }
 
 /// Line order of a member: the profile's priority, then the site's other lines,
-/// so the router can fail over across every line of the site.
-pub(crate) fn member_lines(site: &Site, profile: &Profile) -> Vec<superba_core::LineId> {
-    profile.ordered_line_ids(site)
+/// so the router can fail over across every enabled line of the site. Disabled
+/// lines (user bug 108) are left out entirely: no request, probe or WebSocket
+/// dial ever reaches them. An error when every line is disabled, since an empty
+/// order would mean "all of the site's lines" to [`member_from_site`].
+pub(crate) fn member_lines(site: &Site, profile: &Profile) -> Result<Vec<superba_core::LineId>> {
+    let lines = profile.enabled_line_ids(site);
+    if lines.is_empty() {
+        return Err(Error::invalid(format!(
+            "every line of provider {} is disabled; enable a line to route through it",
+            profile.id
+        )));
+    }
+    Ok(lines)
 }
 
 impl Switcher {
@@ -549,7 +559,7 @@ impl Switcher {
                 });
             }
             let path = member_path(site, profile)?;
-            let mut member = member_from_site(site, &member_lines(site, profile), &path)?;
+            let mut member = member_from_site(site, &member_lines(site, profile)?, &path)?;
             member.id = router_id(id.as_str());
             member.name = profile.name.clone();
             member.model_map = site.model_map.clone();

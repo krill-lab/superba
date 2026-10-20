@@ -279,6 +279,7 @@ pub fn profile(id: &str, site: &str) -> Profile {
         model: ModelDefaults::default(),
         auth: superba_core::AuthChoice::from_mode(AuthMode::Pat),
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         codex_settings: Default::default(),
     }
 }

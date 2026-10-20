@@ -149,6 +149,9 @@ pub struct State {
     pub import: Option<crate::pages::import::ImportDialog>,
     /// The delete confirmation.
     pub(crate) remove: Option<RemoveDialog>,
+    /// Confirmation to disable the line Codex uses in direct mode (user bug
+    /// 108): (provider, the line to disable).
+    pub(crate) disable_line: Option<(ProfileId, LineId)>,
 }
 
 impl std::fmt::Debug for State {
@@ -164,7 +167,10 @@ impl std::fmt::Debug for State {
 impl State {
     /// A dialog of this page is open (the shell leaves Enter / Escape to it).
     pub fn is_modal_open(&self) -> bool {
-        self.add.is_some() || self.remove.is_some() || self.import.is_some()
+        self.add.is_some()
+            || self.remove.is_some()
+            || self.import.is_some()
+            || self.disable_line.is_some()
     }
 
     /// The entry being renamed in the list and the typed name.
@@ -365,6 +371,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     });
     add::show(ui.ctx(), cx, state, out);
     detail::remove_dialog(ui.ctx(), cx, state);
+    lines::disable_dialog(ui.ctx(), cx, state, out);
     show_import(ui.ctx(), cx, state, out);
 }
 

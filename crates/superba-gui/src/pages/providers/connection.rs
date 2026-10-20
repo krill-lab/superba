@@ -49,6 +49,12 @@ pub(super) fn show(
     super::transports::poll(ui, cx, state, p);
     if p.kind == ProviderKind::Custom {
         base_url(ui, cx, state, p);
+        // A custom provider with several lines (imported, or a site file)
+        // lists them too, to order and disable them (user bug 108).
+        if site.lines.len() > 1 {
+            ui.add_space(6.0);
+            super::lines::show(ui, cx, state, p, out);
+        }
     } else {
         super::lines::show(ui, cx, state, p, out);
     }

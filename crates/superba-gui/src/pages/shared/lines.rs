@@ -85,6 +85,77 @@ pub fn reorder_action(
     })
 }
 
+/// What disabling or enabling `line` of `profile` asks for (user bug 108).
+/// Enabling, and disabling a line Codex does not use now, save the profile
+/// (a running router reloads its members at once). Disabling the line Codex
+/// uses in direct mode is [`LineToggle::Confirm`]: the caller asks, then
+/// [`disable_and_switch`]. `None` when the change is refused (the last
+/// enabled line, a line of another site).
+pub fn toggle_action(
+    data: &Data,
+    profile: &Profile,
+    site: &Site,
+    line: &LineId,
+    disable: bool,
+) -> Option<LineToggle> {
+    let mut changed = profile.clone();
+    changed.set_line_disabled(site, line, disable).ok()?;
+    if disable && applied_line(data, profile).as_ref() == Some(line) {
+        let next = changed.enabled_line_ids(site).into_iter().next()?;
+        return Some(LineToggle::Confirm { next });
+    }
+    Some(LineToggle::Save(Action::SaveProfile {
+        profile: Box::new(changed),
+        key: None,
+    }))
+}
+
+/// The answer of [`toggle_action`].
+#[derive(Debug)]
+pub enum LineToggle {
+    /// Save the changed profile.
+    Save(Action),
+    /// The line is the one in use (direct mode): confirm, then switch to `next`.
+    Confirm {
+        /// The first enabled line after the change.
+        next: LineId,
+    },
+}
+
+/// The confirmed disable of the line in use: save the profile with `line`
+/// disabled, then the usual switch to the first enabled line (hot-switch
+/// countdown and confirmation). Empty when the change is refused.
+pub fn disable_and_switch(profile: &Profile, site: &Site, line: &LineId) -> Vec<Action> {
+    let mut changed = profile.clone();
+    if changed.set_line_disabled(site, line, true).is_err() {
+        return Vec::new();
+    }
+    let Some(next) = changed.enabled_line_ids(site).into_iter().next() else {
+        return Vec::new();
+    };
+    vec![
+        Action::SaveProfile {
+            profile: Box::new(changed),
+            key: None,
+        },
+        Action::Switch {
+            profile: profile.id.clone(),
+            line: Some(next),
+            auth: None,
+        },
+    ]
+}
+
+/// True when `line` is the only enabled line of `profile` on `site` (it cannot
+/// be disabled).
+pub fn last_enabled(profile: &Profile, site: &Site, line: &LineId) -> bool {
+    !profile.is_line_disabled(line)
+        && site
+            .lines
+            .iter()
+            .all(|l| &l.id == line || profile.is_line_disabled(&l.id))
+}
+
 /// Human-readable priority, distinct from the latest observed upstream.
 pub fn priority_text(tr: &crate::i18n::Tr, names: impl IntoIterator<Item = String>) -> String {
     names
