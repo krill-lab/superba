@@ -92,12 +92,13 @@ fn pages_are_grouped_and_every_label_is_translated() {
             NavGroup::Connect,
             NavGroup::Codex,
             NavGroup::Claude,
+            NavGroup::Others,
         ]
     );
-    assert_eq!(Page::ALL.len(), 12);
+    assert_eq!(Page::ALL.len(), 18);
     assert_eq!(Page::ALL[1], Page::Tools);
     assert_eq!(
-        Page::ALL[11],
+        Page::ALL[17],
         Page::Superba(superba_gui::pages::SuperbaSection::Home)
     );
     assert!(
@@ -112,7 +113,12 @@ fn pages_are_grouped_and_every_label_is_translated() {
                 assert_ne!(tr.t(key), key, "{key} missing in {locale:?}");
             }
         }
-        for g in [NavGroup::Connect, NavGroup::Codex, NavGroup::Claude] {
+        for g in [
+            NavGroup::Connect,
+            NavGroup::Codex,
+            NavGroup::Claude,
+            NavGroup::Others,
+        ] {
             let key = g.caption_key().unwrap();
             assert_ne!(tr.t(key), key);
         }

@@ -54,6 +54,7 @@ pub mod settings;
 pub mod shared;
 pub mod wizard;
 
+use superba_core::harness::HarnessId;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -105,6 +106,10 @@ pub enum Page {
     ClaudeSettings,
     /// Superba maintenance and preferences, with a section deep link.
     Superba(SuperbaSection),
+    /// One installed coding tool (dsh, opencode, pi, ZCode, WorkBuddy,
+    /// Gemini CLI): the Tools page's detail of it as a page of its own; its
+    /// sidebar entry shows only when the tool is installed (user request 114).
+    Tool(superba_core::harness::HarnessId),
 }
 
 /// Sidebar groups (UX §2.1).
@@ -118,6 +123,8 @@ pub enum NavGroup {
     Codex,
     /// Claude Code on this computer.
     Claude,
+    /// The other coding tools that are installed.
+    Others,
 }
 
 impl NavGroup {
@@ -128,6 +135,7 @@ impl NavGroup {
             NavGroup::Connect => Some("nav.group.connect"),
             NavGroup::Codex => Some("nav.group.codex"),
             NavGroup::Claude => Some("nav.group.claude"),
+            NavGroup::Others => Some("nav.group.others"),
         }
     }
 }
@@ -145,7 +153,7 @@ pub enum PageLayout {
 
 impl Page {
     /// Sidebar destinations; Superba sections share one pinned entry.
-    pub const ALL: [Page; 12] = [
+    pub const ALL: [Page; 18] = [
         Page::Overview,
         Page::Tools,
         Page::Providers,
@@ -157,11 +165,17 @@ impl Page {
         Page::Hosts,
         Page::ClaudeCode,
         Page::ClaudeSettings,
+        Page::Tool(HarnessId::Dsh),
+        Page::Tool(HarnessId::OpenCode),
+        Page::Tool(HarnessId::Pi),
+        Page::Tool(HarnessId::ZCode),
+        Page::Tool(HarnessId::WorkBuddy),
+        Page::Tool(HarnessId::Gemini),
         Page::Superba(SuperbaSection::Home),
     ];
 
     /// Every independently addressable page, including all Superba sections.
-    pub const DESTINATIONS: [Page; 19] = [
+    pub const DESTINATIONS: [Page; 25] = [
         Page::Overview,
         Page::Tools,
         Page::Providers,
@@ -173,6 +187,12 @@ impl Page {
         Page::Hosts,
         Page::ClaudeCode,
         Page::ClaudeSettings,
+        Page::Tool(HarnessId::Dsh),
+        Page::Tool(HarnessId::OpenCode),
+        Page::Tool(HarnessId::Pi),
+        Page::Tool(HarnessId::ZCode),
+        Page::Tool(HarnessId::WorkBuddy),
+        Page::Tool(HarnessId::Gemini),
         Page::Superba(SuperbaSection::Home),
         Page::Superba(SuperbaSection::Updates),
         Page::Superba(SuperbaSection::Diagnostics),
@@ -204,6 +224,7 @@ impl Page {
             Page::Providers | Page::Models | Page::Router | Page::Usage => NavGroup::Connect,
             Page::Settings | Page::Sessions | Page::Hosts => NavGroup::Codex,
             Page::ClaudeCode | Page::ClaudeSettings => NavGroup::Claude,
+            Page::Tool(_) => NavGroup::Others,
         }
     }
 
@@ -218,6 +239,7 @@ impl Page {
             || self == Self::Router
             || self == Self::ClaudeCode
             || self == Self::Tools
+            || matches!(self, Self::Tool(_))
             || self == Self::Models
             || self == Self::Providers
         {
@@ -247,6 +269,15 @@ impl Page {
             Page::Hosts => "nav.hosts",
             Page::ClaudeCode => "nav.claude_code",
             Page::ClaudeSettings => "nav.claude_settings",
+            Page::Tool(h) => match h {
+                HarnessId::Dsh => "nav.tool.dsh",
+                HarnessId::OpenCode => "nav.tool.opencode",
+                HarnessId::Pi => "nav.tool.pi",
+                HarnessId::ZCode => "nav.tool.zcode",
+                HarnessId::WorkBuddy => "nav.tool.workbuddy",
+                HarnessId::Gemini => "nav.tool.gemini",
+                HarnessId::ClaudeCode => "nav.claude_code",
+            },
             Page::Superba(section) => section.title_key(),
         }
     }
@@ -276,6 +307,7 @@ impl Page {
             Page::Hosts => "page.hosts.subtitle",
             Page::ClaudeCode => "page.claude_code.subtitle",
             Page::ClaudeSettings => "page.claude_settings.subtitle",
+            Page::Tool(_) => "page.tool.subtitle",
             Page::Superba(section) => section.subtitle_key(),
         }
     }
@@ -294,6 +326,7 @@ impl Page {
             Page::Hosts => Icon::Server,
             Page::ClaudeCode => Icon::Cloud,
             Page::ClaudeSettings => Icon::Terminal,
+            Page::Tool(_) => Icon::Tools,
             Page::Superba(_) => Icon::Superba,
         }
     }
@@ -325,6 +358,8 @@ pub struct PageStatus {
     pub badge: NavBadge,
     /// Tooltip of the badge (translated).
     pub badge_tip: Option<String>,
+    /// Not in the sidebar now (a tool that is not installed).
+    pub hidden: bool,
 }
 
 /// One entry of the Cmd/Ctrl+K command palette.
