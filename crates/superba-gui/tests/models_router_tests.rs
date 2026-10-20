@@ -117,6 +117,11 @@ async fn every_mode_shows_one_row_per_model_with_its_providers() {
                     report.whole(&models_page::mode_label(&tr, mode)),
                     "{at}: mode"
                 );
+                // What the mode does wraps instead of eliding (UI spec §7).
+                assert!(
+                    report.whole(&models_page::mode_help(&tr, mode)),
+                    "{at}: mode help"
+                );
                 // The router publishes its own list: no list source picker,
                 // no site picker toggle.
                 assert!(

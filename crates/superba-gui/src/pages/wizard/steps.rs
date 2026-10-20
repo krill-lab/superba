@@ -954,6 +954,8 @@ fn router_list(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
     let title = ui
         .label(Text::title(cx.tr.t("models.router.wizard_title"), cx.pal))
         .id;
+    // What the question is about, then the choice, then what the choice does.
+    ui.add(egui::Label::new(Text::small(cx.tr.t("models.router.wizard_body"), cx.pal)).wrap());
     ui.add_space(4.0);
     FormRow::unlabeled().height(size::CONTROL).show(ui, |ui| {
         crate::design::a11y::label_unnamed_by(ui, title, |ui| {
@@ -976,11 +978,7 @@ fn router_list(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
     ui.add_space(2.0);
     ui.add(
         egui::Label::new(Text::small(
-            format!(
-                "{} {}",
-                crate::pages::models::mode_help(cx.tr, w.catalog_mode),
-                cx.tr.t("models.router.wizard_body")
-            ),
+            crate::pages::models::mode_help(cx.tr, w.catalog_mode),
             cx.pal,
         ))
         .wrap(),

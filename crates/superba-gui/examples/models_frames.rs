@@ -4,10 +4,11 @@
 //! Run with HOME and SUPERBA_DATA_DIR pointed at a disposable directory:
 //!
 //!     models_frames --mode codex|extended|prefixed --width 1280|960 [--dark] [--zh]
-//!         [--click X,Y] [--hover X,Y] [--wizard] --output FILE.png
+//!         [--click X,Y] [--hover X,Y] [--wizard [--scroll]] --output FILE.png
 //!
 //! `--wizard` shows the setup wizard's "Line & models" step instead, where the
-//! router model list is asked.
+//! router model list is asked; `--scroll` scrolls its body to the end, where
+//! that question is.
 #![allow(dead_code)]
 #[path = "../tests/support/mod.rs"]
 mod support;
@@ -103,9 +104,27 @@ struct WizardShot {
     fonts: superba_gui::design::fonts::FontReport,
     output: Option<PathBuf>,
     frames: u32,
+    /// Scroll the step's body to its end before the shot.
+    scroll: bool,
 }
 
 impl eframe::App for WizardShot {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
+        // A few wheel notches over the body, then the pointer leaves.
+        if self.scroll && (5..10).contains(&self.frames) {
+            let center = ctx.content_rect().center();
+            input.events.push(egui::Event::PointerMoved(center));
+            input.events.push(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -400.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
+                modifiers: Default::default(),
+            });
+        } else if self.scroll && self.frames == 10 {
+            input.events.push(egui::Event::PointerGone);
+        }
+    }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.frames += 1;
         let ctx = ui.ctx().clone();
@@ -120,7 +139,7 @@ impl eframe::App for WizardShot {
             log: &[],
         };
         superba_gui::pages::wizard::show(&ctx, &cx, &mut self.wizard, &mut Vec::new());
-        if self.frames > 20
+        if self.frames > if self.scroll { 40 } else { 20 }
             && let Some(path) = self.output.take()
         {
             let close = ctx.clone();
@@ -205,6 +224,7 @@ fn main() -> eframe::Result {
         wizard.step = superba_gui::pages::wizard::Step::LineModels;
         let theme = opts.theme;
         let locale = opts.locale.unwrap_or(Locale::En);
+        let scroll = args.iter().any(|a| a == "--scroll");
         return eframe::run_native(
             "Superba",
             native,
@@ -223,6 +243,7 @@ fn main() -> eframe::Result {
                     fonts,
                     output: Some(output),
                     frames: 0,
+                    scroll,
                 }))
             }),
         );

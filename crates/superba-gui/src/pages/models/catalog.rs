@@ -228,10 +228,16 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
     let mode = catalog.settings.mode;
     let mut picked = None;
     let enabled = state.catalog_save.is_none() && !cx.busy && !view.read_only;
-    // The controls keep their width; the explanation takes the rest and
-    // elides (full text on hover) rather than squeezing them.
-    let text_w = (ui.available_width() - MODE_W - 150.0 - space::L).max(160.0);
-    FormRow::default()
+    // The controls keep the width they used last frame (the prefixes button
+    // is wider in English); the explanation takes the rest and wraps (prose
+    // wraps, UI spec §7), so the row grows a line at 960 px instead of
+    // eliding what the mode does.
+    let controls_id = egui::Id::unique("superba-models-mode-controls");
+    let controls_w: f32 = ui
+        .data(|d| d.get_temp(controls_id))
+        .unwrap_or(MODE_W + space::S + 160.0);
+    let text_w = (ui.available_width() - controls_w - space::L).max(160.0);
+    let row = FormRow::default()
         .label_width(text_w)
         .gap(space::L)
         .height(size::CONTROL + space::S)
@@ -244,7 +250,7 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
                     ui.set_max_width(text_w);
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(Text::strong(cx.tr.t("models.router.title"), cx.pal));
-                    crate::pages::elided(ui, Text::small(mode_help(cx.tr, mode), cx.pal));
+                    ui.add(egui::Label::new(Text::small(mode_help(cx.tr, mode), cx.pal)).wrap());
                 });
             },
             |ui| {
@@ -269,6 +275,11 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
                 prefixes(ui, cx, state, catalog, enabled);
             },
         );
+    let used = row.controls_rect.width();
+    if (used - controls_w).abs() > 0.5 {
+        ui.data_mut(|d| d.insert_temp(controls_id, used));
+        ui.ctx().request_repaint();
+    }
     let (r, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
     ui.painter().hline(

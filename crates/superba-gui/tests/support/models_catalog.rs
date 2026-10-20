@@ -136,7 +136,8 @@ const MODELS: &[Model] = &[
     },
 ];
 
-/// The members, their names and slugs (the relay's is a generated number).
+/// The members, their names and slugs (the relay has an IP address and a
+/// name in Chinese, so its slug is a generated number).
 pub const PROVIDERS: [(&str, &str, &str); 2] =
     [("krill", "Krill", "krill"), ("office", "内网", "p2")];
 
@@ -180,7 +181,7 @@ pub fn catalog(mode: CatalogMode) -> RouterCatalogView {
                     endpoint: if *member == "krill" {
                         "https://api.krill.example/backend-api/codex/models".into()
                     } else {
-                        "https://llm.relay.example/v1/models".into()
+                        "http://10.20.0.8:8000/v1/models".into()
                     },
                     protocol: if m.converted {
                         "anthropic_messages"
@@ -226,7 +227,7 @@ pub fn catalog(mode: CatalogMode) -> RouterCatalogView {
         CatalogSourceStatus {
             provider: "office".into(),
             layer: Codex,
-            endpoint: "https://llm.relay.example/v1/models?client_version=0.163.0".into(),
+            endpoint: "http://10.20.0.8:8000/v1/models?client_version=0.163.0".into(),
             observed_at: None,
             stale: false,
             // A relay without a Codex catalog: normal, not a warning.
@@ -235,7 +236,7 @@ pub fn catalog(mode: CatalogMode) -> RouterCatalogView {
         CatalogSourceStatus {
             provider: "office".into(),
             layer: CatalogLayer::Standard,
-            endpoint: "https://llm.relay.example/v1/models".into(),
+            endpoint: "http://10.20.0.8:8000/v1/models".into(),
             observed_at: Some(1),
             stale: false,
             error: None,
