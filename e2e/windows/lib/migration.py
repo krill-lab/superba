@@ -86,11 +86,9 @@ def wait_migration(run, s, u, total=600, restore=False, stop=False, timeout=300)
                 u.click_at(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2, relative=False)
                 observations[-1]["stop_clicked"] = True
                 stopped = True
-            # The existing desktop-agent connection avoids an SSH + PowerShell
-            # startup on every UI poll. Keep handles as independent diagnostics.
-            processes = run.agent.procs(r"^superba\.exe$")
-            observations[-1]["handles"] = [{"pid": p["pid"], "handles": p.get("handles")}
-                                            for p in processes]
+            # WMI's full process inventory can block for seconds even over the
+            # agent connection. This command reads only native handle counts.
+            observations[-1]["handles"] = run.agent.call("proc.handles", name="superba")
             if seen_active and not active:
                 break
             time.sleep(1)

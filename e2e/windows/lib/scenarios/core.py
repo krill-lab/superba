@@ -360,6 +360,15 @@ def usage_provider_group(u, s):
         time.sleep(0.2)
 
 
+def usage_open_detail(u, s, row):
+    # A row exposes selection and invocation patterns; those need not open its
+    # detail. Use a real click on this named row, then require both detail tabs.
+    action = u.act("click", name=row["name"], type="DataItem", enabled=True)
+    s.save("usage-row-action.json", action)
+    for key in ("requests.detail.general", "requests.detail.timing"):
+        u.wait(key=key, type="TabItem")
+
+
 @scenario("W32", "Usage page: router rows, detail General/Timing; router off reads session files",
           area="router", needs=("router_on",), bugs=(10, 11, 12, 13, 21, 22), tags=("core",))
 def w32(t):
@@ -386,7 +395,7 @@ def w32(t):
         s.manual("usage-router-on.png: banner 'Router on (127.0.0.1:<port>)…', rows with session names and "
                  "'Krill · <line>' provider, filter dropdown borders not clipped (bug 9)")
     with t.step("Open a request: General and Timing tabs") as s:
-        # Rows are DataItems named by their summary (time, session, status, model, cost), invoked by
+        # Rows are DataItems named by their summary (time, session, status, model, cost), clicked by
         # name; the detail tabs are TabItems named General / Timing (user bug 56).
         tree = u.tree(patterns=False)
         rows = [e for e in tree if e["type"] == "DataItem" and e["rect"] and e["rect"][3] == 26
@@ -396,8 +405,7 @@ def w32(t):
                      and e["rect"][3] == 26 and e["rect"][2] > 600],
                 "no unnamed row left (bug 56)")
         if rows:
-            u.click(name=rows[0]["name"], type="DataItem")
-        time.sleep(2)
+            usage_open_detail(u, s, rows[0])
         s.shot("usage-detail-general")
         s.ui_dump("usage-detail-general")
         tabs = [e for e in u.tree(patterns=False) if e["type"] == "TabItem"

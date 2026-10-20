@@ -225,6 +225,7 @@ public static class WtAgent
             case "start": return Start(a);
             case "kill": return Kill(a);
             case "procs": return Procs(a);
+            case "proc.handles": return ProcessHandles(S(a, "name", "superba"));
             case "proc.integrity": return Integrity(I(a, "pid", 0));
             case "env.user": return UserEnv();
             case "file.read": return FileRead(a);
@@ -975,6 +976,27 @@ public static class WtAgent
         if (B(a, "tree", true)) KillTree(pid);
         else Process.GetProcessById(pid).Kill();
         return true;
+    }
+
+    // Migration can finish inside one WMI enumeration. Read only the named
+    // process's handle count here; command lines and parent ids are not needed.
+    static object ProcessHandles(string name)
+    {
+        List<Dictionary<string, object>> result = new List<Dictionary<string, object>>();
+        foreach (Process process in Process.GetProcessesByName(name))
+        {
+            using (process)
+            {
+                try
+                {
+                    result.Add(new Dictionary<string, object> {
+                        { "pid", process.Id }, { "handles", process.HandleCount }
+                    });
+                }
+                catch (InvalidOperationException) { } // Process exited while sampled.
+            }
+        }
+        return result;
     }
 
     static object Procs(Dictionary<string, object> a)

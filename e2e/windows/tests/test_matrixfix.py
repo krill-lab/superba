@@ -14,7 +14,7 @@ import flows
 from app import App
 from migration import (check_migrated, check_restored, migration_count,
                        wait_migration)
-from scenarios.core import routed_usage_turn, usage_provider_group
+from scenarios.core import routed_usage_turn, usage_open_detail, usage_provider_group
 from strings import Strings
 from ui import Ui, UiError
 
@@ -53,6 +53,7 @@ class MatrixTests(unittest.TestCase):
         self.run = SimpleNamespace(strings={lang: Strings(lang) for lang in ('en', 'zh-CN')},
                                    agent=Mock(), vm=Mock(), state={}, session_snapshot='wintest')
         self.run.agent.procs.return_value = []
+        self.run.agent.call.return_value = []
         self.step = checking_step()
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -148,7 +149,8 @@ class MatrixTests(unittest.TestCase):
         u.texts = Mock(side_effect=texts)
         self.run.vm = Mock()
         self.run.vm.ps.side_effect = lambda *a, **kw: self.clock.sleep(9)
-        self.run.agent.procs.return_value = [dict(pid=42, handles=575)]
+        self.run.agent.procs.side_effect = lambda *a, **kw: self.clock.sleep(9)
+        self.run.agent.call.return_value = [dict(pid=42, handles=575)]
         u.tree = Mock(side_effect=lambda **kw: self.clock.sleep(24))
 
         def transfer(*args):
@@ -158,6 +160,9 @@ class MatrixTests(unittest.TestCase):
         self.run.vm.scp_from.side_effect = transfer
         wait_migration(self.run, self.step, u)
         self.run.vm.ps.assert_not_called()
+        self.run.agent.procs.assert_not_called()
+        self.assertTrue(all(c.args == ('proc.handles',) and c.kwargs == {'name': 'superba'}
+                            for c in self.run.agent.call.call_args_list))
         u.tree.assert_not_called()
         samples = self.step.save.call_args_list[0].args[1]
         self.assertEqual([x['count'] for x in samples], [(0, 600), (200, 600), (400, 600), None])
@@ -276,6 +281,21 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual([c.args for c in u.click_at.call_args_list], [(60, 35), (60, 75)])
         u.click.assert_not_called()
         self.assertEqual(u.wait.call_count, 3)
+
+    def test_usage_detail_uses_real_click_and_requires_both_tabs(self):
+        u = Mock()
+        usage_open_detail(u, self.step, {'name': '12:34, E2E-W32, Done, gpt-6.1-sol'})
+        u.act.assert_called_once_with('click', name='12:34, E2E-W32, Done, gpt-6.1-sol',
+                                      type='DataItem', enabled=True)
+        self.assertEqual([c.kwargs['key'] for c in u.wait.call_args_list],
+                         ['requests.detail.general', 'requests.detail.timing'])
+        u.click.assert_not_called()
+
+    def test_usage_detail_does_not_pass_when_click_leaves_list_visible(self):
+        u = Mock()
+        u.wait.side_effect = UiError('detail tab not found')
+        with self.assertRaisesRegex(UiError, 'detail tab not found'):
+            usage_open_detail(u, self.step, {'name': '12:34, E2E-W32'})
 
 
 @unittest.skipUnless(shutil.which('node'), 'node needed to execute the renderer predicate')
