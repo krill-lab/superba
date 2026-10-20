@@ -283,7 +283,7 @@ def w31(t):
         u.page("router")
         time.sleep(1)
         advanced = u.reveal(key="router.advanced.title", type="Button")
-        # Native egui disclosure headers expose Invoke, not ExpandCollapse.
+        # The 「高级」 disclosure (AccessKit DisclosureTriangle) exposes Invoke, not ExpandCollapse.
         if advanced.get("expanded") != "Expanded":
             u.click(key="router.advanced.title")
         u.reveal(key="stats_line.title", type="Button")

@@ -219,12 +219,15 @@ fn router_actions_and_lower_settings_remain_reachable_when_narrow() {
             let mut h = Harness::new(size, locale, fake(), true);
             let mut state = router::State::default();
             h = h.min_height(Page::Router.min_height());
+            // No member yet: the members section offers the fix (add Krill)
+            // next to the header's 开启路由….
+            let add = tr.f("router.eligibility.add", &[("name", &"Krill")]);
             let f = h.until(
                 |ui, cx, out| router::show(ui, cx, &mut state, out),
-                |f| f.has(&tr.t("router.members.add")),
+                |f| f.has(&add),
             );
-            for key in ["router.banner.turn_on", "router.members.add"] {
-                visible_text(&f, &tr.t(key));
+            for text in [tr.t("router.banner.turn_on"), add] {
+                visible_text(&f, &text);
             }
             assert!(
                 !f.texts

@@ -34,9 +34,7 @@ open_active = "Open active requests"
 open_stats = "Open usage statistics"
 
 [router.banner]
-active = "Router on"
 inactive = "Router off"
-listen = "Listen address"
 turn_off = "Turn off the router…"
 local = "Router off — Direct · Local service ({addr})."
 on = "Router on — this computer's Codex requests go through the local process superba-router ({addr}). The official login and remote hosts don't use it."
@@ -51,6 +49,7 @@ off = "Off"
 unknown = "Unknown"
 
 [router.service]
+state = "Status"
 uninstall = "Uninstall"
 uninstall_hint = "Stop and remove the background service and the router's files. Turn router mode off first."
 running = "Running"
@@ -89,7 +88,6 @@ fallback = "Backup {n}"
 candidate = "Provider to add"
 title = "Members & line order"
 help = "Providers in priority order. A conversation stays with its member; it moves only when every line of that member fails. 401, 403 and 429 are never retried elsewhere."
-empty = "No members yet: add a provider below."
 pick = "Choose a provider…"
 add = "Add member"
 remove = "Remove member"
@@ -114,12 +112,19 @@ requests = "{n} requests"
 failovers = "{n} failed over"
 websockets = "{n} WebSocket"
 last_error = "Last failure"
+col.line = "Line"
+col.address = "Address"
+col.state = "Status"
+col.ttfb = "First token"
+col.requests = "Requests"
 
 [router.events]
 title = "Recent routing events"
-show = "Show"
-hide = "Hide"
 ago = "{time} ago"
+col.time = "When"
+col.event = "Event"
+col.target = "Member / line"
+col.detail = "Detail"
 
 [router.event]
 failover = "Failed over"
@@ -462,6 +467,11 @@ reset = "Reset to default"
 preview = "Preview · last turn ({time})"
 preview_sample = "Preview · sample data"
 sample_reply = "Done — fetch_all is async now, and the tests cover the new path."
+enabled = "Add the stats line to replies"
+tools = "Tools"
+tools_hint = "Replies of these tools get the line."
+show_hint = "What the default template shows."
+style_hint = "How the ChatGPT app shows the line."
 
 [stats_line.client]
 claude_code = "Claude Code"
@@ -518,6 +528,7 @@ view_title = "Price table"
 view_body = "USD per 1M tokens from OpenAI's official price pages (revision {rev}: the date they were read). Standard prices are shown; Fast, Flex and Ultrafast use their own official prices."
 view_empty = "The table has no prices yet, so costs show “—”. A price per model can be set on the Models page."
 view_loading = "Loading the price table…"
+ratio_of = "Price ratio of {provider}"
 
 [prices.source]
 builtin = "Built-in"
@@ -531,6 +542,8 @@ output = "Output"
 source = "Source"
 
 # Request detail: how the request body went upstream (user request 14).
+provider = "Provider"
+ratio = "Ratio"
 [requests.compression]
 label = "Request body"
 
@@ -541,6 +554,7 @@ routed = "Claude Code goes through the router"
 pending = "Set to the router: apply it on Claude Code → Connection & models"
 preferred = "Claude Code's provider"
 claude_only = "Claude Code only"
+address = "Router address"
 
 [router.preference]
 first = "{line} (preferred)"
@@ -555,13 +569,11 @@ recovery = "Default failure cooldown: 5 s, doubling up to 60 s. New conversation
 local = "This computer"
 
 [router.ingress]
-title = "Ingresses"
+title = "Entry points"
 openai = "OpenAI compatible"
 token_ready = "Token ready"
 token_missing = "Token not ready"
 token_unknown = "Token status unknown"
-recent = "Last 24 hours · {n} records"
-recent_unknown = "Last 24 hours · unavailable"
 count_hint = "Local router records grouped by tool and request protocol; requests while recording is paused are excluded."
 translation = "Protocol conversion"
 translation_state = "Protocol conversion · {enabled}/{total} enabled"
@@ -569,6 +581,11 @@ translation_unknown = "Conversion settings unavailable. Configure the router fir
 translation_hint = "Client protocol → upstream protocol. Each change is saved and reloaded by a running router; a stopped router applies it on next start. Native endpoints take priority. These switches allow conversion; model readiness is shown in the member list."
 no_address = "Address not configured"
 copy = "Copy {name} ingress address"
+col.name = "Client"
+col.client_protocol = "Client protocol"
+col.address = "Address"
+col.recent = "Last 24 h"
 
 [router.advanced]
 title = "Advanced"
+caption = "Reply stats line · Prices · Recording · Service"

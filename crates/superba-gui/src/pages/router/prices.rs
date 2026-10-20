@@ -10,6 +10,9 @@
 use std::sync::Arc;
 
 use egui::{Align, Layout, Ui};
+
+use crate::design::tokens::{size, space};
+use crate::design::widgets::Table;
 use superba_core::{
     AccountRequest, Error, FeedOrigin, FeedsStatus, Multiplier, PriceTable, ProfileId, RequestRow,
     RequestStatus, Result, RouterStatsSettings, StatsGroupBy, StatsQuery, SwitchService,
@@ -23,7 +26,7 @@ use super::{Dialog, State};
 use crate::design::widgets::info_card::InfoLine;
 use crate::design::widgets::{Button, Text};
 use crate::i18n::Tr;
-use crate::pages::{Action, Cx, error_text, kv};
+use crate::pages::{Action, Cx, error_text};
 
 /// Days compared with billing.
 pub const CALIBRATION_DAYS: u32 = 7;
@@ -243,6 +246,8 @@ pub struct Prices {
     pub calibration: Loader<Calibration>,
     /// The price table in use (`SwitchService::price_table`), for "View…".
     pub table: Loader<PriceTable>,
+    /// Give the ratio field the keyboard focus when it appears (after 编辑).
+    pub focus: bool,
 }
 
 /// The providers of the price list, router members first: every key-based
@@ -307,7 +312,10 @@ pub fn start_calibration(cx: &Cx<'_>, state: &mut State, profile: ProfileId, nam
         .start(async move { load_calibration(service, profile, name, current).await });
 }
 
-/// Draw the price section.
+/// Draw the price section: the price table in use, then one row per
+/// key-based provider with its ratio (right-aligned) and its actions in the
+/// last column — 按账单校准… where the provider reports usage, 编辑 — and,
+/// while a ratio is edited, the field in the ratio column with 保存 / 取消.
 pub fn section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     let p = &mut state.prefs.prices;
     p.feeds.poll();
@@ -321,7 +329,12 @@ pub fn section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         let service = cx.service.clone();
         p.feeds.start(async move { service.feeds_status().await });
     }
-    ui.label(Text::section(cx.tr.t("prices.title"), cx.pal));
+    crate::pages::section(
+        ui,
+        cx,
+        &cx.tr.t("prices.title"),
+        Some(&cx.tr.t("prices.note")),
+    );
     // The revision in use (the feed's), else the newest recorded row's.
     let rev = state
         .prefs
@@ -342,25 +355,50 @@ pub fn section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         None => cx.tr.t("prices.source.builtin"),
     };
     let mut view = false;
-    kv(ui, cx, &cx.tr.t("prices.table_label"), |ui| {
-        ui.label(Text::small(
-            cx.tr
-                .f("prices.table", &[("source", &source), ("rev", &rev)]),
-            cx.pal,
-        ))
-        .on_hover_text(cx.tr.t("prices.table_tip"));
-        view = crate::design::widgets::link_button(ui, &cx.tr.t("prices.view"), false).clicked();
-    });
+    crate::pages::superba::row(
+        ui,
+        cx,
+        &cx.tr.t("prices.table_label"),
+        &cx.tr
+            .f("prices.table", &[("source", &source), ("rev", &rev)]),
+        true,
+        |ui| {
+            view = ui
+                .add(Button::new(cx.tr.t("prices.view")).small())
+                .on_hover_text(cx.tr.t("prices.table_tip"))
+                .clicked();
+        },
+    );
     if view {
         open_table(cx, state);
     }
     let stats = state.stats_settings(cx);
     let providers = providers(cx);
     if providers.is_empty() {
-        ui.label(Text::caption(cx.tr.t("prices.no_providers"), cx.pal));
+        ui.add(egui::Label::new(Text::small(cx.tr.t("prices.no_providers"), cx.pal)).wrap());
+        return;
     }
     let calibrating = state.prefs.prices.calibration.loading();
-    for (id, name, usage) in providers {
+    let headers = [
+        cx.tr.t("prices.col.provider"),
+        cx.tr.t("prices.col.ratio"),
+        String::new(),
+    ];
+    // The actions column holds the widest pair of buttons of any row.
+    let w = |b: Button| b.small().desired_size(ui).x;
+    let actions_w = (w(Button::ghost(cx.tr.t("prices.calibrate")))
+        + w(Button::ghost(cx.tr.t("prices.edit"))))
+    .max(w(Button::new(cx.tr.t("prices.save"))) + w(Button::ghost(cx.tr.t("action.cancel"))))
+        + space::XS
+        + space::M;
+    let ratio_w = size::CONTROL * 3.0;
+    let table = Table::new(&[1.0, 0.0, 0.0])
+        .min_widths(&[0.0, ratio_w, actions_w])
+        .right_aligned(&[1, 2]);
+    table.header(ui, &headers);
+    let n = providers.len();
+    let mut invalid = None;
+    for (i, (id, name, usage)) in providers.into_iter().enumerate() {
         let ratio = ratio_of(&stats, &id);
         let editing = state
             .prefs
@@ -369,67 +407,106 @@ pub fn section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             .as_ref()
             .filter(|(p, _)| p == &id)
             .map(|(_, t)| t.clone());
-        kv(ui, cx, &name, |ui| match editing {
-            Some(mut text) => {
-                let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(70.0));
-                let valid = parse_ratio(&text);
-                let save = ui
-                    .add(
-                        Button::new(cx.tr.t("prices.save"))
-                            .small()
-                            .enabled(valid.is_some()),
-                    )
-                    .clicked()
-                    || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-                let cancel = ui
-                    .add(Button::ghost(cx.tr.t("action.cancel")).small())
-                    .clicked();
-                if valid.is_none() && !text.trim().is_empty() {
-                    ui.label(Text::caption(cx.tr.t("prices.invalid"), cx.pal).color(cx.pal.red));
+        let mut text = editing.clone();
+        let mut save = false;
+        let mut cancel = false;
+        let mut edit = false;
+        let mut calibrate = false;
+        let mut enter = false;
+        let mut escape = false;
+        let focus = state.prefs.prices.focus && text.is_some();
+        ui.push_id(&id, |ui| {
+            table.row(ui, size::ROW, i + 1 == n, |ui, col| match col {
+                0 => {
+                    ui.label(Text::body(&name, cx.pal));
                 }
-                if save && let Some(m) = valid {
-                    let next = with_ratio(&stats, &id, m);
-                    state.prefs.prices.editing = None;
-                    state.save_stats(cx, next);
-                } else if cancel {
-                    state.prefs.prices.editing = None;
-                } else {
-                    state.prefs.prices.editing = Some((id.clone(), text));
-                }
-            }
-            None => {
-                ui.label(Text::mono(
-                    cx.tr.f("prices.ratio", &[("ratio", &ratio)]),
-                    cx.pal,
-                ));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui
-                        .add(Button::ghost(cx.tr.t("prices.edit")).small())
-                        .clicked()
-                    {
-                        state.prefs.prices.editing = Some((id.clone(), ratio.to_string()));
-                    }
-                    if usage
-                        && ui
+                1 => match &mut text {
+                    Some(t) => {
+                        let r = ui
                             .add(
-                                Button::ghost(cx.tr.t("prices.calibrate"))
-                                    .small()
-                                    .loading(calibrating)
-                                    .enabled(!calibrating),
+                                egui::TextEdit::singleline(t)
+                                    .align(egui::Align2::RIGHT_CENTER)
+                                    .desired_width(ui.available_width()),
                             )
-                            .on_hover_text(cx.tr.t("prices.calibrate_tip"))
-                            .clicked()
-                    {
-                        start_calibration(cx, state, id.clone(), name.clone());
+                            .accessible_name(cx.tr.f("prices.ratio_of", &[("provider", &name)]));
+                        if focus {
+                            r.request_focus();
+                        }
+                        enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        escape = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
                     }
-                });
-            }
+                    None => {
+                        ui.label(Text::body(
+                            cx.tr.f("prices.ratio", &[("ratio", &ratio)]),
+                            cx.pal,
+                        ));
+                    }
+                },
+                _ => {
+                    ui.spacing_mut().item_spacing.x = space::XS;
+                    if let Some(t) = &text {
+                        let valid = parse_ratio(t).is_some();
+                        cancel = ui
+                            .add(Button::ghost(cx.tr.t("action.cancel")).small())
+                            .clicked();
+                        save = ui
+                            .add(Button::new(cx.tr.t("prices.save")).small().enabled(valid))
+                            .clicked();
+                    } else {
+                        edit = ui
+                            .add(Button::ghost(cx.tr.t("prices.edit")).small())
+                            .clicked();
+                        if usage {
+                            calibrate = ui
+                                .add(
+                                    Button::ghost(cx.tr.t("prices.calibrate"))
+                                        .small()
+                                        .loading(calibrating)
+                                        .enabled(!calibrating),
+                                )
+                                .on_hover_text(cx.tr.t("prices.calibrate_tip"))
+                                .clicked();
+                        }
+                    }
+                }
+            });
         });
+        let valid = text.as_deref().and_then(parse_ratio);
+        if let Some(t) = &text
+            && valid.is_none()
+            && !t.trim().is_empty()
+        {
+            invalid = Some(name.clone());
+        }
+        if focus {
+            state.prefs.prices.focus = false;
+        }
+        if (save || enter)
+            && let Some(m) = valid
+        {
+            let next = with_ratio(&stats, &id, m);
+            state.prefs.prices.editing = None;
+            state.save_stats(cx, next);
+        } else if cancel || escape {
+            state.prefs.prices.editing = None;
+        } else if edit {
+            state.prefs.prices.editing = Some((id.clone(), ratio.to_string()));
+            state.prefs.prices.focus = true;
+        } else if let Some(t) = text {
+            state.prefs.prices.editing = Some((id.clone(), t));
+        }
+        if calibrate {
+            start_calibration(cx, state, id.clone(), name.clone());
+        }
+    }
+    if invalid.is_some() {
+        ui.label(Text::caption(cx.tr.t("prices.invalid"), cx.pal).color(cx.pal.red));
     }
     if let Some(e) = &state.prefs.prices.calibration.error {
-        ui.label(Text::caption(error_text(cx.tr, e), cx.pal).color(cx.pal.red));
+        ui.add(
+            egui::Label::new(Text::caption(error_text(cx.tr, e), cx.pal).color(cx.pal.red)).wrap(),
+        );
     }
-    ui.add(egui::Label::new(Text::caption(cx.tr.t("prices.note"), cx.pal)).wrap());
 }
 
 /// Body of the calibration dialog.
@@ -465,29 +542,34 @@ pub fn calibrate_dialog(
         ))
         .wrap(),
     );
-    egui::Grid::new("router-calibration-days")
-        .num_columns(3)
-        .spacing([24.0, 2.0])
-        .show(ui, |ui| {
-            ui.label(Text::caption(cx.tr.t("prices.day"), cx.pal));
-            ui.label(Text::caption(cx.tr.t("prices.estimated"), cx.pal));
-            ui.label(Text::caption(cx.tr.t("prices.billed"), cx.pal));
-            ui.end_row();
-            for (day, est, billed) in &c.days {
-                ui.label(Text::mono_muted(day, cx.pal));
-                ui.label(Text::mono(
-                    est.map_or_else(|| "—".into(), |u| format!("${}", u.amount(2))),
+    let table = Table::new(&[1.0, 1.0, 1.0]).right_aligned(&[1, 2]);
+    table.header(
+        ui,
+        &[
+            cx.tr.t("prices.day"),
+            cx.tr.t("prices.estimated"),
+            cx.tr.t("prices.billed"),
+        ],
+    );
+    let dollars = |u: Option<Usd>| u.map_or_else(|| "—".into(), |u| format!("${}", u.amount(2)));
+    for (i, (day, est, billed)) in c.days.iter().enumerate() {
+        table.row(ui, size::ROW, i + 1 == c.days.len(), |ui, col| {
+            ui.label(
+                Text::small(
+                    match col {
+                        0 => day.clone(),
+                        1 => dollars(*est),
+                        _ => dollars(*billed),
+                    },
                     cx.pal,
-                ));
-                ui.label(Text::mono(
-                    billed.map_or_else(|| "—".into(), |u| format!("${}", u.amount(2))),
-                    cx.pal,
-                ));
-                ui.end_row();
-            }
+                )
+                .color(cx.pal.text),
+            );
         });
+    }
+    ui.add_space(space::S);
     ui.add(egui::Label::new(Text::caption(cx.tr.t("prices.calibrate_note"), cx.pal)).wrap());
-    ui.add_space(8.0);
+    ui.add_space(space::S);
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui
@@ -561,7 +643,7 @@ pub(super) fn table_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, close: &
                 cx.tr.f("prices.view_body", &[("rev", &table.rev)]),
                 cx.pal,
             ));
-            ui.add_space(6.0);
+            ui.add_space(space::S);
             let rows = table_rows(table);
             let headers = [
                 "prices.col.model",
@@ -570,28 +652,25 @@ pub(super) fn table_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, close: &
                 "prices.col.output",
                 "prices.col.source",
             ];
+            let table = Table::new(&[1.6, 0.8, 0.8, 0.8, 1.0]).right_aligned(&[1, 2, 3]);
+            table.header(ui, &headers.map(|h| cx.tr.t(h)));
             egui::ScrollArea::vertical()
+                .id_salt("router-price-table")
                 .max_height(320.0)
                 .show(ui, |ui| {
-                    egui::Grid::new("router-price-table")
-                        .striped(true)
-                        .num_columns(headers.len())
-                        .show(ui, |ui| {
-                            for h in headers {
-                                ui.label(Text::caption(cx.tr.t(h), cx.pal));
-                            }
-                            ui.end_row();
-                            for row in &rows {
-                                for (i, cell) in row.iter().enumerate() {
-                                    if i == 0 || i == 4 {
-                                        ui.label(Text::small(cell, cx.pal));
-                                    } else {
-                                        ui.label(Text::mono(cell, cx.pal));
-                                    }
-                                }
-                                ui.end_row();
-                            }
+                    for (i, row) in rows.iter().enumerate() {
+                        table.row(ui, size::ROW, i + 1 == rows.len(), |ui, col| {
+                            let text = Text::small(&row[col], cx.pal);
+                            // Model ids are ids: monospace; prices and hosts are not.
+                            ui.label(if col == 0 {
+                                Text::mono(&row[col], cx.pal)
+                            } else if col == 4 {
+                                text
+                            } else {
+                                text.color(cx.pal.text)
+                            });
                         });
+                    }
                 });
         }
         (None, Some(e)) => {
@@ -603,7 +682,7 @@ pub(super) fn table_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, close: &
             ui.label(Text::small(cx.tr.t("prices.view_loading"), cx.pal));
         }
     }
-    ui.add_space(8.0);
+    ui.add_space(space::S);
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         if ui
             .add(Button::ghost(cx.tr.t("action.close")).small())

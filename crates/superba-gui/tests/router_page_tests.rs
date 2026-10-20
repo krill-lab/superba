@@ -522,7 +522,8 @@ fn every_key_based_provider_has_a_price_ratio_without_the_router() {
         open_advanced(&mut h, &mut state, locale);
         let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| f.has(&tr.t("prices.title")) && f.has(ratio),
+            // The ratio cell itself (the section's note mentions "× 1" too).
+            |f| f.has(&tr.t("prices.title")) && f.texts.iter().any(|(t, _)| t == ratio),
         );
         assert!(f.has("Krill"), "{}", f.all_text());
         assert!(
@@ -603,4 +604,69 @@ fn disabling_router_shows_off_banner_for_a_direct_local_upstream() {
     let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
     assert!(f.has("路由已关闭"), "{}", f.all_text());
     assert!(!f.has("路由已开启"), "{}", f.all_text());
+}
+
+/// The price editor stays in its table row: the ratio field in the ratio
+/// column, 保存 and 取消 in the actions column where 按账单校准… and 编辑 were,
+/// nothing outside the row; 取消 puts the ratio back.
+#[test]
+fn the_ratio_editor_replaces_the_ratio_and_its_actions_in_place() {
+    for locale in [Locale::ZhCn, Locale::En] {
+        let tr = superba_gui::i18n::Tr::new(locale);
+        let mut h = Harness::new([960.0, 640.0], locale, fake(), true);
+        let mut state = State::default();
+        open_advanced(&mut h, &mut state, locale);
+        let edit = tr.t("prices.edit");
+        let f = h.until_scrolled(
+            |ui, cx, out| router::show(ui, cx, &mut state, out),
+            |f| {
+                f.clipped_texts
+                    .iter()
+                    .any(|(t, r, clip)| t == &edit && clip.contains_rect(*r))
+            },
+        );
+        let ratio = f
+            .texts
+            .iter()
+            .find(|(t, _)| t == "× 1")
+            .map(|(_, r)| *r)
+            .expect("ratio cell");
+        h.click_text(&f, &edit);
+        let f = h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
+        // The row's line (the focused field may scroll it a little into view).
+        let row = f.find("Krill").expect("Krill's row");
+        let (save, cancel) = (tr.t("prices.save"), tr.t("action.cancel"));
+        for text in [&save, &cancel] {
+            let (_, r, clip) = f
+                .clipped_texts
+                .iter()
+                .find(|(t, _, _)| t == text)
+                .unwrap_or_else(|| panic!("{text} missing:\n{}", f.all_text()));
+            assert!(clip.contains_rect(*r), "{locale:?}: {text} clipped");
+            // On the row's line, in the actions column right of the ratio.
+            assert!(
+                (r.center().y - row.center().y).abs() < 1.0,
+                "{locale:?}: {text} at {r:?}, the row at {row:?}"
+            );
+            assert!(
+                r.min.x > ratio.max.x - 0.5,
+                "{locale:?}: {text} over the ratio"
+            );
+        }
+        // The field holds the ratio being edited.
+        assert!(
+            f.texts
+                .iter()
+                .any(|(t, r)| t == "1" && (r.center().y - row.center().y).abs() < 1.0)
+        );
+        assert!(
+            !f.texts
+                .iter()
+                .any(|(t, r)| t == "× 1" && (r.center().y - row.center().y).abs() < 1.0)
+        );
+        h.click_text(&f, &cancel);
+        let f = h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
+        let drawn = |s: &str| f.texts.iter().any(|(t, _)| t == s);
+        assert!(drawn(&edit) && !drawn(&save), "{}", f.all_text());
+    }
 }

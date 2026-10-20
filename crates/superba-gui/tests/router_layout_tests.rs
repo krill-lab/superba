@@ -127,3 +127,154 @@ fn advanced_expands_through_accesskit_and_keeps_existing_action_names() {
         });
     }
 }
+
+/// ui-spec rule 5: one primary button per view. The header's 开启路由… is the
+/// primary action only once a member can carry traffic; until then the
+/// members section's first "add … as a member" is, and 关闭路由… never is.
+#[test]
+fn one_primary_action_in_every_router_state() {
+    use superba_gui::design::widgets::ButtonKind;
+    use superba_gui::pages::router::eligibility::primary_fix;
+    use superba_switch::router_doctor::router_candidates;
+
+    assert_eq!(router::switch_kind(false, true), ButtonKind::Primary);
+    assert_eq!(router::switch_kind(false, false), ButtonKind::Secondary);
+    assert_eq!(router::switch_kind(true, true), ButtonKind::Secondary);
+    assert_eq!(router::switch_kind(true, false), ButtonKind::Secondary);
+
+    // Krill with a key (addable) after a provider without one: Krill's button
+    // is the primary fix, the key fix stays secondary.
+    let service = members();
+    service.edit_profiles(|set| {
+        set.settings.router.members.clear();
+        let mut keyless = set.profile(&ProfileId::new("krill")).unwrap().clone();
+        keyless.id = ProfileId::new("plain");
+        keyless.name = "Plain".into();
+        keyless.key_ref = None;
+        set.profiles.insert(0, keyless);
+    });
+    let mut set = None;
+    service.edit_profiles(|s| set = Some(s.clone()));
+    let sites = router_harness::data_from(&service).sites;
+    let all = router_candidates(&set.unwrap(), &sites);
+    let fixable: Vec<_> = all
+        .iter()
+        .filter(|c| c.addable() || c.eligibility.needs_key())
+        .collect();
+    let primary = primary_fix(&fixable).expect("an addable provider");
+    assert!(fixable[primary].addable());
+    assert!(fixable[..primary].iter().all(|c| !c.addable()));
+    assert_eq!(primary_fix(&[]), None);
+}
+
+#[test]
+fn the_conversion_matrix_has_the_same_protocols_down_and_across() {
+    use superba_core::{RequestProtocol as P, RouterConversion};
+    let c = |from, to| RouterConversion {
+        from,
+        to,
+        enabled: true,
+    };
+    // Listed in the router's order (client Messages first), shown in one order.
+    let conversions = [
+        c(P::Messages, P::Responses),
+        c(P::Gemini, P::ChatCompletions),
+        c(P::Responses, P::Messages),
+    ];
+    assert_eq!(
+        router::ingress::matrix_axes(&conversions),
+        [P::Responses, P::ChatCompletions, P::Messages, P::Gemini]
+    );
+    assert_eq!(
+        router::ingress::matrix_axes(&[c(P::Messages, P::Responses)]),
+        [P::Responses, P::Messages]
+    );
+}
+
+/// The whole body scrolls under the header at 960×640: no fixed status card or
+/// eligibility panel above it (they took half the window), the fix for "no
+/// member" is in view, every section title is drawn once (no column header
+/// repeats 入口), and the entry table's counts end under their header.
+#[test]
+fn the_off_page_guides_to_a_member_in_one_scrolling_column_at_both_sizes() {
+    for size in [[1280.0, 800.0], [960.0, 640.0]] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let tr = Tr::new(locale);
+            for dark in [false, true] {
+                let service = Arc::new(FakeService::new(FakeOptions {
+                    fast: true,
+                    ..Default::default()
+                }));
+                let mut h =
+                    Harness::new(size, locale, service, true).min_height(Page::Router.min_height());
+                if dark {
+                    h = h.dark();
+                }
+                let mut state = State::default();
+                let add = tr.f("router.eligibility.add", &[("name", &"Krill")]);
+                let count = tr.t("router.ingress.col.recent");
+                let f = h.until(
+                    |ui, cx, out| router::show(ui, cx, &mut state, out),
+                    |f| f.has(&add) && f.has(&count) && f.has("0"),
+                );
+                let what = format!("{size:?} {locale:?} dark={dark}");
+                assert_eq!(f.scroll_areas, 1, "{what}");
+                assert!(f.fits() && !f.scrolled, "{what}");
+                for text in [
+                    tr.t("router.banner.turn_on"),
+                    tr.t("router.eligibility.none"),
+                    add.clone(),
+                    tr.t("router.ingress.title"),
+                ] {
+                    assert!(
+                        f.clipped_texts.iter().any(|(t, rect, clip)| t == &text
+                            && clip.contains_rect(*rect)
+                            && f.rect.contains_rect(*rect)),
+                        "{what}: {text} not in view\n{}",
+                        f.all_text()
+                    );
+                }
+                for title in [
+                    tr.t("router.members.title"),
+                    tr.t("router.ingress.title"),
+                    tr.t(Page::Router.title_key()),
+                ] {
+                    assert_eq!(
+                        f.texts.iter().filter(|(t, _)| t == &title).count(),
+                        1,
+                        "{what}: {title} drawn more than once"
+                    );
+                }
+                // The state is said once: "路由已关闭 —— …", not a second label.
+                assert_eq!(
+                    f.texts
+                        .iter()
+                        .filter(|(t, _)| t.contains(&tr.t("router.banner.inactive")))
+                        .count(),
+                    1,
+                    "{what}\n{}",
+                    f.all_text()
+                );
+                let header = f.find(&count).unwrap();
+                let numbers: Vec<_> = f
+                    .texts
+                    .iter()
+                    .filter(|(t, r)| {
+                        t.chars().all(|c| c.is_ascii_digit() || c == ',')
+                            && r.min.y > header.max.y
+                            && r.max.x > header.min.x
+                    })
+                    .collect();
+                assert_eq!(numbers.len(), 4, "{what}: {numbers:?}");
+                for (n, r) in numbers {
+                    assert!(
+                        (r.max.x - header.max.x).abs() < 0.5,
+                        "{what}: {n} ends at {} under a header ending at {}",
+                        r.max.x,
+                        header.max.x
+                    );
+                }
+            }
+        }
+    }
+}

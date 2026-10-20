@@ -2,15 +2,19 @@
 
 use std::time::Duration;
 
-use egui::{Align, Layout, Ui};
+use egui::Ui;
 use superba_core::{
     RequestHarness, RequestProtocol, RequestSource, StatsQuery, SwitchService, Timestamp,
 };
 
 use super::{Op, State};
+use crate::design::elide::Shape;
+use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
-use crate::design::widgets::{Card, FormRow, IconButton, Text, Toggle};
-use crate::pages::Cx;
+use crate::design::tokens::{size, space, text};
+use crate::design::widgets::value_chip::ValueChip;
+use crate::design::widgets::{Badge, Disclosure, FormRow, IconButton, Status, Table, Text, Toggle};
+use crate::pages::{Cx, section_with};
 
 /// Client base URLs of the four entry points shipped in this build.
 pub const PATHS: [&str; 4] = ["/backend-api/codex", "/claude", "/openai/v1", "/gemini"];
@@ -75,6 +79,10 @@ pub async fn recent_counts(
     Ok([codex, claude, openai, gemini])
 }
 
+/// 入口 / Entry points: whether the router's token is ready, then a table of
+/// the four entry points — name, address (elided in the middle, the whole URL
+/// on hover), requests recorded in the last 24 hours (right-aligned) and a copy
+/// action in the last column — and the protocol conversion switches.
 pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     state.ingress.poll();
     if state.ingress.due(Some(Duration::from_secs(10))) {
@@ -86,107 +94,117 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     }
     let snapshot = state.snapshot.as_ref();
     let port = snapshot.and_then(|s| s.port);
-    let token = cx.tr.t(match snapshot {
-        Some(s) if s.token_ready => "router.ingress.token_ready",
-        Some(_) => "router.ingress.token_missing",
-        None => "router.ingress.token_unknown",
-    });
+    let (token_status, token) = match snapshot {
+        Some(s) if s.token_ready => (Status::Ok, "router.ingress.token_ready"),
+        Some(_) => (Status::Warn, "router.ingress.token_missing"),
+        None => (Status::Idle, "router.ingress.token_unknown"),
+    };
     let names = [
         cx.tr.text(&RequestHarness::Codex.text()),
         cx.tr.text(&RequestHarness::ClaudeCode.text()),
         cx.tr.t("router.ingress.openai"),
         cx.tr.text(&RequestProtocol::Gemini.text()),
     ];
-    ui.scope(|ui| {
-        // Other controls can widen a scrolling column beyond its visible pane.
-        // Keep this card and its wrapped conversion labels inside that pane.
-        let width = ui
-            .available_width()
-            .min((ui.clip_rect().right() - ui.cursor().left()).max(0.0));
-        ui.set_width(width);
-        Card::new().padding(16).show(ui, |ui| {
-            FormRow::new(Text::section(cx.tr.t("router.ingress.title"), cx.pal))
-                .label_width(0.0)
-                .right()
-                .show(ui, |ui| {
-                    ui.label(Text::caption(&token, cx.pal));
-                });
-            for (i, name) in names.iter().enumerate() {
-                ui.push_id(i, |ui| {
-                    let url = address(port, i);
-                    let count = state
-                        .ingress
-                        .value
-                        .as_ref()
-                        .filter(|_| state.ingress.error.is_none())
-                        .map(|counts| cx.tr.f("router.ingress.recent", &[("n", &counts[i])]))
-                        .unwrap_or_else(|| cx.tr.t("router.ingress.recent_unknown"));
-                    let compact = ui.available_width() < 720.0;
-                    if compact {
-                        FormRow::new(Text::strong(name, cx.pal))
-                            .label_width(0.0)
-                            .right()
-                            .show(ui, |ui| {
-                                ui.label(Text::caption(&count, cx.pal))
-                                    .on_hover_text(cx.tr.t("router.ingress.count_hint"));
-                            });
-                    }
-                    let row = if compact {
-                        FormRow::unlabeled()
-                    } else {
-                        FormRow::new(Text::strong(name, cx.pal)).label_width(140.0)
-                    };
-                    row.show(ui, |ui| {
-                        // Reserve trailing controls so the URL cannot push them offscreen.
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let copy = cx.tr.f("router.ingress.copy", &[("name", name)]);
-                            if ui
-                                .add(IconButton::new(Icon::Copy, copy).enabled(url.is_some()))
-                                .clicked()
-                                && let Some(url) = &url
-                            {
-                                ui.ctx().copy_text(url.clone());
-                            }
-                            if !compact {
-                                ui.label(Text::caption(&count, cx.pal))
-                                    .on_hover_text(cx.tr.t("router.ingress.count_hint"));
-                            }
-                            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                                ui.add(
-                                    egui::Label::new(Text::mono_muted(
-                                        url.clone().unwrap_or_else(|| {
-                                            cx.tr.t("router.ingress.no_address")
-                                        }),
-                                        cx.pal,
-                                    ))
-                                    .truncate(),
-                                )
-                                .on_hover_text(url.unwrap_or_else(|| PATHS[i].to_owned()));
-                            });
-                        });
-                    });
-                    if i + 1 < names.len() {
-                        crate::pages::divider(ui, cx);
-                    }
-                });
-            }
-            ui.add_space(8.0);
-            translation(ui, cx, state);
-        });
+    section_with(ui, cx, &cx.tr.t("router.ingress.title"), None, |ui| {
+        ui.add(Badge::new(cx.tr.t(token)).status(token_status));
     });
+    let headers = [
+        cx.tr.t("router.ingress.col.name"),
+        cx.tr.t("router.ingress.col.address"),
+        cx.tr.t("router.ingress.col.recent"),
+        String::new(),
+    ];
+    // The name and count columns are as wide as their widest text.
+    let width = |text: &str, f: egui::FontId| {
+        ui.painter()
+            .layout_no_wrap(text.to_owned(), f, egui::Color32::PLACEHOLDER)
+            .size()
+            .x
+    };
+    let name_w = names
+        .iter()
+        .map(|n| width(n, font(text::BODY, Weight::Medium)))
+        .fold(
+            width(&headers[0], font(text::CAPTION, Weight::Medium)),
+            f32::max,
+        )
+        + space::M * 2.0;
+    let count_w = width(&headers[2], font(text::CAPTION, Weight::Medium))
+        .max(width("999,999", font(text::SMALL, Weight::Regular)))
+        + space::M * 2.0;
+    let table = Table::new(&[0.0, 1.0, 0.0, 0.0])
+        .min_widths(&[name_w, 0.0, count_w, size::CONTROL_SM + space::M])
+        .right_aligned(&[2, 3]);
+    table.header(ui, &headers);
+    let counts = state
+        .ingress
+        .value
+        .filter(|_| state.ingress.error.is_none());
+    for (i, name) in names.iter().enumerate() {
+        let url = address(port, i);
+        ui.push_id(i, |ui| {
+            table.row(ui, size::ROW, i + 1 == names.len(), |ui, col| match col {
+                0 => {
+                    ui.label(Text::strong(name, cx.pal));
+                }
+                1 => match &url {
+                    // An address: monospace, shortened in the middle.
+                    Some(url) => {
+                        ui.add(
+                            ValueChip::new(url, Shape::Url)
+                                .plain()
+                                .size(text::SMALL)
+                                .max_width(ui.available_width()),
+                        );
+                    }
+                    None => {
+                        ui.label(Text::small(cx.tr.t("router.ingress.no_address"), cx.pal))
+                            .on_hover_text(PATHS[i]);
+                    }
+                },
+                2 => {
+                    let count = counts.map_or_else(
+                        || "—".to_owned(),
+                        |c| crate::pages::shared::format::group_thousands(c[i]),
+                    );
+                    ui.label(Text::small(count, cx.pal).color(cx.pal.text))
+                        .on_hover_text(cx.tr.t("router.ingress.count_hint"));
+                }
+                _ => {
+                    let copy = cx.tr.f("router.ingress.copy", &[("name", name)]);
+                    if ui
+                        .add(
+                            IconButton::new(Icon::Copy, copy)
+                                .size(size::CONTROL_SM)
+                                .enabled(url.is_some()),
+                        )
+                        .clicked()
+                        && let Some(url) = &url
+                    {
+                        ui.ctx().copy_text(url.clone());
+                    }
+                }
+            });
+        });
+    }
+    ui.add_space(space::XS);
+    translation(ui, cx, state);
 }
 
 fn translation(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     if let Some(error) = &state.conversion_error {
-        crate::pages::note(ui, cx, crate::design::widgets::Status::Error, error);
+        crate::pages::note(ui, cx, Status::Error, error);
     }
     let conversions = state.snapshot.as_ref().and_then(|s| s.translation.clone());
     let Some(conversions) = conversions else {
-        ui.label(Text::small(cx.tr.t("router.ingress.translation"), cx.pal));
-        ui.label(Text::caption(
-            cx.tr.t("router.ingress.translation_unknown"),
-            cx.pal,
-        ));
+        FormRow::new(Text::small(cx.tr.t("router.ingress.translation"), cx.pal))
+            .label_width(0.0)
+            .show(ui, |ui| {
+                ui.label(Text::caption(
+                    cx.tr.t("router.ingress.translation_unknown"),
+                    cx.pal,
+                ));
+            });
         return;
     };
     let enabled = conversions.iter().filter(|c| c.enabled).count();
@@ -194,34 +212,84 @@ fn translation(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         "router.ingress.translation_state",
         &[("enabled", &enabled), ("total", &conversions.len())],
     );
-    egui::CollapsingHeader::new(title)
-        .id_salt("router-conversion-directions")
-        .show(ui, |ui| {
-            ui.add(
-                egui::Label::new(Text::caption(
-                    cx.tr.t("router.ingress.translation_hint"),
-                    cx.pal,
-                ))
-                .wrap(),
-            );
-            for mut conversion in conversions {
-                let label = format!(
-                    "{} → {}",
-                    cx.tr.text(&conversion.from.text()),
-                    cx.tr.text(&conversion.to.text()),
-                );
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(
-                            Toggle::new(&mut conversion.enabled, &label)
-                                .enabled(state.op.is_none() && state.error.is_none()),
-                        )
-                        .changed()
-                    {
-                        state.start(cx, Op::Conversion, |b| b.set_conversion(conversion));
+    Disclosure::new("router-conversion-directions", title).show(ui, |ui| {
+        ui.add(
+            egui::Label::new(Text::small(
+                cx.tr.t("router.ingress.translation_hint"),
+                cx.pal,
+            ))
+            .wrap(),
+        );
+        ui.add_space(space::XS);
+        conversion_matrix(ui, cx, state, &conversions);
+    });
+}
+
+/// The conversion directions as a matrix: a row per client protocol, a column
+/// per upstream protocol, a switch where a conversion exists ("—" elsewhere).
+/// Each switch is named "client → upstream", as the list it replaces was.
+fn conversion_matrix(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &mut State,
+    conversions: &[superba_core::RouterConversion],
+) {
+    let axes = matrix_axes(conversions);
+    let (from, to) = (&axes, &axes);
+    let mut headers = vec![cx.tr.t("router.ingress.col.client_protocol")];
+    headers.extend(to.iter().map(|p| cx.tr.text(&p.text())));
+    let mut weights = vec![1.4];
+    weights.extend(to.iter().map(|_| 1.0));
+    let table = Table::new(&weights);
+    table.header(ui, &headers);
+    let enabled = state.op.is_none() && state.error.is_none();
+    for (r, client) in from.iter().enumerate() {
+        ui.push_id(("conversion", r), |ui| {
+            table.row(ui, size::ROW, r + 1 == from.len(), |ui, col| {
+                if col == 0 {
+                    ui.label(Text::small(cx.tr.text(&client.text()), cx.pal).color(cx.pal.text));
+                    return;
+                }
+                let upstream = to[col - 1];
+                match conversions
+                    .iter()
+                    .find(|c| c.from == *client && c.to == upstream)
+                {
+                    Some(c) => {
+                        let mut c = *c;
+                        let label = format!(
+                            "{} → {}",
+                            cx.tr.text(&c.from.text()),
+                            cx.tr.text(&c.to.text()),
+                        );
+                        if ui
+                            .add(Toggle::new(&mut c.enabled, &label).enabled(enabled))
+                            .changed()
+                        {
+                            state.start(cx, Op::Conversion, |b| b.set_conversion(c));
+                        }
                     }
-                    ui.add(egui::Label::new(Text::small(label, cx.pal)).wrap());
-                });
-            }
+                    None => {
+                        ui.label(Text::small("—", cx.pal));
+                    }
+                }
+            });
         });
+    }
+}
+
+/// The protocols of the conversion matrix, the same list for its rows (client
+/// protocols) and its columns (upstream protocols) so that "no conversion"
+/// runs down the diagonal: Responses, Chat Completions, Messages, Gemini, the
+/// ones that appear in `conversions`.
+pub fn matrix_axes(conversions: &[superba_core::RouterConversion]) -> Vec<RequestProtocol> {
+    [
+        RequestProtocol::Responses,
+        RequestProtocol::ChatCompletions,
+        RequestProtocol::Messages,
+        RequestProtocol::Gemini,
+    ]
+    .into_iter()
+    .filter(|p| conversions.iter().any(|c| c.from == *p || c.to == *p))
+    .collect()
 }
