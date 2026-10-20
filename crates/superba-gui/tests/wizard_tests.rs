@@ -124,6 +124,23 @@ async fn a_rerun_edits_the_applied_provider_instead_of_duplicating_it() {
     w.step = Step::Confirm;
     let dyn_service: Arc<dyn SwitchService> = service.clone();
     let mut out = Vec::new();
+    // The router model list starts at the saved one (Codex models only) and
+    // is handed back only when it was changed.
+    assert_eq!(w.catalog_mode, superba_core::CatalogMode::Codex);
+    let unchanged = with_cx(&data, &dyn_service, Locale::En, |cx| {
+        wizard::finish(cx, &w, &mut out)
+    });
+    assert!(
+        matches!(
+            unchanged,
+            WizardOutcome::Finish {
+                catalog_mode: None,
+                ..
+            }
+        ),
+        "{unchanged:?}"
+    );
+    w.catalog_mode = superba_core::CatalogMode::Prefixed;
     let outcome = with_cx(&data, &dyn_service, Locale::En, |cx| {
         wizard::finish(cx, &w, &mut out)
     });
@@ -132,11 +149,12 @@ async fn a_rerun_edits_the_applied_provider_instead_of_duplicating_it() {
         profile,
         key,
         request,
-        ..
+        catalog_mode,
     } = outcome
     else {
         panic!("expected Finish, got {outcome:?}");
     };
+    assert_eq!(catalog_mode, Some(superba_core::CatalogMode::Prefixed));
     assert!(site.is_none(), "a preset site is never saved");
     assert_eq!(profile.id, applied.id, "the existing profile is edited");
     assert_eq!(profile.key_ref, applied.key_ref, "its key is kept");

@@ -4,7 +4,10 @@
 //! Run with HOME and SUPERBA_DATA_DIR pointed at a disposable directory:
 //!
 //!     models_frames --mode codex|extended|prefixed --width 1280|960 [--dark] [--zh]
-//!         [--click X,Y] [--hover X,Y] --output FILE.png
+//!         [--click X,Y] [--hover X,Y] [--wizard] --output FILE.png
+//!
+//! `--wizard` shows the setup wizard's "Line & models" step instead, where the
+//! router model list is asked.
 #![allow(dead_code)]
 #[path = "../tests/support/mod.rs"]
 mod support;
@@ -91,6 +94,52 @@ impl eframe::App for Capture {
     }
 }
 
+/// The setup wizard alone, at its "Line & models" step.
+struct WizardShot {
+    wizard: superba_gui::pages::wizard::Wizard,
+    data: superba_gui::pages::Data,
+    service: Arc<dyn SwitchService>,
+    tr: superba_gui::i18n::Tr,
+    fonts: superba_gui::design::fonts::FontReport,
+    output: Option<PathBuf>,
+    frames: u32,
+}
+
+impl eframe::App for WizardShot {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.frames += 1;
+        let ctx = ui.ctx().clone();
+        let cx = superba_gui::pages::Cx {
+            tr: &self.tr,
+            pal: superba_gui::design::Palette::of(&ctx),
+            data: &self.data,
+            busy: false,
+            now: superba_core::Timestamp::now(),
+            fonts: &self.fonts,
+            service: &self.service,
+            log: &[],
+        };
+        superba_gui::pages::wizard::show(&ctx, &cx, &mut self.wizard, &mut Vec::new());
+        if self.frames > 20
+            && let Some(path) = self.output.take()
+        {
+            let close = ctx.clone();
+            ctx.request_screenshot(move |image| {
+                let size =
+                    resvg::tiny_skia::IntSize::from_wh(image.width() as u32, image.height() as u32)
+                        .unwrap();
+                let pixels = image.pixels.iter().flat_map(|p| p.to_array()).collect();
+                resvg::tiny_skia::Pixmap::from_vec(pixels, size)
+                    .unwrap()
+                    .save_png(path)
+                    .unwrap();
+                close.send_viewport_cmd(egui::ViewportCommand::Close);
+            });
+        }
+        ctx.request_repaint_after(Duration::from_millis(50));
+    }
+}
+
 fn point(text: Option<String>) -> Option<egui::Pos2> {
     let text = text?;
     let (x, y) = text.split_once(',')?;
@@ -142,6 +191,42 @@ fn main() -> eframe::Result {
     service.set_models_view(support::models_catalog::view(base, mode));
     let click = point(arg("--click"));
     let hover = point(arg("--hover"));
+    if args.iter().any(|a| a == "--wizard") {
+        let data = rt.block_on(async {
+            let mut data = superba_gui::pages::Data {
+                sites: service.sites().await.unwrap(),
+                ..Default::default()
+            };
+            data.overview.finish(service.overview().await);
+            data.profiles.finish(service.profile_set().await);
+            data
+        });
+        let mut wizard = superba_gui::pages::wizard::Wizard::start(&data);
+        wizard.step = superba_gui::pages::wizard::Step::LineModels;
+        let theme = opts.theme;
+        let locale = opts.locale.unwrap_or(Locale::En);
+        return eframe::run_native(
+            "Superba",
+            native,
+            Box::new(move |cc| {
+                cc.egui_ctx.set_pixels_per_point(1.0);
+                // The system CJK face, as the app finds it.
+                let fonts = superba_gui::design::fonts::discover_cjk();
+                cc.egui_ctx
+                    .set_fonts(superba_gui::design::fonts::definitions(&fonts));
+                superba_gui::design::style::install(&cc.egui_ctx, theme);
+                Ok(Box::new(WizardShot {
+                    wizard,
+                    data,
+                    service,
+                    tr: superba_gui::i18n::Tr::new(locale),
+                    fonts,
+                    output: Some(output),
+                    frames: 0,
+                }))
+            }),
+        );
+    }
     eframe::run_native(
         "Superba Models",
         native,
