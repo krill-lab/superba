@@ -11,6 +11,7 @@ use crate::design::tokens::{Palette, text};
 pub struct Table {
     weights: Vec<f32>,
     min_widths: Vec<f32>,
+    right: Vec<usize>,
 }
 
 impl Table {
@@ -19,7 +20,20 @@ impl Table {
         Self {
             weights: weights.to_vec(),
             min_widths: vec![0.0; weights.len()],
+            right: Vec::new(),
         }
+    }
+
+    /// Space between a right-aligned column's labels and its right edge, so
+    /// a number does not run into the left-aligned column after it: right-
+    /// aligned cells leave it too.
+    pub const RIGHT_INSET: f32 = 12.0;
+
+    /// Right-align the header labels of these columns (numbers, whose cells
+    /// the caller right-aligns too, [`Table::RIGHT_INSET`] from the edge).
+    pub fn right_aligned(mut self, columns: &[usize]) -> Self {
+        self.right = columns.to_vec();
+        self
     }
 
     /// Minimum width per column.
@@ -61,10 +75,15 @@ impl Table {
     pub fn header(&self, ui: &mut Ui, labels: &[String]) {
         let pal = Palette::of(ui.ctx());
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::hover());
-        for (col, label) in self.columns(rect, 12.0).iter().zip(labels) {
+        for (i, (col, label)) in self.columns(rect, 12.0).iter().zip(labels).enumerate() {
+            let (x, align) = if self.right.contains(&i) {
+                (col.max.x - Self::RIGHT_INSET, egui::Align2::RIGHT_CENTER)
+            } else {
+                (col.min.x, egui::Align2::LEFT_CENTER)
+            };
             ui.painter().text(
-                pos2(col.min.x, col.center().y),
-                egui::Align2::LEFT_CENTER,
+                pos2(x, col.center().y),
+                align,
                 label,
                 font(text::CAPTION, Weight::Medium),
                 pal.text_subtle,

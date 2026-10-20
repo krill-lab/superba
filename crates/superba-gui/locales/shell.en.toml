@@ -173,7 +173,7 @@ short.claude_code = "Connection & models"
 short.claude_settings = "Settings"
 
 [page]
-claude_code.subtitle = "Which provider and models Claude Code uses on this computer: the Anthropic endpoint, the /model list, the Opus / Sonnet / Haiku slots and what each model supports. Superba writes only its own keys of settings.json."
+claude_code.subtitle = "The provider, Anthropic endpoint and models Claude Code uses on this computer."
 claude_settings.subtitle = "Claude Code's settings on this computer (~/.claude/settings.json): every key and documented environment variable, with the file editor and its backups."
 diagnostics.subtitle = "Checks, Codex processes, the environment and the activity log."
 hosts.subtitle = "SSH hosts the ChatGPT app knows, and this computer's WSL distributions (they switch with it by default)."
