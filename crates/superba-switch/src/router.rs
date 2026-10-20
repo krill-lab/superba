@@ -97,6 +97,12 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
             "router protocol conversion settings",
         ))
     }
+    /// Persist the failover and recovery rules and reload without starting
+    /// the service.
+    async fn set_failover(&self, failover: superba_core::RouterFailover) -> Result<()> {
+        let _ = failover;
+        Err(Error::not_implemented("router failover settings"))
+    }
     /// Endpoint of the stored configuration (reads files only).
     fn endpoint(&self) -> Result<RouterEndpointInfo>;
     /// Write the configuration, install and start the service, wait until it
@@ -280,6 +286,9 @@ impl RouterControl for SystemRouterControl {
     }
     async fn set_conversion(&self, conversion: superba_core::RouterConversion) -> Result<()> {
         self.manager.set_conversion(conversion).await.map(|_| ())
+    }
+    async fn set_failover(&self, failover: superba_core::RouterFailover) -> Result<()> {
+        self.manager.set_failover(&failover).await.map(|_| ())
     }
     async fn restart(&self) -> Result<()> {
         self.manager.restart(ROUTER_START_WAIT).await
@@ -588,6 +597,8 @@ impl Switcher {
             config.openai = stored.openai;
             config.gemini = stored.gemini;
             config.translation = stored.translation;
+            // The failover rules are set on the Router page, not with the members.
+            config.tuning.set_failover(&stored.tuning.failover()).ok();
         }
         if !claude.openai.is_empty() {
             config
@@ -855,6 +866,7 @@ impl Switcher {
             configured: service.configured,
             token_ready: d.router.endpoint().is_ok_and(|e| !e.token.is_empty()),
             translation: config.as_ref().map(|c| c.translation.view()),
+            failover: config.as_ref().map(|c| c.tuning.failover()),
             installed: service.installed,
             running,
             port: service.port,

@@ -610,6 +610,15 @@ def click_action(x, y):
     return act
 
 
+def palette_go(query):
+    """Run the first palette entry matching `query` (a Usage tab, ...)."""
+    def act(s):
+        palette_action(query)(s)
+        s.input.key("Return")
+        time.sleep(1.5)
+    return act
+
+
 def wizard_action(query):
     """Open the setup wizard from the palette (a re-run with an existing provider)
     and go to its provider step."""
@@ -722,6 +731,9 @@ def main():
                 for kind in ("menu", "migrate"):
                     shots.append((f"sessions-{kind}-{suffix}", "sessions", theme, lang, 7.0,
                                   sessions_action(kind, size), size))
+                # The Usage page's 路由 tab (user bug 116).
+                shots.append((f"usage-routing-{suffix}", "usage", theme, lang, 7.0,
+                              palette_go("routing"), size))
             shots.append((f"palette-dark-en{tail}", "overview", "dark", "en", 6.0,
                           palette_action("cdn"), size))
             shots.append((f"palette-light-zh{tail}", "overview", "light", "zh-CN", 6.0,

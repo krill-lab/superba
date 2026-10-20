@@ -222,6 +222,39 @@ impl LineConfig {
     }
 }
 
+/// Statuses that fail over by default: the gateway errors.
+pub const DEFAULT_FAILOVER_STATUSES: &[u16] = &[502, 503, 504];
+
+/// Statuses the failover setting may name (the others always pass through).
+pub const CONFIGURABLE_FAILOVER_STATUSES: &[u16] = &[401, 403, 429, 500, 502, 503, 504];
+
+impl Tuning {
+    /// The failover and recovery settings in effect.
+    pub fn failover(&self) -> superba_core::RouterFailover {
+        superba_core::RouterFailover {
+            cooldown_secs: u32::try_from(self.breaker_base_ms / 1000).unwrap_or(u32::MAX),
+            max_cooldown_secs: u32::try_from(self.breaker_max_ms / 1000).unwrap_or(u32::MAX),
+            failover_statuses: self.failover_statuses.clone(),
+            sticky_idle_minutes: u32::try_from(self.sticky_ttl_secs / 60).unwrap_or(u32::MAX),
+            return_to_preferred: self.return_to_preferred,
+        }
+    }
+
+    /// Apply failover and recovery settings (validated first).
+    pub fn set_failover(&mut self, f: &superba_core::RouterFailover) -> Result<()> {
+        f.validate()?;
+        self.breaker_base_ms = u64::from(f.cooldown_secs) * 1000;
+        self.breaker_max_ms = u64::from(f.max_cooldown_secs) * 1000;
+        let mut statuses = f.failover_statuses.clone();
+        statuses.sort_unstable();
+        statuses.dedup();
+        self.failover_statuses = statuses;
+        self.sticky_ttl_secs = u64::from(f.sticky_idle_minutes) * 60;
+        self.return_to_preferred = f.return_to_preferred;
+        Ok(())
+    }
+}
+
 /// Timeouts, stickiness and breaker parameters. Defaults follow the router spike.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -242,6 +275,14 @@ pub struct Tuning {
     pub breaker_base_ms: u64,
     /// Longest open period.
     pub breaker_max_ms: u64,
+    /// HTTP statuses that fail over to the next line (and count as a soft
+    /// failure of the line). Every other status is passed to the client. An
+    /// edge interception always fails over.
+    pub failover_statuses: Vec<u16>,
+    /// A conversation pinned to a fallback member returns to an earlier
+    /// member once one of its lines is available again (off: it stays on the
+    /// fallback until it has been idle for [`Tuning::sticky_ttl_secs`]).
+    pub return_to_preferred: bool,
     /// Timeout of one health probe.
     pub probe_timeout_ms: u64,
     /// Probe every line at start and open lines when their backoff ends. When
@@ -286,6 +327,8 @@ impl Default for Tuning {
             breaker_threshold: 2,
             breaker_base_ms: 5_000,
             breaker_max_ms: 60_000,
+            failover_statuses: DEFAULT_FAILOVER_STATUSES.to_vec(),
+            return_to_preferred: false,
             probe_timeout_ms: 5_000,
             active_probes: true,
             max_concurrent: None,

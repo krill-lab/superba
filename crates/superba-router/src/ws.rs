@@ -22,7 +22,7 @@ use tracing::Instrument;
 
 use crate::config::join_path;
 use crate::forward::{
-    Observed, describe_error, empty, failover_status, local_busy, request_headers,
+    Observed, describe_error, empty, failover_status_in, local_busy, request_headers,
     response_headers, router_error, set_route,
 };
 use crate::limits::{Admission, ConnSlot, Place, file_limit_detail, file_limit_in};
@@ -70,9 +70,7 @@ pub(crate) async fn proxy_ws(
     let conn_slot = parts.extensions.get::<ConnSlot>().cloned();
     let key = session_key(&parts.headers);
     let now = Instant::now();
-    let pin = key
-        .as_deref()
-        .and_then(|k| lock(&generation.sticky).get(k, now));
+    let pin = key.as_deref().and_then(|k| generation.pin(k, now));
 
     // The preferred member decides whether this session uses WebSocket at all.
     let preferred = candidates(
@@ -154,7 +152,11 @@ pub(crate) async fn proxy_ws(
             }
             Ok(resp) => resp,
         };
-        if let Some(reason) = failover_status(resp.status(), resp.headers()) {
+        if let Some(reason) = failover_status_in(
+            &generation.config.tuning.failover_statuses,
+            resp.status(),
+            resp.headers(),
+        ) {
             let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
             note_line_down(&shared, &generation, c, opened, &reason);
             failed_over(&shared, member, line, &mut failures, &label, reason);

@@ -522,6 +522,71 @@ pub struct RouterConversion {
     pub enabled: bool,
 }
 
+/// Failover and recovery rules of the router (persisted in its configuration,
+/// applied with a reload).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RouterFailover {
+    /// First cooldown of a failed line, in seconds; doubles on each failure.
+    pub cooldown_secs: u32,
+    /// Longest cooldown, in seconds.
+    pub max_cooldown_secs: u32,
+    /// HTTP statuses that fail over to the next line; the others are passed
+    /// to the tool.
+    pub failover_statuses: Vec<u16>,
+    /// A conversation stays on its line until idle this many minutes.
+    pub sticky_idle_minutes: u32,
+    /// Return a conversation to the preferred member once it has recovered.
+    pub return_to_preferred: bool,
+}
+
+impl Default for RouterFailover {
+    fn default() -> Self {
+        Self {
+            cooldown_secs: 5,
+            max_cooldown_secs: 60,
+            failover_statuses: vec![502, 503, 504],
+            sticky_idle_minutes: 120,
+            return_to_preferred: false,
+        }
+    }
+}
+
+impl RouterFailover {
+    /// Bounds of [`RouterFailover::cooldown_secs`].
+    pub const COOLDOWN: std::ops::RangeInclusive<u32> = 1..=300;
+    /// Bounds of [`RouterFailover::max_cooldown_secs`].
+    pub const MAX_COOLDOWN: std::ops::RangeInclusive<u32> = 1..=3600;
+    /// Bounds of [`RouterFailover::sticky_idle_minutes`].
+    pub const STICKY_IDLE: std::ops::RangeInclusive<u32> = 5..=1440;
+    /// Statuses that may be chosen to fail over.
+    pub const STATUSES: [u16; 7] = [401, 403, 429, 500, 502, 503, 504];
+
+    /// Check the bounds.
+    pub fn validate(&self) -> crate::Result<()> {
+        let bad = |what: &str| Err(crate::Error::invalid(format!("router failover: {what}")));
+        if !Self::COOLDOWN.contains(&self.cooldown_secs) {
+            return bad("the cooldown must be 1 to 300 seconds");
+        }
+        if !Self::MAX_COOLDOWN.contains(&self.max_cooldown_secs)
+            || self.max_cooldown_secs < self.cooldown_secs
+        {
+            return bad("the longest cooldown must be at least the first and at most 3600 seconds");
+        }
+        if !Self::STICKY_IDLE.contains(&self.sticky_idle_minutes) {
+            return bad("the idle time must be 5 to 1440 minutes");
+        }
+        if self
+            .failover_statuses
+            .iter()
+            .any(|s| !Self::STATUSES.contains(s))
+        {
+            return bad("only 401, 403, 429, 500, 502, 503 and 504 can fail over");
+        }
+        Ok(())
+    }
+}
+
 /// Router status snapshot.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RouterView {
@@ -536,6 +601,10 @@ pub struct RouterView {
     /// router configuration. These are permissions, not model readiness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub translation: Option<Vec<RouterConversion>>,
+    /// Failover and recovery rules in the router configuration; unknown
+    /// without a readable configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failover: Option<RouterFailover>,
     /// The service is installed with the service manager.
     pub installed: bool,
     /// The router answers its admin API.

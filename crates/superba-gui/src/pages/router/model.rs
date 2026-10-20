@@ -180,6 +180,9 @@ pub struct Live {
     pub events: Vec<EventView>,
     /// Local capacity and shortages (user bug 35).
     pub local: superba_core::RouterLocalView,
+    /// ChatGPT backend calls answered by the router itself since it started,
+    /// by route (`x-superba-route: local`).
+    pub local_answers: std::collections::BTreeMap<String, u64>,
 }
 
 /// How long the router page warns about a local shortage after the last one.
@@ -282,6 +285,8 @@ pub struct Snapshot {
     pub token_ready: bool,
     /// Saved conversion directions; `None` without a readable configuration.
     pub translation: Option<Vec<superba_core::RouterConversion>>,
+    /// Saved failover and recovery rules; `None` without a readable configuration.
+    pub failover: Option<superba_core::RouterFailover>,
     /// Request recording counters of the running router.
     pub recording: Option<superba_core::RouterStatsStatus>,
     /// Every provider as a possible member with its eligibility, from the same

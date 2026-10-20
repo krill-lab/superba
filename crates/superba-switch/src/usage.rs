@@ -190,6 +190,7 @@ impl Attribution {
             requested_model: r.model.clone(),
             session_id: Some(r.thread_id.clone()),
             agent_kind: None,
+            attempts: Vec::new(),
         }
     }
 }

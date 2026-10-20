@@ -13,7 +13,7 @@ use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
 use crate::design::tokens::{size, space, text};
 use crate::design::widgets::value_chip::ValueChip;
-use crate::design::widgets::{Badge, Disclosure, FormRow, IconButton, Status, Table, Text, Toggle};
+use crate::design::widgets::{Badge, IconButton, Status, Table, Text, Toggle};
 use crate::pages::{Cx, section_with};
 
 /// Client base URLs of the four entry points shipped in this build.
@@ -204,46 +204,45 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             });
         });
     }
-    ui.add_space(space::XS);
-    translation(ui, cx, state);
 }
 
-fn translation(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+/// 「协议转换」 / "Protocol conversion": a plain section like 「入口」 (user bug
+/// 116): the title with how many directions are on at its right, what the
+/// switches mean, then the matrix.
+pub(super) fn conversion_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+    let conversions = state.snapshot.as_ref().and_then(|s| s.translation.clone());
+    let count = conversions.as_ref().map(|c| {
+        cx.tr.f(
+            "router.ingress.translation_count",
+            &[
+                ("enabled", &c.iter().filter(|c| c.enabled).count()),
+                ("total", &c.len()),
+            ],
+        )
+    });
+    section_with(
+        ui,
+        cx,
+        &cx.tr.t("router.ingress.translation"),
+        Some(&cx.tr.t("router.ingress.translation_hint")),
+        |ui| {
+            if let Some(count) = &count {
+                ui.label(Text::small(count, cx.pal));
+            }
+        },
+    );
     if let Some(error) = &state.conversion_error {
         crate::pages::note(ui, cx, Status::Error, error);
     }
-    let conversions = state.snapshot.as_ref().and_then(|s| s.translation.clone());
-    let Some(conversions) = conversions else {
-        // The disclosure's label (13 pt medium, muted) and why it cannot open.
-        FormRow::new(
-            Text::small(cx.tr.t("router.ingress.translation"), cx.pal)
-                .font(font(text::SMALL, Weight::Medium)),
-        )
-        .label_width(0.0)
-        .show(ui, |ui| {
+    match conversions {
+        Some(conversions) => conversion_matrix(ui, cx, state, &conversions),
+        None => {
             ui.label(
                 Text::small(cx.tr.t("router.ingress.translation_unknown"), cx.pal)
                     .color(cx.pal.text_subtle),
             );
-        });
-        return;
-    };
-    let enabled = conversions.iter().filter(|c| c.enabled).count();
-    let title = cx.tr.f(
-        "router.ingress.translation_state",
-        &[("enabled", &enabled), ("total", &conversions.len())],
-    );
-    Disclosure::new("router-conversion-directions", title).show(ui, |ui| {
-        ui.add(
-            egui::Label::new(Text::small(
-                cx.tr.t("router.ingress.translation_hint"),
-                cx.pal,
-            ))
-            .wrap(),
-        );
-        ui.add_space(space::XS);
-        conversion_matrix(ui, cx, state, &conversions);
-    });
+        }
+    }
 }
 
 /// The conversion directions as a matrix: a row per client protocol, a column

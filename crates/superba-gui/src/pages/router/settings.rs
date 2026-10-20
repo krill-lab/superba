@@ -1,7 +1,9 @@
 //! The Router page's body in reading order, one scrolling column at every
-//! width: the status line, members and their line order, Claude Code's
-//! members, the entry points, then the rarely changed settings in the closed
-//! 「高级」 / "Advanced" group (reply stats line, prices, recording, service).
+//! width: the status line with the service and router process under it, the
+//! members and their line order, the entry points, protocol conversion, the
+//! failover and recovery rules, then the rarely changed settings under
+//! 「高级」 / "Advanced" (reply stats line, prices, recording). No section is
+//! collapsed (user bug 116).
 //! Sections are flat (ui-spec rule 2): a section title, an optional caption,
 //! then rows separated by hairlines. Changes save immediately without a restart.
 
@@ -11,9 +13,7 @@ use superba_core::{StatsLineClient, StatsLineStyle};
 use super::stats_line::{self, Sample};
 use super::{State, mode, prices, view};
 use crate::design::tokens::{size, space};
-use crate::design::widgets::{
-    Button, Disclosure, FormRow, QuotePreview, Segmented, Status, Text, Toggle,
-};
+use crate::design::widgets::{Button, FormRow, QuotePreview, Segmented, Status, Text, Toggle};
 use crate::pages::{Action, Cx, clock_time, divider, section};
 
 /// Edits in progress on the tab.
@@ -29,27 +29,33 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     scroll_column(ui, "router-settings", |ui| {
         ui.spacing_mut().item_spacing.y = space::XS;
         super::status_line(ui, cx, state);
+        // The service and the router process belong to the status (user bug 116).
+        view::service_strip(ui, cx, state);
         view::notices(ui, cx, state);
         ui.add_space(space::XL);
         view::members_section(ui, cx, state, out);
         ui.add_space(space::XL);
         super::ingress::show(ui, cx, state);
         ui.add_space(space::XL);
+        // Plain sections like 「入口」, never collapsed (user bugs 116, 117).
+        super::ingress::conversion_section(ui, cx, state);
+        ui.add_space(space::XL);
+        super::failover::section_ui(ui, cx, state);
+        ui.add_space(space::XL);
         divider(ui, cx);
         ui.add_space(space::S);
-        Disclosure::new("router-advanced", cx.tr.t("router.advanced.title"))
-            .section()
-            .caption(cx.tr.t("router.advanced.caption"))
-            .show(ui, |ui| {
-                ui.add_space(space::M);
-                stats_line_section(ui, cx, state);
-                ui.add_space(space::XL);
-                prices::moved_row(ui, cx, out);
-                ui.add_space(space::XL);
-                recording_section(ui, cx, state);
-                ui.add_space(space::XL);
-                view::service_section(ui, cx, state);
-            });
+        section(
+            ui,
+            cx,
+            &cx.tr.t("router.advanced.title"),
+            Some(&cx.tr.t("router.advanced.caption")),
+        );
+        ui.add_space(space::S);
+        stats_line_section(ui, cx, state);
+        ui.add_space(space::XL);
+        prices::moved_row(ui, cx, out);
+        ui.add_space(space::XL);
+        recording_section(ui, cx, state);
         ui.add_space(space::XL);
     });
 }

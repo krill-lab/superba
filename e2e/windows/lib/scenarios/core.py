@@ -282,10 +282,8 @@ def w31(t):
         flows.start_superba(run, s)
         u.page("router")
         time.sleep(1)
-        advanced = u.reveal(key="router.advanced.title", type="Button")
-        # The 「高级」 disclosure (AccessKit DisclosureTriangle) exposes Invoke, not ExpandCollapse.
-        if advanced.get("expanded") != "Expanded":
-            u.click(key="router.advanced.title")
+        # 「高级」 is a plain section since user bug 116 (no disclosure to open):
+        # scroll its stats line switch into view.
         u.reveal(key="stats_line.title", type="Button")
         el = u.wait(key="stats_line.title", type="Button")
         if el.get("toggle") != "On":

@@ -118,6 +118,14 @@ impl SwitchService for LocatedService {
         service.router_set_conversion(conversion).await
     }
 
+    async fn router_set_failover(
+        &self,
+        failover: superba_core::RouterFailover,
+    ) -> Result<RouterView> {
+        let (service, _lock) = self.read().await?;
+        service.router_set_failover(failover).await
+    }
+
     async fn router_install(&self, request: RouterInstallRequest) -> Result<RouterView> {
         let (service, _lock) = self.read().await?;
         service.router_install(request).await
