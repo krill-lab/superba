@@ -121,7 +121,12 @@ async fn brew_run(op: &Op<'_>, brew: &Path, verb: &str, pkg: Package, stage: Too
         }
         if locked(&out) && attempt < 3 {
             op.log.line("brew is busy (another brew holds its lock); waiting");
-            tokio::time::sleep(Duration::from_secs(if cfg!(test) { 0 } else { 10 })).await;
+            let ms = cx
+                .env
+                .var("SUPERBA_BREW_LOCK_WAIT_MS")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10_000);
+            tokio::time::sleep(Duration::from_millis(ms)).await;
             continue;
         }
         if unknown(&out) && !updated {
