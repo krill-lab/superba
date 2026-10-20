@@ -1691,6 +1691,7 @@ impl SwitchService for FakeService {
                 last_refresh: None,
                 id_token_exp: None,
                 email: None,
+                account_id: None,
             }),
             notices: vec![],
             external: s.external.clone(),

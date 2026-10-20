@@ -31,6 +31,14 @@ pub enum AuthMode {
     /// The user's own ChatGPT login (restored from the encrypted stash).
     #[serde(rename = "chatgpt")]
     OfficialChatGpt,
+    /// Mixed login (router mode only): `auth.json` keeps the user's own
+    /// ChatGPT login, so remote control, Codex Cloud tasks and the app's
+    /// ChatGPT features use the real account at chatgpt.com; only
+    /// `openai_base_url` points at the local router, which accepts that login
+    /// and sends model traffic to its members. Never chosen for a profile: the
+    /// planner resolves router mode to it when the router setting asks.
+    #[serde(rename = "mixed")]
+    MixedOfficial,
 }
 
 impl AuthMode {
@@ -39,7 +47,7 @@ impl AuthMode {
     pub fn family(self) -> AuthFamily {
         match self {
             AuthMode::Pat | AuthMode::ApiKey => AuthFamily::Token,
-            AuthMode::OfficialChatGpt => AuthFamily::ChatGpt,
+            AuthMode::OfficialChatGpt | AuthMode::MixedOfficial => AuthFamily::ChatGpt,
         }
     }
 
@@ -51,6 +59,11 @@ impl AuthMode {
     /// True if Codex must see `CODEX_AUTHAPI_BASE_URL` (PAT whoami origin).
     pub fn needs_authapi_env(self) -> bool {
         matches!(self, AuthMode::Pat)
+    }
+
+    /// True if `auth.json` holds the user's own ChatGPT login.
+    pub fn uses_official_login(self) -> bool {
+        matches!(self, AuthMode::OfficialChatGpt | AuthMode::MixedOfficial)
     }
 
     /// True if `chatgpt_base_url` must point at the line (`wham/accounts/check`).
@@ -66,6 +79,10 @@ impl AuthMode {
             AuthMode::OfficialChatGpt => {
                 LocalizedText::new("auth_mode.chatgpt", "Official ChatGPT login")
             }
+            AuthMode::MixedOfficial => LocalizedText::new(
+                "auth_mode.mixed",
+                "Official ChatGPT login + router (mixed login)",
+            ),
         }
     }
 }

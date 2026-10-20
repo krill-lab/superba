@@ -592,10 +592,15 @@ fn io_errors_keep_the_os_code_and_name_the_open_file_limit() {
 
 #[test]
 fn every_auth_mode_has_complete_translations() {
-    let texts: Vec<_> = [AuthMode::Pat, AuthMode::ApiKey, AuthMode::OfficialChatGpt]
-        .into_iter()
-        .map(AuthMode::text)
-        .collect();
+    let texts: Vec<_> = [
+        AuthMode::Pat,
+        AuthMode::ApiKey,
+        AuthMode::OfficialChatGpt,
+        AuthMode::MixedOfficial,
+    ]
+    .into_iter()
+    .map(AuthMode::text)
+    .collect();
     assert_catalog_contract("auth_mode.", &texts);
 }
 

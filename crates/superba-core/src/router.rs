@@ -52,7 +52,7 @@ pub fn codex_uses_router(
             .active
             .as_ref()
             .and_then(|a| a.auth_mode)
-            .is_some_and(|m| m.uses_key())
+            .is_some_and(|m| m.uses_key() || m == crate::AuthMode::MixedOfficial)
         && state
             .model_provider
             .as_deref()
@@ -77,6 +77,12 @@ pub struct RouterSettings {
     pub stats: RouterStatsSettings,
     /// Namespaces and visibility of the merged Codex catalog.
     pub catalog: crate::RouterCatalogSettings,
+    /// Mixed login (Providers page, official account card: "use the official
+    /// account for remote features"): while the router is on, Codex keeps the
+    /// user's own ChatGPT login and only model traffic goes to the router
+    /// ([`crate::AuthMode::MixedOfficial`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mixed_login: bool,
 }
 
 /// Request recording, the optional stats line and the prices of cost estimates.

@@ -534,6 +534,10 @@ impl TomlConfigEngine {
                 | ResolvedMode::Original { .. }
                 | ResolvedMode::Release { .. }
                 | ResolvedMode::Generation { .. }
+                | ResolvedMode::Token {
+                    auth: superba_core::AuthMode::MixedOfficial,
+                    ..
+                }
         );
         let stash = if restores_login {
             self.stash.load(&scope)?.filter(|b| !is_signed_out(b))

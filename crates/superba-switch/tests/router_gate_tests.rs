@@ -261,6 +261,7 @@ async fn local_pat_verification_uses_the_router_origin_with_the_real_prober() {
             .iter()
             .map(|m| (m.id.clone(), superba_core::Secret::new(KEY)))
             .collect(),
+        official_tokens: Default::default(),
     };
     let server = superba_router::RouterServer::bind(config, secrets)
         .await

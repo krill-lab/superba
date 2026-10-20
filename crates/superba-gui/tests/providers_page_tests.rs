@@ -880,3 +880,67 @@ async fn the_base_url_row_of_a_custom_provider_shows_its_whole_auth_note() {
         }
     }
 }
+
+/// The official login's detail with mixed login set as given.
+async fn official_detail(
+    router_on: bool,
+    mixed: bool,
+    stash_account: Option<&str>,
+    locale: Locale,
+) -> String {
+    let service = fake();
+    let mut data = data_of(&service).await;
+    if let Some(set) = data.profiles.value.as_mut() {
+        set.settings.router.enabled = router_on;
+        set.settings.router.mixed_login = mixed;
+    }
+    if let Some(o) = data.overview.value.as_mut()
+        && let Some(stash) = o.login_stash.as_mut()
+    {
+        stash.account_id = stash_account.map(str::to_owned);
+        stash.email = Some("me@example.com".into());
+    }
+    let svc: Arc<dyn SwitchService> = service.clone();
+    let mut state = providers::State::default();
+    let mut out = Vec::new();
+    with_cx(&data, &svc, locale, |cx| {
+        providers::command(&mut state, cx, "profile:official", &mut out);
+    });
+    let mut frames = 0;
+    let (_, text) = drive(&data, svc, &mut state, locale, |_, _| {
+        frames += 1;
+        frames > 2
+    });
+    text
+}
+
+#[tokio::test]
+async fn the_official_detail_offers_mixed_login_and_says_where_it_stands() {
+    let off = official_detail(true, false, Some("acct"), Locale::En).await;
+    assert!(
+        off.contains("Use the official account for remote features"),
+        "{off}"
+    );
+    assert!(!off.contains("Apply now"), "{off}");
+
+    let router_off = official_detail(false, true, Some("acct"), Locale::En).await;
+    assert!(
+        router_off.contains("Takes effect once the local router is on"),
+        "{router_off}"
+    );
+
+    let no_login = official_detail(true, true, None, Locale::En).await;
+    assert!(
+        no_login.contains("No official ChatGPT login is saved on this computer"),
+        "{no_login}"
+    );
+
+    let pending = official_detail(true, true, Some("acct"), Locale::En).await;
+    assert!(
+        pending.contains("Codex still uses the router token"),
+        "{pending}"
+    );
+
+    let zh = official_detail(true, true, Some("acct"), Locale::ZhCn).await;
+    assert!(zh.contains("远程功能使用官方账号"), "{zh}");
+}

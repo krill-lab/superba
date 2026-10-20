@@ -29,6 +29,7 @@ mod detail;
 pub mod form;
 mod lines;
 mod list;
+mod mixed;
 pub mod ops;
 mod transports;
 
@@ -149,6 +150,8 @@ pub struct State {
     pub import: Option<crate::pages::import::ImportDialog>,
     /// The delete confirmation.
     pub(crate) remove: Option<RemoveDialog>,
+    /// Mixed login on the official login's detail.
+    pub(crate) mixed: mixed::MixedLogin,
 }
 
 impl std::fmt::Debug for State {
@@ -272,6 +275,7 @@ impl State {
         }
         busy |= !self.tests.is_empty();
         busy |= account::poll(self);
+        busy |= self.mixed.poll(cx, out);
         if let Some(d) = &mut self.add {
             let (running, finished) = d.poll(cx, out);
             busy |= running;
