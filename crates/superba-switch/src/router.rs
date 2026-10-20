@@ -150,6 +150,12 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
     fn wsl_listen(&self) -> Vec<std::net::Ipv4Addr> {
         Vec::new()
     }
+    /// Mixed login: accept the user's own ChatGPT login of `account_id` from
+    /// local Codex (`None`: router tokens only). Returns whether it changed.
+    async fn set_official_client(&self, account_id: Option<String>) -> Result<bool> {
+        let _ = account_id;
+        Err(Error::not_implemented("router mixed login"))
+    }
     /// Add or update the Windows Firewall rule that lets WSL reach the router at
     /// `address:port` (asks for administrator approval). The rule covers the
     /// router program on `address` whatever its port, so a later move of the
@@ -316,6 +322,16 @@ impl RouterControl for SystemRouterControl {
 
     async fn set_wsl_listen(&self, addresses: Vec<std::net::Ipv4Addr>) -> Result<bool> {
         self.manager.set_wsl_listen(addresses).await
+    }
+
+    async fn set_official_client(&self, account_id: Option<String>) -> Result<bool> {
+        self.manager
+            .set_official_client(
+                account_id.map(
+                    |account_id| superba_router::official::OfficialClientConfig { account_id },
+                ),
+            )
+            .await
     }
 
     fn wsl_listen(&self) -> Vec<std::net::Ipv4Addr> {

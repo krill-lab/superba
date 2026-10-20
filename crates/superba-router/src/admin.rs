@@ -196,7 +196,8 @@ pub(crate) fn reload(shared: &Shared) -> Result<u64> {
     // The admission and connection caps stay as started; the pool follows the
     // new settings.
     let budget = Budget::new(shared.limits.budget.open_files_limit, &config.tuning);
-    let generation = Generation::build(number, config, &secrets, &budget)?;
+    let mut generation = Generation::build(number, config, &secrets, &budget, Some(paths))?;
+    generation.inherit_vaults(&shared.current());
     crate::merged_catalog::inherit_probes(&shared.current(), &generation);
     crate::merged_catalog::attach_evidence(&generation, Some(paths.dir()));
     shared.install(generation);

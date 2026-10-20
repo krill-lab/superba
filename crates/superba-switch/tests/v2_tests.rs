@@ -1458,3 +1458,106 @@ async fn uninstalling_superba_removes_the_local_router_too() {
     assert!(w.calls().contains(&"router.uninstall".to_owned()));
     assert!(!w.profiles.set.lock().unwrap().settings.router.enabled);
 }
+
+// --- mixed login -----------------------------------------------------------------------
+
+fn mixed_on(w: &World) {
+    w.profiles.set.lock().unwrap().settings.router.mixed_login = true;
+}
+
+#[tokio::test]
+async fn mixed_login_keeps_the_official_login_and_routes_only_model_traffic() {
+    let w = World::new();
+    let sw = w.switcher();
+    router_on(&sw).await;
+    mixed_on(&w);
+    w.config.state.lock().unwrap().auth = superba_core::AuthShape::ChatGpt {
+        email: Some("me@example.com".into()),
+        account_id: Some("acct-live".into()),
+    };
+    let plan = sw.plan(req("work")).await.unwrap();
+    assert!(!plan.primary.is_blocked(), "{:?}", plan.primary);
+    let (auth, base) = token(&plan);
+    assert_eq!(auth, AuthMode::MixedOfficial);
+    assert_eq!(base, FakeRouter::base_url(18_431));
+    match &desired(&plan).mode {
+        ResolvedMode::Token { endpoints, .. } => {
+            assert!(endpoints.chatgpt_base_url.is_none(), "chatgpt.com stays");
+            assert!(endpoints.authapi_origin.is_none());
+        }
+        _ => unreachable!(),
+    }
+    let warnings = warning_keys(&plan);
+    assert!(
+        warnings.contains(&"switch.warn.mixed_login".to_owned()),
+        "{warnings:?}"
+    );
+    assert!(!warnings.contains(&"switch.warn.router_mode".to_owned()));
+    sw.execute(
+        plan,
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
+        Arc::new(SafeDefaults),
+        Arc::new(NoEvents),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        *w.router.official.lock().unwrap(),
+        vec![Some("acct-live".to_owned())],
+        "the router accepts the live account"
+    );
+}
+
+#[tokio::test]
+async fn mixed_login_uses_the_stashed_account_when_auth_json_holds_the_router_token() {
+    let w = World::new();
+    let sw = w.switcher();
+    router_on(&sw).await;
+    mixed_on(&w);
+    *w.config.login_stash.lock().unwrap() = Some(superba_core::LoginStashInfo {
+        stashed_at: superba_core::Timestamp::from_millis(1_800_000_000_000),
+        last_refresh: None,
+        id_token_exp: None,
+        email: Some("me@example.com".into()),
+        account_id: Some("acct-stash".into()),
+    });
+    let plan = sw.plan(req("work")).await.unwrap();
+    assert_eq!(token(&plan).0, AuthMode::MixedOfficial);
+}
+
+#[tokio::test]
+async fn mixed_login_without_a_login_falls_back_to_the_router_token_and_says_so() {
+    let w = World::new();
+    let sw = w.switcher();
+    router_on(&sw).await;
+    mixed_on(&w);
+    let plan = sw.plan(req("work")).await.unwrap();
+    assert_eq!(token(&plan).0, AuthMode::Pat);
+    let warnings = warning_keys(&plan);
+    assert!(warnings.contains(&"switch.warn.mixed_login_no_login".to_owned()));
+    assert!(warnings.contains(&"switch.warn.router_mode".to_owned()));
+}
+
+#[tokio::test]
+async fn turning_mixed_login_off_stops_the_router_accepting_the_login() {
+    let w = World::new();
+    let sw = w.switcher();
+    router_on(&sw).await;
+    let plan = sw.plan(req("work")).await.unwrap();
+    assert_eq!(token(&plan).0, AuthMode::Pat);
+    sw.execute(
+        plan,
+        ExecuteOptions {
+            allow_full_restart: true,
+            ..ExecuteOptions::default()
+        },
+        Arc::new(SafeDefaults),
+        Arc::new(NoEvents),
+    )
+    .await
+    .unwrap();
+    assert_eq!(*w.router.official.lock().unwrap(), vec![None]);
+}

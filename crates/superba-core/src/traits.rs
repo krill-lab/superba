@@ -1186,6 +1186,14 @@ pub trait SwitchService: Send + Sync {
     /// applied profile, which points Codex at the router or back to direct mode.
     async fn router_set_enabled(&self, enabled: bool) -> Result<RouterView>;
 
+    /// Persist mixed login on or off ([`crate::RouterSettings::mixed_login`]).
+    /// Like router mode, it takes effect with the next switch to a routed
+    /// profile (the caller plans one).
+    async fn router_set_mixed_login(&self, on: bool) -> Result<RouterView> {
+        let _ = on;
+        Err(crate::Error::not_implemented("mixed login"))
+    }
+
     /// Stop and remove the router service and its secrets. Refused while Codex
     /// still goes through the router (disable router mode first).
     async fn router_uninstall(&self) -> Result<RouterView>;

@@ -724,6 +724,16 @@ impl SwitchService for Switcher {
         self.router_set_enabled_impl(enabled).await
     }
 
+    async fn router_set_mixed_login(&self, on: bool) -> Result<superba_core::RouterView> {
+        self.refuse_elevated()?;
+        let mut set = self.deps.profiles.load().await?;
+        if set.settings.router.mixed_login != on {
+            set.settings.router.mixed_login = on;
+            self.deps.profiles.save(&set).await?;
+        }
+        self.router_status_impl().await
+    }
+
     async fn router_uninstall(&self) -> Result<superba_core::RouterView> {
         self.refuse_elevated()?;
         self.router_uninstall_impl().await

@@ -15,6 +15,7 @@ cdn = "Multi-carrier CDN"
 pat = "PAT (personal access token)"
 apikey = "API key"
 chatgpt = "Official ChatGPT login"
+mixed = "Official ChatGPT login + router (mixed login)"
 
 [key_access]
 ok = "Available"

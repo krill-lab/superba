@@ -15,6 +15,7 @@ cdn = "三网优化 CDN"
 pat = "PAT（个人访问令牌）"
 apikey = "API Key"
 chatgpt = "官方 ChatGPT 登录"
+mixed = "官方 ChatGPT 登录 + 本地路由（混合登录）"
 
 [key_access]
 ok = "可用"

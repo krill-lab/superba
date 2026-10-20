@@ -182,6 +182,14 @@ impl RouterConfig {
     /// Native first, then a deterministic preference among enabled codecs.
     /// Callers keep their own model routing, failover order and stickiness.
     pub fn upstream_protocol(&self, id: &str, client: Protocol) -> Option<Protocol> {
+        if self
+            .member(id)
+            .is_some_and(|m| m.kind == crate::MemberKind::Official)
+        {
+            // Codex's own Responses only; never converted for another tool.
+            return (client == Protocol::Responses && self.native_protocol(id, client))
+                .then_some(client);
+        }
         if self.native_protocol(id, client) {
             return Some(client);
         }

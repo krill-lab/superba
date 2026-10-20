@@ -41,7 +41,7 @@ pub(super) fn show(
     header(ui, cx, state, p, out);
     ui.add_space(10.0);
     if p.kind == ProviderKind::Official {
-        official(ui, cx, out);
+        official(ui, cx, state, out);
         return;
     }
     let account = p.has_key() && p.profile.is_some();
@@ -330,7 +330,7 @@ pub(super) fn start_checks(state: &mut State, cx: &Cx<'_>, p: &Provider, key: Ke
 }
 
 /// The official login: what it does, switch to it, restore the original.
-fn official(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
+fn official(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     ui.add(egui::Label::new(Text::body(cx.tr.t("providers.official.body"), cx.pal)).wrap());
     ui.add_space(8.0);
     let stash = match cx
@@ -366,6 +366,8 @@ fn official(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
             out.push(Action::restore_original());
         }
     });
+    section_gap(ui, cx);
+    super::mixed::show(ui, cx, &mut state.mixed, out);
     section_gap(ui, cx);
     ui.add(egui::Label::new(Text::small(cx.tr.t("providers.official.note"), cx.pal)).wrap());
 }

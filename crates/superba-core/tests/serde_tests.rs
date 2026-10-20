@@ -340,6 +340,7 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
             last_refresh: None,
             id_token_exp: None,
             email: Some("someone@example.com".into()),
+            account_id: None,
         }),
         runtime: Some(RuntimeView {
             checked_at: Timestamp(1_234),

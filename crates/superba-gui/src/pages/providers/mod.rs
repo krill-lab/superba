@@ -29,6 +29,7 @@ mod detail;
 pub mod form;
 mod lines;
 mod list;
+mod mixed;
 pub mod ops;
 mod transports;
 
@@ -152,6 +153,8 @@ pub struct State {
     /// Confirmation to disable the line Codex uses in direct mode (user bug
     /// 108): (provider, the line to disable).
     pub(crate) disable_line: Option<(ProfileId, LineId)>,
+    /// Mixed login on the official login's detail.
+    pub(crate) mixed: mixed::MixedLogin,
 }
 
 impl std::fmt::Debug for State {
@@ -278,6 +281,7 @@ impl State {
         }
         busy |= !self.tests.is_empty();
         busy |= account::poll(self);
+        busy |= self.mixed.poll(cx, out);
         if let Some(d) = &mut self.add {
             let (running, finished) = d.poll(cx, out);
             busy |= running;

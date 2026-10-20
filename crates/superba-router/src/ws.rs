@@ -130,7 +130,29 @@ pub(crate) async fn proxy_ws(
         let label = generation.label(c.member, c.line);
         let url = join_path(&line.cfg.base_url, &rest, parts.uri.query());
         let drop_turn_state = pin.is_some_and(|p| p.member != c.member);
-        let mut headers = request_headers(&parts.headers, true, drop_turn_state, &member.auth);
+        let official = if member.cfg.kind == crate::MemberKind::Official {
+            let client = parts.extensions.get::<crate::official::OfficialClient>();
+            match crate::official::resolve(member, client, &generation.http).await {
+                Ok(a) => Some(a),
+                Err(reason) => {
+                    failures.push(format!("{label}: {reason}"));
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+        let mut headers = request_headers(
+            &parts.headers,
+            true,
+            drop_turn_state,
+            official.as_ref().map_or(&member.auth, |a| &a.auth),
+        );
+        if let Some(a) = &official
+            && let Ok(v) = http::HeaderValue::from_str(&a.account_id)
+        {
+            headers.insert(crate::official::ACCOUNT_HEADER, v);
+        }
         // Privacy shaping requires readable frames on every connection.
         headers.remove(SEC_WEBSOCKET_EXTENSIONS);
         let started = Instant::now();
@@ -202,7 +224,19 @@ pub(crate) async fn proxy_ws(
             let mut out = Response::new(http_body_util::BodyExt::boxed_unsync(
                 body.holding(admission),
             ));
-            *out.status_mut() = status;
+            // A member's 401 is not the official login's (mixed login): never
+            // let Codex refresh that login for it.
+            *out.status_mut() = if status == StatusCode::UNAUTHORIZED
+                && member.cfg.kind != crate::MemberKind::Official
+                && parts
+                    .extensions
+                    .get::<crate::official::OfficialClient>()
+                    .is_some()
+            {
+                StatusCode::BAD_GATEWAY
+            } else {
+                status
+            };
             *out.headers_mut() = headers;
             return out;
         }

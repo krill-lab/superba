@@ -140,6 +140,13 @@ impl OpenAiMember {
                 responses: Some(OpenAiEndpoint::line_base()),
                 ..Self::default()
             },
+            // The official login serves Codex only (the OpenAI ingress
+            // leaves it out, RouterConfig::upstream_protocol refuses other
+            // clients).
+            MemberKind::Official => Self {
+                responses: Some(OpenAiEndpoint::line_base()),
+                ..Self::default()
+            },
         }
     }
 
@@ -236,6 +243,9 @@ impl RouterConfig {
     /// defaults); `None` for an unknown member.
     pub fn openai_member(&self, id: &str) -> Option<OpenAiMember> {
         let member = self.member(id)?;
+        if member.kind == MemberKind::Official {
+            return Some(OpenAiMember::default_for(member, self.serves_codex(id)));
+        }
         Some(match self.openai.as_ref().and_then(|o| o.members.get(id)) {
             Some(m) => m.clone(),
             None => OpenAiMember::default_for(member, self.serves_codex(id)),
@@ -249,6 +259,12 @@ impl RouterConfig {
         id: &str,
         protocol: OpenAiProtocol,
     ) -> std::result::Result<(), OpenAiIneligible> {
+        if self
+            .member(id)
+            .is_some_and(|m| m.kind == MemberKind::Official)
+        {
+            return Err(protocol.ineligible());
+        }
         self.upstream_protocol(id, protocol.into())
             .map(|_| ())
             .ok_or(protocol.ineligible())

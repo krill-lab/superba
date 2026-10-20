@@ -1099,6 +1099,17 @@ impl Run<'_> {
             }
         }
 
+        // Mixed login: the router accepts the official login before Codex
+        // presents it (and stops when the profile goes back to PAT).
+        if let Some(account) = self.pc.official_client.clone() {
+            match d.router.set_official_client(account.clone()).await {
+                Ok(_) => {}
+                // Nothing to undo when turning it off on a fake or old router.
+                Err(e) if account.is_none() && e.is_not_implemented() => {}
+                Err(e) => return Err(e),
+            }
+        }
+
         if self
             .pc
             .endpoints

@@ -624,6 +624,9 @@ pub struct LoginStashInfo {
     /// Account email.
     #[serde(default)]
     pub email: Option<String>,
+    /// ChatGPT account id (mixed login names it to the router).
+    #[serde(default)]
+    pub account_id: Option<String>,
 }
 
 /// Where a stashed ChatGPT login belongs: a local Codex home or a remote host (the
