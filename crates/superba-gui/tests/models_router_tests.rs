@@ -93,9 +93,21 @@ async fn every_mode_shows_one_row_per_model_with_its_providers() {
                 }
                 assert!(report.whole("Krill"), "{at}");
                 assert!(report.whole("内网"), "{at}");
+                let narrow = window[0] < 1000.0;
                 for key in [
                     "models.router.title",
+                    "models.col.model",
                     "models.col.providers",
+                    if narrow {
+                        "models.col.context_short"
+                    } else {
+                        "models.col.context"
+                    },
+                    if narrow {
+                        "models.col.compact_short"
+                    } else {
+                        "models.col.compact"
+                    },
                     "models.col.actions",
                     "models.router.prefixes",
                 ] {

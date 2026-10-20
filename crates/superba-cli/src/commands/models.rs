@@ -60,6 +60,23 @@ pub(super) async fn run(
             };
             save(edit, exec, rt, out).await
         }
+        Some(ModelsCommand::Mode { mode, dry_run }) => {
+            let mut settings = rt.service.profile_set().await?.settings.router.catalog;
+            let before = settings.mode;
+            if let Some(mode) = mode {
+                settings.mode = (*mode).into();
+                if !dry_run && settings.mode != before {
+                    rt.service.save_router_catalog(settings.clone()).await?;
+                }
+            }
+            out.field("cli.models.mode", settings.mode.as_str())?;
+            out.value(&serde_json::json!({
+                "mode": settings.mode,
+                "changed": settings.mode != before,
+                "dry_run": dry_run,
+            }))?;
+            Ok(exit::OK)
+        }
     }
 }
 
@@ -459,6 +476,12 @@ fn render(view: &ModelsView, out: &mut Output) -> superba_core::Result<()> {
     if let Some(reason) = &view.list.fallback_reason {
         out.field("cli.models.fallback", out.render(&reason.to_text()))?;
     }
+    if let Some(catalog) = &view.router_catalog {
+        out.field("cli.models.mode", catalog.settings.mode.as_str())?;
+        for (alias, id) in &catalog.aliases {
+            out.field("cli.models.alias", format!("{alias} → {id}"))?;
+        }
+    }
     let d = &view.defaults;
     out.field("cli.models.default", out.optional(d.model.as_ref()))?;
     out.field(
@@ -519,7 +542,7 @@ fn render(view: &ModelsView, out: &mut Output) -> superba_core::Result<()> {
                 .iter()
                 .map(|t| out.render(&t.text()))
                 .collect();
-            vec![
+            let mut row = vec![
                 m.slug.clone(),
                 o.and_then(|o| o.display_name.clone())
                     .unwrap_or_else(|| m.label().to_owned()),
@@ -527,21 +550,32 @@ fn render(view: &ModelsView, out: &mut Output) -> superba_core::Result<()> {
                 compact,
                 tiers.join(", "),
                 out.label(state_key(view, m, o)),
-            ]
+            ];
+            // Through the router: the providers of the model, in member order.
+            if let Some(catalog) = &view.router_catalog {
+                let names: Vec<&str> = catalog
+                    .model(&m.slug)
+                    .into_iter()
+                    .flat_map(|r| &r.sources)
+                    .map(|p| p.provider_name.as_str())
+                    .collect();
+                row.push(names.join(", "));
+            }
+            row
         })
         .collect::<Vec<_>>();
-    out.section_table(
-        "cli.models.list",
-        &[
-            "cli.models.col.model",
-            "cli.models.col.name",
-            "cli.models.col.context",
-            "cli.models.col.compact",
-            "cli.models.col.tiers",
-            "cli.models.col.state",
-        ],
-        rows,
-    )?;
+    let mut columns = vec![
+        "cli.models.col.model",
+        "cli.models.col.name",
+        "cli.models.col.context",
+        "cli.models.col.compact",
+        "cli.models.col.tiers",
+        "cli.models.col.state",
+    ];
+    if view.router_catalog.is_some() {
+        columns.push("cli.models.col.providers");
+    }
+    out.section_table("cli.models.list", &columns, rows)?;
     for n in &view.notes {
         out.notice(n)?;
     }

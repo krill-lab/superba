@@ -217,6 +217,8 @@ did_you_mean = "did you mean {suggestion}?"
 runtime = "Cannot start the async runtime."
 
 [cli.help]
+models_mode = "Show or set the router model list: what the local router offers Codex"
+models_mode_value = "codex: Codex's own models only (default); extended: also the providers' models; prefixed: also one pinned alias per provider"
 router_line = "Set a member’s preferred line (hot reload; existing streams continue)"
 config_group = "Codex's own config.toml and auth.json: edit by hand, check, list and restore backups"
 config_edit = "Open config.toml or auth.json in $VISUAL / $EDITOR (notepad on Windows), check it when the editor closes, show the diff and save it after a backup"
@@ -648,6 +650,8 @@ ran_short = "! This computer ran short while routing: {files} \"too many open fi
 last_file_limit = "Last \"too many open files\""
 
 [cli.models]
+mode = "Router model list"
+alias = "Pinned alias"
 profile = "Profile"
 source_label = "Model list"
 fallback = "Provider list unavailable"
@@ -703,6 +707,7 @@ official = "Codex's own list (official login, read-only)"
 other = "Other"
 
 [cli.models.col]
+providers = "Providers"
 model = "Model"
 name = "Name"
 context = "Context"

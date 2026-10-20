@@ -1025,6 +1025,35 @@ pub enum ModelsCommand {
         #[command(flatten)]
         exec: ExecArgs,
     },
+    #[command(about = english("cli.help.models_mode"))]
+    Mode {
+        /// Show the current router model list when omitted.
+        #[arg(value_enum, help = english("cli.help.models_mode_value"))]
+        mode: Option<CatalogModeArg>,
+        #[arg(long, help = english("cli.help.dry_run"))]
+        dry_run: bool,
+    },
+}
+
+/// The router model list (`spb models mode`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum CatalogModeArg {
+    /// Codex's own models only (the default).
+    Codex,
+    /// Codex's models and the providers' models.
+    Extended,
+    /// Both, plus one alias per provider pinned to it.
+    Prefixed,
+}
+
+impl From<CatalogModeArg> for superba_core::CatalogMode {
+    fn from(value: CatalogModeArg) -> Self {
+        match value {
+            CatalogModeArg::Codex => Self::Codex,
+            CatalogModeArg::Extended => Self::Extended,
+            CatalogModeArg::Prefixed => Self::Prefixed,
+        }
+    }
 }
 
 /// `spb models default`.

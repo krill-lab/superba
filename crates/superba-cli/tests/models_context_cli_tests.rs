@@ -226,3 +226,35 @@ async fn a_profile_without_catalog_support_refuses_per_model_values() {
         vec!["gpt-6-astra".to_owned()]
     );
 }
+
+#[tokio::test]
+async fn router_model_list_mode_is_shown_set_and_dry_run() {
+    use superba_core::CatalogMode;
+    let service = FakeService::new();
+    let mode = |s: &FakeService| s.profiles.lock().unwrap().settings.router.catalog.mode;
+    let (code, stdout, stderr) = invoke(service.clone(), &["models", "mode"]).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains("codex"), "{stdout}");
+    for (arg, expected) in [
+        ("extended", CatalogMode::Extended),
+        ("prefixed", CatalogMode::Prefixed),
+        ("codex", CatalogMode::Codex),
+    ] {
+        let (code, stdout, stderr) = invoke(service.clone(), &["models", "mode", arg]).await;
+        assert_eq!(code, 0, "{stderr}");
+        assert!(stdout.contains(arg), "{stdout}");
+        assert_eq!(mode(&service), expected);
+    }
+    let (code, stdout, stderr) = invoke(
+        service.clone(),
+        &["models", "mode", "prefixed", "--dry-run"],
+    )
+    .await;
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains("prefixed"), "{stdout}");
+    assert_eq!(
+        mode(&service),
+        CatalogMode::Codex,
+        "a dry run stores nothing"
+    );
+}

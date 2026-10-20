@@ -731,6 +731,14 @@ impl SwitchService for FakeService {
             .retain(|p| &p.id != id);
         Ok(())
     }
+    async fn save_router_catalog(
+        &self,
+        settings: superba_core::RouterCatalogSettings,
+    ) -> Result<()> {
+        self.record("save_router_catalog")?;
+        self.profiles.lock().unwrap().settings.router.catalog = settings;
+        Ok(())
+    }
     async fn save_settings(&self, settings: Settings) -> Result<()> {
         self.record("save_settings")?;
         self.profiles.lock().unwrap().settings = settings;
