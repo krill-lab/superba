@@ -132,6 +132,7 @@ async fn a_rerun_edits_the_applied_provider_instead_of_duplicating_it() {
         profile,
         key,
         request,
+        ..
     } = outcome
     else {
         panic!("expected Finish, got {outcome:?}");
@@ -258,6 +259,7 @@ async fn the_custom_site_is_tested_before_it_is_saved_and_saved_only_on_apply() 
         profile,
         key,
         request,
+        ..
     } = outcome
     else {
         panic!("expected Finish, got {outcome:?}");

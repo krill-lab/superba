@@ -67,6 +67,11 @@ impl Switcher {
     ) -> Result<()> {
         let mut set = self.deps.profiles.load().await?;
         set.settings.router.catalog = settings;
+        // Without Codex members the list is a preference for later (the setup
+        // wizard asks before the router is on): nothing to validate or reload.
+        if set.settings.router.members.is_empty() {
+            return self.deps.profiles.save(&set).await;
+        }
         // Validate against concrete members before persisting the user's names.
         self.build_router_members(&set, &set.settings.router.members)
             .await?;

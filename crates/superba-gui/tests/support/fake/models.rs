@@ -29,6 +29,10 @@ pub(super) struct State {
     /// `models_view` answers after this long (a provider list fetch and the
     /// local Codex's bundled list take seconds in the real service).
     delay: Option<std::time::Duration>,
+    /// Every router list setting saved (mode, slugs, visibility).
+    router_saves: Vec<RouterCatalogSettings>,
+    /// Every model the router was asked to test.
+    router_tests: Vec<String>,
 }
 
 impl FakeService {
@@ -61,6 +65,16 @@ impl FakeService {
     /// Every `save_models` edit so far.
     pub fn models_edits(&self) -> Vec<ModelsEdit> {
         self.models_area().edits.clone()
+    }
+
+    /// Every router list setting saved so far.
+    pub fn router_catalog_saves(&self) -> Vec<RouterCatalogSettings> {
+        self.models_area().router_saves.clone()
+    }
+
+    /// Every router model test so far.
+    pub fn router_tests(&self) -> Vec<String> {
+        self.models_area().router_tests.clone()
     }
 
     /// Simulate a finished switch to `profile`: Codex now reads its saved
@@ -433,5 +447,35 @@ pub(super) async fn save_models(fake: &FakeService, edit: ModelsEdit) -> Result<
     Ok(ModelsEditReport {
         profile: saved,
         notes: Vec::new(),
+    })
+}
+
+/// Body of `SwitchService::save_router_catalog`: kept, and the router's
+/// settings of every set view follow (rows are the fixture's).
+pub(super) async fn save_router_catalog(
+    fake: &FakeService,
+    settings: RouterCatalogSettings,
+) -> Result<()> {
+    let mut area = fake.models_area();
+    for view in area.views.values_mut() {
+        if let Some(catalog) = &mut view.router_catalog {
+            catalog.settings = settings.clone();
+        }
+    }
+    area.router_saves.push(settings);
+    Ok(())
+}
+
+/// Body of `SwitchService::test_router_model`: passes, naming the provider.
+pub(super) async fn test_router_model(
+    fake: &FakeService,
+    model: String,
+) -> Result<RouterModelTest> {
+    fake.models_area().router_tests.push(model.clone());
+    Ok(RouterModelTest {
+        detail: "Krill: Response completed through the local router".into(),
+        model,
+        passed: true,
+        tested_at: 1,
     })
 }

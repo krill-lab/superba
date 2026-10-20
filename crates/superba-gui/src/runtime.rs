@@ -188,6 +188,9 @@ pub enum Command {
     StopSessions,
     /// Save settings.
     SaveSettings(Settings),
+    /// Save the router model list (the wizard's answer), keeping the other
+    /// router list settings as they are stored now.
+    SaveRouterCatalogMode(superba_core::CatalogMode),
     /// Set GUI login startup.
     SetAutostart(bool),
     /// Save a profile (and its key).
@@ -731,6 +734,16 @@ async fn handle(
         }
         Command::SaveSettings(settings) => {
             out.send(Reply::SettingsSaved(service.save_settings(settings).await));
+        }
+        Command::SaveRouterCatalogMode(mode) => {
+            let saved = async {
+                let mut catalog = service.profile_set().await?.settings.router.catalog;
+                catalog.mode = mode;
+                service.save_router_catalog(catalog).await
+            }
+            .await;
+            out.send(Reply::SettingsSaved(saved));
+            out.send(Reply::Profiles(service.profile_set().await));
         }
         Command::SaveProfile { profile, key } => {
             let saved = service.save_profile(*profile, key).await;

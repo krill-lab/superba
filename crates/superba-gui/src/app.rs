@@ -337,6 +337,8 @@ pub struct SuperbaApp {
     had_providers: bool,
     pending_key_save: bool,
     wizard_request: Option<SwitchRequest>,
+    /// The router model list the wizard changed, saved after its profile.
+    wizard_catalog_mode: Option<superba_core::CatalogMode>,
     /// The last update attempt's problem was announced in this run.
     selfupdate_problem_announced: bool,
     /// A scan for failed Codex turns to notify about (GH#12) is running.
@@ -432,6 +434,7 @@ impl SuperbaApp {
             had_providers: false,
             pending_key_save: false,
             wizard_request: None,
+            wizard_catalog_mode: None,
             selfupdate_problem_announced: false,
             notify_watch: None,
             elevated_notice: None,
@@ -974,6 +977,9 @@ impl SuperbaApp {
                 }
                 Reply::ProfileSaved(r) => match r {
                     Ok(_) if self.wizard_request.is_some() => {
+                        if let Some(mode) = self.wizard_catalog_mode.take() {
+                            self.backend.send(Command::SaveRouterCatalogMode(mode));
+                        }
                         if let Some(request) = self.wizard_request.take() {
                             self.flow.request(request, now);
                         }
@@ -988,6 +994,7 @@ impl SuperbaApp {
                     Err(e) => {
                         self.pending_key_save = false;
                         self.wizard_request = None;
+                        self.wizard_catalog_mode = None;
                         self.error_toast(self.tr.t("toast.profile_failed"), &e);
                     }
                 },
@@ -2186,11 +2193,14 @@ impl eframe::App for SuperbaApp {
                         profile,
                         key,
                         request,
+                        catalog_mode,
                     } => {
                         self.wizard = None;
                         self.wizard_dismissed = true;
-                        // Plan once the site, the profile (and its key) are saved.
+                        // Plan once the site, the profile (and its key) are saved;
+                        // the router model list is saved after the profile too.
                         self.wizard_request = Some(*request);
+                        self.wizard_catalog_mode = catalog_mode;
                         self.backend.send(match site {
                             Some(site) => Command::SaveSiteAndProfile { site, profile, key },
                             None => Command::SaveProfile { profile, key },

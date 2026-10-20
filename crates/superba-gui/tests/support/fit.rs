@@ -48,6 +48,12 @@ pub struct FitReport {
     pub text_shapes: Vec<(String, Rect, bool)>,
     /// Actions the page returned in the second frame.
     pub actions: Vec<Action>,
+    /// Every text shape with its rectangle and the clip rectangle it was
+    /// painted with (a text cut off by its cell shows here).
+    pub clipped: Vec<(String, Rect, Rect)>,
+    /// Accessibility nodes with bounds (role, name, rectangle); only with
+    /// [`render_fit_accesskit`].
+    pub nodes: Vec<(egui::accesskit::Role, String, Rect)>,
 }
 
 impl FitReport {
@@ -67,6 +73,15 @@ impl FitReport {
             .iter()
             .filter(|(_, r, _)| r.max.x > self.rect.max.x + 0.5)
             .map(|(t, _, _)| t.as_str())
+            .collect()
+    }
+
+    /// Nodes of `role`.
+    pub fn nodes_of(&self, role: egui::accesskit::Role) -> Vec<(&str, Rect)> {
+        self.nodes
+            .iter()
+            .filter(|(r, _, _)| *r == role)
+            .map(|(_, n, rect)| (n.as_str(), *rect))
             .collect()
     }
 
@@ -97,9 +112,37 @@ pub fn render_fit_min_height(
     theme: egui::Theme,
     data: &Data,
     min_height: f32,
+    show: impl FnMut(&mut egui::Ui, &Cx<'_>, &mut Vec<Action>),
+) -> FitReport {
+    render(window, locale, theme, data, min_height, false, show)
+}
+
+/// [`render_fit_min_height`] with AccessKit on: the report lists the nodes
+/// and their bounds (buttons inside table rows, their names).
+pub fn render_fit_accesskit(
+    window: [f32; 2],
+    locale: Locale,
+    theme: egui::Theme,
+    data: &Data,
+    min_height: f32,
+    show: impl FnMut(&mut egui::Ui, &Cx<'_>, &mut Vec<Action>),
+) -> FitReport {
+    render(window, locale, theme, data, min_height, true, show)
+}
+
+fn render(
+    window: [f32; 2],
+    locale: Locale,
+    theme: egui::Theme,
+    data: &Data,
+    min_height: f32,
+    accesskit: bool,
     mut show: impl FnMut(&mut egui::Ui, &Cx<'_>, &mut Vec<Action>),
 ) -> FitReport {
     let ctx = egui::Context::default();
+    if accesskit {
+        ctx.enable_accesskit();
+    }
     let fonts_report = fonts::FontReport::default();
     ctx.set_fonts(fonts::definitions(&fonts_report));
     style::install(&ctx, Some(theme));
@@ -117,6 +160,8 @@ pub fn render_fit_min_height(
         texts: Vec::new(),
         text_shapes: Vec::new(),
         actions: Vec::new(),
+        clipped: Vec::new(),
+        nodes: Vec::new(),
     };
     for frame in 0..2 {
         let mut actions = Vec::new();
@@ -153,6 +198,35 @@ pub fn render_fit_min_height(
             },
         );
         if frame == 1 {
+            report.clipped = output
+                .shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(t) => Some((
+                        t.galley.text().to_owned(),
+                        t.galley.rect.translate(t.pos.to_vec2()),
+                        s.clip_rect,
+                    )),
+                    _ => None,
+                })
+                .collect();
+            if let Some(update) = &output.platform_output.accesskit_update {
+                report.nodes = update
+                    .nodes
+                    .iter()
+                    .filter_map(|(_, node)| {
+                        let b = node.bounds()?;
+                        Some((
+                            node.role(),
+                            node.label().unwrap_or_default().to_owned(),
+                            Rect::from_min_max(
+                                pos2(b.x0 as f32, b.y0 as f32),
+                                pos2(b.x1 as f32, b.y1 as f32),
+                            ),
+                        ))
+                    })
+                    .collect();
+            }
             report.used_bottom = used;
             report.scrolled = scrolled;
             report.actions = actions;

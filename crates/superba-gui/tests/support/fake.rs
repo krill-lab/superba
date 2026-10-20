@@ -2153,6 +2153,14 @@ impl SwitchService for FakeService {
         models::save_models(self, edit).await
     }
 
+    async fn save_router_catalog(&self, settings: RouterCatalogSettings) -> Result<()> {
+        models::save_router_catalog(self, settings).await
+    }
+
+    async fn test_router_model(&self, model: String) -> Result<RouterModelTest> {
+        models::test_router_model(self, model).await
+    }
+
     async fn host_sessions(&self, target_id: &TargetId) -> Result<HostSessions> {
         sessions::host_sessions(self, target_id).await
     }

@@ -828,3 +828,21 @@ async fn router_model_list_mode_is_saved_and_handed_to_the_router() {
     let catalog = written.last().unwrap().catalog.as_ref().unwrap();
     assert_eq!(catalog.settings.mode, superba_core::CatalogMode::Prefixed);
 }
+
+#[tokio::test]
+async fn the_mode_is_a_preference_before_the_router_has_members() {
+    let w = World::new();
+    let sw = switcher(&w);
+    let mut settings = sw.profile_set().await.unwrap().settings.router.catalog;
+    settings.mode = superba_core::CatalogMode::Extended;
+    sw.save_router_catalog(settings).await.unwrap();
+    let set = sw.profile_set().await.unwrap();
+    assert_eq!(
+        set.settings.router.catalog.mode,
+        superba_core::CatalogMode::Extended
+    );
+    assert!(
+        w.router.written.lock().unwrap().is_empty(),
+        "the router is untouched"
+    );
+}

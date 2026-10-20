@@ -18,7 +18,7 @@ use super::{PriceDialog, State, model_map, saved_prices};
 use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
-use crate::design::tokens::{size, text};
+use crate::design::tokens::{size, space, text};
 use crate::design::widgets::token_field::{
     TokenError, TokenField, TokenInput, exact_tokens, parse_input, short_tokens, token_label,
 };
@@ -35,8 +35,20 @@ const EFFORTS: [&str; 5] = ["minimal", "low", "medium", "high", "xhigh"];
 
 /// Width of the context window / auto-compact fields.
 const FIELD_W: f32 = 76.0;
-/// The same in a narrow table (room for the tag and caption next to it).
+/// The same in a narrow table, where the field stands alone.
 const FIELD_W_NARROW: f32 = 72.0;
+/// A value column: the field, its tag and caption.
+const VALUE_W: f32 = 164.0;
+/// A value column of a narrow table: the field alone.
+const VALUE_NARROW: f32 = FIELD_W_NARROW + space::S;
+/// The reset button (an icon in the actions column).
+const RESET_W: f32 = 24.0;
+/// The actions column without the router: the reset button, wide enough for
+/// its header.
+const ACTIONS_W: f32 = 56.0;
+/// The actions column with the router: show in Codex, Test and reset at the
+/// small control height. Wide enough for "Test" in a loading state.
+const ACTIONS_ROUTED: f32 = 128.0;
 
 /// Tables narrower than this drop the speed column (the 960 px window).
 const NARROW_TABLE: f32 = 860.0;
@@ -79,11 +91,21 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         model_map: &map,
         prices: &prices,
     };
-    super::catalog::controls(ui, cx, state, &view);
+    let routed = view.router_catalog.is_some();
+    if routed {
+        super::catalog::mode_row(ui, cx, state, &view);
+        ui.add_space(space::XS);
+    }
     let body = ui.available_rect_before_wrap();
-    // A narrow page (the 960 px window) puts the list source on a row of its
-    // own above the default model / effort / speed controls (user bug 25).
-    let narrow = body.width() < NARROW_STRIP;
+    // A narrow page (the 960 px window) puts the list source (the router's
+    // filters) on a row of its own above the default model / effort / speed
+    // controls (user bug 25).
+    let strip_id = egui::Id::unique(("superba-models-strip", routed));
+    let controls_w: f32 = ui.data(|d| d.get_temp(strip_id)).unwrap_or(0.0);
+    // The router's filters also move up when the default model / effort /
+    // speed controls leave them too little room (longer English labels).
+    let narrow = body.width() < NARROW_STRIP
+        || (routed && body.width() - controls_w - space::L < super::catalog::FILTERS_W);
     let mut tracks = vec![
         Track::Fixed(size::CONTROL),
         Track::Fixed(20.0),
@@ -91,12 +113,21 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         Track::Fixed(26.0),
     ];
     if narrow {
-        tracks.insert(0, Track::Fixed(20.0));
+        tracks.insert(
+            0,
+            Track::Fixed(if routed { size::CONTROL_SM } else { 20.0 }),
+        );
     }
     let rects = layout::row_rects(body, &tracks, 6.0);
     let rows = if narrow {
         layout::fixed(ui, rects[0], |ui| {
-            ui.horizontal(|ui| source_line(ui, cx, &saved));
+            ui.horizontal(|ui| {
+                if routed {
+                    super::catalog::filters(ui, cx, state, &view);
+                } else {
+                    source_line(ui, cx, &saved);
+                }
+            });
         });
         &rects[1..]
     } else {
@@ -137,7 +168,15 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
                     .enabled(!loading && state.view.is_some()),
             )
             .clicked();
-        source_picker(ui, cx, current.as_ref(), narrow, out);
+        // Through the router the list is the members' merged list; which of a
+        // provider's own lists is read does not apply (the mode row does).
+        if !state
+            .view
+            .as_ref()
+            .is_some_and(|v| v.router_catalog.is_some())
+        {
+            source_picker(ui, cx, current.as_ref(), narrow, out);
+        }
         let name = list
             .iter()
             .find(|p| p.profile_id() == current.as_ref())
@@ -297,6 +336,13 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>, with_so
     if defaults != before {
         state.pending.set_defaults(saved, defaults);
     }
+    // The page decides next frame whether the source (filters) fits beside them.
+    let id = egui::Id::unique(("superba-models-strip", view.router_catalog.is_some()));
+    let measured: f32 = ui.data(|d| d.get_temp(id)).unwrap_or(0.0);
+    if (measured - controls.width()).abs() > 0.5 {
+        ui.data_mut(|d| d.insert_temp(id, controls.width()));
+        ui.ctx().request_repaint();
+    }
     if !with_source {
         return;
     }
@@ -310,7 +356,11 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>, with_so
             .layout(Layout::left_to_right(Align::Center)),
         |ui| {
             ui.set_clip_rect(left.intersect(ui.clip_rect()));
-            source_line(ui, cx, saved);
+            if view.router_catalog.is_some() {
+                super::catalog::filters(ui, cx, state, view);
+            } else {
+                source_line(ui, cx, saved);
+            }
         },
     );
 }
@@ -406,6 +456,17 @@ fn model_picker(
                     seen |= defaults.model.as_deref() == Some(m.slug.as_str());
                     ui.selectable_value(&mut defaults.model, Some(m.slug.clone()), &m.slug)
                         .on_hover_text(m.label());
+                }
+                // Prefixed mode: the pinned aliases Codex is offered too.
+                let aliases = view.router_catalog.iter().flat_map(|c| &c.aliases);
+                for (alias, model) in aliases {
+                    seen |= defaults.model.as_deref() == Some(alias.as_str());
+                    let name = view
+                        .list
+                        .model(model)
+                        .map_or_else(|| model.clone(), |m| m.label().to_owned());
+                    ui.selectable_value(&mut defaults.model, Some(alias.clone()), alias)
+                        .on_hover_text(name);
                 }
                 if let Some(other) = defaults.model.clone().filter(|_| !seen) {
                     ui.selectable_value(&mut defaults.model, Some(other.clone()), other);
@@ -710,9 +771,53 @@ enum RowRef<'a> {
     Model(&'a ModelSpec),
 }
 
+/// The columns of the table, left to right.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Col {
+    /// Slug and display name, with the row's state on the right.
+    Model,
+    /// The router's providers of the model (router only).
+    Providers,
+    /// Context window.
+    Window,
+    /// Auto-compact threshold.
+    Compact,
+    /// Faster tiers (wide tables only; a narrow one names them in the model cell).
+    Speed,
+    /// Price override (direct) or the upstream name (custom sites).
+    Extra,
+    /// Row actions: show in Codex, test (router) and reset, in one place.
+    Actions,
+}
+
+/// The columns and their minimum widths for this view and width.
+fn columns(routed: bool, narrow: bool) -> Vec<(Col, f32)> {
+    // Value fields alone in a narrow table: the tag and caption move into the
+    // field's tooltip, so the model column keeps room for its slug.
+    let value = if narrow { VALUE_NARROW } else { VALUE_W };
+    let mut cols = vec![(Col::Model, 0.0)];
+    if routed {
+        cols.push((Col::Providers, if narrow { 120.0 } else { 160.0 }));
+    }
+    cols.push((Col::Window, value));
+    cols.push((Col::Compact, value));
+    if !narrow {
+        cols.push((Col::Speed, if routed { 104.0 } else { 132.0 }));
+    }
+    if !routed {
+        cols.push((Col::Extra, 176.0));
+    }
+    cols.push((
+        Col::Actions,
+        if routed { ACTIONS_ROUTED } else { ACTIONS_W },
+    ));
+    cols
+}
+
 /// The paged model table with the pager and the pending bar in its footer.
 fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
     let view = saved.view;
+    let routed = view.router_catalog.is_some();
     let models: Vec<_> = model::rows(saved, &state.pending, state.show_hidden, &state.query)
         .into_iter()
         .filter(|m| super::catalog::matches(state, view, &m.slug))
@@ -721,32 +826,34 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
     let custom = !saved.model_map.is_empty()
         || providers::site(cx.data, &view.site_id)
             .is_some_and(|s| s.kind == superba_core::SiteKind::Compatible);
-    let last_col = if view.router_catalog.is_some() {
-        cx.tr.t("models.catalog.actions")
-    } else if custom {
-        cx.tr.t("models.col.upstream")
-    } else {
-        cx.tr.t("models.col.price")
-    };
     // Below NARROW_TABLE (the 960 px minimum window) the speed column folds
     // into the model cell's second line and the value columns narrow, so the
     // model column keeps room for its slug (user bug 25).
     let narrow = ui.available_width() < NARROW_TABLE;
-    let mut headers = vec![
-        cx.tr.t("models.col.model"),
-        cx.tr.t("models.col.context"),
-        cx.tr.t("models.col.compact"),
-        cx.tr.t("models.col.speed"),
-        last_col,
-        String::new(),
-    ];
-    let columns = if narrow {
-        headers.remove(3);
-        Table::new(&[1.0, 0.0, 0.0, 0.0, 0.0]).min_widths(&[0.0, 150.0, 164.0, 158.0, 28.0])
-    } else {
-        Table::new(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-            .min_widths(&[0.0, 176.0, 176.0, 132.0, 176.0, 28.0])
-    };
+    let plan = columns(routed, narrow);
+    let headers: Vec<String> = plan
+        .iter()
+        .map(|(c, _)| {
+            cx.tr.t(match c {
+                Col::Model => "models.col.model",
+                Col::Providers => "models.col.providers",
+                Col::Window if narrow => "models.col.context_short",
+                Col::Compact if narrow => "models.col.compact_short",
+                Col::Window => "models.col.context",
+                Col::Compact => "models.col.compact",
+                Col::Speed => "models.col.speed",
+                Col::Extra if custom => "models.col.upstream",
+                Col::Extra => "models.col.price",
+                Col::Actions => "models.col.actions",
+            })
+        })
+        .collect();
+    let weights: Vec<f32> = plan
+        .iter()
+        .map(|(c, _)| if *c == Col::Model { 1.0 } else { 0.0 })
+        .collect();
+    let mins: Vec<f32> = plan.iter().map(|(_, w)| *w).collect();
+    let columns = Table::new(&weights).min_widths(&mins);
     let read_only = view.read_only || cx.busy || state.saving.is_some();
     let count = state.pending.count(saved);
     let active = view_applied(cx, view);
@@ -768,6 +875,8 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
     let mut edits: Vec<Edit> = Vec::new();
     // A focus request (palette) applies when its row is drawn this frame.
     let focus = state.focus.take();
+    let testing = state.catalog_test.as_ref().map(|(m, _)| m.clone());
+    let catalog_busy = state.catalog_save.is_some();
     let State {
         table,
         buffers,
@@ -779,6 +888,7 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
     PagedTable::new(("models", &view.profile_id), columns, total, table)
         .label(cx.tr.t(Page::Models.title_key()))
         .header(headers)
+        .truncate_headers()
         .row_height(size::ROW_TABLE2)
         .keys_when_idle(true)
         .footer(|ui| {
@@ -808,10 +918,10 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
                 edits: &mut edits,
                 focus: focus.as_ref(),
                 table: prices.as_ref(),
+                testing: testing.as_deref(),
+                catalog_busy,
             };
-            // The narrow table has no speed column (index 3).
-            let col = if narrow && col >= 3 { col + 1 } else { col };
-            cell(ui, &mut rc, &r, col);
+            cell(ui, &mut rc, &r, plan[col].0);
         });
     for e in edits {
         apply_edit(cx, state, saved, e);
@@ -838,7 +948,7 @@ fn view_applied(cx: &Cx<'_>, view: &ModelsView) -> bool {
 enum Edit {
     /// Toggle picker visibility.
     Visible(String, bool),
-    /// Test one model through the router.
+    /// Test one model (a canonical id: each provider; an alias: one).
     Test(String),
     /// Committed text of a field.
     Text {
@@ -863,21 +973,26 @@ struct RowCx<'a, 'b> {
     custom: bool,
     /// The provider is the applied one.
     active: bool,
-    /// No speed column: the model cell names the faster tiers.
+    /// No speed column: the model cell names the faster tiers; value cells
+    /// show the field alone.
     narrow: bool,
     edits: &'a mut Vec<Edit>,
     focus: Option<&'a (String, Field)>,
     table: Option<&'a superba_core::PriceTable>,
+    /// The model (or alias) whose router test runs.
+    testing: Option<&'a str>,
+    /// A router list setting is being saved.
+    catalog_busy: bool,
 }
 
-fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
+fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: Col) {
     let cx = rc.cx;
     match (row, col) {
-        (RowRef::All, 0) => name_cell(ui, rc, ALL_MODELS, |ui| {
+        (RowRef::All, Col::Model) => name_cell(ui, rc, ALL_MODELS, 2, |ui| {
             ui.label(Text::strong(cx.tr.t("models.all"), cx.pal));
-            ui.label(Text::caption(cx.tr.t("models.all_hint"), cx.pal));
+            ui.add(egui::Label::new(Text::caption(cx.tr.t("models.all_hint"), cx.pal)).truncate());
         }),
-        (RowRef::All, 1) => {
+        (RowRef::All, Col::Window) => {
             let d = rc.pending.defaults(rc.saved);
             let shown = Shown {
                 value: d.context_window,
@@ -892,12 +1007,17 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
             };
             value_cell(ui, rc, ALL_MODELS, Field::Window, shown);
         }
-        (RowRef::All, 2) => {
+        (RowRef::All, Col::Compact) => {
             let d = rc.pending.defaults(rc.saved);
             let shown = Shown {
                 value: d.auto_compact,
                 initial: d.auto_compact.map(short_tokens).unwrap_or_default(),
-                placeholder: cx.tr.t("models.compact_default_short"),
+                // A narrow field has room for the share only.
+                placeholder: if rc.narrow {
+                    "90%".to_owned()
+                } else {
+                    cx.tr.t("models.compact_default_short")
+                },
                 source: source_of(d.auto_compact.is_some()),
                 caption: d
                     .auto_compact
@@ -907,86 +1027,42 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
             };
             value_cell(ui, rc, ALL_MODELS, Field::Compact, shown);
         }
-        (RowRef::All, 3) => {
+        (RowRef::All, Col::Speed) => {
             let tier = rc.pending.defaults(rc.saved).speed.unwrap_or_default();
             ui.label(Text::small(cx.tr.text(&tier.text()), cx.pal));
         }
-        (RowRef::All, 5) => reset_button(ui, rc, ALL_MODELS),
+        (RowRef::All, Col::Actions) => actions(ui, rc, ALL_MODELS),
         (RowRef::All, _) => {}
-        (RowRef::Model(m), 0) => {
-            let o = rc.pending.override_of(rc.saved, &m.slug);
-            let mut name = o
-                .display_name
-                .clone()
-                .unwrap_or_else(|| m.label().to_owned());
-            if model::hidden(m, &o) {
-                name = format!("{name} · {}", cx.tr.t("models.hidden"));
+        (RowRef::Model(m), Col::Model) => model_cell(ui, rc, m),
+        (RowRef::Model(m), Col::Providers) => {
+            if let Some(row) = super::catalog::row(rc.saved.view, &m.slug)
+                && let Some(super::catalog::ChipAction::Test(alias)) =
+                    super::catalog::providers_cell(ui, cx, row, rc.testing.is_some())
+            {
+                rc.edits.push(Edit::Test(alias));
             }
-            if rc.narrow {
-                for t in model::tiers(m)
-                    .into_iter()
-                    .filter(|t| *t != SpeedTier::Standard)
-                {
-                    name = format!("{name} · {}", cx.tr.text(&t.text()));
-                }
-            }
-            name_cell(ui, rc, &m.slug, |ui| {
-                let r = ui.add(
-                    egui::Label::new(
-                        RichText::new(&m.slug)
-                            .font(mono_font(text::SMALL, Weight::Medium))
-                            .color(cx.pal.text),
-                    )
-                    .truncate(),
-                );
-                if let Some(d) = &m.description {
-                    r.on_hover_text(d);
-                }
-                // Which lists named the model (explicit list sources).
-                let mut name = name;
-                if !m.lists.is_empty() {
-                    let lists: Vec<String> = m
-                        .lists
-                        .iter()
-                        .map(|k| {
-                            cx.tr.t(match k {
-                                superba_core::ModelListKind::Codex => {
-                                    "models.list_source.codex_short"
-                                }
-                                superba_core::ModelListKind::Standard => {
-                                    "models.list_source.standard_short"
-                                }
-                            })
-                        })
-                        .collect();
-                    name = format!("{name} · {}", lists.join(" + "));
-                }
-                if let Some(row) = super::catalog::row(rc.saved.view, &m.slug) {
-                    name = format!("{} · {}", name, super::catalog::badge(cx, row));
-                    ui.add(egui::Label::new(Text::caption(name, cx.pal)).truncate())
-                        .on_hover_text(super::catalog::evidence(row));
-                } else {
-                    ui.add(egui::Label::new(Text::caption(name, cx.pal)).truncate());
-                }
-            });
         }
-        (RowRef::Model(m), 1) => {
+        (RowRef::Model(m), Col::Window) => {
             let l = model::limits(rc.saved, rc.pending, m);
             let o = rc.pending.override_of(rc.saved, &m.slug);
+            let caption = if m.estimated_context_window && l.window_source == LimitSource::Model {
+                Some((cx.tr.t("models.estimated"), false))
+            } else {
+                l.max
+                    .map(|max| (cx.tr.f("models.max", &[("max", &token_label(max))]), false))
+            };
             let shown = Shown {
                 value: l.window,
                 initial: l.window.map(short_tokens).unwrap_or_default(),
                 placeholder: "—".to_owned(),
                 source: l.window_source,
-                caption: l
-                    .max
-                    .map(|max| (cx.tr.f("models.max", &[("max", &token_label(max))]), false)),
+                caption,
                 hover: window_hover(rc, m, &l, &o),
                 enabled: rc.saved.view.per_model,
             };
             value_cell(ui, rc, &m.slug, Field::Window, shown);
         }
-        (RowRef::Model(m), 2) => {
+        (RowRef::Model(m), Col::Compact) => {
             let l = model::limits(rc.saved, rc.pending, m);
             let o = rc.pending.override_of(rc.saved, &m.slug);
             let initial = match l.compact_source {
@@ -1010,7 +1086,7 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
             };
             value_cell(ui, rc, &m.slug, Field::Compact, shown);
         }
-        (RowRef::Model(m), 3) => {
+        (RowRef::Model(m), Col::Speed) => {
             // Standard is always there: the column names the faster tiers.
             let tiers: Vec<SpeedTier> = model::tiers(m)
                 .into_iter()
@@ -1038,35 +1114,12 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
                 }
             }
         }
-        (RowRef::Model(m), 4) if rc.saved.view.router_catalog.is_some() => {
-            let mut visible = !model::hidden(m, &rc.pending.override_of(rc.saved, &m.slug));
-            ui.vertical(|ui| {
-                if ui
-                    .add_enabled(
-                        !rc.read_only,
-                        egui::Checkbox::new(&mut visible, cx.tr.t("models.catalog.visible")),
-                    )
-                    .changed()
-                {
-                    rc.edits.push(Edit::Visible(m.slug.clone(), visible));
-                }
-                if ui
-                    .add_enabled(
-                        !rc.read_only,
-                        egui::Button::new(cx.tr.t("models.catalog.test")),
-                    )
-                    .clicked()
-                {
-                    rc.edits.push(Edit::Test(m.slug.clone()));
-                }
-            });
-        }
-        (RowRef::Model(m), 4) if rc.custom => {
+        (RowRef::Model(m), Col::Extra) if rc.custom => {
             let o = rc.pending.override_of(rc.saved, &m.slug);
             let value = o.upstream_name.clone().unwrap_or_default();
             upstream(ui, rc, &m.slug, value);
         }
-        (RowRef::Model(m), 4) => {
+        (RowRef::Model(m), Col::Extra) => {
             let shown = model::shown_price(rc.pending, rc.saved, rc.table, &m.slug);
             let (label, color) = match &shown {
                 Some((p, true)) => (price_text(p), cx.pal.text),
@@ -1091,8 +1144,134 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: usize) {
                 rc.edits.push(Edit::Price(m.slug.clone()));
             }
         }
-        (RowRef::Model(m), 5) => reset_button(ui, rc, &m.slug),
-        _ => {}
+        (RowRef::Model(m), Col::Actions) => actions(ui, rc, &m.slug),
+    }
+}
+
+/// The model cell: the slug (an id: mono), then the display name with what
+/// else matters for the row (hidden, the faster tiers in a narrow table, a
+/// protocol conversion), the row's state as a pill on the right.
+fn model_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, m: &ModelSpec) {
+    let cx = rc.cx;
+    let o = rc.pending.override_of(rc.saved, &m.slug);
+    let mut parts = Vec::new();
+    // A display name that only repeats the id (standard lists) is left out.
+    let name = o
+        .display_name
+        .clone()
+        .unwrap_or_else(|| m.label().to_owned());
+    if name != m.slug {
+        parts.push(name);
+    }
+    if model::hidden(m, &o) {
+        parts.push(cx.tr.t("models.hidden"));
+    }
+    if rc.narrow {
+        for t in model::tiers(m)
+            .into_iter()
+            .filter(|t| *t != SpeedTier::Standard)
+        {
+            parts.push(cx.tr.text(&t.text()));
+        }
+    }
+    let catalog_row = super::catalog::row(rc.saved.view, &m.slug);
+    if catalog_row.is_some_and(super::catalog::translated) {
+        parts.push(cx.tr.t("models.catalog.converted"));
+    }
+    // Which of the provider's lists named the model (direct, explicit sources).
+    if catalog_row.is_none() && !m.lists.is_empty() {
+        let lists: Vec<String> = m
+            .lists
+            .iter()
+            .map(|k| {
+                cx.tr.t(match k {
+                    superba_core::ModelListKind::Codex => "models.list_source.codex_short",
+                    superba_core::ModelListKind::Standard => "models.list_source.standard_short",
+                })
+            })
+            .collect();
+        parts.push(lists.join(" + "));
+    }
+    let lines = if parts.is_empty() { 1 } else { 2 };
+    name_cell(ui, rc, &m.slug, lines, |ui| {
+        let r = ui.add(
+            egui::Label::new(
+                RichText::new(&m.slug)
+                    .font(mono_font(text::SMALL, Weight::Medium))
+                    .color(cx.pal.text),
+            )
+            .truncate(),
+        );
+        r.on_hover_text(m.description.clone().unwrap_or_else(|| m.slug.clone()));
+        if !parts.is_empty() {
+            crate::pages::elided(ui, Text::caption(parts.join(" · "), cx.pal));
+        }
+    });
+}
+
+/// The row's actions in the last column, one line at the small control
+/// height, always in the same order and place: show in Codex, Test (router),
+/// reset (only when the row has its own values).
+fn actions(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str) {
+    let cx = rc.cx;
+    ui.spacing_mut().item_spacing.x = space::XS;
+    if slug != ALL_MODELS
+        && rc.saved.view.router_catalog.is_some()
+        && let Some(m) = rc.saved.spec(slug)
+    {
+        let visible = !model::hidden(m, &rc.pending.override_of(rc.saved, slug));
+        let tip = cx.tr.f(
+            if visible {
+                "models.router.visible_tip"
+            } else {
+                "models.router.hidden_tip"
+            },
+            &[("model", &slug)],
+        );
+        if ui
+            .add(
+                IconButton::new(if visible { Icon::Eye } else { Icon::EyeOff }, tip)
+                    .size(size::CONTROL_SM)
+                    .checked(visible)
+                    .enabled(!rc.read_only && !rc.catalog_busy),
+            )
+            .clicked()
+        {
+            rc.edits.push(Edit::Visible(slug.to_owned(), !visible));
+        }
+        let testing = rc.testing == Some(slug);
+        if ui
+            .add(
+                Button::new(cx.tr.t("models.catalog.test"))
+                    .small()
+                    .loading(testing)
+                    .enabled(!rc.read_only && rc.testing.is_none()),
+            )
+            .on_hover_text(cx.tr.t("models.router.test_tip"))
+            .clicked()
+        {
+            rc.edits.push(Edit::Test(slug.to_owned()));
+        }
+    }
+    if !rc.read_only && rc.pending.overridden(rc.saved, slug) {
+        let name = cx
+            .tr
+            .f("models.reset_of", &[("model", &label_of(cx, slug))]);
+        if ui
+            .add(IconButton::new(Icon::Restore, name).size(RESET_W))
+            .clicked()
+        {
+            rc.edits.push(Edit::Reset(slug.to_owned()));
+        }
+    }
+}
+
+/// "All models" or the slug, for names of row controls.
+fn label_of(cx: &Cx<'_>, slug: &str) -> String {
+    if slug == ALL_MODELS {
+        cx.tr.t("models.all")
+    } else {
+        slug.to_owned()
     }
 }
 
@@ -1106,7 +1285,13 @@ fn source_of(set: bool) -> LimitSource {
 
 /// The model column: marker, the name lines on the left and the row's state
 /// on the right.
-fn name_cell(ui: &mut Ui, rc: &RowCx<'_, '_>, slug: &str, name: impl FnOnce(&mut Ui)) {
+fn name_cell(
+    ui: &mut Ui,
+    rc: &RowCx<'_, '_>,
+    slug: &str,
+    lines: usize,
+    name: impl FnOnce(&mut Ui),
+) {
     let rect = ui.max_rect();
     let state = model::row_state(rc.saved, rc.pending, slug, rc.active);
     let badge = ui
@@ -1114,7 +1299,7 @@ fn name_cell(ui: &mut Ui, rc: &RowCx<'_, '_>, slug: &str, name: impl FnOnce(&mut
             egui::UiBuilder::new()
                 .max_rect(rect)
                 .layout(Layout::right_to_left(Align::Center)),
-            |ui| state_badge(ui, rc, state),
+            |ui| state_badge(ui, rc, slug, state),
         )
         .inner;
     let right = badge.map_or(rect.max.x, |r| r.min.x - 8.0);
@@ -1126,21 +1311,43 @@ fn name_cell(ui: &mut Ui, rc: &RowCx<'_, '_>, slug: &str, name: impl FnOnce(&mut
         |ui| {
             ui.set_clip_rect(left.intersect(ui.clip_rect()));
             marker(ui, rc, slug);
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 1.0;
+            if lines == 1 {
+                // One line sits on the row's center line like the controls.
                 name(ui);
-            });
+            } else {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    name(ui);
+                });
+            }
         },
     );
 }
 
-/// The row's state as a small pill (nothing when there is nothing to say).
-fn state_badge(ui: &mut Ui, rc: &RowCx<'_, '_>, state: model::RowState) -> Option<egui::Rect> {
+/// The row's state as a small pill (nothing when there is nothing to say):
+/// an edit's state first, else why the router does not offer the model.
+fn state_badge(
+    ui: &mut Ui,
+    rc: &RowCx<'_, '_>,
+    slug: &str,
+    state: model::RowState,
+) -> Option<egui::Rect> {
     use model::RowState as S;
     let cx = rc.cx;
     let provider = || super::provider_name(cx, &rc.saved.view.profile_id);
     let (key, color, tip) = match state {
-        S::Quiet => return None,
+        S::Quiet => {
+            let row = super::catalog::row(rc.saved.view, slug)?;
+            let (label, status, tip) = super::catalog::readiness_pill(cx, row.readiness)?;
+            let tip = match &row.detail {
+                Some(detail) => format!("{tip}\n{detail}"),
+                None => tip,
+            };
+            let r = pill(ui, cx, &label, cx.pal.status(status));
+            let rect = r.rect;
+            r.on_hover_text(tip);
+            return Some(rect);
+        }
         S::Unsaved => (
             "models.state.unsaved",
             cx.pal.amber,
@@ -1209,18 +1416,6 @@ fn marker(ui: &mut Ui, rc: &RowCx<'_, '_>, slug: &str) {
     }
 }
 
-fn reset_button(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str) {
-    if rc.read_only || !rc.pending.overridden(rc.saved, slug) {
-        return;
-    }
-    if ui
-        .add(IconButton::new(Icon::Restore, rc.cx.tr.t("models.reset")).size(24.0))
-        .clicked()
-    {
-        rc.edits.push(Edit::Reset(slug.to_owned()));
-    }
-}
-
 /// What a window / compaction cell shows.
 struct Shown {
     /// The value Codex uses (`None` = unknown, or unset on the all-models row).
@@ -1274,11 +1469,21 @@ fn value_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, field: Field, sho
     if rc.focus == Some(&key) {
         ui.memory_mut(|m| m.request_focus(id));
     }
+    let (tag, tag_color) = match shown.source {
+        LimitSource::Custom => ("models.tag.custom", cx.pal.link),
+        LimitSource::AllModels => ("models.tag.all", cx.pal.text_muted),
+        LimitSource::Model => ("models.tag.default", cx.pal.text_subtle),
+    };
+    // A narrow table shows the field alone: its tag and caption lead the tooltip.
+    let hover = match (&shown.caption, rc.narrow) {
+        (Some((caption, _)), true) => format!("{} · {caption}\n{}", cx.tr.t(tag), shown.hover),
+        (None, true) => format!("{}\n{}", cx.tr.t(tag), shown.hover),
+        (_, false) => shown.hover.clone(),
+    };
     let tip = match (&error, shown.enabled) {
-        (Some(e), _) => format!("{e}\n\n{}", shown.hover),
+        (Some(e), _) => format!("{e}\n\n{hover}"),
         (None, false) => format!(
-            "{}\n\n{}",
-            shown.hover,
+            "{hover}\n\n{}",
             cx.tr.f(
                 "models.per_model_unavailable",
                 &[(
@@ -1287,7 +1492,7 @@ fn value_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, field: Field, sho
                 )]
             )
         ),
-        (None, true) => shown.hover,
+        (None, true) => hover,
     };
     // Disabled fields (personal access token, busy) explain themselves too.
     r.response
@@ -1301,6 +1506,9 @@ fn value_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, field: Field, sho
             text,
         });
     }
+    if rc.narrow {
+        return;
+    }
     ui.add_space(6.0);
     // The tag over the caption, centred on the field.
     let block = if shown.caption.is_some() { 36.0 } else { 18.0 };
@@ -1311,12 +1519,7 @@ fn value_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, field: Field, sho
         |ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
             ui.add_space(pad);
-            let (tag, color) = match shown.source {
-                LimitSource::Custom => ("models.tag.custom", cx.pal.link),
-                LimitSource::AllModels => ("models.tag.all", cx.pal.text_muted),
-                LimitSource::Model => ("models.tag.default", cx.pal.text_subtle),
-            };
-            pill(ui, cx, &cx.tr.t(tag), color);
+            pill(ui, cx, &cx.tr.t(tag), tag_color);
             if let Some((caption, amber)) = shown.caption {
                 let t = Text::caption(caption, cx.pal);
                 ui.add(egui::Label::new(if amber { t.color(cx.pal.amber) } else { t }).truncate());
@@ -1356,6 +1559,9 @@ fn window_hover(rc: &RowCx<'_, '_>, m: &ModelSpec, l: &ModelLimits, o: &ModelOve
             cx.tr
                 .f("models.hover.max", &[("value", &exact_tokens(max))]),
         );
+    }
+    if m.estimated_context_window {
+        lines.push(cx.tr.t("models.hover.estimated"));
     }
     if let Some(u) = l.usable_window() {
         lines.push(cx.tr.f(
@@ -1674,7 +1880,9 @@ fn bottom(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
             ));
             ui.add_space(12.0);
         }
-        if view.picker_available && !view.read_only {
+        // The router publishes its own list (the mode row decides what is in
+        // it); the site's picker mode only applies to a direct connection.
+        if view.picker_available && !view.read_only && view.router_catalog.is_none() {
             let mut on = state.pending.picker(saved) == ModelPicker::Provider;
             let before = on;
             ui.add(
@@ -1712,6 +1920,25 @@ fn note_text(cx: &Cx<'_>, view: &ModelsView) -> (Status, String, Vec<String>) {
     if view.read_only {
         let t = cx.tr.t("models.official_readonly");
         return (Status::Idle, t.clone(), vec![t]);
+    }
+    if let Some(catalog) = &view.router_catalog {
+        let (status, mut lines) = super::catalog::list_problems(cx, catalog);
+        let notes: Vec<String> = view.notes.iter().map(|n| cx.localize(&n.text)).collect();
+        let warn = status == Status::Warn || super::warning(&view.notes);
+        let first = lines
+            .first()
+            .cloned()
+            .filter(|_| status == Status::Warn)
+            .or_else(|| {
+                view.notes
+                    .iter()
+                    .find(|n| n.severity != superba_core::Severity::Info)
+                    .map(|n| cx.localize(&n.text))
+            })
+            .unwrap_or_else(|| cx.tr.t("models.router.note"));
+        lines.extend(notes);
+        lines.push(cx.tr.t("models.router.note"));
+        return (if warn { Status::Warn } else { Status::Idle }, first, lines);
     }
     let file = match &view.catalog_file {
         CatalogFileStatus::NotNeeded => None,

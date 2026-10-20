@@ -941,6 +941,50 @@ pub(super) fn line_models(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard, out: &mut Ve
     }
     ui.add_space(16.0);
     model_picker(ui, cx, w);
+    if !w.official() {
+        ui.add_space(16.0);
+        router_list(ui, cx, w);
+    }
+}
+
+/// The router model list: asked here so Codex lists the right models the
+/// moment the local router is turned on (the Models page changes it later).
+fn router_list(ui: &mut Ui, cx: &Cx<'_>, w: &mut Wizard) {
+    use superba_core::CatalogMode;
+    let title = ui
+        .label(Text::title(cx.tr.t("models.router.wizard_title"), cx.pal))
+        .id;
+    ui.add_space(4.0);
+    FormRow::unlabeled().height(size::CONTROL).show(ui, |ui| {
+        crate::design::a11y::label_unnamed_by(ui, title, |ui| {
+            Dropdown::new("wizard-router-list")
+                .medium()
+                .width(320.0)
+                .selected_text(crate::pages::models::mode_label(cx.tr, w.catalog_mode))
+                .show_ui(ui, |ui| {
+                    for mode in CatalogMode::ALL {
+                        ui.selectable_value(
+                            &mut w.catalog_mode,
+                            mode,
+                            crate::pages::models::mode_label(cx.tr, mode),
+                        )
+                        .on_hover_text(crate::pages::models::mode_help(cx.tr, mode));
+                    }
+                });
+        });
+    });
+    ui.add_space(2.0);
+    ui.add(
+        egui::Label::new(Text::small(
+            format!(
+                "{} {}",
+                crate::pages::models::mode_help(cx.tr, w.catalog_mode),
+                cx.tr.t("models.router.wizard_body")
+            ),
+            cx.pal,
+        ))
+        .wrap(),
+    );
 }
 
 /// A re-run selected the edited provider's current line (not the fastest one).

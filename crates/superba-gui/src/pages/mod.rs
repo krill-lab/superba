@@ -214,9 +214,10 @@ impl Page {
 
     /// Minimum content height before the shell uses its short-window fallback.
     pub fn min_height(self) -> f32 {
-        if self.is_superba() || self == Self::Router {
-            // These settings pages already scroll their own body. Keep the
-            // header fixed and avoid a second scroll area at 960×640.
+        if self.is_superba() || self == Self::Router || self == Self::Models {
+            // These settings pages already scroll their own body (the Models
+            // table pages instead): keep the header fixed and avoid a second
+            // scroll area at 960×640, where the pager would fall off the card.
             480.0
         } else {
             crate::design::layout::FIT_MIN_HEIGHT

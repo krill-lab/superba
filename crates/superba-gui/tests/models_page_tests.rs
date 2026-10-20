@@ -75,6 +75,8 @@ async fn merged_catalog_controls_fit_and_show_pending_evidence() {
                 layer: superba_core::CatalogLayer::Synthesized,
                 evidence: "pending".into(),
                 observed_at: 1,
+                readiness: Some(superba_core::CatalogReadiness::Pending),
+                alias: Some(format!("krill/{slug}")),
             }],
         }],
         ..Default::default()
@@ -727,9 +729,10 @@ async fn models_fit_the_minimum_window_without_cutting_a_column() {
         }
         for key in [
             "models.col.model",
-            "models.col.context",
-            "models.col.compact",
+            "models.col.context_short",
+            "models.col.compact_short",
             "models.col.price",
+            "models.col.actions",
         ] {
             assert!(report.whole(&tr.t(key)), "{locale:?}: header {key}");
         }

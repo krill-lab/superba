@@ -367,6 +367,7 @@ pub struct IconButton {
     tooltip: String,
     size: f32,
     enabled: bool,
+    checked: Option<bool>,
 }
 
 impl IconButton {
@@ -377,6 +378,7 @@ impl IconButton {
             tooltip: tooltip.into(),
             size: size::CONTROL,
             enabled: true,
+            checked: None,
         }
     }
 
@@ -389,6 +391,13 @@ impl IconButton {
     /// Enable or disable.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    /// An on / off toggle drawn as an icon (eye / eye-off): screen readers
+    /// get a check box with this state, named by the tooltip.
+    pub fn checked(mut self, on: bool) -> Self {
+        self.checked = Some(on);
         self
     }
 }
@@ -404,7 +413,11 @@ impl Widget for IconButton {
         let (rect, response) = ui.allocate_exact_size(vec2(self.size, self.size), sense);
         let tooltip = self.tooltip.clone();
         let enabled = self.enabled;
-        response.widget_info(|| WidgetInfo::labeled(egui::Role::Button, enabled, &tooltip));
+        let checked = self.checked;
+        response.widget_info(|| match checked {
+            Some(on) => WidgetInfo::selected(egui::Role::CheckBox, enabled, on, &tooltip),
+            None => WidgetInfo::labeled(egui::Role::Button, enabled, &tooltip),
+        });
         let focused = show_focus(&response);
         if ui.is_rect_visible(rect) {
             let t = hover_t(ui, &response);

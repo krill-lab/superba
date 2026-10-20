@@ -4,6 +4,7 @@
 
 pub mod fake;
 pub mod fit;
+pub mod models_catalog;
 pub mod ui;
 pub mod update_tools;
 
