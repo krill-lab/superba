@@ -80,6 +80,11 @@ Changes since [v0.1.1-alpha.6](https://github.com/krill-lab/superba/releases/tag
   CJK font alignment and background conversion of cached system fonts.
 - Session-lock diagnostics recover holder information from per-file-descriptor
   locks where the system-wide lock list does not expose it.
+- Sessions refresh after migration and rollback without requiring a manual rescan.
+- Uninstall restores the authentication endpoint owned by Superba when switching
+  from routed PAT to a direct API-key profile.
+- Narrow windows keep Claude settings readable and avoid overlapping network
+  source controls and provider/router settings.
 
 ### Limits of this preview
 
@@ -104,6 +109,9 @@ Changes since [v0.1.1-alpha.6](https://github.com/krill-lab/superba/releases/tag
   download links. WorkBuddy retains its own updater. Gemini CLI configuration
   is included, but Gemini CLI installation and updates are not managed here.
   Tool installation inside WSL and Windows ARM64 packages remain out of scope.
+- macOS validation for this candidate relies on hosted CI tests and DMG/Finder
+  checks. The full Mac device matrix was not rerun because the test VM is
+  unavailable; earlier device checks do not establish full coverage of this build.
 
 ## [0.1.1-alpha.6] - 2026-10-19
 
