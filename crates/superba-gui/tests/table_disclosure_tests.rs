@@ -8,7 +8,7 @@ mod support;
 use egui::accesskit::{Action, Role};
 use egui::{Event, Rect, Theme, pos2, vec2};
 use superba_gui::design::tokens::size;
-use superba_gui::design::widgets::{Disclosure, Table, Text};
+use superba_gui::design::widgets::{Disclosure, QuotePreview, Table, Text};
 use superba_gui::design::{Palette, fonts, style};
 use support::ui::Harness;
 
@@ -229,4 +229,27 @@ fn a_long_caption_is_shortened_inside_a_narrow_line() {
     page.frame(600.0, Vec::new());
     page.frame(600.0, Vec::new());
     assert!(page.elided.is_empty(), "{:?}", page.elided);
+}
+
+#[test]
+fn the_reply_preview_is_exactly_as_wide_as_its_column() {
+    // It was 2 pt wider (margins and stroke), which widened the settings
+    // column under it and pushed the switches beside it into the scroll gutter.
+    for theme in [Theme::Light, Theme::Dark] {
+        let h = Harness::new([600.0, 300.0], theme);
+        let mut rects = (Rect::NOTHING, Rect::NOTHING);
+        h.settle(&mut |ui| {
+            ui.set_width(400.0);
+            let column = ui.max_rect();
+            let r = QuotePreview::new("Done.", "⚡ 87 tok/s")
+                .caption("Preview")
+                .show(ui);
+            rects = (column, r.rect);
+        });
+        let (column, preview) = rects;
+        assert!(
+            (preview.width() - column.width()).abs() < EPS,
+            "{preview:?} in {column:?}"
+        );
+    }
 }

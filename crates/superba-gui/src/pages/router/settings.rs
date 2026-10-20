@@ -11,7 +11,9 @@ use superba_core::{StatsLineClient, StatsLineStyle};
 use super::stats_line::{self, Sample};
 use super::{State, mode, prices, view};
 use crate::design::tokens::{size, space};
-use crate::design::widgets::{Button, Disclosure, FormRow, QuotePreview, Segmented, Text, Toggle};
+use crate::design::widgets::{
+    Button, Disclosure, FormRow, QuotePreview, Segmented, Status, Text, Toggle,
+};
 use crate::pages::{Action, Cx, clock_time, divider, section};
 
 /// Edits in progress on the tab.
@@ -143,11 +145,12 @@ fn stats_line_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     let stats = state.stats_settings(cx);
     let saving = state.saving_stats();
     let title = cx.tr.t("stats_line.title");
-    let mut desc = cx.tr.t("stats_line.body");
-    if !mode(cx).is_router() {
-        desc = format!("{desc}\n{}", cx.tr.t("stats_line.needs_router"));
-    }
+    let desc = cx.tr.t("stats_line.body");
     section(ui, cx, &title, None);
+    if !mode(cx).is_router() {
+        // Why switching it on changes nothing yet, before the switch.
+        crate::pages::note(ui, cx, Status::Warn, cx.tr.t("stats_line.needs_router"));
+    }
     crate::pages::superba::row(ui, cx, &cx.tr.t("stats_line.enabled"), &desc, false, |ui| {
         let mut on = stats.line.enabled;
         // Named by the section title: the e2e drivers (W31) and the a11y tests

@@ -397,7 +397,6 @@ pub fn section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         .right_aligned(&[1, 2]);
     table.header(ui, &headers);
     let n = providers.len();
-    let mut invalid = None;
     for (i, (id, name, usage)) in providers.into_iter().enumerate() {
         let ratio = ratio_of(&stats, &id);
         let editing = state
@@ -476,7 +475,8 @@ pub fn section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             && valid.is_none()
             && !t.trim().is_empty()
         {
-            invalid = Some(name.clone());
+            // Under the row being edited, before the next provider.
+            ui.label(Text::caption(cx.tr.t("prices.invalid"), cx.pal).color(cx.pal.red));
         }
         if focus {
             state.prefs.prices.focus = false;
@@ -498,9 +498,6 @@ pub fn section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         if calibrate {
             start_calibration(cx, state, id.clone(), name.clone());
         }
-    }
-    if invalid.is_some() {
-        ui.label(Text::caption(cx.tr.t("prices.invalid"), cx.pal).color(cx.pal.red));
     }
     if let Some(e) = &state.prefs.prices.calibration.error {
         ui.add(

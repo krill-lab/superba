@@ -278,3 +278,72 @@ fn the_off_page_guides_to_a_member_in_one_scrolling_column_at_both_sizes() {
         }
     }
 }
+
+/// Nothing in the page's column, Advanced open, reaches past its right edge
+/// into the scroll bar's gutter (the reply preview and a section's wrapped
+/// caption made the column wider, and the switches and 查看… beside them
+/// went under the scroll bar at 960×640).
+#[test]
+fn advanced_settings_stay_inside_the_column_at_both_sizes() {
+    use superba_gui::design::tokens::focus::BLEED;
+    for size in [[1280.0, 800.0], [960.0, 640.0]] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let tr = Tr::new(locale);
+            let mut h =
+                Harness::new(size, locale, members(), true).min_height(Page::Router.min_height());
+            let mut state = State::default();
+            let title = tr.t("router.advanced.title");
+            let f = h.until_scrolled(
+                |ui, cx, out| router::show(ui, cx, &mut state, out),
+                |f| {
+                    f.clipped_texts
+                        .iter()
+                        .any(|(t, r, clip)| t == &title && clip.contains_rect(*r))
+                },
+            );
+            h.click_text(&f, &title);
+            let mut seen_service = false;
+            for _ in 0..30 {
+                let f = h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
+                // The column is clipped to its rectangle plus the focus bleed
+                // (table cells to their cell); the page header's controls to
+                // the page. Its right edge: the widest clip inside the page.
+                let inside = |clip: &egui::Rect| clip.right() < f.rect.right() - 0.5;
+                let column = f
+                    .clipped_texts
+                    .iter()
+                    .map(|(_, _, clip)| *clip)
+                    .chain(f.outlines.iter().map(|(_, clip)| *clip))
+                    .filter(inside)
+                    .map(|clip| clip.right())
+                    .fold(f32::MIN, f32::max)
+                    - BLEED;
+                for (rect, clip) in &f.outlines {
+                    if inside(clip) && rect.intersects(*clip) {
+                        assert!(
+                            rect.right() <= column + 0.5,
+                            "{size:?} {locale:?}: a control at {rect:?} past the column ({column})"
+                        );
+                    }
+                }
+                for (text, rect, clip) in &f.clipped_texts {
+                    if inside(clip) && rect.intersects(*clip) {
+                        assert!(
+                            rect.right() <= column + 0.5,
+                            "{size:?} {locale:?}: {text:?} at {rect:?} past the column ({column})"
+                        );
+                    }
+                }
+                seen_service |= f.has(&tr.t("router.process"));
+                if seen_service && f.has(&tr.t("router.service.state")) {
+                    break;
+                }
+                h.scroll_at(
+                    egui::pos2(f.rect.min.x + 100.0, f.rect.center().y),
+                    egui::vec2(0.0, -200.0),
+                );
+            }
+            assert!(seen_service, "{size:?} {locale:?}: scrolled to the service");
+        }
+    }
+}
