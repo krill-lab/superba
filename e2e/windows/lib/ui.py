@@ -149,6 +149,11 @@ class Ui:
         # their interactive children must pass the visibility filter.
         return {"name": self.L("superba.title"), "type": "Tab", "visible": False}
 
+    def modal(self, title_key):
+        # egui's named Dialog maps to a UIA Window. Its structural node has
+        # no rectangle; controls inside it still use the visibility filter.
+        return {"name": self.L(title_key), "type": "Window", "visible": False}
+
     def wait_selected(self, timeout=20, **sel):
         end = time.monotonic() + timeout
         while True:

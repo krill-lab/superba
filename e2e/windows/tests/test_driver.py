@@ -151,12 +151,17 @@ class DriverTests(unittest.TestCase):
 
         def find(**selector):
             rows = frames[min(frame["index"], len(frames) - 1)]
-            name = u.L(selector["key"]) if "key" in selector else None
+            name = u.L(selector["key"]) if "key" in selector else selector.get("name")
+            if "within" in selector:
+                scope = selector["within"]
+                if not any(r["type"] == scope["type"] and r["name"] == scope["name"] for r in rows):
+                    return []
             return [row for row in rows if row["type"] == selector["type"]
                     and (row["name"] == name if name else re.search(selector["name_re"], row["name"]))]
 
         u.find = Mock(side_effect=find)
         u.click = Mock()
+        u.wait_gone = Mock()
         return u, frame
 
     def test_tool_install_direct_start_requires_its_localized_installing_row(self):
@@ -178,7 +183,7 @@ class DriverTests(unittest.TestCase):
             with self.subTest(lang=lang):
                 strings = Strings(lang)
                 u, frame = self.install_ui([[], [
-                    {"name": strings.t("updates.list.confirm"), "type": "Text"},
+                    {"name": strings.t("updates.list.confirm"), "type": "Window"},
                     {"name": "Claude Code · — → 2.1.304", "type": "Text"},
                 ]], lang)
                 events = []
@@ -188,7 +193,8 @@ class DriverTests(unittest.TestCase):
                 with patch("scenarios.alpha7.time.sleep", side_effect=lambda _: frame.update(index=1)):
                     confirm_or_observe_install(u, s, "Claude Code")
                 self.assertEqual(events, ["install-review", "updates.list.start"])
-                u.click.assert_called_once_with(key="updates.list.start")
+                u.click.assert_called_once_with(key="updates.list.start", within=u.modal("updates.list.confirm"))
+                u.wait_gone.assert_called_once()
                 self.assertEqual(s.save.call_args.args[1]["job"]["name"], "Claude Code · — → 2.1.304")
 
     def test_tool_install_missing_or_unrelated_state_never_skips_review(self):
@@ -209,7 +215,7 @@ class DriverTests(unittest.TestCase):
     def test_tool_install_review_must_name_the_requested_tool(self):
         from scenarios.alpha7 import confirm_or_observe_install
         u, _ = self.install_ui([[
-            {"name": "Review updates", "type": "Text"},
+            {"name": "Review updates", "type": "Window"},
             {"name": "opencode · — → 2.0.32", "type": "Text"},
         ]])
         with self.assertRaises(UiError):

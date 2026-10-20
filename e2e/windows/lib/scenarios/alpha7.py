@@ -166,14 +166,94 @@ def tool_row(run, s, tool, label):
     return row
 
 
-def wait_install(run, s, tool, installed, timeout=900):
+def tool_log(run, tool):
+    return run.guest_read(run.guest["DATA"] + "\\logs\\tools\\" + tool + ".log") or ""
+
+
+def wait_install(run, s, tool, installed, timeout=900, before_log=""):
+    """File discovery can precede both --version and the operation's result."""
     end = time.monotonic() + timeout
+    operation = "install" if installed else "uninstall"
+    started = False
+    start_deadline = min(end, time.monotonic() + 60)
+    before_header = before_log.splitlines()[:1]
+    last_log = None
     while time.monotonic() < end:
+        log = tool_log(run, tool)
+        if log != last_log:
+            s.save(f"{tool}-{operation}-operation.log", log)
+            last_log = log
+        current = (log.splitlines()[:1] != before_header
+                   and re.match(r"^\S+ " + operation + r" .+ \(channel ", log))
+        if current:
+            if not started:
+                s.save(f"{tool}-{operation}-started.log", log)
+                started = True
+            s.check(not re.search(r"(?m)^\S+ (?:failed|refused|stopped):", log),
+                    f"{tool}: {operation} has no terminal failure (see operation log)")
+        if not started and time.monotonic() >= start_deadline:
+            raise UiError(f"{tool}: no new {operation} operation started within 60s")
         row = tool_row(run, s, tool, "inventory-poll")
-        if bool(row["installs"]) == installed:
+        ready = bool(row["installs"]) == installed
+        if installed:
+            ready = ready and all(str(i.get("version") or "").strip() for i in row["installs"])
+        if ready and current and re.search(r"(?m)^\S+ done:", log):
             return row
         time.sleep(5)
-    s.check(False, f"{tool}: installed={installed} not reached within {timeout}s")
+    s.check(False, f"{tool}: installed={installed} with complete version probes and a successful "
+                  f"{operation} not reached within {timeout}s")
+
+
+def wait_tool_idle(u, s, name, installed, timeout=60):
+    """The GUI can still be finishing an installer after CLI discovery succeeds."""
+    end = time.monotonic() + timeout
+    selector = {"name_re": "^" + re.escape(name) + r",", "type": "Button"}
+    u.reveal(**selector)
+    states = ("current", "available", "vendor", "unknown") if installed else ("missing",)
+    ready = re.compile("^" + re.escape(name) + r", (?:" +
+                       "|".join(re.escape(u.L("updates.list." + k)) for k in states) + r")(?:,|$)")
+    failed = name + ", " + u.L("updates.list.failed") + ","
+    while True:
+        rows = u.find(**selector)
+        if any(row["name"].startswith(failed) for row in rows):
+            s.save("tool-row-failed.json", rows)
+            raise UiError(f"{name}: GUI reports an operation failure")
+        if len(rows) == 1 and ready.search(rows[0]["name"]):
+            s.save("tool-row-ready.json", rows[0])
+            return
+        if time.monotonic() >= end:
+            s.save("tool-row-not-ready.json", rows)
+            s.ui_dump("tool-row-not-ready")
+            raise UiError(f"{name}: GUI did not finish the operation within {timeout}s")
+        time.sleep(0.5)
+
+
+def verify_tool_version(run, s, tool, row):
+    """Compare a new execution (or PE metadata) with the detected version."""
+    for index, item in enumerate(row["installs"]):
+        version = str(item.get("version") or "").removeprefix("v")
+        s.check(bool(version), f"{tool}: inventory contains the installed version")
+        path = item["path"]
+        if tool in ("claude", "opencode", "pi", "dsh"):
+            command = "& " + psq(path) + " --version; exit $LASTEXITCODE"
+            result = run.agent.exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command],
+                                    timeout=120)
+            s.save(f"{tool}-actual-version-{index}.json", result)
+            s.check(result["code"] == 0 and not result["timed_out"],
+                    f"{tool}: actual installed program returns its version")
+            pattern = r"(?<![\w.+-])v?" + re.escape(version) + r"(?![\w.+-])"
+            s.check(re.search(pattern, result["stdout"] + "\n" + result["stderr"]) is not None,
+                    f"{tool}: executed version agrees with detected version {version}")
+        else:
+            data = json.loads(run.guest_ps(
+                "$f=Get-Item -LiteralPath " + psq(path) + "; "
+                "@{file_version=$f.VersionInfo.FileVersion;product_version=$f.VersionInfo.ProductVersion} "
+                "| ConvertTo-Json -Compress"))
+            s.save(f"{tool}-actual-version-{index}.json", data)
+            expected = re.findall(r"\d+", version)
+            s.check(bool(expected) and any(re.findall(r"\d+", str(v or ""))[:len(expected)] == expected
+                                          for v in data.values()),
+                    f"{tool}: actual PE file/product version agrees with detected version")
 
 
 def confirm_or_observe_install(u, s, name, timeout=20):
@@ -181,13 +261,15 @@ def confirm_or_observe_install(u, s, name, timeout=20):
     end = time.monotonic() + timeout
     installing = "^" + re.escape(f"{name}, {u.L('updates.list.installing')}") + r"(?:,|$)"
     while True:
-        review = u.find(key="updates.list.confirm", type="Text")
+        modal = u.modal("updates.list.confirm")
+        review = u.find(**modal)
         if review:
             job = u.wait(name_re="^" + re.escape(name + " · "), type="Text",
-                         timeout=max(0, end - time.monotonic()))
+                         within=modal, timeout=max(0, end - time.monotonic()))
             s.save("install-review.json", {"title": review, "job": job})
             s.shot("install-review")
-            u.click(key="updates.list.start")
+            u.click(key="updates.list.start", within=modal)
+            u.wait_gone(**modal, timeout=timeout)
             return
         rows = u.find(name_re=installing, type="Button")
         if rows:
@@ -197,6 +279,35 @@ def confirm_or_observe_install(u, s, name, timeout=20):
         if time.monotonic() >= end:
             raise UiError(f"{name}: neither its install review nor Installing row appeared within {timeout}s")
         time.sleep(0.25)
+
+
+def confirm_removal(u, s, name, offers_data_removal=False, timeout=20):
+    modal = u.modal("updates.list.confirm_remove")
+    title = u.wait(**modal, timeout=timeout)
+    job = u.wait(name_re="^" + re.escape(name + " · "), type="Text", within=modal, timeout=timeout)
+    checkboxes = u.find(key="updates.list.remove_data", type="CheckBox", within=modal)
+    s.check(not offers_data_removal or bool(checkboxes), "removable user data has an explicit removal choice")
+    for checkbox in checkboxes:
+        s.check(checkbox.get("toggle") in ("Off", 0, False), "remove user data is off by default")
+    s.save("uninstall-review.json", {"title": title, "job": job, "remove_data": checkboxes})
+    s.shot("uninstall-review")
+    s.ui_dump("uninstall-review")
+    # The expanded update row behind the modal has the very same button name.
+    u.click(key="updates.list.remove", within=modal)
+    u.wait_gone(**modal, timeout=timeout)
+
+
+def tool_data_hashes(run, folders):
+    """Observe the existing opt-in removal directories without changing them."""
+    if not folders:
+        return {}
+    paths = ",".join(psq(p) for p in folders)
+    return json.loads(run.guest_ps(
+        "$ErrorActionPreference='Stop'; $o=@{}; foreach($p in @(" + paths + ")) { "
+        "$o[$p]=[bool](Test-Path -LiteralPath $p); "
+        "if ($o[$p]) { Get-ChildItem -LiteralPath $p -Recurse -File -Force | ForEach-Object { "
+        "$o[$_.FullName]=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } } }; "
+        "$o | ConvertTo-Json -Compress"))
 
 
 def tool_install(t, tool, name):
@@ -212,26 +323,32 @@ def tool_install(t, tool, name):
         u.superba("updates")
         action = f"{u.L('updates.list.install')} {name}"
         u.reveal(name=action, type="Button")
+        before_log = tool_log(run, tool)
         u.click(name=action)
         confirm_or_observe_install(u, s, name)
-        installed = wait_install(run, s, tool, True)
+        installed = wait_install(run, s, tool, True, before_log=before_log)
         s.check(bool(installed["installs"][0].get("version")), "installed version matches the CLI inventory")
-        u.reveal(name_re="^" + re.escape(name) + r",", type="Button")
+        verify_tool_version(run, s, tool, installed)
+        wait_tool_idle(u, s, name, True)
         s.shot("tool-installed")
         s.ui_dump("tool-installed")
         s.manual("No UAC prompt; ZCode/WorkBuddy installer signature verified in the operation log.")
     with t.step(f"{name}: uninstall from the same update row, keeping user data") as s:
+        data_dirs = installed.get("data_dirs", [])
+        before_data = tool_data_hashes(run, data_dirs)
+        s.save("user-data-before.json", before_data)
         row_selector = {"name_re": "^" + re.escape(name) + r",", "type": "Button"}
         u.reveal(**row_selector)
         u.act("expand", **row_selector)
         u.reveal(key="updates.list.remove", type="Button")
+        before_log = tool_log(run, tool)
         u.click(key="updates.list.remove")
-        u.wait(key="updates.list.confirm_remove")
-        for checkbox in u.find(key="updates.list.remove_data", type="CheckBox"):
-            s.check(checkbox.get("toggle") in ("Off", 0, False), "remove user data is off by default")
-        s.shot("uninstall-review")
-        u.click(key="updates.list.remove")
-        wait_install(run, s, tool, False)
+        confirm_removal(u, s, name, offers_data_removal=tool == "opencode" and bool(data_dirs))
+        wait_install(run, s, tool, False, before_log=before_log)
+        wait_tool_idle(u, s, name, False)
+        after_data = tool_data_hashes(run, data_dirs)
+        s.save("user-data-after.json", after_data)
+        s.check(before_data == after_data, "existing user data is unchanged after uninstall")
         s.shot("tool-uninstalled")
         s.ui_dump("tool-uninstalled")
 

@@ -283,12 +283,14 @@ def w86(t):
         r = run.spb("remote", "follow", HOST, "off", timeout=120, label="follow-off")
         s.check(r["code"] == 0, f"spb remote follow {HOST} off: exit {r['code']}")
         before = wsl_hashes(run)
+        s.save("wsl-follow-off-before.sha256", before)
         other = "b" if run.state.get("line", "a") == "a" else "a"
         r = run.spb("switch", "--line", run.net.line_id(other), "--countdown", "0", "--yes", timeout=300,
                     label="switch-follow-off")
         s.check(r["code"] == 0, f"switch exit {r['code']}")
         run.state["line"] = other
         after = wsl_hashes(run)
+        s.save("wsl-follow-off-after.sha256", after)
         s.check(before == after, "distribution files unchanged")
         r = run.spb("remote", "follow", HOST, "on", timeout=120, label="follow-on")
         s.check(r["code"] == 0, "follow back on")

@@ -758,6 +758,10 @@ class _Release(BaseHTTPRequestHandler):
         if path.endswith("/releases/latest"):
             body = json.dumps({**release, "prerelease": False}).encode()
             ctype = "application/json"
+        elif path.endswith("/releases/tags/" + srv.tag):
+            # The updater resolves the offered version by tag before download.
+            body = json.dumps(release).encode()
+            ctype = "application/json"
         elif path.endswith("/releases"):
             # The Preview update channel (a pre-release build's default) reads the list.
             body = json.dumps([release]).encode()

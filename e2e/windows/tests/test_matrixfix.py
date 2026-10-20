@@ -235,10 +235,11 @@ class MatrixTests(unittest.TestCase):
                 u.texts = Mock(side_effect=[[], [], [],
                     [u.L('confirm.title'), u.L('restart.reason.certificate_trust_changed')],
                     [u.L('banner.running.title', dest='router')], [], []])
-                u.exists.side_effect = [False, True, True]
+                u.exists.side_effect = [False, True, True, True]
                 phases, _ = flows.wait_switch_done(self.run, self.step, u, timeout=30, router_restart=True)
                 self.assertIn('[full restart: router certificate]', phases)
-                u.click.assert_called_once_with(key='confirm.full_restart', type='Button')
+                u.click.assert_called_once_with(key='confirm.full_restart', type='Button',
+                                                within=u.modal('confirm.title'))
 
     def test_router_confirmation_never_accepts_an_unrelated_reason(self):
         u = self.ui()

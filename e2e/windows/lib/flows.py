@@ -313,9 +313,12 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=Fal
                 raise UiError("unexpected or repeated full-restart confirmation while enabling the router")
             s.shot("router-certificate-confirm")
             s.ui_dump("router-certificate-confirm")
-            s.check(u.exists(key="confirm.full_restart", type="Button", enabled=True),
+            modal = u.modal("confirm.title")
+            s.check(u.exists(name=reason, type="Text", within=modal),
+                    "the actual restart dialog names the router certificate change")
+            s.check(u.exists(key="confirm.full_restart", type="Button", enabled=True, within=modal),
                     "explicit Full restart offered for the updated local router certificate")
-            u.click(key="confirm.full_restart", type="Button")
+            u.click(key="confirm.full_restart", type="Button", within=modal)
             confirmed_router_restart = True
             seen.append("[full restart: router certificate]")
             continue
@@ -711,8 +714,28 @@ WSL_FILES = "~/.codex/config.toml ~/.codex/auth.json ~/.profile ~/.bashrc ~/.zsh
 
 def wsl_hashes(run, distro=WSL_DISTRO):
     """sha256 of the distribution files Superba may touch (or `missing <f>`)."""
-    r = wsl(run, f"for f in {WSL_FILES}; do [ -f $f ] && sha256sum $f || echo missing $f; done", distro=distro)
-    return r["stdout"].strip()
+    # A nested `wsl bash -lc` expands $f in the outer login shell, producing
+    # six hashes of stdin. Execute a file directly, with no shell on the argv.
+    script = Path(__file__).resolve().parents[1] / "guest" / "wsl-hashes.sh"
+    run.vm.scp_to(script, "C:/Users/Public/wintest/wsl-hashes.sh")
+    r = run.agent.exec("wsl.exe", ["-d", distro, "--exec", "sh", "/mnt/c/Users/Public/wintest/wsl-hashes.sh"],
+                       env={"WSL_UTF8": "1"}, timeout=120)
+    if r["code"] != 0 or r["timed_out"]:
+        raise UiError("WSL file hash probe failed or timed out")
+    return checked_wsl_hashes(r["stdout"])
+
+
+def checked_wsl_hashes(output):
+    """Reject stdin, missing/duplicate entries and hashes of unrelated files."""
+    lines = output.strip().splitlines()
+    records = [re.fullmatch(r"(?:missing |[0-9a-f]{64}  )(/[^\r\n]+)", line) for line in lines]
+    suffixes = [p.removeprefix("~") for p in WSL_FILES.split()]
+    if len(records) == len(suffixes) and all(records):
+        paths = [m[1] for m in records]
+        hash_root = paths[0].removesuffix(suffixes[0])
+        if hash_root and paths == [hash_root + suffix for suffix in suffixes]:
+            return "\n".join(lines)
+    raise UiError("WSL file hash probe must return the six named files (hash or missing), never stdin")
 
 
 def wsl_tree_hashes(run, path="~/.codex ~/.bashrc ~/.profile", distro=WSL_DISTRO):
