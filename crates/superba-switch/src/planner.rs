@@ -1433,7 +1433,28 @@ impl Switcher {
             })
             .await;
         match decision {
-            crate::model_keep::KeepDecision::Nothing => {}
+            crate::model_keep::KeepDecision::Nothing => {
+                // "Run Codex in WSL" with a model the destination sets itself
+                // (the profile's model, alpha.8 W90): nothing is kept, but the
+                // app's Codex in that distribution moves to or from the router
+                // with the same model; say so, as for a kept one (user bug 63).
+                let routed_now = superba_core::router::codex_uses_router(
+                    state,
+                    set.settings.router.enabled,
+                    self.deps.router.endpoint().ok().as_ref().map(|e| &e.base_url),
+                );
+                let model = resolved.model.model.clone();
+                if let (Some(distro), Some(model)) = (&dest.legacy_wsl, model)
+                    && routed_now != dest.routed
+                    && state.model.as_deref() == Some(model.as_str())
+                {
+                    draft.info(
+                        text("switch.models.keep_legacy_wsl")
+                            .arg("distro", distro)
+                            .arg("model", &model),
+                    );
+                }
+            }
             crate::model_keep::KeepDecision::Note(n) => draft.warnings.push(n),
             crate::model_keep::KeepDecision::Keep { model, notice } => {
                 if dest.remote_resolved.is_none() {
