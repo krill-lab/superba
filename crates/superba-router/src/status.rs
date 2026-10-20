@@ -60,6 +60,10 @@ pub struct RouterStatus {
     /// WSL listeners currently bound (`<adapter address>:<port>`, user bug 45).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wsl_listen: Vec<String>,
+    /// ChatGPT backend calls answered locally since start, by route
+    /// (`ps/plugins/installed`, `wham/usage`, `wham/*`…).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub local_answers: std::collections::BTreeMap<String, u64>,
 }
 
 /// The router's local budget ([`crate::limits`]) and the local shortages it
@@ -208,6 +212,11 @@ pub struct Totals {
     pub rejected: u64,
     /// WebSocket handshakes answered 426 by the router itself.
     pub ws_refused: u64,
+    /// ChatGPT backend calls (usage, analytics, profile, settings, plugin
+    /// and MCP endpoints) the router answered itself; never sent to a member
+    /// and not counted in `requests`.
+    #[serde(default)]
+    pub local_answers: u64,
 }
 
 /// Kind of a routing event.
