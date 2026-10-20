@@ -1,5 +1,6 @@
 """Regression checks for UIA timing and navigation; no VM or user configuration."""
 import importlib.util
+import re
 import sys
 import tempfile
 import unittest
@@ -142,6 +143,78 @@ class DriverTests(unittest.TestCase):
             with self.assertRaises(SkipScenario):
                 require_alpha7(t)
             ensure.assert_not_called()
+
+    def install_ui(self, frames, lang="en"):
+        """Filter successive actual UIA frames, including unrelated controls."""
+        u = self.ui(lang)
+        frame = {"index": 0}
+
+        def find(**selector):
+            rows = frames[min(frame["index"], len(frames) - 1)]
+            name = u.L(selector["key"]) if "key" in selector else None
+            return [row for row in rows if row["type"] == selector["type"]
+                    and (row["name"] == name if name else re.search(selector["name_re"], row["name"]))]
+
+        u.find = Mock(side_effect=find)
+        u.click = Mock()
+        return u, frame
+
+    def test_tool_install_direct_start_requires_its_localized_installing_row(self):
+        from scenarios.alpha7 import confirm_or_observe_install
+        for lang in ("en", "zh-CN"):
+            with self.subTest(lang=lang):
+                row = {"name": f"Claude Code, {Strings(lang).t('updates.list.installing')}, 2.1.304",
+                       "type": "Button", "rect": [20, 30, 800, 50]}
+                u, _ = self.install_ui([[row]], lang)
+                s = Mock()
+                confirm_or_observe_install(u, s, "Claude Code")
+                u.click.assert_not_called()
+                s.save.assert_called_once_with("install-started.json", [row])
+                s.shot.assert_called_once_with("install-started")
+
+    def test_tool_install_waits_for_actual_review_and_records_it_before_start(self):
+        from scenarios.alpha7 import confirm_or_observe_install
+        for lang in ("en", "zh-CN"):
+            with self.subTest(lang=lang):
+                strings = Strings(lang)
+                u, frame = self.install_ui([[], [
+                    {"name": strings.t("updates.list.confirm"), "type": "Text"},
+                    {"name": "Claude Code · — → 2.1.304", "type": "Text"},
+                ]], lang)
+                events = []
+                s = Mock()
+                s.shot.side_effect = lambda name: events.append(name)
+                u.click.side_effect = lambda **kw: events.append(kw["key"])
+                with patch("scenarios.alpha7.time.sleep", side_effect=lambda _: frame.update(index=1)):
+                    confirm_or_observe_install(u, s, "Claude Code")
+                self.assertEqual(events, ["install-review", "updates.list.start"])
+                u.click.assert_called_once_with(key="updates.list.start")
+                self.assertEqual(s.save.call_args.args[1]["job"]["name"], "Claude Code · — → 2.1.304")
+
+    def test_tool_install_missing_or_unrelated_state_never_skips_review(self):
+        from scenarios.alpha7 import confirm_or_observe_install
+        for rows in ([], [{"name": "opencode, Installing, 2.0.32", "type": "Button"}],
+                     [{"name": "Claude Code, Not installed, Installing is only a description", "type": "Button"}],
+                     [{"name": "Claude Code, Installing, 2.1.304", "type": "Text"}],
+                     [{"name": "Claude Code, Update failed, 2.1.304", "type": "Button"}],
+                     [{"name": "Full restart", "type": "Button"}]):
+            with self.subTest(rows=rows):
+                u, _ = self.install_ui([rows])
+                s = Mock()
+                with self.assertRaisesRegex(UiError, "neither its install review nor Installing row"):
+                    confirm_or_observe_install(u, s, "Claude Code", timeout=0)
+                u.click.assert_not_called()
+                s.shot.assert_not_called()
+
+    def test_tool_install_review_must_name_the_requested_tool(self):
+        from scenarios.alpha7 import confirm_or_observe_install
+        u, _ = self.install_ui([[
+            {"name": "Review updates", "type": "Text"},
+            {"name": "opencode · — → 2.0.32", "type": "Text"},
+        ]])
+        with self.assertRaises(UiError):
+            confirm_or_observe_install(u, Mock(), "Claude Code", timeout=0)
+        u.click.assert_not_called()
 
     @patch("ui.time.sleep")
     def test_toast_after_empty_frames_is_polled(self, sleep):
