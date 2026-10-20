@@ -9,10 +9,11 @@ use crate::design::icons::Icon;
 use crate::design::tokens::{size, space, text};
 use crate::design::widgets::value_chip::ValueChip;
 use crate::design::widgets::{
-    Badge, Button, Dropdown, IconButton, Segmented, Status, StatusDot, Text, dialog, dialog_body,
+    Badge, Button, Change, ChangeLabels, ChangeList, Dropdown, IconButton, Segmented, Status,
+    StatusDot, Text, dialog, dialog_body,
 };
 use crate::pages::{Action, Cx, Page, SuperbaSection, callout};
-use egui::{RichText, Ui};
+use egui::Ui;
 use superba_core::harness::*;
 use superba_core::i18n::Severity;
 
@@ -647,7 +648,7 @@ pub fn review(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     let response = dialog(
         ui.ctx(),
         egui::Id::unique("tool-plan"),
-        560.0_f32.min(screen.width() - 2.0 * space::XXL),
+        720.0_f32.min(screen.width() - 2.0 * space::XXL),
         |ui| {
             ui.label(Text::title(
                 cx.tr.t(if plan.kind == HarnessPlanKind::Restore {
@@ -658,20 +659,27 @@ pub fn review(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 cx.pal,
             ));
             dialog_body(ui, |ui| {
-                for c in &plan.changes {
-                    ui.label(RichText::new(format!("{} · {}", c.file, c.slot)).monospace());
-                    ui.add(
-                        egui::Label::new(Text::small(
-                            format!(
-                                "{} → {}",
-                                c.before.as_deref().unwrap_or("—"),
-                                c.after.as_deref().unwrap_or("—")
-                            ),
-                            cx.pal,
-                        ))
-                        .wrap(),
-                    );
-                }
+                let changes: Vec<Change> = plan
+                    .changes
+                    .iter()
+                    .map(|c| {
+                        let row = Change::new(
+                            format!("{} · {}", c.file, c.slot),
+                            c.before.clone(),
+                            c.after.clone(),
+                        );
+                        if c.drift {
+                            row.flag(cx.tr.t("tools.drifted"), Status::Warn)
+                        } else {
+                            row
+                        }
+                    })
+                    .collect();
+                let labels = ChangeLabels {
+                    none: cx.tr.t("tools.absent"),
+                    removed: cx.tr.t("tools.removed"),
+                };
+                ChangeList::new(&changes, &labels).show(ui);
                 crate::pages::shared::notices::notice_list(
                     ui,
                     cx,
