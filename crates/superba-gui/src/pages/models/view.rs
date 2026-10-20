@@ -96,6 +96,9 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         super::catalog::mode_row(ui, cx, state, &view);
         ui.add_space(space::XS);
     }
+    // What keeps the providers' models out of Codex, next to the mode
+    // (user bug 106).
+    super::catalog::guidance_row(ui, cx, state, &view, out);
     let body = ui.available_rect_before_wrap();
     // A narrow page (the 960 px window) puts the list source (the router's
     // filters) on a row of its own above the default model / effort / speed
@@ -214,21 +217,17 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
             });
         ui.label(Text::small(cx.tr.t("models.provider"), cx.pal));
         ui.add_space(8.0);
-        let r = ui
-            .add(
-                TextEdit::singleline(&mut state.query)
-                    .id(egui::Id::unique("models-search"))
-                    .hint_text(cx.tr.t("models.search"))
-                    .desired_width(if narrow { 120.0 } else { 170.0 })
-                    .margin(vec2(10.0, 5.0)),
-            )
-            .accessible_name(cx.tr.t("models.search"));
+        let r = crate::design::widgets::SearchField::new(
+            &mut state.query,
+            "models-search",
+            cx.tr.t("models.search"),
+            cx.tr.t("action.clear_search"),
+        )
+        .width(if narrow { 140.0 } else { 190.0 })
+        .show(ui);
         if state.focus_search {
             r.request_focus();
             state.focus_search = false;
-        }
-        if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            state.query.clear();
         }
     });
     if refresh {

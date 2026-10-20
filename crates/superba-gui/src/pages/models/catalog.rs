@@ -227,6 +227,7 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
     };
     let mode = catalog.settings.mode;
     let mut picked = None;
+    let mut fix_clicked = false;
     let enabled = state.catalog_save.is_none() && !cx.busy && !view.read_only;
     // The controls keep the width they used last frame (the prefixes button
     // is wider in English); the explanation takes the rest and wraps (prose
@@ -250,7 +251,36 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
                     ui.set_max_width(text_w);
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(Text::strong(cx.tr.t("models.router.title"), cx.pal));
-                    ui.add(egui::Label::new(Text::small(mode_help(cx.tr, mode), cx.pal)).wrap());
+                    if let Some(Guidance::Withheld(n)) = guidance(view, mode) {
+                        // What the default mode leaves out, and the fix, in
+                        // place of the mode's explanation (user bug 106).
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = space::XS;
+                            ui.add(crate::design::widgets::StatusDot::new(Status::Warn));
+                            ui.label(
+                                Text::small(
+                                    cx.tr.f("models.router.withheld_title", &[("n", &n)]),
+                                    cx.pal,
+                                )
+                                .color(cx.pal.status(Status::Warn)),
+                            )
+                            .on_hover_text(cx.tr.t("models.router.withheld_body"));
+                            let fix = ui
+                                .add(
+                                    Button::new(cx.tr.t("models.router.withheld_fix"))
+                                        .small()
+                                        .enabled(enabled),
+                                )
+                                .on_hover_text(cx.tr.t("models.router.withheld_tip"));
+                            if fix.clicked() {
+                                fix_clicked = true;
+                            }
+                        });
+                    } else {
+                        ui.add(
+                            egui::Label::new(Text::small(mode_help(cx.tr, mode), cx.pal)).wrap(),
+                        );
+                    }
                 });
             },
             |ui| {
@@ -287,6 +317,9 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
         r.center().y,
         egui::Stroke::new(1.0, cx.pal.border),
     );
+    if fix_clicked {
+        picked = Some(CatalogMode::Extended);
+    }
     if let Some(choice) = picked.filter(|m| *m != mode) {
         let mut settings = catalog.settings.clone();
         settings.mode = choice;
@@ -692,4 +725,111 @@ pub(super) fn list_problems(cx: &Cx<'_>, catalog: &RouterCatalogView) -> (Status
     out.extend(stale);
     out.extend(details);
     (status, out)
+}
+
+/// Height of a guidance row under the router model list (user bug 106).
+pub const GUIDANCE_H: f32 = 44.0;
+
+/// What keeps the providers' models out of Codex, with its one-click fix
+/// (user bug 106): Codex mode withholds them ("Switch to Codex + provider
+/// models"); a direct connection ignores the router model list entirely
+/// ("Turn on the local router") once the user picked a mode that adds
+/// models (`saved` is the stored mode). `None` when nothing does.
+pub fn guidance(view: &ModelsView, saved: CatalogMode) -> Option<Guidance> {
+    match &view.router_catalog {
+        Some(c) if c.settings.mode == CatalogMode::Codex && !c.withheld.is_empty() => {
+            Some(Guidance::Withheld(c.withheld.len()))
+        }
+        Some(_) => None,
+        None if !view.read_only && saved.extends() => Some(Guidance::Direct),
+        None => None,
+    }
+}
+
+/// See [`guidance`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Guidance {
+    /// Codex mode keeps this many provider models from Codex.
+    Withheld(usize),
+    /// A direct connection: the modes need the local router.
+    Direct,
+}
+
+/// The guidance row, when [`guidance`] has one.
+pub(super) fn guidance_row(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &mut State,
+    view: &ModelsView,
+    out: &mut Vec<crate::pages::Action>,
+) {
+    let saved = cx
+        .data
+        .profiles
+        .value
+        .as_ref()
+        .map(|p| p.settings.router.catalog.mode)
+        .unwrap_or_default();
+    let Some(g) = guidance(view, saved).filter(|g| *g == Guidance::Direct) else {
+        return;
+    };
+    let (title, body, fix, tip) = match g {
+        Guidance::Withheld(n) => (
+            cx.tr.f("models.router.withheld_title", &[("n", &n)]),
+            cx.tr.t("models.router.withheld_body"),
+            cx.tr.t("models.router.withheld_fix"),
+            cx.tr.t("models.router.withheld_tip"),
+        ),
+        Guidance::Direct => (
+            cx.tr.t("models.router.direct_title"),
+            cx.tr.t("models.router.direct_body"),
+            cx.tr.t("models.router.direct_fix"),
+            cx.tr.t("models.router.direct_tip"),
+        ),
+    };
+    let (_, row) = ui.allocate_space(egui::vec2(ui.available_width(), GUIDANCE_H));
+    let enabled = !cx.busy && state.catalog_save.is_none() && !view.read_only;
+    let clicked = ui
+        .add_enabled_ui(enabled, |ui| {
+            crate::design::widgets::AttentionRow {
+                id: 106,
+                title: &title,
+                detail: Some(&body),
+                label: &fix,
+                tip: &tip,
+                icon: Icon::Warning,
+                color: cx.pal.status(Status::Warn),
+            }
+            .show_at(ui, row)
+        })
+        .inner;
+    if !clicked || !enabled {
+        return;
+    }
+    match g {
+        Guidance::Withheld(_) => {
+            if let Some(catalog) = &view.router_catalog {
+                let mut settings = catalog.settings.clone();
+                settings.mode = CatalogMode::Extended;
+                save_settings(state, cx, settings);
+            }
+        }
+        Guidance::Direct => out.push(crate::pages::Action::Plan(Box::new(
+            crate::pages::router::backend::router_request(true),
+        ))),
+    }
+}
+
+/// The switch request that makes Codex read the router's changed model list
+/// at once (a hot restart of its core through the normal apply flow), when
+/// the page's provider is the applied one and goes through the router.
+pub(super) fn refresh_request(cx: &Cx<'_>, view: &ModelsView) -> Option<crate::pages::Action> {
+    (view.router_catalog.is_some()
+        && !cx.busy
+        && crate::pages::shared::providers::applied_profile_id(cx.data) == Some(&view.profile_id))
+    .then(|| {
+        crate::pages::Action::Plan(Box::new(superba_core::SwitchRequest::refresh_models(
+            view.profile_id.clone(),
+        )))
+    })
 }

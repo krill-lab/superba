@@ -1186,6 +1186,14 @@ async fn nothing_to_write_and_a_current_core_needs_no_restart() {
     *w.config.noop_plan.lock().unwrap() = true;
     let p = sw.plan(req("keyed")).await.unwrap();
     assert_eq!(p.primary, RestartKind::None);
+    // User bug 106: the router's model list changed (a mode, a model that
+    // passed its test). Nothing to write, but Codex must read the list again:
+    // its core restarts.
+    let p = sw
+        .plan(SwitchRequest::refresh_models(ProfileId::new("keyed")))
+        .await
+        .unwrap();
+    assert!(p.primary.is_hot(), "{:?}", p.primary);
 
     // A core older than the applied configuration still gets the restart.
     {

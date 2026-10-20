@@ -110,6 +110,7 @@ impl RouterServer {
         let port = config.listen_port;
         let budget = Budget::for_this_process(&config.tuning);
         let generation = Generation::build(1, config, &secrets, &budget)?;
+        crate::merged_catalog::attach_evidence(&generation, paths.as_ref().map(RouterPaths::dir));
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
         let listener = TcpListener::bind(addr).await.map_err(|e| Error::Network {
             url: format!("http://{addr}"),
@@ -828,7 +829,20 @@ async fn dispatch(
     } else if req.method() == http::Method::GET && rest.trim_end_matches('/') == "/models" {
         crate::catalog::handle(shared, req, rest, admission).await
     } else {
-        proxy::proxy_http(shared, req, rest, admission, proxy::Ingress::Codex).await
+        let generation = shared.current();
+        let responses =
+            generation.config.catalog.is_some() && proxy::is_responses_path(req.method(), &rest);
+        let mut answer =
+            proxy::proxy_http(shared, req, rest, admission, proxy::Ingress::Codex).await;
+        if responses
+            && let Ok(tag) =
+                http::HeaderValue::from_str(&crate::merged_catalog::models_etag(&generation))
+        {
+            // The router owns Codex's model list: an upstream's own tag
+            // would name a list Codex never fetched from here.
+            answer.headers_mut().insert("x-models-etag", tag);
+        }
+        answer
     }
 }
 

@@ -7,8 +7,9 @@ use serde_json::json;
 use superba_appctl::appx::canonical;
 use superba_appctl::install::{
     ENV_SUPERBA_APP_DIR, OwlAppIni, appimage_install, explicit_install, inspect_install,
-    parse_appx_application_id, parse_appx_packages_json, parse_codex_package_json,
-    parse_desktop_exec, parse_linux_package_metadata, parse_owl_app_ini, parse_plist_string, is_desktop_bundle_id,
+    is_desktop_bundle_id, parse_appx_application_id, parse_appx_packages_json,
+    parse_codex_package_json, parse_desktop_exec, parse_linux_package_metadata, parse_owl_app_ini,
+    parse_plist_string,
 };
 use superba_core::codex::ENV_SUPERBA_APP_PATH;
 use superba_core::{AppVariant, CodexVersion, MapEnv};
