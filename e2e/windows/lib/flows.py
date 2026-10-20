@@ -274,7 +274,7 @@ APP_SETUP_EXTRA_S = 480
 APP_SETUP_WAIT_S = 900
 
 
-def wait_switch_done(run, s, u, timeout=240, force_quit=True):
+def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=False):
     """Follows the switch overlay until it is gone; answers the force-quit question
     (Windows: ChatGPT not opened by Superba) when force_quit. Returns the phases seen.
 
@@ -294,6 +294,7 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
     extended = False
     names = []
     ended_survivors = False
+    confirmed_router_restart = False
     results = []
     result_patterns = [re.compile(p) for p in switch_result_patterns(u)]
 
@@ -305,6 +306,19 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
         for name in names:
             if name not in results and any(rx.search(name) for rx in result_patterns):
                 results.append(name)
+        if router_restart and u.L("confirm.title") in names:
+            reason = u.L("restart.reason.certificate_trust_changed")
+            if reason not in names or confirmed_router_restart:
+                s.ui_dump("unexpected-router-confirmation")
+                raise UiError("unexpected or repeated full-restart confirmation while enabling the router")
+            s.shot("router-certificate-confirm")
+            s.ui_dump("router-certificate-confirm")
+            s.check(u.exists(key="confirm.full_restart", type="Button", enabled=True),
+                    "explicit Full restart offered for the updated local router certificate")
+            u.click(key="confirm.full_restart", type="Button")
+            confirmed_router_restart = True
+            seen.append("[full restart: router certificate]")
+            continue
         still_running = u.L("decide.still_running.title")
         if still_running in names:
             s.info(f"switch dialog: {still_running}")
@@ -349,6 +363,11 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True):
             continue
         if time.time() - t0 > 3 and not any(rx.match(n) for rx in busy for n in names) \
                 and not any(n == u.L("confirm.title") for n in names):
+            # Planning may briefly leave an empty frame before the confirmation.
+            # A router-on caller must see the resulting action, not just no overlay.
+            if router_restart and not u.exists(key="router.turn_off", type="Button", enabled=True):
+                time.sleep(2)
+                continue
             if "wsl" in (run.session_snapshot or ""):
                 delayed = [n for n in names if re.search(r"(?i)timed? out|timeout|超时", n)]
                 if delayed:
@@ -623,6 +642,7 @@ def turn(run, t, marker, prefix="", expect_line=None, new_chat=False):
 # --------------------------------------------------------------------------- router
 def router_on(run, t, prefix=""):
     u = ui(run)
+    a = app(run)
     with t.step(prefix + "Router page: member gate, add Krill, turn on") as s:
         start_superba(run, s)
         u.page("router")
@@ -636,6 +656,7 @@ def router_on(run, t, prefix=""):
             u.click(name=u.L("router.eligibility.add", name="Krill"))
             time.sleep(2)
         s.check(bool(u.has_text(r"^Krill")), "Krill listed as a member")
+        before_main = a.main()
         u.click(key="router.banner.turn_on")
         time.sleep(2)
         if not getattr(run.opts, "model", None) and run.state.get("turn_models"):
@@ -645,8 +666,12 @@ def router_on(run, t, prefix=""):
                     "the plan says Codex keeps the model the PAT gave (user bug 58)", soft=True)
         s.ui_dump("router-plan")
         u.try_click(key="banner.switch_now")  # else the countdown runs out by itself
-        phases, names = wait_switch_done(run, s, u)
+        phases, names = wait_switch_done(run, s, u, router_restart=True)
         s.info(f"phases: {phases}")
+        if "[full restart: router certificate]" in phases:
+            after_main = a.wait_main(90, not_pid=(before_main or {}).get("pid"))
+            s.save("router-restart-processes.json", {"before": before_main, "after": after_main})
+            s.check(after_main is not None, "Full restart actually relaunched the app with a new main process")
         s.shot("router-on")
         cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
         m = re.search(r'openai_base_url = "http://127\.0\.0\.1:(\d+)/backend-api/codex"', cfg)
@@ -659,6 +684,9 @@ def router_on(run, t, prefix=""):
         inv = inventory(run)
         s.check(ROUTER_RUN_VALUE in inv["run_key"], f"HKCU Run value {ROUTER_RUN_VALUE}: {inv['run_key'].get(ROUTER_RUN_VALUE, '')[:120]!r}")
         s.check(any(p.startswith("superba-router.exe") for p in inv["processes"]), f"superba-router.exe running: {inv['processes']}")
+        # Reuse the request composer's total budget. The introduction can appear
+        # long after the first renderer frame (initially only Loading model…).
+        s.check(a.composer_ready(300), f"composer usable after router restart: {a.composer_error}")
         run.state["router_on"] = True
 
 

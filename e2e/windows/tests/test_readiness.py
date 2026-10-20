@@ -45,10 +45,10 @@ class ReadinessTests(unittest.TestCase):
 
     def test_composer_retries_renderer_timeout_and_unfocusable_composer(self):
         app = self.app()
-        app.eval = Mock(side_effect=[AgentError("renderer timed out"), False, True])
+        app.eval = Mock(side_effect=[AgentError("renderer timed out"), False, False, True])
         app.main = Mock(return_value={"pid": 1})
         self.assertTrue(app.composer_ready(timeout=20))
-        self.assertEqual(app.eval.call_count, 3)
+        self.assertEqual(app.eval.call_count, 4)
         self.assertEqual(self.clock.now, 6)
 
     def test_composer_waits_for_restarted_main(self):
@@ -66,6 +66,32 @@ class ReadinessTests(unittest.TestCase):
         self.assertFalse(app.composer_ready(timeout=6))
         self.assertIn("renderer timed out", app.composer_error)
         self.assertLessEqual(self.clock.now, 9)
+
+    def test_model_introduction_can_appear_after_loading_then_focus_is_rechecked(self):
+        app = self.app()
+        actions = []
+
+        def evaluate(expr, timeout):
+            actions.append(expr)
+            if expr == App.FOCUS_JS:
+                return self.clock.now >= 6
+            self.assertEqual(expr, App.KEEP_MODEL_JS)
+            return self.clock.now >= 3
+
+        app.eval = Mock(side_effect=evaluate)
+        self.assertTrue(app.composer_ready(timeout=10))
+        self.assertEqual(actions, [App.FOCUS_JS, App.KEEP_MODEL_JS, App.FOCUS_JS,
+                                  App.KEEP_MODEL_JS, App.FOCUS_JS])
+        self.assertEqual(self.clock.now, 6)
+        self.assertTrue(any("Continue with current model" in m for m in self.messages))
+
+    def test_answering_model_introduction_does_not_extend_deadline_or_prove_readiness(self):
+        app = self.app()
+        app.eval = Mock(side_effect=lambda expr, timeout: expr == App.KEEP_MODEL_JS)
+        self.assertFalse(app.composer_ready(timeout=7))
+        self.assertEqual(self.clock.now, 7)
+        self.assertIn("not focusable", app.composer_error)
+        self.assertLessEqual(app.eval.call_args.kwargs["timeout"], 1)
 
     def test_finished_sandbox_does_not_require_composer_before_onboarding(self):
         app = self.app()

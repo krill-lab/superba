@@ -266,6 +266,10 @@ class Ui:
     def texts(self):
         return [e["name"] for e in self.tree(patterns=False) if e["name"]]
 
+    def snapshot(self):
+        """Cached names and button bounds for observing a short-lived flow."""
+        return self.agent.call("uia.snapshot", timeout=30, **self.win)
+
     def has_text(self, pattern, timeout=0):
         rx = re.compile(pattern)
         end = time.time() + timeout

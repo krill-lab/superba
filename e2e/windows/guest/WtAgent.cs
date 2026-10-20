@@ -212,6 +212,7 @@ public static class WtAgent
             case "windows": return Windows(a);
             case "window": return WindowOp(a);
             case "uia.tree": return UiaTree(a);
+            case "uia.snapshot": return UiaSnapshot(a);
             case "uia.find": return UiaFind(a);
             case "uia.act": return UiaAct(a);
             case "click": return Click(a);
@@ -224,6 +225,7 @@ public static class WtAgent
             case "start": return Start(a);
             case "kill": return Kill(a);
             case "procs": return Procs(a);
+            case "proc.handles": return ProcessHandles(S(a, "name", "superba"));
             case "proc.integrity": return Integrity(I(a, "pid", 0));
             case "env.user": return UserEnv();
             case "file.read": return FileRead(a);
@@ -505,6 +507,40 @@ public static class WtAgent
             return o.Count < max;
         }, B(a, "raw", false));
         return o;
+    }
+
+    // One provider cache request, then local reads. A live property-by-property
+    // tree walk can take longer than a short migration while its UI is changing.
+    static object UiaSnapshot(Dictionary<string, object> a)
+    {
+        CacheRequest cache = new CacheRequest();
+        cache.TreeScope = TreeScope.Subtree;
+        cache.TreeFilter = Automation.RawViewCondition;
+        cache.AutomationElementMode = AutomationElementMode.None;
+        cache.Add(AutomationElement.NameProperty);
+        cache.Add(AutomationElement.ControlTypeProperty);
+        cache.Add(AutomationElement.BoundingRectangleProperty);
+        cache.Add(AutomationElement.IsEnabledProperty);
+        AutomationElement root = RootOf(a).GetUpdatedCache(cache);
+        List<Dictionary<string, object>> result = new List<Dictionary<string, object>>();
+        Stack<AutomationElement> pending = new Stack<AutomationElement>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            AutomationElement element = pending.Pop();
+            AutomationElement.AutomationElementInformation c = element.Cached;
+            System.Windows.Rect r = c.BoundingRectangle;
+            Dictionary<string, object> row = new Dictionary<string, object>();
+            row["name"] = c.Name;
+            row["type"] = c.ControlType.ProgrammaticName.Replace("ControlType.", "");
+            row["rect"] = r.IsEmpty ? null : new int[] { (int)r.X, (int)r.Y, (int)r.Width, (int)r.Height };
+            row["enabled"] = c.IsEnabled;
+            result.Add(row);
+            AutomationElementCollection children = element.CachedChildren;
+            if (children != null)
+                for (int i = children.Count - 1; i >= 0; i--) pending.Push(children[i]);
+        }
+        return result;
     }
 
     class Sel
@@ -942,12 +978,33 @@ public static class WtAgent
         return true;
     }
 
+    // Migration can finish inside one WMI enumeration. Read only the named
+    // process's handle count here; command lines and parent ids are not needed.
+    static object ProcessHandles(string name)
+    {
+        List<Dictionary<string, object>> result = new List<Dictionary<string, object>>();
+        foreach (Process process in Process.GetProcessesByName(name))
+        {
+            using (process)
+            {
+                try
+                {
+                    result.Add(new Dictionary<string, object> {
+                        { "pid", process.Id }, { "handles", process.HandleCount }
+                    });
+                }
+                catch (InvalidOperationException) { } // Process exited while sampled.
+            }
+        }
+        return result;
+    }
+
     static object Procs(Dictionary<string, object> a)
     {
         string nameRe = S(a, "name_re", null);
         List<Dictionary<string, object>> o = new List<Dictionary<string, object>>();
         using (ManagementObjectSearcher q = new ManagementObjectSearcher(
-            "SELECT ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine, CreationDate, SessionId FROM Win32_Process"))
+            "SELECT ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine, CreationDate, SessionId, HandleCount FROM Win32_Process"))
         {
             foreach (ManagementObject m in q.Get())
             {
@@ -960,6 +1017,7 @@ public static class WtAgent
                 i["path"] = Convert.ToString(m["ExecutablePath"]);
                 i["cmdline"] = Convert.ToString(m["CommandLine"]);
                 i["session"] = Convert.ToInt64(m["SessionId"]);
+                i["handles"] = Convert.ToInt64(m["HandleCount"]);
                 string cd = Convert.ToString(m["CreationDate"]);
                 if (!string.IsNullOrEmpty(cd)) i["started"] = ManagementDateTimeConverter.ToDateTime(cd).ToUniversalTime().ToString("o");
                 o.Add(i);

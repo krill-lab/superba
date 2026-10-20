@@ -256,6 +256,19 @@ class App:
     FOCUS_JS = ("(() => { const el = document.querySelector('.ProseMirror'); if (!el) return false;"
                 " el.focus(); return document.activeElement === el || el.contains(document.activeElement); })()")
 
+    KEEP_MODEL_JS = r"""(() => {
+      const visible = e => !!e && (e.offsetParent !== null || e.getClientRects().length > 0);
+      const dialogs = [...document.querySelectorAll('[role=dialog],dialog,[aria-modal=true]')];
+      for (const dialog of dialogs) {
+        if (!visible(dialog) || !/^Introducing\s+\S+/.test((dialog.innerText || '').trim())) continue;
+        const buttons = [...dialog.querySelectorAll('button,[role=button]')].filter(e =>
+          visible(e) && !e.disabled && e.getAttribute('aria-disabled') !== 'true' &&
+          (e.innerText || '').trim() === 'Continue with current model');
+        if (buttons.length === 1) { buttons[0].click(); return true; }
+      }
+      return false;
+    })()"""
+
     def composer_ready(self, timeout=FIRST_START_S, call_s=30):
         """Until the composer takes the focus (on a first start the Windows app keeps it
         disabled while "Finishing Windows setup" creates its sandbox, minutes).
@@ -272,12 +285,20 @@ class App:
         while True:
             tries += 1
             try:
-                if self.eval(self.FOCUS_JS, timeout=max(5, min(call_s, end - time.time()))):
+                remaining = end - time.time()
+                if remaining <= 0:
+                    return False
+                if self.eval(self.FOCUS_JS, timeout=min(call_s, remaining)):
+                    self.composer_error = None
                     if errors:
                         self.run.log(f"  composer usable after {tries} tries / {time.time() - t0:.0f} s"
                                      f" ({errors} renderer errors)")
                     return True
                 self.composer_error = "the composer is not focusable"
+                remaining = end - time.time()
+                if remaining > 0 and self.eval(self.KEEP_MODEL_JS, timeout=min(call_s, remaining)):
+                    self.run.log("  answered the visible model introduction: Continue with current model")
+                    # A click is not readiness. Recheck focus inside the same deadline.
             except (AgentError, AppError) as e:
                 errors += 1
                 self.composer_error = f"renderer did not answer: {e}"
@@ -290,7 +311,7 @@ class App:
                     self.run.log(f"  process list failed: {e2}")
             if time.time() >= end:
                 return False
-            time.sleep(3)
+            time.sleep(min(3, max(0, end - time.time())))
 
     # ------------------------------------------------------------- first-start setup
     def setup_procs(self):

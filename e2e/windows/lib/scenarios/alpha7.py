@@ -12,7 +12,7 @@ import time
 
 import flows
 from runner import scenario
-from ui import Ui
+from ui import Ui, UiError
 from vm import psq
 
 
@@ -176,6 +176,29 @@ def wait_install(run, s, tool, installed, timeout=900):
     s.check(False, f"{tool}: installed={installed} not reached within {timeout}s")
 
 
+def confirm_or_observe_install(u, s, name, timeout=20):
+    """Uncautioned installs start directly; review only an actual install dialog."""
+    end = time.monotonic() + timeout
+    installing = "^" + re.escape(f"{name}, {u.L('updates.list.installing')}") + r"(?:,|$)"
+    while True:
+        review = u.find(key="updates.list.confirm", type="Text")
+        if review:
+            job = u.wait(name_re="^" + re.escape(name + " · "), type="Text",
+                         timeout=max(0, end - time.monotonic()))
+            s.save("install-review.json", {"title": review, "job": job})
+            s.shot("install-review")
+            u.click(key="updates.list.start")
+            return
+        rows = u.find(name_re=installing, type="Button")
+        if rows:
+            s.save("install-started.json", rows)
+            s.shot("install-started")
+            return
+        if time.monotonic() >= end:
+            raise UiError(f"{name}: neither its install review nor Installing row appeared within {timeout}s")
+        time.sleep(0.25)
+
+
 def tool_install(t, tool, name):
     u = require_alpha7(t)
     run = t.run
@@ -190,9 +213,7 @@ def tool_install(t, tool, name):
         action = f"{u.L('updates.list.install')} {name}"
         u.reveal(name=action, type="Button")
         u.click(name=action)
-        u.wait(key="updates.list.confirm")
-        s.shot("install-review")
-        u.click(key="updates.list.start")
+        confirm_or_observe_install(u, s, name)
         installed = wait_install(run, s, tool, True)
         s.check(bool(installed["installs"][0].get("version")), "installed version matches the CLI inventory")
         u.reveal(name_re="^" + re.escape(name) + r",", type="Button")
