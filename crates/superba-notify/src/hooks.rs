@@ -33,6 +33,8 @@ use serde_json::{Value, json};
 use superba_core::notify::harness;
 use superba_core::{EventKind, NotifyEvent, Timestamp};
 
+mod windows;
+
 /// The words after the program in Codex's `notify` (and in Claude Code's
 /// hook command).
 pub const CODEX_NOTIFY_ARGS: [&str; 2] = ["notify", "codex"];
@@ -76,13 +78,7 @@ pub fn classify_notify(argv: &[String]) -> NotifyShape {
     if program.trim().is_empty() {
         return NotifyShape::Missing;
     }
-    let name = program
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(program)
-        .to_ascii_lowercase();
-    let ours_program = matches!(name.as_str(), "spb" | "spb.exe" | "superba" | "superba.exe");
-    if ours_program && rest.len() >= 2 && rest[0] == "notify" && rest[1] == "codex" {
+    if is_notify_program(program) && rest.len() >= 2 && rest[0] == "notify" && rest[1] == "codex" {
         let chained = match rest.get(2).map(String::as_str) {
             Some("--") => rest[3..].to_vec(),
             _ => Vec::new(),
@@ -93,6 +89,15 @@ pub fn classify_notify(argv: &[String]) -> NotifyShape {
         };
     }
     NotifyShape::Foreign(argv.to_vec())
+}
+
+fn is_notify_program(program: &str) -> bool {
+    let name = program
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    matches!(name.as_str(), "spb" | "spb.exe" | "superba" | "superba.exe")
 }
 
 /// Split `spb notify codex` arguments: `[--, chained...] <json>` (Codex
@@ -268,9 +273,8 @@ impl GenericPayload {
     }
 }
 
-/// Quote `program` for the shell that runs hook commands (`sh -c` /
-/// `$SHELL -lc` on Unix; Claude Code and Codex on Windows run them through a
-/// shell that accepts double quotes).
+/// Quote a program path. Quoting alone does not make a Windows hook executable
+/// in every shell; use [`hook_command`] to build a complete hook command.
 pub fn shell_quote(program: &str) -> String {
     // A plain path needs no quotes in any shell (and quotes would make
     // PowerShell read the path as a string, not a command).
@@ -294,6 +298,9 @@ pub fn shell_quote(program: &str) -> String {
 
 /// The command line of Superba's hook for `harness` (`spb notify hook <id>`).
 pub fn hook_command(program: &str, harness_id: &str) -> String {
+    if cfg!(windows) {
+        return windows::command(program, harness_id);
+    }
     format!(
         "{} {} {} {harness_id}",
         shell_quote(program),
@@ -328,25 +335,41 @@ pub fn claude_code_hooks(program: &str) -> Value {
 /// Superba's: its command runs `spb`/`superba` with `notify hook`.
 pub fn is_our_hook_command(command: &str) -> bool {
     let command = command.trim();
+    let our_args = |words: &[&str]| {
+        matches!(
+            words,
+            ["notify", "hook", harness::CODEX | harness::CLAUDE_CODE]
+        )
+    };
+    if let Some([program, notify, hook, harness_id]) = windows::argv(command) {
+        return is_notify_program(&program) && our_args(&[&notify, &hook, &harness_id]);
+    }
     // The program may be quoted ('…' or "…") because of spaces in its path.
     let (program, rest) = match command.chars().next() {
         Some(q @ ('\'' | '"')) => match command[1..].find(q) {
-            Some(end) => (&command[1..=end], &command[end + 2..]),
-            None => return false,
+            Some(end) if command[end + 2..].starts_with(char::is_whitespace) => {
+                (&command[1..=end], &command[end + 2..])
+            }
+            _ => return false,
         },
-        _ => command
-            .split_once(char::is_whitespace)
-            .unwrap_or((command, "")),
+        _ => {
+            let (program, rest) = command
+                .split_once(char::is_whitespace)
+                .unwrap_or((command, ""));
+            // Legacy generated unquoted paths contain no shell operators.
+            if !program
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"/._-+\\:".contains(&b))
+            {
+                return false;
+            }
+            (program, rest)
+        }
     };
-    let name = program
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(program)
-        .to_ascii_lowercase();
     let words: Vec<&str> = rest.split_whitespace().collect();
-    matches!(name.as_str(), "spb" | "spb.exe" | "superba" | "superba.exe")
-        && words.len() >= 2
-        && words[..2] == HOOK_ARGS
+    // User commands that chain, redirect or customize a hook are not ours to
+    // replace on reinstall (or remove on uninstall).
+    is_notify_program(program) && our_args(&words)
 }
 
 /// The Codex `config.toml` table for Superba's `PermissionRequest` hook
