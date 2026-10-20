@@ -27,7 +27,7 @@ use crate::descriptor::pi_asset;
 use crate::http::{self, Checksum};
 use crate::platform::Os;
 use crate::state::{InstalledRecord, ToolState};
-use crate::{Ctx, Detected, Op, archive, fsx, version};
+use crate::{Ctx, Detected, Op, archive, fsx, run, version};
 
 /// The npm package.
 pub const PACKAGE: &str = "@earendil-works/pi-coding-agent";
@@ -279,20 +279,11 @@ async fn install_archive(op: &Op<'_>) -> Result<ToolReport> {
     op.stage(ToolStage::Checking, None);
     crate::forget_versions();
     let exe = app_exe(cx);
-    let got = crate::probe_version(cx, &exe, &["--version"]).await;
-    op.log.line(format!(
-        "--version: {}",
-        got.as_deref().unwrap_or("no answer")
-    ));
-    if !got.as_deref().is_some_and(|g| version::same(g, &v)) {
-        return Err(Error::Process {
-            message: format!(
-                "{} reports {} after installing {v}",
-                exe.display(),
-                got.as_deref().unwrap_or("nothing")
-            ),
-        });
-    }
+    let cmd = cx
+        .cmd(&exe)
+        .args(["--version"])
+        .timeout(Duration::from_secs(20));
+    verify_version(op, &cmd, &v).await?;
     let notes = common::expose(op, "pi", &exe, &app_dir(cx))?;
     op.record(|s| {
         s.installed = Some(InstalledRecord {
@@ -303,6 +294,45 @@ async fn install_archive(op: &Op<'_>) -> Result<ToolReport> {
         });
     })?;
     Ok(op.report(Some(v), Some(exe), notes))
+}
+
+async fn verify_version(op: &Op<'_>, cmd: &run::Cmd, expected: &str) -> Result<()> {
+    // A newly extracted Windows pi can take longer than 20 s to start, while
+    // the next launch finishes in a few seconds. Retry only that timeout,
+    // once. Keep each failure in the operation log and honor cancellation.
+    // Installation must execute the program, even if detection cached a version.
+    let attempts = if op.cx.platform.os == Os::Windows {
+        2
+    } else {
+        1
+    };
+    for attempt in 1..=attempts {
+        op.log.line(format!(
+            "--version attempt {attempt}/{attempts} (deadline {} ms)",
+            cmd.timeout.as_millis()
+        ));
+        let out = match op.run_ok(cmd, ToolStage::Checking).await {
+            Err(Error::Timeout { .. }) if attempt < attempts => {
+                op.log
+                    .line("--version timed out; retrying once after the process tree ended");
+                continue;
+            }
+            result => result?,
+        };
+        let got = version::from_output(&format!("{}\n{}", out.stdout, out.stderr));
+        if !got.as_deref().is_some_and(|g| version::same(g, expected)) {
+            return Err(Error::Process {
+                message: format!(
+                    "{} reports {} after installing {expected}: {}",
+                    cmd.program.display(),
+                    got.as_deref().unwrap_or("no parseable version"),
+                    out.tail(6)
+                ),
+            });
+        }
+        return Ok(());
+    }
+    unreachable!("the last attempt returns its result")
 }
 
 async fn remove_ours(op: &Op<'_>) -> Result<ToolReport> {
@@ -462,4 +492,158 @@ async fn remove_managed(op: &Op<'_>) -> Result<ToolReport> {
     }
     fsx::remove_empty_dirs(&agent_bin, &cx.home.join(".pi").join("agent"));
     Ok(op.report(None, None, vec![kept()]))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::sync::Arc;
+
+    use superba_core::{
+        LocalContext, NetworkSettings, NoToolProgress, SharedToolProgress, ToolProgressSink,
+        ToolRequest,
+    };
+
+    use super::*;
+    use crate::log::OpLog;
+    use crate::platform::{Arch, Platform};
+    use crate::{NoHost, Sources, ToolManager};
+
+    struct Check {
+        root: tempfile::TempDir,
+        manager: ToolManager,
+        log: OpLog,
+        cmd: run::Cmd,
+    }
+
+    impl Check {
+        fn new(os: Os, script: &str) -> Self {
+            let root = tempfile::tempdir().unwrap();
+            let ctx = LocalContext::for_tests(root.path());
+            let manager = ToolManager::with(
+                &ctx,
+                NetworkSettings::default(),
+                Arc::new(NoHost),
+                Platform::new(os, Arch::X64),
+                Sources::default(),
+            );
+            let log = OpLog::begin(&ctx.data_dir, ToolId::Pi, "verify test");
+            let cmd = run::Cmd::new("/bin/sh")
+                .args(["-c", &format!("echo attempt >> attempts; {script}")])
+                .cwd(root.path())
+                .timeout(Duration::from_millis(200));
+            Self {
+                root,
+                manager,
+                log,
+                cmd,
+            }
+        }
+
+        async fn verify(&self, sink: &dyn ToolProgressSink) -> Result<()> {
+            let req = ToolRequest::new(ToolId::Pi, ToolOp::Install);
+            let op = Op {
+                cx: self.manager.ctx(),
+                req: &req,
+                det: &Detected::default(),
+                desc: crate::descriptor::descriptor(ToolId::Pi, &self.manager.ctx().platform),
+                channel: "latest".into(),
+                log: &self.log,
+                sink,
+            };
+            verify_version(&op, &self.cmd, "1.3.0").await
+        }
+
+        fn attempts(&self) -> usize {
+            std::fs::read_to_string(self.root.path().join("attempts"))
+                .unwrap_or_default()
+                .lines()
+                .count()
+        }
+
+        fn log(&self) -> String {
+            std::fs::read_to_string(self.log.path()).unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn windows_first_start_timeout_retries_and_logs_both_results() {
+        let check = Check::new(
+            Os::Windows,
+            "if [ ! -f ready ]; then : > ready; exec /bin/sleep 30; fi; echo 1.3.0",
+        );
+        check.verify(&NoToolProgress).await.unwrap();
+        assert_eq!(check.attempts(), 2);
+        let log = check.log();
+        assert!(log.contains("failed: timed out:"), "{log}");
+        assert!(log.contains("retrying once"), "{log}");
+        assert!(log.contains("| 1.3.0") && log.contains("exit: 0"), "{log}");
+    }
+
+    #[tokio::test]
+    async fn persistent_timeout_is_bounded_and_non_windows_is_not_retried() {
+        for (os, attempts) in [(Os::Windows, 2), (Os::Linux, 1)] {
+            let check = Check::new(os, "exec /bin/sleep 30");
+            let result =
+                tokio::time::timeout(Duration::from_secs(5), check.verify(&NoToolProgress))
+                    .await
+                    .expect("verification must be bounded");
+            assert!(matches!(result, Err(Error::Timeout { .. })), "{result:?}");
+            assert_eq!(check.attempts(), attempts);
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_exit_unparseable_and_wrong_versions_are_not_retried() {
+        for (script, detail) in [
+            ("echo 1.3.0; echo startup-failed >&2; exit 9", "exit code 9"),
+            ("echo not-ready", "no parseable version"),
+            ("echo 1.2.0", "reports 1.2.0 after installing 1.3.0"),
+        ] {
+            let check = Check::new(Os::Windows, script);
+            let err = check.verify(&NoToolProgress).await.unwrap_err();
+            assert!(err.to_string().contains(detail), "{err}");
+            assert_eq!(check.attempts(), 1);
+            assert!(!check.log().contains("retrying"));
+        }
+    }
+
+    #[tokio::test]
+    async fn wrong_version_after_timeout_still_fails() {
+        let check = Check::new(
+            Os::Windows,
+            "if [ ! -f ready ]; then : > ready; exec /bin/sleep 30; fi; echo 1.2.0",
+        );
+        let err = check.verify(&NoToolProgress).await.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("reports 1.2.0 after installing 1.3.0")
+        );
+        assert_eq!(check.attempts(), 2);
+    }
+
+    #[tokio::test]
+    async fn cancellation_ends_verification_without_retry() {
+        let check = Check::new(Os::Windows, "echo waiting; exec /bin/sleep 30");
+        let sink = SharedToolProgress::default();
+        let cancel = async {
+            loop {
+                if sink
+                    .latest()
+                    .is_some_and(|p| p.detail.as_deref() == Some("waiting"))
+                {
+                    sink.cancel();
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        };
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(check.verify(&sink), cancel)
+        })
+        .await
+        .expect("cancellation must stop the command");
+        assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
+        assert_eq!(check.attempts(), 1);
+        assert!(!check.log().contains("retrying"));
+    }
 }

@@ -409,10 +409,12 @@ impl Op<'_> {
 /// A program file: path, size, mtime.
 type FileKey = (PathBuf, u64, i128);
 
-/// Cached `--version` answers per program file.
-static VERSION_CACHE: OnceLock<Mutex<HashMap<FileKey, Option<String>>>> = OnceLock::new();
+/// Successful `--version` answers per program file. A failed startup says
+/// nothing about the file's version and must not poison later detection.
+static VERSION_CACHE: OnceLock<Mutex<HashMap<FileKey, String>>> = OnceLock::new();
 
-/// `program --version` (or `args`), parsed; cached per file size and mtime.
+/// `program --version` (or `args`), parsed; successful answers are cached
+/// per file size and mtime. Failed probes can be tried again.
 pub async fn probe_version(cx: &Ctx, program: &Path, args: &[&str]) -> Option<String> {
     probe_version_with(cx.cmd(program).args(args.iter().copied())).await
 }
@@ -429,7 +431,7 @@ pub(crate) async fn probe_version_with(cmd: run::Cmd) -> Option<String> {
     let key = (program.to_path_buf(), meta.len(), mtime);
     let cache = VERSION_CACHE.get_or_init(Default::default);
     if let Some(v) = cache.lock().unwrap_or_else(|p| p.into_inner()).get(&key) {
-        return v.clone();
+        return Some(v.clone());
     }
     let cmd = cmd.timeout(Duration::from_secs(20));
     let found = run::output(&cmd)
@@ -437,10 +439,12 @@ pub(crate) async fn probe_version_with(cmd: run::Cmd) -> Option<String> {
         .ok()
         .filter(run::Outcome::success)
         .and_then(|o| version::from_output(&format!("{}\n{}", o.stdout, o.stderr)));
-    cache
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .insert(key, found.clone());
+    if let Some(v) = &found {
+        cache
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(key, v.clone());
+    }
     found
 }
 
