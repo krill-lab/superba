@@ -214,7 +214,7 @@ impl Page {
 
     /// Minimum content height before the shell uses its short-window fallback.
     pub fn min_height(self) -> f32 {
-        if self.is_superba() || self == Self::Router {
+        if self.is_superba() || self == Self::Router || self == Self::ClaudeCode {
             // These settings pages already scroll their own body. Keep the
             // header fixed and avoid a second scroll area at 960×640.
             480.0

@@ -4,8 +4,8 @@
 //! of a real file (keys only the file has under Other, edited as JSON),
 //! writes edits back keeping every other key and its place (variables into
 //! `env`); the model rows merge the lists with ids added by hand; both pages
-//! render on the fake service with named controls, the Codex-only id marked
-//! and the local router route disabled.
+//! render on the fake service with named controls, the Codex-only id marked,
+//! a dropdown per slot and the local router route disabled.
 
 mod a11y_harness;
 mod support;
@@ -187,10 +187,22 @@ fn the_connection_page_shows_the_provider_models_and_the_disabled_router() {
         assert!(t.has("https://api.krill-code.net"), "{}", t.dump());
         // Every control has a name.
         assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
-        // Pick a model: its detail pane offers the slots.
-        let t = h.click(None, "gpt-6.1-sol");
-        assert!(t.has(&tr.t("claude.detail.use_as")), "{}", t.dump());
-        assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
+        // Every slot has a model dropdown, and every model a /model box.
+        let opus = tr.f(
+            "claude.slots.model_of",
+            &[("slot", &tr.t("claude.slot.opus"))],
+        );
+        assert!(
+            t.find(Some(Role::ComboBox), &opus).is_some(),
+            "{}",
+            t.dump()
+        );
+        let show = tr.f("claude.picker.show_named", &[("model", &"gpt-6.1-sol")]);
+        assert!(
+            t.find(Some(Role::CheckBox), &show).is_some(),
+            "{}",
+            t.dump()
+        );
     }
 }
 
