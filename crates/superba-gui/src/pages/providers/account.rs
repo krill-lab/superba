@@ -135,7 +135,8 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
     let mut range = None;
     ui.horizontal(|ui| {
         ui.set_min_height(size::CONTROL);
-        status_line(ui, cx, acc);
+        // Refresh and the range first (right to left): the account line left
+        // of them is shortened instead of drawn under them (960×640).
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let r = ui.add(
                 Button::new(cx.tr.t("action.refresh"))
@@ -164,6 +165,9 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
                     range = Some(d);
                 }
             }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                status_line(ui, cx, acc);
+            });
         });
     });
     if refresh {
@@ -281,7 +285,8 @@ fn status_line(ui: &mut Ui, cx: &Cx<'_>, acc: &AccountState) {
             );
         }
     }
-    ui.add(egui::Label::new(Text::small(parts.join(" · "), cx.pal)).truncate());
+    // The whole line on hover when it is shortened.
+    crate::pages::elided(ui, Text::small(parts.join(" · "), cx.pal));
 }
 
 /// Balance, expiry, cost of the range, average per day.

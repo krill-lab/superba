@@ -2,6 +2,8 @@
 
 use superba_core::{Line, LineId, Profile, Site};
 
+use crate::pages::{Action, Data};
+
 /// Lines of `site` in the profile's priority order; lines the profile does not list
 /// follow in the site's order.
 pub fn ordered_lines(site: &Site, profile: Option<&Profile>) -> Vec<Line> {
@@ -33,6 +35,54 @@ pub fn moved(mut ids: Vec<LineId>, from: usize, to: usize) -> Vec<LineId> {
         ids.insert(to, id);
     }
     ids
+}
+
+/// The line of `profile` Codex talks to in direct mode: the applied line while
+/// `profile` is the applied provider; `None` in router mode (the router picks
+/// per request) or for another provider.
+pub fn applied_line(data: &Data, profile: &Profile) -> Option<LineId> {
+    if data.router_enabled() {
+        return None;
+    }
+    let active = data.active_state()?;
+    if active.profile_id.as_ref() != Some(&profile.id) {
+        return None;
+    }
+    active.line_id.clone()
+}
+
+/// What moving entry `from` to `to` of `ids` (the lines of `profile` in their
+/// order) asks for (user bug 105). In direct mode Codex talks to one line, so
+/// for the provider in use a move that puts another line than the applied one
+/// first is the switch to that line: the same [`super::switch_action`] as the
+/// Overview's line popover (hot-switch countdown and confirmation; the switch
+/// saves the order when it is applied). Every other move saves the order: the
+/// line a switch to the provider tries first and the router's failover order,
+/// which a running router reloads at once (rline). `None` when nothing moves.
+pub fn reorder_action(
+    data: &Data,
+    profile: &Profile,
+    ids: Vec<LineId>,
+    from: usize,
+    to: usize,
+) -> Option<Action> {
+    let order = moved(ids.clone(), from, to);
+    if order == ids {
+        return None;
+    }
+    if let Some(applied) = applied_line(data, profile)
+        && order.first() != ids.first()
+        && let Some(first) = order.first()
+        && first != &applied
+    {
+        return Some(super::switch_action(data, profile, first));
+    }
+    let mut changed = profile.clone();
+    changed.set_line_priority(order);
+    Some(Action::SaveProfile {
+        profile: Box::new(changed),
+        key: None,
+    })
 }
 
 /// Human-readable priority, distinct from the latest observed upstream.

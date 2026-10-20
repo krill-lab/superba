@@ -184,10 +184,11 @@ fn provider_header_and_lines_actions_do_not_cover_labels() {
     for size in SIZES {
         for locale in [Locale::En, Locale::ZhCn] {
             let tr = Tr::new(locale);
-            let mut h = Harness::new(size, locale, fake(), true);
+            let mut h =
+                Harness::new(size, locale, fake(), true).min_height(Page::Providers.min_height());
             let mut state = providers::State::default();
             let f = h.settle(|ui, cx, out| providers::show(ui, cx, &mut state, out));
-            let title = visible_text(&f, &tr.t("providers.lines.title"));
+            let title = visible_text(&f, &tr.t("providers.lines.title_direct"));
             let probe = visible_text(&f, &tr.t("action.probe"));
             assert!(
                 !title.intersects(probe),
@@ -207,6 +208,63 @@ fn provider_header_and_lines_actions_do_not_cover_labels() {
                     "In use overlaps Switch at {size:?}"
                 );
             }
+        }
+    }
+}
+
+/// User bug 105 (with the ui-spec's 960×640 rule): the Connection tab is taller
+/// than the detail pane of a short window, so the pane scrolls (the page header
+/// and the list stay) and its last row is reachable; at the Fit sizes nothing
+/// scrolls.
+#[test]
+fn provider_connection_tab_scrolls_to_its_last_row_when_short() {
+    for size in SIZES {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let tr = Tr::new(locale);
+            let mut h =
+                Harness::new(size, locale, fake(), true).min_height(Page::Providers.min_height());
+            let mut state = providers::State::default();
+            let last = tr.t("providers.settings.open");
+            let reachable = |f: &Frame| {
+                f.clipped_texts
+                    .iter()
+                    .any(|(t, r, clip)| t == &last && clip.expand(0.5).contains_rect(*r))
+            };
+            // Two passes: the pane decides from the tab's height last frame.
+            h.settle(|ui, cx, out| providers::show(ui, cx, &mut state, out));
+            let mut f = h.settle(|ui, cx, out| providers::show(ui, cx, &mut state, out));
+            assert!(
+                !f.scrolled,
+                "{size:?} {locale:?}: the page itself never scrolls"
+            );
+            if size[1] >= 800.0 {
+                assert!(reachable(&f), "{size:?} {locale:?}: {}", f.all_text());
+                assert_eq!(f.scroll_areas, 0, "{size:?} {locale:?}");
+                continue;
+            }
+            // The detail pane (right of the list) scrolls.
+            for _ in 0..12 {
+                if reachable(&f) {
+                    break;
+                }
+                h.scroll_at(
+                    egui::pos2(f.rect.max.x - 120.0, f.rect.center().y),
+                    egui::vec2(0.0, -90.0),
+                );
+                f = h.settle(|ui, cx, out| providers::show(ui, cx, &mut state, out));
+            }
+            assert!(
+                reachable(&f),
+                "{size:?} {locale:?}: {:?} in {:?}",
+                f.clipped_texts
+                    .iter()
+                    .filter(|(t, _, _)| t == &last)
+                    .collect::<Vec<_>>(),
+                f.rect
+            );
+            assert_eq!(f.scroll_areas, 1, "{size:?} {locale:?}: one scroll area");
+            // The list column did not move.
+            visible_text(&f, &tr.t("providers.add.button"));
         }
     }
 }

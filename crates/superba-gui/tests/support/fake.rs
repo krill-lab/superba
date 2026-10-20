@@ -136,6 +136,8 @@ struct FakeState {
     busy_armed: bool,
     fail_armed: bool,
     router_installed: bool,
+    /// The upstream the router last used per member (`router_status`).
+    last_routes: BTreeMap<ProfileId, RouterLineRoute>,
     /// GH#5: what another tool changed (the overview's `external`).
     external: Option<superba_core::ExternalChange>,
 }
@@ -193,6 +195,12 @@ impl FakeService {
         st.app.hot_switch = HotSwitchStatus::Unavailable {
             reason: FullRestartReason::NoCdp,
         };
+    }
+
+    /// The upstream the router last used for `profile` (user bug 105: what
+    /// `router_status` reports as the member's `last_route`).
+    pub fn set_last_route(&self, profile: ProfileId, route: RouterLineRoute) {
+        self.state().last_routes.insert(profile, route);
     }
 
     /// GH#7: ChatGPT is installed but not running.
@@ -619,6 +627,7 @@ impl FakeState {
             busy_armed: options.busy_turns,
             fail_armed: options.fail_verification,
             router_installed: false,
+            last_routes: BTreeMap::new(),
             external: None,
         }
     }
@@ -1735,7 +1744,7 @@ impl SwitchService for FakeService {
                 .iter()
                 .map(|id| RouterMemberView {
                     protocols: Vec::new(),
-                    last_route: None,
+                    last_route: s.last_routes.get(id).cloned(),
                     profile_id: id.clone(),
                     name: s
                         .profiles

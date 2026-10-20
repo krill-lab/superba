@@ -219,9 +219,11 @@ impl Page {
             || self == Self::ClaudeCode
             || self == Self::Tools
             || self == Self::Models
+            || self == Self::Providers
         {
             // These settings pages already scroll their own body (Tools: its
-            // list and its detail; Models: its table pages instead). Keep the
+            // list and its detail; Models: its table pages instead; Providers:
+            // the detail pane, when its tab is taller than the pane). Keep the
             // header and footer fixed and avoid a second scroll area at 960×640,
             // where the pager would fall off the card.
             480.0
