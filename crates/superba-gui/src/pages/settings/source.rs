@@ -15,8 +15,8 @@ use superba_core::{
 };
 
 use super::model::{
-    Availability, Category, Change, Entry, EnumOption, Explanation, Item, Kind, Legacy, Model,
-    Pending, Stage, TargetInfo, TargetKey, Value,
+    Availability, Category, Change, Entry, EnumOption, Explanation, Freshness, Item, Kind, Legacy,
+    Model, NewKey, Pending, Release, Stage, TargetInfo, TargetKey, Value,
 };
 use crate::pages::Cx;
 use crate::runtime::ReadTask;
@@ -579,6 +579,66 @@ fn first_seen(store: &CatalogStore) -> BTreeMap<String, String> {
     out
 }
 
+/// Releases listed under "New in latest".
+pub const NEW_RELEASES: usize = 5;
+
+/// The newest `n` catalog releases (prereleases included), newest first, with
+/// the config keys each adds over the highest stable release below it: the
+/// "Config keys added" list of the catalog's change summaries
+/// (`dist/changes/codex-<v>.md`, which the generator computes the same way from
+/// the signed version files; the summaries themselves are not shipped).
+pub fn releases(store: &CatalogStore, n: usize, os: Os) -> Vec<Release> {
+    let mut versions: Vec<CodexVersion> = store.versions().cloned().collect();
+    versions.sort();
+    let mut out = Vec::new();
+    for (i, v) in versions.iter().enumerate().rev().take(n) {
+        let base = versions[..i].iter().rev().find(|b| b.pre.is_none());
+        let added = match (store.exact(v), base.map(|b| store.exact(b))) {
+            (Ok(Some(c)), Some(Ok(Some(b)))) => {
+                let old: BTreeSet<&str> = b.config_keys.iter().map(|k| k.path.as_str()).collect();
+                let mut added: Vec<NewKey> = c
+                    .config_keys
+                    .iter()
+                    .filter(|k| !old.contains(k.path.as_str()))
+                    .map(|k| new_key(store, &c, k, os))
+                    .collect();
+                added.sort_by(|a, b| a.path.cmp(&b.path));
+                added.dedup_by(|a, b| a.path == b.path);
+                added
+            }
+            _ => Vec::new(),
+        };
+        out.push(Release {
+            version: v.to_string(),
+            prerelease: v.pre.is_some(),
+            added,
+        });
+    }
+    out
+}
+
+/// A key `catalog` adds, with its text and stage (a feature's stage, else
+/// stable or deprecated).
+fn new_key(store: &CatalogStore, catalog: &VersionCatalog, k: &ConfigKey, os: Os) -> NewKey {
+    let feature = catalog.features.iter().find(|f| f.config_path == k.path);
+    let (name, name_zh, text) = match feature {
+        Some(f) => explanation(store.explain_feature(catalog, &f.key)),
+        None => explanation(store.explain_key(catalog, &k.path)),
+    };
+    let stage = match feature {
+        Some(f) => stage_of(f.stage_on(os)),
+        None if k.deprecated_hint => Stage::Deprecated,
+        None => Stage::Stable,
+    };
+    NewKey {
+        path: k.path.clone(),
+        name,
+        name_zh,
+        text,
+        stage,
+    }
+}
+
 /// Build the model from a catalog store (pure apart from the store's lazy parsing).
 pub fn build(
     store: &CatalogStore,
@@ -694,6 +754,7 @@ pub fn build(
                 since,
                 availability: availability(&|c: &VersionCatalog| c.feature(&key).is_some()),
                 host_support: host_support(&|c: &VersionCatalog| c.feature(&key).is_some()),
+                new_in: None,
                 common: common.get(path.as_str()).copied(),
                 legacy: None,
                 recommended: recommended
@@ -723,6 +784,7 @@ pub fn build(
                 name_zh,
                 common: common.get(path.as_str()).copied(),
                 host_support: host_support(&|c: &VersionCatalog| c.key(&path).is_some()),
+                new_in: None,
                 category: curation.category_of_key(&path).to_owned(),
                 stage: if k.deprecated_hint {
                     Stage::Deprecated
@@ -844,6 +906,7 @@ pub fn build(
             owner: None,
             common: None,
             host_support: Vec::new(),
+            new_in: None,
             path,
         });
     }
@@ -943,7 +1006,27 @@ pub fn build(
             );
         }
     }
+    let releases = releases(store, NEW_RELEASES, os);
+    for e in &mut entries {
+        e.new_in = releases
+            .iter()
+            .position(|r| r.added.iter().any(|k| k.path == e.path));
+    }
+    let freshness = Freshness {
+        newest: store.index().versions.last().map(|v| v.version.clone()),
+        generated: store.index().generated.clone(),
+        ahead: t
+            .infos
+            .iter()
+            .filter(|i| i.catalog_outdated)
+            .filter_map(|i| i.version.as_deref())
+            .filter_map(|v| CodexVersion::parse(v).ok())
+            .max()
+            .map(|v| v.to_string()),
+    };
     Ok(Model {
+        releases,
+        freshness,
         profile_id: profile.map(|p| p.id.clone()),
         profile_applied: applied,
         read_only_reason: profile.is_none().then_some("codex_settings.no_profile"),

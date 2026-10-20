@@ -27,6 +27,7 @@ pub mod files;
 pub mod files_highlight;
 pub mod files_view;
 pub mod model;
+mod news;
 mod rail;
 pub mod source;
 mod view;

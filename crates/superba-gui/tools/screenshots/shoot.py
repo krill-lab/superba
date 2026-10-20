@@ -600,6 +600,16 @@ def overview_actions(size):
     return act
 
 
+def click_action(x, y):
+    """Click one point of the window (a rail item), then park the pointer."""
+    def act(s):
+        focus(s)
+        s.input.click(x, y)
+        time.sleep(0.4)
+        s.input.park()
+    return act
+
+
 def wizard_action(query):
     """Open the setup wizard from the palette (a re-run with an existing provider)
     and go to its provider step."""
@@ -683,6 +693,9 @@ def main():
                     shots.append((f"{page}-{suffix}", page, theme, lang, 7.0, None, size))
                 shots.append((f"overview-actions-{suffix}", "overview", theme, lang, 7.0,
                               overview_actions(size), size))
+                # Codex settings, "New in latest" (third rail item).
+                shots.append((f"settings-new-{suffix}", "settings", theme, lang, 7.0,
+                              click_action(290, 240), size))
             shots.append((f"palette-dark-en{tail}", "overview", "dark", "en", 6.0,
                           palette_action("cdn"), size))
             shots.append((f"palette-light-zh{tail}", "overview", "light", "zh-CN", 6.0,
