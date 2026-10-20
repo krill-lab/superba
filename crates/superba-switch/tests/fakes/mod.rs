@@ -2513,7 +2513,11 @@ impl World {
     /// the app running with CDP + bridge and the overseas auth address (hot path).
     pub fn new() -> Self {
         let tmp = tempfile::tempdir().unwrap();
-        let ctx = LocalContext::for_tests(tmp.path());
+        let mut ctx = LocalContext::for_tests(tmp.path());
+        // Backups are sealed with a vault key; keep it in the temp data dir
+        // instead of the runner's Windows Credential Manager, where entries
+        // written by parallel tests intermittently read back as missing.
+        ctx.env = Arc::new(superba_core::MapEnv::new().with("SUPERBA_SECRET_BACKEND", "file"));
         let home = ctx.codex_home();
         let log: Log = Arc::new(Mutex::new(Vec::new()));
         let clock = Arc::new(ManualClock::new(Timestamp(T0)));
