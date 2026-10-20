@@ -197,7 +197,13 @@ fn claude_code_hook_entries_run_in_the_background() {
         assert_eq!(handler["type"], "command", "{event}");
         assert_eq!(handler["async"], true, "{event}");
         let cmd = handler["command"].as_str().unwrap();
-        assert!(cmd.ends_with(" notify hook claude-code"), "{cmd}");
+        assert_eq!(
+            cmd,
+            hooks::hook_command(
+                "/Applications/Superba.app/Contents/MacOS/spb",
+                "claude-code"
+            )
+        );
         assert!(is_our_hook_command(cmd), "{cmd}");
     }
     assert_eq!(

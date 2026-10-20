@@ -189,7 +189,19 @@ pub fn set_permission_hook(
     let ours = our_permission_handlers(&doc);
     if install {
         if !ours.is_empty() {
-            return Ok(None);
+            // Reinstall also repairs the command after a move or a quoting
+            // fix. Keep handler options, positions and the user's hooks intact.
+            // Codex validates its saved trust hash against the changed command.
+            let desired = hook_command(program, superba_core::notify::harness::CODEX);
+            let mut changed = false;
+            for (i, j) in ours {
+                let command = &mut doc["hooks"]["PermissionRequest"][i]["hooks"][j]["command"];
+                if command.as_str() != Some(desired.as_str()) {
+                    *command = value(desired.clone());
+                    changed = true;
+                }
+            }
+            return Ok(changed.then(|| doc.to_string()));
         }
         let hooks = doc
             .entry("hooks")

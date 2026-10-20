@@ -156,7 +156,9 @@ impl Home {
                 }
             }
             if let Some(root) = std::env::var_os("SystemRoot") {
-                paths.push(PathBuf::from(root).join("System32"));
+                let system32 = PathBuf::from(root).join("System32");
+                paths.push(system32.join("WindowsPowerShell/v1.0"));
+                paths.push(system32);
             }
         }
         cmd.env("PATH", std::env::join_paths(paths).unwrap());
@@ -216,6 +218,108 @@ fn add_telegram(home: &Home, sink: &Mock) {
         &[("TG_TOKEN", "123456:NOT-A-REAL-TOKEN")],
     );
     home.ok(&["notify", "set", "--enabled", "on"], &[]);
+}
+
+#[cfg(windows)]
+#[test]
+fn generated_windows_hooks_execute_unchanged_with_spaced_and_special_paths() {
+    use std::os::windows::process::CommandExt;
+
+    let home = Home::new();
+    let sink = Mock::sink();
+    add_telegram(&home, &sink);
+    home.ok(&["notify", "set", "--summary", "on", "--rate", "120"], &[]);
+    let mut shells = vec![
+        ("powershell", PathBuf::from("powershell.exe")),
+        ("cmd", PathBuf::from("cmd.exe")),
+    ];
+    if let Some(program_files) = std::env::var_os("ProgramFiles") {
+        let bash = PathBuf::from(program_files).join("Git/bin/bash.exe");
+        if bash.is_file() {
+            shells.push(("bash", bash));
+        }
+    }
+    let mut sent = 0;
+    for folder in [
+        "path with spaces",
+        "O'Brien $HOME %PATH% !test! & (x) `tick ; 中文 ‘smart’",
+    ] {
+        let expected = sent + 2 * shells.len();
+        let program = home.p(folder).join("spb.exe");
+        std::fs::create_dir_all(program.parent().unwrap()).unwrap();
+        std::fs::copy(env!("CARGO_BIN_EXE_spb"), &program).unwrap();
+        let env = [("SUPERBA_NOTIFY_PROGRAM", program.to_str().unwrap())];
+        home.ok(&["notify", "install", "codex", "--approvals"], &env);
+        let installed = home.config();
+        home.ok(&["notify", "install", "codex", "--approvals"], &env);
+        assert_eq!(home.config(), installed);
+        let status: Value =
+            serde_json::from_str(&home.ok(&["notify", "status", "--json"], &env)).unwrap();
+        for hook in status["hooks"]["hooks"].as_array().unwrap() {
+            let Some(argv) = hook["command"].as_array().filter(|a| a.len() == 1) else {
+                continue;
+            };
+            let command = argv[0].as_str().unwrap();
+            for (shell, executable) in &shells {
+                let summary = format!("quote regression {sent}: 中文 é 👋 \" $ &\n第二行");
+                let payload = json!({"hook_event_name":"StopFailure", "session_id":format!("quote-{sent}"),
+                    "error":"test_failure", "last_assistant_message":summary});
+                let mut cmd = Command::new(executable);
+                home.env(&mut cmd);
+                match *shell {
+                    "powershell" => {
+                        cmd.args([
+                            "-NoProfile",
+                            "-NonInteractive",
+                            "-Command",
+                            &format!("{command}; exit $LASTEXITCODE"),
+                        ]);
+                    }
+                    "cmd" => {
+                        cmd.args(["/d", "/s", "/c"])
+                            .raw_arg(format!("\"{command}\""));
+                    }
+                    _ => {
+                        cmd.args(["-c", command]);
+                    }
+                }
+                let mut child = cmd
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .unwrap();
+                child
+                    .stdin
+                    .take()
+                    .unwrap()
+                    .write_all(serde_json::to_string_pretty(&payload).unwrap().as_bytes())
+                    .unwrap();
+                let output = child.wait_with_output().unwrap();
+                assert!(
+                    output.status.success() && output.stdout.is_empty() && output.stderr.is_empty(),
+                    "{shell} {folder}: {output:?}"
+                );
+                sent += 1;
+                let hits = sink.wait_for(sent, Duration::from_secs(10));
+                assert_eq!(hits.len(), sent, "{shell} {folder}: missing hook payload");
+                assert!(
+                    hits[sent - 1].body["text"]
+                        .as_str()
+                        .unwrap()
+                        .contains(&summary.replace('&', "&amp;").replace('\n', " ")),
+                    "stdin JSON must survive {shell}: {hits:?}"
+                );
+            }
+        }
+        assert_eq!(
+            sent, expected,
+            "Codex and Claude Code commands must both run"
+        );
+        home.ok(&["notify", "uninstall", "codex", "--approvals"], &env);
+        assert!(!home.config().contains("notify hook"));
+        assert!(!home.config().contains("EncodedCommand"));
+    }
 }
 
 #[test]
