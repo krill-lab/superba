@@ -291,6 +291,17 @@ pub struct ToolRow {
     /// Remarks (several installs, prerequisites, a delegated method).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<Notice>,
+    /// The program the user chose for the command (「指定路径…」).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_path: Option<PathBuf>,
+    /// Where Superba looked for the command (`PATH: …`, `Homebrew: …`),
+    /// set when nothing was found.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub searched: Vec<String>,
+    /// How a new install is made when it differs from the usual method
+    /// (`homebrew`), or why the usual method is used instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_method: Option<LocalizedText>,
 }
 
 impl ToolRow {
@@ -400,6 +411,10 @@ pub struct ToolSettingsChange {
     /// Turn "Superba manages updates" on (the tool's own updater off) or off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manage_updates: Option<bool>,
+    /// Use this program for the command (checked with `--version` first);
+    /// an empty path goes back to searching for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_path: Option<PathBuf>,
 }
 
 /// Stage of a tool operation.
