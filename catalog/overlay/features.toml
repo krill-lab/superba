@@ -44,6 +44,11 @@ zh_name = "API key 模型发现"
 zh = "使用 API key 认证时，从服务端拉取可用模型目录，用于模型选择等处；关闭后不使用拉取到的目录。只对未自定义 base URL 的官方 OpenAI 接口，或配置了 `model_catalog_url` 的模型供应商生效。0.161 起为稳定功能并默认开启。"
 zh_basis = ""
 
+["feature:app_server_websocket_compression"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:apply_patch_freeform"]
 en = ""
 en_hash = ""
@@ -387,6 +392,11 @@ zh_name = "执行端能力发现"
 zh = "通过一次高层的 exec-server RPC 发现所选根目录中的插件与技能清单（manifest），代替逐项扫描；文件系统受限的沙箱环境无论是否开启都会使用这种方式。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:executor_capability_discovery_v2"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:experimental_windows_sandbox"]
 en = ""
 en_hash = ""
@@ -641,6 +651,11 @@ zh_name = "MCP OAuth 协调刷新"
 zh = "MCP 服务器的 OAuth 令牌改由 MCP 客户端（RMCP）通过 Codex 配置的凭据存储来协调刷新，而不是沿用原有的刷新与保存流程。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:mcp_tool_list_changed"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:memories"]
 en = ""
 en_hash = ""
@@ -689,6 +704,11 @@ en_hash = ""
 zh_name = "子代理继承动态工具"
 zh = "多代理 v2 中新派生的子代理继承客户端定义的动态工具。开发中，默认关闭。"
 zh_basis = ""
+
+["feature:multi_env_copy_file"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:network_proxy"]
 en_name = "Network proxy"
@@ -1037,6 +1057,11 @@ zh_name = "子代理默认上下文限制"
 zh = "子代理改用各自模型默认的上下文窗口和自动压缩阈值，不再继承父会话中设置的 `model_context_window` 与 `model_auto_compact_token_limit`。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:subagent_thread_environments"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:system_proxy_fallback"]
 en = ""
 en_hash = ""
@@ -1197,6 +1222,11 @@ en_hash = ""
 zh_name = "本地图片查看"
 zh = "启用内置的本地图片查看工具，让模型可以把本地图片文件加载进上下文查看。默认开启。"
 zh_basis = ""
+
+["feature:wake_on_agent_messages"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:web_search_cached"]
 en = ""

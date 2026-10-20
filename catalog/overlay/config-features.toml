@@ -201,9 +201,9 @@ zh = "Guardian v2 后台分类器以 `conversation` 模式运行时会保留历�
 zh_basis = "8584143d962173b0"
 
 ["config:features.guardianv2.async_classifier_mode"]
-en = "Classifier experiment override. Otherwise use the model default, then snapshots."
-en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
-en_hash = "e4713b5d224eec23"
+en = "Classifier mode override. Otherwise use the model default, then conversation."
+en_source = "openai/codex rust-v0.164.0-alpha.7: codex-rs/core/config.schema.json"
+en_hash = "61c30bbee8280e1e"
 zh_name = "后台分类器模式"
 zh = "覆盖 Guardian v2 后台风险分类器的实验模式：`snapshot`（每次单独发送当前快照）或 `conversation`（在持续的分类会话中累积历史）。未设置时先用模型目录的默认值，再回退到 `snapshot`。"
 zh_basis = "e4713b5d224eec23"

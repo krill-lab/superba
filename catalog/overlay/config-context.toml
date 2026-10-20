@@ -197,9 +197,9 @@ zh = "设为 `true` 时，会话一旦用到外部上下文来源（如 MCP 工�
 zh_basis = "09ca57e709a71cbe"
 
 ["config:memories.dual_write"]
-en = "Generate both versions while the selected version supplies context."
-en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
-en_hash = "039f8b493e501f8a"
+en = "Generate both versions while v1 is selected; v2 runs alone after cutover."
+en_source = "openai/codex rust-v0.164.0-alpha.7: codex-rs/core/config.schema.json"
+en_hash = "2e8d96e0d78d8c26"
 zh_name = "双版本同时生成"
 zh = "同时运行 `v1` 和 `v2` 两套记忆生成流程，但只有 `memories.version` 选中的版本提供给模型。默认 `false`。"
 zh_basis = "039f8b493e501f8a"

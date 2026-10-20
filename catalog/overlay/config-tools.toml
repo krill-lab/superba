@@ -205,6 +205,11 @@ zh_name = "压缩后钩子"
 zh = "上下文压缩完成后运行的钩子，`matcher` 匹配触发方式 `manual`（手动压缩）或 `auto`（自动压缩）。钩子要求停止时，当前轮次会被中止。"
 zh_basis = ""
 
+["config:hooks.PostModelRequest"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["config:hooks.PostToolUse"]
 en = ""
 en_hash = ""
@@ -218,6 +223,11 @@ en_hash = ""
 zh_name = "压缩前钩子"
 zh = "即将压缩上下文时运行的钩子，`matcher` 匹配 `manual` 或 `auto`。钩子要求停止时不进行本次压缩，并中止当前轮次。"
 zh_basis = ""
+
+["config:hooks.PreModelRequest"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["config:hooks.PreToolUse"]
 en = ""
@@ -288,6 +298,12 @@ en_hash = ""
 zh_name = "启用此钩子"
 zh = "设为 `false` 可停用该钩子，未设置时视为启用。管理员托管的钩子和内置钩子不受此项影响。"
 zh_basis = ""
+
+["config:hooks.state.<name>.trusted_content_hash"]
+en = "Approved plugin contents; kept separate for declaration-only clients."
+en_source = "openai/codex rust-v0.164.0-alpha.7: codex-rs/core/config.schema.json"
+en_hash = "2fc85240680838d7"
+zh = ""
 
 ["config:hooks.state.<name>.trusted_hash"]
 en = ""
