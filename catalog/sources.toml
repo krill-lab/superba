@@ -5,6 +5,9 @@ repo = "openai/codex"
 floor = "0.155.0"
 # Include every alpha tag >= floor (they are frequent; normally off).
 prereleases = false
+# Include the newest prerelease while it is ahead of every stable release (rolls
+# forward: each new alpha replaces the previous one; the stable tag replaces it).
+latest_prerelease = true
 # Prereleases included anyway: the builds the desktop app bundles.
 # 0.162.0-alpha.17.2: ChatGPT/Codex desktop app 26.1007 (26.1007.21434, 26.1007.71326).
 # 0.163.0-alpha.10.2: desktop app 26.1013 (26.1013.31256, 26.1013.40934).

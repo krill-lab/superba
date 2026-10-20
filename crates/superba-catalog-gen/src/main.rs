@@ -191,7 +191,8 @@ fn run(cli: Cli) -> Result<()> {
                 (None, Some(f)) => git::tags_from_ls_remote(&std::fs::read_to_string(f)?),
                 (None, None) => bail!("pass --git or --ls-remote"),
             };
-            let sources = dist::Sources::load(cat)?;
+            let versions: Vec<CodexVersion> = tags.iter().map(|(v, _)| v.clone()).collect();
+            let sources = dist::Sources::load(cat)?.resolve(&versions)?;
             let have: Vec<CodexVersion> = dist::dist_versions(cat)?
                 .into_iter()
                 .map(|(v, _)| v)

@@ -11,7 +11,7 @@ English) explanations, the feeds, and how changes are reviewed and signed.
 
 | Path | Written by | Contents |
 |---|---|---|
-| `sources.toml` | people | Which `openai/codex` releases are included (floor, extra prereleases). |
+| `sources.toml` | people | Which `openai/codex` releases are included (floor, extra prereleases, `latest_prerelease`: the newest alpha while it is ahead of every stable release). |
 | `curation.toml` | people | Settings categories, platform hints and the "Common" list (`[common]`); the schema has none of them. |
 | `dist/codex-<version>.json` | generator | One Codex release: every config key, feature and legacy alias, with official upstream text only. |
 | `dist/changes/codex-<version>.md` | generator | What changed against the previous stable release. |
