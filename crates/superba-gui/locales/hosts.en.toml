@@ -64,10 +64,6 @@ reconnect = "Reconnect this host in the app for changes to take effect"
 title = "No remote hosts"
 body = "The ChatGPT desktop app doesn't know any remote host yet. Hosts you add in the app appear here."
 
-[hosts.palette]
-sync = "Sync settings to {host}"
-sync_detail = "Push this computer's Codex settings, filtered by the host's Codex version"
-
 [hosts.syncdlg]
 title = "Sync settings to {host} · codex {version}"
 title_plain = "Sync settings to {host}"

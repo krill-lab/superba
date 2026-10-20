@@ -27,7 +27,7 @@ use superba_core::{
 
 use super::shared::hosts as names;
 use super::shared::loading;
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, empty_state, error_text};
+use super::{Action, Cx, Page, PageStatus, empty_state, error_text};
 use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
@@ -994,25 +994,6 @@ fn unreachable(ui: &mut Ui, cx: &Cx<'_>, host: &HostEntry, e: &Error) -> bool {
         ),
         &cx.tr.t("sessions.unreachable_body"),
     )
-}
-
-/// Command palette entries: show the sessions of each remote SSH host.
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let _ = state;
-    hosts(cx)
-        .into_iter()
-        .filter(|h| h.kind.is_managed())
-        .map(|h| PaletteItem {
-            title: cx.tr.f("sessions.palette.host", &[("host", &h.label)]),
-            detail: None,
-            keywords: vec!["sessions".into(), h.label.clone()],
-            group: PaletteGroup::Navigate,
-            action: Action::PageCommand {
-                page: Page::Sessions,
-                command: format!("host:{}", h.id),
-            },
-        })
-        .collect()
 }
 
 /// Run a command addressed to this page (see the module docs).

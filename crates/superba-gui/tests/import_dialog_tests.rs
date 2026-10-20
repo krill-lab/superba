@@ -352,7 +352,7 @@ async fn importing_from_the_providers_page_saves_once_and_offers_a_switch() {
 }
 
 #[tokio::test]
-async fn the_add_dialog_and_the_palette_open_the_import_dialog() {
+async fn the_add_dialog_and_the_import_command_open_the_import_dialog() {
     let service = fake();
     let data = data_of(&service).await;
     let svc: Arc<dyn SwitchService> = service.clone();
@@ -367,19 +367,12 @@ async fn the_add_dialog_and_the_palette_open_the_import_dialog() {
     };
     assert!(h.click_text("从其他工具导入…", &mut page));
     assert!(state.add.is_none() && state.import.is_some());
-    let mut items = Vec::new();
+    let mut out = Vec::new();
     h.frame(Vec::new(), &mut |ui| {
         let cx = cx(ui, &tr, &data, &svc, &h.fonts);
-        items = providers::palette(&cx, &state);
+        providers::command(&mut state, &cx, "import", &mut out);
     });
-    let import = items
-        .iter()
-        .find(|i| i.title == "从其他工具导入供应商")
-        .unwrap();
-    assert!(matches!(
-        &import.action,
-        Action::PageCommand { page: Page::Providers, command } if command == "import"
-    ));
+    assert!(state.import.is_some());
 }
 
 #[tokio::test]

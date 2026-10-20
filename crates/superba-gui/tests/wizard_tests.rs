@@ -417,14 +417,7 @@ async fn every_entry_point_opens_the_wizard_with_an_existing_profile() {
             out.iter().any(|a| matches!(a, Action::StartWizard)),
             "Preferences ({locale:?}): {out:?}"
         );
-        // Command palette: "Run setup".
-        let items = superba_gui::app::shell_palette(&tr, &data);
-        let item = items
-            .iter()
-            .find(|i| i.title == tr.t("palette.run_wizard"))
-            .expect("palette entry");
-        assert!(matches!(item.action, Action::StartWizard));
-        // Overview ⋯ menu.
+        // The `wizard` page command (tray, deep links).
         let mut out = Vec::new();
         with_cx(&data, &dyn_service, locale, |cx| {
             overview::command(&mut overview::State::default(), cx, "wizard", &mut out);

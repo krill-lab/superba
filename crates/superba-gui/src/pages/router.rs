@@ -49,7 +49,7 @@ use superba_core::{ClearRequest, RouterStatsSettings, RouterView, Timestamp};
 
 use self::backend::RouterBackend;
 use self::model::{Candidate, Mode, Snapshot};
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, page_header};
+use super::{Action, Cx, Page, PageStatus, page_header};
 use crate::design::fonts::{Weight, font};
 use crate::design::tokens::{space, text};
 use crate::design::widgets::log_table::elided;
@@ -764,133 +764,6 @@ pub fn status(state: &State) -> PageStatus {
 /// Dialogs of the Usage page (the two pages share the dialog slot).
 pub fn usage_status(state: &State) -> PageStatus {
     status(state)
-}
-
-fn page_command(page: Page, command: &str) -> Action {
-    Action::PageCommand {
-        page,
-        command: command.into(),
-    }
-}
-
-/// Command palette entries: router mode and the stats line (Router), the Usage
-/// tabs and recording (Usage).
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let on = mode(cx).is_router();
-    let members = eligibility::has_members(cx, state);
-    let ready = members && eligibility::has_eligible_member(cx, state);
-    let keywords = || vec!["router".into(), "failover".into(), "proxy".into()];
-    let mut items = Vec::new();
-    if !on && !ready {
-        // Nothing to turn on yet: the Router page explains how to add members
-        // (or why none can carry traffic), as the disabled 开启 does.
-        items.push(PaletteItem {
-            title: cx.tr.t("router.palette.setup"),
-            detail: Some(cx.tr.t(if members {
-                "router.eligibility.none"
-            } else {
-                "router.needs_member"
-            })),
-            keywords: keywords(),
-            group: PaletteGroup::Router,
-            action: Action::Go(Page::Router),
-        });
-    } else {
-        let (title, command) = if on {
-            ("router.palette.off", "off")
-        } else {
-            ("router.palette.on", "on")
-        };
-        items.push(PaletteItem {
-            title: cx.tr.t(title),
-            detail: Some(cx.tr.t("router.palette.detail")),
-            keywords: keywords(),
-            group: PaletteGroup::Router,
-            action: page_command(Page::Router, command),
-        });
-    }
-    items.push(PaletteItem {
-        title: cx.tr.t("router.palette.doctor"),
-        detail: Some(cx.tr.t("router.doctor.hint")),
-        keywords: vec![
-            "router".into(),
-            "doctor".into(),
-            "diagnostics".into(),
-            "诊断".into(),
-        ],
-        group: PaletteGroup::Router,
-        action: page_command(Page::Router, "doctor"),
-    });
-    let stats = state.stats_settings(cx);
-    let entries: [(Page, &str, &str, Vec<String>); 5] = [
-        (
-            Page::Usage,
-            "usage.palette.open_recent",
-            "tab:recent",
-            vec![
-                "requests".into(),
-                "log".into(),
-                "usage".into(),
-                "请求记录".into(),
-                "用量".into(),
-            ],
-        ),
-        (
-            Page::Usage,
-            "usage.palette.open_active",
-            "tab:active",
-            vec!["requests".into(), "in flight".into(), "usage".into()],
-        ),
-        (
-            Page::Usage,
-            "usage.palette.open_stats",
-            "tab:stats",
-            vec![
-                "statistics".into(),
-                "cost".into(),
-                "usage".into(),
-                "统计".into(),
-            ],
-        ),
-        (
-            Page::Router,
-            if stats.line.enabled {
-                "router.palette.stats_off"
-            } else {
-                "router.palette.stats_on"
-            },
-            if stats.line.enabled {
-                "stats_line:off"
-            } else {
-                "stats_line:on"
-            },
-            vec!["stats line".into(), "tok/s".into(), "统计行".into()],
-        ),
-        (
-            Page::Router,
-            if stats.record {
-                "router.palette.pause_recording"
-            } else {
-                "router.palette.resume_recording"
-            },
-            if stats.record {
-                "record:off"
-            } else {
-                "record:on"
-            },
-            vec!["recording".into(), "记录".into()],
-        ),
-    ];
-    for (page, title, command, keywords) in entries {
-        items.push(PaletteItem {
-            title: cx.tr.t(title),
-            detail: None,
-            keywords,
-            group: PaletteGroup::Router,
-            action: page_command(page, command),
-        });
-    }
-    items
 }
 
 /// Commands both pages understand: `refresh` reloads, `stats_line:on|off` and

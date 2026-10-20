@@ -267,10 +267,3 @@ dismiss = "关闭提示"
 [codex_editor.toast]
 saved = "已保存 {file}。"
 saved_backup = "已保存 {file}；之前的版本在“备份”里。"
-
-[codex_editor.palette]
-backups = "从备份还原 {file}"
-backups_detail = "Codex 文件 · 每份备份及其差异"
-config = "编辑 config.toml"
-auth = "编辑 auth.json"
-detail = "Codex 文件 · 检查、格式化、备份"

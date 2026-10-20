@@ -9,7 +9,7 @@ pub mod windows_app;
 
 use crate::design::widgets::Status;
 use crate::pages::router::db::Loader;
-use crate::pages::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, error_text};
+use crate::pages::{Action, Cx, PageStatus, error_text};
 use crate::runtime::ReadTask;
 use egui::Ui;
 pub use items::{UpdateItem, UpdateStatus};
@@ -303,52 +303,6 @@ impl State {
             service.save_settings(settings).await
         }));
     }
-}
-
-/// Command palette entries.
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let mut items = vec![PaletteItem {
-        title: cx.tr.t("updates.palette.check_superba"),
-        detail: None,
-        keywords: vec![
-            "superba".into(),
-            "update".into(),
-            "upgrade".into(),
-            "更新".into(),
-        ],
-        group: PaletteGroup::Commands,
-        action: Action::PageCommand {
-            page: Page::Superba(crate::pages::SuperbaSection::Updates),
-            command: "check_superba".into(),
-        },
-    }];
-    items.push(PaletteItem {
-        title: cx.tr.t("updates.palette.check"),
-        detail: None,
-        keywords: vec!["update".into(), "version".into(), "更新".into()],
-        group: PaletteGroup::Commands,
-        action: Action::PageCommand {
-            page: Page::Superba(crate::pages::SuperbaSection::Updates),
-            command: "check".into(),
-        },
-    });
-    if state.view.value.as_ref().is_some_and(|v| {
-        v.cli
-            .iter()
-            .any(|r| matches!(r.action, CliUpdateAction::Install { .. }))
-    }) {
-        items.push(PaletteItem {
-            title: cx.tr.t("updates.palette.update_cli"),
-            detail: None,
-            keywords: vec!["codex".into(), "cli".into(), "update".into()],
-            group: PaletteGroup::Commands,
-            action: Action::PageCommand {
-                page: Page::Superba(crate::pages::SuperbaSection::Updates),
-                command: "update_cli".into(),
-            },
-        });
-    }
-    items
 }
 
 /// Run a command addressed to this page: `check`, `update_cli` (update the

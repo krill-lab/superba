@@ -268,10 +268,3 @@ dismiss = "Dismiss"
 [codex_editor.toast]
 saved = "Saved {file}."
 saved_backup = "Saved {file}; the previous version is in Backups."
-
-[codex_editor.palette]
-backups = "Restore {file} from a backup"
-backups_detail = "Codex files · every backup with a diff"
-config = "Edit config.toml"
-auth = "Edit auth.json"
-detail = "Codex files · checked, formatted, backed up"

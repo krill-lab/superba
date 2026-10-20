@@ -46,12 +46,6 @@ fn only_app_known_hosts_are_listed_and_the_page_fits() {
             );
             assert!(!f.scrolled && f.fits(), "{size:?} {locale:?}");
             assert_eq!(f.scroll_areas, 0, "the page itself never scrolls");
-            // The palette offers only app-known hosts too.
-            h.frame(|_, cx, _| {
-                let items = hosts::palette(cx, &state);
-                assert_eq!(items.len(), 2);
-                assert!(items.iter().all(|i| !i.title.contains("old-box")));
-            });
         }
     }
 }

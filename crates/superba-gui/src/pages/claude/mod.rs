@@ -16,7 +16,7 @@ pub mod settings;
 use egui::Ui;
 use superba_core::ClaudeView;
 
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem};
+use super::{Action, Cx, Page, PageStatus};
 use crate::runtime::ReadTask;
 
 /// State of both Claude Code pages, kept across navigation.
@@ -119,42 +119,4 @@ pub fn command(state: &mut State, page: Page, cx: &Cx<'_>, command: &str, out: &
         Page::ClaudeSettings => settings::command(state, cx, command, out),
         _ => connect::command(state, cx, command, out),
     }
-}
-
-/// Palette entries of the Claude Code pages.
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let mut items = vec![
-        PaletteItem {
-            title: cx.tr.t("claude.palette.apply"),
-            detail: None,
-            keywords: vec!["claude".into(), "apply".into(), "settings.json".into()],
-            group: PaletteGroup::Commands,
-            action: Action::PageCommand {
-                page: Page::ClaudeCode,
-                command: "apply".into(),
-            },
-        },
-        PaletteItem {
-            title: cx.tr.t("claude.palette.pull"),
-            detail: None,
-            keywords: vec!["claude".into(), "models".into(), "/v1/models".into()],
-            group: PaletteGroup::Commands,
-            action: Action::PageCommand {
-                page: Page::ClaudeCode,
-                command: "pull".into(),
-            },
-        },
-        PaletteItem {
-            title: cx.tr.t("claude.palette.files"),
-            detail: None,
-            keywords: vec!["claude".into(), "settings.json".into(), "edit".into()],
-            group: PaletteGroup::Commands,
-            action: Action::PageCommand {
-                page: Page::ClaudeSettings,
-                command: "files".into(),
-            },
-        },
-    ];
-    items.extend(settings::palette(cx, &state.settings));
-    items
 }

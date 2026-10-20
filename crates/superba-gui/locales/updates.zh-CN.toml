@@ -94,11 +94,6 @@ current = "当前"
 bundled = "内置"
 stored = "已下载"
 
-[updates.palette]
-check_superba = "检查 Superba 更新"
-check = "检查更新"
-update_cli = "更新 Codex CLI"
-
 [updates.superba]
 title = "Superba"
 checking = "正在检查 Superba 更新…"

@@ -18,7 +18,7 @@ Shots, at 1280x800 in light and dark, English and Chinese:
 - `codex-files-review-*`: a line typed into the editor, then Ctrl+S: the review
   with the diff and what happens on save;
 - `codex-files-auth-*`: auth.json with the key hidden;
-- `codex-files-backups-*`: the Backups dialog (palette "Restore config.toml
+- `codex-files-backups-*`: the Backups dialog (`--command files-backups:config`, formerly "Restore config.toml
   from a backup");
 - `codex-files-restore-*`: one backup chosen there, with its diff to the editor.
 
@@ -91,10 +91,17 @@ def hand_edit(s, bin_dir):
     shoot.log(f"spb config edit rc={p.returncode}\n{p.stdout.strip()}\n{p.stderr.strip()}")
 
 
-def open_editor(query):
+COMMANDS = {
+    "Edit config.toml": "files:config",
+    "Edit auth.json": "files:auth",
+    "Restore config.toml": "files-backups:config",
+}
+
+
+def open_editor(_query):
+    """Wait for the editor the shot page opened (`settings#<command>`, see
+    COMMANDS: the command palette is gone, user request 118)."""
     def act(s):
-        shoot.palette_action(query)(s)
-        s.input.key("Return")
         time.sleep(2.5)
         s.input.park()
     return act
@@ -176,19 +183,19 @@ def main():
 
         only = [p for p in (a.only or "").split(",") if p]
         plan = [
-            ("codex-files", open_editor("Edit config.toml")),
-            ("codex-files-review", review),
-            ("codex-files-auth", open_editor("Edit auth.json")),
-            ("codex-files-backups", open_editor("Restore config.toml")),
-            ("codex-files-restore", restore),
+            ("codex-files", "Edit config.toml", open_editor("Edit config.toml")),
+            ("codex-files-review", "Edit config.toml", review),
+            ("codex-files-auth", "Edit auth.json", open_editor("Edit auth.json")),
+            ("codex-files-backups", "Restore config.toml", open_editor("Restore config.toml")),
+            ("codex-files-restore", "Restore config.toml", restore),
         ]
-        for stem, actions in plan:
+        for stem, what, actions in plan:
             for theme, lang in VARIANTS:
                 name = f"{stem}-{theme}-{'zh' if lang == 'zh-CN' else 'en'}"
                 if only and not any(name == p or name.startswith(p + "-") for p in only):
                     continue
                 restored()
-                s.shot(name, "settings", theme, lang, 8.0, actions, SIZE)
+                s.shot(name, f"settings#{COMMANDS[what]}", theme, lang, 8.0, actions, SIZE)
     finally:
         s.close()
 

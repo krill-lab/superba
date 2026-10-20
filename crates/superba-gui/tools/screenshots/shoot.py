@@ -14,8 +14,8 @@ real desktop app is launched through `spb launch` so the hot-switch countdown ca
 be captured.
 
 Every page is shot at 1280x800 and 1440x900 (`--sizes`), dark and light, English
-and Chinese; extra states: the command palette and the setup wizard (opened again
-from the palette with an existing provider).
+and Chinese; extra state: the setup wizard (opened again with `--command wizard`
+with an existing provider).
 
 Requirements: Linux, Xvfb, xdotool, libX11 + libXtst (XTEST), scrot, openssl,
 Python 3.11 (stdlib only).
@@ -34,7 +34,6 @@ after `windowfocus` on the Superba window. Ad-hoc driver scripts load this file
     inp.move(600, 200)            # hover
     inp.scroll(700, 500, 5)       # wheel down 5 notches (negative: up)
     inp.park()                    # bottom-right corner of the screen, outside the window
-    inp.key("ctrl+k"); inp.type("cdn"); inp.key("Return")
 
     python3 -I crates/superba-gui/tools/screenshots/shoot.py \\
         --bin-dir target/debug [--display :176] [--out docs/screenshots] \\
@@ -204,7 +203,7 @@ class Input:
         self.xdo("search", "--sync", "--name", self.window, "windowfocus", "--sync")
 
     def key(self, *combos):
-        """Key presses such as "ctrl+k", "Return", "Escape", "Tab"."""
+        """Key presses such as "ctrl+f", "Return", "Escape", "Tab"."""
         self.focus()
         self.xdo("key", "--delay", "60", *combos)
 
@@ -212,6 +211,12 @@ class Input:
         """Type text (any characters)."""
         self.focus()
         self.xdo("type", "--delay", str(delay), text)
+
+
+def page_args(page):
+    """`--page` (and `--command`) arguments of a shot page."""
+    page, _, command = page.partition("#")
+    return ["--page", page] + (["--command", command] if command else [])
 
 
 class Session:
@@ -439,11 +444,12 @@ class Session:
         return self.input.xdo(*args)
 
     def shot(self, name, page, theme, lang, wait=6.0, actions=None, size=SIZE):
+        """`page` is a `--page` name, or `page#command` (see `page_command`)."""
         guard(self.home)
         out = self.args.out / f"{name}.png"
         gui = subprocess.Popen(
             [str(self.args.bin_dir / "superba"), "--size", f"{size[0]}x{size[1]}",
-             "--theme", theme, "--lang", lang, "--page", page],
+             "--theme", theme, "--lang", lang, *page_args(page)],
             env=self.env(), cwd=self.home, stdout=subprocess.DEVNULL,
             stderr=open(self.work / "gui.err", "a"), start_new_session=True)
         try:
@@ -578,42 +584,20 @@ def focus(s):
     time.sleep(0.3)
 
 
-def palette_action(query):
+def page_command(page, command):
+    """A shot page that runs `command` on `page` once it has loaded
+    (`superba --page PAGE --command CMD`). The Cmd/Ctrl+K command palette the
+    older helpers typed into is gone (user request 118)."""
+    return f"{page}#{command}"
+
+
+def wizard_action(_query=None):
+    """Go from the wizard's first step to its provider step (the shot page
+    opens it with `page_command("overview", "wizard")`)."""
     def act(s):
         focus(s)
-        s.input.key("ctrl+k")
-        time.sleep(0.6)
-        s.input.type(query)
-        time.sleep(0.4)
-    return act
-
-
-def overview_actions(size):
-    """Open the Overview Actions menu without selecting an operation."""
-    def act(s):
-        focus(s)
-        s.input.click(size[0] - 54, 70)
-        s.input.park()
-    return act
-
-
-def wizard_action(query):
-    """Open the setup wizard from the palette (a re-run with an existing provider)
-    and go to its provider step."""
-    def act(s):
-        palette_action(query)(s)
-        s.input.key("Return")
-        time.sleep(1.0)
         s.input.key("Return")
         time.sleep(0.4)
-    return act
-
-
-def countdown_action(query):
-    def act(s):
-        palette_action(query)(s)
-        s.input.key("Return")
-        time.sleep(6.0)
     return act
 
 
@@ -676,21 +660,10 @@ def main():
                 suffix = f"{theme}-{'zh' if lang == 'zh-CN' else 'en'}{tail}"
                 for page in PAGES:
                     shots.append((f"{page}-{suffix}", page, theme, lang, 7.0, None, size))
-                shots.append((f"overview-actions-{suffix}", "overview", theme, lang, 7.0,
-                              overview_actions(size), size))
-            shots.append((f"palette-dark-en{tail}", "overview", "dark", "en", 6.0,
-                          palette_action("cdn"), size))
-            shots.append((f"palette-light-zh{tail}", "overview", "light", "zh-CN", 6.0,
-                          palette_action("over"), size))
-            shots.append((f"wizard-dark-en{tail}", "overview", "dark", "en", 6.0,
-                          wizard_action("onboarding"), size))
-            shots.append((f"wizard-light-zh{tail}", "overview", "light", "zh-CN", 6.0,
-                          wizard_action("onboarding"), size))
-            if args.app_dir:
-                shots.append((f"countdown-dark-en{tail}", "overview", "dark", "en", 7.0,
-                              countdown_action("cdn"), size))
-                shots.append((f"countdown-light-zh{tail}", "overview", "light", "zh-CN", 7.0,
-                              countdown_action("cdn"), size))
+            shots.append((f"wizard-dark-en{tail}", page_command("overview", "wizard"), "dark",
+                          "en", 8.0, wizard_action(), size))
+            shots.append((f"wizard-light-zh{tail}", page_command("overview", "wizard"), "light",
+                          "zh-CN", 8.0, wizard_action(), size))
         only = [p for p in (args.only or "").split(",") if p]
         for name, page, theme, lang, wait, act, size in shots:
             if only and not any(name.startswith(p) for p in only):

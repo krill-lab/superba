@@ -560,7 +560,7 @@ def w36(t):
 
 
 # --------------------------------------------------------------------------- restore / uninstall
-@scenario("W40", "Restore the original configuration (Overview -> Actions)", area="restore", needs=("turn",),
+@scenario("W40", "Restore the original configuration (Superba -> Data)", area="restore", needs=("turn",),
           tags=("core",))
 def w40(t):
     run = t.run
@@ -568,11 +568,11 @@ def w40(t):
     base = run.state.get("baseline") or {}
     with t.step("Restore original from the GUI") as s:
         flows.start_superba(run, s)
-        u.page("overview")
+        # The Overview's Actions menu is gone (user request 118): restore
+        # lives on Superba > Data.
+        u.page("superba:data")
         time.sleep(1)
-        u.click(key="overview.menu.title")
-        time.sleep(1)
-        u.act("invoke", key="overview.menu.restore_original")
+        u.act("invoke", key="prefs.restore.original_button")
         time.sleep(2)
         s.ui_dump("restore-choice")
         s.shot("restore-choice")

@@ -32,12 +32,12 @@ use superba_core::{
     BillingSummary, LineCaps, Profile, RestoreTarget, Site, SpeedSupport, SpeedTier, catalog,
 };
 
-use super::{Action, Cx, Page, PageStatus, PaletteItem, empty_state, error_state};
+use super::{Action, Cx, Page, PageStatus, empty_state, error_state};
 use crate::design::backdrop::Backdrop;
 use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
 use crate::design::tokens::text;
-use crate::design::widgets::{Button, IconButton, Latency, Text};
+use crate::design::widgets::{Button, Latency, Text};
 use crate::runtime::ReadTask;
 pub use cards::{GAP, Grid, layout};
 pub use lines::LineRow;
@@ -121,23 +121,6 @@ pub fn status(_state: &State) -> PageStatus {
     PageStatus::default()
 }
 
-/// "Codex in effect" (the shell lists switching and restore).
-pub fn palette(cx: &Cx<'_>, _state: &State) -> Vec<PaletteItem> {
-    vec![PaletteItem {
-        title: cx.tr.t("overview.palette.in_effect"),
-        detail: Some(cx.tr.t("overview.palette.in_effect_detail")),
-        keywords: vec![
-            "runtime".into(),
-            "processes".into(),
-            "restart".into(),
-            "stale".into(),
-            "vscode".into(),
-        ],
-        group: super::PaletteGroup::Commands,
-        action: Action::ShowRuntime,
-    }]
-}
-
 /// Commands: `wizard`, `restore:original`, `restore:official`, `refresh`.
 pub fn command(state: &mut State, _cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     match command {
@@ -158,7 +141,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
             out.push(Action::RunDoctor);
         }
     }
-    title_row(ui, cx, state, out);
+    title_row(ui, cx);
     ui.add_space(8.0);
 
     let Some(overview) = cx.data.overview.value.as_ref() else {
@@ -208,8 +191,9 @@ pub fn is_empty(cx: &Cx<'_>) -> bool {
     cx.data.active_state().is_none() && cx.data.providers().is_empty()
 }
 
-/// The large title with a gray line after it, and the menu on the right.
-fn title_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+/// The large title with a short tool-neutral line after it. No menu: its
+/// actions live on the Superba page (user request 118).
+fn title_row(ui: &mut Ui, cx: &Cx<'_>) {
     ui.allocate_ui_with_layout(
         vec2(ui.available_width(), TITLE_ROW),
         Layout::left_to_right(Align::Center),
@@ -226,60 +210,8 @@ fn title_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>)
                 ui.add_space(0.0);
                 ui.label(Text::small(cx.tr.t("overview.tagline"), cx.pal));
             });
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                menu(ui, cx, state, out);
-            });
         },
     );
-}
-
-fn menu(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    let response = ui.add(IconButton::new(Icon::More, cx.tr.t("overview.menu.title")));
-    egui::Popup::menu(&response)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
-        .show(|ui| {
-            ui.set_min_width(220.0);
-            // The command palette (also Cmd/Ctrl+K): the sidebar has no
-            // search field (user bug 85).
-            let search = egui::Button::new(cx.tr.t("shell.search"))
-                .shortcut_text(crate::shell::palette_shortcut_label());
-            if ui.add(search).clicked() {
-                out.push(Action::OpenPalette);
-            }
-            ui.separator();
-            let baseline = cx
-                .data
-                .overview
-                .value
-                .as_ref()
-                .is_some_and(|o| o.baseline_captured);
-            if ui
-                .add_enabled(
-                    baseline && !cx.busy,
-                    egui::Button::new(cx.tr.t("overview.menu.restore_original")),
-                )
-                .clicked()
-            {
-                out.push(Action::restore_original());
-            }
-            if ui
-                .add_enabled(
-                    !cx.busy && !cx.data.official_active(),
-                    egui::Button::new(cx.tr.t("overview.menu.restore_official")),
-                )
-                .clicked()
-            {
-                out.push(Action::Restore(RestoreTarget::Official));
-            }
-            ui.separator();
-            if ui.button(cx.tr.t("overview.menu.wizard")).clicked() {
-                out.push(Action::StartWizard);
-            }
-            if ui.button(cx.tr.t("action.refresh")).clicked() {
-                out.push(Action::Refresh);
-                state.usage.at = None;
-            }
-        });
 }
 
 /// "Choose a provider for Codex" (UX §3.1 empty state), in the left column.

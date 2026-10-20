@@ -20,7 +20,7 @@ use superba_gui::i18n::Tr;
 use superba_gui::pages::settings::files::{Dialog, Editor};
 use superba_gui::pages::settings::files_highlight::{Token, tokens};
 use superba_gui::pages::settings::{self as settings_page, State};
-use superba_gui::pages::{Action, Cx, Data, Page, PaletteGroup};
+use superba_gui::pages::{Action, Cx, Data};
 use support::fake::{FakeOptions, FakeService};
 use support::fit::{SIZES, render_fit};
 
@@ -327,21 +327,10 @@ async fn auth_secrets_stay_hidden_until_revealed() {
 // ------------------------------------------------- Settings page integration
 
 #[tokio::test]
-async fn the_settings_page_opens_the_editor_from_its_button_palette_and_commands() {
+async fn the_settings_page_opens_the_editor_from_its_commands() {
     let service = fake();
     let data = data(&service).await;
     with_cx(&service, &data, Locale::En, |cx| {
-        let items = settings_page::palette(cx, &State::default());
-        let config = items
-            .iter()
-            .find(|i| i.title == "Edit config.toml")
-            .unwrap();
-        assert_eq!(config.group, PaletteGroup::Commands);
-        assert!(matches!(
-            &config.action,
-            Action::PageCommand { page: Page::Settings, command } if command == "files:config"
-        ));
-        assert!(items.iter().any(|i| i.title == "Edit auth.json"));
         let mut state = State::default();
         let mut out = Vec::new();
         settings_page::command(&mut state, cx, "files:auth", &mut out);
@@ -358,13 +347,6 @@ async fn the_settings_page_opens_the_editor_from_its_button_palette_and_commands
         assert_eq!(state.files.dialog, Some(Dialog::Review));
         assert!(settings_page::status(&state).modal);
     });
-    let zh = with_cx(&service, &data, Locale::ZhCn, |cx| {
-        settings_page::palette(cx, &State::default())
-            .into_iter()
-            .map(|i| i.title)
-            .collect::<Vec<_>>()
-    });
-    assert!(zh.contains(&"编辑 config.toml".to_owned()));
 }
 
 /// An editor already open on `kind` (no background read).

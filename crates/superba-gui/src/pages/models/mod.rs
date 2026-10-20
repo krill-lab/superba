@@ -38,7 +38,7 @@ use superba_core::{
 
 use self::model::{Field, Pending, Saved};
 use super::shared::providers;
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem};
+use super::{Action, Cx, PageStatus};
 use crate::design::widgets::{PagedState, Status};
 use crate::runtime::ReadTask;
 
@@ -571,30 +571,6 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
             .request_repaint_after(std::time::Duration::from_millis(60));
     }
     view::page(ui, cx, state, out);
-}
-
-/// Command palette entries: a context-window entry per listed model (the speed
-/// tiers of the applied provider are shell entries).
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let Some(view) = &state.view else {
-        return Vec::new();
-    };
-    let mut items = Vec::new();
-    if !view.read_only {
-        for m in &view.list.models {
-            items.push(PaletteItem {
-                title: cx.tr.f("models.palette.context", &[("model", &m.slug)]),
-                detail: m.display_name.clone(),
-                keywords: vec![m.slug.clone(), "context".into(), "window".into()],
-                group: PaletteGroup::Commands,
-                action: Action::PageCommand {
-                    page: Page::Models,
-                    command: format!("context:{}", m.slug),
-                },
-            });
-        }
-    }
-    items
 }
 
 /// Run a command addressed to this page (see the module docs).

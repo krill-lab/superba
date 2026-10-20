@@ -103,11 +103,6 @@ over_max = "Above this model's maximum {max}"
 percent_needs_window = "A percentage needs a context window; enter tokens instead"
 too_small = "The context window must be at least {min}"
 
-[models.palette]
-context = "Set the context window of {model}"
-current = "current"
-speed = "Speed: {tier}"
-
 [models.pending]
 count = "{n} unsaved {n|change|changes}"
 diff = "View diff"

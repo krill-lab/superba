@@ -17,7 +17,7 @@ use superba_core::{
 };
 use superba_gui::design::{Palette, fonts, style};
 use superba_gui::i18n::Tr;
-use superba_gui::pages::{Action, Cx, Data, Page, providers, shared};
+use superba_gui::pages::{Action, Cx, Data, providers, shared};
 use support::fake::{FakeOptions, FakeService};
 
 #[test]
@@ -737,12 +737,6 @@ async fn commands_pick_tabs_and_providers() {
         assert!(!providers::status(&state).modal);
         providers::command(&mut state, cx, "add", &mut out);
         assert!(providers::status(&state).modal, "`add` opens the dialog");
-        // Every palette entry of the page is addressed to Providers.
-        for item in providers::palette(cx, &state) {
-            if let Action::PageCommand { page, .. } = item.action {
-                assert_eq!(page, Page::Providers);
-            }
-        }
     });
     assert!(out.is_empty(), "{out:?}");
 }

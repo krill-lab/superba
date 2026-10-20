@@ -28,11 +28,6 @@ off = "Router off: requests come from Codex's session files on this computer (fi
 off_tip = "Codex writes every model request's usage into its session files (CODEX_HOME/sessions). Superba reads them read-only: model, input, output, cache, cost and duration. Turn on the local router for first token, TPS, the line that answered, transport and HTTP status."
 settings = "Open Router"
 
-[usage.palette]
-open_recent = "Open recent requests"
-open_active = "Open active requests"
-open_stats = "Open usage statistics"
-
 [router.banner]
 inactive = "Router off"
 turn_off = "Turn off the router…"
@@ -137,17 +132,6 @@ reloaded = "Configuration reloaded"
 local_limit = "This computer ran short (no line blamed)"
 compaction = "Compaction routed (kept on its provider)"
 ciphertext = "Content another provider encrypted left out and sent again"
-
-[router.palette]
-setup = "Set up the local router"
-on = "Turn the local router on"
-off = "Turn the local router off"
-detail = "Fail over across providers and their lines"
-stats_on = "Turn the stats line on"
-stats_off = "Turn the stats line off"
-pause_recording = "Pause request recording"
-resume_recording = "Resume request recording"
-doctor = "Local router diagnostics"
 
 [router.eligibility]
 none = "Turning on the router needs at least one member with an API key."

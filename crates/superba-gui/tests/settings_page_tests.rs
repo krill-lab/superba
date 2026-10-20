@@ -9,10 +9,10 @@ mod support;
 
 use superba_core::settings::{CodexSettings, SettingValue};
 use superba_core::{Locale, ProfileSet, SwitchService};
+use superba_gui::pages::Data;
 use superba_gui::pages::settings::model::{Availability, Model, Rail};
 use superba_gui::pages::settings::source::{self, Input};
 use superba_gui::pages::settings::{self as settings_page, State};
-use superba_gui::pages::{Action, Data};
 use support::fake::{FakeOptions, FakeService};
 use support::fit::{SIZES, render_fit};
 
@@ -310,37 +310,6 @@ async fn narrow_windows_show_the_detail_as_a_sheet_over_the_list() {
         },
     );
     assert!(report.all_text().contains("取值"), "{}", report.all_text());
-}
-
-#[tokio::test]
-async fn palette_titles_are_chinese_names_and_focus_selects_the_row() {
-    let service = fake();
-    let data = data(&service).await;
-    let model = model(&data, None);
-    let st = state(model, Rail::Common);
-    let svc: std::sync::Arc<dyn SwitchService> = std::sync::Arc::new(fake());
-    let tr = superba_gui::i18n::Tr::new(Locale::ZhCn);
-    let fonts = superba_gui::design::fonts::FontReport::default();
-    let cx = superba_gui::pages::Cx {
-        tr: &tr,
-        pal: &superba_gui::design::tokens::LIGHT,
-        data: &data,
-        busy: false,
-        now: superba_core::Timestamp::now(),
-        fonts: &fonts,
-        service: &svc,
-        log: &[],
-    };
-    let items = settings_page::palette(&cx, &st);
-    let approval = items
-        .iter()
-        .find(|i| i.keywords.iter().any(|k| k == "approval_policy"))
-        .unwrap();
-    assert_eq!(approval.title, "审批策略");
-    assert!(matches!(
-        &approval.action,
-        Action::PageCommand { command, .. } if command == "focus:approval_policy"
-    ));
 }
 
 #[tokio::test]
