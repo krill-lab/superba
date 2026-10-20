@@ -1151,8 +1151,8 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: Col) {
         (RowRef::Model(m), Col::Price) => {
             let shown = model::shown_price(rc.pending, rc.saved, rc.table, &m.slug);
             let (label, color) = match &shown {
-                // A price the user set is marked (✎) and drawn in full colour.
-                Some((p, true)) => (format!("✎ {}", price_text(p)), cx.pal.text),
+                // A price the user set is marked (*) and drawn in full colour.
+                Some((p, true)) => (format!("* {}", price_text(p)), cx.pal.text),
                 Some((p, false)) => (price_text(p), cx.pal.text_subtle),
                 None => ("—".to_owned(), cx.pal.text_subtle),
             };
@@ -1212,7 +1212,7 @@ fn model_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, m: &ModelSpec) {
     {
         parts.push(format!(
             "{}${}",
-            if own { "✎ " } else { "" },
+            if own { "* " } else { "" },
             price_text(&p)
         ));
     }

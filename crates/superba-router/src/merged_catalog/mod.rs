@@ -373,7 +373,25 @@ pub(crate) fn attach_evidence(g: &Generation, dir: Option<&std::path::Path>) {
     };
     let path = dir.join(EVIDENCE_FILE);
     let now = unix_ms();
-    let kept = read_evidence(&path);
+    let all = read_evidence(&path);
+    // Evidence of a member whose key, lines, mapping or protocol routes
+    // changed is gone for good: going back to the old settings later must not
+    // bring an old pass back without a new test.
+    let scopes: HashMap<&str, String> = g
+        .members
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (m.cfg.id.as_str(), evidence_scope(g, i)))
+        .collect();
+    let kept: Vec<Evidence> = all
+        .iter()
+        .filter(|e| scopes.get(e.member.as_str()).is_none_or(|s| *s == e.scope))
+        .filter(|e| now.saturating_sub(e.tested_at) < PASS_VALID_MS)
+        .cloned()
+        .collect();
+    if kept.len() != all.len() {
+        write_evidence(&path, &kept);
+    }
     {
         let mut probes = lock(&g.merged_catalog.probes);
         for (i, m) in g.members.iter().enumerate() {
@@ -422,10 +440,14 @@ pub(crate) fn record_evidence(g: &Generation, member: usize, result: &RouterMode
             detail: result.detail.clone(),
         });
     }
-    if let Ok(bytes) = serde_json::to_vec_pretty(&kept) {
+    write_evidence(&path, &kept);
+}
+
+fn write_evidence(path: &std::path::Path, kept: &[Evidence]) {
+    if let Ok(bytes) = serde_json::to_vec_pretty(kept) {
         let tmp = path.with_extension("json.tmp");
         if std::fs::write(&tmp, bytes).is_ok() {
-            let _ = std::fs::rename(&tmp, &path);
+            let _ = std::fs::rename(&tmp, path);
         }
     }
 }

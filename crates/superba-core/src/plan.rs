@@ -586,7 +586,7 @@ pub struct SwitchRequest {
     /// The router's model list for Codex changed (a router model list mode,
     /// a model that passed its test): restart the app's Codex core even when
     /// no file changes, so it fetches the list again at once (user bug 106).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub refresh_models: bool,
 }
 
