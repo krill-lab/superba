@@ -7,11 +7,6 @@ reload = "Reload"
 cancel = "Cancel"
 discard = "Discard edits"
 
-[claude.palette]
-apply = "Apply Claude Code configuration"
-pull = "Pull Claude Code models"
-files = "Edit Claude Code settings.json"
-
 [claude.banner]
 new_sessions = "Written to settings.json. New Claude Code sessions use it; running sessions keep what they started with."
 restored = "Claude Code's settings are back to what they were before Superba. New sessions use them."

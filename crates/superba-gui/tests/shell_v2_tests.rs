@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-//! Shell: command palette ranking, page groups and layouts, catalog hygiene, a
+//! Shell: page groups and layouts, catalog hygiene, a
 //! render smoke test of the overview with real-shaped account data (no demo
 //! backend exists any more), the wizard profile and router watch toasts.
 
@@ -14,61 +14,8 @@ use superba_core::{
 };
 use superba_gui::design::{Palette, fonts, style};
 use superba_gui::i18n::{Tr, ui_files};
-use superba_gui::pages::{
-    Action, Cx, Data, NavGroup, Page, PageLayout, PaletteGroup, PaletteItem, overview,
-};
-use superba_gui::palette::{filter, score};
+use superba_gui::pages::{Action, Cx, Data, NavGroup, Page, PageLayout, overview};
 use support::fake::{FakeOptions, FakeService};
-
-fn item(title: &str, group: PaletteGroup, keywords: &[&str]) -> PaletteItem {
-    PaletteItem {
-        title: title.into(),
-        detail: None,
-        keywords: keywords.iter().map(|k| (*k).to_owned()).collect(),
-        group,
-        action: Action::Refresh,
-    }
-}
-
-#[test]
-fn palette_matches_every_word_and_ranks_title_prefixes_first() {
-    let a = item("Switch to Overseas", PaletteGroup::Switch, &["overseas"]);
-    let b = item("Overview", PaletteGroup::Navigate, &["overview"]);
-    let c = item(
-        "Settings: model",
-        PaletteGroup::Settings,
-        &["model_reasoning_effort"],
-    );
-    assert_eq!(score("", &a), Some(1000));
-    assert!(score("over", &b).unwrap() < score("over", &a).unwrap());
-    assert!(score("to over", &a).is_some(), "all words must match");
-    assert!(score("to xyz", &a).is_none());
-    assert!(score("reasoning", &c).is_some(), "keywords are searched");
-    assert!(score("OVERSEAS", &a).is_some(), "case-insensitive");
-}
-
-#[test]
-fn palette_keeps_group_order_and_caps_results() {
-    let items = vec![
-        item("Go to Overview", PaletteGroup::Navigate, &[]),
-        item("Switch to CDN", PaletteGroup::Switch, &[]),
-        item("Turn the router on", PaletteGroup::Router, &[]),
-    ];
-    let out = filter("", items);
-    let groups: Vec<_> = out.iter().map(|i| i.group).collect();
-    assert_eq!(
-        groups,
-        vec![
-            PaletteGroup::Switch,
-            PaletteGroup::Router,
-            PaletteGroup::Navigate
-        ]
-    );
-    let many: Vec<_> = (0..200)
-        .map(|i| item(&format!("Key {i}"), PaletteGroup::Settings, &[]))
-        .collect();
-    assert_eq!(filter("key", many).len(), superba_gui::palette::MAX_RESULTS);
-}
 
 #[test]
 fn pages_are_grouped_and_every_label_is_translated() {
@@ -121,15 +68,6 @@ fn pages_are_grouped_and_every_label_is_translated() {
         ] {
             let key = g.caption_key().unwrap();
             assert_ne!(tr.t(key), key);
-        }
-        for g in [
-            PaletteGroup::Switch,
-            PaletteGroup::Router,
-            PaletteGroup::Settings,
-            PaletteGroup::Navigate,
-            PaletteGroup::Commands,
-        ] {
-            assert_ne!(tr.t(g.caption_key()), g.caption_key());
         }
     }
 }
@@ -598,7 +536,6 @@ fn the_shell_never_names_a_provider_outside_presets_and_capabilities() {
     for (file, source) in [
         ("shell.rs", include_str!("../src/shell.rs")),
         ("app.rs", include_str!("../src/app.rs")),
-        ("palette.rs", include_str!("../src/palette.rs")),
         ("pages/mod.rs", include_str!("../src/pages/mod.rs")),
         (
             "pages/overview/mod.rs",

@@ -41,8 +41,8 @@ use superba_core::{
 };
 
 use self::ops::SiteReport;
-use super::shared::providers::{self, Provider, ProviderId, ProviderKind};
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, page_header};
+use super::shared::providers::{self, Provider, ProviderId};
+use super::{Action, Cx, Page, PageStatus, page_header};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
 use crate::design::widgets::{Button, PagedState};
@@ -394,47 +394,6 @@ fn show_import(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, out: &mut Ve
             }
         }
     }
-}
-
-/// Command palette entries: import from other tools, and test the connection of
-/// each key-based provider.
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let _ = state;
-    let import = PaletteItem {
-        title: cx.tr.t("providers.palette.import"),
-        detail: Some(cx.tr.t("providers.palette.import_detail")),
-        keywords: vec![
-            "import".into(),
-            "cc-switch".into(),
-            "ccs".into(),
-            "ai-toolbox".into(),
-            "导入".into(),
-        ],
-        group: PaletteGroup::Commands,
-        action: Action::PageCommand {
-            page: Page::Providers,
-            command: "import".into(),
-        },
-    };
-    let mut items = vec![import];
-    items.extend(
-        providers::list(cx.data)
-            .into_iter()
-            .filter(|p| p.kind != ProviderKind::Official && p.has_key())
-            .map(|p| PaletteItem {
-                title: cx
-                    .tr
-                    .f("providers.palette.test", &[("name", &list::name(cx, &p))]),
-                detail: Some(list::secondary(cx, &p)),
-                keywords: vec![p.site.id.to_string(), "test".into(), "probe".into()],
-                group: PaletteGroup::Commands,
-                action: Action::PageCommand {
-                    page: Page::Providers,
-                    command: format!("test:{}", p.id.command()),
-                },
-            }),
-    );
-    items
 }
 
 /// Run a command addressed to this page (see the module docs).

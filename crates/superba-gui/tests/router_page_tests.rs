@@ -347,19 +347,6 @@ fn stats_line_and_recording_commands_save_settings_without_restarting_codex() {
     let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
     // Saving reloads the shell data (no switch is planned).
     assert!(f.actions.iter().all(|a| !matches!(a, Action::Plan(_))));
-    let items = h.frame(|_, cx, _| {
-        let items = router::palette(cx, &state);
-        let titles: Vec<String> = items.iter().map(|i| i.title.clone()).collect();
-        assert!(
-            titles.contains(&"Open recent requests".to_owned()),
-            "{titles:?}"
-        );
-        assert!(
-            titles.contains(&"Turn the stats line off".to_owned()),
-            "{titles:?}"
-        );
-    });
-    let _ = items;
     h.frame(|_, cx, out| router::usage_command(&mut state, cx, "tab:active", out));
     assert_eq!(state.tab, Tab::Active);
     h.frame(|_, cx, out| router::usage_command(&mut state, cx, "search", out));

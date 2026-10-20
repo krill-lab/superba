@@ -102,11 +102,6 @@ over_max = "超过该模型的上限 {max}"
 percent_needs_window = "百分比需要先有上下文窗口，请改填 token 数"
 too_small = "上下文窗口至少 {min}"
 
-[models.palette]
-context = "设置 {model} 的上下文窗口"
-current = "当前"
-speed = "速度：{tier}"
-
 [models.pending]
 count = "{n} 项更改未保存"
 diff = "查看差异"

@@ -175,41 +175,6 @@ fn rollout_rows_are_listed_with_dashes_in_the_router_only_columns() {
 }
 
 #[test]
-fn palette_entries_open_the_usage_tabs() {
-    let mut h = Harness::new([1280.0, 800.0], Locale::En, fake(), true);
-    let state = State::default();
-    h.frame(|_, cx, _| {
-        let items = router::palette(cx, &state);
-        let find = |title: &str| {
-            items
-                .iter()
-                .find(|i| i.title == title)
-                .unwrap_or_else(|| panic!("{title}"))
-        };
-        for (title, command) in [
-            ("Open recent requests", "tab:recent"),
-            ("Open active requests", "tab:active"),
-            ("Open usage statistics", "tab:stats"),
-        ] {
-            match &find(title).action {
-                Action::PageCommand { page, command: c } => {
-                    assert_eq!(*page, Page::Usage);
-                    assert_eq!(c, command);
-                }
-                other => panic!("{other:?}"),
-            }
-        }
-        assert!(matches!(
-            &find("Turn the stats line on").action,
-            Action::PageCommand {
-                page: Page::Router,
-                ..
-            }
-        ));
-    });
-}
-
-#[test]
 fn without_a_router_clearing_and_pausing_are_off() {
     let service = fake();
     let mut h = Harness::new([1280.0, 800.0], Locale::ZhCn, service.clone(), true);

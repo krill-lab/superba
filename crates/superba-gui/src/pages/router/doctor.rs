@@ -1,8 +1,8 @@
 //! 诊断 / Diagnostics on the Router page: the same report as `spb router
 //! doctor` (program, background service, configuration, providers, port, log),
 //! shown as one block with a Copy button so a user can paste it into a support
-//! request. Opened from the service row, from "查看原因" under a failed start,
-//! and from the command palette.
+//! request. Opened from the service row and from "查看原因" under a failed
+//! start.
 
 use egui::{Align, Layout, Ui};
 use superba_core::{Error, RouterDoctorReport};

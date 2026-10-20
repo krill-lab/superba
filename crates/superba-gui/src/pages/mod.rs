@@ -17,9 +17,6 @@
 //! /// ScrollArea; a `PageLayout::Scroll` page is drawn inside the shell's one.
 //! pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>);
 //!
-//! /// Entries for the Cmd/Ctrl+K command palette (rebuilt while it is open).
-//! pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem>;
-//!
 //! /// Run a command addressed to this page ([`Action::PageCommand`]); the shell
 //! /// navigates to the page first. Shared commands: `search` (Ctrl/Cmd+F),
 //! /// `save` (Ctrl/Cmd+S while [`PageStatus::pending`] > 0).
@@ -351,8 +348,7 @@ pub enum NavBadge {
 /// contract).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PageStatus {
-    /// A dialog of the page is open: the shell leaves Enter / Escape to it and
-    /// does not open the palette.
+    /// A dialog of the page is open: the shell leaves Enter / Escape to it.
     pub modal: bool,
     /// Unsaved edits (amber sidebar dot; Ctrl/Cmd+S sends `save`).
     pub pending: usize,
@@ -362,49 +358,6 @@ pub struct PageStatus {
     pub badge_tip: Option<String>,
     /// Not in the sidebar now (a tool that is not installed).
     pub hidden: bool,
-}
-
-/// One entry of the Cmd/Ctrl+K command palette.
-#[derive(Debug)]
-pub struct PaletteItem {
-    /// Main text.
-    pub title: String,
-    /// Secondary text (current value, line host, ...).
-    pub detail: Option<String>,
-    /// Extra search terms (config key paths, English names in zh-CN, ...).
-    pub keywords: Vec<String>,
-    /// Section the entry is listed under.
-    pub group: PaletteGroup,
-    /// What choosing it does.
-    pub action: Action,
-}
-
-/// Palette sections, in display order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PaletteGroup {
-    /// Switch line, profile or site.
-    Switch,
-    /// Router.
-    Router,
-    /// Codex settings keys.
-    Settings,
-    /// Go to a page.
-    Navigate,
-    /// Other commands (restore, refresh, theme).
-    Commands,
-}
-
-impl PaletteGroup {
-    /// i18n key of the section caption.
-    pub fn caption_key(self) -> &'static str {
-        match self {
-            PaletteGroup::Switch => "palette.group.switch",
-            PaletteGroup::Router => "palette.group.router",
-            PaletteGroup::Settings => "palette.group.settings",
-            PaletteGroup::Navigate => "palette.group.navigate",
-            PaletteGroup::Commands => "palette.group.commands",
-        }
-    }
 }
 
 impl Action {
@@ -554,10 +507,6 @@ pub enum Action {
         /// The saved provider.
         profile: ProfileId,
     },
-    /// Open the command palette.
-    OpenPalette,
-    /// Search only settings in the command palette.
-    OpenSettingsPalette,
 }
 
 /// Loaded data with loading / error state.

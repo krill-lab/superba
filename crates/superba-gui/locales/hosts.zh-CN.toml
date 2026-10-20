@@ -63,10 +63,6 @@ reconnect = "需要在 app 里重新连接该主机才会生效"
 title = "没有远程主机"
 body = "ChatGPT 桌面 app 还没有记录任何远程主机。在 app 里添加 SSH 主机后，它会出现在这里。"
 
-[hosts.palette]
-sync = "同步设置到 {host}"
-sync_detail = "推送本机的 Codex 设置，按该主机的 Codex 版本过滤"
-
 [hosts.syncdlg]
 title = "同步设置到 {host} · codex {version}"
 title_plain = "同步设置到 {host}"

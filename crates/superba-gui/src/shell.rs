@@ -81,8 +81,7 @@ pub fn sidebar_frame() -> egui::Frame {
 /// dots (`status` per page), and Superba's own pages (Diagnostics,
 /// Preferences) pinned at the bottom above a hairline and the version. No
 /// brand and no search field: the window's top is empty (the traffic lights,
-/// the drag area) and the command palette opens with Cmd/Ctrl+K and from the
-/// Overview's menu. The selected row is a soft gray pill with its icon in the
+/// the drag area). The selected row is a soft gray pill with its icon in the
 /// brand coral. The current state lives on the overview, not in the sidebar.
 ///
 /// When the window is too short for the comfortable rows (the 960x640
@@ -255,15 +254,6 @@ const FOOTER_RULE: f32 = 7.0;
 
 /// Height of the version line at the bottom of the sidebar.
 const FOOTER_VERSION: f32 = 16.0;
-
-/// The shortcut label shown next to search affordances.
-pub fn palette_shortcut_label() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Cmd K"
-    } else {
-        "Ctrl K"
-    }
-}
 
 fn nav_item(
     ui: &mut Ui,

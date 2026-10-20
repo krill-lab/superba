@@ -28,12 +28,6 @@ off = "路由未开启：请求来自这台电脑上 Codex 的会话记录（首
 off_tip = "Codex 会把每次模型请求的用量写进会话记录（CODEX_HOME/sessions）。Superba 只读这些文件：模型、输入、输出、缓存、费用和完成时间。开启本地路由后还能看到首字、TPS、应答的线路、传输方式和 HTTP 状态。"
 settings = "打开路由"
 
-[usage.palette]
-open_routing = "打开路由记录"
-open_recent = "打开最近请求"
-open_active = "打开活动请求"
-open_stats = "打开用量统计"
-
 [router.banner]
 inactive = "路由已关闭"
 turn_off = "关闭路由…"
@@ -139,17 +133,6 @@ reloaded = "配置已重新加载"
 local_limit = "本机资源吃紧（未归咎于线路）"
 compaction = "压缩请求已按能力路由（留在原服务商）"
 ciphertext = "已去掉其他服务商加密的内容并重发"
-
-[router.palette]
-setup = "设置本地路由"
-on = "开启本地路由"
-off = "关闭本地路由"
-detail = "在供应商和它们的线路之间故障转移"
-stats_on = "开启统计行"
-stats_off = "关闭统计行"
-pause_recording = "暂停记录请求"
-resume_recording = "继续记录请求"
-doctor = "本地路由诊断"
 
 [router.eligibility]
 none = "开启路由需要至少一个有 API key 的成员。"

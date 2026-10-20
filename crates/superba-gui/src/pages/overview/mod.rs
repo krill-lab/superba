@@ -1,5 +1,12 @@
-//! Overview (user request 27): an original composition around what Superba is
-//! for — where Codex's traffic goes and what it costs.
+//! Overview (user request 27, 118): an original composition around what
+//! Superba is for — where every coding tool's traffic goes and what it costs.
+//!
+//! - With one tool (Codex) the route hero below; with several, one lane per
+//!   tool ([`lanes`], [`tools`]): tool → 本地路由 | 直连 → provider → model, the
+//!   rarely used tools folded into 「+N」.
+//! - 今日, the heat-strip and 最近会话 count every tool in the request log
+//!   (router, Codex rollouts, Claude Code transcripts); 今日 adds a chip per
+//!   tool.
 //!
 //! - A route hero across the top ([`hero`]): 本机 → 本地路由 → 供应商 · 线路 →
 //!   模型 · 速度档, the latency on the link into the provider, problem markers
@@ -19,10 +26,12 @@
 
 mod cards;
 pub mod hero;
+pub mod lanes;
 mod lines;
 mod sessions;
 mod today;
 pub mod todo;
+pub mod tools;
 pub mod usage;
 
 use std::time::{Duration, Instant};
@@ -32,14 +41,14 @@ use superba_core::{
     BillingSummary, LineCaps, Profile, RestoreTarget, Site, SpeedSupport, SpeedTier, catalog,
 };
 
-use super::{Action, Cx, Page, PageStatus, PaletteItem, empty_state, error_state};
+use super::{Action, Cx, Page, PageStatus, empty_state, error_state};
 use crate::design::backdrop::Backdrop;
 use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
 use crate::design::tokens::text;
-use crate::design::widgets::{Button, IconButton, Latency, Text};
+use crate::design::widgets::{Button, Latency, Text};
 use crate::runtime::ReadTask;
-pub use cards::{GAP, Grid, layout};
+pub use cards::{GAP, Grid, layout, layout_with};
 pub use lines::LineRow;
 pub use sessions::{host_label, usage_command};
 pub use today::{delta_text, figure};
@@ -121,23 +130,6 @@ pub fn status(_state: &State) -> PageStatus {
     PageStatus::default()
 }
 
-/// "Codex in effect" (the shell lists switching and restore).
-pub fn palette(cx: &Cx<'_>, _state: &State) -> Vec<PaletteItem> {
-    vec![PaletteItem {
-        title: cx.tr.t("overview.palette.in_effect"),
-        detail: Some(cx.tr.t("overview.palette.in_effect_detail")),
-        keywords: vec![
-            "runtime".into(),
-            "processes".into(),
-            "restart".into(),
-            "stale".into(),
-            "vscode".into(),
-        ],
-        group: super::PaletteGroup::Commands,
-        action: Action::ShowRuntime,
-    }]
-}
-
 /// Commands: `wizard`, `restore:original`, `restore:official`, `refresh`.
 pub fn command(state: &mut State, _cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     match command {
@@ -158,7 +150,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
             out.push(Action::RunDoctor);
         }
     }
-    title_row(ui, cx, state, out);
+    title_row(ui, cx);
     ui.add_space(8.0);
 
     let Some(overview) = cx.data.overview.value.as_ref() else {
@@ -179,20 +171,50 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     let snap = state.usage.value.as_ref();
     let todos = todo::todos(cx, snap);
     let hero_model = hero::model(cx, overview, &todos, snap);
+    let routes = tools::routes(
+        cx,
+        snap,
+        if hero_model.provider.ghost {
+            ""
+        } else {
+            &hero_model.provider.title
+        },
+        if hero_model.model.ghost {
+            ""
+        } else {
+            &hero_model.model.title
+        },
+    );
     let area = ui.available_rect_before_wrap();
-    let g = layout(area);
+    // One tool: the single-tool hero; several: one lane per tool.
+    let multi = routes.len() > 1;
+    // 今日 makes room for its per-tool chips.
+    let chips = snap.is_some_and(|s| s.tools_today.len() > 1) && !is_empty(cx);
+    let extra = if chips { tools::CHIP_ROW + 4.0 } else { 0.0 };
+    let g = if multi {
+        let tall = cards::page_height(area) >= 660.0;
+        let lanes = routes.len().min(if tall { 4 } else { 3 });
+        let hero_h = lanes::height(lanes, if tall { 182.0 } else { hero::HEIGHT });
+        layout_with(area, Some(hero_h), extra)
+    } else {
+        layout_with(area, None, extra)
+    };
     let used = g.sessions.max.y.max(g.todo.max.y) - area.min.y;
     ui.allocate_rect(
         Rect::from_min_size(area.min, vec2(area.width(), used)),
         Sense::hover(),
     );
-    hero::show(ui, cx, &hero_model, g.hero, out);
+    if multi {
+        lanes::show(ui, cx, &hero_model, &routes, g.hero, out);
+    } else {
+        hero::show(ui, cx, &hero_model, g.hero, out);
+    }
     let mut dismissed = false;
     if is_empty(cx) && !state.empty_dismissed {
         let left = g.today.union(g.sessions);
         cards::card(ui, left, |ui| setup_card(ui, cx, &mut dismissed, out));
     } else {
-        cards::card(ui, g.today, |ui| today::show(ui, cx, snap));
+        cards::card(ui, g.today, |ui| today::show(ui, cx, snap, out));
         cards::card(ui, g.sessions, |ui| sessions::show(ui, cx, snap, out));
     }
     cards::card(ui, g.lines, |ui| lines::show(ui, cx, snap, out));
@@ -208,8 +230,9 @@ pub fn is_empty(cx: &Cx<'_>) -> bool {
     cx.data.active_state().is_none() && cx.data.providers().is_empty()
 }
 
-/// The large title with a gray line after it, and the menu on the right.
-fn title_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+/// The large title with a short tool-neutral line after it. No menu: its
+/// actions live on the Superba page (user request 118).
+fn title_row(ui: &mut Ui, cx: &Cx<'_>) {
     ui.allocate_ui_with_layout(
         vec2(ui.available_width(), TITLE_ROW),
         Layout::left_to_right(Align::Center),
@@ -226,60 +249,8 @@ fn title_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>)
                 ui.add_space(0.0);
                 ui.label(Text::small(cx.tr.t("overview.tagline"), cx.pal));
             });
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                menu(ui, cx, state, out);
-            });
         },
     );
-}
-
-fn menu(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    let response = ui.add(IconButton::new(Icon::More, cx.tr.t("overview.menu.title")));
-    egui::Popup::menu(&response)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
-        .show(|ui| {
-            ui.set_min_width(220.0);
-            // The command palette (also Cmd/Ctrl+K): the sidebar has no
-            // search field (user bug 85).
-            let search = egui::Button::new(cx.tr.t("shell.search"))
-                .shortcut_text(crate::shell::palette_shortcut_label());
-            if ui.add(search).clicked() {
-                out.push(Action::OpenPalette);
-            }
-            ui.separator();
-            let baseline = cx
-                .data
-                .overview
-                .value
-                .as_ref()
-                .is_some_and(|o| o.baseline_captured);
-            if ui
-                .add_enabled(
-                    baseline && !cx.busy,
-                    egui::Button::new(cx.tr.t("overview.menu.restore_original")),
-                )
-                .clicked()
-            {
-                out.push(Action::restore_original());
-            }
-            if ui
-                .add_enabled(
-                    !cx.busy && !cx.data.official_active(),
-                    egui::Button::new(cx.tr.t("overview.menu.restore_official")),
-                )
-                .clicked()
-            {
-                out.push(Action::Restore(RestoreTarget::Official));
-            }
-            ui.separator();
-            if ui.button(cx.tr.t("overview.menu.wizard")).clicked() {
-                out.push(Action::StartWizard);
-            }
-            if ui.button(cx.tr.t("action.refresh")).clicked() {
-                out.push(Action::Refresh);
-                state.usage.at = None;
-            }
-        });
 }
 
 /// "Choose a provider for Codex" (UX §3.1 empty state), in the left column.

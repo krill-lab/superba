@@ -46,6 +46,9 @@ pub enum RequestSource {
     CcSwitch,
     /// Imported from AI Toolbox's usage history.
     AiToolbox,
+    /// Claude Code's local transcripts (`projects/**/*.jsonl` of its
+    /// configuration directory): model, tokens and times only.
+    ClaudeTranscript,
 }
 
 impl RequestSource {
@@ -62,6 +65,10 @@ impl RequestSource {
             RequestSource::AiToolbox => {
                 LocalizedText::new("request_source.ai_toolbox", "Imported from AI Toolbox")
             }
+            RequestSource::ClaudeTranscript => LocalizedText::new(
+                "request_source.claude_transcript",
+                "Claude Code transcripts",
+            ),
         }
     }
 
@@ -83,14 +90,15 @@ impl RequestSource {
     }
 
     /// Every source, in the order the Usage page's filter lists them.
-    pub const ALL: [RequestSource; 4] = [
+    pub const ALL: [RequestSource; 5] = [
         RequestSource::Router,
         RequestSource::Rollout,
+        RequestSource::ClaudeTranscript,
         RequestSource::CcSwitch,
         RequestSource::AiToolbox,
     ];
 
-    /// Stable id (`router`, `rollout`, `ccs`, `ai-toolbox`), as `spb usage
+    /// Stable id (`router`, `rollout`, `claude-code`, `ccs`, `ai-toolbox`), as `spb usage
     /// --source` takes it.
     pub fn id(self) -> &'static str {
         match self {
@@ -98,6 +106,7 @@ impl RequestSource {
             RequestSource::Rollout => "rollout",
             RequestSource::CcSwitch => "ccs",
             RequestSource::AiToolbox => "ai-toolbox",
+            RequestSource::ClaudeTranscript => "claude-code",
         }
     }
 }

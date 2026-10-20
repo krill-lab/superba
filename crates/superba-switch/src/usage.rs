@@ -95,21 +95,23 @@ impl Attribution {
         )
     }
 
-    /// The log row of a rollout request.
-    pub fn row(&self, r: &RolloutRequest) -> RequestRow {
-        let (member_id, member_name) = self.member(r.model_provider.as_deref(), r.started_at);
-        let usage = r.usage;
+    /// Cost and price basis of a request (as the router prices its rows: the
+    /// Models-page price wins, else the list price; the basis goes to
+    /// `price_rev`). `None` without usage, model or a price.
+    pub fn price(
+        &self,
+        member_id: &ProfileId,
+        model: Option<&str>,
+        usage: Option<superba_sessions::usage::RolloutUsage>,
+        service_tier: Option<&str>,
+    ) -> Option<(superba_core::Usd, Option<String>)> {
         // As the router prices its rows: the Models-page price wins, else the
         // list price; the basis goes to `price_rev`.
-        let estimate = usage.zip(r.model.as_deref()).and_then(|(u, model)| {
-            let entry = superba_models::price::lookup(
-                &self.prices,
-                &self.price_settings,
-                &member_id,
-                model,
-            )
-            .ok()
-            .flatten()?;
+        usage.zip(model).and_then(|(u, model)| {
+            let entry =
+                superba_models::price::lookup(&self.prices, &self.price_settings, member_id, model)
+                    .ok()
+                    .flatten()?;
             let tokens = superba_models::price::UsageTokens {
                 input: u.input,
                 cached: u.cached,
@@ -118,14 +120,12 @@ impl Attribution {
                 at_ms: Some(r.started_at.as_millis()),
                 ..Default::default()
             };
-            let ratio = superba_models::price::ratio_of(&self.price_settings, &member_id);
-            let cost =
-                superba_models::price::cost(&entry, &tokens, r.service_tier.as_deref(), ratio)
-                    .ok()?;
+            let ratio = superba_models::price::ratio_of(&self.price_settings, member_id);
+            let cost = superba_models::price::cost(&entry, &tokens, service_tier, ratio).ok()?;
             let is_override = self
                 .price_settings
                 .overrides
-                .get(&member_id)
+                .get(member_id)
                 .is_some_and(|o| {
                     o.contains_key(model)
                         || superba_models::split_tier_suffix(model)
@@ -137,7 +137,19 @@ impl Attribution {
                 superba_models::price::PriceBasis::of_list(&entry, &self.prices.rev)
             };
             Some((cost, basis.map(|b| b.encode())))
-        });
+        })
+    }
+
+    /// The log row of a rollout request.
+    pub fn row(&self, r: &RolloutRequest) -> RequestRow {
+        let (member_id, member_name) = self.member(r.model_provider.as_deref(), r.started_at);
+        let usage = r.usage;
+        let estimate = self.price(
+            &member_id,
+            r.model.as_deref(),
+            usage,
+            r.service_tier.as_deref(),
+        );
         let (cost, price_rev) = match estimate {
             Some((c, basis)) => (Some(c), basis),
             None => (None, None),

@@ -48,6 +48,7 @@ mod progress;
 mod rollout;
 mod sqlite;
 mod text;
+pub mod claude_usage;
 pub mod titles;
 pub mod usage;
 mod util;

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use router_harness::Harness;
 use superba_core::{ChannelKind, EventKind, Locale, NotifyChannel, Settings};
-use superba_gui::pages::{Action, Page, SuperbaSection, notify, superba};
+use superba_gui::pages::{Action, SuperbaSection, notify, superba};
 use support::fake::{FakeOptions, FakeService};
 
 fn settings() -> Settings {
@@ -148,27 +148,7 @@ fn the_add_dialog_checks_fields_in_the_users_language() {
 }
 
 #[test]
-fn palette_entries_open_the_section() {
-    let service = Arc::new(FakeService::new(FakeOptions::default()));
-    let mut h = Harness::new([1280.0, 800.0], Locale::En, service, false);
-    h.frame(|_, cx, _| {
-        let items = notify::palette(cx);
-        let titles: Vec<&str> = items.iter().map(|i| i.title.as_str()).collect();
-        assert_eq!(titles[..3], ["Notifications", "Add channel", "Test all"]);
-        assert!(titles.contains(&"Add a notification channel: WeChat via ServerChan"));
-        assert_eq!(items.len(), 3 + ChannelKind::ALL.len());
-        assert!(items.iter().all(|i| matches!(
-            &i.action,
-            Action::PageCommand {
-                page: Page::Superba(SuperbaSection::Notify),
-                ..
-            }
-        )));
-    });
-}
-
-#[test]
-fn adding_a_kind_from_the_palette_opens_its_form() {
+fn adding_a_kind_by_command_opens_its_form() {
     let service = Arc::new(FakeService::new(FakeOptions::default()));
     let mut h = Harness::new([1280.0, 900.0], Locale::ZhCn, service, false);
     let mut prefs = settings();

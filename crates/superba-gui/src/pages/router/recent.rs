@@ -244,7 +244,12 @@ impl Recent {
     pub fn show_session(&mut self, key: &str) {
         self.clear_filters();
         self.grouping = RequestGrouping::Session;
-        self.group = Some(superba_core::harness_group_key(RequestHarness::Codex, key));
+        // A tool-qualified key (the Overview's sessions of every tool) as is;
+        // a bare one is a Codex session.
+        self.group = Some(match superba_core::split_harness_key(key) {
+            Some(_) => key.to_owned(),
+            None => superba_core::harness_group_key(RequestHarness::Codex, key),
+        });
         if self.range == Range::Day {
             self.range = Range::Week;
         }

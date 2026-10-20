@@ -1,4 +1,4 @@
-//! The Overview's 最近会话 card (user request 27): the five Codex sessions
+//! The Overview's 最近会话 card (user request 27, 118): the five sessions of any tool
 //! with the newest requests — name, where they ran, model, tokens, when they
 //! were last active and their estimated cost over the seven days. A click
 //! opens the Usage page filtered to that session.
@@ -35,6 +35,15 @@ fn columns(width: f32) -> [f32; 6] {
 /// "本机 · App", "本机 · 终端": this computer and the client that sent the
 /// newest request.
 pub fn host_label(cx: &Cx<'_>, s: &SessionSummary) -> String {
+    // Another tool: this computer and the tool (its clients are not told
+    // apart).
+    if s.harness != superba_core::RequestHarness::Codex {
+        return format!(
+            "{} · {}",
+            cx.tr.t("overview.sessions.this_computer"),
+            super::tools::name(cx, s.harness)
+        );
+    }
     let client = match s.client {
         RequestClient::Desktop => "overview.sessions.client.desktop",
         RequestClient::Tui => "overview.sessions.client.tui",
@@ -166,7 +175,8 @@ fn session_row(ui: &mut Ui, cx: &Cx<'_>, s: &SessionSummary, r: Rect, cols: &[f3
         );
     }
     let y = r.center().y;
-    let mut x = r.min.x + 8.0;
+    let x = r.min.x + 8.0;
+    let mut next = x;
     let one = |s: String, w: f32, font_id: egui::FontId, color: Color32| {
         let mut job = egui::text::LayoutJob::single_section(
             s,
@@ -215,17 +225,27 @@ fn session_row(ui: &mut Ui, cx: &Cx<'_>, s: &SessionSummary, r: Rect, cols: &[f3
             pal.text,
         ),
     ];
+    // The tool's monogram before the session's name.
+    const MONO: f32 = 18.0;
+    crate::design::widgets::MonogramTile::new(super::tools::monogram(s.harness))
+        .size(MONO)
+        .paint_at(ui, pos2(x + MONO / 2.0, y));
     for (i, (s_text, f, color)) in cells.into_iter().enumerate() {
-        let g = one(s_text, cols[i], f, color);
+        let (shift, w) = if i == 0 {
+            (MONO + 6.0, cols[0] - MONO - 6.0)
+        } else {
+            (0.0, cols[i])
+        };
+        let x = next + shift;
+        let g = one(s_text, w, f, color);
         let gy = y - g.size().y / 2.0;
         if i >= 3 {
             let gw = g.size().x;
-            ui.painter()
-                .galley(pos2(x + cols[i] - 8.0 - gw, gy), g, color);
+            ui.painter().galley(pos2(x + w - 8.0 - gw, gy), g, color);
         } else {
             ui.painter().galley(pos2(x, gy), g, color);
         }
-        x += cols[i];
+        next += cols[i];
     }
     if show_focus(&resp) {
         focus_ring(ui.painter(), r, radius::ROW, pal);

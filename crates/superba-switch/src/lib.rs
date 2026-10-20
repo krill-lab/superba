@@ -27,6 +27,7 @@ mod account;
 pub mod ciphers;
 pub mod claude;
 mod claude_router;
+pub mod claude_usage;
 pub mod compaction;
 pub mod core_watch;
 mod data;
@@ -430,6 +431,8 @@ pub struct Switcher {
     pin_override: Arc<Mutex<Option<superba_core::AppCodexPin>>>,
     /// Model requests read from the local Codex home's rollouts (Usage page).
     usage: usage::SharedIndex,
+    /// Claude Code transcript index (Usage page, Overview).
+    claude_usage: claude_usage::SharedClaudeIndex,
     /// The language the UI reported ([`SwitchService::set_ui_locale`]); the
     /// default stats line template is resolved in it.
     reported_locale: Arc<Mutex<Option<superba_core::Locale>>>,
@@ -483,6 +486,13 @@ impl Switcher {
         let usage = Arc::new(std::sync::Mutex::new(
             superba_sessions::usage::UsageIndex::new(deps.ctx.codex_home()),
         ));
+        let claude_usage = Arc::new(std::sync::Mutex::new(
+            superba_sessions::claude_usage::ClaudeUsageIndex::new(
+                superba_core::ClaudeHome::resolve(deps.ctx.env.as_ref(), &deps.ctx.home_dir)
+                    .root()
+                    .to_path_buf(),
+            ),
+        ));
         let monitor = monitor::EnvMonitor::new(deps.app.clone(), monitor::MonitorTuning::default());
         Self {
             deps,
@@ -495,6 +505,7 @@ impl Switcher {
             catalog_off: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pin_override: Arc::new(Mutex::new(None)),
             usage,
+            claude_usage,
             reported_locale: Arc::new(Mutex::new(None)),
             monitor,
             ownership: Arc::default(),

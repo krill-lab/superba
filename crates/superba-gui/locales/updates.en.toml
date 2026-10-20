@@ -95,11 +95,6 @@ current = "Current"
 bundled = "Bundled"
 stored = "Downloaded"
 
-[updates.palette]
-check_superba = "Check for Superba updates"
-check = "Check for updates"
-update_cli = "Update Codex CLI"
-
 [updates.superba]
 title = "Superba"
 checking = "Checking for a newer Superba…"

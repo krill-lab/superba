@@ -44,7 +44,7 @@ NAMES = {
     "s13": "Local router (real binaries): install, enable, stickiness, failover between turns and mid-turn, 401/403/429 not failed over, disable, watchdog fallback",
     "s14": "Account data from standard endpoints (mock): balance + usage, each endpoint 404 hidden, 429 cached with note",
     "s15": "Tracked tree: no demo mode artifacts, no user-facing 'context management' wording, no account-summary endpoint, no 'for Krill' brand string, no internal hosts, no key bytes",
-    "s16": "Setup wizard with the Krill preset (fresh home, GUI): first start, key typed, lines, finish = profile + switch; re-run from Preferences and the palette edits the profile; Skip writes nothing",
+    "s16": "Setup wizard with the Krill preset (fresh home, GUI): first start, key typed, lines, finish = profile + switch; re-run from Preferences edits the profile; Skip writes nothing",
     "s17": "Model lists from the provider (Codex-native and /v1/models) and the signed feeds through raced mirrors: 404 / HTML / stale / valid, winner remembered, cache, built-in snapshot",
     "s18": "Per-model context override: catalog file at <CODEX_HOME>/superba/models-<sha8>.json, preflight, picker list, rollout context window, reset and pruning, a refused preflight writes nothing",
     "s19": "Fast / Ultrafast in API-key direct mode: service_tier for the CLI, the app runs Standard, Ultrafast through the catalog, tier-suffixed model names for the app, Standard = no tier",

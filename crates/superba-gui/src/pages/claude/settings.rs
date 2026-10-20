@@ -30,9 +30,7 @@ use crate::design::widgets::{
 };
 use crate::pages::settings::files::Editor;
 use crate::pages::shared::loading::{self, Latest};
-use crate::pages::{
-    Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, error_text, page_header,
-};
+use crate::pages::{Action, Cx, Page, PageStatus, error_text, page_header};
 use crate::runtime::ReadTask;
 
 /// Time limit of reading settings.json.
@@ -959,30 +957,4 @@ pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Acti
     } else if command == "save" {
         s.save(cx);
     }
-}
-
-/// Palette entries: every key with its Chinese name.
-pub fn palette(cx: &Cx<'_>, s: &SettingsState) -> Vec<PaletteItem> {
-    let Some(model) = &s.model else {
-        return Vec::new();
-    };
-    let zh = cx.tr.locale() == Locale::ZhCn;
-    model
-        .rows
-        .iter()
-        .filter(|r| !r.entry.deprecated || r.value.is_some())
-        .map(|r| PaletteItem {
-            title: format!("{} · Claude Code", r.title(zh)),
-            detail: Some(r.path().to_owned()),
-            keywords: [Some(r.path().to_owned()), r.entry.name_zh.clone()]
-                .into_iter()
-                .flatten()
-                .collect(),
-            group: PaletteGroup::Settings,
-            action: Action::PageCommand {
-                page: Page::ClaudeSettings,
-                command: format!("focus:{}", r.path()),
-            },
-        })
-        .collect()
 }

@@ -12,7 +12,7 @@ made by
 
 Shots, at 1280x800 in light and dark, English and Chinese:
 
-- `usage-import-dialog-*`: the import dialog (command palette) with each tool's
+- `usage-import-dialog-*`: the import dialog (`--command import`) with each tool's
   usage history next to its providers;
 - `usage-imported-*`: the Usage page after `spb import usage ccs` and
   `spb import usage ai-toolbox`, imported rows next to the router's and
@@ -66,12 +66,11 @@ def enter_namespace():
     os.execvpe("unshare", argv, {**os.environ, NS_ENV: "1"})
 
 
-def palette(query, settle=3.5):
-    """Open the command palette, run the first entry matching `query`."""
+def settle(wait=3.5):
+    """Let a page opened with `--command` settle (the command palette the
+    older version typed into is gone, user request 118)."""
     def act(s):
-        shoot.palette_action(query)(s)
-        s.input.key("Return")
-        time.sleep(settle)
+        time.sleep(wait)
         s.input.park()
     return act
 
@@ -157,7 +156,7 @@ def main():
                 s.shot(name, page, theme, lang, wait, actions, SIZE)
 
         if wanted("usage-import-dialog"):
-            shots("usage-import-dialog", "providers", palette("import"))
+            shots("usage-import-dialog", "providers#import", settle())
         for cmd in (["import", "usage", "ccs", "--dry-run"], ["import", "usage", "ccs"],
                     ["import", "usage", "ai-toolbox"], ["import", "usage", "ccs"],
                     ["usage", "log", "--since", "1d", "--source", "ccs", "--limit", "5"],

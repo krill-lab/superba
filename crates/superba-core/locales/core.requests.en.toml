@@ -12,6 +12,7 @@ other = "Other"
 # Where a request row comes from (Usage page, CSV, spb usage).
 [request_source]
 router = "Local router"
+claude_transcript = "Claude Code transcripts"
 rollout = "Codex session files"
 ccs = "Imported from CC Switch"
 ai_toolbox = "Imported from AI Toolbox"

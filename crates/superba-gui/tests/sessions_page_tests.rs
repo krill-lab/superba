@@ -308,9 +308,6 @@ async fn the_command_copy_and_local_commands_produce_actions() {
         sessions::command(&mut state, cx, "rescan", &mut out);
         sessions::command(&mut state, cx, "host:local", &mut out);
         sessions::command(&mut state, cx, "host:unknown", &mut out);
-        // Palette: one entry per app host, addressed to this page.
-        let items = sessions::palette(cx, &state);
-        assert_eq!(items.len(), 2);
     });
     assert!(matches!(out.as_slice(), [Action::LoadSessions]), "{out:?}");
     assert_eq!(state.host, None);

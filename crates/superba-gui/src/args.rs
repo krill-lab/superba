@@ -33,12 +33,14 @@ pub struct GuiArgs {
     pub start_in_tray: bool,
     /// Login startup: reuse an existing instance without raising its window.
     pub autostart: bool,
+    /// `--command CMD`: run a command of the `--page` page once loaded.
+    pub command: Option<String>,
 }
 
 /// Usage text for `--gui-help`.
 pub const USAGE: &str = "\
 superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
-        [--launch-chatgpt] [--start-in-tray] [--autostart]
+        [--command CMD] [--launch-chatgpt] [--start-in-tray] [--autostart]
 
   --theme T     dark or light (default: preferences / system)
   --lang L      en or zh-CN (default: preferences / system)
@@ -47,6 +49,8 @@ superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
                 settings sessions hosts claude-code claude-settings dsh opencode
                 pi zcode workbuddy gemini superba
                 updates diagnostics data general appearance network notify
+  --command CMD run a command of that page once it has loaded (tooling):
+                e.g. overview wizard, providers import, router doctor
   --launch-chatgpt
                 open ChatGPT through Superba (so it can be hot-switched); a
                 running Superba window does it, else no window opens unless
@@ -150,6 +154,7 @@ impl GuiArgs {
                     let v = value("--page")?;
                     out.page = Some(parse_page(&v).ok_or_else(|| format!("unknown page {v:?}"))?);
                 }
+                "--command" => out.command = Some(value("--command")?),
                 "--size" => {
                     let v = value("--size")?;
                     let (w, h) = v
