@@ -4,7 +4,7 @@
 //! Run with HOME and SUPERBA_DATA_DIR pointed at a disposable directory:
 //!
 //!     models_frames --mode codex|extended|prefixed --width 1280|960 [--dark] [--zh]
-//!         [--click X,Y] [--hover X,Y] [--wizard [--scroll]] --output FILE.png
+//!         [--click X,Y] [--hover X,Y] [--wizard [--scroll]] [--direct] --output FILE.png
 //!
 //! `--wizard` shows the setup wizard's "Line & models" step instead, where the
 //! router model list is asked; `--scroll` scrolls its body to the end, where
@@ -188,7 +188,11 @@ fn main() -> eframe::Result {
         } else {
             Locale::En
         }),
-        page: Some(Page::Models),
+        page: Some(if args.iter().any(|a| a == "--router") {
+            Page::Router
+        } else {
+            Page::Models
+        }),
         ..Default::default()
     };
     let native = eframe::NativeOptions {
@@ -207,7 +211,12 @@ fn main() -> eframe::Result {
     let base = rt
         .block_on(service.models_view(Default::default()))
         .unwrap();
-    service.set_models_view(support::models_catalog::view(base, mode));
+    if args.iter().any(|a| a == "--direct") {
+        // A direct connection with the mode stored as a preference.
+        service.set_router_catalog_mode(mode);
+    } else {
+        service.set_models_view(support::models_catalog::view(base, mode));
+    }
     let click = point(arg("--click"));
     let hover = point(arg("--hover"));
     if args.iter().any(|a| a == "--wizard") {

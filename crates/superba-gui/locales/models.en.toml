@@ -116,6 +116,19 @@ save = "Save"
 save_apply = "Save & apply"
 
 [models.price]
+cache_write = "Cache write"
+src_override = "Your price for this provider (replaces the built-in one)"
+src_table = "Built-in official price · {source} · {rev}"
+src_none = "No known official price, so costs show —; click to set one"
+base_line = "Input ${input} · cache read ${cached} · output ${output} (per 1M tokens)"
+write_line = "Cache write ${write}"
+write_line_1h = "Cache write ${write} (1 hour ${hour})"
+band_line = ">{above}: input ${input} / output ${output}"
+window_line = "{label} {span}: input ${input} / output ${output}"
+tiers_line = "Service tier prices too: {tiers}"
+weekdays = "Mon–Fri"
+weekend = "weekends"
+all_day = "all day"
 body = "USD per 1M tokens. Used only for the request log's estimated cost; it replaces the built-in price of this model for this provider."
 cached = "Cached input"
 input = "Input"
@@ -173,6 +186,13 @@ standard = "Standard list"
 codex_short = "Codex list"
 standard_short = "standard list"
 tip = "Codex list: /backend-api/codex/models (or /codex/v1/models), with reasoning levels and context windows. Standard list: /v1/models, also models that are not in the Codex list. Both lists: read at once and merged."
+
+[models.prices]
+open = "Prices & calibration…"
+open_tip = "The price table, each provider's price ratio and calibration against its bill"
+title = "Prices & calibration"
+table = "{source} · {rev} · {n} models"
+hide_table = "Hide"
 
 [models.router]
 builtin_tip = "One of Codex's own models that this provider does not list: offered as before, not verified."

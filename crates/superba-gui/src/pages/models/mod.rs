@@ -22,6 +22,7 @@
 
 mod catalog;
 pub mod model;
+pub mod prices;
 mod view;
 
 pub use catalog::{Guidance, chip_lines, guidance, mode_help, mode_label, valid_slug};
@@ -53,6 +54,8 @@ pub struct PriceDialog {
     pub cached: String,
     /// Output price.
     pub output: String,
+    /// Cache-write price (empty = the input price).
+    pub write: String,
     /// Validation message.
     pub error: Option<String>,
 }
@@ -121,6 +124,8 @@ pub struct State {
     pub diff_open: bool,
     /// The price editor is open.
     pub price: Option<PriceDialog>,
+    /// 「价格与校准」: the price table, ratios and calibration.
+    pub price_tools: prices::PriceTools,
     /// Built-in price table (feeds), when loaded.
     prices: Option<PriceTable>,
     /// The price table load ran (or was set).

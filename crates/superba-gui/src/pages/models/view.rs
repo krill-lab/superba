@@ -52,6 +52,10 @@ const ACTIONS_ROUTED: f32 = 128.0;
 
 /// Tables narrower than this drop the speed column (the 960 px window).
 const NARROW_TABLE: f32 = 860.0;
+/// Width of the price column next to a providers or upstream column.
+const PRICE_W: f32 = 150.0;
+/// The narrowest table with a price column next to a providers or upstream column.
+const PRICE_TABLE: f32 = 1120.0;
 
 /// Pages narrower than this show the list source on a row of its own.
 const NARROW_STRIP: f32 = 860.0;
@@ -146,6 +150,7 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     if state.price.is_some() {
         price_dialog(ui.ctx(), cx, state, &saved);
     }
+    super::prices::tools_dialog(ui.ctx(), cx, &mut state.price_tools, state.prices.as_ref());
 }
 
 /// Page header: provider picker, search and refresh on the right.
@@ -792,14 +797,17 @@ enum Col {
     Compact,
     /// Faster tiers (wide tables only; a narrow one names them in the model cell).
     Speed,
-    /// Price override (direct) or the upstream name (custom sites).
+    /// The upstream name (custom sites).
     Extra,
+    /// The price per 1M tokens and where it comes from, editable (user
+    /// requirement 115: prices live on this page).
+    Price,
     /// Row actions: show in Codex, test (router) and reset, in one place.
     Actions,
 }
 
 /// The columns and their minimum widths for this view and width.
-fn columns(routed: bool, narrow: bool) -> Vec<(Col, f32)> {
+fn columns(routed: bool, narrow: bool, custom: bool, priced: bool) -> Vec<(Col, f32)> {
     // Value fields alone in a narrow table: the tag and caption move into the
     // field's tooltip, so the model column keeps room for its slug.
     let value = if narrow { VALUE_NARROW } else { VALUE_W };
@@ -812,8 +820,15 @@ fn columns(routed: bool, narrow: bool) -> Vec<(Col, f32)> {
     if !narrow {
         cols.push((Col::Speed, if routed { 104.0 } else { 132.0 }));
     }
-    if !routed {
+    if !routed && custom {
         cols.push((Col::Extra, 176.0));
+    }
+    // Every table has a price column, except a narrow one that already has a
+    // providers or upstream column: its prices fold into the model cell.
+    if !routed && !custom {
+        cols.push((Col::Price, 176.0));
+    } else if priced {
+        cols.push((Col::Price, PRICE_W));
     }
     cols.push((
         Col::Actions,
@@ -838,7 +853,10 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
     // into the model cell's second line and the value columns narrow, so the
     // model column keeps room for its slug (user bug 25).
     let narrow = ui.available_width() < NARROW_TABLE;
-    let plan = columns(routed, narrow);
+    // A providers or upstream column leaves room for prices only in a wide
+    // table; otherwise they fold into the model cell.
+    let priced = ui.available_width() >= PRICE_TABLE;
+    let plan = columns(routed, narrow, custom, priced);
     let headers: Vec<String> = plan
         .iter()
         .map(|(c, _)| {
@@ -850,8 +868,8 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
                 Col::Window => "models.col.context",
                 Col::Compact => "models.col.compact",
                 Col::Speed => "models.col.speed",
-                Col::Extra if custom => "models.col.upstream",
-                Col::Extra => "models.col.price",
+                Col::Extra => "models.col.upstream",
+                Col::Price => "models.col.price",
                 Col::Actions => "models.col.actions",
             })
         })
@@ -923,6 +941,7 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
                 custom,
                 active,
                 narrow,
+                priced: plan.iter().any(|(c, _)| *c == Col::Price),
                 edits: &mut edits,
                 focus: focus.as_ref(),
                 table: prices.as_ref(),
@@ -984,6 +1003,8 @@ struct RowCx<'a, 'b> {
     /// No speed column: the model cell names the faster tiers; value cells
     /// show the field alone.
     narrow: bool,
+    /// The table has a price column.
+    priced: bool,
     edits: &'a mut Vec<Edit>,
     focus: Option<&'a (String, Field)>,
     table: Option<&'a superba_core::PriceTable>,
@@ -1122,18 +1143,20 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: Col) {
                 }
             }
         }
-        (RowRef::Model(m), Col::Extra) if rc.custom => {
+        (RowRef::Model(m), Col::Extra) => {
             let o = rc.pending.override_of(rc.saved, &m.slug);
             let value = o.upstream_name.clone().unwrap_or_default();
             upstream(ui, rc, &m.slug, value);
         }
-        (RowRef::Model(m), Col::Extra) => {
+        (RowRef::Model(m), Col::Price) => {
             let shown = model::shown_price(rc.pending, rc.saved, rc.table, &m.slug);
             let (label, color) = match &shown {
-                Some((p, true)) => (price_text(p), cx.pal.text),
+                // A price the user set is marked (✎) and drawn in full colour.
+                Some((p, true)) => (format!("✎ {}", price_text(p)), cx.pal.text),
                 Some((p, false)) => (price_text(p), cx.pal.text_subtle),
                 None => ("—".to_owned(), cx.pal.text_subtle),
             };
+            let tip = super::prices::price_tip(cx, shown.as_ref());
             let r = ui.add(
                 egui::Label::new(
                     RichText::new(label)
@@ -1147,7 +1170,7 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: Col) {
                     Sense::click()
                 }),
             );
-            let r = r.on_hover_text(cx.tr.t("models.price.tip"));
+            let r = r.on_hover_text(tip);
             if r.clicked() {
                 rc.edits.push(Edit::Price(m.slug.clone()));
             }
@@ -1181,6 +1204,17 @@ fn model_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, m: &ModelSpec) {
         {
             parts.push(cx.tr.text(&t.text()));
         }
+    }
+    // A narrow table without a price column names the price here.
+    if !rc.priced
+        && (rc.custom || rc.saved.view.router_catalog.is_some())
+        && let Some((p, own)) = model::shown_price(rc.pending, rc.saved, rc.table, &m.slug)
+    {
+        parts.push(format!(
+            "{}${}",
+            if own { "✎ " } else { "" },
+            price_text(&p)
+        ));
     }
     let catalog_row = super::catalog::row(rc.saved.view, &m.slug);
     if catalog_row.is_some_and(super::catalog::translated) {
@@ -1721,6 +1755,7 @@ fn apply_edit(cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>, edit: Edit) {
                 input: text(current.as_ref().map(|p| p.input)),
                 cached: text(current.as_ref().and_then(|p| p.cached_input)),
                 output: text(current.as_ref().map(|p| p.output)),
+                write: text(current.as_ref().and_then(|p| p.cache_write)),
                 slug,
                 error: None,
             });
@@ -1877,6 +1912,8 @@ fn bottom(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
         ui.set_min_height(24.0);
         ui.spacing_mut().item_spacing.x = 6.0;
         let hidden = model::hidden_count(saved, &state.pending);
+        super::prices::open_button(ui, cx, &mut state.price_tools);
+        ui.add_space(8.0);
         if hidden > 0 || state.show_hidden {
             ui.add(Toggle::new(
                 &mut state.show_hidden,
@@ -2062,6 +2099,7 @@ fn price_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, saved: &Sav
                 ("models.price.input", &mut d.input),
                 ("models.price.cached", &mut d.cached),
                 ("models.price.output", &mut d.output),
+                ("models.price.cache_write", &mut d.write),
             ] {
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(vec2(150.0, 24.0), Sense::hover());
@@ -2124,17 +2162,21 @@ fn price_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, saved: &Sav
 pub fn parse_price(d: &PriceDialog) -> Option<PriceEntry> {
     let input = Usd::parse_dollars(&d.input).filter(|v| v.micros() >= 0)?;
     let output = Usd::parse_dollars(&d.output).filter(|v| v.micros() >= 0)?;
-    let cached = if d.cached.trim().is_empty() {
-        None
-    } else {
-        Some(Usd::parse_dollars(&d.cached).filter(|v| v.micros() >= 0)?)
+    let optional = |t: &str| -> Option<Option<Usd>> {
+        if t.trim().is_empty() {
+            Some(None)
+        } else {
+            Some(Some(Usd::parse_dollars(t).filter(|v| v.micros() >= 0)?))
+        }
     };
+    let cached = optional(&d.cached)?;
+    let write = optional(&d.write)?;
     Some(PriceEntry {
         cache_write_1h: None,
         windows: Vec::new(),
         input,
         cached_input: cached,
-        cache_write: None,
+        cache_write: write,
         output,
         long_context: Vec::new(),
         tiers: BTreeMap::new(),

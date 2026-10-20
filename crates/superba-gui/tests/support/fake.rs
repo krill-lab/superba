@@ -215,6 +215,12 @@ impl FakeService {
         self.open_calls.load(Ordering::SeqCst)
     }
 
+    /// Store the router model list mode in the saved settings (a direct
+    /// connection keeps it as a preference).
+    pub fn set_router_catalog_mode(&self, mode: superba_core::CatalogMode) {
+        self.state().profiles.settings.router.catalog.mode = mode;
+    }
+
     fn state(&self) -> MutexGuard<'_, FakeState> {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
     }

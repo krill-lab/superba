@@ -612,3 +612,71 @@ fn search_field_clears_with_its_button_and_escape() {
     run(&mut text, vec![esc], false);
     assert_eq!(text, "");
 }
+
+/// User requirement 115: through the router every row has its price with
+/// where it comes from; at 960 px the price folds into the model cell.
+#[tokio::test]
+async fn routed_rows_show_their_price_and_fold_it_when_narrow() {
+    let fake = service();
+    let data = data(&fake).await;
+    let view = routed(&fake, CatalogMode::Extended).await;
+    let table = fake.price_table().await.unwrap();
+    for (window, wide) in [([1440.0, 900.0], true), ([960.0, 640.0], false)] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let tr = Tr::new(locale);
+            let mut state = fresh(&view);
+            state.set_price_table(Some(table.clone()));
+            // The priced fixture model on the first page.
+            state.query = "astra".into();
+            let report = render_fit_min_height(
+                window,
+                locale,
+                egui::Theme::Light,
+                &data,
+                Page::Models.min_height(),
+                |ui, cx, out| models_page::show(ui, cx, &mut state, out),
+            );
+            let at = format!("{window:?} {locale:?}");
+            assert!(report.fits(), "{at}: {report:?}");
+            assert_eq!(report.beyond_right(), Vec::<&str>::new(), "{at}");
+            assert_eq!(
+                report.texts.contains(&tr.t("models.col.price")),
+                wide,
+                "{at}: price column"
+            );
+            let astra = "5.00 · 0.50 · 40.00";
+            assert!(
+                report.texts.iter().any(|t| t.contains(astra)),
+                "{at}: {:?}",
+                report.texts
+            );
+            // The page's way to the ratios and calibration.
+            assert!(report.whole(&tr.t("models.prices.open")), "{at}");
+        }
+    }
+}
+
+/// 「价格与校准…」 lists each key-based provider's ratio; editing and saving
+/// stores it with the same settings the cost estimates read.
+#[tokio::test]
+async fn price_ratios_are_edited_on_the_models_page() {
+    let fake = service();
+    let data = data(&fake).await;
+    let view = routed(&fake, CatalogMode::Extended).await;
+    fake.set_models_view(view.clone());
+    let tr = Tr::new(Locale::ZhCn);
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let mut state = fresh(&view);
+    let open = tr.t("models.prices.open");
+    let edit = tr.t("prices.edit");
+    let save = tr.t("prices.save");
+    drive(
+        &data,
+        service,
+        &mut state,
+        &[open.as_str(), edit.as_str(), save.as_str()],
+        |_, _| !fake.saved_stats().is_empty(),
+    );
+    assert_eq!(fake.saved_stats().len(), 1);
+    assert!(state.price_tools.open, "the dialog stays open");
+}

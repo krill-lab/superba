@@ -115,6 +115,19 @@ save = "保存"
 save_apply = "保存并应用"
 
 [models.price]
+cache_write = "缓存写入"
+src_override = "你为这个供应商设置的价格（覆盖内置价格）"
+src_table = "内置官方价格 · {source} · {rev}"
+src_none = "没有已知的官方价格，费用显示 —；点击设置价格"
+base_line = "输入 ${input} · 缓存读取 ${cached} · 输出 ${output}（每 1M token）"
+write_line = "缓存写入 ${write}"
+write_line_1h = "缓存写入 ${write}（1 小时 ${hour}）"
+band_line = ">{above}：输入 ${input} / 输出 ${output}"
+window_line = "{label} {span}：输入 ${input} / 输出 ${output}"
+tiers_line = "另有服务档位价格：{tiers}"
+weekdays = "周一至周五"
+weekend = "周末"
+all_day = "全天"
 body = "单位：美元 / 每 1M token。只用于请求记录中的费用估算，会替代这个供应商下该模型的内置价格。"
 cached = "缓存输入"
 input = "输入"
@@ -172,6 +185,13 @@ standard = "标准列表"
 codex_short = "Codex 列表"
 standard_short = "标准列表"
 tip = "Codex 列表：/backend-api/codex/models（或 /codex/v1/models），带推理强度和上下文窗口。标准列表：/v1/models，也包含不在 Codex 列表里的模型。两个列表：同时读取并合并。"
+
+[models.prices]
+open = "价格与校准…"
+open_tip = "价格表、每个供应商的价格比例，以及按账单校准"
+title = "价格与校准"
+table = "{source} · {rev} · {n} 个模型"
+hide_table = "收起"
 
 [models.router]
 builtin_tip = "Codex 自带的模型，该供应商的列表里没有：照旧提供，未经验证。"
