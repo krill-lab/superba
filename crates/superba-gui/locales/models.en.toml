@@ -175,6 +175,7 @@ standard_short = "standard list"
 tip = "Codex list: /backend-api/codex/models (or /codex/v1/models), with reasoning levels and context windows. Standard list: /v1/models, also models that are not in the Codex list. Both lists: read at once and merged."
 
 [models.router]
+builtin_tip = "One of Codex's own models that this provider does not list: offered as before, not verified."
 title = "Router model list"
 mode.codex = "Codex models only"
 mode.extended = "Codex + provider models"

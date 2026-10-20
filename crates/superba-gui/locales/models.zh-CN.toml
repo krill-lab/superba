@@ -174,6 +174,7 @@ standard_short = "标准列表"
 tip = "Codex 列表：/backend-api/codex/models（或 /codex/v1/models），带推理强度和上下文窗口。标准列表：/v1/models，也包含不在 Codex 列表里的模型。两个列表：同时读取并合并。"
 
 [models.router]
+builtin_tip = "Codex 自带的模型，该供应商的列表里没有：照旧提供，未经验证。"
 title = "路由模型列表"
 mode.codex = "仅 Codex 模型"
 mode.extended = "Codex + 供应商模型"

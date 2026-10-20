@@ -132,6 +132,9 @@ pub fn chip_lines(cx: &Cx<'_>, source: &CatalogProvenance) -> Vec<String> {
         Some(other) => readiness_pill(cx, other).map(|p| p.2).unwrap_or_default(),
     };
     lines.push(status);
+    if source.layer == CatalogLayer::Builtin {
+        lines.push(cx.tr.t("models.router.builtin_tip"));
+    }
     if source.translated() {
         lines.push(cx.tr.f(
             "models.router.converted",
