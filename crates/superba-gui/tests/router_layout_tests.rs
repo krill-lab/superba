@@ -743,3 +743,44 @@ fn the_off_state_names_the_way_to_a_member_for_screen_readers() {
         assert!(tree.unnamed().is_empty(), "{:?}", tree.unnamed());
     }
 }
+
+/// alpha.8 Windows acceptance (D2): UI Automation gives a disclosure triangle
+/// the ExpandCollapse pattern, not Invoke, so the harness's "invoke" became
+/// ExpandCollapse.Expand, i.e. AccessKit's Expand, which the disclosure
+/// ignored: only a real click opened 「高级」. Expand and Collapse work.
+#[test]
+fn advanced_opens_and_closes_through_expand_and_collapse() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let mut h = AppHarness::new(members(), locale, Page::Router);
+        let advanced = tr.t("router.advanced.title");
+        let tree = h.wait_for(Some(Role::DisclosureTriangle), &advanced);
+        let id = tree
+            .find(Some(Role::DisclosureTriangle), &advanced)
+            .unwrap();
+        assert!(tree.node(id).supports_action(Action::Expand));
+        h.act(id, Action::Expand);
+        let tree = h.wait_for(Some(Role::Switch), &tr.t("stats_line.title"));
+        let id = tree
+            .find(Some(Role::DisclosureTriangle), &advanced)
+            .unwrap();
+        assert_eq!(tree.node(id).is_expanded(), Some(true));
+        assert!(tree.node(id).supports_action(Action::Collapse));
+        // Expanding what is open changes nothing.
+        h.act(id, Action::Expand);
+        let tree = h.settle();
+        assert!(
+            tree.find(Some(Role::Switch), &tr.t("stats_line.title"))
+                .is_some()
+        );
+        h.act(id, Action::Collapse);
+        let tree = h.until("advanced closed", |t| {
+            t.find(Some(Role::Switch), &tr.t("stats_line.title"))
+                .is_none()
+        });
+        let id = tree
+            .find(Some(Role::DisclosureTriangle), &advanced)
+            .unwrap();
+        assert_eq!(tree.node(id).is_expanded(), Some(false));
+    }
+}

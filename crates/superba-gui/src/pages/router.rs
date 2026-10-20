@@ -576,16 +576,11 @@ fn switch_button(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Acti
     } else {
         "router.banner.turn_on"
     });
+    // UI Automation reads the visible label ("Turn off the router…"); a
+    // shorter name of its own ("Turn off") broke the label-in-name rule
+    // (alpha.8 Windows acceptance, D5).
     let button = Button::new(label).kind(switch_kind(on, ready));
-    // The existing UIA / AX names of the on and off flows (e2e/windows, e2e/macos).
-    let name = cx.tr.t(if on {
-        "router.turn_off"
-    } else {
-        "router.banner.turn_on"
-    });
-    let response = ui
-        .add(button.small().loading(starting).enabled(enabled))
-        .accessible_name(name);
+    let response = ui.add(button.small().loading(starting).enabled(enabled));
     let hint = match &request {
         Err(key) => cx.tr.t(key),
         Ok(_) if !members && !on => cx.tr.t("router.needs_member"),

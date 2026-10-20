@@ -329,7 +329,7 @@ fn tabs_have_names_roles_and_keyboard_navigation_into_the_panel() {
 fn at_anchor(t: &a11y_harness::Tree, tr: &Tr, section: SuperbaSection) -> bool {
     let name = tr.t(section.title_key());
     let active = t
-        .find(Some(Role::Button), &name)
+        .find(Some(Role::Tab), &name)
         .is_some_and(|id| t.node(id).is_selected() == Some(true));
     let header = t.find_all(Some(Role::Label), &name).into_iter().any(|id| {
         t.node(id)
@@ -377,16 +377,13 @@ fn jump_directory_tracks_scroll_and_sidebar_and_comma_restore_anchors() {
             SuperbaSection::Appearance,
             SuperbaSection::Network,
         ] {
-            h.click(Some(Role::Button), &tr.t(section.title_key()));
+            h.click(Some(Role::Tab), &tr.t(section.title_key()));
             h.until("jump", |t| at_anchor(t, &tr, section));
         }
         h.scroll_page(-1200.0);
         h.until("scroll spy", |t| {
-            t.find(
-                Some(Role::Button),
-                &tr.t(SuperbaSection::Notify.title_key()),
-            )
-            .is_some_and(|id| t.node(id).is_selected() == Some(true))
+            t.find(Some(Role::Tab), &tr.t(SuperbaSection::Notify.title_key()))
+                .is_some_and(|id| t.node(id).is_selected() == Some(true))
         });
         h.go(Page::Overview, &tr);
         h.click(Some(Role::Tab), "Superba");
@@ -398,10 +395,7 @@ fn jump_directory_tracks_scroll_and_sidebar_and_comma_restore_anchors() {
             at_anchor(t, &tr, SuperbaSection::General)
         });
         // The current Page can already be General after manually scrolling away.
-        h.click(
-            Some(Role::Button),
-            &tr.t(SuperbaSection::Notify.title_key()),
-        );
+        h.click(Some(Role::Tab), &tr.t(SuperbaSection::Notify.title_key()));
         h.until("notify again", |t| {
             at_anchor(t, &tr, SuperbaSection::Notify)
         });

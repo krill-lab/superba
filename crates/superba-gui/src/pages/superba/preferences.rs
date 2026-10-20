@@ -149,7 +149,10 @@ fn jumps(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 galley,
                 cx.pal.text,
             );
-            a11y::selectable(&response, egui::Role::Button, &label, selected);
+            // A tab, so UI Automation exposes SelectionItem.IsSelected for the
+            // section in view (a button has no selected state there; alpha.8
+            // Windows acceptance, D6).
+            a11y::selectable(&response, egui::Role::Tab, &label, selected);
             if show_focus(&response) {
                 focus_ring(ui.painter(), rect, 6, cx.pal);
             }
