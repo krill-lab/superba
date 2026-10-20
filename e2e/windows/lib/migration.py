@@ -54,7 +54,10 @@ def wait_migration(run, s, u, total=600, restore=False, stop=False, timeout=300)
 
     try:
         while time.monotonic() - start < timeout:
-            names = u.texts()
+            read_start = time.monotonic()
+            snapshot = u.snapshot()
+            read_seconds = time.monotonic() - read_start
+            names = [e["name"] for e in snapshot if e["name"]]
             active = migration_busy(u, names)
             seen_active |= active
             errors.extend(n for n in names if re.search(r"(?i)holds|too many open files|os error|EMFILE", n))
@@ -69,14 +72,19 @@ def wait_migration(run, s, u, total=600, restore=False, stop=False, timeout=300)
             count = next((c for n in names if (c := migration_count(u.s, n, total, restore))), None)
             current = next((n for n in names if re.fullmatch(u.R("movers.now"), n)), None)
             observations.append({"t": round(time.monotonic() - start, 1), "count": count,
-                                 "active": active, "current": current, "texts": names})
+                                 "active": active, "current": current, "texts": names,
+                                 "read_seconds": round(read_seconds, 3)})
             if count and active and len([o for o in observations if o["count"]]) <= 6:
                 capture(f"{'restoring' if restore else 'migrating'}-{len(observations)}")
             if stop and not stopped and active and count and 0 < count[0] < count[1]:
-                s.check(u.exists(key="movers.stop", type="Button", enabled=True),
+                buttons = [e for e in snapshot if e["name"] == u.L("movers.stop")
+                           and e["type"] == "Button" and e["enabled"] and e.get("rect")]
+                s.check(len(buttons) == 1,
                         "Stop and undo is enabled during actual migration progress")
-                s.ui_dump("before-stop-and-undo")
-                u.click(key="movers.stop", type="Button")
+                s.save("before-stop-and-undo.json", snapshot)
+                rect = buttons[0]["rect"]
+                u.click_at(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2, relative=False)
+                observations[-1]["stop_clicked"] = True
                 stopped = True
             # The existing desktop-agent connection avoids an SSH + PowerShell
             # startup on every UI poll. Keep handles as independent diagnostics.

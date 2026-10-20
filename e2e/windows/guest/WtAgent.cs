@@ -212,6 +212,7 @@ public static class WtAgent
             case "windows": return Windows(a);
             case "window": return WindowOp(a);
             case "uia.tree": return UiaTree(a);
+            case "uia.snapshot": return UiaSnapshot(a);
             case "uia.find": return UiaFind(a);
             case "uia.act": return UiaAct(a);
             case "click": return Click(a);
@@ -505,6 +506,40 @@ public static class WtAgent
             return o.Count < max;
         }, B(a, "raw", false));
         return o;
+    }
+
+    // One provider cache request, then local reads. A live property-by-property
+    // tree walk can take longer than a short migration while its UI is changing.
+    static object UiaSnapshot(Dictionary<string, object> a)
+    {
+        CacheRequest cache = new CacheRequest();
+        cache.TreeScope = TreeScope.Subtree;
+        cache.TreeFilter = Automation.RawViewCondition;
+        cache.AutomationElementMode = AutomationElementMode.None;
+        cache.Add(AutomationElement.NameProperty);
+        cache.Add(AutomationElement.ControlTypeProperty);
+        cache.Add(AutomationElement.BoundingRectangleProperty);
+        cache.Add(AutomationElement.IsEnabledProperty);
+        AutomationElement root = RootOf(a).GetUpdatedCache(cache);
+        List<Dictionary<string, object>> result = new List<Dictionary<string, object>>();
+        Stack<AutomationElement> pending = new Stack<AutomationElement>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            AutomationElement element = pending.Pop();
+            AutomationElement.AutomationElementInformation c = element.Cached;
+            System.Windows.Rect r = c.BoundingRectangle;
+            Dictionary<string, object> row = new Dictionary<string, object>();
+            row["name"] = c.Name;
+            row["type"] = c.ControlType.ProgrammaticName.Replace("ControlType.", "");
+            row["rect"] = r.IsEmpty ? null : new int[] { (int)r.X, (int)r.Y, (int)r.Width, (int)r.Height };
+            row["enabled"] = c.IsEnabled;
+            result.Add(row);
+            AutomationElementCollection children = element.CachedChildren;
+            if (children != null)
+                for (int i = children.Count - 1; i >= 0; i--) pending.Push(children[i]);
+        }
+        return result;
     }
 
     class Sel

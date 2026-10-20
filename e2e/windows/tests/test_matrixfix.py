@@ -62,7 +62,18 @@ class MatrixTests(unittest.TestCase):
     def ui(self, lang='en'):
         u = Ui(self.run, lang)
         u.click = Mock()
+        u.click_at = Mock()
         u.exists = Mock(return_value=True)
+
+        def snapshot():
+            names = u.texts()
+            rows = [dict(name=name, type='Text', enabled=True, rect=None) for name in names]
+            if u.L('movers.title.migrate') in names:
+                rows.append(dict(name=u.L('movers.stop'), type='Button', enabled=True,
+                                 rect=[10, 20, 100, 30]))
+            return rows
+
+        u.snapshot = Mock(side_effect=snapshot)
         return u
 
     def test_migration_count_current_locales_and_former_slash_copy(self):
@@ -119,7 +130,8 @@ class MatrixTests(unittest.TestCase):
         u.texts = Mock(side_effect=[['Migrating sessions', 'Migrated 299 of 600 sessions', 'Now: file'],
                                    ['Stopping the migration'], ['Migration history', 'Rolled back']])
         wait_migration(self.run, self.step, u, stop=True)
-        u.click.assert_called_once_with(key='movers.stop', type='Button')
+        u.click_at.assert_called_once_with(60, 35, relative=False)
+        u.click.assert_not_called()
         self.assertEqual(self.clock.now, 2)
 
     def test_slow_ssh_diagnostics_and_transfers_cannot_hide_moving_progress(self):
@@ -137,6 +149,7 @@ class MatrixTests(unittest.TestCase):
         self.run.vm = Mock()
         self.run.vm.ps.side_effect = lambda *a, **kw: self.clock.sleep(9)
         self.run.agent.procs.return_value = [dict(pid=42, handles=575)]
+        u.tree = Mock(side_effect=lambda **kw: self.clock.sleep(24))
 
         def transfer(*args):
             self.assertEqual(observed[-1], ['Migration history', 'Done'])
@@ -145,6 +158,7 @@ class MatrixTests(unittest.TestCase):
         self.run.vm.scp_from.side_effect = transfer
         wait_migration(self.run, self.step, u)
         self.run.vm.ps.assert_not_called()
+        u.tree.assert_not_called()
         samples = self.step.save.call_args_list[0].args[1]
         self.assertEqual([x['count'] for x in samples], [(0, 600), (200, 600), (400, 600), None])
         self.assertTrue(all(x['handles'] == [dict(pid=42, handles=575)] for x in samples))
@@ -158,12 +172,25 @@ class MatrixTests(unittest.TestCase):
         self.run.vm = Mock()
 
         def transfer(*args):
-            u.click.assert_called_once_with(key='movers.stop', type='Button')
+            u.click_at.assert_called_once_with(60, 35, relative=False)
             self.assertEqual(u.texts.call_count, 3)
 
         self.run.vm.scp_from.side_effect = transfer
         wait_migration(self.run, self.step, u, stop=True)
         self.run.vm.scp_from.assert_called_once()
+
+    def test_stop_needs_one_visible_enabled_button_in_the_same_progress_snapshot(self):
+        for buttons in ([], [dict(name='Stop and undo', type='Button', enabled=False,
+                                 rect=[10, 20, 100, 30])]):
+            with self.subTest(buttons=buttons):
+                u = self.ui()
+                u.snapshot = Mock(return_value=[
+                    dict(name=n, type='Text', enabled=True, rect=None)
+                    for n in ['Migrating sessions', 'Migrated 299 of 600 sessions', 'Now: file']
+                ] + buttons)
+                with self.assertRaisesRegex(AssertionError, 'Stop and undo is enabled'):
+                    wait_migration(self.run, self.step, u, stop=True)
+                u.click_at.assert_not_called()
 
     def test_data_proof_rejects_unmigrated_files_and_incomplete_undo(self):
         count = dict(threads=600, rollouts=600, distinct=600)
