@@ -47,10 +47,10 @@ fn usage_is_its_own_page_next_to_the_router() {
 #[test]
 fn the_router_page_lands_on_its_settings() {
     for (locale, settings, tabs) in [
-        (Locale::ZhCn, "统计行", ["最近请求", "活动请求"]),
+        (Locale::ZhCn, "成员与线路顺序", ["最近请求", "活动请求"]),
         (
             Locale::En,
-            "Reply stats line",
+            "Members & line order",
             ["Recent requests", "Active requests"],
         ),
     ] {

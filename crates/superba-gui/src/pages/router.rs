@@ -52,7 +52,7 @@ use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, page_header
 use crate::design::fonts::{Weight, font};
 use crate::design::tokens::text;
 use crate::design::widgets::log_table::elided;
-use crate::design::widgets::{Button, Segmented, Status, StatusDot, dialog};
+use crate::design::widgets::{Button, Card, FormRow, Segmented, Status, StatusDot, Text, dialog};
 use crate::runtime::ReadTask;
 
 /// How often live status is refreshed while the page is visible.
@@ -461,9 +461,10 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     tick(ui, cx, state, out, false);
     page_header(ui, cx, Page::Router, |_| {});
     banner(ui, cx, state, out);
-    ui.add_space(4.0);
+    view::notices(ui, cx, state);
+    ui.add_space(10.0);
     let rect = ui.available_rect_before_wrap();
-    crate::design::layout::fixed(ui, rect, |ui| settings::show(ui, cx, state, out));
+    crate::design::layout::fixed(ui, rect, |ui| settings::show(ui, cx, state));
     dialogs(ui, cx, state, out);
 }
 
@@ -562,15 +563,68 @@ fn banner(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     // as an API key (user bug 28); the panel below says why and how to fix it.
     // Both come from the snapshot that lists the members (user bug 39).
     let eligible = eligibility::has_eligible_member(cx, state);
-    let button = (!on).then(|| {
-        (
-            cx.tr.t("router.banner.turn_on"),
-            members && eligible && !cx.busy && state.op.is_none(),
-        )
+    let request = backend::mode_request(cx, !on);
+    let enabled =
+        request.is_ok() && !cx.busy && state.op.is_none() && (on || (members && eligible));
+    let starting = state.op.as_ref().is_some_and(|(op, _)| *op == Op::Start);
+    Card::new().padding(12).show(ui, |ui| {
+        let label = cx.tr.t(if on {
+            "router.banner.turn_off"
+        } else {
+            "router.banner.turn_on"
+        });
+        let button = Button::primary(label)
+            .small()
+            .loading(starting)
+            .enabled(enabled);
+        let control_w = button.desired_size(ui).x;
+        FormRow::default()
+            .label_width((ui.available_width() - control_w - 16.0).max(0.0))
+            .right()
+            .show_with(
+                ui,
+                |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add(StatusDot::new(status));
+                        ui.label(Text::strong(
+                            cx.tr.t(if on {
+                                "router.banner.active"
+                            } else {
+                                "router.banner.inactive"
+                            }),
+                            cx.pal,
+                        ))
+                        .on_hover_text(&line);
+                        ui.label(Text::caption(cx.tr.t("router.banner.listen"), cx.pal));
+                        ui.label(Text::mono(&addr, cx.pal));
+                    });
+                },
+                |ui| {
+                    // Preserve the existing UIA/AX names used by router on/off flows.
+                    let name = cx.tr.t(if on {
+                        "router.turn_off"
+                    } else {
+                        "router.banner.turn_on"
+                    });
+                    let response = ui.add(button).accessible_name(name);
+                    let hint = match &request {
+                        Err(key) => cx.tr.t(key),
+                        Ok(_) if !members && !on => cx.tr.t("router.needs_member"),
+                        Ok(_) if !eligible && !on => cx.tr.t("router.eligibility.none"),
+                        Ok(_) => cx.tr.t("router.preview_hint"),
+                    };
+                    if response
+                        .on_hover_text(&hint)
+                        .on_disabled_hover_text(hint)
+                        .clicked()
+                    {
+                        state.switch_mode(cx, !on, out);
+                    }
+                },
+            );
+        ui.add(egui::Label::new(Text::small(&line, cx.pal)).wrap())
+            .on_hover_text(cx.tr.t("router.banner.tip"));
     });
-    if banner_line(ui, cx, status, &line, &cx.tr.t("router.banner.tip"), button) {
-        state.switch_mode(cx, true, out);
-    }
     if !on {
         eligibility::panel(ui, cx, state, out);
     }

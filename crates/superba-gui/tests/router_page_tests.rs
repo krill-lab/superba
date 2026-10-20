@@ -24,6 +24,20 @@ fn fake() -> Arc<FakeService> {
     }))
 }
 
+fn open_advanced(h: &mut Harness, state: &mut State, locale: Locale) {
+    let title = superba_gui::i18n::Tr::new(locale).t("router.advanced.title");
+    let frame = h.until_scrolled(
+        |ui, cx, out| router::show(ui, cx, state, out),
+        |f| {
+            f.clipped_texts
+                .iter()
+                .any(|(text, rect, clip)| text == &title && clip.contains_rect(*rect))
+        },
+    );
+    h.click_text(&frame, &title);
+    h.settle(|ui, cx, out| router::show(ui, cx, state, out));
+}
+
 fn loaded(f: &Frame) -> bool {
     f.has("登录页样式") || f.has("Krill · 海外线路")
 }
@@ -284,27 +298,36 @@ fn the_stats_line_preview_follows_the_template_while_typing() {
     let service = fake();
     let mut h = Harness::new([1440.0, 900.0], Locale::ZhCn, service.clone(), true);
     let mut state = State::default();
-    let f = h.until(
+    open_advanced(&mut h, &mut state, Locale::ZhCn);
+    let f = h.until_scrolled(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| f.has("87 tok/s · 首字 0.82s · 本轮 12,345 in / 321 out"),
+        |f| {
+            f.has("87 tok/s · 首字 0.82s · 本轮 12,345 in / 321 out")
+                && f.has("预览 · 示例数据")
+                && f.has("默认（跟随界面语言）")
+        },
     );
     assert!(f.has("预览 · 示例数据"));
     assert!(!f.has("已自定义模板"));
     // The default follows the UI language (user bug 23).
     assert!(f.has("默认（跟随界面语言）"), "{}", f.all_text());
     state.prefs.template = Some("X {tps} Y {output}".into());
-    let f = h.until(
+    let f = h.until_scrolled(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| f.has("X 87 Y 321"),
+        |f| f.has("X 87 Y 321") && f.has("已自定义模板 · 恢复默认后可用勾选"),
     );
     // While a custom template is typed the metric checkboxes are disabled.
     assert!(f.has("已自定义模板 · 恢复默认后可用勾选"));
     // English default and the italic style.
     let mut h = Harness::new([1280.0, 800.0], Locale::En, fake(), true);
     let mut state = State::default();
-    let f = h.until(
+    open_advanced(&mut h, &mut state, Locale::En);
+    let f = h.until_scrolled(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| f.has("87 tok/s · first token 0.82s · turn 12,345 in / 321 out"),
+        |f| {
+            f.has("87 tok/s · first token 0.82s · turn 12,345 in / 321 out")
+                && f.has("Default (follows the UI language)")
+        },
     );
     assert!(f.has("Default (follows the UI language)"));
 }
@@ -463,13 +486,12 @@ fn the_price_table_in_use_can_be_viewed() {
 }
 
 #[test]
-fn service_buttons_sit_in_the_value_column_and_long_columns_fade_at_the_edge() {
-    // User bug 25: 安装并启动 sat 6 px left of the value column (a hard-coded
-    // 128 px indent). Review ux-visual #11: the right column overflowed at
-    // 1280x800 in English without any cue.
+fn service_buttons_remain_aligned_in_the_advanced_group() {
+    // User bug 25 stays fixed when maintenance moves into Advanced.
     for locale in [Locale::En, Locale::ZhCn] {
         let mut h = Harness::new([1280.0, 800.0], locale, fake(), true);
         let mut state = State::default();
+        open_advanced(&mut h, &mut state, locale);
         let tr = superba_gui::i18n::Tr::new(locale);
         let install = tr.t("router.service.install");
         let f = h.until_scrolled(
@@ -484,18 +506,7 @@ fn service_buttons_sit_in_the_value_column_and_long_columns_fade_at_the_edge() {
             (button - badge).abs() < 0.5,
             "{locale:?}: button at {button}, value column at {badge}"
         );
-        if locale == Locale::En {
-            // The stats line column is longer than the page: its bottom edge
-            // fades into the panel.
-            let page = f.rect;
-            assert!(
-                f.meshes
-                    .iter()
-                    .any(|m| m.min.x > page.center().x && (m.max.y - page.max.y).abs() < 30.0),
-                "no fade at the bottom of the right column: {:?} in {page:?}",
-                f.meshes
-            );
-        }
+        assert_eq!(f.scroll_areas, 1, "one scroll area for all router settings");
     }
 }
 
@@ -508,6 +519,7 @@ fn every_key_based_provider_has_a_price_ratio_without_the_router() {
         let tr = superba_gui::i18n::Tr::new(locale);
         let mut h = Harness::new([1440.0, 900.0], locale, service.clone(), true);
         let mut state = State::default();
+        open_advanced(&mut h, &mut state, locale);
         let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
             |f| f.has(&tr.t("prices.title")) && f.has(ratio),

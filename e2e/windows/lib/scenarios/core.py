@@ -282,6 +282,11 @@ def w31(t):
         flows.start_superba(run, s)
         u.page("router")
         time.sleep(1)
+        advanced = u.reveal(key="router.advanced.title", type="Button")
+        # Native egui disclosure headers expose Invoke, not ExpandCollapse.
+        if advanced.get("expanded") != "Expanded":
+            u.click(key="router.advanced.title")
+        u.reveal(key="stats_line.title", type="Button")
         el = u.wait(key="stats_line.title", type="Button")
         if el.get("toggle") != "On":
             u.act("toggle", key="stats_line.title", type="Button")
