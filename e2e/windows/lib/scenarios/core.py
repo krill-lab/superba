@@ -360,6 +360,23 @@ def usage_provider_group(u, s):
         time.sleep(0.2)
 
 
+def usage_show_window(u, s):
+    """The completed ChatGPT turn must not cover Usage's clicks or screenshots."""
+    windows = u.agent.call("windows", process_re="^ChatGPT$")
+    minimized = []
+    for window in windows:
+        if window.get("visible") and not window.get("minimized"):
+            result = u.agent.call("window", hwnd=window["hwnd"], minimize=True)
+            minimized.append(result)
+            s.check(bool(result and result.get("minimized")),
+                    "the completed ChatGPT window was minimized before inspecting Usage")
+    target = u.agent.call("window", foreground=True, **u.win)
+    s.save("usage-window-state.json", {"chatgpt_before": windows, "minimized": minimized,
+                                       "superba": target})
+    s.check(bool(target and target.get("foreground") and not target.get("minimized")),
+            "Superba is active for Usage clicks and screenshots")
+
+
 def usage_open_detail(u, s, row):
     # A row exposes selection and invocation patterns; those need not open its
     # detail. Use a real click on this named row, then require both detail tabs.
@@ -386,6 +403,7 @@ def w32(t):
         bad = [x for x in rows if (x.get("first_token_ms") or 0) < 0 or (x.get("duration_ms") or 0) < 0]
         s.check(not bad, f"no negative timings (bug 12): {bad[:2]}")
         flows.start_superba(run, s)
+        usage_show_window(u, s)
         u.page("usage")
         time.sleep(3)
         s.shot("usage-router-on")

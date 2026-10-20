@@ -7,14 +7,15 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 import flows
 from app import App
 from migration import (check_migrated, check_restored, migration_count,
                        wait_migration)
-from scenarios.core import routed_usage_turn, usage_open_detail, usage_provider_group
+from scenarios.core import (routed_usage_turn, usage_open_detail, usage_provider_group,
+                            usage_show_window)
 from strings import Strings
 from ui import Ui, UiError
 
@@ -295,6 +296,34 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual([c.args for c in u.click_at.call_args_list], [(60, 35), (60, 75)])
         u.click.assert_not_called()
         self.assertEqual(u.wait.call_count, 3)
+
+    def test_usage_prepares_an_unobscured_window_after_the_completed_turn(self):
+        u = self.ui()
+        overlay = {'hwnd': 23, 'visible': True, 'minimized': False}
+        hidden = {'hwnd': 24, 'visible': False, 'minimized': False}
+        minimized = {'hwnd': 23, 'minimized': True}
+        self.run.agent.call.side_effect = [
+            [overlay, hidden], minimized, {'foreground': True, 'minimized': False}]
+        usage_show_window(u, self.step)
+        self.assertEqual(self.run.agent.call.call_args_list, [
+            call('windows', process_re='^ChatGPT$'),
+            call('window', hwnd=23, minimize=True),
+            call('window', foreground=True, process_re='^superba$')])
+        u.click_at.assert_not_called()
+
+    def test_usage_refuses_a_chatgpt_window_that_stays_over_the_page(self):
+        u = self.ui()
+        self.run.agent.call.side_effect = [
+            [{'hwnd': 23, 'visible': True, 'minimized': False}], {'minimized': False}]
+        with self.assertRaisesRegex(AssertionError, 'ChatGPT window was minimized'):
+            usage_show_window(u, self.step)
+        self.assertEqual(self.run.agent.call.call_count, 2)
+
+    def test_usage_refuses_a_background_superba_window(self):
+        u = self.ui()
+        self.run.agent.call.side_effect = [[], {'foreground': False, 'minimized': False}]
+        with self.assertRaisesRegex(AssertionError, 'Superba is active'):
+            usage_show_window(u, self.step)
 
     def test_usage_detail_uses_real_click_and_requires_both_tabs(self):
         u = Mock()
