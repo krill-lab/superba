@@ -104,6 +104,7 @@ impl Attribution {
         model: Option<&str>,
         usage: Option<superba_sessions::usage::RolloutUsage>,
         service_tier: Option<&str>,
+        started_at: superba_core::Timestamp,
     ) -> Option<(superba_core::Usd, Option<String>)> {
         // As the router prices its rows: the Models-page price wins, else the
         // list price; the basis goes to `price_rev`.
@@ -117,7 +118,7 @@ impl Attribution {
                 cached: u.cached,
                 cache_write: u.cache_write,
                 output: u.output,
-                at_ms: Some(r.started_at.as_millis()),
+                at_ms: Some(started_at.as_millis()),
                 ..Default::default()
             };
             let ratio = superba_models::price::ratio_of(&self.price_settings, member_id);
@@ -149,6 +150,7 @@ impl Attribution {
             r.model.as_deref(),
             usage,
             r.service_tier.as_deref(),
+            r.started_at,
         );
         let (cost, price_rev) = match estimate {
             Some((c, basis)) => (Some(c), basis),

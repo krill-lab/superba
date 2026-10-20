@@ -7,6 +7,8 @@ mod support;
 
 use std::sync::Arc;
 
+use a11y_harness::AppHarness;
+use egui::accesskit::Role;
 use router_harness::Harness;
 use superba_core::{Locale, ProfileId, RequestProtocol as P, RouterConversion};
 use superba_gui::i18n::Tr;
