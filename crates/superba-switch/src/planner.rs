@@ -2566,7 +2566,9 @@ impl Switcher {
         match (request.model_override.as_ref(), suggestions.first()) {
             (None, Some(replacement)) => {
                 resolved.model.model = Some(replacement.clone());
-                draft.info(
+                // Another model runs after the switch: a warning, never folded
+                // away with the information (user bug 103).
+                draft.warn(
                     text("switch.warn.model_missing")
                         .arg_text("site", site.name.clone())
                         .arg("model", &current)
@@ -3334,16 +3336,24 @@ fn snapshots(r: &superba_core::EnvReport) -> Vec<EnvSnapshot> {
         .collect()
 }
 
-/// Up to three replacement models: same family prefix first (text before the
-/// last `-`), then the catalog order.
+/// Up to three replacement models: the model itself when `current` names it
+/// through a router provider (`<provider>/<model>`, what Codex keeps after a
+/// prefixed model was picked while the router was on; user bug 103: turning
+/// the router off replaced `provider/gpt-6.1-sol` with the line's first model),
+/// then the same family (text before the last `-`), then the catalog order.
 pub fn suggest_models<'a>(current: &str, catalog: impl Iterator<Item = &'a str>) -> Vec<String> {
     let all: Vec<&str> = catalog.collect();
-    let family = current.rsplit_once('-').map_or(current, |(f, _)| f);
-    let mut out: Vec<String> = all
-        .iter()
-        .filter(|m| m.starts_with(family))
-        .map(|m| (*m).to_owned())
-        .collect();
+    let bare = current.split_once('/').map_or(current, |(_, m)| m);
+    let family = bare.rsplit_once('-').map_or(bare, |(f, _)| f);
+    let mut out: Vec<String> = Vec::new();
+    if bare != current && all.contains(&bare) {
+        out.push(bare.to_owned());
+    }
+    out.extend(
+        all.iter()
+            .filter(|m| m.starts_with(family) && **m != bare)
+            .map(|m| (*m).to_owned()),
+    );
     for m in &all {
         if out.len() >= 3 {
             break;
