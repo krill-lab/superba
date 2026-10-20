@@ -20,7 +20,7 @@ written = "已为 Codex {version} 写入模型目录文件"
 failed = "未写入模型目录文件：{reason}"
 
 [models_note]
-generic_template = "{model}：没有已知的目录条目，使用 Codex 对未知模型的通用设置"
+generic_template = "{model}：不在当前 Codex 版本的内置目录中，使用 Codex 对未知模型的通用设置"
 generic_without_prompt = "{model}：缺少此 Codex 版本的通用指令，暂用另一个模型的指令"
 filled_fields = "{model}：Codex {version} 必需的字段取自它的内置目录（{fields}）"
 compact_clamped = "{model}：自动压缩阈值 {limit} 超过上下文窗口的 90%，Codex 实际在 {effective} 时压缩"
