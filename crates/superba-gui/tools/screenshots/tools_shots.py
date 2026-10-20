@@ -12,7 +12,8 @@ installed. Nothing outside the throwaway HOME is read or written.
         [--sizes 1280x800,960x640] [--only codex,opencode] [--variants light-zh,dark-en]
 
 Shots are named tools-<row>-<theme>-<lang>-<W>x<H>.png; `models` is opencode
-with its model chooser open.
+with its model chooser open, `draft` opencode with an unapplied change and
+`review` the review before opencode's first apply.
 """
 
 import argparse
@@ -34,7 +35,7 @@ ROWS = ["codex", "claude", "dsh", "opencode", "pi", "zcode", "workbuddy", "gemin
 INSTALLED = {"opencode": "2.0.32", "gemini": "0.9.0"}
 
 
-def select(row, chooser=False):
+def select(row, chooser=False, draft=False, review=False):
     """Click the Codex row (it takes keyboard focus), then walk down to `row`."""
     def act(s):
         w, _ = s.size
@@ -47,6 +48,12 @@ def select(row, chooser=False):
         steps = ROWS.index(row)
         if steps:
             s.input.xdo("key", "--delay", "150", *["Down"] * steps)
+        if draft:
+            # From the opencode row: the four rows below it, "Install & update…",
+            # "View usage", the provider, then the protocol; Right picks Chat.
+            s.input.xdo("key", "--delay", "150", *["Tab"] * 8, "Right")
+            time.sleep(0.6)
+        if steps or draft:
             # A pointer press hides the keyboard focus ring (the page title is inert).
             time.sleep(0.4)
             s.input.click(x - 40, 66)
@@ -54,6 +61,11 @@ def select(row, chooser=False):
             # "Choose…" of "Models written": the last row of the Models section.
             s.input.click(*s.chooser)
             time.sleep(0.6)
+        if review:
+            # Apply, at the right end of the footer.
+            w, h = s.size
+            s.input.click(w - 55, h - 34)
+            time.sleep(1.5)
         s.input.park()
         time.sleep(0.8)
     return act
@@ -66,7 +78,8 @@ def main():
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--display", default=":205")
     ap.add_argument("--sizes", default="1280x800,960x640")
-    ap.add_argument("--only", help="comma-separated rows (codex, opencode, gemini, workbuddy, pi, models)")
+    ap.add_argument("--only", help="comma-separated rows (codex, opencode, gemini, workbuddy, "
+                    "pi, models, draft, review)")
     ap.add_argument("--variants", default="light-zh,dark-en,light-en,dark-zh")
     args = ap.parse_args()
     if os.environ.get("SUPERBA_TOOLS_SHOTS_NS") != "1":
@@ -78,7 +91,7 @@ def main():
     for v in args.variants.split(","):
         theme, lang = v.split("-", 1)
         variants.append((theme, "zh-CN" if lang == "zh" else "en"))
-    rows = (args.only or "codex,opencode,gemini,workbuddy,pi,models").split(",")
+    rows = (args.only or "codex,opencode,gemini,workbuddy,pi,models,draft,review").split(",")
     args.bin_dir = args.bin_dir.resolve()
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -108,9 +121,11 @@ def main():
                              517 if size[0] >= 1100 else 534)
                 tag = f"{theme}-{'zh' if lang == 'zh-CN' else 'en'}-{size[0]}x{size[1]}"
                 for row in rows:
-                    target = "opencode" if row == "models" else row
+                    target = "opencode" if row in ("models", "draft", "review") else row
                     s.shot(f"tools-{row}-{tag}", "tools", theme, lang, 7.0,
-                           select(target, chooser=row == "models"), size)
+                           select(target, chooser=row == "models", draft=row == "draft",
+                                  review=row == "review"),
+                           size)
     finally:
         s.close()
 

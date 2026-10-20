@@ -40,7 +40,7 @@
 "tools.file_valid" = "Valid"
 "tools.file_invalid" = "Invalid · line {line}, column {column}"
 "tools.file_unreadable" = "Unreadable"
-"tools.owned" = "{n} entries managed by Superba"
+"tools.owned" = "{n} {n|entry|entries} managed by Superba"
 "tools.plain_key" = "Contains a plaintext key"
 "tools.edit" = "Edit"
 "tools.backups" = "Backups"

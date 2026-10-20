@@ -6,7 +6,7 @@ use super::form::{self, Rows};
 use super::{Selection, State, models};
 use crate::design::elide::Shape;
 use crate::design::icons::Icon;
-use crate::design::tokens::{space, text};
+use crate::design::tokens::{size, space, text};
 use crate::design::widgets::value_chip::ValueChip;
 use crate::design::widgets::{
     Badge, Button, Dropdown, IconButton, Segmented, Status, StatusDot, Text, dialog,
@@ -280,7 +280,7 @@ fn connection(
 /// A URL elided in the middle (full value on hover) with a copy button after it.
 fn address(ui: &mut Ui, cx: &Cx<'_>, url: &str) {
     if ui
-        .add(IconButton::new(Icon::Copy, cx.tr.t("tools.copy_address")))
+        .add(IconButton::new(Icon::Copy, cx.tr.t("tools.copy_address")).size(size::CONTROL_SM))
         .clicked()
     {
         ui.ctx().copy_text(url.to_owned());
