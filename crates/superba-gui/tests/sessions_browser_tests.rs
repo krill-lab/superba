@@ -193,10 +193,16 @@ async fn fuzzy_search_and_filters_narrow_the_list() {
     assert!(!texts.iter().any(|x| x == "Plan the database migration"));
     p.state.borrow_mut().browser.search = "srv app".into();
     assert!(p.texts().iter().any(|x| x == "Fix flaky test"));
-    // Nothing matches: the empty state, and Clear search brings everything back.
+    // Nothing matches: the empty state, and the field's × brings everything back.
     p.state.borrow_mut().browser.search = "zzzz".into();
     assert!(p.texts().iter().any(|x| x == "No matching sessions"));
-    p.click("Clear search");
+    // SearchField: 280 wide, 6 px margin, an 18 px clear button at the right.
+    let text = p.rect_of("zzzz", false);
+    p.press(
+        egui::pos2(text.min.x - 6.0 + 280.0 - 3.0 - 9.0, text.center().y),
+        PointerButton::Primary,
+        Modifiers::default(),
+    );
     assert!(p.state.borrow().browser.search.is_empty());
     assert!(p.texts().iter().any(|x| x == "3 sessions"));
     // Host filter.

@@ -276,7 +276,6 @@ fn the_routing_tab_shows_hops_conversion_fallback_and_local_answers() {
 
 #[test]
 fn filters_and_search_narrow_the_list() {
-    let tr = Tr::new(Locale::ZhCn);
     let mut h = Harness::new([1280.0, 800.0], Locale::ZhCn, service(), true);
     let mut state = State::default();
     state.tab = Tab::Routing;
@@ -305,7 +304,10 @@ fn filters_and_search_narrow_the_list() {
         |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
         |f| f.has("gpt-old-row") && !f.has("gpt-failed"),
     );
-    h.click_text(&f, &tr.t("requests.search_clear"));
+    // The field's × (SearchField): at the toolbar's right edge, an 18 px
+    // button inside a 10 px margin.
+    let text = f.find("gpt-old-row").unwrap();
+    h.click_at(egui::pos2(f.rect.max.x - 5.0 - 9.0, text.center().y));
     let f = h.until(
         |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
         |f| f.has("gpt-failed") && f.has("gpt-old-row"),

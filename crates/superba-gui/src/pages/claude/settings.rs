@@ -461,7 +461,7 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, path: Option<String>) 
             cx.tr.t("claude.settings.search"),
             cx.tr.t("action.clear_search"),
         )
-        .width(240.0)
+        .width(300.0)
         .margin(vec2(10.0, 6.0))
         .show(ui);
         if s.focus_search {

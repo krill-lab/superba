@@ -236,7 +236,7 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, model: &Model, events: &mu
             cx.tr.t("codex_settings.search"),
             cx.tr.t("action.clear_search"),
         )
-        .width(220.0)
+        .width(260.0)
         .margin(vec2(10.0, 6.0))
         .show(ui);
         if state.focus_search {

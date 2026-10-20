@@ -1091,7 +1091,7 @@ async fn router_popover_shows_preference_failover_and_saves_the_chosen_line() {
             "国内极速（首选）",
             "当前：海外线路（国内极速失败后切换）",
             &tr.t("router.preference.choose"),
-            &tr.t("router.preference.recovery"),
+            &superba_gui::pages::router::recovery_text(&tr, None),
         ] {
             assert!(
                 texts.iter().any(|(t, _)| t.contains(expected)),
