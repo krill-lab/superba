@@ -9,6 +9,7 @@ pub mod icons;
 pub mod layout;
 pub mod style;
 pub mod tokens;
+pub mod tool_icons;
 pub mod widgets;
 
 pub use tokens::Palette;

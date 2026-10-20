@@ -134,6 +134,8 @@ pub struct LogCell {
     pub dot: Option<Status>,
     /// A tool glyph before the text.
     pub icon: Option<crate::design::icons::Icon>,
+    /// A tool's icon tile before the text (its monogram key, `cx`, `ds`).
+    pub tool: Option<&'static str>,
     /// Hover text.
     pub tooltip: Option<String>,
     /// Shorter text shown instead when `text` does not fit.
@@ -144,6 +146,12 @@ impl LogCell {
     /// Add a glyph while retaining the readable text and accessible name.
     pub fn icon(mut self, icon: crate::design::icons::Icon) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// Put the tool's icon tile (logo or monogram) before the text.
+    pub fn tool(mut self, monogram: Option<&'static str>) -> Self {
+        self.tool = monogram;
         self
     }
 
@@ -806,7 +814,9 @@ fn paint_cell(
     pal: &Palette,
 ) -> bool {
     let color = content.color.unwrap_or(pal.text);
-    let dot_w = if content.icon.is_some() {
+    let dot_w = if content.tool.is_some() {
+        crate::pages::shared::tool_label::ROOM
+    } else if content.icon.is_some() {
         18.0
     } else if content.dot.is_some() {
         12.0
@@ -833,7 +843,16 @@ fn paint_cell(
             .circle_filled(pos2(dx, rect.center().y), 3.0, pal.status(status));
     }
     let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
-    if let Some(icon) = content.icon {
+    if let Some(m) = content.tool {
+        crate::pages::shared::tool_label::paint(
+            ui,
+            m,
+            pos2(
+                rect.min.x + CELL_PAD + crate::pages::shared::tool_label::TILE / 2.0,
+                rect.center().y,
+            ),
+        );
+    } else if let Some(icon) = content.icon {
         crate::design::icons::paint(
             &painter,
             Rect::from_center_size(

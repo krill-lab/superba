@@ -454,6 +454,14 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         requests::ProviderNames::new(cx.tr, set, &cx.data.sites).relabel_buckets(&mut buckets);
     }
     let rows = table_rows(cx.tr, titles, s.by, &buckets);
+    // Tool groupings lead with the tool's icon (one row per bucket there).
+    let tools: Vec<Option<&'static str>> = match s.by {
+        StatsGroupBy::Harness | StatsGroupBy::HarnessModel | StatsGroupBy::Session => buckets
+            .iter()
+            .map(|b| crate::pages::shared::tool_label::monogram_of_key(&b.key))
+            .collect(),
+        _ => Vec::new(),
+    };
     let table = Table::new(&[2.2, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.8, 0.9, 0.8, 0.9]);
     // Numbers as in 最近请求: right-aligned under right-aligned headers, in the
     // UI font at caption size (ux-visual #8).
@@ -473,6 +481,16 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             if col == 0 {
                 if *line {
                     ui.add_space(LINE_INDENT);
+                }
+                if let Some(Some(m)) = tools.get(row) {
+                    let (r, _) = ui.allocate_exact_size(
+                        egui::vec2(
+                            crate::pages::shared::tool_label::TILE,
+                            crate::pages::shared::tool_label::TILE,
+                        ),
+                        egui::Sense::hover(),
+                    );
+                    crate::pages::shared::tool_label::paint(ui, m, r.center());
                 }
                 crate::pages::elided(ui, Text::small(value, cx.pal).color(color));
             } else {

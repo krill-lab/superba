@@ -84,19 +84,39 @@ type Found = (Option<std::time::SystemTime>, HarnessInstall);
 /// Found programs and their versions, by path and modification time.
 static INSTALLS: Mutex<Option<HashMap<PathBuf, Found>>> = Mutex::new(None);
 
-fn on_path(
-    env: &dyn superba_core::EnvSource,
-    names: &[&str],
-    extra: &[PathBuf],
-) -> Option<PathBuf> {
-    let mut dirs: Vec<PathBuf> = env
-        .var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default();
-    dirs.extend(extra.iter().cloned());
-    dirs.iter()
-        .flat_map(|d| names.iter().map(move |n| d.join(n)))
-        .find(|p| p.is_file())
+/// `names[0]` (the command) wherever Superba finds programs (the chosen
+/// path, `PATH`, the login / registry `PATH`, Homebrew, npm / pnpm / bun,
+/// the usual folders; [`superba_tools::locate`]), else in `extra`.
+fn on_path(ctx: &superba_core::LocalContext, names: &[&str], extra: &[PathBuf]) -> Option<PathBuf> {
+    use superba_tools::locate;
+    let command = names.first()?.split('.').next()?.to_owned();
+    let os = superba_tools::platform::Platform::detect().os;
+    let e = locate::Env {
+        env: ctx.env.as_ref(),
+        home: &ctx.home_dir,
+        os,
+    };
+    let (found, dirs) = locate::locate(&e, Some(&ctx.data_dir), &command);
+    if let Some(l) = &found
+        && l.source == locate::Source::Override
+    {
+        return Some(l.path.clone());
+    }
+    let not_dancers_shell = |p: &PathBuf| {
+        command != "dsh"
+            || !superba_tools::tools::common::homebrew_of(p)
+                .is_some_and(|(n, cask, _)| n == "dsh" && !cask)
+    };
+    dirs.find_all(&command)
+        .into_iter()
+        .map(|l| l.path)
+        .find(not_dancers_shell)
+        .or_else(|| {
+            extra
+                .iter()
+                .flat_map(|d| names.iter().map(move |n| d.join(n)))
+                .find(|p| p.is_file())
+        })
 }
 
 fn exe_names(base: &str) -> Vec<String> {
@@ -198,8 +218,14 @@ impl Switcher {
                 if let Some(a) = env.var_os("APPDATA") {
                     extra.push(PathBuf::from(a).join("npm"));
                 }
+                if harness == HarnessId::Dsh {
+                    // Superba's own installs (npm prefix, Node-free runtime).
+                    let own = superba_tools::state::tools_dir(&ctx.data_dir).join("dsh");
+                    extra.push(own.join("npm").join("bin"));
+                    extra.push(own.join("npm"));
+                }
                 on_path(
-                    env,
+                    ctx,
                     &n.iter().map(String::as_str).collect::<Vec<_>>(),
                     &extra,
                 )
@@ -207,7 +233,7 @@ impl Switcher {
             HarnessId::OpenCode => {
                 let n = names("opencode");
                 on_path(
-                    env,
+                    ctx,
                     &n.iter().map(String::as_str).collect::<Vec<_>>(),
                     &[home.join(".opencode").join("bin")],
                 )
@@ -215,7 +241,7 @@ impl Switcher {
             HarnessId::Pi => {
                 let n = names("pi");
                 on_path(
-                    env,
+                    ctx,
                     &n.iter().map(String::as_str).collect::<Vec<_>>(),
                     &[home.join(".pi").join("agent").join("bin")],
                 )

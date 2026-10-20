@@ -128,7 +128,8 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             width(&headers[0], font(text::CAPTION, Weight::Medium)),
             f32::max,
         )
-        + space::M * 2.0;
+        + space::M * 2.0
+        + crate::pages::shared::tool_label::ROOM;
     let count_w = width(&headers[2], font(text::CAPTION, Weight::Medium))
         .max(width("999,999", font(text::SMALL, Weight::Regular)))
         + space::M * 2.0;
@@ -145,7 +146,23 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         ui.push_id(i, |ui| {
             table.row(ui, size::ROW, i + 1 == names.len(), |ui, col| match col {
                 0 => {
-                    ui.label(Text::strong(name, cx.pal));
+                    // Codex, Claude Code and Gemini with their icon; the
+                    // OpenAI-compatible entry has no single tool.
+                    let tool = [Some("cx"), Some("cc"), None, Some("gm")][i];
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        let (r, _) = ui.allocate_exact_size(
+                            egui::vec2(
+                                crate::pages::shared::tool_label::TILE,
+                                crate::pages::shared::tool_label::TILE,
+                            ),
+                            egui::Sense::hover(),
+                        );
+                        if let Some(m) = tool {
+                            crate::pages::shared::tool_label::paint(ui, m, r.center());
+                        }
+                        ui.label(Text::strong(name, cx.pal));
+                    });
                 }
                 1 => match &url {
                     // An address: monospace, shortened in the middle.

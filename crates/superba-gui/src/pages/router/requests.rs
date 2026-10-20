@@ -23,6 +23,7 @@ use crate::design::widgets::log_table::{LogCell, LogColumn};
 use crate::design::widgets::source_list::SourceEntry;
 use crate::i18n::Tr;
 use crate::pages::shared::format::{compact, group_thousands};
+use crate::pages::shared::tool_label;
 
 /// Placeholder for an unknown value.
 pub const DASH: &str = "—";
@@ -708,6 +709,7 @@ pub fn source_entries(
                     _ => session_group_label(tr, titles, &g.key),
                 },
                 tooltip: Some(tip(&[Some(&g.key)], g.last)),
+                tool: tool_label::monogram_of_key(&g.key),
                 key: g.key.clone(),
                 count: g.count,
                 child: false,
@@ -730,6 +732,7 @@ pub fn source_entries(
             key: g.key.clone(),
             count: g.count,
             child: false,
+            tool: None,
         });
         entries.extend(lines.iter().map(|l| SourceEntry {
             label: l.label.clone(),
@@ -740,6 +743,7 @@ pub fn source_entries(
             key: l.key.clone(),
             count: l.count,
             child: true,
+            tool: None,
         }));
         if split && unknown > 0 {
             let label = tr.t("requests.group.line_unknown");
@@ -753,6 +757,7 @@ pub fn source_entries(
                 key: provider_line_key(&g.key, ""),
                 count: unknown,
                 child: true,
+                tool: None,
             });
         }
     }
@@ -905,7 +910,13 @@ pub fn cell(
     now: Timestamp,
 ) -> LogCell {
     match col {
-        Col::Harness => LogCell::text(tr.text(&row.harness.text())).icon(harness_icon(row.harness)),
+        Col::Harness => {
+            let cell = LogCell::text(tr.text(&row.harness.text()));
+            match tool_label::monogram(row.harness) {
+                Some(m) => cell.tool(Some(m)),
+                None => cell.icon(harness_icon(row.harness)),
+            }
+        }
         Col::Model => LogCell::text(model_text(row)),
         Col::CacheKey => match session_key(row) {
             Some(k) => LogCell::mono(short_cache_key(k)).tooltip(k),

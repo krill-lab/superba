@@ -64,7 +64,7 @@ fn tool_column_model_mapping_and_titles_have_readable_accessible_text() {
             Timestamp::now(),
         );
         assert_eq!(cell.text, "Claude Code");
-        assert!(cell.icon.is_some());
+        assert_eq!(cell.tool, Some("cc"));
         assert_eq!(requests::model_text(&rows[1]), "haiku → gpt-5.4-mini");
         let name = requests::row_name(&tr, &BTreeMap::new(), &rows[1], Timestamp::now());
         assert!(name.contains("Claude Code") && name.contains("haiku → gpt-5.4-mini"));

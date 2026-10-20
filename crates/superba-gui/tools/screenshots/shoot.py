@@ -669,6 +669,9 @@ def main():
     ap.add_argument("--app-dir", type=Path)
     ap.add_argument("--only", help="comma-separated shot name prefixes")
     ap.add_argument("--keep", action="store_true", help="keep the work directory")
+    ap.add_argument("--installed", default="",
+                    help="comma-separated commands given stand-in programs on PATH "
+                         "(dsh,opencode,pi,gemini): those tools look installed")
     ap.add_argument("--rollouts", action="store_true",
                     help="write Codex rollout files (rollouts.py) for the Usage page")
     ap.add_argument("--no-router-log", action="store_true",
@@ -698,6 +701,10 @@ def main():
         s.start_relay()
         s.write_sites()
         s.copy_app()
+        for name in filter(None, args.installed.split(",")):
+            stub = s.bin / name
+            stub.write_text("#!/bin/sh\necho 1.0.0\n")
+            stub.chmod(0o755)
         s.provision()
         s.check_paths()
         shots = []

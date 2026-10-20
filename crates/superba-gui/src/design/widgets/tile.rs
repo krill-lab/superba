@@ -50,7 +50,8 @@ impl Widget for IconTile {
         response
     }
 }
-/// Two-letter identity when no tool artwork exists.
+/// A tool's identity: its logo (see [`crate::design::tool_icons`]) or,
+/// without one, two letters.
 pub struct MonogramTile {
     text: String,
     side: f32,
@@ -73,6 +74,10 @@ impl MonogramTile {
         let p = Palette::of(ui.ctx());
         let r = egui::Rect::from_center_size(center, vec2(self.side, self.side));
         ui.painter().rect_filled(r, 6, p.hover);
+        // The tool's own logo when one is licensed for redistribution.
+        if crate::design::tool_icons::paint(ui, &self.text, r) {
+            return;
+        }
         ui.painter().text(
             center,
             egui::Align2::CENTER_CENTER,

@@ -200,6 +200,10 @@ impl PageStates {
                 ..PageStatus::default()
             },
             Page::Tools => pages::tools::status(&self.tools),
+            Page::Tool(h) => PageStatus {
+                hidden: !pages::tools::installed(&self.tools, h),
+                ..pages::tools::status(&self.tools)
+            },
         }
     }
 
@@ -235,7 +239,7 @@ impl PageStates {
                     pages::notify::command(&mut self.notify, cx, command);
                 }
             }
-            Page::Tools => pages::tools::command(&mut self.tools, cx, command),
+            Page::Tools | Page::Tool(_) => pages::tools::command(&mut self.tools, cx, command),
         }
     }
 
@@ -277,6 +281,7 @@ impl PageStates {
                 pages::claude::show(ui, cx, &mut self.claude, page, out);
             }
             Page::Tools => pages::tools::show(ui, cx, &mut self.tools, out),
+            Page::Tool(h) => pages::tools::show_one(ui, cx, &mut self.tools, h, out),
             Page::Superba(section) => pages::superba::show(
                 ui,
                 cx,
@@ -1939,6 +1944,7 @@ impl SuperbaApp {
         {
             let cx = cx!(self, pal, busy);
             self.pages.updates.background(&cx, out);
+            pages::tools::background(&mut self.pages.tools, &cx);
             let tools = self.pages.updates.tools.view(&cx);
             let entries =
                 pages::superba::updates::items::inventory(&cx, &self.pages.updates, &tools);
