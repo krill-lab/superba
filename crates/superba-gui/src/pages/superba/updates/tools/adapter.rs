@@ -218,6 +218,10 @@ impl ToolsSource for ServiceTools {
                     log: None,
                     versions: vec![],
                     removal: None,
+                    searched: vec![],
+                    install_method: None,
+                    choose_path: false,
+                    command_path: None,
                 })
                 .collect();
         }
@@ -294,6 +298,17 @@ impl ToolsSource for ServiceTools {
             id,
             ToolSettingsChange {
                 channel: Some(channel),
+                ..Default::default()
+            },
+        )
+    }
+    fn command_path(&self, id: ToolId, path: Option<std::path::PathBuf>) -> Result<(), String> {
+        let mut state = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        state.row(id)?;
+        state.change(
+            id,
+            ToolSettingsChange {
+                command_path: Some(path.unwrap_or_default()),
                 ..Default::default()
             },
         )
@@ -483,6 +498,10 @@ fn normalize(cx: &Cx<'_>, state: &State, id: ToolId, row: &superba_core::ToolRow
         vec![]
     };
     ToolRow {
+        searched: row.searched.clone(),
+        install_method: row.install_method.as_ref().map(|t| cx.localize(t)),
+        choose_path: id.has_command(),
+        command_path: row.command_path.as_deref().map(display_path),
         entry,
         installs,
         channels: row.channels.clone(),

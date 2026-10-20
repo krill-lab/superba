@@ -33,7 +33,7 @@ pub async fn detect(cx: &Ctx, desc: &Descriptor, st: &ToolState) -> Detected {
         {
             det.notes.push(Notice::info(
                 common::text(
-                    "tools.found_off_path",
+                    "tools.locate.found_off_path",
                     "Found in {dir} ({source}), which is not on this app's PATH.",
                 )
                 .arg(

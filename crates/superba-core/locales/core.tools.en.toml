@@ -50,3 +50,11 @@ self_update = "{name} updates itself and cannot be told not to; Superba shows it
 [tools.zcode]
 kept = "ZCode's settings and sessions in ~/.zcode were kept."
 self_update = "ZCode also updates itself (Help → Check for Updates); its server can require an update."
+
+[tools.locate]
+found_off_path = "Found in {dir} ({source}), which is not on this app's PATH."
+
+[tools.brew]
+default = "Installs with Homebrew: brew install {args}"
+missing = "Homebrew is not installed, so Superba uses the tool's own installer."
+none_dsh = "dsh has no Homebrew package (the `dsh` formula is a different program), so Superba installs it with npm."

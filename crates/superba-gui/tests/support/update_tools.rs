@@ -114,6 +114,10 @@ impl ToolsSource for DemoTools {
                     .into(),
                 ];
                 ToolRow {
+                    searched: vec![],
+                    install_method: None,
+                    choose_path: id.has_command(),
+                    command_path: None,
                     entry,
                     install_cautions: vec![],
                     installs: vec![format!("~/.local/bin/{} · PATH #1", id.as_str())],

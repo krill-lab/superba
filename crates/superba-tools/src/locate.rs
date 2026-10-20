@@ -373,7 +373,9 @@ fn pathext(env: &dyn EnvSource) -> Vec<String> {
 // ---------------------------------------------------------------------------
 // the PATH the user's shell / the registry has now
 
-static QUERIES: OnceLock<Mutex<HashMap<String, (Instant, Option<String>)>>> = OnceLock::new();
+/// Answers by command line: when, and what.
+type Answers = HashMap<String, (Instant, Option<String>)>;
+static QUERIES: OnceLock<Mutex<Answers>> = OnceLock::new();
 const QUERY_TTL: Duration = Duration::from_secs(300);
 const QUERY_TIMEOUT: Duration = Duration::from_secs(4);
 
