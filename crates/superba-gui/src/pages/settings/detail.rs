@@ -15,7 +15,7 @@ use super::view::{avail_icon, avail_mark, value_text};
 use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::tokens::text;
 use crate::design::widgets::{
-    Badge, Dropdown, Status, StatusDot, Text, Toggle, dialog, link_button,
+    Badge, Dropdown, Status, StatusDot, Text, Toggle, dialog, dialog_body, link_button,
 };
 use crate::pages::shared::values;
 use crate::pages::{Action, Cx, Page};
@@ -690,43 +690,41 @@ pub(super) fn expanded_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut Stat
         560.0,
         |ui| {
             ui.label(Text::h2(e.title_for(zh).text, cx.pal));
-            ui.label(Text::mono_muted(&e.path, cx.pal));
-            egui::ScrollArea::vertical()
-                .id_salt("codex-settings-expanded-text")
-                .max_height(420.0)
-                .show(ui, |ui| {
-                    let width = ui.available_width();
-                    let job = |t: &str, color| {
-                        let mut job =
-                            code_spans(t, font(text::SMALL, Weight::Regular), color, cx.pal);
-                        job.wrap.max_width = width;
-                        job
-                    };
-                    if zh && let Some(t) = &e.text.zh {
-                        ui.add(egui::Label::new(job(t, cx.pal.text)).wrap());
-                        ui.add_space(8.0);
-                        ui.label(Text::caption(
-                            cx.tr.t("codex_settings.detail.official"),
-                            cx.pal,
-                        ));
-                    }
-                    if let Some(t) = e.text.en.as_ref().or(e.text.en_note.as_ref()) {
-                        ui.add(egui::Label::new(job(t, cx.pal.text_muted)).wrap());
+            dialog_body(ui, |ui| {
+                ui.label(Text::mono_muted(&e.path, cx.pal));
+                let width = ui.available_width();
+                let job = |t: &str, color| {
+                    let mut job = code_spans(t, font(text::SMALL, Weight::Regular), color, cx.pal);
+                    job.wrap.max_width = width;
+                    job
+                };
+                if zh && let Some(t) = &e.text.zh {
+                    ui.add(egui::Label::new(job(t, cx.pal.text)).wrap());
+                    ui.add_space(8.0);
+                    ui.label(Text::caption(
+                        cx.tr.t("codex_settings.detail.official"),
+                        cx.pal,
+                    ));
+                }
+                if let Some(t) = e.text.en.as_ref().or(e.text.en_note.as_ref()) {
+                    ui.add(egui::Label::new(job(t, cx.pal.text_muted)).wrap());
+                }
+            });
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    if ui
+                        .add(
+                            crate::design::widgets::Button::new(
+                                cx.tr.t("codex_settings.pending.close"),
+                            )
+                            .kbd("Esc"),
+                        )
+                        .clicked()
+                    {
+                        close = true;
                     }
                 });
-            ui.add_space(8.0);
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                if ui
-                    .add(
-                        crate::design::widgets::Button::new(
-                            cx.tr.t("codex_settings.pending.close"),
-                        )
-                        .kbd("Esc"),
-                    )
-                    .clicked()
-                {
-                    close = true;
-                }
             });
         },
     );

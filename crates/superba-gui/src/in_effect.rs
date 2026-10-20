@@ -27,7 +27,7 @@ use superba_core::{
     SwitchService, ThreadActivity, UnknownReason,
 };
 
-use crate::design::widgets::{Button, Status, StatusDot, Text, dialog};
+use crate::design::widgets::{Button, Status, StatusDot, Text, dialog, dialog_body};
 use crate::pages::{Action, Cx};
 use crate::runtime::ReadTask;
 
@@ -347,33 +347,27 @@ pub fn show(ctx: &egui::Context, cx: &Cx<'_>, state: &mut InEffect, out: &mut Ve
                 }
             });
         });
-        ui.add(egui::Label::new(Text::muted(cx.tr.t("in_effect.body"), cx.pal)).wrap());
-        let Some(view) = state.view.clone() else {
-            match &state.error {
-                Some(e) => ui.label(Text::small(cx.tr.text(&e.to_text()), cx.pal)),
-                None => ui.label(Text::small(cx.tr.t("in_effect.loading"), cx.pal)),
+        dialog_body(ui, |ui| {
+            ui.add(egui::Label::new(Text::muted(cx.tr.t("in_effect.body"), cx.pal)).wrap());
+            let Some(view) = state.view.clone() else {
+                match &state.error {
+                    Some(e) => ui.label(Text::small(cx.tr.text(&e.to_text()), cx.pal)),
+                    None => ui.label(Text::small(cx.tr.t("in_effect.loading"), cx.pal)),
+                };
+                return;
             };
-            return;
-        };
-        ui.add_space(4.0);
-        ui.label(Text::body(written_line(cx, &view), cx.pal));
-        ui.separator();
-        if view.consumers.is_empty() {
-            ui.label(Text::small(cx.tr.t("in_effect.none"), cx.pal));
-            return;
-        }
-        // The list takes what the window leaves around the header.
-        let room = (ui.ctx().content_rect().height() - 240.0).max(240.0);
-        ScrollArea::vertical()
-            .max_height(room)
-            .min_scrolled_height(room)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                for row in &view.consumers {
-                    row_ui(ui, cx, state, row, &mut actions);
-                    ui.add_space(6.0);
-                }
-            });
+            ui.add_space(4.0);
+            ui.label(Text::body(written_line(cx, &view), cx.pal));
+            ui.separator();
+            if view.consumers.is_empty() {
+                ui.label(Text::small(cx.tr.t("in_effect.none"), cx.pal));
+                return;
+            }
+            for row in &view.consumers {
+                row_ui(ui, cx, state, row, &mut actions);
+                ui.add_space(6.0);
+            }
+        });
     });
     if response.should_close() {
         close = true;

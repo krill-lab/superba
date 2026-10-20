@@ -10,6 +10,7 @@ pub mod format;
 pub mod hosts;
 pub mod lines;
 pub mod loading;
+pub mod notices;
 pub mod profile;
 pub mod providers;
 pub mod values;

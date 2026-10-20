@@ -248,6 +248,23 @@ window_restore = "还原窗口"
 [notice]
 elevated_title = "Superba 正以管理员身份运行"
 elevated_body = "这没有问题：它仍在你自己的账户里工作。它的文件、本地路由（随你登录启动）和它设置的环境变量都只属于你这个用户，和平时一样。不需要以管理员身份启动它。"
+expand = "展开"
+collapse = "收起"
+info_show = "{n} 条说明"
+info_hide = "收起 {n} 条说明"
+
+[notice.group]
+more = "{text}（另有 {n} 条同类）"
+
+[notice.group.models_note]
+generic_template = "{n} 个模型不在当前 Codex 版本的内置目录中，使用 Codex 对未知模型的通用设置"
+generic_without_prompt = "{n} 个模型缺少此 Codex 版本的通用指令，暂用另一个模型的指令"
+filled_fields = "{n} 个模型缺少的必需字段取自此 Codex 版本的内置目录"
+compact_clamped = "{n} 个模型的自动压缩阈值超过上下文窗口的 90%，Codex 会更早压缩"
+max_raised = "{n} 个模型的最大上下文窗口已调高，上游可能拒绝更长的请求"
+override_unknown_model = "{n} 个模型的设置已保留但不生效：它们不在列表中"
+duplicate = "{n} 个模型在列表中出现了多次，使用第一条"
+tier_not_offered_by_model = "{n} 个模型不提供所选速度，按标准速度运行"
 
 [startup]
 crash_body = "Superba 遇到内部错误，必须关闭：{reason}\n\n崩溃报告已写入 {path}。"

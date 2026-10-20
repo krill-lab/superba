@@ -43,7 +43,10 @@ pub use badge::Badge;
 pub use button::{Button, ButtonKind, ButtonSize, IconButton};
 pub use card::{Card, card};
 pub use countdown::CountdownBar;
-pub use dialog::dialog;
+pub use dialog::{
+    WINDOW_MARGIN as DIALOG_WINDOW_MARGIN, bounded, dialog, dialog_body,
+    max_content_height as dialog_max_content_height,
+};
 pub use key_input::KeyInput;
 pub use latency::{Latency, LatencyBadge};
 pub use meter::{Meter, SplitBar};

@@ -697,13 +697,15 @@ fn dialogs(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
                 cx.tr.t("requests.clear.title"),
                 cx.pal,
             ));
-            ui.add(
-                egui::Label::new(crate::design::widgets::Text::small(
-                    cx.tr.f("requests.clear.confirm", &[("n", rows)]),
-                    cx.pal,
-                ))
-                .wrap(),
-            );
+            crate::design::widgets::dialog_body(ui, |ui| {
+                ui.add(
+                    egui::Label::new(crate::design::widgets::Text::small(
+                        cx.tr.f("requests.clear.confirm", &[("n", rows)]),
+                        cx.pal,
+                    ))
+                    .wrap(),
+                );
+            });
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

@@ -5,7 +5,7 @@
 use superba_core::CloseAction;
 
 use crate::design::tokens::Palette;
-use crate::design::widgets::{Button, Text, dialog};
+use crate::design::widgets::{Button, Text, dialog, dialog_body};
 use crate::i18n::Tr;
 
 /// What the user answered.
@@ -33,8 +33,10 @@ pub fn show(ctx: &egui::Context, tr: &Tr) -> Option<Answer> {
     let mut answer = None;
     let response = dialog(ctx, egui::Id::unique("tray-first-close"), 520.0, |ui| {
         ui.label(Text::h2(tr.t("tray.prompt.title"), pal));
-        ui.add(egui::Label::new(Text::body(tr.t("tray.prompt.body"), pal)).wrap());
-        ui.add(egui::Label::new(Text::muted(tr.t("tray.prompt.later"), pal)).wrap());
+        dialog_body(ui, |ui| {
+            ui.add(egui::Label::new(Text::body(tr.t("tray.prompt.body"), pal)).wrap());
+            ui.add(egui::Label::new(Text::muted(tr.t("tray.prompt.later"), pal)).wrap());
+        });
         ui.add_space(12.0);
         ui.horizontal_wrapped(|ui| {
             if ui.add(Button::primary(tr.t("tray.prompt.keep"))).clicked() {

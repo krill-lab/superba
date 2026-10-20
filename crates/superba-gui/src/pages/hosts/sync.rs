@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use egui::{Align, Layout, ScrollArea, Ui};
+use egui::{Align, Layout, Ui};
 use superba_core::{
     BlockReason, CodexVersion, HostSyncAction, HostSyncPlan, HostSyncRow, HostSyncSelection,
     ProfileId, SwitchIntent, SwitchRequest, TargetId,
@@ -19,7 +19,7 @@ use superba_core::{
 use super::super::router::db::Loader;
 use super::State;
 use crate::design::widgets::value_chip::tooltip_text;
-use crate::design::widgets::{Button, Status, Text, dialog};
+use crate::design::widgets::{Button, Status, Text, dialog, dialog_body};
 use crate::pages::shared::values;
 use crate::pages::{Action, Cx, divider, error_text, note};
 
@@ -492,7 +492,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
                 (None, None) => None,
             };
             let Some(plan) = d.plan.value.clone().filter(|_| failure.is_none()) else {
-                match &failure {
+                dialog_body(ui, |ui| match &failure {
                     Some(Unusable::Unreachable { detail }) => {
                         note(
                             ui,
@@ -517,7 +517,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
                     None => {
                         ui.label(Text::small(cx.tr.t("hosts.syncdlg.loading"), cx.pal));
                     }
-                }
+                });
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -538,12 +538,17 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
                 });
                 return;
             };
-            for n in &plan.notes {
-                note(ui, cx, Status::Idle, cx.localize(&n.text));
-            }
             if plan.rows.is_empty() {
-                // Nothing to compare: no column header and no restart note.
-                ui.label(Text::small(cx.tr.t("hosts.syncdlg.nothing"), cx.pal));
+                dialog_body(ui, |ui| {
+                    crate::pages::shared::notices::notice_list(
+                        ui,
+                        cx,
+                        egui::Id::unique(("hosts-sync-notices", d.target.as_str())),
+                        &plan.notes,
+                    );
+                    // Nothing to compare: no column header and no restart note.
+                    ui.label(Text::small(cx.tr.t("hosts.syncdlg.nothing"), cx.pal));
+                });
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -557,28 +562,30 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
                 });
                 return;
             }
-            let names = d.names.value.clone().unwrap_or_default();
-            let (writes, skips, removes) = groups(&plan);
-            let widths = [260.0, 150.0, 150.0];
-            ui.horizontal(|ui| {
-                ui.add_space(26.0);
-                ui.allocate_ui(egui::vec2(widths[0], 18.0), |ui| {
-                    ui.label(Text::caption(cx.tr.t("hosts.syncdlg.col.setting"), cx.pal));
+            dialog_body(ui, |ui| {
+                crate::pages::shared::notices::notice_list(
+                    ui,
+                    cx,
+                    egui::Id::unique(("hosts-sync-notices", d.target.as_str())),
+                    &plan.notes,
+                );
+                let names = d.names.value.clone().unwrap_or_default();
+                let (writes, skips, removes) = groups(&plan);
+                let widths = [260.0, 150.0, 150.0];
+                ui.horizontal(|ui| {
+                    ui.add_space(26.0);
+                    ui.allocate_ui(egui::vec2(widths[0], 18.0), |ui| {
+                        ui.label(Text::caption(cx.tr.t("hosts.syncdlg.col.setting"), cx.pal));
+                    });
+                    ui.allocate_ui(egui::vec2(widths[1], 18.0), |ui| {
+                        ui.label(Text::caption(cx.tr.t("hosts.syncdlg.col.local"), cx.pal));
+                    });
+                    ui.label(Text::caption(
+                        cx.tr.f("hosts.syncdlg.col.host", &[("host", &d.label)]),
+                        cx.pal,
+                    ));
                 });
-                ui.allocate_ui(egui::vec2(widths[1], 18.0), |ui| {
-                    ui.label(Text::caption(cx.tr.t("hosts.syncdlg.col.local"), cx.pal));
-                });
-                ui.label(Text::caption(
-                    cx.tr.f("hosts.syncdlg.col.host", &[("host", &d.label)]),
-                    cx.pal,
-                ));
-            });
-            ScrollArea::vertical()
-                .id_salt("hosts-sync-rows")
-                .max_height(380.0)
-                .min_scrolled_height(160.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
+                ui.scope(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     if !writes.is_empty() {
                         group_header(ui, cx, "hosts.syncdlg.write", writes.len());
@@ -599,14 +606,15 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
                         }
                     }
                 });
-            divider(ui, cx);
-            ui.add(
-                egui::Label::new(Text::small(
-                    cx.tr.f("hosts.syncdlg.restart", &[("host", &d.label)]),
-                    cx.pal,
-                ))
-                .wrap(),
-            );
+                divider(ui, cx);
+                ui.add(
+                    egui::Label::new(Text::small(
+                        cx.tr.f("hosts.syncdlg.restart", &[("host", &d.label)]),
+                        cx.pal,
+                    ))
+                    .wrap(),
+                );
+            });
             ui.horizontal(|ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let n = d.ticked.len();

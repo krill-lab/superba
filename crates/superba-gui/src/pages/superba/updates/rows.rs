@@ -8,7 +8,7 @@ use super::{
 use crate::design::icons::Icon;
 use crate::design::widgets::{
     Button, ButtonKind, Segmented, Status, Text, UpdateGroup, UpdateRow, UpdateTile, dialog,
-    link_button,
+    dialog_body, link_button,
 };
 use crate::pages::{Action, Cx, Page, callout};
 use egui::{Align, Layout, Ui};
@@ -359,58 +359,58 @@ fn confirmation(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Actio
                 }),
                 cx.pal,
             ));
-            egui::ScrollArea::vertical()
-                .max_height(300.0)
-                .show(ui, |ui| {
-                    for job in &batch.jobs {
-                        ui.add(
-                            egui::Label::new(Text::small(
-                                format!("{} · {}", job.name, job.versions()),
-                                cx.pal,
-                            ))
-                            .wrap(),
-                        );
-                    }
-                    for caution in &batch.cautions {
-                        callout(ui, cx, Status::Warn, caution);
-                    }
-                });
-            if removing {
-                ui.add(
-                    egui::Label::new(Text::small(cx.tr.t("updates.tools.kept_note"), cx.pal))
+            dialog_body(ui, |ui| {
+                for job in &batch.jobs {
+                    ui.add(
+                        egui::Label::new(Text::small(
+                            format!("{} · {}", job.name, job.versions()),
+                            cx.pal,
+                        ))
                         .wrap(),
-                );
-                let tools = state.tools.view(cx);
-                for job in &mut batch.jobs {
-                    if let Some(Operation::ToolRemove { id, remove_data }) = &mut job.operation
-                        && let Some(removal) = tools
-                            .rows
-                            .iter()
-                            .find(|r| r.entry.id == UpdateItem::Tool(*id))
-                            .and_then(|r| r.removal.as_ref())
-                        && !removal.data_dirs.is_empty()
-                    {
-                        ui.checkbox(remove_data, cx.tr.t("updates.list.remove_data"));
-                        for path in &removal.data_dirs {
-                            ui.add(egui::Label::new(Text::mono(path, cx.pal)).wrap());
+                    );
+                }
+                for caution in &batch.cautions {
+                    callout(ui, cx, Status::Warn, caution);
+                }
+                if removing {
+                    ui.add(
+                        egui::Label::new(Text::small(cx.tr.t("updates.tools.kept_note"), cx.pal))
+                            .wrap(),
+                    );
+                    let tools = state.tools.view(cx);
+                    for job in &mut batch.jobs {
+                        if let Some(Operation::ToolRemove { id, remove_data }) = &mut job.operation
+                            && let Some(removal) = tools
+                                .rows
+                                .iter()
+                                .find(|r| r.entry.id == UpdateItem::Tool(*id))
+                                .and_then(|r| r.removal.as_ref())
+                            && !removal.data_dirs.is_empty()
+                        {
+                            ui.checkbox(remove_data, cx.tr.t("updates.list.remove_data"));
+                            for path in &removal.data_dirs {
+                                ui.add(egui::Label::new(Text::mono(path, cx.pal)).wrap());
+                            }
                         }
                     }
+                } else {
+                    ui.label(Text::small(cx.tr.t("updates.list.sequential"), cx.pal));
                 }
-            } else {
-                ui.label(Text::small(cx.tr.t("updates.list.sequential"), cx.pal));
-            }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                start = ui
-                    .add(
-                        Button::primary(cx.tr.t(if removing {
-                            "updates.list.remove"
-                        } else {
-                            "updates.list.start"
-                        }))
-                        .enabled(!cx.busy),
-                    )
-                    .clicked();
-                cancel = ui.add(Button::new(cx.tr.t("updates.win.cancel"))).clicked();
+            });
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    start = ui
+                        .add(
+                            Button::primary(cx.tr.t(if removing {
+                                "updates.list.remove"
+                            } else {
+                                "updates.list.start"
+                            }))
+                            .enabled(!cx.busy),
+                        )
+                        .clicked();
+                    cancel = ui.add(Button::new(cx.tr.t("updates.win.cancel"))).clicked();
+                });
             });
         },
     );

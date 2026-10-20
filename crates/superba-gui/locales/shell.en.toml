@@ -252,6 +252,26 @@ window_restore = "Restore window"
 # One-time toast when Superba runs with an elevated Windows token (user bug 44).
 elevated_title = "Superba is running as administrator"
 elevated_body = "That's fine: it still works in your own account. Its files, the local router (it starts when you sign in) and the environment variables it sets stay yours, as when it runs normally. There is no need to start it as administrator."
+# Plan notices in dialogs and the switch preview (user bug 103): a row that
+# stands for several notices of one kind, and the disclosure holding the notes.
+expand = "Show all"
+collapse = "Hide"
+info_show = "{n} {n|note|notes}"
+info_hide = "Hide {n} {n|note|notes}"
+
+[notice.group]
+# A row standing for {n} notices of one kind ({text}: the first of them).
+more = "{text} (and {n} more like it)"
+
+[notice.group.models_note]
+generic_template = "{n} {n|model is|models are} not in the built-in catalog of this Codex version; Codex's settings for unknown models are used"
+generic_without_prompt = "{n} {n|model|models}: the generic instructions of this Codex version are not available; another model's instructions are used"
+filled_fields = "{n} {n|model|models}: fields this Codex version requires were taken from its built-in catalog"
+compact_clamped = "{n} {n|model|models}: auto-compact is above 90% of the context window; Codex compacts earlier"
+max_raised = "{n} {n|model|models}: the maximum context window was raised; the upstream may refuse longer prompts"
+override_unknown_model = "The settings for {n} {n|model|models} are kept but not used: {n|it is|they are} not in the list"
+duplicate = "{n} {n|model is|models are} listed more than once; the first entry is used"
+tier_not_offered_by_model = "{n} {n|model does|models do} not offer the chosen speed; {n|it runs|they run} Standard"
 
 [startup]
 # Native message box and stderr when the GUI cannot start or stops on a panic

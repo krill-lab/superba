@@ -9,7 +9,9 @@ use superba_core::{KeyInput, Profile, ProfileId, RestoreTarget};
 use super::{State, Tab, actions, form, ops};
 use crate::design::fonts::{Weight, font};
 use crate::design::tokens::text;
-use crate::design::widgets::{Badge, Button, Segmented, Status, Text, dialog, link_button};
+use crate::design::widgets::{
+    Badge, Button, Segmented, Status, Text, dialog, dialog_body, link_button,
+};
 use crate::pages::shared::providers::{Provider, ProviderKind};
 use crate::pages::shared::{auto_facts, decision_with, ordered_lines};
 use crate::pages::{Action, Cx, section_gap};
@@ -329,20 +331,23 @@ pub(super) fn remove_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State)
             cx.tr.f("providers.delete.title", &[("name", &name)]),
             cx.pal,
         ));
-        let body = if r.provider.kind == ProviderKind::Custom {
-            cx.tr.f("providers.delete.custom", &[("name", &name)])
-        } else {
-            cx.tr.f("providers.delete.confirm", &[("name", &name)])
-        };
-        ui.add(egui::Label::new(Text::muted(body, cx.pal)).wrap());
-        if r.provider.kind == ProviderKind::Custom {
-            ui.add(
-                egui::Label::new(Text::mono_muted(form::base_url(&r.provider.site), cx.pal)).wrap(),
-            );
-        }
-        if let Some(e) = refusal.as_ref().or(r.error.as_ref()) {
-            ui.add(egui::Label::new(Text::small(e, cx.pal).color(cx.pal.red)).wrap());
-        }
+        dialog_body(ui, |ui| {
+            let body = if r.provider.kind == ProviderKind::Custom {
+                cx.tr.f("providers.delete.custom", &[("name", &name)])
+            } else {
+                cx.tr.f("providers.delete.confirm", &[("name", &name)])
+            };
+            ui.add(egui::Label::new(Text::muted(body, cx.pal)).wrap());
+            if r.provider.kind == ProviderKind::Custom {
+                ui.add(
+                    egui::Label::new(Text::mono_muted(form::base_url(&r.provider.site), cx.pal))
+                        .wrap(),
+                );
+            }
+            if let Some(e) = refusal.as_ref().or(r.error.as_ref()) {
+                ui.add(egui::Label::new(Text::small(e, cx.pal).color(cx.pal.red)).wrap());
+            }
+        });
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             if ui

@@ -37,7 +37,7 @@ use crate::design::layout::{self, Track};
 use crate::design::tokens::{size, text};
 use crate::design::widgets::{
     Badge, Button, Card, Dropdown, PagedState, PagedTable, Segmented, Status, StatusDot, Table,
-    Text, Toggle, dialog,
+    Text, Toggle, dialog, dialog_body,
 };
 use crate::pages::shared::loading::{self, Latest};
 use crate::pages::{Action, Cx, Page, PageStatus, error_text, page_header};
@@ -1610,92 +1610,97 @@ fn endpoint_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, out: &mu
     let presets = anthropic_presets();
     let r = dialog(ctx, egui::Id::unique("claude-endpoint"), 520.0, |ui| {
         ui.label(Text::title(cx.tr.t("claude.endpoint.dialog_title"), cx.pal));
-        ui.label(Text::small(cx.tr.t("claude.endpoint.dialog_body"), cx.pal));
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.label(Text::small(cx.tr.t("claude.endpoint.preset"), cx.pal));
-            let current = edit
-                .preset
-                .as_deref()
-                .and_then(|id| presets.iter().find(|p| p.id == id))
-                .map(|p| cx.tr.text(&p.label()))
-                .unwrap_or_else(|| cx.tr.t("claude.endpoint.custom"));
-            let mut pick: Option<Option<&AnthropicPreset>> = None;
-            Dropdown::new("claude-endpoint-preset")
-                .label(cx.tr.t("claude.endpoint.preset"))
-                .selected_text(current)
-                .width(260.0)
-                .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_label(edit.preset.is_none(), cx.tr.t("claude.endpoint.custom"))
-                        .clicked()
-                    {
-                        pick = Some(None);
-                    }
-                    for p in &presets {
-                        let usable = p.base_url.is_some() || origin.is_some();
-                        let on = edit.preset.as_deref() == Some(p.id);
-                        let r = ui.add_enabled(
-                            usable,
-                            egui::Button::selectable(on, cx.tr.text(&p.label())),
-                        );
-                        if r.clicked() {
-                            pick = Some(Some(p));
-                        }
-                    }
-                });
-            if let Some(p) = pick {
-                match p {
-                    Some(p) => {
-                        edit.preset = Some(p.id.to_owned());
-                        if let Some(e) = p.endpoint(origin.as_ref()) {
-                            edit.url = e.base_text();
-                            edit.auth = e.auth;
-                        }
-                    }
-                    None => edit.preset = None,
-                }
-                edit.error = None;
-            }
-        });
-        let field = ui
-            .add(
-                TextEdit::singleline(&mut edit.url)
-                    .hint_text("https://api.example.com/anthropic")
-                    .font(mono_font(text::SMALL, Weight::Regular))
-                    .desired_width(f32::INFINITY)
-                    .margin(vec2(10.0, 6.0)),
-            )
-            .accessible_name(cx.tr.t("claude.endpoint.title"));
-        if field.changed() {
-            edit.preset = None;
-            edit.error = None;
-        }
-        ui.horizontal(|ui| {
-            ui.label(Text::small(cx.tr.t("claude.endpoint.auth"), cx.pal));
-            Segmented::new("claude-endpoint-auth", &mut edit.auth)
-                .label(cx.tr.t("claude.endpoint.auth"))
-                .small()
-                .option(
-                    AnthropicAuth::Bearer,
-                    cx.tr.t("claude.endpoint.auth_bearer"),
-                )
-                .option(AnthropicAuth::ApiKey, cx.tr.t("claude.endpoint.auth_key"))
-                .show(ui);
-        });
-        if let Some(p) = edit.preset.as_deref().and_then(anthropic_preset) {
+        dialog_body(ui, |ui| {
+            ui.label(Text::small(cx.tr.t("claude.endpoint.dialog_body"), cx.pal));
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if ui.link(cx.tr.t("claude.endpoint.docs")).clicked() {
-                    out.push(Action::OpenUrl(p.doc_url.to_owned()));
+                ui.label(Text::small(cx.tr.t("claude.endpoint.preset"), cx.pal));
+                let current = edit
+                    .preset
+                    .as_deref()
+                    .and_then(|id| presets.iter().find(|p| p.id == id))
+                    .map(|p| cx.tr.text(&p.label()))
+                    .unwrap_or_else(|| cx.tr.t("claude.endpoint.custom"));
+                let mut pick: Option<Option<&AnthropicPreset>> = None;
+                Dropdown::new("claude-endpoint-preset")
+                    .label(cx.tr.t("claude.endpoint.preset"))
+                    .selected_text(current)
+                    .width(260.0)
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(
+                                edit.preset.is_none(),
+                                cx.tr.t("claude.endpoint.custom"),
+                            )
+                            .clicked()
+                        {
+                            pick = Some(None);
+                        }
+                        for p in &presets {
+                            let usable = p.base_url.is_some() || origin.is_some();
+                            let on = edit.preset.as_deref() == Some(p.id);
+                            let r = ui.add_enabled(
+                                usable,
+                                egui::Button::selectable(on, cx.tr.text(&p.label())),
+                            );
+                            if r.clicked() {
+                                pick = Some(Some(p));
+                            }
+                        }
+                    });
+                if let Some(p) = pick {
+                    match p {
+                        Some(p) => {
+                            edit.preset = Some(p.id.to_owned());
+                            if let Some(e) = p.endpoint(origin.as_ref()) {
+                                edit.url = e.base_text();
+                                edit.auth = e.auth;
+                            }
+                        }
+                        None => edit.preset = None,
+                    }
+                    edit.error = None;
                 }
             });
-            if p.models == superba_core::claude::ModelsListing::No {
-                ui.label(Text::caption(cx.tr.t("claude.endpoint.no_list"), cx.pal));
+            let field = ui
+                .add(
+                    TextEdit::singleline(&mut edit.url)
+                        .hint_text("https://api.example.com/anthropic")
+                        .font(mono_font(text::SMALL, Weight::Regular))
+                        .desired_width(f32::INFINITY)
+                        .margin(vec2(10.0, 6.0)),
+                )
+                .accessible_name(cx.tr.t("claude.endpoint.title"));
+            if field.changed() {
+                edit.preset = None;
+                edit.error = None;
             }
-        }
-        if let Some(e) = edit.error {
-            crate::pages::note(ui, cx, Status::Error, cx.tr.t(e));
-        }
+            ui.horizontal(|ui| {
+                ui.label(Text::small(cx.tr.t("claude.endpoint.auth"), cx.pal));
+                Segmented::new("claude-endpoint-auth", &mut edit.auth)
+                    .label(cx.tr.t("claude.endpoint.auth"))
+                    .small()
+                    .option(
+                        AnthropicAuth::Bearer,
+                        cx.tr.t("claude.endpoint.auth_bearer"),
+                    )
+                    .option(AnthropicAuth::ApiKey, cx.tr.t("claude.endpoint.auth_key"))
+                    .show(ui);
+            });
+            if let Some(p) = edit.preset.as_deref().and_then(anthropic_preset) {
+                ui.horizontal(|ui| {
+                    if ui.link(cx.tr.t("claude.endpoint.docs")).clicked() {
+                        out.push(Action::OpenUrl(p.doc_url.to_owned()));
+                    }
+                });
+                if p.models == superba_core::claude::ModelsListing::No {
+                    ui.label(Text::caption(cx.tr.t("claude.endpoint.no_list"), cx.pal));
+                }
+            }
+            if let Some(e) = edit.error {
+                crate::pages::note(ui, cx, Status::Error, cx.tr.t(e));
+            }
+        });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if ui
@@ -1756,74 +1761,64 @@ fn plan_dialog(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State) {
             }),
             cx.pal,
         ));
-        ui.label(Text::small(
-            cx.tr.f(
-                "claude.plan.body",
-                &[(
-                    "path",
-                    &superba_core::paths::display_path(
-                        &state.view.as_ref().expect("loaded view").settings_path,
-                    ),
-                )],
-            ),
-            cx.pal,
-        ));
-        egui::ScrollArea::vertical()
-            .max_height(360.0)
-            .show(ui, |ui| {
-                egui::Grid::new("claude-plan-rows")
-                    .num_columns(3)
-                    .striped(true)
-                    .spacing(vec2(10.0, 4.0))
-                    .show(ui, |ui| {
-                        let none = cx.tr.t("claude.plan.absent");
-                        for c in &plan.changes {
-                            ui.label(
-                                RichText::new(&c.slot)
-                                    .font(mono_font(text::CAPTION, Weight::Medium)),
-                            );
-                            let before = c.before.clone().unwrap_or_else(|| none.clone());
-                            let after = c.after.clone().unwrap_or_else(|| none.clone());
-                            ui.add(
-                                egui::Label::new(Text::caption(
-                                    format!("{} → {}", elide(&before), elide(&after)),
-                                    cx.pal,
-                                ))
-                                .truncate(),
-                            )
-                            .on_hover_text(format!("{before}\n→ {after}"));
-                            if c.drift {
-                                ui.add(
-                                    Badge::new(cx.tr.t("claude.plan.drift")).status(Status::Warn),
-                                );
-                            } else {
-                                ui.label("");
-                            }
-                            ui.end_row();
+        dialog_body(ui, |ui| {
+            ui.label(Text::small(
+                cx.tr.f(
+                    "claude.plan.body",
+                    &[(
+                        "path",
+                        &superba_core::paths::display_path(
+                            &state.view.as_ref().expect("loaded view").settings_path,
+                        ),
+                    )],
+                ),
+                cx.pal,
+            ));
+            egui::Grid::new("claude-plan-rows")
+                .num_columns(3)
+                .striped(true)
+                .spacing(vec2(10.0, 4.0))
+                .show(ui, |ui| {
+                    let none = cx.tr.t("claude.plan.absent");
+                    for c in &plan.changes {
+                        ui.label(
+                            RichText::new(&c.slot).font(mono_font(text::CAPTION, Weight::Medium)),
+                        );
+                        let before = c.before.clone().unwrap_or_else(|| none.clone());
+                        let after = c.after.clone().unwrap_or_else(|| none.clone());
+                        ui.add(
+                            egui::Label::new(Text::caption(
+                                format!("{} → {}", elide(&before), elide(&after)),
+                                cx.pal,
+                            ))
+                            .truncate(),
+                        )
+                        .on_hover_text(format!("{before}\n→ {after}"));
+                        if c.drift {
+                            ui.add(Badge::new(cx.tr.t("claude.plan.drift")).status(Status::Warn));
+                        } else {
+                            ui.label("");
                         }
-                    });
-            });
-        for n in &plan.notes {
-            crate::pages::note(
+                        ui.end_row();
+                    }
+                });
+            crate::pages::shared::notices::notice_list(
                 ui,
                 cx,
-                match n.severity {
-                    superba_core::Severity::Info => Status::Idle,
-                    _ => Status::Warn,
-                },
-                cx.localize(&n.text),
+                egui::Id::unique("claude-plan-notices"),
+                &plan.notes,
             );
-        }
-        if plan.drift().count() > 0 {
-            ui.horizontal(|ui| {
-                ui.add(Toggle::new(
-                    &mut state.connect.take_over,
-                    cx.tr.t("claude.plan.take_over"),
-                ));
-                ui.label(Text::small(cx.tr.t("claude.plan.take_over"), cx.pal));
-            });
-        }
-        ui.label(Text::caption(cx.tr.t("claude.plan.backup"), cx.pal));
+            if plan.drift().count() > 0 {
+                ui.horizontal(|ui| {
+                    ui.add(Toggle::new(
+                        &mut state.connect.take_over,
+                        cx.tr.t("claude.plan.take_over"),
+                    ));
+                    ui.label(Text::small(cx.tr.t("claude.plan.take_over"), cx.pal));
+                });
+            }
+            ui.label(Text::caption(cx.tr.t("claude.plan.backup"), cx.pal));
+        });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if ui

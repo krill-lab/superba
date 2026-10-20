@@ -26,7 +26,7 @@ use crate::design::layout::{self, Track};
 use crate::design::tokens::{radius, size, text};
 use crate::design::widgets::{
     Badge, Button, PagedState, PagedTable, Pager, PendingAction, PendingBar, PendingLabels, Status,
-    StatusDot, Table, Text, Toggle, dialog,
+    StatusDot, Table, Text, Toggle, dialog, dialog_body,
 };
 use crate::pages::settings::files::Editor;
 use crate::pages::shared::loading::{self, Latest};
@@ -887,18 +887,20 @@ fn diff_dialog(ctx: &egui::Context, cx: &Cx<'_>, s: &mut SettingsState, model: &
     let (old, new) = (masker.mask(&old), masker.mask(&new));
     let r = dialog(ctx, egui::Id::unique("claude-settings-diff"), 720.0, |ui| {
         ui.label(Text::title(cx.tr.t("claude.settings.diff_title"), cx.pal));
-        ui.label(Text::small(cx.tr.t("claude.settings.diff_body"), cx.pal));
-        crate::pages::settings::files_view::diff_view(
-            ui,
-            cx,
-            "claude-settings-diff",
-            &old,
-            &new,
-            380.0,
-        );
-        if let Some(e) = &s.save_error {
-            crate::pages::note(ui, cx, Status::Error, e.clone());
-        }
+        dialog_body(ui, |ui| {
+            ui.label(Text::small(cx.tr.t("claude.settings.diff_body"), cx.pal));
+            crate::pages::settings::files_view::diff_view(
+                ui,
+                cx,
+                "claude-settings-diff",
+                &old,
+                &new,
+                380.0,
+            );
+            if let Some(e) = &s.save_error {
+                crate::pages::note(ui, cx, Status::Error, e.clone());
+            }
+        });
         ui.horizontal(|ui| {
             if ui
                 .add(Button::primary(cx.tr.t("claude.settings.save")).loading(s.saving.is_some()))

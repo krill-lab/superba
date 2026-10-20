@@ -21,7 +21,7 @@ use super::db::Loader;
 use super::requests::{DASH, cost_text};
 use super::{Dialog, State};
 use crate::design::widgets::info_card::InfoLine;
-use crate::design::widgets::{Button, Text};
+use crate::design::widgets::{Button, Text, dialog_body};
 use crate::i18n::Tr;
 use crate::pages::{Action, Cx, error_text, kv};
 
@@ -448,45 +448,47 @@ pub fn calibrate_dialog(
     ));
     let ratio = c.ratio();
     let money = |u: Usd| u.amount(2);
-    ui.add(
-        egui::Label::new(Text::small(
-            match ratio {
-                Some(r) => cx.tr.f(
-                    "prices.calibrate_result",
-                    &[
-                        ("billed", &money(c.billed)),
-                        ("est", &money(c.estimated)),
-                        ("ratio", &r),
-                    ],
-                ),
-                None => cx.tr.t("prices.calibrate_no_data"),
-            },
-            cx.pal,
-        ))
-        .wrap(),
-    );
-    egui::Grid::new("router-calibration-days")
-        .num_columns(3)
-        .spacing([24.0, 2.0])
-        .show(ui, |ui| {
-            ui.label(Text::caption(cx.tr.t("prices.day"), cx.pal));
-            ui.label(Text::caption(cx.tr.t("prices.estimated"), cx.pal));
-            ui.label(Text::caption(cx.tr.t("prices.billed"), cx.pal));
-            ui.end_row();
-            for (day, est, billed) in &c.days {
-                ui.label(Text::mono_muted(day, cx.pal));
-                ui.label(Text::mono(
-                    est.map_or_else(|| "—".into(), |u| format!("${}", u.amount(2))),
-                    cx.pal,
-                ));
-                ui.label(Text::mono(
-                    billed.map_or_else(|| "—".into(), |u| format!("${}", u.amount(2))),
-                    cx.pal,
-                ));
+    dialog_body(ui, |ui| {
+        ui.add(
+            egui::Label::new(Text::small(
+                match ratio {
+                    Some(r) => cx.tr.f(
+                        "prices.calibrate_result",
+                        &[
+                            ("billed", &money(c.billed)),
+                            ("est", &money(c.estimated)),
+                            ("ratio", &r),
+                        ],
+                    ),
+                    None => cx.tr.t("prices.calibrate_no_data"),
+                },
+                cx.pal,
+            ))
+            .wrap(),
+        );
+        egui::Grid::new("router-calibration-days")
+            .num_columns(3)
+            .spacing([24.0, 2.0])
+            .show(ui, |ui| {
+                ui.label(Text::caption(cx.tr.t("prices.day"), cx.pal));
+                ui.label(Text::caption(cx.tr.t("prices.estimated"), cx.pal));
+                ui.label(Text::caption(cx.tr.t("prices.billed"), cx.pal));
                 ui.end_row();
-            }
-        });
-    ui.add(egui::Label::new(Text::caption(cx.tr.t("prices.calibrate_note"), cx.pal)).wrap());
+                for (day, est, billed) in &c.days {
+                    ui.label(Text::mono_muted(day, cx.pal));
+                    ui.label(Text::mono(
+                        est.map_or_else(|| "—".into(), |u| format!("${}", u.amount(2))),
+                        cx.pal,
+                    ));
+                    ui.label(Text::mono(
+                        billed.map_or_else(|| "—".into(), |u| format!("${}", u.amount(2))),
+                        cx.pal,
+                    ));
+                    ui.end_row();
+                }
+            });
+        ui.add(egui::Label::new(Text::caption(cx.tr.t("prices.calibrate_note"), cx.pal)).wrap());
+    });
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -552,7 +554,7 @@ pub(super) fn table_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, close: &
     let t = &mut state.prefs.prices.table;
     t.poll();
     ui.label(Text::title(cx.tr.t("prices.view_title"), cx.pal));
-    match (&t.value, &t.error) {
+    dialog_body(ui, |ui| match (&t.value, &t.error) {
         (Some(table), _) if table.entries.is_empty() => {
             ui.add(egui::Label::new(Text::small(cx.tr.t("prices.view_empty"), cx.pal)).wrap());
         }
@@ -570,28 +572,24 @@ pub(super) fn table_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, close: &
                 "prices.col.output",
                 "prices.col.source",
             ];
-            egui::ScrollArea::vertical()
-                .max_height(320.0)
+            egui::Grid::new("router-price-table")
+                .striped(true)
+                .num_columns(headers.len())
                 .show(ui, |ui| {
-                    egui::Grid::new("router-price-table")
-                        .striped(true)
-                        .num_columns(headers.len())
-                        .show(ui, |ui| {
-                            for h in headers {
-                                ui.label(Text::caption(cx.tr.t(h), cx.pal));
+                    for h in headers {
+                        ui.label(Text::caption(cx.tr.t(h), cx.pal));
+                    }
+                    ui.end_row();
+                    for row in &rows {
+                        for (i, cell) in row.iter().enumerate() {
+                            if i == 0 || i == 4 {
+                                ui.label(Text::small(cell, cx.pal));
+                            } else {
+                                ui.label(Text::mono(cell, cx.pal));
                             }
-                            ui.end_row();
-                            for row in &rows {
-                                for (i, cell) in row.iter().enumerate() {
-                                    if i == 0 || i == 4 {
-                                        ui.label(Text::small(cell, cx.pal));
-                                    } else {
-                                        ui.label(Text::mono(cell, cx.pal));
-                                    }
-                                }
-                                ui.end_row();
-                            }
-                        });
+                        }
+                        ui.end_row();
+                    }
                 });
         }
         (None, Some(e)) => {
@@ -602,14 +600,16 @@ pub(super) fn table_dialog(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, close: &
                 .request_repaint_after(std::time::Duration::from_millis(100));
             ui.label(Text::small(cx.tr.t("prices.view_loading"), cx.pal));
         }
-    }
+    });
     ui.add_space(8.0);
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if ui
-            .add(Button::ghost(cx.tr.t("action.close")).small())
-            .clicked()
-        {
-            *close = true;
-        }
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add(Button::ghost(cx.tr.t("action.close")).small())
+                .clicked()
+            {
+                *close = true;
+            }
+        });
     });
 }
