@@ -373,6 +373,9 @@ class Session:
         self.run([spb, "profile", "add", "krill", "--name", "Krill", "--site", "krill-local",
                   "--line", "overseas", "--auth", "pat", "--key-stdin"], stdin=KEY + "\n")
         self.run([spb, "profile", "use", "krill", "--yes", "--countdown", "0"], check=False)
+        for line in self.args.disable_line or []:
+            # A disabled line (user bug 108) for the Providers page's shots.
+            self.run([spb, "profile", "edit", "krill", "--disable-line", line])
         p = self.run([spb, "status"], check=False)
         log("status after setup:\n" + p.stdout.strip())
         self.run([spb, "site", "add", "example-api", "--name", "Example API",
@@ -649,6 +652,8 @@ def main():
     ap.add_argument("--sizes", default=",".join(f"{w}x{h}" for w, h in SIZES),
                     help="comma-separated window sizes WxH (the first keeps plain names)")
     ap.add_argument("--size", help="a single window size WxH (same as --sizes WxH)")
+    ap.add_argument("--disable-line", action="append", metavar="LINE",
+                    help="disable this line of the Krill provider (repeatable)")
     args = ap.parse_args()
     sizes = args.size or args.sizes
     args.sizes = [tuple(int(x) for x in v.lower().split("x", 1)) for v in sizes.split(",") if v]

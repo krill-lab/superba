@@ -538,9 +538,14 @@ fn member_row(
                     egui::Label::new(Text::small(format!("{}", index + 1), cx.pal)),
                 );
                 let healthy = m.healthy_lines();
-                let status = if m.lines.iter().all(|l| l.health == LineHealth::Unknown) {
+                let enabled = m.enabled_lines();
+                let status = if m
+                    .lines
+                    .iter()
+                    .all(|l| matches!(l.health, LineHealth::Unknown | LineHealth::Disabled))
+                {
                     Status::Idle
-                } else if healthy == m.lines.len() {
+                } else if healthy == enabled {
                     Status::Ok
                 } else if healthy > 0 {
                     Status::Warn
@@ -705,6 +710,7 @@ fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&
             LineHealth::Probing => (Status::Warn, "router.line.probing"),
             LineHealth::Down => (Status::Error, "router.line.down"),
             LineHealth::Unknown => (Status::Idle, "router.line.unknown"),
+            LineHealth::Disabled => (Status::Idle, "router.line.disabled"),
         };
         let mut state = cx.tr.t(key);
         let mut tip = Vec::new();

@@ -151,7 +151,14 @@ pub fn members(view: &RouterView, sites: &[Site], profiles: &ProfileSet) -> Vec<
                     .map(|l| l.origin.as_str().to_owned())
                     .unwrap_or_default()
             };
-            let lines: Vec<LineView> = match live {
+            let disabled_view = |l: &superba_core::Line| LineView {
+                id: l.id.to_string(),
+                name: l.name.fallback.clone(),
+                base_url: l.origin.as_str().to_owned(),
+                health: LineHealth::Disabled,
+                metrics: None,
+            };
+            let mut lines: Vec<LineView> = match live {
                 Some(m) if !m.lines.is_empty() => m
                     .lines
                     .iter()
@@ -174,17 +181,34 @@ pub fn members(view: &RouterView, sites: &[Site], profiles: &ProfileSet) -> Vec<
                         crate::pages::shared::ordered_lines(site, Some(profile))
                             .into_iter()
                             .map(|l| LineView {
-                                id: l.id.to_string(),
-                                name: l.name.fallback.clone(),
-                                base_url: l.origin.as_str().to_owned(),
-                                health: LineHealth::Unknown,
-                                metrics: None,
+                                health: if profile.is_line_disabled(&l.id) {
+                                    LineHealth::Disabled
+                                } else {
+                                    LineHealth::Unknown
+                                },
+                                ..disabled_view(&l)
                             })
                             .collect()
                     }
                     _ => Vec::new(),
                 },
             };
+            // The running router has no disabled line (user bug 108): show
+            // each at its place in the profile's order.
+            if let (Some(site), Some(profile)) = (site, profile)
+                && live.is_some_and(|m| !m.lines.is_empty())
+            {
+                for (i, l) in crate::pages::shared::ordered_lines(site, Some(profile))
+                    .iter()
+                    .enumerate()
+                {
+                    if profile.is_line_disabled(&l.id)
+                        && !lines.iter().any(|v| v.id == l.id.as_str())
+                    {
+                        lines.insert(i.min(lines.len()), disabled_view(l));
+                    }
+                }
+            }
             MemberView {
                 id: id.to_string(),
                 last_route: live.and_then(|m| m.last_route.clone()),
