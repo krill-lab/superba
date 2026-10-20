@@ -317,7 +317,8 @@ fn drive(
             let pos = texts
                 .iter()
                 .rev()
-                .find(|(t, _)| t == target)
+                // A menu option may carry its description on a second line.
+                .find(|(t, _)| t == target || t.starts_with(&format!("{target}\n")))
                 .map(|(_, r)| r.center())
                 .unwrap_or_else(|| panic!("{target} not drawn: {texts:?}"));
             events.push(egui::Event::PointerMoved(pos));

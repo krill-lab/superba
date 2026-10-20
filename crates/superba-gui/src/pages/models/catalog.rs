@@ -50,6 +50,24 @@ pub fn mode_help(tr: &Tr, mode: CatalogMode) -> String {
     })
 }
 
+/// A mode in its menu: the name over what it offers Codex.
+fn mode_option(cx: &Cx<'_>, mode: CatalogMode) -> egui::text::LayoutJob {
+    use crate::design::fonts::{Weight, font};
+    use crate::design::tokens::text;
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &mode_label(cx.tr, mode),
+        0.0,
+        egui::TextFormat::simple(font(text::BODY, Weight::Medium), cx.pal.text),
+    );
+    job.append(
+        &format!("\n{}", mode_help(cx.tr, mode)),
+        0.0,
+        egui::TextFormat::simple(font(text::CAPTION, Weight::Regular), cx.pal.text_muted),
+    );
+    job
+}
+
 /// Where a provider's metadata for a model came from.
 pub(super) fn layer_key(layer: CatalogLayer) -> &'static str {
     match layer {
@@ -240,8 +258,7 @@ pub(super) fn mode_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &Model
                         .show_ui(ui, |ui| {
                             for choice in CatalogMode::ALL {
                                 if ui
-                                    .selectable_label(choice == mode, mode_label(cx.tr, choice))
-                                    .on_hover_text(mode_help(cx.tr, choice))
+                                    .selectable_label(choice == mode, mode_option(cx, choice))
                                     .clicked()
                                 {
                                     picked = Some(choice);
@@ -322,22 +339,28 @@ fn prefixes(
         .map(|m| m.id().to_owned())
         .unwrap_or_else(|| "gpt-5.5".into());
     let mut save = false;
+    // Opens leftwards from the button, inside the page card.
     let popup = egui::Popup::menu(&button)
+        .align(egui::RectAlign::BOTTOM_END)
+        .gap(crate::design::widgets::dropdown::MENU_GAP)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.set_width(SLUG_W + 260.0);
             ui.spacing_mut().item_spacing.y = space::S;
             ui.label(Text::strong(cx.tr.t("models.router.prefixes"), cx.pal));
-            ui.add(
-                egui::Label::new(Text::small(
-                    cx.tr.f(
-                        "models.router.prefixes_help",
-                        &[("mode", &mode_label(cx.tr, CatalogMode::Prefixed))],
-                    ),
-                    cx.pal,
-                ))
-                .wrap(),
-            );
+            // A menu lays out justified; prose reads better ragged.
+            ui.with_layout(Layout::top_down(egui::Align::Min), |ui| {
+                ui.add(
+                    egui::Label::new(Text::small(
+                        cx.tr.f(
+                            "models.router.prefixes_help",
+                            &[("mode", &mode_label(cx.tr, CatalogMode::Prefixed))],
+                        ),
+                        cx.pal,
+                    ))
+                    .wrap(),
+                );
+            });
             // Text fields keep their frame inside the menu.
             let v = ui.visuals_mut();
             v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, cx.pal.border);
