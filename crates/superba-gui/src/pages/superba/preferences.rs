@@ -112,17 +112,15 @@ fn jump_width(ui: &Ui, cx: &Cx<'_>) -> f32 {
             .size()
             .x
     };
-    width(cx.tr.t("superba.settings.jump"))
-        + SECTIONS
-            .into_iter()
-            .map(|s| width(cx.tr.t(s.title_key())) + 24.0)
-            .sum::<f32>()
+    SECTIONS
+        .into_iter()
+        .map(|s| width(cx.tr.t(s.title_key())) + 24.0)
+        .sum::<f32>()
 }
 
 fn jumps(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        ui.label(Text::small(cx.tr.t("superba.settings.jump"), cx.pal));
         for section in SECTIONS {
             let label = cx.tr.t(section.title_key());
             let selected = state.active == section;
