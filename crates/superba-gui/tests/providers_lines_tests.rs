@@ -409,15 +409,16 @@ fn use_this_line_runs_the_switch_flow_and_the_badge_follows() {
     let tr = Tr::new(Locale::ZhCn);
     let mut h = AppHarness::new(service.clone(), Locale::ZhCn, Page::Providers);
     let named = |key: &str, line: &str| tr.f(key, &[("line", &line_name(&tr, line))]);
-    let t = h.wait_for(
-        Some(Role::Button),
-        &named("connection.lines.use_named", "cdn"),
-    );
-    assert!(
-        t.has(&named("connection.lines.in_use_named", "overseas")),
-        "{}",
-        t.dump()
-    );
+    // The rows come with the profiles; the 使用中 badge needs the Overview's
+    // active state, which can arrive a few frames later (a slower runner).
+    let t = h.until("the rows and the line in use", |t| {
+        t.find(
+            Some(Role::Button),
+            &named("connection.lines.use_named", "cdn"),
+        )
+        .is_some()
+            && t.has(&named("connection.lines.in_use_named", "overseas"))
+    });
     assert!(
         t.find(
             Some(Role::Button),

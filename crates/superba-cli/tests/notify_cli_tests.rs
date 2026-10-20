@@ -150,7 +150,10 @@ impl Home {
         {
             // Known-folder resolution needs the Windows installation variables,
             // even though every writable test directory is isolated above.
-            for name in ["SystemRoot", "SystemDrive", "WINDIR"] {
+            // PowerShell decides what is a program by PATHEXT: without it, it
+            // hands even powershell.exe or spb.exe to ShellExecute, detached
+            // from the hook's stdin and output (every session has it set).
+            for name in ["SystemRoot", "SystemDrive", "WINDIR", "PATHEXT", "ComSpec"] {
                 if let Some(value) = std::env::var_os(name) {
                     cmd.env(name, value);
                 }

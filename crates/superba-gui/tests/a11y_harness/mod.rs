@@ -251,6 +251,16 @@ fn isolate() {
             std::env::set_var("XDG_DATA_HOME", dir.join(".local/share"));
             std::env::set_var("XDG_CONFIG_HOME", dir.join(".config"));
         }
+        // The one-time "running elevated" toast is real on an elevated CI
+        // runner (GitHub's Windows images) and would sit over every page
+        // with its own close button; startup_account_tests covers it.
+        let data = dir.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(
+            data.join(superba_gui::notices::ELEVATED_SEEN_FILE),
+            b"shown\n",
+        )
+        .unwrap();
     });
 }
 
