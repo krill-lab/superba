@@ -1,75 +1,114 @@
-//! Connection, model selection, tool options and owned configuration files.
-use super::{Selection, State, provider};
+//! The detail of the selected row, one column of sections: a header (identity,
+//! state, install state, secondary actions), then for a tool «连接», «模型»,
+//! «选项» and «配置文件» as settings rows; for Codex and Claude Code a
+//! read-only summary with one action that opens their own page.
+use super::form::{self, Rows};
+use super::{Selection, State, models};
+use crate::design::elide::Shape;
+use crate::design::icons::Icon;
+use crate::design::tokens::{size, space, text};
+use crate::design::widgets::value_chip::ValueChip;
 use crate::design::widgets::{
-    Badge, Button, Card, Dropdown, MonogramTile, Pager, Segmented, Status, Text, dialog,
-    dialog_body,
+    Badge, Button, Dropdown, IconButton, Segmented, Status, StatusDot, Text, dialog, dialog_body,
 };
-use crate::pages::{Action, Cx, Page};
+use crate::pages::{Action, Cx, Page, SuperbaSection, callout};
 use egui::{RichText, Ui};
 use superba_core::harness::*;
-use superba_core::{ModelSource, ModelVisibility};
+use superba_core::i18n::Severity;
 
-fn label(ui: &mut Ui, cx: &Cx<'_>, key: &str) {
-    ui.label(Text::strong(cx.tr.t(key), cx.pal));
-    ui.add_space(4.0);
-}
-/// Draw the chosen summary or editor.
+/// Widest provider field.
+const FIELD_W: f32 = 260.0;
+
+/// Draw the chosen summary or tool.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    ui.spacing_mut().item_spacing.y = 6.0;
-    ui.horizontal_wrapped(|ui| {
-        ui.add(MonogramTile::new(state.selected.monogram()).size(40.0));
-        ui.heading(state.selected.name());
-        if let Some(h) = state.selected.harness()
-            && let Some(view) = state.views.get(&h)
-        {
-            if let Some(install) = &view.install
-                && let Some(version) = &install.version
+    ui.spacing_mut().item_spacing.y = 0.0;
+    match state.selected.harness() {
+        Some(h) => tool(ui, cx, state, h, out),
+        None => summary(ui, cx, state, out),
+    }
+    ui.add_space(space::XL);
+}
+
+/// The install state under the tool's name.
+fn install_text(cx: &Cx<'_>, h: HarnessId, install: Option<&HarnessInstall>) -> String {
+    match install {
+        None => cx.tr.t("tools.not_installed"),
+        Some(i) => match (&i.version, h) {
+            (Some(v), HarnessId::OpenCode) => cx.tr.f(
+                "tools.installed_version",
+                &[(
+                    "version",
+                    &format!(
+                        "{v} · OpenCode {}",
+                        i.opencode_major.unwrap_or(OpencodeMajor::V2).as_str()
+                    ),
+                )],
+            ),
+            (Some(v), _) => cx.tr.f("tools.installed_version", &[("version", v)]),
+            (None, _) => cx.tr.t("tools.installed"),
+        },
+    }
+}
+
+fn tool(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, h: HarnessId, out: &mut Vec<Action>) {
+    let tool_state = state.tool_state(cx, h);
+    let install = state.views.get(&h).map(|v| v.install.clone()).or_else(|| {
+        state
+            .summaries
+            .iter()
+            .find(|s| s.harness == h)
+            .map(|s| s.install.clone())
+    });
+    let installed = install.as_ref().is_none_or(|i| i.is_some());
+    let subtitle = match &install {
+        Some(i) => install_text(cx, h, i.as_ref()),
+        None => cx.tr.t("tools.loading"),
+    };
+    form::header(
+        ui,
+        cx,
+        state.selected.monogram(),
+        state.selected.name(),
+        Some((tool_state.status(), cx.tr.t(tool_state.key()))),
+        &subtitle,
+        |ui| {
+            if ui
+                .add(Button::ghost(cx.tr.t("tools.usage")).small())
+                .clicked()
             {
-                let version = if h == HarnessId::OpenCode {
-                    format!(
-                        "OpenCode {} · {version}",
-                        install.opencode_major.unwrap_or(OpencodeMajor::V2).as_str()
-                    )
-                } else {
-                    version.clone()
-                };
-                ui.label(Text::small(version, cx.pal));
+                out.push(Action::Go(Page::Usage));
             }
-            let (status, key) = if !view.pending.is_empty() || state.drafts.contains_key(&h) {
-                (Status::Warn, "tools.pending_short")
-            } else if view.applied.is_some() {
-                (Status::Ok, "tools.applied")
-            } else {
-                (Status::Idle, "tools.not_configured")
-            };
-            ui.add(Badge::new(cx.tr.t(key)).status(status));
-        }
+            if !installed
+                && ui
+                    .add(Button::new(cx.tr.t("tools.install")).small())
+                    .clicked()
+            {
+                out.push(Action::Go(Page::Superba(SuperbaSection::Updates)));
+            }
+        },
+    );
+    ui.add_space(space::XL);
+    if let Some(e) = &state.error {
+        callout(ui, cx, Status::Error, e);
+        ui.add_space(space::M);
+    }
+    if let Some(f) = state.view_load.failure() {
+        callout(ui, cx, Status::Error, &f.text(cx));
+        ui.add_space(space::S);
         if ui
-            .add(Button::ghost(cx.tr.t("tools.usage")).small())
+            .add(Button::new(cx.tr.t("tools.retry")).small())
             .clicked()
         {
-            out.push(Action::Go(Page::Usage));
-        }
-    });
-    ui.add_space(12.0);
-    if let Some(e) = &state.error {
-        ui.add(egui::Label::new(Text::body(e, cx.pal).color(cx.pal.red)).wrap());
-    }
-    let Some(h) = state.selected.harness() else {
-        summary(ui, cx, state, out);
-        return;
-    };
-    if let Some(f) = state.view_load.failure() {
-        ui.add(egui::Label::new(Text::body(f.text(cx), cx.pal).color(cx.pal.red)).wrap());
-        if ui.add(Button::new(cx.tr.t("tools.retry"))).clicked() {
             state.load_view(cx, h);
         }
+        ui.add_space(space::M);
     }
     if let Some(f) = state.preview_load.failure() {
-        ui.add(egui::Label::new(Text::body(f.text(cx), cx.pal).color(cx.pal.red)).wrap());
+        callout(ui, cx, Status::Error, &f.text(cx));
+        ui.add_space(space::M);
     }
     let Some(saved) = state.views.get(&h).cloned() else {
-        ui.label(cx.tr.t("tools.loading"));
+        ui.label(Text::muted(cx.tr.t("tools.loading"), cx.pal));
         return;
     };
     let view = state
@@ -78,98 +117,45 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
         .filter(|v| v.harness == h)
         .cloned()
         .unwrap_or(saved);
-    if view.install.is_none() {
-        ui.add(egui::Label::new(Text::small(cx.tr.t("tools.not_installed"), cx.pal)).wrap());
-    }
     let mut settings = state.settings(h);
     let before = settings.clone();
-    if ui.available_width() >= 650.0 {
-        ui.columns(2, |cols| {
-            connection(&mut cols[0], cx, state, &view, &mut settings);
-            options(&mut cols[0], cx, h, &mut settings, out);
-            models(&mut cols[1], cx, state, h, &mut settings, out);
-        });
-    } else {
-        connection(ui, cx, state, &view, &mut settings);
-        ui.add_space(14.0);
-        models(ui, cx, state, h, &mut settings, out);
-        ui.add_space(14.0);
-        options(ui, cx, h, &mut settings, out);
-    }
+    connection(ui, cx, state, &view, &mut settings);
+    form::section_gap(ui);
+    models::section(ui, cx, state, h, &mut settings);
+    form::section_gap(ui);
+    options(ui, cx, h, &mut settings, out);
     if settings != before {
         state.edit(h, settings);
     }
-    ui.add_space(12.0);
-    label(ui, cx, "tools.files");
-    for file in &view.files {
-        Card::new().flat().show(ui, |ui| {
-            ui.add(
-                egui::Label::new(
-                    RichText::new(superba_core::paths::display_path(&file.path)).monospace(),
-                )
-                .truncate(),
-            );
-            let status = match &file.status {
-                HarnessFileStatus::Absent => cx.tr.t("tools.file_absent"),
-                HarnessFileStatus::Valid => cx.tr.t("tools.file_valid"),
-                HarnessFileStatus::Invalid { line, column, .. } => cx
-                    .tr
-                    .f("tools.file_invalid", &[("line", line), ("column", column)]),
-                _ => cx.tr.t("tools.file_unreadable"),
-            };
-            let owned = view.applied.as_ref().map_or(0, |a| {
-                a.owned
-                    .iter()
-                    .filter(|p| p.starts_with(&format!("{} ", file.key)))
-                    .count()
-            });
-            ui.horizontal_wrapped(|ui| {
-                ui.label(Text::small(
-                    format!("{} · {}", status, cx.tr.f("tools.owned", &[("n", &owned)])),
-                    cx.pal,
-                ));
-                if file.holds_key {
-                    ui.label(Text::small(cx.tr.t("tools.plain_key"), cx.pal));
-                }
-                if ui.add(Button::new(cx.tr.t("tools.edit")).small()).clicked() {
-                    state.editor.open(cx, h, file.key.clone(), false);
-                }
-                if ui
-                    .add(
-                        Button::ghost(cx.tr.f("tools.backup_count", &[("n", &file.backups)]))
-                            .small(),
-                    )
-                    .clicked()
-                {
-                    state.editor.open(cx, h, file.key.clone(), true);
-                }
-            });
-        });
-    }
-    for note in view
+    form::section_gap(ui);
+    files(ui, cx, state, &view, h);
+    let notes: Vec<_> = view
         .notes
         .iter()
         .filter(|n| n.text.key != "router.protocol.translated")
-    {
-        ui.add(egui::Label::new(Text::small(cx.tr.text(&note.text), cx.pal)).wrap());
-    }
-    if let Some(report) = &state.report
-        && report.harness == h
-    {
-        for note in &report.notes {
-            ui.add(egui::Label::new(Text::small(cx.tr.text(&note.text), cx.pal)).wrap());
+        .chain(
+            state
+                .report
+                .as_ref()
+                .filter(|r| r.harness == h)
+                .map(|r| r.notes.as_slice())
+                .unwrap_or_default(),
+        )
+        .collect();
+    if !notes.is_empty() {
+        ui.add_space(space::M);
+        ui.spacing_mut().item_spacing.y = space::XS;
+        for note in notes {
+            let status = match note.severity {
+                Severity::Info => Status::Idle,
+                Severity::Warning => Status::Warn,
+                Severity::Danger => Status::Error,
+            };
+            crate::pages::note(ui, cx, status, cx.tr.text(&note.text));
         }
     }
 }
-fn field(ui: &mut Ui, cx: &Cx<'_>, key: &str, show: impl FnOnce(&mut Ui)) {
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [66.0, 28.0],
-            egui::Label::new(Text::small(cx.tr.t(key), cx.pal)),
-        );
-        show(ui);
-    });
-}
+
 fn connection(
     ui: &mut Ui,
     cx: &Cx<'_>,
@@ -177,7 +163,8 @@ fn connection(
     view: &HarnessView,
     s: &mut HarnessSettings,
 ) {
-    label(ui, cx, "tools.connection");
+    form::section(ui, cx, &cx.tr.t("tools.connection"), None);
+    let mut rows = Rows::new();
     let name = s
         .provider
         .as_ref()
@@ -199,11 +186,11 @@ fn connection(
                 )],
             )
         });
-    field(ui, cx, "tools.provider", |ui| {
+    rows.row(ui, cx, &cx.tr.t("tools.provider"), None, |ui| {
         Dropdown::new("tool-provider")
             .label(cx.tr.t("tools.provider"))
             .selected_text(name)
-            .width(ui.available_width())
+            .fixed_width(ui.available_width().min(FIELD_W))
             .show_ui(ui, |ui| {
                 if ui
                     .selectable_label(s.provider.is_none(), cx.tr.t("tools.follow_short"))
@@ -228,250 +215,93 @@ fn connection(
                 }
             });
     });
-    field(ui, cx, "tools.protocol", |ui| {
-        let mut protocol = s
-            .protocol
-            .or_else(|| view.endpoint.as_ref().map(|e| e.protocol))
-            .or_else(|| view.protocols.first().copied());
-        let old = protocol;
-        let mut control =
-            Segmented::new("tool-protocol", &mut protocol).label(cx.tr.t("tools.protocol"));
-        for p in view.harness.protocols().iter().copied() {
-            let name = match p {
-                HarnessProtocol::Responses => "Responses",
-                HarnessProtocol::Chat => "Chat",
-                HarnessProtocol::Anthropic => "Anthropic",
-                HarnessProtocol::Gemini => "Gemini",
-            };
-            control = if view.protocols.contains(&p) {
-                control.option(Some(p), name)
-            } else {
-                control.disabled_option(Some(p), name, cx.tr.t("tools.protocol_unavailable"))
-            };
-        }
-        control.show(ui);
-        if old != protocol {
-            s.protocol = protocol;
-        }
-    });
-    if let Some(note) = view
+    let translated = view
         .notes
         .iter()
         .find(|n| n.text.key == "router.protocol.translated")
-    {
-        field(ui, cx, "tools.eligibility", |ui| {
-            ui.label(Text::body(cx.tr.text(&note.text), cx.pal));
-        });
-    }
-    field(ui, cx, "tools.route", |ui| {
-        Segmented::new("tool-route", &mut s.route)
+        .map(|n| cx.tr.text(&n.text));
+    rows.row(
+        ui,
+        cx,
+        &cx.tr.t("tools.protocol"),
+        translated.as_deref(),
+        |ui| {
+            let mut protocol = s
+                .protocol
+                .or_else(|| view.endpoint.as_ref().map(|e| e.protocol))
+                .or_else(|| view.protocols.first().copied());
+            let old = protocol;
+            let mut control = Segmented::new(("tool-protocol", view.harness), &mut protocol)
+                .label(cx.tr.t("tools.protocol"))
+                .small();
+            for p in view.harness.protocols().iter().copied() {
+                let name = match p {
+                    HarnessProtocol::Responses => "Responses",
+                    HarnessProtocol::Chat => "Chat",
+                    HarnessProtocol::Anthropic => "Anthropic",
+                    HarnessProtocol::Gemini => "Gemini",
+                };
+                control = if view.protocols.contains(&p) {
+                    control.option(Some(p), name)
+                } else {
+                    control.disabled_option(Some(p), name, cx.tr.t("tools.protocol_unavailable"))
+                };
+            }
+            control.show(ui);
+            if old != protocol {
+                s.protocol = protocol;
+            }
+        },
+    );
+    let hint = cx.tr.t(if s.route == HarnessRoute::Routed {
+        "tools.route_hint"
+    } else {
+        "tools.direct_hint"
+    });
+    rows.row(ui, cx, &cx.tr.t("tools.route"), Some(&hint), |ui| {
+        Segmented::new(("tool-route", view.harness), &mut s.route)
             .label(cx.tr.t("tools.route"))
+            .small()
             .option(HarnessRoute::Direct, cx.tr.t("tools.direct"))
             .option(HarnessRoute::Routed, cx.tr.t("tools.routed"))
             .show(ui);
     });
-    field(ui, cx, "tools.address", |ui| {
+    rows.row(ui, cx, &cx.tr.t("tools.address"), None, |ui| {
         if state.preview_load.loading() {
-            ui.label(cx.tr.t("tools.loading"));
+            ui.label(Text::muted(cx.tr.t("tools.loading"), cx.pal));
         } else if let Some(endpoint) = &view.endpoint {
-            let text = endpoint.base_text();
-            if ui
-                .add(crate::design::widgets::IconButton::new(
-                    crate::design::icons::Icon::Copy,
-                    cx.tr.t("tools.copy_address"),
-                ))
-                .clicked()
-            {
-                ui.ctx().copy_text(text.clone());
-            }
-            ui.add(egui::Label::new(RichText::new(&text).monospace()).wrap());
+            address(ui, cx, &endpoint.base_text());
         } else {
-            ui.label("—");
+            ui.label(Text::muted("—", cx.pal));
         }
     });
+}
+
+/// A URL elided in the middle (full value on hover) with a copy button after it.
+fn address(ui: &mut Ui, cx: &Cx<'_>, url: &str) {
+    if ui
+        .add(IconButton::new(Icon::Copy, cx.tr.t("tools.copy_address")).size(size::CONTROL_SM))
+        .clicked()
+    {
+        ui.ctx().copy_text(url.to_owned());
+    }
     ui.add(
-        egui::Label::new(Text::small(
-            cx.tr.t(if s.route == HarnessRoute::Routed {
-                "tools.route_hint"
-            } else {
-                "tools.direct_hint"
-            }),
-            cx.pal,
-        ))
-        .wrap(),
+        ValueChip::new(url, Shape::Url)
+            .plain()
+            .size(text::SMALL)
+            .max_width(ui.available_width()),
     );
 }
-fn models(
-    ui: &mut Ui,
-    cx: &Cx<'_>,
-    state: &mut State,
-    h: HarnessId,
-    s: &mut HarnessSettings,
-    out: &mut Vec<Action>,
-) {
-    label(ui, cx, "tools.models");
-    let Some(id) = provider(cx, s) else {
-        ui.label(cx.tr.t("tools.choose_provider"));
-        return;
-    };
-    if let Some(p) = cx.data.profile(&id) {
-        let mut source = p.model_source.unwrap_or(ModelSource::Auto);
-        let old = source;
-        let label = |source| {
-            cx.tr.t(match source {
-                ModelSource::Auto => "models.list_source.auto",
-                ModelSource::Codex => "models.list_source.codex",
-                ModelSource::Standard => "models.list_source.standard",
-            })
-        };
-        Dropdown::new("tool-source")
-            .label(cx.tr.t("models.list_source.label"))
-            .selected_text(label(source))
-            .show_ui(ui, |ui| {
-                for value in [ModelSource::Auto, ModelSource::Codex, ModelSource::Standard] {
-                    if ui.selectable_label(source == value, label(value)).clicked() {
-                        source = value;
-                    }
-                }
-            });
-        if source != old {
-            let mut p = p.clone();
-            p.model_source = Some(source);
-            out.push(Action::SaveProfile {
-                profile: Box::new(p),
-                key: None,
-            });
-        }
-    }
-    ui.horizontal_wrapped(|ui| {
-        if ui.add(Button::new(cx.tr.t("tools.pull")).small()).clicked() {
-            state.pull_models(cx, id.clone(), true);
-        }
-        let response = ui.add(
-            egui::TextEdit::singleline(&mut state.search)
-                .hint_text(cx.tr.t("tools.search"))
-                .desired_width(ui.available_width().min(210.0)),
-        );
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::Role::TextInput,
-                ui.is_enabled(),
-                cx.tr.t("tools.search"),
-            )
-        });
-        if response.changed() {
-            state.model_page = 0;
-        }
-    });
-    if let Some(f) = state.model_load.failure() {
-        ui.add(egui::Label::new(Text::small(f.text(cx), cx.pal).color(cx.pal.red)).wrap());
-    }
-    if state.model_load.loading() {
-        ui.label(cx.tr.t("tools.loading"));
-    }
-    let Some(list) = state.models.get(&id) else {
-        return;
-    };
-    for e in list
-        .sources
-        .iter()
-        .filter_map(|s| s.error.as_ref())
-        .chain(list.fallback_reason.as_ref())
-    {
-        ui.add(
-            egui::Label::new(
-                Text::small(crate::pages::error_text(cx.tr, e), cx.pal).color(cx.pal.red),
-            )
-            .wrap(),
-        );
-    }
-    let mut available: Vec<_> = list
-        .models
-        .iter()
-        .filter(|m| m.supported_in_api && m.visibility != ModelVisibility::None)
-        .map(|m| (m.slug.clone(), m.context_window))
-        .collect();
-    for id in &s.models {
-        if !available.iter().any(|(slug, _)| slug == id) {
-            available.push((id.clone(), None));
-        }
-    }
-    let query = state.search.to_lowercase();
-    let filtered: Vec<_> = available
-        .iter()
-        .filter(|m| m.0.to_lowercase().contains(&query))
-        .collect();
-    let total = filtered.len();
-    let count = if s.models.is_empty() {
-        available.len()
-    } else {
-        s.models.len()
-    };
-    ui.label(Text::small(
-        format!("{count} / {}", available.len()),
-        cx.pal,
-    ));
-    state.model_page = state.model_page.min(total.saturating_sub(1) / 6);
-    for model in filtered.into_iter().skip(state.model_page * 6).take(6) {
-        ui.horizontal(|ui| {
-            let mut checked = s.models.is_empty() || s.models.contains(&model.0);
-            if ui.checkbox(&mut checked, &model.0).changed() {
-                if s.models.is_empty() {
-                    s.models = available.iter().map(|m| m.0.clone()).collect();
-                }
-                if checked {
-                    if !s.models.contains(&model.0) {
-                        s.models.push(model.0.clone());
-                    }
-                } else if s.models.len() > 1 {
-                    s.models.retain(|id| id != &model.0);
-                    if s.default_model.as_ref() == Some(&model.0) {
-                        s.default_model = s.models.first().cloned();
-                    }
-                }
-            }
-            if let Some(w) = model.1 {
-                ui.label(Text::small(format!("{}K", w / 1000), cx.pal));
-            }
-        });
-    }
-    Pager::new(("tool-models", h), &mut state.model_page, total, 6)
-        .compact()
-        .labels(cx.tr.t("tools.previous"), cx.tr.t("tools.next"))
-        .show(ui);
-    let selected: Vec<_> = available
-        .iter()
-        .filter(|m| s.models.is_empty() || s.models.contains(&m.0))
-        .collect();
-    Dropdown::new("tool-default-model")
-        .label(cx.tr.t("tools.default_model"))
-        .selected_text(
-            s.default_model
-                .as_deref()
-                .or_else(|| selected.first().map(|m| m.0.as_str()))
-                .unwrap_or("—"),
-        )
-        .width(ui.available_width())
-        .show_ui(ui, |ui| {
-            for m in selected {
-                if ui
-                    .selectable_label(s.default_model.as_ref() == Some(&m.0), &m.0)
-                    .clicked()
-                {
-                    s.default_model = Some(m.0.clone());
-                }
-            }
-        });
-    ui.add(egui::Label::new(Text::small(cx.tr.t("tools.models_hint"), cx.pal)).wrap());
-}
+
 fn options(ui: &mut Ui, cx: &Cx<'_>, h: HarnessId, s: &mut HarnessSettings, out: &mut Vec<Action>) {
-    ui.add_space(8.0);
-    label(ui, cx, "tools.options");
+    form::section(ui, cx, &cx.tr.t("tools.options"), None);
+    let mut rows = Rows::new();
     match h {
-        HarnessId::OpenCode => {
+        HarnessId::OpenCode => rows.row(ui, cx, &cx.tr.t("tools.config_format"), None, |ui| {
             let mut v = s.options.opencode_major.unwrap_or(OpencodeMajor::V2);
             if Segmented::new("tool-opencode", &mut v)
                 .label(cx.tr.t("tools.config_format"))
+                .small()
                 .option(OpencodeMajor::V2, "OpenCode 2")
                 .option(OpencodeMajor::V1, "OpenCode 1")
                 .show(ui)
@@ -479,56 +309,153 @@ fn options(ui: &mut Ui, cx: &Cx<'_>, h: HarnessId, s: &mut HarnessSettings, out:
             {
                 s.options.opencode_major = Some(v);
             }
-        }
-        HarnessId::Dsh => {
+        }),
+        HarnessId::Dsh => rows.row(ui, cx, &cx.tr.t("tools.telemetry"), None, |ui| {
             Segmented::new("tool-telemetry", &mut s.options.dsh_telemetry)
                 .label(cx.tr.t("tools.telemetry"))
+                .small()
                 .option(DshTelemetry::Off, cx.tr.t("tools.telemetry_off"))
                 .option(DshTelemetry::Unmanaged, cx.tr.t("tools.telemetry_keep"))
                 .show(ui);
-        }
-        HarnessId::WorkBuddy => {
-            for (edition, key) in [
-                (WorkBuddyEdition::Cn, "tools.workbuddy_cn"),
-                (WorkBuddyEdition::Intl, "tools.workbuddy_intl"),
-            ] {
-                let mut on = s.options.workbuddy_editions.contains(&edition)
-                    || (s.options.workbuddy_editions.is_empty() && edition == WorkBuddyEdition::Cn);
-                if ui.checkbox(&mut on, cx.tr.t(key)).changed() {
-                    if s.options.workbuddy_editions.is_empty() {
-                        s.options.workbuddy_editions.push(WorkBuddyEdition::Cn);
-                    }
-                    if on {
-                        s.options.workbuddy_editions.push(edition);
-                        s.options.workbuddy_editions.sort();
-                        s.options.workbuddy_editions.dedup();
-                    } else if s.options.workbuddy_editions.len() > 1 {
-                        s.options.workbuddy_editions.retain(|e| *e != edition);
+        }),
+        HarnessId::WorkBuddy => rows.row(
+            ui,
+            cx,
+            &cx.tr.t("tools.editions"),
+            Some(&cx.tr.t("tools.editions_hint")),
+            |ui| {
+                // Right to left: the international edition is drawn first.
+                for (edition, key) in [
+                    (WorkBuddyEdition::Intl, "tools.workbuddy_intl"),
+                    (WorkBuddyEdition::Cn, "tools.workbuddy_cn"),
+                ] {
+                    let editions = &mut s.options.workbuddy_editions;
+                    let mut on = editions.contains(&edition)
+                        || (editions.is_empty() && edition == WorkBuddyEdition::Cn);
+                    if ui.checkbox(&mut on, cx.tr.t(key)).changed() {
+                        if editions.is_empty() {
+                            editions.push(WorkBuddyEdition::Cn);
+                        }
+                        if on {
+                            editions.push(edition);
+                            editions.sort();
+                            editions.dedup();
+                        } else if editions.len() > 1 {
+                            editions.retain(|e| *e != edition);
+                        }
                     }
                 }
-            }
-        }
+            },
+        ),
         _ => {}
     }
     let stats = cx.data.profiles.value.as_ref().is_some_and(|set| {
         let line = &set.settings.router.stats.line;
         line.enabled && line.harnesses.iter().any(|id| id.id() == h.as_str())
     });
-    ui.label(Text::small(
-        cx.tr.t(if stats {
-            "tools.stats_on"
-        } else {
-            "tools.stats_off"
-        }),
-        cx.pal,
-    ));
-    if ui
-        .add(Button::ghost(cx.tr.t("tools.stats_link")).small())
-        .clicked()
-    {
-        out.push(Action::Go(Page::Router));
+    rows.row(
+        ui,
+        cx,
+        &cx.tr.t("tools.stats_row"),
+        Some(&cx.tr.t("tools.stats_help")),
+        |ui| {
+            if ui
+                .add(
+                    Button::ghost(cx.tr.t("tools.stats_link"))
+                        .trailing(Icon::ArrowRight)
+                        .small(),
+                )
+                .clicked()
+            {
+                out.push(Action::Go(Page::Router));
+            }
+            ui.label(Text::muted(
+                cx.tr.t(if stats {
+                    "tools.enabled"
+                } else {
+                    "tools.disabled"
+                }),
+                cx.pal,
+            ));
+        },
+    );
+}
+
+/// A file's state: dot and text.
+fn file_status(cx: &Cx<'_>, status: &HarnessFileStatus) -> (Status, String) {
+    match status {
+        HarnessFileStatus::Absent => (Status::Idle, cx.tr.t("tools.file_absent")),
+        HarnessFileStatus::Valid => (Status::Ok, cx.tr.t("tools.file_valid")),
+        HarnessFileStatus::Invalid { line, column, .. } => (
+            Status::Error,
+            cx.tr
+                .f("tools.file_invalid", &[("line", line), ("column", column)]),
+        ),
+        _ => (Status::Error, cx.tr.t("tools.file_unreadable")),
     }
 }
+
+fn files(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, view: &HarnessView, h: HarnessId) {
+    form::section(ui, cx, &cx.tr.t("tools.files"), None);
+    let mut rows = Rows::new();
+    let applied = view.applied.is_some();
+    for file in &view.files {
+        let (status, status_text) = file_status(cx, &file.status);
+        let owned = view.applied.as_ref().map_or(0, |a| {
+            a.owned
+                .iter()
+                .filter(|p| p.starts_with(&format!("{} ", file.key)))
+                .count()
+        });
+        let path = superba_core::paths::display_path(&file.path);
+        let mut edit = false;
+        let mut backups = false;
+        rows.row_with(
+            ui,
+            ("tool-file", &file.key),
+            |ui| {
+                ui.spacing_mut().item_spacing.y = space::XS;
+                ui.add(
+                    ValueChip::new(&path, Shape::Path)
+                        .plain()
+                        .size(text::SMALL)
+                        .max_width(ui.available_width()),
+                );
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = space::XS + 2.0;
+                    ui.add(StatusDot::new(status));
+                    ui.label(Text::small(
+                        [
+                            status_text.clone(),
+                            cx.tr.f("tools.owned", &[("n", &owned)]),
+                            cx.tr.f("tools.backup_n", &[("n", &file.backups)]),
+                        ]
+                        .join(" · "),
+                        cx.pal,
+                    ));
+                    if file.holds_key {
+                        ui.add(if applied {
+                            Badge::new(cx.tr.t("tools.plain_key")).status(Status::Warn)
+                        } else {
+                            Badge::new(cx.tr.t("tools.plain_key_after")).hollow()
+                        });
+                    }
+                });
+            },
+            |ui| {
+                backups = ui
+                    .add(Button::new(cx.tr.t("tools.backups")).small())
+                    .clicked();
+                edit = ui.add(Button::new(cx.tr.t("tools.edit")).small()).clicked();
+            },
+        );
+        if edit || backups {
+            state.editor.open(cx, h, file.key.clone(), backups);
+        }
+    }
+}
+
+/// Codex and Claude Code: what they use, read-only, and the page that edits it.
 fn summary(ui: &mut Ui, cx: &Cx<'_>, state: &State, out: &mut Vec<Action>) {
     let claude = state.selected == Selection::Claude;
     let p = if claude {
@@ -554,123 +481,161 @@ fn summary(ui: &mut Ui, cx: &Cx<'_>, state: &State, out: &mut Vec<Action>) {
         set.settings.router.stats.line.enabled
             && set.settings.router.stats.line.harnesses.contains(&harness)
     });
-    let mut rows: Vec<(String, String)> = Vec::new();
-    let mut row = |key: &str, value: String| rows.push((cx.tr.t(key), value));
-    if let Some(p) = p {
-        row("tools.provider", p.name.clone());
-        row("tools.authentication", cx.tr.text(&p.auth_mode.text()));
-        if let Some(line) = &p.line_id {
-            row(
-                "tools.line",
-                cx.data.line_label(cx.tr, Some(&p.site_id), line),
-            );
-        }
-        if !claude {
-            row(
-                "tools.default_model",
-                p.model.model.clone().unwrap_or_else(|| "—".into()),
-            );
-        }
-    }
-    row(
-        "tools.route",
-        cx.tr.t(if routed {
-            "tools.routed"
-        } else {
-            "tools.direct"
-        }),
-    );
-    row(
-        "tools.statistics",
-        cx.tr.t(if stats {
-            "tools.enabled"
-        } else {
-            "tools.disabled"
-        }),
-    );
-    if claude {
-        if let Some(v) = &state.claude {
-            if let Some(e) = v
-                .router_base_url
-                .as_ref()
-                .filter(|_| routed)
-                .or_else(|| v.endpoint.as_ref().map(|e| &e.base_url))
+    let version = if claude {
+        state
+            .claude
+            .as_ref()
+            .and_then(|v| v.install.as_ref())
+            .and_then(|i| i.version.as_ref())
+            .map(|v| v.to_string())
+    } else {
+        cx.data
+            .overview
+            .value
+            .as_ref()
+            .and_then(|o| o.cli.terminal_cli())
+            .and_then(|b| b.version.as_ref())
+            .map(|v| v.to_string())
+    };
+    let subtitle = match &version {
+        Some(v) => cx.tr.f("tools.installed_version", &[("version", v)]),
+        None => cx.tr.t("tools.version_unknown"),
+    };
+    let (open_key, page) = if claude {
+        ("tools.open_claude", Page::ClaudeCode)
+    } else {
+        ("tools.open_codex", Page::Settings)
+    };
+    let badge = super::list::summary_state(cx, state, state.selected);
+    form::header(
+        ui,
+        cx,
+        state.selected.monogram(),
+        state.selected.name(),
+        Some(badge),
+        &subtitle,
+        |ui| {
+            if ui
+                .add(
+                    Button::new(cx.tr.t(open_key))
+                        .trailing(Icon::ArrowRight)
+                        .small(),
+                )
+                .clicked()
             {
-                row("tools.address", e.to_string());
+                out.push(Action::Go(page));
             }
-            if let Some(id) = &v.provider {
-                let models = v.config.models_of(id);
-                for slot in superba_core::ClaudeSlot::ALL {
-                    row(
-                        match slot {
-                            superba_core::ClaudeSlot::Opus => "tools.model_opus",
-                            superba_core::ClaudeSlot::Sonnet => "tools.model_sonnet",
-                            superba_core::ClaudeSlot::Haiku => "tools.model_haiku",
-                            superba_core::ClaudeSlot::Fable => "tools.model_fable",
-                            superba_core::ClaudeSlot::Custom => "tools.model_custom",
-                        },
-                        models
-                            .slots
-                            .get(&slot)
-                            .map(|m| m.model.clone())
-                            .unwrap_or_else(|| "—".into()),
-                    );
-                }
-            }
-            if let Some(version) = v.install.as_ref().and_then(|i| i.version.as_ref()) {
-                row("tools.version", version.to_string());
-            }
-        }
-    } else if let Some(version) = cx
-        .data
-        .overview
-        .value
-        .as_ref()
-        .and_then(|o| o.cli.terminal_cli())
-        .and_then(|b| b.version.as_ref())
-    {
-        row("tools.version", version.to_string());
-    }
-    Card::new().flat().show(ui, |ui| {
-        label(ui, cx, "tools.connection");
-        let value_width = (ui.available_width() - 140.0).max(120.0);
-        egui::Grid::new(("tool-summary-properties", state.selected))
-            .num_columns(2)
-            .spacing([24.0, 6.0])
-            .min_col_width(108.0)
-            .max_col_width(value_width)
-            .show(ui, |ui| {
-                for (key, value) in rows {
-                    ui.label(Text::small(key, cx.pal));
-                    ui.add(egui::Label::new(Text::body(value, cx.pal)).wrap());
-                    ui.end_row();
-                }
+        },
+    );
+    ui.add_space(space::XL);
+
+    let value = |ui: &mut Ui, v: &str| {
+        ui.add(egui::Label::new(Text::body(v, cx.pal)).truncate());
+    };
+    form::section(
+        ui,
+        cx,
+        &cx.tr.t("tools.connection"),
+        Some(&cx.tr.t("tools.summary_hint")),
+    );
+    let mut rows = Rows::new();
+    match p {
+        Some(p) => {
+            rows.row(ui, cx, &cx.tr.t("tools.provider"), None, |ui| {
+                value(ui, &p.name)
             });
-        ui.add_space(18.0);
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .add(Button::primary(cx.tr.t(if claude {
-                    "tools.open_claude"
-                } else {
-                    "tools.open_codex"
-                })))
-                .clicked()
-            {
-                out.push(Action::Go(if claude {
-                    Page::ClaudeCode
-                } else {
-                    Page::Settings
-                }));
+            rows.row(ui, cx, &cx.tr.t("tools.authentication"), None, |ui| {
+                value(ui, &cx.tr.text(&p.auth_mode.text()))
+            });
+            if let Some(line) = &p.line_id {
+                rows.row(ui, cx, &cx.tr.t("tools.line"), None, |ui| {
+                    value(ui, &cx.data.line_label(cx.tr, Some(&p.site_id), line))
+                });
             }
-            if ui
-                .add(Button::ghost(cx.tr.t("tools.open_providers")))
-                .clicked()
-            {
-                out.push(Action::Go(Page::Providers));
-            }
-        });
+        }
+        None => rows.row(ui, cx, &cx.tr.t("tools.provider"), None, |ui| {
+            value(ui, &cx.tr.t("tools.not_configured"))
+        }),
+    }
+    rows.row(ui, cx, &cx.tr.t("tools.route"), None, |ui| {
+        value(
+            ui,
+            &cx.tr.t(if routed {
+                "tools.routed"
+            } else {
+                "tools.direct"
+            }),
+        )
     });
+    if claude
+        && let Some(v) = &state.claude
+        && let Some(url) = v
+            .router_base_url
+            .as_ref()
+            .filter(|_| routed)
+            .or_else(|| v.endpoint.as_ref().map(|e| &e.base_url))
+    {
+        rows.row(ui, cx, &cx.tr.t("tools.address"), None, |ui| {
+            address(ui, cx, url.as_str().trim_end_matches('/'))
+        });
+    }
+    rows.row(ui, cx, &cx.tr.t("tools.stats_row"), None, |ui| {
+        value(
+            ui,
+            &cx.tr.t(if stats {
+                "tools.enabled"
+            } else {
+                "tools.disabled"
+            }),
+        )
+    });
+
+    form::section_gap(ui);
+    form::section(ui, cx, &cx.tr.t("tools.models"), None);
+    let mut rows = Rows::new();
+    let mono = |ui: &mut Ui, v: &str| {
+        ui.add(egui::Label::new(Text::mono(v, cx.pal)).truncate());
+    };
+    if claude {
+        let slots = state
+            .claude
+            .as_ref()
+            .and_then(|v| v.provider.as_ref().map(|id| v.config.models_of(id)));
+        let mut any = false;
+        for slot in superba_core::ClaudeSlot::ALL {
+            let Some(model) = slots.as_ref().and_then(|m| m.slots.get(&slot)) else {
+                continue;
+            };
+            any = true;
+            let key = match slot {
+                superba_core::ClaudeSlot::Opus => "tools.model_opus",
+                superba_core::ClaudeSlot::Sonnet => "tools.model_sonnet",
+                superba_core::ClaudeSlot::Haiku => "tools.model_haiku",
+                superba_core::ClaudeSlot::Fable => "tools.model_fable",
+                superba_core::ClaudeSlot::Custom => "tools.model_custom",
+            };
+            rows.row(ui, cx, &cx.tr.t(key), None, |ui| mono(ui, &model.model));
+        }
+        if !any {
+            rows.row(ui, cx, &cx.tr.t("tools.slots"), None, |ui| {
+                value(ui, &cx.tr.t("tools.slots_unset"))
+            });
+        }
+    } else {
+        let model = p.and_then(|p| p.model.model.clone());
+        rows.row(
+            ui,
+            cx,
+            &cx.tr.t("tools.default_model"),
+            None,
+            |ui| match &model {
+                Some(m) => mono(ui, m),
+                None => value(ui, &cx.tr.t("tools.model_unset")),
+            },
+        );
+    }
 }
+
 /// Shared masked plan review, with an explicit drift choice.
 pub fn review(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     let Some(plan) = state.plan.clone() else {
@@ -678,16 +643,20 @@ pub fn review(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     };
     let mut apply = false;
     let mut cancel = false;
+    let screen = ui.ctx().content_rect();
     let response = dialog(
         ui.ctx(),
         egui::Id::unique("tool-plan"),
-        560.0_f32.min(ui.ctx().content_rect().width() - 64.0),
+        560.0_f32.min(screen.width() - 2.0 * space::XXL),
         |ui| {
-            ui.heading(cx.tr.t(if plan.kind == HarnessPlanKind::Restore {
-                "tools.review_restore"
-            } else {
-                "tools.review_apply"
-            }));
+            ui.label(Text::title(
+                cx.tr.t(if plan.kind == HarnessPlanKind::Restore {
+                    "tools.review_restore"
+                } else {
+                    "tools.review_apply"
+                }),
+                cx.pal,
+            ));
             dialog_body(ui, |ui| {
                 for c in &plan.changes {
                     ui.label(RichText::new(format!("{} · {}", c.file, c.slot)).monospace());
@@ -714,9 +683,14 @@ pub fn review(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                     ui.checkbox(&mut state.take_over, cx.tr.t("tools.take_over"));
                 }
             });
-            ui.horizontal(|ui| {
-                cancel = ui.add(Button::new(cx.tr.t("tools.cancel"))).clicked();
-                apply = ui.add(Button::primary(cx.tr.t("tools.confirm"))).clicked();
+            ui.add_space(space::XS);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                apply = ui
+                    .add(Button::primary(cx.tr.t("tools.confirm")).small())
+                    .clicked();
+                cancel = ui
+                    .add(Button::new(cx.tr.t("tools.cancel")).small())
+                    .clicked();
             });
         },
     );

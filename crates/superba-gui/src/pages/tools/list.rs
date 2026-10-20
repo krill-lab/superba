@@ -1,11 +1,16 @@
 //! Seven neutral tool identities, with keyboard selection and spoken status.
-use super::{Selection, State};
+use super::{Selection, State, ToolState};
 use crate::design::widgets::{Button, MonogramTile, Status, StatusDot, Text};
 use crate::design::{
     a11y,
     fonts::{Weight, font},
-    tokens::{radius, size, text},
+    tokens::{radius, size, space, text},
 };
+
+/// Side of a row's monogram ([`MonogramTile`]'s default).
+const TILE: f32 = 30.0;
+/// Left edge of the monograms and the group captions.
+const TILE_X: f32 = space::S;
 use crate::pages::{Action, Cx, Page, SuperbaSection};
 use superba_core::harness::{HarnessId, HarnessRoute};
 
@@ -14,20 +19,86 @@ use superba_core::harness::{HarnessId, HarnessRoute};
 pub struct Row {
     /// Destination.
     pub selection: Selection,
-    /// Provider, models and connection summary.
+    /// Provider, connection and state, or why there is none.
     pub summary: String,
     /// Status dot.
     pub status: Status,
 }
+
+/// The line under a row's name: provider, connection and state
+/// ("Krill · 直连 · 已应用"), or only why there is none (`idle`: "未配置",
+/// "未安装"). Codex has no state of its own.
+pub fn summary_line(
+    provider: Option<&str>,
+    route: &str,
+    state: Option<&str>,
+    idle: Option<&str>,
+) -> String {
+    match (idle, provider) {
+        (None, Some(p)) => std::iter::once(p)
+            .chain(Some(route))
+            .chain(state)
+            .collect::<Vec<_>>()
+            .join(" · "),
+        (idle, _) => idle.unwrap_or("—").to_owned(),
+    }
+}
+
+fn route_label(cx: &Cx<'_>, routed: bool) -> String {
+    cx.tr.t(if routed {
+        "tools.routed"
+    } else {
+        "tools.direct"
+    })
+}
+
+fn claude_state(state: &State) -> ToolState {
+    state.claude.as_ref().map_or(ToolState::NotConfigured, |v| {
+        ToolState::of(
+            v.applied.is_some(),
+            false,
+            !v.pending.is_empty(),
+            false,
+            false,
+        )
+    })
+}
+
+/// The header badge of Codex ("in use" while a provider is applied) and Claude Code.
+pub fn summary_state(cx: &Cx<'_>, state: &State, selection: Selection) -> (Status, String) {
+    if selection == Selection::Codex {
+        if cx.data.active_profile().is_some() {
+            (Status::Ok, cx.tr.t("tools.in_use"))
+        } else {
+            (Status::Idle, cx.tr.t("tools.not_configured"))
+        }
+    } else {
+        let s = claude_state(state);
+        (s.status(), cx.tr.t(s.key()))
+    }
+}
+
 /// Build rows before splitting the page into independently borrowed panes.
 pub fn rows(cx: &Cx<'_>, state: &State) -> Vec<Row> {
     let active = cx.data.active_profile();
+    let not_configured = cx.tr.t("tools.not_configured");
+    let not_installed = cx.tr.t("tools.not_installed");
+    let claude = claude_state(state);
+    let claude_provider = state
+        .claude
+        .as_ref()
+        .and_then(|v| v.provider.as_ref())
+        .and_then(|id| cx.data.profile(id));
+    let claude_label = cx.tr.t(claude.key());
     let mut rows = vec![
         Row {
             selection: Selection::Codex,
-            summary: active
-                .map(|p| format!("{} · {}", p.name, p.model.model.as_deref().unwrap_or("—")))
-                .unwrap_or_else(|| cx.tr.t("tools.not_configured")),
+            summary: summary_line(
+                active.map(|p| p.name.as_str()),
+                &route_label(cx, cx.data.router_enabled()),
+                None,
+                active.is_none().then_some(not_configured.as_str()),
+            ),
             status: if active.is_some() {
                 Status::Ok
             } else {
@@ -36,75 +107,48 @@ pub fn rows(cx: &Cx<'_>, state: &State) -> Vec<Row> {
         },
         Row {
             selection: Selection::Claude,
-            summary: state
-                .claude
-                .as_ref()
-                .and_then(|v| v.provider.as_ref())
-                .and_then(|id| cx.data.profile(id))
-                .map(|p| p.name.clone())
-                .unwrap_or_else(|| cx.tr.t("tools.not_configured")),
-            status: state.claude.as_ref().map_or(Status::Idle, |v| {
-                if !v.pending.is_empty() {
-                    Status::Warn
-                } else if v.applied.is_some() {
-                    Status::Ok
-                } else {
-                    Status::Idle
-                }
-            }),
+            summary: summary_line(
+                claude_provider.map(|p| p.name.as_str()),
+                &route_label(cx, cx.data.claude_routed()),
+                Some(&claude_label),
+                (claude == ToolState::NotConfigured).then_some(not_configured.as_str()),
+            ),
+            status: claude.status(),
         },
     ];
     for h in HarnessId::ALL {
         let settings = state.settings(h);
-        let summary = state.summaries.iter().find(|s| s.harness == h);
-        let view = state.views.get(&h);
-        let follows_changed = settings.provider.is_none()
-            && summary
-                .is_some_and(|s| s.applied && s.applied_provider.as_ref() != active.map(|p| &p.id));
-        let pending = follows_changed
-            || state.drafts.contains_key(&h)
-            || view.is_some_and(|v| !v.pending.is_empty());
-        let bad = summary.is_some_and(|s| s.drift > 0)
-            || view.is_some_and(|v| v.files.iter().any(|f| !f.status.writable()));
-        let applied =
-            summary.is_some_and(|s| s.applied) || view.is_some_and(|v| v.applied.is_some());
-        let status = if pending || bad {
-            Status::Warn
-        } else if applied {
-            Status::Ok
-        } else {
-            Status::Idle
+        let tool = state.tool_state(cx, h);
+        let installed = state
+            .views
+            .get(&h)
+            .map(|v| v.install.is_some())
+            .or_else(|| {
+                state
+                    .summaries
+                    .iter()
+                    .find(|s| s.harness == h)
+                    .map(|s| s.installed)
+            })
+            .unwrap_or(true);
+        let provider = match &settings.provider {
+            Some(id) => cx.data.profile(id),
+            None => active,
         };
-        let label = cx.tr.t(if bad {
-            "tools.changed"
-        } else if pending {
-            "tools.pending_short"
-        } else if applied {
-            "tools.applied"
-        } else {
-            "tools.not_configured"
-        });
-        let provider = settings
-            .provider
-            .as_ref()
-            .and_then(|id| cx.data.profile(id))
-            .or(if settings.provider.is_none() {
-                active
-            } else {
-                None
-            });
-        let route = cx.tr.t(if settings.route == HarnessRoute::Routed {
-            "tools.routed"
-        } else {
-            "tools.direct"
-        });
-        let text = provider.map_or(label.clone(), |p| {
-            format!("{} · {} · {}", p.name, route, label)
-        });
+        let label = cx.tr.t(tool.key());
         rows.push(Row {
             selection: Selection::Tool(h),
-            summary: text,
-            status,
+            summary: summary_line(
+                provider.map(|p| p.name.as_str()),
+                &route_label(cx, settings.route == HarnessRoute::Routed),
+                Some(&label),
+                (tool == ToolState::NotConfigured).then_some(if installed {
+                    not_configured.as_str()
+                } else {
+                    not_installed.as_str()
+                }),
+            ),
+            status: tool.status(),
         });
     }
     rows
@@ -121,16 +165,20 @@ pub fn show(
     let mut picked = None;
     for (i, row) in rows.iter().enumerate() {
         if i == 0 || i == 2 {
-            ui.add_space(if i == 0 { 0.0 } else { 12.0 });
-            ui.label(Text::small(
-                cx.tr.t(if i == 0 {
-                    "tools.own_pages"
-                } else {
-                    "tools.other"
-                }),
-                cx.pal,
-            ));
-            ui.add_space(4.0);
+            ui.add_space(if i == 0 { 0.0 } else { space::M });
+            ui.horizontal(|ui| {
+                // In line with the monograms of the rows below.
+                ui.add_space(TILE_X);
+                ui.label(Text::caption(
+                    cx.tr.t(if i == 0 {
+                        "tools.own_pages"
+                    } else {
+                        "tools.other"
+                    }),
+                    cx.pal,
+                ));
+            });
+            ui.add_space(space::XS);
         }
         let is_selected = selected == row.selection
             || (selected == Selection::Initial
@@ -151,8 +199,24 @@ pub fn show(
         a11y::selectable(&response, egui::Role::ListItem, &name, is_selected);
         if response.clicked() {
             picked = Some(row.selection);
+            // A clicked row keeps keyboard focus, so Up/Down continue from it.
+            response.request_focus();
+        }
+        if response.gained_focus() {
+            response.scroll_to_me(None);
         }
         if response.has_focus() {
+            // The rows move the selection with Up/Down themselves; egui must not
+            // also move the focus to the widget below.
+            ui.memory_mut(|m| {
+                m.set_focus_lock_filter(
+                    response.id,
+                    egui::EventFilter {
+                        vertical_arrows: true,
+                        ..Default::default()
+                    },
+                )
+            });
             let next = ui.input_mut(|input| {
                 if input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown) {
                     Some((i + 1).min(rows.len() - 1))
@@ -180,9 +244,11 @@ pub fn show(
                 },
             );
         }
-        MonogramTile::new(row.selection.monogram())
-            .paint_at(ui, egui::pos2(rect.left() + 23.0, rect.center().y));
-        let left = rect.left() + 47.0;
+        MonogramTile::new(row.selection.monogram()).paint_at(
+            ui,
+            egui::pos2(rect.left() + TILE_X + TILE / 2.0, rect.center().y),
+        );
+        let left = rect.left() + TILE_X + TILE + space::M;
         ui.painter().text(
             egui::pos2(left, rect.top() + 9.0),
             egui::Align2::LEFT_TOP,
@@ -211,14 +277,17 @@ pub fn show(
         } else {
             StatusDot::new(row.status).size(6.0).paint_at(ui, dot);
         }
-        if response.has_focus() {
+        if crate::design::widgets::show_focus(&response) {
             crate::design::widgets::focus_ring(ui.painter(), rect, radius::ROW, cx.pal);
         }
     }
-    ui.add_space(16.0);
+    ui.add_space(space::M);
     if ui
-        .add(Button::ghost(cx.tr.t("tools.updates")).small())
-        .on_hover_text(cx.tr.t("tools.updates"))
+        .add(
+            Button::ghost(cx.tr.t("tools.updates"))
+                .icon(crate::design::icons::Icon::Download)
+                .small(),
+        )
         .clicked()
     {
         out.push(Action::Go(Page::Superba(SuperbaSection::Updates)));
