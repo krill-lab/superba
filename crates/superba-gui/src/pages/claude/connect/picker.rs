@@ -126,7 +126,8 @@ pub fn context_text(n: u64) -> String {
 
 /// Column weights and minimum widths of the `/model` table: shown, model,
 /// source, context, actions (each minimum includes the 12 point gap after
-/// it).
+/// it; the context column's also the [`Table::RIGHT_INSET`] its numbers keep
+/// from the actions).
 pub const COLUMNS: ([f32; 5], [f32; 5]) =
     ([0.0, 1.0, 0.5, 0.0, 0.0], [56.0, 168.0, 132.0, 88.0, 104.0]);
 
@@ -286,23 +287,17 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, m: &Models<'_>, lines: &[L
                         ui.add(egui::Label::new(Text::small(text, cx.pal)).truncate());
                     }
                 }
-                3 => {
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.add_space(Table::RIGHT_INSET);
-                        match r.context_window {
-                            Some(n) => {
-                                let all = crate::pages::shared::format::group_thousands(n);
-                                ui.label(Text::small(context_text(n), cx.pal))
-                                    .on_hover_text(
-                                        cx.tr.f("claude.detail.context", &[("n", &all)]),
-                                    );
-                            }
-                            None => {
-                                ui.label(Text::caption("—", cx.pal));
-                            }
-                        }
-                    });
-                }
+                // Right-aligned by the table, under its header.
+                3 => match r.context_window {
+                    Some(n) => {
+                        let all = crate::pages::shared::format::group_thousands(n);
+                        ui.label(Text::small(context_text(n), cx.pal))
+                            .on_hover_text(cx.tr.f("claude.detail.context", &[("n", &all)]));
+                    }
+                    None => {
+                        ui.label(Text::caption("—", cx.pal));
+                    }
+                },
                 _ => {
                     if line.position.is_some() {
                         let resp = ui

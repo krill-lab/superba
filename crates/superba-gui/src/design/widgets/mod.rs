@@ -114,5 +114,8 @@ pub use underline_tabs::{UnderlineTab, UnderlineTabs};
 
 pub mod attention;
 pub use attention::AttentionRow;
+// Show / hide a group (「高级」, details): a chevron header with its state.
+pub mod disclosure;
+pub use disclosure::{Disclosure, DisclosureResponse};
 pub mod update_row;
 pub use update_row::{UpdateGroup, UpdateResponse, UpdateRow, UpdateTile};

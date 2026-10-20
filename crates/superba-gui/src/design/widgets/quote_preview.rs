@@ -61,7 +61,9 @@ impl QuotePreview {
             .corner_radius(radius::CONTROL + 2)
             .inner_margin(Margin::symmetric(14, 10))
             .show(ui, |ui| {
-                ui.set_width(width - 28.0);
+                // The frame's margins (14 + 14) and stroke (1 + 1) around the
+                // content add up to the available width, not more.
+                ui.set_width(width - 30.0);
                 ui.spacing_mut().item_spacing.y = 6.0;
                 if !self.caption.is_empty() {
                     ui.label(

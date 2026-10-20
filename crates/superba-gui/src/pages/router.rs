@@ -1,11 +1,12 @@
 //! Two sidebar pages share this module and its state (user decision 21):
 //!
 //! - 路由 / Router ([`show`]): the local smart router's SETTINGS only (opt-in,
-//!   v2 decision 6). A one-line banner says plainly whether Codex traffic goes
-//!   through the local process; under it the router itself (`view.rs`: mode,
-//!   service, members and failover order, stickiness), prices (`prices.rs`), the
-//!   reply stats line (`stats_line.rs`), recording and retention
-//!   (`settings.rs`). Opening 路由 always lands here.
+//!   v2 decision 6). The page header carries the one on / off action; under it
+//!   one scrolling column (`settings.rs`): a status line saying plainly whether
+//!   Codex traffic goes through the local process, the members and their line
+//!   order (`view.rs`), the entry points (`ingress.rs`), then the closed
+//!   「高级」 group: the reply stats line (`stats_line.rs`), prices
+//!   (`prices.rs`), recording and the service. Opening 路由 always lands here.
 //! - 用量 / Usage ([`show_usage`]): tabs 最近请求 / 活动请求 / 统计 with a search
 //!   on the right.
 //!   - 最近请求 (`recent.rs`): source list (按会话 / 按供应商), the 13-column log
@@ -50,9 +51,9 @@ use self::backend::RouterBackend;
 use self::model::{Candidate, Mode, Snapshot};
 use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, page_header};
 use crate::design::fonts::{Weight, font};
-use crate::design::tokens::text;
+use crate::design::tokens::{space, text};
 use crate::design::widgets::log_table::elided;
-use crate::design::widgets::{Button, Card, FormRow, Segmented, Status, StatusDot, Text, dialog};
+use crate::design::widgets::{Button, ButtonKind, Segmented, Status, StatusDot, dialog};
 use crate::runtime::ReadTask;
 
 /// How often live status is refreshed while the page is visible.
@@ -136,7 +137,6 @@ pub struct State {
     op_error: Option<String>,
     conversion_error: Option<String>,
     pick: Option<usize>,
-    show_events: bool,
     /// The router-mode switch to plan once [`Op::Start`] has finished.
     then_plan: Option<superba_core::SwitchRequest>,
     /// A switch ready to be planned (handed to the switch flow by `show`).
@@ -456,15 +456,14 @@ fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: b
     });
 }
 
-/// Draw the Router page: the banner and the router settings.
+/// Draw the Router page: the header with the one on / off action, then one
+/// scrolling column with the status, members, entry points and the collapsed
+/// Advanced group (`settings.rs`).
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     tick(ui, cx, state, out, false);
-    page_header(ui, cx, Page::Router, |_| {});
-    banner(ui, cx, state, out);
-    view::notices(ui, cx, state);
-    ui.add_space(10.0);
+    page_header(ui, cx, Page::Router, |ui| switch_button(ui, cx, state, out));
     let rect = ui.available_rect_before_wrap();
-    crate::design::layout::fixed(ui, rect, |ui| settings::show(ui, cx, state));
+    crate::design::layout::fixed(ui, rect, |ui| settings::show(ui, cx, state, out));
     dialogs(ui, cx, state, out);
 }
 
@@ -542,13 +541,73 @@ fn banner_line(
     clicked
 }
 
-/// The Router page's banner: router on (traffic through the local process) or
-/// off, with 开启 once members exist.
-fn banner(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+/// The router can be turned on: members exist and one of them can carry
+/// traffic (user bug 28; both from the snapshot that lists them, user bug 39).
+fn ready(cx: &Cx<'_>, state: &State) -> bool {
+    eligibility::has_members(cx, state) && eligibility::has_eligible_member(cx, state)
+}
+
+/// The weight of the header's on / off button (ui-spec rule 5, one primary
+/// button per view): primary only while turning on is possible; while no
+/// member can carry traffic the members section's fix is the primary action;
+/// turning off is never the page's main task.
+pub fn switch_kind(on: bool, ready: bool) -> ButtonKind {
+    if !on && ready {
+        ButtonKind::Primary
+    } else {
+        ButtonKind::Secondary
+    }
+}
+
+/// The header's one action: 开启路由… / 关闭路由…. Turning on is the page's
+/// primary action once a member can carry traffic; until then the members
+/// section's fix is, and this button is a disabled secondary one. Turning off
+/// is secondary.
+fn switch_button(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    let on = mode(cx).is_router();
+    let members = eligibility::has_members(cx, state);
+    let eligible = eligibility::has_eligible_member(cx, state);
+    let request = backend::mode_request(cx, !on);
+    let ready = on || ready(cx, state);
+    let enabled = request.is_ok() && !cx.busy && state.op.is_none() && ready;
+    let starting = state.op.as_ref().is_some_and(|(op, _)| *op == Op::Start);
+    let label = cx.tr.t(if on {
+        "router.banner.turn_off"
+    } else {
+        "router.banner.turn_on"
+    });
+    let button = Button::new(label).kind(switch_kind(on, ready));
+    // The existing UIA / AX names of the on and off flows (e2e/windows, e2e/macos).
+    let name = cx.tr.t(if on {
+        "router.turn_off"
+    } else {
+        "router.banner.turn_on"
+    });
+    let response = ui
+        .add(button.small().loading(starting).enabled(enabled))
+        .accessible_name(name);
+    let hint = match &request {
+        Err(key) => cx.tr.t(key),
+        Ok(_) if !members && !on => cx.tr.t("router.needs_member"),
+        Ok(_) if !eligible && !on => cx.tr.t("router.eligibility.none"),
+        Ok(_) => cx.tr.t("router.preview_hint"),
+    };
+    if response
+        .on_hover_text(&hint)
+        .on_disabled_hover_text(hint)
+        .clicked()
+    {
+        state.switch_mode(cx, !on, out);
+    }
+}
+
+/// What the router does right now, in one wrapped line under the header: a
+/// status dot, the state in bold ("路由已开启") and what it means for Codex's
+/// requests, with the listen address. The full rules are its hover text.
+pub(super) fn status_line(ui: &mut Ui, cx: &Cx<'_>, state: &State) {
     let mode = mode(cx);
-    let on = mode.is_router();
-    let addr = address(state, &mode);
-    let (status, line) = if on {
+    let (status, line) = if mode.is_router() {
+        let addr = address(state, &mode);
         (Status::Ok, cx.tr.f("router.banner.on", &[("addr", &addr)]))
     } else if let Mode::Local { address } = &mode {
         (
@@ -558,76 +617,29 @@ fn banner(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     } else {
         (Status::Idle, cx.tr.t("router.banner.off"))
     };
-    let members = eligibility::has_members(cx, state);
-    // Members alone are not enough: one must have a key the router can send
-    // as an API key (user bug 28); the panel below says why and how to fix it.
-    // Both come from the snapshot that lists the members (user bug 39).
-    let eligible = eligibility::has_eligible_member(cx, state);
-    let request = backend::mode_request(cx, !on);
-    let enabled =
-        request.is_ok() && !cx.busy && state.op.is_none() && (on || (members && eligible));
-    let starting = state.op.as_ref().is_some_and(|(op, _)| *op == Op::Start);
-    Card::new().padding(12).show(ui, |ui| {
-        let label = cx.tr.t(if on {
-            "router.banner.turn_off"
-        } else {
-            "router.banner.turn_on"
-        });
-        let button = Button::primary(label)
-            .small()
-            .loading(starting)
-            .enabled(enabled);
-        let control_w = button.desired_size(ui).x;
-        FormRow::default()
-            .label_width((ui.available_width() - control_w - 16.0).max(0.0))
-            .right()
-            .show_with(
-                ui,
-                |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.add(StatusDot::new(status));
-                        ui.label(Text::strong(
-                            cx.tr.t(if on {
-                                "router.banner.active"
-                            } else {
-                                "router.banner.inactive"
-                            }),
-                            cx.pal,
-                        ))
-                        .on_hover_text(&line);
-                        ui.label(Text::caption(cx.tr.t("router.banner.listen"), cx.pal));
-                        ui.label(Text::mono(&addr, cx.pal));
-                    });
-                },
-                |ui| {
-                    // Preserve the existing UIA/AX names used by router on/off flows.
-                    let name = cx.tr.t(if on {
-                        "router.turn_off"
-                    } else {
-                        "router.banner.turn_on"
-                    });
-                    let response = ui.add(button).accessible_name(name);
-                    let hint = match &request {
-                        Err(key) => cx.tr.t(key),
-                        Ok(_) if !members && !on => cx.tr.t("router.needs_member"),
-                        Ok(_) if !eligible && !on => cx.tr.t("router.eligibility.none"),
-                        Ok(_) => cx.tr.t("router.preview_hint"),
-                    };
-                    if response
-                        .on_hover_text(&hint)
-                        .on_disabled_hover_text(hint)
-                        .clicked()
-                    {
-                        state.switch_mode(cx, !on, out);
-                    }
-                },
-            );
-        ui.add(egui::Label::new(Text::small(&line, cx.pal)).wrap())
+    // "路由已开启 —— …" / "Router on — …": the state before the dash in bold.
+    let (head, tail) = line
+        .split_once(" —— ")
+        .map(|(h, t)| (h, format!(" —— {t}")))
+        .or_else(|| line.split_once(" — ").map(|(h, t)| (h, format!(" — {t}"))))
+        .unwrap_or((line.as_str(), String::new()));
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        head,
+        0.0,
+        egui::TextFormat::simple(font(text::BODY, Weight::Medium), cx.pal.text),
+    );
+    job.append(
+        &tail,
+        0.0,
+        egui::TextFormat::simple(font(text::BODY, Weight::Regular), cx.pal.text_muted),
+    );
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = space::S;
+        ui.add(StatusDot::new(status));
+        ui.add(egui::Label::new(job).wrap())
             .on_hover_text(cx.tr.t("router.banner.tip"));
     });
-    if !on {
-        eligibility::panel(ui, cx, state, out);
-    }
 }
 
 /// The Usage page's banner: where the rows come from (router log and Codex

@@ -116,40 +116,69 @@ fn a_right_aligned_header_ends_where_its_numbers_end() {
     let ctx = egui::Context::default();
     ctx.set_fonts(fonts::definitions(&fonts::FontReport::default()));
     style::install(&ctx, Some(egui::Theme::Light));
-    let table = Table::new(&[1.0, 0.0])
-        .min_widths(&[100.0, 80.0])
-        .right_aligned(&[1]);
-    let out = ctx.run_ui(
-        egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 200.0))),
-            ..Default::default()
-        },
-        |ui| {
-            ui.set_width(400.0);
-            table.header(ui, &["Model".into(), "Context".into()]);
-        },
-    );
-    let texts: Vec<(String, Rect)> = out
-        .shapes
-        .iter()
-        .filter_map(|s| match &s.shape {
-            egui::Shape::Text(t) => Some((
-                t.galley.text().to_owned(),
-                t.galley.rect.translate(t.pos.to_vec2()),
-            )),
-            _ => None,
-        })
-        .collect();
-    let cells = table.cells(Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 32.0)));
-    let (_, model) = texts.iter().find(|(t, _)| t == "Model").unwrap();
-    let (_, context) = texts.iter().find(|(t, _)| t == "Context").unwrap();
-    assert!((model.min.x - cells[0].min.x).abs() < 0.5, "{model:?}");
-    assert!(
-        (context.max.x - (cells[1].max.x - Table::RIGHT_INSET)).abs() < 1.0,
-        "{context:?} in {:?}",
-        cells[1]
-    );
-    out.drop_without_applying_deltas();
+    // As in the `/model` table, the context column is followed by the
+    // (left-aligned) actions: its header and its numbers end
+    // `Table::RIGHT_INSET` before the column's edge. A right-aligned last
+    // column has only the row's padding after it and ends at its edge.
+    let cases = [
+        (
+            Table::new(&[1.0, 0.0, 0.0])
+                .min_widths(&[100.0, 80.0, 80.0])
+                .right_aligned(&[1]),
+            vec!["Model".to_owned(), "Context".into(), "Actions".into()],
+            Table::RIGHT_INSET,
+        ),
+        (
+            Table::new(&[1.0, 0.0])
+                .min_widths(&[100.0, 80.0])
+                .right_aligned(&[1]),
+            vec!["Model".to_owned(), "Context".into()],
+            0.0,
+        ),
+    ];
+    for (table, labels, inset) in cases {
+        assert!((table.right_inset(1) - inset).abs() < f32::EPSILON);
+        let out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 200.0))),
+                ..Default::default()
+            },
+            |ui| {
+                ui.set_width(400.0);
+                table.header(ui, &labels);
+                table.row(ui, size::ROW, true, |ui, col| {
+                    ui.label(["gpt-5.5", "200K", "Edit"][col]);
+                });
+            },
+        );
+        let texts: Vec<(String, Rect)> = out
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) => Some((
+                    t.galley.text().to_owned(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                )),
+                _ => None,
+            })
+            .collect();
+        let cells = table.cells(Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 32.0)));
+        let find = |s: &str| texts.iter().find(|(t, _)| t == s).unwrap().1;
+        let (model, context, number) = (find("Model"), find("Context"), find("200K"));
+        assert!((model.min.x - cells[0].min.x).abs() < 0.5, "{model:?}");
+        assert!(
+            (context.max.x - (cells[1].max.x - inset)).abs() < 1.0,
+            "{context:?} in {:?}",
+            cells[1]
+        );
+        assert!(
+            (number.max.x - context.max.x).abs() < 0.5,
+            "200K ends at {} under a header ending at {}",
+            number.max.x,
+            context.max.x
+        );
+        out.drop_without_applying_deltas();
+    }
 }
 
 // ---- slots ----------------------------------------------------------------

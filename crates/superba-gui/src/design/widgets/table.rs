@@ -1,10 +1,13 @@
 //! A minimal table: weighted columns, caption header, 1 px row dividers and row
-//! hover. Each cell gets its own child `Ui` laid out left-to-right, centered.
+//! hover. Each cell gets its own child `Ui` laid out left-to-right, centered;
+//! the cells of [`Table::right_aligned`] columns (numbers) right-to-left, under
+//! a right-aligned header label that ends where they end
+//! ([`Table::right_inset`]).
 
-use egui::{Align, Layout, Rect, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
+use egui::{Align, Layout, Rect, Sense, Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2};
 
 use crate::design::fonts::{Weight, font};
-use crate::design::tokens::{Palette, text};
+use crate::design::tokens::{Palette, size, text};
 
 /// Column layout of a table.
 #[derive(Clone, Debug)]
@@ -24,16 +27,36 @@ impl Table {
         }
     }
 
-    /// Space between a right-aligned column's labels and its right edge, so
-    /// a number does not run into the left-aligned column after it: right-
-    /// aligned cells leave it too.
+    /// Space a right-aligned column keeps clear at its right edge when a
+    /// left-aligned column follows it, so a number does not run into the text
+    /// after it. Its header label and its cells' content both end there (see
+    /// [`Table::right_inset`]); a caller sizing such a column adds it to the
+    /// column's minimum width.
     pub const RIGHT_INSET: f32 = 12.0;
 
-    /// Right-align the header labels of these columns (numbers, whose cells
-    /// the caller right-aligns too, [`Table::RIGHT_INSET`] from the edge).
+    /// Right-align these columns (numbers): the header label and the cell's
+    /// content end at the column's right edge, or [`Table::RIGHT_INSET`]
+    /// before it where a left-aligned column follows.
     pub fn right_aligned(mut self, columns: &[usize]) -> Self {
         self.right = columns.to_vec();
         self
+    }
+
+    /// The column `i` is right-aligned.
+    pub fn is_right(&self, i: usize) -> bool {
+        self.right.contains(&i)
+    }
+
+    /// Space column `i`'s header label and cell content keep clear at its
+    /// right edge: [`Table::RIGHT_INSET`] for a right-aligned column followed
+    /// by a left-aligned one, else 0 (the 12 px column gap, or the row's 12 px
+    /// side padding after the last column, is room enough).
+    pub fn right_inset(&self, i: usize) -> f32 {
+        if self.is_right(i) && i + 1 < self.weights.len() && !self.is_right(i + 1) {
+            Self::RIGHT_INSET
+        } else {
+            0.0
+        }
     }
 
     /// Minimum width per column.
@@ -71,23 +94,49 @@ impl Table {
         self.columns(rect, 12.0)
     }
 
-    /// Header row with caption labels.
+    /// Header row with caption labels ([`size::TABLE_HEADER`] high). A label
+    /// wider than its column is shortened with "…" (full text on hover), so it
+    /// never runs into the next column. Screen readers see each non-empty label
+    /// as a column header.
     pub fn header(&self, ui: &mut Ui, labels: &[String]) {
         let pal = Palette::of(ui.ctx());
-        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::hover());
+        let (rect, response) = ui.allocate_exact_size(
+            vec2(ui.available_width(), size::TABLE_HEADER),
+            Sense::hover(),
+        );
+        let a11y = crate::design::a11y::enabled(ui);
         for (i, (col, label)) in self.columns(rect, 12.0).iter().zip(labels).enumerate() {
-            let (x, align) = if self.right.contains(&i) {
-                (col.max.x - Self::RIGHT_INSET, egui::Align2::RIGHT_CENTER)
-            } else {
-                (col.min.x, egui::Align2::LEFT_CENTER)
-            };
-            ui.painter().text(
-                pos2(x, col.center().y),
-                align,
+            if label.is_empty() {
+                continue;
+            }
+            let inset = self.right_inset(i);
+            let galley = super::log_table::elided(
+                ui,
                 label,
                 font(text::CAPTION, Weight::Medium),
                 pal.text_subtle,
+                // A column sized to its label must not shorten it by rounding.
+                col.width() - inset + 1.0,
             );
+            let size = galley.size();
+            let x = if self.is_right(i) {
+                col.max.x - inset - size.x
+            } else {
+                col.min.x
+            };
+            let elided = galley.elided;
+            ui.painter().galley(
+                pos2(x, col.center().y - size.y / 2.0),
+                galley,
+                pal.text_subtle,
+            );
+            if a11y || elided {
+                let cell = ui.interact(*col, response.id.with(("header", i)), Sense::hover());
+                cell.widget_info(|| WidgetInfo::labeled(egui::Role::ColumnHeader, true, label));
+                if elided {
+                    cell.on_hover_text(label);
+                }
+            }
         }
         ui.painter().hline(
             rect.x_range(),
@@ -113,11 +162,14 @@ impl Table {
                 .rect_filled(rect, 6, pal.hover.gamma_multiply(0.6));
         }
         for (i, col) in self.columns(rect, 12.0).into_iter().enumerate() {
-            let mut child = ui.new_child(
-                UiBuilder::new()
-                    .max_rect(col)
-                    .layout(Layout::left_to_right(Align::Center)),
-            );
+            let layout = if self.is_right(i) {
+                Layout::right_to_left(Align::Center)
+            } else {
+                Layout::left_to_right(Align::Center)
+            };
+            let mut content = col;
+            content.max.x -= self.right_inset(i);
+            let mut child = ui.new_child(UiBuilder::new().max_rect(content).layout(layout));
             child.spacing_mut().item_spacing.x = 6.0;
             child.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
             child.set_clip_rect(col.intersect(ui.clip_rect()));

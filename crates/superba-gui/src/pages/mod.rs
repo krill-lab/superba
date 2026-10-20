@@ -1284,15 +1284,17 @@ pub fn section_with(
     subtitle: Option<&str>,
     actions: impl FnOnce(&mut Ui),
 ) {
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 2.0;
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 2.0;
+        ui.horizontal(|ui| {
             ui.label(Text::section(title, cx.pal));
-            if let Some(s) = subtitle {
-                ui.add(egui::Label::new(Text::small(s, cx.pal)).wrap());
-            }
+            ui.with_layout(Layout::right_to_left(Align::Center), actions);
         });
-        ui.with_layout(Layout::right_to_left(Align::Center), actions);
+        // The subtitle wraps at the column's width under the title row (wrapped
+        // in the row next to the actions it made the row wider than the column).
+        if let Some(s) = subtitle {
+            ui.add(egui::Label::new(Text::small(s, cx.pal)).wrap());
+        }
     });
     ui.add_space(8.0);
 }

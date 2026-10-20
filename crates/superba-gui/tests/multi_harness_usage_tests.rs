@@ -473,8 +473,15 @@ fn unavailable_ingress_statistics_do_not_show_a_cached_count() {
         |ui, cx, out| router::show(ui, cx, &mut state, out),
         |f| f.has("Conversion settings unavailable"),
     );
-    assert!(f.has("Last 24 hours · unavailable"), "{}", f.all_text());
-    assert!(!f.has("987654"));
+    // Every count of the entry table reads "—" under its "Last 24 h" header.
+    let header = f.find("Last 24 h").expect("count column header");
+    let dashes = f
+        .texts
+        .iter()
+        .filter(|(t, r)| t == "—" && (r.right() - header.right()).abs() < 0.5)
+        .count();
+    assert_eq!(dashes, 4, "{}", f.all_text());
+    assert!(!f.has("987654") && !f.has("987,654"));
 }
 
 #[test]
@@ -500,22 +507,55 @@ fn expanded_conversion_directions_fit_the_narrow_router_column() {
         );
         h.click_at(f.find(&title).unwrap().center());
         h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
-        let direction = format!(
-            "{} → {}",
-            tr.text(&RequestProtocol::Messages.text()),
-            tr.text(&RequestProtocol::ChatCompletions.text())
-        );
+        // A matrix: client protocols down, upstream protocols across, all
+        // four names in both, each inside its cell.
+        let corner = tr.t("router.ingress.col.client_protocol");
+        let names: Vec<String> = [
+            RequestProtocol::Responses,
+            RequestProtocol::ChatCompletions,
+            RequestProtocol::Messages,
+            RequestProtocol::Gemini,
+        ]
+        .iter()
+        .map(|p| tr.text(&p.text()))
+        .collect();
+        // Each name as a column header and as a row, from the corner down.
+        let in_matrix =
+            |f: &router_harness::Frame, name: &str| -> Vec<(String, egui::Rect, egui::Rect)> {
+                let Some(top) = f.find(&corner).map(|r| r.min.y) else {
+                    return Vec::new();
+                };
+                f.clipped_texts
+                    .iter()
+                    .filter(|(t, r, _)| t == name && r.min.y >= top - 0.5)
+                    .cloned()
+                    .collect()
+            };
         let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| f.has(&direction),
+            |f| names.iter().all(|n| in_matrix(f, n).len() >= 2),
         );
-        for (label, rect, clip) in &f.clipped_texts {
-            if label.contains('→') || label == &title {
+        for name in &names {
+            let cells = in_matrix(&f, name);
+            assert!(
+                cells.len() >= 2,
+                "{locale:?}: {name} as row and column\n{}",
+                f.all_text()
+            );
+            for (label, rect, clip) in &cells {
                 assert!(
                     rect.right() <= clip.right() + 1.0,
                     "{locale:?}: {label:?} {rect:?} clipped by {clip:?}"
                 );
             }
         }
+        // No conversion from a protocol to itself: the diagonal.
+        let top = f.find(&corner).unwrap().min.y;
+        let diagonal = f
+            .texts
+            .iter()
+            .filter(|(t, r)| t == "—" && r.min.y > top)
+            .count();
+        assert_eq!(diagonal, 4, "{}", f.all_text());
     }
 }
