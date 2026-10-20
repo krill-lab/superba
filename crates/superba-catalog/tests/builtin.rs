@@ -248,7 +248,11 @@ fn explanations_use_official_text_and_flag_missing_chinese() {
 #[test]
 fn official_overlay_text_matches_the_latest_catalog() {
     let store = CatalogStore::builtin().unwrap();
-    let c = store.latest().unwrap();
+    // overlay-sync takes the English of the newest version, which is a
+    // prerelease while `latest_prerelease` follows an alpha ahead of the stable
+    // release.
+    let newest = store.versions().max().unwrap().clone();
+    let c = store.exact(&newest).unwrap().unwrap();
     for k in &c.config_keys {
         if c.features.iter().any(|f| f.config_path == k.path) {
             continue;

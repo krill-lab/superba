@@ -187,8 +187,13 @@ jobs:
             printf '## Catalog feeds update\n\nRegenerated catalog/feeds/ (models, prompts, Codex releases, desktop app builds; latest app %s). A maintainer signs the feed index after merging.\n' \
               "${{ steps.feedsin.outputs.latest }}" > "$RUNNER_TEMP/summary.md"
           fi
+      # The release gate (every live entry has current Chinese text) cannot pass
+      # here: new entries arrive with empty Chinese fields that maintainers write
+      # in the pull request, whose CI still runs the gate.
       - name: Test the catalog crates
-        run: cargo test --locked -p superba-catalog -p superba-catalog-gen
+        run: >-
+          cargo test --locked -p superba-catalog -p superba-catalog-gen --
+          --skip every_shipped_entry_has_a_current_chinese_name_and_explanation
       - name: Export the catalog change
         id: diff
         run: |

@@ -326,6 +326,10 @@ pub fn compute_index(catalog: &Path, previous: Option<&Index>) -> Result<Index> 
         index_format: INDEX_FORMAT,
         catalog_format: CATALOG_FORMAT,
         serial: previous.map_or(1, |p| p.serial),
+        generated: previous.map_or_else(
+            || Some(superba_core::Timestamp::now().utc_date_string()),
+            |p| p.generated.clone(),
+        ),
         repo: REPO.to_owned(),
         latest: latest.to_string(),
         versions,
@@ -336,6 +340,7 @@ pub fn compute_index(catalog: &Path, previous: Option<&Index>) -> Result<Index> 
             p.files == index.files && p.versions == index.versions && p.latest == index.latest;
         if !same {
             index.serial = p.serial + 1;
+            index.generated = Some(superba_core::Timestamp::now().utc_date_string());
         }
     }
     Ok(index)

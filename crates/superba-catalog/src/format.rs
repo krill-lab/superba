@@ -471,6 +471,10 @@ pub struct Index {
     /// Increases whenever the listed files change; clients refuse an index whose
     /// serial is lower than one they already have (rollback protection).
     pub serial: u64,
+    /// UTC date (`YYYY-MM-DD`) of the last serial bump (informational; older
+    /// indexes have none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated: Option<String>,
     /// Upstream repository (`openai/codex`).
     pub repo: String,
     /// Highest stable version in [`Index::versions`].
