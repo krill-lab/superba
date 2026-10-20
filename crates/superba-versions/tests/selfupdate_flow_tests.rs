@@ -579,7 +579,9 @@ async fn linux_install_asks_for_a_relaunch_of_the_gui_when_requested() {
     let plan = result.finish.expect("a second stage");
     assert_eq!(
         plan.exe,
-        std::fs::canonicalize(&dir).unwrap().join("superba")
+        superba_core::paths::canonical(&dir)
+            .unwrap()
+            .join("superba")
     );
     assert_eq!(plan.args.relaunch.as_deref(), Some(plan.exe.as_path()));
     assert_eq!(plan.args.wait_pid, Some(std::process::id()));
@@ -751,7 +753,7 @@ async fn windows_installs_through_the_msi_handoff_and_never_swaps_files() {
     assert_eq!(
         plan.args.relaunch.as_deref(),
         Some(
-            std::fs::canonicalize(dir.join("superba.exe"))
+            superba_core::paths::canonical(dir.join("superba.exe"))
                 .unwrap()
                 .as_path()
         )

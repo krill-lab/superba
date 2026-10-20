@@ -375,7 +375,7 @@ async fn the_overview_poll_starts_no_process_after_the_first_snapshot() {
     let start = commands_built();
     let first = sw.overview().await.unwrap();
     let initial = commands_built() - start;
-    let canonical = std::fs::canonicalize(&app_dir).unwrap();
+    let canonical = superba_core::paths::canonical(&app_dir).unwrap();
     assert!(
         first.app.installs.iter().any(|i| i.path == canonical),
         "{:?}",

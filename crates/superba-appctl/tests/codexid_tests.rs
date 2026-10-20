@@ -112,7 +112,7 @@ fn anything_else_is_not_followed() {
 #[test]
 fn the_macos_launcher_and_its_codexcli_binary_are_one_codex() {
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     let (_, launcher, binary) = mac_app(&root);
     let id = CodexIdentity::of(&launcher);
     assert_eq!(id.launchers, vec![launcher.clone()]);
@@ -143,7 +143,7 @@ fn the_macos_launcher_and_its_codexcli_binary_are_one_codex() {
 #[test]
 fn an_unreadable_launcher_falls_back_to_the_known_codexcli_path() {
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     let (_, launcher, binary) = mac_app(&root);
     write(
         &launcher,
@@ -160,7 +160,7 @@ fn an_unreadable_launcher_falls_back_to_the_known_codexcli_path() {
 #[test]
 fn only_codex_programs_continue_the_chain() {
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     // An npm-style wrapper execs node: the wrapper is the program.
     let node = write(&root.join("bin/node"), "native node (fake)");
     let wrapper = write(
@@ -197,7 +197,7 @@ fn only_codex_programs_continue_the_chain() {
 #[test]
 fn windows_codex_exe_and_its_wsl_twin_are_one_codex() {
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     let resources = root.join("app/resources");
     write(&resources.join("app.asar"), "archive");
     let exe = write(&resources.join("codex.exe"), "MZ windows codex");
@@ -220,7 +220,7 @@ fn windows_codex_exe_and_its_wsl_twin_are_one_codex() {
 #[test]
 fn linux_resources_codex_and_a_pinned_codex() {
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     write(&root.join("chatgpt/resources/app.asar"), "archive");
     let bundled = write(&root.join("chatgpt/resources/codex"), "ELF bundled");
     let pinned = write(
@@ -249,7 +249,7 @@ fn symlinked_applications_and_linked_launchers_are_the_same_codex() {
     use std::os::unix::fs::symlink;
 
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     let (_, launcher, binary) = mac_app(&root.join("Volumes/Apps"));
     // `/Applications` is a link to another volume.
     symlink(root.join("Volumes/Apps"), root.join("Applications")).unwrap();
@@ -274,7 +274,7 @@ fn symlinked_applications_and_linked_launchers_are_the_same_codex() {
 #[test]
 fn missing_files_compare_by_normalized_path() {
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     let a = root.join("gone/bin/../bin/./codex");
     let b = root.join("gone/bin/codex");
     assert!(same_file(&a, &b));
@@ -287,7 +287,7 @@ fn missing_files_compare_by_normalized_path() {
 #[test]
 fn short_paths_name_the_app_or_home_and_the_last_parts() {
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     let (app, launcher, binary) = mac_app(&root);
     let join = |parts: &[&str]| parts.join(MAIN_SEPARATOR_STR);
     assert_eq!(
@@ -333,7 +333,7 @@ async fn versions_are_read_from_the_launcher_target_without_running_the_launcher
     use superba_core::CodexVersion;
 
     let temp = tempdir().unwrap();
-    let root = fs::canonicalize(temp.path()).unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     let (_, launcher, binary) = mac_app(&root);
     let log = root.join("launcher-ran");
     write(

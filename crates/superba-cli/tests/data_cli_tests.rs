@@ -14,7 +14,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().canonicalize().unwrap();
+        let root = superba_core::paths::canonical(temp.path()).unwrap();
         for dir in [
             "home",
             "data",
@@ -79,7 +79,7 @@ fn move_where_and_usage_follow_a_fixed_pointer_across_processes() {
     let report = f.json(&["--json", "data", "move", target.to_str().unwrap()]);
     assert_eq!(
         Path::new(report["location"]["directory"].as_str().unwrap()),
-        target.canonicalize().unwrap()
+        superba_core::paths::canonical(&target).unwrap()
     );
     let current = f.json(&["--json", "data", "where"]);
     assert_eq!(current["directory"], report["location"]["directory"]);

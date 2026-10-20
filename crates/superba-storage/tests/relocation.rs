@@ -13,7 +13,7 @@ use superba_storage::{
 
 fn fixture() -> (tempfile::TempDir, LocalContext) {
     let temp = tempfile::tempdir().unwrap();
-    let root = temp.path().canonicalize().unwrap();
+    let root = superba_core::paths::canonical(temp.path()).unwrap();
     let ctx = LocalContext::for_tests(&root);
     fs::create_dir_all(ctx.data_dir.root()).unwrap();
     fs::create_dir_all(&ctx.home_dir).unwrap();

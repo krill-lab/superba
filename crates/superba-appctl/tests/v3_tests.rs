@@ -141,7 +141,7 @@ fn app_server_exe_is_the_process_image_of_the_newest_app_server_child() {
     assert_eq!(
         exe,
         Some(
-            std::fs::canonicalize(fake.parent().unwrap())
+            superba_core::paths::canonical(fake.parent().unwrap())
                 .unwrap()
                 .join("codex")
         )
