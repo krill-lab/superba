@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.1-alpha.8"
+version = "0.1.1-alpha.9"
 edition = "2024"
 rust-version = "1.98"
 authors = ["Krill <admin@krill-code.com>"]
@@ -25,22 +25,22 @@ unimplemented = "warn"
 # Cargo.toml and rarely touch this file or Cargo.lock.
 [workspace.dependencies]
 # --- internal crates
-superba-core = { path = "crates/superba-core", version = "0.1.1-alpha.8" }
-superba-storage = { path = "crates/superba-storage", version = "0.1.1-alpha.8" }
-superba-config = { path = "crates/superba-config", version = "0.1.1-alpha.8" }
-superba-net = { path = "crates/superba-net", version = "0.1.1-alpha.8" }
-superba-sessions = { path = "crates/superba-sessions", version = "0.1.1-alpha.8" }
-superba-appctl = { path = "crates/superba-appctl", version = "0.1.1-alpha.8" }
-superba-remote = { path = "crates/superba-remote", version = "0.1.1-alpha.8" }
-superba-switch = { path = "crates/superba-switch", version = "0.1.1-alpha.8" }
-superba-cli = { path = "crates/superba-cli", version = "0.1.1-alpha.8" }
-superba-catalog = { path = "crates/superba-catalog", version = "0.1.1-alpha.8" }
-superba-router = { path = "crates/superba-router", version = "0.1.1-alpha.8" }
-superba-models = { path = "crates/superba-models", version = "0.1.1-alpha.8" }
-superba-versions = { path = "crates/superba-versions", version = "0.1.1-alpha.8" }
-superba-import = { path = "crates/superba-import", version = "0.1.1-alpha.8" }
-superba-notify = { path = "crates/superba-notify", version = "0.1.1-alpha.8" }
-superba-tools = { path = "crates/superba-tools", version = "0.1.1-alpha.8" }
+superba-core = { path = "crates/superba-core", version = "0.1.1-alpha.9" }
+superba-storage = { path = "crates/superba-storage", version = "0.1.1-alpha.9" }
+superba-config = { path = "crates/superba-config", version = "0.1.1-alpha.9" }
+superba-net = { path = "crates/superba-net", version = "0.1.1-alpha.9" }
+superba-sessions = { path = "crates/superba-sessions", version = "0.1.1-alpha.9" }
+superba-appctl = { path = "crates/superba-appctl", version = "0.1.1-alpha.9" }
+superba-remote = { path = "crates/superba-remote", version = "0.1.1-alpha.9" }
+superba-switch = { path = "crates/superba-switch", version = "0.1.1-alpha.9" }
+superba-cli = { path = "crates/superba-cli", version = "0.1.1-alpha.9" }
+superba-catalog = { path = "crates/superba-catalog", version = "0.1.1-alpha.9" }
+superba-router = { path = "crates/superba-router", version = "0.1.1-alpha.9" }
+superba-models = { path = "crates/superba-models", version = "0.1.1-alpha.9" }
+superba-versions = { path = "crates/superba-versions", version = "0.1.1-alpha.9" }
+superba-import = { path = "crates/superba-import", version = "0.1.1-alpha.9" }
+superba-notify = { path = "crates/superba-notify", version = "0.1.1-alpha.9" }
+superba-tools = { path = "crates/superba-tools", version = "0.1.1-alpha.9" }
 
 # --- async runtime and plumbing
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "process", "fs", "time", "sync", "net", "io-util", "signal"] }

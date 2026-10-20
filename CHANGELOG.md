@@ -5,7 +5,68 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
-## [0.1.1-alpha.8] - Unreleased
+## [0.1.1-alpha.9] - Unreleased
+
+Changes since [v0.1.1-alpha.8](https://github.com/krill-lab/superba/releases/tag/v0.1.1-alpha.8).
+
+> **alpha.7 users: the in-app update to this version fails on Windows (msiexec
+> 1619, fixed in alpha.9's updater) — download and run the MSI manually once.**
+
+### Added
+
+- An Overview for every coding tool: today's use per tool, each tool's route
+  to its provider, and Claude Code's own requests (read from its transcripts)
+  next to Codex's in the request log.
+- A session browser on the Sessions page: search, links to each session's
+  folder and transcript, and exports. Session migration moved to Tools.
+- Turn a provider's line off without deleting it, from the Providers page or
+  the command line; neither the router nor a direct switch uses a disabled line.
+- Mixed login: keep the official ChatGPT account for remote features while the
+  models go through the router, and add the official ChatGPT plan as a router
+  member. Providers has a switch for it on the official login.
+- Failover rules on the Router page: the cooldowns, which HTTP statuses fail
+  over, how long a conversation stays on its line and whether it returns to
+  the preferred one. Overview and Providers describe the rules you set.
+- A Routing tab on Usage shows where each request went, every hop it tried and
+  any protocol conversion.
+- Codex settings has a "New in latest" category with the keys the newest Codex
+  releases add.
+- Superba finds tools that are not on PATH, lets you pick a program's path, and
+  uses Homebrew by default on macOS. Installed tools get their own sidebar
+  entries, and tools show their icons on Usage, the Overview and the Router.
+- Prices moved to the Models page, with long-context price bands, 5-minute and
+  1-hour cache writes, time-window prices and other vendors' list prices.
+- `superba --command` runs a page command at start-up.
+
+### Changed
+
+- The Router page is one flat page: the service sits under the status line and
+  the Claude Code section is gone. Its price section is now a link to Models.
+- The Cmd/Ctrl+K command palette and the Overview's ⋯ menu are gone. Superba
+  settings has an inline filter instead, and the "跳到" label before its section
+  list is gone.
+- Every search box has a clear button and clears with Esc.
+- Write confirmations show every change in full.
+
+### Fixed
+
+- A tested provider model reaches Codex, and switching the Models display mode
+  takes effect at once.
+- Windows: paths handed to other programs or shown to you are never in the
+  `\\?\` form; processes Superba cannot open no longer block quitting the
+  app, and the ones it cannot end are named; screen readers can open Router's
+  sections and see which settings section is current.
+- WSL: the distribution's model is named when the profile sets one.
+- macOS: only the ChatGPT/Codex apps count as a desktop install.
+
+### Limits of this preview
+
+- Windows and macOS packages remain unsigned, as before. macOS packages are
+  not notarized.
+- The built-in catalog snapshot must be re-signed by a maintainer to carry the
+  new price feed.
+
+## [0.1.1-alpha.8] - 2026-10-20
 
 Changes since [v0.1.1-alpha.7](https://github.com/krill-lab/superba/releases/tag/v0.1.1-alpha.7).
 
