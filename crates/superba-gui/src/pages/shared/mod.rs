@@ -13,6 +13,7 @@ pub mod loading;
 pub mod notices;
 pub mod profile;
 pub mod providers;
+pub mod tool_label;
 pub mod values;
 
 pub use auth::{AutoFacts, auto_facts, decision, decision_with, switch_action};
