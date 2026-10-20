@@ -9,7 +9,7 @@ use superba_core::{
 
 use super::{Op, State};
 use crate::design::icons::Icon;
-use crate::design::widgets::{Button, Card, Text, Toggle};
+use crate::design::widgets::{Card, FormRow, IconButton, Text, Toggle};
 use crate::pages::Cx;
 
 /// Client base URLs of the four entry points shipped in this build.
@@ -104,43 +104,16 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             .available_width()
             .min((ui.clip_rect().right() - ui.cursor().left()).max(0.0));
         ui.set_width(width);
-        Card::new().padding(12).show(ui, |ui| {
-            ui.label(Text::section(cx.tr.t("router.ingress.title"), cx.pal));
+        Card::new().padding(16).show(ui, |ui| {
+            FormRow::new(Text::section(cx.tr.t("router.ingress.title"), cx.pal))
+                .label_width(0.0)
+                .right()
+                .show(ui, |ui| {
+                    ui.label(Text::caption(&token, cx.pal));
+                });
             for (i, name) in names.iter().enumerate() {
                 ui.push_id(i, |ui| {
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        ui.label(Text::small(name, cx.pal));
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.label(Text::caption(&token, cx.pal));
-                        });
-                    });
                     let url = address(port, i);
-                    ui.horizontal(|ui| {
-                        let copy = cx.tr.f("router.ingress.copy", &[("name", name)]);
-                        let button = ui
-                            .add(
-                                Button::ghost(cx.tr.t("requests.detail.copy"))
-                                    .icon(Icon::Copy)
-                                    .small()
-                                    .enabled(url.is_some()),
-                            )
-                            .accessible_name(copy);
-                        if button.clicked()
-                            && let Some(url) = &url
-                        {
-                            ui.ctx().copy_text(url.clone());
-                        }
-                        ui.add(
-                            egui::Label::new(Text::small(
-                                url.clone()
-                                    .unwrap_or_else(|| cx.tr.t("router.ingress.no_address")),
-                                cx.pal,
-                            ))
-                            .truncate(),
-                        )
-                        .on_hover_text(url.unwrap_or_else(|| PATHS[i].to_owned()));
-                    });
                     let count = state
                         .ingress
                         .value
@@ -148,8 +121,53 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                         .filter(|_| state.ingress.error.is_none())
                         .map(|counts| cx.tr.f("router.ingress.recent", &[("n", &counts[i])]))
                         .unwrap_or_else(|| cx.tr.t("router.ingress.recent_unknown"));
-                    ui.label(Text::caption(count, cx.pal))
-                        .on_hover_text(cx.tr.t("router.ingress.count_hint"));
+                    let compact = ui.available_width() < 720.0;
+                    if compact {
+                        FormRow::new(Text::strong(name, cx.pal))
+                            .label_width(0.0)
+                            .right()
+                            .show(ui, |ui| {
+                                ui.label(Text::caption(&count, cx.pal))
+                                    .on_hover_text(cx.tr.t("router.ingress.count_hint"));
+                            });
+                    }
+                    let row = if compact {
+                        FormRow::unlabeled()
+                    } else {
+                        FormRow::new(Text::strong(name, cx.pal)).label_width(140.0)
+                    };
+                    row.show(ui, |ui| {
+                        // Reserve trailing controls so the URL cannot push them offscreen.
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let copy = cx.tr.f("router.ingress.copy", &[("name", name)]);
+                            if ui
+                                .add(IconButton::new(Icon::Copy, copy).enabled(url.is_some()))
+                                .clicked()
+                                && let Some(url) = &url
+                            {
+                                ui.ctx().copy_text(url.clone());
+                            }
+                            if !compact {
+                                ui.label(Text::caption(&count, cx.pal))
+                                    .on_hover_text(cx.tr.t("router.ingress.count_hint"));
+                            }
+                            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                ui.add(
+                                    egui::Label::new(Text::mono_muted(
+                                        url.clone().unwrap_or_else(|| {
+                                            cx.tr.t("router.ingress.no_address")
+                                        }),
+                                        cx.pal,
+                                    ))
+                                    .truncate(),
+                                )
+                                .on_hover_text(url.unwrap_or_else(|| PATHS[i].to_owned()));
+                            });
+                        });
+                    });
+                    if i + 1 < names.len() {
+                        crate::pages::divider(ui, cx);
+                    }
                 });
             }
             ui.add_space(8.0);

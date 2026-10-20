@@ -34,6 +34,10 @@ open_active = "Open active requests"
 open_stats = "Open usage statistics"
 
 [router.banner]
+active = "Router on"
+inactive = "Router off"
+listen = "Listen address"
+turn_off = "Turn off the router…"
 local = "Router off — Direct · Local service ({addr})."
 on = "Router on — this computer's Codex requests go through the local process superba-router ({addr}). The official login and remote hosts don't use it."
 off = "Router off — Codex connects to the provider directly."
@@ -77,8 +81,13 @@ ran_short = "This computer ran short {time} ago: {files} \"too many open files\"
 unlimited = "unlimited"
 
 [router.members]
+order_hint = "Choose a member first, then try its lines in order."
+rules = "Failover & recovery rules"
+details = "Protocol & line details"
+primary = "Preferred"
+fallback = "Backup {n}"
 candidate = "Provider to add"
-title = "Members (by priority)"
+title = "Members & line order"
 help = "Providers in priority order. A conversation stays with its member; it moves only when every line of that member fails. 401, 403 and 429 are never retried elsewhere."
 empty = "No members yet: add a provider below."
 pick = "Choose a provider…"
@@ -560,3 +569,6 @@ translation_unknown = "Conversion settings unavailable. Configure the router fir
 translation_hint = "Client protocol → upstream protocol. Each change is saved and reloaded by a running router; a stopped router applies it on next start. Native endpoints take priority. These switches allow conversion; model readiness is shown in the member list."
 no_address = "Address not configured"
 copy = "Copy {name} ingress address"
+
+[router.advanced]
+title = "Advanced"

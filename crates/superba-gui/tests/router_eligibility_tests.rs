@@ -169,7 +169,7 @@ fn a_member_set_outside_the_page_unlocks_turn_on_without_a_reload() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
-    assert!(f.has("成员（按优先级）"), "{}", f.all_text());
+    assert!(f.has("成员与线路顺序"), "{}", f.all_text());
     assert!(
         !f.has("开启路由需要至少一个有 API key 的成员。"),
         "{}",
@@ -220,7 +220,7 @@ fn adding_krill_from_the_panel_unlocks_turn_on_without_a_reload() {
     // No h.reload: the page alone must agree with itself.
     let f = h.until(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| !f.has("开启路由需要至少一个有 API key 的成员。") && f.has("成员（按优先级）"),
+        |f| !f.has("开启路由需要至少一个有 API key 的成员。") && f.has("成员与线路顺序"),
     );
     assert!(!f.has("添加 Krill 为成员"), "{}", f.all_text());
     h.click_text(&f, "开启路由…");
@@ -299,7 +299,7 @@ fn a_router_program_on_a_network_share_is_flagged_under_the_service() {
     let mut state = page(&service);
     let f = h.until_scrolled(
         |ui, cx, out| router::show(ui, cx, &mut state, out),
-        |f| f.has("成员（按优先级）"),
+        |f| f.has("成员与线路顺序"),
     );
     assert!(!f.has("网络共享"), "{}", f.all_text());
 }

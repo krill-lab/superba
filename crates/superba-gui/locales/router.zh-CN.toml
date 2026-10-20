@@ -33,6 +33,10 @@ open_active = "打开活动请求"
 open_stats = "打开用量统计"
 
 [router.banner]
+active = "路由已开启"
+inactive = "路由已关闭"
+listen = "监听地址"
+turn_off = "关闭路由…"
 local = "路由已关闭 —— 直连 · 本机服务（{addr}）。"
 on = "路由已开启 —— 这台电脑上 Codex 的请求经由本机进程 superba-router（{addr}）转发。官方登录和远程主机不经过它。"
 off = "路由已关闭 —— Codex 直接连接供应商。"
@@ -76,8 +80,13 @@ ran_short = "本机资源在 {time} 前吃紧：出现 {files} 次「打开的�
 unlimited = "不限"
 
 [router.members]
+order_hint = "先选成员，再按该成员的线路顺序尝试。"
+rules = "故障转移与恢复规则"
+details = "协议与线路详情"
+primary = "首选"
+fallback = "后备 {n}"
 candidate = "要添加的供应商"
-title = "成员（按优先级）"
+title = "成员与线路顺序"
 help = "按优先级排列的供应商。会话固定在一个成员上，只有该成员的所有线路都失败时才会换成员；401 / 403 / 429 不会换到别处重试。"
 empty = "还没有成员：在下方添加供应商。"
 pick = "选择供应商…"
@@ -559,3 +568,6 @@ translation_unknown = "暂时无法读取转换设置，请先配置路由。"
 translation_hint = "客户端协议 → 上游协议。修改后立即保存，运行中的路由会重新加载；已停止的路由在下次启动时应用。优先使用原生端点。开关仅允许转换，模型是否可用请看成员列表。"
 no_address = "尚未配置地址"
 copy = "复制 {name} 入口地址"
+
+[router.advanced]
+title = "高级"

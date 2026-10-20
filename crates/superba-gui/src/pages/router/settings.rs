@@ -1,19 +1,16 @@
-//! The Router page (UX §3.5, user decision 21): two columns. Left: the router
-//! (mode, background service, process, address, members — `view.rs`) and the
-//! prices of the cost estimates (`prices.rs`). Right: the reply stats line with
-//! its live preview and the recording settings (numbers only: request content
-//! is never recorded). Recording, stats line and price changes are saved at once
-//! and only reload the router (never a Codex restart). The column contents
-//! scroll inside the page when the window is short.
+//! Router settings in reading order: members and lines, entry points, then
+//! optional settings in a closed Advanced group. One scroll area at every width
+//! keeps the controls aligned. Changes still save immediately without a restart.
 
 use egui::{ScrollArea, Ui};
 use superba_core::{StatsLineClient, StatsLineStyle};
 
 use super::stats_line::{self, Sample};
 use super::{State, mode, prices, view};
-use crate::design::layout::{self, Track};
-use crate::design::widgets::{Button, FormRow, QuotePreview, Segmented, Status, Text, Toggle};
-use crate::pages::{Action, Cx, clock_time, note, section_gap};
+use crate::design::widgets::{
+    Button, Card, FormRow, QuotePreview, Segmented, Status, Text, Toggle,
+};
+use crate::pages::{Cx, clock_time, note, section_gap};
 
 /// Edits in progress on the tab.
 #[derive(Debug, Default)]
@@ -24,38 +21,32 @@ pub struct Prefs {
     pub prices: prices::Prices,
 }
 
-pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    // Each column needs room for the mode badge and service/member actions.
-    // Use the existing scrolling layout as one column on narrow windows.
-    if ui.available_width() < 900.0 {
-        scroll_column(ui, "router-settings-stacked", |ui| {
-            column(ui, cx, state, out, 0);
-            section_gap(ui, cx);
-            column(ui, cx, state, out, 1);
+pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+    scroll_column(ui, "router-settings", |ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        Card::new().padding(16).show(ui, |ui| {
+            view::members_section(ui, cx, state);
         });
-        return;
-    }
-    layout::columns(ui, &[Track::Fill, Track::Fill], 28.0, |ui, i| {
-        scroll_column(ui, ("router-settings-col", i), |ui| {
-            column(ui, cx, state, out, i);
-        });
-    });
-}
-
-fn column(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, i: usize) {
-    ui.spacing_mut().item_spacing.y = 6.0;
-    if i == 0 {
-        view::router_column(ui, cx, state, out);
-        section_gap(ui, cx);
+        ui.add_space(8.0);
         super::ingress::show(ui, cx, state);
-        section_gap(ui, cx);
-        prices::section(ui, cx, state);
-    } else {
-        stats_line_section(ui, cx, state);
-        section_gap(ui, cx);
-        recording_section(ui, cx, state);
-    }
-    ui.add_space(12.0);
+        ui.add_space(8.0);
+        Card::new().padding(16).show(ui, |ui| {
+            egui::CollapsingHeader::new(Text::section(cx.tr.t("router.advanced.title"), cx.pal))
+                .id_salt("router-advanced")
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.add_space(8.0);
+                    stats_line_section(ui, cx, state);
+                    section_gap(ui, cx);
+                    prices::section(ui, cx, state);
+                    section_gap(ui, cx);
+                    recording_section(ui, cx, state);
+                    section_gap(ui, cx);
+                    view::service_section(ui, cx, state);
+                });
+        });
+        ui.add_space(12.0);
+    });
 }
 
 /// Height of the fades at a scrolled column's edges.
