@@ -217,33 +217,43 @@ fn router_actions_and_lower_settings_remain_reachable_when_narrow() {
         for locale in [Locale::En, Locale::ZhCn] {
             let tr = Tr::new(locale);
             let mut h = Harness::new(size, locale, fake(), true);
-            if let Some(config) = h
-                .data
-                .overview
-                .value
-                .as_mut()
-                .and_then(|o| o.config.as_mut())
-            {
-                config.openai_base_url = Some("http://127.0.0.1:36435".into());
-            }
             let mut state = router::State::default();
+            h = h.min_height(Page::Router.min_height());
             let f = h.until(
                 |ui, cx, out| router::show(ui, cx, &mut state, out),
-                |f| f.has(&tr.t("router.service.install")),
+                |f| f.has(&tr.t("router.members.add")),
             );
-            for key in ["router.turn_on", "router.doctor.open", "router.members.add"] {
+            for key in ["router.banner.turn_on", "router.members.add"] {
                 visible_text(&f, &tr.t(key));
             }
-            if size == SIZES[0] {
+            assert!(
+                !f.texts
+                    .iter()
+                    .any(|(text, _)| text == &tr.t("stats_line.title")),
+                "Advanced starts closed"
+            );
+            let title = tr.t("router.advanced.title");
+            let f = h.until_scrolled(
+                |ui, cx, out| router::show(ui, cx, &mut state, out),
+                |f| {
+                    f.clipped_texts
+                        .iter()
+                        .any(|(text, rect, clip)| text == &title && clip.contains_rect(*rect))
+                },
+            );
+            h.click_text(&f, &title);
+            h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
+            for key in ["stats_line.title", "router.doctor.open"] {
                 let f = h.until_scrolled(
                     |ui, cx, out| router::show(ui, cx, &mut state, out),
                     |f| {
-                        f.clipped_texts.iter().any(|(t, r, clip)| {
-                            t == &tr.t("stats_line.title") && clip.contains_rect(*r)
-                        })
+                        f.clipped_texts
+                            .iter()
+                            .any(|(t, r, clip)| t == &tr.t(key) && clip.contains_rect(*r))
                     },
                 );
-                visible_text(&f, &tr.t("stats_line.title"));
+                visible_text(&f, &tr.t(key));
+                assert_eq!(f.scroll_areas, 1);
             }
         }
     }

@@ -262,6 +262,10 @@ fn per_tool_stats_switches_keep_the_defaults_and_save_independently() {
     );
     let service = fake();
     let mut h = AppHarness::new(service.clone(), Locale::En, Page::Router);
+    h.click(
+        Some(Role::DisclosureTriangle),
+        &Tr::new(Locale::En).t("router.advanced.title"),
+    );
     let tree = h.wait_for(Some(Role::CheckBox), "dsh");
     assert!(tree.unnamed().is_empty(), "{}", tree.dump());
     h.click(Some(Role::CheckBox), "dsh");
@@ -479,7 +483,8 @@ fn expanded_conversion_directions_fit_the_narrow_router_column() {
         let tr = Tr::new(locale);
         let service = fake();
         service.set_router_translation(Some(Default::default()));
-        let mut h = Harness::new([960.0, 640.0], locale, service, true);
+        let mut h = Harness::new([960.0, 640.0], locale, service, true)
+            .min_height(Page::Router.min_height());
         let mut state = State::default();
         let title = tr.f(
             "router.ingress.translation_state",
@@ -487,7 +492,11 @@ fn expanded_conversion_directions_fit_the_narrow_router_column() {
         );
         let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| f.has(&title),
+            |f| {
+                f.clipped_texts
+                    .iter()
+                    .any(|(text, rect, clip)| text == &title && clip.contains_rect(*rect))
+            },
         );
         h.click_at(f.find(&title).unwrap().center());
         h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));

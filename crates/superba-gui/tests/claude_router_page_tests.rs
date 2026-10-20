@@ -132,10 +132,10 @@ fn router_controls_stay_visible_and_claude_members_are_reachable() {
                     h = h.dark();
                 }
                 let mut state = State::default();
-                let title = tr.t("router.section.title");
+                let title = tr.t("router.members.title");
                 let f = h.until(
                     |ui, cx, out| router::show(ui, cx, &mut state, out),
-                    |f| f.has(&tr.t("router.service_label")),
+                    |f| f.has(&tr.t("router.members.title")),
                 );
                 let (_, rect, clip) = f
                     .clipped_texts
