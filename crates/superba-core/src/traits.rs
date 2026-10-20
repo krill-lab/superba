@@ -1539,6 +1539,27 @@ pub trait SwitchService: Send + Sync {
     /// key). Read-only.
     async fn session_titles(&self, keys: Vec<String>) -> Result<BTreeMap<String, SessionTitle>>;
 
+    /// Every thread the session browser lists: this computer's `state_*.sqlite`
+    /// threads and the desktop app's thread catalog (all hosts). Read-only.
+    async fn session_list(&self) -> Result<crate::SessionList> {
+        Err(Error::NotImplemented {
+            what: "session list".into(),
+        })
+    }
+
+    /// Export a thread of this computer: Markdown as text, or a new session
+    /// file of another tool. Never writes into a Codex store.
+    async fn session_export(
+        &self,
+        thread_id: String,
+        format: crate::SessionExportFormat,
+    ) -> Result<crate::SessionExport> {
+        let _ = (thread_id, format);
+        Err(Error::NotImplemented {
+            what: "session export".into(),
+        })
+    }
+
     // --- v0.3: feeds ----------------------------------------------------------
 
     /// The public list-price table cost estimates use (the feed's; per-provider

@@ -33,6 +33,21 @@ impl Harness {
         events: Vec<Event>,
         f: &mut dyn FnMut(&mut egui::Ui),
     ) -> Vec<(String, Rect)> {
+        self.run(events, f)
+    }
+
+    /// [`Self::frame`] with these keyboard modifiers held (from this frame on).
+    pub fn frame_with_modifiers(
+        &self,
+        mut events: Vec<Event>,
+        modifiers: egui::Modifiers,
+        f: &mut dyn FnMut(&mut egui::Ui),
+    ) -> Vec<(String, Rect)> {
+        events.insert(0, Event::ModifiersChanged(modifiers));
+        self.run(events, f)
+    }
+
+    fn run(&self, events: Vec<Event>, f: &mut dyn FnMut(&mut egui::Ui)) -> Vec<(String, Rect)> {
         let output = self.ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(self.screen),

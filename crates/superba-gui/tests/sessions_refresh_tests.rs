@@ -20,6 +20,7 @@ fn app() -> AppHarness {
     }));
     service.set_session_counts(&[("krill", 600)]);
     let mut h = AppHarness::new(service, Locale::En, Page::Sessions);
+    h.click(Some(Role::Button), "Session migration…");
     let t = h.wait_for(Some(Role::Button), "Migrate to openai…");
     assert_counts(&t, 0, 600);
     assert!(t.has("No migrations yet"), "{}", t.dump());

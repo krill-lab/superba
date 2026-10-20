@@ -864,7 +864,7 @@ async fn a_host_being_scanned_spins_in_the_switcher_and_a_failed_scan_offers_ret
     // gpu-01 does not answer until released, then fails.
     service.hold_host_sessions(&gpu, true);
     service.fail_host_sessions(&gpu, true);
-    let mut state = sessions::State::default();
+    let mut state = sessions::State::migration_tool();
     with_cx(&data, &svc, Locale::En, |cx| {
         state.select(cx, Some(gpu.clone()))
     });

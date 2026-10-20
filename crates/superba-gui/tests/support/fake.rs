@@ -2340,6 +2340,18 @@ impl SwitchService for FakeService {
         sessions::sessions(self).await
     }
 
+    async fn session_list(&self) -> Result<SessionList> {
+        sessions::session_list(self).await
+    }
+
+    async fn session_export(
+        &self,
+        thread_id: String,
+        format: SessionExportFormat,
+    ) -> Result<SessionExport> {
+        sessions::session_export(self, thread_id, format).await
+    }
+
     async fn doctor(&self) -> Result<Vec<DoctorFinding>> {
         self.delay(400).await;
         Ok([

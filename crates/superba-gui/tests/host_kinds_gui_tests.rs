@@ -178,7 +178,7 @@ fn the_sessions_switcher_names_devices_and_never_scans_them() {
             ("远程控制设备".to_owned(), false),
         ]
     );
-    let mut state = sessions::State::default();
+    let mut state = sessions::State::migration_tool();
     let f = h.frames(2, |ui, cx, out| sessions::show(ui, cx, &mut state, out));
     assert!(f.has("Studio Mac"), "{}", f.all_text());
     no_raw_id(&f.all_text());
