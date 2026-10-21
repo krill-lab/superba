@@ -46,11 +46,3 @@ a browser or touching the user's login.
 
 Successful browser authorization and real subscription quota responses require
 the user to sign in; fixture tests do not establish those live results.
-
-## Native tray menu
-
-The tray uses the original platform menu (muda on Windows/macOS, dbusmenu on
-Linux). The switch submenu also includes saved ChatGPT accounts. Lightweight
-mode is a native check item: it hides the main window using the existing
-window lifecycle; unchecking it or choosing Open restores the window.
-No auxiliary egui viewport is created by the tray.

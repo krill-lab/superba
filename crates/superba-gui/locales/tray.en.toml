@@ -4,7 +4,6 @@
 # defined in another area file (tests/i18n_tests.rs).
 
 [tray]
-menu.lightweight = "Lightweight mode"
 current.none = "No provider set up yet"
 current.official = "Official ChatGPT login"
 current.unknown = "Provider not known"

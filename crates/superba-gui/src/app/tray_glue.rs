@@ -16,7 +16,7 @@ impl SuperbaApp {
     /// Show the tray icon (once, from [`SuperbaApp::new`]).
     pub(super) fn start_tray(&mut self, ctx: &egui::Context) {
         let busy = self.tray_busy();
-        let menu = menu::window_menu(&self.tr, &self.data, busy, self.life.is_hidden());
+        let menu = menu::build(&self.tr, &self.data, busy);
         let tooltip = menu::tooltip(&self.tr, &self.data);
         self.tray = match &self.opts.tray {
             TrayOption::Off => Tray::disabled(),
@@ -117,16 +117,6 @@ impl SuperbaApp {
     fn on_tray_event(&mut self, ctx: &egui::Context, event: TrayEvent) {
         match event {
             TrayEvent::Activate | TrayEvent::Action(TrayAction::Open) => self.show_window(ctx),
-            TrayEvent::Action(TrayAction::SwitchChatGptAccount(id)) => {
-                self.handle_action(ctx, Action::SwitchChatGptAccount(id));
-            }
-            TrayEvent::Action(TrayAction::LightMode(enabled)) => {
-                if enabled {
-                    self.life.start_hidden(self.tray.status().hide_support());
-                } else {
-                    self.show_window(ctx);
-                }
-            }
             TrayEvent::HostLost => self.life.tray_lost(),
             TrayEvent::HostBack => {}
             TrayEvent::Action(TrayAction::Superba(section)) => {
@@ -205,7 +195,7 @@ impl SuperbaApp {
         }
         if self.tray.menu().is_some() {
             let busy = self.tray_busy();
-            let menu = menu::window_menu(&self.tr, &self.data, busy, self.life.is_hidden());
+            let menu = menu::build(&self.tr, &self.data, busy);
             let tooltip = menu::tooltip(&self.tr, &self.data);
             self.tray.update(menu, tooltip);
         }
