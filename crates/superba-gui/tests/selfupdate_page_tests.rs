@@ -752,6 +752,47 @@ fn the_rate_limit_is_a_quiet_line_with_the_time_it_ends() {
 }
 
 #[test]
+fn a_rate_limited_row_localizes_the_reason_and_restores_retry_after_cooldown() {
+    use updates::items::{Operation, UpdateItem, inventory};
+    for (locale, reason) in [
+        (Locale::ZhCn, "GitHub 更新检查暂时限流"),
+        (Locale::En, "GitHub update checks are rate limited"),
+    ] {
+        let mut v = view(SelfUpdateStatus::CheckFailed, None);
+        v.detail = Some("rate limited".into());
+        v.limited_until = Some(Timestamp(Timestamp::now().0 + 600_000));
+        let mut h = harness(fake(), locale, v);
+        let mut state = State::default();
+        let f = page(&mut h, &mut state, reason);
+        assert!(f.has(reason), "{}", f.all_text());
+        assert!(!f.has("the last answer is shown"));
+        for expired in [false, true] {
+            if expired {
+                h.data.selfupdate.value.as_mut().unwrap().limited_until = Some(Timestamp::EPOCH);
+            }
+            h.frame(|_, cx, _| {
+                let rows = inventory(cx, &state, &updates::tools::ToolsView::default());
+                let row = rows
+                    .iter()
+                    .find(|row| row.id == UpdateItem::Superba)
+                    .unwrap();
+                assert_eq!(matches!(row.operation, Some(Operation::Check)), expired);
+                if locale == Locale::ZhCn {
+                    assert!(!row.description.contains("rate limited"));
+                }
+                if expired {
+                    assert!(row.description.contains(if locale == Locale::ZhCn {
+                        "等待已结束"
+                    } else {
+                        "wait has ended"
+                    }));
+                }
+            });
+        }
+    }
+}
+
+#[test]
 fn release_notes_are_rendered_as_plain_text() {
     assert_eq!(
         note_lines(
