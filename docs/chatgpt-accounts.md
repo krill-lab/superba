@@ -15,6 +15,8 @@ account picker.
   login token; the current quota response takes precedence for display. If its
   optional plan field is absent, `account/read` supplies the subscription type.
   Missing plan data is shown as a loading/error state, never as a plan tier.
+  Both `prolite` and `pro_lite` display as Pro Lite. Other non-empty service tiers
+  remain visible by their returned name instead of being mistaken for read failures.
 - Login uses Codex app-server's `account/login/start` and
   `account/login/completed` protocol in a private, disposable `CODEX_HOME`, with
   file credentials selected explicitly. The browser URL can be reopened or

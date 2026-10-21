@@ -119,7 +119,7 @@ async fn weekly_limits_stay_in_the_same_column_for_mixed_account_windows() {
     let service = fake();
     let mut data = data_of(&service).await;
     data.chatgpt_accounts
-        .finish(Ok(["both-windows", "weekly-only"]
+        .finish(Ok(["both-windows", "prolite-weekly"]
             .into_iter()
             .map(|id| superba_core::ChatGptAccount {
                 id: id.into(),
@@ -165,7 +165,9 @@ async fn weekly_limits_stay_in_the_same_column_for_mixed_account_windows() {
             );
             assert!(weeks[1].min.x > hours[0].max.x);
             assert!(report.beyond_right().is_empty());
-            assert!(report.whole("Free") && report.whole("Plus"));
+            assert!(report.whole("Pro Lite") && report.whole("Plus"));
+            assert!(!report.all_text().contains("套餐读取失败"));
+            assert!(!report.all_text().contains("Plan unavailable"));
         }
     }
 }

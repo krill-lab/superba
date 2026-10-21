@@ -459,17 +459,41 @@ fn quota_windows(
 }
 
 /// Keep service plan names recognizable, without treating them as quota rules.
-fn plan_label(plan: &str) -> Option<&'static str> {
-    Some(match plan.trim().to_ascii_lowercase().as_str() {
+fn plan_label(plan: &str) -> Option<&str> {
+    let plan = plan.trim();
+    Some(match plan.to_ascii_lowercase().as_str() {
+        "" | "unknown" => return None,
         "free" => "Free",
         "go" => "Go",
         "plus" => "Plus",
         "pro" => "Pro",
-        "pro_lite" => "Pro Lite",
+        "prolite" | "pro_lite" => "Pro Lite",
         "team" => "Team",
         "business" => "Business",
         "enterprise" => "Enterprise",
         "edu" => "Edu",
-        _ => return None,
+        // Preserve new service tiers instead of reporting a successful read as a failure.
+        _ => plan,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plan_label;
+
+    #[test]
+    fn subscription_labels_preserve_valid_service_tiers() {
+        for (raw, label) in [
+            ("free", Some("Free")),
+            ("plus", Some("Plus")),
+            ("pro", Some("Pro")),
+            ("prolite", Some("Pro Lite")),
+            (" PRO_LITE ", Some("Pro Lite")),
+            (" future_tier ", Some("future_tier")),
+            (" unknown ", None),
+            (" ", None),
+        ] {
+            assert_eq!(plan_label(raw), label, "{raw}");
+        }
+    }
 }

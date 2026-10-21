@@ -1659,13 +1659,22 @@ impl SwitchService for FakeService {
     async fn chatgpt_quota(&self, id: &str) -> Result<superba_core::ChatGptQuota> {
         Ok(superba_core::ChatGptQuota {
             account_id: id.into(),
-            plan_type: Some(if id == "weekly-only" { "free" } else { "plus" }.into()),
+            plan_type: Some(
+                match id {
+                    "weekly-only" => "free",
+                    "prolite-weekly" => "prolite",
+                    _ => "plus",
+                }
+                .into(),
+            ),
             fetched_at: Timestamp::now(),
-            five_hour: (id != "weekly-only").then_some(superba_core::ChatGptWindow {
-                remaining: 100.0,
-                minutes: 300,
-                resets_at: None,
-            }),
+            five_hour: (!matches!(id, "weekly-only" | "prolite-weekly")).then_some(
+                superba_core::ChatGptWindow {
+                    remaining: 100.0,
+                    minutes: 300,
+                    resets_at: None,
+                },
+            ),
             weekly: Some(superba_core::ChatGptWindow {
                 remaining: 69.0,
                 minutes: 10080,
