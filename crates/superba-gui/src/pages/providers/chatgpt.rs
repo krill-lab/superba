@@ -1,9 +1,12 @@
 //! Official account management, using the existing provider page and switch flow.
 
-use crate::design::widgets::{Button, Status, Text};
-use crate::pages::{Action, Cx, callout, error_text};
+use crate::design::fonts::{Weight, font};
+use crate::design::icons::Icon;
+use crate::design::tokens::text;
+use crate::design::widgets::{Badge, Button, IconButton, Status, Text};
+use crate::pages::{Action, Cx, callout, divider, elided, error_text};
 use crate::runtime::{ReadTask, task};
-use egui::Ui;
+use egui::{Align, Layout, Sense, Stroke, Ui, vec2};
 use std::collections::HashMap;
 use std::sync::{
     Arc,
@@ -11,7 +14,7 @@ use std::sync::{
     mpsc,
 };
 use std::time::Duration;
-use superba_core::{ChatGptAccount, ChatGptLoginPrompt, ChatGptQuota, ChatGptWindow};
+use superba_core::{ChatGptAccount, ChatGptLoginPrompt, ChatGptQuota};
 
 #[derive(Debug)]
 struct Login {
@@ -199,122 +202,228 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         ui.add_space(12.0);
         ui.add(egui::Label::new(Text::small(cx.tr.t("chatgpt.empty"), cx.pal)).wrap());
     }
-    for account in accounts {
-        let active = account.active && cx.data.official_active();
+    ui.add_space(12.0);
+    for (index, account) in accounts.iter().enumerate() {
         if !state.quotas.contains_key(&account.id) {
             state.refresh(cx, &account.id);
         }
-        ui.add_space(12.0);
-        egui::Frame::new()
-            .stroke(egui::Stroke::new(1.0, cx.pal.border))
-            .corner_radius(8)
-            .inner_margin(12)
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(Text::body(&account.email, cx.pal));
-                    if active {
-                        ui.label(Text::small(cx.tr.t("chatgpt.in_use"), cx.pal));
-                    }
-                    let working = state
-                        .quotas
-                        .get(&account.id)
-                        .is_some_and(|q| q.task.is_some());
-                    if ui
-                        .add(
-                            Button::new(cx.tr.t("chatgpt.switch"))
-                                .small()
-                                .enabled(!active && !cx.busy && !working && !signing_in),
-                        )
-                        .clicked()
-                    {
-                        out.push(Action::SwitchChatGptAccount(account.id.clone()));
-                    }
-                    if ui
-                        .add(
-                            Button::new(cx.tr.t("chatgpt.refresh"))
-                                .small()
-                                .loading(working)
-                                .enabled(!cx.busy && !working),
-                        )
-                        .clicked()
-                    {
-                        state.refresh(cx, &account.id);
-                    }
-                });
-                let quota = state.quotas.get(&account.id);
-                let value = quota.and_then(|q| q.value.as_ref());
-                ui.add_space(8.0);
-                ui.horizontal_wrapped(|ui| {
-                    window(
-                        ui,
-                        cx,
-                        "chatgpt.five_hour",
-                        value.and_then(|q| q.five_hour.as_ref()),
-                        quota.is_some_and(|q| q.task.is_some()),
-                    );
-                    ui.add_space(20.0);
-                    window(
-                        ui,
-                        cx,
-                        "chatgpt.weekly",
-                        value.and_then(|q| q.weekly.as_ref()),
-                        quota.is_some_and(|q| q.task.is_some()),
-                    );
-                });
-                if let Some(value) = value {
-                    ui.label(Text::caption(
-                        cx.tr
-                            .f("chatgpt.updated", &[("when", &cx.ago(value.fetched_at))]),
-                        cx.pal,
-                    ));
-                }
-                if let Some(error) = quota.and_then(|q| q.error.as_ref()) {
-                    callout(ui, cx, Status::Error, error);
-                }
-            });
+        if index > 0 {
+            divider(ui, cx);
+        }
+        let mut refresh = false;
+        ui.push_id(&account.id, |ui| {
+            refresh = account_row(
+                ui,
+                cx,
+                account,
+                index,
+                state.quotas.get(&account.id),
+                signing_in,
+                out,
+            );
+        });
+        if refresh {
+            state.refresh(cx, &account.id);
+        }
     }
     ui.add_space(8.0);
     ui.add(egui::Label::new(Text::caption(cx.tr.t("chatgpt.switching"), cx.pal)).wrap());
     ui.add_space(16.0);
 }
 
-fn window(ui: &mut Ui, cx: &Cx<'_>, label: &str, window: Option<&ChatGptWindow>, loading: bool) {
-    ui.vertical(|ui| {
-        ui.label(Text::small(cx.tr.t(label), cx.pal));
-        if let Some(window) = window {
-            let label = cx.tr.f(
-                "chatgpt.remaining",
-                &[("percent", &format!("{:.0}", window.remaining))],
-            );
-            ui.add(
-                egui::ProgressBar::new(window.remaining as f32 / 100.0)
-                    .desired_width(150.0)
-                    .text(label),
-            );
-            if let Some(reset) = window.resets_at {
-                let minutes = reset
-                    .duration_since(cx.now)
-                    .map_or(0, |d| d.as_secs().div_ceil(60));
-                let time = if minutes >= 1440 {
-                    format!("{}d {}h", minutes / 1440, (minutes % 1440) / 60)
-                } else {
-                    format!("{}h {}m", minutes / 60, minutes % 60)
-                };
-                ui.label(Text::caption(
-                    cx.tr.f("chatgpt.reset", &[("time", &time)]),
-                    cx.pal,
-                ));
+/// The same flat, divided rows as provider lines, with stable quota columns.
+fn account_row(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    account: &ChatGptAccount,
+    index: usize,
+    quota: Option<&Quota>,
+    signing_in: bool,
+    out: &mut Vec<Action>,
+) -> bool {
+    let active = account.active && cx.data.official_active();
+    let working = quota.is_some_and(|q| q.task.is_some());
+    let value = quota.and_then(|q| q.value.as_ref());
+    let action_width = Button::new(cx.tr.t("chatgpt.switch"))
+        .small()
+        .desired_size(ui)
+        .x
+        + 44.0;
+    // Reserve room for a readable identity, both quota windows and the actions.
+    let wide = ui.available_width() >= 760.0;
+    let mut refresh = false;
+    let mut actions = |ui: &mut Ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if working {
+                ui.add_sized([28.0, 28.0], egui::Spinner::new().size(16.0));
+            } else if ui
+                .add(
+                    IconButton::new(Icon::Refresh, cx.tr.t("chatgpt.refresh"))
+                        .size(28.0)
+                        .enabled(!cx.busy),
+                )
+                .clicked()
+            {
+                refresh = true;
             }
-        } else {
-            ui.label(Text::caption(
-                cx.tr.t(if loading {
-                    "chatgpt.loading_limits"
-                } else {
-                    "chatgpt.unknown"
-                }),
-                cx.pal,
-            ));
+            ui.add_space(4.0);
+            if active {
+                ui.add(Badge::new(cx.tr.t("chatgpt.in_use")).status(Status::Ok));
+            } else if ui
+                .add(
+                    Button::new(cx.tr.t("chatgpt.switch"))
+                        .small()
+                        .enabled(!cx.busy && !working && !signing_in),
+                )
+                .clicked()
+            {
+                out.push(Action::SwitchChatGptAccount(account.id.clone()));
+            }
+        });
+    };
+    let identity = |ui: &mut Ui| {
+        ui.spacing_mut().item_spacing.y = 2.0;
+        elided(ui, Text::strong(&account.email, cx.pal));
+        if let Some(value) = value {
+            elided(
+                ui,
+                Text::caption(
+                    cx.tr
+                        .f("chatgpt.updated", &[("when", &cx.ago(value.fetched_at))]),
+                    cx.pal,
+                ),
+            );
         }
+    };
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 12.0;
+        ui.set_min_height(if wide { 54.0 } else { 38.0 });
+        let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
+        ui.painter().circle(
+            r.center(),
+            10.0,
+            if active {
+                cx.pal.primary
+            } else {
+                cx.pal.surface
+            },
+            Stroke::new(
+                1.0,
+                if active {
+                    cx.pal.primary
+                } else {
+                    cx.pal.border_strong
+                },
+            ),
+        );
+        ui.painter().text(
+            r.center(),
+            egui::Align2::CENTER_CENTER,
+            (index + 1).to_string(),
+            font(text::CAPTION, Weight::Semibold),
+            if active {
+                cx.pal.on_primary
+            } else {
+                cx.pal.text_muted
+            },
+        );
+        let quota_width = if wide { 336.0 } else { 0.0 };
+        let name_width = (ui.available_width() - action_width - quota_width - 24.0)
+            .clamp(40.0, if wide { 300.0 } else { f32::INFINITY });
+        ui.allocate_ui_with_layout(vec2(name_width, 38.0), Layout::top_down(Align::Min), |ui| {
+            ui.set_width(name_width);
+            identity(ui);
+        });
+        if wide {
+            quota_windows(ui, cx, value, working, 156.0);
+        }
+        actions(ui);
     });
+    if !wide {
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 12.0;
+            ui.add_space(22.0);
+            let width = ((ui.available_width() - 12.0) / 2.0).min(200.0);
+            quota_windows(ui, cx, value, working, width);
+        });
+    }
+    if let Some(error) = quota.and_then(|q| q.error.as_ref()) {
+        callout(ui, cx, Status::Error, error);
+    }
+    refresh
+}
+
+fn quota_windows(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    value: Option<&ChatGptQuota>,
+    working: bool,
+    width: f32,
+) {
+    for (label, window) in [
+        (
+            "chatgpt.five_hour",
+            value.and_then(|q| q.five_hour.as_ref()),
+        ),
+        ("chatgpt.weekly", value.and_then(|q| q.weekly.as_ref())),
+    ] {
+        ui.allocate_ui_with_layout(vec2(width, 48.0), Layout::top_down(Align::Min), |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(Text::small(cx.tr.t(label), cx.pal));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let remaining = window.map(|w| {
+                        cx.tr.f(
+                            "chatgpt.remaining",
+                            &[("percent", &format!("{:.0}", w.remaining))],
+                        )
+                    });
+                    ui.label(Text::small(remaining.unwrap_or_else(|| "—".into()), cx.pal));
+                });
+            });
+            let (track, _) = ui.allocate_exact_size(vec2(width, 3.0), Sense::hover());
+            ui.painter().rect_filled(track, 2.0, cx.pal.border);
+            if let Some(window) = window {
+                let filled = egui::Rect::from_min_size(
+                    track.min,
+                    vec2(
+                        width * (window.remaining as f32 / 100.0).clamp(0.0, 1.0),
+                        3.0,
+                    ),
+                );
+                if filled.width() > 0.0 {
+                    ui.painter().rect_filled(filled, 2.0, cx.pal.text_muted);
+                }
+                if let Some(reset) = window.resets_at {
+                    let minutes = reset
+                        .duration_since(cx.now)
+                        .map_or(0, |d| d.as_secs().div_ceil(60));
+                    let time = if minutes >= 1440 {
+                        format!("{}d {}h", minutes / 1440, (minutes % 1440) / 60)
+                    } else {
+                        format!("{}h {}m", minutes / 60, minutes % 60)
+                    };
+                    elided(
+                        ui,
+                        Text::caption(cx.tr.f("chatgpt.reset", &[("time", &time)]), cx.pal),
+                    );
+                }
+            } else {
+                elided(
+                    ui,
+                    Text::caption(
+                        cx.tr.t(if working {
+                            "chatgpt.loading_limits"
+                        } else {
+                            "chatgpt.unknown"
+                        }),
+                        cx.pal,
+                    ),
+                );
+            }
+        });
+    }
 }
