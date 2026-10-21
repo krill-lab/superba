@@ -54,6 +54,13 @@ impl Accounts {
             .map(|s| {
                 let mut account = s.account.clone();
                 account.active = active.as_deref() == Some(&account.id);
+                // Backfill metadata from encrypted credentials saved by older versions.
+                let auth = live
+                    .filter(|_| account.active)
+                    .map_or(s.auth.as_bytes(), |a| a.expose());
+                account.plan_type = authjson::login_info(auth)
+                    .and_then(|info| info.plan_type)
+                    .or(account.plan_type);
                 account
             })
             .collect())
@@ -84,6 +91,7 @@ impl Accounts {
             email: info
                 .email
                 .unwrap_or_else(|| info.account_id.unwrap_or_else(|| info.identity.clone())),
+            plan_type: info.plan_type,
             added_at: all.get(&info.identity).map_or(now, |s| s.account.added_at),
             active: false,
         };
@@ -200,6 +208,41 @@ mod tests {
             DataDir::new(root.join("data")),
             Arc::new(MapEnv::new().with(crate::ENV_SUPERBA_SECRET_BACKEND, "file")),
         )
+    }
+
+    #[test]
+    fn older_saved_accounts_backfill_subscription_without_changing_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Accounts::new(context(dir.path()));
+        let mut value: serde_json::Value =
+            serde_json::from_slice(credential("a", "private-token").expose()).unwrap();
+        value["tokens"]["id_token"]["https://api.openai.com/auth"] =
+            serde_json::json!({"chatgpt_plan_type":"plus"});
+        let auth = SecretBytes::new(serde_json::to_vec(&value).unwrap());
+        let account = store.put(&auth, Timestamp(1)).unwrap();
+        assert_eq!(account.plan_type.as_deref(), Some("plus"));
+        // Simulate an encrypted store created before plan metadata was added.
+        let saved = Vault::new(store.ctx.clone())
+            .read_sealed(&store.path())
+            .unwrap()
+            .unwrap();
+        let mut legacy: serde_json::Value = serde_json::from_slice(saved.expose()).unwrap();
+        legacy[&account.id]["account"]
+            .as_object_mut()
+            .unwrap()
+            .remove("plan_type");
+        Vault::new(store.ctx.clone())
+            .write_sealed(&store.path(), &serde_json::to_vec(&legacy).unwrap())
+            .unwrap();
+        let list = store.list(None).unwrap();
+        assert_eq!(list[0].plan_type.as_deref(), Some("plus"));
+        value["tokens"]["id_token"]["https://api.openai.com/auth"]["chatgpt_plan_type"] =
+            "pro".into();
+        let live = SecretBytes::new(serde_json::to_vec(&value).unwrap());
+        let list = store.list(Some(&live)).unwrap();
+        assert!(list[0].active);
+        assert_eq!(list[0].id, account.id);
+        assert_eq!(list[0].plan_type.as_deref(), Some("pro"));
     }
 
     #[test]

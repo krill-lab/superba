@@ -284,16 +284,23 @@ fn account_row(
     let identity = |ui: &mut Ui| {
         ui.spacing_mut().item_spacing.y = 2.0;
         elided(ui, Text::strong(&account.email, cx.pal));
-        if let Some(value) = value {
-            elided(
-                ui,
-                Text::caption(
-                    cx.tr
-                        .f("chatgpt.updated", &[("when", &cx.ago(value.fetched_at))]),
-                    cx.pal,
-                ),
-            );
-        }
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            let plan = value
+                .and_then(|q| q.plan_type.as_deref())
+                .or(account.plan_type.as_deref());
+            ui.add(Badge::new(plan_label(cx, plan)).outline());
+            if let Some(value) = value {
+                elided(
+                    ui,
+                    Text::caption(
+                        cx.tr
+                            .f("chatgpt.updated", &[("when", &cx.ago(value.fetched_at))]),
+                        cx.pal,
+                    ),
+                );
+            }
+        });
     };
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 12.0;
@@ -361,13 +368,29 @@ fn quota_windows(
     working: bool,
     width: f32,
 ) {
+    let Some(value) = value else {
+        ui.label(Text::small(
+            cx.tr.t(if working {
+                "chatgpt.loading_limits"
+            } else {
+                "chatgpt.unknown"
+            }),
+            cx.pal,
+        ));
+        return;
+    };
+    if value.five_hour.is_none() && value.weekly.is_none() {
+        ui.label(Text::small(cx.tr.t("chatgpt.no_windows"), cx.pal));
+        return;
+    }
     for (label, window) in [
-        (
-            "chatgpt.five_hour",
-            value.and_then(|q| q.five_hour.as_ref()),
-        ),
-        ("chatgpt.weekly", value.and_then(|q| q.weekly.as_ref())),
+        ("chatgpt.five_hour", value.five_hour.as_ref()),
+        ("chatgpt.weekly", value.weekly.as_ref()),
     ] {
+        // Absence is not an unlimited plan: show only windows actually reported.
+        let Some(window) = window else {
+            continue;
+        };
         ui.allocate_ui_with_layout(vec2(width, 48.0), Layout::top_down(Align::Min), |ui| {
             ui.set_width(width);
             ui.spacing_mut().item_spacing.y = 4.0;
@@ -375,55 +398,63 @@ fn quota_windows(
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.label(Text::small(cx.tr.t(label), cx.pal));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let remaining = window.map(|w| {
-                        cx.tr.f(
-                            "chatgpt.remaining",
-                            &[("percent", &format!("{:.0}", w.remaining))],
-                        )
-                    });
-                    ui.label(Text::small(remaining.unwrap_or_else(|| "—".into()), cx.pal));
+                    let remaining = cx.tr.f(
+                        "chatgpt.remaining",
+                        &[("percent", &format!("{:.0}", window.remaining))],
+                    );
+                    ui.label(Text::small(remaining, cx.pal));
                 });
             });
             let (track, _) = ui.allocate_exact_size(vec2(width, 3.0), Sense::hover());
             ui.painter().rect_filled(track, 2.0, cx.pal.border);
-            if let Some(window) = window {
-                let filled = egui::Rect::from_min_size(
-                    track.min,
-                    vec2(
-                        width * (window.remaining as f32 / 100.0).clamp(0.0, 1.0),
-                        3.0,
-                    ),
-                );
-                if filled.width() > 0.0 {
-                    ui.painter().rect_filled(filled, 2.0, cx.pal.text_muted);
-                }
-                if let Some(reset) = window.resets_at {
-                    let minutes = reset
-                        .duration_since(cx.now)
-                        .map_or(0, |d| d.as_secs().div_ceil(60));
-                    let time = if minutes >= 1440 {
-                        format!("{}d {}h", minutes / 1440, (minutes % 1440) / 60)
-                    } else {
-                        format!("{}h {}m", minutes / 60, minutes % 60)
-                    };
-                    elided(
-                        ui,
-                        Text::caption(cx.tr.f("chatgpt.reset", &[("time", &time)]), cx.pal),
-                    );
-                }
-            } else {
+            let filled = egui::Rect::from_min_size(
+                track.min,
+                vec2(
+                    width * (window.remaining as f32 / 100.0).clamp(0.0, 1.0),
+                    3.0,
+                ),
+            );
+            if filled.width() > 0.0 {
+                let color = if window.remaining <= 10.0 {
+                    cx.pal.red
+                } else if window.remaining <= 20.0 {
+                    cx.pal.amber
+                } else {
+                    cx.pal.green
+                };
+                ui.painter().rect_filled(filled, 2.0, color);
+            }
+            if let Some(reset) = window.resets_at {
+                let minutes = reset
+                    .duration_since(cx.now)
+                    .map_or(0, |d| d.as_secs().div_ceil(60));
+                let time = if minutes >= 1440 {
+                    format!("{}d {}h", minutes / 1440, (minutes % 1440) / 60)
+                } else {
+                    format!("{}h {}m", minutes / 60, minutes % 60)
+                };
                 elided(
                     ui,
-                    Text::caption(
-                        cx.tr.t(if working {
-                            "chatgpt.loading_limits"
-                        } else {
-                            "chatgpt.unknown"
-                        }),
-                        cx.pal,
-                    ),
+                    Text::caption(cx.tr.f("chatgpt.reset", &[("time", &time)]), cx.pal),
                 );
             }
         });
     }
+}
+
+/// Keep service plan names recognizable, without treating them as quota rules.
+fn plan_label(cx: &Cx<'_>, plan: Option<&str>) -> String {
+    match plan {
+        Some("free") => "Free",
+        Some("go") => "Go",
+        Some("plus") => "Plus",
+        Some("pro") => "Pro",
+        Some("pro_lite") => "Pro Lite",
+        Some("team") => "Team",
+        Some("business") => "Business",
+        Some("enterprise") => "Enterprise",
+        Some("edu") => "Edu",
+        _ => return cx.tr.t("chatgpt.plan_unknown"),
+    }
+    .into()
 }

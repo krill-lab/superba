@@ -1287,6 +1287,7 @@ async fn clicking_the_provider_tile_opens_accounts_and_selects_an_exact_account(
         .finish(Ok(vec![superba_core::ChatGptAccount {
             id: "managed-b".into(),
             email: "b@example.test".into(),
+            plan_type: None,
             added_at: Timestamp(1),
             active: false,
         }]));

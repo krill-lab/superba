@@ -11,6 +11,9 @@ pub struct ChatGptAccount {
     pub id: String,
     /// Account email reported by the login token.
     pub email: String,
+    /// Subscription label from the saved login; optional for older stores.
+    #[serde(default)]
+    pub plan_type: Option<String>,
     /// When this account was first saved.
     pub added_at: Timestamp,
     /// Matches this computer's live official credential.
@@ -33,6 +36,9 @@ pub struct ChatGptWindow {
 pub struct ChatGptQuota {
     /// The account this result belongs to.
     pub account_id: String,
+    /// Subscription reported by the quota service, when available.
+    #[serde(default)]
+    pub plan_type: Option<String>,
     /// Five-hour window, if reported (never inferred from a missing value).
     pub five_hour: Option<ChatGptWindow>,
     /// Weekly window, if reported.

@@ -18,12 +18,14 @@ async fn chatgpt_accounts_show_individual_limits_and_switch_the_selected_identit
         superba_core::ChatGptAccount {
             id: "a".into(),
             email: "a@example.test".into(),
+            plan_type: None,
             added_at: Timestamp(1),
             active: false,
         },
         superba_core::ChatGptAccount {
             id: "b".into(),
             email: "b@example.test".into(),
+            plan_type: None,
             added_at: Timestamp(2),
             active: false,
         },
@@ -63,6 +65,53 @@ async fn chatgpt_accounts_show_individual_limits_and_switch_the_selected_identit
         .unwrap();
     assert_eq!(request.chatgpt_account_id.as_deref(), Some("b"));
     assert!(request.targets.local && request.targets.remotes.is_empty());
+}
+
+#[tokio::test]
+async fn weekly_only_account_shows_live_subscription_without_a_five_hour_placeholder() {
+    let service = fake();
+    let mut data = data_of(&service).await;
+    data.chatgpt_accounts
+        .finish(Ok(vec![superba_core::ChatGptAccount {
+            id: "weekly-only".into(),
+            email: "weekly@example.test".into(),
+            plan_type: Some("plus".into()),
+            added_at: Timestamp(1),
+            active: false,
+        }]));
+    let service: Arc<dyn SwitchService> = service;
+    for (locale, weekly, five_hour) in [
+        (Locale::ZhCn, "每周", "5 小时"),
+        (Locale::En, "Weekly", "5 hours"),
+    ] {
+        let mut state = providers::State::default();
+        state.select(ProviderId::Profile("official".into()));
+        let mut frames = 0;
+        let (_, text) = drive(&data, service.clone(), &mut state, locale, |_, _| {
+            frames += 1;
+            frames > 20
+        });
+        assert!(
+            text.contains("Free") && text.contains(weekly) && text.contains("69%"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("Plus") && !text.contains(five_hour),
+            "{text}"
+        );
+        // The layout remains within the provider pane at both supported sizes.
+        for size in SIZES {
+            let report = render_fit(size, locale, egui::Theme::Light, &data, |ui, cx, out| {
+                providers::show(ui, cx, &mut state, out)
+            });
+            assert!(
+                report.beyond_right().is_empty(),
+                "{:?}",
+                report.beyond_right()
+            );
+            assert!(report.whole("Free") && report.whole(weekly));
+        }
+    }
 }
 
 use superba_core::{

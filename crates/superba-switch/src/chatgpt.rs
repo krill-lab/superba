@@ -297,6 +297,12 @@ fn parse_quota(id: &str, result: &Value, now: Timestamp) -> ChatGptQuota {
         .unwrap_or(&Value::Null);
     let mut quota = ChatGptQuota {
         account_id: id.into(),
+        plan_type: bucket
+            .get("planType")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
         five_hour: None,
         weekly: None,
         fetched_at: now,
@@ -333,6 +339,34 @@ fn parse_quota(id: &str, result: &Value, now: Timestamp) -> ChatGptQuota {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn weekly_only_subscriptions_keep_the_plan_and_do_not_invent_five_hour_limits() {
+        for plan in ["free", "plus", "pro", "business"] {
+            let quota = parse_quota(
+                "a",
+                &json!({"rateLimits": {
+                    "planType": plan,
+                    "primary": {"usedPercent": 6, "windowDurationMins": 10080},
+                    "secondary": null
+                }}),
+                Timestamp::EPOCH,
+            );
+            assert_eq!(quota.plan_type.as_deref(), Some(plan));
+            assert!(quota.five_hour.is_none());
+            assert_eq!(quota.weekly.unwrap().remaining, 94.0);
+        }
+        let quota = parse_quota(
+            "a",
+            &json!({"rateLimits": {"planType":"plus"},
+                "rateLimitsByLimitId":{"codex":{"planType":"pro", "primary":{"usedPercent":100,"windowDurationMins":300}}}
+            }),
+            Timestamp::EPOCH,
+        );
+        assert_eq!(quota.plan_type.as_deref(), Some("pro"));
+        assert_eq!(quota.five_hour.unwrap().remaining, 0.0);
+        assert!(quota.weekly.is_none());
+    }
+
     #[test]
     fn limits_use_duration_and_never_invent_missing_values() {
         let response = json!({"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":31,"windowDurationMins":10080,"resetsAt":100},"secondary":{"usedPercent":-2,"windowDurationMins":300}}},"rateLimits":{"primary":{"usedPercent":99,"windowDurationMins":300}}});
