@@ -1907,20 +1907,31 @@ impl Run<'_> {
         // A relaunched app needs its own start-up first (tens of seconds on a
         // slow machine before its first app-server, seen on Windows VMs): the
         // window then runs from the launch, not from this check.
-        let appear_by = match self.launched_at {
+        // "Run Codex in WSL": the app's core is a `wsl.exe` that starts a
+        // login shell and Codex inside the distribution; on WSL 1 the app's
+        // replacement of its first core came 60-80 s after the launch (user
+        // bug 69b, e2e run 20261018-191254) and, on a cold distribution, more
+        // than 100 s after a launch or a hot restart (alpha.9 W81/W90: the core
+        // came up ~2 min after the check had given up).
+        let wsl = self.sw.legacy_wsl(&self.pc.home).await;
+        let launch_window = match wsl {
+            Some(_) => tuning.launch_verify_timeout * WSL_LAUNCH_WINDOW_FACTOR,
+            None => tuning.launch_verify_timeout,
+        };
+        let mut appear_by = match self.launched_at {
+            // A relaunched app needs its own start-up first (tens of seconds
+            // on a slow machine before its first app-server, seen on Windows
+            // VMs): the window then runs from the launch, not from this check.
             Some(at) if before.is_empty() => {
-                // "Run Codex in WSL": the app's core is a `wsl.exe` that starts
-                // a login shell and Codex inside the distribution; on WSL 1 the
-                // app's replacement of its first core came 60-80 s after the
-                // launch (user bug 69b, e2e run 20261018-191254).
-                let window = match self.sw.legacy_wsl(&self.pc.home).await {
-                    Some(_) => tuning.launch_verify_timeout * WSL_LAUNCH_WINDOW_FACTOR,
-                    None => tuning.launch_verify_timeout,
-                };
-                (at + window).max(started + tuning.verify_timeout)
+                (at + launch_window).max(started + tuning.verify_timeout)
             }
+            // A hot restart in WSL waits for the distribution's cold start too.
+            _ if wsl.is_some() => started + tuning.verify_timeout.max(tuning.launch_verify_timeout),
             _ => started + tuning.verify_timeout,
         };
+        // In WSL a core that came up and exited again is checked once more for
+        // a whole launch window before the check fails.
+        let mut retried = wsl.is_none();
         let mut watch = CoreWatch::new(t0, before, tuning.stable);
         loop {
             let processes = match d.app.processes(&self.pc.home).await {
@@ -1962,12 +1973,44 @@ impl Run<'_> {
                         None => skipped(text("switch.verify.not_supported")),
                     };
                 }
-                let detail = watch.failure(now - started, session.main_pid);
+                if !retried && watch.replacement_pending() {
+                    retried = true;
+                    appear_by = now + launch_window;
+                    tracing::info!(
+                        app = session.main_pid,
+                        exited = ?watch.exited_new(),
+                        waited_ms = (now - started).as_millis() as u64,
+                        retry_ms = launch_window.as_millis() as u64,
+                        "Codex core in WSL exited with no replacement yet; checking once more"
+                    );
+                    continue;
+                }
+                let mut detail = watch.failure(now - started, session.main_pid);
+                if let Some(distro) = &wsl {
+                    detail = text("switch.verify.wsl_core_hint")
+                        .arg_text("detail", detail)
+                        .arg("distro", distro.name.clone());
+                }
+                let lifetimes: Vec<String> = watch
+                    .lifetimes()
+                    .iter()
+                    .map(|(pid, ran, alive)| {
+                        format!(
+                            "{pid}: ran {} ms{}",
+                            ran.as_millis(),
+                            if *alive { " (running)" } else { " (exited)" }
+                        )
+                    })
+                    .collect();
                 tracing::warn!(
                     app = session.main_pid,
                     ?before,
                     exited = ?watch.exited_new(),
                     alive = ?watch.alive_new(),
+                    ?lifetimes,
+                    waited_ms = (now - started).as_millis() as u64,
+                    wsl = wsl.as_ref().map(|d| d.name.as_str()),
+                    retried = retried && wsl.is_some(),
                     "Codex core verification failed"
                 );
                 return CheckResult::Failed {

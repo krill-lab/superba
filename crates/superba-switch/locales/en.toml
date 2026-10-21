@@ -225,6 +225,7 @@ new_app_servers_exited = "new Codex core processes of ChatGPT (pid {app}) starte
 new_app_server_unsettled = "the new Codex core (pid {pid}) had not been running for {stable} s yet when the check ended after {seconds} s"
 old_app_server_alive = "a new Codex core runs (pid {new}), but the previous one (pid {old}) was still running after {seconds} s"
 core_not_started = "ChatGPT had not started its Codex core {seconds} s after it was opened (it may still be starting)"
+wsl_core_hint = "{detail}. ChatGPT runs its Codex core inside WSL ({distro}); Superba waited for the distribution to start and checked once more. A stopped WSL 1 distribution can take minutes to start; if ChatGPT still has no working Codex, open the distribution once (wsl -d {distro}) and reopen ChatGPT through Superba (spb launch --restart)"
 with_previous = "{detail}; {previous}"
 previous_running = "the previous Codex core (pid {pids}) is still running"
 previous_exited = "the previous Codex core (pid {pids}) exited"

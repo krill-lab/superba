@@ -36,7 +36,7 @@ def page_tour(t, s, lang="en", tag=""):
     u = U(t, lang)
     for p in PAGES:
         u.page(p)
-        time.sleep(2.5)
+        u.wait_rendered()
         s.shot(f"{tag}{p.replace(':', '-')}")
     u.page("overview")
 

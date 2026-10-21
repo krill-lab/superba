@@ -735,6 +735,19 @@ impl SuperbaApp {
         self.data.router_watch = Some(watch.state);
     }
 
+    /// Router mode or its members changed in the stored settings, not
+    /// through this window (alpha.9 D3: `spb router disable`, another
+    /// instance): the preferences copy takes the stored router settings (a
+    /// later preferences save must not turn router mode back on) and every
+    /// cached router read is dropped, so the Router page, the Providers lines
+    /// and the watchdog read the router again.
+    fn on_router_settings_changed(&mut self, set: &superba_core::ProfileSet) {
+        self.settings.router = set.settings.router.clone();
+        self.data.router_watch = None;
+        self.pages.router.invalidate();
+        self.pages.providers.router.invalidate();
+    }
+
     /// The router watchdog has work: router mode on and no switch planned or
     /// running (one tick every 5 s, also while the window is hidden).
     fn router_watch_wanted(&self) -> bool {
@@ -911,6 +924,12 @@ impl SuperbaApp {
                         self.settings = set.settings.clone();
                         self.settings_loaded = true;
                         self.apply_settings(ctx);
+                    }
+                    if let Ok(set) = &r
+                        && self.settings_loaded
+                        && router_settings_changed(self.data.profiles.value.as_ref(), set)
+                    {
+                        self.on_router_settings_changed(set);
                     }
                     self.data.profiles.finish(r);
                     self.maybe_launch_on_start();
@@ -2283,6 +2302,15 @@ pub fn provider_name(
     } else {
         profile.name.clone()
     }
+}
+
+/// Whether the stored router settings in `new` differ from those the window
+/// shows (`old`; `None` before the first read counts as no change).
+pub fn router_settings_changed(
+    old: Option<&superba_core::ProfileSet>,
+    new: &superba_core::ProfileSet,
+) -> bool {
+    old.is_some_and(|old| old.settings.router != new.settings.router)
 }
 
 /// Sidebar badges computed from the shell's own data (UX §2.1): the router dot

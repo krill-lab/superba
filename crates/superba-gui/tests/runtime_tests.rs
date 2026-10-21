@@ -719,3 +719,65 @@ fn the_ui_language_reaches_the_service() {
     assert_eq!(service.ui_locales(), [Locale::ZhCn]);
     drop_with_timeout(backend);
 }
+
+/// alpha.9 D3: `spb router disable` (or another instance) turns router mode
+/// off behind the window. The overview poll hands the changed settings to the
+/// UI, and only when they changed.
+#[test]
+fn the_overview_poll_delivers_router_mode_changed_outside_the_window() {
+    use superba_core::SwitchService;
+    let service = Arc::new(FakeService::new(FakeOptions {
+        fast: true,
+        ..FakeOptions::default()
+    }));
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let mut settings = rt.block_on(service.profile_set()).unwrap().settings;
+    settings.router.enabled = true;
+    rt.block_on(service.save_settings(settings.clone()))
+        .unwrap();
+    let backend = Backend::start(service.clone(), Arc::new(|| {})).unwrap();
+    let poll = |backend: &Backend| {
+        backend.send(Command::Overview);
+        collect_until(backend, "overview", |r| matches!(r, Reply::Overview(_)))
+    };
+    let profiles = |replies: &[Reply]| -> Vec<bool> {
+        replies
+            .iter()
+            .filter_map(|r| match r {
+                Reply::Profiles(Ok(p)) => Some(p.settings.router.enabled),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(
+        profiles(&poll(&backend)),
+        vec![true],
+        "the first poll reads them"
+    );
+    assert_eq!(
+        profiles(&poll(&backend)),
+        Vec::<bool>::new(),
+        "unchanged: nothing"
+    );
+    // The CLI writes profiles.json.
+    settings.router.enabled = false;
+    rt.block_on(service.save_settings(settings)).unwrap();
+    assert_eq!(
+        profiles(&poll(&backend)),
+        vec![false],
+        "the change reaches the UI"
+    );
+    assert_eq!(profiles(&poll(&backend)), Vec::<bool>::new());
+}
+
+#[test]
+fn only_a_change_of_the_router_settings_invalidates_the_router_reads() {
+    let old = superba_core::ProfileSet::default();
+    let mut new = old.clone();
+    assert!(!superba_gui::app::router_settings_changed(None, &new));
+    assert!(!superba_gui::app::router_settings_changed(Some(&old), &new));
+    new.settings.router.enabled = !old.settings.router.enabled;
+    assert!(superba_gui::app::router_settings_changed(Some(&old), &new));
+    assert!(superba_gui::runtime::profiles_changed(None, &new));
+    assert!(!superba_gui::runtime::profiles_changed(Some(&new), &new));
+}

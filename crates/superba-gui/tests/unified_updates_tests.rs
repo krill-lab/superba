@@ -354,6 +354,31 @@ fn skipped_self_update_and_failure_are_distinct() {
         assert!(!row.batchable());
     });
 }
+#[test]
+fn a_running_preview_newer_than_the_latest_release_shows_no_arrow() {
+    let (service, mut data, state, tools) = prepared();
+    data.selfupdate.finish(Ok(SelfUpdateView {
+        current: "0.1.1-alpha.9".into(),
+        status: SelfUpdateStatus::UpToDate,
+        latest: Some(superba_core::SelfRelease {
+            tag: "v0.1.1-alpha.8".into(),
+            version: "0.1.1-alpha.8".into(),
+            prerelease: true,
+            notes: String::new(),
+            published_at: None,
+            url: "https://example.com/release".into(),
+            asset: Some("package.tar.gz".into()),
+            asset_size: None,
+        }),
+        ..Default::default()
+    }));
+    with_cx(&data, &service, Locale::ZhCn, |cx| {
+        let row = items::inventory(cx, &state, &tools.view(cx)).remove(0);
+        assert_eq!(row.status, UpdateStatus::Current);
+        assert_eq!(row.versions(), "0.1.1-alpha.9");
+        assert!(!row.versions().contains('→'));
+    });
+}
 
 fn job(id: UpdateItem) -> Entry {
     let op = match id {

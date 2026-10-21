@@ -294,6 +294,10 @@ APP_SETUP_WAIT_S = 900
 
 
 def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=False):
+    # router_restart: True / "on" when turning the router on, "off" when turning it off.
+    # Either way the certificate change makes Superba ask for a full restart after
+    # ~20 s of planning; the wait must not end before that question was answered
+    # (alpha.9 W33: it returned after 3 s with no phases, before the dialog).
     """Follows the switch overlay until it is gone; answers the force-quit question
     (Windows: ChatGPT not opened by Superba) when force_quit. Returns the phases seen.
 
@@ -384,7 +388,8 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=Fal
                 and not any(n == u.L("confirm.title") for n in names):
             # Planning may briefly leave an empty frame before the confirmation.
             # A router-on caller must see the resulting action, not just no overlay.
-            if router_restart and not u.exists(key="router.banner.turn_off", type="Button", enabled=True):
+            if router_restart and router_wait_more(router_restart, confirmed_router_restart, results,
+                                                   lambda k: u.exists(key=k, type="Button", enabled=True)):
                 time.sleep(2)
                 continue
             if "wsl" in (run.session_snapshot or ""):
@@ -400,6 +405,16 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=Fal
         raise UiError(f"the switch stayed paused for running turns ({round(time.time() - t0)} s): {lines}; "
                       f"phases seen {seen}")
     raise UiError(f"the switch did not finish within {timeout} s; phases seen {seen}")
+
+
+def router_wait_more(router_restart, confirmed, results, button_enabled):
+    """Whether a router on/off switch is still unfinished: the full-restart confirmation
+    not yet answered (and no result shown instead), or the banner not yet flipped
+    (turning on shows Turn off; turning off shows Turn on)."""
+    if not confirmed and not results:
+        return True
+    want = "router.banner.turn_on" if router_restart == "off" else "router.banner.turn_off"
+    return not button_enabled(want)
 
 
 def switch_result_patterns(u):

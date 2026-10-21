@@ -194,3 +194,43 @@ fn the_failover_rules_are_settings_that_save() {
         assert!(service.router_failover().return_to_preferred);
     }
 }
+
+/// alpha.9: the cooldown fields take a value from UI Automation's
+/// ValuePattern.SetValue (text) and from the keyboard, and their steppers
+/// change it by one; out-of-range input is clamped.
+#[test]
+fn the_cooldown_fields_take_typed_and_assistive_values() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = members();
+        let mut h = AppHarness::new(service.clone(), locale, Page::Router);
+        let first = tr.t("router.failover.cooldown");
+        h.wait_for(Some(Role::TextInput), &first);
+        h.set_value(&first, "7");
+        h.until("first cooldown 7 saved", |_| {
+            service.router_failover().cooldown_secs == 7
+        });
+        h.click(Some(Role::Button), &format!("{first} +"));
+        h.until("stepped to 8", |_| {
+            service.router_failover().cooldown_secs == 8
+        });
+        let max = tr.t("router.failover.max_cooldown");
+        h.set_value(&max, "999999");
+        let top = *RouterFailover::MAX_COOLDOWN.end();
+        h.until("max cooldown clamped", |_| {
+            service.router_failover().max_cooldown_secs == top
+        });
+        // Typed: focus the field, type, Enter.
+        let sticky = tr.t("router.failover.sticky");
+        let tree = h.wait_for(Some(Role::TextInput), &sticky);
+        let id = tree.find(Some(Role::TextInput), &sticky).unwrap();
+        h.act(id, egui::accesskit::Action::Focus);
+        h.settle();
+        h.shortcut(egui::Key::A);
+        h.type_text("30");
+        h.key(egui::Key::Enter);
+        h.until("sticky 30 saved", |_| {
+            service.router_failover().sticky_idle_minutes == 30
+        });
+    }
+}

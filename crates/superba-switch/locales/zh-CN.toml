@@ -224,6 +224,7 @@ new_app_servers_exited = "ChatGPT（pid {app}）启动过新的 Codex 内核进�
 new_app_server_unsettled = "检查在 {seconds} 秒后结束时，新的 Codex 内核（pid {pid}）还没有持续运行满 {stable} 秒"
 old_app_server_alive = "新的 Codex 内核在运行（pid {new}），但 {seconds} 秒后旧的（pid {old}）仍在运行"
 core_not_started = "ChatGPT 打开 {seconds} 秒后还没有启动它的 Codex 内核（可能仍在启动中）"
+wsl_core_hint = "{detail}。ChatGPT 在 WSL（{distro}）里运行它的 Codex 内核；Superba 已等待该发行版启动并重新检查了一次。已停止的 WSL 1 发行版可能要几分钟才能启动；如果 ChatGPT 仍然没有可用的 Codex，请先打开一次该发行版（wsl -d {distro}），再通过 Superba 重新打开 ChatGPT（spb launch --restart）"
 with_previous = "{detail}；{previous}"
 previous_running = "旧的 Codex 内核（pid {pids}）仍在运行"
 previous_exited = "旧的 Codex 内核（pid {pids}）已退出"

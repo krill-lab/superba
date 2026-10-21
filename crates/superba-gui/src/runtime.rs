@@ -439,8 +439,22 @@ impl Outbox {
 }
 
 /// The last overview the periodic poll delivered (compared without its
-/// timestamp: an unchanged one does not wake the UI).
-type LastOverview = Arc<std::sync::Mutex<Option<Overview>>>;
+/// timestamp: an unchanged one does not wake the UI), and the last
+/// `profiles.json` it read (alpha.9 D3: `spb router disable`, another
+/// Superba or a hand edit changes router mode behind the window; the poll
+/// hands a changed set to the UI so the router state shown follows it).
+#[derive(Default)]
+struct LastRead {
+    overview: Option<Overview>,
+    profiles: Option<ProfileSet>,
+}
+type LastOverview = Arc<std::sync::Mutex<LastRead>>;
+
+/// Whether the poll should hand `new` to the UI: the first read, or a set
+/// that differs from the one the poll read last.
+pub fn profiles_changed(last: Option<&ProfileSet>, new: &ProfileSet) -> bool {
+    last != Some(new)
+}
 
 /// Whether `new` shows nothing `old` did not (at most the read time differs).
 fn same_overview(old: &Overview, new: &Overview) -> bool {
@@ -638,12 +652,32 @@ async fn handle(
             out.send(Reply::Overview(o));
         }
         Command::Overview => {
-            let o = after_switches(switches, || service.overview()).await;
+            let (o, p) = after_switches(switches, || async {
+                tokio::join!(service.overview(), service.profile_set())
+            })
+            .await;
+            // Settings changed outside this window (the CLI, another instance):
+            // the UI takes the stored set, so router mode and the cached
+            // router reads follow without a restart.
+            let changed = match (&p, last.lock()) {
+                (Ok(new), Ok(mut last)) => {
+                    let changed = profiles_changed(last.profiles.as_ref(), new);
+                    last.profiles = Some(new.clone());
+                    changed
+                }
+                _ => false,
+            };
+            if changed {
+                out.send(Reply::Profiles(p));
+            }
             // The 5 s poll: an unchanged overview needs no frame of its own.
             let unchanged = match (&o, last.lock()) {
                 (Ok(new), Ok(mut last)) => {
-                    let same = last.as_ref().is_some_and(|old| same_overview(old, new));
-                    *last = Some(new.clone());
+                    let same = last
+                        .overview
+                        .as_ref()
+                        .is_some_and(|old| same_overview(old, new));
+                    last.overview = Some(new.clone());
                     same
                 }
                 _ => false,

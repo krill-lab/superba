@@ -469,7 +469,7 @@ def w33(t):
         u.try_click(key="banner.switch_now")
         # Turning off also changes the router certificate settings: the product
         # asks for a full restart of ChatGPT (expected, alpha.8 D8).
-        phases, _ = flows.wait_switch_done(run, s, u, timeout=240, router_restart=True)
+        phases, _ = flows.wait_switch_done(run, s, u, timeout=240, router_restart="off")
         s.info(f"phases: {phases}")
         if "[full restart: router certificate]" in phases:
             after_main = a.wait_main(90, not_pid=(before_main or {}).get("pid"))

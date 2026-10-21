@@ -33,6 +33,7 @@ class DriverTests(unittest.TestCase):
                     u.act = Mock()
                     u.wait_selected = Mock()
                     u.wait_settings_anchor = Mock()
+                    u.wait_rendered = Mock()
                     u.superba(section)
                     tab = "settings" if section in SETTINGS_ANCHORS else {"superba": "home"}.get(section, section)
                     calls = u.act.call_args_list
@@ -42,7 +43,8 @@ class DriverTests(unittest.TestCase):
                         "within": {"name": "Superba", "type": "Tab", "visible": False}})
                     u.wait_selected.assert_called_once_with(**calls[1].kwargs)
                     if section in SETTINGS_ANCHORS:
-                        self.assertEqual(calls[2].kwargs["type"], "Button")
+                        # Settings anchors are tabs since D6 (alpha.9 W62 looked for a Button).
+                        self.assertEqual(calls[2].kwargs["type"], "TabItem")
                         self.assertEqual(calls[2].kwargs["key"], f"superba.section.{section}")
                         u.wait_settings_anchor.assert_called_once_with(section)
                     else:

@@ -34,6 +34,22 @@ CATALOG_RS = REPO / "crates" / "superba-core" / "src" / "catalog.rs"
 GUEST_TLS = r"C:\Users\Public\wintest\tls"
 
 
+def check_real_env(environ=None):
+    """The test relay's settings for --net real, or RuntimeError naming what is missing.
+    run.py calls it before taking a VM from the pool, so a forgotten export costs
+    nothing (alpha.9: windows-20261021-064750 restored and released a VM for it)."""
+    environ = os.environ if environ is None else environ
+    envf = environ.get("SUPERBA_E2E_ENV")
+    if not envf:
+        raise RuntimeError("--net real needs SUPERBA_E2E_ENV (see e2e/README.md)")
+    if not os.path.isfile(envf):
+        raise RuntimeError("SUPERBA_E2E_ENV does not name a readable file")
+    e = read_env_file(envf)
+    if not e.get("SUPERBA_E2E_UPSTREAM") or not e.get("SUPERBA_E2E_KEY"):
+        raise RuntimeError("SUPERBA_E2E_UPSTREAM / SUPERBA_E2E_KEY missing in SUPERBA_E2E_ENV")
+    return e
+
+
 def read_env_file(path):
     """Only the three keys e2e/README.md documents; values stay in memory."""
     keys = {"SUPERBA_E2E_UPSTREAM", "SUPERBA_E2E_KEY", "SUPERBA_E2E_APP_DIR"}
@@ -122,12 +138,7 @@ class Net:
         raise RuntimeError(f"mock relay did not start (see {self.dir / 'mockrelay.out'})")
 
     def _start_real(self):
-        envf = os.environ.get("SUPERBA_E2E_ENV")
-        if not envf:
-            raise RuntimeError("--net real needs SUPERBA_E2E_ENV (see e2e/README.md)")
-        e = read_env_file(envf)
-        if not e.get("SUPERBA_E2E_UPSTREAM") or not e.get("SUPERBA_E2E_KEY"):
-            raise RuntimeError("SUPERBA_E2E_UPSTREAM / SUPERBA_E2E_KEY missing in SUPERBA_E2E_ENV")
+        e = check_real_env()
         try:
             import aiohttp  # noqa: F401  (the forwarder's dependency, like e2e/)
         except ImportError:

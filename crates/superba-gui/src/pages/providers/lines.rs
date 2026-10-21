@@ -116,6 +116,13 @@ pub(crate) struct RouterLive {
 }
 
 impl RouterLive {
+    /// Forget the last read: the next frame reads `router_status` again
+    /// (router mode changed outside this window; alpha.9 D3).
+    pub(crate) fn invalidate(&mut self) {
+        self.view = None;
+        self.at = None;
+    }
+
     /// Poll a running read and start one when none ran for [`ROUTER_RELOAD`].
     fn tick(&mut self, ui: &Ui, cx: &Cx<'_>) {
         if let Some(task) = &self.task {

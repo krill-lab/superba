@@ -30,8 +30,14 @@ fn save(state: &mut State, cx: &Cx<'_>, next: RouterFailover) {
     state.start(cx, Op::Failover, |b| b.set_failover(next));
 }
 
-/// A number field committed when the drag ends, the field loses focus or a
-/// step was clicked (not on every frame of a drag).
+/// A whole number typed into a text field, with − / + steppers (alpha.9: the
+/// egui `DragValue` used before ignored UI Automation's
+/// `ValuePattern.SetValue`, which sends text, and its ±1 steps rounded away at
+/// a drag speed of 0.25, so neither automation nor a keyboard user could set
+/// it reliably). The value is committed when the field loses focus (Enter,
+/// Tab, a click elsewhere; Escape discards), when an assistive technology sets
+/// the text, or when a stepper is clicked; out-of-range input is clamped and
+/// text that is not a number is dropped.
 fn number(
     ui: &mut Ui,
     value: &mut u32,
@@ -40,16 +46,77 @@ fn number(
     name: &str,
     enabled: bool,
 ) -> bool {
-    let r = ui
-        .add_enabled(
-            enabled,
-            egui::DragValue::new(value)
-                .range(range)
-                .suffix(suffix)
-                .speed(0.25),
-        )
-        .accessible_name(name);
-    r.drag_stopped() || r.lost_focus() || (r.changed() && !r.dragged() && !r.has_focus())
+    let id = ui.make_persistent_id(("failover-number", name));
+    let (lo, hi) = (*range.start(), *range.end());
+    let mut committed = false;
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let minus = ui
+                .add_enabled(*value > lo, egui::Button::new("−").small())
+                .accessible_name(format!("{name} −"));
+            let mut text: String = ui
+                .data_mut(|d| d.get_temp::<String>(id))
+                .unwrap_or_else(|| value.to_string());
+            let r = ui
+                .add(
+                    egui::TextEdit::singleline(&mut text)
+                        .id(id.with("edit"))
+                        .desired_width(52.0)
+                        .char_limit(9),
+                )
+                .accessible_name(name);
+            // A numeric SetValue (UIA RangeValuePattern) also counts.
+            let numeric = ui.input(|i| {
+                i.accesskit_action_requests(r.id, egui::accesskit::Action::SetValue)
+                    .filter_map(|q| match q.data {
+                        Some(egui::accesskit::ActionData::NumericValue(v)) => Some(v),
+                        _ => None,
+                    })
+                    .last()
+            });
+            let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
+            if let Some(v) = numeric {
+                text = format!("{}", v.round().max(0.0) as u64);
+            }
+            let set_from_outside = numeric.is_some() || (r.changed() && !r.has_focus());
+            if (r.lost_focus() && !escaped) || set_from_outside {
+                if let Some(n) = parse_number(&text) {
+                    *value = n.clamp(u64::from(lo), u64::from(hi)) as u32;
+                    committed = true;
+                }
+                ui.data_mut(|d| d.remove::<String>(id));
+            } else if r.has_focus() {
+                ui.data_mut(|d| d.insert_temp(id, text));
+            } else {
+                ui.data_mut(|d| d.remove::<String>(id));
+            }
+            let plus = ui
+                .add_enabled(*value < hi, egui::Button::new("+").small())
+                .accessible_name(format!("{name} +"));
+            if minus.clicked() {
+                *value = value.saturating_sub(1).clamp(lo, hi);
+                committed = true;
+            }
+            if plus.clicked() {
+                *value = value.saturating_add(1).clamp(lo, hi);
+                committed = true;
+            }
+            ui.label(suffix.trim());
+        });
+    });
+    committed
+}
+
+/// The digits of a typed value (`"7"`, `" 7 秒"`, `"7s"`); `None` without any.
+fn parse_number(text: &str) -> Option<u64> {
+    let digits: String = text
+        .trim()
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits.parse().ok()
 }
 
 pub(super) fn section_ui(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
@@ -188,4 +255,18 @@ pub(super) fn section_ui(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             }
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_number;
+
+    #[test]
+    fn typed_values_keep_their_digits() {
+        assert_eq!(parse_number("7"), Some(7));
+        assert_eq!(parse_number(" 7 秒"), Some(7));
+        assert_eq!(parse_number("120s"), Some(120));
+        assert_eq!(parse_number("秒"), None);
+        assert_eq!(parse_number(""), None);
+    }
 }

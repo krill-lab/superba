@@ -51,11 +51,26 @@ def session_file(instance):
     return WORK / f"session-vm{instance or 1}.json"
 
 
+def unique_out_dir(parent, now=None):
+    """windows-<YYYYmmdd-HHMMSS>, created exclusively: a second run started in the same
+    second gets windows-<ts>-2 (-3, ...) instead of writing into the first one's folder."""
+    ts = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    parent = Path(parent)
+    parent.mkdir(parents=True, exist_ok=True)
+    for n in range(1, 1000):
+        d = parent / (f"windows-{ts}" if n == 1 else f"windows-{ts}-{n}")
+        try:
+            d.mkdir()
+            return d.resolve()
+        except FileExistsError:
+            continue
+    raise RuntimeError(f"no free output folder for {ts} under {parent}")
+
+
 class Run:
     def __init__(self, opts, root=None):
         self.opts = opts
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        self.root = Path(root) if root else (REPO / "e2e" / "out" / f"windows-{ts}").resolve()
+        self.root = Path(root) if root else unique_out_dir(REPO / "e2e" / "out")
         (self.root / "evidence").mkdir(parents=True, exist_ok=True)
         (self.root / "transcripts").mkdir(parents=True, exist_ok=True)
         self._log = open(self.root / "run.log", "a", buffering=1)

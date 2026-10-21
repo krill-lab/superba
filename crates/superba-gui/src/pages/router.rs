@@ -221,6 +221,17 @@ impl State {
         self.backend.clone()
     }
 
+    /// Drop the timing of the last read: the next frame reads the router
+    /// again (settings changed outside this window; alpha.9 D3).
+    pub fn invalidate(&mut self) {
+        self.loaded_at = None;
+    }
+
+    /// Whether the next refresh reads the router at once.
+    pub fn stale(&self) -> bool {
+        self.loaded_at.is_none()
+    }
+
     /// Reload now (after a change) or when the poll interval has passed.
     fn refresh(&mut self, cx: &Cx<'_>, force: bool) {
         if self.task.is_some() {
