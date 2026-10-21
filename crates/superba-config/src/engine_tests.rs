@@ -17,6 +17,54 @@ use crate::keystore::ENV_SUPERBA_SECRET_BACKEND;
 const CONFIG: &str = "model = \"gpt-5.5\"\n\n[mcp_servers.fs]\ncommand = \"mcp-fs\"\n";
 const AUTH: &str = "{\"OPENAI_API_KEY\": \"someone-elses-key-0042\"}";
 
+#[test]
+fn chatgpt_account_switch_replaces_a_live_login_and_rolls_back_exactly() {
+    let t = T::new();
+    let login = |id: &str| {
+        SecretBytes::new(serde_json::to_vec(&serde_json::json!({
+        "auth_mode":"chatgpt", "tokens":{"id_token":{"email":format!("{id}@example.test"),"sub":id},
+        "account_id":id,"access_token":format!("access-{id}"),"refresh_token":format!("refresh-{id}")}
+    })).unwrap())
+    };
+    let a = login("a");
+    let b = login("b");
+    std::fs::write(t.root.join("auth.json"), a.expose()).unwrap();
+    let accounts = crate::chatgpt::Accounts::new(t.engine.ctx.clone());
+    let account_a = accounts.put(&a, Timestamp(1)).unwrap();
+    let account_b = accounts.put(&b, Timestamp(1)).unwrap();
+    let desired = ResolvedProfile {
+        profile_id: Some(ProfileId::new("official")),
+        site_id: Some(SiteId::new("official")),
+        line_id: None,
+        model_catalog: None,
+        model: Default::default(),
+        key_resolutions: Default::default(),
+        settings: Default::default(),
+        mode: ResolvedMode::ChatGptAccount {
+            account_id: account_b.id,
+            auth_json: b.clone(),
+        },
+    };
+    let before = t.config();
+    let plan = t.engine.plan_sync(&t.root, &desired).unwrap();
+    assert_eq!(
+        t.auth().as_bytes(),
+        a.expose(),
+        "planning never writes the live login"
+    );
+    assert!(plan.auth_change.as_ref().unwrap().stash_login);
+    let report = t.engine.apply_sync(&plan).unwrap();
+    assert_eq!(
+        t.auth().as_bytes(),
+        b.expose(),
+        "the existing official-login keep rule must not suppress an explicit account switch"
+    );
+    assert_eq!(accounts.load(&account_a.id).unwrap(), a);
+    t.engine.rollback_sync(&report).unwrap();
+    assert_eq!(t.config(), before);
+    assert_eq!(t.auth().as_bytes(), a.expose());
+}
+
 struct T {
     _tmp: tempfile::TempDir,
     engine: TomlConfigEngine,

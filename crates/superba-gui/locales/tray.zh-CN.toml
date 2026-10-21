@@ -2,6 +2,7 @@
 # 每个键必须在 tray.en.toml 中存在且 {占位符} 相同，且不得在其他区域文件中定义（tests/i18n_tests.rs）。
 
 [tray]
+menu.lightweight = "轻量模式"
 current.none = "尚未设置服务商"
 current.official = "ChatGPT 官方登录"
 current.unknown = "服务商未知"

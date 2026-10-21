@@ -175,7 +175,7 @@ fn after_bytes(current: Option<&[u8]>, change: &FileChange) -> Option<Vec<u8>> {
 fn site_kind_of(mode: &ResolvedMode) -> Option<SiteKind> {
     match mode {
         ResolvedMode::Token { site_kind, .. } => Some(*site_kind),
-        ResolvedMode::Official => Some(SiteKind::Official),
+        ResolvedMode::Official | ResolvedMode::ChatGptAccount { .. } => Some(SiteKind::Official),
         _ => None,
     }
 }
@@ -772,6 +772,14 @@ impl TomlConfigEngine {
             && let Some(live) = &files.auth_json
         {
             self.stash.put(&scope, live, now)?;
+            let accounts = crate::chatgpt::Accounts::new(self.ctx.clone());
+            if accounts
+                .list(Some(live))?
+                .iter()
+                .any(|account| account.active)
+            {
+                accounts.put(live, now)?;
+            }
         }
         self.record_first_writes(root, &files, &r.files)?;
         self.extend_baseline(root, &r)?;

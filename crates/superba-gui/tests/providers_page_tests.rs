@@ -10,6 +10,61 @@
 
 mod support;
 
+#[tokio::test]
+async fn chatgpt_accounts_show_individual_limits_and_switch_the_selected_identity() {
+    let service = fake();
+    let mut data = data_of(&service).await;
+    data.chatgpt_accounts.finish(Ok(vec![
+        superba_core::ChatGptAccount {
+            id: "a".into(),
+            email: "a@example.test".into(),
+            added_at: Timestamp(1),
+            active: false,
+        },
+        superba_core::ChatGptAccount {
+            id: "b".into(),
+            email: "b@example.test".into(),
+            added_at: Timestamp(2),
+            active: false,
+        },
+    ]));
+    let service: Arc<dyn SwitchService> = service;
+    let mut state = providers::State::default();
+    state.select(shared::providers::ProviderId::Profile(ProfileId::new(
+        "official",
+    )));
+    let (_, text) = drive(&data, service.clone(), &mut state, Locale::ZhCn, |_, _| {
+        false
+    });
+    for expected in [
+        "a@example.test",
+        "b@example.test",
+        "5 小时",
+        "每周",
+        "剩余 100%",
+        "剩余 69%",
+        "添加账号",
+    ] {
+        assert!(text.contains(expected), "missing {expected}: {text}");
+    }
+    let harness = support::ui::Harness::new([1060.0, 760.0], egui::Theme::Light);
+    let mut actions = Vec::new();
+    {
+        let mut paint = |ui: &mut egui::Ui| {
+            with_cx(&data, &service, Locale::ZhCn, |cx| {
+                providers::show(ui, cx, &mut state, &mut actions)
+            })
+        };
+        assert!(harness.click_last_text("切换到此账号", &mut paint));
+    }
+    let request = actions
+        .iter()
+        .find_map(superba_gui::app::planned_request)
+        .unwrap();
+    assert_eq!(request.chatgpt_account_id.as_deref(), Some("b"));
+    assert!(request.targets.local && request.targets.remotes.is_empty());
+}
+
 use superba_core::{
     AccountReport, AccountSummary, AuthChoice, AuthMode, BillingSummary, CodexPath, DailyUsage,
     LineCaps, LineId, Locale, ModelUsage, ProfileId, SiteId, SwitchService, Timestamp, UsageReport,

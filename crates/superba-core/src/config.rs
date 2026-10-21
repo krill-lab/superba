@@ -116,6 +116,13 @@ pub enum ResolvedMode {
     },
     /// Official ChatGPT: remove owned keys, restore the stashed login (if any).
     Official,
+    /// Apply an explicitly selected, encrypted managed ChatGPT login.
+    ChatGptAccount {
+        /// Local account identity for audit/display (never a token).
+        account_id: String,
+        /// Credential resolved during planning; executable plans never deserialize it.
+        auth_json: SecretBytes,
+    },
     /// Restore the baseline captured at first takeover.
     Original {
         /// Provider handling (plan 10.4).
@@ -179,7 +186,9 @@ impl ResolvedProfile {
     pub fn auth_mode(&self) -> Option<AuthMode> {
         match &self.mode {
             ResolvedMode::Token { auth, .. } => Some(*auth),
-            ResolvedMode::Official => Some(AuthMode::OfficialChatGpt),
+            ResolvedMode::Official | ResolvedMode::ChatGptAccount { .. } => {
+                Some(AuthMode::OfficialChatGpt)
+            }
             ResolvedMode::Original { .. }
             | ResolvedMode::Generation { .. }
             | ResolvedMode::Release { .. } => None,

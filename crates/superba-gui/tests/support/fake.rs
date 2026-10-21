@@ -1653,6 +1653,26 @@ impl FakeService {
 
 #[superba_core::async_trait]
 impl SwitchService for FakeService {
+    async fn chatgpt_accounts(&self) -> Result<Vec<superba_core::ChatGptAccount>> {
+        Ok(vec![])
+    }
+    async fn chatgpt_quota(&self, id: &str) -> Result<superba_core::ChatGptQuota> {
+        Ok(superba_core::ChatGptQuota {
+            account_id: id.into(),
+            fetched_at: Timestamp::now(),
+            five_hour: Some(superba_core::ChatGptWindow {
+                remaining: 100.0,
+                minutes: 300,
+                resets_at: None,
+            }),
+            weekly: Some(superba_core::ChatGptWindow {
+                remaining: 69.0,
+                minutes: 10080,
+                resets_at: None,
+            }),
+        })
+    }
+
     async fn data_usage(&self) -> Result<superba_core::data::DataUsage> {
         self.areas
             .storage

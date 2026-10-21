@@ -112,6 +112,15 @@ pub fn local_request(intent: SwitchIntent) -> SwitchRequest {
 /// restarting, migrating, uninstalling and explicit plans. Saving a profile,
 /// a site or settings never plans anything by itself.
 pub fn planned_request(action: &Action) -> Option<SwitchRequest> {
+    if let Action::SwitchChatGptAccount(id) = action {
+        let mut request = local_request(SwitchIntent::Profile {
+            profile_id: ProfileId::new(catalog::PROFILE_OFFICIAL),
+            line_id: None,
+            auth_mode: None,
+        });
+        request.chatgpt_account_id = Some(id.clone());
+        return Some(request);
+    }
     let intent = match action {
         Action::Switch {
             profile,
@@ -883,6 +892,7 @@ impl SuperbaApp {
         for reply in self.backend.drain() {
             let now = self.now();
             match reply {
+                Reply::ChatGptAccounts(r) => self.data.chatgpt_accounts.finish(r),
                 Reply::Overview(r) => {
                     self.pages
                         .superba
@@ -1595,6 +1605,7 @@ impl SuperbaApp {
         match action {
             // Planned above.
             Action::Switch { .. }
+            | Action::SwitchChatGptAccount(_)
             | Action::Restore(_)
             | Action::Plan(_)
             | Action::RestartApp

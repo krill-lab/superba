@@ -700,7 +700,8 @@ impl Switcher {
         // WSL distributions (user bug 45) follow by default, also for router on /
         // off, restores and uninstall; plan_remotes adds the ones without a
         // stored setting.
-        let auto_targets = local && request.targets.remotes.is_empty();
+        let auto_targets =
+            local && request.targets.remotes.is_empty() && request.chatgpt_account_id.is_none();
         let wsl_follow = auto_targets && crate::wsl::participates(&request.intent);
         let profile_switch = matches!(request.intent, SwitchIntent::Profile { .. });
         let mut followed: Vec<TargetId> = if auto_targets {
@@ -1639,6 +1640,25 @@ impl Switcher {
         pat_version_ok: Option<bool>,
         draft: &mut Draft,
     ) -> Result<Dest> {
+        if request.chatgpt_account_id.is_some() {
+            if !request.targets.local || !request.targets.remotes.is_empty() {
+                return Err(Error::invalid(
+                    "managed ChatGPT logins can only be applied to this computer",
+                ));
+            }
+            let official = match &request.intent {
+                SwitchIntent::Profile { profile_id, .. } => profile_id.as_str() == PROFILE_OFFICIAL,
+                SwitchIntent::Restore {
+                    target: RestoreTarget::Official,
+                } => true,
+                _ => false,
+            };
+            if !official {
+                return Err(Error::invalid(
+                    "a managed ChatGPT account requires the official provider",
+                ));
+            }
+        }
         match &request.intent {
             SwitchIntent::Profile {
                 profile_id,
@@ -2258,6 +2278,32 @@ impl Switcher {
             }
             Err(e) => draft.skipped("login", &e),
         }
+        let mut mode = ResolvedMode::Official;
+        let mut label = text("switch.destination.official");
+        if let Some(id) = &request.chatgpt_account_id {
+            let store = superba_config::chatgpt::Accounts::new(d.ctx.clone());
+            match store.load(id) {
+                Ok(auth_json) => {
+                    if let Some(info) = superba_config::authjson::login_info(auth_json.expose()) {
+                        label = superba_core::LocalizedText::new(
+                            "switch.destination.chatgpt_account",
+                            "ChatGPT · {email}",
+                        )
+                        .arg("email", info.email.unwrap_or_else(|| id.clone()));
+                    }
+                    mode = ResolvedMode::ChatGptAccount {
+                        account_id: id.clone(),
+                        auth_json,
+                    };
+                }
+                Err(e) => {
+                    draft.block(BlockReason::Unparseable {
+                        path: d.ctx.data_dir.secrets_dir().join("chatgpt-accounts.enc"),
+                        message: e.to_string(),
+                    });
+                }
+            }
+        }
         let site = catalog::official_site();
         Dest {
             resolved: Some(ResolvedProfile {
@@ -2267,14 +2313,14 @@ impl Switcher {
                     .or_else(|| Some(ProfileId::new(PROFILE_OFFICIAL))),
                 site_id: Some(SiteId::new(OFFICIAL_SITE_ID)),
                 line_id: None,
-                mode: ResolvedMode::Official,
+                mode,
                 model: Default::default(),
                 key_resolutions: request.key_resolutions.clone(),
                 settings: Default::default(),
             }),
             site: Some(site),
             auth: Some(AuthMode::OfficialChatGpt),
-            label: text("switch.destination.official"),
+            label,
             profile_id: profile_id.or_else(|| Some(ProfileId::new(PROFILE_OFFICIAL))),
             writes_local: true,
             ..Dest::default()
@@ -2383,7 +2429,11 @@ impl Switcher {
     ) {
         let leaves_provider = matches!(
             dest.resolved.as_ref().map(|r| &r.mode),
-            Some(ResolvedMode::Token { .. } | ResolvedMode::Official)
+            Some(
+                ResolvedMode::Token { .. }
+                    | ResolvedMode::Official
+                    | ResolvedMode::ChatGptAccount { .. }
+            )
         ) || matches!(
             dest.resolved.as_ref().map(|r| &r.mode),
             Some(ResolvedMode::Original {
@@ -3314,7 +3364,9 @@ pub(crate) fn remote_resolution(
 ) -> (ResolvedProfile, superba_core::RemoteApplyScope) {
     let mut resolved = base.clone();
     match resolved.mode {
-        ResolvedMode::Token { .. } | ResolvedMode::Official => {
+        ResolvedMode::Token { .. }
+        | ResolvedMode::Official
+        | ResolvedMode::ChatGptAccount { .. } => {
             resolved.settings = Default::default();
             resolved.model_catalog = None;
             resolved.model.speed = None;

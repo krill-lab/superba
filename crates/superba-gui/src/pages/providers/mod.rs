@@ -23,6 +23,7 @@
 pub mod account;
 mod actions;
 mod add;
+mod chatgpt;
 mod compaction;
 mod connection;
 mod detail;
@@ -102,6 +103,7 @@ pub(crate) struct RemoveDialog {
 /// Page-local state, kept across navigation.
 #[derive(Default)]
 pub struct State {
+    pub(crate) chatgpt: chatgpt::State,
     /// Selected provider (`None` = the first of the list, the applied one).
     pub selected: Option<ProviderId>,
     /// Tab of the detail.
@@ -325,7 +327,7 @@ impl State {
 
 /// Draw the page.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    if state.poll(cx, out) {
+    if state.chatgpt.poll(cx, out) | state.poll(cx, out) {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(60));
     }

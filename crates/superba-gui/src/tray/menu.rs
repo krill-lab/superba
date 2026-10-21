@@ -37,6 +37,10 @@ pub enum TrayAction {
     },
     /// Back to the official ChatGPT login.
     RestoreOfficial,
+    /// Select one encrypted official login.
+    SwitchChatGptAccount(String),
+    /// Hide the main window and retain the tray, or show it again.
+    LightMode(bool),
     /// Open, reopen or bring forward ChatGPT through Superba (GH#7).
     LaunchApp,
     /// Turn router mode off.
@@ -227,6 +231,22 @@ pub fn build(tr: &Tr, data: &Data, busy: bool) -> TrayMenu {
     TrayMenu { items }
 }
 
+/// Native menu with a checked lightweight-mode item reflecting the main window.
+pub fn window_menu(tr: &Tr, data: &Data, busy: bool, hidden: bool) -> TrayMenu {
+    let mut menu = build(tr, data, busy);
+    let position = menu.items.len().saturating_sub(1);
+    menu.items.insert(
+        position,
+        TrayItem::check(
+            tr.t("tray.menu.lightweight"),
+            TrayAction::LightMode(!hidden),
+            true,
+            hidden,
+        ),
+    );
+    menu
+}
+
 /// The switch submenu: every provider (a submenu of lines when it has
 /// several), the one in use checked, then the official ChatGPT login.
 fn switch_items(tr: &Tr, data: &Data, busy: bool) -> Vec<TrayItem> {
@@ -289,6 +309,17 @@ fn switch_items(tr: &Tr, data: &Data, busy: bool) -> Vec<TrayItem> {
         !busy && !official,
         official,
     ));
+    if let Some(accounts) = &data.chatgpt_accounts.value {
+        for account in accounts {
+            let current = official && account.active;
+            items.push(TrayItem::check(
+                account.email.clone(),
+                TrayAction::SwitchChatGptAccount(account.id.clone()),
+                !busy && !current,
+                current,
+            ));
+        }
+    }
     items
 }
 
