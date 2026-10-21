@@ -114,6 +114,62 @@ async fn weekly_only_account_shows_live_subscription_without_a_five_hour_placeho
     }
 }
 
+#[tokio::test]
+async fn weekly_limits_stay_in_the_same_column_for_mixed_account_windows() {
+    let service = fake();
+    let mut data = data_of(&service).await;
+    data.chatgpt_accounts
+        .finish(Ok(["both-windows", "weekly-only"]
+            .into_iter()
+            .map(|id| superba_core::ChatGptAccount {
+                id: id.into(),
+                email: format!("{id}@example.test"),
+                plan_type: None,
+                added_at: Timestamp(1),
+                active: false,
+            })
+            .collect()));
+    let service: Arc<dyn SwitchService> = service;
+    for (locale, weekly, five_hour) in [
+        (Locale::ZhCn, "每周", "5 小时"),
+        (Locale::En, "Weekly", "5 hours"),
+    ] {
+        let mut state = providers::State::default();
+        state.select(ProviderId::Profile("official".into()));
+        let mut frames = 0;
+        drive(&data, service.clone(), &mut state, locale, |_, _| {
+            frames += 1;
+            frames > 20
+        });
+        for size in [[1280.0, 800.0], [1600.0, 1000.0]] {
+            let report = render_fit(size, locale, egui::Theme::Light, &data, |ui, cx, out| {
+                providers::show(ui, cx, &mut state, out)
+            });
+            let weeks: Vec<_> = report
+                .text_shapes
+                .iter()
+                .filter(|(t, _, _)| t == weekly)
+                .map(|(_, r, _)| r)
+                .collect();
+            let hours: Vec<_> = report
+                .text_shapes
+                .iter()
+                .filter(|(t, _, _)| t == five_hour)
+                .map(|(_, r, _)| r)
+                .collect();
+            assert_eq!(weeks.len(), 2, "{}", report.all_text());
+            assert_eq!(hours.len(), 1);
+            assert!(
+                (weeks[0].min.x - weeks[1].min.x).abs() < 1.0,
+                "{size:?}: {weeks:?}"
+            );
+            assert!(weeks[1].min.x > hours[0].max.x);
+            assert!(report.beyond_right().is_empty());
+            assert!(report.whole("Free") && report.whole("Plus"));
+        }
+    }
+}
+
 use superba_core::{
     AccountReport, AccountSummary, AuthChoice, AuthMode, BillingSummary, CodexPath, DailyUsage,
     LineCaps, LineId, Locale, ModelUsage, ProfileId, SiteId, SwitchService, Timestamp, UsageReport,

@@ -12,7 +12,9 @@ account picker.
   existing Superba vault. GUI views contain an opaque local identity, email,
   subscription label, first-save time and live-account marker; no tokens.
   Older saved accounts recover their subscription label from their encrypted
-  login token; the current quota response takes precedence for display.
+  login token; the current quota response takes precedence for display. If its
+  optional plan field is absent, `account/read` supplies the subscription type.
+  Missing plan data is shown as a loading/error state, never as a plan tier.
 - Login uses Codex app-server's `account/login/start` and
   `account/login/completed` protocol in a private, disposable `CODEX_HOME`, with
   file credentials selected explicitly. The browser URL can be reopened or
@@ -25,7 +27,8 @@ account picker.
 - The Codex bucket is preferred from `rateLimitsByLimitId`, with legacy
   `rateLimits` as a fallback. Windows are identified by `windowDurationMins`
   (300 and 10080), independently of primary/secondary order. Only reported windows
-  are shown: a weekly-only account has no five-hour placeholder. A response with
+  are shown: a weekly-only account leaves the five-hour column blank, with
+  weekly usage aligned in the same column as other accounts. A response with
   neither window is labeled unavailable, never unlimited or 100% remaining.
   Subscription names do not determine which windows an account has. Old results
   keep their fetch time when a refresh fails. Quota bars are green above 20%,

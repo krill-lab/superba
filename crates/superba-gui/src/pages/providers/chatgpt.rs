@@ -288,8 +288,23 @@ fn account_row(
             ui.spacing_mut().item_spacing.x = 6.0;
             let plan = value
                 .and_then(|q| q.plan_type.as_deref())
-                .or(account.plan_type.as_deref());
-            ui.add(Badge::new(plan_label(cx, plan)).outline());
+                .and_then(plan_label)
+                .or_else(|| account.plan_type.as_deref().and_then(plan_label));
+            if let Some(plan) = plan {
+                ui.add(Badge::new(plan).outline());
+            } else {
+                elided(
+                    ui,
+                    Text::caption(
+                        cx.tr.t(if working {
+                            "chatgpt.loading_plan"
+                        } else {
+                            "chatgpt.plan_unavailable"
+                        }),
+                        cx.pal,
+                    ),
+                );
+            }
             if let Some(value) = value {
                 elided(
                     ui,
@@ -387,8 +402,9 @@ fn quota_windows(
         ("chatgpt.five_hour", value.five_hour.as_ref()),
         ("chatgpt.weekly", value.weekly.as_ref()),
     ] {
-        // Absence is not an unlimited plan: show only windows actually reported.
+        // Keep both columns aligned, but do not draw a missing window's label or track.
         let Some(window) = window else {
+            ui.allocate_exact_size(vec2(width, 48.0), Sense::hover());
             continue;
         };
         ui.allocate_ui_with_layout(vec2(width, 48.0), Layout::top_down(Align::Min), |ui| {
@@ -443,18 +459,17 @@ fn quota_windows(
 }
 
 /// Keep service plan names recognizable, without treating them as quota rules.
-fn plan_label(cx: &Cx<'_>, plan: Option<&str>) -> String {
-    match plan {
-        Some("free") => "Free",
-        Some("go") => "Go",
-        Some("plus") => "Plus",
-        Some("pro") => "Pro",
-        Some("pro_lite") => "Pro Lite",
-        Some("team") => "Team",
-        Some("business") => "Business",
-        Some("enterprise") => "Enterprise",
-        Some("edu") => "Edu",
-        _ => return cx.tr.t("chatgpt.plan_unknown"),
-    }
-    .into()
+fn plan_label(plan: &str) -> Option<&'static str> {
+    Some(match plan.trim().to_ascii_lowercase().as_str() {
+        "free" => "Free",
+        "go" => "Go",
+        "plus" => "Plus",
+        "pro" => "Pro",
+        "pro_lite" => "Pro Lite",
+        "team" => "Team",
+        "business" => "Business",
+        "enterprise" => "Enterprise",
+        "edu" => "Edu",
+        _ => return None,
+    })
 }

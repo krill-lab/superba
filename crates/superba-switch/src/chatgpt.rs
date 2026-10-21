@@ -261,7 +261,18 @@ impl Switcher {
         };
         let home = store.session(Some(&credential))?;
         let mut rpc = Rpc::start(&self.chatgpt_binary().await?, home.path()).await?;
-        let result = rpc.call("account/rateLimits/read", json!({})).await;
+        let mut result = rpc
+            .call("account/rateLimits/read", json!({}))
+            .await
+            .map(|value| parse_quota(id, &value, self.deps.clock.now()));
+        if let Ok(quota) = &mut result
+            && quota.plan_type.is_none()
+            && let Ok(account) = rpc
+                .call("account/read", json!({"refreshToken": false}))
+                .await
+        {
+            complete_quota_plan(quota, &account);
+        }
         rpc.stop().await;
         let refreshed = home.auth()?;
         let identity = authjson::login_info(refreshed.expose())
@@ -281,9 +292,26 @@ impl Switcher {
         let latest = current
             .as_ref()
             .filter(|auth| authjson::login_info(auth.expose()).is_some_and(|i| i.identity == id));
-        store.put(latest.unwrap_or(&refreshed), self.deps.clock.now())?;
-        let result = result?;
-        Ok(parse_quota(id, &result, self.deps.clock.now()))
+        let saved = store.put(latest.unwrap_or(&refreshed), self.deps.clock.now())?;
+        let mut quota = result?;
+        if quota.plan_type.is_none() {
+            quota.plan_type = saved.plan_type.as_deref().and_then(normalize_plan);
+        }
+        Ok(quota)
+    }
+}
+
+/// An absent/placeholder plan is a read state, not a subscription tier.
+fn normalize_plan(plan: &str) -> Option<String> {
+    let plan = plan.trim().to_ascii_lowercase();
+    (!plan.is_empty() && plan != "unknown").then_some(plan)
+}
+
+fn complete_quota_plan(quota: &mut ChatGptQuota, result: &Value) {
+    if quota.plan_type.is_none() && result["account"]["type"] == "chatgpt" {
+        quota.plan_type = result["account"]["planType"]
+            .as_str()
+            .and_then(normalize_plan);
     }
 }
 
@@ -300,9 +328,7 @@ fn parse_quota(id: &str, result: &Value, now: Timestamp) -> ChatGptQuota {
         plan_type: bucket
             .get("planType")
             .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_owned),
+            .and_then(normalize_plan),
         five_hour: None,
         weekly: None,
         fetched_at: now,
@@ -339,6 +365,33 @@ fn parse_quota(id: &str, result: &Value, now: Timestamp) -> ChatGptQuota {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_quota_plan_uses_account_info_without_overwriting_a_reported_plan() {
+        for plan in ["free", "plus", "pro"] {
+            let mut quota = parse_quota(
+                "a",
+                &json!({"rateLimits":{"planType":"unknown"}}),
+                Timestamp::EPOCH,
+            );
+            assert!(quota.plan_type.is_none());
+            complete_quota_plan(
+                &mut quota,
+                &json!({"account":{"type":"chatgpt", "planType":plan.to_uppercase()}}),
+            );
+            assert_eq!(quota.plan_type.as_deref(), Some(plan));
+            complete_quota_plan(
+                &mut quota,
+                &json!({"account":{"type":"chatgpt", "planType":"other"}}),
+            );
+            assert_eq!(quota.plan_type.as_deref(), Some(plan));
+        }
+        let mut quota = parse_quota("a", &json!({}), Timestamp::EPOCH);
+        complete_quota_plan(&mut quota, &json!({"account":null}));
+        assert!(quota.plan_type.is_none());
+        assert!(normalize_plan(" UNKNOWN ").is_none());
+        assert!(normalize_plan(" ").is_none());
+    }
+
     #[test]
     fn weekly_only_subscriptions_keep_the_plan_and_do_not_invent_five_hour_limits() {
         for plan in ["free", "plus", "pro", "business"] {
