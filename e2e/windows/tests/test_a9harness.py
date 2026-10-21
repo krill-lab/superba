@@ -92,3 +92,28 @@ class AnchorAndRenderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ListAndW52Tests(unittest.TestCase):
+    def test_list_sorts_ids_of_any_prefix(self):
+        import run as runpy
+        from types import SimpleNamespace as N
+        ids = ["W52", "MX10", "W1", "SU9", "MX2", "W12"]
+        got = [s.id for s in sorted((N(id=i) for i in ids), key=runpy.scenario_sort_key)]
+        self.assertEqual(got, ["MX2", "MX10", "SU9", "W1", "W12", "W52"])
+
+    def test_cmd_list_runs_over_the_registry(self):
+        import contextlib, io
+        import run as runpy
+        from types import SimpleNamespace as N
+        with contextlib.redirect_stdout(io.StringIO()):
+            runpy.cmd_list(N(area=None))
+
+    def test_w52_failure_notice_pattern(self):
+        import re
+        from lib.scenarios import more
+        rx = re.compile(more.UPDATE_FAILED_RX)
+        for t in ["The installer reported success, but this is still Superba 0.1.1-alpha.9.",
+                  "安装程序报告成功，但当前仍是 Superba 0.1.1-alpha.9。", "更新到 Superba 9.0.0 失败"]:
+            self.assertTrue(rx.search(t), t)
+        self.assertIsNone(rx.search("已是最新"))

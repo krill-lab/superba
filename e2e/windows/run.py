@@ -73,8 +73,14 @@ def default_msi():
     return str(cands[-1]) if cands else None
 
 
+def scenario_sort_key(s):
+    """W1 < W12 < MX10 < SU9: by letter prefix, then number (any prefix length)."""
+    m = re.match(r"([A-Za-z]*)(\d*)(.*)", s.id)
+    return (m.group(1), int(m.group(2) or 0), m.group(3))
+
+
 def cmd_list(opts):
-    rows = sorted(REGISTRY.values(), key=lambda s: int(s.id[1:]))
+    rows = sorted(REGISTRY.values(), key=scenario_sort_key)
     for s in rows:
         if opts.area and s.area != opts.area:
             continue

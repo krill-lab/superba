@@ -224,6 +224,32 @@ jobs:
         env:
           SUPERBA_SECRET_BACKEND: file
         run: ./scripts/release/test-msi.ps1 -StageDir stage
+      # A genuine newer release for the self-update acceptance (W52): the
+      # programs themselves are built as 9.0.0 (spb --version, the GUI and
+      # the file version say 9.0.0), like local-msi.sh --version 9.0.0
+      # --bump-exe. The workspace-version MSI above stays for acceptance.
+      - name: Build the 9.0.0 self-update fixture (programs built as 9.0.0)
+        shell: bash
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "0"
+        run: |
+          set -euo pipefail
+          real=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          test -n "$real"
+          sed -i "s/\"$real\"/\"9.0.0\"/g" Cargo.toml Cargo.lock
+          cargo build --release --locked -p superba-gui -p superba-cli -p superba-router -p superba-msi-ca
+          mkdir -p stage9
+          cp -r stage/. stage9/
+          for b in superba spb superba-router; do cp "target/release/$b.exe" stage9/; done
+          cp target/release/superba_msi_ca.dll stage9/
+          git checkout -- Cargo.toml Cargo.lock
+      - name: Package and check the 9.0.0 fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $v = & ./stage9/spb.exe --version
+          if ("$v" -notmatch '9\.0\.0') { throw "the 9.0.0 fixture's spb reports '$v'" }
+          ./scripts/release/build-msi.ps1 -StageDir stage9 -Version 9.0.0 -Out "$env:RUNNER_TEMP/msi-test/superba-9.0.0-windows-x86_64.msi"
       - name: Keep the MSI and logs
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

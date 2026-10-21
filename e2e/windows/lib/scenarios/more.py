@@ -804,6 +804,12 @@ def wait_msi_version(run, version, timeout=420):
     return last
 
 
+# The self-update's failure notices (updates.*.toml problem_failed /
+# problem_installed / failed, and the record's "still Superba <old>" reason).
+UPDATE_FAILED_RX = (r"The update to Superba .* failed|was installed with a problem|Update failed"
+                    r"|this is still Superba|更新到 Superba .*失败|已安装，但有问题|更新失败|仍是 Superba")
+
+
 @scenario("W52", "Superba self-update via the MSI from an older version", area="updates",
           conflicts=("installed",), bugs=(30, 44))
 def w52(t):
@@ -879,6 +885,10 @@ def w52(t):
                 u.click(key="wizard.skip")
             u.superba("updates")
             s.shot("after-update")
+            # alpha.9: spb --version alone missed a GUI that relaunched with
+            # "The installer reported success, but this is still Superba <old>".
+            bad = u.has_text(UPDATE_FAILED_RX, timeout=5)
+            s.check(bad is None, f"no 'update failed' notice after the relaunch: {bad!r}")
     finally:
         srv.shutdown()
         tun.terminate()

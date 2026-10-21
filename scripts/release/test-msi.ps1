@@ -80,8 +80,10 @@ function RouterProcs {
 $msi1 = Build $BaseVersion 'base.msi'
 $msi2 = Build $UpgradeVersion 'upgrade1.msi'
 $msi3 = Build $UpgradeVersion2 'upgrade2.msi'
-# Not installed here: a far newer release for trying the self-update by hand.
-$null = Build '9.0.0' 'superba-9.0.0-windows-x86_64.msi'
+# The 9.0.0 self-update fixture is built by ci.yml's msi-package job from
+# programs compiled as 9.0.0 (alpha.9: an MSI that only carried the 9.0.0
+# label installed programs still reporting the workspace version, and the
+# self-update rightly said "this is still Superba <old>").
 # The same programs under the workspace's own version (what spb --version
 # reports): the MSI the Windows acceptance installs, so the installed product,
 # the Add/Remove Programs entry and spb agree (alpha.8 acceptance used the 9.0.0
