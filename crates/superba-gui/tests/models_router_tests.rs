@@ -93,21 +93,13 @@ async fn every_mode_shows_one_row_per_model_with_its_providers() {
                 }
                 assert!(report.whole("Krill"), "{at}");
                 assert!(report.whole("内网"), "{at}");
-                let narrow = window[0] < 1000.0;
                 for key in [
                     "models.router.title",
                     "models.col.model",
                     "models.col.providers",
-                    if narrow {
-                        "models.col.context_short"
-                    } else {
-                        "models.col.context"
-                    },
-                    if narrow {
-                        "models.col.compact_short"
-                    } else {
-                        "models.col.compact"
-                    },
+                    // Field-only value columns take the short headers.
+                    "models.col.context_short",
+                    "models.col.compact_short",
                     "models.col.actions",
                     "models.router.prefixes",
                 ] {
@@ -283,7 +275,8 @@ async fn chips_name_each_providers_source_and_upstream_id() {
     );
     let text = report.all_text();
     assert!(text.contains("待验证"), "{text}");
-    assert!(text.contains("估算值"), "{text}");
+    // An estimated window is marked in its field (the caption is its tooltip).
+    assert!(text.contains('≈'), "{text}");
 }
 
 fn with_cx<T>(data: &Data, tr: &Tr, f: impl FnOnce(&Cx<'_>) -> T) -> T {

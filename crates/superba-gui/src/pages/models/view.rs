@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use egui::{Align, Layout, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, Layout, RichText, Sense, TextEdit, Ui, WidgetInfo, vec2};
 use superba_core::{
     CatalogFileStatus, LimitError, LimitSource, ModelDefaults, ModelLimits, ModelListSource,
     ModelOverride, ModelPicker, ModelSpec, ModelsView, PriceEntry, SpeedEffect, SpeedTier, Usd,
@@ -34,11 +34,15 @@ use crate::pages::{Action, Cx, Page, empty_state, error_state, page_header};
 const EFFORTS: [&str; 5] = ["minimal", "low", "medium", "high", "xhigh"];
 
 /// Width of the context window / auto-compact fields.
-const FIELD_W: f32 = 76.0;
-/// The same in a narrow table, where the field stands alone.
-const FIELD_W_NARROW: f32 = 72.0;
-/// A value column: the field, its tag and caption.
-const VALUE_W: f32 = 164.0;
+const FIELD_W: f32 = 80.0;
+/// The same in a narrow table (room for 「Default」 as the placeholder).
+const FIELD_W_NARROW: f32 = FIELD_W;
+/// A value column: the field alone.
+const VALUE_W: f32 = FIELD_W + space::S;
+/// The narrowest upstream column (it is flexible, like the model column).
+const UPSTREAM_W: f32 = 168.0;
+/// The upstream picker's button.
+const PICK_W: f32 = 28.0;
 /// A value column of a narrow table: the field alone.
 const VALUE_NARROW: f32 = FIELD_W_NARROW + space::S;
 /// The reset button (an icon in the actions column).
@@ -53,7 +57,7 @@ const ACTIONS_ROUTED: f32 = 128.0;
 /// Tables narrower than this drop the speed column (the 960 px window).
 const NARROW_TABLE: f32 = 860.0;
 /// Width of the price column next to a providers or upstream column.
-const PRICE_W: f32 = 150.0;
+const PRICE_W: f32 = 168.0;
 /// The narrowest table with a price column next to a providers or upstream column.
 const PRICE_TABLE: f32 = 1120.0;
 
@@ -806,10 +810,19 @@ enum Col {
     Actions,
 }
 
-/// The columns and their minimum widths for this view and width.
-fn columns(routed: bool, narrow: bool, custom: bool, priced: bool) -> Vec<(Col, f32)> {
-    // Value fields alone in a narrow table: the tag and caption move into the
-    // field's tooltip, so the model column keeps room for its slug.
+/// The columns and their minimum widths for this view and width. The model
+/// and upstream columns are flexible (they share what is left); the actions
+/// column is fixed and reserved first (see [`Table::fixed`]).
+fn columns(
+    routed: bool,
+    narrow: bool,
+    custom: bool,
+    priced: bool,
+    speed: bool,
+) -> Vec<(Col, f32)> {
+    // Value fields alone: the source (默认 / 所有模型 / 自定义) is the field's
+    // muted placeholder, the tag and caption lead its tooltip, so the columns
+    // that carry names keep the room.
     let value = if narrow { VALUE_NARROW } else { VALUE_W };
     let mut cols = vec![(Col::Model, 0.0)];
     if routed {
@@ -817,11 +830,12 @@ fn columns(routed: bool, narrow: bool, custom: bool, priced: bool) -> Vec<(Col, 
     }
     cols.push((Col::Window, value));
     cols.push((Col::Compact, value));
-    if !narrow {
+    // The speed column only when some model has a faster tier.
+    if !narrow && speed {
         cols.push((Col::Speed, if routed { 104.0 } else { 132.0 }));
     }
     if !routed && custom {
-        cols.push((Col::Extra, 176.0));
+        cols.push((Col::Extra, UPSTREAM_W));
     }
     // Every table has a price column, except a narrow one that already has a
     // providers or upstream column: its prices fold into the model cell.
@@ -856,17 +870,21 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
     // A providers or upstream column leaves room for prices only in a wide
     // table; otherwise they fold into the model cell.
     let priced = ui.available_width() >= PRICE_TABLE;
-    let plan = columns(routed, narrow, custom, priced);
+    let speed = models.iter().any(|m| {
+        model::tiers(m)
+            .into_iter()
+            .any(|t| t != SpeedTier::Standard)
+    });
+    let plan = columns(routed, narrow, custom, priced, speed);
     let headers: Vec<String> = plan
         .iter()
         .map(|(c, _)| {
             cx.tr.t(match c {
                 Col::Model => "models.col.model",
                 Col::Providers => "models.col.providers",
-                Col::Window if narrow => "models.col.context_short",
-                Col::Compact if narrow => "models.col.compact_short",
-                Col::Window => "models.col.context",
-                Col::Compact => "models.col.compact",
+                // Field-only columns: the short headers fit above the field.
+                Col::Window => "models.col.context_short",
+                Col::Compact => "models.col.compact_short",
                 Col::Speed => "models.col.speed",
                 Col::Extra => "models.col.upstream",
                 Col::Price => "models.col.price",
@@ -876,10 +894,16 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
         .collect();
     let weights: Vec<f32> = plan
         .iter()
-        .map(|(c, _)| if *c == Col::Model { 1.0 } else { 0.0 })
+        .map(|(c, _)| match c {
+            Col::Model => 1.0,
+            Col::Extra => 0.7,
+            _ => 0.0,
+        })
         .collect();
     let mins: Vec<f32> = plan.iter().map(|(_, w)| *w).collect();
-    let columns = Table::new(&weights).min_widths(&mins);
+    let columns = Table::new(&weights)
+        .min_widths(&mins)
+        .fixed(&[plan.len() - 1]);
     let read_only = view.read_only || cx.busy || state.saving.is_some();
     let count = state.pending.count(saved);
     let active = view_applied(cx, view);
@@ -1026,13 +1050,14 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: Col) {
             let shown = Shown {
                 value: d.context_window,
                 initial: d.context_window.map(short_tokens).unwrap_or_default(),
-                placeholder: "—".to_owned(),
+                placeholder: cx.tr.t("models.tag.default"),
                 source: source_of(d.context_window.is_some()),
                 caption: d
                     .context_window
                     .map(|_| (cx.tr.t("models.all_capped"), false)),
                 hover: all_hover(cx, d.context_window, Field::Window),
                 enabled: true,
+                approx: false,
             };
             value_cell(ui, rc, ALL_MODELS, Field::Window, shown);
         }
@@ -1053,6 +1078,7 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: Col) {
                     .map(|_| (cx.tr.t("models.all_compact_capped"), false)),
                 hover: all_hover(cx, d.auto_compact, Field::Compact),
                 enabled: true,
+                approx: false,
             };
             value_cell(ui, rc, ALL_MODELS, Field::Compact, shown);
         }
@@ -1083,11 +1109,12 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: Col) {
             let shown = Shown {
                 value: l.window,
                 initial: l.window.map(short_tokens).unwrap_or_default(),
-                placeholder: "—".to_owned(),
+                placeholder: cx.tr.t("models.tag.default"),
                 source: l.window_source,
                 caption,
                 hover: window_hover(rc, m, &l, &o),
                 enabled: rc.saved.view.per_model,
+                approx: m.estimated_context_window && l.window_source == LimitSource::Model,
             };
             value_cell(ui, rc, &m.slug, Field::Window, shown);
         }
@@ -1107,11 +1134,12 @@ fn cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, row: &RowRef<'_>, col: Col) {
             let shown = Shown {
                 value: l.compact,
                 initial: initial.map(short_tokens).unwrap_or_default(),
-                placeholder: "—".to_owned(),
+                placeholder: cx.tr.t("models.tag.default"),
                 source: l.compact_source,
                 caption,
                 hover: compact_hover(rc, &l, &o),
                 enabled: rc.saved.view.per_model,
+                approx: false,
             };
             value_cell(ui, rc, &m.slug, Field::Compact, shown);
         }
@@ -1474,17 +1502,26 @@ struct Shown {
     hover: String,
     /// Per-model values reach Codex (false for profiles without catalog support).
     enabled: bool,
+    /// The value is an estimate (shown as 「≈」 before it; the caption says so).
+    approx: bool,
 }
 
 /// A value cell: the field (a `k`/`M` label until edited; the exact value on
-/// hover), then the tag (默认 / 所有模型 / 自定义) over a caption.
+/// hover; 默认 as its muted placeholder), the tag (默认 / 所有模型 / 自定义)
+/// and caption in its tooltip.
 fn value_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, field: Field, shown: Shown) {
     let cx = rc.cx;
     let key = (slug.to_owned(), field);
     let error = rc.errors.get(&key).cloned();
     let label = shown
         .value
-        .map(token_label)
+        .map(|v| {
+            if shown.approx {
+                format!("≈{}", token_label(v))
+            } else {
+                token_label(v)
+            }
+        })
         .unwrap_or_else(|| shown.placeholder.clone());
     // Rejected text stays in the field (red) until it is fixed or cleared.
     let rejected = rc.rejected.get(&key).cloned();
@@ -1511,16 +1548,16 @@ fn value_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, field: Field, sho
     if rc.focus == Some(&key) {
         ui.memory_mut(|m| m.request_focus(id));
     }
-    let (tag, tag_color) = match shown.source {
-        LimitSource::Custom => ("models.tag.custom", cx.pal.link),
-        LimitSource::AllModels => ("models.tag.all", cx.pal.text_muted),
-        LimitSource::Model => ("models.tag.default", cx.pal.text_subtle),
+    let tag = match shown.source {
+        LimitSource::Custom => "models.tag.custom",
+        LimitSource::AllModels => "models.tag.all",
+        LimitSource::Model => "models.tag.default",
     };
     // A narrow table shows the field alone: its tag and caption lead the tooltip.
-    let hover = match (&shown.caption, rc.narrow) {
-        (Some((caption, _)), true) => format!("{} · {caption}\n{}", cx.tr.t(tag), shown.hover),
-        (None, true) => format!("{}\n{}", cx.tr.t(tag), shown.hover),
-        (_, false) => shown.hover.clone(),
+    // The field alone: its tag and caption lead the tooltip.
+    let hover = match &shown.caption {
+        Some((caption, _)) => format!("{} · {caption}\n{}", cx.tr.t(tag), shown.hover),
+        None => format!("{}\n{}", cx.tr.t(tag), shown.hover),
     };
     let tip = match (&error, shown.enabled) {
         (Some(e), _) => format!("{e}\n\n{hover}"),
@@ -1548,26 +1585,6 @@ fn value_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, field: Field, sho
             text,
         });
     }
-    if rc.narrow {
-        return;
-    }
-    ui.add_space(6.0);
-    // The tag over the caption, centred on the field.
-    let block = if shown.caption.is_some() { 36.0 } else { 18.0 };
-    let pad = ((ui.available_height() - block) / 2.0).max(0.0);
-    ui.allocate_ui_with_layout(
-        vec2(ui.available_width(), ui.available_height()),
-        Layout::top_down(Align::Min),
-        |ui| {
-            ui.spacing_mut().item_spacing.y = 2.0;
-            ui.add_space(pad);
-            pill(ui, cx, &cx.tr.t(tag), tag_color);
-            if let Some((caption, amber)) = shown.caption {
-                let t = Text::caption(caption, cx.pal);
-                ui.add(egui::Label::new(if amber { t.color(cx.pal.amber) } else { t }).truncate());
-            }
-        },
-    );
 }
 
 /// "200,000 tokens" with the source in brackets.
@@ -1679,17 +1696,83 @@ fn upstream(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, value: String) {
         // Not editing: show the stored name, never a copy from an older view.
         buffer.clone_from(&value);
     }
-    let r = ui
-        .add_enabled(
-            !rc.read_only,
-            TextEdit::singleline(buffer)
-                .id(id)
-                .font(egui::TextStyle::Monospace)
-                .hint_text(slug)
-                .desired_width(128.0)
-                .margin(vec2(8.0, 4.0)),
-        )
-        .accessible_name(format!("{} · {slug}", rc.cx.tr.t("models.col.upstream")));
+    // The picker sits at the cell's right end; the name takes the rest, so
+    // neither runs past the column (user report: a clipped picker).
+    let name_w = (ui.available_width() - PICK_W - ui.spacing().item_spacing.x).max(24.0);
+    let open = ui.data(|d| d.get_temp::<bool>(id.with("open"))).unwrap_or(false);
+    let editing = was_editing || open || ui.memory(|m| m.has_focus(id));
+    let cx = rc.cx;
+    let r = if editing {
+        // A long name scrolls inside the field.
+        let r = ui
+            .add_enabled(
+                !rc.read_only,
+                TextEdit::singleline(buffer)
+                    .id(id)
+                    .font(egui::TextStyle::Monospace)
+                    .hint_text(slug)
+                    .desired_width(name_w - 16.0)
+                    .margin(vec2(8.0, 4.0)),
+            )
+            .accessible_name(format!("{} · {slug}", cx.tr.t("models.col.upstream")));
+        if open {
+            r.request_focus();
+            ui.data_mut(|d| d.remove::<bool>(id.with("open")));
+        }
+        r
+    } else {
+        // Not editing: the name as text (「同名」 when it is the model id),
+        // shortened with its full text on hover; a click edits it.
+        let same = value.is_empty() || value == slug;
+        let (shown, color, tip) = if same {
+            (
+                cx.tr.t("models.upstream.same"),
+                cx.pal.text_subtle,
+                cx.tr.f("models.upstream.same_tip", &[("model", &slug)]),
+            )
+        } else {
+            (
+                value.clone(),
+                cx.pal.text,
+                cx.tr.f("models.upstream.edit_tip", &[("name", &value)]),
+            )
+        };
+        let (rect, resp) = ui.allocate_exact_size(
+            vec2(name_w, size::CONTROL_SM),
+            if rc.read_only {
+                Sense::hover()
+            } else {
+                Sense::click()
+            },
+        );
+        if resp.hovered() && !rc.read_only {
+            ui.painter().rect_filled(rect, 4, cx.pal.hover);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+        }
+        let galley = crate::design::widgets::log_table::elided(
+            ui,
+            &shown,
+            mono_font(text::SMALL, Weight::Regular),
+            color,
+            rect.width() - 8.0,
+        );
+        let y = rect.center().y - galley.size().y / 2.0;
+        ui.painter()
+            .galley(egui::pos2(rect.min.x + 4.0, y), galley, color);
+        resp.widget_info(|| {
+            WidgetInfo::labeled(
+                egui::Role::Button,
+                !rc.read_only,
+                format!("{} · {slug}: {shown}", cx.tr.t("models.col.upstream")),
+            )
+        });
+        let resp = resp.on_hover_text(tip);
+        if resp.clicked() {
+            ui.data_mut(|d| d.insert_temp(id.with("open"), true));
+            ui.ctx().request_repaint();
+        }
+        resp
+    };
     let mut picked = None;
     let ids: Vec<&str> = rc
         .saved
@@ -1703,7 +1786,7 @@ fn upstream(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, value: String) {
         Dropdown::new(("models-upstream-pick", slug))
             .label(rc.cx.tr.t("models.upstream.pick"))
             .selected_text("")
-            .width(20.0)
+            .fixed_width(PICK_W)
             .menu_height(300.0)
             .show_ui(ui, |ui| {
                 for id in &ids {

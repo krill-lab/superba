@@ -685,7 +685,6 @@ async fn models_fit_both_sizes_and_locales_with_at_least_eleven_rows() {
             );
             let text = report.all_text();
             assert!(text.contains("gpt-6-astra"), "{text}");
-            assert!(text.contains("872K"), "max window shown: {text}");
         }
     }
 }

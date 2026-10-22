@@ -257,8 +257,10 @@ fn switches(actions: &[Action]) -> usize {
         .count()
 }
 
-const CONTEXT: &str = "Context window";
-const COMPACT: &str = "Auto-compact";
+// Field-only value columns: the short headers (the tag and caption are in
+// the field's tooltip, 默认 is its placeholder).
+const CONTEXT: &str = "Window";
+const COMPACT: &str = "Compact";
 
 #[test]
 fn token_labels_use_k_and_m_with_the_exact_value_for_tooltips() {
@@ -284,13 +286,14 @@ async fn rows_show_what_codex_uses_tagged_default_or_custom() {
     let mut page = Page::new(false).await;
     // gpt-5.5 lists a 272K window (maximum 272K): Codex compacts at 90 %.
     let row = page.row("gpt-5.5");
-    for text in ["272K", "Default", "max 272K", "244.8K", "at 90%"] {
+    for text in ["272K", "244.8K"] {
         assert!(row.contains(&text.to_owned()), "{text}: {row:?}");
     }
+    // No tag chips next to the fields: the source is in the tooltip.
     assert!(!row.contains(&"Custom".to_owned()), "{row:?}");
-    // The all-models row is unset: each model keeps its own values.
+    assert!(!row.contains(&"Default".to_owned()), "{row:?}");
+    // The all-models row is unset: 默认 is the window field's placeholder.
     let row = page.row("All models (default)");
-    assert!(row.contains(&"—".to_owned()), "{row:?}");
     assert!(row.contains(&"Default".to_owned()), "{row:?}");
 }
 
@@ -299,7 +302,7 @@ async fn an_edit_is_echoed_at_once_and_stays_while_the_view_reloads() {
     let mut page = Page::new(false).await;
     page.enter("gpt-5.5", CONTEXT, "200k");
     let row = page.row("gpt-5.5");
-    for text in ["200K", "Custom", "Unsaved", "180K"] {
+    for text in ["200K", "Unsaved", "180K"] {
         assert!(row.contains(&text.to_owned()), "{text}: {row:?}");
     }
     let texts = page.settle();
@@ -319,7 +322,6 @@ async fn an_edit_is_echoed_at_once_and_stays_while_the_view_reloads() {
     let texts = page.wait(|p, _| !p.actions.is_empty());
     let row = page.row("gpt-5.5");
     assert!(row.contains(&"200K".to_owned()), "{row:?} {}", all(&texts));
-    assert!(row.contains(&"Custom".to_owned()), "{row:?}");
     // Saved, not applied yet (Codex restarts to apply it), and the page says why.
     assert!(row.contains(&"Not applied".to_owned()), "{row:?}");
     let actions = page.take_actions();
@@ -370,14 +372,9 @@ async fn a_saved_value_survives_a_restart_of_the_page() {
     page.refresh_data().await;
     page.wait(|p, t| p.state.view().is_some() && has(t, "gpt-6-astra"));
     let row = page.row("gpt-6-astra");
-    for text in ["400K", "300K", "at 75%", "Not applied"] {
+    for text in ["400K", "300K", "Not applied"] {
         assert!(row.contains(&text.to_owned()), "{text}: {row:?}");
     }
-    assert_eq!(
-        row.iter().filter(|t| *t == "Custom").count(),
-        2,
-        "window and compaction: {row:?}"
-    );
 }
 
 #[tokio::test]
@@ -401,7 +398,7 @@ async fn escape_cancels_and_an_empty_field_goes_back_to_the_default() {
     page.take_actions();
     page.enter("gpt-5.5", CONTEXT, "");
     let row = page.row("gpt-5.5");
-    for text in ["272K", "Default", "Unsaved"] {
+    for text in ["272K", "Unsaved"] {
         assert!(row.contains(&text.to_owned()), "{text}: {row:?}");
     }
     page.click_text("Save & apply");

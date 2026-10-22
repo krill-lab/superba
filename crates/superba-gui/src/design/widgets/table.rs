@@ -15,6 +15,7 @@ pub struct Table {
     weights: Vec<f32>,
     min_widths: Vec<f32>,
     right: Vec<usize>,
+    fixed: Vec<usize>,
 }
 
 impl Table {
@@ -24,6 +25,7 @@ impl Table {
             weights: weights.to_vec(),
             min_widths: vec![0.0; weights.len()],
             right: Vec::new(),
+            fixed: Vec::new(),
         }
     }
 
@@ -59,6 +61,15 @@ impl Table {
         }
     }
 
+    /// Keep these columns (row actions) at their minimum width even when the
+    /// minimum widths add up to more than the row: the other columns' minimums
+    /// shrink instead, so a fixed column is reserved before the rest and never
+    /// runs past the row's right edge (user bug: clipped Models actions).
+    pub fn fixed(mut self, columns: &[usize]) -> Self {
+        self.fixed = columns.to_vec();
+        self
+    }
+
     /// Minimum width per column.
     pub fn min_widths(mut self, widths: &[f32]) -> Self {
         self.min_widths = widths.to_vec();
@@ -67,15 +78,32 @@ impl Table {
 
     fn columns(&self, rect: Rect, pad: f32) -> Vec<Rect> {
         let inner = rect.shrink2(vec2(pad, 0.0));
-        let fixed: f32 = self.min_widths.iter().sum();
-        let total_w: f32 = self.weights.iter().sum();
+        let n = self.weights.len();
+        let reserved: f32 = (0..n)
+            .filter(|i| self.fixed.contains(i))
+            .map(|i| self.min_widths.get(i).copied().unwrap_or(0.0))
+            .sum();
+        let shrinkable: f32 = self.min_widths.iter().sum::<f32>() - reserved;
+        // Minimums that do not fit shrink proportionally, fixed columns aside.
+        let scale = if reserved + shrinkable > inner.width() && shrinkable > 0.0 {
+            ((inner.width() - reserved) / shrinkable).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let mins: Vec<f32> = self
+            .min_widths
+            .iter()
+            .enumerate()
+            .map(|(i, m)| if self.fixed.contains(&i) { *m } else { m * scale })
+            .collect();
+        let fixed: f32 = mins.iter().sum();
+        let total_w: f32 = self.weights.iter().sum::<f32>().max(f32::EPSILON);
         let flexible = (inner.width() - fixed).max(0.0);
         let mut x = inner.min.x;
         let gap = 12.0;
-        let n = self.weights.len();
         self.weights
             .iter()
-            .zip(&self.min_widths)
+            .zip(&mins)
             .enumerate()
             .map(|(i, (w, min))| {
                 let width = min + flexible * w / total_w;

@@ -154,6 +154,9 @@ provider_note = "供应商说明：{text}"
 
 [models.upstream]
 pick = "从站点的模型列表中选择"
+same = "同名"
+same_tip = "按 {model} 发给上游。点击设置其他名称。"
+edit_tip = "上游名称：{name}。点击编辑。"
 
 [models.state]
 applied = "已应用"

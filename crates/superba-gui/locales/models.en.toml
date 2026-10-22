@@ -155,6 +155,9 @@ provider_note = "Provider's description: {text}"
 
 [models.upstream]
 pick = "Pick from the site's model list"
+same = "Same name"
+same_tip = "Sent upstream as {model}. Click to set another name."
+edit_tip = "Upstream name: {name}. Click to edit."
 
 [models.state]
 applied = "Applied"
