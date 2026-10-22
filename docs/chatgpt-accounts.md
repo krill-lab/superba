@@ -38,7 +38,8 @@ account picker.
   neither window is labeled unavailable, never unlimited or 100% remaining.
   Subscription names do not determine which windows an account has. Old results
   keep their fetch time when a refresh fails. Quota bars are green above 20%,
-  amber above 10% up to 20% and red at 10% or less, using each theme's status colors.
+  amber above 10% up to 20% and red at 10% or less, with vivid theme-aware fills,
+  rounded six-point tracks and a subtle glow.
 - A switch request carries only the opaque `chatgpt_account_id`. Planning resolves
   the credential into a non-deserializable executable config plan. The standard
   preview, running-turn checks, restart, journal, verification and rollback apply.

@@ -17,6 +17,8 @@ use std::time::Duration;
 use superba_core::{ChatGptAccount, ChatGptLoginPrompt, ChatGptQuota, Timestamp};
 
 const QUOTA_REFRESH: Duration = Duration::from_secs(60);
+const QUOTA_BAR_HEIGHT: f32 = 6.0;
+const QUOTA_BAR_RADIUS: u8 = 3;
 
 #[derive(Debug)]
 struct Login {
@@ -456,24 +458,32 @@ fn quota_windows(
                     ui.label(Text::small(remaining, cx.pal));
                 });
             });
-            let (track, _) = ui.allocate_exact_size(vec2(width, 3.0), Sense::hover());
-            ui.painter().rect_filled(track, 2.0, cx.pal.border);
+            let (track, _) = ui.allocate_exact_size(vec2(width, QUOTA_BAR_HEIGHT), Sense::hover());
+            ui.painter()
+                .rect_filled(track, QUOTA_BAR_RADIUS, cx.pal.border);
             let filled = egui::Rect::from_min_size(
                 track.min,
                 vec2(
                     width * (window.remaining as f32 / 100.0).clamp(0.0, 1.0),
-                    3.0,
+                    QUOTA_BAR_HEIGHT,
                 ),
             );
             if filled.width() > 0.0 {
-                let color = if window.remaining <= 10.0 {
-                    cx.pal.red
-                } else if window.remaining <= 20.0 {
-                    cx.pal.amber
-                } else {
-                    cx.pal.green
-                };
-                ui.painter().rect_filled(filled, 2.0, color);
+                let color = cx.pal.quota_fill(window.remaining);
+                for (spread, alpha) in [(2.0, 10), (1.0, if cx.pal.dark { 35 } else { 22 })] {
+                    let glow = egui::Color32::from_rgba_unmultiplied(
+                        color.r(),
+                        color.g(),
+                        color.b(),
+                        alpha,
+                    );
+                    ui.painter().rect_filled(
+                        filled.expand(spread),
+                        QUOTA_BAR_RADIUS + spread as u8,
+                        glow,
+                    );
+                }
+                ui.painter().rect_filled(filled, QUOTA_BAR_RADIUS, color);
             }
             if let Some(reset) = window.resets_at {
                 let minutes = reset
