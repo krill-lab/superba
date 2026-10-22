@@ -98,6 +98,15 @@ pub struct FakeService {
     next_plan: AtomicU64,
     areas: Areas,
     open_calls: AtomicU64,
+    quota_probe: Mutex<QuotaProbe>,
+}
+
+#[derive(Default)]
+struct QuotaProbe {
+    accounts: Vec<superba_core::ChatGptAccount>,
+    calls: Vec<String>,
+    fail: bool,
+    gate: Option<Arc<tokio::sync::Semaphore>>,
 }
 
 /// Fake state per page area (`fake/<area>.rs`).
@@ -156,6 +165,7 @@ impl FakeService {
             next_plan: AtomicU64::new(1),
             areas: Areas::default(),
             open_calls: AtomicU64::new(0),
+            quota_probe: Mutex::new(QuotaProbe::default()),
         }
         .with_account_summary(true)
     }
@@ -213,6 +223,26 @@ impl FakeService {
     /// How often `open_app` was called (GH#7).
     pub fn open_app_calls(&self) -> u64 {
         self.open_calls.load(Ordering::SeqCst)
+    }
+
+    /// Recorded quota queries in the isolated fake world.
+    pub fn chatgpt_quota_calls(&self) -> Vec<String> {
+        self.quota_probe.lock().unwrap().calls.clone()
+    }
+
+    /// Saved accounts loaded by the app's normal startup refresh.
+    pub fn set_chatgpt_accounts(&self, accounts: Vec<superba_core::ChatGptAccount>) {
+        self.quota_probe.lock().unwrap().accounts = accounts;
+    }
+
+    /// Fail quota queries without discarding the GUI's previous successful result.
+    pub fn fail_chatgpt_quota(&self, fail: bool) {
+        self.quota_probe.lock().unwrap().fail = fail;
+    }
+
+    /// Hold quota queries until the test releases a permit.
+    pub fn gate_chatgpt_quota(&self, gate: Option<Arc<tokio::sync::Semaphore>>) {
+        self.quota_probe.lock().unwrap().gate = gate;
     }
 
     fn state(&self) -> MutexGuard<'_, FakeState> {
@@ -1654,9 +1684,23 @@ impl FakeService {
 #[superba_core::async_trait]
 impl SwitchService for FakeService {
     async fn chatgpt_accounts(&self) -> Result<Vec<superba_core::ChatGptAccount>> {
-        Ok(vec![])
+        Ok(self.quota_probe.lock().unwrap().accounts.clone())
     }
     async fn chatgpt_quota(&self, id: &str) -> Result<superba_core::ChatGptQuota> {
+        let (fail, gate) = {
+            let mut probe = self.quota_probe.lock().unwrap();
+            probe.calls.push(id.into());
+            (probe.fail, probe.gate.clone())
+        };
+        if let Some(gate) = gate {
+            let _permit = gate
+                .acquire_owned()
+                .await
+                .map_err(|e| Error::other(e.to_string()))?;
+        }
+        if fail {
+            return Err(Error::other("fixture quota unavailable"));
+        }
         Ok(superba_core::ChatGptQuota {
             account_id: id.into(),
             plan_type: Some(

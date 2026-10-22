@@ -164,6 +164,11 @@ impl std::fmt::Debug for State {
 }
 
 impl State {
+    /// Refresh managed ChatGPT limits on every page, also while hidden in the tray.
+    pub fn background(&mut self, ctx: &egui::Context, cx: &Cx<'_>, out: &mut Vec<Action>) {
+        self.chatgpt.background(ctx, cx, out);
+    }
+
     /// A dialog of this page is open (the shell leaves Enter / Escape to it).
     pub fn is_modal_open(&self) -> bool {
         self.add.is_some() || self.remove.is_some() || self.import.is_some()
@@ -327,7 +332,8 @@ impl State {
 
 /// Draw the page.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    if state.chatgpt.poll(cx, out) | state.poll(cx, out) {
+    state.background(ui.ctx(), cx, out);
+    if state.poll(cx, out) {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(60));
     }

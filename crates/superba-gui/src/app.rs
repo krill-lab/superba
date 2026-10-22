@@ -790,6 +790,16 @@ impl SuperbaApp {
             ctx.request_repaint_after(Duration::from_millis(100));
             return;
         }
+        {
+            let pal = Palette::of(ctx);
+            let busy = self.flow.is_running() || self.flow.is_planning();
+            let cx = cx!(self, pal, busy);
+            let mut actions = Vec::new();
+            self.pages.providers.background(ctx, &cx, &mut actions);
+            for action in actions {
+                self.handle_action(ctx, action);
+            }
+        }
         if !self.data.router_enabled() && !self.data.claude_routed() {
             self.data.router_watch = None;
         }
@@ -2253,8 +2263,8 @@ impl eframe::App for SuperbaApp {
 
     /// Runs before every `ui` and alone while the window is hidden or
     /// minimised (eframe calls no `ui` then): the backend's answers keep being
-    /// handled and the router watchdog keeps ticking; nothing else is read and
-    /// the window is not woken up for anything else.
+    /// handled, the router watchdog keeps ticking and managed ChatGPT quotas
+    /// refresh without showing the window.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.fonts.poll(ctx);
         let visible = ctx.input(|i| i.viewport().visible()).unwrap_or(true);

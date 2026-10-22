@@ -10,6 +10,136 @@
 
 mod support;
 
+fn quota_tick(
+    data: &Data,
+    service: &Arc<dyn SwitchService>,
+    state: &mut providers::State,
+    ctx: &egui::Context,
+    seconds: i64,
+    busy: bool,
+) {
+    with_cx(data, service, Locale::En, |cx| {
+        let cx = Cx {
+            now: Timestamp(seconds * 1000),
+            busy,
+            ..*cx
+        };
+        state.background(ctx, &cx, &mut Vec::new());
+    });
+}
+
+async fn settle_quota(
+    data: &Data,
+    service: &Arc<dyn SwitchService>,
+    state: &mut providers::State,
+    ctx: &egui::Context,
+    seconds: i64,
+    busy: bool,
+) {
+    for _ in 0..30 {
+        quota_tick(data, service, state, ctx, seconds, busy);
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+fn quota_accounts(data: &mut Data, ids: &[&str]) {
+    data.chatgpt_accounts.finish(Ok(ids
+        .iter()
+        .map(|id| superba_core::ChatGptAccount {
+            id: (*id).into(),
+            email: format!("{id}@example.test"),
+            plan_type: None,
+            added_at: Timestamp(1),
+            active: false,
+        })
+        .collect()));
+}
+
+#[tokio::test]
+async fn all_saved_accounts_refresh_every_minute_without_rendering_the_provider_page() {
+    let fake = fake();
+    let mut data = data_of(&fake).await;
+    quota_accounts(&mut data, &["a", "b"]);
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let ctx = egui::Context::default();
+    let mut state = providers::State::default();
+    settle_quota(&data, &service, &mut state, &ctx, 0, false).await;
+    let mut calls = fake.chatgpt_quota_calls();
+    calls.sort();
+    assert_eq!(calls, ["a", "b"]);
+    settle_quota(&data, &service, &mut state, &ctx, 59, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+    settle_quota(&data, &service, &mut state, &ctx, 60, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 4);
+    // Returning after a long sleep runs one refresh, never a backlog of missed ticks.
+    settle_quota(&data, &service, &mut state, &ctx, 600, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 6);
+    quota_accounts(&mut data, &[]);
+    settle_quota(&data, &service, &mut state, &ctx, 660, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 6);
+}
+
+#[tokio::test]
+async fn quota_refresh_does_not_overlap_and_pauses_new_queries_during_switches() {
+    let fake = fake();
+    let mut data = data_of(&fake).await;
+    quota_accounts(&mut data, &["a"]);
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    fake.gate_chatgpt_quota(Some(gate.clone()));
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let ctx = egui::Context::default();
+    let mut state = providers::State::default();
+    settle_quota(&data, &service, &mut state, &ctx, 0, false).await;
+    settle_quota(&data, &service, &mut state, &ctx, 60, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 1);
+    gate.add_permits(1);
+    fake.gate_chatgpt_quota(None);
+    settle_quota(&data, &service, &mut state, &ctx, 61, true).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 1);
+    settle_quota(&data, &service, &mut state, &ctx, 61, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+    settle_quota(&data, &service, &mut state, &ctx, 120, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+}
+
+#[tokio::test]
+async fn failed_automatic_refresh_keeps_the_last_quota_and_retries_next_minute() {
+    let fake = fake();
+    let mut data = data_of(&fake).await;
+    quota_accounts(&mut data, &["a"]);
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let harness = support::ui::Harness::new([1060.0, 760.0], egui::Theme::Light);
+    let mut state = providers::State::default();
+    state.select(ProviderId::Profile("official".into()));
+    settle_quota(&data, &service, &mut state, &harness.ctx, 0, false).await;
+    fake.fail_chatgpt_quota(true);
+    settle_quota(&data, &service, &mut state, &harness.ctx, 60, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+    let texts = harness.settle(&mut |ui| {
+        with_cx(&data, &service, Locale::En, |cx| {
+            let cx = Cx {
+                now: Timestamp(60_000),
+                ..*cx
+            };
+            providers::show(ui, &cx, &mut state, &mut Vec::new());
+        });
+    });
+    let text = texts
+        .iter()
+        .map(|(t, _)| t.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        text.contains("69%") && text.contains("fixture quota unavailable"),
+        "{text}"
+    );
+    settle_quota(&data, &service, &mut state, &harness.ctx, 119, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+    fake.fail_chatgpt_quota(false);
+    settle_quota(&data, &service, &mut state, &harness.ctx, 120, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 3);
+}
+
 #[tokio::test]
 async fn chatgpt_accounts_show_individual_limits_and_switch_the_selected_identity() {
     let service = fake();

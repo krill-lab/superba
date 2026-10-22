@@ -22,6 +22,10 @@ account picker.
   file credentials selected explicitly. The browser URL can be reopened or
   copied; cancellation stops only Superba's helper child. The user's current
   Codex home is not used for the login ceremony.
+- Each saved account refreshes automatically every 60 seconds on all pages and
+  while hidden in the tray. Manual refresh resets that account's timer. Requests
+  never overlap for one account, pause during switches or login, and retry at
+  the next interval after a failure while retaining the last successful result.
 - Limits use `account/rateLimits/read` with the selected account. Helpers preserve
   rotated credentials, including when the limits request fails. An unchanged
   active login can receive its own rotated tokens; a concurrent account change

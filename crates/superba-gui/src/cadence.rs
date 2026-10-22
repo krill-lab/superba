@@ -10,10 +10,10 @@
 //! generation moves. The remote host list follows focus changes and a long
 //! interval; Superba's own update check runs once a day while shown.
 //!
-//! While the window is hidden or minimised only the router watchdog keeps its
-//! [`ROUTER_WATCH_EVERY`] tick (it falls back to direct mode when the router
-//! dies); nothing else is asked and the window is not woken up for anything
-//! else. Showing it again or giving it the focus reads the overview at once.
+//! While the window is hidden or minimised the router watchdog and notification
+//! watcher keep ticking. Managed ChatGPT quotas have a separate one-minute
+//! timer in the provider state, polled by the app alongside this cadence.
+//! Showing the window again or giving it focus reads the overview at once.
 
 use std::time::{Duration, Instant};
 

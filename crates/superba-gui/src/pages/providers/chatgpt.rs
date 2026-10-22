@@ -14,7 +14,9 @@ use std::sync::{
     mpsc,
 };
 use std::time::Duration;
-use superba_core::{ChatGptAccount, ChatGptLoginPrompt, ChatGptQuota};
+use superba_core::{ChatGptAccount, ChatGptLoginPrompt, ChatGptQuota, Timestamp};
+
+const QUOTA_REFRESH: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
 struct Login {
@@ -35,6 +37,7 @@ struct Quota {
     value: Option<ChatGptQuota>,
     task: Option<ReadTask<ChatGptQuota>>,
     error: Option<String>,
+    next_refresh: Option<Timestamp>,
 }
 
 /// Page-owned login and quota work; credentials never enter GUI state.
@@ -47,6 +50,40 @@ pub(crate) struct State {
 }
 
 impl State {
+    pub(super) fn background(&mut self, ctx: &egui::Context, cx: &Cx<'_>, out: &mut Vec<Action>) {
+        let mut running = self.poll(cx, out);
+        let accounts = cx
+            .data
+            .chatgpt_accounts
+            .value
+            .as_deref()
+            .unwrap_or_default();
+        self.quotas
+            .retain(|id, _| accounts.iter().any(|a| a.id == *id));
+        let paused = cx.busy || self.login.is_some() || self.import.is_some();
+        let mut wake = None;
+        for account in accounts {
+            let entry = self.quotas.entry(account.id.clone()).or_default();
+            let due = entry.next_refresh.is_none_or(|at| at <= cx.now);
+            if !paused && due && entry.task.is_none() {
+                self.refresh(cx, &account.id);
+            }
+            let entry = &self.quotas[&account.id];
+            running |= entry.task.is_some();
+            let wait = entry
+                .next_refresh
+                .and_then(|at| at.duration_since(cx.now))
+                .unwrap_or(Duration::ZERO)
+                .max(Duration::from_secs(1));
+            wake = Some(wake.map_or(wait, |old: Duration| old.min(wait)));
+        }
+        if running {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        } else if let Some(wait) = wake {
+            ctx.request_repaint_after(wait);
+        }
+    }
+
     pub(super) fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) -> bool {
         if let Some(login) = &mut self.login {
             while let Ok(prompt) = login.prompts.try_recv() {
@@ -123,6 +160,7 @@ impl State {
             return;
         }
         entry.error = None;
+        entry.next_refresh = Some(cx.now.saturating_add(QUOTA_REFRESH));
         let service = cx.service.clone();
         let id = id.to_owned();
         entry.task = Some(task(async move { service.chatgpt_quota(&id).await }));
@@ -204,9 +242,6 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     }
     ui.add_space(12.0);
     for (index, account) in accounts.iter().enumerate() {
-        if !state.quotas.contains_key(&account.id) {
-            state.refresh(cx, &account.id);
-        }
         if index > 0 {
             divider(ui, cx);
         }
