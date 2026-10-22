@@ -76,6 +76,11 @@ REPO = HERE.parents[3]
 SIZE = (1280, 800)
 # Window sizes every page is shot at (UX §8); the first keeps the plain names.
 SIZES = [(1280, 800), (1440, 900)]
+# Long ids of the custom-site list and their upstream names (--custom-site).
+CUSTOM_EXTRA = ["gpt-5.3-codex-spark", "claude-opus-4-7-20260901-thinking-extended-context-1m",
+                "gpt-5.2-chat-latest"]
+CUSTOM_MAP = [("gpt-5.3-codex-spark", "gpt-5.3-codex-spark-internal-preview-2026"),
+              ("gpt-5.5", "claude-opus-4-7-20260901-thinking-extended-context-1m")]
 # Fake key: accepted only by the mock relay started below.
 KEY = "nb_shot_0f6c2d8e4a1b9c3d5e7f0a2b4c6d8e1f7a3c"
 LINES = [
@@ -330,6 +335,8 @@ class Session:
                 "--cert", str(self.tls / "server.pem"), "--key", str(self.tls / "server.key"),
                 "--latency", ",".join(f"{l[0]}={l[3]}" for l in LINES),
                 "--edge-block", "cn-fast", "--log", str(self.work / "relay.jsonl")]
+        for m in CUSTOM_EXTRA if self.args.custom_site else ():
+            argv += ["--extra-model", m]
         relay = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=open(self.work / "relay.err", "w"),
                                  start_new_session=True)
         self.pids.append(relay.pid)
@@ -385,6 +392,15 @@ class Session:
         log("status after setup:\n" + p.stdout.strip())
         self.run([spb, "site", "add", "example-api", "--name", "Example API",
                   "--base-url", f"https://127.0.0.1:{self.ports['overseas']}/v1"], check=False)
+        if self.args.custom_site:
+            # The custom site applied, with long ids and upstream names (the
+            # Models page's upstream column).
+            self.run([spb, "site", "edit", "example-api"]
+                     + [x for k, v in CUSTOM_MAP for x in ("--map", f"{k}={v}")])
+            self.run([spb, "profile", "add", "example", "--name", "内网", "--site",
+                      "example-api", "--auth", "apikey", "--key-stdin"], stdin=KEY + "\n")
+            self.run([spb, "profile", "use", "example", "--yes", "--countdown", "0"],
+                     check=False)
         # A longer countdown keeps the hot-switch overlay on screen for its shot.
         profiles = self.home / ".local/share/superba/profiles.json"
         if profiles.exists():
@@ -677,6 +693,8 @@ def main():
     ap.add_argument("--sizes", default=",".join(f"{w}x{h}" for w, h in SIZES),
                     help="comma-separated window sizes WxH (the first keeps plain names)")
     ap.add_argument("--size", help="a single window size WxH (same as --sizes WxH)")
+    ap.add_argument("--custom-site", action="store_true",
+                    help="apply a custom-site provider with long model ids and upstream names")
     ap.add_argument("--disable-line", action="append", metavar="LINE",
                     help="disable this line of the Krill provider (repeatable)")
     args = ap.parse_args()

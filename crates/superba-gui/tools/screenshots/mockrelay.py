@@ -67,6 +67,9 @@ MAX_TIMESTAMP = 253_402_300_799  # Last second of year 9999, UTC.
 
 # Context windows of the mock models (also served as OpenAI-list metadata).
 CONTEXT = {"gpt-5.5": 272_000, "gpt-6-astra": 400_000, "gpt-5.5-mini": 128_000}
+# More ids of the OpenAI-style list only (`--extra-model`, e.g. long ids for
+# the Models page's custom-site shots).
+EXTRA_MODELS = []
 FAST = {"id": "priority", "name": "Fast", "description": "2x speed, increased usage"}
 ULTRAFAST = {"id": "ultrafast", "name": "Ultrafast",
              "description": "Fastest responses, highest usage"}
@@ -431,8 +434,8 @@ class Handler(BaseHTTPRequestHandler):
                                             in enumerate(MODELS)]}, {}
                 return 200, {"object": "list", "data": [
                     {"id": m, "object": "model", "created": 0, "owned_by": "mock-krill",
-                     "context_length": CONTEXT[m]}
-                    for m, _, _ in MODELS]}, {}
+                     "context_length": CONTEXT.get(m, 200_000)}
+                    for m in [m for m, _, _ in MODELS] + EXTRA_MODELS]}, {}
             if path == WHOAMI:
                 return 200, {"email": "dev@example.com", "chatgpt_user_id": "user-mock-dev",
                              "chatgpt_account_id": ACCOUNT_ID, "chatgpt_plan_type": "pro",
@@ -596,6 +599,8 @@ def parse_args(argv=None):
     parser.add_argument("--fault-file", help="JSON {path: status} read per request (e2e: "
                         "404 hides an endpoint, 429 rate-limits it)")
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--extra-model", action="append", default=[], metavar="ID",
+                        help="another id of the OpenAI-style /v1/models list")
     args = parser.parse_args(argv)
     if args.self_test:
         return args
@@ -865,6 +870,7 @@ def self_test():
 
 def main(argv=None):
     args = parse_args(argv)
+    EXTRA_MODELS.extend(args.extra_model)
     if args.self_test:
         try:
             self_test()
