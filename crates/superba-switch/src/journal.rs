@@ -20,6 +20,9 @@ use superba_core::{
 /// Number of finished entries kept for history (remote "roll back this host").
 pub const KEEP_FINISHED: usize = 32;
 
+/// How long [`StateLock::acquire`] waits for a lock that is busy for a moment.
+pub const STATE_LOCK_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// Holds `state.lock` (exclusive `flock` / `LockFileEx`) while alive.
 #[derive(Debug)]
 pub struct StateLock {
@@ -28,7 +31,7 @@ pub struct StateLock {
 }
 
 impl StateLock {
-    /// Try to take the lock without waiting; another Superba process (GUI or `spb`)
+    /// Take the lock, waiting at most [`STATE_LOCK_GRACE`]; another Superba process (GUI or `spb`)
     /// holding it is reported as [`Error::Locked`].
     pub fn acquire(data_dir: &DataDir) -> Result<Self> {
         fs::create_dir_all(data_dir.root()).map_err(|e| Error::io(data_dir.root(), &e))?;
@@ -40,12 +43,28 @@ impl StateLock {
             .write(true)
             .open(&path)
             .map_err(|e| Error::io(&path, &e))?;
-        match file.try_lock() {
-            Ok(()) => Ok(Self { _file: file, path }),
-            Err(fs::TryLockError::WouldBlock) => Err(Error::Locked {
-                what: path.display().to_string(),
-            }),
-            Err(fs::TryLockError::Error(e)) => Err(Error::io(&path, &e)),
+        // A lock that is busy for a moment is waited for (at most
+        // [`STATE_LOCK_GRACE`]): a `flock` lives on the open file description,
+        // and a process this program spawns on another thread inherits a copy
+        // of the descriptor until its `exec` closes it. A lock released in that
+        // window stays held by the child for a few milliseconds, which made a
+        // second write right after a first one fail with "locked" (alpha.9 CI,
+        // located_service_tests). Another Superba really holding the lock is
+        // still reported as [`Error::Locked`].
+        let deadline = std::time::Instant::now() + STATE_LOCK_GRACE;
+        loop {
+            match file.try_lock() {
+                Ok(()) => return Ok(Self { _file: file, path }),
+                Err(fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(fs::TryLockError::WouldBlock) => {
+                    return Err(Error::Locked {
+                        what: path.display().to_string(),
+                    });
+                }
+                Err(fs::TryLockError::Error(e)) => return Err(Error::io(&path, &e)),
+            }
         }
     }
 

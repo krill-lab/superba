@@ -255,10 +255,8 @@ async fn harness_drafts_errors_edits_and_reviewed_restore_reach_the_real_writer(
         std::fs::read(&saved.file.path).unwrap(),
         save.contents.expose()
     );
-    assert!(matches!(
-        service.save_harness_file(save).await,
-        Err(Error::Conflict { .. })
-    ));
+    let again = service.save_harness_file(save).await;
+    assert!(matches!(again, Err(Error::Conflict { .. })), "{again:?}");
     let backups = service.harness_backups(HarnessId::Pi).await.unwrap();
     let backup = backups
         .iter()

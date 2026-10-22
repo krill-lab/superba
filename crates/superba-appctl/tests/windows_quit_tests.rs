@@ -9,9 +9,8 @@ use superba_appctl::{osproc, procs, quit};
 use superba_core::{AppSession, EnvObservation, QuitOptions, QuitOutcome, QuitStep};
 use windows_sys::Win32::Foundation::{CloseHandle, DBG_CONTINUE, LocalFree};
 use windows_sys::Win32::System::Diagnostics::Debug::{
-    CREATE_PROCESS_DEBUG_EVENT, CREATE_THREAD_DEBUG_EVENT, ContinueDebugEvent, DEBUG_EVENT,
-    DebugSetProcessKillOnExit, EXCEPTION_DEBUG_EVENT, EXIT_PROCESS_DEBUG_EVENT,
-    LOAD_DLL_DEBUG_EVENT, WaitForDebugEvent,
+    CREATE_PROCESS_DEBUG_EVENT, ContinueDebugEvent, DEBUG_EVENT, DebugSetProcessKillOnExit,
+    EXCEPTION_DEBUG_EVENT, EXIT_PROCESS_DEBUG_EVENT, LOAD_DLL_DEBUG_EVENT, WaitForDebugEvent,
 };
 
 struct OwnedChild(Child);
@@ -134,8 +133,14 @@ fn delayed_exit(delay: Duration) -> (u32, std::thread::JoinHandle<()>) {
             let mut event: DEBUG_EVENT = unsafe { std::mem::zeroed() };
             // SAFETY: valid writable event; only our child's events are read.
             assert_ne!(unsafe { WaitForDebugEvent(&mut event, 60_000) }, 0);
-            // SAFETY: the event code identifies the active union field. Windows
-            // gives the debugger these handles separately from std's Child.
+            // SAFETY: the event code identifies the active union field. Only
+            // the image file handles belong to the debugger: the process and
+            // thread handles of CREATE_PROCESS / CREATE_THREAD events are
+            // closed by the system when the matching EXIT event is continued
+            // (WaitForDebugEvent docs). Closing them here too was a double
+            // close: once the value was reused for a std thread handle (another
+            // test's debugger thread), the system's close invalidated it and
+            // `join` failed with "The handle is invalid" (alpha.9 CI).
             unsafe {
                 match event.dwDebugEventCode {
                     CREATE_PROCESS_DEBUG_EVENT => {
@@ -143,11 +148,6 @@ fn delayed_exit(delay: Duration) -> (u32, std::thread::JoinHandle<()>) {
                         if !info.hFile.is_null() {
                             CloseHandle(info.hFile);
                         }
-                        CloseHandle(info.hProcess);
-                        CloseHandle(info.hThread);
-                    }
-                    CREATE_THREAD_DEBUG_EVENT => {
-                        CloseHandle(event.u.CreateThread.hThread);
                     }
                     LOAD_DLL_DEBUG_EVENT => {
                         let h = event.u.LoadDll.hFile;
