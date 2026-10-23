@@ -311,6 +311,8 @@ impl PendingDecision {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Reply {
+    /// Managed official logins.
+    ChatGptAccounts(Result<Vec<superba_core::ChatGptAccount>>),
     /// Overview loaded.
     Overview(Result<Overview>),
     /// Profiles loaded.
@@ -647,11 +649,13 @@ async fn handle(
                 tokio::join!(service.overview(), service.profile_set(), service.sites())
             })
             .await;
+            out.send(Reply::ChatGptAccounts(service.chatgpt_accounts().await));
             out.send(Reply::Profiles(p));
             out.send(Reply::Sites(s));
             out.send(Reply::Overview(o));
         }
         Command::Overview => {
+            out.send(Reply::ChatGptAccounts(service.chatgpt_accounts().await));
             let (o, p) = after_switches(switches, || async {
                 tokio::join!(service.overview(), service.profile_set())
             })
@@ -750,6 +754,7 @@ async fn handle(
             tokio::join!(
                 async {
                     let (o, p) = tokio::join!(service.overview(), service.profile_set());
+                    out.send(Reply::ChatGptAccounts(service.chatgpt_accounts().await));
                     out.send(Reply::Profiles(p));
                     out.send(Reply::Overview(o));
                 },
@@ -827,6 +832,7 @@ async fn handle(
                 // changed the configuration.
                 switches.fetch_add(1, Ordering::SeqCst);
                 let (o, p) = tokio::join!(service.overview(), service.profile_set());
+                out.send(Reply::ChatGptAccounts(service.chatgpt_accounts().await));
                 out.send(Reply::Profiles(p));
                 out.send(Reply::Overview(o));
             }

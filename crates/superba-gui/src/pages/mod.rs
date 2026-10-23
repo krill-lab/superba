@@ -375,6 +375,8 @@ impl Action {
 /// Something a page asks the app to do.
 #[derive(Debug)]
 pub enum Action {
+    /// Apply a specific official ChatGPT account through the normal switch flow.
+    SwitchChatGptAccount(String),
     /// Navigate.
     Go(Page),
     /// Reload overview, profiles, sites.
@@ -566,6 +568,8 @@ pub fn local_offset_secs(t: Timestamp) -> Option<i64> {
 pub struct Data {
     /// Overview.
     pub overview: Load<Overview>,
+    /// Managed official logins, without credentials.
+    pub chatgpt_accounts: Load<Vec<superba_core::ChatGptAccount>>,
     /// Profiles and settings.
     pub profiles: Load<ProfileSet>,
     /// Sites.

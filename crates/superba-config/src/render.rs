@@ -206,7 +206,7 @@ fn targets(
                 );
             }
         }
-        ResolvedMode::Official => {
+        ResolvedMode::Official | ResolvedMode::ChatGptAccount { .. } => {
             for p in ROUTING_KEYS {
                 put(p, Target::Remove);
             }
@@ -366,7 +366,10 @@ fn auth_target(
         is_restore(&inp.desired.mode) && inp.released_changed.iter().any(|p| p == AUTH_JSON_PATH);
     if inp.auth_drift || released_auth {
         let resolution = inp.desired.key_resolutions.get(AUTH_JSON_PATH);
-        let token = matches!(inp.desired.mode, ResolvedMode::Token { .. });
+        let token = matches!(
+            inp.desired.mode,
+            ResolvedMode::Token { .. } | ResolvedMode::ChatGptAccount { .. }
+        );
         match (token, resolution) {
             (_, Some(KeyResolution::Overwrite)) => {}
             // A ChatGPT login (Codex's own sign-in) is stashed before a switch
@@ -395,6 +398,7 @@ fn auth_target(
             AuthTarget::Write(authjson::render_token(*auth, key)?)
         }
         ResolvedMode::Official => official_auth(live_shape, inp.login_stash, notes),
+        ResolvedMode::ChatGptAccount { auth_json, .. } => AuthTarget::Write(auth_json.clone()),
         // A hand-off restores the credential only while it is Superba's.
         ResolvedMode::Release { .. } if inp.last_written.is_empty() => AuthTarget::Keep,
         ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => {

@@ -242,6 +242,7 @@ remote_failed = "{host}：{detail}"
 foreign_auth = "auth.json 由另一个工具管理；不测试它的 Key"
 
 [switch.destination]
+chatgpt_account = "ChatGPT · {email}"
 router = "{site}（经本地路由）"
 profile = "{site} · {line} · {mode}"
 profile_no_line = "{site} · {mode}"
