@@ -14,8 +14,8 @@ use std::path::Path;
 
 use superba_core::codex::{PAT_RECOMMENDED_KEYS, PROVIDER_OPENAI, config_keys as k};
 use superba_core::{
-    AUTH_JSON_PATH, AuthChange, AuthShape, Baseline, BaselineExtras, CodexFiles, ConfigState,
-    Error, FileChange, KeyChange, KeyResolution, KeySnapshot, LocalizedText, Notice,
+    AUTH_JSON_PATH, AuthChange, AuthMode, AuthShape, Baseline, BaselineExtras, CodexFiles,
+    ConfigState, Error, FileChange, KeyChange, KeyResolution, KeySnapshot, LocalizedText, Notice,
     ProviderRestore, RenderedFiles, ResolvedMode, ResolvedProfile, Result, SecretBytes, Timestamp,
     is_valid_setting_path, reserved_owner,
 };
@@ -162,7 +162,7 @@ fn targets(
         ResolvedMode::Token {
             auth, endpoints, ..
         } => {
-            if !auth.uses_key() {
+            if !auth.uses_key() && *auth != AuthMode::MixedOfficial {
                 return Err(Error::invalid(format!("{auth:?} is not a token auth mode")));
             }
             put(k::MODEL_PROVIDER, Target::Set(string_repr(PROVIDER_OPENAI)));
@@ -172,7 +172,11 @@ fn targets(
                     &endpoints.openai_base_url,
                 ))),
             );
-            if auth.writes_chatgpt_base_url() {
+            if *auth == AuthMode::MixedOfficial {
+                // Mixed login: every ChatGPT call goes to chatgpt.com with the
+                // real account; only model traffic goes to the router.
+                put(k::CHATGPT_BASE_URL, Target::Remove);
+            } else if auth.writes_chatgpt_base_url() {
                 let url = endpoints.chatgpt_base_url.as_ref().ok_or_else(|| {
                     Error::invalid(format!("{auth:?} needs chatgpt_base_url in the endpoints"))
                 })?;
@@ -386,6 +390,10 @@ fn auth_target(
         }
     }
     Ok(match &inp.desired.mode {
+        // Mixed login keeps (or restores) the user's own ChatGPT login.
+        ResolvedMode::Token { auth, .. } if *auth == AuthMode::MixedOfficial => {
+            official_auth(live_shape, inp.login_stash, notes)
+        }
         ResolvedMode::Token { auth, key, .. } => {
             AuthTarget::Write(authjson::render_token(*auth, key)?)
         }

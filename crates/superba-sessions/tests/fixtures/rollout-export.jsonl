@@ -1,0 +1,16 @@
+{"timestamp": "2026-10-20T08:00:00Z", "type": "session_meta", "payload": {"id": "019a2f5b-6a7b-7d46-8e85-4f0a6b8c2d05", "timestamp": "2026-10-20T08:00:00Z", "cwd": "/home/u/w/superba", "originator": "Codex Desktop", "model_provider": "openai"}}
+{"timestamp": "2026-10-20T08:00:00Z", "type": "turn_context", "payload": {"cwd": "/home/u/w/superba", "model": "gpt-5.5"}}
+{"timestamp": "2026-10-20T08:00:01Z", "type": "response_item", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "<permissions instructions>sandbox"}]}}
+{"timestamp": "2026-10-20T08:00:01Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "# AGENTS.md instructions for /home/u\n\nbe nice"}]}}
+{"timestamp": "2026-10-20T08:00:01Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "<environment_context>\n<cwd>/x</cwd>\n</environment_context>"}]}}
+{"timestamp": "2026-10-20T08:00:02Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Old question before compaction"}]}}
+{"timestamp": "2026-10-20T08:00:03Z", "type": "compacted", "payload": {"message": "We discussed the schema; table users was renamed.", "replacement_history": []}}
+{"timestamp": "2026-10-20T08:00:04Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Plan the database migration"}, {"type": "input_image", "image_url": "data:image/png;base64,AAAA"}]}}
+{"timestamp": "2026-10-20T08:00:05Z", "type": "response_item", "payload": {"type": "reasoning", "summary": [{"type": "summary_text", "text": "**Planning** the steps"}], "encrypted_content": "gAAAAABencrypted"}}
+{"timestamp": "2026-10-20T08:00:05Z", "type": "response_item", "payload": {"type": "function_call", "name": "shell", "arguments": "{\"command\":[\"ls\",\"migrations\"]}", "call_id": "call_1"}}
+{"timestamp": "2026-10-20T08:00:06Z", "type": "response_item", "payload": {"type": "function_call_output", "call_id": "call_1", "output": "001_init.sql\n002_users.sql"}}
+{"timestamp": "2026-10-20T08:00:06Z", "type": "response_item", "payload": {"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: 003.sql\n+ALTER TABLE x;\n*** End Patch", "call_id": "call_2"}}
+{"timestamp": "2026-10-20T08:00:07Z", "type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "call_2", "output": "{\"output\":\"Success\"}"}}
+{"timestamp": "2026-10-20T08:00:08Z", "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Added `003.sql`. Run `make migrate`."}]}}
+{"timestamp": "2026-10-20T08:00:08Z", "type": "event_msg", "payload": {"type": "token_count", "info": null}}
+not json

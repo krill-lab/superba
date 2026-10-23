@@ -46,6 +46,12 @@ pub struct Profile {
     /// [`Profile::line_priority`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub backup_lines: Vec<LineId>,
+    /// Lines the user disabled (user bug 108): never selected, probed or
+    /// dialled by the router, and never the active line in direct mode. They
+    /// keep their place in the priority order. At least one of the site's
+    /// lines stays enabled ([`Profile::set_line_disabled`]).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub disabled_lines: std::collections::BTreeSet<LineId>,
     /// Auth mode. For key-based profiles it mirrors [`Profile::auth`]
     /// ([`AuthChoice::representative_mode`]); built-in profiles use
     /// [`AuthMode::OfficialChatGpt`].
@@ -135,10 +141,61 @@ impl Profile {
         lines
     }
 
+    /// True when the user disabled `line`.
+    pub fn is_line_disabled(&self, line: &LineId) -> bool {
+        self.disabled_lines.contains(line)
+    }
+
+    /// [`Profile::ordered_line_ids`] without the disabled lines: the lines the
+    /// router fails over across and a direct switch may use. Empty only when
+    /// every line of the site is disabled.
+    pub fn enabled_line_ids(&self, site: &Site) -> Vec<LineId> {
+        let mut lines = self.ordered_line_ids(site);
+        lines.retain(|id| !self.is_line_disabled(id));
+        lines
+    }
+
+    /// Disable or enable a site line. Refuses to disable the last enabled
+    /// line of the site. The caller saves the profile; a running router
+    /// reloads its members at once.
+    pub fn set_line_disabled(
+        &mut self,
+        site: &Site,
+        line: &LineId,
+        disabled: bool,
+    ) -> crate::Result<()> {
+        if self.is_builtin() || self.site_id != site.id || site.line(line).is_none() {
+            return Err(crate::Error::invalid(format!(
+                "line {line} is not available for profile {}",
+                self.id
+            )));
+        }
+        if !disabled {
+            self.disabled_lines.remove(line);
+            return Ok(());
+        }
+        let others_enabled = site
+            .lines
+            .iter()
+            .any(|l| &l.id != line && !self.is_line_disabled(&l.id));
+        if !others_enabled {
+            return Err(crate::Error::invalid(format!(
+                "line {line} is the last enabled line of profile {}",
+                self.id
+            )));
+        }
+        self.disabled_lines.insert(line.clone());
+        Ok(())
+    }
+
     /// Make a site line preferred, keeping every other line in its effective
     /// order. The caller saves the profile to apply it to a running router.
     pub fn prefer_line(&mut self, site: &Site, line: LineId) -> crate::Result<()> {
-        if self.is_builtin() || self.site_id != site.id || site.line(&line).is_none() {
+        if self.is_builtin()
+            || self.site_id != site.id
+            || site.line(&line).is_none()
+            || self.is_line_disabled(&line)
+        {
             return Err(crate::Error::invalid(format!(
                 "line {line} is not available for profile {}",
                 self.id

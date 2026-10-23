@@ -557,9 +557,9 @@ impl AppHarness {
             self.act(id, Action::Click);
             self.settle();
             if tab == SuperbaTab::Settings {
-                self.click(Some(Role::Button), &tr.t(section.title_key()));
+                self.click(Some(Role::Tab), &tr.t(section.title_key()));
                 return self.until("settings anchor", |tree| {
-                    tree.find(Some(Role::Button), &tr.t(section.title_key()))
+                    tree.find(Some(Role::Tab), &tr.t(section.title_key()))
                         .is_some_and(|id| tree.node(id).is_selected() == Some(true))
                 });
             }

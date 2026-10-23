@@ -532,6 +532,9 @@ pub struct Entry {
     /// Availability per remote host the app is connected to (what a settings
     /// sync to that host would skip), in host order.
     pub host_support: Vec<(TargetKey, Availability)>,
+    /// Index into [`Model::releases`] of the newest listed release that added
+    /// this key ("New in latest").
+    pub new_in: Option<usize>,
 }
 
 impl Entry {
@@ -770,6 +773,45 @@ pub struct Category {
     pub label_zh: Option<String>,
 }
 
+/// The config keys one Codex release added, from the catalog's change summary
+/// (against the previous stable release).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Release {
+    /// Codex version.
+    pub version: String,
+    /// Alpha / beta.
+    pub prerelease: bool,
+    /// Config keys added, by path.
+    pub added: Vec<NewKey>,
+}
+
+/// One key a release added, described from that release's catalog (the key may
+/// be unknown to every local Codex and so have no [`Entry`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewKey {
+    /// Config path.
+    pub path: String,
+    /// Official display name (experimental features).
+    pub name: Option<String>,
+    /// Chinese display name.
+    pub name_zh: Option<String>,
+    /// Explanation.
+    pub text: Explanation,
+    /// Stage in that release.
+    pub stage: Stage,
+}
+
+/// How current the catalog is.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Freshness {
+    /// Newest Codex version (prereleases included) the catalog covers.
+    pub newest: Option<String>,
+    /// Date the catalog index was generated (`YYYY-MM-DD`), when recorded.
+    pub generated: Option<String>,
+    /// A local Codex newer than every catalog version.
+    pub ahead: Option<String>,
+}
+
 /// Everything the Codex settings tab shows.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Model {
@@ -795,6 +837,10 @@ pub struct Model {
     pub profile: Option<String>,
     /// `config.toml` could not be parsed: the page is read-only.
     pub config_error: Option<String>,
+    /// The newest catalog releases, newest first ("New in latest").
+    pub releases: Vec<Release>,
+    /// How current the catalog is.
+    pub freshness: Freshness,
 }
 
 impl Model {
@@ -823,6 +869,9 @@ impl Model {
             rows.sort_by_key(|e| e.rank(&filter.query));
         } else if filter.rail == Rail::Common {
             rows.sort_by_key(|e| e.common.unwrap_or(usize::MAX));
+        } else if filter.rail == Rail::New {
+            // As the grouped list draws them: by release, then by path.
+            rows.sort_by(|a, b| (a.new_in, &a.path).cmp(&(b.new_in, &b.path)));
         }
         rows
     }
@@ -839,6 +888,10 @@ impl Model {
             rail: Rail::Changed,
             ..Filter::default()
         };
+        let new = Filter {
+            rail: Rail::New,
+            ..Filter::default()
+        };
         let any = Filter {
             rail: Rail::All,
             ..filter.clone()
@@ -849,6 +902,9 @@ impl Model {
             }
             if changed.accepts(e, pending) {
                 out.changed += 1;
+            }
+            if new.accepts(e, pending) {
+                out.new += 1;
             }
             if any.accepts(e, pending) {
                 *out.categories.entry(e.category.clone()).or_insert(0) += 1;
@@ -894,6 +950,8 @@ pub enum Rail {
     Common,
     /// Keys the provider manages plus pending edits.
     Changed,
+    /// Keys added by the newest Codex releases.
+    New,
     /// One catalog category.
     Category(String),
 }
@@ -949,6 +1007,7 @@ impl Filter {
         }
         match &self.rail {
             Rail::Changed => entry.managed || pending.get(&entry.path).is_some(),
+            Rail::New => entry.new_in.is_some(),
             // Common entries a local Codex does not know are left out.
             Rail::Common => {
                 entry.common.is_some()
@@ -971,6 +1030,8 @@ pub struct RailCounts {
     pub common: usize,
     /// Entries in "Changed".
     pub changed: usize,
+    /// Entries in "New in latest".
+    pub new: usize,
     /// Visible entries (search hits while searching) per category.
     pub categories: BTreeMap<String, usize>,
     /// All search hits (while searching).

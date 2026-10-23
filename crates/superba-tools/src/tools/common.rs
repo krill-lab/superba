@@ -12,7 +12,7 @@ use crate::{Ctx, Op, fsx, pathenv};
 
 /// `p` with links resolved (unchanged when it cannot be).
 pub fn canonical(p: &Path) -> PathBuf {
-    let c = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let c = superba_core::paths::canonical(p).unwrap_or_else(|_| p.to_path_buf());
     // Windows' verbatim prefix only gets in the way of comparisons.
     let s = c.to_string_lossy();
     match s.strip_prefix(r"\\?\") {

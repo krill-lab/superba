@@ -369,6 +369,9 @@ pub enum QuitStep {
         ended: u32,
         /// Processes that could not be ended.
         failed: u32,
+        /// Those that could not be ended, named (`codex.exe (pid 5620)`).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        failed_names: Vec<String>,
     },
 }
 
@@ -380,7 +383,15 @@ impl QuitStep {
             QuitStep::ClosedWindows => "closed its windows".into(),
             QuitStep::Signalled => "sent a quit request".into(),
             QuitStep::Waited { ms } => format!("waited {:.1} s", *ms as f64 / 1000.0),
-            QuitStep::Ended { ended, failed } => {
+            QuitStep::Ended {
+                ended,
+                failed,
+                failed_names,
+            } if !failed_names.is_empty() => format!(
+                "ended {ended} process(es) by force, {failed} could not be ended: {}",
+                failed_names.join(", ")
+            ),
+            QuitStep::Ended { ended, failed, .. } => {
                 format!("ended {ended} process(es) by force, {failed} could not be ended")
             }
         }

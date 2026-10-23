@@ -27,7 +27,7 @@ use crate::cipher::{self, Plan, Removed};
 use crate::compaction::{self, CompactionInput, Route};
 use crate::config::join_path;
 use crate::forward::{
-    Observed, UpBody, UpResponse, describe_error, empty_responses_answer, failover_status,
+    Observed, UpBody, UpResponse, describe_error, empty_responses_answer, failover_status_in,
     local_busy, request_headers, response_headers, router_error, set_route, up_response,
 };
 use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_detail, file_limit_in};
@@ -342,9 +342,7 @@ async fn proxy_request(
         None => session_key(&parts.headers),
     };
     let now = Instant::now();
-    let pin = key
-        .as_deref()
-        .and_then(|k| lock(&generation.sticky).get(k, now));
+    let pin = key.as_deref().and_then(|k| generation.pin(k, now));
     // Remote compaction: a compacted conversation stays with the member that
     // made its compaction item; compaction requests skip members that cannot
     // compact (crate::compaction).
@@ -531,6 +529,25 @@ async fn proxy_request(
         let converted = upstream != Protocol::Responses && is_responses_path(&parts.method, &rest);
         let mut response_tools = Vec::new();
         let mut resent = false;
+        parts.extensions.remove::<crate::official::ResolvedAuth>();
+        if member.cfg.kind == crate::MemberKind::Official {
+            let client = parts
+                .extensions
+                .get::<crate::official::OfficialClient>()
+                .cloned();
+            match crate::official::resolve(member, client.as_ref(), &generation.http).await {
+                Ok(a) => {
+                    parts.extensions.insert(a);
+                }
+                Err(reason) => {
+                    if let Some(t) = &mut tracker {
+                        t.attempt_failed(c, None, &reason, std::time::Duration::ZERO);
+                    }
+                    failures.push(format!("{label}: {reason}"));
+                    continue;
+                }
+            }
+        }
         let (result, compression, started) = loop {
             let send_body = match mapped.get(&c.member) {
                 Some(b) => b.clone(),
@@ -771,7 +788,31 @@ async fn proxy_request(
                 note_line_down(&shared, &generation, c, opened, &reason);
                 (reason, None)
             }
-            Ok(resp) => match failover_status(resp.status(), resp.headers()).or_else(|| {
+            Ok(resp) => match failover_status_in(
+                &generation.config.tuning.failover_statuses,
+                resp.status(),
+                resp.headers(),
+            )
+            .or_else(|| {
+                // The official plan's own window is spent (or its login
+                // was refused): another member may still serve.
+                (member.cfg.kind == crate::MemberKind::Official
+                    && i + 1 < total
+                    && (crate::official::plan_limit(resp.status())
+                        || resp.status() == StatusCode::UNAUTHORIZED))
+                    .then(|| {
+                        format!(
+                            "official ChatGPT {} (HTTP {})",
+                            if resp.status() == StatusCode::UNAUTHORIZED {
+                                "login refused"
+                            } else {
+                                "plan limit reached"
+                            },
+                            resp.status().as_u16()
+                        )
+                    })
+            })
+            .or_else(|| {
                 empty_responses_answer(&rest, resp.status(), resp.headers()).then(|| {
                     format!(
                         "intercepted by the line's edge (HTTP {} with an empty body)",
@@ -780,6 +821,17 @@ async fn proxy_request(
                 })
             }) {
                 Some(reason) => {
+                    if resp.status() == StatusCode::UNAUTHORIZED
+                        && let (Some(v), Some(t)) = (
+                            member.vault.as_ref(),
+                            parts
+                                .extensions
+                                .get::<crate::official::ResolvedAuth>()
+                                .and_then(|a| a.stored.as_ref()),
+                        )
+                    {
+                        v.note_refused(t.expose());
+                    }
                     let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
                     note_line_down(&shared, &generation, c, opened, &reason);
                     (reason, Some(resp.status().as_u16()))
@@ -860,7 +912,15 @@ async fn proxy_request(
                         let now = Instant::now();
                         t.answered(c, resp.status().as_u16(), resp.headers(), started, now);
                     }
-                    return downstream(
+                    // A member's 401 says nothing about the user's ChatGPT
+                    // login: never let Codex refresh it for that.
+                    let relay_auth_error = resp.status() == StatusCode::UNAUTHORIZED
+                        && member.cfg.kind != crate::MemberKind::Official
+                        && parts
+                            .extensions
+                            .get::<crate::official::OfficialClient>()
+                            .is_some();
+                    let mut out = downstream(
                         shared.clone(),
                         generation.clone(),
                         c,
@@ -869,6 +929,10 @@ async fn proxy_request(
                         (active, admission),
                         (tracker, ingress),
                     );
+                    if relay_auth_error {
+                        *out.status_mut() = StatusCode::BAD_GATEWAY;
+                    }
+                    return out;
                 }
             },
         };
@@ -1099,10 +1163,19 @@ async fn send(
             routing::headers(&parts.headers, generation, c.member, upstream),
         )
     } else {
-        (
-            join_path(base, rest, parts.uri.query()),
-            request_headers(&parts.headers, false, drop_turn_state, &member.auth),
-        )
+        let official = parts.extensions.get::<crate::official::ResolvedAuth>();
+        let mut h = request_headers(
+            &parts.headers,
+            false,
+            drop_turn_state,
+            official.map_or(&member.auth, |a| &a.auth),
+        );
+        if let Some(a) = official
+            && let Ok(v) = http::HeaderValue::from_str(&a.account_id)
+        {
+            h.insert(crate::official::ACCOUNT_HEADER, v);
+        }
+        (join_path(base, rest, parts.uri.query()), h)
     };
     if let Some(route) = parts.extensions.get::<crate::catalog::ValidatorRoute>()
         && route.0.to_str().ok() != Some(generation.label(c.member, c.line).as_str())

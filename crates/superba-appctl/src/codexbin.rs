@@ -176,7 +176,7 @@ pub struct FileStamp {
 impl FileStamp {
     /// Stamp of `path` (`None` when it cannot be read).
     pub fn of(path: &Path) -> Option<Self> {
-        let path = fs::canonicalize(path).ok()?;
+        let path = superba_core::paths::canonical(path).ok()?;
         let meta = fs::metadata(&path).ok()?;
         let mtime_ms = meta
             .modified()
@@ -455,17 +455,18 @@ pub fn scanned_version(path: &Path) -> Option<CodexVersion> {
 /// desktop app install, else by its resolved path
 /// ([`CodexInstallKind::from_resolved_path`]).
 pub fn install_kind(binary: &Path, store_dir: &Path, installs: &[AppInstall]) -> CodexInstallKind {
-    let resolved = fs::canonicalize(binary).unwrap_or_else(|_| binary.to_path_buf());
-    let store = fs::canonicalize(store_dir).unwrap_or_else(|_| store_dir.to_path_buf());
+    let resolved = superba_core::paths::canonical(binary).unwrap_or_else(|_| binary.to_path_buf());
+    let store =
+        superba_core::paths::canonical(store_dir).unwrap_or_else(|_| store_dir.to_path_buf());
     if resolved.starts_with(&store) {
         return CodexInstallKind::SuperbaStore;
     }
     let bundled = installs.iter().any(|i| {
         i.bundled_codex
             .as_deref()
-            .and_then(|b| fs::canonicalize(b).ok())
+            .and_then(|b| superba_core::paths::canonical(b).ok())
             .is_some_and(|b| b == resolved)
-            || fs::canonicalize(&i.path)
+            || superba_core::paths::canonical(&i.path)
                 .is_ok_and(|root| root.is_dir() && resolved.starts_with(root))
     });
     if bundled {

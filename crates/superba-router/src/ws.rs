@@ -22,7 +22,7 @@ use tracing::Instrument;
 
 use crate::config::join_path;
 use crate::forward::{
-    Observed, describe_error, empty, failover_status, local_busy, request_headers,
+    Observed, describe_error, empty, failover_status_in, local_busy, request_headers,
     response_headers, router_error, set_route,
 };
 use crate::limits::{Admission, ConnSlot, Place, file_limit_detail, file_limit_in};
@@ -70,9 +70,7 @@ pub(crate) async fn proxy_ws(
     let conn_slot = parts.extensions.get::<ConnSlot>().cloned();
     let key = session_key(&parts.headers);
     let now = Instant::now();
-    let pin = key
-        .as_deref()
-        .and_then(|k| lock(&generation.sticky).get(k, now));
+    let pin = key.as_deref().and_then(|k| generation.pin(k, now));
 
     // The preferred member decides whether this session uses WebSocket at all.
     let preferred = candidates(
@@ -132,7 +130,29 @@ pub(crate) async fn proxy_ws(
         let label = generation.label(c.member, c.line);
         let url = join_path(&line.cfg.base_url, &rest, parts.uri.query());
         let drop_turn_state = pin.is_some_and(|p| p.member != c.member);
-        let mut headers = request_headers(&parts.headers, true, drop_turn_state, &member.auth);
+        let official = if member.cfg.kind == crate::MemberKind::Official {
+            let client = parts.extensions.get::<crate::official::OfficialClient>();
+            match crate::official::resolve(member, client, &generation.http).await {
+                Ok(a) => Some(a),
+                Err(reason) => {
+                    failures.push(format!("{label}: {reason}"));
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+        let mut headers = request_headers(
+            &parts.headers,
+            true,
+            drop_turn_state,
+            official.as_ref().map_or(&member.auth, |a| &a.auth),
+        );
+        if let Some(a) = &official
+            && let Ok(v) = http::HeaderValue::from_str(&a.account_id)
+        {
+            headers.insert(crate::official::ACCOUNT_HEADER, v);
+        }
         // Privacy shaping requires readable frames on every connection.
         headers.remove(SEC_WEBSOCKET_EXTENSIONS);
         let started = Instant::now();
@@ -154,7 +174,11 @@ pub(crate) async fn proxy_ws(
             }
             Ok(resp) => resp,
         };
-        if let Some(reason) = failover_status(resp.status(), resp.headers()) {
+        if let Some(reason) = failover_status_in(
+            &generation.config.tuning.failover_statuses,
+            resp.status(),
+            resp.headers(),
+        ) {
             let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
             note_line_down(&shared, &generation, c, opened, &reason);
             failed_over(&shared, member, line, &mut failures, &label, reason);
@@ -200,7 +224,19 @@ pub(crate) async fn proxy_ws(
             let mut out = Response::new(http_body_util::BodyExt::boxed_unsync(
                 body.holding(admission),
             ));
-            *out.status_mut() = status;
+            // A member's 401 is not the official login's (mixed login): never
+            // let Codex refresh that login for it.
+            *out.status_mut() = if status == StatusCode::UNAUTHORIZED
+                && member.cfg.kind != crate::MemberKind::Official
+                && parts
+                    .extensions
+                    .get::<crate::official::OfficialClient>()
+                    .is_some()
+            {
+                StatusCode::BAD_GATEWAY
+            } else {
+                status
+            };
             *out.headers_mut() = headers;
             return out;
         }

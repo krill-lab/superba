@@ -8,7 +8,7 @@ mod support;
 use std::sync::Arc;
 
 use a11y_harness::AppHarness;
-use egui::accesskit::{Action, Role};
+use egui::accesskit::Role;
 use router_harness::Harness;
 use superba_core::{Locale, ProfileId, RequestProtocol as P, RouterConversion};
 use superba_gui::i18n::Tr;
@@ -90,43 +90,6 @@ fn both_members_and_line_priority_fit_before_advanced_at_every_review_size() {
                 );
             }
         }
-    }
-}
-
-#[test]
-fn advanced_expands_through_accesskit_and_keeps_existing_action_names() {
-    for locale in [Locale::En, Locale::ZhCn] {
-        let tr = Tr::new(locale);
-        let service = members();
-        let mut h = AppHarness::new(service.clone(), locale, Page::Router);
-        let advanced = tr.t("router.advanced.title");
-        let tree = h.wait_for(Some(Role::DisclosureTriangle), &advanced);
-        let id = tree
-            .find(Some(Role::DisclosureTriangle), &advanced)
-            .unwrap();
-        assert_eq!(tree.node(id).is_expanded(), Some(false));
-        assert_eq!(
-            tree.find_all(Some(Role::Button), &tr.t("router.banner.turn_on"))
-                .len(),
-            1
-        );
-        assert!(
-            tree.find(Some(Role::Switch), &tr.t("stats_line.title"))
-                .is_none()
-        );
-        assert!(tree.node(id).supports_action(Action::Click));
-        h.act(id, Action::Click);
-        let tree = h.wait_for(Some(Role::Switch), &tr.t("stats_line.title"));
-        assert!(tree.unnamed().is_empty(), "{:?}", tree.unnamed());
-        h.click(Some(Role::Switch), &tr.t("stats_line.title"));
-        h.until("stats line saved", |_| {
-            service.saved_stats().last().is_some_and(|s| s.line.enabled)
-        });
-        h.click(Some(Role::DisclosureTriangle), &advanced);
-        h.until("advanced closed", |tree| {
-            tree.find(Some(Role::Switch), &tr.t("stats_line.title"))
-                .is_none()
-        });
     }
 }
 
@@ -268,12 +231,18 @@ fn the_off_page_guides_to_a_member_in_one_scrolling_column_at_both_sizes() {
                     f.all_text()
                 );
                 let header = f.find(&count).unwrap();
+                // The table ends where the next section (协议转换) starts; a
+                // taller card (macOS) shows the failover numbers below it.
+                let end = f
+                    .find(&tr.t("router.ingress.translation"))
+                    .map_or(f32::INFINITY, |r| r.min.y);
                 let numbers: Vec<_> = f
                     .texts
                     .iter()
                     .filter(|(t, r)| {
                         t.chars().all(|c| c.is_ascii_digit() || c == ',')
                             && r.min.y > header.max.y
+                            && r.max.y < end
                             && r.max.x > header.min.x
                     })
                     .collect();
@@ -304,17 +273,14 @@ fn advanced_settings_stay_inside_the_column_at_both_sizes() {
             let mut h =
                 Harness::new(size, locale, members(), true).min_height(Page::Router.min_height());
             let mut state = State::default();
-            let title = tr.t("router.advanced.title");
-            let f = h.until_scrolled(
+            // 「高级」 is a plain section (user bug 116): scroll from the top
+            // to the end of the page.
+            h.until(
                 |ui, cx, out| router::show(ui, cx, &mut state, out),
-                |f| {
-                    f.clipped_texts
-                        .iter()
-                        .any(|(t, r, clip)| t == &title && clip.contains_rect(*r))
-                },
+                |f| f.has("Backup provider"),
             );
-            h.click_text(&f, &title);
-            let mut seen_service = false;
+            let end = tr.t("recording.title");
+            let mut seen_end = false;
             for _ in 0..30 {
                 let f = h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
                 // The column is clipped to its rectangle plus the focus bleed
@@ -346,8 +312,11 @@ fn advanced_settings_stay_inside_the_column_at_both_sizes() {
                         );
                     }
                 }
-                seen_service |= f.has(&tr.t("router.process"));
-                if seen_service && f.has(&tr.t("router.service.state")) {
+                seen_end |= f
+                    .clipped_texts
+                    .iter()
+                    .any(|(t, r, clip)| t == &end && clip.contains_rect(*r));
+                if seen_end {
                     break;
                 }
                 h.scroll_at(
@@ -355,7 +324,7 @@ fn advanced_settings_stay_inside_the_column_at_both_sizes() {
                     egui::vec2(0.0, -200.0),
                 );
             }
-            assert!(seen_service, "{size:?} {locale:?}: scrolled to the service");
+            assert!(seen_end, "{size:?} {locale:?}: scrolled to the end");
         }
     }
 }
@@ -523,49 +492,35 @@ fn with_everything_open_no_text_is_cut_or_overlaps_at_both_widths() {
                         |f| loaded(f, &tr, state),
                     );
                     assert_tidy(&f, &format!("{what}, closed"));
-                    // From the bottom up, so opening one does not move the next.
-                    let labels = [
-                        tr.t("router.advanced.title"),
-                        tr.t("router.ingress.translation"),
-                        tr.t("router.members.rules"),
-                        tr.t("router.members.details"),
-                    ];
+                    // The only expanders left are each member's line details
+                    // (「高级」, 「协议转换」 and the failover rules are plain
+                    // sections since user bugs 116 and 117). From the bottom up.
+                    let details = tr.t("router.members.details");
                     let mut hits: Vec<egui::Rect> = f
                         .texts
                         .iter()
-                        .filter(|(t, _)| {
-                            labels
-                                .iter()
-                                .any(|l| t == l || t.starts_with(&format!("{l} · ")))
-                        })
+                        .filter(|(t, _)| t == &details)
                         .map(|(_, r)| *r)
                         .collect();
                     hits.sort_by(|a, b| b.min.y.total_cmp(&a.min.y));
                     assert!(
-                        hits.len() == if state == "on" { 5 } else { 3 },
+                        hits.len() == if state == "on" { 2 } else { 0 },
                         "{what}: expanders {hits:?}\n{}",
                         f.all_text()
                     );
                     for r in hits {
                         h.click_at(r.center());
                     }
-                    h.until(
-                        |ui, cx, out| router::show(ui, cx, &mut page, out),
-                        |f| f.has(&tr.t("router.service_label")),
-                    );
-                    // The rest of the clicks, and the bodies done opening.
+                    // The clicks, and the bodies done opening.
                     let f = h.frames(30, |ui, cx, out| router::show(ui, cx, &mut page, out));
-                    for opened in [
+                    for shown in [
                         tr.t("router.service_label"),
                         tr.t("recording.title"),
                         tr.t("prices.title"),
-                        tr.t("router.preference.recovery"),
+                        tr.t("router.failover.title"),
+                        tr.t("stats_line.title"),
                     ] {
-                        assert!(
-                            f.has(&opened),
-                            "{what}: {opened} not shown\n{}",
-                            f.all_text()
-                        );
+                        assert!(f.has(&shown), "{what}: {shown} not shown\n{}", f.all_text());
                     }
                     if state == "on" {
                         for open in [
@@ -584,7 +539,7 @@ fn with_everything_open_no_text_is_cut_or_overlaps_at_both_widths() {
 }
 
 /// At the two review sizes, the page in one scrolling column: tidy (rule 7)
-/// at the top and on every screen down to the service with 「高级」 open.
+/// at the top and on every screen down to the end of 「高级」.
 #[test]
 fn every_screen_down_to_the_service_is_tidy_at_both_sizes() {
     for size in [[1280.0, 800.0], [960.0, 640.0]] {
@@ -601,16 +556,6 @@ fn every_screen_down_to_the_service_is_tidy_at_both_sizes() {
                 assert!(f.fits() && !f.scrolled, "{what}");
                 assert_eq!(f.scroll_areas, 1, "{what}");
                 assert_tidy(&f, &what);
-                let title = tr.t("router.advanced.title");
-                let f = h.until_scrolled(
-                    |ui, cx, out| router::show(ui, cx, &mut page, out),
-                    |f| {
-                        f.clipped_texts
-                            .iter()
-                            .any(|(t, r, clip)| t == &title && clip.contains_rect(*r))
-                    },
-                );
-                h.click_text(&f, &title);
                 let mut last = String::new();
                 let mut screens = 0;
                 for _ in 0..40 {
@@ -629,8 +574,8 @@ fn every_screen_down_to_the_service_is_tidy_at_both_sizes() {
                     );
                 }
                 assert!(
-                    last.contains(&format!("{:?}", tr.t("router.process"))),
-                    "{what}: the service was not reached"
+                    last.contains(&format!("{:?}", tr.t("recording.title"))),
+                    "{what}: the end of the page was not reached"
                 );
                 assert!(screens > 2, "{what}: {screens} screens");
             }
@@ -638,12 +583,12 @@ fn every_screen_down_to_the_service_is_tidy_at_both_sizes() {
     }
 }
 
-/// ui-spec rule 6: 「高级」 is closed by default, in both states and at both
-/// sizes, and is the page's last line: scrolled to the end, nothing of the
-/// reply stats line, the prices, the recording or the service is drawn, and
-/// no text is below 「高级」's line.
+/// 「高级」 is a plain section like 「入口」 (user bug 116, overriding ui-spec
+/// rule 6 for this page): scrolled to the end, its title with the caption
+/// under it, then the reply stats line, the prices and the recording; the
+/// service is not down here any more (it is under the status line).
 #[test]
-fn advanced_is_closed_by_default_and_ends_the_page_in_both_states() {
+fn advanced_is_a_plain_section_at_the_end_in_both_states() {
     for size in [[1280.0, 800.0], [960.0, 640.0]] {
         for state in STATES {
             for locale in [Locale::En, Locale::ZhCn] {
@@ -655,46 +600,31 @@ fn advanced_is_closed_by_default_and_ends_the_page_in_both_states() {
                     |ui, cx, out| router::show(ui, cx, &mut page, out),
                     |f| loaded(f, &tr, state),
                 );
-                // Scroll well past the end.
-                let mut f = h.settle(|ui, cx, out| router::show(ui, cx, &mut page, out));
-                for _ in 0..12 {
-                    h.scroll_at(
-                        egui::pos2(f.rect.min.x + 100.0, f.rect.center().y),
-                        egui::vec2(0.0, -400.0),
-                    );
-                    f = h.settle(|ui, cx, out| router::show(ui, cx, &mut page, out));
-                }
                 let title = tr.t("router.advanced.title");
-                let line = f
-                    .clipped_texts
-                    .iter()
-                    .find(|(t, r, clip)| t == &title && clip.contains_rect(*r))
-                    .map(|(_, r, _)| *r)
-                    .unwrap_or_else(|| panic!("{what}: 「高级」 not in view\n{}", f.all_text()));
-                // Its caption says what it holds, on the same line.
+                let f = h.until_scrolled(
+                    |ui, cx, out| router::show(ui, cx, &mut page, out),
+                    |f| {
+                        f.clipped_texts
+                            .iter()
+                            .any(|(t, r, clip)| t == &title && clip.contains_rect(*r))
+                    },
+                );
+                let line = f.find(&title).unwrap();
                 let caption = f
                     .find(&tr.t("router.advanced.caption"))
                     .unwrap_or_else(|| panic!("{what}: no caption\n{}", f.all_text()));
-                assert!((caption.center().y - line.center().y).abs() < 2.0, "{what}");
-                for hidden in [
+                assert!(caption.min.y >= line.max.y - 1.0, "{what}");
+                // No disclosure: its settings follow when scrolling on.
+                for below in [
                     tr.t("stats_line.title"),
                     tr.t("prices.title"),
                     tr.t("recording.title"),
-                    tr.t("router.service_label"),
-                    tr.t("router.process"),
                 ] {
-                    assert!(
-                        !f.texts.iter().any(|(t, _)| t == &hidden),
-                        "{what}: {hidden} drawn while Advanced is closed"
+                    h.until_scrolled(
+                        |ui, cx, out| router::show(ui, cx, &mut page, out),
+                        |f| f.has(&below),
                     );
                 }
-                let below: Vec<_> = f
-                    .clipped_texts
-                    .iter()
-                    .filter(|(_, r, clip)| r.intersects(*clip) && r.min.y > line.max.y)
-                    .map(|(t, _, _)| t)
-                    .collect();
-                assert!(below.is_empty(), "{what}: drawn under 「高级」: {below:?}");
             }
         }
     }

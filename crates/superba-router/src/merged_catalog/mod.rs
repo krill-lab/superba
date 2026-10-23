@@ -20,7 +20,7 @@ use superba_core::{
 };
 
 use crate::config::RouterConfig;
-use crate::state::{Generation, lock};
+use crate::state::{Generation, lock, unix_ms};
 
 pub(crate) use probe::test;
 pub(crate) use route::{Selection, select};
@@ -252,12 +252,39 @@ pub(crate) struct Catalog {
     sources: Mutex<HashMap<String, Arc<tokio::sync::Mutex<cache::Entry>>>>,
     probes: Mutex<HashMap<String, Arc<tokio::sync::Mutex<Option<RouterModelTest>>>>>,
     latest: Mutex<Option<Snapshot>>,
+    /// ETag of the list `/models` serves now (see [`models_etag`]).
+    etag: Mutex<Option<String>>,
+    /// Where passed tool probes are kept across router restarts.
+    evidence: Mutex<Option<std::path::PathBuf>>,
+}
+
+/// The body `/models` returns for a snapshot.
+fn published_bytes(snap: &Snapshot) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({"models":snap.published})).expect("catalog JSON")
+}
+
+fn etag_of(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("\"{}\"", hex::encode(Sha256::digest(bytes)))
 }
 
 pub(crate) async fn snapshot(g: &Arc<Generation>, query: &str) -> Snapshot {
     let result = merge::build(g, query).await;
+    *lock(&g.merged_catalog.etag) = Some(etag_of(&published_bytes(&result)));
     *lock(&g.merged_catalog.latest) = Some(result.clone());
     result
+}
+
+/// What a Responses answer to Codex carries as `X-Models-Etag` (user bug
+/// 106). Codex keeps the `ETag` of the list it fetched and refreshes the list
+/// at once when a response names another one, instead of after its cache
+/// lifetime (300 s) or at its next start. A generation that has not built its
+/// list yet (a mode change, a reload) answers with a tag of its own, which
+/// differs from anything served before and so makes Codex fetch it.
+pub(crate) fn models_etag(g: &Generation) -> String {
+    lock(&g.merged_catalog.etag)
+        .clone()
+        .unwrap_or_else(|| format!("\"superba-{:p}\"", g as *const Generation))
 }
 
 pub(crate) async fn report(g: &Arc<Generation>) -> RouterCatalogView {
@@ -268,11 +295,9 @@ pub(crate) async fn response(
     g: &Arc<Generation>,
     query: &str,
 ) -> http::Response<crate::state::RespBody> {
-    use sha2::{Digest, Sha256};
     let snap = snapshot(g, query).await;
-    let bytes =
-        serde_json::to_vec(&serde_json::json!({"models":snap.published})).expect("catalog JSON");
-    let etag = format!("\"{}\"", hex::encode(Sha256::digest(&bytes)));
+    let bytes = published_bytes(&snap);
+    let etag = etag_of(&bytes);
     let mut out = http::Response::new(crate::forward::full(bytes::Bytes::from(bytes)));
     out.headers_mut().insert(
         http::header::CONTENT_TYPE,
@@ -285,6 +310,146 @@ pub(crate) async fn response(
         http::HeaderValue::from_static("private, max-age=60"),
     );
     out
+}
+
+/// How long a passed tool probe keeps a model published (user bug 106: a
+/// day-long window made a tested model leave Codex's list the next day).
+pub(crate) const PASS_VALID_MS: u64 = 30 * 86_400_000;
+
+/// The file of passed probes in the router's data dir.
+const EVIDENCE_FILE: &str = "probe-evidence.json";
+
+/// One passed probe on disk: no secret, only a digest of what it depends on.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Evidence {
+    member: String,
+    /// Digest of the member's key, kind, model map, lines, protocol routes.
+    scope: String,
+    model: String,
+    tested_at: u64,
+    detail: String,
+}
+
+/// A digest of everything a member's probe result depends on (the same
+/// fields [`inherit_probes`] compares). A changed key, endpoint, mapping or
+/// protocol route gives another digest, so old evidence never applies.
+fn evidence_scope(g: &Generation, member: usize) -> String {
+    use sha2::{Digest, Sha256};
+    let m = &g.members[member];
+    let mut h = Sha256::new();
+    h.update(m.auth.as_bytes());
+    h.update(
+        format!(
+            "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            m.cfg.kind,
+            m.cfg.model_map,
+            m.cfg.lines,
+            g.openai.members.get(member).map(|o| &o.cfg),
+            g.config.translation,
+            g.config
+                .claude
+                .as_ref()
+                .and_then(|c| c.members.get(&m.cfg.id)),
+            g.config.gemini_member(&m.cfg.id),
+        )
+        .as_bytes(),
+    );
+    hex::encode(h.finalize())
+}
+
+fn read_evidence(path: &std::path::Path) -> Vec<Evidence> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+/// Load the passed probes kept in `dir` into a new generation (start-up and
+/// every reload), so a tested model stays published after the router (or the
+/// computer) restarts.
+pub(crate) fn attach_evidence(g: &Generation, dir: Option<&std::path::Path>) {
+    let Some(dir) = dir else {
+        return;
+    };
+    let path = dir.join(EVIDENCE_FILE);
+    let now = unix_ms();
+    let all = read_evidence(&path);
+    // Evidence of a member whose key, lines, mapping or protocol routes
+    // changed is gone for good: going back to the old settings later must not
+    // bring an old pass back without a new test.
+    let scopes: HashMap<&str, String> = g
+        .members
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (m.cfg.id.as_str(), evidence_scope(g, i)))
+        .collect();
+    let kept: Vec<Evidence> = all
+        .iter()
+        .filter(|e| scopes.get(e.member.as_str()).is_none_or(|s| *s == e.scope))
+        .filter(|e| now.saturating_sub(e.tested_at) < PASS_VALID_MS)
+        .cloned()
+        .collect();
+    if kept.len() != all.len() {
+        write_evidence(&path, &kept);
+    }
+    {
+        let mut probes = lock(&g.merged_catalog.probes);
+        for (i, m) in g.members.iter().enumerate() {
+            let scope = evidence_scope(g, i);
+            for e in kept.iter().filter(|e| {
+                e.member == m.cfg.id
+                    && e.scope == scope
+                    && now.saturating_sub(e.tested_at) < PASS_VALID_MS
+            }) {
+                probes.entry(probe_key(i, &e.model)).or_insert_with(|| {
+                    Arc::new(tokio::sync::Mutex::new(Some(RouterModelTest {
+                        model: e.model.clone(),
+                        passed: true,
+                        detail: e.detail.clone(),
+                        tested_at: e.tested_at,
+                    })))
+                });
+            }
+        }
+    }
+    *lock(&g.merged_catalog.evidence) = Some(path);
+}
+
+/// Record a probe result on disk: a pass is kept, a failure removes the
+/// model's earlier pass. Best effort: the in-memory result already counts.
+pub(crate) fn record_evidence(g: &Generation, member: usize, result: &RouterModelTest) {
+    let Some(path) = lock(&g.merged_catalog.evidence).clone() else {
+        return;
+    };
+    let Some(m) = g.members.get(member) else {
+        return;
+    };
+    let scope = evidence_scope(g, member);
+    let now = unix_ms();
+    let mut kept: Vec<Evidence> = read_evidence(&path)
+        .into_iter()
+        .filter(|e| now.saturating_sub(e.tested_at) < PASS_VALID_MS)
+        .filter(|e| !(e.member == m.cfg.id && e.model == result.model))
+        .collect();
+    if result.passed {
+        kept.push(Evidence {
+            member: m.cfg.id.clone(),
+            scope,
+            model: result.model.clone(),
+            tested_at: result.tested_at,
+            detail: result.detail.clone(),
+        });
+    }
+    write_evidence(&path, &kept);
+}
+
+fn write_evidence(path: &std::path::Path, kept: &[Evidence]) {
+    if let Ok(bytes) = serde_json::to_vec_pretty(kept) {
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, bytes).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        }
+    }
 }
 
 fn probe_key(member: usize, model: &str) -> String {

@@ -260,7 +260,7 @@ pub fn entry_in_use(dir: &Path, target: &str) -> Option<String> {
     // Long, plain and (Windows) lower-case: a process started through a short
     // `RUNNER~1` path reports that form.
     let key = |p: &Path| -> PathBuf {
-        let p = plain(fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()));
+        let p = plain(superba_core::paths::canonical(p).unwrap_or_else(|_| p.to_path_buf()));
         if cfg!(windows) {
             PathBuf::from(p.to_string_lossy().to_lowercase())
         } else {

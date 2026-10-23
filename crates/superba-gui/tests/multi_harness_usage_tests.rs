@@ -64,7 +64,7 @@ fn tool_column_model_mapping_and_titles_have_readable_accessible_text() {
             Timestamp::now(),
         );
         assert_eq!(cell.text, "Claude Code");
-        assert!(cell.icon.is_some());
+        assert_eq!(cell.tool, Some("cc"));
         assert_eq!(requests::model_text(&rows[1]), "haiku → gpt-5.4-mini");
         let name = requests::row_name(&tr, &BTreeMap::new(), &rows[1], Timestamp::now());
         assert!(name.contains("Claude Code") && name.contains("haiku → gpt-5.4-mini"));
@@ -261,11 +261,8 @@ fn per_tool_stats_switches_keep_the_defaults_and_save_independently() {
         [RequestHarness::ClaudeCode, RequestHarness::Dsh]
     );
     let service = fake();
+    // 「高级」 is a plain section (user bug 116): the switches are in the tree.
     let mut h = AppHarness::new(service.clone(), Locale::En, Page::Router);
-    h.click(
-        Some(Role::DisclosureTriangle),
-        &Tr::new(Locale::En).t("router.advanced.title"),
-    );
     let tree = h.wait_for(Some(Role::CheckBox), "dsh");
     assert!(tree.unnamed().is_empty(), "{}", tree.dump());
     h.click(Some(Role::CheckBox), "dsh");
@@ -352,13 +349,15 @@ fn ingress_conversion_controls_show_partial_state_and_save_one_direction() {
         }));
         let mut h = AppHarness::new(service.clone(), locale, Page::Router);
         h.resize([960.0, 640.0]);
+        // 「协议转换」 is a plain section (user bug 116): the count at its
+        // title's right, the matrix under it, nothing to open.
         let title = |enabled| {
             tr.f(
-                "router.ingress.translation_state",
+                "router.ingress.translation_count",
                 &[("enabled", &enabled), ("total", &12)],
             )
         };
-        h.click(None, &title(11));
+        h.wait_for(None, &title(11));
         let off = format!(
             "{} → {}",
             tr.text(&RequestProtocol::Messages.text()),
@@ -494,7 +493,7 @@ fn expanded_conversion_directions_fit_the_narrow_router_column() {
             .min_height(Page::Router.min_height());
         let mut state = State::default();
         let title = tr.f(
-            "router.ingress.translation_state",
+            "router.ingress.translation_count",
             &[("enabled", &12), ("total", &12)],
         );
         let f = h.until_scrolled(
@@ -505,7 +504,7 @@ fn expanded_conversion_directions_fit_the_narrow_router_column() {
                     .any(|(text, rect, clip)| text == &title && clip.contains_rect(*rect))
             },
         );
-        h.click_at(f.find(&title).unwrap().center());
+        let _ = f;
         h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
         // A matrix: client protocols down, upstream protocols across, all
         // four names in both, each inside its cell.

@@ -44,7 +44,7 @@ pub(super) fn show(
         egui::ScrollArea::vertical()
             .id_salt("chatgpt-accounts-detail")
             .auto_shrink([false, false])
-            .show(ui, |ui| official(ui, cx, &mut state.chatgpt, out));
+            .show(ui, |ui| official(ui, cx, state, out));
         return;
     }
     let account = p.has_key() && p.profile.is_some();
@@ -333,8 +333,8 @@ pub(super) fn start_checks(state: &mut State, cx: &Cx<'_>, p: &Provider, key: Ke
 }
 
 /// The official login: what it does, switch to it, restore the original.
-fn official(ui: &mut Ui, cx: &Cx<'_>, state: &mut super::chatgpt::State, out: &mut Vec<Action>) {
-    super::chatgpt::show(ui, cx, state, out);
+fn official(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    super::chatgpt::show(ui, cx, &mut state.chatgpt, out);
     ui.separator();
     ui.add(egui::Label::new(Text::body(cx.tr.t("providers.official.body"), cx.pal)).wrap());
     ui.add_space(8.0);
@@ -371,6 +371,8 @@ fn official(ui: &mut Ui, cx: &Cx<'_>, state: &mut super::chatgpt::State, out: &m
             out.push(Action::restore_original());
         }
     });
+    section_gap(ui, cx);
+    super::mixed::show(ui, cx, &mut state.mixed, out);
     section_gap(ui, cx);
     ui.add(egui::Label::new(Text::small(cx.tr.t("providers.official.note"), cx.pal)).wrap());
 }

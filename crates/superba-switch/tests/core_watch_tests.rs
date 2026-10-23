@@ -267,6 +267,81 @@ async fn a_relaunched_app_running_codex_in_wsl_gets_a_longer_window() {
     assert_eq!(o.status, OutcomeStatus::WrittenOnly, "{:?}", o.notices);
 }
 
+fn wsl_world() -> World {
+    let w = full_restart_world();
+    let mut host = wsl_host("Ubuntu", 1, superba_core::WslNetworking::Nat);
+    host.wsl.as_mut().unwrap().default = true;
+    w.remote.hosts.lock().unwrap().push(host);
+    let home = w.ctx.codex_home();
+    std::fs::create_dir_all(home.root()).unwrap();
+    std::fs::write(
+        home.config_toml(),
+        "[desktop]\nrunCodexInWindowsSubsystemForLinux = true\n",
+    )
+    .unwrap();
+    w
+}
+
+#[test]
+fn the_watch_keeps_lifetimes_and_knows_a_replacement_is_pending() {
+    let mut w = CoreWatch::new(Timestamp(T0), &[], 5 * S);
+    assert!(!w.replacement_pending());
+    w.observe(S, &[server(601, T0)]);
+    w.observe(3 * S, &[server(601, T0)]);
+    assert!(!w.replacement_pending());
+    w.observe(4 * S, &[]);
+    assert!(w.replacement_pending());
+    assert_eq!(w.lifetimes(), vec![(601, 2 * S, false)]);
+    w.observe(5 * S, &[server(602, T0)]);
+    assert!(!w.replacement_pending());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cold_wsl_core_replaced_after_the_window_passes_on_the_retry() {
+    // alpha.9 W81 (WSL 1, cold distribution): the app's first core exited and
+    // its replacement came ~2 min after the full restart, past the 120 s window.
+    let w = wsl_world();
+    *w.app.spawn_script.lock().unwrap() = vec![
+        (Duration::from_secs(20), Some(Duration::from_secs(2))),
+        (Duration::from_secs(170), None),
+    ];
+    let sw = Switcher::with_tuning(w.deps(), tuning(5 * S));
+    let opts = ExecuteOptions {
+        allow_full_restart: true,
+        ..ExecuteOptions::default()
+    };
+    let o = run_with(&w, &sw, opts, ScriptedDecider::with(&[])).await;
+    assert_eq!(o.status, OutcomeStatus::Switched, "{:?}", o.notices);
+    assert_eq!(o.verification.unwrap().process, CheckResult::Passed);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_wsl_core_that_never_comes_back_fails_once_with_a_wsl_message() {
+    let w = wsl_world();
+    *w.app.spawn_script.lock().unwrap() =
+        vec![(Duration::from_secs(20), Some(Duration::from_secs(2)))];
+    let sw = Switcher::with_tuning(w.deps(), tuning(5 * S));
+    let opts = ExecuteOptions {
+        allow_full_restart: true,
+        ..ExecuteOptions::default()
+    };
+    let o = run_with(&w, &sw, opts, ScriptedDecider::with(&[])).await;
+    assert_eq!(o.status, OutcomeStatus::WrittenOnly, "{:?}", o.notices);
+    let CheckResult::Failed { detail } = o.verification.unwrap().process else {
+        panic!("process check should fail");
+    };
+    assert!(
+        detail.starts_with(
+            "new Codex core processes of ChatGPT (pid 200) started but exited again (pid 501)"
+        ),
+        "{detail}"
+    );
+    assert!(detail.contains("inside WSL (Ubuntu)"), "{detail}");
+    assert!(detail.contains("checked once more"), "{detail}");
+    // One retry: the launch window (120 s) twice, not more.
+    assert!(detail.contains("none was running after 2"), "{detail}");
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_relaunched_app_without_a_core_yet_is_named_as_such() {
     // The first start after an install took 93 s to its first app-server on

@@ -109,7 +109,8 @@ impl RouterServer {
     ) -> Result<Self> {
         let port = config.listen_port;
         let budget = Budget::for_this_process(&config.tuning);
-        let generation = Generation::build(1, config, &secrets, &budget)?;
+        let generation = Generation::build(1, config, &secrets, &budget, paths.as_ref())?;
+        crate::merged_catalog::attach_evidence(&generation, paths.as_ref().map(RouterPaths::dir));
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
         let listener = TcpListener::bind(addr).await.map_err(|e| Error::Network {
             url: format!("http://{addr}"),
@@ -659,6 +660,26 @@ async fn dispatch(
         }
         return admin::handle(shared, req).await;
     }
+    // Mixed login: the account, remote and usage calls belong to chatgpt.com
+    // with the real account. The router never answers them with its local
+    // identity for an official token (whoami / accounts/check would then
+    // name another account than remote control and cloud tasks).
+    if (crate::account::handles(&path)
+        || crate::local_backend::route(req.method(), &path).is_some())
+        && req
+            .headers()
+            .get(AUTHORIZATION)
+            .and_then(|v| bearer(v.as_bytes()))
+            .and_then(|t| std::str::from_utf8(t).ok())
+            .and_then(crate::official::claims)
+            .is_some()
+    {
+        return router_error(
+            StatusCode::NOT_FOUND,
+            "mixed_login_chatgpt_call",
+            "with mixed login Codex sends ChatGPT account calls to chatgpt.com, not to the router; leave chatgpt_base_url unset",
+        );
+    }
     // ChatGPT backend calls besides model traffic (PAT router mode) are
     // answered here and never reach a member (crate::local_backend).
     if !crate::account::handles(&path)
@@ -717,7 +738,45 @@ async fn dispatch(
         .or(gemini_header_key)
         .or(gemini_query_key.as_deref().map(str::as_bytes))
         .and_then(|t| authenticate(router_token, t, entry));
+    // Mixed login: Codex presents the user's own ChatGPT access token on the
+    // loopback Codex ingress (crate::official).
+    let mut presenter = presenter;
+    let mut official_other_account = false;
+    let bearer_token = bearer_token.map(<[u8]>::to_vec);
+    if presenter.is_none()
+        && entry == Entry::Loopback
+        && claude.is_none()
+        && openai.is_none()
+        && gemini.is_none()
+        && let Some(t) = bearer_token.as_deref()
+    {
+        match crate::official::match_client(generation.config.official_client.as_ref(), t) {
+            crate::official::ClientMatch::Accepted => {
+                let token = String::from_utf8_lossy(t).into_owned();
+                let account_id = crate::official::claims(&token)
+                    .map(|c| c.account_id)
+                    .unwrap_or_default();
+                req.extensions_mut()
+                    .insert(crate::official::OfficialClient {
+                        account_id,
+                        token: superba_core::Secret::new(token),
+                    });
+                presenter = Some(Presenter::default());
+            }
+            crate::official::ClientMatch::OtherAccount => official_other_account = true,
+            crate::official::ClientMatch::NotOfficial => {}
+        }
+    }
     drop(generation);
+    if official_other_account {
+        shared.totals.rejected.fetch_add(1, Ordering::Relaxed);
+        // 403, not 401: a 401 would make Codex refresh a login that is fine.
+        return router_error(
+            StatusCode::FORBIDDEN,
+            "official_account_changed",
+            "Codex is signed in to another ChatGPT account than the one Superba set up for mixed login; apply the profile again in Superba",
+        );
+    }
     // The host and harness are ours to say: a client's own headers are
     // dropped (and the headers are never forwarded upstream).
     req.headers_mut().remove(CODEX_HOST_HEADER);
@@ -828,7 +887,20 @@ async fn dispatch(
     } else if req.method() == http::Method::GET && rest.trim_end_matches('/') == "/models" {
         crate::catalog::handle(shared, req, rest, admission).await
     } else {
-        proxy::proxy_http(shared, req, rest, admission, proxy::Ingress::Codex).await
+        let generation = shared.current();
+        let responses =
+            generation.config.catalog.is_some() && proxy::is_responses_path(req.method(), &rest);
+        let mut answer =
+            proxy::proxy_http(shared, req, rest, admission, proxy::Ingress::Codex).await;
+        if responses
+            && let Ok(tag) =
+                http::HeaderValue::from_str(&crate::merged_catalog::models_etag(&generation))
+        {
+            // The router owns Codex's model list: an upstream's own tag
+            // would name a list Codex never fetched from here.
+            answer.headers_mut().insert("x-models-etag", tag);
+        }
+        answer
     }
 }
 

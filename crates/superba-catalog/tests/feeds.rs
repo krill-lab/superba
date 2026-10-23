@@ -237,7 +237,13 @@ fn the_builtin_snapshot_verifies_and_carries_every_feed() {
                 .is_some_and(|s| s.starts_with("https://")),
             "{model}"
         );
-        assert_eq!(e.rev.as_deref(), Some(snap.prices.rev.as_str()), "{model}");
+        // Each entry keeps the date its own page was read; the table's
+        // revision is the newest of them.
+        let rev = e.rev.as_deref().unwrap_or_default();
+        assert!(
+            rev.len() == 10 && rev <= snap.prices.rev.as_str(),
+            "{model}: {rev}"
+        );
     }
     // The built-in table holds OpenAI's list prices, tier by tier, and the
     // feed index that lists it carries a valid signature of a trusted key.

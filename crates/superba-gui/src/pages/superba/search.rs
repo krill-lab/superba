@@ -1,10 +1,9 @@
 //! Searchable preference rows and their focus/scroll anchors.
-use super::{Action, Cx, Page, SuperbaSection};
+use super::{Cx, SuperbaSection};
 use crate::design::widgets::{FormRow, Text};
-use crate::pages::{PaletteGroup, PaletteItem};
 use egui::{Id, Rect, Sense, Ui};
 
-/// Every preference row offered by the command palette.
+/// Every preference row the inline filter and `focus:` deep links know.
 pub const ROWS: &[(SuperbaSection, &str)] = &[
     (SuperbaSection::General, "settings.countdown.title"),
     (SuperbaSection::General, "settings.safe_mode.title"),
@@ -69,38 +68,33 @@ pub fn label_key(key: &str) -> &str {
     }
 }
 
-/// Sections and individual rows; opening a row never changes its value.
-pub fn palette(cx: &Cx<'_>) -> Vec<PaletteItem> {
-    let mut items: Vec<_> = SuperbaSection::ALL
-        .into_iter()
-        .filter(|s| *s != SuperbaSection::Home)
-        .map(|s| PaletteItem {
-            title: format!("Superba › {}", cx.tr.t(s.title_key())),
-            detail: Some(cx.tr.t(s.subtitle_key())),
-            keywords: vec![s.id().into(), "superba settings preferences".into()],
-            group: PaletteGroup::Navigate,
-            action: Action::Go(Page::Superba(s)),
-        })
-        .collect();
-    items.extend(
-        ROWS.iter()
-            .filter(|(_, key)| *key != "prefs.network.app_source" || cfg!(windows))
-            .map(|(s, key)| PaletteItem {
-                title: cx.tr.t(label_key(key)),
-                detail: Some(format!("Superba › {}", cx.tr.t(s.title_key()))),
-                keywords: vec![
-                    key.to_string(),
-                    s.id().into(),
-                    "superba preferences settings".into(),
-                ],
-                group: PaletteGroup::Settings,
-                action: Action::PageCommand {
-                    page: Page::Superba(*s),
-                    command: format!("focus:{key}"),
-                },
-            }),
-    );
-    items
+fn filter_key() -> Id {
+    Id::unique("superba-settings-filter-query")
+}
+fn section_all_key() -> Id {
+    Id::unique("superba-settings-filter-section")
+}
+/// The inline filter's query while the settings sections are drawn ("" = none).
+pub(super) fn set_filter(ctx: &egui::Context, query: &str) {
+    ctx.data_mut(|d| d.insert_temp(filter_key(), query.to_owned()));
+}
+/// The section being drawn matched as a whole (every row is shown).
+pub(super) fn set_section_all(ctx: &egui::Context, all: bool) {
+    ctx.data_mut(|d| d.insert_temp(section_all_key(), all));
+}
+/// The inline settings filter has a query (folded cards open so their rows
+/// can match).
+pub(crate) fn filtering(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<String>(filter_key()))
+        .is_some_and(|q| !q.is_empty())
+}
+
+/// Whether a row passes the inline filter.
+pub(crate) fn visible(ctx: &egui::Context, fields: &[&str]) -> bool {
+    let query: String = ctx.data(|d| d.get_temp(filter_key())).unwrap_or_default();
+    query.is_empty()
+        || ctx.data(|d| d.get_temp::<bool>(section_all_key()).unwrap_or(false))
+        || super::preferences::filter_matches(&query, fields)
 }
 
 fn focus_key() -> Id {
@@ -121,7 +115,7 @@ pub(crate) fn anchor(ui: &mut Ui, key: &str, name: &str, rect: Rect) {
     let id = ui.make_persistent_id(("setting-row", key));
     if !ui.is_enabled() {
         // A disabled control remains read-only; its containing row can still
-        // receive palette focus. Register the row from the enabled parent.
+        // receive deep-link focus. Register the row from the enabled parent.
         ui.ctx().data_mut(|d| {
             d.get_temp_mut_or_default::<Vec<DeferredAnchor>>(Id::unique("superba-disabled-rows"))
                 .push(DeferredAnchor {
@@ -192,6 +186,9 @@ pub(crate) fn row(
         .iter()
         .find(|(_, key)| cx.tr.t(label_key(key)) == title)
         .map(|(_, key)| *key);
+    if !visible(ui.ctx(), &[title, desc, key.unwrap_or("")]) {
+        return;
+    }
     // The installer-source explanation is a paragraph, and its three-way
     // selector exceeds the ordinary control column. Keep both on their own row.
     let compact = ui.available_width() < 620.0

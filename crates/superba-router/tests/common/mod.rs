@@ -496,6 +496,7 @@ pub fn secrets_for(cfg: &RouterConfig) -> RouterSecrets {
             .iter()
             .map(|m| (m.id.clone(), Secret::new(key_of(&m.id))))
             .collect(),
+        official_tokens: Default::default(),
     }
 }
 

@@ -39,6 +39,8 @@ pub struct SourceEntry {
     pub tooltip: Option<String>,
     /// A sub-entry of the entry before it (a provider's line): indented.
     pub child: bool,
+    /// The tool's icon tile before the label (tool, tool × model, session).
+    pub tool: Option<&'static str>,
 }
 
 /// What happened in a [`SourceList`] this frame.
@@ -255,6 +257,7 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
             all_sel,
             Kind::All,
             pal,
+            false,
         )
         .clicked()
             && !all_sel
@@ -304,8 +307,27 @@ impl<'a, G: PartialEq + Clone> SourceList<'a, G> {
                         ui.allocate_exact_size(vec2(inner_w - 4.0, ENTRY_HEIGHT), Sense::hover());
                     let sel = selected.as_deref() == Some(e.key.as_str());
                     let kind = if e.child { Kind::Child } else { Kind::Entry };
-                    let mut resp =
-                        entry(ui, id.with(("e", i)), r, &e.label, e.count, sel, kind, pal);
+                    let mut resp = entry(
+                        ui,
+                        id.with(("e", i)),
+                        r,
+                        &e.label,
+                        e.count,
+                        sel,
+                        kind,
+                        pal,
+                        e.tool.is_some(),
+                    );
+                    if let Some(m) = e.tool {
+                        crate::pages::shared::tool_label::paint(
+                            ui,
+                            m,
+                            pos2(
+                                r.min.x + 6.0 + crate::pages::shared::tool_label::TILE / 2.0,
+                                r.center().y,
+                            ),
+                        );
+                    }
                     if let Some(t) = &e.tooltip {
                         resp = resp.on_hover_text(t);
                     }
@@ -347,6 +369,7 @@ fn entry(
     selected: bool,
     kind: Kind,
     pal: &Palette,
+    tool: bool,
 ) -> egui::Response {
     let resp = ui
         .interact(r, id, Sense::click())
@@ -389,6 +412,8 @@ fn entry(
             Stroke::new(1.0, pal.border),
         );
         CHILD_INDENT
+    } else if tool {
+        crate::pages::shared::tool_label::ROOM
     } else {
         0.0
     };

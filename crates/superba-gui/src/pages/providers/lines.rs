@@ -18,6 +18,14 @@
 //!   and a running router reloads a member's order at once (rline). The latest
 //!   observed upstream (当前：…, with the lines that failed before it) comes
 //!   from `router_status`, read again every [`ROUTER_RELOAD`].
+//!
+//! Each row of a provider with several lines has a switch that enables or
+//! disables the line (user bug 108). A disabled line keeps its place in the
+//! order, is muted and says 已禁用 / Disabled instead of a latency and the row
+//! action; the router never selects it and a switch never uses it. The last
+//! enabled line cannot be disabled. Disabling the line Codex uses in direct
+//! mode asks first ([`disable_dialog`]), then switches to the first enabled
+//! line through the usual switch.
 
 use std::time::{Duration, Instant};
 
@@ -30,11 +38,13 @@ use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
 use crate::design::tokens::{size, text};
 use crate::design::widgets::{
-    Badge, Button, IconButton, Latency, LatencyBadge, Status, StatusDot, Text,
+    Badge, Button, IconButton, Latency, LatencyBadge, Status, StatusDot, Text, Toggle, dialog,
+    dialog_body,
 };
 use crate::pages::shared::providers::Provider;
 use crate::pages::shared::{
-    applied_line, ordered_lines, reorder_action, route_text, switch_action,
+    LineToggle, applied_line, disable_and_switch, last_enabled, ordered_lines, reorder_action,
+    route_text, switch_action, toggle_action,
 };
 use crate::pages::{Action, Cx, divider, elided, error_text, note, pat_status};
 use crate::runtime::ReadTask;
@@ -106,6 +116,13 @@ pub(crate) struct RouterLive {
 }
 
 impl RouterLive {
+    /// Forget the last read: the next frame reads `router_status` again
+    /// (router mode changed outside this window; alpha.9 D3).
+    pub(crate) fn invalidate(&mut self) {
+        self.view = None;
+        self.at = None;
+    }
+
     /// Poll a running read and start one when none ran for [`ROUTER_RELOAD`].
     fn tick(&mut self, ui: &Ui, cx: &Cx<'_>) {
         if let Some(task) = &self.task {
@@ -144,8 +161,13 @@ impl RouterLive {
 
 /// What the right end of a line row shows.
 enum Slot {
-    /// A state: in use (direct), preferred (router); `name` for screen readers.
-    Badge { text: String, name: String },
+    /// A state: in use (direct), preferred (router), disabled; `name` for
+    /// screen readers.
+    Badge {
+        text: String,
+        name: String,
+        status: Status,
+    },
     /// The row action ([`switch_action`] to the row's line).
     Action {
         text: String,
@@ -187,14 +209,32 @@ pub(super) fn show(
     let ids: Vec<LineId> = lines.iter().map(|l| l.id.clone()).collect();
     let n = lines.len();
     let wide = ui.available_width() >= WIDE;
+    let disabled: Vec<bool> = lines
+        .iter()
+        .map(|l| profile.is_some_and(|pr| pr.is_line_disabled(&l.id)))
+        .collect();
+    // The router's preferred line: the first enabled one.
+    let preferred = disabled.iter().position(|d| !d);
     let slots: Vec<Slot> = lines
         .iter()
         .enumerate()
-        .map(|(i, line)| slot(cx, p, mode, many, i, line, applied.as_ref()))
+        .map(|(i, line)| {
+            slot(
+                cx,
+                p,
+                mode,
+                many,
+                (disabled[i], preferred == Some(i)),
+                line,
+                applied.as_ref(),
+            )
+        })
         .collect();
     let slot_w = slots.iter().map(|s| slot_width(ui, s)).fold(0.0, f32::max);
     let mut reorder = None;
+    let mut toggled: Option<(LineId, bool)> = None;
     for (i, (line, slot)) in lines.iter().zip(slots).enumerate() {
+        let off = disabled[i];
         if i > 0 {
             divider(ui, cx);
         }
@@ -210,7 +250,7 @@ pub(super) fn show(
         let current = route
             .as_ref()
             .is_some_and(|r| r.line_id == line.id.as_str());
-        let failover = current && i > 0;
+        let failover = current && Some(i) != preferred;
         let host = if current {
             format!(
                 "{} · {}",
@@ -253,12 +293,35 @@ pub(super) fn show(
             arrows(ui);
             ui.add_space(6.0);
             chosen |= slot_ui(ui, cx, slot_w, &slot);
+            if many && let Some(pr) = profile {
+                ui.add_space(8.0);
+                if let Some(disable) = enable_switch(ui, cx, pr, site, line, &name, off) {
+                    toggled = Some((line.id.clone(), disable));
+                }
+            }
+        };
+        let name_text = if off {
+            Text::strong(name.clone(), cx.pal).color(cx.pal.text_muted)
+        } else {
+            Text::strong(name.clone(), cx.pal)
+        };
+        let latency_ui = |ui: &mut Ui| {
+            if off {
+                // A disabled line is not probed for Codex: no latency.
+                ui.add_space(LATENCY_W);
+            } else {
+                ui.add_sized(
+                    [LATENCY_W, 22.0],
+                    LatencyBadge::new(latency)
+                        .name(crate::pages::overview::latency_text(cx, latency)),
+                );
+            }
         };
         if wide {
             ui.horizontal(|ui| {
                 ui.set_min_height(LINE_H);
                 ui.spacing_mut().item_spacing.x = 8.0;
-                rank(ui, cx, i);
+                rank(ui, cx, i, off);
                 let name_w = (ui.available_width() * 0.26).clamp(110.0, 200.0);
                 ui.allocate_ui_with_layout(
                     vec2(name_w, 40.0),
@@ -266,15 +329,11 @@ pub(super) fn show(
                     |ui| {
                         ui.set_width(name_w);
                         ui.spacing_mut().item_spacing.y = 1.0;
-                        elided(ui, Text::strong(name.clone(), cx.pal));
+                        elided(ui, name_text.clone());
                         host_text(ui, cx, &host, current, failover);
                     },
                 );
-                ui.add_sized(
-                    [LATENCY_W, 22.0],
-                    LatencyBadge::new(latency)
-                        .name(crate::pages::overview::latency_text(cx, latency)),
-                );
+                latency_ui(ui);
                 super::transports::badges(ui, cx, p, &line.id);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     right(ui);
@@ -298,17 +357,13 @@ pub(super) fn show(
                     ui.horizontal(|ui| {
                         ui.set_min_height(size::CONTROL_SM);
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        rank(ui, cx, i);
+                        rank(ui, cx, i, off);
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             right(ui);
                             ui.add_space(6.0);
-                            ui.add_sized(
-                                [LATENCY_W, 22.0],
-                                LatencyBadge::new(latency)
-                                    .name(crate::pages::overview::latency_text(cx, latency)),
-                            );
+                            latency_ui(ui);
                             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                                elided(ui, Text::strong(name.clone(), cx.pal));
+                                elided(ui, name_text.clone());
                             });
                         });
                     });
@@ -325,6 +380,17 @@ pub(super) fn show(
         }
         if chosen && let Some(profile) = profile {
             out.push(switch_action(cx.data, profile, &line.id));
+        }
+    }
+    if let Some((line, disable)) = toggled
+        && let Some(profile) = profile
+    {
+        match toggle_action(cx.data, profile, site, &line, disable) {
+            Some(LineToggle::Save(action)) => out.push(action),
+            Some(LineToggle::Confirm { .. }) => {
+                state.disable_line = Some((profile.id.clone(), line));
+            }
+            None => {}
         }
     }
     if let Some((from, to)) = reorder
@@ -379,7 +445,7 @@ fn header(
         Mode::Direct { .. } => cx.tr.t("providers.lines.order_hint"),
         Mode::Router { .. } => format!(
             "{}\n{}",
-            cx.tr.t("router.preference.recovery"),
+            crate::pages::router::recovery_text(cx.tr, cx.data.router_failover.as_ref()),
             cx.tr.t("router.preference.observed")
         ),
     };
@@ -432,7 +498,7 @@ fn slot(
     p: &Provider,
     mode: Mode,
     many: bool,
-    i: usize,
+    (disabled, preferred): (bool, bool),
     line: &superba_core::Line,
     applied: Option<&LineId>,
 ) -> Slot {
@@ -440,9 +506,15 @@ fn slot(
     let named = |key: &str| cx.tr.f(key, &[("line", &name)]);
     let profile = p.profile.as_ref();
     match mode {
+        _ if disabled => Slot::Badge {
+            text: cx.tr.t("connection.lines.disabled"),
+            name: named("connection.lines.disabled_named"),
+            status: Status::Idle,
+        },
         Mode::Direct { .. } if applied == Some(&line.id) => Slot::Badge {
             text: cx.tr.t("connection.lines.in_use"),
             name: named("connection.lines.in_use_named"),
+            status: Status::Ok,
         },
         // One line: the provider's own switch is in the header.
         _ if !many => Slot::Empty,
@@ -460,9 +532,10 @@ fn slot(
                 enabled: keyed,
             }
         }
-        Mode::Router { .. } if i == 0 => Slot::Badge {
+        Mode::Router { .. } if preferred => Slot::Badge {
             text: cx.tr.t("connection.lines.preferred"),
             name: named("connection.lines.preferred_named"),
+            status: Status::Ok,
         },
         Mode::Router { .. } => Slot::Action {
             text: cx.tr.t("connection.lines.prefer"),
@@ -501,8 +574,8 @@ fn slot_ui(ui: &mut Ui, cx: &Cx<'_>, width: f32, slot: &Slot) -> bool {
         |ui| {
             ui.set_width(width);
             match slot {
-                Slot::Badge { text, name } => {
-                    let r = ui.add(Badge::new(text.clone()).status(Status::Ok));
+                Slot::Badge { text, name, status } => {
+                    let r = ui.add(Badge::new(text.clone()).status(*status));
                     a11y::describe(&r, egui::accesskit::Role::Label, name);
                     false
                 }
@@ -569,10 +642,122 @@ fn is_pat_detail(key: &str) -> bool {
     )
 }
 
-/// The line's place in the order (1 = tried first).
-fn rank(ui: &mut Ui, cx: &Cx<'_>, i: usize) {
+/// The switch that enables or disables `line` (on = enabled); named per line
+/// for screen readers. `Some(disable)` when it was flipped. The last enabled
+/// line's switch is locked on.
+fn enable_switch(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    profile: &superba_core::Profile,
+    site: &superba_core::Site,
+    line: &superba_core::Line,
+    name: &str,
+    off: bool,
+) -> Option<bool> {
+    let last = last_enabled(profile, site, &line.id);
+    let mut on = !off;
+    let r = ui.add(
+        Toggle::new(
+            &mut on,
+            cx.tr.f("connection.lines.enable_named", &[("line", &name)]),
+        )
+        .enabled(!cx.busy && !last),
+    );
+    let tip = cx.tr.t(if last {
+        "connection.lines.disable_last"
+    } else if off {
+        "connection.lines.enable_tip"
+    } else {
+        "connection.lines.disable_tip"
+    });
+    let r = r.on_hover_text(&tip).on_disabled_hover_text(&tip);
+    (r.changed() && on == off).then_some(!off)
+}
+
+/// The confirmation to disable the line Codex uses (direct mode): Disable and
+/// switch saves the profile and asks for the usual switch to the first enabled
+/// line.
+pub(super) fn disable_dialog(
+    ctx: &egui::Context,
+    cx: &Cx<'_>,
+    state: &mut State,
+    out: &mut Vec<Action>,
+) {
+    let Some((profile_id, line_id)) = state.disable_line.clone() else {
+        return;
+    };
+    let found = cx
+        .data
+        .profiles
+        .value
+        .as_ref()
+        .and_then(|s| s.profile(&profile_id).cloned())
+        .and_then(|p| cx.data.site(&p.site_id).map(|s| (p, s)));
+    let Some((profile, site)) = found else {
+        state.disable_line = None;
+        return;
+    };
+    let mut after = profile.clone();
+    let next = after
+        .set_line_disabled(&site, &line_id, true)
+        .ok()
+        .and_then(|()| after.enabled_line_ids(&site).into_iter().next());
+    let (Some(line), Some(next)) = (site.line(&line_id), next.and_then(|n| site.line(&n))) else {
+        state.disable_line = None;
+        return;
+    };
+    let line_name = cx.tr.text(&line.name);
+    let next_name = cx.tr.text(&next.name);
+    let args: [(&str, &dyn std::fmt::Display); 2] = [("line", &line_name), ("next", &next_name)];
+    let mut close = false;
+    let response = dialog(
+        ctx,
+        egui::Id::unique("providers-disable-line"),
+        480.0,
+        |ui| {
+            ui.label(Text::h2(
+                cx.tr.f("connection.lines.disable_active_title", &args),
+                cx.pal,
+            ));
+            dialog_body(ui, |ui| {
+                ui.add(
+                    egui::Label::new(Text::muted(
+                        cx.tr.f("connection.lines.disable_active_body", &args),
+                        cx.pal,
+                    ))
+                    .wrap(),
+                );
+            });
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add(
+                        Button::primary(cx.tr.f("connection.lines.disable_active_confirm", &args))
+                            .enabled(!cx.busy),
+                    )
+                    .clicked()
+                {
+                    out.extend(disable_and_switch(&profile, &site, &line_id));
+                    close = true;
+                }
+                if ui
+                    .add(Button::ghost(cx.tr.t("action.cancel")).kbd("Esc"))
+                    .clicked()
+                {
+                    close = true;
+                }
+            });
+        },
+    );
+    if close || response.should_close() {
+        state.disable_line = None;
+    }
+}
+
+/// The line's place in the order (1 = tried first); muted when disabled.
+fn rank(ui: &mut Ui, cx: &Cx<'_>, i: usize, off: bool) {
     let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
-    let first = i == 0;
+    let first = i == 0 && !off;
     ui.painter().circle(
         r.center(),
         10.0,

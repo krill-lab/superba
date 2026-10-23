@@ -2,7 +2,7 @@
 //! Anthropic endpoint, and the plan of an apply or a restore (what changes in
 //! `settings.json`).
 
-use egui::{RichText, TextEdit, vec2};
+use egui::{TextEdit, vec2};
 use superba_core::claude::{AnthropicPreset, anthropic_preset, anthropic_presets};
 use superba_core::{AnthropicAuth, AnthropicEndpoint, ClaudePlanKind};
 
@@ -10,7 +10,8 @@ use super::State;
 use crate::design::fonts::{Weight, mono_font};
 use crate::design::tokens::text;
 use crate::design::widgets::{
-    Badge, Button, Dropdown, Segmented, Status, Text, Toggle, dialog, dialog_body,
+    Button, Change, ChangeLabels, ChangeList, Dropdown, Segmented, Status, Text, Toggle, dialog,
+    dialog_body,
 };
 use crate::pages::{Action, Cx};
 
@@ -171,7 +172,7 @@ pub(super) fn plan(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State) {
     };
     let mut close = false;
     let mut write = false;
-    let r = dialog(ctx, egui::Id::unique("claude-plan"), 640.0, |ui| {
+    let r = dialog(ctx, egui::Id::unique("claude-plan"), 760.0, |ui| {
         ui.label(Text::title(
             cx.tr.t(if plan.kind == ClaudePlanKind::Restore {
                 "claude.plan.title_restore"
@@ -193,34 +194,24 @@ pub(super) fn plan(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State) {
                 ),
                 cx.pal,
             ));
-            egui::Grid::new("claude-plan-rows")
-                .num_columns(3)
-                .striped(true)
-                .spacing(vec2(10.0, 4.0))
-                .show(ui, |ui| {
-                    let none = cx.tr.t("claude.plan.absent");
-                    for c in &plan.changes {
-                        ui.label(
-                            RichText::new(&c.slot).font(mono_font(text::CAPTION, Weight::Medium)),
-                        );
-                        let before = c.before.clone().unwrap_or_else(|| none.clone());
-                        let after = c.after.clone().unwrap_or_else(|| none.clone());
-                        ui.add(
-                            egui::Label::new(Text::caption(
-                                format!("{} → {}", elide(&before), elide(&after)),
-                                cx.pal,
-                            ))
-                            .truncate(),
-                        )
-                        .on_hover_text(format!("{before}\n→ {after}"));
-                        if c.drift {
-                            ui.add(Badge::new(cx.tr.t("claude.plan.drift")).status(Status::Warn));
-                        } else {
-                            ui.label("");
-                        }
-                        ui.end_row();
+            let changes: Vec<Change> = plan
+                .changes
+                .iter()
+                .map(|c| {
+                    let row = Change::new(&c.slot, c.before.clone(), c.after.clone());
+                    if c.drift {
+                        row.flag(cx.tr.t("claude.plan.drift"), Status::Warn)
+                    } else {
+                        row
                     }
-                });
+                })
+                .collect();
+            let labels = ChangeLabels {
+                none: cx.tr.t("claude.plan.absent"),
+                removed: cx.tr.t("claude.plan.removed"),
+            };
+            ui.add_space(4.0);
+            ChangeList::new(&changes, &labels).show(ui);
             crate::pages::shared::notices::notice_list(
                 ui,
                 cx,
@@ -265,8 +256,4 @@ pub(super) fn plan(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State) {
     } else if close {
         state.connect.plan = None;
     }
-}
-
-fn elide(s: &str) -> String {
-    crate::design::elide::elide_cols(s, 36, crate::design::elide::Ellipsis::End)
 }

@@ -64,6 +64,8 @@ pub(crate) struct PlanContext {
     pub settings: superba_core::PlanSettings,
     /// Router mode: new member order and configuration, applied before writing.
     pub router_update: Option<(Vec<ProfileId>, crate::router::BuiltMembers)>,
+    /// Router mode: mixed login account to accept (`Some(None)`: none).
+    pub official_client: Option<Option<String>>,
     /// Router intent: router mode to store after a successful switch.
     pub router_enabled_after: Option<bool>,
     /// Settings sync: the record stored for the host after it succeeded.
@@ -131,6 +133,7 @@ impl PlanContext {
             uninstall: None,
             settings: PlanSettings::default(),
             router_update: None,
+            official_client: None,
             router_enabled_after: None,
             host_sync: None,
             pin: None,
@@ -224,6 +227,9 @@ struct Dest {
     remote_resolved: Option<ResolvedProfile>,
     /// Router mode: new member order and configuration to apply before writing.
     router_update: Option<(Vec<ProfileId>, crate::router::BuiltMembers)>,
+    /// Router mode: the official account the router accepts from local Codex
+    /// (mixed login), `Some(None)` = router tokens only.
+    official_client: Option<Option<String>>,
     /// Router intent: router mode to store after a successful switch.
     router_enabled_after: Option<bool>,
     /// The local home goes through the router (which maps model names per
@@ -1165,6 +1171,7 @@ impl Switcher {
         // Router mode: a profile switch that only reorders the router's members
         // needs no restart (the router reloads; Codex keeps pointing at it).
         let primary = if local
+            && !request.refresh_models
             && dest.router_update.is_some()
             && config_plan.as_ref().is_none_or(|c| c.writes_no_files())
             && env_plan.as_ref().is_none_or(|e| e.is_noop())
@@ -1182,6 +1189,7 @@ impl Switcher {
         // (it started after the current generation was written). A hot restart
         // would only interrupt running turns.
         let primary = if local
+            && !request.refresh_models
             && primary.is_hot()
             && config_plan.as_ref().is_some_and(|c| c.writes_no_files())
             && env_plan.as_ref().is_none_or(|e| e.is_noop())
@@ -1378,6 +1386,7 @@ impl Switcher {
                 uninstall: dest.uninstall,
                 settings,
                 router_update: dest.router_update,
+                official_client: dest.official_client,
                 router_enabled_after: dest.router_enabled_after,
                 host_sync: None,
                 pin: None,
@@ -1434,7 +1443,33 @@ impl Switcher {
             })
             .await;
         match decision {
-            crate::model_keep::KeepDecision::Nothing => {}
+            crate::model_keep::KeepDecision::Nothing => {
+                // "Run Codex in WSL" with a model the destination sets itself
+                // (the profile's model, alpha.8 W90): nothing is kept, but the
+                // app's Codex in that distribution moves to or from the router
+                // with the same model; say so, as for a kept one (user bug 63).
+                let routed_now = superba_core::router::codex_uses_router(
+                    state,
+                    set.settings.router.enabled,
+                    self.deps
+                        .router
+                        .endpoint()
+                        .ok()
+                        .as_ref()
+                        .map(|e| &e.base_url),
+                );
+                let model = resolved.model.model.clone();
+                if let (Some(distro), Some(model)) = (&dest.legacy_wsl, model)
+                    && routed_now != dest.routed
+                    && state.model.as_deref() == Some(model.as_str())
+                {
+                    draft.info(
+                        text("switch.models.keep_legacy_wsl")
+                            .arg("distro", distro)
+                            .arg("model", &model),
+                    );
+                }
+            }
             crate::model_keep::KeepDecision::Note(n) => draft.warnings.push(n),
             crate::model_keep::KeepDecision::Keep { model, notice } => {
                 if dest.remote_resolved.is_none() {
@@ -1984,13 +2019,28 @@ impl Switcher {
                     Some(l) => vec![l.clone()],
                     None => {
                         let mut v = profile.line_priority();
-                        v.retain(|l| site.line(l).is_some());
+                        v.retain(|l| site.line(l).is_some() && !profile.is_line_disabled(l));
                         if v.is_empty() {
-                            v.extend(site.default_line().map(|l| l.id.clone()));
+                            // The site's default, or else its first enabled
+                            // line; a disabled line is never switched to.
+                            v.extend(
+                                site.default_line()
+                                    .map(|l| l.id.clone())
+                                    .filter(|l| !profile.is_line_disabled(l))
+                                    .or_else(|| profile.enabled_line_ids(&site).into_iter().next()),
+                            );
                         }
                         v
                     }
                 };
+                if let Some(l) = &line_override
+                    && profile.is_line_disabled(l)
+                {
+                    return Err(Error::invalid(format!(
+                        "line {l} of provider {} is disabled; enable it before switching to it",
+                        profile.id
+                    )));
+                }
                 if candidates.is_empty() {
                     let missing = line_override.clone().or_else(|| profile.line_id.clone());
                     return Err(Error::NotFound {
@@ -2096,7 +2146,14 @@ impl Switcher {
                 dest.router_update = None;
             }
             if let (Some(e), Some(token)) = (dest.endpoints.clone(), dest.key.clone()) {
-                dest.resolved = Some(resolved(&e, AuthMode::Pat, &token));
+                let auth = dest.auth.unwrap_or(AuthMode::Pat);
+                let mut r = resolved(&e, auth, &token);
+                if auth == AuthMode::MixedOfficial {
+                    // Krill's PAT recommendations do not apply to the
+                    // official login.
+                    r.settings = Default::default();
+                }
+                dest.resolved = Some(r);
             }
             dest.label = text("switch.destination.router").arg_text("site", site.name.clone());
             return Ok(dest);
@@ -2227,12 +2284,39 @@ impl Switcher {
                 }),
             }
         }
-        draft.warn(
-            text("switch.warn.router_mode")
-                .arg_text("site", site.name.clone())
-                .arg("port", endpoint.port),
-        );
+        let official = if router.mixed_login {
+            let login = self.official_login().await;
+            if login.is_none() {
+                draft.warn(text("switch.warn.mixed_login_no_login"));
+            }
+            login
+        } else {
+            None
+        };
+        dest.official_client = Some(official.as_ref().map(|(account, _)| account.clone()));
+        match &official {
+            Some((_, email)) => draft.warn(
+                text("switch.warn.mixed_login")
+                    .arg("email", email.clone().unwrap_or_default())
+                    .arg_text("site", site.name.clone())
+                    .arg("port", endpoint.port),
+            ),
+            None => draft.warn(
+                text("switch.warn.router_mode")
+                    .arg_text("site", site.name.clone())
+                    .arg("port", endpoint.port),
+            ),
+        }
         match ResolvedEndpoints::for_base_url(&endpoint.base_url) {
+            Ok(e) if official.is_some() => {
+                // Mixed login: auth.json keeps the official login and
+                // chatgpt_base_url stays chatgpt.com (no workspace discovery,
+                // no CODEX_AUTHAPI_BASE_URL); only model traffic is routed.
+                dest.auth = Some(AuthMode::MixedOfficial);
+                dest.env_op = Some(EnvOp::Clear);
+                dest.endpoints = Some(e);
+                dest.key = Some(endpoint.token);
+            }
             Ok(mut e) => {
                 // Inference stays on HTTP loopback (also used by the CLI and
                 // model probes). Workspace discovery uses TLS on the same
@@ -2251,6 +2335,30 @@ impl Switcher {
             Err(e) => draft.block(BlockReason::RouterUnavailable {
                 detail: e.to_string(),
             }),
+        }
+    }
+
+    /// The official ChatGPT login of the local home for mixed login: the live
+    /// one if `auth.json` holds it, else the stashed one (account id, email).
+    async fn official_login(&self) -> Option<(String, Option<String>)> {
+        let d = &self.deps;
+        let home = d.ctx.codex_home();
+        if let Ok(state) = d.config.read_state(&home).await
+            && let superba_core::AuthShape::ChatGpt {
+                account_id: Some(account),
+                email,
+            } = state.auth
+            && !account.is_empty()
+        {
+            return Some((account, email));
+        }
+        let scope = StashScope::Local(home.root().to_path_buf());
+        match d.config.login_stash(&scope).await {
+            Ok(Some(info)) => info
+                .account_id
+                .filter(|a| !a.is_empty())
+                .map(|a| (a, info.email)),
+            _ => None,
         }
     }
 

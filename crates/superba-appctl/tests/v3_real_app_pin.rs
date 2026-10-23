@@ -240,7 +240,7 @@ async fn pinned_store_codex_runs_the_app_server_and_an_inherited_value_never_pin
         .status()
         .unwrap();
     assert!(st.success());
-    let pinned = std::fs::canonicalize(entry.join("bin/codex")).unwrap();
+    let pinned = superba_core::paths::canonical(entry.join("bin/codex")).unwrap();
 
     let mut env = BTreeMap::new();
     env.insert("DISPLAY".to_owned(), s.display.clone());
@@ -265,7 +265,7 @@ async fn pinned_store_codex_runs_the_app_server_and_an_inherited_value_never_pin
         })
         .await;
         eprintln!("pinned launch: app-server exe {}", exe.display());
-        assert_eq!(std::fs::canonicalize(&exe).unwrap(), pinned);
+        assert_eq!(superba_core::paths::canonical(&exe).unwrap(), pinned);
         eventually("home screen", Duration::from_secs(90), || async {
             let st = c.renderer_state(&session).await.ok()?;
             if st.on_home {
@@ -317,10 +317,10 @@ async fn pinned_store_codex_runs_the_app_server_and_an_inherited_value_never_pin
         })
         .await;
         eprintln!("unpinned launch: app-server exe {}", exe.display());
-        let bundled = std::fs::canonicalize(app.join("resources/codex")).unwrap();
-        assert_eq!(std::fs::canonicalize(&exe).unwrap(), bundled);
+        let bundled = superba_core::paths::canonical(app.join("resources/codex")).unwrap();
+        assert_eq!(superba_core::paths::canonical(&exe).unwrap(), bundled);
         if let Some(seen) = session.app_server_exe.as_deref() {
-            assert_eq!(std::fs::canonicalize(seen).unwrap(), bundled);
+            assert_eq!(superba_core::paths::canonical(seen).unwrap(), bundled);
         }
     })
     .catch_unwind()

@@ -42,6 +42,11 @@ pub trait RouterBackend: Send + Sync {
             ))
         })
     }
+    /// Persist the failover and recovery rules and reload a running router.
+    fn set_failover(&self, failover: superba_core::RouterFailover) -> BoxFut<()> {
+        let _ = failover;
+        Box::pin(async { Err(Error::not_implemented("router failover settings")) })
+    }
     /// Reorder the members (profile ids in the new priority order).
     fn set_order(&self, ids: Vec<String>) -> BoxFut<()>;
     /// Add a profile as a member (the service copies its key for the router).
@@ -151,7 +156,14 @@ pub fn members(view: &RouterView, sites: &[Site], profiles: &ProfileSet) -> Vec<
                     .map(|l| l.origin.as_str().to_owned())
                     .unwrap_or_default()
             };
-            let lines: Vec<LineView> = match live {
+            let disabled_view = |l: &superba_core::Line| LineView {
+                id: l.id.to_string(),
+                name: l.name.fallback.clone(),
+                base_url: l.origin.as_str().to_owned(),
+                health: LineHealth::Disabled,
+                metrics: None,
+            };
+            let mut lines: Vec<LineView> = match live {
                 Some(m) if !m.lines.is_empty() => m
                     .lines
                     .iter()
@@ -174,17 +186,34 @@ pub fn members(view: &RouterView, sites: &[Site], profiles: &ProfileSet) -> Vec<
                         crate::pages::shared::ordered_lines(site, Some(profile))
                             .into_iter()
                             .map(|l| LineView {
-                                id: l.id.to_string(),
-                                name: l.name.fallback.clone(),
-                                base_url: l.origin.as_str().to_owned(),
-                                health: LineHealth::Unknown,
-                                metrics: None,
+                                health: if profile.is_line_disabled(&l.id) {
+                                    LineHealth::Disabled
+                                } else {
+                                    LineHealth::Unknown
+                                },
+                                ..disabled_view(&l)
                             })
                             .collect()
                     }
                     _ => Vec::new(),
                 },
             };
+            // The running router has no disabled line (user bug 108): show
+            // each at its place in the profile's order.
+            if let (Some(site), Some(profile)) = (site, profile)
+                && live.is_some_and(|m| !m.lines.is_empty())
+            {
+                for (i, l) in crate::pages::shared::ordered_lines(site, Some(profile))
+                    .iter()
+                    .enumerate()
+                {
+                    if profile.is_line_disabled(&l.id)
+                        && !lines.iter().any(|v| v.id == l.id.as_str())
+                    {
+                        lines.insert(i.min(lines.len()), disabled_view(l));
+                    }
+                }
+            }
             MemberView {
                 id: id.to_string(),
                 last_route: live.and_then(|m| m.last_route.clone()),
@@ -337,6 +366,7 @@ pub fn live(status: &RouterStatus, members: &[MemberView]) -> Live {
             })
             .collect(),
         local: status.local.view(),
+        local_answers: status.local_answers.clone(),
     }
 }
 
@@ -442,6 +472,7 @@ impl RouterBackend for SystemRouter {
                 port: view.port,
                 token_ready: view.token_ready,
                 translation: view.translation,
+                failover: view.failover,
                 recording: view.stats.clone(),
                 network_exe: this.network_exe.clone(),
                 claude: view.claude.clone(),
@@ -460,6 +491,11 @@ impl RouterBackend for SystemRouter {
     fn set_conversion(&self, conversion: superba_core::RouterConversion) -> BoxFut<()> {
         let service = self.service.clone();
         Box::pin(async move { service.router_set_conversion(conversion).await.map(|_| ()) })
+    }
+
+    fn set_failover(&self, failover: superba_core::RouterFailover) -> BoxFut<()> {
+        let service = self.service.clone();
+        Box::pin(async move { service.router_set_failover(failover).await.map(|_| ()) })
     }
 
     fn add_member(&self, candidate: Candidate) -> BoxFut<()> {

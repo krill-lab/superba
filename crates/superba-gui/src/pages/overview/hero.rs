@@ -349,7 +349,7 @@ pub fn model(
 // ---------------------------------------------------------------------------
 
 /// A rounded rectangle outline made of dashes.
-fn dashed_rrect(painter: &egui::Painter, rect: Rect, r: f32, stroke: Stroke) {
+pub(super) fn dashed_rrect(painter: &egui::Painter, rect: Rect, r: f32, stroke: Stroke) {
     let mut pts = Vec::new();
     let corners = [
         (pos2(rect.max.x - r, rect.min.y + r), -90.0f32),
@@ -794,7 +794,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
 /// "Reopen with Superba" while it runs without hot switching (a full restart,
 /// previewed and confirmed). Where it goes, the button, what a click does and
 /// its hover text; `None` when there is nothing to offer.
-fn launch_button(
+pub(super) fn launch_button(
     ui: &Ui,
     cx: &Cx<'_>,
     hero: &Hero,
@@ -819,7 +819,7 @@ fn launch_button(
 /// The provider node's popover: the applied provider's lines with their
 /// latency (a click plans the switch), the other providers, adding one and the
 /// Providers page.
-fn provider_popover(
+pub(super) fn provider_popover(
     response: &egui::Response,
     cx: &Cx<'_>,
     current: Option<&str>,
@@ -854,7 +854,9 @@ fn provider_popover(
                 && site.lines.len() > 1
             {
                 let routed = cx.data.router_enabled();
-                let lines = crate::pages::shared::ordered_lines(&site, Some(profile));
+                // Disabled lines (user bug 108) are never used: not listed.
+                let mut lines = crate::pages::shared::ordered_lines(&site, Some(profile));
+                lines.retain(|l| !profile.is_line_disabled(&l.id));
                 let active = if routed {
                     lines.first().map(|l| l.id.clone())
                 } else {
@@ -888,7 +890,10 @@ fn provider_popover(
                     }
                     ui.add(
                         egui::Label::new(Text::caption(
-                            cx.tr.t("router.preference.recovery"),
+                            crate::pages::router::recovery_text(
+                                cx.tr,
+                                cx.data.router_failover.as_ref(),
+                            ),
                             cx.pal,
                         ))
                         .wrap(),
@@ -1039,7 +1044,7 @@ fn hot_note(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
 /// The model node's popover: the speed tier (the tiers some listed model
 /// offers; a change plans the hot restart that applies it), where it applies,
 /// and the Models page.
-fn speed_popover(response: &egui::Response, cx: &Cx<'_>, out: &mut Vec<Action>) {
+pub(super) fn speed_popover(response: &egui::Response, cx: &Cx<'_>, out: &mut Vec<Action>) {
     let Some((profile, support)) = super::speed_support(cx) else {
         return;
     };

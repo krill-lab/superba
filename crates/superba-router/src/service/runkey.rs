@@ -64,7 +64,7 @@ fn starts_router_in(command: &str, dir: &Path) -> bool {
         .file_stem()
         .and_then(|s| s.to_str())
         .is_some_and(|s| s.eq_ignore_ascii_case("superba-router"));
-    let canonical = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_owned());
+    let canonical = |p: &Path| superba_core::paths::canonical(p).unwrap_or_else(|_| p.to_owned());
     is_router
         && program.parent().is_some_and(|parent| {
             let (a, b) = (canonical(parent), canonical(dir));

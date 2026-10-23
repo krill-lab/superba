@@ -3,12 +3,16 @@
 //! - 路由 / Router ([`show`]): the local smart router's SETTINGS only (opt-in,
 //!   v2 decision 6). The page header carries the one on / off action; under it
 //!   one scrolling column (`settings.rs`): a status line saying plainly whether
-//!   Codex traffic goes through the local process, the members and their line
-//!   order (`view.rs`), the entry points (`ingress.rs`), then the closed
-//!   「高级」 group: the reply stats line (`stats_line.rs`), prices
-//!   (`prices.rs`), recording and the service. Opening 路由 always lands here.
-//! - 用量 / Usage ([`show_usage`]): tabs 最近请求 / 活动请求 / 统计 with a search
-//!   on the right.
+//!   Codex traffic goes through the local process with the service and the
+//!   router process under it, the members and their line order (`view.rs`),
+//!   the entry points and protocol conversion (`ingress.rs`), the failover and
+//!   recovery rules (`failover.rs`), then 「高级」: the reply stats line
+//!   (`stats_line.rs`), prices (`prices.rs`) and recording. No section is
+//!   collapsed (user bug 116). Opening 路由 always lands here.
+//! - 用量 / Usage ([`show_usage`]): tabs 最近请求 / 路由 / 活动请求 / 统计 with a
+//!   search on the right.
+//!   - 路由 (`routing.rs`): each routed request's lines tried, failovers,
+//!     protocol conversion and the router's local answers.
 //!   - 最近请求 (`recent.rs`): source list (按会话 / 按供应商), the 13-column log
 //!     with totals, toolbar and the detail pane (`detail.rs`: 通用 and 计时).
 //!   - 活动请求 (`active.rs`): requests in flight from the router's admin API
@@ -30,11 +34,13 @@ pub mod db;
 mod detail;
 pub mod doctor;
 pub mod eligibility;
+mod failover;
 pub mod ingress;
 pub mod model;
 pub mod prices;
 mod recent;
 pub mod requests;
+pub mod routing;
 mod settings;
 mod stats;
 pub mod stats_line;
@@ -49,7 +55,7 @@ use superba_core::{ClearRequest, RouterStatsSettings, RouterView, Timestamp};
 
 use self::backend::RouterBackend;
 use self::model::{Candidate, Mode, Snapshot};
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, page_header};
+use super::{Action, Cx, Page, PageStatus, page_header};
 use crate::design::fonts::{Weight, font};
 use crate::design::tokens::{space, text};
 use crate::design::widgets::log_table::elided;
@@ -65,6 +71,9 @@ pub enum Tab {
     /// 最近请求.
     #[default]
     Recent,
+    /// 路由: how each routed request went (lines tried, conversion, local
+    /// answers).
+    Routing,
     /// 活动请求.
     Active,
     /// 统计.
@@ -73,12 +82,13 @@ pub enum Tab {
 
 impl Tab {
     /// All tabs in order.
-    pub const ALL: [Tab; 3] = [Tab::Recent, Tab::Active, Tab::Stats];
+    pub const ALL: [Tab; 4] = [Tab::Recent, Tab::Routing, Tab::Active, Tab::Stats];
 
     /// i18n key of the label.
     pub fn key(self) -> &'static str {
         match self {
             Tab::Recent => "usage.tab.recent",
+            Tab::Routing => "usage.tab.routing",
             Tab::Active => "usage.tab.active",
             Tab::Stats => "usage.tab.stats",
         }
@@ -88,6 +98,7 @@ impl Tab {
     pub fn command(self) -> &'static str {
         match self {
             Tab::Recent => "recent",
+            Tab::Routing => "routing",
             Tab::Active => "active",
             Tab::Stats => "stats",
         }
@@ -106,6 +117,8 @@ enum Op {
     Uninstall,
     /// Start (or repair) the service, then plan turning router mode on.
     Start,
+    /// Save the failover and recovery rules.
+    Failover,
 }
 
 /// A dialog of the page.
@@ -137,6 +150,8 @@ pub struct State {
     op_error: Option<String>,
     conversion_error: Option<String>,
     pick: Option<usize>,
+    /// Failover rules being saved (shown until the next snapshot has them).
+    failover_draft: Option<superba_core::RouterFailover>,
     /// The router-mode switch to plan once [`Op::Start`] has finished.
     then_plan: Option<superba_core::SwitchRequest>,
     /// A switch ready to be planned (handed to the switch flow by `show`).
@@ -152,6 +167,8 @@ pub struct State {
     pub active: active::Active,
     /// 统计.
     pub stats: stats::Stats,
+    /// 路由.
+    pub routing: routing::Routing,
     /// Router settings (edits in progress).
     pub prefs: settings::Prefs,
     /// Recent recorded request counts for the ingress card.
@@ -204,6 +221,17 @@ impl State {
         self.backend.clone()
     }
 
+    /// Drop the timing of the last read: the next frame reads the router
+    /// again (settings changed outside this window; alpha.9 D3).
+    pub fn invalidate(&mut self) {
+        self.loaded_at = None;
+    }
+
+    /// Whether the next refresh reads the router at once.
+    pub fn stale(&self) -> bool {
+        self.loaded_at.is_none()
+    }
+
     /// Reload now (after a change) or when the poll interval has passed.
     fn refresh(&mut self, cx: &Cx<'_>, force: bool) {
         if self.task.is_some() {
@@ -245,6 +273,9 @@ impl State {
             self.loaded_at = Some(Instant::now());
             match result {
                 Ok(s) => {
+                    if self.op.is_none() {
+                        self.failover_draft = None;
+                    }
                     self.snapshot = Some(s);
                     self.error = None;
                 }
@@ -433,6 +464,7 @@ fn address(state: &State, mode: &Mode) -> String {
 
 /// Poll background work and schedule the next repaint (both pages).
 fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: bool) {
+    prices::poll_calibration(state);
     state.poll(cx, out);
     if let Some(request) = state.ready_plan.take() {
         out.push(Action::Plan(Box::new(request)));
@@ -446,7 +478,8 @@ fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: b
         || state.titles.loading()
         || state.recent.loading()
         || state.active.loading()
-        || state.stats.loading();
+        || state.stats.loading()
+        || state.routing.loading();
     ui.ctx().request_repaint_after(if busy {
         Duration::from_millis(100)
     } else if usage && state.tab == Tab::Active {
@@ -457,8 +490,8 @@ fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: b
 }
 
 /// Draw the Router page: the header with the one on / off action, then one
-/// scrolling column with the status, members, entry points and the collapsed
-/// Advanced group (`settings.rs`).
+/// scrolling column with the status, members, entry points, failover rules
+/// and Advanced (`settings.rs`).
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     tick(ui, cx, state, out, false);
     page_header(ui, cx, Page::Router, |ui| switch_button(ui, cx, state, out));
@@ -491,6 +524,7 @@ pub fn show_usage(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
     let rect = ui.available_rect_before_wrap();
     crate::design::layout::fixed(ui, rect, |ui| match state.tab {
         Tab::Recent => recent::show(ui, cx, state, out),
+        Tab::Routing => routing::show(ui, cx, state, out),
         Tab::Active => active::show(ui, cx, state, out),
         Tab::Stats => stats::show(ui, cx, state, out),
     });
@@ -576,16 +610,11 @@ fn switch_button(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Acti
     } else {
         "router.banner.turn_on"
     });
+    // UI Automation reads the visible label ("Turn off the router…"); a
+    // shorter name of its own ("Turn off") broke the label-in-name rule
+    // (alpha.8 Windows acceptance, D5).
     let button = Button::new(label).kind(switch_kind(on, ready));
-    // The existing UIA / AX names of the on and off flows (e2e/windows, e2e/macos).
-    let name = cx.tr.t(if on {
-        "router.turn_off"
-    } else {
-        "router.banner.turn_on"
-    });
-    let response = ui
-        .add(button.small().loading(starting).enabled(enabled))
-        .accessible_name(name);
+    let response = ui.add(button.small().loading(starting).enabled(enabled));
     let hint = match &request {
         Err(key) => cx.tr.t(key),
         Ok(_) if !members && !on => cx.tr.t("router.needs_member"),
@@ -676,19 +705,19 @@ fn tab_row(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
             seg = seg.option(t, cx.tr.t(t.key()));
         }
         seg.show(ui);
-        if matches!(state.tab, Tab::Recent | Tab::Active) {
+        if matches!(state.tab, Tab::Recent | Tab::Routing | Tab::Active) {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let edit = egui::TextEdit::singleline(&mut state.search)
-                    .hint_text(cx.tr.t("requests.search"))
-                    .desired_width(260.0);
-                // Named by what it searches (its only visible label is the hint).
-                let r = ui.add(edit).accessible_name(cx.tr.t("requests.search"));
+                let r = crate::design::widgets::SearchField::new(
+                    &mut state.search,
+                    "usage-requests-search",
+                    cx.tr.t("requests.search"),
+                    cx.tr.t("requests.search_clear"),
+                )
+                .width(260.0_f32.min(ui.available_width()))
+                .show(ui);
                 if state.focus_search {
                     state.focus_search = false;
                     r.request_focus();
-                }
-                if r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    state.search.clear();
                 }
             });
         }
@@ -766,131 +795,37 @@ pub fn usage_status(state: &State) -> PageStatus {
     status(state)
 }
 
-fn page_command(page: Page, command: &str) -> Action {
-    Action::PageCommand {
-        page,
-        command: command.into(),
-    }
-}
-
-/// Command palette entries: router mode and the stats line (Router), the Usage
-/// tabs and recording (Usage).
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let on = mode(cx).is_router();
-    let members = eligibility::has_members(cx, state);
-    let ready = members && eligibility::has_eligible_member(cx, state);
-    let keywords = || vec!["router".into(), "failover".into(), "proxy".into()];
-    let mut items = Vec::new();
-    if !on && !ready {
-        // Nothing to turn on yet: the Router page explains how to add members
-        // (or why none can carry traffic), as the disabled 开启 does.
-        items.push(PaletteItem {
-            title: cx.tr.t("router.palette.setup"),
-            detail: Some(cx.tr.t(if members {
-                "router.eligibility.none"
-            } else {
-                "router.needs_member"
-            })),
-            keywords: keywords(),
-            group: PaletteGroup::Router,
-            action: Action::Go(Page::Router),
-        });
+/// The recovery rules as one sentence, from the saved failover settings (the
+/// defaults until the router's configuration has been read): the Overview's
+/// and Providers' line-order help.
+pub fn recovery_text(
+    tr: &crate::i18n::Tr,
+    failover: Option<&superba_core::RouterFailover>,
+) -> String {
+    let f = failover.cloned().unwrap_or_default();
+    let idle = if f.sticky_idle_minutes % 60 == 0 {
+        tr.f(
+            "router.preference.hours",
+            &[("n", &(f.sticky_idle_minutes / 60))],
+        )
     } else {
-        let (title, command) = if on {
-            ("router.palette.off", "off")
+        tr.f(
+            "router.preference.minutes",
+            &[("n", &f.sticky_idle_minutes)],
+        )
+    };
+    tr.f(
+        if f.return_to_preferred {
+            "router.preference.recovery_return"
         } else {
-            ("router.palette.on", "on")
-        };
-        items.push(PaletteItem {
-            title: cx.tr.t(title),
-            detail: Some(cx.tr.t("router.palette.detail")),
-            keywords: keywords(),
-            group: PaletteGroup::Router,
-            action: page_command(Page::Router, command),
-        });
-    }
-    items.push(PaletteItem {
-        title: cx.tr.t("router.palette.doctor"),
-        detail: Some(cx.tr.t("router.doctor.hint")),
-        keywords: vec![
-            "router".into(),
-            "doctor".into(),
-            "diagnostics".into(),
-            "诊断".into(),
+            "router.preference.recovery"
+        },
+        &[
+            ("cooldown", &f.cooldown_secs),
+            ("max", &f.max_cooldown_secs),
+            ("idle", &idle),
         ],
-        group: PaletteGroup::Router,
-        action: page_command(Page::Router, "doctor"),
-    });
-    let stats = state.stats_settings(cx);
-    let entries: [(Page, &str, &str, Vec<String>); 5] = [
-        (
-            Page::Usage,
-            "usage.palette.open_recent",
-            "tab:recent",
-            vec![
-                "requests".into(),
-                "log".into(),
-                "usage".into(),
-                "请求记录".into(),
-                "用量".into(),
-            ],
-        ),
-        (
-            Page::Usage,
-            "usage.palette.open_active",
-            "tab:active",
-            vec!["requests".into(), "in flight".into(), "usage".into()],
-        ),
-        (
-            Page::Usage,
-            "usage.palette.open_stats",
-            "tab:stats",
-            vec![
-                "statistics".into(),
-                "cost".into(),
-                "usage".into(),
-                "统计".into(),
-            ],
-        ),
-        (
-            Page::Router,
-            if stats.line.enabled {
-                "router.palette.stats_off"
-            } else {
-                "router.palette.stats_on"
-            },
-            if stats.line.enabled {
-                "stats_line:off"
-            } else {
-                "stats_line:on"
-            },
-            vec!["stats line".into(), "tok/s".into(), "统计行".into()],
-        ),
-        (
-            Page::Router,
-            if stats.record {
-                "router.palette.pause_recording"
-            } else {
-                "router.palette.resume_recording"
-            },
-            if stats.record {
-                "record:off"
-            } else {
-                "record:on"
-            },
-            vec!["recording".into(), "记录".into()],
-        ),
-    ];
-    for (page, title, command, keywords) in entries {
-        items.push(PaletteItem {
-            title: cx.tr.t(title),
-            detail: None,
-            keywords,
-            group: PaletteGroup::Router,
-            action: page_command(page, command),
-        });
-    }
-    items
+    )
 }
 
 /// Commands both pages understand: `refresh` reloads, `stats_line:on|off` and
@@ -942,7 +877,7 @@ pub fn usage_command(state: &mut State, cx: &Cx<'_>, command: &str, _out: &mut V
     }
     match command {
         "search" => {
-            if !matches!(state.tab, Tab::Recent | Tab::Active) {
+            if !matches!(state.tab, Tab::Recent | Tab::Routing | Tab::Active) {
                 state.tab = Tab::Recent;
             }
             state.focus_search = true;

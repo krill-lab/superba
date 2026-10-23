@@ -22,7 +22,7 @@ use super::tap::{AnthropicSse, AnthropicUsage};
 use super::{line, meta, passthrough};
 use crate::config::join_path;
 use crate::forward::{
-    Observed, UpResponse, describe_error, failover_status, full, response_headers, set_route,
+    Observed, UpResponse, describe_error, failover_status_in, full, response_headers, set_route,
     up_response,
 };
 use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_detail, file_limit_in};
@@ -55,8 +55,8 @@ fn prepare(
 }
 
 /// Why an answer is a failover reason (502-504, 529, an edge interception).
-fn failover_reason(resp: &reqwest::Response) -> Option<String> {
-    failover_status(resp.status(), resp.headers())
+fn failover_reason(statuses: &[u16], resp: &reqwest::Response) -> Option<String> {
+    failover_status_in(statuses, resp.status(), resp.headers())
         .or_else(|| (resp.status().as_u16() == 529).then(|| "HTTP 529".to_owned()))
 }
 
@@ -151,9 +151,7 @@ pub(super) async fn messages(
         .as_deref()
         .map(|s| format!("claude:{s}:{}", resolution.model));
     let now = Instant::now();
-    let pin = key
-        .as_deref()
-        .and_then(|k| lock(&generation.sticky).get(k, now));
+    let pin = key.as_deref().and_then(|k| generation.pin(k, now));
     let order = route::attempts(&generation, &resolution.targets, pin, now);
     let mut prepared: HashMap<usize, (Bytes, Vec<String>)> = HashMap::new();
     let mut failures: Vec<String> = Vec::new();
@@ -233,7 +231,7 @@ pub(super) async fn messages(
                 note_line_down(&shared, &generation, a.c, opened, &reason);
                 (reason, None)
             }
-            Ok(resp) => match failover_reason(&resp) {
+            Ok(resp) => match failover_reason(&generation.config.tuning.failover_statuses, &resp) {
                 Some(reason) => {
                     let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
                     note_line_down(&shared, &generation, a.c, opened, &reason);

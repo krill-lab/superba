@@ -7,11 +7,6 @@ reload = "重新读取"
 cancel = "取消"
 discard = "放弃修改"
 
-[claude.palette]
-apply = "应用 Claude Code 配置"
-pull = "拉取 Claude Code 模型"
-files = "编辑 Claude Code 的 settings.json"
-
 [claude.banner]
 new_sessions = "已写入 settings.json。新开的 Claude Code 会话生效；正在运行的会话保持启动时的设置。"
 restored = "Claude Code 的设置已还原为 Superba 之前的样子，新开的会话生效。"
@@ -218,6 +213,7 @@ title_restore = "还原 settings.json？"
 body = "{path}：只改动这些键，其他键保持不变。"
 absent = "（无）"
 drift = "被别人改过"
+removed = "删除"
 take_over = "同时覆盖被别人改过的键"
 backup = "Superba 会先备份文件（Claude Code 设置 → 编辑 settings.json → 备份）。"
 write = "写入"

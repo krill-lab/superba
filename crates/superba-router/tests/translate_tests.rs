@@ -432,6 +432,7 @@ fn cache_read_and_write_are_distinct_and_input_is_inclusive() {
     assert_eq!(
         a.usage,
         Usage {
+            cache_write_1h: None,
             input: Some(60),
             output: Some(4),
             cache_read: Some(20),
@@ -452,6 +453,7 @@ fn gemini_cache_read_is_subset_and_thought_tokens_are_output() {
     assert_eq!(
         r.usage,
         Usage {
+            cache_write_1h: None,
             input: Some(100),
             output: Some(12),
             cache_read: Some(40),

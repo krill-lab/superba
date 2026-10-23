@@ -338,6 +338,9 @@ pub struct Usage {
     pub cache_write: Option<u64>,
     /// Output tokens used for reasoning.
     pub reasoning: Option<u64>,
+    /// Of `cache_write`, one-hour cache writes (Anthropic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<u64>,
 }
 
 impl Usage {

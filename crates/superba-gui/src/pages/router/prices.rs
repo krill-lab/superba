@@ -1,4 +1,7 @@
-//! Prices of the cost estimates (路由 page → 价格): the price table in use (public
+//! Prices of the cost estimates. Since user requirement 115 the price table,
+//! the ratios and calibration are edited on the Models page
+//! (`pages::models::prices`); this module keeps the shared pieces and the
+//! Usage page's calibration dialog. Originally (路由 page → 价格): the price table in use (public
 //! list prices from Superba's feeds), a ratio per provider (relays usually sell
 //! at a fraction of list price; default × 1) for every key-based provider, in
 //! the router or not (costs of requests from Codex's session files use it too,
@@ -14,7 +17,7 @@ use egui::{Align, Layout, Ui};
 use crate::design::tokens::{size, space};
 use crate::design::widgets::Table;
 use superba_core::{
-    AccountRequest, Error, FeedOrigin, FeedsStatus, Multiplier, PriceTable, ProfileId, RequestRow,
+    AccountRequest, Error, FeedsStatus, Multiplier, PriceTable, ProfileId, RequestRow,
     RequestStatus, Result, RouterStatsSettings, StatsGroupBy, StatsQuery, SwitchService,
     UsageQuery, Usd,
 };
@@ -292,14 +295,6 @@ pub fn providers(cx: &Cx<'_>) -> Vec<(ProfileId, String, bool)> {
         .collect()
 }
 
-fn origin_text(cx: &Cx<'_>, status: &FeedsStatus) -> String {
-    match &status.source {
-        FeedOrigin::Mirror { name } => name.clone(),
-        FeedOrigin::Cache => cx.tr.t("prices.source.cache"),
-        _ => cx.tr.t("prices.source.builtin"),
-    }
-}
-
 /// Start loading a billing comparison for `profile`.
 pub fn start_calibration(cx: &Cx<'_>, state: &mut State, profile: ProfileId, name: String) {
     let current = ratio_of(&state.stats_settings(cx), &profile);
@@ -312,201 +307,26 @@ pub fn start_calibration(cx: &Cx<'_>, state: &mut State, profile: ProfileId, nam
         .start(async move { load_calibration(service, profile, name, current).await });
 }
 
-/// Draw the price section: the price table in use, then one row per
-/// key-based provider with its ratio (right-aligned) and its actions in the
-/// last column — 按账单校准… where the provider reports usage, 编辑 — and,
-/// while a ratio is edited, the field in the ratio column with 保存 / 取消.
-pub fn section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+/// What is left of the price section on the Router page (user requirement
+/// 115): a link to the Models page, where prices, ratios and calibration are.
+pub fn moved_row(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
+    crate::pages::section(ui, cx, &cx.tr.t("prices.title"), None);
+    let r = ui
+        .add(Button::ghost(cx.tr.t("prices.moved")).small())
+        .on_hover_text(cx.tr.t("prices.moved_tip"));
+    if r.clicked() {
+        out.push(Action::Go(crate::pages::Page::Models));
+    }
+}
+
+/// Open the billing comparison started from the Usage page's cost view once
+/// it has loaded (every frame of the Router and Usage pages).
+pub fn poll_calibration(state: &mut State) {
     let p = &mut state.prefs.prices;
-    p.feeds.poll();
     if p.calibration.poll()
         && let Some(c) = p.calibration.value.clone()
     {
         state.dialog = Some(Dialog::Calibrate(c));
-    }
-    let p = &mut state.prefs.prices;
-    if p.feeds.due(None) {
-        let service = cx.service.clone();
-        p.feeds.start(async move { service.feeds_status().await });
-    }
-    crate::pages::section(
-        ui,
-        cx,
-        &cx.tr.t("prices.title"),
-        Some(&cx.tr.t("prices.note")),
-    );
-    // The revision in use (the feed's), else the newest recorded row's.
-    let rev = state
-        .prefs
-        .prices
-        .feeds
-        .value
-        .as_ref()
-        .and_then(|f| f.prices_rev.clone())
-        .or_else(|| {
-            state.recent.shown.iter().find_map(|r| {
-                let basis = PriceBasis::parse(r.price_rev.as_deref()?)?;
-                basis.rev().map(str::to_owned)
-            })
-        })
-        .unwrap_or_default();
-    let source = match &state.prefs.prices.feeds.value {
-        Some(s) => origin_text(cx, s),
-        None => cx.tr.t("prices.source.builtin"),
-    };
-    let mut view = false;
-    crate::pages::superba::row(
-        ui,
-        cx,
-        &cx.tr.t("prices.table_label"),
-        &cx.tr
-            .f("prices.table", &[("source", &source), ("rev", &rev)]),
-        true,
-        |ui| {
-            view = ui
-                .add(Button::new(cx.tr.t("prices.view")).small())
-                .on_hover_text(cx.tr.t("prices.table_tip"))
-                .clicked();
-        },
-    );
-    if view {
-        open_table(cx, state);
-    }
-    let stats = state.stats_settings(cx);
-    let providers = providers(cx);
-    if providers.is_empty() {
-        ui.add(egui::Label::new(Text::small(cx.tr.t("prices.no_providers"), cx.pal)).wrap());
-        return;
-    }
-    let calibrating = state.prefs.prices.calibration.loading();
-    let headers = [
-        cx.tr.t("prices.col.provider"),
-        cx.tr.t("prices.col.ratio"),
-        String::new(),
-    ];
-    // The actions column holds the widest pair of buttons of any row.
-    let w = |b: Button| b.small().desired_size(ui).x;
-    let actions_w = (w(Button::ghost(cx.tr.t("prices.calibrate")))
-        + w(Button::ghost(cx.tr.t("prices.edit"))))
-    .max(w(Button::new(cx.tr.t("prices.save"))) + w(Button::ghost(cx.tr.t("action.cancel"))))
-        + space::XS
-        + space::M;
-    let ratio_w = size::CONTROL * 3.0;
-    let table = Table::new(&[1.0, 0.0, 0.0])
-        .min_widths(&[0.0, ratio_w, actions_w])
-        .right_aligned(&[1, 2]);
-    table.header(ui, &headers);
-    let n = providers.len();
-    for (i, (id, name, usage)) in providers.into_iter().enumerate() {
-        let ratio = ratio_of(&stats, &id);
-        let editing = state
-            .prefs
-            .prices
-            .editing
-            .as_ref()
-            .filter(|(p, _)| p == &id)
-            .map(|(_, t)| t.clone());
-        let mut text = editing.clone();
-        let mut save = false;
-        let mut cancel = false;
-        let mut edit = false;
-        let mut calibrate = false;
-        let mut enter = false;
-        let mut escape = false;
-        let focus = state.prefs.prices.focus && text.is_some();
-        ui.push_id(&id, |ui| {
-            table.row(ui, size::ROW, i + 1 == n, |ui, col| match col {
-                0 => {
-                    ui.label(Text::body(&name, cx.pal));
-                }
-                1 => match &mut text {
-                    Some(t) => {
-                        let r = ui
-                            .add(
-                                egui::TextEdit::singleline(t)
-                                    .align(egui::Align2::RIGHT_CENTER)
-                                    .desired_width(ui.available_width()),
-                            )
-                            .accessible_name(cx.tr.f("prices.ratio_of", &[("provider", &name)]));
-                        if focus {
-                            r.request_focus();
-                        }
-                        enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        escape = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
-                    }
-                    None => {
-                        ui.label(Text::body(
-                            cx.tr.f("prices.ratio", &[("ratio", &ratio)]),
-                            cx.pal,
-                        ));
-                    }
-                },
-                _ => {
-                    ui.spacing_mut().item_spacing.x = space::XS;
-                    if let Some(t) = &text {
-                        let valid = parse_ratio(t).is_some();
-                        cancel = ui
-                            .add(Button::ghost(cx.tr.t("action.cancel")).small())
-                            .clicked();
-                        save = ui
-                            .add(Button::new(cx.tr.t("prices.save")).small().enabled(valid))
-                            .clicked();
-                    } else {
-                        edit = ui
-                            .add(Button::ghost(cx.tr.t("prices.edit")).small())
-                            .clicked();
-                        if usage {
-                            calibrate = ui
-                                .add(
-                                    Button::ghost(cx.tr.t("prices.calibrate"))
-                                        .small()
-                                        .loading(calibrating)
-                                        .enabled(!calibrating),
-                                )
-                                .on_hover_text(cx.tr.t("prices.calibrate_tip"))
-                                .clicked();
-                        }
-                    }
-                }
-            });
-        });
-        let valid = text.as_deref().and_then(parse_ratio);
-        if let Some(t) = &text
-            && valid.is_none()
-            && !t.trim().is_empty()
-        {
-            // Under the row being edited, before the next provider, at the
-            // cells' left padding (under the provider's name).
-            ui.horizontal(|ui| {
-                ui.add_space(space::M);
-                ui.label(Text::caption(cx.tr.t("prices.invalid"), cx.pal).color(cx.pal.red));
-            });
-        }
-        if focus {
-            state.prefs.prices.focus = false;
-        }
-        if (save || enter)
-            && let Some(m) = valid
-        {
-            let next = with_ratio(&stats, &id, m);
-            state.prefs.prices.editing = None;
-            state.save_stats(cx, next);
-        } else if cancel || escape {
-            state.prefs.prices.editing = None;
-        } else if edit {
-            state.prefs.prices.editing = Some((id.clone(), ratio.to_string()));
-            state.prefs.prices.focus = true;
-        } else if let Some(t) = text {
-            state.prefs.prices.editing = Some((id.clone(), t));
-        }
-        if calibrate {
-            start_calibration(cx, state, id.clone(), name.clone());
-        }
-    }
-    if let Some(e) = &state.prefs.prices.calibration.error {
-        ui.add(
-            egui::Label::new(Text::caption(error_text(cx.tr, e), cx.pal).color(cx.pal.red)).wrap(),
-        );
     }
 }
 

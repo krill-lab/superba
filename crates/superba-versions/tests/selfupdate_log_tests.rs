@@ -508,3 +508,27 @@ fn every_msiexec_code_has_a_meaning_in_both_languages() {
         }
     }
 }
+
+/// alpha.8 Windows acceptance (D1): the MSI path came from a canonicalized data
+/// directory (`\\?\C:\…`) and msiexec refused it with 1619. The installer
+/// is handed over in the plain form.
+#[test]
+fn msiexec_never_gets_a_verbatim_path() {
+    let w = World::new();
+    let host = Script::answers([ran(0, ""), ran(0, "{}")]);
+    let mut args = w.args();
+    args.msi = Some(PathBuf::from(
+        r"\\?\C:\Users\me\AppData\Local\Superba\downloads\superba-0.2.0-windows-x86_64.msi",
+    ));
+    let _ = run_with(&args, &host, Duration::from_secs(60));
+    let runs = host.runs.borrow();
+    let msiexec = &runs[0].1;
+    assert_eq!(
+        msiexec[1],
+        r"C:\Users\me\AppData\Local\Superba\downloads\superba-0.2.0-windows-x86_64.msi"
+    );
+    assert!(
+        msiexec.iter().all(|a| !a.starts_with(r"\\?\")),
+        "{msiexec:?}"
+    );
+}

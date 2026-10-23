@@ -105,7 +105,7 @@ pub fn router_exe_candidates_for(
         }
     };
     push(router_exe_next_to(current_exe));
-    if let Ok(real) = std::fs::canonicalize(current_exe) {
+    if let Ok(real) = superba_core::paths::canonical(current_exe) {
         push(router_exe_next_to(&real));
     }
     if macos {
@@ -216,7 +216,7 @@ pub fn is_network_location(path: &Path) -> bool {
         return true;
     }
     #[cfg(windows)]
-    if let Ok(real) = std::fs::canonicalize(path) {
+    if let Ok(real) = superba_core::paths::canonical(path) {
         return network_path_text(&real.to_string_lossy());
     }
     false
@@ -509,6 +509,11 @@ impl RouterManager {
             gemini.order.retain(|id| ids.contains(&id.as_str()));
             config.gemini = Some(gemini);
         }
+        // Mixed login is set on its own (`set_official_client`); a members
+        // rewrite keeps it.
+        if config.official_client.is_none() {
+            config.official_client = stored.as_ref().and_then(|s| s.official_client.clone());
+        }
         if config.stats.is_none() {
             config.stats = Some(stored.and_then(|s| s.stats).unwrap_or_default());
         }
@@ -517,6 +522,17 @@ impl RouterManager {
             Ok(old) if !old.router_token.is_empty() => RouterSecrets {
                 router_token: old.router_token,
                 member_keys,
+                // A stored official login is the router's own (refreshed in
+                // place); keep it while its member exists.
+                official_tokens: old
+                    .official_tokens
+                    .into_iter()
+                    .filter(|(id, _)| {
+                        config
+                            .member(id)
+                            .is_some_and(|m| m.kind == crate::MemberKind::Official)
+                    })
+                    .collect(),
             },
             _ => RouterSecrets::generate(member_keys),
         };
@@ -713,6 +729,29 @@ impl RouterManager {
         Ok(true)
     }
 
+    /// Persist the failover and recovery rules and reload a running router in
+    /// place (a stopped router reads them on its next start). Returns whether
+    /// a running router reloaded.
+    pub async fn set_failover(&self, failover: &superba_core::RouterFailover) -> Result<bool> {
+        let mut config = RouterConfig::load(&self.paths).map_err(|e| match e {
+            Error::Io { .. } => Error::NotFound {
+                what: "the local router configuration (enable the router first)".into(),
+            },
+            other => other,
+        })?;
+        let before = config.tuning.clone();
+        config.tuning.set_failover(failover)?;
+        if config.tuning == before {
+            return Ok(false);
+        }
+        config.save(&self.paths)?;
+        if !watchdog::check(&self.paths).await.is_up() {
+            return Ok(false);
+        }
+        AdminClient::from_runtime(&self.paths)?.reload().await?;
+        Ok(true)
+    }
+
     /// Listen also on these WSL adapter addresses (user bug 45; the same port,
     /// source tokens only). A running router reloads the configuration; it binds
     /// an address once it exists. Returns whether a running router reloaded.
@@ -737,6 +776,31 @@ impl RouterManager {
         }
         let client = AdminClient::from_runtime(&self.paths)?;
         client.reload().await?;
+        Ok(true)
+    }
+
+    /// Accept (or stop accepting) the user's own ChatGPT login from local
+    /// Codex (mixed login, [`crate::official`]). A running router reloads.
+    /// Returns whether the stored configuration changed.
+    pub async fn set_official_client(
+        &self,
+        client: Option<crate::official::OfficialClientConfig>,
+    ) -> Result<bool> {
+        let mut config = RouterConfig::load(&self.paths).map_err(|e| match e {
+            Error::Io { .. } => Error::NotFound {
+                what: "the local router configuration (enable the router first)".into(),
+            },
+            other => other,
+        })?;
+        if config.official_client == client {
+            return Ok(false);
+        }
+        config.official_client = client;
+        config.validate()?;
+        config.save(&self.paths)?;
+        if watchdog::check(&self.paths).await.is_up() {
+            AdminClient::from_runtime(&self.paths)?.reload().await?;
+        }
         Ok(true)
     }
 

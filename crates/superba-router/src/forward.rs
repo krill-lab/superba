@@ -130,16 +130,26 @@ pub(crate) fn response_headers(src: &HeaderMap, upgrade: bool) -> HeaderMap {
 /// line's edge intercepted the request (Krill CDN `l-block` header). Every other
 /// status is passed through, 401/403/429 and 500 included.
 pub(crate) fn failover_status(status: StatusCode, headers: &HeaderMap) -> Option<String> {
+    failover_status_in(crate::config::DEFAULT_FAILOVER_STATUSES, status, headers)
+}
+
+/// [`failover_status`] with the configured statuses that fail over
+/// ([`crate::config::Tuning::failover_statuses`]); an edge interception
+/// always does.
+pub(crate) fn failover_status_in(
+    statuses: &[u16],
+    status: StatusCode,
+    headers: &HeaderMap,
+) -> Option<String> {
     if headers.contains_key(EDGE_BLOCK_HEADER) {
         return Some(format!(
             "intercepted by the line's edge (HTTP {})",
             status.as_u16()
         ));
     }
-    match status.as_u16() {
-        502..=504 => Some(format!("HTTP {}", status.as_u16())),
-        _ => None,
-    }
+    statuses
+        .contains(&status.as_u16())
+        .then(|| format!("HTTP {}", status.as_u16()))
 }
 
 /// A 2xx answer to a Responses request with an empty body comes from something

@@ -34,7 +34,8 @@ fn open_advanced(h: &mut Harness, state: &mut State, locale: Locale) {
                 .any(|(text, rect, clip)| text == &title && clip.contains_rect(*rect))
         },
     );
-    h.click_text(&frame, &title);
+    // 「高级」 is a plain section since user bug 116: in view is enough.
+    let _ = frame;
     h.settle(|ui, cx, out| router::show(ui, cx, state, out));
 }
 
@@ -346,19 +347,6 @@ fn stats_line_and_recording_commands_save_settings_without_restarting_codex() {
     let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
     // Saving reloads the shell data (no switch is planned).
     assert!(f.actions.iter().all(|a| !matches!(a, Action::Plan(_))));
-    let items = h.frame(|_, cx, _| {
-        let items = router::palette(cx, &state);
-        let titles: Vec<String> = items.iter().map(|i| i.title.clone()).collect();
-        assert!(
-            titles.contains(&"Open recent requests".to_owned()),
-            "{titles:?}"
-        );
-        assert!(
-            titles.contains(&"Turn the stats line off".to_owned()),
-            "{titles:?}"
-        );
-    });
-    let _ = items;
     h.frame(|_, cx, out| router::usage_command(&mut state, cx, "tab:active", out));
     assert_eq!(state.tab, Tab::Active);
     h.frame(|_, cx, out| router::usage_command(&mut state, cx, "search", out));
@@ -486,61 +474,67 @@ fn the_price_table_in_use_can_be_viewed() {
 }
 
 #[test]
-fn service_buttons_remain_aligned_in_the_advanced_group() {
-    // User bug 25 stays fixed when maintenance moves into Advanced.
+fn service_facts_and_buttons_line_up_under_the_status_line() {
+    // User bug 25 stays fixed now that the service sits under the status line
+    // (user bug 116): its facts and its buttons start at the status text.
     for locale in [Locale::En, Locale::ZhCn] {
         let mut h = Harness::new([1280.0, 800.0], locale, fake(), true);
         let mut state = State::default();
-        open_advanced(&mut h, &mut state, locale);
         let tr = superba_gui::i18n::Tr::new(locale);
         let install = tr.t("router.service.install");
-        let f = h.until_scrolled(
+        let f = h.until(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
             |f| f.has(&install),
         );
-        // A small button's text starts 12 px into it; a status badge's 20 px
-        // (8 px padding and the dot): both rectangles start at the value column.
-        let button = f.find(&install).unwrap().min.x - 12.0;
-        let badge = f.find(&tr.t("router.service.not_installed")).unwrap().min.x - 20.0;
+        // A small button's text starts 12 px into it.
+        let button = f.find(&install).unwrap();
+        let caption = f.find(&tr.t("router.service_label")).unwrap();
         assert!(
-            (button - badge).abs() < 0.5,
-            "{locale:?}: button at {button}, value column at {badge}"
+            (button.min.x - 12.0 - caption.min.x).abs() < 0.5,
+            "{locale:?}: button at {}, facts at {}",
+            button.min.x - 12.0,
+            caption.min.x
+        );
+        assert!(
+            caption.max.y <= button.min.y,
+            "{locale:?}: facts above the buttons"
+        );
+        let members = f.find(&tr.t("router.members.title")).unwrap();
+        assert!(
+            button.max.y < members.min.y,
+            "{locale:?}: above the members"
         );
         assert_eq!(f.scroll_areas, 1, "one scroll area for all router settings");
     }
 }
 
+/// User requirement 115: prices, ratios and calibration moved to the Models
+/// page; the Router page's 高级 group keeps a link there.
 #[test]
-fn every_key_based_provider_has_a_price_ratio_without_the_router() {
-    // Review ux-visual #4: with the router off the price section only said
-    // "add members in Router settings", while direct-mode costs use the ratio.
+fn the_price_section_links_to_the_models_page() {
     let service = fake();
-    for (locale, ratio) in [(Locale::ZhCn, "× 1"), (Locale::En, "× 1")] {
+    for locale in [Locale::ZhCn, Locale::En] {
         let tr = superba_gui::i18n::Tr::new(locale);
         let mut h = Harness::new([1440.0, 900.0], locale, service.clone(), true);
         let mut state = State::default();
         open_advanced(&mut h, &mut state, locale);
+        let moved = tr.t("prices.moved");
         let f = h.until_scrolled(
             |ui, cx, out| router::show(ui, cx, &mut state, out),
-            // The ratio cell itself (the section's note mentions "× 1" too).
-            |f| f.has(&tr.t("prices.title")) && f.texts.iter().any(|(t, _)| t == ratio),
+            |f| f.has(&moved),
         );
-        assert!(f.has("Krill"), "{}", f.all_text());
+        assert!(f.has(&tr.t("prices.title")));
+        // No ratio table here any more.
+        assert!(!f.has(&tr.t("prices.edit")), "{}", f.all_text());
+        assert!(!f.has(&tr.t("prices.calibrate")), "{}", f.all_text());
+        h.click_text(&f, &moved);
+        let f = h.frames(4, |ui, cx, out| router::show(ui, cx, &mut state, out));
         assert!(
-            !f.has("路由设置") && !f.has("Router settings"),
-            "{}",
-            f.all_text()
-        );
-        assert!(!f.has(&tr.t("prices.no_providers")));
-        // No official login among them (ChatGPT bills it).
-        let official = tr.t("providers.official.name");
-        let prices_at = f.find(&tr.t("prices.title")).unwrap().min.y;
-        assert!(
-            !f.texts
+            f.actions
                 .iter()
-                .any(|(t, r)| *t == official && r.min.y > prices_at),
-            "{}",
-            f.all_text()
+                .any(|a| matches!(a, Action::Go(superba_gui::pages::Page::Models))),
+            "{:?}",
+            f.actions
         );
     }
 }
@@ -604,69 +598,4 @@ fn disabling_router_shows_off_banner_for_a_direct_local_upstream() {
     let f = h.frames(3, |ui, cx, out| router::show(ui, cx, &mut state, out));
     assert!(f.has("路由已关闭"), "{}", f.all_text());
     assert!(!f.has("路由已开启"), "{}", f.all_text());
-}
-
-/// The price editor stays in its table row: the ratio field in the ratio
-/// column, 保存 and 取消 in the actions column where 按账单校准… and 编辑 were,
-/// nothing outside the row; 取消 puts the ratio back.
-#[test]
-fn the_ratio_editor_replaces_the_ratio_and_its_actions_in_place() {
-    for locale in [Locale::ZhCn, Locale::En] {
-        let tr = superba_gui::i18n::Tr::new(locale);
-        let mut h = Harness::new([960.0, 640.0], locale, fake(), true);
-        let mut state = State::default();
-        open_advanced(&mut h, &mut state, locale);
-        let edit = tr.t("prices.edit");
-        let f = h.until_scrolled(
-            |ui, cx, out| router::show(ui, cx, &mut state, out),
-            |f| {
-                f.clipped_texts
-                    .iter()
-                    .any(|(t, r, clip)| t == &edit && clip.contains_rect(*r))
-            },
-        );
-        let ratio = f
-            .texts
-            .iter()
-            .find(|(t, _)| t == "× 1")
-            .map(|(_, r)| *r)
-            .expect("ratio cell");
-        h.click_text(&f, &edit);
-        let f = h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
-        // The row's line (the focused field may scroll it a little into view).
-        let row = f.find("Krill").expect("Krill's row");
-        let (save, cancel) = (tr.t("prices.save"), tr.t("action.cancel"));
-        for text in [&save, &cancel] {
-            let (_, r, clip) = f
-                .clipped_texts
-                .iter()
-                .find(|(t, _, _)| t == text)
-                .unwrap_or_else(|| panic!("{text} missing:\n{}", f.all_text()));
-            assert!(clip.contains_rect(*r), "{locale:?}: {text} clipped");
-            // On the row's line, in the actions column right of the ratio.
-            assert!(
-                (r.center().y - row.center().y).abs() < 1.0,
-                "{locale:?}: {text} at {r:?}, the row at {row:?}"
-            );
-            assert!(
-                r.min.x > ratio.max.x - 0.5,
-                "{locale:?}: {text} over the ratio"
-            );
-        }
-        // The field holds the ratio being edited.
-        assert!(
-            f.texts
-                .iter()
-                .any(|(t, r)| t == "1" && (r.center().y - row.center().y).abs() < 1.0)
-        );
-        assert!(
-            !f.texts
-                .iter()
-                .any(|(t, r)| t == "× 1" && (r.center().y - row.center().y).abs() < 1.0)
-        );
-        h.click_text(&f, &cancel);
-        let f = h.settle(|ui, cx, out| router::show(ui, cx, &mut state, out));
-        let drawn = |s: &str| f.texts.iter().any(|(t, _)| t == s);
-        assert!(drawn(&edit) && !drawn(&save), "{}", f.all_text());
-    }
 }

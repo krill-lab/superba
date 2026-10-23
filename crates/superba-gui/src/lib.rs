@@ -19,7 +19,7 @@
 //! - [`flow`]: the pure UI state machine (unit tested);
 //! - [`runtime`]: the background runtime bridge;
 //! - [`i18n`]: layered catalogs (`locales/*.toml`);
-//! - `pages` / `shell` / [`app`]: the views; [`palette`]: the Cmd/Ctrl+K palette;
+//! - `pages` / `shell` / [`app`]: the views;
 //! - [`chrome`]: the window frame without a title bar (traffic lights on macOS,
 //!   Superba's own window buttons on Windows and Linux);
 //! - [`tray`]: the tray icon / menu-bar item and what closing the window does
@@ -46,7 +46,6 @@ mod macos;
 pub mod movers;
 pub mod notices;
 pub mod pages;
-pub mod palette;
 pub mod runtime;
 pub mod shell;
 pub mod startup;
@@ -108,6 +107,7 @@ pub fn run(args: GuiArgs, report: &startup::Reporter) -> anyhow::Result<()> {
         single_instance: true,
         tray: tray::TrayOption::System,
         start_in_tray,
+        command: args.command.clone(),
     };
     let gpu = startup::Gpu::from_env_value(std::env::var(startup::ENV_SUPERBA_GPU).ok().as_deref());
     let mut result = run_window(&viewport, gpu, x11, &service, &opts, report);

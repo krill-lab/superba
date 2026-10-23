@@ -15,7 +15,12 @@
 //! arrives its view is a loading state (user bug 83); a failed first scan
 //! offers Retry in place.
 //!
-//! Commands: `host:<target id>` (show a remote host), `host:local`, `rescan`.
+//! Since sessions2 the page opens on the session browser
+//! (`session_browser.rs`); everything above is the migration tool behind the
+//! header's 「会话迁移…」 button, with a back button to the list.
+//!
+//! Commands: `host:<target id>` (the migration tool on a remote host),
+//! `host:local`, `migrate`, `browse`, `rescan`.
 
 use std::collections::HashMap;
 
@@ -27,7 +32,7 @@ use superba_core::{
 
 use super::shared::hosts as names;
 use super::shared::loading;
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, empty_state, error_text};
+use super::{Action, Cx, Page, PageStatus, empty_state, error_text};
 use crate::design::fonts::{Weight, font, mono_font};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
@@ -102,6 +107,20 @@ pub struct State {
     pub providers: PagedState,
     /// Paging of the migration history.
     pub history: PagedState,
+    /// The migration tool is open (else the session browser shows).
+    pub migration: bool,
+    /// The session browser.
+    pub browser: super::session_browser::Browser,
+}
+
+impl State {
+    /// The page with the migration tool open.
+    pub fn migration_tool() -> Self {
+        State {
+            migration: true,
+            ..State::default()
+        }
+    }
 }
 
 impl std::fmt::Debug for State {
@@ -257,8 +276,56 @@ impl State {
     }
 }
 
-/// Draw the page.
+/// Draw the page: the session browser, or the migration tool.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    if !state.migration {
+        browse_header(ui, cx, state);
+        super::session_browser::show(ui, cx, &mut state.browser, out);
+        return;
+    }
+    show_migration(ui, cx, state, out);
+}
+
+/// The browser's header: the migration tool and Rescan on the right.
+fn browse_header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+    let loading = state.browser.loading();
+    let mut open = false;
+    let mut rescan = false;
+    crate::pages::page_header_with(
+        ui,
+        cx,
+        Page::Sessions,
+        &cx.tr.t("sessions.browse.subtitle"),
+        |ui| {
+            rescan = ui
+                .add(
+                    Button::new(cx.tr.t("action.rescan"))
+                        .icon(Icon::Refresh)
+                        .small()
+                        .loading(loading)
+                        .enabled(!loading),
+                )
+                .clicked();
+            open = ui
+                .add(
+                    Button::new(cx.tr.t("sessions.browse.migrate_tool"))
+                        .icon(Icon::ArrowRightLeft)
+                        .small(),
+                )
+                .on_hover_text(cx.tr.t("sessions.browse.migrate_tool_tip"))
+                .clicked();
+        },
+    );
+    if rescan {
+        state.browser.load(cx);
+    }
+    if open {
+        state.migration = true;
+    }
+}
+
+/// The migration tool (the page before sessions2).
+fn show_migration(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     if state.poll() {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(60));
@@ -436,9 +503,11 @@ fn header(
     };
     let can_scan = selected.as_ref().is_none_or(|h| h.kind.is_managed());
     let mut rescan = false;
-    let subtitle = cx
-        .tr
-        .f(Page::Sessions.subtitle_key(), &[("provider", &provider)]);
+    let subtitle = cx.tr.f(
+        "sessions.browse.migration_subtitle",
+        &[("provider", &provider)],
+    );
+    let mut back = false;
     crate::pages::page_header_with(ui, cx, Page::Sessions, &subtitle, |ui| {
         rescan = ui
             .add(
@@ -449,7 +518,13 @@ fn header(
                     .enabled(!scanning && can_scan),
             )
             .clicked();
+        back = ui
+            .add(Button::ghost(cx.tr.t("sessions.browse.back")).small())
+            .clicked();
     });
+    if back {
+        state.migration = false;
+    }
     if rescan {
         match selected {
             Some(h) => {
@@ -996,28 +1071,10 @@ fn unreachable(ui: &mut Ui, cx: &Cx<'_>, host: &HostEntry, e: &Error) -> bool {
     )
 }
 
-/// Command palette entries: show the sessions of each remote SSH host.
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let _ = state;
-    hosts(cx)
-        .into_iter()
-        .filter(|h| h.kind.is_managed())
-        .map(|h| PaletteItem {
-            title: cx.tr.f("sessions.palette.host", &[("host", &h.label)]),
-            detail: None,
-            keywords: vec!["sessions".into(), h.label.clone()],
-            group: PaletteGroup::Navigate,
-            action: Action::PageCommand {
-                page: Page::Sessions,
-                command: format!("host:{}", h.id),
-            },
-        })
-        .collect()
-}
-
 /// Run a command addressed to this page (see the module docs).
 pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     if let Some(id) = command.strip_prefix("host:") {
+        state.migration = true;
         if id == "local" {
             state.select(cx, None);
             return;
@@ -1025,6 +1082,12 @@ pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Acti
         if let Some(h) = hosts(cx).into_iter().find(|h| h.id.as_str() == id) {
             state.select(cx, Some(h.id));
         }
+    } else if command == "migrate" {
+        state.migration = true;
+    } else if command == "browse" {
+        state.migration = false;
+    } else if command == "rescan" && !state.migration {
+        state.browser.load(cx);
     } else if command == "rescan" {
         match state.host.clone() {
             Some(h) => state.scan(cx, &h),

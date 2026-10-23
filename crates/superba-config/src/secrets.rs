@@ -157,7 +157,10 @@ fn non_empty(s: Secret, what: &str) -> Result<Secret> {
 }
 
 fn is_inside(path: &Path, dir: &Path) -> bool {
-    match (std::fs::canonicalize(path), std::fs::canonicalize(dir)) {
+    match (
+        superba_core::paths::canonical(path),
+        superba_core::paths::canonical(dir),
+    ) {
         (Ok(p), Ok(d)) => p.starts_with(d),
         _ => path.starts_with(dir),
     }

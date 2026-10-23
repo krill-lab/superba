@@ -27,16 +27,16 @@ pub mod files;
 pub mod files_highlight;
 pub mod files_view;
 pub mod model;
+mod news;
 mod rail;
 pub mod source;
 mod view;
 
 use egui::Ui;
-use superba_core::Locale;
 
 use self::model::{Change, Filter, Model, Pending, Rail};
 use super::shared::loading::Latest;
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, page_header};
+use super::{Action, Cx, Page, PageStatus, page_header};
 use crate::design::widgets::PagedState;
 use crate::runtime::ReadTask;
 
@@ -463,105 +463,6 @@ pub fn status(state: &State) -> PageStatus {
         pending: state.pending.len() + usize::from(state.files.dirty()),
         ..PageStatus::default()
     }
-}
-
-/// The palette entries of the file editor (always listed).
-fn files_palette(cx: &Cx<'_>) -> Vec<PaletteItem> {
-    [
-        (
-            superba_core::CodexFileKind::ConfigToml,
-            "codex_editor.palette.config",
-            "config",
-        ),
-        (
-            superba_core::CodexFileKind::AuthJson,
-            "codex_editor.palette.auth",
-            "auth",
-        ),
-    ]
-    .into_iter()
-    .flat_map(|(kind, key, short)| {
-        [
-            PaletteItem {
-                title: cx.tr.t(key),
-                detail: Some(cx.tr.t("codex_editor.palette.detail")),
-                keywords: vec![
-                    kind.file_name().to_owned(),
-                    "codex".into(),
-                    "edit".into(),
-                    "config".into(),
-                ],
-                group: PaletteGroup::Commands,
-                action: Action::PageCommand {
-                    page: Page::Settings,
-                    command: format!("files:{short}"),
-                },
-            },
-            PaletteItem {
-                title: cx.tr.f(
-                    "codex_editor.palette.backups",
-                    &[("file", &kind.file_name())],
-                ),
-                detail: Some(cx.tr.t("codex_editor.palette.backups_detail")),
-                keywords: vec![
-                    kind.file_name().to_owned(),
-                    "backup".into(),
-                    "restore".into(),
-                ],
-                group: PaletteGroup::Commands,
-                action: Action::PageCommand {
-                    page: Page::Settings,
-                    command: format!("files-backups:{short}"),
-                },
-            },
-        ]
-    })
-    .collect()
-}
-
-/// Command palette entries: one per listed setting (Chinese name first in
-/// Chinese, keywords include the path and the English name); choosing one
-/// selects it on this page.
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let mut items = files_palette(cx);
-    let Some(model) = &state.model else {
-        return items;
-    };
-    let zh = cx.tr.locale() == Locale::ZhCn;
-    let everything = Filter::default();
-    model
-        .visible(&everything, &state.pending)
-        .map(|e| PaletteItem {
-            title: e.title_for(zh).text.to_owned(),
-            // One short line: the first line (or item) of a long value.
-            detail: Some(
-                e.shown_value(&state.pending)
-                    .map(|v| {
-                        let s = editor::shown(cx, v);
-                        crate::design::elide::elide_cols(&s.head, 48, s.shape.ellipsis())
-                    })
-                    .unwrap_or_else(|| cx.tr.t("codex_settings.value.unset")),
-            ),
-            keywords: [
-                Some(e.path.clone()),
-                e.name.clone(),
-                e.name_zh.clone(),
-                e.text.en.clone(),
-                e.text.zh.clone(),
-            ]
-            .into_iter()
-            .flatten()
-            .collect(),
-            group: PaletteGroup::Settings,
-            action: Action::PageCommand {
-                page: Page::Settings,
-                command: format!("focus:{}", e.path),
-            },
-        })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .for_each(|i| items.push(i));
-    items
 }
 
 /// Run a command addressed to this page (see the module docs).

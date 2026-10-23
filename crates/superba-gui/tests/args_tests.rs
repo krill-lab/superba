@@ -26,6 +26,7 @@ fn defaults_leave_all_overrides_disabled() {
         launch_chatgpt: false,
         start_in_tray: false,
         autostart: false,
+        command: None,
     };
     assert_eq!(GuiArgs::default(), expected);
     assert_eq!(parse(&[]).unwrap(), expected);
@@ -217,6 +218,7 @@ fn flags_compose_and_later_values_override_earlier_ones() {
             launch_chatgpt: false,
             start_in_tray: false,
             autostart: false,
+            command: None,
         }
     );
 }
@@ -278,4 +280,11 @@ fn login_start_is_distinct_from_forcing_the_tray() {
     assert!(args.autostart);
     assert!(!args.start_in_tray);
     assert!(parse(&["--autostart=true"]).is_err());
+}
+
+#[test]
+fn command_runs_a_page_command_after_the_page() {
+    let args = parse(&["--page", "providers", "--command", "import"]).unwrap();
+    assert_eq!(args.command.as_deref(), Some("import"));
+    assert!(parse(&["--command"]).is_err());
 }

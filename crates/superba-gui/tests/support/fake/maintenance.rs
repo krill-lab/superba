@@ -11,6 +11,26 @@ pub(super) struct State {
     pub restores: Vec<(HarnessId, String)>,
 }
 impl FakeService {
+    /// Detection finds exactly `installed` (the others have no program).
+    pub fn installed_tools(&self, installed: &[HarnessId]) {
+        let mut state = self.areas.maintenance.lock().unwrap();
+        state.harnesses = HarnessId::ALL
+            .into_iter()
+            .map(|h| HarnessSummary {
+                harness: h,
+                settings: HarnessSettings::default(),
+                installed: installed.contains(&h),
+                install: installed.contains(&h).then(|| HarnessInstall {
+                    binary: Some(format!("/home/u/.local/bin/{h}").into()),
+                    version: Some("1.0.0".into()),
+                    opencode_major: None,
+                }),
+                applied_provider: None,
+                applied: false,
+                drift: 0,
+            })
+            .collect();
+    }
     pub fn maintenance_fixture(&self) {
         let mut state = self.areas.maintenance.lock().unwrap();
         for h in HarnessId::ALL {

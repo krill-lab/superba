@@ -20,8 +20,7 @@ Shots, at 1280x800 in light and dark, English and Chinese:
 
 - `coexist-dialog-*`: the dialog the Overview opens by itself (who, what,
   take over again / let cc-switch manage it / not now);
-- `coexist-banner-*`: a switch to another line planned from the command
-  palette asks first (the dialog is dismissed with Esc);
+- `coexist-banner-*`: the banner left after the dialog is dismissed with Esc;
 - `coexist-handed-off-*`: the Overview after `spb hand-off --yes`.
 
 Every shot starts from the same Superba data and Codex files. Like shoot.py it
@@ -102,13 +101,12 @@ def cc_switch_switches(codex):
 
 
 def dismiss_and_switch(s):
-    """Esc closes the dialog ("Not now"); the palette plans a line switch."""
+    """Esc closes the dialog ("Not now"), leaving the banner. (The command
+    palette that then planned a line switch is gone, user request 118.)"""
     shoot.focus(s)
     s.input.key("Escape")
     time.sleep(0.6)
-    shoot.palette_action("cdn")(s)
-    s.input.key("Return")
-    time.sleep(3.0)
+    time.sleep(1.0)
     s.input.park()
 
 

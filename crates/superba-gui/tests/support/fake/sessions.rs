@@ -208,3 +208,74 @@ pub(super) async fn host_sessions(
         migrate_command: devbox.then(|| "spb sessions migrate --from krill".to_owned()),
     })
 }
+
+/// The session browser's threads: two on this computer, one on the SSH host
+/// `bj` (as the app's catalog lists it).
+pub(super) async fn session_list(_fake: &FakeService) -> Result<SessionList> {
+    let now = Timestamp::now().0;
+    let entry =
+        |host: &str, kind: &str, id: &str, title: &str, cwd: &str, ago_min: i64| SessionEntry {
+            host_id: host.into(),
+            host_kind: Some(kind.into()),
+            thread_id: id.into(),
+            title: title.into(),
+            cwd: cwd.into(),
+            provider: "openai".into(),
+            model: (host == LOCAL_HOST_ID).then(|| "gpt-5.5".into()),
+            updated_at: Some(Timestamp(now - ago_min * 60_000)),
+            tokens_used: (host == LOCAL_HOST_ID).then_some(123_456),
+            ..SessionEntry::default()
+        };
+    Ok(SessionList {
+        entries: vec![
+            entry(
+                LOCAL_HOST_ID,
+                "local",
+                "019a2f5b-6a7b-7d46-8e85-4f0a6b8c2d05",
+                "Plan the database migration",
+                "/home/u/w/superba",
+                3,
+            ),
+            entry(
+                "remote-ssh-discovered:bj",
+                "ssh",
+                "01a158c7-a09e-7cd2-ba08-41459547a695",
+                "Fix flaky test",
+                "/srv/app",
+                60,
+            ),
+            entry(
+                LOCAL_HOST_ID,
+                "local",
+                "019a2f10-5b1c-7c3e-9d41-0a6b2c4d8e01",
+                "Refactor the router",
+                "/home/u/w/router",
+                600,
+            ),
+        ],
+        truncated: false,
+        scanned_at: Timestamp::now(),
+        warnings: Vec::new(),
+    })
+}
+
+/// Markdown of a thread; session formats report a made-up file.
+pub(super) async fn session_export(
+    _fake: &FakeService,
+    thread_id: String,
+    format: SessionExportFormat,
+) -> Result<SessionExport> {
+    Ok(match format {
+        SessionExportFormat::Markdown => SessionExport {
+            text: format!("# {thread_id}\n"),
+            messages: 2,
+            ..SessionExport::default()
+        },
+        _ => SessionExport {
+            text: "claude --resume fake".into(),
+            path: Some("/tmp/fake.jsonl".into()),
+            session_id: Some("fake".into()),
+            messages: 2,
+        },
+    })
+}

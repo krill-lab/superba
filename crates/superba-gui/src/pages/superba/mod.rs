@@ -42,7 +42,7 @@ pub enum SuperbaSection {
     Notify,
 }
 impl SuperbaSection {
-    /// Deep-link, palette and tray order.
+    /// Deep-link and tray order.
     pub const ALL: [Self; 8] = [
         Self::Home,
         Self::Updates,
@@ -169,7 +169,7 @@ impl SuperbaSection {
 pub struct State {
     /// Where the main sidebar returns during this run.
     pub last: SuperbaSection,
-    /// Palette row waiting to be scrolled into view and focused.
+    /// Deep-linked row waiting to be scrolled into view and focused.
     pub focus: Option<String>,
     /// Background reads for the home summary.
     pub home: home::State,
@@ -254,7 +254,7 @@ pub fn show(
     .show(ui, &mut index);
     ui.add_space(8.0);
     if tab == SuperbaTab::Settings {
-        preferences::toolbar(ui, cx, &mut state.preferences, out);
+        preferences::toolbar(ui, cx, &mut state.preferences);
     }
     let focus_ready = tab != SuperbaTab::Updates
         || (!updates.view.loading()

@@ -7,7 +7,9 @@
 //! Only the chevron and the texts take clicks, so a disclosure never steals a
 //! click meant for the row it sits in. Screen readers and UI Automation see a
 //! disclosure triangle named by its label, with its expanded state (the
-//! Windows e2e expands 「高级」 through it); AccessKit's Click toggles it.
+//! Windows e2e expands 「高级」 through it); AccessKit's Click toggles it and
+//! its Expand / Collapse (UI Automation's ExpandCollapse pattern) open and
+//! close it.
 
 use egui::collapsing_header::CollapsingState;
 use egui::{AsIdSalt, CursorIcon, IdSalt, Rect, Response, Sense, Ui, WidgetInfo, pos2, vec2};
@@ -122,15 +124,37 @@ impl Disclosure {
         let header = ui
             .interact(hit, id.with("header"), Sense::click())
             .on_hover_cursor(CursorIcon::PointingHand);
+        // UI Automation shows a disclosure triangle with ExpandCollapse, not
+        // Invoke: its Expand and Collapse arrive as AccessKit actions of their
+        // own (alpha.8 Windows acceptance: 「高级」 did not open through UIA).
+        let (expand, collapse) = ui.input(|i| {
+            (
+                i.has_accesskit_action_request(header.id, egui::accesskit::Action::Expand),
+                i.has_accesskit_action_request(header.id, egui::accesskit::Action::Collapse),
+            )
+        });
         if header.clicked() {
             state.toggle(ui);
+        } else if expand && !state.is_open() {
+            state.set_open(true);
+            ui.request_repaint();
+        } else if collapse && state.is_open() {
+            state.set_open(false);
+            ui.request_repaint();
         }
         let open = state.is_open();
         let enabled = ui.is_enabled();
         let name = self.label.clone();
         header.widget_info(|| WidgetInfo::labeled(egui::Role::DisclosureTriangle, enabled, &name));
-        ui.ctx()
-            .accesskit_node_builder(header.id, |node| node.set_expanded(open));
+        ui.ctx().accesskit_node_builder(header.id, |node| {
+            node.set_expanded(open);
+            node.add_action(egui::accesskit::Action::Click);
+            node.add_action(if open {
+                egui::accesskit::Action::Collapse
+            } else {
+                egui::accesskit::Action::Expand
+            });
+        });
         if ui.is_rect_visible(line) {
             let t = hover_t(ui, &header);
             let rest = if self.section {

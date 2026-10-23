@@ -28,6 +28,7 @@ mod chatgpt;
 pub mod ciphers;
 pub mod claude;
 mod claude_router;
+pub mod claude_usage;
 pub mod compaction;
 pub mod core_watch;
 mod data;
@@ -123,7 +124,7 @@ pub fn detect_context() -> Result<LocalContext> {
             .map_err(|e| Error::other(e.to_string()))?
             .join(data_dir)
     };
-    let data_dir = data_dir.canonicalize().unwrap_or(data_dir);
+    let data_dir = superba_core::paths::canonical(&data_dir).unwrap_or(data_dir);
     Ok(LocalContext::new(
         base.home_dir(),
         superba_storage::resolve(&data_dir)?,
@@ -431,6 +432,8 @@ pub struct Switcher {
     pin_override: Arc<Mutex<Option<superba_core::AppCodexPin>>>,
     /// Model requests read from the local Codex home's rollouts (Usage page).
     usage: usage::SharedIndex,
+    /// Claude Code transcript index (Usage page, Overview).
+    claude_usage: claude_usage::SharedClaudeIndex,
     /// The language the UI reported ([`SwitchService::set_ui_locale`]); the
     /// default stats line template is resolved in it.
     reported_locale: Arc<Mutex<Option<superba_core::Locale>>>,
@@ -484,6 +487,13 @@ impl Switcher {
         let usage = Arc::new(std::sync::Mutex::new(
             superba_sessions::usage::UsageIndex::new(deps.ctx.codex_home()),
         ));
+        let claude_usage = Arc::new(std::sync::Mutex::new(
+            superba_sessions::claude_usage::ClaudeUsageIndex::new(
+                superba_core::ClaudeHome::resolve(deps.ctx.env.as_ref(), &deps.ctx.home_dir)
+                    .root()
+                    .to_path_buf(),
+            ),
+        ));
         let monitor = monitor::EnvMonitor::new(deps.app.clone(), monitor::MonitorTuning::default());
         Self {
             deps,
@@ -496,6 +506,7 @@ impl Switcher {
             catalog_off: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pin_override: Arc::new(Mutex::new(None)),
             usage,
+            claude_usage,
             reported_locale: Arc::new(Mutex::new(None)),
             monitor,
             ownership: Arc::default(),
@@ -707,6 +718,16 @@ impl SwitchService for Switcher {
         self.router_status_impl().await
     }
 
+    async fn router_set_failover(
+        &self,
+        failover: superba_core::RouterFailover,
+    ) -> Result<superba_core::RouterView> {
+        self.refuse_elevated()?;
+        failover.validate()?;
+        self.deps.router.set_failover(failover).await?;
+        self.router_status_impl().await
+    }
+
     async fn router_install(
         &self,
         request: superba_core::RouterInstallRequest,
@@ -718,6 +739,16 @@ impl SwitchService for Switcher {
     async fn router_set_enabled(&self, enabled: bool) -> Result<superba_core::RouterView> {
         self.refuse_elevated()?;
         self.router_set_enabled_impl(enabled).await
+    }
+
+    async fn router_set_mixed_login(&self, on: bool) -> Result<superba_core::RouterView> {
+        self.refuse_elevated()?;
+        let mut set = self.deps.profiles.load().await?;
+        if set.settings.router.mixed_login != on {
+            set.settings.router.mixed_login = on;
+            self.deps.profiles.save(&set).await?;
+        }
+        self.router_status_impl().await
     }
 
     async fn router_uninstall(&self) -> Result<superba_core::RouterView> {
@@ -1050,6 +1081,43 @@ impl SwitchService for Switcher {
         })
         .await
         .map_err(|e| Error::other(format!("session names: {e}")))?
+    }
+
+    async fn session_list(&self) -> Result<superba_core::SessionList> {
+        let home = self.deps.ctx.codex_home();
+        let home_dir = self.deps.ctx.home_dir.clone();
+        tokio::task::spawn_blocking(move || superba_sessions::browse::list(&home, Some(&home_dir)))
+            .await
+            .map_err(|e| Error::other(format!("session list: {e}")))
+    }
+
+    async fn session_export(
+        &self,
+        thread_id: String,
+        format: superba_core::SessionExportFormat,
+    ) -> Result<superba_core::SessionExport> {
+        let home = self.deps.ctx.codex_home();
+        let home_dir = self.deps.ctx.home_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            // The rollout path and title as the list reads them.
+            let list = superba_sessions::browse::list(&home, Some(&home_dir));
+            let entry = list
+                .entries
+                .iter()
+                .find(|e| e.is_local() && e.thread_id == thread_id);
+            let targets = superba_sessions::export::Targets::from_env(&home_dir);
+            superba_sessions::export::export(
+                &home,
+                &thread_id,
+                entry.and_then(|e| e.rollout_path.as_deref()),
+                entry.map(|e| e.title.as_str()).unwrap_or(""),
+                format,
+                &targets,
+                superba_core::Timestamp::now(),
+            )
+        })
+        .await
+        .map_err(|e| Error::other(format!("session export: {e}")))?
     }
 
     async fn feeds_status(&self) -> Result<superba_core::FeedsStatus> {

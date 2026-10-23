@@ -8,7 +8,7 @@ use superba_core::{
     LongContextPrice, Multiplier, PriceEntry, PriceSettings, PriceTable, ProfileId, TierPrice, Usd,
 };
 use superba_models::price::{
-    PriceBasis, UsageTokens, canonical_tier, cost, lookup, rates, ratio_of, source_label,
+    PriceBasis, UsageTokens, canonical_tier, cost, lookup, rates, rates_at, ratio_of, source_label,
     tier_multiplier,
 };
 
@@ -18,6 +18,8 @@ fn usd(s: &str) -> Usd {
 
 fn entry() -> PriceEntry {
     PriceEntry {
+        cache_write_1h: None,
+        windows: Vec::new(),
         input: usd("1.25"),
         cached_input: Some(usd("0.125")),
         cache_write: None,
@@ -38,6 +40,8 @@ fn cost_follows_the_formula() {
     // fresh 600k * 1.25 + cached 400k * 0.125 + output 10k * 10
     // = 0.75 + 0.05 + 0.10 = 0.90 USD
     let usage = UsageTokens {
+        at_ms: None,
+        cache_write_1h: 0,
         input: 1_000_000,
         cached: 400_000,
         cache_write: 0,
@@ -70,6 +74,8 @@ fn cost_follows_the_formula() {
 #[test]
 fn cache_writes_default_to_the_input_price_and_rounding_is_to_the_micro_dollar() {
     let usage = UsageTokens {
+        at_ms: None,
+        cache_write_1h: 0,
         input: 3,
         cached: 0,
         cache_write: 3,
@@ -92,6 +98,7 @@ fn cache_writes_default_to_the_input_price_and_rounding_is_to_the_micro_dollar()
 fn long_context_tiers_apply_above_their_threshold() {
     let mut e = entry();
     e.long_context = vec![LongContextPrice {
+        cache_write_1h: None,
         above_input_tokens: 272_000,
         input: usd("2.5"),
         cached_input: None,
@@ -126,6 +133,8 @@ fn additive_usage_is_normalised() {
     assert_eq!(u.fresh(), 100);
     // Inconsistent upstream numbers never underflow.
     let odd = UsageTokens {
+        at_ms: None,
+        cache_write_1h: 0,
         input: 10,
         cached: 20,
         cache_write: 5,
@@ -249,13 +258,29 @@ fn every_listed_model_is_priced_or_known_to_have_no_official_price() {
             m.slug
         );
     }
-    for e in table.entries.values() {
-        assert_eq!(e.rev.as_deref(), Some(table.rev.as_str()));
+    // Every entry names the official page it was read from and the date.
+    const OFFICIAL: [&str; 10] = [
+        "https://developers.openai.com/",
+        "https://openai.com/",
+        "https://platform.claude.com/",
+        "https://ai.google.dev/",
+        "https://api-docs.deepseek.com/",
+        "https://www.alibabacloud.com/",
+        "https://docs.z.ai/",
+        "https://platform.kimi.ai/",
+        "https://docs.x.ai/",
+        "https://docs.byteplus.com/",
+    ];
+    for (model, e) in &table.entries {
+        let rev = e.rev.as_deref().unwrap_or_default();
+        assert!(
+            rev.len() == 10 && rev <= table.rev.as_str(),
+            "{model}: {rev}"
+        );
         let src = e.source.as_deref().unwrap();
         assert!(
-            src.starts_with("https://developers.openai.com/")
-                || src.starts_with("https://openai.com/"),
-            "{src}"
+            OFFICIAL.iter().any(|o| src.starts_with(o)),
+            "{model}: {src}"
         );
     }
 }
@@ -332,6 +357,8 @@ fn the_built_in_table_prices_each_tier_from_its_own_official_table() {
 fn cached_input_and_cache_writes_are_billed_at_their_own_rates() {
     // gpt-6.1-sol: input $2, cached $0.10 (5%), cache writes $2.50 (1.25x).
     let u = UsageTokens {
+        at_ms: None,
+        cache_write_1h: 0,
         input: 100_000,
         cached: 60_000,
         cache_write: 10_000,
@@ -362,6 +389,8 @@ fn long_prompts_use_the_long_context_band_of_the_tier() {
     // 400k input on gpt-6-astra: long-context $20 Standard, $40 Fast, $120
     // Ultrafast, cached $2 / $4.
     let u = UsageTokens {
+        at_ms: None,
+        cache_write_1h: 0,
         input: 400_000,
         cached: 100_000,
         cache_write: 0,
@@ -482,6 +511,7 @@ fn long_context_cache_writes_use_the_band() {
     let mut e = entry();
     e.cache_write = Some(usd("1.5625"));
     e.long_context = vec![LongContextPrice {
+        cache_write_1h: None,
         above_input_tokens: 272_000,
         input: usd("2.5"),
         cached_input: Some(usd("0.25")),
@@ -542,4 +572,191 @@ fn the_price_basis_round_trips_through_the_stored_text() {
         source_label("https://developers.openai.com/api/docs/pricing/?x=1"),
         "developers.openai.com/api/docs/pricing"
     );
+}
+
+// --- user requirement 115: tiers, cache writes, time windows ----------------
+
+fn window(start: &str, end: &str, offset: i32, weekdays: &[u8]) -> superba_core::PriceWindow {
+    superba_core::PriceWindow {
+        label: Some("off-peak".into()),
+        start: start.into(),
+        end: end.into(),
+        utc_offset_minutes: offset,
+        weekdays: weekdays.to_vec(),
+        input: usd("0.5"),
+        cached_input: None,
+        cache_write: None,
+        output: usd("1"),
+    }
+}
+
+/// 2026-10-19 (a Monday) at `hh:mm` UTC, in Unix ms.
+fn monday_utc(hh: i64, mm: i64) -> i64 {
+    // 2026-10-19T00:00:00Z
+    1_792_368_000_000 + (hh * 60 + mm) * 60_000
+}
+
+#[test]
+fn the_reference_monday_is_a_monday() {
+    let w = window("00:00", "00:00", 0, &[1]);
+    assert!(w.contains(monday_utc(12, 0)));
+    assert!(!w.contains(monday_utc(12, 0) - 86_400_000), "Sunday");
+    assert!(!w.contains(monday_utc(12, 0) + 86_400_000), "Tuesday");
+}
+
+#[test]
+fn a_long_context_band_applies_strictly_above_its_threshold() {
+    let mut e = entry();
+    e.long_context = vec![LongContextPrice {
+        above_input_tokens: 272_000,
+        input: usd("2.5"),
+        cached_input: None,
+        cache_write: None,
+        cache_write_1h: None,
+        output: usd("15"),
+    }];
+    let at = |input| rates(&e, input, None).0.input;
+    assert_eq!(at(272_000), usd("1.25"), "at the threshold: base");
+    assert_eq!(at(272_001), usd("2.5"), "one above: the band");
+    // The band prices the whole request, output included.
+    let u = |input| UsageTokens {
+        input,
+        output: 1_000_000,
+        ..Default::default()
+    };
+    assert_eq!(
+        cost(&e, &u(272_000), None, Multiplier::ONE).unwrap(),
+        usd("10.34")
+    );
+    assert_eq!(
+        cost(&e, &u(272_001), None, Multiplier::ONE).unwrap(),
+        usd("15.680003")
+    );
+}
+
+#[test]
+fn five_minute_and_one_hour_cache_writes_have_their_own_rates() {
+    let mut e = entry();
+    e.cache_write = Some(usd("1.5625"));
+    e.cache_write_1h = Some(usd("2.5"));
+    // 1M input: 200k fresh, 300k read, 500k written (100k of them for 1h).
+    let u = UsageTokens {
+        input: 1_000_000,
+        cached: 300_000,
+        cache_write: 500_000,
+        cache_write_1h: 100_000,
+        output: 0,
+        at_ms: None,
+    };
+    // 0.2*1.25 + 0.3*0.125 + 0.4*1.5625 + 0.1*2.5 = 0.25+0.0375+0.625+0.25
+    assert_eq!(cost(&e, &u, None, Multiplier::ONE).unwrap(), usd("1.1625"));
+    // Without a 1h price, 1h writes cost the cache-write price.
+    e.cache_write_1h = None;
+    assert_eq!(cost(&e, &u, None, Multiplier::ONE).unwrap(), usd("1.06875"));
+    // Additive (Anthropic) usage keeps the split.
+    let mut add = UsageTokens::from_additive(200_000, 300_000, 500_000, 0);
+    add.cache_write_1h = 100_000;
+    assert_eq!(add.input, 1_000_000);
+    assert_eq!(add.fresh(), 200_000);
+}
+
+#[test]
+fn time_windows_apply_by_request_time_at_their_edges() {
+    let mut e = entry();
+    e.windows = vec![window("16:30", "00:30", 0, &[])];
+    let u = |at| UsageTokens {
+        input: 1_000_000,
+        at_ms: Some(at),
+        ..Default::default()
+    };
+    let c = |at| cost(&e, &u(at), None, Multiplier::ONE).unwrap();
+    assert_eq!(c(monday_utc(16, 29)), usd("1.25"), "a minute before");
+    assert_eq!(c(monday_utc(16, 30)), usd("0.5"), "the start is inside");
+    assert_eq!(c(monday_utc(23, 59)), usd("0.5"));
+    assert_eq!(c(monday_utc(24, 0)), usd("0.5"), "past midnight");
+    assert_eq!(c(monday_utc(24, 29)), usd("0.5"));
+    assert_eq!(c(monday_utc(24, 30)), usd("1.25"), "the end is outside");
+    // No request time: no window.
+    let mut none = u(monday_utc(17, 0));
+    none.at_ms = None;
+    assert_eq!(cost(&e, &none, None, Multiplier::ONE).unwrap(), usd("1.25"));
+}
+
+#[test]
+fn time_windows_use_the_providers_zone_and_weekdays() {
+    let mut e = entry();
+    // 00:30-08:30 Beijing time (UTC+8) = 16:30-00:30 UTC, weekdays only.
+    e.windows = vec![window("00:30", "08:30", 480, &[1, 2, 3, 4, 5])];
+    let at = |ms| rates_at(&e, 0, None, Some(ms)).0.input;
+    // Monday 16:30 UTC is Tuesday 00:30 in Beijing: inside.
+    assert_eq!(at(monday_utc(16, 30)), usd("0.5"));
+    assert_eq!(at(monday_utc(16, 29)), usd("1.25"));
+    // Friday 16:30 UTC is Saturday in Beijing: not a weekday there.
+    assert_eq!(at(monday_utc(16, 30) + 4 * 86_400_000), usd("1.25"));
+    // Sunday 16:30 UTC is Monday in Beijing: inside.
+    assert_eq!(at(monday_utc(16, 30) - 86_400_000), usd("0.5"));
+    // A long-context band wins over a window.
+    e.long_context = vec![LongContextPrice {
+        above_input_tokens: 10,
+        input: usd("3"),
+        cached_input: None,
+        cache_write: None,
+        cache_write_1h: None,
+        output: usd("3"),
+    }];
+    assert_eq!(
+        rates_at(&e, 11, None, Some(monday_utc(16, 30))).0.input,
+        usd("3")
+    );
+}
+
+#[test]
+fn deepseeks_built_in_off_peak_hours_follow_its_page() {
+    let table = builtin();
+    let e = table.get("deepseek-v4-pro").expect("DeepSeek is priced");
+    let input = |ms| rates_at(e, 0, None, Some(ms)).0.input;
+    let (peak, off) = (e.input, e.windows[0].input);
+    assert!(off < peak);
+    // Weekday peak 01:00-04:00 and 06:00-10:00 UTC.
+    assert_eq!(input(monday_utc(0, 59)), off);
+    assert_eq!(input(monday_utc(1, 0)), peak);
+    assert_eq!(input(monday_utc(3, 59)), peak);
+    assert_eq!(input(monday_utc(4, 0)), off);
+    assert_eq!(input(monday_utc(6, 0)), peak);
+    assert_eq!(input(monday_utc(10, 0)), off);
+    // Weekends are off-peak all day.
+    assert_eq!(input(monday_utc(2, 0) - 86_400_000), off, "Sunday");
+    assert_eq!(input(monday_utc(2, 0) + 5 * 86_400_000), off, "Saturday");
+}
+
+#[test]
+fn models_without_a_price_have_no_cost_and_overrides_still_win() {
+    let table = builtin();
+    let settings = PriceSettings::default();
+    assert!(
+        lookup(&table, &settings, &"p".into(), "doubao-seed-unknown")
+            .unwrap()
+            .is_none()
+    );
+    // Other vendors' list prices are there, with their page and date.
+    for m in [
+        "claude-sonnet-4-5",
+        "gemini-2.5-pro",
+        "glm-4.6",
+        "kimi-k2.6",
+    ] {
+        let e = lookup(&table, &settings, &"p".into(), m).unwrap().unwrap();
+        assert!(e.source.is_some() && e.rev.is_some(), "{m}");
+    }
+    let mut own = settings.clone();
+    let mut mine = entry();
+    mine.input = usd("9");
+    own.overrides
+        .entry("p".into())
+        .or_default()
+        .insert("claude-sonnet-4-5".into(), mine);
+    let e = lookup(&table, &own, &"p".into(), "claude-sonnet-4-5")
+        .unwrap()
+        .unwrap();
+    assert_eq!(e.input, usd("9"));
 }

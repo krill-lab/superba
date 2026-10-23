@@ -332,7 +332,7 @@ fn recent_sessions_are_the_newest_with_their_tokens_model_client_and_cost() {
     rows[2].client = RequestClient::Tui;
     let s = usage::recent_sessions(&rows, 3);
     assert_eq!(
-        s.iter().map(|s| s.key.as_str()).collect::<Vec<_>>(),
+        s.iter().map(|s| s.id()).collect::<Vec<_>>(),
         ["busy", "free", "old"],
         "newest last request first, at most n"
     );
@@ -473,10 +473,7 @@ async fn a_snapshot_reads_the_week_the_totals_the_router_and_titles() {
     let s = usage::load(svc, now, 0).await.expect("snapshot");
     assert_eq!(s.today.requests, 1);
     assert_eq!(
-        s.sessions
-            .iter()
-            .map(|s| s.key.as_str())
-            .collect::<Vec<_>>(),
+        s.sessions.iter().map(|s| s.id()).collect::<Vec<_>>(),
         ["019a-new", "019a-old"],
         "seven days only"
     );
@@ -848,6 +845,10 @@ fn busy_snapshot() -> Snapshot {
         traces: usage::line_traces(&rows, now),
         unpriced: Vec::new(),
         router: None,
+        tools_today: usage::tool_usage(&rows, Timestamp(0), now),
+        tools_week: usage::tool_usage(&rows, Timestamp(0), now),
+        harnesses: Vec::new(),
+        claude: None,
         at: now,
         offset_secs: 0,
     }
@@ -1090,7 +1091,7 @@ async fn router_popover_shows_preference_failover_and_saves_the_chosen_line() {
             "国内极速（首选）",
             "当前：海外线路（国内极速失败后切换）",
             &tr.t("router.preference.choose"),
-            &tr.t("router.preference.recovery"),
+            &superba_gui::pages::router::recovery_text(&tr, None),
         ] {
             assert!(
                 texts.iter().any(|(t, _)| t.contains(expected)),
@@ -1315,5 +1316,294 @@ async fn clicking_the_provider_tile_opens_accounts_and_selects_an_exact_account(
     assert!(
         out.iter()
             .any(|a| matches!(a, Action::SwitchChatGptAccount(id) if id == "managed-b"))
+    );
+}
+
+// --- Every tool (user request 118) ---------------------------------------------------------------
+
+/// A row of `harness` with its own session id (no Codex cache key).
+fn tool_row(
+    id: i64,
+    started: Timestamp,
+    harness: &str,
+    session: &str,
+    tokens: (u64, u64, u64),
+    cost: Option<i64>,
+) -> RequestRow {
+    let mut r = row(id, started, "", "m", tokens, cost, None, None);
+    r.prompt_cache_key = None;
+    r.session_id = Some(session.into());
+    r.harness = serde_json::from_value(json!(harness)).unwrap();
+    r
+}
+
+#[test]
+fn every_tool_is_counted_per_tool_and_an_unknown_cost_stays_unknown() {
+    use superba_core::RequestHarness as H;
+    let now = now();
+    let rows = vec![
+        tool_row(
+            1,
+            Timestamp(now.as_millis() - 5 * MIN),
+            "codex",
+            "same-id",
+            (10_000, 8_000, 500),
+            Some(40_000),
+        ),
+        tool_row(
+            2,
+            Timestamp(now.as_millis() - 4 * MIN),
+            "codex",
+            "same-id",
+            (12_000, 9_000, 600),
+            Some(50_000),
+        ),
+        // Claude Code without a price: tokens counted, cost unknown (not $0).
+        tool_row(
+            3,
+            Timestamp(now.as_millis() - 3 * MIN),
+            "claude_code",
+            "same-id",
+            (30_000, 20_000, 900),
+            None,
+        ),
+        tool_row(
+            4,
+            Timestamp(now.as_millis() - 2 * MIN),
+            "opencode",
+            "oc-1",
+            (2_000, 0, 100),
+            Some(5_000),
+        ),
+        // Yesterday: only in the week.
+        tool_row(
+            5,
+            Timestamp(now.as_millis() - DAY),
+            "pi",
+            "pi-1",
+            (1_000, 0, 10),
+            Some(1_000),
+        ),
+    ];
+    let (today_start, _) = usage::day_and_month_start(now, OFFSET);
+    let today = usage::tool_usage(&rows, today_start, now);
+    assert_eq!(
+        today.iter().map(|t| t.harness).collect::<Vec<_>>(),
+        [H::Codex, H::OpenCode, H::ClaudeCode],
+        "priced tools by cost first, an unpriced one after them"
+    );
+    assert_eq!(today[0].requests, 2);
+    assert_eq!(today[0].cost(), Some(90_000));
+    let claude = &today[2];
+    assert_eq!(claude.tokens, 30_900);
+    assert_eq!(claude.cost(), None, "unknown, never zero");
+    assert_eq!(claude.unpriced, 1);
+    let week = usage::tool_usage(&rows, Timestamp(now.as_millis() - 7 * DAY), now);
+    assert_eq!(week.len(), 4);
+    assert!(week.iter().any(|t| t.harness == H::Pi));
+    // The same session id in two tools is two sessions, each with its tool.
+    let sessions = usage::recent_sessions(&rows, 10);
+    let same: Vec<_> = sessions.iter().filter(|s| s.id() == "same-id").collect();
+    assert_eq!(same.len(), 2, "{sessions:?}");
+    assert!(
+        same.iter()
+            .any(|s| s.harness == H::Codex && s.requests == 2)
+    );
+    assert!(
+        same.iter()
+            .any(|s| s.harness == H::ClaudeCode && s.cost_micros.is_none())
+    );
+    // The Usage link names the tool's session.
+    let claude_key = &same
+        .iter()
+        .find(|s| s.harness == H::ClaudeCode)
+        .unwrap()
+        .key;
+    assert_eq!(
+        superba_core::split_harness_key(claude_key),
+        Some((H::ClaudeCode, "same-id"))
+    );
+}
+
+/// The hero's rectangle at a window size (as `overview::show` lays it out).
+fn hero_rect(w: f32, h: f32, lanes: usize) -> Rect {
+    let page_w = (w - 220.0 - 64.0).min(1200.0);
+    let page_h = h - 28.0 - 16.0;
+    let area = Rect::from_min_size(
+        egui::pos2(252.0, 28.0 + overview::TITLE_ROW + 8.0),
+        egui::vec2(page_w, page_h - overview::TITLE_ROW - 8.0),
+    );
+    let tall = area.height().max(600.0) >= 660.0;
+    let want = overview::lanes::height(
+        lanes.min(if tall { 4 } else { 3 }),
+        if tall { 182.0 } else { hero::HEIGHT },
+    );
+    let g = overview::layout_with(area, Some(want), 0.0);
+    for r in [g.today, g.sessions, g.lines, g.todo] {
+        assert!(r.min.y >= g.hero.max.y, "cards below the hero");
+    }
+    g.hero
+}
+
+#[test]
+fn the_lanes_fit_one_three_and_six_tools_at_both_sizes() {
+    use overview::lanes;
+    for (w, h, cap) in [(960.0, 640.0, 3usize), (1280.0, 800.0, 4)] {
+        for tools in [1usize, 3, 6] {
+            let rect = hero_rect(w, h, tools);
+            let g = lanes::geometry(rect, tools);
+            assert_eq!(g.shown, tools.min(cap), "{w}x{h} {tools} tools: {g:?}");
+            assert_eq!(g.folded, tools.saturating_sub(cap), "{w}x{h} {tools} tools");
+            assert_eq!(g.lanes.len(), g.shown);
+            // Lanes inside the card, below the caption, at least LANE_MIN - 4 apart.
+            for pair in g.lanes.windows(2) {
+                assert!(pair[1] - pair[0] >= lanes::LANE_MIN - 4.0, "{g:?}");
+            }
+            let first = g.lanes.first().unwrap();
+            let last = g.lanes.last().unwrap();
+            assert!(
+                first - g.lane_h / 2.0 >= rect.min.y + 14.0 + 20.0,
+                "{w}x{h}: {g:?}"
+            );
+            assert!(
+                last + g.lane_h / 2.0 <= rect.max.y - 10.0,
+                "{w}x{h}: {g:?} in {rect:?}"
+            );
+            // Columns left to right, none squeezed.
+            let cols = [g.tool, g.router, g.provider, g.model];
+            for c in cols {
+                assert!(c.1 - c.0 >= 100.0, "{w}x{h}: column {c:?} too narrow");
+                assert!(c.0 >= rect.min.x && c.1 <= rect.max.x, "{c:?} in {rect:?}");
+            }
+            for pair in cols.windows(2) {
+                assert!(pair[1].0 > pair[0].1, "columns overlap: {cols:?}");
+            }
+        }
+    }
+}
+
+/// A snapshot whose week has requests of `n` tools (Codex first).
+fn tools_snapshot(n: usize) -> Snapshot {
+    let mut s = busy_snapshot();
+    let tools = ["codex", "claude_code", "opencode", "pi", "dsh", "gemini"];
+    let now = s.at;
+    let rows: Vec<RequestRow> = tools[..n]
+        .iter()
+        .enumerate()
+        .flat_map(|(i, h)| {
+            (0..(10 - i as i64)).map(move |k| {
+                tool_row(
+                    100 + i as i64 * 20 + k,
+                    Timestamp(now.as_millis() - (k + 1) * MIN),
+                    h,
+                    &format!("{h}-s"),
+                    (1_000, 0, 100),
+                    Some(1_000),
+                )
+            })
+        })
+        .collect();
+    s.tools_today = usage::tool_usage(&rows, Timestamp(0), now);
+    s.tools_week = s.tools_today.clone();
+    s
+}
+
+#[tokio::test]
+async fn the_request_path_draws_a_lane_per_tool_and_folds_the_rest() {
+    let data = fake_data().await;
+    for (size, folded) in [([960.0, 640.0], 3), ([1280.0, 800.0], 2)] {
+        let harness = Harness::new(size, egui::Theme::Dark);
+        for locale in [Locale::ZhCn, Locale::En] {
+            let tr = Tr::new(locale);
+            // One tool: the single-tool hero.
+            let mut state = overview::State::default();
+            state.usage = UsageLoader::preloaded(busy_snapshot());
+            let mut out = Vec::new();
+            let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+            let texts: Vec<String> = harness.settle(&mut f).into_iter().map(|(t, _)| t).collect();
+            assert!(texts.contains(&tr.t("overview.hero.this")), "{texts:?}");
+            // Six tools: lanes, 「+N」 and a chip per tool.
+            let mut state = overview::State::default();
+            state.usage = UsageLoader::preloaded(tools_snapshot(6));
+            let mut out = Vec::new();
+            let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+            let texts: Vec<String> = harness.settle(&mut f).into_iter().map(|(t, _)| t).collect();
+            let all = texts.join("\n");
+            assert!(!texts.contains(&tr.t("overview.hero.this")), "{all}");
+            for name in ["Codex", "Claude Code", "opencode"] {
+                assert!(
+                    texts.iter().any(|t| t == name),
+                    "{name} lane missing: {all}"
+                );
+            }
+            let more = tr.f("overview.tools.more", &[("n", &folded)]);
+            assert!(texts.contains(&more), "{size:?} {more}: {all}");
+            assert!(!all.contains("Codex 的请求去向"), "{all}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_lane_click_opens_that_tool_on_the_tools_page() {
+    let data = fake_data().await;
+    let harness = Harness::new([1280.0, 800.0], egui::Theme::Light);
+    let tr = Tr::new(Locale::En);
+    let mut state = overview::State::default();
+    state.usage = UsageLoader::preloaded(tools_snapshot(3));
+    let mut out = Vec::new();
+    {
+        let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        let texts = harness.settle(&mut f);
+        let (_, r) = texts
+            .iter()
+            .filter(|(t, _)| t == "opencode")
+            .min_by(|a, b| a.1.min.y.total_cmp(&b.1.min.y))
+            .cloned()
+            .expect("opencode lane");
+        harness.click_at(r.center(), &mut f);
+    }
+    assert!(
+        out.iter().any(|a| matches!(
+            a,
+            Action::PageCommand { page: Page::Tools, command } if command == "opencode"
+        )),
+        "{out:?}"
+    );
+}
+
+#[tokio::test]
+async fn the_codex_lane_keeps_the_provider_popover() {
+    let data = fake_data().await;
+    let harness = Harness::new([1280.0, 800.0], egui::Theme::Dark);
+    let tr = Tr::new(Locale::En);
+    let mut state = overview::State::default();
+    state.usage = UsageLoader::preloaded(tools_snapshot(3));
+    let mut out = Vec::new();
+    let mut f = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+    let texts = harness.settle(&mut f);
+    let (_, codex) = texts
+        .iter()
+        .find(|(t, _)| t == "Codex")
+        .cloned()
+        .expect("Codex lane");
+    // The provider text on the Codex lane (the first text right of the router column).
+    let (_, provider) = texts
+        .iter()
+        .filter(|(t, r)| {
+            (r.center().y - codex.center().y).abs() < 4.0
+                && r.min.x > codex.max.x + 200.0
+                && t.contains("Krill")
+        })
+        .min_by(|a, b| a.1.min.x.total_cmp(&b.1.min.x))
+        .cloned()
+        .expect("Codex provider");
+    harness.click_at(
+        egui::pos2(provider.max.x + 12.0, provider.center().y),
+        &mut f,
+    );
+    let texts: Vec<String> = harness.settle(&mut f).into_iter().map(|(t, _)| t).collect();
+    assert!(
+        texts.contains(&tr.t("overview.other_providers")),
+        "{texts:?}"
     );
 }

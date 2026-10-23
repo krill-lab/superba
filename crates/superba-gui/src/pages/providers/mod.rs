@@ -30,6 +30,7 @@ mod detail;
 pub mod form;
 mod lines;
 mod list;
+mod mixed;
 pub mod ops;
 mod transports;
 
@@ -42,8 +43,8 @@ use superba_core::{
 };
 
 use self::ops::SiteReport;
-use super::shared::providers::{self, Provider, ProviderId, ProviderKind};
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, page_header};
+use super::shared::providers::{self, Provider, ProviderId};
+use super::{Action, Cx, Page, PageStatus, page_header};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
 use crate::design::widgets::{Button, PagedState};
@@ -151,6 +152,11 @@ pub struct State {
     pub import: Option<crate::pages::import::ImportDialog>,
     /// The delete confirmation.
     pub(crate) remove: Option<RemoveDialog>,
+    /// Confirmation to disable the line Codex uses in direct mode (user bug
+    /// 108): (provider, the line to disable).
+    pub(crate) disable_line: Option<(ProfileId, LineId)>,
+    /// Mixed login on the official login's detail.
+    pub(crate) mixed: mixed::MixedLogin,
 }
 
 impl std::fmt::Debug for State {
@@ -171,7 +177,10 @@ impl State {
 
     /// A dialog of this page is open (the shell leaves Enter / Escape to it).
     pub fn is_modal_open(&self) -> bool {
-        self.add.is_some() || self.remove.is_some() || self.import.is_some()
+        self.add.is_some()
+            || self.remove.is_some()
+            || self.import.is_some()
+            || self.disable_line.is_some()
     }
 
     /// The entry being renamed in the list and the typed name.
@@ -279,6 +288,7 @@ impl State {
         }
         busy |= !self.tests.is_empty();
         busy |= account::poll(self);
+        busy |= self.mixed.poll(cx, out);
         if let Some(d) = &mut self.add {
             let (running, finished) = d.poll(cx, out);
             busy |= running;
@@ -373,6 +383,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     });
     add::show(ui.ctx(), cx, state, out);
     detail::remove_dialog(ui.ctx(), cx, state);
+    lines::disable_dialog(ui.ctx(), cx, state, out);
     show_import(ui.ctx(), cx, state, out);
 }
 
@@ -395,47 +406,6 @@ fn show_import(ctx: &egui::Context, cx: &Cx<'_>, state: &mut State, out: &mut Ve
             }
         }
     }
-}
-
-/// Command palette entries: import from other tools, and test the connection of
-/// each key-based provider.
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let _ = state;
-    let import = PaletteItem {
-        title: cx.tr.t("providers.palette.import"),
-        detail: Some(cx.tr.t("providers.palette.import_detail")),
-        keywords: vec![
-            "import".into(),
-            "cc-switch".into(),
-            "ccs".into(),
-            "ai-toolbox".into(),
-            "导入".into(),
-        ],
-        group: PaletteGroup::Commands,
-        action: Action::PageCommand {
-            page: Page::Providers,
-            command: "import".into(),
-        },
-    };
-    let mut items = vec![import];
-    items.extend(
-        providers::list(cx.data)
-            .into_iter()
-            .filter(|p| p.kind != ProviderKind::Official && p.has_key())
-            .map(|p| PaletteItem {
-                title: cx
-                    .tr
-                    .f("providers.palette.test", &[("name", &list::name(cx, &p))]),
-                detail: Some(list::secondary(cx, &p)),
-                keywords: vec![p.site.id.to_string(), "test".into(), "probe".into()],
-                group: PaletteGroup::Commands,
-                action: Action::PageCommand {
-                    page: Page::Providers,
-                    command: format!("test:{}", p.id.command()),
-                },
-            }),
-    );
-    items
 }
 
 /// Run a command addressed to this page (see the module docs).

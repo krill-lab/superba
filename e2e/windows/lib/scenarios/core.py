@@ -282,10 +282,8 @@ def w31(t):
         flows.start_superba(run, s)
         u.page("router")
         time.sleep(1)
-        advanced = u.reveal(key="router.advanced.title", type="Button")
-        # The 「高级」 disclosure (AccessKit DisclosureTriangle) exposes Invoke, not ExpandCollapse.
-        if advanced.get("expanded") != "Expanded":
-            u.click(key="router.advanced.title")
+        # 「高级」 is a plain section since user bug 116 (no disclosure to open):
+        # scroll its stats line switch into view.
         u.reveal(key="stats_line.title", type="Button")
         el = u.wait(key="stats_line.title", type="Button")
         if el.get("toggle") != "On":
@@ -464,10 +462,19 @@ def w33(t):
         flows.start_superba(run, s)
         u.page("router")
         time.sleep(1)
-        u.click(key="router.turn_off")
+        a = App(run)
+        before_main = a.main()
+        u.click(key="router.banner.turn_off")
         time.sleep(2)
         u.try_click(key="banner.switch_now")
-        flows.wait_switch_done(run, s, u, timeout=120)
+        # Turning off also changes the router certificate settings: the product
+        # asks for a full restart of ChatGPT (expected, alpha.8 D8).
+        phases, _ = flows.wait_switch_done(run, s, u, timeout=240, router_restart="off")
+        s.info(f"phases: {phases}")
+        if "[full restart: router certificate]" in phases:
+            after_main = a.wait_main(90, not_pid=(before_main or {}).get("pid"))
+            s.check(after_main is not None, "Full restart relaunched the app with a new main process")
+            s.check(a.composer_ready(300), f"composer usable after the full restart: {a.composer_error}")
         cfg = run.guest_read(run.guest["CODEX_HOME"] + r"\config.toml") or ""
         s.check("http://127.0.0.1:%d/backend-api/codex" % (run.state.get("router_port") or 0) not in cfg,
                 "config.toml no longer points at the router")
@@ -560,7 +567,7 @@ def w36(t):
 
 
 # --------------------------------------------------------------------------- restore / uninstall
-@scenario("W40", "Restore the original configuration (Overview -> Actions)", area="restore", needs=("turn",),
+@scenario("W40", "Restore the original configuration (Superba -> Data)", area="restore", needs=("turn",),
           tags=("core",))
 def w40(t):
     run = t.run
@@ -568,11 +575,11 @@ def w40(t):
     base = run.state.get("baseline") or {}
     with t.step("Restore original from the GUI") as s:
         flows.start_superba(run, s)
-        u.page("overview")
+        # The Overview's Actions menu is gone (user request 118): restore
+        # lives on Superba > Data.
+        u.page("superba:data")
         time.sleep(1)
-        u.click(key="overview.menu.title")
-        time.sleep(1)
-        u.act("invoke", key="overview.menu.restore_original")
+        u.act("invoke", key="prefs.restore.original_button")
         time.sleep(2)
         s.ui_dump("restore-choice")
         s.shot("restore-choice")

@@ -27,6 +27,11 @@ pub struct Sources {
     /// Include every prerelease tag >= floor.
     #[serde(default)]
     pub prereleases: bool,
+    /// Include the newest prerelease when it is newer than every stable release
+    /// (it rolls forward: the previous alpha drops out, and the stable release
+    /// replaces it once tagged).
+    #[serde(default)]
+    pub latest_prerelease: bool,
     /// Prereleases included anyway (for example the ones the desktop app bundles).
     #[serde(default)]
     pub extra_versions: Vec<String>,
@@ -51,6 +56,29 @@ impl Sources {
         Ok(s)
     }
 
+    /// Resolve `latest_prerelease` against the repository's release versions: the
+    /// newest prerelease above every stable release becomes an extra version.
+    pub fn resolve(mut self, all: &[CodexVersion]) -> Result<Sources> {
+        if !self.latest_prerelease {
+            return Ok(self);
+        }
+        let floor = CodexVersion::parse(&self.floor).map_err(|e| anyhow::anyhow!("floor: {e}"))?;
+        let newest_stable = all.iter().filter(|v| v.pre.is_none()).max();
+        let newest = all
+            .iter()
+            .filter(|v| !self.exclude_versions.contains(&v.to_string()))
+            .max();
+        if let Some(n) = newest
+            && n.pre.is_some()
+            && *n >= floor
+            && newest_stable.is_none_or(|s| n > s)
+            && !self.extra_versions.contains(&n.to_string())
+        {
+            self.extra_versions.push(n.to_string());
+        }
+        Ok(self)
+    }
+
     /// Whether `v` belongs in the catalog.
     pub fn selects(&self, v: &CodexVersion) -> Result<bool> {
         let floor = CodexVersion::parse(&self.floor).map_err(|e| anyhow::anyhow!("floor: {e}"))?;
@@ -67,8 +95,11 @@ impl Sources {
 
 /// The selected `(version, tag)` pairs of a repository, ascending.
 pub fn selected_tags(sources: &Sources, repo: &GitRepo) -> Result<Vec<(CodexVersion, String)>> {
+    let all = repo.release_tags()?;
+    let versions: Vec<CodexVersion> = all.iter().map(|(v, _)| v.clone()).collect();
+    let sources = &sources.clone().resolve(&versions)?;
     let mut out = Vec::new();
-    for (v, tag) in repo.release_tags()? {
+    for (v, tag) in all {
         if sources.selects(&v)? {
             out.push((v, tag));
         }
@@ -295,6 +326,10 @@ pub fn compute_index(catalog: &Path, previous: Option<&Index>) -> Result<Index> 
         index_format: INDEX_FORMAT,
         catalog_format: CATALOG_FORMAT,
         serial: previous.map_or(1, |p| p.serial),
+        generated: previous.map_or_else(
+            || Some(superba_core::Timestamp::now().utc_date_string()),
+            |p| p.generated.clone(),
+        ),
         repo: REPO.to_owned(),
         latest: latest.to_string(),
         versions,
@@ -305,6 +340,7 @@ pub fn compute_index(catalog: &Path, previous: Option<&Index>) -> Result<Index> 
             p.files == index.files && p.versions == index.versions && p.latest == index.latest;
         if !same {
             index.serial = p.serial + 1;
+            index.generated = Some(superba_core::Timestamp::now().utc_date_string());
         }
     }
     Ok(index)
@@ -337,4 +373,39 @@ pub fn write_index(catalog: &Path) -> Result<bool> {
         );
     }
     Ok(changed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn src(latest: bool) -> Sources {
+        Sources {
+            format: 1,
+            repo: REPO.into(),
+            floor: "0.155.0".into(),
+            prereleases: false,
+            latest_prerelease: latest,
+            extra_versions: vec![],
+            exclude_versions: vec![],
+        }
+    }
+
+    fn vs(v: &[&str]) -> Vec<CodexVersion> {
+        v.iter().map(|s| CodexVersion::parse(s).unwrap()).collect()
+    }
+
+    #[test]
+    fn latest_prerelease_rolls_forward() {
+        let all = vs(&["0.163.0", "0.164.0-alpha.6", "0.164.0-alpha.7"]);
+        let s = src(true).resolve(&all).unwrap();
+        assert!(s.selects(&all[2]).unwrap());
+        assert!(!s.selects(&all[1]).unwrap());
+        assert!(!src(false).resolve(&all).unwrap().selects(&all[2]).unwrap());
+        // Once the stable release is tagged, no prerelease is added.
+        let all = vs(&["0.163.0", "0.164.0-alpha.7", "0.164.0"]);
+        let s = src(true).resolve(&all).unwrap();
+        assert!(!s.selects(&all[1]).unwrap());
+        assert!(s.extra_versions.is_empty());
+    }
 }

@@ -353,6 +353,8 @@ impl Switcher {
                     cached: tokens.cached,
                     cache_write: 0,
                     output: tokens.output,
+                    at_ms: Some(superba_core::Timestamp::now().as_millis()),
+                    ..Default::default()
                 };
                 let ratio = superba_models::price::ratio_of(prices, &profile);
                 if let Ok(cost) = superba_models::price::cost(&entry, &usage, None, ratio) {

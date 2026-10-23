@@ -70,6 +70,10 @@ pub(crate) struct MemberRt {
     pub auth: HeaderValue,
     pub lines: Vec<LineRt>,
     pub last_route: Mutex<Option<superba_core::RouterLineRoute>>,
+    /// Stored login of an official member (`None` for the others, and for an
+    /// official member without one: it then serves only the mixed-login
+    /// client's own token).
+    pub vault: Option<Arc<crate::official::Vault>>,
 }
 
 impl std::fmt::Debug for MemberRt {
@@ -104,6 +108,26 @@ pub(crate) struct Generation {
 }
 
 impl Generation {
+    /// The pin of a conversation at `now`. With
+    /// [`crate::config::Tuning::return_to_preferred`] a pin on a fallback member
+    /// is ignored once a line of an earlier member is available again, so the
+    /// conversation goes back to the preferred member.
+    pub fn pin(&self, key: &str, now: Instant) -> Option<crate::sticky::Pin> {
+        let pin = lock(&self.sticky).get(key, now)?;
+        if self.config.tuning.return_to_preferred
+            && self
+                .members
+                .iter()
+                .take(pin.member)
+                .any(|m| m.lines.iter().any(|l| lock(&l.health).is_available(now)))
+        {
+            return None;
+        }
+        Some(pin)
+    }
+}
+
+impl Generation {
     /// Build a generation; validates the configuration and the secrets.
     /// `budget` sizes the upstream connection pool.
     pub fn build(
@@ -111,6 +135,7 @@ impl Generation {
         config: RouterConfig,
         secrets: &RouterSecrets,
         budget: &Budget,
+        paths: Option<&crate::paths::RouterPaths>,
     ) -> Result<Self> {
         config.validate()?;
         secrets.validate_for(&config)?;
@@ -122,6 +147,35 @@ impl Generation {
         };
         let mut members = Vec::with_capacity(config.members.len());
         for m in &config.members {
+            if m.kind == crate::MemberKind::Official {
+                let vault = secrets.official_tokens.get(&m.id).map(|t| {
+                    Arc::new(crate::official::Vault::new(
+                        &m.id,
+                        Some(t.clone()),
+                        config.official_token_url(),
+                        paths.cloned().map(crate::official::persist_to),
+                    ))
+                });
+                let mut auth = HeaderValue::from_static("Bearer -");
+                auth.set_sensitive(true);
+                members.push(MemberRt {
+                    cfg: m.clone(),
+                    last_route: Mutex::new(None),
+                    auth,
+                    vault,
+                    lines: m
+                        .lines
+                        .iter()
+                        .map(|l| LineRt {
+                            cfg: l.clone(),
+                            health: Mutex::new(LineHealth::new(policy)),
+                            counters: LineCounters::default(),
+                            probing: AtomicBool::new(false),
+                        })
+                        .collect(),
+                });
+                continue;
+            }
             let key = secrets.key(&m.id).ok_or_else(|| Error::Secret {
                 message: format!("no API key for router member {:?}", m.id),
             })?;
@@ -139,6 +193,7 @@ impl Generation {
                 cfg: m.clone(),
                 last_route: Mutex::new(None),
                 auth,
+                vault: None,
                 lines: m
                     .lines
                     .iter()
@@ -189,6 +244,34 @@ impl Generation {
                 compaction: self.config.compaction_support(&m.cfg.id),
             })
             .collect()
+    }
+
+    /// Keep the stored logins of `old` across a reload: a vault that may
+    /// have refreshed since the files were read is the source of truth unless
+    /// the user stored a different login meanwhile.
+    pub fn inherit_vaults(&mut self, old: &Generation) {
+        for m in self.members.iter_mut() {
+            let Some(prev) = old
+                .members
+                .iter()
+                .find(|o| o.cfg.id == m.cfg.id)
+                .and_then(|o| o.vault.clone())
+            else {
+                continue;
+            };
+            let replace = match &m.vault {
+                None => false,
+                Some(new) => match (new.try_current(), prev.try_current()) {
+                    // A spent login is replaced by a new sign-in.
+                    (Some(n), Some(p)) => n.account_id == p.account_id && !p.expired,
+                    // Refreshing right now: the old vault holds the newest token.
+                    _ => true,
+                },
+            };
+            if replace {
+                m.vault = Some(prev);
+            }
+        }
     }
 
     /// `member/line` label for logs and the route header.

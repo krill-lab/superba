@@ -74,6 +74,13 @@ impl ToolId {
             Self::WorkbuddyAi => "WorkBuddy AI",
         }
     }
+    /// A command-line tool (its program can be chosen).
+    pub fn has_command(self) -> bool {
+        matches!(
+            self,
+            Self::ClaudeCode | Self::Dsh | Self::Opencode | Self::Pi
+        )
+    }
     /// Legible two-letter icon.
     pub fn monogram(self) -> &'static str {
         match self {
@@ -110,6 +117,14 @@ pub struct ToolRow {
     pub versions: Vec<String>,
     /// Removal policy; None when Superba cannot remove this installation.
     pub removal: Option<Removal>,
+    /// Where the installer looked, shown when nothing was found.
+    pub searched: Vec<String>,
+    /// How a new install is made (Homebrew on macOS), or why not.
+    pub install_method: Option<String>,
+    /// The tool has a command whose program the user may choose.
+    pub choose_path: bool,
+    /// The program the user chose, if any.
+    pub command_path: Option<String>,
 }
 /// Facts reviewed before removing a tool.
 #[derive(Clone, Debug)]
@@ -154,6 +169,10 @@ pub trait ToolsSource: Debug + Send + Sync {
     fn channel(&self, id: ToolId, channel: String) -> Result<(), String>;
     /// Change ownership of automatic updates.
     fn managed(&self, id: ToolId, enabled: bool) -> Result<(), String>;
+    /// Use this program for the tool (checked first); `None` searches again.
+    fn command_path(&self, _id: ToolId, _path: Option<std::path::PathBuf>) -> Result<(), String> {
+        Err("Choosing a path is not available here".into())
+    }
 }
 /// Tool detail body, deliberately independent of page headers or scroll areas.
 pub fn section(
@@ -169,7 +188,44 @@ pub fn section(
     };
     let mut request = None;
     for install in &row.installs {
-        ui.add(egui::Label::new(Text::mono(install, cx.pal)).wrap());
+        install_line(ui, cx, install);
+    }
+    if row.installs.is_empty() && !row.searched.is_empty() {
+        ui.label(Text::small(cx.tr.t("updates.list.not_found"), cx.pal));
+        for place in &row.searched {
+            install_line(ui, cx, place);
+        }
+    }
+    if let Some(method) = &row.install_method {
+        ui.add(egui::Label::new(Text::small(method, cx.pal)).wrap());
+    }
+    if let Some(path) = &row.command_path {
+        install_line(
+            ui,
+            cx,
+            &cx.tr.f("updates.list.chosen_path", &[("path", path)]),
+        );
+    }
+    if row.choose_path {
+        ui.add_enabled_ui(row.entry.status != UpdateStatus::Installing, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add(Button::new(cx.tr.t("updates.list.choose_path")).small())
+                    .on_hover_text(cx.tr.t("updates.list.choose_path_hint"))
+                    .clicked()
+                    && let Some(p) = rfd::FileDialog::new().pick_file()
+                {
+                    report(source.command_path(id, Some(p)), out);
+                }
+                if row.command_path.is_some()
+                    && ui
+                        .add(Button::new(cx.tr.t("updates.list.clear_path")).small())
+                        .clicked()
+                {
+                    report(source.command_path(id, None), out);
+                }
+            });
+        });
     }
     ui.add_enabled_ui(row.entry.status != UpdateStatus::Installing, |ui| {
         if !row.channels.is_empty() {
@@ -266,6 +322,26 @@ pub fn section(
         out.push(Action::OpenUrl(log.clone()));
     }
     request
+}
+/// One `kind · version · path` line: the path is elided in the middle to
+/// the width there is, the whole line is the tooltip.
+fn install_line(ui: &mut Ui, cx: &Cx<'_>, line: &str) {
+    use crate::design::elide::{Ellipsis, elide_by};
+    let font = egui::TextStyle::Monospace.resolve(ui.style());
+    let max = ui.available_width().max(80.0);
+    let shown = ui.fonts_mut(|f| {
+        let (head, path) = match line.rsplit_once(" · ") {
+            Some((h, p)) => (format!("{h} · "), p),
+            None => (String::new(), line),
+        };
+        let head_w: f32 = head.chars().map(|c| f.glyph_width(&font, c)).sum();
+        let path = elide_by(path, (max - head_w).max(40.0), Ellipsis::Path, |c| {
+            f.glyph_width(&font, c)
+        });
+        format!("{head}{path}")
+    });
+    let r = ui.add(egui::Label::new(Text::mono(&shown, cx.pal)).truncate());
+    r.on_hover_text(line);
 }
 fn report(result: Result<(), String>, out: &mut Vec<Action>) {
     if let Err(text) = result {

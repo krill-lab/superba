@@ -6,7 +6,7 @@ The isolated home gets three channels (Telegram, Feishu with a signing secret,
 WeChat through ServerChan) added with `spb notify channels add` (fake tokens,
 the file secret backend; nothing is sent) and Codex's `notify` hook installed
 in a throwaway CODEX_HOME. Each shot opens the section through the command
-palette (Ctrl+K "notify" / the add-channel entry), so no coordinates of the
+`--command notify:add`, so no coordinates of the
 page are needed:
 
 1. `notify-<lang>.png`: the top of the section (switch, channels).
@@ -104,10 +104,8 @@ def main():
         seed(s, s.bin / "spb")
         s.check_paths()
 
-        def open_with(query, scroll=0):
+        def open_with(_what, scroll=0):
             def act(s):
-                shoot.palette_action(query)(s)
-                s.input.key("Return")
                 time.sleep(1.2)
                 if scroll:
                     s.input.scroll(760, 500, scroll)
@@ -121,12 +119,12 @@ def main():
                    actions=open_with("notification settings"), size=SIZE)
             s.shot(f"notify-more-{suffix}", "notify", "light", lang,
                    actions=open_with("notification settings", scroll=9), size=SIZE)
-            s.shot(f"notify-add-{suffix}", "notify", "light", lang,
+            s.shot(f"notify-add-{suffix}", "notify#notify:add", "light", lang,
                    actions=open_with("add notification channel"), size=SIZE)
 
             wechat = open_with("add serverchan channel")
 
-            s.shot(f"notify-add-wechat-{suffix}", "notify", "light", lang,
+            s.shot(f"notify-add-wechat-{suffix}", "notify#notify:add:serverchan", "light", lang,
                    actions=wechat, size=SIZE)
         s.shot("notify-dark-zh", "notify", "dark", "zh-CN",
                actions=open_with("notification settings"), size=SIZE)

@@ -411,7 +411,12 @@ fn sidebar_tabs_align_with_the_card_and_remain_visible_at_minimum_size() {
             let drag = chrome::drag_rects(screen(window))[0];
             assert!(f64::from(drag.bottom()) <= first.y0);
             let mut previous = first.y0;
-            for page in Page::ALL {
+            // The tools' entries show only when installed (user request 114;
+            // sidebar_tools_tests).
+            for page in Page::ALL
+                .into_iter()
+                .filter(|p| !matches!(p, Page::Tool(_)))
+            {
                 let name = tr.t(page.sidebar_page().title_key());
                 let id = tree
                     .find_all(Some(Role::Tab), &name)

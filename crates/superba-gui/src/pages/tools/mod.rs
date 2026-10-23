@@ -84,6 +84,7 @@ pub struct State {
     pub preview: Option<HarnessView>,
     preview_load: Latest<(HarnessId, HarnessSettings), HarnessView>,
     list_task: Option<ReadTask<Vec<HarnessSummary>>>,
+    listed_at: Option<std::time::Instant>,
     claude_task: Option<ReadTask<ClaudeView>>,
     view_load: Latest<HarnessId, HarnessView>,
     loaded_profiles: Option<ProfileSet>,
@@ -153,6 +154,7 @@ impl State {
         self.loaded_active = cx.data.active_profile().map(|p| p.id.clone());
         let svc = cx.service.clone();
         self.list_task = Some(task(async move { svc.harness_list().await }));
+        self.listed_at = Some(std::time::Instant::now());
         let svc = cx.service.clone();
         self.claude_task = Some(task(async move { svc.claude_view().await }));
         if let Some(h) = self.selected.harness() {
@@ -452,6 +454,89 @@ pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
         state.models_open = false;
     }
     if let (Some(h), Some(rect)) = (tool, rects.get(1)) {
+        ui.painter().hline(
+            rect.x_range(),
+            rect.min.y - space::S / 2.0,
+            egui::Stroke::new(1.0, cx.pal.border),
+        );
+        layout::fixed(ui, *rect, |ui| footer(ui, cx, state, h));
+    }
+    models::chooser(ui, cx, state, out);
+    detail::review(ui, cx, state);
+}
+
+/// The tool was found on this computer (its program or app; user request
+/// 114: only then does it get a sidebar entry).
+pub fn installed(state: &State, h: HarnessId) -> bool {
+    state
+        .summaries
+        .iter()
+        .any(|s| s.harness == h && s.install.is_some())
+}
+
+/// How often the sidebar looks for newly installed or removed tools.
+const RELIST: Duration = Duration::from_secs(60);
+
+/// Keep the tool list current on every page (the sidebar shows the
+/// installed tools): the first load, then a quiet re-list every minute.
+pub fn background(state: &mut State, cx: &Cx<'_>) {
+    state.poll(cx);
+    if state.list_task.is_none() && state.listed_at.is_none_or(|t| t.elapsed() >= RELIST) {
+        let svc = cx.service.clone();
+        state.list_task = Some(task(async move { svc.harness_list().await }));
+        state.listed_at = Some(std::time::Instant::now());
+    }
+}
+
+/// One tool as a page of its own (its sidebar entry): the Tools page's
+/// detail and footer for `h`, without the list.
+pub fn show_one(
+    ui: &mut egui::Ui,
+    cx: &Cx<'_>,
+    state: &mut State,
+    h: HarnessId,
+    out: &mut Vec<Action>,
+) {
+    if state.selected != Selection::Tool(h) {
+        state.selected = Selection::Tool(h);
+        state.preview = None;
+        state.search.clear();
+        state.models_open = false;
+        if state.initialized {
+            state.load_view(cx, h);
+        }
+    }
+    state.poll(cx);
+    if state.busy() || state.view_load.loading() || state.preview_load.loading() {
+        ui.ctx().request_repaint_after(Duration::from_millis(60));
+    }
+    page_header(ui, cx, Page::Tool(h), |ui| {
+        if ui
+            .add(
+                Button::ghost(cx.tr.t("tools.reload"))
+                    .icon(Icon::Refresh)
+                    .small(),
+            )
+            .clicked()
+        {
+            state.reload(cx);
+        }
+    });
+    if state.editor.open {
+        files::show(ui, cx, &mut state.editor);
+        if !state.editor.open {
+            state.reload(cx);
+        }
+        return;
+    }
+    let body = ui.available_rect_before_wrap();
+    let rects = layout::row_rects(body, &[Track::Fill, Track::Fixed(size::FOOTER)], space::S);
+    let mut detail_out = Vec::new();
+    layout::fixed(ui, rects[0], |ui| {
+        detail::show(ui, cx, state, &mut detail_out)
+    });
+    out.extend(detail_out);
+    if let Some(rect) = rects.get(1) {
         ui.painter().hline(
             rect.x_range(),
             rect.min.y - space::S / 2.0,

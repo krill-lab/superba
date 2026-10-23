@@ -29,7 +29,7 @@ use superba_core::{HostSyncPlan, HostView, TargetId, VersionsView};
 
 use super::router::db::Loader;
 use super::shared::hosts as names;
-use super::{Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, page_header};
+use super::{Action, Cx, Page, PageStatus, page_header};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
 use crate::design::widgets::{Button, Status};
@@ -423,43 +423,6 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     if state.sync.is_some() {
         sync::show(ui, cx, state, out);
     }
-}
-
-/// Command palette entries: sync settings to each SSH host.
-pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem> {
-    let hosts: Vec<(TargetId, String)> = match &state.hosts.value {
-        Some(list) => list
-            .iter()
-            .filter(|h| h.host.is_app_known() && h.host.is_managed())
-            .map(|h| (h.host.target_id.clone(), names::title(cx.tr, &h.host)))
-            .collect(),
-        None => cx
-            .data
-            .overview
-            .value
-            .as_ref()
-            .map(|o| {
-                o.remotes
-                    .iter()
-                    .filter(|r| r.host.is_app_known() && r.host.is_managed())
-                    .map(|r| (r.host.target_id.clone(), names::title(cx.tr, &r.host)))
-                    .collect()
-            })
-            .unwrap_or_default(),
-    };
-    hosts
-        .into_iter()
-        .map(|(id, label)| PaletteItem {
-            title: cx.tr.f("hosts.palette.sync", &[("host", &label)]),
-            detail: Some(cx.tr.t("hosts.palette.sync_detail")),
-            keywords: vec!["remote".into(), "ssh".into(), "sync".into(), label.clone()],
-            group: PaletteGroup::Commands,
-            action: Action::PageCommand {
-                page: Page::Hosts,
-                command: format!("sync:{id}"),
-            },
-        })
-        .collect()
 }
 
 /// Run a command addressed to this page: `refresh`, `select:<target id>`,

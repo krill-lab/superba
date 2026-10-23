@@ -120,7 +120,7 @@ pub fn replace_files(pairs: &[(PathBuf, PathBuf)]) -> Result<Vec<String>> {
         }
     };
     for (src, target) in pairs {
-        let real = fs::canonicalize(target).unwrap_or_else(|_| target.clone());
+        let real = superba_core::paths::canonical(target).unwrap_or_else(|_| target.clone());
         let new = sibling(&real, NEW_MARK);
         let _ = fs::remove_file(&new);
         if let Err(e) = fs::copy(src, &new) {

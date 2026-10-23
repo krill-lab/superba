@@ -176,14 +176,6 @@ fn a_member_set_outside_the_page_unlocks_turn_on_without_a_reload() {
         f.all_text()
     );
     assert!(!f.has("添加 Krill 为成员"), "{}", f.all_text());
-    // The palette offers turning it on, not "set up".
-    h.frame(|_, cx, _| {
-        let titles: Vec<String> = router::palette(cx, &state)
-            .into_iter()
-            .map(|i| i.title)
-            .collect();
-        assert!(titles.contains(&"开启本地路由".to_owned()), "{titles:?}");
-    });
     // 开启 is enabled: it starts the router and plans router mode.
     h.click_text(&f, "开启路由…");
     h.until(
@@ -337,14 +329,4 @@ fn english_wording_and_the_diagnostics_dialog() {
         |f| f.has("Local router diagnostics") && !f.has("Collecting diagnostics…"),
     );
     assert!(f.has("Copy"), "{}", f.all_text());
-    h.frame(|_, cx, _| {
-        let titles: Vec<String> = router::palette(cx, &state)
-            .into_iter()
-            .map(|i| i.title)
-            .collect();
-        assert!(
-            titles.contains(&"Local router diagnostics".to_owned()),
-            "{titles:?}"
-        );
-    });
 }

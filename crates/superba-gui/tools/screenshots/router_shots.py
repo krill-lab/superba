@@ -7,7 +7,7 @@ PAT for direct switches (`--auth pat`) and a custom site without a key, no route
 member. The Router page then shows 开启 disabled, the reason under the banner and
 the fixes ("添加 Krill 为成员": a PAT profile still has its key, which the router
 sends as an API key, user bug 78; "为 … 填写 API key"). The diagnostics dialog is opened through the
-command palette ("doctor") and shows the real `router_doctor` report of that
+`--command doctor` and shows the real `router_doctor` report of that
 HOME. Nothing is installed and no button is clicked.
 
 Like shoot.py it re-runs itself in an unprivileged user + PID namespace, with an
@@ -39,9 +39,7 @@ spec.loader.exec_module(shoot)
 
 
 def doctor_action(s):
-    """Open 诊断 from the palette and wait for the report."""
-    shoot.palette_action("doctor")(s)
-    s.input.key("Return")
+    """Wait for the report of 诊断 (opened with `--command doctor`)."""
     time.sleep(4.0)
     s.input.park()
 
@@ -103,7 +101,8 @@ def main():
                                  (f"router-doctor-{tail}", doctor_action)):
                 if only and not any(name.startswith(p) for p in only):
                     continue
-                s.shot(name, "router", theme, lang, 7.0, action, SIZE)
+                page = "router#doctor" if action else "router"
+                s.shot(name, page, theme, lang, 7.0, action, SIZE)
     finally:
         s.close()
 

@@ -1206,6 +1206,7 @@ fn still_running(pids: &[(u32, &str)]) -> superba_core::QuitReport {
             superba_core::QuitStep::ClosedWindows,
             superba_core::QuitStep::Waited { ms: 5_000 },
             superba_core::QuitStep::Ended {
+                failed_names: Vec::new(),
                 ended: 14,
                 failed: 1,
             },
@@ -2281,4 +2282,24 @@ async fn a_failed_relaunch_is_reported_at_once_and_not_as_a_plain_written_switch
         !keys.contains(&"switch.done.written_only".to_owned()),
         "{keys:?}"
     );
+}
+
+/// alpha.9: a lock busy for a moment (a spawned child still holding a copy of
+/// the descriptor until its exec) is waited for; one really held is reported.
+#[test]
+fn a_state_lock_busy_for_a_moment_is_waited_for() {
+    let w = World::new();
+    let held = StateLock::acquire(&w.ctx.data_dir).unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        drop(held);
+    });
+    StateLock::acquire(&w.ctx.data_dir).expect("taken once the brief holder let go");
+    release.join().unwrap();
+
+    let _held = StateLock::acquire(&w.ctx.data_dir).unwrap();
+    let start = std::time::Instant::now();
+    let err = StateLock::acquire(&w.ctx.data_dir).unwrap_err();
+    assert_eq!(err.code(), "locked");
+    assert!(start.elapsed() >= superba_switch::journal::STATE_LOCK_GRACE);
 }

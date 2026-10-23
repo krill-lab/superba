@@ -18,7 +18,7 @@ use superba_core::{
 };
 
 use super::superba::{row, search};
-use super::{Action, Cx, Page, PaletteGroup, PaletteItem, error_text, section};
+use super::{Action, Cx, error_text, section};
 use crate::design::icons::Icon;
 use crate::design::widgets::{
     Badge, Button, Card, Dropdown, KeyInput, Segmented, Status, Text, Toggle, dialog, dialog_body,
@@ -154,67 +154,6 @@ impl State {
     pub fn modal(&self) -> bool {
         self.editor.is_some() || self.delete.is_some()
     }
-}
-
-/// Command-palette entries: open the section, add a channel, send a test.
-pub fn palette(cx: &Cx<'_>) -> Vec<PaletteItem> {
-    let item = |key: &str, command: &str, english: &str| {
-        let mut keywords: Vec<String> = [
-            "notifications",
-            "telegram",
-            "wechat",
-            "feishu",
-            "lark",
-            "dingtalk",
-            "wecom",
-            "bark",
-            "ntfy",
-            "webhook",
-        ]
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-        // English words for the Chinese UI too (a query typed in English).
-        keywords.push(english.to_owned());
-        PaletteItem {
-            title: cx.tr.t(key),
-            detail: Some(cx.tr.t("prefs.notify.title")),
-            keywords,
-            group: PaletteGroup::Commands,
-            action: Action::PageCommand {
-                page: Page::Superba(crate::pages::SuperbaSection::Notify),
-                command: command.into(),
-            },
-        }
-    };
-    let mut items = vec![
-        item("prefs.notify.title", "notify:show", "notification settings"),
-        item(
-            "prefs.notify.channels.add",
-            "notify:add",
-            "add notification channel",
-        ),
-        item(
-            "prefs.notify.channels.test_all",
-            "notify:test",
-            "test notifications",
-        ),
-    ];
-    // "Add a channel: WeChat (ServerChan)", one per kind.
-    for kind in ChannelKind::ALL {
-        let label = kind_label(cx, kind);
-        let mut it = item(
-            "prefs.notify.channels.add",
-            &format!("notify:add:{}", kind.id()),
-            &format!("add {} channel", kind.id()),
-        );
-        it.title = cx
-            .tr
-            .f("prefs.notify.palette.add_kind", &[("kind", &label)]);
-        it.keywords.push(kind.label().fallback);
-        items.push(it);
-    }
-    items
 }
 
 /// Run a Preferences command addressed to this section.
@@ -492,7 +431,12 @@ fn body(
     // Unused (off, no channel): the switch and "Add channel" only, so the
     // page stays short for people who do not want notifications.
     let on = settings.notify.enabled;
-    if on || !settings.notify.channels.is_empty() || search::pending(ui.ctx()) || state.show_all {
+    if on
+        || !settings.notify.channels.is_empty()
+        || search::pending(ui.ctx())
+        || search::filtering(ui.ctx())
+        || state.show_all
+    {
         state.show_all = true;
         ui.add_space(12.0);
         ui.add_enabled_ui(on, |ui| {
@@ -675,7 +619,11 @@ fn events_card(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings) {
             .num_columns(columns * 2)
             .spacing([12.0, 10.0])
             .show(ui, |ui| {
-                for (i, (value, key)) in items.into_iter().enumerate() {
+                let ctx = ui.ctx().clone();
+                let shown = items
+                    .into_iter()
+                    .filter(|(_, key)| search::visible(&ctx, &[&cx.tr.t(key), key]));
+                for (i, (value, key)) in shown.enumerate() {
                     let label = cx.tr.t(key);
                     let r = ui.add(Toggle::new(value, label.clone()));
                     search::anchor(ui, key, &label, r.rect);
@@ -742,7 +690,11 @@ fn content_card(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, state: &mut S
                     (&mut n.content.usage, "prefs.notify.content.usage"),
                     (&mut n.content.host, "prefs.notify.content.host"),
                 ];
-                for (i, (value, key)) in items.into_iter().enumerate() {
+                let ctx = ui.ctx().clone();
+                let shown = items
+                    .into_iter()
+                    .filter(|(_, key)| search::visible(&ctx, &[&cx.tr.t(key), key]));
+                for (i, (value, key)) in shown.enumerate() {
                     let label = cx.tr.t(key);
                     let r = ui.add(Toggle::new(value, label.clone()));
                     search::anchor(ui, key, &label, r.rect);

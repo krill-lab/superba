@@ -39,8 +39,8 @@ use crate::Switcher;
 pub const DB_FILE: &str = "imported-usage.sqlite3";
 /// Rows of one query at most (newest first beyond it are left out).
 pub const MAX_ROWS: usize = 200_000;
-/// Ids of imported rows lie below this (rollout rows are `-2^62 ..= -1`,
-/// router rows positive).
+/// Ids of imported rows lie below this (Claude Code transcript rows are
+/// `-2^62 ..< -2^61`, rollout rows `-2^61 ..= -1`, router rows positive).
 pub const ID_LIMIT: i64 = -(1 << 62);
 
 /// The row id of an imported request (stable, below [`ID_LIMIT`]).
@@ -472,6 +472,7 @@ fn request_row(source: ImportSource, r: &rusqlite::Row<'_>) -> rusqlite::Result<
         requested_model: None,
         session_id: None,
         agent_kind: None,
+        attempts: Vec::new(),
     })
 }
 

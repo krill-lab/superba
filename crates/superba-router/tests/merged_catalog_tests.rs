@@ -1144,3 +1144,137 @@ fn slugs_use_the_saved_value_an_ascii_name_the_domain_then_a_number() {
         Some("deepseek")
     );
 }
+
+/// User bug 106 end to end, through the router's own files: a third-party
+/// model (`deepseek-v4.1-flash` in a provider's `/v1/models`) passes its tool
+/// probe. In Codex mode it is withheld (and the view says so); switching the
+/// mode publishes it at once, shown in the picker; Responses answers carry the
+/// list's tag so Codex refetches the list; the pass survives a router restart.
+#[tokio::test]
+async fn bug106_a_passed_provider_model_reaches_codex_after_a_mode_switch() {
+    const ID: &str = "deepseek-v4.1-flash";
+    let krill = upstream(krill_reply()).await;
+    // The provider marks it hidden in its own list metadata: a verified model
+    // is still shown unless the user hides it here.
+    let office = upstream(office_reply(
+        json!({"data":[{"id":ID,"visibility":"hide"}]}),
+    ))
+    .await;
+    let mut cfg = office_and_krill(&krill, &office, CatalogMode::Codex);
+    let temp = tempfile::tempdir().unwrap();
+    let paths = superba_router::RouterPaths::from_dir(temp.path().join("router"));
+    cfg.save(&paths).unwrap();
+    let secrets = secrets_for(&cfg);
+    secrets.save(&paths).unwrap();
+    async fn boot(paths: &superba_router::RouterPaths) -> (Router, tokio::task::JoinHandle<()>) {
+        let server = superba_router::RouterServer::bind_from_files(paths.clone())
+            .await
+            .unwrap();
+        let r = Router {
+            addr: server.local_addr(),
+            admin_token: server.admin_token().expose().to_owned(),
+            handle: server.shutdown_handle(),
+            http: reqwest::Client::builder().no_proxy().build().unwrap(),
+        };
+        let task = tokio::spawn(async move { server.serve().await.unwrap() });
+        (r, task)
+    }
+    async fn reload(r: &Router) {
+        let status = r
+            .http
+            .post(r.url("/_superba/v1/reload"))
+            .bearer_auth(&r.admin_token)
+            .send()
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, 200);
+    }
+    async fn served(r: &Router) -> (Value, String) {
+        let resp = r
+            .http
+            .get(r.url("/models?client_version=0.163.0"))
+            .bearer_auth(ROUTER_TOKEN)
+            .send()
+            .await
+            .unwrap();
+        let etag = resp.headers()["etag"].to_str().unwrap().to_owned();
+        (resp.json().await.unwrap(), etag)
+    }
+    async fn models_etag(r: &Router) -> String {
+        let resp = r
+            .post(None, r#"{"model":"gpt-test","input":"hello"}"#)
+            .await;
+        assert_eq!(resp.status(), 200);
+        resp.headers()["x-models-etag"].to_str().unwrap().to_owned()
+    }
+    let (r, task) = boot(&paths).await;
+
+    // Codex mode: withheld, and the view names it for the Models page.
+    let (list, codex_tag) = served(&r).await;
+    assert!(!listed(&list, ID));
+    let view = report(&r).await;
+    assert!(view.model(ID).is_none());
+    assert!(view.withheld.iter().any(|w| w == ID), "{:?}", view.withheld);
+    // The test still runs (the page offers it) and passes...
+    let test = probe(&r, ID).await;
+    assert!(test.passed, "{}", test.detail);
+    assert_eq!(test.detail, "Two-turn function call passed");
+    // ...but Codex mode keeps it out.
+    assert!(!listed(&served(&r).await.0, ID));
+    assert_eq!(models_etag(&r).await, codex_tag);
+
+    // Provider models: published right away, shown in the picker.
+    cfg.catalog.as_mut().unwrap().settings.mode = CatalogMode::Extended;
+    cfg.save(&paths).unwrap();
+    reload(&r).await;
+    // Before Codex fetched the new list, Responses name another list.
+    assert_ne!(models_etag(&r).await, codex_tag);
+    let (list, extended_tag) = served(&r).await;
+    let entry = list["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["slug"] == ID)
+        .expect("published in provider-models mode")
+        .clone();
+    assert_eq!(entry["visibility"], "list");
+    assert_ne!(extended_tag, codex_tag);
+    assert_eq!(models_etag(&r).await, extended_tag);
+    assert!(report(&r).await.withheld.is_empty());
+
+    // Prefixed: the bare id and the pinned alias.
+    cfg.catalog.as_mut().unwrap().settings.mode = CatalogMode::Prefixed;
+    cfg.save(&paths).unwrap();
+    reload(&r).await;
+    let list = served(&r).await.0;
+    assert!(listed(&list, ID));
+    assert!(listed(&list, &format!("p2/{ID}")), "{list}");
+
+    // A router restart keeps the pass (it is on disk, keyed to the key).
+    r.handle.shutdown();
+    task.await.unwrap();
+    let (r, task) = boot(&paths).await;
+    assert!(listed(&served(&r).await.0, ID));
+
+    // The user's own choice to hide it wins.
+    cfg.catalog
+        .as_mut()
+        .unwrap()
+        .settings
+        .visibility
+        .insert(ID.into(), false);
+    cfg.save(&paths).unwrap();
+    reload(&r).await;
+    let list = served(&r).await.0;
+    let entry = list["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["slug"] == ID)
+        .unwrap()
+        .clone();
+    assert_eq!(entry["visibility"], "hide");
+    r.handle.shutdown();
+    task.await.unwrap();
+}

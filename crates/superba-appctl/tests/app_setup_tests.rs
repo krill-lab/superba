@@ -11,6 +11,7 @@ use superba_core::ActivitySignal;
 
 fn entry(pid: u32, ppid: u32, exe: Option<&str>, argv: &[&str]) -> ProcEntry {
     ProcEntry {
+        name: None,
         pid,
         ppid: Some(ppid),
         exe: exe.map(PathBuf::from),

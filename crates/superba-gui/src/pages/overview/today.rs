@@ -39,7 +39,7 @@ pub fn delta_text(delta: Delta) -> Option<String> {
 }
 
 /// Draw the card.
-pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>) {
+pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<super::Action>) {
     let tr = cx.tr;
     let view = snap.map(|s| TodayView::of(&s.today, &s.yesterday_same, &s.yesterday, &s.month));
     let tokens = tr.t("overview.unit.tokens");
@@ -61,6 +61,12 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>) {
     });
     ui.add_space(2.0);
     kpi_row(ui, cx, view.as_ref(), &tokens);
+    // Every tool with use today (two or more): one chip each.
+    if let (Some(s), Some(v)) = (snap, view.as_ref())
+        && s.tools_today.len() > 1
+    {
+        super::tools::chips(ui, cx, &s.tools_today, v.measure, out);
+    }
     ui.add_space(10.0);
     split(ui, cx, view.as_ref());
     ui.add_space(12.0);
@@ -321,8 +327,11 @@ fn heat_strip(ui: &mut Ui, cx: &Cx<'_>, rect: Rect, snap: Option<&Snapshot>) {
             vec2(cw - gap, ch - gap),
         )
     };
+    // Rows too short for every label: today and every other day.
+    let sparse = ch < 13.0;
     for d in 0..usage::DAYS {
-        if snap.is_some() {
+        let labelled = !sparse || d == usage::DAYS - 1 || (usage::DAYS - 1 - d).is_multiple_of(2);
+        if snap.is_some() && labelled {
             p.text(
                 pos2(rect.min.x, grid.min.y + d as f32 * ch + (ch - gap) / 2.0),
                 Align2::LEFT_CENTER,

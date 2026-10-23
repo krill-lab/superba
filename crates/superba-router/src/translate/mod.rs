@@ -202,6 +202,7 @@ pub(crate) fn stats_usage(u: ir::Usage) -> Option<crate::stats::usage::Usage> {
         output: u.output.unwrap_or(0),
         cached: u.cache_read,
         cache_write: u.cache_write,
+        cache_write_1h: u.cache_write_1h,
         reasoning: u.reasoning,
     })
 }

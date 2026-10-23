@@ -78,7 +78,10 @@ pub(crate) const ROW_COLUMNS: &str = "id, started_ms, prompt_cache_key, thread_i
      input_tokens, cached_tokens, cache_write_tokens, output_tokens, reasoning_tokens, ttfb_ms, \
      first_token_ms, duration_ms, tps_milli, cost_micros, price_rev, injected, stripped, \
      upstream_request_id, codex_host, harness, harness_version, protocol, requested_model, \
-     session_id, agent_kind, response_id";
+     session_id, agent_kind, response_id, attempts";
+
+/// Index of the `attempts` column in [`ROW_COLUMNS`].
+const ATTEMPTS_COLUMN: usize = 48;
 
 /// Number of [`ROW_COLUMNS`] (the detail fields follow them).
 fn row_column_count() -> usize {
@@ -219,6 +222,10 @@ pub(crate) fn row_from_sql(r: &Row<'_>) -> rusqlite::Result<RequestRow> {
         session_id: r.get(45)?,
         agent_kind: agent_kind.as_deref().and_then(enum_parse),
         response_id: r.get(47)?,
+        attempts: r
+            .get::<_, Option<String>>(ATTEMPTS_COLUMN)?
+            .and_then(|j| serde_json::from_str::<Vec<RequestAttempt>>(&j).ok())
+            .unwrap_or_default(),
     })
 }
 
@@ -961,6 +968,59 @@ impl Reader {
             out.extend(rows);
         }
         out.sort_by_key(|r| (r.started_at, r.id));
+        Ok(out)
+    }
+
+    /// Claude Code rows started in `[from, to)` whose session id is one of
+    /// `sessions` or whose response id is one of `responses`: what Claude
+    /// Code transcript rows are matched against.
+    pub fn claude_rows_for(
+        &self,
+        from: Option<Timestamp>,
+        to: Option<Timestamp>,
+        sessions: &[String],
+        responses: &[String],
+    ) -> Result<Vec<RequestRow>> {
+        let Some(conn) = open_read_only(&self.paths.usage_db())? else {
+            return Ok(Vec::new());
+        };
+        let mut out: Vec<RequestRow> = Vec::new();
+        for (column, values) in [("session_id", sessions), ("response_id", responses)] {
+            for chunk in values.chunks(400) {
+                let mut f = Filter::new();
+                f.raw("harness = 'claude_code'");
+                if column == "session_id" {
+                    if let Some(from) = from {
+                        f.push("started_ms >= ?", SqlValue::Integer(from.as_millis()));
+                    }
+                    if let Some(to) = to {
+                        f.push("started_ms < ?", SqlValue::Integer(to.as_millis()));
+                    }
+                }
+                let base = f.params.len();
+                let marks: Vec<String> = (1..=chunk.len())
+                    .map(|i| format!("?{}", base + i))
+                    .collect();
+                f.params.extend(chunk.iter().map(|t| text(t)));
+                f.clauses
+                    .push(format!("{column} IN ({})", marks.join(", ")));
+                let sql = format!(
+                    "SELECT {} FROM requests{} ORDER BY started_ms ASC, id ASC LIMIT {}",
+                    row_columns(&conn),
+                    f.sql(),
+                    MAX_QUERY_ROWS * 10
+                );
+                let mut stmt = conn.prepare(&sql).map_err(sql_err)?;
+                let rows = stmt
+                    .query_map(params_from_iter(f.params.iter()), row_from_sql)
+                    .map_err(sql_err)?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(sql_err)?;
+                out.extend(rows);
+            }
+        }
+        out.sort_by_key(|r| (r.started_at, r.id));
+        out.dedup_by_key(|r| r.id);
         Ok(out)
     }
 }

@@ -14,8 +14,8 @@ real desktop app is launched through `spb launch` so the hot-switch countdown ca
 be captured.
 
 Every page is shot at 1280x800 and 1440x900 (`--sizes`), dark and light, English
-and Chinese; extra states: the command palette and the setup wizard (opened again
-from the palette with an existing provider).
+and Chinese; extra state: the setup wizard (opened again with `--command wizard`
+with an existing provider).
 
 Requirements: Linux, Xvfb, xdotool, libX11 + libXtst (XTEST), scrot, openssl,
 Python 3.11 (stdlib only).
@@ -34,7 +34,6 @@ after `windowfocus` on the Superba window. Ad-hoc driver scripts load this file
     inp.move(600, 200)            # hover
     inp.scroll(700, 500, 5)       # wheel down 5 notches (negative: up)
     inp.park()                    # bottom-right corner of the screen, outside the window
-    inp.key("ctrl+k"); inp.type("cdn"); inp.key("Return")
 
     python3 -I crates/superba-gui/tools/screenshots/shoot.py \\
         --bin-dir target/debug [--display :176] [--out docs/screenshots] \\
@@ -204,7 +203,7 @@ class Input:
         self.xdo("search", "--sync", "--name", self.window, "windowfocus", "--sync")
 
     def key(self, *combos):
-        """Key presses such as "ctrl+k", "Return", "Escape", "Tab"."""
+        """Key presses such as "ctrl+f", "Return", "Escape", "Tab"."""
         self.focus()
         self.xdo("key", "--delay", "60", *combos)
 
@@ -212,6 +211,12 @@ class Input:
         """Type text (any characters)."""
         self.focus()
         self.xdo("type", "--delay", str(delay), text)
+
+
+def page_args(page):
+    """`--page` (and `--command`) arguments of a shot page."""
+    page, _, command = page.partition("#")
+    return ["--page", page] + (["--command", command] if command else [])
 
 
 class Session:
@@ -373,6 +378,9 @@ class Session:
         self.run([spb, "profile", "add", "krill", "--name", "Krill", "--site", "krill-local",
                   "--line", "overseas", "--auth", "pat", "--key-stdin"], stdin=KEY + "\n")
         self.run([spb, "profile", "use", "krill", "--yes", "--countdown", "0"], check=False)
+        for line in self.args.disable_line or []:
+            # A disabled line (user bug 108) for the Providers page's shots.
+            self.run([spb, "profile", "edit", "krill", "--disable-line", line])
         p = self.run([spb, "status"], check=False)
         log("status after setup:\n" + p.stdout.strip())
         self.run([spb, "site", "add", "example-api", "--name", "Example API",
@@ -407,6 +415,12 @@ class Session:
         if self.args.no_router_log:
             # Rows of the Usage page then come from the rollouts only.
             (data / "router" / "usage.sqlite3").unlink(missing_ok=True)
+        if self.args.tools > 1 and not self.args.no_router_log:
+            # Other coding tools' requests (the Overview's lanes and chips).
+            p = self.run([sys.executable, "-I", str(HERE / "tools_usage.py"),
+                          "--data-dir", str(data), "--home", str(self.home),
+                          "--tools", str(self.args.tools)])
+            log(f"tools: {p.stdout.strip()}")
         if self.args.rollouts:
             p = self.run([sys.executable, "-I", str(HERE / "rollouts.py"),
                           "--codex-home", str(self.home / ".codex"),
@@ -420,8 +434,12 @@ class Session:
             spb = str(self.args.bin_dir / "spb")
             p = self.run([spb, "router", "enable", "--member", "krill", "--yes",
                           "--write-only"], check=False)
-            log(f"spb router enable rc={p.returncode}")
+            log(f"spb router enable rc={p.returncode} {p.stderr.strip()[:300]}")
             if p.returncode == 0:
+                if self.args.tools > 1:
+                    # Claude Code through the router too (the Overview's lanes).
+                    p = self.run([spb, "claude", "route", "router"], check=False)
+                    log(f"spb claude route router rc={p.returncode} {p.stderr.strip()[:200]}")
                 return
             # Older builds: point Codex at a local router by hand.
             cfg = self.home / ".codex" / "config.toml"
@@ -439,11 +457,12 @@ class Session:
         return self.input.xdo(*args)
 
     def shot(self, name, page, theme, lang, wait=6.0, actions=None, size=SIZE):
+        """`page` is a `--page` name, or `page#command` (see `page_command`)."""
         guard(self.home)
         out = self.args.out / f"{name}.png"
         gui = subprocess.Popen(
             [str(self.args.bin_dir / "superba"), "--size", f"{size[0]}x{size[1]}",
-             "--theme", theme, "--lang", lang, "--page", page],
+             "--theme", theme, "--lang", lang, *page_args(page)],
             env=self.env(), cwd=self.home, stdout=subprocess.DEVNULL,
             stderr=open(self.work / "gui.err", "a"), start_new_session=True)
         try:
@@ -578,46 +597,50 @@ def focus(s):
     time.sleep(0.3)
 
 
-def palette_action(query):
+def page_command(page, command):
+    """A shot page that runs `command` on `page` once it has loaded
+    (`superba --page PAGE --command CMD`). The Cmd/Ctrl+K command palette the
+    older helpers typed into is gone (user request 118)."""
+    return f"{page}#{command}"
+
+
+def wizard_action(_query=None):
+    """Go from the wizard's first step to its provider step (the shot page
+    opens it with `page_command("overview", "wizard")`)."""
     def act(s):
         focus(s)
-        s.input.key("ctrl+k")
-        time.sleep(0.6)
-        s.input.type(query)
-        time.sleep(0.4)
-    return act
-
-
-def overview_actions(size):
-    """Open the Overview Actions menu without selecting an operation."""
-    def act(s):
-        focus(s)
-        s.input.click(size[0] - 54, 70)
-        s.input.park()
-    return act
-
-
-def wizard_action(query):
-    """Open the setup wizard from the palette (a re-run with an existing provider)
-    and go to its provider step."""
-    def act(s):
-        palette_action(query)(s)
-        s.input.key("Return")
-        time.sleep(1.0)
         s.input.key("Return")
         time.sleep(0.4)
-    return act
-
-
-def countdown_action(query):
-    def act(s):
-        palette_action(query)(s)
-        s.input.key("Return")
-        time.sleep(6.0)
     return act
 
 
 NS_ENV = "SUPERBA_SHOTS_NS"
+
+
+def sessions_action(kind, size):
+    """Sessions page: right-click the second row (its menu), or open the
+    migration tool from the header button."""
+    def act(s):
+        w = size[0]
+        focus(s)
+        if kind == "menu":
+            s.input.click(330 if w >= 1100 else 320, 244, button=3)
+        else:
+            s.input.click(1060 if w >= 1100 else 780, 76)
+        time.sleep(1.0)
+        if kind == "migrate":
+            s.input.park()
+    return act
+
+
+def click_action(x, y):
+    """Click one point of the window (a rail item), then park the pointer."""
+    def act(s):
+        focus(s)
+        s.input.click(x, y)
+        time.sleep(0.4)
+        s.input.park()
+    return act
 
 
 def enter_namespace():
@@ -640,15 +663,22 @@ def main():
     ap.add_argument("--app-dir", type=Path)
     ap.add_argument("--only", help="comma-separated shot name prefixes")
     ap.add_argument("--keep", action="store_true", help="keep the work directory")
+    ap.add_argument("--installed", default="",
+                    help="comma-separated commands given stand-in programs on PATH "
+                         "(dsh,opencode,pi,gemini): those tools look installed")
     ap.add_argument("--rollouts", action="store_true",
                     help="write Codex rollout files (rollouts.py) for the Usage page")
     ap.add_argument("--no-router-log", action="store_true",
                     help="no router request log (Usage rows from the rollouts only)")
+    ap.add_argument("--tools", type=int, default=1,
+                    help="coding tools with requests, Codex included (tools_usage.py; 1 = Codex only)")
     ap.add_argument("--router-on", action="store_true",
                     help="point Codex at a local router (router mode on, nothing runs)")
     ap.add_argument("--sizes", default=",".join(f"{w}x{h}" for w, h in SIZES),
                     help="comma-separated window sizes WxH (the first keeps plain names)")
     ap.add_argument("--size", help="a single window size WxH (same as --sizes WxH)")
+    ap.add_argument("--disable-line", action="append", metavar="LINE",
+                    help="disable this line of the Krill provider (repeatable)")
     args = ap.parse_args()
     sizes = args.size or args.sizes
     args.sizes = [tuple(int(x) for x in v.lower().split("x", 1)) for v in sizes.split(",") if v]
@@ -667,6 +697,10 @@ def main():
         s.start_relay()
         s.write_sites()
         s.copy_app()
+        for name in filter(None, args.installed.split(",")):
+            stub = s.bin / name
+            stub.write_text("#!/bin/sh\necho 1.0.0\n")
+            stub.chmod(0o755)
         s.provision()
         s.check_paths()
         shots = []
@@ -676,21 +710,19 @@ def main():
                 suffix = f"{theme}-{'zh' if lang == 'zh-CN' else 'en'}{tail}"
                 for page in PAGES:
                     shots.append((f"{page}-{suffix}", page, theme, lang, 7.0, None, size))
-                shots.append((f"overview-actions-{suffix}", "overview", theme, lang, 7.0,
-                              overview_actions(size), size))
-            shots.append((f"palette-dark-en{tail}", "overview", "dark", "en", 6.0,
-                          palette_action("cdn"), size))
-            shots.append((f"palette-light-zh{tail}", "overview", "light", "zh-CN", 6.0,
-                          palette_action("over"), size))
-            shots.append((f"wizard-dark-en{tail}", "overview", "dark", "en", 6.0,
-                          wizard_action("onboarding"), size))
-            shots.append((f"wizard-light-zh{tail}", "overview", "light", "zh-CN", 6.0,
-                          wizard_action("onboarding"), size))
-            if args.app_dir:
-                shots.append((f"countdown-dark-en{tail}", "overview", "dark", "en", 7.0,
-                              countdown_action("cdn"), size))
-                shots.append((f"countdown-light-zh{tail}", "overview", "light", "zh-CN", 7.0,
-                              countdown_action("cdn"), size))
+                # Codex settings, "New in latest" (third rail item).
+                shots.append((f"settings-new-{suffix}", "settings", theme, lang, 7.0,
+                              click_action(290, 240), size))
+                for kind in ("menu", "migrate"):
+                    shots.append((f"sessions-{kind}-{suffix}", "sessions", theme, lang, 7.0,
+                                  sessions_action(kind, size), size))
+                # The Usage page's 路由 tab (user bug 116).
+                shots.append((f"usage-routing-{suffix}", page_command("usage", "tab:routing"),
+                              theme, lang, 7.0, None, size))
+            shots.append((f"wizard-dark-en{tail}", page_command("overview", "wizard"), "dark",
+                          "en", 8.0, wizard_action(), size))
+            shots.append((f"wizard-light-zh{tail}", page_command("overview", "wizard"), "light",
+                          "zh-CN", 8.0, wizard_action(), size))
         only = [p for p in (args.only or "").split(",") if p]
         for name, page, theme, lang, wait, act, size in shots:
             if only and not any(name.startswith(p) for p in only):

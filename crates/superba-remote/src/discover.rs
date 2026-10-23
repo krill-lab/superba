@@ -426,7 +426,7 @@ fn read_ssh_config(
     if depth > 4 {
         return;
     }
-    let Ok(path) = fs::canonicalize(path) else {
+    let Ok(path) = superba_core::paths::canonical(path) else {
         return;
     };
     if !visited.insert(path.clone()) {

@@ -36,6 +36,7 @@ pub mod descriptor;
 pub mod fsx;
 pub mod http;
 pub mod jsonedit;
+pub mod locate;
 pub mod log;
 pub mod pathenv;
 pub mod platform;
@@ -193,12 +194,33 @@ impl Ctx {
         pathenv::path_dirs(self.env.as_ref())
     }
 
-    /// The program `name` on `PATH`.
+    /// Where programs are looked for ([`locate`]).
+    pub fn search(&self) -> locate::SearchDirs {
+        locate::Env {
+            env: self.env.as_ref(),
+            home: &self.home,
+            os: self.platform.os,
+        }
+        .dirs()
+    }
+
+    /// The program `name`: the path the user chose for it, else the first
+    /// on `PATH`, the login / registry `PATH`, Homebrew, npm / pnpm / bun
+    /// and the usual folders ([`locate`]).
     pub fn which(&self, name: &str) -> Option<PathBuf> {
-        run::which_in(
+        self.locate(name).0.map(|l| l.path)
+    }
+
+    /// [`Self::which`] with how it was found and where Superba looked.
+    pub fn locate(&self, name: &str) -> (Option<locate::Located>, locate::SearchDirs) {
+        locate::locate(
+            &locate::Env {
+                env: self.env.as_ref(),
+                home: &self.home,
+                os: self.platform.os,
+            },
+            Some(&self.data),
             name,
-            self.env.var_os("PATH").as_deref(),
-            self.platform.os == Os::Windows,
         )
     }
 
@@ -218,7 +240,7 @@ impl Ctx {
         } else {
             c = c.env("HOME", self.home.as_os_str());
         }
-        if let Some(p) = self.env.var_os("PATH") {
+        if let Some(p) = self.search().joined().or_else(|| self.env.var_os("PATH")) {
             c = c.env("PATH", p);
         }
         for var in [
@@ -281,6 +303,14 @@ pub struct Detected {
     pub blocked: Option<LocalizedText>,
     /// A link replaces the install button (no verified method on this OS).
     pub link: Option<String>,
+    /// The program the user chose for the command.
+    pub command_path: Option<PathBuf>,
+    /// Where the command was looked for (when nothing was found).
+    pub searched: Vec<String>,
+    /// How a new install is made, or why the usual method is used.
+    pub install_method: Option<LocalizedText>,
+    /// macOS: Homebrew installs (nothing installed yet) or owns the install.
+    pub brew: Option<tools::brew::Package>,
 }
 
 /// One operation in progress.
@@ -534,6 +564,7 @@ impl ToolManager {
         } else {
             tools::detect(cx, &desc, &st).await
         };
+        let desc = tools::effective(desc, &det);
         let channels: Vec<String> = det
             .channels
             .clone()
@@ -615,6 +646,21 @@ impl ToolManager {
             }
             State::update(&cx.data, tool, |s| s.channel = Some(ch.clone()))?;
         }
+        if let Some(path) = &change.command_path {
+            let command = desc.command.ok_or_else(|| {
+                Error::invalid(format!(
+                    "{} has no command to point at",
+                    tool.display_name()
+                ))
+            })?;
+            if path.as_os_str().is_empty() {
+                locate::Overrides::set(&cx.data, command, None)?;
+            } else {
+                locate::validate(path)?;
+                locate::Overrides::set(&cx.data, command, Some(path.clone()))?;
+            }
+            forget_versions();
+        }
         if let Some(on) = change.manage_updates {
             let _lock = ToolLock::acquire(&cx.data, tool)?;
             tools::manage_updates(cx, &desc, on).await?;
@@ -635,6 +681,7 @@ impl ToolManager {
         forget_versions();
         let st = State::load(&cx.data).tool(tool);
         let det = tools::detect(cx, &desc, &st).await;
+        let desc = tools::effective(desc, &det);
         let channels: Vec<String> = det
             .channels
             .clone()
@@ -908,5 +955,8 @@ fn compose(
         data_dirs: det.data_dirs,
         path_hint: det.path_hint,
         notes: det.notes,
+        command_path: det.command_path,
+        searched: det.searched,
+        install_method: det.install_method,
     }
 }

@@ -135,6 +135,14 @@ impl SwitchService for LocatedService {
         service.router_set_conversion(conversion).await
     }
 
+    async fn router_set_failover(
+        &self,
+        failover: superba_core::RouterFailover,
+    ) -> Result<RouterView> {
+        let (service, _lock) = self.read().await?;
+        service.router_set_failover(failover).await
+    }
+
     async fn router_install(&self, request: RouterInstallRequest) -> Result<RouterView> {
         let (service, _lock) = self.read().await?;
         service.router_install(request).await
@@ -143,6 +151,11 @@ impl SwitchService for LocatedService {
     async fn router_set_enabled(&self, enabled: bool) -> Result<RouterView> {
         let (service, _lock) = self.read().await?;
         service.router_set_enabled(enabled).await
+    }
+
+    async fn router_set_mixed_login(&self, on: bool) -> Result<RouterView> {
+        let (service, _lock) = self.read().await?;
+        service.router_set_mixed_login(on).await
     }
 
     async fn router_uninstall(&self) -> Result<RouterView> {
@@ -420,6 +433,20 @@ impl SwitchService for LocatedService {
     async fn session_titles(&self, keys: Vec<String>) -> Result<BTreeMap<String, SessionTitle>> {
         let (service, _lock) = self.read().await?;
         service.session_titles(keys).await
+    }
+
+    async fn session_list(&self) -> Result<superba_core::SessionList> {
+        let (service, _lock) = self.read().await?;
+        service.session_list().await
+    }
+
+    async fn session_export(
+        &self,
+        thread_id: String,
+        format: superba_core::SessionExportFormat,
+    ) -> Result<superba_core::SessionExport> {
+        let (service, _lock) = self.read().await?;
+        service.session_export(thread_id, format).await
     }
 
     async fn price_table(&self) -> Result<PriceTable> {

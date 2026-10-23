@@ -34,7 +34,7 @@ impl FontCache {
     fn key(&self, face: &CjkFace) -> Option<PathBuf> {
         let meta = fs::metadata(&face.path).ok()?;
         let modified = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
-        let path = fs::canonicalize(&face.path).ok()?;
+        let path = superba_core::paths::canonical(&face.path).ok()?;
         let hash = Sha256::digest(path.as_os_str().as_encoded_bytes());
         let hash: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
         Some(self.directory.join(format!(

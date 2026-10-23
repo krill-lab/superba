@@ -124,6 +124,29 @@ class Ui:
         key = "superba.tools.title" if page == "tools" else f"nav.{page.replace('-', '_')}"
         self.act("invoke", key=key, type="TabItem")
         time.sleep(0.6)
+        self.wait_rendered()
+
+    def wait_rendered(self, timeout=10, settle=2, poll=0.5):
+        """Waits until the window's names stop changing for `settle` consecutive polls
+        (a page that just opened lays out over a few frames; a screenshot taken
+        before shows a half-drawn page). Returns the names last seen."""
+        end = time.monotonic() + timeout
+        last, same = None, 0
+        while True:
+            try:
+                names = self.texts()
+            except (UiError, AgentError):
+                names = None
+            if names and names == last:
+                same += 1
+                if same >= settle:
+                    return names
+            else:
+                same = 0
+            last = names
+            if time.monotonic() >= end:
+                return last
+            time.sleep(poll)
 
     def superba(self, section="home"):
         """Open a Superba tab, then a settings anchor when requested.
@@ -141,8 +164,10 @@ class Ui:
         self.act("invoke", **sel)
         self.wait_selected(**sel)
         if section in SETTINGS_ANCHORS:
-            self.click(key=f"superba.section.{section}")
+            # Settings anchors are tabs since alpha.9 (D6): UIA TabItem, not Button.
+            self.click(key=f"superba.section.{section}", type="TabItem")
             self.wait_settings_anchor(section)
+        self.wait_rendered()
 
     def superba_tab_list(self):
         # AccessKit's structural containers have no bounding rectangle. Only
@@ -164,7 +189,7 @@ class Ui:
         end = time.monotonic() + timeout
         previous, stable_since = None, None
         while True:
-            buttons = self.find(key=key, type="Button")
+            buttons = self.find(key=key, type="TabItem")
             headings = self.find(key=key, type="Text",
                                  within={"name": self.L("superba.tab.settings"), "type": "Pane", "visible": False})
             window = self.window()

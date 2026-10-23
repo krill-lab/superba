@@ -2,10 +2,9 @@
 use super::{Action, Cx, SuperbaSection, appearance, general, network};
 use crate::design::{
     a11y,
-    icons::{self, Icon},
     widgets::{Text, focus_ring, show_focus},
 };
-use egui::{Align, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Align, Rect, Sense, Ui, pos2, vec2};
 use superba_core::Settings;
 
 pub(super) const SECTIONS: [SuperbaSection; 4] = [
@@ -19,23 +18,26 @@ pub(super) const SECTIONS: [SuperbaSection; 4] = [
 pub(super) struct State {
     pub active: SuperbaSection,
     pub jump: Option<SuperbaSection>,
+    /// The inline settings filter.
+    pub filter: String,
 }
 impl Default for State {
     fn default() -> Self {
         Self {
             active: SuperbaSection::General,
             jump: None,
+            filter: String::new(),
         }
     }
 }
 
-pub(super) fn toolbar(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+pub(super) fn toolbar(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     if ui.available_width() < 860.0 {
-        search_entry(ui, cx, out);
+        search_entry(ui, cx, state);
         jumps(ui, cx, state);
     } else {
         ui.horizontal(|ui| {
-            search_entry(ui, cx, out);
+            search_entry(ui, cx, state);
             let width = jump_width(ui, cx);
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 ui.allocate_ui_with_layout(
@@ -49,59 +51,29 @@ pub(super) fn toolbar(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec
     ui.add_space(4.0);
 }
 
-fn search_entry(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
-    let label = cx.tr.t("superba.search");
-    let (rect, response) = ui.allocate_exact_size(
-        vec2(280.0_f32.min(ui.available_width()), 32.0),
-        Sense::click(),
-    );
-    ui.painter().rect_filled(
-        rect,
-        6,
-        if response.hovered() {
-            cx.pal.hover
-        } else {
-            cx.pal.bg_subtle
-        },
-    );
-    ui.painter()
-        .rect_stroke(rect, 6, Stroke::new(1.0, cx.pal.border), StrokeKind::Inside);
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), vec2(16.0, 16.0)),
-        Icon::Search,
-        cx.pal.text_muted,
-    );
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink2(vec2(36.0, 0.0)))
-            .layout(egui::Layout::left_to_right(Align::Center)),
-    );
-    child.label(Text::small(&label, cx.pal));
-    let shortcut = crate::shell::palette_shortcut_label();
-    let galley = ui.painter().layout_no_wrap(
-        shortcut.into(),
-        crate::design::fonts::mono_font(11.0, crate::design::fonts::Weight::Regular),
-        cx.pal.text_subtle,
-    );
-    ui.painter().galley(
-        pos2(
-            rect.right() - galley.size().x - 10.0,
-            rect.center().y - galley.size().y / 2.0,
-        ),
-        galley,
-        cx.pal.text_subtle,
-    );
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-    if show_focus(&response) {
-        focus_ring(ui.painter(), rect, 6, cx.pal);
-    }
-    if response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
-    {
-        out.push(Action::OpenSettingsPalette);
-    }
+/// The inline settings filter: rows whose name, explanation or key do not
+/// contain the typed words are hidden (the command palette is gone, user
+/// request 118).
+fn search_entry(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
+    let width = 280.0_f32.min(ui.available_width());
+    crate::design::widgets::SearchField::new(
+        &mut state.filter,
+        "superba-settings-filter",
+        cx.tr.t("superba.search"),
+        cx.tr.t("action.clear_search"),
+    )
+    .width(width)
+    .height(32.0)
+    .show(ui);
+}
+
+/// Whether `query`'s words all occur in one of `fields` (case-insensitive).
+pub fn filter_matches(query: &str, fields: &[&str]) -> bool {
+    let hay = fields.join(" ").to_lowercase();
+    query
+        .to_lowercase()
+        .split_whitespace()
+        .all(|w| hay.contains(w))
 }
 
 fn jump_width(ui: &Ui, cx: &Cx<'_>) -> f32 {
@@ -112,17 +84,15 @@ fn jump_width(ui: &Ui, cx: &Cx<'_>) -> f32 {
             .size()
             .x
     };
-    width(cx.tr.t("superba.settings.jump"))
-        + SECTIONS
-            .into_iter()
-            .map(|s| width(cx.tr.t(s.title_key())) + 24.0)
-            .sum::<f32>()
+    SECTIONS
+        .into_iter()
+        .map(|s| width(cx.tr.t(s.title_key())) + 24.0)
+        .sum::<f32>()
 }
 
 fn jumps(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        ui.label(Text::small(cx.tr.t("superba.settings.jump"), cx.pal));
         for section in SECTIONS {
             let label = cx.tr.t(section.title_key());
             let selected = state.active == section;
@@ -149,7 +119,10 @@ fn jumps(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
                 galley,
                 cx.pal.text,
             );
-            a11y::selectable(&response, egui::Role::Button, &label, selected);
+            // A tab, so UI Automation exposes SelectionItem.IsSelected for the
+            // section in view (a button has no selected state there; alpha.8
+            // Windows acceptance, D6).
+            a11y::selectable(&response, egui::Role::Tab, &label, selected);
             if show_focus(&response) {
                 focus_ring(ui.painter(), rect, 6, cx.pal);
             }
@@ -178,7 +151,21 @@ pub(super) fn show(
         state.jump = None;
     }
     let jump = state.jump;
+    let query = state.filter.trim().to_owned();
+    super::search::set_filter(ui.ctx(), &query);
+    let mut shown = 0;
     for section in SECTIONS {
+        let all = query.is_empty() || filter_matches(&query, &[&cx.tr.t(section.title_key())]);
+        if !all
+            && !super::search::ROWS.iter().any(|(s, key)| {
+                *s == section
+                    && filter_matches(&query, &[&cx.tr.t(super::search::label_key(key)), key])
+            })
+        {
+            continue;
+        }
+        shown += 1;
+        super::search::set_section_all(ui.ctx(), all);
         ui.push_id(section, |ui| {
             let top = ui.cursor().min.y;
             if top <= viewport_top + 12.0 {
@@ -220,11 +207,19 @@ pub(super) fn show(
             }
             // Even a disabled/empty Notifications section can reach the top.
             // Otherwise the end-of-content clamp leaves Network highlighted.
-            if section == SuperbaSection::Notify {
+            if section == SuperbaSection::Notify && query.is_empty() {
                 ui.add_space((ui.clip_rect().height() - (ui.cursor().min.y - top)).max(0.0));
             }
             ui.add_space(32.0);
         });
+    }
+    super::search::set_filter(ui.ctx(), "");
+    if shown == 0 {
+        ui.add_space(24.0);
+        ui.label(Text::muted(
+            cx.tr.f("superba.search_empty", &[("query", &query)]),
+            cx.pal,
+        ));
     }
     if state.active != active {
         state.active = active;

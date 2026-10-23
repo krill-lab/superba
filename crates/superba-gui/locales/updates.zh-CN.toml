@@ -94,11 +94,6 @@ current = "当前"
 bundled = "内置"
 stored = "已下载"
 
-[updates.palette]
-check_superba = "检查 Superba 更新"
-check = "检查更新"
-update_cli = "更新 Codex CLI"
-
 [updates.superba]
 title = "Superba"
 checking = "正在检查 Superba 更新…"
@@ -220,6 +215,11 @@ committing = "正在完成安装并替换文件"
 subtitle = "Superba、桌面 app、Codex 和编码工具的版本与安装"
 install_version = "安装所选版本…"
 remove = "卸载…"
+choose_path = "指定路径…"
+choose_path_hint = "选择这个工具的可执行文件；Superba 会先运行它的 --version 检查"
+clear_path = "改回自动查找"
+chosen_path = "已指定路径：{path}"
+not_found = "没有找到。Superba 查找了："
 confirm_remove = "确认卸载"
 remove_data = "同时删除这些设置和数据目录"
 

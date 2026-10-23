@@ -262,7 +262,7 @@ async fn sessions_shapes(extra: &[&str], locale: Locale) -> Vec<Shape> {
     ctx.set_fonts(fonts::definitions(&report));
     style::install(&ctx, Some(Theme::Light));
     let tr = Tr::new(locale);
-    let mut state = State::default();
+    let mut state = State::migration_tool();
     let mut actions = Vec::new();
     let mut shapes = Vec::new();
     let start = Instant::now();

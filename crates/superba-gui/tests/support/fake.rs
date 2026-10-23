@@ -245,6 +245,12 @@ impl FakeService {
         self.quota_probe.lock().unwrap().gate = gate;
     }
 
+    /// Store the router model list mode in the saved settings (a direct
+    /// connection keeps it as a preference).
+    pub fn set_router_catalog_mode(&self, mode: superba_core::CatalogMode) {
+        self.state().profiles.settings.router.catalog.mode = mode;
+    }
+
     fn state(&self) -> MutexGuard<'_, FakeState> {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
     }
@@ -317,6 +323,7 @@ fn krill_profile(line: LineId, auth: AuthMode) -> Profile {
         model: ModelDefaults::default(),
         auth: superba_core::AuthChoice::from_mode(auth),
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         codex_settings: Default::default(),
     }
 }
@@ -1765,6 +1772,7 @@ impl SwitchService for FakeService {
                 last_refresh: None,
                 id_token_exp: None,
                 email: None,
+                account_id: None,
             }),
             notices: vec![],
             external: s.external.clone(),
@@ -1804,6 +1812,7 @@ impl SwitchService for FakeService {
         Ok(RouterView {
             settings: s.profiles.settings.router.clone(),
             translation: self.router_translation(),
+            failover: (!members.is_empty()).then(|| self.router_failover()),
             configured: !members.is_empty(),
             installed: s.router_installed,
             running: s.router_installed,
@@ -1834,6 +1843,13 @@ impl SwitchService for FakeService {
 
     async fn router_set_conversion(&self, conversion: RouterConversion) -> Result<RouterView> {
         self.edit_router_conversion(conversion).await
+    }
+
+    async fn router_set_failover(
+        &self,
+        failover: superba_core::RouterFailover,
+    ) -> Result<RouterView> {
+        self.edit_router_failover(failover).await
     }
 
     async fn router_install(&self, request: RouterInstallRequest) -> Result<RouterView> {
@@ -2411,6 +2427,18 @@ impl SwitchService for FakeService {
 
     async fn sessions(&self) -> Result<(SessionReport, Vec<MigrationReceipt>)> {
         sessions::sessions(self).await
+    }
+
+    async fn session_list(&self) -> Result<SessionList> {
+        sessions::session_list(self).await
+    }
+
+    async fn session_export(
+        &self,
+        thread_id: String,
+        format: SessionExportFormat,
+    ) -> Result<SessionExport> {
+        sessions::session_export(self, thread_id, format).await
     }
 
     async fn doctor(&self) -> Result<Vec<DoctorFinding>> {

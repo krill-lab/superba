@@ -467,6 +467,25 @@ fn bundled_cli(resources: &Path) -> (Option<PathBuf>, Option<CodexVersion>) {
     (binary, version)
 }
 
+/// Whether a macOS `CFBundleIdentifier` is the ChatGPT or Codex desktop app:
+/// `com.openai.chat`, `com.openai.chatgpt`, `com.openai.codex` and its
+/// dotted channels (`com.openai.codex.beta`), but not the bundled CLI
+/// (`com.openai.codex.cli`) nor the installer (`com.openai.codex.installer`).
+/// Exact, case-sensitive ids: a prefix such as `com.openai.codexfoo` or a
+/// foreign Electron app (`com.anysphere.*`, Cursor) is not one.
+pub fn is_desktop_bundle_id(id: &str) -> bool {
+    match id {
+        "com.openai.chat" | "com.openai.chatgpt" | "com.openai.codex" => true,
+        "com.openai.codex.cli" | "com.openai.codex.installer" => false,
+        _ => id.strip_prefix("com.openai.codex.").is_some_and(|channel| {
+            !channel.is_empty()
+                && channel
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        }),
+    }
+}
+
 fn inspect_bundle(root: &Path) -> Option<AppInstall> {
     if root
         .file_name()?
@@ -491,7 +510,9 @@ fn inspect_bundle(root: &Path) -> Option<AppInstall> {
     }
     let plist = fs::read_to_string(contents.join("Info.plist")).ok()?;
     let id = nonempty(&parse_plist_string(&plist, "CFBundleIdentifier")?)?;
-    if id == "com.openai.codex.cli" {
+    // Other Electron apps (Cursor's `com.anysphere.*`, VS Code, Slack...) have
+    // the same layout: only the ChatGPT / Codex bundle ids are an install.
+    if !is_desktop_bundle_id(&id) {
         return None;
     }
     let name = parse_plist_string(&plist, "CFBundleExecutable")?;
@@ -844,7 +865,7 @@ fn desktop_targets(programs: Vec<PathBuf>) -> Vec<PathBuf> {
         if !program.is_absolute() {
             continue;
         }
-        let program = fs::canonicalize(&program).unwrap_or(program);
+        let program = superba_core::paths::canonical(&program).unwrap_or(program);
         if let Some(parent) = program
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -927,8 +948,7 @@ pub fn candidate_paths(env: &dyn EnvSource, home_dir: &Path) -> Vec<PathBuf> {
             .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
             && let Ok(plist) = fs::read_to_string(path.join("Contents/Info.plist"))
             && let Some(id) = parse_plist_string(&plist, "CFBundleIdentifier")
-            && (matches!(id.as_str(), "com.openai.chat" | "com.openai.chatgpt")
-                || (id.starts_with("com.openai.codex") && id != "com.openai.codex.cli"))
+            && is_desktop_bundle_id(&id)
         {
             paths.push(path);
         }
@@ -1275,7 +1295,7 @@ async fn probe_codex_version(binary: &Path) -> Option<CodexVersion> {
 }
 
 async fn version_of(binary: &Path) -> Option<CodexVersion> {
-    let binary = fs::canonicalize(binary).ok()?;
+    let binary = superba_core::paths::canonical(binary).ok()?;
     let mut command = Command::from(superba_core::process::command(binary));
     command
         .arg("--version")

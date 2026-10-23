@@ -36,6 +36,7 @@ fn profile(id: &str, site: &str) -> Profile {
         site_id: SiteId::new(site),
         line_id: None,
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
         auth: AuthChoice::Auto,
         key_ref: Some(KeyRef::Keyring {
@@ -134,6 +135,72 @@ fn members_follow_the_saved_order_with_live_lines_or_the_sites_lines() {
     assert_eq!(m[1].lines[0].id, catalog::KRILL_LINE_CDN);
     assert!(m[1].lines.iter().all(|l| l.health == LineHealth::Unknown));
     assert!(members(&RouterView::default(), &sites, &set).is_empty());
+}
+
+/// User bug 108: the router runs without a disabled line; the member table
+/// shows it at its place in the order, as 已禁用 / Disabled.
+#[test]
+fn disabled_lines_show_at_their_place_in_the_member_table() {
+    let site = catalog::krill_site();
+    let mut set = ProfileSet::default();
+    let mut krill = profile("krill", catalog::KRILL_SITE_ID);
+    krill.set_line_priority([
+        LineId::new(catalog::KRILL_LINE_OVERSEAS),
+        LineId::new(catalog::KRILL_LINE_CDN),
+        LineId::new(catalog::KRILL_LINE_CN_FAST),
+    ]);
+    krill
+        .set_line_disabled(&site, &LineId::new(catalog::KRILL_LINE_CDN), true)
+        .unwrap();
+    set.profiles.push(krill);
+    let mut view = RouterView::default();
+    view.settings.members = vec![ProfileId::new("krill")];
+    let live_line = |id: &str| RouterLineView {
+        id: id.into(),
+        name: id.into(),
+        health: RouterLineHealth::Healthy,
+        ttfb_ms: None,
+        requests: 1,
+        failovers_away: 0,
+        last_error: None,
+    };
+    view.members = vec![RouterMemberView {
+        protocols: Vec::new(),
+        last_route: None,
+        profile_id: ProfileId::new("krill"),
+        name: "Krill".into(),
+        lines: vec![
+            live_line(catalog::KRILL_LINE_OVERSEAS),
+            live_line(catalog::KRILL_LINE_CN_FAST),
+        ],
+    }];
+    let sites = vec![site];
+    let m = members(&view, &sites, &set);
+    let lines: Vec<_> = m[0]
+        .lines
+        .iter()
+        .map(|l| (l.id.as_str(), l.health))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            (catalog::KRILL_LINE_OVERSEAS, LineHealth::Up),
+            (catalog::KRILL_LINE_CDN, LineHealth::Disabled),
+            (catalog::KRILL_LINE_CN_FAST, LineHealth::Up),
+        ]
+    );
+    assert_eq!((m[0].enabled_lines(), m[0].healthy_lines()), (2, 2));
+    // Not running: the same, from the profile.
+    let m = members(
+        &RouterView {
+            members: Vec::new(),
+            ..view
+        },
+        &sites,
+        &set,
+    );
+    assert_eq!(m[0].lines[1].health, LineHealth::Disabled);
+    assert_eq!(m[0].lines[0].health, LineHealth::Unknown);
 }
 
 fn status_json(state: &str) -> RouterStatus {

@@ -616,7 +616,7 @@ impl Switcher {
             what: format!("migrating sessions in a WSL distribution on {arch}"),
         })?;
         let exe = std::env::current_exe()
-            .and_then(std::fs::canonicalize)
+            .and_then(superba_core::paths::canonical)
             .map_err(|e| Error::other(format!("cannot find this program: {e}")))?;
         let p = exe.with_file_name(name);
         if p.is_file() {

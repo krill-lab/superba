@@ -41,7 +41,10 @@ fn usage_is_its_own_page_next_to_the_router() {
     // Deep links: `--page usage`, `--page router`.
     assert_eq!(superba_gui::args::parse_page("usage"), Some(Page::Usage));
     assert_eq!(superba_gui::args::parse_page("router"), Some(Page::Router));
-    assert_eq!(Tab::ALL, [Tab::Recent, Tab::Active, Tab::Stats]);
+    assert_eq!(
+        Tab::ALL,
+        [Tab::Recent, Tab::Routing, Tab::Active, Tab::Stats]
+    );
 }
 
 #[test]
@@ -169,41 +172,6 @@ fn rollout_rows_are_listed_with_dashes_in_the_router_only_columns() {
         |f| f.has("Codex 会话记录"),
     );
     assert!(f.has("仅本地路由可提供"), "{}", f.all_text());
-}
-
-#[test]
-fn palette_entries_open_the_usage_tabs() {
-    let mut h = Harness::new([1280.0, 800.0], Locale::En, fake(), true);
-    let state = State::default();
-    h.frame(|_, cx, _| {
-        let items = router::palette(cx, &state);
-        let find = |title: &str| {
-            items
-                .iter()
-                .find(|i| i.title == title)
-                .unwrap_or_else(|| panic!("{title}"))
-        };
-        for (title, command) in [
-            ("Open recent requests", "tab:recent"),
-            ("Open active requests", "tab:active"),
-            ("Open usage statistics", "tab:stats"),
-        ] {
-            match &find(title).action {
-                Action::PageCommand { page, command: c } => {
-                    assert_eq!(*page, Page::Usage);
-                    assert_eq!(c, command);
-                }
-                other => panic!("{other:?}"),
-            }
-        }
-        assert!(matches!(
-            &find("Turn the stats line on").action,
-            Action::PageCommand {
-                page: Page::Router,
-                ..
-            }
-        ));
-    });
 }
 
 #[test]

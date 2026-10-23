@@ -33,7 +33,7 @@ pub fn stop_router_processes(dir: &Path) -> usize {
 }
 
 fn stop_router_processes_once(dir: &Path) -> usize {
-    let want = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_owned());
+    let want = superba_core::paths::canonical(dir).unwrap_or_else(|_| dir.to_owned());
     let mut sys = System::new();
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -48,7 +48,7 @@ fn stop_router_processes_once(dir: &Path) -> usize {
             continue;
         }
         let Some(parent) = exe.parent() else { continue };
-        let parent = std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_owned());
+        let parent = superba_core::paths::canonical(parent).unwrap_or_else(|_| parent.to_owned());
         if same_dir(&parent, &want) && process.kill() {
             killed += 1;
         }

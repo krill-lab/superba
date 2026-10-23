@@ -228,45 +228,55 @@ fn home_fact_explanations_and_updates_subtitle_are_never_elided() {
 }
 
 #[test]
-fn palette_opens_and_focuses_every_setting_without_changing_it() {
+fn the_inline_filter_finds_every_setting_without_changing_it() {
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
-        let mut h = AppHarness::new(service(), locale, Page::Overview);
+        let mut h = AppHarness::new(service(), locale, Page::Superba(SuperbaSection::General));
         h.resize([960.0, 640.0]);
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
         let before = rt.block_on(h.service.profile_set()).unwrap().settings;
+        h.settle();
+        let search = tr.t("superba.search");
         for (section, key) in superba::search::ROWS {
             if *key == "prefs.network.app_source" && !cfg!(windows) {
                 continue;
             }
-            h.shortcut(egui::Key::K);
-            h.set_value(&tr.t("palette.placeholder"), key);
-            h.key(egui::Key::Enter);
-            let tree = h.until(key, |t| {
-                t.nodes
-                    .get(&t.focus)
-                    .and_then(|n| n.bounds())
-                    // The longer data section can end at a fractional scroll
-                    // offset. Match the half-pixel tolerance of the fit tests.
-                    .is_some_and(|r| r.y0 >= 49.5 && r.y1 <= 626.5)
-            });
+            if matches!(section, SuperbaSection::Data | SuperbaSection::Updates) {
+                // Rows of the Data and Updates tabs are not in the settings list.
+                continue;
+            }
             let label = tr.t(superba::search::label_key(key));
-            assert_eq!(
-                tree.name(tree.focus).as_deref(),
-                Some(label.as_str()),
-                "{locale:?} {section:?} {key}:\n{}",
-                tree.dump()
-            );
-            let rect = tree.node(tree.focus).bounds().expect("row bounds");
+            h.set_value(&search, &label);
+            let tree = h.until(key, |t| t.find(Some(Role::Group), &label).is_some());
+            let rows = tree.with_role(Role::Group).len();
             assert!(
-                rect.y1 >= 50.0 && rect.y0 < 610.0,
-                "{key}: row not scrolled into view: {rect:?}"
+                rows < 12,
+                "{locale:?} {key}: the filter hides other rows ({rows}):\n{}",
+                tree.dump()
             );
             assert!(tree.unnamed().is_empty(), "{key}: {:?}", tree.unnamed());
         }
+        h.set_value(&search, "zzqx-no-such-setting");
+        let empty = tr.f(
+            "superba.search_empty",
+            &[("query", &"zzqx-no-such-setting")],
+        );
+        let t = h.until("empty", |t| t.has(&empty));
+        assert!(
+            t.find(Some(Role::Group), &tr.t("settings.theme.title"))
+                .is_none()
+        );
+        h.set_value(&search, "");
+        let t = h.settle();
+        assert!(
+            t.find(Some(Role::Group), &tr.t("settings.theme.title"))
+                .is_some(),
+            "{}",
+            t.dump()
+        );
         assert_eq!(
             rt.block_on(h.service.profile_set()).unwrap().settings,
             before
@@ -329,7 +339,7 @@ fn tabs_have_names_roles_and_keyboard_navigation_into_the_panel() {
 fn at_anchor(t: &a11y_harness::Tree, tr: &Tr, section: SuperbaSection) -> bool {
     let name = tr.t(section.title_key());
     let active = t
-        .find(Some(Role::Button), &name)
+        .find(Some(Role::Tab), &name)
         .is_some_and(|id| t.node(id).is_selected() == Some(true));
     let header = t.find_all(Some(Role::Label), &name).into_iter().any(|id| {
         t.node(id)
@@ -377,16 +387,13 @@ fn jump_directory_tracks_scroll_and_sidebar_and_comma_restore_anchors() {
             SuperbaSection::Appearance,
             SuperbaSection::Network,
         ] {
-            h.click(Some(Role::Button), &tr.t(section.title_key()));
+            h.click(Some(Role::Tab), &tr.t(section.title_key()));
             h.until("jump", |t| at_anchor(t, &tr, section));
         }
         h.scroll_page(-1200.0);
         h.until("scroll spy", |t| {
-            t.find(
-                Some(Role::Button),
-                &tr.t(SuperbaSection::Notify.title_key()),
-            )
-            .is_some_and(|id| t.node(id).is_selected() == Some(true))
+            t.find(Some(Role::Tab), &tr.t(SuperbaSection::Notify.title_key()))
+                .is_some_and(|id| t.node(id).is_selected() == Some(true))
         });
         h.go(Page::Overview, &tr);
         h.click(Some(Role::Tab), "Superba");
@@ -398,10 +405,7 @@ fn jump_directory_tracks_scroll_and_sidebar_and_comma_restore_anchors() {
             at_anchor(t, &tr, SuperbaSection::General)
         });
         // The current Page can already be General after manually scrolling away.
-        h.click(
-            Some(Role::Button),
-            &tr.t(SuperbaSection::Notify.title_key()),
-        );
+        h.click(Some(Role::Tab), &tr.t(SuperbaSection::Notify.title_key()));
         h.until("notify again", |t| {
             at_anchor(t, &tr, SuperbaSection::Notify)
         });
@@ -412,43 +416,25 @@ fn jump_directory_tracks_scroll_and_sidebar_and_comma_restore_anchors() {
     }
 }
 
-fn modal_has(t: &a11y_harness::Tree, name: &str) -> bool {
-    let dialog = t
-        .with_role(Role::Dialog)
-        .into_iter()
-        .next()
-        .expect("palette dialog");
-    let mut nodes = vec![dialog];
-    while let Some(id) = nodes.pop() {
-        if t.name(id).as_deref() == Some(name) {
-            return true;
-        }
-        nodes.extend(t.node(id).children());
-    }
-    false
-}
-
 #[test]
-fn settings_search_entry_only_lists_settings_and_global_shortcut_resets_scope() {
+fn cmd_k_opens_nothing_any_more() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let mut h = AppHarness::new(service(), locale, Page::Overview);
+        h.settle();
+        let t = h.shortcut(egui::Key::K);
+        assert!(t.with_role(Role::Dialog).is_empty(), "{}", t.dump());
+        assert!(t.with_role(Role::TextInput).is_empty(), "{}", t.dump());
+    }
+    // The palette's strings are gone from both catalogs.
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
-        let mut h = AppHarness::new(service(), locale, Page::Superba(SuperbaSection::General));
-        let t = h.click(Some(Role::Button), &tr.t("superba.search"));
-        assert!(modal_has(&t, &tr.t("superba.tab.settings")));
         for key in [
-            "palette.group.navigate",
-            "palette.group.switch",
-            "palette.group.commands",
+            "palette.placeholder",
+            "palette.run_wizard",
+            "overview.menu.title",
         ] {
-            assert!(!modal_has(&t, &tr.t(key)), "{key}: {}", t.dump());
+            assert_eq!(tr.t(key), key, "{locale:?} still has {key}");
         }
-        h.set_value(&tr.t("palette.placeholder"), "prefs.data.dir");
-        h.key(egui::Key::Enter);
-        h.until("search across tabs", |t| {
-            t.name(t.focus) == Some(tr.t("prefs.data.dir"))
-        });
-        let t = h.shortcut(egui::Key::K);
-        assert!(t.has(&tr.t("palette.group.switch")), "{}", t.dump());
     }
 }
 

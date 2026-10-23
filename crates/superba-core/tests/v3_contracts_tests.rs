@@ -142,6 +142,7 @@ fn row() -> RequestRow {
         requested_model: None,
         session_id: None,
         agent_kind: None,
+        attempts: Vec::new(),
     }
 }
 
@@ -816,6 +817,7 @@ fn request_pages_details_stats_and_inflight_round_trip() {
             outcome: "502".into(),
             elapsed_ms: Some(40),
             compression: Some(superba_core::RequestCompression::RouterZstd),
+            upstream_protocol: None,
         }],
         log: vec!["failover after 502".into()],
     });
@@ -903,11 +905,14 @@ fn price_tables_round_trip_with_optional_fields_skipped() {
     let mut tiers = BTreeMap::new();
     tiers.insert("priority".to_owned(), Multiplier::from_ppm(2_000_000));
     let entry = PriceEntry {
+        cache_write_1h: None,
+        windows: Vec::new(),
         input: usd(1.25),
         cached_input: Some(usd(0.125)),
         cache_write: None,
         output: usd(10.0),
         long_context: vec![LongContextPrice {
+            cache_write_1h: None,
             above_input_tokens: 272_000,
             input: usd(2.5),
             cached_input: None,

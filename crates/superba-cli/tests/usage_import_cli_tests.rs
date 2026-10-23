@@ -156,6 +156,7 @@ async fn profile_compaction_shows_the_effective_value_and_the_choice_is_saved() 
         site_id: SiteId::new(catalog::KRILL_SITE_ID),
         line_id: None,
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         auth_mode: AuthMode::ApiKey,
         auth: AuthChoice::ApiKey,
         key_ref: None,

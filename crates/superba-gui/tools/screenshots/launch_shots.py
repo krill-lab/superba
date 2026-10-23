@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Screenshots and a real-binary check of GH#7 (user bug 66): opening ChatGPT
-through Superba from the Overview, the command palette, a second start
+through Superba from the Overview, a second start
 (`superba --launch-chatgpt`, what the Windows "ChatGPT (Superba)" shortcut and
 the Linux desktop action run) and the start-up preference.
 
@@ -9,7 +9,7 @@ Krill profile applied with a PAT) and opens the desktop app given with
 --app-dir through `spb launch`. Then, with the real `superba` and `spb`:
 
 1. ChatGPT not running: `launch-open-overview-*` (the hero's "Open ChatGPT with
-   Superba"), `launch-palette-*` (the palette, "chatgpt" typed). Check: the
+   Superba"). Check: the
    hero's button opens ChatGPT through Superba (`spb status`: launched by
    Superba, hot switch ready) and goes away (`launch-opened-overview-light-en`).
 2. ChatGPT started directly (no debugging port): `launch-reopen-overview-*` and
@@ -136,14 +136,6 @@ def click_action(s):
     s.input.park()
 
 
-def palette(s):
-    s.input.focus()
-    s.input.key("ctrl+k")
-    time.sleep(0.6)
-    s.input.type("chatgpt")
-    time.sleep(0.8)
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -187,7 +179,6 @@ def main():
         for theme, lang in VARIANTS:
             short = "zh" if lang == "zh-CN" else "en"
             s.shot(f"launch-open-overview-{theme}-{short}", "overview", theme, lang, 8.0, None, SIZE)
-            s.shot(f"launch-palette-{theme}-{short}", "overview", theme, lang, 8.0, palette, SIZE)
         g = gui(s)
         try:
             time.sleep(8)

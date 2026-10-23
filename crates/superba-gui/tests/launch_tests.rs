@@ -5,7 +5,7 @@
 //! - The state machine: what the Overview offers (open / reopen / nothing) and
 //!   what a request does for each origin (the window, the "ChatGPT (Superba)"
 //!   shortcut, the start-up preference).
-//! - The hero's action, the palette entry and the reopen's confirmation (no
+//! - The hero's action and the reopen's confirmation (no
 //!   "write only", running turns named) in the whole app.
 //! - The handover: `superba --launch-chatgpt` reaches a running window through
 //!   `gui-instance.json`; stale or foreign requests are refused.
@@ -33,7 +33,7 @@ use superba_gui::launch::{
     AppLaunch, LaunchOrigin, LaunchResult, LaunchStep, app_launch, launch, launch_step,
 };
 use superba_gui::pages::overview::hero;
-use superba_gui::pages::{Action, Cx, Data, Page};
+use superba_gui::pages::{Cx, Data, Page};
 use support::fake::{FakeOptions, FakeService};
 
 fn fake() -> Arc<FakeService> {
@@ -246,42 +246,10 @@ async fn the_hero_and_the_palette_carry_the_action() {
         let data = data_of(&service).await;
         let overview = data.overview.value.clone().unwrap();
         for locale in [Locale::En, Locale::ZhCn] {
-            let tr = Tr::new(locale);
             with_cx(&data, service.clone(), locale, |cx| {
                 let h = hero::model(cx, &overview, &[], None);
                 assert_eq!(h.launch, expected, "{setup:?}");
             });
-            let items = superba_gui::app::shell_palette(&tr, &data);
-            let titles: Vec<&str> = items.iter().map(|i| i.title.as_str()).collect();
-            let open = tr.t("action.open_app");
-            let reopen = tr.t("action.reopen_app");
-            match expected {
-                Some(AppLaunch::Open) => {
-                    let item = items.iter().find(|i| i.title == open).expect("open");
-                    assert!(matches!(item.action, Action::OpenApp));
-                    assert!(!titles.contains(&reopen.as_str()));
-                }
-                Some(AppLaunch::Reopen(_)) => {
-                    let item = items.iter().find(|i| i.title == reopen).expect("reopen");
-                    assert!(matches!(item.action, Action::RestartApp));
-                    assert!(item.detail.is_some());
-                    assert!(!titles.contains(&open.as_str()));
-                }
-                None => {
-                    assert!(!titles.contains(&open.as_str()), "{titles:?}");
-                    assert!(!titles.contains(&reopen.as_str()), "{titles:?}");
-                    assert!(titles.contains(&tr.t("action.full_restart").as_str()));
-                }
-            }
-            // Found by what users type.
-            let reopen_or_open = superba_gui::palette::filter("hot switch", items);
-            assert_eq!(
-                reopen_or_open
-                    .iter()
-                    .any(|i| i.title == open || i.title == reopen),
-                expected.is_some(),
-                "{setup:?} {locale:?}"
-            );
         }
     }
     let tr = Tr::new(Locale::En);

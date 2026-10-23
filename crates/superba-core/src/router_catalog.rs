@@ -191,6 +191,11 @@ pub struct RouterCatalogView {
     /// rows of their own.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub aliases: BTreeMap<String, String>,
+    /// Provider models the current mode keeps out of Codex's list and out of
+    /// [`Self::models`] (Codex mode: everything outside Codex's own list), so
+    /// the Models page can say how to get them (user bug 106).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub withheld: Vec<String>,
 }
 
 impl RouterCatalogView {

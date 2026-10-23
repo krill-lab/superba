@@ -30,7 +30,7 @@ fn manager(root: &Path, mock: &Mock, extra_path: &[&Path], env: &[(&str, &str)])
     let mut ctx = context(root, extra_path);
     if !env.is_empty() {
         let mut map = superba_core::MapEnv::new();
-        for k in ["PATH", "SHELL"] {
+        for k in ["PATH", "SHELL", "SUPERBA_SEARCH_ROOT"] {
             if let Some(v) = ctx.env.var(k) {
                 map = map.with(k, v);
             }

@@ -41,18 +41,36 @@ pub struct Grid {
 /// of the width; its rows split lower than the right column's, so the four
 /// cards never line up into a plain table.
 pub fn layout(area: Rect) -> Grid {
+    layout_with(area, None, 0.0)
+}
+
+/// Height of the page area `layout` works with.
+pub fn page_height(area: Rect) -> f32 {
     // Inside a scroll area the height is unbounded: keep the natural size.
-    let h = if area.height().is_finite() {
+    if area.height().is_finite() {
         area.height().max(600.0)
     } else {
         712.0
-    };
-    let hero_h = (h * 0.19).clamp(super::hero::HEIGHT, 152.0).floor();
+    }
+}
+
+/// [`layout`] with the request path's lanes: the hero grows to `lanes_h`
+/// when the window is tall enough (the cards keep their minimum heights), and
+/// 今日 grows by `today_extra` (its per-tool chips) at 最近会话's expense.
+pub fn layout_with(area: Rect, lanes_h: Option<f32>, today_extra: f32) -> Grid {
+    let h = page_height(area);
+    let base = (h * 0.19).clamp(super::hero::HEIGHT, 152.0);
+    // Room the cards below can give up (their minimums: 今日 270 and 最近会话
+    // 150, plus the gap).
+    let spare = (h - GAP - 270.0 - GAP - 150.0 - base).max(0.0);
+    let hero_h = lanes_h
+        .map_or(base, |want| want.min(base + spare).max(base))
+        .floor();
     let w = area.width();
     let left_w = ((w - GAP) * 2.0 / 3.0).floor();
     let right_w = w - GAP - left_w;
     let g = h - hero_h - GAP;
-    let today_h = (g * 0.54).clamp(270.0, 390.0).floor();
+    let today_h = ((g * 0.54).clamp(270.0, 390.0) + today_extra).floor();
     let lines_h = (g * 0.48).clamp(236.0, 350.0).floor();
     let top = area.min.y + hero_h + GAP;
     let x0 = area.min.x;

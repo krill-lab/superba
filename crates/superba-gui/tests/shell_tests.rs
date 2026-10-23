@@ -267,6 +267,11 @@ fn recovery_banner_displays_failure_without_a_running_timer() {
 /// Every sidebar label with its rectangle, the sidebar laid out as the app does
 /// (left panel, the shell's frame) in a `window` sized window.
 fn sidebar_texts(window: [f32; 2], locale: Locale) -> Vec<(String, Rect)> {
+    sidebar_texts_with(window, locale, true)
+}
+
+/// [`sidebar_texts`], the tools' entries shown (all six installed) or not.
+fn sidebar_texts_with(window: [f32; 2], locale: Locale, tools: bool) -> Vec<(String, Rect)> {
     use superba_gui::pages::{Page, PageStatus};
     let h = support::ui::Harness::new(window, egui::Theme::Light);
     let tr = Tr::new(locale);
@@ -292,7 +297,11 @@ fn sidebar_texts(window: [f32; 2], locale: Locale) -> Vec<(String, Rect)> {
                 };
                 let mut page = Page::Overview;
                 let mut actions = Vec::new();
-                shell::sidebar(ui, &cx, &mut page, &|_| PageStatus::default(), &mut actions);
+                let status = |p: Page| PageStatus {
+                    hidden: !tools && matches!(p, Page::Tool(_)),
+                    ..PageStatus::default()
+                };
+                shell::sidebar(ui, &cx, &mut page, &status, &mut actions);
             });
     })
 }
@@ -349,14 +358,43 @@ fn the_sidebar_never_draws_pages_under_the_pinned_ones_at_the_minimum_window() {
             let step = rect_of(&texts, Page::Models).center().y
                 - rect_of(&texts, Page::Providers).center().y;
             if window[1] >= 800.0 {
-                assert_eq!(step, size::NAV_ROW + size::NAV_GAP, "rows at {window:?}");
-            } else {
+                // All six tools shown: at least the compact rows.
                 assert!(
                     step >= size::NAV_ROW_COMPACT + size::NAV_GAP,
-                    "compact rows at {window:?}: {step}"
+                    "rows at {window:?}: {step}"
+                );
+            } else {
+                // All six tools installed (user request 114): the tight rows.
+                assert!(
+                    step >= size::NAV_ROW_TIGHT + size::NAV_GAP,
+                    "tight rows at {window:?}: {step}"
                 );
             }
         }
+        // Without the tools: the comfortable rows at 1280x800.
+        let texts = sidebar_texts_with([1280.0, 800.0], locale, false);
+        let y = |page: Page| {
+            texts
+                .iter()
+                .find(|(t, _)| *t == tr.t(page.nav_key()))
+                .map(|(_, r)| r.center().y)
+                .unwrap()
+        };
+        assert_eq!(
+            y(Page::Models) - y(Page::Providers),
+            size::NAV_ROW + size::NAV_GAP
+        );
+        // And the compact rows at 960x640.
+        let texts = sidebar_texts_with(size::MIN_WINDOW, locale, false);
+        let y = |page: Page| {
+            texts
+                .iter()
+                .find(|(t, _)| *t == tr.t(page.nav_key()))
+                .map(|(_, r)| r.center().y)
+                .unwrap()
+        };
+        assert!(y(Page::Models) - y(Page::Providers) >= size::NAV_ROW_COMPACT + size::NAV_GAP);
+        assert!(!texts.iter().any(|(t, _)| *t == tr.t("nav.group.others")));
     }
 }
 

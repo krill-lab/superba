@@ -1007,7 +1007,7 @@ fn superba_tray_sections_show_the_window_and_open_the_requested_section() {
                 .any(|id| t.node(*id).is_selected() == Some(true));
             selected
                 && (tab != superba_gui::pages::superba::SuperbaTab::Settings
-                    || t.find(Some(Role::Button), &tr.t(section.title_key()))
+                    || t.find(Some(Role::Tab), &tr.t(section.title_key()))
                         .is_some_and(|id| t.node(id).is_selected() == Some(true)))
         });
         assert!(h.visible());

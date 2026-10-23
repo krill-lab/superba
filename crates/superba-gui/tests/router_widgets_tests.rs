@@ -272,6 +272,7 @@ fn the_source_list_selects_entries_and_collapses() {
 fn provider_lines_are_indented_sub_entries_and_the_tabs_fit_150_px_in_english() {
     let ctx = context();
     let entry = |key: &str, label: &str, count: u64, child: bool| SourceEntry {
+        tool: None,
         key: key.into(),
         label: label.into(),
         count,

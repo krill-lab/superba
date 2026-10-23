@@ -81,8 +81,7 @@ pub fn sidebar_frame() -> egui::Frame {
 /// dots (`status` per page), and Superba's own pages (Diagnostics,
 /// Preferences) pinned at the bottom above a hairline and the version. No
 /// brand and no search field: the window's top is empty (the traffic lights,
-/// the drag area) and the command palette opens with Cmd/Ctrl+K and from the
-/// Overview's menu. The selected row is a soft gray pill with its icon in the
+/// the drag area). The selected row is a soft gray pill with its icon in the
 /// brand coral. The current state lives on the overview, not in the sidebar.
 ///
 /// When the window is too short for the comfortable rows (the 960x640
@@ -99,12 +98,20 @@ pub fn sidebar(
 
     // Superba's own pages sit at the bottom.
     let pinned = |p: Page| p.is_superba();
-    let main: Vec<Page> = Page::ALL.into_iter().filter(|p| !pinned(*p)).collect();
+    // A tool's entry only while it is installed (user request 114); the
+    // page that is open keeps its entry.
+    let main: Vec<Page> = Page::ALL
+        .into_iter()
+        .filter(|p| !pinned(*p) && (*page == *p || !status(*p).hidden))
+        .collect();
     let footer: Vec<Page> = Page::ALL.into_iter().filter(|p| pinned(*p)).collect();
-    let metrics = if ui.available_height() >= NavMetrics::FULL.needed(&main, footer.len()) {
+    let h = ui.available_height();
+    let metrics = if h >= NavMetrics::FULL.needed(&main, footer.len()) {
         NavMetrics::FULL
-    } else {
+    } else if h >= NavMetrics::COMPACT.needed(&main, footer.len()) {
         NavMetrics::COMPACT
+    } else {
+        NavMetrics::TIGHT
     };
     Panel::bottom("sidebar-footer")
         .resizable(false)
@@ -208,6 +215,13 @@ impl NavMetrics {
         caption_gap: size::NAV_CAPTION_GAP[1],
     };
 
+    /// Every page and all six tools at the 960x640 minimum (user request 114).
+    const TIGHT: Self = Self {
+        row: size::NAV_ROW_TIGHT,
+        caption: size::NAV_CAPTION[1],
+        caption_gap: 0.0,
+    };
+
     /// Height of the main list plus the pinned footer (rows, headings, the
     /// footer's hairline and version) with these sizes.
     fn needed(self, main: &[Page], footer_rows: usize) -> f32 {
@@ -240,15 +254,6 @@ const FOOTER_RULE: f32 = 7.0;
 
 /// Height of the version line at the bottom of the sidebar.
 const FOOTER_VERSION: f32 = 16.0;
-
-/// The shortcut label shown next to search affordances.
-pub fn palette_shortcut_label() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Cmd K"
-    } else {
-        "Ctrl K"
-    }
-}
 
 fn nav_item(
     ui: &mut Ui,
@@ -288,7 +293,15 @@ fn nav_item(
         pos2(rect.min.x + size::NAV_ICON_X, rect.center().y - side / 2.0),
         vec2(side, side),
     );
-    icons::paint(p, icon_rect, page.icon(), icon_color);
+    match page {
+        // The tool's own logo or monogram (user request 114).
+        Page::Tool(h) => crate::design::widgets::MonogramTile::new(
+            crate::pages::tools::Selection::Tool(h).monogram(),
+        )
+        .size(side + 3.0)
+        .paint_at(ui, icon_rect.center()),
+        _ => icons::paint(p, icon_rect, page.icon(), icon_color),
+    }
     p.text(
         pos2(rect.min.x + size::NAV_LABEL_X, rect.center().y),
         egui::Align2::LEFT_CENTER,

@@ -852,3 +852,59 @@ async fn an_update_applies_the_router_state_of_now() {
     execute(&sw, plan).await;
     assert!(!router_enabled(&w));
 }
+
+/// alpha.8 Windows acceptance (W90): with a model the profile sets itself
+/// nothing is "kept", and the plan for the router said nothing about the
+/// app's Codex inside WSL. It names the distribution and the model too.
+#[tokio::test]
+async fn run_codex_in_wsl_names_the_profile_model_when_the_router_turns_on() {
+    let (w, sw) = pat_applied("gpt-6.1-sol").await;
+    {
+        let mut set = w.profiles.set.lock().unwrap();
+        let p = set
+            .profiles
+            .iter_mut()
+            .find(|p| p.id.as_str() == "work")
+            .unwrap();
+        p.model.model = Some("gpt-6.1-sol".into());
+    }
+    let plan = sw
+        .plan(SwitchRequest::profile(ProfileId::new("work")))
+        .await
+        .unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    execute(&sw, plan).await;
+    for h in w.remote.hosts.lock().unwrap().iter_mut() {
+        h.wsl.as_mut().unwrap().default = true;
+    }
+    let path = w.ctx.codex_home().config_toml();
+    let mut config = std::fs::read_to_string(&path).unwrap();
+    assert!(config.contains("model = \"gpt-6.1-sol\""), "{config}");
+    config.push_str("\n[desktop]\nrunCodexInWindowsSubsystemForLinux = true\n");
+    std::fs::write(&path, config).unwrap();
+
+    let plan = sw.plan(router(true)).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    let n = plan
+        .warnings
+        .iter()
+        .find(|n| n.text.key == "switch.models.keep_legacy_wsl")
+        .unwrap_or_else(|| panic!("{:?}", plan.warnings));
+    assert_eq!(
+        messages::catalog(Locale::En).text(&n.text),
+        "The ChatGPT app runs this Codex inside WSL (Ubuntu, \"Run Codex in WSL\") with the \
+         configuration written here, so it keeps gpt-6.1-sol there too."
+    );
+    execute(&sw, plan).await;
+
+    // A line switch that keeps the route says nothing about it.
+    let plan = sw
+        .plan(SwitchRequest::profile(ProfileId::new("work")))
+        .await
+        .unwrap();
+    assert!(
+        !local_keys(&plan).contains(&"switch.models.keep_legacy_wsl".to_owned()),
+        "{:?}",
+        plan.warnings
+    );
+}

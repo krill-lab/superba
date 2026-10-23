@@ -48,7 +48,7 @@ impl SelfUpdater {
                 message: format!("cannot locate the running Superba: {e}"),
             })?,
         };
-        Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+        Ok(superba_core::paths::canonical(&exe).unwrap_or(exe))
     }
 
     /// Remove what an earlier update left behind: the macOS backup once the

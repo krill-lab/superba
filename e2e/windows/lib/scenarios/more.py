@@ -36,7 +36,7 @@ def page_tour(t, s, lang="en", tag=""):
     u = U(t, lang)
     for p in PAGES:
         u.page(p)
-        time.sleep(2.5)
+        u.wait_rendered()
         s.shot(f"{tag}{p.replace(':', '-')}")
     u.page("overview")
 
@@ -758,6 +758,14 @@ class _Release(BaseHTTPRequestHandler):
         if path.endswith("/releases/latest"):
             body = json.dumps({**release, "prerelease": False}).encode()
             ctype = "application/json"
+        elif "/releases/tags/" in path:
+            # "Update now" installs the release it offered by its tag
+            # (SelfUpdater::release_of: GET releases/tags/<tag>).
+            if path.rsplit("/", 1)[-1] != srv.tag:
+                self.send_error(404)
+                return
+            body = json.dumps(release).encode()
+            ctype = "application/json"
         elif path.endswith("/releases"):
             # The Preview update channel (a pre-release build's default) reads the list.
             body = json.dumps([release]).encode()
@@ -794,6 +802,12 @@ def wait_msi_version(run, version, timeout=420):
         if last["code"] == 0 and last["stdout"].strip() == f"spb {version}":
             break
     return last
+
+
+# The self-update's failure notices (updates.*.toml problem_failed /
+# problem_installed / failed, and the record's "still Superba <old>" reason).
+UPDATE_FAILED_RX = (r"The update to Superba .* failed|was installed with a problem|Update failed"
+                    r"|this is still Superba|更新到 Superba .*失败|已安装，但有问题|更新失败|仍是 Superba")
 
 
 @scenario("W52", "Superba self-update via the MSI from an older version", area="updates",
@@ -847,12 +861,15 @@ def w52(t):
             s.ui_dump("update-available")
             u.reveal(key="updates.superba.update_now", type="Button")
             u.click(key="updates.superba.update_now")
-            probe = wait_msi_version(run, tag[1:])
+            # The CI fixture MSI is named 9.0.0; its programs report the
+            # workspace version (flows.program_version).
+            want = flows.program_version(tag[1:])
+            probe = wait_msi_version(run, want)
             ver = probe["stdout"].strip()
             s.save("version-after-update.json", probe)
-            s.check(probe["code"] == 0 and ver == f"spb {tag[1:]}",
-                    f"spb --version after the update: {ver!r} (exit {probe['code']})")
-            run.state["version"] = tag[1:]
+            s.check(probe["code"] == 0 and ver == f"spb {want}",
+                    f"spb --version after the update: {ver!r} (exit {probe['code']}, want {want})")
+            run.state["version"] = want
             s.info(f"mock release requests: {srv.hits}")
             inv = flows.inventory(run)
             s.save("inventory-after-update.json", inv)
@@ -868,6 +885,10 @@ def w52(t):
                 u.click(key="wizard.skip")
             u.superba("updates")
             s.shot("after-update")
+            # alpha.9: spb --version alone missed a GUI that relaunched with
+            # "The installer reported success, but this is still Superba <old>".
+            bad = u.has_text(UPDATE_FAILED_RX, timeout=5)
+            s.check(bad is None, f"no 'update failed' notice after the relaunch: {bad!r}")
     finally:
         srv.shutdown()
         tun.terminate()
@@ -949,20 +970,23 @@ def w62(t):
                 for section in SETTINGS_ANCHORS:
                     u.superba(section)
                     for anchor in SETTINGS_ANCHORS:
-                        visible(u.find(key=f"superba.section.{anchor}", type="Button", visible=False), anchor)
-                    selected = u.wait(key=f"superba.section.{section}", type="Button").get("selected")
+                        visible(u.find(key=f"superba.section.{anchor}", type="TabItem", visible=False), anchor)
+                    selected = u.wait(key=f"superba.section.{section}", type="TabItem").get("selected")
                     s.check(selected is True, f"{section} selected after its heading settled: {selected}",
                             soft=selected is None)
                     s.shot(f"960x640-settings-{section}")
                     s.ui_dump(f"960x640-settings-{section}")
-    with t.step("Smaller than the minimum is refused") as s:
+    with t.step("Below the minimum (programmatic resize): the layout survives") as s:
         u = U(t)
         try:
             u.resize(700, 500)
             time.sleep(1)
             got = u.window()
-            s.check(got["rect"][2] >= 940 and got["rect"][3] >= 600,
-                    f"window stays at least the minimum: {got['rect']}", soft=True)
+            # The minimum (960x640, design tokens size::MIN_WINDOW) is the
+            # window's minimum tracking size: Windows applies it to sizing by
+            # the user, not to SetWindowPos, so the agent's resize may go
+            # below it (alpha.8 D9). Only record what happened.
+            s.info(f"after SetWindowPos 700x500: {got['rect']}")
             s.shot("minimum-size-attempt")
             s.ui_dump("minimum-size-attempt")
         finally:

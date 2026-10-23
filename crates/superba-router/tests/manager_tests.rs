@@ -648,7 +648,7 @@ fn the_router_program_is_found_in_every_release_layout() {
         find_router_exe, is_transient_location, router_exe_candidates, router_exe_name,
     };
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
+    let root = superba_core::paths::canonical(dir.path()).unwrap();
     let name = router_exe_name();
 
     // Archives and cargo target dirs: next to superba / spb.

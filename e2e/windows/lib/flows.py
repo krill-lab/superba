@@ -177,6 +177,25 @@ def msi_version(run):
     return m.group(1) if m else None
 
 
+# The CI package test's "far newer" MSI (scripts/release/test-msi.ps1): the
+# product says 9.0.0, the programs inside report the workspace version.
+FIXTURE_MSI_VERSION = "9.0.0"
+
+
+def workspace_version():
+    """The version in the checkout's Cargo.toml (what the programs report)."""
+    text = (Path(__file__).resolve().parents[3] / "Cargo.toml").read_text(encoding="utf-8")
+    m = re.search(r'^version = "([^"]+)"', text, re.M)
+    return m.group(1) if m else None
+
+
+def program_version(msi_name_version):
+    """What `spb --version` reports after installing the MSI of this version."""
+    if msi_name_version == FIXTURE_MSI_VERSION:
+        return workspace_version()
+    return msi_name_version
+
+
 def install(run, t, prefix="", passive=True):
     with t.step(prefix + "MSI installs per-user without elevation") as s:
         if "baseline" not in run.state:
@@ -219,7 +238,7 @@ def install(run, t, prefix="", passive=True):
         r = run.agent.exec("cmd.exe", ["/d", "/c", "spb --version"], timeout=60)
         s.check(r["code"] == 0 and "spb" in r["stdout"], f"`spb --version` through PATH: {r['stdout'].strip()!r} exit {r['code']}")
         run.state["version"] = r["stdout"].strip().split()[-1] if r["stdout"].strip() else None
-        want = msi_version(run)
+        want = program_version(msi_version(run))
         if want and run.state["version"]:
             s.check(run.state["version"] == want, f"spb version {run.state['version']} = MSI version {want}", soft=True)
         r = run.agent.exec(run.guest["INSTALL"] + r"\superba-router.exe", ["--version"], timeout=60)
@@ -275,6 +294,10 @@ APP_SETUP_WAIT_S = 900
 
 
 def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=False):
+    # router_restart: True / "on" when turning the router on, "off" when turning it off.
+    # Either way the certificate change makes Superba ask for a full restart after
+    # ~20 s of planning; the wait must not end before that question was answered
+    # (alpha.9 W33: it returned after 3 s with no phases, before the dialog).
     """Follows the switch overlay until it is gone; answers the force-quit question
     (Windows: ChatGPT not opened by Superba) when force_quit. Returns the phases seen.
 
@@ -310,7 +333,7 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=Fal
             reason = u.L("restart.reason.certificate_trust_changed")
             if reason not in names or confirmed_router_restart:
                 s.ui_dump("unexpected-router-confirmation")
-                raise UiError("unexpected or repeated full-restart confirmation while enabling the router")
+                raise UiError("unexpected or repeated full-restart confirmation while turning the router on or off")
             s.shot("router-certificate-confirm")
             s.ui_dump("router-certificate-confirm")
             s.check(u.exists(key="confirm.full_restart", type="Button", enabled=True),
@@ -365,7 +388,8 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=Fal
                 and not any(n == u.L("confirm.title") for n in names):
             # Planning may briefly leave an empty frame before the confirmation.
             # A router-on caller must see the resulting action, not just no overlay.
-            if router_restart and not u.exists(key="router.turn_off", type="Button", enabled=True):
+            if router_restart and router_wait_more(router_restart, confirmed_router_restart, results,
+                                                   lambda k: u.exists(key=k, type="Button", enabled=True)):
                 time.sleep(2)
                 continue
             if "wsl" in (run.session_snapshot or ""):
@@ -381,6 +405,16 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=Fal
         raise UiError(f"the switch stayed paused for running turns ({round(time.time() - t0)} s): {lines}; "
                       f"phases seen {seen}")
     raise UiError(f"the switch did not finish within {timeout} s; phases seen {seen}")
+
+
+def router_wait_more(router_restart, confirmed, results, button_enabled):
+    """Whether a router on/off switch is still unfinished: the full-restart confirmation
+    not yet answered (and no result shown instead), or the banner not yet flipped
+    (turning on shows Turn off; turning off shows Turn on)."""
+    if not confirmed and not results:
+        return True
+    want = "router.banner.turn_on" if router_restart == "off" else "router.banner.turn_off"
+    return not button_enabled(want)
 
 
 def switch_result_patterns(u):
@@ -650,10 +684,16 @@ def router_on(run, t, prefix=""):
         s.shot("router-before")
         s.ui_dump("router-before")
         gate = u.find(key="router.banner.turn_on", type="Button")
-        if gate:
+        add = u.L("router.eligibility.add", name="Krill")
+        if gate and not u.exists(timeout=3, name=add, visible=False):
+            # An earlier scenario of this run (W33, W89, …) left Krill a member: the
+            # gate is open already (alpha.8 W35/W88).
+            s.info("Krill is a member already (left by an earlier scenario): no member gate to check")
+            s.check(gate[0]["enabled"] is True, "'Turn on the router…' enabled with a member")
+        elif gate:
             s.check(gate[0]["enabled"] is False, "'Turn on the router…' disabled while there is no member (bug 28/39)")
             s.check(bool(u.has_text(re.escape(u.L("router.eligibility.none")))), "the reason is shown inline")
-            u.click(name=u.L("router.eligibility.add", name="Krill"))
+            u.click(name=add)
             time.sleep(2)
         s.check(bool(u.has_text(r"^Krill")), "Krill listed as a member")
         before_main = a.main()

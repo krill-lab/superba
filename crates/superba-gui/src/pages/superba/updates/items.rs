@@ -217,8 +217,13 @@ impl Entry {
         self
     }
     /// Display known versions without implying an unknown installed version.
+    /// An up-to-date row never shows an arrow: a running preview can be newer
+    /// than the newest published release, and "a9 → a8" reads as a downgrade.
     pub fn versions(&self) -> String {
         let current = self.current.as_deref().unwrap_or("—");
+        if self.status == UpdateStatus::Current {
+            return current.into();
+        }
         match self.latest.as_deref().filter(|v| *v != current) {
             Some(latest) => format!("{current} → {latest}"),
             None => current.into(),

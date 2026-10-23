@@ -8,9 +8,9 @@ use std::time::{Duration, Instant};
 use egui::{Align, Frame, Layout, Panel, ScrollArea, UiBuilder, pos2};
 use superba_core::{
     EnvironmentEvent, KeyInput, LineCaps, Locale, MigrationRequest, MigrationSelector,
-    OutcomeStatus, ProfileId, RestartKind, RestoreTarget, Settings, Severity, SiteId, StepStatus,
-    SwitchEvent, SwitchIntent, SwitchPhase, SwitchRequest, SwitchService, TargetId,
-    TargetSelection, Theme, Timestamp, catalog, codex::PROVIDER_OPENAI,
+    OutcomeStatus, ProfileId, RestartKind, Settings, Severity, SiteId, StepStatus, SwitchEvent,
+    SwitchIntent, SwitchPhase, SwitchRequest, SwitchService, TargetId, TargetSelection, Theme,
+    Timestamp, catalog, codex::PROVIDER_OPENAI,
 };
 
 use crate::cadence::{self, Cadence, Due};
@@ -23,11 +23,7 @@ use crate::design::widgets::{Status, Toast, Toasts};
 use crate::flow::{Flow, FlowAttention, FlowNotice, Stage};
 use crate::i18n::{Tr, system_locale};
 use crate::pages::wizard::{Wizard, WizardOutcome};
-use crate::pages::{
-    self, Action, Cx, Data, LogLine, Page, PageLayout, PageStatus, PaletteGroup, PaletteItem,
-    error_text,
-};
-use crate::palette::{self, CommandPalette};
+use crate::pages::{self, Action, Cx, Data, LogLine, Page, PageLayout, PageStatus, error_text};
 use crate::runtime::{Backend, Command, Reply};
 use crate::shell::{self, BannerState};
 
@@ -53,6 +49,10 @@ pub struct AppOptions {
     /// Start with the window hidden in the tray (`--start-in-tray` or the
     /// preference, read before the window opened).
     pub start_in_tray: bool,
+    /// `--command CMD`: a page command run on the first page once the
+    /// overview has loaded (screenshot and e2e tooling; the command palette
+    /// that used to reach these is gone, user request 118).
+    pub command: Option<String>,
 }
 
 /// Build a [`Cx`] from the app's fields without borrowing the whole app (page
@@ -209,6 +209,10 @@ impl PageStates {
                 ..PageStatus::default()
             },
             Page::Tools => pages::tools::status(&self.tools),
+            Page::Tool(h) => PageStatus {
+                hidden: !pages::tools::installed(&self.tools, h),
+                ..pages::tools::status(&self.tools)
+            },
         }
     }
 
@@ -244,24 +248,8 @@ impl PageStates {
                     pages::notify::command(&mut self.notify, cx, command);
                 }
             }
-            Page::Tools => pages::tools::command(&mut self.tools, cx, command),
+            Page::Tools | Page::Tool(_) => pages::tools::command(&mut self.tools, cx, command),
         }
-    }
-
-    /// Palette entries of every page module.
-    pub fn palette(&self, cx: &Cx<'_>) -> Vec<PaletteItem> {
-        let mut items = pages::overview::palette(cx, &self.overview);
-        items.extend(pages::router::palette(cx, &self.router));
-        items.extend(pages::settings::palette(cx, &self.settings));
-        items.extend(pages::providers::palette(cx, &self.providers));
-        items.extend(pages::models::palette(cx, &self.models));
-        items.extend(pages::sessions::palette(cx, &self.sessions));
-        items.extend(pages::hosts::palette(cx, &self.hosts));
-        items.extend(pages::superba::updates::palette(cx, &self.updates));
-        items.extend(pages::claude::palette(cx, &self.claude));
-        items.extend(pages::notify::palette(cx));
-        items.extend(pages::superba::search::palette(cx));
-        items
     }
 
     /// Draw `page` (header included).
@@ -286,6 +274,7 @@ impl PageStates {
                 pages::claude::show(ui, cx, &mut self.claude, page, out);
             }
             Page::Tools => pages::tools::show(ui, cx, &mut self.tools, out),
+            Page::Tool(h) => pages::tools::show_one(ui, cx, &mut self.tools, h, out),
             Page::Superba(section) => pages::superba::show(
                 ui,
                 cx,
@@ -311,7 +300,6 @@ pub struct SuperbaApp {
     data: Data,
     page: Page,
     pages: PageStates,
-    palette: CommandPalette,
     banner: BannerState,
     /// The session migration dialog (scene textures and clock).
     movers: crate::movers::dialog::MoversDialog,
@@ -417,7 +405,6 @@ impl SuperbaApp {
             data: Data::default(),
             page: opts.page.unwrap_or(Page::Overview),
             pages: PageStates::default(),
-            palette: CommandPalette::default(),
             banner: BannerState::default(),
             movers: Default::default(),
             external: Default::default(),
@@ -757,6 +744,19 @@ impl SuperbaApp {
         self.data.router_watch = Some(watch.state);
     }
 
+    /// Router mode or its members changed in the stored settings, not
+    /// through this window (alpha.9 D3: `spb router disable`, another
+    /// instance): the preferences copy takes the stored router settings (a
+    /// later preferences save must not turn router mode back on) and every
+    /// cached router read is dropped, so the Router page, the Providers lines
+    /// and the watchdog read the router again.
+    fn on_router_settings_changed(&mut self, set: &superba_core::ProfileSet) {
+        self.settings.router = set.settings.router.clone();
+        self.data.router_watch = None;
+        self.pages.router.invalidate();
+        self.pages.providers.router.invalidate();
+    }
+
     /// The router watchdog has work: router mode on and no switch planned or
     /// running (one tick every 5 s, also while the window is hidden).
     fn router_watch_wanted(&self) -> bool {
@@ -944,6 +944,12 @@ impl SuperbaApp {
                         self.settings = set.settings.clone();
                         self.settings_loaded = true;
                         self.apply_settings(ctx);
+                    }
+                    if let Ok(set) = &r
+                        && self.settings_loaded
+                        && router_settings_changed(self.data.profiles.value.as_ref(), set)
+                    {
+                        self.on_router_settings_changed(set);
                     }
                     self.data.profiles.finish(r);
                     self.maybe_launch_on_start();
@@ -1802,16 +1808,7 @@ impl SuperbaApp {
                 toast.ttl = Some(OFFER_TOAST_SECS);
                 self.toasts.push(toast);
             }
-            Action::OpenPalette => self.palette.open(),
-            Action::OpenSettingsPalette => self.palette.open_settings(),
         }
-    }
-
-    /// The shell's palette entries followed by the page modules' entries.
-    fn palette_items(&self, cx: &Cx<'_>) -> Vec<PaletteItem> {
-        let mut items = shell_palette(&self.tr, &self.data);
-        items.extend(self.pages.palette(cx));
-        items
     }
 
     /// The last update attempt failed (or ended with a problem) and that was
@@ -1888,10 +1885,7 @@ impl SuperbaApp {
         }
         // Dialogs own Enter / Escape; the flow must not react to them.
         let modal = self.wizard.is_some() || self.pages.any_modal() || self.in_effect.is_open();
-        if !modal && ctx.input_mut(|i| i.consume_shortcut(&palette::SHORTCUT)) {
-            self.palette.toggle();
-        }
-        if modal || self.palette.is_open() {
+        if modal {
             return;
         }
         let preferences = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Comma);
@@ -1960,6 +1954,7 @@ impl SuperbaApp {
         {
             let cx = cx!(self, pal, busy);
             self.pages.updates.background(&cx, out);
+            pages::tools::background(&mut self.pages.tools, &cx);
             let tools = self.pages.updates.tools.view(&cx);
             let entries =
                 pages::superba::updates::items::inventory(&cx, &self.pages.updates, &tools);
@@ -1973,6 +1968,15 @@ impl SuperbaApp {
                 // The sidebar is drawn before this page body.
                 ui.ctx().request_repaint();
             }
+        }
+        if let Some(f) = self
+            .pages
+            .router
+            .snapshot()
+            .and_then(|s| s.failover.as_ref())
+            && self.data.router_failover.as_ref() != Some(f)
+        {
+            self.data.router_failover = Some(f.clone());
         }
         self.data.notify_hooks_attention =
             self.settings.notify.enabled && self.pages.notify.needs_attention();
@@ -2185,7 +2189,6 @@ impl eframe::App for SuperbaApp {
             // the files, when nothing else asks for the user's attention.
             let quiet = !movers
                 && self.wizard.is_none()
-                && !self.palette.is_open()
                 && matches!(self.flow.stage(), crate::flow::Stage::Idle);
             self.external.offer(
                 self.data
@@ -2232,14 +2235,6 @@ impl eframe::App for SuperbaApp {
         }
         // The first-close question (item 70), above everything else.
         self.tray_prompt(&ctx);
-        if self.palette.is_open() {
-            let busy = self.flow.is_running() || self.flow.is_planning();
-            let cx = cx!(self, pal, busy);
-            let items = self.palette_items(&cx);
-            if let Some(action) = self.palette.show(&ctx, &self.tr, items) {
-                actions.push(action);
-            }
-        }
         self.release_startup_notices();
         if let Some(a) = self.toasts.show(&ctx, &self.tr.t("action.close")) {
             self.handle_toast_action(a);
@@ -2247,6 +2242,14 @@ impl eframe::App for SuperbaApp {
         // The window buttons (Windows, Linux), above everything else.
         crate::chrome::overlay(&ctx, &self.tr);
 
+        if self.data.overview.value.is_some()
+            && let Some(command) = self.opts.command.take()
+        {
+            actions.push(Action::PageCommand {
+                page: self.page,
+                command,
+            });
+        }
         for action in actions {
             self.handle_action(&ctx, action);
         }
@@ -2299,237 +2302,6 @@ impl eframe::App for SuperbaApp {
     }
 }
 
-/// Entries the shell contributes to the command palette (UX §3.12): switch to
-/// a provider or one of its lines, speed, restore, go to a page, run the setup
-/// wizard, add a provider, test lines, check for updates, refresh, open or
-/// restart the app. Page modules add their own through `palette()`.
-pub fn shell_palette(tr: &Tr, data: &Data) -> Vec<PaletteItem> {
-    let mut items = Vec::new();
-    let active = data.active_state();
-    let active_profile = data.active_profile();
-    // Lines of every provider with several lines.
-    for profile in data.providers() {
-        let Some(site) = data.site(&profile.site_id) else {
-            continue;
-        };
-        let provider = provider_name(tr, profile, &site);
-        if site.lines.len() > 1 {
-            for line in &site.lines {
-                let name = tr.text(&line.name);
-                // The line Codex already uses: marked, and choosing it does
-                // nothing (a switch would only restart the Codex core).
-                let current = active.is_some_and(|a| {
-                    a.profile_id.as_ref() == Some(&profile.id)
-                        && a.line_id.as_ref() == Some(&line.id)
-                });
-                let host = line.origin.host().to_owned();
-                items.push(PaletteItem {
-                    title: tr.f(
-                        "palette.switch_provider_line",
-                        &[("provider", &provider), ("line", &name)],
-                    ),
-                    detail: Some(if current {
-                        format!("{} · {host}", tr.t("palette.current"))
-                    } else {
-                        host
-                    }),
-                    keywords: vec![
-                        line.id.to_string(),
-                        line.name.fallback.clone(),
-                        profile.id.to_string(),
-                    ],
-                    group: PaletteGroup::Switch,
-                    action: if current {
-                        Action::Toast {
-                            status: Status::Idle,
-                            text: tr.f("palette.already_current", &[("line", &name)]),
-                        }
-                    } else {
-                        pages::shared::switch_action(data, profile, &line.id)
-                    },
-                });
-            }
-        }
-        if active_profile.is_none_or(|a| a.id != profile.id) {
-            items.push(PaletteItem {
-                title: tr.f("palette.switch_provider", &[("provider", &provider)]),
-                detail: site.default_line().map(|l| l.origin.host().to_owned()),
-                keywords: vec![profile.id.to_string(), site.id.to_string()],
-                group: PaletteGroup::Switch,
-                action: Action::Switch {
-                    profile: profile.id.clone(),
-                    line: None,
-                    auth: None,
-                },
-            });
-        }
-    }
-    // Speed of the applied provider (tiers some listed model offers).
-    if let Some(profile) = active_profile {
-        let offered = data
-            .active_models
-            .value
-            .as_ref()
-            .filter(|m| m.profile_id == profile.id)
-            .map(|m| m.speed.offered.clone())
-            .unwrap_or_default();
-        let current = profile.model.speed.unwrap_or_default();
-        for tier in offered.into_iter().filter(|t| *t != current) {
-            items.push(PaletteItem {
-                title: tr.f("palette.speed", &[("tier", &tr.text(&tier.text()))]),
-                detail: Some(provider_name(
-                    tr,
-                    profile,
-                    &data
-                        .site(&profile.site_id)
-                        .unwrap_or_else(catalog::compatible_template_site),
-                )),
-                keywords: vec![
-                    "speed".into(),
-                    "service_tier".into(),
-                    tier.config_value().into(),
-                ],
-                group: PaletteGroup::Switch,
-                action: Action::SetSpeed {
-                    profile: profile.id.clone(),
-                    tier,
-                },
-            });
-        }
-    }
-    if !data.official_active() {
-        items.push(PaletteItem {
-            title: tr.t("palette.restore_official"),
-            detail: None,
-            keywords: vec!["chatgpt".into(), "official".into(), "restore".into()],
-            group: PaletteGroup::Switch,
-            action: Action::Restore(RestoreTarget::Official),
-        });
-    }
-    if data
-        .overview
-        .value
-        .as_ref()
-        .is_some_and(|o| o.baseline_captured)
-    {
-        items.push(PaletteItem {
-            title: tr.t("palette.restore_original"),
-            detail: None,
-            keywords: vec!["original".into(), "restore".into(), "undo".into()],
-            group: PaletteGroup::Switch,
-            action: Action::restore_original(),
-        });
-        // GH#5: let cc-switch, AI Toolbox, ... manage Codex (also before they
-        // changed anything), unless Superba already owns nothing.
-        let overview = data.overview.value.as_ref();
-        if !overview
-            .and_then(|o| o.config.as_ref())
-            .is_some_and(|c| c.handed_off.is_some())
-        {
-            let to = overview
-                .and_then(|o| o.external.as_ref())
-                .map(|x| x.source.clone())
-                .unwrap_or_default();
-            items.push(PaletteItem {
-                title: tr.t("palette.hand_off"),
-                detail: None,
-                keywords: vec![
-                    "cc-switch".into(),
-                    "ai toolbox".into(),
-                    "hand off".into(),
-                    "release".into(),
-                ],
-                group: PaletteGroup::Switch,
-                action: Action::Plan(Box::new(crate::external::hand_off_request(&to))),
-            });
-        }
-    }
-    for page in Page::ALL {
-        items.push(PaletteItem {
-            title: tr.f("palette.go", &[("page", &tr.t(page.title_key()))]),
-            detail: None,
-            keywords: vec![
-                crate::args::PAGE_NAMES
-                    .iter()
-                    .find(|(p, _)| *p == page)
-                    .map_or("", |(_, n)| n)
-                    .to_owned(),
-            ],
-            group: PaletteGroup::Navigate,
-            action: Action::Go(page),
-        });
-    }
-    items.push(PaletteItem {
-        title: tr.t("palette.run_wizard"),
-        detail: None,
-        keywords: vec!["setup".into(), "wizard".into(), "onboarding".into()],
-        group: PaletteGroup::Commands,
-        action: Action::StartWizard,
-    });
-    items.push(PaletteItem {
-        title: tr.t("palette.add_provider"),
-        detail: None,
-        keywords: vec!["provider".into(), "site".into(), "add".into()],
-        group: PaletteGroup::Commands,
-        action: Action::PageCommand {
-            page: Page::Providers,
-            command: "add".into(),
-        },
-    });
-    if let Some(site) = data.lines_site_id().and_then(|id| data.site(&id)) {
-        items.push(PaletteItem {
-            title: tr.t("palette.probe"),
-            detail: Some(tr.text(&site.name)),
-            keywords: vec!["latency".into(), "ping".into()],
-            group: PaletteGroup::Commands,
-            action: Action::Probe(site.id.clone()),
-        });
-    }
-    items.push(PaletteItem {
-        title: tr.t("palette.check_updates"),
-        detail: None,
-        keywords: vec!["update".into(), "version".into(), "codex".into()],
-        group: PaletteGroup::Commands,
-        action: Action::CheckUpdates,
-    });
-    items.push(PaletteItem {
-        title: tr.t("action.refresh"),
-        detail: None,
-        keywords: vec!["reload".into()],
-        group: PaletteGroup::Commands,
-        action: Action::Refresh,
-    });
-    // Open or reopen ChatGPT through Superba (GH#7); a running ChatGPT that
-    // can be hot-switched can still be restarted fully.
-    let overview = data.overview.value.as_ref();
-    let running = overview.is_some_and(|o| o.app.session.is_some());
-    let (title, detail, action) = match overview.and_then(crate::launch::app_launch) {
-        Some(launch @ crate::launch::AppLaunch::Reopen(_)) => (
-            tr.t(launch.label_key()),
-            Some(tr.t(launch.tip_key())),
-            Action::RestartApp,
-        ),
-        _ if running => (tr.t("action.full_restart"), None, Action::RestartApp),
-        _ => (tr.t("action.open_app"), None, Action::OpenApp),
-    };
-    items.push(PaletteItem {
-        title,
-        detail,
-        keywords: vec![
-            "chatgpt".into(),
-            "codex".into(),
-            "app".into(),
-            "open".into(),
-            "reopen".into(),
-            "hot switch".into(),
-            "superba".into(),
-        ],
-        group: PaletteGroup::Commands,
-        action,
-    });
-    items
-}
-
 /// Show the window and bring it to the front (a request of another start
 /// needs the user: a reopen to confirm, an error to read). On Windows the
 /// request's sender passes its foreground right on first
@@ -2551,6 +2323,15 @@ pub fn provider_name(
     } else {
         profile.name.clone()
     }
+}
+
+/// Whether the stored router settings in `new` differ from those the window
+/// shows (`old`; `None` before the first read counts as no change).
+pub fn router_settings_changed(
+    old: Option<&superba_core::ProfileSet>,
+    new: &superba_core::ProfileSet,
+) -> bool {
+    old.is_some_and(|old| old.settings.router != new.settings.router)
 }
 
 /// Sidebar badges computed from the shell's own data (UX §2.1): the router dot

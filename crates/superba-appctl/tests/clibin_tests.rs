@@ -138,7 +138,7 @@ mod unix {
     #[test]
     fn discovery_keeps_path_ranks_then_extras_and_deduplicates_symlinks() {
         let temp = tempdir().unwrap();
-        let root = temp.path().canonicalize().unwrap();
+        let root = superba_core::paths::canonical(temp.path()).unwrap();
         let home = root.join("home");
         let first = root.join("bin-one");
         let non_executable = root.join("bin-not-executable");
@@ -215,7 +215,7 @@ mod unix {
     #[test]
     fn a_bundled_binary_on_path_keeps_its_rank_and_inherits_metadata() {
         let temp = tempdir().unwrap();
-        let root = temp.path().canonicalize().unwrap();
+        let root = superba_core::paths::canonical(temp.path()).unwrap();
         let home = root.join("home");
         let mut install = app_install(root.join("app"));
         let bundled = install.path.join("resources/codex");
@@ -239,7 +239,7 @@ mod unix {
     #[test]
     fn absent_path_does_not_fall_back_to_the_process_environment() {
         let temp = tempdir().unwrap();
-        let root = temp.path().canonicalize().unwrap();
+        let root = superba_core::paths::canonical(temp.path()).unwrap();
         let binary = root.join(".local/bin/codex");
         script(&binary);
         let found = find_codex_binaries(&MapEnv::new(), &root, &[]);
@@ -250,7 +250,7 @@ mod unix {
     #[test]
     fn relative_and_empty_path_entries_use_the_supplied_working_directory() {
         let temp = tempdir().unwrap();
-        let root = temp.path().canonicalize().unwrap();
+        let root = superba_core::paths::canonical(temp.path()).unwrap();
         let cwd = root.join("cwd");
         let home = root.join("home");
         script(&cwd.join("bin/codex"));

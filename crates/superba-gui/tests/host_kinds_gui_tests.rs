@@ -119,18 +119,11 @@ fn a_device_gets_a_read_only_detail_without_any_ssh_action() {
                 .any(|a| matches!(a, Action::Copy(id) if id == FakeService::DEVICE_HOST_ID))
         },
     );
-    // Commands and the palette never reach the device either.
+    // Commands never reach the device either.
     h.frame(|_, cx, out| {
         hosts::command(&mut state, cx, &format!("sync:{}", device()), out);
         hosts::command(&mut state, cx, &format!("probe:{}", device()), out);
         state.set_follow(cx, device(), true);
-        let titles: Vec<String> = hosts::palette(cx, &state)
-            .into_iter()
-            .map(|i| i.title)
-            .collect();
-        // devbox, gpu-01 and the WSL distribution.
-        assert_eq!(titles.len(), 3, "{titles:?}");
-        assert!(titles.iter().all(|t| !t.contains("Studio")), "{titles:?}");
     });
     assert!(state.sync.is_none(), "no sync dialog for a device");
     h.frames(3, |ui, cx, out| hosts::show(ui, cx, &mut state, out));
@@ -178,7 +171,7 @@ fn the_sessions_switcher_names_devices_and_never_scans_them() {
             ("远程控制设备".to_owned(), false),
         ]
     );
-    let mut state = sessions::State::default();
+    let mut state = sessions::State::migration_tool();
     let f = h.frames(2, |ui, cx, out| sessions::show(ui, cx, &mut state, out));
     assert!(f.has("Studio Mac"), "{}", f.all_text());
     no_raw_id(&f.all_text());
@@ -196,11 +189,6 @@ fn the_sessions_switcher_names_devices_and_never_scans_them() {
     h.frame(|_, cx, out| {
         sessions::command(&mut state, cx, "rescan", out);
         state.scan(cx, &device());
-        let palette: Vec<String> = sessions::palette(cx, &state)
-            .into_iter()
-            .map(|i| i.title)
-            .collect();
-        assert_eq!(palette.len(), 3, "{palette:?}");
     });
     h.frames(3, |ui, cx, out| sessions::show(ui, cx, &mut state, out));
     assert!(

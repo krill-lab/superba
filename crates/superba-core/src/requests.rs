@@ -46,6 +46,9 @@ pub enum RequestSource {
     CcSwitch,
     /// Imported from AI Toolbox's usage history.
     AiToolbox,
+    /// Claude Code's local transcripts (`projects/**/*.jsonl` of its
+    /// configuration directory): model, tokens and times only.
+    ClaudeTranscript,
 }
 
 impl RequestSource {
@@ -62,6 +65,10 @@ impl RequestSource {
             RequestSource::AiToolbox => {
                 LocalizedText::new("request_source.ai_toolbox", "Imported from AI Toolbox")
             }
+            RequestSource::ClaudeTranscript => LocalizedText::new(
+                "request_source.claude_transcript",
+                "Claude Code transcripts",
+            ),
         }
     }
 
@@ -83,14 +90,15 @@ impl RequestSource {
     }
 
     /// Every source, in the order the Usage page's filter lists them.
-    pub const ALL: [RequestSource; 4] = [
+    pub const ALL: [RequestSource; 5] = [
         RequestSource::Router,
         RequestSource::Rollout,
+        RequestSource::ClaudeTranscript,
         RequestSource::CcSwitch,
         RequestSource::AiToolbox,
     ];
 
-    /// Stable id (`router`, `rollout`, `ccs`, `ai-toolbox`), as `spb usage
+    /// Stable id (`router`, `rollout`, `claude-code`, `ccs`, `ai-toolbox`), as `spb usage
     /// --source` takes it.
     pub fn id(self) -> &'static str {
         match self {
@@ -98,6 +106,7 @@ impl RequestSource {
             RequestSource::Rollout => "rollout",
             RequestSource::CcSwitch => "ccs",
             RequestSource::AiToolbox => "ai-toolbox",
+            RequestSource::ClaudeTranscript => "claude-code",
         }
     }
 }
@@ -652,9 +661,24 @@ pub struct RequestRow {
     /// Main conversation, subagent or background work, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_kind: Option<AgentKind>,
+    /// The lines tried, in order, the answering one last (router rows; empty
+    /// for other sources). The same list as [`RequestDetail::attempts`], here
+    /// so the Usage page's 路由 tab can show every hop without a detail read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attempts: Vec<RequestAttempt>,
 }
 
 impl RequestRow {
+    /// The protocol the request reached its upstream in, when it differs from
+    /// the one the tool spoke (a protocol conversion).
+    pub fn converted_to(&self) -> Option<RequestProtocol> {
+        self.attempts
+            .iter()
+            .rev()
+            .find_map(|a| a.upstream_protocol)
+            .filter(|p| *p != self.protocol)
+    }
+
     /// This tool's own session id. Codex can also identify a session by its cache key.
     pub fn session_key(&self) -> Option<&str> {
         self.session_id
@@ -1217,6 +1241,11 @@ pub struct RequestAttempt {
     /// upstream.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compression: Option<RequestCompression>,
+    /// The protocol the request went to this line in (absent in rows recorded
+    /// before it was kept). Differs from [`RequestRow::protocol`] when the
+    /// router converted the request (Anthropic Messages → OpenAI Responses).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_protocol: Option<RequestProtocol>,
 }
 
 /// Everything about one request (the detail pane).
@@ -1454,8 +1483,79 @@ pub struct LongContextPrice {
     /// Cache write (default = this band's `input`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<Usd>,
+    /// One-hour cache write (Anthropic's `ttl: "1h"`; default = this band's
+    /// `cache_write`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<Usd>,
     /// Output.
     pub output: Usd,
+}
+
+/// Prices during a daily time window (DeepSeek's former off-peak discount):
+/// they replace the entry's Standard prices for requests that start inside
+/// the window. A long-context band still wins over a window.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PriceWindow {
+    /// What the window is called on the price page (`off-peak`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Start, `HH:MM` in the provider's time zone (inclusive).
+    pub start: String,
+    /// End, `HH:MM` (exclusive); at or before `start` the window runs past
+    /// midnight.
+    pub end: String,
+    /// The provider's time zone as an offset from UTC in minutes (the price
+    /// page's own zone; `0` for UTC, `480` for Beijing).
+    #[serde(default)]
+    pub utc_offset_minutes: i32,
+    /// ISO weekdays the window applies on, in that zone (1 = Monday ...
+    /// 7 = Sunday); empty = every day. A time after midnight counts for the
+    /// day it falls on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weekdays: Vec<u8>,
+    /// Input.
+    pub input: Usd,
+    /// Cached input (default = `input`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_input: Option<Usd>,
+    /// Cache write (default = `input`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<Usd>,
+    /// Output.
+    pub output: Usd,
+}
+
+impl PriceWindow {
+    /// Minutes after midnight of `HH:MM`.
+    pub fn minute_of(text: &str) -> Option<u32> {
+        let (h, m) = text.trim().split_once(':')?;
+        let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+        (h <= 24 && m < 60 && h * 60 + m <= 24 * 60).then_some(h * 60 + m)
+    }
+
+    /// Whether the instant `unix_ms` falls inside the window.
+    pub fn contains(&self, unix_ms: i64) -> bool {
+        let (Some(start), Some(end)) = (Self::minute_of(&self.start), Self::minute_of(&self.end))
+        else {
+            return false;
+        };
+        let (start, end) = (start % 1440, end % 1440);
+        let local = unix_ms.div_euclid(60_000) + i64::from(self.utc_offset_minutes);
+        let minute = local.rem_euclid(1440) as u32;
+        // 1970-01-01 was a Thursday (ISO 4).
+        let weekday = ((local.div_euclid(1440) + 3).rem_euclid(7) + 1) as u8;
+        if !self.weekdays.is_empty() && !self.weekdays.contains(&weekday) {
+            return false;
+        }
+        if start < end {
+            (start..end).contains(&minute)
+        } else if start > end {
+            minute >= start || minute < end
+        } else {
+            // start == end: the whole day.
+            true
+        }
+    }
 }
 
 /// Absolute prices of one service tier in USD per 1M tokens, copied from the
@@ -1491,11 +1591,17 @@ pub struct PriceEntry {
     /// Cached input (default = `input`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_input: Option<Usd>,
-    /// Cache write (default = `input`).
+    /// Cache write (default = `input`); Anthropic's five-minute write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<Usd>,
+    /// One-hour cache write (Anthropic's `ttl: "1h"`; default = `cache_write`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<Usd>,
     /// Output.
     pub output: Usd,
+    /// Daily time windows with their own prices (off-peak), by request time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub windows: Vec<PriceWindow>,
     /// Long-context tiers, ascending by threshold.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub long_context: Vec<LongContextPrice>,

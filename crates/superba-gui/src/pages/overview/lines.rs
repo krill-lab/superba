@@ -50,7 +50,9 @@ pub fn rows(cx: &Cx<'_>, site: &Site, snap: Option<&Snapshot>) -> Vec<LineRow> {
         snap.and_then(|s| s.router.as_ref())
             .and_then(|r| r.members.iter().find(|m| m.profile_id == p.id))
     });
-    let lines = crate::pages::shared::ordered_lines(site, profile);
+    let mut lines = crate::pages::shared::ordered_lines(site, profile);
+    // Disabled lines (user bug 108) are never used: the card leaves them out.
+    lines.retain(|l| !profile.is_some_and(|p| p.is_line_disabled(&l.id)));
     lines
         .into_iter()
         .enumerate()
@@ -218,7 +220,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<Act
         )
         .on_hover_text(format!(
             "{note}\n{}\n{}",
-            tr.t("router.preference.recovery"),
+            crate::pages::router::recovery_text(tr, cx.data.router_failover.as_ref()),
             tr.t("router.preference.observed")
         ));
     }

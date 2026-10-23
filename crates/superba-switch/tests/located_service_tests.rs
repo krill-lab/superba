@@ -16,7 +16,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 async fn fixture() -> (tempfile::TempDir, LocalContext, Arc<dyn SwitchService>) {
     let temp = tempfile::tempdir().unwrap();
-    let mut ctx = LocalContext::for_tests(&temp.path().canonicalize().unwrap());
+    let mut ctx = LocalContext::for_tests(&superba_core::paths::canonical(temp.path()).unwrap());
     ctx.env = Arc::new(MapEnv::new().with("SUPERBA_SECRET_BACKEND", "file"));
     std::fs::create_dir_all(&ctx.home_dir).unwrap();
     let profiles = superba_config::JsonProfileStore::new(ctx.clone());
@@ -255,10 +255,8 @@ async fn harness_drafts_errors_edits_and_reviewed_restore_reach_the_real_writer(
         std::fs::read(&saved.file.path).unwrap(),
         save.contents.expose()
     );
-    assert!(matches!(
-        service.save_harness_file(save).await,
-        Err(Error::Conflict { .. })
-    ));
+    let again = service.save_harness_file(save).await;
+    assert!(matches!(again, Err(Error::Conflict { .. })), "{again:?}");
     let backups = service.harness_backups(HarnessId::Pi).await.unwrap();
     let backup = backups
         .iter()

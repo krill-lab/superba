@@ -314,7 +314,7 @@ fn remote_rows_install_on_the_host_and_failures_are_shown() {
 }
 
 #[test]
-fn check_and_palette_commands() {
+fn check_and_update_commands() {
     let service = fake();
     let mut h = harness(service.clone(), Locale::En);
     let mut state = expanded_state();
@@ -324,20 +324,6 @@ fn check_and_palette_commands() {
         |ui, cx, out| updates::show(ui, cx, &mut state, out),
         |_| service.version_refreshes() == 1,
     );
-    h.frame(|_, cx, _| {
-        let titles: Vec<String> = updates::palette(cx, &state)
-            .into_iter()
-            .map(|i| i.title)
-            .collect();
-        assert_eq!(
-            titles,
-            [
-                "Check for Superba updates",
-                "Check for updates",
-                "Update Codex CLI"
-            ]
-        );
-    });
     h.frame(|_, cx, out| updates::command(&mut state, cx, "update_cli", out));
     h.until(
         |ui, cx, out| updates::show(ui, cx, &mut state, out),

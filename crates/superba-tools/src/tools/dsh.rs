@@ -82,6 +82,21 @@ async fn node_usable(cx: &Ctx) -> (bool, Option<String>) {
     )
 }
 
+/// DeepSeek's `dsh`: the chosen path, else the first `dsh` found that is not
+/// Homebrew's `dsh` formula (Dancer's shell, a different program).
+pub fn find(cx: &Ctx) -> Option<PathBuf> {
+    let (found, dirs) = cx.locate("dsh");
+    if let Some(l) = &found
+        && l.source == crate::locate::Source::Override
+    {
+        return Some(l.path.clone());
+    }
+    dirs.find_all("dsh")
+        .into_iter()
+        .map(|l| l.path)
+        .find(|p| !common::homebrew_of(p).is_some_and(|(name, cask, _)| name == "dsh" && !cask))
+}
+
 /// What is installed.
 pub async fn detect(cx: &Ctx, desc: &Descriptor, st: &ToolState) -> Detected {
     let os = cx.platform.os;
@@ -106,7 +121,7 @@ pub async fn detect(cx: &Ctx, desc: &Descriptor, st: &ToolState) -> Detected {
         };
         ours.push(install(exe, ToolInstallKind::Runtime, v, true, false));
     }
-    let found = cx.which("dsh");
+    let found = find(cx);
     let mut external = None;
     if let Some(f) = &found {
         let launcher = cx.local_bin().join("dsh");

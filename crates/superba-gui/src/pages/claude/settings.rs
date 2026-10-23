@@ -10,7 +10,7 @@
 //! Superba manages are read-only here (the connection page owns them). The
 //! file editor of the Codex settings page opens `settings.json` itself.
 
-use egui::{Align, Layout, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, Layout, RichText, Sense, Ui, vec2};
 use superba_catalog::claude::{ClaudeGroup, ClaudeSource};
 use superba_core::{
     CodexFileDoc, CodexFileKind, CodexFileSave, CodexFileSaved, Locale, SaveReason, SecretBytes,
@@ -30,9 +30,7 @@ use crate::design::widgets::{
 };
 use crate::pages::settings::files::Editor;
 use crate::pages::shared::loading::{self, Latest};
-use crate::pages::{
-    Action, Cx, Page, PageStatus, PaletteGroup, PaletteItem, error_text, page_header,
-};
+use crate::pages::{Action, Cx, Page, PageStatus, error_text, page_header};
 use crate::runtime::ReadTask;
 
 /// Time limit of reading settings.json.
@@ -457,21 +455,18 @@ fn strip(ui: &mut Ui, cx: &Cx<'_>, s: &mut SettingsState, path: Option<String>) 
     ui.horizontal(|ui| {
         ui.set_min_height(size::CONTROL);
         ui.spacing_mut().item_spacing.x = 8.0;
-        let search = ui
-            .add(
-                TextEdit::singleline(&mut s.filter.query)
-                    .id(egui::Id::unique("claude-settings-search"))
-                    .hint_text(cx.tr.t("claude.settings.search"))
-                    .desired_width(240.0)
-                    .margin(vec2(10.0, 6.0)),
-            )
-            .accessible_name(cx.tr.t("claude.settings.search"));
+        let search = crate::design::widgets::SearchField::new(
+            &mut s.filter.query,
+            "claude-settings-search",
+            cx.tr.t("claude.settings.search"),
+            cx.tr.t("action.clear_search"),
+        )
+        .width(300.0)
+        .margin(vec2(10.0, 6.0))
+        .show(ui);
         if s.focus_search {
             search.request_focus();
             s.focus_search = false;
-        }
-        if search.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            s.filter.query.clear();
         }
         ui.add(Toggle::new(
             &mut s.filter.deprecated,
@@ -959,30 +954,4 @@ pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Acti
     } else if command == "save" {
         s.save(cx);
     }
-}
-
-/// Palette entries: every key with its Chinese name.
-pub fn palette(cx: &Cx<'_>, s: &SettingsState) -> Vec<PaletteItem> {
-    let Some(model) = &s.model else {
-        return Vec::new();
-    };
-    let zh = cx.tr.locale() == Locale::ZhCn;
-    model
-        .rows
-        .iter()
-        .filter(|r| !r.entry.deprecated || r.value.is_some())
-        .map(|r| PaletteItem {
-            title: format!("{} · Claude Code", r.title(zh)),
-            detail: Some(r.path().to_owned()),
-            keywords: [Some(r.path().to_owned()), r.entry.name_zh.clone()]
-                .into_iter()
-                .flatten()
-                .collect(),
-            group: PaletteGroup::Settings,
-            action: Action::PageCommand {
-                page: Page::ClaudeSettings,
-                command: format!("focus:{}", r.path()),
-            },
-        })
-        .collect()
 }

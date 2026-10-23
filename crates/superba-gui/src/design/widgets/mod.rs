@@ -119,3 +119,9 @@ pub mod disclosure;
 pub use disclosure::{Disclosure, DisclosureResponse};
 pub mod update_row;
 pub use update_row::{UpdateGroup, UpdateResponse, UpdateRow, UpdateTile};
+
+// The changes a "write this file?" dialog makes, key then value, never cut.
+pub mod change_list;
+pub use change_list::{Change, ChangeLabels, ChangeList};
+pub mod search_field;
+pub use search_field::SearchField;

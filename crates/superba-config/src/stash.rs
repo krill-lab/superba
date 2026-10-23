@@ -99,6 +99,7 @@ impl Stash {
             last_refresh: info.last_refresh,
             id_token_exp: info.id_token_exp,
             email: info.email.clone(),
+            account_id: info.account_id.clone(),
         };
         let mut idx = self.index(scope)?;
         idx.scope = Some(scope.clone());

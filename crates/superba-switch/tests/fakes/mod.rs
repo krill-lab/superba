@@ -158,6 +158,7 @@ impl FakeConfig {
                 last_refresh: None,
                 id_token_exp: None,
                 email: None,
+                account_id: None,
             })),
             generations: Mutex::new(Vec::new()),
             tamper_after_apply: Mutex::new(false),
@@ -707,6 +708,7 @@ pub fn krill_profile(id: &str, line: Option<&str>, auth: AuthMode) -> Profile {
         model: Default::default(),
         auth: superba_core::AuthChoice::from_mode(auth),
         backup_lines: Vec::new(),
+        disabled_lines: Default::default(),
         codex_settings: Default::default(),
     }
 }
@@ -936,6 +938,8 @@ pub struct FakeRouter {
     pub fail_move: Mutex<Option<Error>>,
     /// The merged catalog the running router reports (`None` = not supported).
     pub catalog: Mutex<Option<superba_core::RouterCatalogView>>,
+    /// Mixed login accounts handed to the router, in order.
+    pub official: Mutex<Vec<Option<String>>>,
 }
 
 impl FakeRouter {
@@ -956,6 +960,7 @@ impl FakeRouter {
             inflight: Mutex::new(Vec::new()),
             stats_status: Mutex::new(None),
             wsl_listen: Mutex::new(Vec::new()),
+            official: Mutex::new(Vec::new()),
             firewall: Mutex::new(Vec::new()),
             firewall_error: Mutex::new(None),
             taken: Mutex::new(None),
@@ -1158,6 +1163,30 @@ impl RouterControl for FakeRouter {
             .collect())
     }
 
+    async fn claude_requests_for(
+        &self,
+        from: Option<Timestamp>,
+        to: Option<Timestamp>,
+        sessions: Vec<String>,
+        responses: Vec<String>,
+    ) -> Result<Vec<superba_core::RequestRow>> {
+        let page = self.page.lock().unwrap();
+        Ok(page
+            .rows
+            .iter()
+            .filter(|r| r.harness == superba_core::RequestHarness::ClaudeCode)
+            .filter(|r| {
+                r.response_id
+                    .as_ref()
+                    .is_some_and(|id| responses.contains(id))
+                    || (from.is_none_or(|f| r.started_at >= f)
+                        && to.is_none_or(|t| r.started_at < t)
+                        && r.session_id.as_ref().is_some_and(|s| sessions.contains(s)))
+            })
+            .cloned()
+            .collect())
+    }
+
     async fn clear_requests(
         &self,
         request: &superba_core::ClearRequest,
@@ -1168,6 +1197,14 @@ impl RouterControl for FakeRouter {
 
     async fn inflight(&self) -> Result<Vec<superba_core::InflightRequest>> {
         Ok(self.inflight.lock().unwrap().clone())
+    }
+
+    async fn set_official_client(&self, account_id: Option<String>) -> Result<bool> {
+        push(&self.log, format!("router.official {account_id:?}"));
+        let mut o = self.official.lock().unwrap();
+        let changed = o.last() != Some(&account_id);
+        o.push(account_id);
+        Ok(changed)
     }
 
     async fn set_wsl_listen(&self, addresses: Vec<std::net::Ipv4Addr>) -> Result<bool> {

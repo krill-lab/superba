@@ -68,7 +68,7 @@ fn opened_by_superba(w: &World, yes: bool) {
 }
 
 fn root(w: &World) -> PathBuf {
-    std::fs::canonicalize(w.tmp.path()).unwrap()
+    superba_core::paths::canonical(w.tmp.path()).unwrap()
 }
 
 async fn view(w: &World) -> VersionsView {

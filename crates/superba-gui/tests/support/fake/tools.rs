@@ -54,6 +54,9 @@ fn row(id: ToolId, support: ToolSupport, channels: &[&str], latest: &str) -> Too
         data_dirs: Vec::new(),
         path_hint: None,
         notes: Vec::new(),
+        command_path: None,
+        searched: Vec::new(),
+        install_method: None,
     }
 }
 

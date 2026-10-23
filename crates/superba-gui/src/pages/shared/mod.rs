@@ -13,10 +13,14 @@ pub mod loading;
 pub mod notices;
 pub mod profile;
 pub mod providers;
+pub mod tool_label;
 pub mod values;
 
 pub use auth::{AutoFacts, auto_facts, decision, decision_with, switch_action};
 pub use format::{compact, group_thousands, nice_axis};
-pub use lines::{applied_line, moved, ordered_lines, priority_text, reorder_action, route_text};
+pub use lines::{
+    LineToggle, applied_line, disable_and_switch, last_enabled, moved, ordered_lines,
+    priority_text, reorder_action, route_text, toggle_action,
+};
 pub use profile::new_profile;
 pub use providers::{Provider, ProviderId, ProviderKind};

@@ -97,6 +97,12 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
             "router protocol conversion settings",
         ))
     }
+    /// Persist the failover and recovery rules and reload without starting
+    /// the service.
+    async fn set_failover(&self, failover: superba_core::RouterFailover) -> Result<()> {
+        let _ = failover;
+        Err(Error::not_implemented("router failover settings"))
+    }
     /// Endpoint of the stored configuration (reads files only).
     fn endpoint(&self) -> Result<RouterEndpointInfo>;
     /// Write the configuration, install and start the service, wait until it
@@ -143,6 +149,12 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
     /// The WSL addresses the stored configuration listens on.
     fn wsl_listen(&self) -> Vec<std::net::Ipv4Addr> {
         Vec::new()
+    }
+    /// Mixed login: accept the user's own ChatGPT login of `account_id` from
+    /// local Codex (`None`: router tokens only). Returns whether it changed.
+    async fn set_official_client(&self, account_id: Option<String>) -> Result<bool> {
+        let _ = account_id;
+        Err(Error::not_implemented("router mixed login"))
     }
     /// Add or update the Windows Firewall rule that lets WSL reach the router at
     /// `address:port` (asks for administrator approval). The rule covers the
@@ -193,6 +205,19 @@ pub trait RouterControl: Send + Sync + std::fmt::Debug {
         threads: Vec<String>,
     ) -> Result<Vec<superba_core::RequestRow>> {
         let _ = (from, to, threads);
+        Ok(Vec::new())
+    }
+    /// Claude Code rows started in `[from, to)` of these sessions, plus any
+    /// Claude Code row with one of these response ids: what Claude Code
+    /// transcript rows are matched against (empty without a request log).
+    async fn claude_requests_for(
+        &self,
+        from: Option<superba_core::Timestamp>,
+        to: Option<superba_core::Timestamp>,
+        sessions: Vec<String>,
+        responses: Vec<String>,
+    ) -> Result<Vec<superba_core::RequestRow>> {
+        let _ = (from, to, sessions, responses);
         Ok(Vec::new())
     }
     /// Grouped aggregates.
@@ -281,6 +306,9 @@ impl RouterControl for SystemRouterControl {
     async fn set_conversion(&self, conversion: superba_core::RouterConversion) -> Result<()> {
         self.manager.set_conversion(conversion).await.map(|_| ())
     }
+    async fn set_failover(&self, failover: superba_core::RouterFailover) -> Result<()> {
+        self.manager.set_failover(&failover).await.map(|_| ())
+    }
     async fn restart(&self) -> Result<()> {
         self.manager.restart(ROUTER_START_WAIT).await
     }
@@ -294,6 +322,16 @@ impl RouterControl for SystemRouterControl {
 
     async fn set_wsl_listen(&self, addresses: Vec<std::net::Ipv4Addr>) -> Result<bool> {
         self.manager.set_wsl_listen(addresses).await
+    }
+
+    async fn set_official_client(&self, account_id: Option<String>) -> Result<bool> {
+        self.manager
+            .set_official_client(
+                account_id.map(
+                    |account_id| superba_router::official::OfficialClientConfig { account_id },
+                ),
+            )
+            .await
     }
 
     fn wsl_listen(&self) -> Vec<std::net::Ipv4Addr> {
@@ -406,6 +444,21 @@ impl RouterControl for SystemRouterControl {
         .await
     }
 
+    async fn claude_requests_for(
+        &self,
+        from: Option<superba_core::Timestamp>,
+        to: Option<superba_core::Timestamp>,
+        sessions: Vec<String>,
+        responses: Vec<String>,
+    ) -> Result<Vec<superba_core::RequestRow>> {
+        let paths = self.manager.paths().clone();
+        blocking(move || {
+            superba_router::store::Reader::open(&paths)?
+                .claude_rows_for(from, to, &sessions, &responses)
+        })
+        .await
+    }
+
     async fn request_stats(&self, query: &StatsQuery) -> Result<RequestStats> {
         let (paths, query) = (self.manager.paths().clone(), query.clone());
         blocking(move || superba_router::store::Reader::open(&paths)?.stats(&query)).await
@@ -507,9 +560,19 @@ pub(crate) fn member_line_base(
 }
 
 /// Line order of a member: the profile's priority, then the site's other lines,
-/// so the router can fail over across every line of the site.
-pub(crate) fn member_lines(site: &Site, profile: &Profile) -> Vec<superba_core::LineId> {
-    profile.ordered_line_ids(site)
+/// so the router can fail over across every enabled line of the site. Disabled
+/// lines (user bug 108) are left out entirely: no request, probe or WebSocket
+/// dial ever reaches them. An error when every line is disabled, since an empty
+/// order would mean "all of the site's lines" to [`member_from_site`].
+pub(crate) fn member_lines(site: &Site, profile: &Profile) -> Result<Vec<superba_core::LineId>> {
+    let lines = profile.enabled_line_ids(site);
+    if lines.is_empty() {
+        return Err(Error::invalid(format!(
+            "every line of provider {} is disabled; enable a line to route through it",
+            profile.id
+        )));
+    }
+    Ok(lines)
 }
 
 impl Switcher {
@@ -549,7 +612,7 @@ impl Switcher {
                 });
             }
             let path = member_path(site, profile)?;
-            let mut member = member_from_site(site, &member_lines(site, profile), &path)?;
+            let mut member = member_from_site(site, &member_lines(site, profile)?, &path)?;
             member.id = router_id(id.as_str());
             member.name = profile.name.clone();
             member.model_map = site.model_map.clone();
@@ -578,6 +641,8 @@ impl Switcher {
             config.openai = stored.openai;
             config.gemini = stored.gemini;
             config.translation = stored.translation;
+            // The failover rules are set on the Router page, not with the members.
+            config.tuning.set_failover(&stored.tuning.failover()).ok();
         }
         if !claude.openai.is_empty() {
             config
@@ -845,6 +910,7 @@ impl Switcher {
             configured: service.configured,
             token_ready: d.router.endpoint().is_ok_and(|e| !e.token.is_empty()),
             translation: config.as_ref().map(|c| c.translation.view()),
+            failover: config.as_ref().map(|c| c.tuning.failover()),
             installed: service.installed,
             running,
             port: service.port,
@@ -1462,6 +1528,15 @@ impl Switcher {
                 extra.extend(rows);
                 truncated |= t;
             }
+            if wants(RequestSource::ClaudeTranscript) {
+                match self.claude_rows(query.from, query.to).await {
+                    Ok((rows, t)) => {
+                        extra.extend(rows);
+                        truncated |= t;
+                    }
+                    Err(e) => tracing::warn!(error = %e, "Claude Code transcripts not read"),
+                }
+            }
             if query.source.is_none_or(|s| s.imported_from().is_some()) {
                 match self.imported_rows(query.from, query.to).await {
                     Ok((rows, t)) => {
@@ -1488,9 +1563,13 @@ impl Switcher {
     }
 
     pub(crate) async fn router_request_impl(&self, id: i64) -> Result<RequestDetail> {
-        // Imported rows have the lowest ids, rollout rows the other negative ones.
+        // Imported rows have the lowest ids, then Claude Code transcript
+        // rows, rollout rows the other negative ones.
         if id < crate::usage_import::ID_LIMIT {
             return self.imported_detail(id).await;
+        }
+        if id < superba_sessions::claude_usage::ID_CEIL {
+            return self.claude_detail(id).await;
         }
         if id < 0 {
             return self.rollout_detail(id).await;
@@ -1515,6 +1594,11 @@ impl Switcher {
                 .rollout_rows(query.from, query.to)
                 .await
                 .unwrap_or_default();
+            extra.extend(rows);
+        }
+        if wants(RequestSource::ClaudeTranscript)
+            && let Ok((rows, _)) = self.claude_rows(query.from, query.to).await
+        {
             extra.extend(rows);
         }
         let imported = query.source.is_none_or(|s| s.imported_from().is_some());

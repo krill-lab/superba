@@ -511,21 +511,9 @@ fn the_overview_todo_offers_the_update_and_opens_the_updates_page() {
 }
 
 #[test]
-fn the_palette_has_a_superba_update_command_that_opens_the_page_and_checks() {
-    for (locale, title) in [
-        (Locale::ZhCn, "检查 Superba 更新"),
-        (Locale::En, "Check for Superba updates"),
-    ] {
+fn the_check_superba_command_checks() {
+    for locale in [Locale::ZhCn, Locale::En] {
         let mut h = Harness::new([1280.0, 800.0], locale, fake(), false);
-        h.frame(|_, cx, _| {
-            let items = updates::palette(cx, &expanded_state());
-            let item = items.iter().find(|i| i.title == title).expect(title);
-            assert!(
-                matches!(&item.action, Action::PageCommand { page: Page::Superba(superba_gui::pages::SuperbaSection::Updates), command } if command == "check_superba"),
-                "{:?}",
-                item.action
-            );
-        });
         let mut state = expanded_state();
         let mut out = Vec::new();
         h.frame(|_, cx, _| updates::command(&mut state, cx, "check_superba", &mut out));

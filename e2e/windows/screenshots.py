@@ -129,7 +129,7 @@ def main():
                 u.superba(section)
                 left, top, width, height = u.window()["rect"]
                 controls = [u.wait(key=key, type="TabItem", within=u.superba_tab_list()) for key in SUPERBA_TABS.values()]
-                controls += [u.wait(key=f"superba.section.{a}", type="Button") for a in SETTINGS_ANCHORS]
+                controls += [u.wait(key=f"superba.section.{a}", type="TabItem") for a in SETTINGS_ANCHORS]
                 for control in controls:
                     x, y, w, h = control["rect"]
                     assert w > 0 and h > 0 and left <= x and top <= y and x + w <= left + width and y + h <= top + height, control

@@ -50,3 +50,11 @@ self_update = "{name} 会自行更新且无法关闭；Superba 只显示它的�
 [tools.zcode]
 kept = "ZCode 在 ~/.zcode 中的设置和会话已保留。"
 self_update = "ZCode 也会自行更新（帮助 → 检查更新）；它的服务器可以要求必须更新。"
+
+[tools.locate]
+found_off_path = "在 {dir}（{source}）找到，这个目录不在 Superba 的 PATH 中。"
+
+[tools.brew]
+default = "用 Homebrew 安装：brew install {args}"
+missing = "没有安装 Homebrew，所以 Superba 使用工具自己的安装方式。"
+none_dsh = "dsh 没有 Homebrew 软件包（`dsh` formula 是另一个同名程序），所以 Superba 用 npm 安装。"

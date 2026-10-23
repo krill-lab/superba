@@ -241,7 +241,7 @@ pub(crate) fn candidate_files(dirs: &[PathBuf]) -> Vec<PathBuf> {
                 .filter_map(|p| {
                     let meta = std::fs::symlink_metadata(&p).ok()?;
                     if meta.file_type().is_symlink() {
-                        let target = std::fs::canonicalize(&p).ok()?;
+                        let target = superba_core::paths::canonical(&p).ok()?;
                         target.is_file().then_some(target)
                     } else {
                         meta.is_file().then_some(p)

@@ -47,6 +47,8 @@ pub enum CoreState {
 struct Seen {
     /// Elapsed time of the first observation.
     first: Duration,
+    /// Elapsed time of the latest observation.
+    last: Duration,
     /// Still in the latest snapshot.
     alive: bool,
 }
@@ -105,13 +107,13 @@ impl CoreWatch {
             s.alive = false;
         }
         for pid in &new {
-            self.seen
-                .entry(*pid)
-                .or_insert(Seen {
-                    first: elapsed,
-                    alive: true,
-                })
-                .alive = true;
+            let s = self.seen.entry(*pid).or_insert(Seen {
+                first: elapsed,
+                last: elapsed,
+                alive: true,
+            });
+            s.alive = true;
+            s.last = elapsed;
         }
         if !self.old_alive.is_empty() || new.is_empty() {
             return CoreState::Waiting;
@@ -143,6 +145,24 @@ impl CoreWatch {
             .filter(|(_, s)| !s.alive)
             .map(|(pid, _)| *pid)
             .collect()
+    }
+
+    /// Every new app-server seen so far with how long it was observed running
+    /// (first to last snapshot) and whether it still runs: the diagnostics of
+    /// a failed check (the app, not Superba, owns these processes, so their
+    /// exit code and stderr are not available; their lifetimes are).
+    pub fn lifetimes(&self) -> Vec<(u32, Duration, bool)> {
+        self.seen
+            .iter()
+            .map(|(pid, s)| (*pid, s.last.saturating_sub(s.first), s.alive))
+            .collect()
+    }
+
+    /// Whether a new app-server came up and exited again with none running
+    /// now: the app may still be replacing it (seen with "Run Codex in WSL" on
+    /// a cold WSL 1 distribution), worth one more wait.
+    pub fn replacement_pending(&self) -> bool {
+        self.alive_new().is_empty() && !self.exited_new().is_empty()
     }
 
     /// The new app-servers running in the latest snapshot.

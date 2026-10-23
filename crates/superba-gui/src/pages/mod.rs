@@ -17,9 +17,6 @@
 //! /// ScrollArea; a `PageLayout::Scroll` page is drawn inside the shell's one.
 //! pub fn show(ui: &mut egui::Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>);
 //!
-//! /// Entries for the Cmd/Ctrl+K command palette (rebuilt while it is open).
-//! pub fn palette(cx: &Cx<'_>, state: &State) -> Vec<PaletteItem>;
-//!
 //! /// Run a command addressed to this page ([`Action::PageCommand`]); the shell
 //! /// navigates to the page first. Shared commands: `search` (Ctrl/Cmd+F),
 //! /// `save` (Ctrl/Cmd+S while [`PageStatus::pending`] > 0).
@@ -49,6 +46,7 @@ pub mod tools;
 pub use superba::SuperbaSection;
 pub mod providers;
 pub mod router;
+pub mod session_browser;
 pub mod sessions;
 pub mod settings;
 pub mod shared;
@@ -56,6 +54,7 @@ pub mod wizard;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
+use superba_core::harness::HarnessId;
 
 use egui::{Align, Layout, RichText, Sense, Stroke, Ui, vec2};
 use superba_core::{
@@ -105,6 +104,10 @@ pub enum Page {
     ClaudeSettings,
     /// Superba maintenance and preferences, with a section deep link.
     Superba(SuperbaSection),
+    /// One installed coding tool (dsh, opencode, pi, ZCode, WorkBuddy,
+    /// Gemini CLI): the Tools page's detail of it as a page of its own; its
+    /// sidebar entry shows only when the tool is installed (user request 114).
+    Tool(superba_core::harness::HarnessId),
 }
 
 /// Sidebar groups (UX §2.1).
@@ -118,6 +121,8 @@ pub enum NavGroup {
     Codex,
     /// Claude Code on this computer.
     Claude,
+    /// The other coding tools that are installed.
+    Others,
 }
 
 impl NavGroup {
@@ -128,6 +133,7 @@ impl NavGroup {
             NavGroup::Connect => Some("nav.group.connect"),
             NavGroup::Codex => Some("nav.group.codex"),
             NavGroup::Claude => Some("nav.group.claude"),
+            NavGroup::Others => Some("nav.group.others"),
         }
     }
 }
@@ -145,7 +151,7 @@ pub enum PageLayout {
 
 impl Page {
     /// Sidebar destinations; Superba sections share one pinned entry.
-    pub const ALL: [Page; 12] = [
+    pub const ALL: [Page; 18] = [
         Page::Overview,
         Page::Tools,
         Page::Providers,
@@ -157,11 +163,17 @@ impl Page {
         Page::Hosts,
         Page::ClaudeCode,
         Page::ClaudeSettings,
+        Page::Tool(HarnessId::Dsh),
+        Page::Tool(HarnessId::OpenCode),
+        Page::Tool(HarnessId::Pi),
+        Page::Tool(HarnessId::ZCode),
+        Page::Tool(HarnessId::WorkBuddy),
+        Page::Tool(HarnessId::Gemini),
         Page::Superba(SuperbaSection::Home),
     ];
 
     /// Every independently addressable page, including all Superba sections.
-    pub const DESTINATIONS: [Page; 19] = [
+    pub const DESTINATIONS: [Page; 25] = [
         Page::Overview,
         Page::Tools,
         Page::Providers,
@@ -173,6 +185,12 @@ impl Page {
         Page::Hosts,
         Page::ClaudeCode,
         Page::ClaudeSettings,
+        Page::Tool(HarnessId::Dsh),
+        Page::Tool(HarnessId::OpenCode),
+        Page::Tool(HarnessId::Pi),
+        Page::Tool(HarnessId::ZCode),
+        Page::Tool(HarnessId::WorkBuddy),
+        Page::Tool(HarnessId::Gemini),
         Page::Superba(SuperbaSection::Home),
         Page::Superba(SuperbaSection::Updates),
         Page::Superba(SuperbaSection::Diagnostics),
@@ -204,6 +222,7 @@ impl Page {
             Page::Providers | Page::Models | Page::Router | Page::Usage => NavGroup::Connect,
             Page::Settings | Page::Sessions | Page::Hosts => NavGroup::Codex,
             Page::ClaudeCode | Page::ClaudeSettings => NavGroup::Claude,
+            Page::Tool(_) => NavGroup::Others,
         }
     }
 
@@ -218,14 +237,16 @@ impl Page {
             || self == Self::Router
             || self == Self::ClaudeCode
             || self == Self::Tools
+            || matches!(self, Self::Tool(_))
             || self == Self::Models
             || self == Self::Providers
+            || self == Self::Sessions
         {
             // These settings pages already scroll their own body (Tools: its
             // list and its detail; Models: its table pages instead; Providers:
             // the detail pane, when its tab is taller than the pane). Keep the
             // header and footer fixed and avoid a second scroll area at 960×640,
-            // where the pager would fall off the card.
+            // where the pager would fall off the card. Sessions: its list pages.
             480.0
         } else {
             crate::design::layout::FIT_MIN_HEIGHT
@@ -247,6 +268,15 @@ impl Page {
             Page::Hosts => "nav.hosts",
             Page::ClaudeCode => "nav.claude_code",
             Page::ClaudeSettings => "nav.claude_settings",
+            Page::Tool(h) => match h {
+                HarnessId::Dsh => "nav.tool.dsh",
+                HarnessId::OpenCode => "nav.tool.opencode",
+                HarnessId::Pi => "nav.tool.pi",
+                HarnessId::ZCode => "nav.tool.zcode",
+                HarnessId::WorkBuddy => "nav.tool.workbuddy",
+                HarnessId::Gemini => "nav.tool.gemini",
+                HarnessId::ClaudeCode => "nav.claude_code",
+            },
             Page::Superba(section) => section.title_key(),
         }
     }
@@ -276,6 +306,7 @@ impl Page {
             Page::Hosts => "page.hosts.subtitle",
             Page::ClaudeCode => "page.claude_code.subtitle",
             Page::ClaudeSettings => "page.claude_settings.subtitle",
+            Page::Tool(_) => "page.tool.subtitle",
             Page::Superba(section) => section.subtitle_key(),
         }
     }
@@ -294,6 +325,7 @@ impl Page {
             Page::Hosts => Icon::Server,
             Page::ClaudeCode => Icon::Cloud,
             Page::ClaudeSettings => Icon::Terminal,
+            Page::Tool(_) => Icon::Tools,
             Page::Superba(_) => Icon::Superba,
         }
     }
@@ -316,8 +348,7 @@ pub enum NavBadge {
 /// contract).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PageStatus {
-    /// A dialog of the page is open: the shell leaves Enter / Escape to it and
-    /// does not open the palette.
+    /// A dialog of the page is open: the shell leaves Enter / Escape to it.
     pub modal: bool,
     /// Unsaved edits (amber sidebar dot; Ctrl/Cmd+S sends `save`).
     pub pending: usize,
@@ -325,49 +356,8 @@ pub struct PageStatus {
     pub badge: NavBadge,
     /// Tooltip of the badge (translated).
     pub badge_tip: Option<String>,
-}
-
-/// One entry of the Cmd/Ctrl+K command palette.
-#[derive(Debug)]
-pub struct PaletteItem {
-    /// Main text.
-    pub title: String,
-    /// Secondary text (current value, line host, ...).
-    pub detail: Option<String>,
-    /// Extra search terms (config key paths, English names in zh-CN, ...).
-    pub keywords: Vec<String>,
-    /// Section the entry is listed under.
-    pub group: PaletteGroup,
-    /// What choosing it does.
-    pub action: Action,
-}
-
-/// Palette sections, in display order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PaletteGroup {
-    /// Switch line, profile or site.
-    Switch,
-    /// Router.
-    Router,
-    /// Codex settings keys.
-    Settings,
-    /// Go to a page.
-    Navigate,
-    /// Other commands (restore, refresh, theme).
-    Commands,
-}
-
-impl PaletteGroup {
-    /// i18n key of the section caption.
-    pub fn caption_key(self) -> &'static str {
-        match self {
-            PaletteGroup::Switch => "palette.group.switch",
-            PaletteGroup::Router => "palette.group.router",
-            PaletteGroup::Settings => "palette.group.settings",
-            PaletteGroup::Navigate => "palette.group.navigate",
-            PaletteGroup::Commands => "palette.group.commands",
-        }
-    }
+    /// Not in the sidebar now (a tool that is not installed).
+    pub hidden: bool,
 }
 
 impl Action {
@@ -519,10 +509,6 @@ pub enum Action {
         /// The saved provider.
         profile: ProfileId,
     },
-    /// Open the command palette.
-    OpenPalette,
-    /// Search only settings in the command palette.
-    OpenSettingsPalette,
 }
 
 /// Loaded data with loading / error state.
@@ -604,6 +590,9 @@ pub struct Data {
     pub account: Load<superba_core::AccountReport>,
     /// Last router watchdog state (while router mode is on).
     pub router_watch: Option<superba_core::RouterWatchState>,
+    /// The router's saved failover and recovery rules, from the Router
+    /// page's last snapshot (`None`: not read yet; the defaults apply).
+    pub router_failover: Option<superba_core::RouterFailover>,
     /// Whether the tray icon is shown (Preferences → Window; item 70).
     pub tray: crate::tray::TrayStatus,
     /// Settings diff of the latest plan: (plan id, preview).

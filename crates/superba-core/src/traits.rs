@@ -1192,6 +1192,13 @@ pub trait SwitchService: Send + Sync {
         ))
     }
 
+    /// Persist the failover and recovery rules and reload a running router.
+    /// Requires an existing router configuration; never starts the service.
+    async fn router_set_failover(&self, failover: crate::RouterFailover) -> Result<RouterView> {
+        let _ = failover;
+        Err(crate::Error::not_implemented("router failover settings"))
+    }
+
     /// Configure the router members (each with its own key), install and start
     /// the router service and wait until it answers. Does not change Codex's
     /// configuration.
@@ -1200,6 +1207,14 @@ pub trait SwitchService: Send + Sync {
     /// Persist router mode on or off. The caller then plans a switch to the
     /// applied profile, which points Codex at the router or back to direct mode.
     async fn router_set_enabled(&self, enabled: bool) -> Result<RouterView>;
+
+    /// Persist mixed login on or off ([`crate::RouterSettings::mixed_login`]).
+    /// Like router mode, it takes effect with the next switch to a routed
+    /// profile (the caller plans one).
+    async fn router_set_mixed_login(&self, on: bool) -> Result<RouterView> {
+        let _ = on;
+        Err(crate::Error::not_implemented("mixed login"))
+    }
 
     /// Stop and remove the router service and its secrets. Refused while Codex
     /// still goes through the router (disable router mode first).
@@ -1560,6 +1575,27 @@ pub trait SwitchService: Send + Sync {
     /// the local `state_5.sqlite` (title, else first user message, else the short
     /// key). Read-only.
     async fn session_titles(&self, keys: Vec<String>) -> Result<BTreeMap<String, SessionTitle>>;
+
+    /// Every thread the session browser lists: this computer's `state_*.sqlite`
+    /// threads and the desktop app's thread catalog (all hosts). Read-only.
+    async fn session_list(&self) -> Result<crate::SessionList> {
+        Err(Error::NotImplemented {
+            what: "session list".into(),
+        })
+    }
+
+    /// Export a thread of this computer: Markdown as text, or a new session
+    /// file of another tool. Never writes into a Codex store.
+    async fn session_export(
+        &self,
+        thread_id: String,
+        format: crate::SessionExportFormat,
+    ) -> Result<crate::SessionExport> {
+        let _ = (thread_id, format);
+        Err(Error::NotImplemented {
+            what: "session export".into(),
+        })
+    }
 
     // --- v0.3: feeds ----------------------------------------------------------
 

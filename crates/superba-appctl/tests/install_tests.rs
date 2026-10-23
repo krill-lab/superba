@@ -7,8 +7,9 @@ use serde_json::json;
 use superba_appctl::appx::canonical;
 use superba_appctl::install::{
     ENV_SUPERBA_APP_DIR, OwlAppIni, appimage_install, explicit_install, inspect_install,
-    parse_appx_application_id, parse_appx_packages_json, parse_codex_package_json,
-    parse_desktop_exec, parse_linux_package_metadata, parse_owl_app_ini, parse_plist_string,
+    is_desktop_bundle_id, parse_appx_application_id, parse_appx_packages_json,
+    parse_codex_package_json, parse_desktop_exec, parse_linux_package_metadata, parse_owl_app_ini,
+    parse_plist_string,
 };
 use superba_core::codex::ENV_SUPERBA_APP_PATH;
 use superba_core::{AppVariant, CodexVersion, MapEnv};
@@ -340,7 +341,7 @@ fn inspect_mac_variants_follow_executable_and_bundle_id() {
         (3, "com.openai.chatgpt", "ChatGPT", AppVariant::ChatGpt),
         (
             4,
-            "example.desktop",
+            "com.openai.codex",
             "Other.Shell",
             AppVariant::Other("Other.Shell".into()),
         ),
@@ -699,4 +700,110 @@ async fn codex_version_times_out_a_script_that_does_not_exit() {
     assert!(codex_version(&binary).await.is_none());
     assert!(start.elapsed() >= Duration::from_secs(5));
     assert!(start.elapsed() < Duration::from_secs(15));
+}
+
+/// User bug 107: Cursor (and its `com.anysphere.*` helper bundles) is an
+/// Electron app with `Contents/Resources/app.asar` and an `Electron
+/// Framework.framework`; a running Cursor was taken for the ChatGPT app and its
+/// bundle id recorded as the install to relaunch ("not found: desktop app
+/// install com.anysphere.sand").
+#[test]
+fn foreign_electron_bundles_are_not_desktop_installs() {
+    let temp = tempdir().unwrap();
+    for (name, id, exe) in [
+        ("Cursor.app", "com.todesktop.230313mzl4w4u92", "Cursor"),
+        ("Cursor Sandbox.app", "com.anysphere.sand", "Cursor Helper"),
+        ("Cursor Codex.app", "com.anysphere.codex", "Codex"),
+        ("Visual Studio Code.app", "com.microsoft.VSCode", "Electron"),
+        ("Slack.app", "com.tinyspeck.slackmacgap", "Slack"),
+        ("ChatGPT.app", "com.example.ChatGPT", "ChatGPT"),
+        ("Codexish.app", "com.openai.codexfoo", "Codex"),
+        ("Installer.app", "com.openai.codex.installer", "Codex"),
+    ] {
+        let root = mac_app(
+            &temp.path().join(name),
+            id,
+            exe,
+            "Electron Framework.framework",
+        );
+        assert!(inspect_install(&root).is_none(), "{id}");
+        assert!(
+            inspect_install(&root.join("Contents/MacOS").join(exe)).is_none(),
+            "{id}"
+        );
+        assert!(
+            !superba_appctl::procs::is_app_main_exe(&root.join("Contents/MacOS").join(exe))
+                || inspect_install(&root.join("Contents/MacOS").join(exe)).is_none()
+        );
+    }
+}
+
+#[test]
+fn desktop_bundle_ids_are_exact() {
+    for id in [
+        "com.openai.chat",
+        "com.openai.chatgpt",
+        "com.openai.codex",
+        "com.openai.codex.beta",
+    ] {
+        assert!(is_desktop_bundle_id(id), "{id}");
+    }
+    for id in [
+        "",
+        "com.anysphere.sand",
+        "com.anysphere.cursor",
+        "com.todesktop.230313mzl4w4u92",
+        "com.openai.codex.cli",
+        "com.openai.codex.installer",
+        "com.openai.codex.",
+        "com.openai.codexfoo",
+        "com.openai.chat.helper",
+        "com.openai.chatgpt.sandbox",
+        "COM.OPENAI.CODEX",
+        "xcom.openai.codex",
+    ] {
+        assert!(!is_desktop_bundle_id(id), "{id}");
+    }
+}
+
+/// A process list (as the macOS snapshot reads it) with Cursor, its sandbox
+/// helper and ChatGPT running: only ChatGPT is a desktop app main, whatever the
+/// start order, so the switch never records a Cursor bundle id to relaunch.
+#[test]
+fn running_cursor_is_never_the_desktop_app_main() {
+    use superba_appctl::procs::{ProcEntry, Snapshot, is_codex_app_entry};
+    let temp = tempdir().unwrap();
+    let cursor = mac_app(
+        &temp.path().join("Cursor.app"),
+        "com.todesktop.230313mzl4w4u92",
+        "Cursor",
+        "Electron Framework.framework",
+    );
+    let sand = mac_app(
+        &temp.path().join("Cursor Sandbox.app"),
+        "com.anysphere.sand",
+        "Cursor Sandbox",
+        "Electron Framework.framework",
+    );
+    let chatgpt = mac_app(
+        &temp.path().join("ChatGPT.app"),
+        "com.openai.codex",
+        "ChatGPT",
+        "Electron Framework.framework",
+    );
+    let entry = |pid: u32, exe: PathBuf| ProcEntry {
+        pid,
+        ppid: Some(1),
+        argv: vec![exe.display().to_string()],
+        exe: Some(exe),
+        started_at: Some(superba_core::Timestamp::from_millis(i64::from(pid) * 1000)),
+        ..Default::default()
+    };
+    let entries = vec![
+        entry(10, chatgpt.join("Contents/MacOS/ChatGPT")),
+        entry(20, cursor.join("Contents/MacOS/Cursor")),
+        entry(30, sand.join("Contents/MacOS/Cursor Sandbox")),
+    ];
+    let snap = Snapshot::classify_entries(entries, &is_codex_app_entry);
+    assert_eq!(snap.app_mains(), vec![10]);
 }

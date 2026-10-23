@@ -1002,6 +1002,7 @@ fn a_quit_report_names_the_processes_and_the_steps() {
             QuitStep::Ended {
                 ended: 14,
                 failed: 1,
+                failed_names: vec!["ChatGPT.exe (pid 812)".into()],
             },
         ],
         left: vec![LingeringProcess {
@@ -1029,7 +1030,7 @@ fn a_quit_report_names_the_processes_and_the_steps() {
     assert!(
         en.contains(
             "Tried: closed its windows, waited 5.0 s, ended processes by force: 14 ended, \
-             1 could not be ended."
+             1 could not be ended (ChatGPT.exe (pid 812))."
         ),
         "{en}"
     );
@@ -1040,7 +1041,7 @@ fn a_quit_report_names_the_processes_and_the_steps() {
     );
     assert!(
         zh.contains(
-            "已尝试：关闭了它的窗口，等待了 5.0 秒，强制结束了 14 个进程（1 个无法结束）。"
+            "已尝试：关闭了它的窗口，等待了 5.0 秒，强制结束了 14 个进程（1 个无法结束：ChatGPT.exe (pid 812)）。"
         ),
         "{zh}"
     );

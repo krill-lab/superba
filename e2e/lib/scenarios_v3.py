@@ -1665,21 +1665,3 @@ def _s16(run, c, ns, g, home, env):
          f"re-run from Preferences edits the existing profile (still one Krill profile, now on {profiles[0].get('line_id') if profiles else None}) "
          f"and switches: openai_base_url = {flat.get('openai_base_url')}")
     g.stop()
-    # Re-run from the command palette (Chinese UI): "运行设置向导".
-    g.start(lang="zh-CN")
-    xdo(run, "mousemove", "640", "700", "click", "1")
-    xdo(run, "key", "ctrl+k")
-    time.sleep(0.8)
-    xdo(run, "type", "--delay", "80", "设置向导")
-    time.sleep(1.0)
-    g.shot("palette-wizard")
-    xdo(run, "key", "Return")
-    time.sleep(3)
-    png = g.shot("rerun-palette-start")
-    c.ok(is_wizard(png), "palette \"运行设置向导\" opens the wizard (zh-CN)")
-    go_through(g, "rerun-palette", key=False, line_wait=8)
-    time.sleep(12)
-    g.shot("rerun-palette-after")
-    profiles = krill_profiles(home)
-    names = [p.get("id") for p in json.loads((Path(home) / ".local/share/superba/profiles.json").read_text()).get("profiles", [])]
-    c.ok(len(profiles) == 1, f"re-run from the palette edits again: profiles.json holds {names} (one Krill profile, no duplicate)")

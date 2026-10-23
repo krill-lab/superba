@@ -37,7 +37,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod browse;
+pub mod claude_usage;
 mod engine;
+pub mod export;
 mod guard;
 mod inventory;
 mod jsonscan;

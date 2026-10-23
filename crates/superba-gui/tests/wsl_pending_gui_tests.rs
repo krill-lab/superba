@@ -225,9 +225,12 @@ fn a_switch_and_a_visit_read_the_list_again() {
     // This GUI's switch finished.
     service.with_stopped_wsl_pending();
     state.after_switch();
+    // Wait for the read itself, not only the text: a probe of the running
+    // distribution started by the frames before can land first and already
+    // show the pending update (the fake answers probes from its current state).
     h.until(
         |ui, cx, out| hosts::show(ui, cx, &mut state, out),
-        |f| f.has("Update now"),
+        |f| f.has("Update now") && service.hosts_now_calls() == calls + 1,
     );
     assert_eq!(service.hosts_now_calls(), calls + 1);
 
@@ -245,7 +248,7 @@ fn a_switch_and_a_visit_read_the_list_again() {
         .saturating_add(std::time::Duration::from_secs(60));
     h.until(
         |ui, cx, out| hosts::show(ui, cx, &mut state, out),
-        |f| f.has("Running") && !f.has("Update now"),
+        |f| f.has("Running") && !f.has("Update now") && service.hosts_now_calls() == calls + 2,
     );
     assert_eq!(service.hosts_now_calls(), calls + 2);
 
@@ -254,7 +257,7 @@ fn a_switch_and_a_visit_read_the_list_again() {
     state.entered();
     h.until(
         |ui, cx, out| hosts::show(ui, cx, &mut state, out),
-        |f| f.has("Update now"),
+        |f| f.has("Update now") && service.hosts_now_calls() == calls + 3,
     );
     assert_eq!(service.hosts_now_calls(), calls + 3);
 }

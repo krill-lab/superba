@@ -73,8 +73,14 @@ def default_msi():
     return str(cands[-1]) if cands else None
 
 
+def scenario_sort_key(s):
+    """W1 < W12 < MX10 < SU9: by letter prefix, then number (any prefix length)."""
+    m = re.match(r"([A-Za-z]*)(\d*)(.*)", s.id)
+    return (m.group(1), int(m.group(2) or 0), m.group(3))
+
+
 def cmd_list(opts):
-    rows = sorted(REGISTRY.values(), key=lambda s: int(s.id[1:]))
+    rows = sorted(REGISTRY.values(), key=scenario_sort_key)
     for s in rows:
         if opts.area and s.area != opts.area:
             continue
@@ -148,6 +154,16 @@ def run_one(run, sc):
     return rec
 
 
+def preflight_net(opts, environ=None):
+    """--net real must have its relay settings before a VM is taken from the pool."""
+    if getattr(opts, "net", None) == "real":
+        from net import check_real_env
+        try:
+            check_real_env(environ)
+        except RuntimeError as e:
+            raise SystemExit(f"{e}; no VM was acquired")
+
+
 def cmd_run(opts):
     if opts.all:
         ids = [i for i in ALL_ORDER if i in REGISTRY] + sorted(set(REGISTRY) - set(ALL_ORDER), key=lambda i: int(i[1:]))
@@ -160,6 +176,7 @@ def cmd_run(opts):
         opts.msi = default_msi()
     if not opts.msi or not Path(opts.msi).is_file():
         raise SystemExit("no MSI under test: pass --msi PATH (a superba-<version>-windows-x86_64.msi)")
+    preflight_net(opts)
     run = Run(opts)
     # A private copy: the build pipeline may replace the file in .private/winvm/out meanwhile.
     import shutil
@@ -206,6 +223,7 @@ def cmd_session(opts):
     if opts.action == "up":
         if not opts.msi:
             opts.msi = default_msi()
+        preflight_net(opts)
         run = Run(opts)
         # The lock must outlive this command: owned by the calling agent / terminal process,
         # the pool's default 2 h lease (`pool.sh renew ID` extends it; `session down` releases).

@@ -254,6 +254,8 @@ async fn pending_edits_count_diff_and_become_one_models_edit() {
         &saved,
         "gpt-5.5",
         Some(PriceEntry {
+            cache_write_1h: None,
+            windows: Vec::new(),
             input: Usd::from_dollars(1.25).unwrap(),
             cached_input: Some(Usd::from_dollars(0.125).unwrap()),
             cache_write: None,
@@ -764,7 +766,7 @@ async fn models_fit_the_minimum_window_without_cutting_a_column() {
 }
 
 #[tokio::test]
-async fn palette_offers_context_entries_and_commands_focus_the_row() {
+async fn context_commands_focus_the_row() {
     let fake = service();
     let data = data(&fake).await;
     let view = krill_view(&fake).await;
@@ -773,12 +775,6 @@ async fn palette_offers_context_entries_and_commands_focus_the_row() {
     state.set_price_table(None);
     state.set_view(view.clone());
     with_cx(&data, &service, |cx| {
-        let items = models_page::palette(cx, &state);
-        let titles: Vec<&str> = items.iter().map(|i| i.title.as_str()).collect();
-        assert!(
-            titles.contains(&"Set the context window of gpt-6-astra"),
-            "{titles:?}"
-        );
         // A hidden model's command shows hidden models and selects its row.
         models_page::command(&mut state, cx, "context:codex-auto-review", &mut Vec::new());
     });

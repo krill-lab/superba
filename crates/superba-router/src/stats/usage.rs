@@ -9,6 +9,7 @@
 //! | `input_tokens_details.cached_tokens` | cache read, subset of `input_tokens` |
 //! | `input_tokens_details.cache_write_tokens` (Codex ≥ 0.150), else `cache_creation_tokens` | cache write, subset |
 //! | top-level `cache_read_input_tokens` / `cache_creation_input_tokens` (Anthropic style) | additive: added to `input_tokens` |
+//! | `cache_creation.ephemeral_1h_input_tokens` (Anthropic) | one-hour cache writes, subset of the cache writes |
 //! | `prompt_tokens` / `completion_tokens` (+ `prompt_tokens_details.cached_tokens`) | Chat Completions fallback |
 //! | `prompt_cache_hit_tokens` (DeepSeek), top-level `cached_tokens` (Moonshot) | Chat cache reads when `prompt_tokens_details` has none, subset of `prompt_tokens` |
 //!
@@ -25,8 +26,11 @@ pub struct Usage {
     pub input: u64,
     /// Cache read tokens.
     pub cached: Option<u64>,
-    /// Cache write tokens.
+    /// Cache write tokens (all lifetimes).
     pub cache_write: Option<u64>,
+    /// Of `cache_write`, one-hour writes (Anthropic
+    /// `cache_creation.ephemeral_1h_input_tokens`).
+    pub cache_write_1h: Option<u64>,
     /// Output tokens, reasoning included.
     pub output: u64,
     /// Reasoning tokens.
@@ -80,6 +84,14 @@ pub(crate) struct UsageWire {
     completion_tokens_details: Option<Details>,
     prompt_cache_hit_tokens: Option<u64>,
     cached_tokens: Option<u64>,
+    cache_creation: Option<CacheCreation>,
+}
+
+/// Anthropic's split of cache writes by lifetime.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct CacheCreation {
+    ephemeral_1h_input_tokens: Option<u64>,
 }
 
 impl UsageWire {
@@ -121,6 +133,10 @@ impl UsageWire {
                 .or(in_details.cache_creation_tokens),
             output: output.unwrap_or(0),
             reasoning: out_details.and_then(|d| d.reasoning_tokens),
+            cache_write_1h: self
+                .cache_creation
+                .as_ref()
+                .and_then(|c| c.ephemeral_1h_input_tokens),
         };
         // Anthropic-style counts are additive: `input_tokens` excludes them.
         if self.cache_read_input_tokens.is_some() || self.cache_creation_input_tokens.is_some() {

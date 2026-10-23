@@ -71,10 +71,7 @@ fn every_page_names_its_controls_in_both_languages() {
         let t = h.wait_for(Some(Role::Button), &this);
         assert_named(&format!("{locale:?} Overview"), &t);
 
-        // The Overview's menus: More, switch provider or line, speed tier.
-        let t = h.click(Some(Role::Button), &tr.t("overview.menu.title"));
-        assert_named(&format!("{locale:?} Overview › More"), &t);
-        h.key(egui::Key::Escape);
+        // The Overview's menus: switch provider or line, speed tier.
         let t = h.click(Some(Role::Button), &tr.t("overview.hero.switch_menu"));
         assert!(t.has(&tr.t("overview.other_providers")), "{}", t.dump());
         assert_named(&format!("{locale:?} Overview › provider popover"), &t);
@@ -90,30 +87,16 @@ fn every_page_names_its_controls_in_both_languages() {
         h.key(egui::Key::Escape);
 
         // Every page through its sidebar tab.
-        for page in Page::DESTINATIONS {
+        // A tool's page is reached from its entry, shown only when the tool
+        // is installed (sidebar_tools_tests).
+        for page in Page::DESTINATIONS
+            .into_iter()
+            .filter(|p| !matches!(p, Page::Tool(_)))
+        {
             h.go(page, &tr);
             let t = h.until(&format!("{locale:?} {page:?} loaded"), |t| loaded(page, t));
             assert_named(&format!("{locale:?} {page:?}"), &t);
         }
-
-        // The command palette's search field, from the Overview's menu (the
-        // sidebar has no search field since user bug 85; Cmd/Ctrl+K opens it
-        // too).
-        h.go(Page::Overview, &tr);
-        h.click(Some(Role::Button), &tr.t("overview.menu.title"));
-        let search = format!(
-            "{} {}",
-            tr.t("shell.search"),
-            superba_gui::shell::palette_shortcut_label()
-        );
-        let t = h.click(Some(Role::Button), &search);
-        assert!(
-            t.find(Some(Role::TextInput), &tr.t("palette.placeholder"))
-                .is_some(),
-            "{}",
-            t.dump()
-        );
-        assert_named(&format!("{locale:?} command palette"), &t);
     }
 }
 

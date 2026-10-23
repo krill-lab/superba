@@ -87,6 +87,8 @@ impl OpenAiRt {
                 order.push(i);
             }
         }
+        // The official ChatGPT login serves Codex only.
+        order.retain(|i| config.members[*i].kind != crate::MemberKind::Official);
         Self { members, order }
     }
 }

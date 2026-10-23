@@ -465,6 +465,7 @@ impl Tracker {
             outcome: reason.to_owned(),
             elapsed_ms: Some(ms(elapsed)),
             compression: self.body_compression(),
+            upstream_protocol: self.upstream_protocol(c),
         });
         self.failovers += 1;
         let label = self.generation.label(c.member, c.line);
@@ -503,6 +504,7 @@ impl Tracker {
             outcome: "answered".into(),
             elapsed_ms: Some(ms(ttfb)),
             compression: self.body_compression(),
+            upstream_protocol: self.upstream_protocol(c),
         });
         let label = self.generation.label(c.member, c.line);
         self.note(format!("{label}: HTTP {status} after {} ms", ms(ttfb)));
@@ -534,6 +536,7 @@ impl Tracker {
             outcome: "zstd body refused, sent again uncompressed".into(),
             elapsed_ms: Some(ms(elapsed)),
             compression: Some(superba_core::RequestCompression::RouterZstd),
+            upstream_protocol: self.upstream_protocol(c),
         });
         let label = self.generation.label(c.member, c.line);
         self.note(format!(
@@ -564,12 +567,24 @@ impl Tracker {
             ),
             elapsed_ms: Some(ms(elapsed)),
             compression: self.body_compression(),
+            upstream_protocol: self.upstream_protocol(c),
         });
         let label = self.generation.label(c.member, c.line);
         self.note(format!(
             "{label}: HTTP {status} {}; left out {what} and sent the request again",
             crate::cipher::REJECTION_CODE
         ));
+    }
+
+    /// The protocol a request goes to `c`'s member in: the tool's own when the
+    /// member has a native endpoint for it, else the conversion in use.
+    fn upstream_protocol(&self, c: Candidate) -> Option<superba_core::RequestProtocol> {
+        let client = crate::translate::ir::Protocol::try_from(self.meta.protocol).ok()?;
+        let id = &self.generation.members[c.member].cfg.id;
+        self.generation
+            .config
+            .upstream_protocol(id, client)
+            .map(Into::into)
     }
 
     /// The body compression of an HTTP attempt (`None` for WebSocket frames).
@@ -770,6 +785,7 @@ impl Tracker {
                 &model_refs,
                 &u,
                 summary.response_tier.as_deref(),
+                Some(self.started_ms),
             )
         });
         let timing = self.timing(&summary, summary.end.unwrap_or_else(|| self.t0.elapsed()));
@@ -852,6 +868,7 @@ impl Tracker {
             requested_model: self.meta.requested_model.clone(),
             session_id: self.meta.session_id.clone(),
             agent_kind: self.meta.agent_kind,
+            attempts: self.attempts.clone(),
         };
         let stored = StoredRow {
             row,

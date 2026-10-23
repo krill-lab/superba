@@ -235,7 +235,9 @@ class MatrixTests(unittest.TestCase):
                 u.texts = Mock(side_effect=[[], [], [],
                     [u.L('confirm.title'), u.L('restart.reason.certificate_trust_changed')],
                     [u.L('banner.running.title', dest='router')], [], []])
-                u.exists.side_effect = [False, True, True]
+                # Before the confirmation the waiter no longer asks for the banner button:
+                # it waits for the question itself (alpha.9 W33).
+                u.exists.side_effect = [True, True]
                 phases, _ = flows.wait_switch_done(self.run, self.step, u, timeout=30, router_restart=True)
                 self.assertIn('[full restart: router certificate]', phases)
                 u.click.assert_called_once_with(key='confirm.full_restart', type='Button')

@@ -13,7 +13,7 @@ profile on the mock lines) gets the other tools' stores where they keep them:
 Shots, at 1280x800 in light and dark, English and Chinese:
 
 - `import-add-*`: Providers > Add, step 1, with "Import from other tools";
-- `import-dialog-*`: the import dialog (opened from the command palette);
+- `import-dialog-*`: the import dialog (opened with `--command import`);
 - `import-scrolled-*`: the same dialog scrolled to AI Toolbox's providers;
 - `import-result-*`: after Enter imported the selection (Superba's data is
   restored before each of these, so every variant imports the same set).
@@ -59,18 +59,17 @@ def enter_namespace():
     os.execvpe("unshare", argv, {**os.environ, NS_ENV: "1"})
 
 
-def palette(query):
-    """Open the command palette, run the first entry matching `query`."""
+def settle(wait=2.5):
+    """Let a page opened with `--command` settle (the command palette the
+    older version typed into is gone, user request 118)."""
     def act(s):
-        shoot.palette_action(query)(s)
-        s.input.key("Return")
-        time.sleep(2.5)
+        time.sleep(wait)
         s.input.park()
     return act
 
 
 def scrolled(s):
-    palette("import")(s)
+    settle()(s)
     # Over the dialog's list; the wheel scrolls it down to AI Toolbox.
     s.input.scroll(640, 420, 9)
     s.input.park()
@@ -78,7 +77,7 @@ def scrolled(s):
 
 
 def result(s):
-    palette("import")(s)
+    settle()(s)
     s.input.key("Return")
     time.sleep(3.0)
 
@@ -144,9 +143,9 @@ def main():
         only = [p for p in (a.only or "").split(",") if p]
         plan = [
             ("import-add", "providers", add_dialog),
-            ("import-dialog", "providers", lambda _lang: palette("import")),
-            ("import-scrolled", "providers", lambda _lang: scrolled),
-            ("import-result", "providers", lambda _lang: result),
+            ("import-dialog", "providers#import", lambda _lang: settle()),
+            ("import-scrolled", "providers#import", lambda _lang: scrolled),
+            ("import-result", "providers#import", lambda _lang: result),
         ]
         for stem, page, make_actions in plan:
             for theme, lang in VARIANTS:

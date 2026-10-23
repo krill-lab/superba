@@ -425,7 +425,15 @@ pub fn quit_step(step: &superba_core::QuitStep) -> LocalizedText {
         QuitStep::Waited { ms } => {
             text("switch.quit.step_waited").arg("seconds", format!("{:.1}", *ms as f64 / 1000.0))
         }
-        QuitStep::Ended { ended, failed } => text("switch.quit.step_ended")
+        QuitStep::Ended {
+            ended,
+            failed,
+            failed_names,
+        } if !failed_names.is_empty() => text("switch.quit.step_ended_named")
+            .arg("ended", ended)
+            .arg("failed", failed)
+            .arg("names", failed_names.join(", ")),
+        QuitStep::Ended { ended, failed, .. } => text("switch.quit.step_ended")
             .arg("ended", ended)
             .arg("failed", failed),
     }
