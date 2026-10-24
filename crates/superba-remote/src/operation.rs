@@ -81,6 +81,17 @@ impl Drop for Budget {
     }
 }
 
+/// Tests: what is left of `host`'s budget in the current scope.
+#[cfg(all(test, unix))]
+pub(crate) fn set_remaining(host: &RemoteHost, left: Duration) {
+    let _ = CURRENT.try_with(|c| {
+        c.budgets
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(host.target_id.clone(), left);
+    });
+}
+
 pub(crate) fn remember(host: &RemoteHost, snap: &Snapshot) {
     let _ = CURRENT.try_with(|c| {
         c.snapshots

@@ -394,6 +394,10 @@ pub struct WslShell {
 
 /// The first attempt's limit for reading the login environment.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(60);
+/// Least time a write script gets, whatever earlier stages used of the budget.
+const WRITE_MIN: Duration = Duration::from_secs(45);
+/// Least time any other script gets.
+const SCRIPT_MIN: Duration = Duration::from_secs(30);
 
 impl Default for WslShell {
     fn default() -> Self {
@@ -449,8 +453,15 @@ type ReadyState = std::sync::Arc<tokio::sync::Mutex<Option<tokio::time::Instant>
 /// What a timed-out WSL stage was doing, in words, with what to do about it
 /// (alpha.10, W90: "login (attempt 2/2, 60005 ms; total limit 180 s)" named
 /// neither the files involved nor a way out). Starts with `WSL <distro>: <stage>`.
-fn stage_timeout(distro: &str, stage: &str, attempt: u8, elapsed: Duration) -> String {
-    let secs = elapsed.as_secs_f32().round() as u64;
+fn stage_timeout(
+    distro: &str,
+    stage: &str,
+    attempt: u8,
+    elapsed: Duration,
+    allowed: Duration,
+) -> String {
+    let secs = format!("{:.1}", elapsed.as_secs_f32());
+    let allowed = format!("{:.1}", allowed.as_secs_f32());
     let (doing, hint) = match stage {
         "warmup" => (
             "starting the distribution",
@@ -479,7 +490,7 @@ fn stage_timeout(distro: &str, stage: &str, attempt: u8, elapsed: Duration) -> S
         _ => ("running a command", "Retry; the distribution may be busy."),
     };
     format!(
-        "WSL {distro}: {stage} (attempt {attempt}/2) did not finish in {secs} s: {doing}. {hint}"
+        "WSL {distro}: {stage} (attempt {attempt}/2) did not finish: {secs} s of the {allowed} s it had, {doing}. {hint}"
     )
 }
 
@@ -582,7 +593,7 @@ impl WslShell {
                 }
                 _ = tokio::time::sleep_until(due) => {
                     tracing::warn!(host = %host.target_id, %stage, attempt, elapsed_ms = since.elapsed().as_millis() as u64, "WSL stage timed out");
-                    return Err(Error::Timeout { what: stage_timeout(&host.wsl_distro().unwrap_or_default(), &stage, attempt, since.elapsed()) });
+                    return Err(Error::Timeout { what: stage_timeout(&host.wsl_distro().unwrap_or_default(), &stage, attempt, since.elapsed(), due.saturating_duration_since(since)) });
                 }
                 next = async { match phases.as_mut() { Some(rx) => rx.recv().await, None => std::future::pending().await } } => {
                     if let Some(next) = next {
@@ -594,7 +605,7 @@ impl WslShell {
                         // the budget instead of failing again at the same mark.
                         let stage_limit = match (stage.as_str(), attempt) {
                             ("login", 1) => self.login_timeout,
-                            ("login", _) => limit.max(self.login_timeout * 2),
+                            ("login", _) => limit.min(self.login_timeout * 3 / 2),
                             _ => limit,
                         };
                         due = deadline.min(since + stage_limit);
@@ -618,7 +629,18 @@ impl WslShell {
     ) -> Result<ScriptOutput> {
         let distro = require_distro(host)?;
         let budget = crate::operation::budget(host, timeout.max(crate::operation::TOTAL_TIMEOUT));
-        let deadline = budget.deadline;
+        // Every script gets a guaranteed minimum on top of what earlier slow
+        // stages left of the shared budget (alpha.10 re-test, W81: a write
+        // started with 0 s left and failed before it ran). A write gets more:
+        // it is never replayed, so it must not be cut short.
+        let floor = if script.starts_with("# superba-write\n") {
+            WRITE_MIN
+        } else {
+            SCRIPT_MIN
+        };
+        let deadline = budget
+            .deadline
+            .max(tokio::time::Instant::now() + floor.min(timeout.max(Duration::from_secs(1))));
         let events = crate::operation::events();
         let _finish = ProgressEnd {
             events: events.clone(),
@@ -955,12 +977,12 @@ mod timeout_tests {
     }
 
     /// alpha.10 (W90): a slow login stage gets more time on its second
-    /// attempt instead of timing out at the same mark again.
+    /// attempt (half again) instead of timing out at the same mark again.
     #[tokio::test]
-    async fn a_slow_login_gets_the_rest_of_the_budget_on_the_second_attempt() {
+    async fn a_slow_login_gets_more_time_on_the_second_attempt() {
         let (dir, mut shell) = fake("shift 5");
         shell.login_timeout = Duration::from_millis(800);
-        let script = "# superba-wsl-probe\nSB_N='test'\necho attempt >> calls\necho '@@SBPH:test:login'\nif [ ! -f tried ]; then touch tried; sleep 3; else sleep 1.5; fi\necho done\n";
+        let script = "# superba-wsl-probe\nSB_N='test'\necho attempt >> calls\necho '@@SBPH:test:login'\nif [ ! -f tried ]; then touch tried; sleep 3; else sleep 1.0; fi\necho done\n";
         let out = shell
             .run(&host(), script, Duration::from_secs(6))
             .await
@@ -972,6 +994,44 @@ mod timeout_tests {
                 .lines()
                 .count(),
             2
+        );
+    }
+
+    /// alpha.10 re-test (W81): slow login and system stages used up the
+    /// shared budget and the write that followed failed "in 0 s". A write
+    /// still gets its minimum, and a probe its own.
+    #[tokio::test]
+    async fn slow_earlier_stages_still_leave_the_write_its_minimum() {
+        let (dir, shell) = fake("shift 5");
+        let events = Arc::new(Events::default());
+        let h = host();
+        let out = crate::operation::with_events(events, async {
+            // What slow login and system stages left: nothing.
+            crate::operation::set_remaining(&h, Duration::ZERO);
+            let probe = shell
+                .run(
+                    &h,
+                    "# superba-wsl-probe\nSB_N='test'\necho '@@SBPH:test:system'\nsleep 0.5\necho probed\n",
+                    Duration::from_secs(10),
+                )
+                .await
+                .unwrap();
+            assert!(probe.stdout.ends_with(b"probed\n"));
+            crate::operation::set_remaining(&h, Duration::ZERO);
+            shell
+                .run(
+                    &h,
+                    "# superba-write\necho written >> calls\nsleep 1\necho ok\n",
+                    Duration::from_secs(10),
+                )
+                .await
+        })
+        .await
+        .unwrap();
+        assert!(out.stdout.ends_with(b"ok\n"));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("calls")).unwrap(),
+            "written\n"
         );
     }
 
