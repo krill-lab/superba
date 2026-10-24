@@ -387,7 +387,13 @@ pub struct WslShell {
     program: PathBuf,
     ready: std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, ReadyState>>>,
     warmup_timeout: Duration,
+    /// Limit of the `login` stage of a first attempt (a second attempt may use
+    /// what is left of the operation's budget).
+    login_timeout: Duration,
 }
+
+/// The first attempt's limit for reading the login environment.
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(60);
 
 impl Default for WslShell {
     fn default() -> Self {
@@ -395,6 +401,7 @@ impl Default for WslShell {
             program: default_wsl_program(),
             ready: Default::default(),
             warmup_timeout: WARMUP_TIMEOUT,
+            login_timeout: LOGIN_TIMEOUT,
         }
     }
 }
@@ -406,6 +413,7 @@ impl WslShell {
             program: program.into(),
             ready: Default::default(),
             warmup_timeout: WARMUP_TIMEOUT,
+            login_timeout: LOGIN_TIMEOUT,
         }
     }
 
@@ -437,6 +445,43 @@ fn wsl_failure(distro: &str, out: &ScriptOutput) -> Option<Error> {
 const WARMUP_TIMEOUT: Duration = Duration::from_secs(90);
 const READY_TTL: Duration = Duration::from_secs(300);
 type ReadyState = std::sync::Arc<tokio::sync::Mutex<Option<tokio::time::Instant>>>;
+
+/// What a timed-out WSL stage was doing, in words, with what to do about it
+/// (alpha.10, W90: "login (attempt 2/2, 60005 ms; total limit 180 s)" named
+/// neither the files involved nor a way out). Starts with `WSL <distro>: <stage>`.
+fn stage_timeout(distro: &str, stage: &str, attempt: u8, elapsed: Duration) -> String {
+    let secs = elapsed.as_secs_f32().round() as u64;
+    let (doing, hint) = match stage {
+        "warmup" => (
+            "starting the distribution",
+            "WSL may still be starting or updating; open it once in a terminal, then Retry.",
+        ),
+        "login" => (
+            "reading the login environment (bash -l with ~/.profile, then an interactive bash for the PATH from ~/.bashrc)",
+            "A command in ~/.profile or ~/.bashrc may wait for input, the network or a Windows program; check them, then Retry, or apply it later with `spb wsl update`.",
+        ),
+        "version" => (
+            "running codex --version",
+            "Check that `codex --version` answers in that distribution, then Retry.",
+        ),
+        "files" => (
+            "reading the Codex files",
+            "Retry; the distribution may be busy.",
+        ),
+        "system" => (
+            "checking the system",
+            "Retry; the distribution may be busy.",
+        ),
+        "write" => (
+            "writing the configuration",
+            "Nothing was replayed; check ~/.codex there, then Retry.",
+        ),
+        _ => ("running a command", "Retry; the distribution may be busy."),
+    };
+    format!(
+        "WSL {distro}: {stage} (attempt {attempt}/2) did not finish in {secs} s: {doing}. {hint}"
+    )
+}
 
 impl WslShell {
     async fn ready(
@@ -537,14 +582,21 @@ impl WslShell {
                 }
                 _ = tokio::time::sleep_until(due) => {
                     tracing::warn!(host = %host.target_id, %stage, attempt, elapsed_ms = since.elapsed().as_millis() as u64, "WSL stage timed out");
-                    return Err(Error::Timeout { what: format!("WSL {}: {stage} (attempt {attempt}/2, {} ms; total limit 180 s)", host.wsl_distro().unwrap_or_default(), since.elapsed().as_millis()) });
+                    return Err(Error::Timeout { what: stage_timeout(&host.wsl_distro().unwrap_or_default(), &stage, attempt, since.elapsed()) });
                 }
                 next = async { match phases.as_mut() { Some(rx) => rx.recv().await, None => std::future::pending().await } } => {
                     if let Some(next) = next {
                         tracing::info!(host = %host.target_id, %stage, attempt, elapsed_ms = since.elapsed().as_millis() as u64, "WSL stage finished");
                         stage = next;
                         since = tokio::time::Instant::now();
-                        let stage_limit = if stage == "login" { Duration::from_secs(60) } else { limit };
+                        // A second attempt of a slow login (a cold distribution, an
+                        // rc file that runs Windows programs) gets what is left of
+                        // the budget instead of failing again at the same mark.
+                        let stage_limit = match (stage.as_str(), attempt) {
+                            ("login", 1) => self.login_timeout,
+                            ("login", _) => limit.max(self.login_timeout * 2),
+                            _ => limit,
+                        };
                         due = deadline.min(since + stage_limit);
                         crate::operation::report(events.as_ref(), host, Some(&stage), attempt, cancellable);
                     } else { phases = None; }
@@ -900,6 +952,51 @@ mod timeout_tests {
             2
         );
         assert!(events.messages.lock().unwrap().iter().any(|e| matches!(e, SwitchEvent::RemoteProgress { message: Some(m), .. } if m.key == "wsl.progress.files" && m.render_fallback().contains("2/2"))));
+    }
+
+    /// alpha.10 (W90): a slow login stage gets more time on its second
+    /// attempt instead of timing out at the same mark again.
+    #[tokio::test]
+    async fn a_slow_login_gets_the_rest_of_the_budget_on_the_second_attempt() {
+        let (dir, mut shell) = fake("shift 5");
+        shell.login_timeout = Duration::from_millis(800);
+        let script = "# superba-wsl-probe\nSB_N='test'\necho attempt >> calls\necho '@@SBPH:test:login'\nif [ ! -f tried ]; then touch tried; sleep 3; else sleep 1.5; fi\necho done\n";
+        let out = shell
+            .run(&host(), script, Duration::from_secs(6))
+            .await
+            .unwrap();
+        assert!(out.stdout.ends_with(b"done\n"));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("calls"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+    }
+
+    /// The timeout says what the login stage reads and what to do.
+    #[tokio::test]
+    async fn a_login_timeout_names_the_files_and_the_way_out() {
+        let (_dir, mut shell) = fake("shift 5");
+        shell.login_timeout = Duration::from_millis(300);
+        let script = "# superba-wsl-probe\nSB_N='test'\necho '@@SBPH:test:login'\nexec sleep 30\n";
+        let error = shell
+            .run(&host(), script, Duration::from_millis(900))
+            .await
+            .unwrap_err();
+        let Error::Timeout { what } = &error else {
+            panic!("{error}")
+        };
+        assert!(
+            what.starts_with("WSL Ubuntu: login (attempt 2/2)"),
+            "{what}"
+        );
+        assert!(
+            what.contains("~/.profile") && what.contains("~/.bashrc"),
+            "{what}"
+        );
+        assert!(what.contains("spb wsl update"), "{what}");
     }
 
     #[tokio::test]

@@ -190,6 +190,11 @@ fn host_funcs(flavor: Flavor) -> String {
 ///   (`/mnt/c/Users/<u>/.codex/bin/wsl/<16 hex>/codex`, under a `bash` wrapper
 ///   that sets `CODEX_SQLITE_HOME`; user bug 54 (b), seen in the test VM): it
 ///   reads that home, not this distribution's, so neither is counted.
+///
+/// The interactive bash that only reports `PATH` is limited to 20 s with
+/// `timeout` when the distribution has it (alpha.10, W90: a full ~/.bashrc
+/// on a cold WSL 1 distribution kept the login stage past its 60 s on both
+/// attempts); without an answer the non-interactive login `PATH` is used.
 const WSL_FUNCS: &str = r#"sb_user_login() {
   sb_ls=$(sb_shell)
   if [ -z "$sb_ls" ] || [ ! -x "$sb_ls" ]; then return 127; fi
@@ -207,7 +212,7 @@ sb_login() {
   SB_PAYLOAD="$1"
   SB_IPC='printf "%s
 " __SB_P0__ "$PATH" __SB_P1__'
-  SB_WRAP='sb_ip=$(/usr/bin/bash -ilc "$SB_IPC" </dev/null 2>/dev/null | sed -n "/^__SB_P0__$/,/^__SB_P1__$/p" | sed "1d;\$d"); if [ -n "$sb_ip" ]; then PATH=$sb_ip; export PATH; fi; CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"; export CODEX_HOME; exec /bin/sh -c "$SB_PAYLOAD"'
+  SB_WRAP='sb_to=; if command -v timeout >/dev/null 2>&1; then sb_to="timeout -k 2 20"; fi; sb_tf=$(mktemp 2>/dev/null) || sb_tf=/tmp/superba-path.$$; $sb_to /usr/bin/bash -ilc "$SB_IPC" </dev/null >"$sb_tf" 2>/dev/null; sb_ip=$(sed -n "/^__SB_P0__$/,/^__SB_P1__$/p" "$sb_tf" | sed "1d;\$d"); rm -f "$sb_tf"; if [ -n "$sb_ip" ]; then PATH=$sb_ip; export PATH; fi; CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"; export CODEX_HOME; exec /bin/sh -c "$SB_PAYLOAD"'
   export SB_PAYLOAD SB_IPC SB_WRAP
   /usr/bin/bash -lc "$SB_WRAP"
 }

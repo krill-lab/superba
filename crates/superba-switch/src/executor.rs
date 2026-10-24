@@ -47,6 +47,8 @@ const WSL_LAUNCH_WINDOW_FACTOR: u32 = 2;
 /// A relaunched renderer can need several seconds to leave its startup screen.
 /// Bound the wait for navigation readiness so a switch can still finish.
 const NAV_RESTORE_WAIT: Duration = Duration::from_secs(15);
+/// Longest wait for the pin check after a relaunch.
+const PIN_CHECK_WAIT: Duration = Duration::from_secs(30);
 
 /// Sends events with timestamps.
 struct Emitter<'a> {
@@ -1679,7 +1681,15 @@ impl Run<'_> {
                     self.notices
                         .push(Notice::warning(text("switch.done.hot_unavailable")));
                 }
-                self.check_pin(&session).await;
+                // Install detection and the version store must not hold the
+                // outcome back (alpha.10, W90: a router enable never printed its
+                // result after Verify).
+                if tokio::time::timeout(PIN_CHECK_WAIT, self.check_pin(&session))
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("the pin check did not finish in time; skipped");
+                }
                 let (status, returned_to) = if verification.passed() {
                     (
                         OutcomeStatus::Switched,
