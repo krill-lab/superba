@@ -282,6 +282,17 @@ class App:
         .replace(/\s+/g, ' ').slice(0, 400);
     })()"""
 
+    def _explain_blocker(self):
+        """Append what covers the composer to composer_error (best effort)."""
+        if self.composer_error != "the composer is not focusable":
+            return
+        try:
+            blocker = self.eval(self.BLOCKER_JS, timeout=15)
+        except Exception:
+            return
+        if isinstance(blocker, str) and blocker:
+            self.composer_error += f" ({blocker})"
+
     def composer_ready(self, timeout=FIRST_START_S, call_s=30):
         """Until the composer takes the focus (on a first start the Windows app keeps it
         disabled while "Finishing Windows setup" creates its sandbox, minutes).
@@ -308,12 +319,6 @@ class App:
                                      f" ({errors} renderer errors)")
                     return True
                 self.composer_error = "the composer is not focusable"
-                try:
-                    blocker = self.eval(self.BLOCKER_JS, timeout=min(call_s, max(1, end - time.time())))
-                    if blocker:
-                        self.composer_error += f" ({blocker})"
-                except (AgentError, AppError):
-                    pass
                 remaining = end - time.time()
                 if remaining > 0 and self.eval(self.KEEP_MODEL_JS, timeout=min(call_s, remaining)):
                     self.run.log("  answered the visible model introduction: Continue with current model")
@@ -329,6 +334,7 @@ class App:
                 except AgentError as e2:
                     self.run.log(f"  process list failed: {e2}")
             if time.time() >= end:
+                self._explain_blocker()
                 return False
             time.sleep(min(3, max(0, end - time.time())))
 
