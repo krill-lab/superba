@@ -746,8 +746,13 @@ def w90(t):
                 f"the plan names {D} and the model kept there")
         s.check(top_model(local) == m0, f"config.toml (read by the app's Codex in WSL) keeps {m0!r}: "
                                         f"{top_model(local)!r}")
-        row = preview_row(text, "This computer", rf'^model: .*"{re.escape(m0)}" \(Keeps the model in use\)')
-        s.check(bool(row), f"the preview row: {row!r}", soft=True)
+        # The profile sets this model (spb profile edit --model), so the router plan
+        # does not change it and shows no model row; a "(Keeps the model in use)"
+        # row only appears when Superba keeps a model the profile does not set
+        # (alpha.10 H3). Either way no row may move it elsewhere.
+        moved = preview_row(text, "This computer", r'^model: ')
+        kept = preview_row(text, "This computer", rf'^model: .*"{re.escape(m0)}"')
+        s.check(not moved or bool(kept), f"This computer's plan keeps {m0}: {moved!r}")
         main, servers = wsl_app_servers(run, a)
         s.check(bool(servers), "the app's app-server runs in WSL", soft=True)
         App(run).onboarding(120)

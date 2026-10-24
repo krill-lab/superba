@@ -392,6 +392,12 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=Fal
                                                    lambda k: u.exists(key=k, type="Button", enabled=True)):
                 time.sleep(2)
                 continue
+            # "This computer switched; switching failed on WSL: …" is a WARN, with its reason.
+            partial = re.compile(u.R("toast.partial")) if u.s.has("toast.partial") else None
+            failed = [n for n in dict.fromkeys(names + results)
+                      if (partial and partial.search(n)) or re.search(r"switching failed on WSL|在 WSL.*切换失败", n)]
+            if failed:
+                s.check(False, f"switching failed on a WSL distribution: {failed}", soft=True)
             if "wsl" in (run.session_snapshot or ""):
                 delayed = [n for n in names if re.search(r"(?i)timed? out|timeout|超时", n)]
                 if delayed:
@@ -726,6 +732,14 @@ def router_on(run, t, prefix=""):
         s.check(any(p.startswith("superba-router.exe") for p in inv["processes"]), f"superba-router.exe running: {inv['processes']}")
         # Reuse the request composer's total budget. The introduction can appear
         # long after the first renderer frame (initially only Loading model…).
+        # The relaunched app may ask its first-run questionnaire again ("Which best
+        # describes your work?"); answer it as the other flows do (alpha.10 W88).
+        try:
+            steps, _ = a.onboarding(150)
+            if steps:
+                s.info(f"onboarding answered after the router restart: {steps}")
+        except Exception as e:
+            s.info(f"onboarding after the router restart: {e}")
         s.check(a.composer_ready(300), f"composer usable after router restart: {a.composer_error}")
         run.state["router_on"] = True
 
