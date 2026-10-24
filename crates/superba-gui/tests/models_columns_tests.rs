@@ -96,8 +96,7 @@ async fn long_ids_keep_the_actions_inside_and_upstream_names_readable() {
                 // Nothing runs past the right edge, and no text is cut by
                 // its clip rectangle without being elided.
                 assert_eq!(report.beyond_right(), Vec::<&str>::new(), "{at}");
-                for ((text, r, elided), clip) in report.text_shapes.iter().zip(&report.text_clips)
-                {
+                for ((text, r, elided), clip) in report.text_shapes.iter().zip(&report.text_clips) {
                     if r.intersects(*clip) && r.max.y > clip.min.y + 1.0 {
                         assert!(
                             *elided || r.max.x <= clip.max.x + 1.0,
@@ -121,16 +120,19 @@ async fn long_ids_keep_the_actions_inside_and_upstream_names_readable() {
                     .iter()
                     .filter(|(role, name, _)| {
                         *role == Role::Button
-                            && [SPARK, LONG].iter().any(|m| {
-                                **name == tr.f("models.reset_of", &[("model", m)])
-                            })
+                            && [SPARK, LONG]
+                                .iter()
+                                .any(|m| **name == tr.f("models.reset_of", &[("model", m)]))
                     })
                     .collect();
                 assert_eq!(resets.len(), 2, "{at}: {:?}", report.nodes);
                 for (_, name, r) in &resets {
                     assert!(r.width() >= 20.0, "{at}: {name} {r:?}");
                     assert!(r.max.x <= right - 12.0, "{at}: {name} {r:?}");
-                    assert!(r.min.x >= header.min.x - 16.0, "{at}: {name} {r:?} {header:?}");
+                    assert!(
+                        r.min.x >= header.min.x - 16.0,
+                        "{at}: {name} {r:?} {header:?}"
+                    );
                 }
                 // The upstream pickers end before the actions column.
                 let pick = tr.t("models.upstream.pick");
@@ -187,9 +189,15 @@ fn a_fixed_column_is_reserved_before_the_others_shrink() {
     let last = cells[2];
     assert!((last.max.x - 388.0).abs() < 0.5, "{cells:?}");
     assert!((last.width() - 80.0).abs() < 0.5, "{cells:?}");
-    assert!(cells.windows(2).all(|w| w[0].max.x <= w[1].min.x), "{cells:?}");
+    assert!(
+        cells.windows(2).all(|w| w[0].max.x <= w[1].min.x),
+        "{cells:?}"
+    );
     // Without `fixed` every minimum shrinks alike, still inside the row.
     let loose = Table::new(&[1.0, 0.0, 0.0]).min_widths(&[200.0, 320.0, 80.0]);
     let cells = loose.cells(row);
-    assert!(cells[2].max.x <= 388.5 && cells[2].width() < 79.0, "{cells:?}");
+    assert!(
+        cells[2].max.x <= 388.5 && cells[2].width() < 79.0,
+        "{cells:?}"
+    );
 }

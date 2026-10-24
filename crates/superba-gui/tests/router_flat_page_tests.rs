@@ -235,7 +235,6 @@ fn the_cooldown_fields_take_typed_and_assistive_values() {
     }
 }
 
-
 /// The field named `name`, scrolled into view through AccessKit (what UI
 /// Automation's ScrollItemPattern sends); returns its on-screen center.
 fn field_center(h: &mut AppHarness, name: &str) -> egui::Pos2 {

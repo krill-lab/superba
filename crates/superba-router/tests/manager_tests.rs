@@ -1068,10 +1068,25 @@ async fn failover_rules_persist_and_survive_a_new_manager() {
         max_cooldown_secs: 900,
         ..Default::default()
     };
-    assert!(manager.set_failover(&rules).await.unwrap(), "the running router reloads");
-    assert!(!manager.set_failover(&rules).await.unwrap(), "unchanged: nothing written");
-    assert_eq!(RouterConfig::load(manager.paths()).unwrap().tuning.failover(), rules);
+    assert!(
+        manager.set_failover(&rules).await.unwrap(),
+        "the running router reloads"
+    );
+    assert!(
+        !manager.set_failover(&rules).await.unwrap(),
+        "unchanged: nothing written"
+    );
+    assert_eq!(
+        RouterConfig::load(manager.paths())
+            .unwrap()
+            .tuning
+            .failover(),
+        rules
+    );
     let again = RouterManager::new(&data, fake_exe(dir.path()), Box::new(InProcess::default()));
-    assert_eq!(RouterConfig::load(again.paths()).unwrap().tuning.failover(), rules);
+    assert_eq!(
+        RouterConfig::load(again.paths()).unwrap().tuning.failover(),
+        rules
+    );
     manager.uninstall_service().unwrap();
 }

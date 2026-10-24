@@ -813,13 +813,7 @@ enum Col {
 /// The columns and their minimum widths for this view and width. The model
 /// and upstream columns are flexible (they share what is left); the actions
 /// column is fixed and reserved first (see [`Table::fixed`]).
-fn columns(
-    routed: bool,
-    narrow: bool,
-    custom: bool,
-    priced: bool,
-    speed: bool,
-) -> Vec<(Col, f32)> {
+fn columns(routed: bool, narrow: bool, custom: bool, priced: bool, speed: bool) -> Vec<(Col, f32)> {
     // Value fields alone: the source (默认 / 所有模型 / 自定义) is the field's
     // muted placeholder, the tag and caption lead its tooltip, so the columns
     // that carry names keep the room.
@@ -1699,7 +1693,9 @@ fn upstream(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, value: String) {
     // The picker sits at the cell's right end; the name takes the rest, so
     // neither runs past the column (user report: a clipped picker).
     let name_w = (ui.available_width() - PICK_W - ui.spacing().item_spacing.x).max(24.0);
-    let open = ui.data(|d| d.get_temp::<bool>(id.with("open"))).unwrap_or(false);
+    let open = ui
+        .data(|d| d.get_temp::<bool>(id.with("open")))
+        .unwrap_or(false);
     let editing = was_editing || open || ui.memory(|m| m.has_focus(id));
     let cx = rc.cx;
     let r = if editing {

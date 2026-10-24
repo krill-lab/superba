@@ -94,7 +94,13 @@ impl Table {
             .min_widths
             .iter()
             .enumerate()
-            .map(|(i, m)| if self.fixed.contains(&i) { *m } else { m * scale })
+            .map(|(i, m)| {
+                if self.fixed.contains(&i) {
+                    *m
+                } else {
+                    m * scale
+                }
+            })
             .collect();
         let fixed: f32 = mins.iter().sum();
         let total_w: f32 = self.weights.iter().sum::<f32>().max(f32::EPSILON);

@@ -269,6 +269,19 @@ class App:
       return false;
     })()"""
 
+    # What covers the composer (alpha.10, W88: a modal card with a pager sat over a
+    # composer that never took focus, and the report could not say what it was).
+    BLOCKER_JS = r"""(() => {
+      const visible = e => !!e && (e.offsetParent !== null || e.getClientRects().length > 0);
+      const dialogs = [...document.querySelectorAll('[role=dialog],dialog,[aria-modal=true]')].filter(visible);
+      const text = dialogs.map(d => (d.innerText || '').trim()).filter(Boolean).join(' | ');
+      const pm = document.querySelector('.ProseMirror');
+      const state = pm ? (pm.getAttribute('contenteditable') === 'false' ? 'composer read-only' : 'composer present')
+                       : 'no composer';
+      return (state + (text ? '; dialog: ' + text : '; body: ' + (document.body.innerText || '').trim()))
+        .replace(/\s+/g, ' ').slice(0, 400);
+    })()"""
+
     def composer_ready(self, timeout=FIRST_START_S, call_s=30):
         """Until the composer takes the focus (on a first start the Windows app keeps it
         disabled while "Finishing Windows setup" creates its sandbox, minutes).
@@ -295,6 +308,12 @@ class App:
                                      f" ({errors} renderer errors)")
                     return True
                 self.composer_error = "the composer is not focusable"
+                try:
+                    blocker = self.eval(self.BLOCKER_JS, timeout=min(call_s, max(1, end - time.time())))
+                    if blocker:
+                        self.composer_error += f" ({blocker})"
+                except (AgentError, AppError):
+                    pass
                 remaining = end - time.time()
                 if remaining > 0 and self.eval(self.KEEP_MODEL_JS, timeout=min(call_s, remaining)):
                     self.run.log("  answered the visible model introduction: Continue with current model")
