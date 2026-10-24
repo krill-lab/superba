@@ -553,11 +553,20 @@ fn draw_node(
     p.galley(pos2(tx, label_y - th / 2.0), title, title_color);
     let dh = detail.size().y;
     let dw = detail.size().x;
-    p.galley(
-        pos2(center_x - dw / 2.0, label_y + 20.0 - dh / 2.0),
-        detail,
-        pal.text_subtle,
-    );
+    let detail_pos = pos2(center_x - dw / 2.0, label_y + 20.0 - dh / 2.0);
+    p.galley(detail_pos, detail, pal.text_subtle);
+    // The caption under the title (「未开启 · 直连」, "Off · direct", a line's
+    // auth, a model's tier) is painted, so it gets a text node of its own
+    // (alpha.10: UI Automation could not read it). The node's description
+    // stays its hover text.
+    if !n.detail.is_empty() {
+        let r = ui.interact(
+            Rect::from_min_size(detail_pos, vec2(dw, dh)),
+            id.with("detail"),
+            Sense::hover(),
+        );
+        crate::design::a11y::text(&r, &n.detail);
+    }
     if show_focus(&resp) {
         focus_ring(ui.painter(), area, radius::CARD, pal);
     }

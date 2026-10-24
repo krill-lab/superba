@@ -475,3 +475,47 @@ fn state_badges_are_readable_in_both_languages() {
         }
     }
 }
+
+/// alpha.10: the Overview request path's captions are painted under each node
+/// ("Off · direct" / 「未开启 · 直连」 under the local router, the app version,
+/// the line's auth, the model's tier); each is a text in the tree.
+#[test]
+fn the_request_path_captions_are_text_in_the_tree() {
+    for locale in LOCALES {
+        let tr = Tr::new(locale);
+        let mut h = AppHarness::new(fake(false), locale, Page::Overview);
+        let off = tr.t("overview.hero.router_off");
+        let t = h.until("the router caption in the tree", |t| {
+            t.find(Some(Role::Label), &off).is_some()
+        });
+        // The router's caption sits under its title, in the path card.
+        let caption = t
+            .node(t.find(Some(Role::Label), &off).unwrap())
+            .bounds()
+            .unwrap();
+        let title = t
+            .find(Some(Role::Button), &tr.t("overview.hero.router"))
+            .map(|id| t.node(id).bounds().unwrap());
+        if let Some(title) = title {
+            assert!(
+                caption.y0 >= title.y0 && caption.y1 <= title.y1 + 1.0,
+                "{caption:?} {title:?}"
+            );
+        }
+        // The other nodes' captions are texts too: at least one per node.
+        let this = t
+            .find(Some(Role::Button), &tr.t("overview.hero.this"))
+            .and_then(|id| t.node(id).bounds())
+            .expect("this computer");
+        let under_this = t.with_role(Role::Label).into_iter().any(|id| {
+            t.node(id).bounds().is_some_and(|b| {
+                b.y0 > this.y0 && b.y1 <= this.y1 + 1.0 && b.x0 >= this.x0 && b.x1 <= this.x1
+            }) && t.node(id).value().is_some_and(|v| !v.is_empty())
+        });
+        assert!(
+            under_this,
+            "{locale:?}: no caption text under this computer\n{}",
+            t.dump()
+        );
+    }
+}
