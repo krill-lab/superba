@@ -26,18 +26,26 @@ fn save(state: &mut State, cx: &Cx<'_>, next: RouterFailover) {
     if current(state).as_ref() == Some(&next) || next.validate().is_err() {
         return;
     }
-    state.failover_draft = Some(next.clone());
+    let draft = next.clone();
     state.start(cx, Op::Failover, |b| b.set_failover(next));
+    // Shown until the next snapshot has it, only when the save really started.
+    if matches!(state.op, Some((Op::Failover, _))) {
+        state.failover_draft = Some(draft);
+    }
 }
 
-/// A whole number typed into a text field, with − / + steppers (alpha.9: the
-/// egui `DragValue` used before ignored UI Automation's
-/// `ValuePattern.SetValue`, which sends text, and its ±1 steps rounded away at
-/// a drag speed of 0.25, so neither automation nor a keyboard user could set
-/// it reliably). The value is committed when the field loses focus (Enter,
-/// Tab, a click elsewhere; Escape discards), when an assistive technology sets
-/// the text, or when a stepper is clicked; out-of-range input is clamped and
-/// text that is not a number is dropped.
+/// A whole number typed into a text field, with − / + steppers.
+///
+/// The value is committed when the field loses focus (Enter, Tab, a click
+/// elsewhere; Escape discards), when an assistive technology sets the value
+/// (AccessKit `SetValue`, text or numeric), or when a stepper is clicked;
+/// out-of-range input is clamped and text that is not a number is dropped.
+///
+/// alpha.10: a `SetValue` is committed at once even while the field has
+/// keyboard focus. UI Automation clients focus an element before
+/// `ValuePattern.SetValue`, so on Windows the alpha.9 field took the text
+/// but waited for a focus loss that never came: the value was shown and
+/// never saved, and the next keys typed went into that field.
 fn number(
     ui: &mut Ui,
     value: &mut u32,
@@ -47,6 +55,7 @@ fn number(
     enabled: bool,
 ) -> bool {
     let id = ui.make_persistent_id(("failover-number", name));
+    let edit_id = id.with("edit");
     let (lo, hi) = (*range.start(), *range.end());
     let mut committed = false;
     ui.add_enabled_ui(enabled, |ui| {
@@ -55,38 +64,56 @@ fn number(
             let minus = ui
                 .add_enabled(*value > lo, egui::Button::new("−").small())
                 .accessible_name(format!("{name} −"));
+            // The value an assistive technology sets this frame (read before
+            // the field, which applies the text form itself).
+            let assistive = if ui.is_enabled() {
+                ui.input(|i| {
+                    i.accesskit_action_requests(edit_id, egui::accesskit::Action::SetValue)
+                        .filter_map(|q| match &q.data {
+                            Some(egui::accesskit::ActionData::Value(v)) => Some(v.to_string()),
+                            Some(egui::accesskit::ActionData::NumericValue(v)) => {
+                                Some(format!("{}", v.round().max(0.0) as u64))
+                            }
+                            _ => None,
+                        })
+                        .last()
+                })
+            } else {
+                None
+            };
             let mut text: String = ui
                 .data_mut(|d| d.get_temp::<String>(id))
                 .unwrap_or_else(|| value.to_string());
             let r = ui
                 .add(
                     egui::TextEdit::singleline(&mut text)
-                        .id(id.with("edit"))
+                        .id(edit_id)
                         .desired_width(52.0)
                         .char_limit(9),
                 )
                 .accessible_name(name);
-            // A numeric SetValue (UIA RangeValuePattern) also counts.
-            let numeric = ui.input(|i| {
-                i.accesskit_action_requests(r.id, egui::accesskit::Action::SetValue)
-                    .filter_map(|q| match q.data {
-                        Some(egui::accesskit::ActionData::NumericValue(v)) => Some(v),
-                        _ => None,
-                    })
-                    .last()
+            // UI Automation's ScrollItemPattern (egui scrolls on the request
+            // but does not advertise it).
+            ui.ctx().accesskit_node_builder(r.id, |b| {
+                b.add_action(egui::accesskit::Action::ScrollIntoView);
             });
             let escaped = ui.input(|i| i.key_pressed(egui::Key::Escape));
-            if let Some(v) = numeric {
-                text = format!("{}", v.round().max(0.0) as u64);
+            let entered = r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let from_assistive = assistive.is_some();
+            if let Some(v) = assistive {
+                text = v;
             }
-            let set_from_outside = numeric.is_some() || (r.changed() && !r.has_focus());
-            if (r.lost_focus() && !escaped) || set_from_outside {
+            let commit = from_assistive
+                || entered
+                || (r.lost_focus() && !escaped)
+                || (r.changed() && !r.has_focus());
+            if commit {
                 if let Some(n) = parse_number(&text) {
                     *value = n.clamp(u64::from(lo), u64::from(hi)) as u32;
                     committed = true;
                 }
                 ui.data_mut(|d| d.remove::<String>(id));
-            } else if r.has_focus() {
+            } else if r.has_focus() && !escaped {
                 ui.data_mut(|d| d.insert_temp(id, text));
             } else {
                 ui.data_mut(|d| d.remove::<String>(id));

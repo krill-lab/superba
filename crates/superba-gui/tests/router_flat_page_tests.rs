@@ -234,3 +234,130 @@ fn the_cooldown_fields_take_typed_and_assistive_values() {
         });
     }
 }
+
+
+/// The field named `name`, scrolled into view through AccessKit (what UI
+/// Automation's ScrollItemPattern sends); returns its on-screen center.
+fn field_center(h: &mut AppHarness, name: &str) -> egui::Pos2 {
+    let tree = h.wait_for(Some(Role::TextInput), name);
+    let id = tree.find(Some(Role::TextInput), name).unwrap();
+    h.act(id, egui::accesskit::Action::ScrollIntoView);
+    let tree = h.settle();
+    let id = tree.find(Some(Role::TextInput), name).unwrap();
+    let b = tree.node(id).bounds().expect("the field has bounds");
+    let c = egui::pos2(((b.x0 + b.x1) / 2.0) as f32, ((b.y0 + b.y1) / 2.0) as f32);
+    assert!(
+        (0.0..1280.0).contains(&c.x) && (0.0..800.0).contains(&c.y),
+        "{name} is not on screen after ScrollIntoView: {c:?}"
+    );
+    c
+}
+
+/// A real double-click at `pos` (press, release, press, release).
+fn double_click(h: &mut AppHarness, pos: egui::Pos2) {
+    let button = |pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    h.input(vec![
+        vec![egui::Event::PointerMoved(pos)],
+        vec![button(true)],
+        vec![button(false)],
+        vec![button(true)],
+        vec![button(false)],
+    ]);
+}
+
+/// The value the field named `name` shows.
+fn field_value(h: &mut AppHarness, name: &str) -> String {
+    let tree = h.wait_for(Some(Role::TextInput), name);
+    let id = tree.find(Some(Role::TextInput), name).unwrap();
+    tree.node(id).value().unwrap_or_default().to_owned()
+}
+
+/// alpha.10 (Windows re-test CDW2): the cooldowns by a real keyboard —
+/// double-click, select all, type, Enter; and type then Tab out — and by
+/// UI Automation's SetValue, which focuses the element first. Each value is
+/// saved to the router configuration and is what a new window reads.
+#[test]
+fn the_cooldowns_save_from_real_keys_and_a_focused_set_value_and_survive_a_reload() {
+    for locale in [Locale::ZhCn, Locale::En] {
+        let tr = Tr::new(locale);
+        let service = members();
+        let first = tr.t("router.failover.cooldown");
+        let max = tr.t("router.failover.max_cooldown");
+        let sticky = tr.t("router.failover.sticky");
+        {
+            let mut h = AppHarness::new(service.clone(), locale, Page::Router);
+            // Double-click, Ctrl+A, type 7, Enter.
+            let at = field_center(&mut h, &first);
+            double_click(&mut h, at);
+            h.shortcut(egui::Key::A);
+            h.type_text("7");
+            h.key(egui::Key::Enter);
+            h.until("first cooldown 7 saved", |_| {
+                service.router_failover().cooldown_secs == 7
+            });
+            assert_eq!(field_value(&mut h, &first), "7");
+
+            // Click, select all, type 90, Tab out.
+            let at = field_center(&mut h, &max);
+            double_click(&mut h, at);
+            h.shortcut(egui::Key::A);
+            h.type_text("90");
+            h.key(egui::Key::Tab);
+            h.until("longest cooldown 90 saved", |_| {
+                service.router_failover().max_cooldown_secs == 90
+            });
+
+            // UI Automation: SetFocus, then ValuePattern.SetValue; the
+            // field keeps focus and the value is saved anyway.
+            let tree = h.wait_for(Some(Role::TextInput), &max);
+            let id = tree.find(Some(Role::TextInput), &max).unwrap();
+            h.act(id, egui::accesskit::Action::Focus);
+            h.settle();
+            h.set_value(&max, "900");
+            h.until("longest cooldown 900 saved while focused", |_| {
+                service.router_failover().max_cooldown_secs == 900
+            });
+            // Keys typed after it go to that field and save again.
+            h.shortcut(egui::Key::A);
+            h.type_text("1200");
+            h.key(egui::Key::Enter);
+            h.until("longest cooldown 1200 saved", |_| {
+                service.router_failover().max_cooldown_secs == 1200
+            });
+            assert_eq!(service.router_failover().cooldown_secs, 7);
+
+            // A numeric SetValue (RangeValuePattern) on a focused field.
+            let tree = h.wait_for(Some(Role::TextInput), &sticky);
+            let id = tree.find(Some(Role::TextInput), &sticky).unwrap();
+            h.act(id, egui::accesskit::Action::Focus);
+            h.settle();
+            h.input(vec![vec![egui::Event::AccessKitActionRequest(
+                egui::accesskit::ActionRequest {
+                    action: egui::accesskit::Action::SetValue,
+                    target_tree: egui::accesskit::TreeId::ROOT,
+                    target_node: id,
+                    data: Some(egui::accesskit::ActionData::NumericValue(45.0)),
+                },
+            )]]);
+            h.until("sticky 45 saved", |_| {
+                service.router_failover().sticky_idle_minutes == 45
+            });
+        }
+        // A new window reads the saved rules.
+        let mut h = AppHarness::new(service.clone(), locale, Page::Router);
+        h.until("the saved rules are shown after a reload", |t| {
+            let v = |n: &str| {
+                t.find(Some(Role::TextInput), n)
+                    .and_then(|id| t.node(id).value().map(str::to_owned))
+            };
+            v(&first).as_deref() == Some("7")
+                && v(&max).as_deref() == Some("1200")
+                && v(&sticky).as_deref() == Some("45")
+        });
+    }
+}

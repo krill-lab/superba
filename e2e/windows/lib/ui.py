@@ -245,16 +245,45 @@ class Ui:
         return self.agent.call("scroll", x=int(w["rect"][2] * 0.8), y=int(w["rect"][3] * 0.65),
                                relative=True, notches=notches, settle_ms=450, **self.win)
 
+    def _visible(self, el):
+        """The element's center lies inside the Superba window. AccessKit
+        exposes every egui widget, also those scrolled out of the page, so a
+        match alone does not mean a click at its rectangle reaches it
+        (alpha.9 CDW2: the cooldown fields were found below the window and
+        the double-click landed outside it)."""
+        r = el.get("rect") if isinstance(el, dict) else None
+        if not r:
+            return False
+        w = self.wait_window().get("rect") or [0, 0, 0, 0]
+        cx, cy = r[0] + r[2] / 2, r[1] + r[3] / 2
+        return w[0] <= cx < w[0] + w[2] and w[1] <= cy < w[1] + w[3]
+
+    def _visible_match(self, **sel):
+        found = self.find(**sel)
+        idx = self._sel(**sel).get("index", 0)
+        return found[idx] if len(found) > idx and self._visible(found[idx]) else None
+
     def reveal(self, attempts=12, **sel):
-        """Find a control while scrolling only the detail pane, from its top."""
+        """Find a control and bring it into the window: UIA ScrollItemPattern
+        first, else scroll only the detail pane, from its top."""
+        el = self._visible_match(**sel)
+        if el:
+            return el
         if self.exists(**sel):
-            return self.wait(**sel)
+            try:
+                self.act("scroll_into_view", **sel)
+                el = self._visible_match(**sel)
+                if el:
+                    return el
+            except Exception:
+                pass
         self.scroll_detail(80)
         for _ in range(attempts):
-            if self.exists(**sel):
-                return self.wait(**sel)
+            el = self._visible_match(**sel)
+            if el:
+                return el
             self.scroll_detail(-4)
-        raise UiError(f"control not found in the detail pane: {self._describe(self._sel(**sel))}")
+        raise UiError(f"control not in view in the detail pane: {self._describe(self._sel(**sel))}")
 
     def update_row(self, title_key, expand=True):
         """M3 update row names include status/version after the localized title.

@@ -299,13 +299,17 @@ impl State {
                 }
                 Err(e) => {
                     self.then_plan = None;
+                    if op == Op::Failover {
+                        // Not saved: show the stored rules again.
+                        self.failover_draft = None;
+                    }
                     self.op_error = Some(super::error_text(cx.tr, &e));
                     if op == Op::Conversion {
                         self.conversion_error = self.op_error.clone();
                     }
                 }
             }
-            if op == Op::Conversion {
+            if matches!(op, Op::Conversion | Op::Failover) {
                 // An earlier snapshot may still contain the old directions.
                 // Refresh after the write/reload, including after a reload error.
                 self.task = None;

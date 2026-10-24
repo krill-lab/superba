@@ -1041,3 +1041,37 @@ async fn a_members_rewrite_keeps_the_claude_code_section_of_the_members_left() {
     let stored = superba_router::RouterConfig::load(manager.paths()).unwrap();
     assert!(stored.claude.unwrap().members.is_empty());
 }
+
+/// alpha.10 (CDW2): the cooldowns set from the Router page are written to the
+/// router configuration, a running router reloads them, and they are what a
+/// later Superba (a new manager over the same data directory) reads.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn failover_rules_persist_and_survive_a_new_manager() {
+    use superba_router::RouterConfig;
+    let _serial = SERIAL.lock().await;
+    let up = upstream(Mode::Json(200, r#"{"ok":true}"#)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let data = DataDir::new(dir.path());
+    let manager = RouterManager::new(&data, fake_exe(dir.path()), Box::new(InProcess::default()));
+    let cfg = test_config(vec![member(
+        "krill",
+        MemberKind::Krill,
+        false,
+        vec![line("a", up.base("/up"))],
+    )]);
+    manager
+        .enable(&cfg, keys(), Duration::from_secs(10))
+        .await
+        .unwrap();
+    let rules = superba_core::RouterFailover {
+        cooldown_secs: 7,
+        max_cooldown_secs: 900,
+        ..Default::default()
+    };
+    assert!(manager.set_failover(&rules).await.unwrap(), "the running router reloads");
+    assert!(!manager.set_failover(&rules).await.unwrap(), "unchanged: nothing written");
+    assert_eq!(RouterConfig::load(manager.paths()).unwrap().tuning.failover(), rules);
+    let again = RouterManager::new(&data, fake_exe(dir.path()), Box::new(InProcess::default()));
+    assert_eq!(RouterConfig::load(again.paths()).unwrap().tuning.failover(), rules);
+    manager.uninstall_service().unwrap();
+}
