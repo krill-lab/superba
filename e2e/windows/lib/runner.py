@@ -145,6 +145,7 @@ class StepRec:
     # --- context manager
     def __enter__(self):
         self.t.run.log(f"  step: {self.name}")
+        check_disk(self.t.run)
         return self
 
     def __exit__(self, et, ev, tb):
@@ -167,6 +168,33 @@ class StepRec:
 
 class StopScenario(Exception):
     pass
+
+
+# Abort below this much free space on the output's file system (alpha.10 H5:
+# /data reached 0 GB twice while WSL snapshots were restored during a run).
+MIN_FREE_BYTES = 10 * 1024**3
+
+
+class LowDisk(KeyboardInterrupt):
+    """Too little disk left: stop the run like an interrupt (the runner tears
+    the VM down and writes the report)."""
+
+
+def check_disk(run, minimum=MIN_FREE_BYTES):
+    import os
+    import shutil
+    root = getattr(run, "root", None)
+    # Real runs only (run.py turns it on); unit tests run in a small /tmp.
+    if root is None or not os.environ.get("SUPERBA_E2E_DISK_CHECK"):
+        return
+    try:
+        free = shutil.disk_usage(root).free
+    except OSError:
+        return
+    if free < minimum:
+        msg = f"only {free / 1024**3:.1f} GB free under {root}: stopping the run (needs {minimum / 1024**3:.0f} GB)"
+        run.log("ABORT: " + msg)
+        raise LowDisk(msg)
 
 
 class T:

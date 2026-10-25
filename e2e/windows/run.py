@@ -364,4 +364,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # Stop a run below 10 GB free (lib/runner.check_disk; not in unit tests).
+    os.environ.setdefault("SUPERBA_E2E_DISK_CHECK", "1")
     sys.exit(main())

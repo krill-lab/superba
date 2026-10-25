@@ -532,7 +532,7 @@ def w88(t):
         u.click(key="hosts.wsl.update_now")
         phases, names = flows.wait_switch_done(run, s, u, timeout=300)
         s.info(f"phases: {phases}")
-        result = flows.switch_result(u, names)
+        result = flows.switch_result(u, names, s=s)
         s.info(f"toast/result: {result}")
         s.shot("hosts-after-update-now")
         s.ui_dump("hosts-after-update-now")
@@ -755,7 +755,7 @@ def w90(t):
         s.check(not moved or bool(kept), f"This computer's plan keeps {m0}: {moved!r}")
         main, servers = wsl_app_servers(run, a)
         s.check(bool(servers), "the app's app-server runs in WSL", soft=True)
-        App(run).onboarding(120)
+        flows.settle_onboarding(run, s, 240)
     flows.turn(run, t, "E2E-LR1", new_chat=True)
     with t.step("The app's turn through the router ran the same model") as s:
         m1 = (run.state.get("turn_models") or {}).get("E2E-LR1")
@@ -769,7 +769,7 @@ def w90(t):
         if re.search(r"Full restart of ChatGPT", text):
             s.check(a.wait_main(150, not_pid=(before or {}).get("pid")) is not None,
                     "the full restart relaunched ChatGPT")
-        App(run).onboarding(120)
+        flows.settle_onboarding(run, s, 240)
         s.check(App(run).composer_ready(300), "composer usable after router off", soft=True)
     flows.turn(run, t, "E2E-LD1", expect_line=run.state["line"], new_chat=True)
     with t.step("The app's turn after the router ran the same model") as s:

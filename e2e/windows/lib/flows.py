@@ -309,7 +309,7 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=Fal
     t0 = time.time()
     end = t0 + timeout
     busy = [re.compile(u.R(k)) for k in ("banner.running.title", "banner.armed.title", "banner.reapply.title",
-                                         "banner.planning")]
+                                         "banner.reapply.running", "banner.planning") if u.s.has(k)]
     paused = re.compile(u.R("banner.waiting.title"))
     app_setup = u.L("banner.waiting.app_setup")
     here = u.L("banner.waiting.this_computer")
@@ -392,12 +392,7 @@ def wait_switch_done(run, s, u, timeout=240, force_quit=True, router_restart=Fal
                                                    lambda k: u.exists(key=k, type="Button", enabled=True)):
                 time.sleep(2)
                 continue
-            # "This computer switched; switching failed on WSL: …" is a WARN, with its reason.
-            partial = re.compile(u.R("toast.partial")) if u.s.has("toast.partial") else None
-            failed = [n for n in dict.fromkeys(names + results)
-                      if (partial and partial.search(n)) or re.search(r"switching failed on WSL|在 WSL.*切换失败", n)]
-            if failed:
-                s.check(False, f"switching failed on a WSL distribution: {failed}", soft=True)
+            flag_wsl_failure(s, u, names + results)
             if "wsl" in (run.session_snapshot or ""):
                 delayed = [n for n in names if re.search(r"(?i)timed? out|timeout|超时", n)]
                 if delayed:
@@ -432,8 +427,45 @@ def switch_result_patterns(u):
     return [u.R(key) for key in keys] + [r"(?i)failed|rolled back|失败|已回滚"]
 
 
-def switch_result(u, initial=(), timeout=8):
-    return u.poll_texts(switch_result_patterns(u), timeout=timeout, initial=initial)
+def settle_onboarding(run, s, timeout=240):
+    """After a restart: wait for ChatGPT's renderer, then answer its first-run
+    questions, within `timeout` in all; a renderer that is late is noted, not
+    fatal (alpha.10 H4)."""
+    a = App(run)
+    t0 = time.time()
+    try:
+        a.wait_main(timeout)
+        steps, _ = a.onboarding(max(30, int(timeout - (time.time() - t0))))
+        if steps:
+            s.info(f"onboarding answered: {steps}")
+        return steps
+    except Exception as e:
+        s.info(f"onboarding not answered within {timeout} s: {str(e)[:200]}")
+        return None
+
+
+def flag_wsl_failure(s, u, names):
+    """'This computer switched; switching failed on WSL: …' is a WARN with its text,
+    wherever the toast is seen (during the wait or after it; alpha.10 H2). Once per step."""
+    partial = re.compile(u.R("toast.partial")) if u.s.has("toast.partial") else None
+    failed = [n for n in dict.fromkeys(names)
+              if (partial and partial.search(n)) or re.search(r"switching failed on WSL|在 WSL.*切换失败", n)]
+    seen = getattr(s, "_wsl_failures", None)
+    if seen is None:
+        seen = s._wsl_failures = set()
+    new = [n for n in failed if n not in seen]
+    if new:
+        seen.update(new)
+        s.check(False, f"switching failed on a WSL distribution: {new}", soft=True)
+    return failed
+
+
+def switch_result(u, initial=(), timeout=8, s=None):
+    found = u.poll_texts(switch_result_patterns(u), timeout=timeout, initial=initial)
+    if s is not None:
+        # A late toast counts as well: read the overlay a little longer for it.
+        flag_wsl_failure(s, u, list(found) + list(initial) + u.texts())
+    return found
 
 
 def applied(run, label="status"):
@@ -520,9 +552,10 @@ def wizard_krill(run, t, prefix="", line="a", lang="en"):
             u.click(key="confirm.full_restart")
         else:
             s.info("no full-restart confirmation (ChatGPT not running?)")
-        phases, names = wait_switch_done(run, s, u)
+        # A first switch here takes 229–296 s (ChatGPT's first-start setup, WSL).
+        phases, names = wait_switch_done(run, s, u, timeout=420)
         s.info(f"phases: {phases}")
-        toast = switch_result(u, names)
+        toast = switch_result(u, names, s=s)
         s.info(f"toast/result: {toast}")
         s.shot("after-first-switch")
         a = app(run)
