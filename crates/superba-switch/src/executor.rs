@@ -1896,7 +1896,8 @@ impl Run<'_> {
             auth: self.verify_auth(session).await,
             line: self.verify_line().await,
             renderer: if renderer {
-                self.verify_renderer(session).await
+                self.verify_renderer(session, self.launched_at.is_some())
+                    .await
             } else {
                 skipped(text("switch.verify.not_applicable"))
             },
@@ -2214,22 +2215,60 @@ impl Run<'_> {
         }
     }
 
-    async fn verify_renderer(&self, session: Option<&AppSession>) -> CheckResult {
+    /// `launched`: the app was quit and opened again by this switch, so a
+    /// window that never comes is a failure to report, not a flaky read.
+    async fn verify_renderer(&self, session: Option<&AppSession>, launched: bool) -> CheckResult {
         let Some(session) = session.filter(|s| s.cdp.is_some()) else {
             return skipped(text("switch.verify.no_session"));
         };
-        match self.deps().app.renderer_state(session).await {
-            Ok(state) if state.on_login_page && self.pc.auth.is_some_and(AuthMode::uses_key) => {
-                CheckResult::Failed {
-                    detail: text("switch.verify.login_page").render_fallback(),
+        // A relaunched app may take a while to create its window: retry the
+        // read until the launch window has passed (alpha.10 P3: "Verify
+        // window: skipped: NoRendererTarget" while no window ever appeared).
+        let wait = self.sw.tuning.launch_verify_timeout;
+        let started = tokio::time::Instant::now();
+        let error = loop {
+            match self.deps().app.renderer_state(session).await {
+                Ok(state)
+                    if state.on_login_page && self.pc.auth.is_some_and(AuthMode::uses_key) =>
+                {
+                    return CheckResult::Failed {
+                        detail: text("switch.verify.login_page").render_fallback(),
+                    };
                 }
+                Ok(_) => return CheckResult::Passed,
+                Err(e) if e.is_not_implemented() => {
+                    return skipped(text("switch.verify.not_supported"));
+                }
+                // A flaky CDP read after a hot restart is not evidence that
+                // the switch failed.
+                Err(e) if !launched => {
+                    return CheckResult::Skipped {
+                        reason: e.to_string(),
+                    };
+                }
+                Err(e) if started.elapsed() < wait => {
+                    tracing::debug!(error = %e, "the renderer is not reachable yet");
+                    tokio::time::sleep(self.sw.tuning.poll.max(Duration::from_millis(200))).await;
+                }
+                Err(e) => break e,
             }
-            Ok(_) => CheckResult::Passed,
-            Err(e) if e.is_not_implemented() => skipped(text("switch.verify.not_supported")),
-            // A flaky CDP read is not evidence that the switch failed.
-            Err(e) => CheckResult::Skipped {
-                reason: e.to_string(),
-            },
+        };
+        // Still no window: a warning that says whether the app still runs.
+        let running = matches!(
+            self.deps().app.running_session().await,
+            Ok(Some(s)) if s.main_pid == session.main_pid
+        );
+        let state = text(if running {
+            "switch.verify.no_window_running"
+        } else {
+            "switch.verify.no_window_gone"
+        });
+        CheckResult::Failed {
+            detail: text("switch.verify.no_window")
+                .arg("secs", wait.as_secs().to_string())
+                .arg("detail", error.to_string())
+                .arg_text("state", state)
+                .render_fallback(),
         }
     }
 

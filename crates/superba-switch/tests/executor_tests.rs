@@ -2303,3 +2303,32 @@ fn a_state_lock_busy_for_a_moment_is_waited_for() {
     assert_eq!(err.code(), "locked");
     assert!(start.elapsed() >= superba_switch::journal::STATE_LOCK_GRACE);
 }
+
+/// alpha.10 P3: after a full restart whose window never appears, the window
+/// check retries, then fails with what to do; the switch does not report
+/// plain success.
+#[tokio::test(start_paused = true)]
+async fn a_relaunched_app_without_a_window_is_not_a_plain_success() {
+    let w = unhealthy_authapi_world();
+    let before = w.app.renderer.lock().unwrap().clone();
+    let mut states = vec![Ok(before)];
+    states.extend((0..2000).map(|_| {
+        Err(superba_core::Error::Cdp {
+            message: "renderer not reachable: NoRendererTarget".into(),
+        })
+    }));
+    w.app.renderer_states.lock().unwrap().extend(states);
+
+    let (o, _ev) = run(&w, req("work"), allow_full(), ScriptedDecider::with(&[])).await;
+
+    assert_ne!(o.status, OutcomeStatus::Switched, "{o:?}");
+    let v = o.verification.as_ref().expect("verified");
+    let superba_core::CheckResult::Failed { detail } = &v.renderer else {
+        panic!("{:?}", v.renderer)
+    };
+    assert!(detail.contains("window did not appear"), "{detail}");
+    assert!(
+        detail.contains("still running") || detail.contains("no longer running"),
+        "{detail}"
+    );
+}
