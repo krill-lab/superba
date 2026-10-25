@@ -5,6 +5,11 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.1-alpha.11] - 2026-10-26
+
+### Fixed
+- Configs, auth addresses (`CODEX_AUTHAPI_BASE_URL`), restore points and WSL distributions still on the old Krill endpoints (`https://api-slb.krill-code.net`, `https://api.krill-code.net`, `https://api.cdn-krill-ai.com`) are recognised as their own line again (国内极速, 海外线路, 三网优化 CDN) instead of an unknown line or the overseas fallback. alpha.10 matched only the new endpoints, so a restore looked like a full restart, the Overview lost the auth line, and importing an old 国内极速 or CDN URL picked 海外线路. Superba still writes the new endpoints, at the next switch.
+
 ## [0.1.1-alpha.10] - 2026-10-26
 
 ### Changed
