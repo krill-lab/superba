@@ -30,7 +30,7 @@ use superba_remote::ssh::{RemoteShell, SystemSsh};
 use tempfile::TempDir;
 
 const IMAGE: &str = "superba-remote-it:v1";
-const ORIGIN: &str = "https://api.krill-code.net";
+const ORIGIN: &str = "https://api.kbsfdxc.net";
 const KEY: &str = "sk-it-000000000000000000000abcd";
 const MACHINE_ID: &str = "5b0c0ffee5b0c0ffee5b0c0ffee5b0c0";
 const CHATGPT_AUTH: &str = "{\"tokens\":{\"id_token\":\"x\",\"access_token\":\"y\"},\"last_refresh\":\"2026-10-01T00:00:00Z\"}\n";
@@ -286,7 +286,7 @@ async fn remote_hosts_against_an_sshd_container() {
 
     // --- alice: bash login shell, Debian skel .bashrc + a legacy tutorial line.
     let skel_rc = cat(&ssh, &alice, ".bashrc").await.expect("skel bashrc");
-    let legacy = "export CODEX_AUTHAPI_BASE_URL=\"https://api-slb.krill-code.net\"";
+    let legacy = "export CODEX_AUTHAPI_BASE_URL=\"https://api-slb.kbsfdxc.net\"";
     let orig_rc = format!("{skel_rc}{legacy}\n");
     put(&ssh, &alice, ".bashrc", &orig_rc).await;
     put(&ssh, &alice, ".codex/config.toml", CONFIG).await;
@@ -315,7 +315,7 @@ async fn remote_hosts_against_an_sshd_container() {
     // The legacy line is what the app's login shell sees today.
     assert_eq!(
         st.authapi_env,
-        EnvObservation::Present("https://api-slb.krill-code.net".into())
+        EnvObservation::Present("https://api-slb.kbsfdxc.net".into())
     );
     assert!(st.app_server_pids.is_empty());
 
@@ -334,7 +334,7 @@ async fn remote_hosts_against_an_sshd_container() {
     assert!(rc_now.starts_with("# >>> superba >>>"), "{rc_now}");
     assert!(rc_now.contains(&format!("# [superba] {legacy}")));
     let cfg = cat(&ssh, &alice, ".codex/config.toml").await.unwrap();
-    assert!(cfg.contains("openai_base_url = \"https://api.krill-code.net/backend-api/codex\""));
+    assert!(cfg.contains("openai_base_url = \"https://api.kbsfdxc.net/backend-api/codex\""));
     let auth_mode = sh(
         &ssh,
         &alice,

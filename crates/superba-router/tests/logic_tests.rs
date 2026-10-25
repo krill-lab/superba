@@ -54,8 +54,8 @@ fn valid() -> RouterConfig {
             member(
                 "krill",
                 vec![
-                    line("overseas", "https://api.krill-code.net/backend-api/codex"),
-                    line("cdn", "https://api.cdn-krill-ai.com/backend-api/codex"),
+                    line("overseas", "https://api.kbsfdxc.net/backend-api/codex"),
+                    line("cdn", "https://api.kbsfdxc.com/backend-api/codex"),
                 ],
             ),
             member("site", vec![line("main", "https://api.example.com/v1")]),
@@ -460,13 +460,13 @@ fn members_from_sites() {
         [
             (
                 "cdn",
-                "https://api.cdn-krill-ai.com/backend-api/codex",
-                "https://api.cdn-krill-ai.com/v1/models".to_owned()
+                "https://api.kbsfdxc.com/backend-api/codex",
+                "https://api.kbsfdxc.com/v1/models".to_owned()
             ),
             (
                 "overseas",
-                "https://api.krill-code.net/backend-api/codex",
-                "https://api.krill-code.net/v1/models".to_owned()
+                "https://api.kbsfdxc.net/backend-api/codex",
+                "https://api.kbsfdxc.net/v1/models".to_owned()
             ),
         ]
     );
@@ -475,7 +475,7 @@ fn members_from_sites() {
     assert_eq!(all.lines.len(), 3);
     assert_eq!(
         all.lines[0].base_url.as_str(),
-        "https://api-slb.krill-code.net/codex/v1"
+        "https://api-slb.kbsfdxc.net/codex/v1"
     );
     assert!(
         member_from_site(
@@ -491,7 +491,7 @@ fn members_from_sites() {
     let mut site = krill_site();
     site.kind = SiteKind::Compatible;
     site.id = "My Site_1".into();
-    let base = Url::parse("https://api.krill-code.net/v1/").unwrap();
+    let base = Url::parse("https://api.kbsfdxc.net/v1/").unwrap();
     let c = member_from_site(
         &site,
         &[LineId::new("overseas")],
@@ -502,13 +502,10 @@ fn members_from_sites() {
         (c.id.as_str(), c.kind, c.websocket),
         ("my-site_1", MemberKind::Compatible, false)
     );
-    assert_eq!(
-        c.lines[0].base_url.as_str(),
-        "https://api.krill-code.net/v1"
-    );
+    assert_eq!(c.lines[0].base_url.as_str(), "https://api.kbsfdxc.net/v1");
     assert_eq!(
         c.lines[0].effective_probe_url().as_str(),
-        "https://api.krill-code.net/v1/models"
+        "https://api.kbsfdxc.net/v1/models"
     );
     assert!(member_from_site(&site, &[], &MemberPath::Custom("v1".into())).is_err());
     assert_eq!(router_id("Ab/中"), "ab--");

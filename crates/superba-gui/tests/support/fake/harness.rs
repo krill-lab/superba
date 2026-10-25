@@ -92,7 +92,7 @@ pub(super) fn preview(fake: &FakeService, h: HarnessId, settings: HarnessSetting
     } else {
         ProtocolEndpoint {
             protocol,
-            base_url: url::Url::parse("https://api.krill-code.net/v1").unwrap(),
+            base_url: url::Url::parse("https://api.kbsfdxc.net/v1").unwrap(),
             source: EndpointSource::Krill,
         }
     };

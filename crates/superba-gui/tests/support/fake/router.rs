@@ -153,8 +153,8 @@ fn fixture_rows(now: Timestamp) -> Vec<RequestRow> {
     let ago = |s: u64| now.saturating_sub(Duration::from_secs(s));
     let krill = ("krill", "Krill");
     let api = ("my-api", "My API");
-    let over = ("overseas", "海外线路", "api.krill-code.net");
-    let cn = ("cn", "国内极速", "api-slb.krill-code.net");
+    let over = ("overseas", "海外线路", "api.kbsfdxc.net");
+    let cn = ("cn", "国内极速", "api-slb.kbsfdxc.net");
     let myapi = ("default", "api.example.com", "api.example.com");
     let mut rows = vec![
         row(
@@ -273,7 +273,7 @@ fn many_rows(now: Timestamp, n: usize) -> Vec<RequestRow> {
                 now.saturating_sub(Duration::from_secs(i as u64 * 7)),
                 keys[i % keys.len()],
                 ("krill", "Krill"),
-                ("overseas", "海外线路", "api.krill-code.net"),
+                ("overseas", "海外线路", "api.kbsfdxc.net"),
                 if i % 3 == 0 { "gpt-6-astra" } else { "gpt-5.5" },
                 RequestStatus::Ok,
                 Some((1_000 + i as u64, 500, 0, 100 + (i as u64 % 50))),
@@ -645,7 +645,7 @@ pub(super) async fn router_request(fake: &FakeService, id: i64) -> Result<Reques
         attempts.push(RequestAttempt {
             member_id: row.member_id.clone(),
             line_name: Some("国内极速".into()),
-            upstream_host: Some("api-slb.krill-code.net".into()),
+            upstream_host: Some("api-slb.kbsfdxc.net".into()),
             status: Some(502),
             outcome: "502".into(),
             elapsed_ms: Some(120),

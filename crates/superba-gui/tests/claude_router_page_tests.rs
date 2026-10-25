@@ -38,7 +38,7 @@ fn claude_view() -> RouterClaudeView {
             RouterClaudeMember {
                 profile_id: ProfileId::new("krill"),
                 name: "Krill".into(),
-                endpoint: Some("https://api.krill-code.net".into()),
+                endpoint: Some("https://api.kbsfdxc.net".into()),
                 ineligible: None,
                 translated: false,
                 preferred: true,

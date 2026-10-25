@@ -24,7 +24,7 @@ pub struct State {
 }
 
 fn endpoint() -> superba_core::AnthropicEndpoint {
-    let origin = url::Url::parse("https://api.krill-code.net").unwrap();
+    let origin = url::Url::parse("https://api.kbsfdxc.net").unwrap();
     anthropic_preset(superba_core::claude::PRESET_KRILL)
         .unwrap()
         .endpoint(Some(&origin))
@@ -119,7 +119,7 @@ pub(super) fn plan(kind: ClaudePlanKind) -> ClaudePlan {
             file: "settings.json".into(),
             slot: "env.ANTHROPIC_BASE_URL".into(),
             before: None,
-            after: Some("https://api.krill-code.net".into()),
+            after: Some("https://api.kbsfdxc.net".into()),
             drift: false,
             secret: false,
         }],

@@ -33,7 +33,7 @@ use superba_remote::wsl::{
 use superba_remote::{LocalShell, SshRemoteHosts, env_shells};
 use tempfile::TempDir;
 
-const ORIGIN: &str = "https://api.krill-code.net";
+const ORIGIN: &str = "https://api.kbsfdxc.net";
 const KEY: &str = "sk-test-0000000000000000wxyz";
 
 fn write(path: &Path, contents: &str, mode: u32) {

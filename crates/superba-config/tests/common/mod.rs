@@ -18,8 +18,8 @@ use superba_core::{
     SiteId, SiteKind, Timestamp,
 };
 
-pub const OVERSEAS: &str = "https://api.krill-code.net";
-pub const CDN: &str = "https://api.cdn-krill-ai.com";
+pub const OVERSEAS: &str = "https://api.kbsfdxc.net";
+pub const CDN: &str = "https://api.kbsfdxc.com";
 pub const PAT_KEY: &str = "krill-test-pat-000000000001";
 pub const API_KEY: &str = "krill-test-api-000000000002";
 
@@ -32,7 +32,7 @@ model_reasoning_effort = "high"
 
 [model_providers.krill]
 name = "Krill"
-base_url = "https://api.krill-code.net/codex/v1"
+base_url = "https://api.kbsfdxc.net/codex/v1"
 env_key = "KRILL_API_KEY"
 wire_api = "responses"
 

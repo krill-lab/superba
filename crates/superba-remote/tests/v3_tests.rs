@@ -26,8 +26,8 @@ use superba_remote::store::HostStore;
 use superba_remote::{LocalShell, SshRemoteHosts};
 use tempfile::TempDir;
 
-const ORIGIN: &str = "https://api.krill-code.net";
-const OTHER_ORIGIN: &str = "https://api-slb.krill-code.net";
+const ORIGIN: &str = "https://api.kbsfdxc.net";
+const OTHER_ORIGIN: &str = "https://api-slb.kbsfdxc.net";
 const KEY: &str = "sk-test-0000000000000000wxyz";
 const CHATGPT_AUTH: &str = "{\n  \"tokens\": {\"id_token\": \"x\", \"access_token\": \"y\"}\n}\n";
 const CONFIG: &str = "model = \"gpt-5\"\n\n[mcp_servers.docs]\ncommand = \"npx\"\n";
@@ -196,7 +196,7 @@ async fn connection_scope_changes_routing_and_keeps_the_hosts_settings() {
     // The scope survives into apply (which re-renders from the plan).
     env.hosts.apply(&h, &plan).await.unwrap();
     let cfg = read(&env.home.join(".codex/config.toml"));
-    assert!(cfg.contains("api-slb.krill-code.net"), "{cfg}");
+    assert!(cfg.contains("api-slb.kbsfdxc.net"), "{cfg}");
     assert!(cfg.contains("model = \"gpt-6-luna\""), "{cfg}");
     assert!(cfg.contains("approval_policy = \"on-request\""), "{cfg}");
     assert!(cfg.contains("web_search = \"live\""), "{cfg}");
@@ -450,10 +450,7 @@ async fn a_settings_release_restores_the_hosts_pre_sync_value() {
     apply_in(&env, &release, RemoteApplyScope::Settings).await;
     let cfg = read(&config);
     assert!(!cfg.contains("hide_agent_reasoning"), "{cfg}");
-    assert!(
-        cfg.contains("api-slb.krill-code.net"),
-        "routing stays: {cfg}"
-    );
+    assert!(cfg.contains("api-slb.kbsfdxc.net"), "routing stays: {cfg}");
 }
 
 #[tokio::test]

@@ -43,7 +43,7 @@ async fn cli_path_shares_the_block_and_clears_alone() {
         let (_tmp, ctx, p) = persister(platform);
         let bashrc = ctx.home_dir.join(".bashrc");
         fs::write(&bashrc, "# mine\nalias ll='ls -l'\n").unwrap();
-        set(&p, ENV_AUTHAPI_BASE_URL, "https://api.krill-code.net").await;
+        set(&p, ENV_AUTHAPI_BASE_URL, "https://api.kbsfdxc.net").await;
         set(
             &p,
             ENV_CODEX_CLI_PATH,

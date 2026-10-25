@@ -15,7 +15,7 @@ use superba_core::{CodexProcessKind, EnvObservation, Timestamp};
 
 const APP: &str =
     r"C:\Program Files\WindowsApps\OpenAI.Codex_26.1013.4894.0_x64__2p2nqsd0c76g0\app\ChatGPT.exe";
-const URL: &str = "https://api.krill-code.net";
+const URL: &str = "https://api.kbsfdxc.net";
 
 /// As Windows reports it for app 26.1013 in the test VM (the command line split
 /// the way `CommandLineToArgvW` does).

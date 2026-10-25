@@ -129,7 +129,7 @@ async fn original_restore_round_trips(wsl: bool) {
         );
         let h = Host::with_config(&original, wsl);
         let home = h.config.parent().unwrap().parent().unwrap();
-        let rc = "# user's environment\nexport CODEX_AUTHAPI_BASE_URL=https://api-slb.krill-code.net\nexport ORIGINAL_KEY=fixture\n";
+        let rc = "# user's environment\nexport CODEX_AUTHAPI_BASE_URL=https://api-slb.kbsfdxc.net\nexport ORIGINAL_KEY=fixture\n";
         std::fs::write(home.join(".profile"), rc).unwrap();
         let origin = Origin::parse(OVERSEAS).unwrap();
         let mut pat = resolved(ResolvedMode::Token {

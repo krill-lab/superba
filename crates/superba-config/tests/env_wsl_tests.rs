@@ -13,7 +13,7 @@ use superba_core::{DataDir, EnvLocation, EnvOp, EnvPersister, EnvPlan, LocalCont
 use tempfile::TempDir;
 
 const VAR: &str = "CODEX_AUTHAPI_BASE_URL";
-const VALUE: &str = "https://api.krill-code.net";
+const VALUE: &str = "https://api.kbsfdxc.net";
 const WSLENV: &str = "WSLENV";
 
 struct Env {

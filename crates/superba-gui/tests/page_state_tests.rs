@@ -255,6 +255,36 @@ async fn legacy_krill_key_is_read_as_a_secret_for_both_auth_forms() {
     }
 }
 
+/// A config written before 0.1.1-alpha.10 still points at an old Krill origin:
+/// it is Krill's, on its own line, so its key is offered and the line named.
+#[tokio::test]
+async fn a_config_on_a_legacy_krill_origin_is_on_its_krill_line() {
+    let krill = catalog::krill_site();
+    for (origin, line) in [
+        ("https://api-slb.krill-code.net", "cn-fast"),
+        ("https://api.krill-code.net", "overseas"),
+        ("https://api.cdn-krill-ai.com", "cdn"),
+    ] {
+        let (home, config) = legacy_fixture(
+            &format!(
+                "model_provider = \"openai\"\nopenai_base_url = \"{origin}/backend-api/codex\"\n"
+            ),
+            false,
+        )
+        .await;
+        assert!(config_matches_site(&config, &krill), "{origin}");
+        assert!(
+            read_original_key(home.context(), &config, &krill)
+                .await
+                .unwrap()
+                .is_some(),
+            "{origin}"
+        );
+        let o = superba_core::Origin::parse(origin).unwrap();
+        assert_eq!(krill.line_for_origin(&o).unwrap().id.as_str(), line);
+    }
+}
+
 #[tokio::test]
 async fn legacy_key_rejects_other_sites_and_changed_source_files() {
     let (home, config) = legacy_fixture(

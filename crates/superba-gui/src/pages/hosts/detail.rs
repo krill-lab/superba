@@ -85,7 +85,7 @@ pub fn connection_text(cx: &Cx<'_>, sites: &[Site], state: &RemoteState) -> Stri
             .find_map(|s| {
                 s.lines
                     .iter()
-                    .find(|l| Some(&l.origin) == origin.as_ref())
+                    .find(|l| origin.as_ref().is_some_and(|o| l.matches_origin(o)))
                     .map(|l| name(s, l))
             })
             .or_else(|| {

@@ -53,26 +53,26 @@ fn ids_and_protocols_parse_their_names() {
 #[test]
 fn krill_offers_its_line_for_all_three_protocols() {
     let site = krill();
-    let origin = u("https://api.krill-code.net");
+    let origin = u("https://api.kbsfdxc.net");
     let eps = provider_endpoints(
         &site,
         &profile(),
         &origin,
-        &u("https://api.krill-code.net/backend-api/codex"),
+        &u("https://api.kbsfdxc.net/backend-api/codex"),
         None,
     );
     let get = |p| eps.iter().find(|e| e.protocol == p).unwrap();
     assert_eq!(
         get(HarnessProtocol::Responses).base_text(),
-        "https://api.krill-code.net/v1"
+        "https://api.kbsfdxc.net/v1"
     );
     assert_eq!(
         get(HarnessProtocol::Chat).base_text(),
-        "https://api.krill-code.net/v1"
+        "https://api.kbsfdxc.net/v1"
     );
     assert_eq!(
         get(HarnessProtocol::Anthropic).base_text(),
-        "https://api.krill-code.net"
+        "https://api.kbsfdxc.net"
     );
     assert!(eps.iter().all(|e| e.source == EndpointSource::Krill));
     // Declared endpoints win.
@@ -127,7 +127,7 @@ fn anthropic_uses_the_shared_preset_and_provider_override() {
     use superba_core::claude::{AnthropicEndpoint, PRESET_KRILL_CODEX, anthropic_preset};
 
     let site = krill();
-    let origin = u("https://api.krill-code.net");
+    let origin = u("https://api.kbsfdxc.net");
     let mut p = profile();
     for endpoint in [
         anthropic_preset(PRESET_KRILL_CODEX)
@@ -145,7 +145,7 @@ fn anthropic_uses_the_shared_preset_and_provider_override() {
         assert_eq!(anthropic.base_url, endpoint.base_url);
         assert_eq!(anthropic.source, EndpointSource::Provider);
         // OpenAI clients still use the all-models endpoint.
-        assert_eq!(eps[0].base_text(), "https://api.krill-code.net/v1");
+        assert_eq!(eps[0].base_text(), "https://api.kbsfdxc.net/v1");
 
         let declared = ProviderProtocols {
             chat: None,

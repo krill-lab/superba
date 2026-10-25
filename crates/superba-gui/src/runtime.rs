@@ -71,18 +71,22 @@ pub fn config_matches_site(config: &superba_core::ConfigState, site: &Site) -> b
     if config.model_provider.as_deref() == Some(site.id.as_str()) {
         return true;
     }
-    let Some(host) = config
+    let Some(url) = config
         .openai_base_url
         .as_deref()
         .and_then(|base| url::Url::parse(base).ok())
-        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
     else {
         return false;
     };
-    site.lines
-        .iter()
-        .any(|l| l.origin.host().eq_ignore_ascii_case(&host))
-        || (site.kind == SiteKind::Krill && superba_core::catalog::is_krill_host(&host))
+    let Some(host) = url.host_str().map(str::to_ascii_lowercase) else {
+        return false;
+    };
+    // A built-in line also matches its legacy origins (0.1.1-alpha.9 configs).
+    let origin = superba_core::Origin::parse(&url.origin().ascii_serialization()).ok();
+    site.lines.iter().any(|l| {
+        l.origin.host().eq_ignore_ascii_case(&host)
+            || origin.as_ref().is_some_and(|o| l.matches_origin(o))
+    }) || (site.kind == SiteKind::Krill && superba_core::catalog::is_krill_host(&host))
 }
 
 /// Read the key of the observed configuration only while both source files

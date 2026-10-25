@@ -61,7 +61,7 @@ async fn status_lists_claude_codes_providers_on_the_router_with_their_reason() {
             RouterClaudeMember {
                 profile_id: ProfileId::new("work"),
                 name: "Work".into(),
-                endpoint: Some("https://api.krill-code.net".into()),
+                endpoint: Some("https://api.kbsfdxc.net".into()),
                 ineligible: None,
                 translated: false,
                 preferred: true,
@@ -94,7 +94,7 @@ async fn status_lists_claude_codes_providers_on_the_router_with_their_reason() {
         "{out}"
     );
     assert!(
-        out.contains("✓ Work (Claude Code's provider)  https://api.krill-code.net"),
+        out.contains("✓ Work (Claude Code's provider)  https://api.kbsfdxc.net"),
         "{out}"
     );
     assert!(

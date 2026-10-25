@@ -289,7 +289,7 @@ async fn an_unsaved_site_is_probed_with_a_typed_key_and_never_stored() {
     assert!(w.profiles.set.lock().unwrap().custom_sites.is_empty());
 
     // The same rules as saving: a site pointing at a Krill host is refused.
-    let krill = url::Url::parse("https://api.krill-code.net/backend-api/codex").unwrap();
+    let krill = url::Url::parse("https://api.kbsfdxc.net/backend-api/codex").unwrap();
     let mut bad = superba_switch::new_compatible_site(SiteId::new("k"), "K", &krill).unwrap();
     bad.kind = superba_core::SiteKind::Compatible;
     let e = sw

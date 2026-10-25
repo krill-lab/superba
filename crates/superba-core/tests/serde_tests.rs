@@ -271,7 +271,7 @@ fn overview_round_trips_nested_app_cli_remote_account_and_notice_values() {
                     owner_verified: true,
                 }),
                 launched_by_us: true,
-                authapi_env: EnvObservation::Present("https://api.krill-code.net".into()),
+                authapi_env: EnvObservation::Present("https://api.kbsfdxc.net".into()),
                 home_override: None,
                 codex_home: None,
             }),

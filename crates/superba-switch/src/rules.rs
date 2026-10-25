@@ -474,10 +474,11 @@ pub fn mark_stale(processes: &mut [ProcessInfo], applied_at: Option<Timestamp>) 
 // ---------------------------------------------------------------------------
 
 /// The line of `site` whose origin equals `origin` (an env value such as
-/// `https://api.krill-code.net` or with a trailing slash).
+/// `https://api.kbsfdxc.net` or with a trailing slash). A built-in Krill line
+/// also matches its legacy origins ([`Line::matches_origin`]).
 pub fn line_for_origin<'a>(site: &'a Site, origin: &str) -> Option<&'a Line> {
     let o = Origin::parse(origin).ok()?;
-    site.lines.iter().find(|l| l.origin == o)
+    site.line_for_origin(&o)
 }
 
 /// The origin Superba injects as `CODEX_AUTHAPI_BASE_URL` when it launches the app
@@ -493,7 +494,7 @@ pub fn launch_authapi_origin(
         return Some(l.origin.clone());
     }
     if let Some(l) = active_line
-        && krill.lines.iter().any(|k| k.origin == l.origin)
+        && krill.lines.iter().any(|k| k.matches_origin(&l.origin))
     {
         return Some(l.origin.clone());
     }

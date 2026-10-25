@@ -956,11 +956,11 @@ fn line_lookup_rejects_unknown_origins_and_invalid_urls() {
         "https://unknown.example",
         "",
         "not a URL",
-        "http://api.krill-code.net",
-        "https://api.krill-code.net/path",
-        "https://api.krill-code.net?query",
-        "https://api.krill-code.net#fragment",
-        "https://user@api.krill-code.net",
+        "http://api.kbsfdxc.net",
+        "https://api.kbsfdxc.net/path",
+        "https://api.kbsfdxc.net?query",
+        "https://api.kbsfdxc.net#fragment",
+        "https://user@api.kbsfdxc.net",
     ] {
         assert_eq!(rules::line_for_origin(&site, origin), None, "{origin}");
     }

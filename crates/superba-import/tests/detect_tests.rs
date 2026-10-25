@@ -213,7 +213,7 @@ fn without_a_tool_the_change_is_put_down_to_what_changed() {
     assert_eq!(a.source, ChangeSource::CodexLogin);
     // A hand edit pointing Codex somewhere no tool knows.
     let hand = superba.replace(
-        "https://api.krill-code.net/backend-api/codex",
+        "https://api.kbsfdxc.net/backend-api/codex",
         "https://other.example.org/v1",
     );
     let k = keys(&["openai_base_url"]);
@@ -258,7 +258,7 @@ fn an_applied_chatgpt_account_must_be_the_signed_in_one() {
     let h = Home::new();
     with_stores(&h);
     let superba = fixture("live/superba-krill-pat.config.toml").replace(
-        "model_provider = \"openai\"\nopenai_base_url = \"https://api.krill-code.net/backend-api/codex\"\nchatgpt_base_url = \"https://api.krill-code.net/backend-api/\"\n",
+        "model_provider = \"openai\"\nopenai_base_url = \"https://api.kbsfdxc.net/backend-api/codex\"\nchatgpt_base_url = \"https://api.kbsfdxc.net/backend-api/\"\n",
         "",
     );
     let login = |email_claims: &str| {

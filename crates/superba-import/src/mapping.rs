@@ -168,7 +168,7 @@ fn krill_line(origin: &Origin, sites: &[Site]) -> Option<(SiteId, LineId, bool)>
     let mut krill: Vec<&Site> = sites.iter().filter(|s| s.kind == SiteKind::Krill).collect();
     krill.sort_by_key(|s| s.id.as_str() != KRILL_SITE_ID);
     for site in &krill {
-        if let Some(line) = site.lines.iter().find(|l| &l.origin == origin) {
+        if let Some(line) = site.line_for_origin(origin) {
             return Some((site.id.clone(), line.id.clone(), true));
         }
     }

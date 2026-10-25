@@ -71,6 +71,34 @@ fn one(p: ForeignProvider) -> superba_core::ImportCandidate {
     scan.candidates().next().unwrap().clone()
 }
 
+/// The lines are recognised on the current origins too, and a legacy overseas
+/// URL stays the overseas line.
+#[test]
+fn krill_lines_are_recognised_on_their_current_and_legacy_origins() {
+    for (base, extra, lines) in [
+        (
+            "https://api-slb.kbsfdxc.net/codex/v1",
+            "https://api.kbsfdxc.com/v1",
+            [catalog::KRILL_LINE_CN_FAST, catalog::KRILL_LINE_CDN],
+        ),
+        (
+            "https://api.cdn-krill-ai.com/codex/v1",
+            "https://api.krill-code.net/v1",
+            [catalog::KRILL_LINE_CDN, catalog::KRILL_LINE_OVERSEAS],
+        ),
+    ] {
+        let mut p = provider(ImportSource::Ccs, "k", "Krill", base);
+        p.extra_urls = vec![extra.into()];
+        let t = one(p).target.unwrap();
+        assert_eq!(t.kind, SiteKind::Krill, "{base}");
+        assert_eq!(
+            t.lines.iter().map(|l| l.id.as_str()).collect::<Vec<_>>(),
+            lines,
+            "{base}"
+        );
+    }
+}
+
 #[test]
 fn krill_lines_are_recognised_by_origin_with_their_backup_lines() {
     let mut p = provider(

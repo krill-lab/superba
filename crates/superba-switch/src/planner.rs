@@ -2787,7 +2787,7 @@ impl Switcher {
         // this key. The prober also checks the launch-time auth origin against it.
         if let Some((site, line)) = sites.iter().find_map(|site| {
             site.supports(auth)
-                .then(|| site.lines.iter().find(|l| l.origin == endpoints.origin))
+                .then(|| site.line_for_origin(&endpoints.origin))
                 .flatten()
                 .map(|line| (site, line))
         }) {

@@ -365,7 +365,7 @@ fn env_label(ui: &mut Ui, cx: &Cx<'_>, env: &EnvObservation) {
                 .sites
                 .iter()
                 .flat_map(|s| s.lines.iter())
-                .find(|l| l.origin.as_str() == *v)
+                .find(|l| superba_core::Origin::parse(v).is_ok_and(|o| l.matches_origin(&o)))
                 .map(|l| cx.tr.text(&l.name))
                 .unwrap_or_else(|| v.clone());
             ui.add(StatusDot::new(Status::Ok));

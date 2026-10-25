@@ -256,7 +256,7 @@ async fn explicit_profile_and_line_are_checked() {
 async fn usage_is_fetched_only_on_request_and_parts_fail_independently() {
     let f = fixture();
     *f.prober.summary.lock().unwrap() = Err(Error::Network {
-        url: "https://api.krill-code.net/v1/dashboard/billing/subscription".into(),
+        url: "https://api.kbsfdxc.net/v1/dashboard/billing/subscription".into(),
         message: "connection refused".into(),
     });
     let r = f
@@ -282,7 +282,7 @@ async fn usage_is_fetched_only_on_request_and_parts_fail_independently() {
     );
 
     *f.prober.usage.lock().unwrap() = Err(Error::Http {
-        url: "https://api.krill-code.net/v1/organization/costs".into(),
+        url: "https://api.kbsfdxc.net/v1/organization/costs".into(),
         status: 429,
         message: "rate limit exceeded".into(),
     });

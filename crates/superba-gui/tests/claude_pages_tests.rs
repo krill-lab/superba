@@ -184,7 +184,7 @@ fn the_connection_page_shows_the_provider_models_and_the_disabled_router() {
         assert!(combo.is_some(), "{}", t.dump());
         assert!(t.has_containing(&tr.t("claude.route.router")));
         // Krill's suggested endpoint.
-        assert!(t.has("https://api.krill-code.net"), "{}", t.dump());
+        assert!(t.has("https://api.kbsfdxc.net"), "{}", t.dump());
         // Every control has a name.
         assert!(t.unnamed().is_empty(), "{:?}", t.unnamed());
         // Every slot has a model dropdown, and every model a /model box.

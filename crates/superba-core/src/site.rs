@@ -77,6 +77,30 @@ impl Site {
     pub fn site_model<'a>(&'a self, model: &'a str) -> &'a str {
         self.model_map.get(model).map_or(model, String::as_str)
     }
+
+    /// The line whose origin is `origin`, its current one or (for a built-in
+    /// Krill line) one of its legacy origins ([`Line::matches_origin`]). An exact
+    /// match wins over a legacy one.
+    pub fn line_for_origin(&self, origin: &Origin) -> Option<&Line> {
+        self.lines
+            .iter()
+            .find(|l| &l.origin == origin)
+            .or_else(|| self.lines.iter().find(|l| l.matches_origin(origin)))
+    }
+}
+
+impl Line {
+    /// True if `origin` is this line's origin or, for a built-in Krill line, one
+    /// of the origins it used before ([`crate::catalog::krill_legacy_origins`]).
+    /// Configs written by older releases still point at those.
+    pub fn matches_origin(&self, origin: &Origin) -> bool {
+        &self.origin == origin
+            || (self.source == LineSource::Builtin
+                && crate::catalog::is_krill_host(self.origin.host())
+                && crate::catalog::krill_legacy_origins(self.id.as_str())
+                    .iter()
+                    .any(|o| Origin::parse(o).is_ok_and(|o| &o == origin)))
+    }
 }
 
 /// One https entry origin of a site.

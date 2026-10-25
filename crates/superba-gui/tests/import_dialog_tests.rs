@@ -75,7 +75,7 @@ fn fixture_scan() -> ImportScan {
         p.wire_api = Some("responses".into());
         p
     };
-    let mut krill = p("k", "Krill 海外", "https://api.krill-code.net/v1");
+    let mut krill = p("k", "Krill 海外", "https://api.kbsfdxc.net/v1");
     krill.current = true;
     krill.model = Some("gpt-5.5".into());
     let mut keychain = p("kc", "Keychain Relay", "https://kc.example.com/v1");

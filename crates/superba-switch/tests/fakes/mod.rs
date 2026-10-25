@@ -42,8 +42,10 @@ pub(crate) fn push(log: &Log, s: impl Into<String>) {
 
 pub const T0: i64 = 1_760_000_000_000;
 pub const KEY: &str = "sk-test-0000aaaa1111";
-pub const OVERSEAS: &str = "https://api.krill-code.net";
-pub const CN_FAST: &str = "https://api-slb.krill-code.net";
+pub const OVERSEAS: &str = "https://api.kbsfdxc.net";
+pub const CN_FAST: &str = "https://api-slb.kbsfdxc.net";
+/// The overseas line's origin up to 0.1.1-alpha.9.
+pub const LEGACY_OVERSEAS: &str = "https://api.krill-code.net";
 
 // ---------------------------------------------------------------------------
 // Config engine
@@ -171,10 +173,16 @@ impl FakeConfig {
     }
 
     pub fn restore_token(&self, mode: AuthMode) {
+        self.restore_token_at(mode, OVERSEAS);
+    }
+
+    /// [`Self::restore_token`] with the saved files on `origin` (a legacy
+    /// Krill origin, for one).
+    pub fn restore_token_at(&self, mode: AuthMode, origin: &str) {
         *self.restored_auth_mode.lock().unwrap() = Some(mode);
         *self.restored_files.lock().unwrap() = Some(CodexFiles {
             config_toml: Some(SecretBytes::new(format!(
-                "model_provider = \"openai\"\nopenai_base_url = \"{OVERSEAS}/backend-api/codex\"\nchatgpt_base_url = \"{OVERSEAS}/backend-api/\"\n"
+                "model_provider = \"openai\"\nopenai_base_url = \"{origin}/backend-api/codex\"\nchatgpt_base_url = \"{origin}/backend-api/\"\n"
             ).into_bytes())),
             auth_json: Some(superba_config::authjson::render_token(mode, &Secret::new(KEY)).unwrap()),
         });

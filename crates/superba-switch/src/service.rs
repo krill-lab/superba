@@ -968,7 +968,7 @@ impl Switcher {
                     .and_then(|id| sites.iter().find(|s| &s.id == id));
                 let current = site.and_then(|s| s.line(line_id));
                 if current.is_some_and(|l| {
-                    superba_core::Origin::parse(origin).ok() != Some(l.origin.clone())
+                    !superba_core::Origin::parse(origin).is_ok_and(|o| l.matches_origin(&o))
                 }) {
                     // Name the line the app authenticates through when it is one
                     // of the applied site's lines.

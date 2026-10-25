@@ -14,11 +14,11 @@ use superba_core::{
 use tempfile::TempDir;
 
 const VAR: &str = "CODEX_AUTHAPI_BASE_URL";
-const OLD: &str = "https://api-slb.krill-code.net";
-const VALUE: &str = "https://api.krill-code.net";
-const NEXT: &str = "https://api.cdn-krill-ai.com";
-const BASH: &str = "# bash settings\n[ -z \"$PS1\" ] && return\nexport CODEX_AUTHAPI_BASE_URL=\"https://api-slb.krill-code.net\"\n";
-const ZSH: &str = "# zsh settings\nexport CODEX_AUTHAPI_BASE_URL=https://api-slb.krill-code.net\n";
+const OLD: &str = "https://api-slb.kbsfdxc.net";
+const VALUE: &str = "https://api.kbsfdxc.net";
+const NEXT: &str = "https://api.kbsfdxc.com";
+const BASH: &str = "# bash settings\n[ -z \"$PS1\" ] && return\nexport CODEX_AUTHAPI_BASE_URL=\"https://api-slb.kbsfdxc.net\"\n";
+const ZSH: &str = "# zsh settings\nexport CODEX_AUTHAPI_BASE_URL=https://api-slb.kbsfdxc.net\n";
 
 struct TestEnv {
     tmp: TempDir,

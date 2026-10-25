@@ -482,7 +482,7 @@ async fn providers_fit_both_sizes_and_locales_on_both_tabs() {
                 match tab {
                     Tab::Connection => {
                         assert!(text.contains("nb_…"), "the key shows only its tail: {text}");
-                        assert!(text.contains("api.krill-code.net"), "{text}");
+                        assert!(text.contains("api.kbsfdxc.net"), "{text}");
                     }
                     Tab::Account => {
                         assert!(text.contains("$46.53"), "{text}");

@@ -53,11 +53,11 @@ fn close_consumers_decision_defaults_to_cancel_and_allows_continue() {
 #[test]
 fn env_set_defaults_to_not_taking_over_foreign_lines() {
     let op: EnvOp =
-        serde_json::from_str(r#"{"op":"set","value":"https://api.krill-code.net"}"#).unwrap();
+        serde_json::from_str(r#"{"op":"set","value":"https://api.kbsfdxc.net"}"#).unwrap();
     assert_eq!(
         op,
         EnvOp::Set {
-            value: "https://api.krill-code.net".into(),
+            value: "https://api.kbsfdxc.net".into(),
             take_over_foreign: false
         }
     );

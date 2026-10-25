@@ -434,7 +434,7 @@ fn cli_counts_separate_stale_processes_from_known_missing_auth_environment() {
             process(
                 4,
                 CodexProcessKind::CliDaemon,
-                EnvObservation::Present("https://api.krill-code.net".into()),
+                EnvObservation::Present("https://api.kbsfdxc.net".into()),
                 true,
             ),
             process(

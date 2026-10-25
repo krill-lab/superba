@@ -193,7 +193,7 @@ pub struct LineConfig {
     /// Display name.
     pub name: String,
     /// Full base URL the request remainder is appended to, e.g.
-    /// `https://api.krill-code.net/backend-api/codex` or `https://api.example.com/v1`.
+    /// `https://api.kbsfdxc.net/backend-api/codex` or `https://api.example.com/v1`.
     pub base_url: Url,
     /// Unauthenticated health probe; default `<base_url>/models` (any answer other
     /// than 502-504 or an edge interception counts as alive, 401 included).

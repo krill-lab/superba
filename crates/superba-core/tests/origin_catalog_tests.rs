@@ -213,16 +213,16 @@ fn krill_catalog_has_exactly_the_three_expected_lines_and_overseas_default() {
         .map(|line| (line.id.as_str(), line.origin.as_str()))
         .collect();
     let expected = BTreeMap::from([
-        ("cn-fast", "https://api-slb.krill-code.net".to_owned()),
-        ("overseas", "https://api.krill-code.net".to_owned()),
-        ("cdn", "https://api.cdn-krill-ai.com".to_owned()),
+        ("cn-fast", "https://api-slb.kbsfdxc.net".to_owned()),
+        ("overseas", "https://api.kbsfdxc.net".to_owned()),
+        ("cdn", "https://api.kbsfdxc.com".to_owned()),
     ]);
     assert_eq!(actual, expected);
     assert_eq!(site.default_line, Some(LineId::from("overseas")));
     assert_eq!(site.default_line().unwrap().id, "overseas");
     assert_eq!(
         site.line(&LineId::from("cdn")).unwrap().origin.as_str(),
-        "https://api.cdn-krill-ai.com"
+        "https://api.kbsfdxc.com"
     );
     assert!(site.line(&LineId::from("missing")).is_none());
     assert!(site.supports(AuthMode::Pat));
@@ -260,12 +260,12 @@ fn official_site_and_builtin_profile_identities_are_stable() {
 fn krill_host_matching_respects_domain_boundaries_and_normalization() {
     for host in [
         "krill-code.net",
-        "api.krill-code.net",
-        "nested.api.krill-code.net",
+        "api.kbsfdxc.net",
+        "nested.api.kbsfdxc.net",
         "krill-code.com",
         "www.krill-code.com",
         "cdn-krill-ai.com",
-        "api.cdn-krill-ai.com",
+        "api.kbsfdxc.com",
         "krill-ai.com",
         "api.krill-ai.com",
         "API.KRILL-CODE.NET.",
@@ -275,7 +275,7 @@ fn krill_host_matching_respects_domain_boundaries_and_normalization() {
     for host in [
         "evilkrill-code.net",
         "krill-code.net.evil.example",
-        "api.krill-code.net.evil.example",
+        "api.kbsfdxc.net.evil.example",
         "evilcdn-krill-ai.com",
         "notkrill-ai.com",
         "krill-code.org",
@@ -300,4 +300,57 @@ fn pat_endpoints_need_an_https_origin() {
     let https = Origin::parse("https://127.0.0.1:18001").unwrap();
     assert!(https.is_https());
     assert!(ResolvedEndpoints::for_line(&https, CodexPath::BackendApiCodex, AuthMode::Pat).is_ok());
+}
+
+/// Configs written up to 0.1.1-alpha.9 still name the old Krill origins: each
+/// one is recognised as its own line, while the line keeps its new origin.
+#[test]
+fn each_legacy_krill_origin_maps_to_its_own_line() {
+    let site = superba_core::catalog::krill_site();
+    for (line, current, legacy) in [
+        (
+            superba_core::catalog::KRILL_LINE_CN_FAST,
+            superba_core::catalog::KRILL_ORIGIN_CN_FAST,
+            "https://api-slb.krill-code.net",
+        ),
+        (
+            superba_core::catalog::KRILL_LINE_OVERSEAS,
+            superba_core::catalog::KRILL_ORIGIN_OVERSEAS,
+            "https://api.krill-code.net",
+        ),
+        (
+            superba_core::catalog::KRILL_LINE_CDN,
+            superba_core::catalog::KRILL_ORIGIN_CDN,
+            "https://api.cdn-krill-ai.com",
+        ),
+    ] {
+        assert_eq!(superba_core::catalog::krill_legacy_origins(line), [legacy]);
+        for o in [legacy, &format!("{legacy}/"), current] {
+            let origin = superba_core::Origin::parse(o).unwrap();
+            let found = site.line_for_origin(&origin).expect(o);
+            assert_eq!(found.id.as_str(), line, "{o}");
+            assert_eq!(found.origin.as_str(), current, "writes use the new origin");
+            assert_eq!(
+                superba_core::catalog::krill_current_origin(o),
+                Some(current)
+            );
+        }
+        assert!(superba_core::catalog::is_krill_host(
+            superba_core::Origin::parse(legacy).unwrap().host()
+        ));
+    }
+    assert!(superba_core::catalog::krill_legacy_origins("default").is_empty());
+    assert_eq!(
+        superba_core::catalog::krill_current_origin("https://api.example.com"),
+        None
+    );
+    // A user line is never matched by a legacy Krill origin.
+    let mut user = site.lines[0].clone();
+    user.source = superba_core::LineSource::User;
+    user.origin = superba_core::Origin::parse("https://relay.example.com").unwrap();
+    assert!(
+        !user.matches_origin(
+            &superba_core::Origin::parse("https://api-slb.krill-code.net").unwrap()
+        )
+    );
 }

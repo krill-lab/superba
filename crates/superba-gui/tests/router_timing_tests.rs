@@ -361,7 +361,7 @@ fn attempts_are_localized_from_their_fields_and_the_raw_log_is_folded() {
         superba_core::RequestAttempt {
             member_id: row.member_id.clone(),
             line_name: Some("国内极速".into()),
-            upstream_host: Some("api-slb.krill-code.net".into()),
+            upstream_host: Some("api-slb.kbsfdxc.net".into()),
             status: None,
             outcome: "connect failed: dns error".into(),
             elapsed_ms: Some(120),
@@ -401,7 +401,7 @@ fn attempts_are_localized_from_their_fields_and_the_raw_log_is_folded() {
         row.line_name.clone().unwrap()
     );
     assert!(f.has(&line), "{line}:\n{}", f.all_text());
-    assert!(f.has("1. 国内极速 · api-slb.krill-code.net · 连接失败 · 120 ms"));
+    assert!(f.has("1. 国内极速 · api-slb.kbsfdxc.net · 连接失败 · 120 ms"));
     assert!(!f.has("answered"), "{}", f.all_text());
     // The raw log is folded away and never repeats the stats line note.
     assert!(f.has("路由原始日志（英文）"));

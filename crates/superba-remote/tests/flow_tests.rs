@@ -26,7 +26,7 @@ use superba_remote::store::HostStore;
 use superba_remote::{LocalShell, SshRemoteHosts};
 use tempfile::TempDir;
 
-const ORIGIN: &str = "https://api.krill-code.net";
+const ORIGIN: &str = "https://api.kbsfdxc.net";
 const KEY: &str = "sk-test-0000000000000000wxyz";
 const CHATGPT_AUTH: &str = "{\n  \"tokens\": {\"id_token\": \"x\", \"access_token\": \"y\"},\n  \"last_refresh\": \"2026-10-01T00:00:00Z\"\n}\n";
 const CONFIG: &str = "model = \"gpt-5\"\n\n[mcp_servers.docs]\ncommand = \"npx\"\n";
@@ -40,7 +40,7 @@ const PROFILE: &str = "PATH=\"$HOME/../bin\"; export PATH\n\
     if [ -n \"$BASH_VERSION\" ] && [ -f \"$HOME/.bashrc\" ]; then . \"$HOME/.bashrc\"; fi\n";
 
 fn legacy_line() -> String {
-    format!("export {ENV_AUTHAPI_BASE_URL}=\"https://api-slb.krill-code.net\"")
+    format!("export {ENV_AUTHAPI_BASE_URL}=\"https://api-slb.kbsfdxc.net\"")
 }
 
 fn bashrc() -> String {
@@ -221,7 +221,7 @@ async fn pat_apply_writes_files_env_marker_and_backups_then_rolls_back() {
         .mode();
     assert_eq!(mode & 0o777, 0o600);
     let cfg = read(&codex.join("config.toml"));
-    assert!(cfg.contains("openai_base_url = \"https://api.krill-code.net/backend-api/codex\""));
+    assert!(cfg.contains("openai_base_url = \"https://api.kbsfdxc.net/backend-api/codex\""));
     assert!(cfg.contains("[mcp_servers.docs]"), "other config is kept");
     assert_eq!(
         std::fs::metadata(codex.join("config.toml"))

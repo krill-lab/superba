@@ -50,11 +50,11 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
     assert_eq!(c.after.as_deref(), Some("\"openai\""));
     assert_eq!(
         key_change(&plan, k::OPENAI_BASE_URL).after.as_deref(),
-        Some("\"https://api.krill-code.net/backend-api/codex\"")
+        Some("\"https://api.kbsfdxc.net/backend-api/codex\"")
     );
     assert_eq!(
         key_change(&plan, k::CHATGPT_BASE_URL).after.as_deref(),
-        Some("\"https://api.krill-code.net/backend-api/\"")
+        Some("\"https://api.kbsfdxc.net/backend-api/\"")
     );
     assert_eq!(
         key_change(&plan, "features.context_management")
@@ -78,15 +78,15 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
     assert_eq!(report.generation, 1);
     let cfg = env.config();
     assert!(cfg.contains("model_provider = \"openai\""));
-    assert!(cfg.contains("openai_base_url = \"https://api.krill-code.net/backend-api/codex\""));
-    assert!(cfg.contains("chatgpt_base_url = \"https://api.krill-code.net/backend-api/\""));
+    assert!(cfg.contains("openai_base_url = \"https://api.kbsfdxc.net/backend-api/codex\""));
+    assert!(cfg.contains("chatgpt_base_url = \"https://api.kbsfdxc.net/backend-api/\""));
     // Everything else is untouched.
     for line in [
         "# Codex 配置（Krill 教程）",
         "model = \"gpt-5.5\"",
         "model_reasoning_effort = \"high\"",
         "[model_providers.krill]",
-        "base_url = \"https://api.krill-code.net/codex/v1\"",
+        "base_url = \"https://api.kbsfdxc.net/codex/v1\"",
         "env = { DOCS_TOKEN = \"tok-123\" } # inline secret",
         "[projects.\"/home/u/项目\"]",
     ] {
@@ -112,7 +112,7 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
     assert_eq!(creds.key.expose(), PAT_KEY);
     assert_eq!(
         creds.chatgpt_base_url.unwrap().as_str(),
-        "https://api.krill-code.net/backend-api/"
+        "https://api.kbsfdxc.net/backend-api/"
     );
 
     // --- API key on the CDN line (/codex/v1): PAT-only keys go back to baseline.
@@ -121,7 +121,7 @@ async fn legacy_takeover_pat_apikey_and_byte_exact_original_restore() {
     assert_eq!(key_change(&plan, "analytics.enabled").after, None);
     e.apply(&plan).await.unwrap();
     let cfg = env.config();
-    assert!(cfg.contains("openai_base_url = \"https://api.cdn-krill-ai.com/codex/v1\""));
+    assert!(cfg.contains("openai_base_url = \"https://api.kbsfdxc.com/codex/v1\""));
     assert!(!cfg.contains("chatgpt_base_url"));
     assert!(!cfg.contains("[features]"), "{cfg}");
     assert!(!cfg.contains("[analytics]"), "{cfg}");
@@ -184,7 +184,7 @@ async fn keep_openai_restore_routes_through_original_provider_base_url() {
     let cfg = env.config();
     assert!(cfg.contains("model_provider = \"openai\""), "{cfg}");
     assert!(
-        cfg.contains("openai_base_url = \"https://api.krill-code.net/codex/v1\""),
+        cfg.contains("openai_base_url = \"https://api.kbsfdxc.net/codex/v1\""),
         "{cfg}"
     );
     assert!(!cfg.contains("chatgpt_base_url"));
@@ -399,7 +399,7 @@ async fn drift_is_a_conflict_until_resolved() {
         .unwrap();
     // The user edits an owned key by hand.
     let edited = env.config().replace(
-        "https://api.krill-code.net/backend-api/codex",
+        "https://api.kbsfdxc.net/backend-api/codex",
         "https://my-proxy.example/backend-api/codex",
     );
     env.write_config(&edited);
@@ -430,7 +430,7 @@ async fn drift_is_a_conflict_until_resolved() {
     );
     assert!(
         env.config()
-            .contains("chatgpt_base_url = \"https://api.cdn-krill-ai.com/backend-api/\"")
+            .contains("chatgpt_base_url = \"https://api.kbsfdxc.com/backend-api/\"")
     );
     // Kept means released: no drift is reported for it any more.
     assert!(e.read_state(&env.home).await.unwrap().drift.is_empty());
@@ -443,7 +443,7 @@ async fn drift_is_a_conflict_until_resolved() {
         .unwrap();
     assert!(
         env.config()
-            .contains("openai_base_url = \"https://api.krill-code.net/backend-api/codex\"")
+            .contains("openai_base_url = \"https://api.kbsfdxc.net/backend-api/codex\"")
     );
 }
 
@@ -1005,7 +1005,7 @@ async fn render_requires_resolution_for_drift_given_last_written() {
     };
     let last = vec![superba_core::KeySnapshot {
         path: k::OPENAI_BASE_URL.into(),
-        value: Some("\"https://api.krill-code.net/backend-api/codex\"".into()),
+        value: Some("\"https://api.kbsfdxc.net/backend-api/codex\"".into()),
     }];
     let desired = apikey(CDN);
     let err = e

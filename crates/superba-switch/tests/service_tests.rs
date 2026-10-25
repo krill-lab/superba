@@ -201,7 +201,7 @@ async fn custom_sites_are_validated_listed_and_protected_while_used() {
         .collect();
     assert_eq!(ids, ["krill", "official", "acme"]);
     // Built-in ids, Krill hosts and non-compatible kinds are refused.
-    let mut krillish = compatible_site("fake-krill", "https://api.krill-code.net");
+    let mut krillish = compatible_site("fake-krill", "https://api.kbsfdxc.net");
     assert_eq!(
         sw.save_site(krillish.clone()).await.unwrap_err().code(),
         "invalid"
@@ -369,6 +369,26 @@ async fn overview_reports_hot_switch_status_and_the_auth_line() {
         sw.overview().await.unwrap().app.hot_switch,
         HotSwitchStatus::NotInstalled
     );
+}
+
+/// An app still started with a 0.1.1-alpha.9 auth address (an old Krill
+/// origin) is on that line, not on an unknown one.
+#[tokio::test]
+async fn overview_names_the_line_of_a_legacy_auth_address() {
+    let w = World::new();
+    let sw = w.switcher();
+    for (origin, line) in [
+        ("https://api-slb.krill-code.net", "cn-fast"),
+        ("https://api.krill-code.net/", "overseas"),
+        ("https://api.cdn-krill-ai.com", "cdn"),
+    ] {
+        w.set_session(Some(session(Some(origin), true)));
+        assert_eq!(
+            sw.overview().await.unwrap().app.authapi_line,
+            Some(LineId::new(line)),
+            "{origin}"
+        );
+    }
 }
 
 #[tokio::test]

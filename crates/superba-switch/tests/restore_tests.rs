@@ -76,7 +76,7 @@ async fn round_trip(original: &str, switches: &[&str], platform: EnvPlatform, en
     std::fs::create_dir_all(&w.ctx.home_dir).unwrap();
     std::fs::write(codex.join("config.toml"), original).unwrap();
     let rc = if env_value {
-        "# user's shell\nexport CODEX_AUTHAPI_BASE_URL=https://api-slb.krill-code.net\nexport ORIGINAL_KEY=fixture\n"
+        "# user's shell\nexport CODEX_AUTHAPI_BASE_URL=https://api-slb.kbsfdxc.net\nexport ORIGINAL_KEY=fixture\n"
     } else {
         "# user's shell\nexport ORIGINAL_KEY=fixture\n"
     };
@@ -101,12 +101,12 @@ async fn round_trip(original: &str, switches: &[&str], platform: EnvPlatform, en
             .with(
                 &EnvLocation::WindowsUserEnv,
                 "CODEX_AUTHAPI_BASE_URL",
-                "https://api-slb.krill-code.net",
+                "https://api-slb.kbsfdxc.net",
             )
             .with(
                 &EnvLocation::Launchctl,
                 "CODEX_AUTHAPI_BASE_URL",
-                "https://api-slb.krill-code.net",
+                "https://api-slb.kbsfdxc.net",
             )
     } else {
         MemoryNativeEnv::new()

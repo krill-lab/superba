@@ -40,6 +40,43 @@ pub const KRILL_ORIGIN_OVERSEAS: &str = "https://api.kbsfdxc.net";
 /// Origin of [`KRILL_LINE_CDN`].
 pub const KRILL_ORIGIN_CDN: &str = "https://api.kbsfdxc.com";
 
+/// Origins [`KRILL_LINE_CN_FAST`] used up to 0.1.1-alpha.9.
+pub const KRILL_LEGACY_ORIGINS_CN_FAST: &[&str] = &["https://api-slb.krill-code.net"];
+/// Origins [`KRILL_LINE_OVERSEAS`] used up to 0.1.1-alpha.9.
+pub const KRILL_LEGACY_ORIGINS_OVERSEAS: &[&str] = &["https://api.krill-code.net"];
+/// Origins [`KRILL_LINE_CDN`] used up to 0.1.1-alpha.9.
+pub const KRILL_LEGACY_ORIGINS_CDN: &[&str] = &["https://api.cdn-krill-ai.com"];
+
+/// The earlier origins of the built-in Krill line `line_id` (empty for any other
+/// id). Existing configs and env values still name them, so they are recognised
+/// as that line; Superba always writes the current origin.
+pub fn krill_legacy_origins(line_id: &str) -> &'static [&'static str] {
+    match line_id {
+        KRILL_LINE_CN_FAST => KRILL_LEGACY_ORIGINS_CN_FAST,
+        KRILL_LINE_OVERSEAS => KRILL_LEGACY_ORIGINS_OVERSEAS,
+        KRILL_LINE_CDN => KRILL_LEGACY_ORIGINS_CDN,
+        _ => &[],
+    }
+}
+
+/// The current origin of the built-in Krill line that `origin` names, current or
+/// legacy (`None` for any other origin).
+pub fn krill_current_origin(origin: &str) -> Option<&'static str> {
+    let o = Origin::parse(origin).ok()?;
+    [
+        (KRILL_LINE_CN_FAST, KRILL_ORIGIN_CN_FAST),
+        (KRILL_LINE_OVERSEAS, KRILL_ORIGIN_OVERSEAS),
+        (KRILL_LINE_CDN, KRILL_ORIGIN_CDN),
+    ]
+    .into_iter()
+    .find(|(id, cur)| {
+        std::iter::once(*cur)
+            .chain(krill_legacy_origins(id).iter().copied())
+            .any(|c| Origin::parse(c).is_ok_and(|c| c == o))
+    })
+    .map(|(_, cur)| cur)
+}
+
 /// Profile id of the built-in "original configuration" restore anchor.
 pub const PROFILE_ORIGINAL: &str = "original";
 /// Profile id of the built-in "official ChatGPT login" profile.

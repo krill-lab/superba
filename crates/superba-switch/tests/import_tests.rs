@@ -275,9 +275,9 @@ async fn a_krill_line_maps_to_the_krill_preset_and_updates_the_existing_profile(
         home.join(".cc-switch/config.json"),
         r#"{"version":2,"codex":{"current":"k1","providers":{
           "k1":{"id":"k1","name":"Krill CDN","settingsConfig":{"auth":{"OPENAI_API_KEY":"nb_test_cdn_0000000000"},
-            "config":"model_provider = \"krill\"\nmodel = \"gpt-5.5\"\n\n[model_providers.krill]\nname = \"krill\"\nbase_url = \"https://api.cdn-krill-ai.com/codex/v1\"\nwire_api = \"responses\"\n"}},
+            "config":"model_provider = \"krill\"\nmodel = \"gpt-5.5\"\n\n[model_providers.krill]\nname = \"krill\"\nbase_url = \"https://api.kbsfdxc.com/codex/v1\"\nwire_api = \"responses\"\n"}},
           "k2":{"id":"k2","name":"work","settingsConfig":{"auth":{"OPENAI_API_KEY":"nb_test_ovs_0000000000"},
-            "config":"model_provider = \"krill\"\n\n[model_providers.krill]\nbase_url = \"https://api.krill-code.net/v1\"\n"}}}}}"#,
+            "config":"model_provider = \"krill\"\n\n[model_providers.krill]\nbase_url = \"https://api.kbsfdxc.net/v1\"\n"}}}}}"#,
     )
     .unwrap();
     let sw = w.switcher();

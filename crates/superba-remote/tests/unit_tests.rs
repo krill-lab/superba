@@ -289,7 +289,7 @@ fn bases() -> RcBases {
         xdg_config_home: None,
     }
 }
-const ORIGIN: &str = "https://api.krill-code.net";
+const ORIGIN: &str = "https://api.kbsfdxc.net";
 
 fn rc(files: &[(&str, &str)]) -> Vec<RcFile> {
     RC_FILES
@@ -337,7 +337,7 @@ fn apply_writes(files: &[RcFile], plan: &superba_remote::envrc::RcPlan) -> Vec<R
 
 #[test]
 fn zsh_gets_a_block_at_the_end_of_zshenv_and_legacy_lines_are_commented() {
-    let legacy = format!("export {ENV_AUTHAPI_BASE_URL}=\"https://api-slb.krill-code.net\"");
+    let legacy = format!("export {ENV_AUTHAPI_BASE_URL}=\"https://api-slb.kbsfdxc.net\"");
     let zshrc = format!("alias ll='ls -l'\n{legacy}\n");
     let files = rc(&[("zshenv", "export FOO=1"), ("zshrc", &zshrc)]);
     let plan = plan_env(&ShellKind::Zsh, &files, &set_op()).unwrap();
@@ -398,13 +398,13 @@ fn a_changed_value_replaces_the_block_in_place_once() {
     let first = plan_env(&ShellKind::Sh, &files, &set_op()).unwrap();
     let applied = apply_writes(&files, &first);
     let other = EnvOp::Set {
-        value: "https://api.cdn-krill-ai.com".into(),
+        value: "https://api.kbsfdxc.com".into(),
         take_over_foreign: false,
     };
     let second = plan_env(&ShellKind::Sh, &applied, &other).unwrap();
     let text = after(&second, "profile").unwrap();
     assert_eq!(text.matches(MARKER_BEGIN).count(), 1);
-    assert!(text.contains("https://api.cdn-krill-ai.com"));
+    assert!(text.contains("https://api.kbsfdxc.com"));
     assert!(!text.contains(ORIGIN));
     // The old block's Krill export line is not mistaken for a legacy line.
     assert!(!text.contains(LEGACY_COMMENT_PREFIX));
@@ -427,7 +427,7 @@ fn fish_uses_a_conf_d_file_and_foreign_lines_are_reported() {
 
 #[test]
 fn restore_removes_blocks_and_uncomments_legacy_lines() {
-    let legacy = format!("export {ENV_AUTHAPI_BASE_URL}=https://api.krill-code.net");
+    let legacy = format!("export {ENV_AUTHAPI_BASE_URL}=https://api.kbsfdxc.net");
     let bashrc = format!("A=1\n{legacy}\n");
     let files = rc(&[("bashrc", &bashrc), ("profile", "P=1\n")]);
     let set = plan_env(&ShellKind::Bash, &files, &set_op()).unwrap();
@@ -579,7 +579,7 @@ fn syntax_ok(shell: &str, text: &str) -> bool {
 
 #[test]
 fn a_neutralised_legacy_line_keeps_blocks_syntactically_valid() {
-    let legacy = format!("  export {ENV_AUTHAPI_BASE_URL}=https://api.krill-code.net");
+    let legacy = format!("  export {ENV_AUTHAPI_BASE_URL}=https://api.kbsfdxc.net");
     let bashrc = format!("if true; then\n{legacy}\nfi\nf() {{\n{legacy}\n}}\n");
     let files = rc(&[("bashrc", &bashrc)]);
     let plan = plan_env(&ShellKind::Bash, &files, &set_op()).unwrap();

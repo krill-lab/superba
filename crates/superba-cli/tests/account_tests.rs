@@ -516,7 +516,7 @@ async fn failed_parts_are_reported_and_set_the_exit_code() {
     let mut report = full_report();
     report.summary = None;
     report.summary_error = Some(Error::Http {
-        url: "https://api.krill-code.net/v1/dashboard/billing/subscription".into(),
+        url: "https://api.kbsfdxc.net/v1/dashboard/billing/subscription".into(),
         status: 401,
         message: "invalid key".into(),
     });

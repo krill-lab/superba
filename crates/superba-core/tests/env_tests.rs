@@ -118,7 +118,7 @@ fn find_block_includes_whitespace_and_newline_of_indented_end_marker() {
 
 #[test]
 fn legacy_krill_exports_allow_quotes_semicolons_and_trailing_comments() {
-    let origin = "https://api.krill-code.net";
+    let origin = "https://api.kbsfdxc.net";
     for line in [
         format!("export {ENV_AUTHAPI_BASE_URL}={origin}"),
         format!("export {ENV_AUTHAPI_BASE_URL}=\"{origin}\""),
@@ -135,9 +135,9 @@ fn legacy_krill_exports_allow_quotes_semicolons_and_trailing_comments() {
         );
     }
     for origin in [
-        "https://api-slb.krill-code.net",
-        "https://api.cdn-krill-ai.com",
-        "https://api.krill-code.net:443/",
+        "https://api-slb.kbsfdxc.net",
+        "https://api.kbsfdxc.com",
+        "https://api.kbsfdxc.net:443/",
     ] {
         let line = format!("export {ENV_AUTHAPI_BASE_URL}={origin}");
         assert_eq!(legacy_krill_export_value(&line).as_deref(), Some(origin));
@@ -147,16 +147,16 @@ fn legacy_krill_exports_allow_quotes_semicolons_and_trailing_comments() {
 #[test]
 fn legacy_krill_exports_reject_comments_other_variables_and_foreign_hosts() {
     for line in [
-        "# export CODEX_AUTHAPI_BASE_URL=https://api.krill-code.net",
-        "   # export CODEX_AUTHAPI_BASE_URL=https://api.krill-code.net",
-        "# [superba] export CODEX_AUTHAPI_BASE_URL=https://api.krill-code.net",
+        "# export CODEX_AUTHAPI_BASE_URL=https://api.kbsfdxc.net",
+        "   # export CODEX_AUTHAPI_BASE_URL=https://api.kbsfdxc.net",
+        "# [superba] export CODEX_AUTHAPI_BASE_URL=https://api.kbsfdxc.net",
         "export CODEX_AUTHAPI_BASE_URL=https://example.com",
         "export CODEX_AUTHAPI_BASE_URL=https://evilkrill-code.net",
-        "export CODEX_AUTHAPI_BASE_URL=https://api.krill-code.net.evil.example",
-        "export CODEX_AUTHAPI_BASE_URL=ftp://api.krill-code.net",
-        "export OTHER=https://api.krill-code.net",
-        "export CODEX_AUTHAPI_BASE_URL_EXTRA=https://api.krill-code.net",
-        "CODEX_AUTHAPI_BASE_URL=https://api.krill-code.net",
+        "export CODEX_AUTHAPI_BASE_URL=https://api.kbsfdxc.net.evil.example",
+        "export CODEX_AUTHAPI_BASE_URL=ftp://api.kbsfdxc.net",
+        "export OTHER=https://api.kbsfdxc.net",
+        "export CODEX_AUTHAPI_BASE_URL_EXTRA=https://api.kbsfdxc.net",
+        "CODEX_AUTHAPI_BASE_URL=https://api.kbsfdxc.net",
         "export CODEX_AUTHAPI_BASE_URL=",
         "export CODEX_AUTHAPI_BASE_URL=\"\"",
     ] {
@@ -166,7 +166,7 @@ fn legacy_krill_exports_reject_comments_other_variables_and_foreign_hosts() {
 
 #[test]
 fn legacy_krill_export_checks_the_actual_host_not_credential_text() {
-    let line = "export CODEX_AUTHAPI_BASE_URL=https://api.krill-code.net:443@evil.example";
+    let line = "export CODEX_AUTHAPI_BASE_URL=https://api.kbsfdxc.net:443@evil.example";
     assert_eq!(legacy_krill_export_value(line), None);
 }
 

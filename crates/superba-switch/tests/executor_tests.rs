@@ -263,6 +263,22 @@ async fn restored_pat_generation_is_verified_with_its_saved_credentials() {
     );
 }
 
+/// Users of 0.1.1-alpha.9 and earlier have generations on the old Krill origins:
+/// such a generation is still on the overseas line, so its restore stays hot.
+#[tokio::test(start_paused = true)]
+async fn a_generation_on_a_legacy_krill_origin_is_still_on_its_line() {
+    let w = World::new();
+    w.config
+        .restore_token_at(superba_core::AuthMode::Pat, LEGACY_OVERSEAS);
+    let mut r = req("work");
+    r.intent = SwitchIntent::Restore {
+        target: RestoreTarget::Generation { generation: 1 },
+    };
+    let sw = w.switcher();
+    let p = plan_with(&sw, r).await;
+    assert!(p.primary.is_hot(), "{:?}", p.primary);
+}
+
 #[tokio::test(start_paused = true)]
 async fn restored_key_generation_on_the_login_page_fails_verification() {
     for auth in [superba_core::AuthMode::Pat, superba_core::AuthMode::ApiKey] {
@@ -561,7 +577,7 @@ async fn owned_keys_changed_after_writing_fail_the_files_check() {
     let w = World::new();
     *w.config.config_rewritten_after_apply.lock().unwrap() = Some(vec![KeyChange {
         path: "openai_base_url".into(),
-        before: Some("\"https://api.krill-code.net/backend-api/codex\"".into()),
+        before: Some("\"https://api.kbsfdxc.net/backend-api/codex\"".into()),
         after: Some("\"https://elsewhere.example\"".into()),
     }]);
     let d = ScriptedDecider::with(&[("verification_failed", Decision::Rollback)]);

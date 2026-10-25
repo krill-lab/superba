@@ -666,10 +666,10 @@ fn the_config_store_round_trips() {
 #[test]
 fn presets_build_endpoints() {
     let krill = claude::anthropic_preset(claude::PRESET_KRILL_CODEX).unwrap();
-    let origin = url::Url::parse("https://api.krill-code.net").unwrap();
+    let origin = url::Url::parse("https://api.kbsfdxc.net").unwrap();
     assert_eq!(
         krill.endpoint(Some(&origin)).unwrap().base_text(),
-        "https://api.krill-code.net/codex"
+        "https://api.kbsfdxc.net/codex"
     );
     let ds: AnthropicPreset = claude::anthropic_preset("deepseek").unwrap();
     let e = ds.endpoint(None).unwrap();

@@ -81,7 +81,7 @@ async fn pat_profile_with_cdp_bridge_and_healthy_auth_address_is_hot() {
     assert_eq!(cfg.auth_mode, Some(AuthMode::Pat));
     assert_eq!(
         w.config.last_desired.lock().unwrap().as_deref(),
-        Some("token:Pat:https://api.krill-code.net/backend-api/codex")
+        Some("token:Pat:https://api.kbsfdxc.net/backend-api/codex")
     );
     // PAT persists the auth address of the destination line.
     assert_eq!(
@@ -119,7 +119,7 @@ async fn hot_line_change_keeps_the_app_auth_address_and_says_so() {
     assert_eq!(
         w.env.plans.lock().unwrap().last(),
         Some(&EnvOp::Set {
-            value: "https://api.cdn-krill-ai.com".into(),
+            value: "https://api.kbsfdxc.com".into(),
             take_over_foreign: false
         })
     );
@@ -512,7 +512,7 @@ async fn codex_v1_fallback_is_used_for_api_key_only() {
     plan(&w, with_line("work", "cdn", Some(AuthMode::ApiKey))).await;
     assert_eq!(
         w.config.last_desired.lock().unwrap().as_deref(),
-        Some("token:ApiKey:https://api.cdn-krill-ai.com/codex/v1")
+        Some("token:ApiKey:https://api.kbsfdxc.com/codex/v1")
     );
 }
 

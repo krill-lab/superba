@@ -52,7 +52,7 @@ impl T {
     }
 
     fn plan(&self) -> ApplyPlan {
-        let origin = Origin::parse("https://api.krill-code.net").unwrap();
+        let origin = Origin::parse("https://api.kbsfdxc.net").unwrap();
         let desired = ResolvedProfile {
             model_catalog: None,
             profile_id: Some(ProfileId::new("p")),

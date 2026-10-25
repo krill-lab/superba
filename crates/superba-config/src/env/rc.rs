@@ -327,15 +327,12 @@ mod tests {
     #[test]
     fn block_roundtrip_bottom_and_top() {
         let original = "# my rc\nalias ll='ls -l'\n";
-        let block = render(
-            &posix(),
-            &[(VAR.into(), "https://api.krill-code.net".into())],
-        );
+        let block = render(&posix(), &[(VAR.into(), "https://api.kbsfdxc.net".into())]);
         let with = put_block(original, Some(&block), Placement::Bottom);
         assert!(with.starts_with(original));
         assert_eq!(
             block_value(&with, &posix(), VAR).as_deref(),
-            Some("https://api.krill-code.net")
+            Some("https://api.kbsfdxc.net")
         );
         assert_eq!(put_block(&with, None, Placement::Bottom), original);
 
@@ -349,15 +346,12 @@ mod tests {
         assert_eq!(put_block(&top, None, Placement::Top), shebang);
 
         // Replace in place.
-        let b2 = render(
-            &posix(),
-            &[(VAR.into(), "https://api.cdn-krill-ai.com".into())],
-        );
+        let b2 = render(&posix(), &[(VAR.into(), "https://api.kbsfdxc.com".into())]);
         let replaced = put_block(&with, Some(&b2), Placement::Top);
         assert!(replaced.starts_with(original));
         assert_eq!(
             block_value(&replaced, &posix(), VAR).as_deref(),
-            Some("https://api.cdn-krill-ai.com")
+            Some("https://api.kbsfdxc.com")
         );
         // Empty file.
         let fresh = put_block("", Some(&block), Placement::Bottom);
@@ -387,16 +381,18 @@ mod tests {
 
     #[test]
     fn scan_comment_uncomment() {
-        let text = "export PATH=$PATH:~/bin\nexport CODEX_AUTHAPI_BASE_URL=\"https://api-slb.krill-code.net\"\nexport CODEX_AUTHAPI_BASE_URL=https://example.com\n# export CODEX_AUTHAPI_BASE_URL=https://api.krill-code.net\n";
+        let text = "export PATH=$PATH:~/bin\nexport CODEX_AUTHAPI_BASE_URL=\"https://api-slb.kbsfdxc.net\"\nexport CODEX_AUTHAPI_BASE_URL=https://example.com\n# export CODEX_AUTHAPI_BASE_URL=https://api.kbsfdxc.net\n";
         let found = scan(text, VAR);
         assert_eq!(found.len(), 2);
         assert!(found[0].legacy);
         assert_eq!(found[0].line_no, 2);
         assert!(!found[1].legacy);
         let commented = comment_line(text, 2, &found[0].text).unwrap();
-        assert!(commented.contains(
-            "# [superba] export CODEX_AUTHAPI_BASE_URL=\"https://api-slb.krill-code.net\""
-        ));
+        assert!(
+            commented.contains(
+                "# [superba] export CODEX_AUTHAPI_BASE_URL=\"https://api-slb.kbsfdxc.net\""
+            )
+        );
         assert!(has_commented(&commented, &found[0].text));
         assert_eq!(scan(&commented, VAR).len(), 1);
         assert_eq!(uncomment_line(&commented, &found[0].text).unwrap(), text);
@@ -405,20 +401,14 @@ mod tests {
         assert!(comment_line(&shifted, 2, &found[0].text).is_some());
         assert!(comment_line(text, 2, "nope").is_none());
         // Lines inside our block are not reported.
-        let block = render(
-            &posix(),
-            &[(VAR.into(), "https://api.krill-code.net".into())],
-        );
+        let block = render(&posix(), &[(VAR.into(), "https://api.kbsfdxc.net".into())]);
         assert!(scan(&block, VAR).is_empty());
     }
 
     #[test]
     fn crlf_preserved() {
         let text = "a=1\r\nb=2\r\n";
-        let block = render(
-            &posix(),
-            &[(VAR.into(), "https://api.krill-code.net".into())],
-        );
+        let block = render(&posix(), &[(VAR.into(), "https://api.kbsfdxc.net".into())]);
         let with = put_block(text, Some(&block), Placement::Bottom);
         assert!(!with.replace("\r\n", "").contains('\n'));
         assert_eq!(put_block(&with, None, Placement::Bottom), text);
