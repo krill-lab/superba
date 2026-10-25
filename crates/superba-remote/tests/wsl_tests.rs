@@ -566,6 +566,7 @@ fn env_blocks_cover_every_shell_a_distribution_starts_codex_with() {
         codex_resolved_path: None,
         gateway: None,
         app_bash: Some(true),
+        login_fallback: None,
     };
     assert_eq!(
         env_shells(&distro("U"), &st),
@@ -947,4 +948,69 @@ async fn planning_reuses_its_probe_but_apply_and_the_next_plan_read_fresh_files(
     .await;
     hosts.plan_apply(&host, &desired).await.unwrap();
     assert_eq!(shell.probes.load(Ordering::SeqCst), 3);
+}
+
+/// alpha.10 re-test (W81): a cold distribution whose login shell does not
+/// answer in time. With an earlier live read the probe uses it (`cache`);
+/// without one it uses a plain login shell (`plain_login`), else the plain
+/// environment (`none`) — the probe never fails for it.
+#[tokio::test]
+async fn a_slow_login_falls_back_to_the_cache_then_plain_login_then_nothing() {
+    if !have_bash() {
+        return;
+    }
+    let env = setup("/bin/sh");
+    write(
+        &env.home.join("interactive/codex"),
+        "#!/bin/sh\necho 'codex-cli 0.162.0'\n",
+        0o755,
+    );
+    let ls = LocalShell::new(&env.home)
+        .with_login_shell("/bin/sh")
+        .with_env("SB_LOGIN_SECS", "1");
+    let hosts = SshRemoteHosts::new(engine(), DataDir::new(env.home.join("../data2")))
+        .with_shell(Arc::new(ls))
+        .with_wsl_lister(Arc::new(FixedWsl::default()));
+    let host = distro("ColdCache");
+    superba_remote::probe::login_cache::forget(&host.target_id);
+    // A live read first: remembered.
+    let live = hosts.probe(&host).await.unwrap();
+    assert_eq!(live.login_fallback, None);
+    assert!(
+        live.codex_path
+            .as_deref()
+            .unwrap()
+            .ends_with("/interactive/codex")
+    );
+    // Now ~/.bashrc hangs (an interactive shell only).
+    let bashrc = read(&env.home.join(".bashrc"));
+    write(
+        &env.home.join(".bashrc"),
+        &format!("{bashrc}sleep 30\n"),
+        0o644,
+    );
+    let started = std::time::Instant::now();
+    let cached = hosts.probe(&host).await.unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(20),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(cached.login_fallback.as_deref(), Some("cache"));
+    assert_eq!(cached.codex_path, live.codex_path);
+    // Never read live: the plain login shell's view.
+    superba_remote::probe::login_cache::forget(&host.target_id);
+    let plain = hosts.probe(&host).await.unwrap();
+    assert_eq!(plain.login_fallback.as_deref(), Some("plain_login"));
+    // ~/.profile hangs too: the plain environment, still no failure.
+    let profile = read(&env.home.join(".profile"));
+    write(
+        &env.home.join(".profile"),
+        &format!("sleep 30\n{profile}"),
+        0o644,
+    );
+    superba_remote::probe::login_cache::forget(&host.target_id);
+    let none = hosts.probe(&host).await.unwrap();
+    assert_eq!(none.login_fallback.as_deref(), Some("none"));
+    assert_eq!(none.codex_home, format!("{}/.codex", env.home.display()));
 }

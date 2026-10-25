@@ -1927,6 +1927,8 @@ pub struct FakeRemote {
     pub authapi_env: Mutex<EnvObservation>,
     /// Simulate an rc export that still wins after a successful write.
     pub preserve_authapi: Mutex<bool>,
+    /// How the login environment was read (`None`: live; alpha.10 W81).
+    pub login_fallback: Mutex<Option<String>>,
     pub verify_ok: Mutex<BTreeMap<String, bool>>,
     pub busy: Mutex<BTreeMap<String, Vec<ThreadActivity>>>,
     pub incomplete: Mutex<Vec<String>>,
@@ -2078,6 +2080,7 @@ fn remote_state(host: &RemoteHost, version: Option<CodexVersion>, shared: bool) 
         owned_paths: Vec::new(),
         config_toml: None,
         app_bash: None,
+        login_fallback: None,
         gateway: None,
     }
 }
@@ -2157,6 +2160,7 @@ impl RemoteHosts for FakeRemote {
             self.version.lock().unwrap().clone(),
             *self.shared_home.lock().unwrap(),
         );
+        state.login_fallback = self.login_fallback.lock().unwrap().clone();
         state.config_toml = self
             .config_toml
             .lock()
@@ -2247,6 +2251,7 @@ impl RemoteHosts for FakeRemote {
             files: Vec::new(),
             env: None,
             certificate: None,
+            login_fallback: self.login_fallback.lock().unwrap().clone(),
         })
     }
 
@@ -2692,6 +2697,7 @@ impl World {
                 fail_apply: Mutex::new(BTreeMap::new()),
                 authapi_env: Mutex::new(EnvObservation::Absent),
                 preserve_authapi: Mutex::new(false),
+                login_fallback: Mutex::new(None),
                 verify_ok: Mutex::new(BTreeMap::new()),
                 busy: Mutex::new(BTreeMap::new()),
                 incomplete: Mutex::new(Vec::new()),

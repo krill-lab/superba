@@ -348,6 +348,7 @@ async fn no_ssh_operation_reaches_the_transport_for_a_remote_control_device() {
             files: Vec::new(),
             env: None,
             certificate: None,
+            login_fallback: None,
         };
         unsupported(
             hosts

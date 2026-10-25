@@ -422,31 +422,43 @@ fn pending_row(
 ) {
     FormRow::unlabeled().show(ui, |ui| {
         ui.add(crate::design::widgets::StatusDot::new(Status::Warn));
-        ui.add(
-            egui::Label::new(Text::small(
-                match &pending.failure {
-                    Some(error) => cx.tr.f(
-                        "hosts.wsl.pending_failed",
-                        &[
-                            ("age", &cx.ago(pending.at)),
-                            ("detail", &error_text(cx.tr, error)),
-                        ],
-                    ),
-                    None => cx
-                        .tr
-                        .f("hosts.wsl.pending", &[("age", &cx.ago(pending.at))]),
-                },
-                cx.pal,
-            ))
-            .wrap(),
+        // The text wraps in what the button leaves (alpha.10 W88: it ran under
+        // Update now and was clipped at the right edge).
+        let update = cx.tr.t("hosts.wsl.update_now");
+        let button_w = ui
+            .painter()
+            .layout_no_wrap(
+                update.clone(),
+                egui::TextStyle::Body.resolve(ui.style()),
+                cx.pal.text,
+            )
+            .size()
+            .x
+            + 40.0;
+        let text_w = (ui.available_width() - button_w).max(120.0);
+        let text = match &pending.failure {
+            Some(error) => cx.tr.f(
+                "hosts.wsl.pending_failed",
+                &[
+                    ("age", &cx.ago(pending.at)),
+                    ("detail", &error_text(cx.tr, error)),
+                ],
+            ),
+            None => cx
+                .tr
+                .f("hosts.wsl.pending", &[("age", &cx.ago(pending.at))]),
+        };
+        ui.allocate_ui_with_layout(
+            egui::vec2(text_w, 0.0),
+            Layout::top_down(Align::Min),
+            |ui| {
+                ui.set_max_width(text_w);
+                ui.add(egui::Label::new(Text::small(text, cx.pal)).wrap());
+            },
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui
-                .add(
-                    Button::new(cx.tr.t("hosts.wsl.update_now"))
-                        .small()
-                        .enabled(!cx.busy),
-                )
+                .add(Button::new(update).small().enabled(!cx.busy))
                 .on_hover_text(cx.tr.t("hosts.wsl.update_now_tip"))
                 .clicked()
             {

@@ -549,6 +549,7 @@ async fn recovery_rolls_back_interrupted_writes_and_completes_committed_ones() {
                 files: Vec::new(),
                 env: None,
                 certificate: None,
+                login_fallback: None,
             },
             rolled_back: false,
         });

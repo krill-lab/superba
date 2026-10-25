@@ -107,6 +107,13 @@ pub struct RemoteState {
     /// app-server there (`None` = not checked: SSH hosts).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_bash: Option<bool>,
+    /// WSL: how the login environment (PATH, CODEX_HOME, the auth address)
+    /// was read when the live login shell did not answer in time: `cache`
+    /// (an earlier read of this distribution), `plain_login` (`bash -l`
+    /// without `~/.bashrc`) or `none` (the plain environment). `None`: read
+    /// live.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_fallback: Option<String>,
 }
 
 impl RemoteState {
@@ -168,6 +175,10 @@ pub struct RemoteApplyReport {
     /// Receipt for the Codex-only CA bundle (including its removal).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub certificate: Option<Box<RemoteCertificateWrite>>,
+    /// WSL: the login environment this write used was not read live
+    /// ([`RemoteState::login_fallback`]); the switch says so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_fallback: Option<String>,
 }
 
 /// A managed remote certificate bundle; bytes are omitted from serialization.

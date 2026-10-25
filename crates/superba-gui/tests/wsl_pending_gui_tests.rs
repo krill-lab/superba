@@ -81,6 +81,14 @@ fn a_stopped_distribution_with_a_pending_update_says_so_and_offers_update_now() 
                 f.all_text()
             );
             assert!(f.fits(), "{size:?} {locale:?}");
+            // The explanation wraps beside Update now, never under it (W88).
+            let b = f.texts.iter().find(|(t, _)| t == button).unwrap().1;
+            for (t, r) in f.texts.iter().filter(|(t, _)| t.contains(why)) {
+                assert!(
+                    r.max.x <= b.min.x + 0.5 || r.min.y >= b.max.y || r.max.y <= b.min.y,
+                    "{size:?} {locale:?}: {t:?} at {r:?} overlaps the button at {b:?}"
+                );
+            }
             // Showing it never probes (that would start the distribution).
             assert!(
                 !service.host_probes().contains(&wsl()),

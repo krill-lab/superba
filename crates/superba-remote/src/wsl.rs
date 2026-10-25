@@ -495,6 +495,19 @@ fn stage_timeout(
 }
 
 impl WslShell {
+    /// The login stage's limit on `attempt`: the first gets `login_timeout`
+    /// (60 s), a second half again (90 s), bounded only by the operation's
+    /// deadline, not by the script's own stage limit (the alpha.10 re-test's
+    /// second attempt had 45 s: the probe's limit). The script bounds the
+    /// read itself at 35 + 15 s, so these are only a backstop.
+    fn login_limit(&self, attempt: u8) -> Duration {
+        if attempt <= 1 {
+            self.login_timeout
+        } else {
+            self.login_timeout * 3 / 2
+        }
+    }
+
     async fn ready(
         &self,
         host: &RemoteHost,
@@ -603,11 +616,7 @@ impl WslShell {
                         // A second attempt of a slow login (a cold distribution, an
                         // rc file that runs Windows programs) gets what is left of
                         // the budget instead of failing again at the same mark.
-                        let stage_limit = match (stage.as_str(), attempt) {
-                            ("login", 1) => self.login_timeout,
-                            ("login", _) => limit.min(self.login_timeout * 3 / 2),
-                            _ => limit,
-                        };
+                        let stage_limit = if stage == "login" { self.login_limit(attempt) } else { limit };
                         due = deadline.min(since + stage_limit);
                         crate::operation::report(events.as_ref(), host, Some(&stage), attempt, cancellable);
                     } else { phases = None; }
@@ -1033,6 +1042,13 @@ mod timeout_tests {
             std::fs::read_to_string(dir.path().join("calls")).unwrap(),
             "written\n"
         );
+    }
+
+    #[test]
+    fn the_login_attempts_get_60_then_90_seconds() {
+        let shell = WslShell::default();
+        assert_eq!(shell.login_limit(1), Duration::from_secs(60));
+        assert_eq!(shell.login_limit(2), Duration::from_secs(90));
     }
 
     /// The timeout says what the login stage reads and what to do.

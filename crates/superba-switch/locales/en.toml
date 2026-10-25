@@ -494,6 +494,9 @@ databases = "Updating databases: {done} of {total}"
 verifying = "Checked {done} of {total} files"
 
 [switch.wsl]
+login_cached = "{host}: its login shell did not answer in time (a cold start?), so the PATH and environment from its last check were used. If Codex there behaves differently, check ~/.profile and ~/.bashrc and switch again."
+login_plain = "{host}: its interactive login shell (~/.bashrc) did not answer in time, so the PATH of a plain login shell (~/.profile) was used. If Codex there is not found, check ~/.bashrc and switch again."
+login_none = "{host}: its login shell did not answer in time and it was never read before, so the plain environment was used. If Codex there uses another address, check ~/.profile and ~/.bashrc, then run spb wsl update."
 legacy_restart_skipped = "ChatGPT was not restarted because the authentication environment in {host} could not be prepared. Fix the reported WSL error, then retry the switch."
 no_helper = "Superba's Linux helper ({file}) is not installed next to this program, so the sessions in WSL cannot be migrated from here. Run spb sessions migrate inside the distribution instead."
 migrate_app_running = "The ChatGPT app is connected to {host} (its Codex keeps the sessions open). Disconnect it in the app (Settings → Connections) or quit the app, then migrate."

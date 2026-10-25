@@ -493,6 +493,9 @@ databases = "写入数据库 {done} / {total}"
 verifying = "已校验 {done} / {total} 个文件"
 
 [switch.wsl]
+login_cached = "{host}：登录 shell 没有及时响应（可能刚冷启动），已改用上次检查时读到的 PATH 和环境。如果其中的 Codex 表现不同，请检查 ~/.profile 和 ~/.bashrc 后再切换一次。"
+login_plain = "{host}：交互式登录 shell（~/.bashrc）没有及时响应，已改用普通登录 shell（~/.profile）的 PATH。如果找不到其中的 Codex，请检查 ~/.bashrc 后再切换一次。"
+login_none = "{host}：登录 shell 没有及时响应，且之前从未读到过，已改用普通环境。如果其中的 Codex 用的是别的地址，请检查 ~/.profile 和 ~/.bashrc，再运行 spb wsl update。"
 legacy_restart_skipped = "无法准备 {host} 中的认证环境，因此没有重启 ChatGPT。请处理报告的 WSL 错误后重试切换。"
 no_helper = "此程序旁边没有安装 Superba 的 Linux 辅助程序（{file}），无法从这里迁移 WSL 中的会话。请改为在发行版中运行 spb sessions migrate。"
 migrate_app_running = "ChatGPT app 正连接着 {host}（其中的 Codex 会占用会话）。请先在 app 里断开它（设置 → 连接）或退出 app，再迁移。"

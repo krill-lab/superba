@@ -298,6 +298,54 @@ sb_env_of() {
 }
 "#;
 
+/// The login read of a WSL probe, bounded inside the distribution (alpha.10
+/// re-test, W81: on a cold WSL 1 distribution the first GUI switch failed
+/// because reading the login environment took longer than its stage). The
+/// login shell runs in the background for at most `SB_LOGIN_SECS` (35 s);
+/// past that it is killed and the switch goes on with, in order:
+/// - a non-interactive login shell (`bash -l`, no `-i`: no ~/.bashrc) for
+///   at most 15 s (`K login_fallback plain_login`),
+/// - else the plain environment of this script (`K login_fallback none`).
+///
+/// `K login_timeout` records how long the full read had. The caller fills in
+/// what it read from that distribution before (see `probe::login_cache`).
+const WSL_LOGIN_READ: &str = r#"sb_bounded() {
+  sb_bl=$1; sb_bo=$2; shift 2
+  # Only the file is inherited: a process left running past the bound must
+  # not hold the script's output (or progress) pipe open.
+  ( "$@" </dev/null >"$sb_bo" 2>/dev/null 3>&- 4>&- ) &
+  sb_bj=$!
+  sb_bt=0
+  while kill -0 "$sb_bj" 2>/dev/null; do
+    if [ "$sb_bt" -ge $((sb_bl * 5)) ]; then
+      pkill -9 -P "$sb_bj" 2>/dev/null; kill -9 "$sb_bj" 2>/dev/null
+      wait "$sb_bj" 2>/dev/null
+      return 124
+    fi
+    sleep 0.2 2>/dev/null || sleep 1
+    sb_bt=$((sb_bt + 1))
+  done
+  wait "$sb_bj"
+}
+sb_plain_login() { SB_PAYLOAD="$1"; export SB_PAYLOAD; /usr/bin/bash -lc 'exec /bin/sh -c "$SB_PAYLOAD"' </dev/null; }
+sb_lf=$(mktemp 2>/dev/null) || sb_lf=/tmp/superba-login.$$
+sb_bounded "${SB_LOGIN_SECS:-35}" "$sb_lf" sb_login "$SB_LP"
+sb_lst=$?
+if [ "$sb_lst" = 124 ]; then
+  sb_put login_timeout "${SB_LOGIN_SECS:-35}"
+  if [ -x /usr/bin/bash ] && sb_bounded 15 "$sb_lf" sb_plain_login "$SB_LP" && grep -q "^@@SB:$SB_N:K:login_done:" "$sb_lf"; then
+    sb_put login_fallback plain_login
+    sb_lst=0
+  else
+    sb_put login_fallback none
+    : >"$sb_lf"
+  fi
+fi
+sb_put login_status "$sb_lst"
+sb_lo=$(cat "$sb_lf" 2>/dev/null)
+rm -f "$sb_lf"
+"#;
+
 /// Body run inside the user's login shell (as `/bin/sh -c`): what the app-server
 /// would see when the app starts it.
 fn login_payload(nonce: &str, with_version: bool) -> String {
@@ -404,9 +452,7 @@ sb_put home "${HOME:-}"
 sb_put zdotdir "${ZDOTDIR:-}"
 sb_put xdg_config_home "${XDG_CONFIG_HOME:-}"
 sb_phase login
-sb_lo=$(sb_login "$SB_LP" 2>/dev/null)
-sb_put login_status "$?"
-printf '%s\n' "$sb_lo"
+{LOGIN_READ}printf '%s\n' "$sb_lo"
 ch=$(printf '%s\n' "$sb_lo" | sed -n "s/^@@SBCH:$SB_N://p" | tail -n 1)
 if [ -z "$ch" ]; then
   ch="${CODEX_HOME:-$HOME/.codex}"
@@ -453,6 +499,12 @@ sb_put disk_free "$(df -Pk "${HOME:-/}" 2>/dev/null | awk 'NR == 2 { print $4 }'
         );
     }
     body.push_str("sb_put done 1");
+    let login = if flavor == Flavor::Wsl {
+        WSL_LOGIN_READ
+    } else {
+        "sb_lo=$(sb_login \"$SB_LP\" 2>/dev/null)\nsb_put login_status \"$?\"\n"
+    };
+    let body = body.replace("{LOGIN_READ}", login);
     let script = wrap(nonce, &host_funcs(flavor), &body);
     if flavor == Flavor::Wsl {
         format!("# superba-wsl-probe\n{script}")

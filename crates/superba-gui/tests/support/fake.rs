@@ -416,6 +416,7 @@ fn fake_remote(now: Timestamp, devbox: bool) -> RemoteOverview {
             owned_paths: Vec::new(),
             config_toml: None,
             app_bash: None,
+            login_fallback: None,
             gateway: None,
         }),
         error: None,

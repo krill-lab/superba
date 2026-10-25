@@ -3033,6 +3033,10 @@ impl Switcher {
                     continue;
                 }
             };
+            if wsl && let Some(how) = state.login_fallback.as_deref() {
+                draft
+                    .warn(text(crate::wsl::login_fallback_key(how)).arg_text("host", host.title()));
+            }
             if by_default && !crate::wsl::has_codex(&state) {
                 // Nothing in this distribution reads a Codex home.
                 draft.info(text("switch.wsl.no_codex").arg_text("host", host.title()));

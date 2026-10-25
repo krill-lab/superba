@@ -257,3 +257,42 @@ async fn a_failed_first_write_is_persisted_in_the_journal_and_pending_until_retr
     run(&sw, req("work")).await;
     assert!(pending(&sw).await.is_none());
 }
+
+/// alpha.10 re-test (W81): a distribution whose login shell did not answer and
+/// that was never read before is still switched, with a warning that names
+/// the files to check, in the plan and in the outcome.
+#[tokio::test]
+async fn a_login_read_without_cache_still_switches_with_a_warning() {
+    let w = world(true);
+    *w.remote.login_fallback.lock().unwrap() = Some("none".into());
+    let sw = w.switcher();
+    let plan = sw.plan(req("work")).await.unwrap();
+    assert!(
+        notice_keys(&plan).contains(&"switch.wsl.login_none".to_owned()),
+        "{:?}",
+        notice_keys(&plan)
+    );
+    let out = sw
+        .execute(
+            plan,
+            ExecuteOptions::default(),
+            std::sync::Arc::new(SafeDefaults),
+            std::sync::Arc::new(NoEvents),
+        )
+        .await
+        .unwrap();
+    let wsl = out
+        .remotes
+        .iter()
+        .find(|r| r.target_id == target())
+        .unwrap();
+    assert_ne!(wsl.status, superba_core::OutcomeStatus::Failed, "{out:?}");
+    assert!(
+        out.notices
+            .iter()
+            .any(|n| n.text.key == "switch.wsl.login_none"),
+        "{:?}",
+        out.notices
+    );
+    assert!(pending(&sw).await.is_none());
+}

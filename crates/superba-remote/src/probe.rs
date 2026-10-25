@@ -268,11 +268,44 @@ pub fn snapshot_from_records(
             _ => None,
         },
         app_bash: recs.get_nonempty("app_bash").map(|v| v == "1"),
+        login_fallback: None,
     };
-    let install_dir = recs
+    let mut state = state;
+    let mut install_dir = recs
         .get_raw_nonempty("install_dir")
         .filter(|d| d.starts_with('/') && !d.chars().any(char::is_control))
         .map(str::to_owned);
+    let mut ca_path = recs.get_raw_nonempty("ca_path").map(str::to_owned);
+    state.login_fallback = recs.get_nonempty("login_fallback").map(str::to_owned);
+    match &state.login_fallback {
+        None if login_ok => login_cache::store(
+            target,
+            login_cache::LoginView {
+                codex_path: state.codex_path.clone(),
+                codex_resolved_path: state.codex_resolved_path.clone(),
+                codex_version: state.codex_version.clone(),
+                authapi_env: state.authapi_env.clone(),
+                install_dir: install_dir.clone(),
+                ca_path: ca_path.clone(),
+            },
+        ),
+        Some(_) => {
+            if let Some(v) = login_cache::get(target) {
+                state.codex_install = v
+                    .codex_resolved_path
+                    .as_deref()
+                    .map(CodexInstallKind::from_resolved_path);
+                state.codex_path = v.codex_path;
+                state.codex_resolved_path = v.codex_resolved_path;
+                state.codex_version = v.codex_version.or(state.codex_version.take());
+                state.authapi_env = v.authapi_env;
+                install_dir = v.install_dir.or(install_dir);
+                ca_path = v.ca_path.or(ca_path);
+                state.login_fallback = Some("cache".into());
+            }
+        }
+        None => {}
+    }
     Ok(Snapshot {
         state,
         install_dir,
@@ -284,7 +317,7 @@ pub fn snapshot_from_records(
         rc,
         login_ok,
         inspected,
-        ca_path: recs.get_raw_nonempty("ca_path").map(str::to_owned),
+        ca_path,
         ca_source: recs.file("ca_source").cloned().unwrap_or(FileRead::Absent),
         router_ca: recs.file("router_ca").cloned().unwrap_or(FileRead::Absent),
     })
@@ -299,4 +332,62 @@ pub fn parse_pids(s: &str) -> Vec<u32> {
     v.sort_unstable();
     v.dedup();
     v
+}
+
+/// The login environment last read live from each distribution (alpha.10
+/// re-test, W81): a cold distribution whose login shell does not answer in
+/// time is switched with what an earlier read (discovery, the plan's probe, a
+/// previous switch) found, instead of failing the switch.
+pub mod login_cache {
+    use std::collections::BTreeMap;
+    use std::sync::{Mutex, OnceLock};
+
+    use superba_core::{CodexVersion, EnvObservation, TargetId};
+
+    /// What the login shell reports.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct LoginView {
+        /// `command -v codex` in the login shell.
+        pub codex_path: Option<String>,
+        /// Its target with links resolved.
+        pub codex_resolved_path: Option<String>,
+        /// `codex --version`, when read.
+        pub codex_version: Option<CodexVersion>,
+        /// `CODEX_AUTHAPI_BASE_URL` as the login shell sets it.
+        pub authapi_env: EnvObservation,
+        /// Where an install goes.
+        pub install_dir: Option<String>,
+        /// `CODEX_CA_CERTIFICATE`.
+        pub ca_path: Option<String>,
+    }
+
+    fn map() -> &'static Mutex<BTreeMap<TargetId, LoginView>> {
+        static MAP: OnceLock<Mutex<BTreeMap<TargetId, LoginView>>> = OnceLock::new();
+        MAP.get_or_init(Mutex::default)
+    }
+
+    /// Remember a live read.
+    pub fn store(target: &TargetId, view: LoginView) {
+        map()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(target.clone(), view);
+    }
+
+    /// The last live read of `target`.
+    pub fn get(target: &TargetId) -> Option<LoginView> {
+        map()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(target)
+            .cloned()
+    }
+
+    /// Forget `target` (tests).
+    pub fn forget(target: &TargetId) {
+        map()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(target);
+    }
 }

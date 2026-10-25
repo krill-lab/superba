@@ -275,7 +275,16 @@ impl SshRemoteHosts {
     /// Probe the host and keep its paths for later turn checks.
     async fn snapshot(&self, host: &RemoteHost, with_version: bool) -> Result<Snapshot> {
         let nonce = new_nonce();
-        let script = script::probe_script_for(&nonce, with_version, Flavor::of(host));
+        let mut script = script::probe_script_for(&nonce, with_version, Flavor::of(host));
+        // A distribution read live before waits less for its login shell: on a
+        // timeout its last read is used (Update now on a cold distribution,
+        // alpha.10 W88).
+        if Flavor::of(host) == Flavor::Wsl
+            && crate::probe::login_cache::get(&host.target_id).is_some()
+            && let Some(i) = script.find('\n')
+        {
+            script.insert_str(i + 1, "SB_LOGIN_SECS=${SB_LOGIN_SECS:-12}\n");
+        }
         let recs = self.run(host, &script, &nonce, self.timeouts.probe).await?;
         let snap = snapshot_from_records(
             &host.target_id,
@@ -685,6 +694,7 @@ impl SshRemoteHosts {
             files: writes,
             env,
             certificate,
+            login_fallback: snap.state.login_fallback.clone(),
         };
         if ops.is_empty() {
             return Ok(WriteOutcome::Written(report));

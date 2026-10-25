@@ -491,6 +491,7 @@ fn remote_shared_home_detection_requires_two_different_machine_ids() {
             owned_paths: vec![],
             config_toml: None,
             app_bash: None,
+            login_fallback: None,
             gateway: None,
         };
         assert_eq!(

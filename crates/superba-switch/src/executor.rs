@@ -482,8 +482,25 @@ impl Run<'_> {
         } else {
             None
         };
-        if full && let Some(result) = self.quit_for_full_restart().await? {
-            return Ok(result);
+        if full {
+            // Read the WSL distributions' login environment while ChatGPT
+            // closes (alpha.10 re-test, W81): a cold distribution starts
+            // during the quit, and the live read refreshes the login cache
+            // the write uses if its own read is slow.
+            let d = self.deps().clone();
+            let warm: Vec<RemoteHost> = self
+                .remote_hosts_to_apply()
+                .into_iter()
+                .filter(|(h, _)| h.kind == superba_core::HostKind::Wsl)
+                .map(|(h, _)| h)
+                .collect();
+            let warm = async move {
+                join_all(warm.iter().map(|h| d.remote.probe(h))).await;
+            };
+            let (quit, ()) = tokio::join!(self.quit_for_full_restart(), warm);
+            if let Some(result) = quit? {
+                return Ok(result);
+            }
         }
 
         // Applying.
@@ -2342,6 +2359,12 @@ impl Run<'_> {
         for (host, result) in results {
             match result {
                 Ok((status, report)) => {
+                    if let Some(how) = report.as_ref().and_then(|r| r.login_fallback.as_deref()) {
+                        self.notices.push(Notice::warning(
+                            text(crate::wsl::login_fallback_key(how))
+                                .arg_text("host", host.title()),
+                        ));
+                    }
                     if let Some(report) = report {
                         self.entry.remotes.push(RemoteReceipt {
                             target_id: host.target_id.clone(),

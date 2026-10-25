@@ -680,3 +680,13 @@ impl Switcher {
         })
     }
 }
+
+/// The note for a distribution whose login environment was not read live
+/// ([`superba_core::RemoteState::login_fallback`]).
+pub(crate) fn login_fallback_key(how: &str) -> &'static str {
+    match how {
+        "cache" => "switch.wsl.login_cached",
+        "plain_login" => "switch.wsl.login_plain",
+        _ => "switch.wsl.login_none",
+    }
+}
