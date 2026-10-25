@@ -125,7 +125,7 @@ fn presets_are_https_and_unique() {
         ..profile
     };
     let e = claude::effective_endpoint(&krill, &p).unwrap();
-    assert_eq!(e.base_text(), "https://api.krill-code.net");
+    assert_eq!(e.base_text(), "https://api.kbsfdxc.net");
     assert_eq!(e.preset.as_deref(), Some(claude::PRESET_KRILL));
 }
 

@@ -34,11 +34,11 @@ pub const KRILL_LINE_CDN: &str = "cdn";
 pub const KRILL_DEFAULT_LINE: &str = KRILL_LINE_OVERSEAS;
 
 /// Origin of [`KRILL_LINE_CN_FAST`].
-pub const KRILL_ORIGIN_CN_FAST: &str = "https://api-slb.krill-code.net";
+pub const KRILL_ORIGIN_CN_FAST: &str = "https://api-slb.kbsfdxc.net";
 /// Origin of [`KRILL_LINE_OVERSEAS`].
-pub const KRILL_ORIGIN_OVERSEAS: &str = "https://api.krill-code.net";
+pub const KRILL_ORIGIN_OVERSEAS: &str = "https://api.kbsfdxc.net";
 /// Origin of [`KRILL_LINE_CDN`].
-pub const KRILL_ORIGIN_CDN: &str = "https://api.cdn-krill-ai.com";
+pub const KRILL_ORIGIN_CDN: &str = "https://api.kbsfdxc.com";
 
 /// Profile id of the built-in "original configuration" restore anchor.
 pub const PROFILE_ORIGINAL: &str = "original";
@@ -52,6 +52,8 @@ pub const KRILL_DOMAINS: &[&str] = &[
     "krill-code.net",
     "cdn-krill-ai.com",
     "krill-ai.com",
+    "kbsfdxc.com",
+    "kbsfdxc.net",
 ];
 
 /// True if `host` is a Krill domain or one of its subdomains.

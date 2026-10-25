@@ -5,7 +5,19 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
-## [0.1.1-alpha.9] - Unreleased
+## [0.1.1-alpha.10] - 2026-10-26
+
+### Changed
+- Krill lines use new endpoints: 三网优化 CDN `https://api.kbsfdxc.com`, 海外线路 `https://api.kbsfdxc.net`, 国内极速 `https://api-slb.kbsfdxc.net`. Profiles pick them up at the next switch.
+- Models page: the actions column never clips, upstream names are readable (同名 when equal), compact window/compaction inputs.
+
+### Fixed
+- Router failover cooldowns set by keyboard or UI Automation are saved and survive a restart.
+- WSL: a slow login shell no longer fails a switch, Update now or `spb wsl update` (cached environment, then plain login, then plain environment, with a warning); every WSL step gets a minimum time.
+- A relaunched ChatGPT whose window never appears is reported with what to do, not "skipped".
+- Overview request-path captions are readable by screen readers; the Remote hosts pending note wraps beside Update now.
+
+## [0.1.1-alpha.9] - 2026-10-23
 
 Changes since [v0.1.1-alpha.8](https://github.com/krill-lab/superba/releases/tag/v0.1.1-alpha.8).
 
