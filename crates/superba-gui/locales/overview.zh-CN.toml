@@ -2,6 +2,7 @@
 # overview.en.toml with the same {placeholders} (tests/i18n_tests.rs).
 
 [overview]
+startup_loading = "正在读取当前状态与配置..."
 simple.check_codex = "点击检查 Codex 客户端与 Codex CLI 是否为最新版本"
 simple.line_hint = "点击切换路线，记得任务完成后再切换~"
 simple.client_latest = "最新客户端"

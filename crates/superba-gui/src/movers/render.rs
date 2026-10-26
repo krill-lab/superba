@@ -21,7 +21,7 @@ use resvg::tiny_skia::{self, Point, Transform};
 use resvg::usvg;
 
 use super::pose::Pose;
-use super::svg::{self, Anchor, Layer, Scene, TextItem};
+use super::svg::{self, Anchor, Layer, Placement, Scene, TextItem};
 use crate::design::fonts::{self, Weight};
 
 /// The scene's SVG (the artwork as delivered; see `assets/scenes/`).
@@ -228,6 +228,18 @@ pub fn paint(
     let Some(scene) = scene() else {
         return;
     };
+    paint_scene(painter, cache, scene, view, pose, translate);
+}
+
+/// Paint an analysed SVG with its own cache, sharing the migration layer renderer.
+pub fn paint_scene(
+    painter: &Painter,
+    cache: &mut SceneCache,
+    scene: &Scene,
+    view: View,
+    pose: &Pose,
+    translate: &dyn Fn(&str) -> String,
+) {
     let ctx = painter.ctx();
     let density = view.scale * ctx.pixels_per_point();
     if density <= 0.0 {
@@ -243,10 +255,22 @@ pub fn paint(
             continue;
         }
         let m = layer.place.transform(pose);
-        painter.add(quad(raster, m, view, alpha));
+        clipped_painter(painter, &layer.place, pose, view).add(quad(raster, m, view, alpha));
     }
     for text in &scene.texts {
         paint_text(painter, text, pose, view, translate);
+    }
+}
+
+/// Clip in scene coordinates so a moving parcel disappears through the floor;
+/// changing the clip never rebuilds its texture.
+fn clipped_painter(painter: &Painter, place: &Placement, pose: &Pose, view: View) -> Painter {
+    match place.clip_rect(pose) {
+        Some(rect) => painter.with_clip_rect(Rect::from_min_max(
+            view.to_screen(rect.left(), rect.top()),
+            view.to_screen(rect.right(), rect.bottom()),
+        )),
+        None => painter.clone(),
     }
 }
 
@@ -283,6 +307,7 @@ fn paint_text(
     view: View,
     translate: &dyn Fn(&str) -> String,
 ) {
+    let painter = &clipped_painter(painter, &item.place, pose, view);
     let alpha = item.place.opacity(pose);
     if alpha <= 0.01 {
         return;
@@ -422,7 +447,8 @@ pub fn composite(pose: &Pose, density: f32) -> Option<tiny_skia::Pixmap> {
         }
         let tree = usvg::Tree::from_str(&layer.svg, &usvg::Options::default()).ok()?;
         let m = Transform::from_scale(density, density).pre_concat(layer.place.transform(pose));
-        if alpha >= 0.999 {
+        let clip = layer.place.clip_rect(pose);
+        if alpha >= 0.999 && clip.is_none() {
             resvg::render(&tree, m, &mut out.as_mut());
         } else {
             let mut tmp = tiny_skia::Pixmap::new(w, h)?;
@@ -431,7 +457,25 @@ pub fn composite(pose: &Pose, density: f32) -> Option<tiny_skia::Pixmap> {
                 opacity: alpha,
                 ..tiny_skia::PixmapPaint::default()
             };
-            out.draw_pixmap(0, 0, tmp.as_ref(), &paint, Transform::identity(), None);
+            let mut mask = None;
+            if let Some(clip) = clip {
+                let mut ground = tiny_skia::Mask::new(w, h)?;
+                ground.fill_path(
+                    &tiny_skia::PathBuilder::from_rect(clip),
+                    tiny_skia::FillRule::Winding,
+                    true,
+                    Transform::from_scale(density, density),
+                );
+                mask = Some(ground);
+            }
+            out.draw_pixmap(
+                0,
+                0,
+                tmp.as_ref(),
+                &paint,
+                Transform::identity(),
+                mask.as_ref(),
+            );
         }
     }
     Some(out)

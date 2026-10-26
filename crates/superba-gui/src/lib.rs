@@ -50,6 +50,7 @@ pub mod pages;
 pub mod runtime;
 pub mod shell;
 pub mod startup;
+pub mod startup_screen;
 pub mod tray;
 
 use std::sync::Arc;

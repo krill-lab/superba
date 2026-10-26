@@ -32,7 +32,6 @@ short.chatgpt = "官方登录"
 short.pat = "PAT"
 
 [banner]
-checking_turns = "正在检查对话状态，暂不倒计时"
 router_token = "路由令牌（本地）"
 accept = "仍然继续"
 armed.body = "将热重启 Codex 内核（约 1–2 秒），窗口和对话都会保留。重启会影响所有对话，不只是当前这个："

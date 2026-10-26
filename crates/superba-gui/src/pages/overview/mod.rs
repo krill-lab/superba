@@ -64,6 +64,9 @@ const RELOAD: Duration = Duration::from_secs(20);
 /// Height of the title row.
 pub const TITLE_ROW: f32 = 40.0;
 
+/// Height of the title, its spacing and the dashboard's minimum 600-point grid.
+pub const MIN_HEIGHT: f32 = TITLE_ROW + 16.0 + 600.0;
+
 /// Page state: the dismissed setup card and the dashboard's data.
 #[derive(Debug, Default)]
 pub struct State {

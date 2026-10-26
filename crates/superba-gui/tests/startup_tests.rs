@@ -4,10 +4,103 @@
 
 #![allow(missing_docs)]
 
-use std::fs;
+mod a11y_harness;
+mod support;
 
+use std::fs;
+use std::sync::Arc;
+
+use a11y_harness::AppHarness;
+use egui::accesskit::Role;
 use superba_core::Locale;
+use superba_gui::i18n::Tr;
+use superba_gui::pages::Page;
 use superba_gui::startup::{CRASH_LOG, GUI_LOG, Gpu, Reporter, WindowError};
+use support::fake::{FakeOptions, FakeService};
+use tokio::sync::Semaphore;
+
+#[test]
+fn startup_hides_navigation_until_both_state_and_recovery_finish() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        for snapshot_first in [true, false] {
+            let tr = Tr::new(locale);
+            let service = Arc::new(FakeService::new(FakeOptions {
+                fast: true,
+                ..Default::default()
+            }));
+            let snapshot = Arc::new(Semaphore::new(0));
+            let recovery = Arc::new(Semaphore::new(0));
+            service.hold_startup_reads(snapshot.clone(), recovery.clone());
+            let mut h = AppHarness::new(service, locale, Page::Overview);
+            let assert_blank = |tree: &a11y_harness::Tree| {
+                assert!(tree.with_role(Role::Tab).is_empty(), "{}", tree.dump());
+                assert!(
+                    tree.with_role(Role::RadioGroup).is_empty(),
+                    "{}",
+                    tree.dump()
+                );
+                assert!(
+                    tree.find(Some(Role::Image), &tr.t("overview.loading"))
+                        .is_some(),
+                    "{}",
+                    tree.dump()
+                );
+                let image = tree
+                    .find(Some(Role::Image), &tr.t("overview.loading"))
+                    .unwrap();
+                let status = tree
+                    .find(None, &tr.t("overview.startup_loading"))
+                    .expect("startup caption");
+                assert!(
+                    tree.node(status).bounds().unwrap().y0 > tree.node(image).bounds().unwrap().y1
+                );
+            };
+            assert_blank(&h.settle());
+            let (first, last) = if snapshot_first {
+                (&snapshot, &recovery)
+            } else {
+                (&recovery, &snapshot)
+            };
+            first.add_permits(1);
+            assert_blank(&h.settle());
+            last.add_permits(1);
+            let tree = h.until("startup completes", |t| {
+                !t.with_role(Role::Tab).is_empty()
+                    && t.find(Some(Role::RadioGroup), &tr.t("simple.mode_selector"))
+                        .is_some()
+            });
+            assert!(
+                tree.find(Some(Role::Image), &tr.t("overview.loading"))
+                    .is_none()
+            );
+            assert!(
+                tree.find(Some(Role::RadioGroup), &tr.t("simple.mode_selector"))
+                    .is_some()
+            );
+        }
+    }
+}
+
+#[test]
+fn an_initial_read_error_reveals_the_error_page_instead_of_spinning_forever() {
+    let service = Arc::new(FakeService::new(FakeOptions {
+        fast: true,
+        ..Default::default()
+    }));
+    service.fail_startup_overview(superba_core::Error::Other {
+        message: "startup fixture failed".into(),
+    });
+    let tr = Tr::new(Locale::En);
+    let mut h = AppHarness::new(service, Locale::En, Page::Overview);
+    let tree = h.until("initial read error", |t| {
+        t.find(None, "startup fixture failed").is_some()
+    });
+    assert!(!tree.with_role(Role::Tab).is_empty());
+    assert!(
+        tree.find(Some(Role::Image), &tr.t("overview.loading"))
+            .is_none()
+    );
+}
 
 #[test]
 fn the_software_renderer_is_chosen_only_by_superba_gpu_software() {

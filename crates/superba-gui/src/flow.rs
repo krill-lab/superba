@@ -504,7 +504,8 @@ impl Flow {
     }
 
     /// Refresh live conversations during the countdown, including resumed turns.
-    /// The plan id isolates late read results from a subsequent selection.
+    /// Reads run in the background without pausing the timer. Only observed busy
+    /// turns pause it; the plan id isolates late results from a new selection.
     pub fn watch_turns(
         &mut self,
         service: std::sync::Arc<dyn superba_core::SwitchService>,
@@ -541,7 +542,6 @@ impl Flow {
             self.next_turn_watch = now + Duration::from_millis(700);
         }
         if self.turn_watch.is_none() && now >= self.next_turn_watch {
-            self.machine.pause_for_activity(now);
             self.turn_watch = Some((
                 id,
                 crate::runtime::task(async move { service.switch_turn_activity(targets).await }),
@@ -569,11 +569,6 @@ impl Flow {
         if !busy.is_empty() || (!activity.is_empty() && activity.iter().all(|a| a.complete)) {
             self.feed(Input::Turns(busy), now);
         }
-    }
-
-    /// No countdown copy is shown while a fresh activity read is pending or unknown.
-    pub fn checking_turns(&self) -> bool {
-        matches!(self.stage(), Stage::Armed { countdown, .. } if countdown.is_paused())
     }
 
     /// "Switch now" / Enter while armed; "switch anyway" while turns ran at plan time.

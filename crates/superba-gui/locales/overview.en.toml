@@ -2,6 +2,7 @@
 # overview.zh-CN.toml with the same {placeholders} (tests/i18n_tests.rs).
 
 [overview]
+startup_loading = "Reading the current state and configuration..."
 simple.check_codex = "Check for updates to the Codex client and Codex CLI"
 simple.line_hint = "Click to switch routes once your current task is finished~"
 simple.client_latest = "Latest client"

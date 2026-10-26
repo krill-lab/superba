@@ -519,3 +519,50 @@ fn the_log_fits_every_window_size_without_cut_filters_or_elided_numbers() {
         }
     }
 }
+
+#[test]
+fn the_five_hundred_request_notice_does_not_push_filters_or_the_table_past_the_right_edge() {
+    let service = fake();
+    let now = Timestamp::now();
+    let template = FakeService::fixture_request_rows(now).remove(0);
+    service.set_request_rows(
+        (0..501)
+            .map(|i| {
+                let mut row = template.clone();
+                row.id = i;
+                row.started_at = Timestamp::from_millis(now.as_millis() - i);
+                if i % 2 == 0 {
+                    row.source = RequestSource::CcSwitch;
+                }
+                row
+            })
+            .collect(),
+    );
+    for window in [[960.0, 640.0], [1280.0, 800.0], [1440.0, 900.0]] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let tr = Tr::new(locale);
+            let mut h = Harness::new(window, locale, service.clone(), true);
+            let mut state = State::default();
+            let notice = tr.f("requests.truncated", &[("n", &500)]);
+            let f = h.until(
+                |ui, cx, out| router::show_usage(ui, cx, &mut state, out),
+                |f| f.has(&notice),
+            );
+            assert_eq!(state.recent.shown.len(), 500);
+            let beyond: Vec<_> = f
+                .texts
+                .iter()
+                .filter(|(_, rect)| rect.max.x > f.rect.max.x + 0.5)
+                .map(|(text, rect)| (text.as_str(), *rect))
+                .collect();
+            assert!(
+                beyond.is_empty(),
+                "{window:?} {locale:?}: beyond the page: {beyond:?}"
+            );
+            let hosts = f
+                .find(&tr.t("requests.filter.all_hosts"))
+                .expect("hosts filter");
+            assert!(hosts.max.x <= f.rect.max.x + 0.5);
+        }
+    }
+}

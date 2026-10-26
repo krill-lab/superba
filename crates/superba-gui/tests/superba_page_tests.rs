@@ -112,6 +112,38 @@ fn simple_superba_has_two_tabs_with_codex_updates_storage_and_the_shared_setting
         }
         assert!(frame.has(&tr.t("simple.superba.codex_client")));
         assert!(!frame.has("Claude Code"), "{}", frame.all_text());
+        assert!(frame.has(&tr.t("diag.run")), "{}", frame.all_text());
+        h.click_text(&frame, &tr.t("diag.run"));
+        let frame = h.until(
+            |ui, cx, out| {
+                pages.show_simple(
+                    Page::Superba(SuperbaSection::Home),
+                    ui,
+                    cx,
+                    &mut settings,
+                    out,
+                )
+            },
+            |f| {
+                f.actions
+                    .iter()
+                    .any(|a| matches!(a, superba_gui::pages::Action::RunDoctor))
+            },
+        );
+        for expected in [
+            superba_gui::pages::Action::Refresh,
+            superba_gui::pages::Action::CheckUpdates,
+            superba_gui::pages::Action::CheckSelfUpdate,
+        ] {
+            assert!(
+                frame
+                    .actions
+                    .iter()
+                    .any(|a| std::mem::discriminant(a) == std::mem::discriminant(&expected)),
+                "{:?}",
+                frame.actions
+            );
+        }
         h.click_text(&frame, &tr.t("simple.superba.more_apps"));
         let frame = h.until(
             |ui, cx, out| {

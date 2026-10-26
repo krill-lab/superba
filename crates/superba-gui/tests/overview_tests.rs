@@ -1295,6 +1295,9 @@ async fn simple_route_reports_client_updates_latency_and_opens_the_three_speed_s
         for (update, cli_update) in [(false, false), (true, false), (false, true)] {
             versions.app.update_available = update;
             for row in &mut versions.cli {
+                if row.kind != superba_core::CodexInstallKind::AppBundled {
+                    row.kind = superba_core::CodexInstallKind::Standalone;
+                }
                 row.action = if cli_update {
                     superba_core::CliUpdateAction::Command {
                         command: "update codex".into(),
@@ -1509,6 +1512,12 @@ async fn all_three_simple_route_buttons_paint_a_hover_background() {
         .model
         .as_ref()
         .unwrap();
+    let client_status = tr.t("overview.simple.client_unknown");
+    let status_text = labels.iter().find(|(t, _)| t == &client_status).unwrap().1;
+    let status_badge = Rect::from_min_size(
+        status_text.min - egui::vec2(20.0, (20.0 - status_text.height()) / 2.0),
+        egui::vec2(status_text.width() + 28.0, 20.0),
+    );
     let names = [
         "Codex",
         labels
@@ -1518,6 +1527,7 @@ async fn all_three_simple_route_buttons_paint_a_hover_background() {
             .0
             .as_str(),
         model.as_str(),
+        client_status.as_str(),
     ];
     for (index, name) in names.into_iter().enumerate() {
         let at = labels.iter().find(|(t, _)| t == name).unwrap().1.center();
@@ -1537,7 +1547,8 @@ async fn all_three_simple_route_buttons_paint_a_hover_background() {
             );
             hovered |= output.shapes.iter().any(|shape| matches!(&shape.shape,
                 egui::Shape::Rect(r) if r.rect.contains(at) && r.corner_radius == egui::CornerRadius::same(16)
-                    && r.fill.a() > 0 && r.rect.width() < 300.0));
+                    && r.fill.a() > 0 && r.rect.width() < 300.0
+                    && (index != 0 && index != 3 || r.rect.contains_rect(status_badge))));
             output.drop_without_applying_deltas();
         }
         assert!(hovered, "missing hover fill for {name}");
@@ -1624,6 +1635,57 @@ async fn simple_overview_stays_inside_the_window_with_the_short_window_scroll_fa
                 assert!(
                     report.scrolled,
                     "small windows need the shell's vertical fallback"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn simple_client_status_ignores_vendor_cli_when_the_desktop_client_is_installed() {
+    use superba_core::{CliUpdateAction, CodexInstallKind};
+    let service = FakeService::new(FakeOptions {
+        fast: true,
+        ..Default::default()
+    });
+    let mut data = fake_data().await;
+    let original = service.versions_view();
+    assert!(original.app.install.is_some());
+    assert!(!original.cli.is_empty());
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        for kind in [
+            CodexInstallKind::Npm,
+            CodexInstallKind::Homebrew,
+            CodexInstallKind::Other,
+            CodexInstallKind::AppBundled,
+        ] {
+            for update in [false, true] {
+                let mut versions = original.clone();
+                versions.app.update_available = update;
+                for row in &mut versions.cli {
+                    row.kind = kind.clone();
+                    row.binary.version = None;
+                    row.latest = None;
+                    row.action = CliUpdateAction::Command {
+                        command: "vendor updates codex".into(),
+                    };
+                }
+                data.versions.finish(Ok(versions));
+                let h = Harness::new([1280.0, 800.0], egui::Theme::Light);
+                let mut state = overview::State::default();
+                state.simple_usage = UsageLoader::preloaded(busy_snapshot());
+                let mut out = Vec::new();
+                let mut show = simple_page!(&data, &tr, &h.fonts, &mut state, &mut out);
+                let labels = h.settle(&mut show);
+                let expected = tr.t(if update {
+                    "overview.simple.client_update"
+                } else {
+                    "overview.simple.client_latest"
+                });
+                assert!(
+                    labels.iter().any(|(text, _)| text == &expected),
+                    "{kind:?}: {labels:?}"
                 );
             }
         }

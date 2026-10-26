@@ -616,6 +616,40 @@ mod v3 {
     }
 
     #[test]
+    fn the_scroll_fallback_reaches_the_whole_last_card_when_content_exceeds_its_minimum() {
+        let context = egui::Context::default();
+        let mut last = Rect::NOTHING;
+        let mut clip = Rect::NOTHING;
+        for pass in 0..4 {
+            context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 500.0))),
+                        time: Some(pass as f64),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        layout::fit_area(ui, 600.0, |ui| {
+                            last = Rect::from_min_size(
+                                ui.cursor().min + vec2(0.0, 620.0),
+                                vec2(300.0, 80.0),
+                            );
+                            clip = ui.clip_rect();
+                            ui.painter().rect_filled(last, 12, Color32::WHITE);
+                            ui.allocate_rect(last, Sense::hover());
+                            ui.scroll_to_rect(last, Some(egui::Align::Max));
+                        });
+                    },
+                )
+                .drop_without_applying_deltas();
+        }
+        assert!(
+            clip.contains_rect(last),
+            "last card is cropped at the end: {last:?} vs {clip:?}"
+        );
+    }
+
+    #[test]
     fn pager_counts_ranges_and_buttons() {
         assert_eq!(pager::page_count(0, 11), 1);
         assert_eq!(pager::page_count(340, 11), 31);

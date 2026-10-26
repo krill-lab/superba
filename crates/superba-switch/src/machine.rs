@@ -222,12 +222,6 @@ pub struct SwitchMachine {
 }
 
 impl SwitchMachine {
-    /// Keep an armed timer still while fresh turn activity is being read.
-    pub fn pause_for_activity(&mut self, now: Duration) {
-        if let MachineState::Countdown { countdown, .. } = &mut self.state {
-            countdown.pause(now);
-        }
-    }
     /// New idle machine with a countdown of `countdown_secs` (clamped to 0..=30).
     pub fn new(countdown_secs: u8) -> Self {
         Self {

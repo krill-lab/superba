@@ -1,11 +1,12 @@
 //! The session migration scene (user bug 33): a coral krill carries session
-//! crates from the left stack to the shelf on the right, sets each down and
-//! walks back, while a second krill lounges in a chair with a coffee. Shown
+//! crates from left to right, sets each down and walks back while the parcel
+//! sinks through a ground portal and reappears at the left pickup. A second
+//! krill lounges in a chair with a coffee. Shown
 //! with the real progress while a switch migrates sessions or puts them back
 //! ([`dialog`]).
 //!
 //! The artwork is `assets/scenes/superba-session-movers.svg` (1440 x 900, CSS
-//! keyframe animations on an 18 s carry cycle). egui cannot play SVG
+//! keyframe animations on a 4 s carry cycle). egui cannot play SVG
 //! animations, so the scene is ported:
 //! - [`svg`] cuts the source into static layers, moving parts and texts, each
 //!   placed by a chain of fixed and animated transforms;

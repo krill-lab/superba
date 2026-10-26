@@ -21,7 +21,7 @@
 
 use std::ops::Range;
 
-use resvg::tiny_skia::Transform;
+use resvg::tiny_skia::{Rect, Transform};
 
 use super::pose::{ANIMATED_CLASSES, Pose};
 
@@ -32,6 +32,8 @@ pub enum Link {
     Fixed(Transform),
     /// A CSS animation: the class and, for the steam wisps, which one.
     Anim(&'static str, usize),
+    /// A rectangular SVG clip, fixed in this ancestor's coordinates.
+    Clip(Rect),
 }
 
 /// The transform and opacity of something placed by a chain of links.
@@ -49,6 +51,7 @@ impl Placement {
             .fold(Transform::identity(), |m, link| match link {
                 Link::Fixed(t) => m.pre_concat(*t),
                 Link::Anim(class, i) => m.pre_concat(pose.transform(class, *i)),
+                Link::Clip(_) => m,
             })
     }
 
@@ -58,9 +61,34 @@ impl Placement {
             .iter()
             .map(|link| match link {
                 Link::Anim(class, i) => pose.opacity(class, *i),
-                Link::Fixed(_) => 1.0,
+                Link::Fixed(_) | Link::Clip(_) => 1.0,
             })
             .product()
+    }
+
+    /// Ancestor clips in scene coordinates, before descendant animations move.
+    /// Both the cached textures and their labels use this same ground boundary.
+    pub fn clip_rect(&self, pose: &Pose) -> Option<Rect> {
+        let mut transform = Transform::identity();
+        let mut clip: Option<Rect> = None;
+        for link in &self.chain {
+            match link {
+                Link::Fixed(t) => transform = transform.pre_concat(*t),
+                Link::Anim(class, i) => {
+                    transform = transform.pre_concat(pose.transform(class, *i));
+                }
+                Link::Clip(rect) => {
+                    let rect = rect.transform(transform)?;
+                    clip = Some(match clip {
+                        Some(previous) => previous.intersect(&rect).unwrap_or_else(|| {
+                            Rect::from_xywh(0.0, 0.0, 0.0, 0.0).expect("empty clip")
+                        }),
+                        None => rect,
+                    });
+                }
+            }
+        }
+        clip
     }
 
     /// The chain names `class` (the element or one of its groups).
@@ -177,7 +205,31 @@ fn steam_index(node: roxmltree::Node<'_, '_>) -> usize {
 fn moves(class: &str) -> bool {
     !matches!(
         class,
-        "walk-legs" | "still-legs" | "delivered" | "return-arm" | "dot"
+        "walk-legs" | "still-legs" | "delivery-mark" | "return-arm" | "dot"
+    )
+}
+
+/// The scene uses a user-space rectangle to hide parcels below the floor.
+fn rectangular_clip(node: roxmltree::Node<'_, '_>) -> Option<Rect> {
+    let id = node
+        .attribute("clip-path")?
+        .strip_prefix("url(#")?
+        .strip_suffix(')')?;
+    let path = node
+        .document()
+        .descendants()
+        .find(|n| n.has_tag_name("clipPath") && n.attribute("id") == Some(id))?;
+    let rect = path.children().find(|n| n.has_tag_name("rect"))?;
+    let number = |name, default| {
+        rect.attribute(name)
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(default)
+    };
+    Rect::from_xywh(
+        number("x", 0.0),
+        number("y", 0.0),
+        number("width", 0.0),
+        number("height", 0.0),
     )
 }
 
@@ -195,6 +247,9 @@ fn links_of(node: roxmltree::Node<'_, '_>) -> Vec<Link> {
                 out.push(Link::Anim(class, steam_index(node)));
             }
         }
+    }
+    if let Some(clip) = rectangular_clip(node) {
+        out.push(Link::Clip(clip));
     }
     out
 }

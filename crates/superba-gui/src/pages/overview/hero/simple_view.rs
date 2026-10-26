@@ -47,6 +47,32 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut 
             cx.pal.border_strong,
         );
     }
+    let (label, status) = client_status(cx);
+    // Badge includes its dot and padding; the node owns the whole footer too.
+    let width = ui
+        .painter()
+        .layout_no_wrap(
+            label.clone(),
+            font(text::CAPTION, Weight::Medium),
+            cx.pal.text,
+        )
+        .size()
+        .x
+        + 28.0;
+    let client_footer = Rect::from_center_size(pos2(x(0), label_y + 21.0), vec2(width, 20.0));
+    let latency = (!hero.provider.ghost && !cx.data.official_active()).then(|| {
+        let width = ui
+            .painter()
+            .layout_no_wrap(
+                latency_text(cx, hero.latency),
+                mono_font(text::CAPTION, Weight::Medium),
+                cx.pal.text,
+            )
+            .size()
+            .x
+            + 26.0;
+        Rect::from_center_size(pos2(x(provider_index), label_y + 21.0), vec2(width, 22.0))
+    });
     let mut speed_response = None;
     for (i, node) in nodes.into_iter().enumerate() {
         let drawn = draw_node(
@@ -60,6 +86,11 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut 
             b.chart[i % 2],
             0,
             matches!(node.spot, Spot::ThisComputer | Spot::Provider | Spot::Model),
+            match node.spot {
+                Spot::ThisComputer => Some(client_footer),
+                Spot::Provider => latency,
+                _ => None,
+            },
         );
         if drawn.clicked {
             match node.spot {
@@ -74,14 +105,41 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut 
             speed_response = Some(drawn.response);
         }
     }
+    let client_status = ui.put(client_footer, Badge::new(label).status(status));
+    client_status.on_hover_text(cx.tr.t("overview.simple.check_codex"));
+    if let Some(footer) = latency {
+        latency_pill(ui, cx, footer.center(), hero.latency);
+    }
+    if let Some(response) = speed_response {
+        super::super::simple_speed::popover(&response, ui, cx, &model.title, out);
+    }
+    if let Some((rect, button, action, tip)) = launch {
+        if ui.put(rect, button).on_hover_text(tip).clicked() {
+            out.push(action);
+        }
+    }
+}
+
+fn relevant_cli(
+    v: &superba_core::VersionsView,
+) -> impl Iterator<Item = &superba_core::CliVersionRow> {
+    let client_installed = v.app.install.is_some();
+    v.cli.iter().filter(move |row| {
+        row.kind != superba_core::CodexInstallKind::AppBundled
+            && (!client_installed
+                || row.kind == superba_core::CodexInstallKind::Standalone
+                || matches!(row.action, superba_core::CliUpdateAction::Install { .. }))
+    })
+}
+
+fn client_status(cx: &Cx<'_>) -> (String, Status) {
     let versions = cx.data.versions.value.as_ref();
     let (key, status) = match versions {
         _ if cx.data.versions.loading => ("overview.simple.client_unknown", Status::Busy),
         _ if cx.data.versions.error.is_some() => ("overview.simple.client_unknown", Status::Idle),
         Some(v)
             if v.app.update_available
-                || v.cli
-                    .iter()
+                || relevant_cli(v)
                     .any(|r| !matches!(r.action, superba_core::CliUpdateAction::None)) =>
         {
             ("overview.simple.client_update", Status::Warn)
@@ -92,45 +150,11 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut 
                     .install
                     .as_ref()
                     .is_some_and(|i| i.app_version.is_some())
-                && v.cli
-                    .iter()
-                    .filter(|r| r.kind != superba_core::CodexInstallKind::AppBundled)
-                    .all(|r| r.binary.version.is_some() && r.latest.is_some()) =>
+                && relevant_cli(v).all(|r| r.binary.version.is_some() && r.latest.is_some()) =>
         {
             ("overview.simple.client_latest", Status::Ok)
         }
         _ => ("overview.simple.client_unknown", Status::Idle),
     };
-    let label = cx.tr.t(key);
-    let width = ui
-        .painter()
-        .layout_no_wrap(
-            label.clone(),
-            font(text::CAPTION, Weight::Medium),
-            cx.pal.text,
-        )
-        .size()
-        .x
-        + 18.0;
-    let client_status = ui.put(
-        Rect::from_center_size(pos2(x(0), label_y + 21.0), vec2(width.min(col - 8.0), 20.0)),
-        Badge::new(label).status(status),
-    );
-    client_status.on_hover_text(cx.tr.t("overview.simple.check_codex"));
-    if !hero.provider.ghost && !cx.data.official_active() {
-        latency_pill(
-            ui,
-            cx,
-            pos2(x(provider_index), label_y + 21.0),
-            hero.latency,
-        );
-    }
-    if let Some(response) = speed_response {
-        super::super::simple_speed::popover(&response, ui, cx, &model.title, out);
-    }
-    if let Some((rect, button, action, tip)) = launch {
-        if ui.put(rect, button).on_hover_text(tip).clicked() {
-            out.push(action);
-        }
-    }
+    (cx.tr.t(key), status)
 }

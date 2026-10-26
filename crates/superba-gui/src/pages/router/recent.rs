@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use egui::{Align, Layout, Ui};
+use egui::Ui;
 use superba_core::{
     ProfileId, RequestClient, RequestDetail, RequestGroup, RequestGrouping, RequestHarness,
     RequestPage, RequestQuery, RequestRow, RequestSort, RequestSource, RequestStatusFilter,
@@ -617,9 +617,22 @@ fn main(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
 
 fn filters(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     let r = &mut state.recent;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         range_filter(ui, cx, r);
         extra_filters(ui, cx, r);
+        if r.truncated {
+            // Add the notice after the controls: a right-to-left child here
+            // used to consume the row before the remaining filters were drawn,
+            // expanding the available width of the table beyond the page.
+            ui.add(
+                egui::Label::new(Text::caption(
+                    cx.tr.f("requests.truncated", &[("n", &r.shown.len())]),
+                    cx.pal,
+                ))
+                .extend(),
+            )
+            .on_hover_text(cx.tr.t("requests.truncated_tip"));
+        }
     });
     ui.add_space(FILTER_GAP);
     tool_filters(ui, cx, r);
@@ -714,7 +727,7 @@ pub(super) fn tool_filters(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
     });
 }
 
-/// The range segments, and "showing the newest n" on the right.
+/// The range segments; the request-limit notice follows the other filters.
 fn range_filter(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
     ui.spacing_mut().item_spacing.x = 6.0;
     let mut range = r.range;
@@ -727,18 +740,6 @@ fn range_filter(ui: &mut Ui, cx: &Cx<'_>, r: &mut Recent) {
     if seg.show(ui).changed() {
         r.range = range;
         r.changed();
-    }
-    if r.truncated {
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.add(
-                egui::Label::new(Text::caption(
-                    cx.tr.f("requests.truncated", &[("n", &r.shown.len())]),
-                    cx.pal,
-                ))
-                .truncate(),
-            )
-            .on_hover_text(cx.tr.t("requests.truncated_tip"));
-        });
     }
 }
 

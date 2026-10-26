@@ -125,6 +125,7 @@ fn provider_detail(
     p: &Provider,
     out: &mut Vec<Action>,
 ) {
+    ui.spacing_mut().item_spacing.y = 6.0;
     ui.horizontal_wrapped(|ui| {
         ui.label(Text::section(list::name(cx, p), cx.pal));
         if p.applied {
@@ -154,7 +155,7 @@ fn provider_detail(
             });
         }
     });
-    ui.add_space(16.0);
+    ui.add_space(6.0);
     if p.kind == ProviderKind::Official {
         ui.label(Text::body(cx.tr.t("providers.simple.official"), cx.pal));
         return;
@@ -162,11 +163,9 @@ fn provider_detail(
     Card::new()
         .padding(12)
         .show(ui, |ui| line_status(ui, cx, state, p, out));
-    ui.add_space(12.0);
     Card::new()
         .padding(12)
         .show(ui, |ui| account::show_simple(ui, cx, state, p));
-    ui.add_space(12.0);
     Card::new()
         .padding(12)
         .show(ui, |ui| key(ui, cx, state, p, out));
@@ -235,32 +234,12 @@ fn line_status(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &
                 None => Latency::Unknown,
             }
         };
-        ui.add_space(6.0);
+        if index > 0 {
+            crate::pages::divider(ui, cx);
+        }
         let active = p.applied && current.as_ref() == Some(&line.id);
         egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(8, 4))
-            .corner_radius(8)
-            .stroke(egui::Stroke::new(
-                1.0,
-                if active {
-                    cx.pal.border_strong
-                } else {
-                    cx.pal.border
-                },
-            ))
-            .shadow(egui::Shadow {
-                offset: [0, 1],
-                blur: 3,
-                spread: 0,
-                color: egui::Color32::BLACK.gamma_multiply(if cx.pal.dark { 0.16 } else { 0.035 }),
-            })
-            .fill(if active {
-                cx.pal.active
-            } else if index % 2 == 0 {
-                cx.pal.bg_subtle
-            } else {
-                cx.pal.surface
-            })
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 let row = egui::Rect::from_min_size(

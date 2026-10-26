@@ -613,7 +613,6 @@ pub fn banner(
 ) -> bool {
     let tr = cx.tr;
     let pal = cx.pal;
-    let checking_turns = flow.checking_turns();
     ui.ctx()
         .data_mut(|d| d.insert_temp(egui::Id::unique("superba-overlay-max-h"), max_h));
     let view = match flow.stage() {
@@ -692,9 +691,7 @@ pub fn banner(
                 // Re-applying the provider in use (its connection or settings
                 // changed) says so, and why Codex restarts, instead of "Switching".
                 let reapply = reapply_reason(cx, &plan);
-                let title_key = if checking_turns {
-                    "banner.checking_turns"
-                } else if reapply.is_some() {
+                let title_key = if reapply.is_some() {
                     "banner.reapply.title"
                 } else {
                     "banner.armed.title"

@@ -390,7 +390,7 @@ fn a_press_on_a_window_edge_resizes_it_also_where_the_top_moves_it() {
 }
 
 #[test]
-fn sidebar_tabs_align_with_the_card_and_remain_visible_at_minimum_size() {
+fn sidebar_tabs_clear_the_mode_selector_and_remain_visible_at_minimum_size() {
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
         for window in WINDOWS {
@@ -400,14 +400,13 @@ fn sidebar_tabs_align_with_the_card_and_remain_visible_at_minimum_size() {
                 .find(Some(Role::Tab), &tr.t(Page::Overview.title_key()))
                 .unwrap();
             let first = tree.node(overview).bounds().unwrap();
-            let expected_top = if tokens::BUTTONS == Buttons::TrafficLights {
-                48.0
-            } else {
-                backdrop::panel_rect(central(window)).top()
-            };
+            let selector = tree
+                .find(Some(Role::RadioGroup), &tr.t("simple.mode_selector"))
+                .and_then(|id| tree.node(id).bounds())
+                .expect("the title-bar mode selector");
             assert!(
-                (first.y0 - f64::from(expected_top)).abs() < 0.5,
-                "{window:?}: {first:?}"
+                first.y0 - selector.y1 >= 12.0,
+                "{window:?}: selector {selector:?}, first row {first:?}"
             );
             let drag = chrome::drag_rects(screen(window))[0];
             assert!(f64::from(drag.bottom()) <= first.y0);

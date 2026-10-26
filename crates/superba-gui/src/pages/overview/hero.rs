@@ -444,6 +444,7 @@ fn draw_node(
     tint: Color32,
     remotes: usize,
     interactive: bool,
+    footer: Option<Rect>,
 ) -> Drawn {
     let pal = cx.pal;
     let b = Backdrop::of(ui.ctx());
@@ -471,6 +472,7 @@ fn draw_node(
         pos2(center_x - label_w / 2.0 - 12.0, tile.min.y - 8.0),
         pos2(center_x + label_w / 2.0 + 12.0, label_y + 30.0),
     );
+    let area = footer.map_or(area, |footer| area.union(footer.expand2(vec2(10.0, 6.0))));
     let id = ui.scope_id().with(("overview-hero-node", n.spot));
     let resp = ui.interact(
         area,
@@ -817,6 +819,7 @@ fn show_inner(
             tints[i],
             remotes,
             !simple || i == 2,
+            None,
         ));
     }
     for (i, d) in drawn.iter().enumerate() {

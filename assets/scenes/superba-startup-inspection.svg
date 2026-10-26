@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="480" height="380" viewBox="0 0 480 380" role="img" aria-labelledby="title desc">
+<title id="title">Superba startup</title>
+<desc id="desc">The session movers' coral shrimp examines a server through a magnifying glass.</desc>
+<defs>
+ <linearGradient id="shell" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#FF956D"/><stop offset=".5" stop-color="#FF697E"/><stop offset="1" stop-color="#E94382"/></linearGradient>
+ <!-- Keep this symbol identical to superba-session-movers.svg. -->
+ <g id="shrimp" fill="url(#shell)"><path d="M237 122L728 113C802 110 861 162 857 230L826 232C829 178 784 140 728 140L387 133Z"/>
+<path d="M354 167L696 160C752 158 800 187 823 229L790 236C771 203 738 187 693 187Z"/>
+<path d="M527 218H857C852 402 734 557 527 547Z"/>
+<path d="M500 218C418 221 343 253 281 309L500 527Z"/>
+<path d="M259 330C203 389 171 467 168 550H479Z"/>
+<path d="M168 580H477L278 779C211 728 174 655 168 580Z"/>
+<path d="M499 603V834C427 834 363 818 304 793Z"/>
+<path d="M530 603L736 809C670 830 596 841 530 834Z"/><circle cx="668" cy="350" r="95" fill="#FFFDF8"/><circle cx="680" cy="353" r="66" fill="#273548"/><circle cx="700" cy="331" r="20" fill="#FFFDF8"/></g>
+ <linearGradient id="rack" x2=".8" y2="1"><stop stop-color="#65798B"/><stop offset="1" stop-color="#394E62"/></linearGradient>
+ <linearGradient id="drawer" x2="0" y2="1"><stop stop-color="#ECF1F2"/><stop offset="1" stop-color="#D8E2E6"/></linearGradient>
+ <linearGradient id="glass" x2=".8" y2="1"><stop stop-color="#D7F2EF" stop-opacity=".62"/><stop offset="1" stop-color="#9CDCD8" stop-opacity=".14"/></linearGradient>
+</defs>
+<style>
+ .rest-body{animation:inspect-body 4.8s infinite ease-in-out;transform-origin:0px 0px}
+ .sip{animation:inspect-arm 3.4s infinite ease-in-out;transform-origin:38px -15px}
+ .dot{animation:status-light 2s infinite ease-in-out}
+ @keyframes inspect-body{0%,100%{transform:translateY(0) rotate(-1.2deg)}50%{transform:translateY(-3px) rotate(1.2deg)}}
+ @keyframes inspect-arm{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
+ @keyframes status-light{0%,100%{opacity:.38}50%{opacity:1}}
+ @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<ellipse cx="132" cy="337" rx="76" ry="7" fill="#738490" opacity=".12"/>
+<ellipse cx="350" cy="327" rx="87" ry="8" fill="#738490" opacity=".12"/>
+<!-- A quiet server rack, without labels or a surrounding card. -->
+<g>
+ <path d="M292 87L309 76H410L426 87V315L410 324H292Z" fill="#33485C"/>
+ <rect x="278" y="87" width="132" height="237" rx="13" fill="url(#rack)"/>
+ <path d="M291 100H397" stroke="#9AABB8" stroke-width="2" stroke-linecap="round" opacity=".65"/>
+ <rect x="290" y="112" width="108" height="55" rx="8" fill="url(#drawer)"/>
+ <rect x="290" y="178" width="108" height="55" rx="8" fill="url(#drawer)"/>
+ <rect x="290" y="244" width="108" height="55" rx="8" fill="url(#drawer)"/>
+ <path d="M309 129H341M309 137H335M309 145H341M309 195H341M309 203H335M309 211H341M309 261H341M309 269H335M309 277H341" stroke="#91A6B2" stroke-width="3" stroke-linecap="round"/>
+ <circle cx="374" cy="139" r="5" fill="#A7CFC4"/>
+ <circle cx="374" cy="205" r="5" fill="#A7CFC4"/>
+ <circle cx="374" cy="271" r="5" fill="#A7CFC4"/>
+ <path d="M296 312H304M384 312H392" stroke="#A9BAC4" stroke-width="3" stroke-linecap="round"/>
+</g>
+<g class="dot" fill="#71D3B5">
+ <circle cx="374" cy="139" r="5"/><circle cx="374" cy="205" r="5"/><circle cx="374" cy="271" r="5"/>
+</g>
+<!-- The same standing worker, holding an inspection tool instead of a crate. -->
+<g transform="translate(112 236)">
+ <path d="M-12 25L-18 68L-21 94H-6M24 28L31 66L38 94H54" fill="none" stroke="#B65569" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+ <g class="rest-body">
+  <g transform="translate(-95 -167) scale(.24)"><use xlink:href="#shrimp"/></g>
+  <path d="M67-57Q77-50 84-57" fill="none" stroke="#A94458" stroke-width="3" stroke-linecap="round"/>
+  <path d="M-3-15Q-13 10 5 27" fill="none" stroke="#D85572" stroke-width="10" stroke-linecap="round"/>
+  <g class="sip">
+   <path d="M38-15Q66 17 118-14" fill="none" stroke="#D85572" stroke-width="11" stroke-linecap="round"/>
+   <path d="M119-11L148-39" stroke="#314A5A" stroke-width="13" stroke-linecap="round"/>
+   <path d="M123-15L143-34" stroke="#668E99" stroke-width="4" stroke-linecap="round"/>
+   <circle cx="176" cy="-62" r="40" fill="url(#glass)" stroke="#3D6979" stroke-width="8"/>
+   <circle cx="176" cy="-62" r="33" fill="none" stroke="#A8DCD8" stroke-width="2"/>
+   <path d="M155-76A26 26 0 0 1 178-88" fill="none" stroke="#FFFDF8" stroke-width="5" stroke-linecap="round" opacity=".9"/>
+   <path d="M111-11Q117-4 125-9" fill="none" stroke="#FF8391" stroke-width="9" stroke-linecap="round"/>
+  </g>
+ </g>
+</g>
+</svg>

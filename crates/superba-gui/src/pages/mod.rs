@@ -245,6 +245,9 @@ impl Page {
 
     /// Minimum content height before the shell uses its short-window fallback.
     pub fn min_height(self) -> f32 {
+        if self == Self::Overview {
+            return overview::MIN_HEIGHT;
+        }
         if self.is_superba()
             || self == Self::Troubleshooting
             || self == Self::Router

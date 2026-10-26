@@ -1,5 +1,6 @@
 //! Two simple tabs: application information and the shared settings panel.
 use super::{Action, Cx, Page, SuperbaSection, SuperbaTab, header, home, preferences, updates};
+use crate::design::icons::Icon;
 use crate::design::widgets::{Button, Card, StatusDot, Text, UnderlineTab, UnderlineTabs};
 use crate::pages::overview::todo::{self, TodoKind};
 use crate::pages::router::db::Loader;
@@ -67,7 +68,7 @@ pub fn show(
             if settings_tab {
                 preferences::show(ui, cx, &mut state.preferences, settings, notify, out);
             } else {
-                attention(ui, cx);
+                attention(ui, cx, out);
                 ui.add_space(20.0);
                 updates::rows::show_simple(ui, cx, updates, out);
                 ui.add_space(20.0);
@@ -96,8 +97,30 @@ pub fn show(
     }
 }
 
-fn attention(ui: &mut Ui, cx: &Cx<'_>) {
-    crate::pages::section(ui, cx, &cx.tr.t("superba.tab.home"), None);
+fn attention(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
+    let checking = cx.data.overview.loading
+        || cx.data.doctor.loading
+        || cx.data.versions.loading
+        || cx.data.selfupdate.loading;
+    crate::pages::section_with(ui, cx, &cx.tr.t("superba.tab.home"), None, |ui| {
+        if ui
+            .add(
+                Button::ghost(cx.tr.t("diag.run"))
+                    .icon(Icon::Refresh)
+                    .small()
+                    .enabled(!cx.busy && !checking)
+                    .loading(checking),
+            )
+            .clicked()
+        {
+            out.extend([
+                Action::Refresh,
+                Action::RunDoctor,
+                Action::CheckUpdates,
+                Action::CheckSelfUpdate,
+            ]);
+        }
+    });
     let todos: Vec<_> = todo::todos(cx, None)
         .into_iter()
         .filter(|t| !matches!(t.kind, TodoKind::ToolUpdate(_)))
@@ -130,6 +153,7 @@ fn storage(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         if ui
             .add(
                 Button::ghost(cx.tr.t("action.refresh"))
+                    .icon(Icon::Refresh)
                     .small()
                     .loading(state.storage.loading()),
             )

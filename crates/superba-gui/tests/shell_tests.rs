@@ -122,6 +122,92 @@ fn context() -> egui::Context {
 }
 
 #[test]
+fn a_slow_background_turn_check_keeps_the_countdown_and_its_title_running() {
+    use std::sync::Arc;
+    use superba_gui::flow::Stage;
+    use support::fake::{FakeOptions, FakeService};
+
+    let service = Arc::new(FakeService::new(FakeOptions::default()));
+    let held = service.hold_turn_read();
+    let mut flow = armed();
+    flow.watch_turns(service.clone(), Duration::from_secs(1));
+    flow.watch_turns(service.clone(), Duration::from_secs(2));
+    let Stage::Armed { countdown, .. } = flow.stage() else {
+        panic!("counting down")
+    };
+    assert!(!countdown.is_paused());
+    assert_eq!(
+        countdown.remaining(Duration::from_secs(2)),
+        Duration::from_secs(3)
+    );
+    let tr = Tr::new(Locale::En);
+    let dest = superba_gui::pages::dest_text(&tr, &Data::default(), &plan().to);
+    let title = tr.f("banner.armed.title", &[("secs", &3_u64), ("dest", &dest)]);
+    let (_, texts) = frame(&context(), &mut flow, &mut BannerState::default(), 1100.0);
+    assert!(texts.contains(&title), "{texts:?}");
+    flow.tick(Duration::from_millis(4999));
+    assert!(flow.take_commands().is_empty());
+    flow.watch_turns(service, Duration::from_secs(5));
+    flow.tick(Duration::from_secs(5));
+    assert!(
+        matches!(flow.take_commands().as_slice(), [Command::Execute { options, .. }] if !options.force_turns)
+    );
+    drop(held);
+}
+
+#[test]
+fn a_background_check_still_pauses_the_remaining_time_when_a_turn_is_busy() {
+    use std::sync::Arc;
+    use superba_core::{ActivitySignal, ThreadActivity, TurnActivity};
+    use superba_gui::flow::Stage;
+    use support::fake::{FakeOptions, FakeService};
+
+    let service = Arc::new(FakeService::new(FakeOptions::default()));
+    let held = service.hold_turn_read();
+    let mut flow = armed();
+    flow.watch_turns(service.clone(), Duration::from_secs(1));
+    held.send(Ok(vec![TurnActivity {
+        target_id: "local".into(),
+        checked_at: Timestamp::EPOCH,
+        complete: true,
+        busy: vec![ThreadActivity {
+            target_id: "local".into(),
+            thread_id: Some("resumed".into()),
+            title: Some("Active conversation".into()),
+            rollout_path: None,
+            last_event_at: Some(Timestamp::EPOCH),
+            signal: ActivitySignal::RolloutTail,
+            originator: None,
+            cwd: None,
+        }],
+    }]))
+    .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while matches!(flow.stage(), Stage::Armed { .. }) {
+        flow.watch_turns(service.clone(), Duration::from_secs(2));
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background activity must arrive"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let Stage::WaitingBeforeSwitch {
+        countdown, busy, ..
+    } = flow.stage()
+    else {
+        panic!("waiting for the busy conversation")
+    };
+    assert!(countdown.is_paused());
+    assert_eq!(busy.len(), 1);
+    assert_eq!(
+        countdown.remaining(Duration::from_secs(60)),
+        Duration::from_secs(3)
+    );
+    flow.tick(Duration::from_secs(60));
+    assert!(flow.take_commands().is_empty());
+}
+
+#[test]
 fn restore_choice_explains_the_default_and_each_button_replans_its_policy() {
     use superba_core::{PlanChoice, ProviderRestore, RestoreTarget, SwitchIntent};
     use support::ui::Harness;
@@ -278,7 +364,7 @@ fn sidebar_texts_with(window: [f32; 2], locale: Locale, tools: bool) -> Vec<(Str
     let data = Data::default();
     let svc = support::idle_service();
     let fonts_report = fonts::FontReport::default();
-    h.settle(&mut |ui: &mut egui::Ui| {
+    let draw = |ui: &mut egui::Ui| {
         egui::Panel::left("nav")
             .exact_size(size::SIDEBAR)
             .resizable(false)
@@ -303,7 +389,33 @@ fn sidebar_texts_with(window: [f32; 2], locale: Locale, tools: bool) -> Vec<(Str
                 };
                 shell::sidebar(ui, &cx, &mut page, &status, &mut actions);
             });
-    })
+    };
+    let mut texts = Vec::new();
+    for _ in 0..2 {
+        let output = h.ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, window.into())),
+                ..Default::default()
+            },
+            draw,
+        );
+        texts = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) => Some((
+                    text.galley.text().to_owned(),
+                    text.galley
+                        .rect
+                        .translate(text.pos.to_vec2())
+                        .intersect(shape.clip_rect),
+                )),
+                _ => None,
+            })
+            .collect();
+        output.drop_without_applying_deltas();
+    }
+    texts
 }
 
 #[test]
@@ -338,10 +450,13 @@ fn the_sidebar_never_draws_pages_under_the_pinned_ones_at_the_minimum_window() {
             let top_pinned = pinned.iter().map(|r| r.min.y).fold(f32::INFINITY, f32::min);
             for page in Page::ALL.into_iter().filter(|p| !p.is_pinned()) {
                 let r = rect_of(&texts, page);
-                // Labels sit centred in their rows: a whole row gap between the
-                // last page and the first pinned one, and no overlap at all.
+                // A short window scrolls the list. Test the visible text,
+                // excluding glyphs outside the scroll area's clip rectangle.
+                if !r.is_positive() {
+                    continue;
+                }
                 assert!(
-                    r.max.y + 12.0 <= top_pinned,
+                    r.max.y <= top_pinned,
                     "{page:?} at {window:?} ({locale:?}) reaches the pinned pages: {r:?} vs {top_pinned}"
                 );
                 assert!(

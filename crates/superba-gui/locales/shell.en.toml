@@ -33,7 +33,6 @@ short.chatgpt = "Official login"
 short.pat = "PAT"
 
 [banner]
-checking_turns = "Checking conversations before starting the countdown"
 router_token = "router token (local)"
 accept = "Continue anyway"
 armed.body = "Superba will hot-restart the Codex core (about 1–2 s); the window and conversations stay open. The restart affects all conversations, not just the current one:"

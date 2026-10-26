@@ -339,6 +339,7 @@ pub struct SuperbaApp {
     pages: PageStates,
     banner: BannerState,
     mode_transition: crate::mode_switch::Transition,
+    startup_screen: crate::startup_screen::StartupScreen,
     /// The session migration dialog (scene textures and clock).
     movers: crate::movers::dialog::MoversDialog,
     /// GH#5: the dialog about changes another tool made.
@@ -445,6 +446,7 @@ impl SuperbaApp {
             pages: PageStates::default(),
             banner: BannerState::default(),
             mode_transition: Default::default(),
+            startup_screen: Default::default(),
             movers: Default::default(),
             external: Default::default(),
             in_effect: Default::default(),
@@ -932,6 +934,7 @@ impl SuperbaApp {
             let now = self.now();
             match reply {
                 Reply::Overview(r) => {
+                    self.startup_screen.snapshot_received();
                     self.pages
                         .superba
                         .storage
@@ -1128,36 +1131,39 @@ impl SuperbaApp {
                     }
                     Err(e) => self.error_toast(self.tr.t("toast.models_failed"), &e),
                 },
-                Reply::Recovered(r) => match r {
-                    Ok(report) => {
-                        if report.entries.is_empty() {
-                            let text = self.tr.t("log.recovered_nothing");
-                            self.log(Status::Ok, text);
-                        } else {
-                            let text = self
-                                .tr
-                                .f("toast.recovered", &[("n", &report.entries.len())]);
-                            self.log(Status::Warn, text.clone());
-                            self.toasts.push(Toast::new(Status::Warn, text));
+                Reply::Recovered(r) => {
+                    self.startup_screen.recovery_received();
+                    match r {
+                        Ok(report) => {
+                            if report.entries.is_empty() {
+                                let text = self.tr.t("log.recovered_nothing");
+                                self.log(Status::Ok, text);
+                            } else {
+                                let text = self
+                                    .tr
+                                    .f("toast.recovered", &[("n", &report.entries.len())]);
+                                self.log(Status::Warn, text.clone());
+                                self.toasts.push(Toast::new(Status::Warn, text));
+                            }
+                            // Start-up repairs (a model catalog file a changed Codex
+                            // refused was rebuilt or dropped).
+                            for n in &report.notices {
+                                let status = match n.severity {
+                                    Severity::Info => Status::Ok,
+                                    Severity::Warning => Status::Warn,
+                                    _ => Status::Error,
+                                };
+                                let text = pages::localize_text(&self.tr, &self.data, &n.text);
+                                self.log(status, text.clone());
+                                self.toasts.push(Toast::new(status, text));
+                            }
                         }
-                        // Start-up repairs (a model catalog file a changed Codex
-                        // refused was rebuilt or dropped).
-                        for n in &report.notices {
-                            let status = match n.severity {
-                                Severity::Info => Status::Ok,
-                                Severity::Warning => Status::Warn,
-                                _ => Status::Error,
-                            };
-                            let text = pages::localize_text(&self.tr, &self.data, &n.text);
-                            self.log(status, text.clone());
-                            self.toasts.push(Toast::new(status, text));
+                        Err(e) => {
+                            let text = error_text(&self.tr, &e);
+                            self.log(Status::Idle, text);
                         }
                     }
-                    Err(e) => {
-                        let text = error_text(&self.tr, &e);
-                        self.log(Status::Idle, text);
-                    }
-                },
+                }
             }
             // Observe each reply, so a phase and its decision arriving together
             // request attention only once, without losing intervening transitions.
@@ -2239,6 +2245,20 @@ impl eframe::App for SuperbaApp {
         self.handle_instance_requests();
         self.handle_replies(&ctx);
         self.tray_tick(&ctx);
+        if self.startup_screen.pending() {
+            self.startup_screen
+                .show(ui, &self.tr, self.settings.reduce_motion);
+            crate::chrome::drag_areas(ui);
+            self.tray_prompt(&ctx);
+            crate::chrome::overlay(&ctx, &self.tr);
+            for command in self.flow.take_commands() {
+                self.backend.send(command);
+            }
+            self.process_flow_notices(&ctx);
+            self.run_cadence(&ctx, true);
+            self.tray_finish(&ctx);
+            return;
+        }
         if let Some(simple) = self.mode_transition.advance(&ctx) {
             self.settings.simple_mode = simple;
             self.pages.providers.simple_advanced = false;
@@ -2443,7 +2463,6 @@ impl eframe::App for SuperbaApp {
         self.flow.tick(now);
         if self.flow.armed_destination().is_some()
             && matches!(self.flow.stage(), Stage::Armed { .. })
-            && !self.flow.checking_turns()
         {
             self.flow.switch_now(now);
         }
