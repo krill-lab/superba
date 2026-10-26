@@ -57,6 +57,8 @@ pub enum Icon {
     Warning,
     /// Info circle.
     Info,
+    /// Question mark in a circle.
+    Help,
     /// Terminal prompt.
     Terminal,
     /// Server rack.
@@ -121,7 +123,7 @@ pub enum Icon {
 
 impl Icon {
     /// Every icon (tests paint each one).
-    pub const ALL: [Icon; 52] = [
+    pub const ALL: [Icon; 53] = [
         Icon::Superba,
         Icon::Tools,
         Icon::Bell,
@@ -144,6 +146,7 @@ impl Icon {
         Icon::Plus,
         Icon::Warning,
         Icon::Info,
+        Icon::Help,
         Icon::Terminal,
         Icon::Server,
         Icon::Key,
@@ -435,6 +438,19 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             circle(12.0, 12.0, 10.0);
             line(&[(12.0, 16.0), (12.0, 11.5)]);
             dot(12.0, 8.0);
+        }
+        Icon::Help => {
+            circle(12.0, 12.0, 10.0);
+            line(&[
+                (8.5, 8.5),
+                (9.5, 6.5),
+                (12.0, 6.0),
+                (14.5, 7.0),
+                (15.0, 9.5),
+                (12.0, 12.0),
+                (12.0, 14.0),
+            ]);
+            dot(12.0, 17.5);
         }
         Icon::Terminal => {
             line(&[(4.0, 17.0), (10.0, 11.0), (4.0, 5.0)]);

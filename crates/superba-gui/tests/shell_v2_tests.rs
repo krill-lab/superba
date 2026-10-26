@@ -21,7 +21,7 @@ use support::fake::{FakeOptions, FakeService};
 fn pages_are_grouped_and_every_label_is_translated() {
     let groups: Vec<NavGroup> = Page::ALL
         .iter()
-        .filter(|p| !p.is_superba())
+        .filter(|p| !p.is_pinned())
         .map(|p| p.group())
         .collect();
     // Groups are contiguous in navigation order.
@@ -42,10 +42,10 @@ fn pages_are_grouped_and_every_label_is_translated() {
             NavGroup::Others,
         ]
     );
-    assert_eq!(Page::ALL.len(), 18);
+    assert_eq!(Page::ALL.len(), 19);
     assert_eq!(Page::ALL[1], Page::Tools);
     assert_eq!(
-        Page::ALL[17],
+        Page::ALL[18],
         Page::Superba(superba_gui::pages::SuperbaSection::Home)
     );
     assert!(
@@ -673,6 +673,54 @@ async fn sidebar_badges_come_from_the_shells_own_data() {
     });
     data.versions.finish(Ok(versions));
     assert!(data.update_available());
+}
+
+#[tokio::test]
+async fn simple_badges_count_only_superba_codex_client_and_local_cli() {
+    use superba_gui::app::shell_badges_for_mode;
+    use superba_gui::pages::{NavBadge, SuperbaSection};
+    let mut data = fake_data().await;
+    data.update_inventory_count = Some(9);
+    let mut versions = superba_core::VersionsView::default();
+    data.versions.finish(Ok(versions.clone()));
+    let tr = Tr::new(Locale::ZhCn);
+    let count = |data: &Data, simple| {
+        shell_badges_for_mode(&tr, data, simple)
+            .into_iter()
+            .find_map(|(p, badge, _)| (p == Page::Superba(SuperbaSection::Home)).then_some(badge))
+    };
+    assert_eq!(count(&data, true), None);
+    assert_eq!(count(&data, false), Some(NavBadge::Count(9)));
+    versions.app.update_available = true;
+    versions.cli.push(superba_core::CliVersionRow {
+        binary: data.overview.value.as_ref().unwrap().cli.binaries[0].clone(),
+        kind: superba_core::CodexInstallKind::Npm,
+        latest: Some(superba_core::CodexVersion::new(0, 170, 0)),
+        action: superba_core::CliUpdateAction::Command {
+            command: "update codex".into(),
+        },
+    });
+    // Several local installations still represent a single CLI update entry.
+    versions.cli.push(versions.cli[0].clone());
+    data.versions.finish(Ok(versions));
+    assert_eq!(count(&data, true), Some(NavBadge::Count(2)));
+    assert_eq!(count(&data, false), Some(NavBadge::Count(9)));
+    data.selfupdate.finish(Ok(superba_core::SelfUpdateView {
+        current: "0.1.0".into(),
+        status: superba_core::SelfUpdateStatus::Available,
+        latest: Some(superba_core::SelfRelease {
+            tag: "v0.2.0".into(),
+            version: "0.2.0".into(),
+            prerelease: false,
+            notes: String::new(),
+            published_at: None,
+            url: "https://example.com/release".into(),
+            asset: Some("superba.msi".into()),
+            asset_size: Some(1),
+        }),
+        ..Default::default()
+    }));
+    assert_eq!(count(&data, true), Some(NavBadge::Count(3)));
 }
 
 fn models_view(

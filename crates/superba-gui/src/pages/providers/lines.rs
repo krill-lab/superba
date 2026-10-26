@@ -124,7 +124,7 @@ impl RouterLive {
     }
 
     /// Poll a running read and start one when none ran for [`ROUTER_RELOAD`].
-    fn tick(&mut self, ui: &Ui, cx: &Cx<'_>) {
+    pub(super) fn tick(&mut self, ui: &Ui, cx: &Cx<'_>) {
         if let Some(task) = &self.task {
             match task.poll() {
                 Some(result) => {
@@ -148,7 +148,7 @@ impl RouterLive {
     }
 
     /// The latest upstream the router used for `profile`.
-    fn route(&self, profile: &ProfileId) -> Option<&RouterLineRoute> {
+    pub(super) fn route(&self, profile: &ProfileId) -> Option<&RouterLineRoute> {
         self.view
             .as_ref()?
             .members

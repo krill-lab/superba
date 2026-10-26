@@ -471,7 +471,7 @@ impl Run<'_> {
         let full = !write_only
             && (matches!(primary, RestartKind::FullAppRestart { .. })
                 || plan.migration.is_some()
-                || self.pc.rollback_migration.is_some());
+                || !self.pc.rollback_migrations.is_empty());
         // Resolve the dependency before quitting or writing. Follow-off and
         // stopped distributions must not be silently taken over or started.
         let legacy_dependency = if !write_only
@@ -773,7 +773,8 @@ impl Run<'_> {
     /// user cancelled (nothing written).
     async fn quit_for_full_restart(&mut self) -> Result<Option<LocalResult>> {
         let d = self.deps().clone();
-        let needs_migration = self.plan.migration.is_some() || self.pc.rollback_migration.is_some();
+        let needs_migration =
+            self.plan.migration.is_some() || !self.pc.rollback_migrations.is_empty();
         if let Some(session) = self.session.clone() {
             self.ev.phase(SwitchPhase::Quitting);
             self.ev.step(SwitchStep::QuitApp, StepStatus::Running);
@@ -1259,22 +1260,41 @@ impl Run<'_> {
                         return Err(e);
                     }
                 }
-            } else if let Some(id) = self.pc.rollback_migration.clone() {
+            } else if !self.pc.rollback_migrations.is_empty() {
                 self.ev
                     .step(SwitchStep::MigrateSessions, StepStatus::Running);
                 let progress = SessionEvents::sink(self.events.clone());
-                if let Err(e) = d
-                    .sessions
-                    .rollback_stopped_with_progress(&home, &id, &stopped, progress)
-                    .await
-                {
-                    self.ev.step(
-                        SwitchStep::MigrateSessions,
-                        StepStatus::Failed {
-                            message: e.to_string(),
-                        },
-                    );
-                    return Err(e);
+                let result = if let [id] = self.pc.rollback_migrations.as_slice() {
+                    d.sessions
+                        .rollback_stopped_with_progress(&home, id, &stopped, progress)
+                        .await
+                } else {
+                    d.sessions
+                        .rollback_many_stopped_with_progress(
+                            &home,
+                            &self.pc.rollback_migrations,
+                            &stopped,
+                            progress,
+                        )
+                        .await
+                };
+                let report = match result {
+                    Ok(report) => report,
+                    Err(e) => {
+                        self.ev.step(
+                            SwitchStep::MigrateSessions,
+                            StepStatus::Failed {
+                                message: e.to_string(),
+                            },
+                        );
+                        return Err(e);
+                    }
+                };
+                if report.skipped_changed > 0 {
+                    let warning =
+                        text("switch.warn.rollback_changed").arg("count", report.skipped_changed);
+                    self.ev.log(Severity::Warning, warning.clone());
+                    self.notices.push(Notice::warning(warning));
                 }
                 self.ev.step(SwitchStep::MigrateSessions, StepStatus::Done);
             }

@@ -193,7 +193,7 @@ fn cjk_candidate_paths_are_absolute() {
 }
 
 /// Every icon, the new dashboard and sidebar ones included.
-const ALL_ICONS: [Icon; 52] = Icon::ALL;
+const ALL_ICONS: [Icon; 53] = Icon::ALL;
 
 fn widget_frame(theme: Theme) {
     let context = egui::Context::default();

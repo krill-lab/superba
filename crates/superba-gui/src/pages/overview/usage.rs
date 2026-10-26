@@ -108,6 +108,29 @@ pub async fn load(
     now: Timestamp,
     offset_secs: i64,
 ) -> Result<Snapshot> {
+    load_for(service, now, offset_secs, false).await
+}
+
+/// The simple dashboard counts Codex alone, including unrouted rollouts.
+pub async fn load_codex(
+    service: Arc<dyn SwitchService>,
+    now: Timestamp,
+    offset_secs: i64,
+) -> Result<Snapshot> {
+    load_for(service, now, offset_secs, true).await
+}
+
+async fn load_for(
+    service: Arc<dyn SwitchService>,
+    now: Timestamp,
+    offset_secs: i64,
+    codex_only: bool,
+) -> Result<Snapshot> {
+    let harnesses = if codex_only {
+        vec![RequestHarness::Codex]
+    } else {
+        Vec::new()
+    };
     let (today_start, month_start) = day_and_month_start(now, offset_secs);
     let yesterday_start = Timestamp(today_start.as_millis() - DAY_MS);
     let week_start = Timestamp(today_start.as_millis() - (DAYS as i64 - 1) * DAY_MS);
@@ -121,6 +144,7 @@ pub async fn load(
                 from: Some(week_start),
                 to: cursor,
                 limit: PAGE_ROWS,
+                harnesses: harnesses.clone(),
                 ..RequestQuery::default()
             })
             .await?;
@@ -140,6 +164,7 @@ pub async fn load(
         to,
         // Totals only (one row is the smallest page).
         limit: 1,
+        harnesses: harnesses.clone(),
         ..RequestQuery::default()
     };
     let today = service.router_requests(totals(today_start, None)).await?;
@@ -172,8 +197,16 @@ pub async fn load(
             }
         }
     }
-    let harnesses = service.harness_list().await.unwrap_or_default();
-    let claude = service.claude_view().await.ok();
+    let harnesses = if codex_only {
+        Vec::new()
+    } else {
+        service.harness_list().await.unwrap_or_default()
+    };
+    let claude = if codex_only {
+        None
+    } else {
+        service.claude_view().await.ok()
+    };
     Ok(Snapshot {
         today: today.totals,
         yesterday_same: yesterday_same.totals,

@@ -223,6 +223,15 @@ impl Inventory {
                         }
                     }
                 }
+                MigrationSelector::OtherProviders { except } => {
+                    for view in threads.values() {
+                        for provider in view.providers(self) {
+                            if provider != *except {
+                                add(&view.id, &provider);
+                            }
+                        }
+                    }
+                }
                 MigrationSelector::ThreadIds { ids } => {
                     for id in ids {
                         if let Some(view) = threads.get(id) {

@@ -40,6 +40,26 @@ pub fn delta_text(delta: Delta) -> Option<String> {
 
 /// Draw the card.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<super::Action>) {
+    show_inner(ui, cx, snap, out, true);
+}
+
+/// Simple mode has one tool, so it never offers tool navigation chips.
+pub(super) fn show_codex(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    snap: Option<&Snapshot>,
+    out: &mut Vec<super::Action>,
+) {
+    show_inner(ui, cx, snap, out, false);
+}
+
+fn show_inner(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    snap: Option<&Snapshot>,
+    out: &mut Vec<super::Action>,
+    tools: bool,
+) {
     let tr = cx.tr;
     let view = snap.map(|s| TodayView::of(&s.today, &s.yesterday_same, &s.yesterday, &s.month));
     let tokens = tr.t("overview.unit.tokens");
@@ -63,6 +83,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<sup
     kpi_row(ui, cx, view.as_ref(), &tokens);
     // Every tool with use today (two or more): one chip each.
     if let (Some(s), Some(v)) = (snap, view.as_ref())
+        && tools
         && s.tools_today.len() > 1
     {
         super::tools::chips(ui, cx, &s.tools_today, v.measure, out);

@@ -525,6 +525,29 @@ pub trait SessionMigrator: Send + Sync {
         let _ = progress;
         self.rollback_stopped(home, migration_id, stopped).await
     }
+
+    /// Restore several migrations in the supplied order, after the caller stopped
+    /// every Codex consumer. Callers supply newest-first ids so overlapping
+    /// migrations unwind correctly. Implementations may keep their write locks
+    /// for the entire batch. A failure stops before any older migration runs.
+    async fn rollback_many_stopped_with_progress(
+        &self,
+        home: &CodexHome,
+        migration_ids: &[String],
+        stopped: &ConsumersStopped,
+        progress: Arc<dyn SessionProgressSink>,
+    ) -> Result<RollbackReport> {
+        let mut total = RollbackReport::default();
+        for id in migration_ids {
+            let report = self
+                .rollback_stopped_with_progress(home, id, stopped, progress.clone())
+                .await?;
+            total.restored_threads += report.restored_threads;
+            total.restored_rollouts += report.restored_rollouts;
+            total.skipped_changed += report.skipped_changed;
+        }
+        Ok(total)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1600,6 +1623,16 @@ pub trait SwitchService: Send + Sync {
         Err(Error::NotImplemented {
             what: "runtime state".into(),
         })
+    }
+
+    /// Read live turns while a switch countdown is armed. An incomplete result
+    /// must never be treated as evidence that previously busy conversations ended.
+    async fn switch_turn_activity(
+        &self,
+        targets: Vec<crate::TargetId>,
+    ) -> Result<Vec<TurnActivity>> {
+        let _ = targets;
+        Err(Error::not_implemented("switch turn activity"))
     }
 
     /// Stop Codex consumer processes the user picked (the runtime view's

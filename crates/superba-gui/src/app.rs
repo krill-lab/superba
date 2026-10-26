@@ -113,6 +113,10 @@ pub fn local_request(intent: SwitchIntent) -> SwitchRequest {
 /// a site or settings never plans anything by itself.
 pub fn planned_request(action: &Action) -> Option<SwitchRequest> {
     let intent = match action {
+        Action::SessionBatch { rollback: false } => {
+            return Some(pages::simple_usage::migration_request());
+        }
+        Action::SessionBatch { rollback: true } => SwitchIntent::RollbackAllMigrations,
         Action::Switch {
             profile,
             line,
@@ -165,6 +169,8 @@ pub struct PageStates {
     pub settings: pages::settings::State,
     /// Sessions.
     pub sessions: pages::sessions::State,
+    /// Codex-only statistics, batch migration and the last 24 hours of requests.
+    pub simple_usage: pages::simple_usage::State,
     /// Remote hosts.
     pub hosts: pages::hosts::State,
     /// Updates.
@@ -180,9 +186,42 @@ pub struct PageStates {
 }
 
 impl PageStates {
+    /// Draw a simple-mode destination with the shared settings state.
+    pub fn show_simple(
+        &mut self,
+        page: Page,
+        ui: &mut egui::Ui,
+        cx: &Cx<'_>,
+        settings: &mut Settings,
+        out: &mut Vec<Action>,
+    ) {
+        match page {
+            Page::Troubleshooting => {
+                ui.label(crate::design::widgets::Text::page_title(
+                    cx.tr.t(page.title_key()),
+                    cx.pal,
+                ));
+            }
+            Page::Providers => pages::providers::show_simple(ui, cx, &mut self.providers, out),
+            Page::Usage => pages::simple_usage::show(ui, cx, &mut self.simple_usage, out),
+            Page::Superba(section) => pages::superba::show_simple(
+                ui,
+                cx,
+                section,
+                &mut self.superba,
+                settings,
+                &mut self.notify,
+                &mut self.updates,
+                out,
+            ),
+            _ => pages::overview::show_simple(ui, cx, &mut self.overview, out),
+        }
+    }
+
     /// What `page` reports to the shell (default for pages without a module state).
     pub fn status(&self, page: Page) -> PageStatus {
         match page {
+            Page::Troubleshooting => PageStatus::default(),
             Page::Providers => pages::providers::status(&self.providers),
             Page::Models => pages::models::status(&self.models),
             Page::Router => pages::router::status(&self.router),
@@ -215,6 +254,7 @@ impl PageStates {
     /// Run a page command (the shell already navigated to `page`).
     pub fn command(&mut self, page: Page, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
         match page {
+            Page::Troubleshooting => {}
             Page::Providers => pages::providers::command(&mut self.providers, cx, command, out),
             Page::Models => pages::models::command(&mut self.models, cx, command, out),
             Page::Router => pages::router::command(&mut self.router, cx, command, out),
@@ -254,6 +294,12 @@ impl PageStates {
     ) {
         match page {
             Page::Overview => pages::overview::show(ui, cx, &mut self.overview, out),
+            Page::Troubleshooting => {
+                ui.label(crate::design::widgets::Text::page_title(
+                    cx.tr.t(page.title_key()),
+                    cx.pal,
+                ));
+            }
             Page::Providers => pages::providers::show(ui, cx, &mut self.providers, out),
             Page::Models => pages::models::show(ui, cx, &mut self.models, out),
             Page::Router => pages::router::show(ui, cx, &mut self.router, out),
@@ -292,6 +338,7 @@ pub struct SuperbaApp {
     page: Page,
     pages: PageStates,
     banner: BannerState,
+    mode_transition: crate::mode_switch::Transition,
     /// The session migration dialog (scene textures and clock).
     movers: crate::movers::dialog::MoversDialog,
     /// GH#5: the dialog about changes another tool made.
@@ -397,6 +444,7 @@ impl SuperbaApp {
             page: opts.page.unwrap_or(Page::Overview),
             pages: PageStates::default(),
             banner: BannerState::default(),
+            mode_transition: Default::default(),
             movers: Default::default(),
             external: Default::default(),
             in_effect: Default::default(),
@@ -924,6 +972,7 @@ impl SuperbaApp {
                         self.settings = set.settings.clone();
                         self.settings_loaded = true;
                         self.apply_settings(ctx);
+                        self.go(self.page);
                     }
                     if let Ok(set) = &r
                         && self.settings_loaded
@@ -1185,6 +1234,11 @@ impl SuperbaApp {
     /// key-based provider was deleted while Superba runs. Every other entry point
     /// sends [`Action::StartWizard`].
     fn maybe_open_wizard(&mut self) {
+        // Simple mode starts with the provider/key view; the complete setup
+        // wizard remains available after choosing the full interface.
+        if self.settings.simple_mode {
+            return;
+        }
         let (Some(o), Some(p)) = (&self.data.overview.value, &self.data.profiles.value) else {
             return;
         };
@@ -1542,6 +1596,42 @@ impl SuperbaApp {
     }
 
     fn go(&mut self, page: Page) {
+        if self.settings.simple_mode
+            && self.page == Page::Providers
+            && self.pages.providers.simple_advanced
+            && !matches!(
+                page,
+                Page::Overview
+                    | Page::Providers
+                    | Page::Usage
+                    | Page::Sessions
+                    | Page::Superba(_)
+                    | Page::Troubleshooting
+            )
+        {
+            // The user explicitly opened advanced provider settings. Its
+            // links to model/configuration pages enter the complete interface.
+            self.settings.simple_mode = false;
+            self.pages.providers.simple_advanced = false;
+            self.backend
+                .send(Command::SaveSettings(self.settings.clone()));
+        }
+        let page = if self.settings.simple_mode {
+            match page {
+                Page::Overview | Page::Providers | Page::Usage | Page::Troubleshooting => page,
+                Page::Superba(section) => {
+                    Page::Superba(if section.tab() == pages::superba::SuperbaTab::Settings {
+                        section
+                    } else {
+                        pages::SuperbaSection::Home
+                    })
+                }
+                Page::Sessions => Page::Usage,
+                _ => Page::Overview,
+            }
+        } else {
+            page
+        };
         if page == Page::Hosts && self.page != Page::Hosts {
             // What runs and what a switch left pending may have changed while
             // the page was not shown (user bug 68).
@@ -1572,7 +1662,9 @@ impl SuperbaApp {
                     }
                 }
             }
-            Page::Sessions if self.data.sessions.value.is_none() && !self.data.sessions.loading => {
+            Page::Sessions | Page::Usage
+                if self.data.sessions.value.is_none() && !self.data.sessions.loading =>
+            {
                 self.data.sessions.start();
                 self.backend.send(Command::Sessions);
             }
@@ -1595,12 +1687,30 @@ impl SuperbaApp {
         }
         if let Some(request) = planned_request(&action) {
             let now = self.now();
-            self.flow.request(request, now);
+            if matches!(action, Action::SessionBatch { .. }) {
+                self.flow.request_session_batch(request, now);
+            } else {
+                self.flow.request(request, now);
+            }
             return;
         }
         match action {
+            Action::SetSimpleMode(simple) => {
+                if !self.settings_loaded
+                    || self.pages.any_modal()
+                    || self.flow.is_running()
+                    || self.flow.is_planning()
+                {
+                    return;
+                }
+                if simple != self.settings.simple_mode {
+                    self.mode_transition
+                        .start(ctx, simple, self.settings.reduce_motion);
+                }
+            }
             // Planned above.
             Action::Switch { .. }
+            | Action::SessionBatch { .. }
             | Action::Restore(_)
             | Action::Plan(_)
             | Action::RestartApp
@@ -1729,6 +1839,14 @@ impl SuperbaApp {
                 self.data.versions.start();
                 self.backend.send(Command::Versions { refresh: false });
             }
+            Action::CheckCodexUpdates => {
+                if !self.data.versions.loading {
+                    self.service.environment_event(EnvironmentEvent::Refresh);
+                    self.data.versions.start();
+                    self.pages.updates.view.invalidate();
+                    self.backend.send(Command::Versions { refresh: true });
+                }
+            }
             Action::LoadHosts => {
                 self.cadence.hosts_loaded(Instant::now());
                 self.data.hosts.start();
@@ -1766,6 +1884,9 @@ impl SuperbaApp {
             }
             Action::PageCommand { page, command } => {
                 self.go(page);
+                if self.page != page {
+                    return;
+                }
                 let pal = Palette::of(ctx);
                 let busy = self.flow.is_running() || self.flow.is_planning();
                 let cx = cx!(self, pal, busy);
@@ -1915,6 +2036,12 @@ impl SuperbaApp {
     }
 
     fn content(&mut self, ui: &mut egui::Ui, out: &mut Vec<Action>) {
+        ui.ctx().data_mut(|data| {
+            data.insert_temp(
+                egui::Id::unique("superba-reduce-motion"),
+                self.settings.reduce_motion,
+            )
+        });
         let now = self.now();
         let busy = self.flow.is_running() || self.flow.is_planning();
         let pal = Palette::of(ui.ctx());
@@ -2018,10 +2145,20 @@ impl SuperbaApp {
                     .id_salt(("page", page.sidebar_page()))
                     .layout(Layout::top_down(Align::Min)),
             );
-            layout::fit_area(&mut area, page.min_height(), |ui| {
+            let min_height = if self.settings.simple_mode && page == Page::Usage {
+                pages::simple_usage::MIN_HEIGHT
+            } else {
+                page.min_height()
+            };
+            layout::fit_area(&mut area, min_height, |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
                 ui.add_enabled_ui(!self.pages.superba.storage.busy(), |ui| {
-                    self.pages.show(page, ui, &cx, &mut self.settings, out);
+                    if self.settings.simple_mode {
+                        self.pages
+                            .show_simple(page, ui, &cx, &mut self.settings, out);
+                    } else {
+                        self.pages.show(page, ui, &cx, &mut self.settings, out);
+                    }
                 });
             });
         } else {
@@ -2043,7 +2180,12 @@ impl SuperbaApp {
                             ui.set_width(width);
                             ui.spacing_mut().item_spacing.y = 8.0;
                             ui.add_enabled_ui(!self.pages.superba.storage.busy(), |ui| {
-                                self.pages.show(page, ui, &cx, &mut self.settings, out);
+                                if self.settings.simple_mode {
+                                    self.pages
+                                        .show_simple(page, ui, &cx, &mut self.settings, out);
+                                } else {
+                                    self.pages.show(page, ui, &cx, &mut self.settings, out);
+                                }
                             });
                             ui.add_space(40.0 + overlay_h);
                         });
@@ -2097,8 +2239,19 @@ impl eframe::App for SuperbaApp {
         self.handle_instance_requests();
         self.handle_replies(&ctx);
         self.tray_tick(&ctx);
+        if let Some(simple) = self.mode_transition.advance(&ctx) {
+            self.settings.simple_mode = simple;
+            self.pages.providers.simple_advanced = false;
+            self.go(self.page);
+            self.backend
+                .send(Command::SaveSettings(self.settings.clone()));
+        }
         let now = self.now();
         // Let Escape/Enter win over a countdown expiring in this same frame.
+        self.flow.watch_turns(self.service.clone(), now);
+        if self.flow.armed_destination().is_some() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
         self.keyboard(&ctx);
         self.flow.tick(now);
         self.request_attention(&ctx);
@@ -2119,9 +2272,9 @@ impl eframe::App for SuperbaApp {
             .show_separator_line(false)
             .frame(shell::sidebar_frame())
             .show(ui, |ui| {
-                let cx = cx!(self, pal, false);
+                let cx = cx!(self, pal, self.flow.is_running() || self.flow.is_planning());
                 let mut page = self.page;
-                let badges = shell_badges(&self.tr, &self.data);
+                let badges = shell_badges_for_mode(&self.tr, &self.data, self.settings.simple_mode);
                 let pages = &self.pages;
                 let status = move |p: Page| {
                     let mut s = pages.status(p);
@@ -2137,7 +2290,11 @@ impl eframe::App for SuperbaApp {
                     }
                     s
                 };
-                shell::sidebar(ui, &cx, &mut page, &status, &mut actions);
+                if self.settings.simple_mode {
+                    shell::simple_sidebar(ui, &cx, &mut page, &status, &mut actions);
+                } else {
+                    shell::sidebar(ui, &cx, &mut page, &status, &mut actions);
+                }
                 if page != self.page {
                     if page.is_superba() && !self.page.is_superba() {
                         page = Page::Superba(self.pages.superba.last);
@@ -2149,6 +2306,23 @@ impl eframe::App for SuperbaApp {
         egui::CentralPanel::default()
             .frame(Frame::new())
             .show(ui, |ui| self.content(ui, &mut actions));
+
+        {
+            let cx = cx!(self, pal, self.flow.is_running() || self.flow.is_planning());
+            crate::mode_switch::title_button(
+                &ctx,
+                &cx,
+                self.mode_transition
+                    .target()
+                    .unwrap_or(self.settings.simple_mode),
+                self.settings_loaded
+                    && !cx.busy
+                    && !self.pages.any_modal()
+                    && !self.mode_transition.active()
+                    && self.wizard.is_none(),
+                &mut actions,
+            );
+        }
 
         // Overlays: confirmation, decisions, wizard, toasts.
         {
@@ -2219,6 +2393,7 @@ impl eframe::App for SuperbaApp {
             self.handle_toast_action(a);
         }
         // The window buttons (Windows, Linux), above everything else.
+        self.mode_transition.paint(&ctx, pal);
         crate::chrome::overlay(&ctx, &self.tr);
 
         if self.data.overview.value.is_some()
@@ -2261,9 +2436,14 @@ impl eframe::App for SuperbaApp {
         // countdown to cancel, so it starts at once (questions bring the
         // window back, `tray_tick`).
         let now = self.now();
+        self.flow.watch_turns(self.service.clone(), now);
+        if self.flow.armed_destination().is_some() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
         self.flow.tick(now);
         if self.flow.armed_destination().is_some()
             && matches!(self.flow.stage(), Stage::Armed { .. })
+            && !self.flow.checking_turns()
         {
             self.flow.switch_now(now);
         }
@@ -2317,6 +2497,15 @@ pub fn router_settings_changed(
 /// while Codex is routed, the number of hosts with unsynced settings, a dot when
 /// an app or Codex update is available. Each with its translated tooltip.
 pub fn shell_badges(tr: &Tr, data: &Data) -> Vec<(Page, pages::NavBadge, String)> {
+    shell_badges_for_mode(tr, data, false)
+}
+
+/// Shell badges with the update inventory restricted to the active interface.
+pub fn shell_badges_for_mode(
+    tr: &Tr,
+    data: &Data,
+    simple: bool,
+) -> Vec<(Page, pages::NavBadge, String)> {
     let mut out = Vec::new();
     if data.router_enabled() {
         out.push((
@@ -2333,7 +2522,11 @@ pub fn shell_badges(tr: &Tr, data: &Data) -> Vec<(Page, pages::NavBadge, String)
             tr.f("shell.badge.unsynced", &[("n", &unsynced)]),
         ));
     }
-    let count = data.update_count();
+    let count = if simple {
+        data.simple_update_count()
+    } else {
+        data.update_count()
+    };
     if count > 0 {
         out.push((
             Page::Superba(pages::SuperbaSection::Home),

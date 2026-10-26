@@ -436,6 +436,9 @@ impl FakeState {
             applied_at: ago(now, 7200),
         });
         let mut profiles = ProfileSet::default();
+        // Existing page and accessibility fixtures exercise the complete interface.
+        // Simple-page tests select their dedicated renderer explicitly.
+        profiles.settings.simple_mode = false;
         if !first {
             profiles
                 .profiles
@@ -1203,6 +1206,14 @@ impl FakeState {
         let mut selected = BTreeMap::<String, (u32, u32)>::new();
         for selector in &request.selectors {
             let (source, threads, rollouts) = match selector {
+                MigrationSelector::OtherProviders { except } => {
+                    for (provider, counts) in &self.sessions.by_provider {
+                        if provider != except && provider != &request.to_provider {
+                            selected.insert(provider.clone(), (counts.threads, counts.rollouts));
+                        }
+                    }
+                    continue;
+                }
                 MigrationSelector::Provider { provider }
                 | MigrationSelector::CreatedBetween { provider, .. } => {
                     let counts = self
@@ -1661,6 +1672,17 @@ impl FakeService {
 
 #[superba_core::async_trait]
 impl SwitchService for FakeService {
+    async fn switch_turn_activity(&self, targets: Vec<TargetId>) -> Result<Vec<TurnActivity>> {
+        Ok(targets
+            .into_iter()
+            .map(|target_id| TurnActivity {
+                target_id,
+                checked_at: Timestamp::now(),
+                busy: vec![],
+                complete: true,
+            })
+            .collect())
+    }
     async fn data_usage(&self) -> Result<superba_core::data::DataUsage> {
         self.areas
             .storage

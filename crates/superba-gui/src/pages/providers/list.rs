@@ -294,7 +294,7 @@ fn primary_latency(cx: &Cx<'_>, p: &Provider) -> Option<String> {
 }
 
 /// What one row shows.
-fn row_content(cx: &Cx<'_>, p: &Provider) -> RowContent {
+pub(super) fn row_content(cx: &Cx<'_>, p: &Provider) -> RowContent {
     let mut row = RowContent::new(icon(p), name(cx, p));
     row.dot = p.applied.then(|| cx.pal.status(Status::Ok));
     row.subtitle = Some(secondary(cx, p));

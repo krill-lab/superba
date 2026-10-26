@@ -31,6 +31,7 @@ mod lines;
 mod list;
 mod mixed;
 pub mod ops;
+mod simple;
 mod transports;
 
 use std::collections::{BTreeSet, HashMap};
@@ -50,6 +51,7 @@ use crate::design::widgets::{Button, PagedState};
 use crate::runtime::ReadTask;
 
 pub use self::add::{AddDialog, AddStep};
+pub use self::simple::show as show_simple;
 
 /// Tabs of a key-based provider's detail.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -103,6 +105,8 @@ pub(crate) struct RemoveDialog {
 /// Page-local state, kept across navigation.
 #[derive(Default)]
 pub struct State {
+    /// Full provider settings were explicitly opened from simple mode.
+    pub simple_advanced: bool,
     /// Selected provider (`None` = the first of the list, the applied one).
     pub selected: Option<ProviderId>,
     /// Tab of the detail.
@@ -133,6 +137,8 @@ pub struct State {
     pub(crate) models_task: Option<(ProfileId, ReadTask<ModelsView>)>,
     /// Account data per profile.
     pub accounts: HashMap<ProfileId, AccountState>,
+    /// Simple mode always requests seven days, independently of the advanced tab.
+    pub simple_accounts: HashMap<ProfileId, AccountState>,
     /// Paging of the per-model usage table.
     pub(crate) usage_table: PagedState,
     /// The inline rename in the list.
@@ -341,6 +347,17 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     }
     let mut add = false;
     page_header(ui, cx, Page::Providers, |ui| {
+        if state.simple_advanced
+            && ui
+                .add(
+                    Button::ghost(cx.tr.t("providers.simple.back"))
+                        .small()
+                        .enabled(!state.is_modal_open()),
+                )
+                .clicked()
+        {
+            state.simple_advanced = false;
+        }
         add = ui
             .add(
                 Button::primary(cx.tr.t("providers.add.button"))

@@ -50,6 +50,7 @@ pub mod session_browser;
 pub mod sessions;
 pub mod settings;
 pub mod shared;
+pub mod simple_usage;
 pub mod wizard;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -104,6 +105,8 @@ pub enum Page {
     ClaudeSettings,
     /// Superba maintenance and preferences, with a section deep link.
     Superba(SuperbaSection),
+    /// Reserved troubleshooting page; content will be added separately.
+    Troubleshooting,
     /// One installed coding tool (dsh, opencode, pi, ZCode, WorkBuddy,
     /// Gemini CLI): the Tools page's detail of it as a page of its own; its
     /// sidebar entry shows only when the tool is installed (user request 114).
@@ -151,7 +154,7 @@ pub enum PageLayout {
 
 impl Page {
     /// Sidebar destinations; Superba sections share one pinned entry.
-    pub const ALL: [Page; 18] = [
+    pub const ALL: [Page; 19] = [
         Page::Overview,
         Page::Tools,
         Page::Providers,
@@ -169,11 +172,12 @@ impl Page {
         Page::Tool(HarnessId::ZCode),
         Page::Tool(HarnessId::WorkBuddy),
         Page::Tool(HarnessId::Gemini),
+        Page::Troubleshooting,
         Page::Superba(SuperbaSection::Home),
     ];
 
     /// Every independently addressable page, including all Superba sections.
-    pub const DESTINATIONS: [Page; 25] = [
+    pub const DESTINATIONS: [Page; 26] = [
         Page::Overview,
         Page::Tools,
         Page::Providers,
@@ -191,6 +195,7 @@ impl Page {
         Page::Tool(HarnessId::ZCode),
         Page::Tool(HarnessId::WorkBuddy),
         Page::Tool(HarnessId::Gemini),
+        Page::Troubleshooting,
         Page::Superba(SuperbaSection::Home),
         Page::Superba(SuperbaSection::Updates),
         Page::Superba(SuperbaSection::Diagnostics),
@@ -206,6 +211,11 @@ impl Page {
         matches!(self, Self::Superba(_))
     }
 
+    /// Navigation entries kept above the version at the bottom of the sidebar.
+    pub fn is_pinned(self) -> bool {
+        self.is_superba() || self == Self::Troubleshooting
+    }
+
     /// Canonical target used for the sidebar badge and accessible name.
     pub fn sidebar_page(self) -> Self {
         if self.is_superba() {
@@ -218,7 +228,9 @@ impl Page {
     /// Sidebar group.
     pub fn group(self) -> NavGroup {
         match self {
-            Page::Overview | Page::Tools | Page::Superba(_) => NavGroup::Main,
+            Page::Overview | Page::Tools | Page::Superba(_) | Page::Troubleshooting => {
+                NavGroup::Main
+            }
             Page::Providers | Page::Models | Page::Router | Page::Usage => NavGroup::Connect,
             Page::Settings | Page::Sessions | Page::Hosts => NavGroup::Codex,
             Page::ClaudeCode | Page::ClaudeSettings => NavGroup::Claude,
@@ -234,6 +246,7 @@ impl Page {
     /// Minimum content height before the shell uses its short-window fallback.
     pub fn min_height(self) -> f32 {
         if self.is_superba()
+            || self == Self::Troubleshooting
             || self == Self::Router
             || self == Self::ClaudeCode
             || self == Self::Tools
@@ -259,6 +272,7 @@ impl Page {
         match self {
             Page::Overview => "nav.overview",
             Page::Tools => "superba.tools.title",
+            Page::Troubleshooting => "simple.troubleshooting",
             Page::Providers => "nav.providers",
             Page::Models => "nav.models",
             Page::Router => "nav.router",
@@ -297,6 +311,7 @@ impl Page {
         match self {
             Page::Overview => "page.overview.subtitle",
             Page::Tools => "superba.tools.subtitle",
+            Page::Troubleshooting => "simple.troubleshooting",
             Page::Providers => "page.providers.subtitle",
             Page::Models => "page.models.subtitle",
             Page::Router => "page.router.subtitle",
@@ -316,6 +331,7 @@ impl Page {
         match self {
             Page::Overview => Icon::Overview,
             Page::Tools => Icon::Tools,
+            Page::Troubleshooting => Icon::Help,
             Page::Providers => Icon::Plug,
             Page::Models => Icon::Model,
             Page::Router => Icon::Route,
@@ -375,6 +391,13 @@ impl Action {
 /// Something a page asks the app to do.
 #[derive(Debug)]
 pub enum Action {
+    /// Change the desktop navigation mode and persist it.
+    SetSimpleMode(bool),
+    /// One explicit simple-mode click authorizes the complete session batch.
+    SessionBatch {
+        /// Restore every migration, otherwise move every non-openai session.
+        rollback: bool,
+    },
     /// Navigate.
     Go(Page),
     /// Reload overview, profiles, sites.
@@ -478,6 +501,8 @@ pub enum Action {
     /// Reload [`Data::versions`] from the cached lists (no online check), e.g.
     /// after an install changed what is installed.
     LoadVersions,
+    /// Refresh both the installed Codex CLI and desktop client against online releases.
+    CheckCodexUpdates,
     /// Open Superba's data directory in the file manager.
     OpenDataDir,
     /// The data pointer changed; refresh shell paths and cached page snapshots.
@@ -679,6 +704,19 @@ impl Data {
         if let Some(count) = self.update_inventory_count {
             return count;
         }
+        u32::from(self.self_update_offered().is_some())
+            + self.versions.value.as_ref().map_or(0, |v| {
+                u32::from(v.app.update_available)
+                    + u32::from(
+                        v.cli
+                            .iter()
+                            .any(|r| !matches!(r.action, CliUpdateAction::None)),
+                    )
+            })
+    }
+
+    /// Simple mode counts only Superba, the Codex client and local Codex CLI.
+    pub fn simple_update_count(&self) -> u32 {
         u32::from(self.self_update_offered().is_some())
             + self.versions.value.as_ref().map_or(0, |v| {
                 u32::from(v.app.update_available)

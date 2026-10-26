@@ -29,6 +29,127 @@ fn service() -> Arc<FakeService> {
 }
 
 #[test]
+fn troubleshooting_is_a_placeholder_in_both_interfaces() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let mut h = router_harness::Harness::new([960.0, 640.0], locale, service(), true);
+        let mut pages = PageStates::default();
+        let mut settings = Settings::default();
+        for simple in [true, false] {
+            let frame = h.settle(|ui, cx, out| {
+                if simple {
+                    pages.show_simple(Page::Troubleshooting, ui, cx, &mut settings, out);
+                } else {
+                    pages.show(Page::Troubleshooting, ui, cx, &mut settings, out);
+                }
+            });
+            assert_eq!(
+                frame
+                    .texts
+                    .iter()
+                    .map(|(s, _)| s.as_str())
+                    .collect::<Vec<_>>(),
+                vec![tr.t("simple.troubleshooting")]
+            );
+            assert!(frame.actions.is_empty());
+        }
+    }
+}
+
+#[test]
+fn clicking_the_simple_codex_node_refreshes_versions_online() {
+    let service = service();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let mut settings = service.profile_set().await.unwrap().settings;
+        settings.simple_mode = true;
+        service.save_settings(settings).await.unwrap();
+    });
+    let tr = Tr::new(Locale::En);
+    let mut h = AppHarness::new(service.clone(), Locale::En, Page::Overview);
+    h.until("known client version", |tree| {
+        tree.find(None, &tr.t("overview.simple.client_update"))
+            .is_some()
+    });
+    let before = service.version_refreshes();
+    h.click(Some(Role::Button), "Codex");
+    h.until("online Codex version refresh", |_| {
+        service.version_refreshes() > before
+    });
+}
+
+#[test]
+fn simple_superba_has_two_tabs_with_codex_updates_storage_and_the_shared_settings() {
+    let service = service();
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let mut h = router_harness::Harness::new([1280.0, 1000.0], locale, service.clone(), true);
+        let mut pages = PageStates::default();
+        let mut settings = Settings::default();
+        let frame = h.until(
+            |ui, cx, out| {
+                pages.show_simple(
+                    Page::Superba(SuperbaSection::Home),
+                    ui,
+                    cx,
+                    &mut settings,
+                    out,
+                )
+            },
+            |f| f.has(&tr.t("simple.superba.more_apps")),
+        );
+        for key in [
+            "simple.superba.info",
+            "superba.tab.settings",
+            "superba.tab.home",
+            "prefs.data.storage",
+            "settings.about.title",
+        ] {
+            assert!(frame.has(&tr.t(key)), "{key}: {}", frame.all_text());
+        }
+        assert!(frame.has(&tr.t("simple.superba.codex_client")));
+        assert!(!frame.has("Claude Code"), "{}", frame.all_text());
+        h.click_text(&frame, &tr.t("simple.superba.more_apps"));
+        let frame = h.until(
+            |ui, cx, out| {
+                pages.show_simple(
+                    Page::Superba(SuperbaSection::Home),
+                    ui,
+                    cx,
+                    &mut settings,
+                    out,
+                )
+            },
+            |f| {
+                f.actions
+                    .iter()
+                    .any(|a| matches!(a, superba_gui::pages::Action::SetSimpleMode(false)))
+            },
+        );
+        assert!(
+            frame
+                .actions
+                .iter()
+                .any(|a| matches!(a, superba_gui::pages::Action::SetSimpleMode(false)))
+        );
+        let frame = h.settle(|ui, cx, out| {
+            pages.show_simple(
+                Page::Superba(SuperbaSection::General),
+                ui,
+                cx,
+                &mut settings,
+                out,
+            )
+        });
+        assert!(frame.has(&tr.t("superba.search")), "{}", frame.all_text());
+        assert!(!frame.has(&tr.t("simple.superba.more_apps")));
+    }
+}
+
+#[test]
 fn every_section_fits_and_keeps_all_five_tabs_on_one_line() {
     let data = router_harness::data_from(&service());
     for locale in [Locale::En, Locale::ZhCn] {

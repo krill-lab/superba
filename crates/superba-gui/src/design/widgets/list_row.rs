@@ -216,6 +216,7 @@ pub fn paint_row(ui: &Ui, rect: Rect, row: &RowContent) -> Rect {
 pub struct ListRow {
     content: RowContent,
     selected: bool,
+    selection_tint: Option<Color32>,
     height: f32,
     sense: Sense,
     status: Option<(super::Status, String)>,
@@ -227,6 +228,7 @@ impl ListRow {
         Self {
             content: RowContent::new(icon, title),
             selected: false,
+            selection_tint: None,
             height: 56.0,
             sense: Sense::click(),
             status: None,
@@ -275,6 +277,15 @@ impl ListRow {
         self
     }
 
+    /// Use the theme accent for the selected row instead of the neutral fill.
+    pub fn selected_tint(mut self, color: Color32) -> Self {
+        self.selection_tint = Some(color);
+        if self.selected {
+            self.content.tint = Some(color);
+        }
+        self
+    }
+
     /// Row height.
     pub fn height(mut self, h: f32) -> Self {
         self.height = h;
@@ -317,7 +328,9 @@ impl Widget for ListRow {
             0.0
         };
         let fill = if self.selected {
-            pal.active
+            self.selection_tint.map_or(pal.active, |c| {
+                Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), if pal.dark { 50 } else { 25 })
+            })
         } else {
             Color32::TRANSPARENT.lerp_to_gamma(pal.hover, t)
         };

@@ -29,6 +29,8 @@ pub mod hero;
 pub mod lanes;
 mod lines;
 mod sessions;
+mod simple;
+pub mod simple_speed;
 mod today;
 pub mod todo;
 pub mod tools;
@@ -51,6 +53,7 @@ use crate::runtime::ReadTask;
 pub use cards::{GAP, Grid, layout, layout_with};
 pub use lines::LineRow;
 pub use sessions::{host_label, usage_command};
+pub use simple::show as show_simple;
 pub use today::{delta_text, figure};
 use usage::Snapshot;
 
@@ -68,6 +71,8 @@ pub struct State {
     pub empty_dismissed: bool,
     /// The request log and router snapshot.
     pub usage: UsageLoader,
+    /// Codex-only dashboard data for simple mode.
+    pub simple_usage: UsageLoader,
     /// Diagnostics were asked for once (findings feed 待办 and the markers).
     doctor_asked: bool,
 }
@@ -97,6 +102,10 @@ impl UsageLoader {
 
     /// Poll a running read and start one when none ran for [`RELOAD`].
     fn tick(&mut self, ui: &Ui, cx: &Cx<'_>) {
+        self.tick_for(ui, cx, false);
+    }
+
+    fn tick_for(&mut self, ui: &Ui, cx: &Cx<'_>, codex_only: bool) {
         if let Some(task) = &self.task {
             match task.poll() {
                 Some(result) => {
@@ -117,7 +126,13 @@ impl UsageLoader {
             let service = cx.service.clone();
             let now = cx.now;
             let offset = super::local_offset_secs(now).unwrap_or(0);
-            self.task = Some(crate::runtime::task(usage::load(service, now, offset)));
+            self.task = Some(crate::runtime::task(async move {
+                if codex_only {
+                    usage::load_codex(service, now, offset).await
+                } else {
+                    usage::load(service, now, offset).await
+                }
+            }));
             // A failed or empty read is retried on the next interval.
             self.at = Some(Instant::now());
         }
@@ -136,7 +151,10 @@ pub fn command(state: &mut State, _cx: &Cx<'_>, command: &str, out: &mut Vec<Act
         "wizard" => out.push(Action::StartWizard),
         "restore:original" => out.push(Action::restore_original()),
         "restore:official" => out.push(Action::Restore(RestoreTarget::Official)),
-        "refresh" => state.usage.at = None,
+        "refresh" => {
+            state.usage.at = None;
+            state.simple_usage.at = None;
+        }
         other => tracing::debug!(command = other, "unknown overview command"),
     }
 }

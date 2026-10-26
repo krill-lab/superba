@@ -94,6 +94,10 @@ pub(crate) struct Ledger {
     pub created_at: Timestamp,
     #[serde(default)]
     pub completed_at: Option<Timestamp>,
+    /// A per-home order assigned under the migration lock, independent of wall
+    /// clock resolution. Zero identifies older ledgers without this field.
+    #[serde(default)]
+    pub completion_order: u64,
     #[serde(default)]
     pub rolled_back_at: Option<Timestamp>,
     pub request: MigrationRequest,

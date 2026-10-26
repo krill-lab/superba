@@ -57,6 +57,13 @@ struct State {
     /// Thread id -> rollout files still to rewrite in the `Moving` stage.
     files_left: BTreeMap<String, u32>,
     last: Option<Instant>,
+    batch: Option<Batch>,
+}
+
+struct Batch {
+    remaining: usize,
+    done: u32,
+    total: u32,
 }
 
 impl Progress {
@@ -75,6 +82,7 @@ impl Progress {
                 pending: BTreeSet::new(),
                 files_left: BTreeMap::new(),
                 last: None,
+                batch: None,
             }),
         }
     }
@@ -95,6 +103,24 @@ impl Progress {
 
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Keep a multi-ledger restore visible as one operation. Counts include a
+    /// session once per ledger, since overlapping migrations must each unwind.
+    pub(crate) fn batch(&self, counts: impl IntoIterator<Item = usize>) {
+        if self.sink.is_none() {
+            return;
+        }
+        let counts: Vec<usize> = counts.into_iter().collect();
+        if counts.len() > 1 {
+            self.lock().batch = Some(Batch {
+                remaining: counts.len(),
+                done: 0,
+                total: counts.iter().fold(0u32, |total, count| {
+                    total.saturating_add(u32::try_from(*count).unwrap_or(u32::MAX))
+                }),
+            });
+        }
     }
 
     /// An operation over the sessions `threads` starts (`direction`).
@@ -218,7 +244,14 @@ impl Progress {
         st.pending.clear();
         st.step_done = st.step_total;
         st.current = None;
+        if let Some(batch) = &mut st.batch {
+            batch.remaining = batch.remaining.saturating_sub(1);
+        }
         self.send(&mut st, true);
+        let total = st.total;
+        if let Some(batch) = &mut st.batch {
+            batch.done = batch.done.saturating_add(total);
+        }
     }
 
     fn send(&self, st: &mut State, force: bool) {
@@ -234,6 +267,24 @@ impl Progress {
             return;
         }
         st.last = Some(now);
+        if let Some(batch) = &st.batch {
+            let done = batch.done.saturating_add(st.done).min(batch.total);
+            sink.report(SessionProgress {
+                direction: SessionDirection::Restore,
+                stage: if batch.remaining == 0 && st.stage == SessionStage::Done {
+                    SessionStage::Done
+                } else {
+                    SessionStage::Moving
+                },
+                done,
+                total: batch.total,
+                step_done: done,
+                step_total: batch.total,
+                current: st.current.clone(),
+                can_stop: false,
+            });
+            return;
+        }
         sink.report(SessionProgress {
             direction: st.direction,
             stage: st.stage,

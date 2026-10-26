@@ -222,6 +222,12 @@ pub struct SwitchMachine {
 }
 
 impl SwitchMachine {
+    /// Keep an armed timer still while fresh turn activity is being read.
+    pub fn pause_for_activity(&mut self, now: Duration) {
+        if let MachineState::Countdown { countdown, .. } = &mut self.state {
+            countdown.pause(now);
+        }
+    }
     /// New idle machine with a countdown of `countdown_secs` (clamped to 0..=30).
     pub fn new(countdown_secs: u8) -> Self {
         Self {
@@ -376,6 +382,9 @@ impl SwitchMachine {
                 }
             }
             Input::Turns(busy) => match &mut self.state {
+                MachineState::Countdown { countdown, .. } if busy.is_empty() => {
+                    countdown.resume(now);
+                }
                 MachineState::Countdown { ticket, countdown } if !busy.is_empty() => {
                     let mut countdown = *countdown;
                     countdown.pause(now);
@@ -447,7 +456,7 @@ impl SwitchMachine {
         } else if ticket.needs_confirmation {
             self.state = MachineState::ConfirmFull { ticket };
         } else if ticket.countdown_allowed {
-            if self.countdown.is_zero() {
+            if self.countdown.is_zero() && ticket.busy.is_empty() {
                 self.start(ticket, false, false, false, fx);
             } else {
                 let countdown = Countdown::start(self.countdown, now);

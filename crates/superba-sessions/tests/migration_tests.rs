@@ -286,6 +286,169 @@ async fn rollback_restores_everything_exactly() {
 }
 
 #[tokio::test]
+async fn all_other_providers_migrate_together_including_archived_and_inconsistent() {
+    let mut f = standard();
+    f.add(Thread::new(10, "custom-provider").archived().zst());
+    f.add(Thread::new(11, "third-party").no_rollout());
+    let m = f.migrator();
+    let plan = m
+        .plan(
+            &f.home,
+            &MigrationRequest {
+                to_provider: "openai".into(),
+                selectors: vec![MigrationSelector::OtherProviders {
+                    except: "openai".into(),
+                }],
+                include_archived: true,
+                exclude: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(plan.items.len(), 10);
+    assert_eq!(plan.by_source_provider["krill"], 8);
+    assert_eq!(plan.by_source_provider["custom-provider"], 1);
+    assert_eq!(plan.by_source_provider["third-party"], 1);
+    assert!(!plan.by_source_provider.contains_key("openai"));
+    // A request created while Codex was closing must be part of "all" too.
+    f.add(Thread::new(12, "provider-added-after-preview"));
+    m.migrate(&f.home, &plan).await.unwrap();
+    let report = m.scan(&f.home).await.unwrap();
+    assert_eq!(report.hidden_under("openai"), 0);
+    assert_eq!(report.by_provider["openai"].distinct, 12);
+    assert_eq!(report.inconsistent, 0);
+}
+
+#[tokio::test]
+async fn rollback_batch_unwinds_overlapping_migrations_and_is_idempotent() {
+    let mut f = Fixture::new();
+    f.add(Thread::new(1, "first-provider").archived().zst());
+    let before = f.snapshot();
+    let m = f
+        .migrator()
+        .with_clock(std::sync::Arc::new(ManualClock::new(Timestamp::now())));
+    let mut first = m
+        .plan(
+            &f.home,
+            &provider_request("first-provider", "second-provider", true),
+        )
+        .await
+        .unwrap();
+    first.id = "z-first".into();
+    first.backup_dir = f.data.migrate_backup_dir(&first.id);
+    m.migrate(&f.home, &first).await.unwrap();
+    let mut second = m
+        .plan(
+            &f.home,
+            &provider_request("second-provider", "openai", true),
+        )
+        .await
+        .unwrap();
+    second.id = "a-second".into();
+    second.backup_dir = f.data.migrate_backup_dir(&second.id);
+    m.migrate(&f.home, &second).await.unwrap();
+    let history = m.history(&f.home).await.unwrap();
+    assert_eq!(history[0].migrated_at, history[1].migrated_at);
+    assert_eq!(history[0].id, second.id);
+    assert_eq!(history[1].id, first.id);
+    let invalid = m
+        .rollback_many_stopped_with_progress(
+            &f.home,
+            &[second.id.clone(), "missing-id".into()],
+            &ConsumersStopped::new(&f.home, Timestamp::now()),
+            std::sync::Arc::new(NoSessionProgress),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(invalid.code(), "not_found");
+    assert_eq!(
+        row_provider(&f.state_db(), &f.threads[0].id).as_deref(),
+        Some("openai")
+    );
+    let ids = vec![second.id, first.id];
+    let report = m
+        .rollback_many_stopped_with_progress(
+            &f.home,
+            &ids,
+            &ConsumersStopped::new(&f.home, Timestamp::now()),
+            std::sync::Arc::new(NoSessionProgress),
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.restored_rollouts, 2);
+    assert_eq!(report.skipped_changed, 0);
+    assert_eq!(f.snapshot().dbs, before.dbs);
+    assert_eq!(
+        row_provider(&f.state_db(), &f.threads[0].id).as_deref(),
+        Some("first-provider")
+    );
+    assert!(
+        m.history(&f.home)
+            .await
+            .unwrap()
+            .iter()
+            .all(|r| r.rolled_back)
+    );
+    let again = m
+        .rollback_many_stopped_with_progress(
+            &f.home,
+            &ids,
+            &ConsumersStopped::new(&f.home, Timestamp::now()),
+            std::sync::Arc::new(NoSessionProgress),
+        )
+        .await
+        .unwrap();
+    assert_eq!(again, RollbackReport::default());
+}
+
+#[tokio::test]
+async fn rollback_batch_keeps_changed_content_across_overlapping_ledgers() {
+    let mut f = Fixture::new();
+    f.add(Thread::new(1, "first-provider"));
+    f.add(Thread::new(2, "first-provider"));
+    let m = f.migrator();
+    let first = m
+        .plan(
+            &f.home,
+            &provider_request("first-provider", "second-provider", true),
+        )
+        .await
+        .unwrap();
+    m.migrate(&f.home, &first).await.unwrap();
+    let second = m
+        .plan(
+            &f.home,
+            &provider_request("second-provider", "openai", true),
+        )
+        .await
+        .unwrap();
+    m.migrate(&f.home, &second).await.unwrap();
+    let changed = f.rollout_path(&f.threads[0]);
+    let mut contents = fs::read(&changed).unwrap();
+    contents.extend_from_slice(b"{\"ordinal\":99,\"type\":\"event_msg\",\"payload\":{}}\n");
+    fs::write(&changed, &contents).unwrap();
+    let report = m
+        .rollback_many_stopped_with_progress(
+            &f.home,
+            &[second.id, first.id],
+            &ConsumersStopped::new(&f.home, Timestamp::now()),
+            std::sync::Arc::new(NoSessionProgress),
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.skipped_changed, 2);
+    assert_eq!(fs::read(&changed).unwrap(), contents);
+    assert_eq!(
+        row_provider(&f.state_db(), &f.threads[0].id).as_deref(),
+        Some("openai")
+    );
+    assert_eq!(
+        row_provider(&f.state_db(), &f.threads[1].id).as_deref(),
+        Some("first-provider")
+    );
+}
+
+#[tokio::test]
 async fn rollback_skips_sessions_changed_after_migration() {
     let f = standard();
     let m = f.migrator();

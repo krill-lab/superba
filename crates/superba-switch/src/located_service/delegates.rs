@@ -462,6 +462,14 @@ impl SwitchService for LocatedService {
         service.runtime().await
     }
 
+    async fn switch_turn_activity(
+        &self,
+        targets: Vec<superba_core::TargetId>,
+    ) -> Result<Vec<superba_core::TurnActivity>> {
+        let (service, _lock) = self.read().await?;
+        service.switch_turn_activity(targets).await
+    }
+
     async fn stop_processes(
         &self,
         processes: Vec<ProcessInfo>,

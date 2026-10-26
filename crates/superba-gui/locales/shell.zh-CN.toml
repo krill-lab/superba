@@ -32,6 +32,7 @@ short.chatgpt = "官方登录"
 short.pat = "PAT"
 
 [banner]
+checking_turns = "正在检查对话状态，暂不倒计时"
 router_token = "路由令牌（本地）"
 accept = "仍然继续"
 armed.body = "将热重启 Codex 内核（约 1–2 秒），窗口和对话都会保留。重启会影响所有对话，不只是当前这个："
@@ -352,3 +353,43 @@ hand_off_tip = "Superba 只还原它仍在管理的内容，保留这些修改�
 later = "暂不处理"
 other_tool = "另一个工具"
 unset = "（未设置）"
+[simple]
+troubleshooting = "疑难解答"
+mode_selector = "界面模式"
+short_simple = "简单"
+short_full = "完整"
+toggle = "切换到{mode}"
+mode = "简单模式"
+enter = "简单模式"
+leave = "完整模式"
+refresh = "刷新"
+
+[simple.superba]
+codex_client = "Codex 客户端"
+info = "信息"
+more_apps = "找不到您需要的应用？尝试完整模式"
+
+[simple.usage]
+per_page = "每页请求数"
+page_size = "每页 {n} 条"
+prev = "上一页"
+next = "下一页"
+completed = "完成时间"
+title = "会话与用量"
+stats = "最近 24 小时"
+requests = "请求数"
+success = "成功率"
+recent = "请求 · 最近 24 小时"
+more = "加载更多"
+limit = "显示最近 10,000 条请求"
+empty = "最近 24 小时还没有 Codex 请求。"
+
+[simple.sessions]
+what = "这是什么？"
+explanation = "当你混合使用了OpenAI官方的订阅与其他自定义的API时，每个会话对应的服务商可能各不相同。这会导致当你切换供应商时，以前的会话无法继续聊天。现在，利用会话迁移功能，你可以将所有会话统一迁移到OpenAI下，这让你无论是使用官方订阅，亦或者是Krill等API服务商时，都可以获得无缝的体验。\n\n您可以随时撤销会话的迁移。"
+title = "会话迁移"
+pending = "{n} 个会话待迁移到 openai"
+ready = "所有会话均已归属 openai"
+migrate = "全部迁移到 openai"
+rollback = "全部回滚"
+hint = "等待当前请求完成，备份会话后自动重启 Codex。"

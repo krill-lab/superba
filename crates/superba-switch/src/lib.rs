@@ -61,6 +61,7 @@ mod settings;
 mod sites;
 mod tools;
 mod transports;
+mod turn_watch;
 pub mod usage;
 pub mod usage_import;
 pub mod versions;
@@ -1124,6 +1125,13 @@ impl SwitchService for Switcher {
 
     async fn runtime(&self) -> Result<superba_core::RuntimeView> {
         self.runtime_impl().await
+    }
+
+    async fn switch_turn_activity(
+        &self,
+        targets: Vec<superba_core::TargetId>,
+    ) -> Result<Vec<superba_core::TurnActivity>> {
+        self.switch_turn_activity_impl(targets).await
     }
 
     async fn codex_file(

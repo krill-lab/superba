@@ -57,7 +57,7 @@ pub(crate) struct PlanContext {
     pub install_id: Option<String>,
     pub safe_mode: bool,
     pub restart_app: bool,
-    pub rollback_migration: Option<String>,
+    pub rollback_migrations: Vec<String>,
     pub rollback_remote: Option<TargetId>,
     pub uninstall: Option<bool>,
     /// The settings part of the plan (settings plans per home, diff preview).
@@ -128,7 +128,7 @@ impl PlanContext {
             install_id: None,
             safe_mode,
             restart_app: false,
-            rollback_migration: None,
+            rollback_migrations: Vec::new(),
             rollback_remote: None,
             uninstall: None,
             settings: PlanSettings::default(),
@@ -213,7 +213,7 @@ struct Dest {
     env_op: Option<EnvOp>,
     migration: Option<MigrationRequest>,
     restart_app: bool,
-    rollback_migration: Option<String>,
+    rollback_migrations: Vec<String>,
     rollback_remote: Option<TargetId>,
     uninstall: Option<bool>,
     profile_update: Option<ProfileUpdate>,
@@ -1128,10 +1128,13 @@ impl Switcher {
                         reasons: draft.blocks.clone(),
                     }
                 }
-            } else if dest.hand_off {
+            } else if dest.hand_off
+                || (matches!(request.intent, SwitchIntent::RollbackAllMigrations)
+                    && dest.rollback_migrations.is_empty())
+            {
                 // Nothing of the other tool's is touched and Codex picks up the
                 // configuration at its next start (the other tool restarts it or
-                // asks to).
+                // asks to). An empty rollback batch also needs no restart.
                 if draft.blocks.is_empty() {
                     RestartKind::None
                 } else {
@@ -1158,7 +1161,7 @@ impl Switcher {
             } else {
                 decide_local(&LocalFacts {
                     blocks: draft.blocks.clone(),
-                    migration: migration.is_some() || dest.rollback_migration.is_some(),
+                    migration: migration.is_some() || !dest.rollback_migrations.is_empty(),
                     current_family: state.auth.family(),
                     target_family: dest.auth.map(AuthMode::family),
                     target_needs_authapi: needs_authapi,
@@ -1380,7 +1383,7 @@ impl Switcher {
                 install_id: dest.install_id,
                 safe_mode: set.settings.safe_mode,
                 restart_app: dest.restart_app,
-                rollback_migration: dest.rollback_migration,
+                rollback_migrations: dest.rollback_migrations,
                 rollback_remote: dest.rollback_remote,
                 uninstall: dest.uninstall,
                 settings,
@@ -1819,9 +1822,27 @@ impl Switcher {
             }
             SwitchIntent::RollbackMigration { migration_id } => Ok(Dest {
                 label: text("switch.destination.rollback_migration").arg("id", migration_id),
-                rollback_migration: Some(migration_id.clone()),
+                rollback_migrations: vec![migration_id.clone()],
                 ..Dest::default()
             }),
+            SwitchIntent::RollbackAllMigrations => {
+                let home = self.deps.ctx.codex_home();
+                let mut history = self.deps.sessions.history(&home).await?;
+                // Keep the history's newest-first tie order when clocks have
+                // insufficient resolution for two migrations.
+                history.sort_by_key(|receipt| std::cmp::Reverse(receipt.migrated_at));
+                let ids: Vec<String> = history
+                    .into_iter()
+                    .filter(|receipt| !receipt.rolled_back)
+                    .map(|receipt| receipt.id)
+                    .collect();
+                Ok(Dest {
+                    label: text("switch.destination.rollback_all_migrations")
+                        .arg("count", ids.len()),
+                    rollback_migrations: ids,
+                    ..Dest::default()
+                })
+            }
             SwitchIntent::Uninstall {
                 delete_backups,
                 provider,

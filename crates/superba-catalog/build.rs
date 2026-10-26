@@ -1,8 +1,9 @@
 //! Packs the repository's `catalog/` tree (index, signature, version files,
 //! overlays, curation) into a zstd-compressed bundle that `src/bundle.rs` embeds as
 //! the built-in snapshot, and `catalog/feeds/` (signed model list, prices, Codex
-//! and app versions, prompts) into a second bundle. Integrity is checked at run
-//! time against each index, the same way as for downloaded data.
+//! and app versions, prompts) into a second bundle. Checkout text is restored to
+//! LF and checked against the original indices before packing. Runtime integrity
+//! checks still apply, the same way as for downloaded data.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -10,6 +11,8 @@ use std::path::{Path, PathBuf};
 #[path = "src/bundle_format.rs"]
 #[allow(dead_code)]
 mod bundle_format;
+
+mod build_input;
 
 fn main() {
     let manifest =
@@ -19,6 +22,7 @@ fn main() {
         PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR")).join("catalog.bundle.zst");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/bundle_format.rs");
+    println!("cargo:rerun-if-changed=build_input.rs");
     for p in ["dist", "overlay", "curation.toml"] {
         println!("cargo:rerun-if-changed={}", root.join(p).display());
     }
@@ -54,6 +58,10 @@ fn main() {
         );
     }
     entries.sort_by(|a, b| a.0.cmp(&b.0));
+    if !entries.is_empty() {
+        build_input::prepare_entries("dist/index.json", &mut entries)
+            .unwrap_or_else(|error| panic!("cannot embed the settings catalog: {error}"));
+    }
     std::fs::write(&out, compress(&entries)).expect("write bundle");
 
     let feeds = root.join("feeds");
@@ -68,6 +76,10 @@ fn main() {
         );
     }
     feed_entries.sort_by(|a, b| a.0.cmp(&b.0));
+    if !feed_entries.is_empty() {
+        build_input::prepare_entries("index.json", &mut feed_entries)
+            .unwrap_or_else(|error| panic!("cannot embed the data feeds: {error}"));
+    }
     let feeds_out =
         PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR")).join("feeds.bundle.zst");
     std::fs::write(&feeds_out, compress(&feed_entries)).expect("write feeds bundle");

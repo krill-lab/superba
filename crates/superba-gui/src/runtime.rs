@@ -740,6 +740,7 @@ async fn handle(
                 || matches!(
                     plan.request.intent,
                     superba_core::SwitchIntent::RollbackMigration { .. }
+                        | superba_core::SwitchIntent::RollbackAllMigrations
                 );
             let decider: Arc<dyn SwitchDecider> = Arc::new(GuiDecider(out.clone()));
             let events: Arc<dyn SwitchEvents> = Arc::new(GuiEvents {

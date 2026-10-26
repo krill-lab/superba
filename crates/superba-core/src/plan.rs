@@ -478,6 +478,9 @@ pub enum SwitchIntent {
         /// Migration id.
         migration_id: String,
     },
+    /// Roll back every completed migration of this home, newest first, with one
+    /// stop/restart of its Codex consumers.
+    RollbackAllMigrations,
     /// Remove every change Superba made (plan 9.6 uninstall): restore the original
     /// configuration, env values and legacy rc lines, remote markers, launcher
     /// entries; optionally delete backups.

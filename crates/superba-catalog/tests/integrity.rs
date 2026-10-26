@@ -11,6 +11,106 @@ mod common;
 use common::{sign_files, test_key};
 use superba_catalog::{CatalogError, CatalogStore, SignatureStatus, StoreOrigin, TrustPolicy};
 
+#[path = "../build_input.rs"]
+mod build_input;
+
+fn windows_checkout(files: BTreeMap<String, Vec<u8>>) -> Vec<(String, Vec<u8>)> {
+    files
+        .into_iter()
+        .map(|(path, bytes)| {
+            let bytes =
+                if path.ends_with(".json") || path.ends_with(".toml") || path.ends_with(".md") {
+                    String::from_utf8(bytes)
+                        .unwrap()
+                        .replace('\n', "\r\n")
+                        .into_bytes()
+                } else {
+                    bytes
+                };
+            (path, bytes)
+        })
+        .collect()
+}
+
+#[test]
+fn windows_checkout_embeds_the_original_catalog_bytes_and_signature() {
+    let original = superba_catalog::builtin_files().unwrap();
+    let mut entries = windows_checkout(original.clone());
+    assert!(
+        entries
+            .iter()
+            .any(|(path, bytes)| path == "curation.toml" && bytes.len() > original[path].len())
+    );
+    build_input::prepare_entries(INDEX_PATH, &mut entries).unwrap();
+    let canonical: BTreeMap<_, _> = entries.into_iter().collect();
+    assert_eq!(canonical, original);
+    let store =
+        CatalogStore::from_files(StoreOrigin::BuiltIn, canonical, TrustPolicy::ManifestOnly)
+            .unwrap();
+    assert!(!matches!(
+        store.signature(),
+        SignatureStatus::Invalid { .. }
+    ));
+    assert!(
+        store
+            .exact(&superba_core::CodexVersion::parse("0.163.0").unwrap())
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
+fn windows_checkout_embeds_feeds_with_their_original_hashes() {
+    let original = superba_catalog::builtin_feed_files().unwrap();
+    let mut entries = windows_checkout(original.clone());
+    build_input::prepare_entries("index.json", &mut entries).unwrap();
+    let canonical: BTreeMap<_, _> = entries.into_iter().collect();
+    assert_eq!(canonical, original);
+    let feeds = superba_catalog::feeds::FeedData::from_files(
+        canonical,
+        TrustPolicy::ManifestOnly,
+        TRUSTED_KEYS,
+        &[],
+    )
+    .unwrap();
+    assert!(!matches!(
+        feeds.signature(),
+        SignatureStatus::Invalid { .. }
+    ));
+}
+
+#[test]
+fn build_rejects_missing_modified_and_truncated_catalog_files() {
+    for fault in ["missing", "modified", "truncated"] {
+        let mut entries = windows_checkout(superba_catalog::builtin_files().unwrap());
+        let position = entries
+            .iter()
+            .position(|(path, _)| path == "curation.toml")
+            .unwrap();
+        match fault {
+            "missing" => {
+                entries.remove(position);
+            }
+            "modified" => entries[position].1[0] ^= 1,
+            "truncated" => {
+                let length = entries[position].1.len();
+                entries[position].1.truncate(length - 2);
+            }
+            _ => unreachable!(),
+        }
+        let error = build_input::prepare_entries(INDEX_PATH, &mut entries).unwrap_err();
+        assert!(error.contains("curation.toml"), "{fault}: {error}");
+        assert!(
+            error.contains(match fault {
+                "missing" => "missing",
+                "modified" => "SHA-256",
+                _ => "size",
+            }),
+            "{fault}: {error}"
+        );
+    }
+}
+
 fn builtin_files_unsigned() -> BTreeMap<String, Vec<u8>> {
     let mut files = superba_catalog::builtin_files().unwrap();
     files.remove(SIGNATURE_PATH);

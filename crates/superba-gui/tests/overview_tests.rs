@@ -817,6 +817,27 @@ macro_rules! page {
     }};
 }
 
+/// Render the simple dashboard with the same state lifetime as `page!`.
+macro_rules! simple_page {
+    ($data:expr, $tr:expr, $fonts:expr, $state:expr, $out:expr) => {{
+        let svc = support::idle_service();
+        let (data, tr, fonts, state, out) = ($data, $tr, $fonts, $state, $out);
+        move |ui: &mut egui::Ui| {
+            let cx = Cx {
+                tr,
+                pal: Palette::of(ui.ctx()),
+                data,
+                busy: false,
+                now: Timestamp::now(),
+                fonts,
+                service: &svc,
+                log: &[],
+            };
+            overview::show_simple(ui, &cx, state, out);
+        }
+    }};
+}
+
 fn busy_snapshot() -> Snapshot {
     let now = Timestamp::now();
     let rows: Vec<RequestRow> = (0..40)
@@ -1136,6 +1157,477 @@ async fn a_recent_session_opens_usage_filtered_to_it() {
         )),
         "{out:?}"
     );
+}
+
+// --- Simple mode -------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn simple_overview_shows_four_cards_without_other_tools_or_advanced_controls() {
+    let data = fake_data().await;
+    for locale in [Locale::En, Locale::ZhCn] {
+        let harness = Harness::new([1280.0, 800.0], egui::Theme::Light);
+        let tr = Tr::new(locale);
+        let mut state = overview::State::default();
+        // Even stale/preloaded multi-tool data cannot expose tool navigation.
+        state.simple_usage = UsageLoader::preloaded(tools_snapshot(6));
+        let mut out = Vec::new();
+        let all = {
+            let mut show = simple_page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+            harness
+                .settle(&mut show)
+                .into_iter()
+                .map(|(t, _)| t)
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        for key in [
+            "overview.hero.caption",
+            "overview.card.lines",
+            "overview.simple.switch",
+            "overview.card.today",
+        ] {
+            assert!(all.contains(&tr.t(key)), "missing {key}: {all}");
+        }
+        for key in [
+            "overview.card.sessions",
+            "overview.card.todo",
+            "overview.other_providers",
+        ] {
+            assert!(!all.contains(&tr.t(key)), "advanced control {key}: {all}");
+        }
+        for tool in ["Claude Code", "opencode", "Gemini CLI"] {
+            assert!(!all.contains(tool), "other tool {tool}: {all}");
+        }
+        assert!(all.contains("Codex") && all.contains("1.60"), "{all}");
+        assert!(!all.contains("overview."), "untranslated: {all}");
+        assert!(
+            out.is_empty(),
+            "the simple dashboard should not trigger diagnostics: {out:?}"
+        );
+        assert!(
+            state.usage.value.is_none(),
+            "simple and full mode keep separate snapshots"
+        );
+    }
+}
+
+#[tokio::test]
+async fn simple_overview_route_checks_codex_opens_the_speed_picker_and_the_provider_page() {
+    let data = fake_data().await;
+    let harness = Harness::new([1280.0, 800.0], egui::Theme::Dark);
+    let tr = Tr::new(Locale::En);
+    let mut state = overview::State::default();
+    state.simple_usage = UsageLoader::preloaded(busy_snapshot());
+    let mut out = Vec::new();
+    {
+        let mut show = simple_page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        assert!(harness.click_text("Codex", &mut show));
+        assert!(
+            !harness
+                .settle(&mut show)
+                .iter()
+                .any(|(t, _)| t == &tr.t("overview.hero.router")),
+            "an inactive router is absent in simple mode"
+        );
+        let model = data
+            .overview
+            .value
+            .as_ref()
+            .unwrap()
+            .config
+            .as_ref()
+            .unwrap()
+            .model
+            .clone()
+            .unwrap();
+        assert!(harness.click_text(&model, &mut show));
+        let popup = harness.settle(&mut show);
+        assert!(
+            popup
+                .iter()
+                .any(|(t, _)| t == &tr.t("overview.simple.speed.fast"))
+        );
+        // Close the speed popup before testing the provider's navigation.
+        harness.key(egui::Key::Escape, &mut show);
+    }
+    assert!(
+        matches!(out.as_slice(), [Action::CheckCodexUpdates]),
+        "Codex checks versions without entering advanced pages: {out:?}"
+    );
+    out.clear();
+    {
+        let mut show = simple_page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        let (_, rect) = harness
+            .settle(&mut show)
+            .into_iter()
+            .find(|(t, _)| t.starts_with("Krill"))
+            .unwrap();
+        harness.click_at(rect.center(), &mut show);
+    }
+    assert!(
+        matches!(out.as_slice(), [Action::Go(Page::Providers)]),
+        "{out:?}"
+    );
+}
+
+#[tokio::test]
+async fn simple_route_reports_client_updates_latency_and_opens_the_three_speed_stops() {
+    use superba_core::SpeedTier;
+    let mut data = fake_data().await;
+    let service = FakeService::new(FakeOptions {
+        fast: true,
+        ..Default::default()
+    });
+    data.active_models
+        .finish(service.models_view(Default::default()).await);
+    data.active_models.value.as_mut().unwrap().speed.offered = SpeedTier::ALL.to_vec();
+    let mut versions = service.versions_view();
+    for row in &mut versions.cli {
+        row.action = superba_core::CliUpdateAction::None;
+    }
+    let c = caps(&data, "overseas", true, 81);
+    data.caps
+        .entry(c.site_id.clone())
+        .or_default()
+        .finish(Ok(vec![c]));
+    for locale in [Locale::ZhCn, Locale::En] {
+        let tr = Tr::new(locale);
+        for (update, cli_update) in [(false, false), (true, false), (false, true)] {
+            versions.app.update_available = update;
+            for row in &mut versions.cli {
+                row.action = if cli_update {
+                    superba_core::CliUpdateAction::Command {
+                        command: "update codex".into(),
+                    }
+                } else {
+                    superba_core::CliUpdateAction::None
+                };
+            }
+            data.versions.finish(Ok(versions.clone()));
+            let h = Harness::new([1280.0, 800.0], egui::Theme::Light);
+            let mut state = overview::State::default();
+            state.simple_usage = UsageLoader::preloaded(busy_snapshot());
+            let mut out = Vec::new();
+            let mut show = simple_page!(&data, &tr, &h.fonts, &mut state, &mut out);
+            let labels = h.settle(&mut show);
+            let key = if update || cli_update {
+                "overview.simple.client_update"
+            } else {
+                "overview.simple.client_latest"
+            };
+            assert!(labels.iter().any(|(t, _)| t == &tr.t(key)), "{labels:?}");
+            assert!(
+                !labels
+                    .iter()
+                    .any(|(t, _)| t == &tr.t("overview.hero.router"))
+            );
+            let (_, provider) = labels
+                .iter()
+                .find(|(t, _)| t.starts_with("Krill ·"))
+                .unwrap();
+            let (_, latency) = labels
+                .iter()
+                .find(|(t, _)| t.contains("81") && t.contains("ms"))
+                .unwrap();
+            assert!(latency.min.y > provider.max.y);
+            assert!(
+                labels
+                    .iter()
+                    .any(|(t, _)| t == &tr.t("overview.simple.line_hint"))
+            );
+            let model = data
+                .overview
+                .value
+                .as_ref()
+                .unwrap()
+                .config
+                .as_ref()
+                .unwrap()
+                .model
+                .as_ref()
+                .unwrap();
+            assert!(h.click_text(model, &mut show));
+            assert_eq!(
+                h.settle(&mut show)
+                    .iter()
+                    .filter(|(t, _)| t == model)
+                    .count(),
+                1,
+                "the popup must not repeat the model identifier"
+            );
+            for key in [
+                "overview.simple.speed.standard",
+                "overview.simple.speed.fast",
+                "overview.simple.speed.ultrafast",
+            ] {
+                assert!(
+                    h.settle(&mut show).iter().any(|(t, _)| t == &tr.t(key)),
+                    "{key}"
+                );
+            }
+            assert!(h.click_text(&tr.t("overview.simple.speed.fast"), &mut show));
+            drop(show);
+            assert!(
+                !out.iter().any(|a| matches!(a, Action::SetSpeed { .. })),
+                "a preview must not apply a speed"
+            );
+            let mut show = simple_page!(&data, &tr, &h.fonts, &mut state, &mut out);
+            assert!(h.click_text(&tr.t("overview.simple.speed.apply"), &mut show));
+            drop(show);
+            assert!(out.iter().any(|a| matches!(
+                a,
+                Action::SetSpeed {
+                    tier: SpeedTier::Fast,
+                    ..
+                }
+            )));
+        }
+    }
+}
+
+#[test]
+fn simple_speed_starfield_moves_and_respects_reduced_motion() {
+    use superba_core::SpeedTier;
+    use superba_gui::pages::overview::simple_speed;
+    let h = Harness::new([420.0, 220.0], egui::Theme::Light);
+    let data = Data::default();
+    let vertices = |time: f64, reduced: bool, tier| {
+        let output = h.ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(420.0, 220.0),
+                )),
+                time: Some(time),
+                ..Default::default()
+            },
+            |ui| {
+                ui.set_width(340.0);
+                with_cx(&data, Locale::En, |cx| {
+                    simple_speed::picker(ui, cx, tier, &SpeedTier::ALL, "GPT", true, reduced);
+                });
+            },
+        );
+        let vertices: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Mesh(mesh) => Some(
+                    mesh.vertices
+                        .iter()
+                        .map(|v| (v.pos, v.color))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        output.drop_without_applying_deltas();
+        vertices
+    };
+    for tier in [SpeedTier::Fast, SpeedTier::Ultrafast] {
+        assert_ne!(vertices(0.0, false, tier), vertices(0.7, false, tier));
+        assert_eq!(vertices(1.0, true, tier), vertices(2.0, true, tier));
+    }
+    assert!(vertices(3.0, false, SpeedTier::Standard).is_empty());
+    assert_ne!(
+        simple_speed::color(SpeedTier::Fast),
+        simple_speed::color(SpeedTier::Ultrafast)
+    );
+}
+
+#[test]
+fn simple_speed_knob_moves_between_stops_and_reduced_motion_jumps_directly() {
+    use superba_core::SpeedTier;
+    use superba_gui::pages::overview::simple_speed;
+    let h = Harness::new([340.0, 120.0], egui::Theme::Light);
+    let data = Data::default();
+    let knob = |time, tier, reduced| {
+        let output = h.ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(340.0, 120.0),
+                )),
+                time: Some(time),
+                ..Default::default()
+            },
+            |ui| {
+                ui.set_width(300.0);
+                with_cx(&data, Locale::En, |cx| {
+                    simple_speed::picker(
+                        ui,
+                        cx,
+                        tier,
+                        &SpeedTier::ALL,
+                        "hidden-model",
+                        true,
+                        reduced,
+                    );
+                });
+            },
+        );
+        let x = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Circle(c) if c.radius == 13.5 && c.fill == egui::Color32::WHITE => {
+                    Some(c.center.x)
+                }
+                _ => None,
+            })
+            .unwrap();
+        output.drop_without_applying_deltas();
+        x
+    };
+    let start = knob(0.0, SpeedTier::Standard, false);
+    knob(0.1, SpeedTier::Ultrafast, false);
+    let middle = knob(0.21, SpeedTier::Ultrafast, false);
+    let end = knob(0.4, SpeedTier::Ultrafast, false);
+    assert!(start < middle && middle < end, "{start} < {middle} < {end}");
+    assert_eq!(knob(0.5, SpeedTier::Standard, true), start);
+}
+
+#[tokio::test]
+async fn all_three_simple_route_buttons_paint_a_hover_background() {
+    let data = fake_data().await;
+    let h = Harness::new([1280.0, 800.0], egui::Theme::Light);
+    let tr = Tr::new(Locale::En);
+    let mut state = overview::State::default();
+    state.simple_usage = UsageLoader::preloaded(busy_snapshot());
+    let mut actions = Vec::new();
+    let mut show = simple_page!(&data, &tr, &h.fonts, &mut state, &mut actions);
+    let labels = h.settle(&mut show);
+    let model = data
+        .overview
+        .value
+        .as_ref()
+        .unwrap()
+        .config
+        .as_ref()
+        .unwrap()
+        .model
+        .as_ref()
+        .unwrap();
+    let names = [
+        "Codex",
+        labels
+            .iter()
+            .find(|(t, _)| t.starts_with("Krill ·"))
+            .unwrap()
+            .0
+            .as_str(),
+        model.as_str(),
+    ];
+    for (index, name) in names.into_iter().enumerate() {
+        let at = labels.iter().find(|(t, _)| t == name).unwrap().1.center();
+        let mut hovered = false;
+        for step in 0..3 {
+            let output = h.ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1280.0, 800.0),
+                    )),
+                    time: Some(2.0 + index as f64 + step as f64 * 0.2),
+                    events: vec![egui::Event::PointerMoved(at)],
+                    ..Default::default()
+                },
+                |ui| show(ui),
+            );
+            hovered |= output.shapes.iter().any(|shape| matches!(&shape.shape,
+                egui::Shape::Rect(r) if r.rect.contains(at) && r.corner_radius == egui::CornerRadius::same(16)
+                    && r.fill.a() > 0 && r.rect.width() < 300.0));
+            output.drop_without_applying_deltas();
+        }
+        assert!(hovered, "missing hover fill for {name}");
+    }
+}
+
+#[tokio::test]
+async fn simple_quick_switch_plans_a_provider_or_opens_its_missing_key() {
+    let mut data = fake_data().await;
+    let mut ready = data.active_profile().unwrap().clone();
+    ready.id = "simple-ready".into();
+    ready.name = "Ready provider".into();
+    let mut missing = ready.clone();
+    missing.id = "simple-missing".into();
+    missing.name = "Needs API key".into();
+    missing.key_ref = None;
+    data.profiles
+        .value
+        .as_mut()
+        .unwrap()
+        .profiles
+        .extend([ready.clone(), missing.clone()]);
+    let harness = Harness::new([1280.0, 800.0], egui::Theme::Light);
+    let tr = Tr::new(Locale::En);
+    let mut state = overview::State::default();
+    state.simple_usage = UsageLoader::preloaded(busy_snapshot());
+    let mut out = Vec::new();
+    {
+        let mut show = simple_page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        assert!(harness.click_last_text("Krill", &mut show));
+    }
+    assert!(
+        out.is_empty(),
+        "the current provider is already selected: {out:?}"
+    );
+    {
+        let mut show = simple_page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        assert!(harness.click_text(&ready.name, &mut show));
+        assert!(harness.click_text(&missing.name, &mut show));
+    }
+    assert!(
+        matches!(out.as_slice(), [
+        Action::Switch { profile, line: None, auth: None },
+        Action::PageCommand { page: Page::Providers, command },
+    ] if *profile == ready.id && *command == format!("key:{}", missing.id)),
+        "{out:?}"
+    );
+}
+
+#[tokio::test]
+async fn simple_overview_stays_inside_the_window_with_the_short_window_scroll_fallback() {
+    let data = fake_data().await;
+    for window in [[960.0, 640.0], [1280.0, 800.0], [1440.0, 900.0]] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            let mut state = overview::State::default();
+            state.simple_usage = UsageLoader::preloaded(busy_snapshot());
+            let report = support::fit::render_fit(
+                window,
+                locale,
+                egui::Theme::Light,
+                &data,
+                |ui, cx, out| {
+                    overview::show_simple(ui, cx, &mut state, out);
+                },
+            );
+            assert!(
+                report.beyond_right().is_empty(),
+                "horizontal overflow at {window:?} {locale:?}: {:?}",
+                report.beyond_right()
+            );
+            for (label, rect) in report.visible_texts() {
+                assert!(
+                    rect.min.x >= report.rect.min.x - 4.0 && rect.max.x <= report.rect.max.x + 4.0,
+                    "{window:?}: {label} extends outside the page: {rect:?}"
+                );
+                assert!(
+                    rect.min.y >= report.rect.min.y - 4.0 && rect.max.y <= report.rect.max.y + 4.0,
+                    "{window:?}: {label} extends below the viewport: {rect:?}"
+                );
+            }
+            if window[1] > 640.0 {
+                assert!(report.fits() && !report.scrolled, "{window:?}: {report:?}");
+            } else {
+                assert!(
+                    report.scrolled,
+                    "small windows need the shell's vertical fallback"
+                );
+            }
+        }
+    }
 }
 
 // --- Fit ----------------------------------------------------------------------------------------

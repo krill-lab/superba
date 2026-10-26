@@ -7,6 +7,23 @@ use serde_json::json;
 use superba_core::i18n::{core_catalog_source, flatten_toml};
 use superba_core::*;
 
+#[test]
+fn simple_mode_defaults_on_for_existing_settings_and_round_trips_both_choices() {
+    let old: Settings = serde_json::from_str(r#"{"countdown_secs":3,"safe_mode":true}"#).unwrap();
+    assert!(old.simple_mode);
+    assert_eq!(old.countdown_secs, 3);
+    assert!(old.safe_mode);
+    for simple in [true, false] {
+        let settings = Settings {
+            simple_mode: simple,
+            ..old.clone()
+        };
+        let stored = serde_json::to_string(&settings).unwrap();
+        let restored: Settings = serde_json::from_str(&stored).unwrap();
+        assert_eq!(restored, settings);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // values
 // ---------------------------------------------------------------------------

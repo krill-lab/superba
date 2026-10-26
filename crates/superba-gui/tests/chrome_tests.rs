@@ -206,7 +206,8 @@ fn press(pos: egui::Pos2, pressed: bool) -> Event {
 #[test]
 fn dragging_the_empty_top_moves_the_window_and_a_double_click_maximizes_it() {
     // Below the resize edge Linux has along the top.
-    for at in [pos2(110.0, 20.0), pos2(700.0, 20.0)] {
+    // The mode button occupies the upper-left part of the title bar.
+    for at in [pos2(180.0, 20.0), pos2(700.0, 20.0)] {
         let mut h = AppHarness::new(fake(), Locale::En, Page::Providers);
         h.settle();
         h.take_commands();
@@ -254,7 +255,7 @@ fn the_window_still_moves_while_a_modal_dialog_is_open() {
     let t = h.click(Some(Role::Button), &tr.t("providers.add.button"));
     assert!(!t.with_role(Role::Dialog).is_empty(), "{}", t.dump());
     h.take_commands();
-    let at = pos2(110.0, 20.0);
+    let at = pos2(180.0, 20.0);
     let moved = pos2(160.0, 40.0);
     let t = h.input(vec![
         vec![Event::PointerMoved(at)],
@@ -302,7 +303,7 @@ fn after_the_system_move_loop_ate_the_release_clicks_still_work() {
     let mut h = AppHarness::new(fake(), Locale::En, Page::Providers);
     h.settle();
     h.take_commands();
-    let at = pos2(110.0, 20.0);
+    let at = pos2(180.0, 20.0);
     h.input(vec![
         vec![Event::PointerMoved(at)],
         vec![press(at, true)],

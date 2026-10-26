@@ -117,6 +117,25 @@ pub fn effective(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Option<LineRow> {
 
 /// Draw the card.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<Action>) {
+    show_inner(ui, cx, snap, out, false);
+}
+
+pub(super) fn show_simple(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    snap: Option<&Snapshot>,
+    out: &mut Vec<Action>,
+) {
+    show_inner(ui, cx, snap, out, true);
+}
+
+fn show_inner(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    snap: Option<&Snapshot>,
+    out: &mut Vec<Action>,
+    simple: bool,
+) {
     let tr = cx.tr;
     let site = cx.data.active_site().filter(|_| !cx.data.official_active());
     let profile = cx.data.active_profile();
@@ -170,7 +189,9 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, snap: Option<&Snapshot>, out: &mut Vec<Act
     let rows = rows(cx, &site, snap);
     let routed = super::routed_addr(cx).is_some();
     // Footer: how the order is used.
-    let note = if routed {
+    let note = if simple {
+        tr.t("overview.simple.line_hint")
+    } else if routed {
         let priority =
             crate::pages::shared::priority_text(tr, rows.iter().map(|r| tr.text(&r.line.name)));
         let current = current_text(cx, snap).unwrap_or_else(|| tr.t("router.preference.waiting"));

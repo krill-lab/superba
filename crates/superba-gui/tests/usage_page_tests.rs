@@ -19,6 +19,280 @@ use superba_gui::pages::router::{self, State, Tab};
 use superba_gui::pages::{Action, NavGroup, Page, PageLayout};
 use support::fake::{FakeOptions, FakeService};
 
+#[test]
+fn simple_request_finish_time_uses_the_recorded_duration_and_keeps_unknowns_unknown() {
+    use superba_gui::pages::simple_usage::completed_at;
+    let now = Timestamp::from_millis(1_800_000_000_000);
+    let mut r = FakeService::fixture_request_rows(now).remove(0);
+    r.started_at = now;
+    r.duration_ms = Some(4_567);
+    assert_eq!(
+        completed_at(&r),
+        Some(Timestamp::from_millis(now.as_millis() + 4_567))
+    );
+    r.duration_ms = Some(0);
+    assert_eq!(completed_at(&r), Some(now));
+    r.duration_ms = None;
+    assert_eq!(completed_at(&r), None);
+}
+
+#[test]
+fn simple_sessions_explains_migration_in_a_clickable_popup_and_lists_completion_times() {
+    use superba_gui::pages::simple_usage;
+    for locale in [Locale::En, Locale::ZhCn] {
+        let mut h =
+            Harness::new([960.0, 640.0], locale, fake(), true).min_height(simple_usage::MIN_HEIGHT);
+        let tr = Tr::new(locale);
+        let mut state = simple_usage::State::default();
+        let f = h.until(
+            |ui, cx, out| simple_usage::show(ui, cx, &mut state, out),
+            |f| f.has(&tr.t("simple.usage.completed")),
+        );
+        assert!(f.has(&tr.t("simple.sessions.what")));
+        h.click_text(&f, &tr.t("simple.sessions.what"));
+        let help = h.settle(|ui, cx, out| simple_usage::show(ui, cx, &mut state, out));
+        assert!(
+            help.has(&tr.t("simple.sessions.explanation")),
+            "{}",
+            help.all_text()
+        );
+        assert!(
+            !help
+                .actions
+                .iter()
+                .any(|a| matches!(a, Action::SessionBatch { .. }))
+        );
+    }
+}
+
+#[test]
+fn simple_usage_queries_exactly_one_day_of_codex_and_plans_the_complete_session_batch() {
+    use superba_core::{MigrationSelector, RequestHarness, SwitchIntent};
+    use superba_gui::pages::simple_usage;
+    let now = Timestamp::from_millis(1_800_000_000_000);
+    let q = simple_usage::query(now, 0);
+    assert_eq!(q.harnesses, [RequestHarness::Codex]);
+    assert_eq!(
+        q.from,
+        Some(now.saturating_sub(std::time::Duration::from_secs(86_400)))
+    );
+    assert_eq!(q.to, Some(now));
+    assert!(q.group.is_none() && q.member.is_none() && q.source.is_none());
+    let request =
+        superba_gui::app::planned_request(&Action::SessionBatch { rollback: false }).unwrap();
+    let SwitchIntent::MigrateSessions { request: migration } = request.intent else {
+        panic!("migration")
+    };
+    assert_eq!(migration.to_provider, "openai");
+    assert!(migration.include_archived && migration.exclude.is_empty());
+    assert_eq!(
+        migration.selectors,
+        [MigrationSelector::OtherProviders {
+            except: "openai".into()
+        }]
+    );
+    assert!(matches!(
+        superba_gui::app::planned_request(&Action::SessionBatch { rollback: true })
+            .unwrap()
+            .intent,
+        SwitchIntent::RollbackAllMigrations
+    ));
+}
+
+#[test]
+fn simple_usage_totals_and_rows_exclude_other_tools_and_older_requests() {
+    use superba_core::RequestHarness;
+    use superba_gui::pages::simple_usage;
+    let service = fake();
+    let now = Timestamp::now();
+    let mut rows = FakeService::fixture_request_rows(now);
+    rows.truncate(1);
+    rows[0].harness = RequestHarness::Codex;
+    rows[0].requested_model = Some("simple-codex-model".into());
+    rows[0].model = Some("simple-codex-model".into());
+    rows[0].response_model = None;
+    rows[0].upstream_model = None;
+    rows[0].started_at = now.saturating_sub(std::time::Duration::from_secs(60));
+    let mut claude = rows[0].clone();
+    claude.id += 100;
+    claude.harness = RequestHarness::ClaudeCode;
+    claude.requested_model = Some("hidden-other-tool".into());
+    claude.model = Some("hidden-other-tool".into());
+    let mut old = rows[0].clone();
+    old.id += 200;
+    old.requested_model = Some("hidden-old-model".into());
+    old.model = Some("hidden-old-model".into());
+    old.started_at = now.saturating_sub(std::time::Duration::from_secs(90_000));
+    rows.extend([claude, old]);
+    service.set_request_rows(rows);
+    let mut h = Harness::new([1280.0, 800.0], Locale::ZhCn, service, true);
+    let mut state = simple_usage::State::default();
+    let frame = h.until(
+        |ui, cx, out| simple_usage::show(ui, cx, &mut state, out),
+        |f| f.has("simple-codex-model"),
+    );
+    let page = state.requests.value.as_ref().unwrap();
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(page.totals.requests, 1);
+    assert!(!frame.has("hidden-other-tool") && !frame.has("hidden-old-model"));
+}
+
+#[test]
+fn simple_requests_page_in_thirties_or_fifties_and_clamp_after_refresh() {
+    use superba_gui::pages::simple_usage::{State, visible_rows};
+    let mut state = State::default();
+    assert_eq!(visible_rows(&mut state, 121), 0..30);
+    state.page = 2;
+    assert_eq!(visible_rows(&mut state, 121), 60..90);
+    state.per_page = 50;
+    assert_eq!(visible_rows(&mut state, 121), 100..121);
+    assert_eq!(visible_rows(&mut state, 31), 0..31);
+    assert_eq!(visible_rows(&mut state, 0), 0..0);
+    state.per_page = 99;
+    assert_eq!(visible_rows(&mut state, 121), 0..30);
+}
+
+#[test]
+fn simple_requests_render_only_the_selected_page() {
+    use superba_core::RequestHarness;
+    use superba_gui::pages::simple_usage;
+    let service = fake();
+    let now = Timestamp::now();
+    let base = FakeService::fixture_request_rows(now).remove(0);
+    let rows: Vec<_> = (0..81)
+        .map(|i| {
+            let mut r = base.clone();
+            r.id = i;
+            r.harness = RequestHarness::Codex;
+            r.started_at = now.saturating_sub(std::time::Duration::from_secs(60 + i as u64));
+            r.requested_model = Some(format!("page-model-{i:02}"));
+            r.model = r.requested_model.clone();
+            r.response_model = None;
+            r.upstream_model = None;
+            r
+        })
+        .collect();
+    service.set_request_rows(rows);
+    let mut h = Harness::new([1280.0, 1000.0], Locale::En, service, true);
+    let mut state = simple_usage::State::default();
+    let f = h.until(
+        |ui, cx, out| simple_usage::show(ui, cx, &mut state, out),
+        |f| f.has("1–30 / 81"),
+    );
+    assert!(!f.has("page-model-30"), "{}", f.all_text());
+    state.page = 1;
+    let f = h.settle(|ui, cx, out| simple_usage::show(ui, cx, &mut state, out));
+    assert!(f.has("31–60 / 81"), "{}", f.all_text());
+    assert!(f.has("page-model-30"));
+    assert!(!f.has("page-model-00"));
+    state.page = 0;
+    state.per_page = 50;
+    let f = h.settle(|ui, cx, out| simple_usage::show(ui, cx, &mut state, out));
+    assert!(f.has("1–50 / 81"), "{}", f.all_text());
+}
+
+#[test]
+fn simple_usage_sections_fit_and_batch_buttons_never_ask_for_individual_providers() {
+    use superba_core::{MigrationReceipt, ProviderSessions, SwitchService};
+    use superba_gui::pages::simple_usage;
+    for (window, locale) in [
+        ([960.0, 640.0], Locale::ZhCn),
+        ([960.0, 640.0], Locale::En),
+        ([1280.0, 800.0], Locale::ZhCn),
+        ([1440.0, 900.0], Locale::En),
+    ] {
+        let service = fake();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (mut report, _) = rt.block_on(service.sessions()).unwrap();
+        report.scanned_at = Timestamp::now();
+        report.by_provider = BTreeMap::from([
+            (
+                "openai".into(),
+                ProviderSessions {
+                    distinct: 10,
+                    ..Default::default()
+                },
+            ),
+            (
+                "provider-a".into(),
+                ProviderSessions {
+                    distinct: 3,
+                    ..Default::default()
+                },
+            ),
+            (
+                "provider-b".into(),
+                ProviderSessions {
+                    distinct: 4,
+                    ..Default::default()
+                },
+            ),
+        ]);
+        let receipt = MigrationReceipt {
+            id: "batch-old".into(),
+            codex_home: report.codex_home.clone(),
+            migrated_at: Timestamp::now(),
+            to_provider: "openai".into(),
+            by_source_provider: BTreeMap::new(),
+            threads: 1,
+            rollouts: 1,
+            backup_dir: Default::default(),
+            ledger_path: Default::default(),
+            rolled_back: false,
+        };
+        let mut h =
+            Harness::new(window, locale, service, true).min_height(simple_usage::MIN_HEIGHT);
+        h.data.sessions.finish(Ok((report, vec![receipt])));
+        let tr = Tr::new(locale);
+        let mut state = simple_usage::State::default();
+        let f = h.until(
+            |ui, cx, out| simple_usage::show(ui, cx, &mut state, out),
+            |f| f.has(&tr.t("simple.usage.success")),
+        );
+        let stats = f.find(&tr.t("simple.usage.stats")).unwrap();
+        let sessions = f.find(&tr.t("simple.sessions.title")).unwrap();
+        let recent = f.find(&tr.t("simple.usage.recent")).unwrap();
+        assert!(stats.max.y < sessions.min.y && sessions.max.y < recent.min.y);
+        assert!(
+            f.fits(),
+            "{window:?} {locale:?}: bottom {}, page {:?}, stats {:?}, sessions {:?}, recent {:?}: {}",
+            f.used_bottom,
+            f.rect,
+            stats,
+            sessions,
+            recent,
+            f.all_text()
+        );
+        assert!(
+            f.texts.iter().all(|(_, r)| r.max.x <= f.rect.max.x + 0.5),
+            "horizontal overflow: {}",
+            f.all_text()
+        );
+        assert!(f.has(&tr.f("simple.sessions.pending", &[("n", &7)])));
+        for (key, rollback) in [
+            ("simple.sessions.migrate", false),
+            ("simple.sessions.rollback", true),
+        ] {
+            h.click_text(&f, &tr.t(key));
+            let mut batches = Vec::new();
+            h.settle(|ui, cx, out| {
+                simple_usage::show(ui, cx, &mut state, out);
+                batches.extend(out.iter().filter_map(|a| match a {
+                    Action::SessionBatch { rollback } => Some(*rollback),
+                    _ => None,
+                }));
+            });
+            assert_eq!(batches, [rollback]);
+        }
+        h.data.sessions.value.as_mut().unwrap().1[0].rolled_back = true;
+        let f = h.settle(|ui, cx, out| simple_usage::show(ui, cx, &mut state, out));
+        assert!(!f.has(&tr.t("simple.sessions.rollback")));
+    }
+}
+
 fn fake() -> Arc<FakeService> {
     Arc::new(FakeService::new(FakeOptions {
         fast: true,

@@ -157,6 +157,7 @@ owned_key_conflict = "{source} changed what Superba manages since it wrote it: {
 shared_home = "These hosts share one home directory: {hosts}. Write it once and restart all of them?"
 
 [switch.warn]
+rollback_changed = "Skipped {count} session restores because their content changed after migration. New content was kept; other recoverable sessions were rolled back."
 windows_force_quit = "ChatGPT was not opened by Superba, so Superba cannot ask it to quit: on Windows it keeps running in the notification area when its window closes. Superba ends its processes right away instead (force quit), without waiting; unsaved input in ChatGPT may be lost."
 line_fallback = "Line {first} cannot be used ({reason}); {line}, the next line of this profile, is used instead."
 router_mode = "Traffic for {site} goes through Superba's local router (127.0.0.1:{port}), a process on this computer, with the site's own key. Remote hosts stay direct."
@@ -254,6 +255,7 @@ original = "Original configuration"
 generation = "Configuration of generation {generation}"
 migrate = "Session migration"
 rollback_migration = "Undo session migration {id}"
+rollback_all_migrations = "Roll back all session migrations ({count})"
 uninstall = "Remove all Superba changes"
 restart_app = "Restart ChatGPT through Superba"
 rollback_remote = "Roll back {host}"

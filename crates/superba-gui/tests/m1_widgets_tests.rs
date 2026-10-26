@@ -547,7 +547,7 @@ fn row_height_and_fact_card_geometry_match_advertised_dimensions() {
     }
     assert_eq!(size::RAIL, 164.0);
     assert_eq!(size::RAIL_NARROW, 148.0);
-    assert_eq!(Icon::ALL.len(), 52);
+    assert_eq!(Icon::ALL.len(), 53);
 }
 
 #[test]

@@ -160,6 +160,11 @@ pub fn show(
         }
     });
     ui.add_space(20.0);
+    about(ui, cx, out);
+}
+
+/// Shared About links, also shown on the simple information tab.
+pub(super) fn about(ui: &mut Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
     section(ui, cx, &cx.tr.t("settings.about.title"), None);
     ui.horizontal_wrapped(|ui| {
         for (key, suffix) in [
