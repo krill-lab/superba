@@ -1,6 +1,7 @@
 //! The tools' own logos, where their official repositories publish them
 //! under a license that allows redistribution (sources and licenses:
-//! `assets/tool-icons/README.md` and the third-party notices). A desktop app
+//! `assets/tool-icons/README.md` and the third-party notices), and Claude
+//! Code's mark from claude.ai, used only to identify it. A desktop app
 //! without one shows the icon of the copy installed on this computer
 //! ([`installed_app`]). Every other tool keeps its two-letter monogram, as
 //! does any logo that fails to load.
@@ -37,6 +38,15 @@ enum Art {
 }
 
 const LOGOS: &[Logo] = &[
+    // Anthropic's Claude mark, https://claude.ai/favicon.svg: not licensed;
+    // shown only to identify Claude Code, by maintainer decision (README.md).
+    Logo {
+        monogram: "cc",
+        art: Art::Svg {
+            light: include_str!("../../assets/tool-icons/claude.svg"),
+            dark: include_str!("../../assets/tool-icons/claude.svg"),
+        },
+    },
     // openai/mcp-extensions, plugins/bits-and-bolts/assets/keycap-legends/codex.svg (Apache-2.0).
     Logo {
         monogram: "cx",
@@ -331,7 +341,7 @@ mod tests {
 
     #[test]
     fn glyph_takes_the_ink_of_the_background() {
-        let Art::Glyph(svg) = LOGOS[0].art else {
+        let Art::Glyph(svg) = LOGOS[1].art else {
             panic!("Codex is a glyph");
         };
         let ink = |dark| {
@@ -351,7 +361,7 @@ mod tests {
     #[test]
     fn png_logos_are_scaled_down_whole() {
         // Gemini CLI's 1645 pixel icon: its plate reaches the edges, centred.
-        let Art::Png(data) = LOGOS[4].art else {
+        let Art::Png(data) = LOGOS[5].art else {
             panic!("Gemini CLI is a PNG");
         };
         let img = fit(&Pixmap::decode_png(data).unwrap(), 26).unwrap();
@@ -361,11 +371,9 @@ mod tests {
     }
 
     #[test]
-    fn only_claude_code_and_workbuddy_keep_their_monogram() {
-        for m in ["cc", "wb"] {
-            assert!(!ships_logo(m), "{m}");
-        }
-        for m in ["cx", "ds", "oc", "pi", "gm", "zc"] {
+    fn only_workbuddy_has_no_shipped_logo() {
+        assert!(!ships_logo("wb"));
+        for m in ["cc", "cx", "ds", "oc", "pi", "gm", "zc"] {
             assert!(ships_logo(m), "{m}");
         }
     }
@@ -385,7 +393,7 @@ mod tests {
     #[test]
     fn broken_artwork_falls_back() {
         assert!(rasterize("<svg", None, 30).is_none());
-        assert!(render(&LOGOS[1].art, false, 0).is_none());
+        assert!(render(&LOGOS[2].art, false, 0).is_none());
         assert!(render(&Art::Png(b"\x89PNG"), false, 30).is_none());
     }
 }

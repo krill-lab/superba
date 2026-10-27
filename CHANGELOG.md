@@ -8,7 +8,7 @@ number; the minor number changes only for breaking changes.
 ## [Unreleased]
 
 ### Added
-- Tools show their own icons wherever they are listed (sidebar, Tools, Updates, Router, Usage): Codex, Gemini CLI, ZCode and pi join dsh and opencode, each from the vendor's MIT or Apache-2.0 repository (sources and licenses in the third-party notices). WorkBuddy, whose logo is not published under such a license, shows the icon of the copy installed on the computer (read from the app itself, never shipped). Claude Code keeps its monogram: Anthropic allows its marks only with prior permission.
+- Tools show their own icons wherever they are listed (sidebar, Tools, Updates, Router, Usage): Codex, Gemini CLI, ZCode and pi join dsh and opencode, each from the vendor's MIT or Apache-2.0 repository (sources and licenses in the third-party notices). Claude Code shows Anthropic's Claude mark, only to identify it. WorkBuddy, whose logo is not published under a license that allows redistribution, shows the icon of the copy installed on the computer (read from the app itself, never shipped).
 
 ### Fixed
 - Codex turns over the router's WebSocket are recorded as turns again, not warm-ups (user bug 123). Every frame on a socket took its turn metadata from the handshake, which describes Codex's warm-up, so each WebSocket request was logged as `prewarm` under the warm-up's turn and never got the stats line. Each `response.create` frame now reads its own `client_metadata` first, with the handshake only as a fallback, and only a `generate: false` frame counts as a warm-up.

@@ -2,7 +2,8 @@ Tool logos
 ==========
 
 Copied unmodified from the tools' official repositories (pinned commits),
-except `pi.svg`, drawn from pi's own source (below). Each file is licensed by
+except `pi.svg`, drawn from pi's own source (below), and `claude.svg`, which
+is not licensed (see Claude Code below). Each file is licensed by
 its owner under MIT or Apache-2.0 (license texts next to this file and in the
 release's third-party notices). The logos remain their owners' trademarks and
 only identify the tools.
@@ -30,8 +31,16 @@ read from the app (the Windows program's icon resource, the macOS bundle's
 `.icns`, the Linux package's `hicolor` icon); without one it keeps the `wb`
 monogram.
 
-Kept as a monogram: Claude Code. anthropics/claude-code is not open-source
-licensed, none of Anthropic's MIT or Apache-2.0 repositories contains the
-Claude mark (only the Anthropic logo and a "Powered by Claude" wordmark), and
-Anthropic's trademark guidelines (https://www.anthropic.com/legal/trademark-guidelines)
-allow its marks only with prior permission.
+Claude Code
+-----------
+
+| File | Source | License |
+|---|---|---|
+| claude.svg | https://claude.ai/favicon.svg (identical to https://claude.com/favicon.svg), fetched 2026-10-27, unmodified (SHA-256 b150888bc7257af83e3b85d3c2be4294f88986026f8168f6c12fc1fde6697350) | None: no license grants redistribution |
+
+The Claude mark is Anthropic's trademark. Superba shows it only to identify
+Claude Code (nominative use), by maintainer decision on 2026-10-27; Anthropic's
+trademark guidelines (https://www.anthropic.com/legal/trademark-guidelines)
+otherwise ask for prior permission, and none of Anthropic's MIT or Apache-2.0
+repositories contains the mark. It is removed if Anthropic asks, and Claude
+Code goes back to its `cc` monogram.
