@@ -964,7 +964,7 @@ impl Switcher {
         };
 
         // --- model catalog (plan 4 #17) ---------------------------------------
-        let model_check = if local && draft.blocks.is_empty() {
+        let model_check = if local && draft.blocks.is_empty() && !request.ignore_line_status {
             let left = model_left_to_config(&state, &set, &sites, baseline.as_ref());
             self.check_model(&request, left, &mut dest, &mut draft)
                 .await
@@ -1100,7 +1100,11 @@ impl Switcher {
             .as_ref()
             .map(|s| s.authapi_env.clone())
             .unwrap_or(EnvObservation::Unknown);
-        let authapi_health = match (&session, needs_authapi, authapi_env.value()) {
+        let authapi_health = match (
+            &session,
+            needs_authapi && !request.ignore_line_status,
+            authapi_env.value(),
+        ) {
             (Some(_), true, Some(origin)) => Some(self.authapi_health(&dest, origin).await),
             _ => None,
         };
@@ -2092,9 +2096,12 @@ impl Switcher {
                     let Some(line) = site.line(line_id).cloned() else {
                         continue;
                     };
-                    let caps = self
-                        .probe_for_switch(&site, &line, key.as_ref(), draft)
-                        .await;
+                    let caps = if request.ignore_line_status {
+                        None
+                    } else {
+                        self.probe_for_switch(&site, &line, key.as_ref(), draft)
+                            .await
+                    };
                     let eval = evaluate_line(&site, &line, caps.as_ref(), choice, pat_version_ok);
                     if eval.blocks.is_empty() || i == last {
                         chosen = Some((line, caps, eval));
@@ -3323,6 +3330,26 @@ impl Switcher {
         dest: &Dest,
         draft: &mut Draft,
     ) {
+        if !request.ignore_line_status
+            && let RestartKind::Blocked { reasons } = primary
+            && !reasons.is_empty()
+            && reasons
+                .iter()
+                .all(|r| matches!(r, BlockReason::LineUnavailable { .. }))
+        {
+            let mut alt = request.clone();
+            alt.ignore_line_status = true;
+            if let SwitchIntent::Profile { line_id, .. } = &mut alt.intent {
+                *line_id = dest.line.as_ref().map(|l| l.id.clone());
+            }
+            draft.alternatives.push(PlanAlternative {
+                label: text("switch.action.ignore_line_status"),
+                request: alt,
+            });
+        }
+        if request.ignore_line_status {
+            draft.warn(text("switch.warn.ignore_line_status"));
+        }
         let SwitchIntent::Profile {
             profile_id,
             line_id,

@@ -71,6 +71,7 @@ ide_app_servers = "IDE 插件"
 remote = "远程主机 {host}"
 
 [switch.action]
+ignore_line_status = "忽略线路状态，继续切换配置"
 switch_now = "立即切换"
 cancel = "取消"
 full_restart = "完全重启"
@@ -156,6 +157,7 @@ owned_key_conflict = "Superba 写入之后，{source} 修改了它管理的内�
 shared_home = "这些主机共用同一个家目录：{hosts}。只写一次并重启全部主机吗？"
 
 [switch.warn]
+ignore_line_status = "本次切换已跳过线路可用性检查。"
 rollback_changed = "有 {count} 项会话恢复因迁移后内容变化被跳过，新内容已保留；其他可恢复的会话已回滚。"
 windows_force_quit = "ChatGPT 不是由 Superba 打开的，Superba 无法请它退出：在 Windows 上关闭窗口后它仍在通知区域运行。Superba 会直接结束它的进程（强制退出），不再等待；ChatGPT 中未保存的输入可能丢失。"
 line_fallback = "线路 {first} 无法使用（{reason}），改用该配置的下一条线路 {line}。"

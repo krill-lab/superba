@@ -445,7 +445,12 @@ async fn proxy_request(
         }
     };
     if let Some(probe) = &probe {
-        order.retain(|c| c.member == probe.target.member && c.line == probe.line);
+        // An authenticated, explicit model test names its own line. It must
+        // also work with failover disabled or a cached open breaker.
+        order = vec![Candidate {
+            member: probe.target.member,
+            line: probe.line,
+        }];
     }
     note_compaction_route(&shared, &generation, &route, pin, now, order.first());
 
@@ -1226,15 +1231,7 @@ pub(crate) fn on_answer(
             .collect(),
     });
     line.counters.requests.fetch_add(1, Ordering::Relaxed);
-    if !generation.config.tuning.failover_enabled {
-        return;
-    }
-    let reopened = {
-        let mut h = lock(&line.health);
-        let was_open = h.open_until().is_some();
-        h.on_success(Instant::now(), Some(ttfb));
-        was_open
-    };
+    let reopened = generation.observe_answer(c, status, ttfb);
     if reopened {
         shared.event(
             RouteEventKind::LineUp,
@@ -1243,7 +1240,9 @@ pub(crate) fn on_answer(
             Some(format!("HTTP {}", status.as_u16())),
         );
     }
-    if let Some(k) = key {
+    if generation.config.tuning.failover_enabled
+        && let Some(k) = key
+    {
         let new_pin = Pin {
             member: c.member,
             line: c.line,

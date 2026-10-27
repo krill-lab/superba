@@ -43,6 +43,136 @@ fn loaded(f: &Frame) -> bool {
     f.has("登录页样式") || f.has("Krill · 海外线路")
 }
 
+struct SimpleRouter(superba_gui::pages::router::backend::SystemRouter);
+
+impl superba_gui::pages::router::backend::RouterBackend for SimpleRouter {
+    fn snapshot(&self) -> superba_gui::pages::router::backend::BoxFut<router::model::Snapshot> {
+        let snapshot = self.0.snapshot();
+        Box::pin(async move {
+            let mut snapshot = snapshot.await?;
+            snapshot.service = Some(router::model::ServiceView {
+                backend: "test service".into(),
+                installed: true,
+                running: Some(true),
+                pid: None,
+                detail: None,
+            });
+            snapshot.live = Ok(router::model::Live {
+                uptime_ms: 120_000,
+                totals: router::model::Totals {
+                    requests: 1234,
+                    active_requests: 2,
+                    ..Default::default()
+                },
+                local: superba_core::RouterLocalView {
+                    in_flight: 2,
+                    max_concurrent: 128,
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            Ok(snapshot)
+        })
+    }
+    fn set_order(&self, ids: Vec<String>) -> superba_gui::pages::router::backend::BoxFut<()> {
+        self.0.set_order(ids)
+    }
+    fn add_member(
+        &self,
+        candidate: router::model::Candidate,
+    ) -> superba_gui::pages::router::backend::BoxFut<()> {
+        self.0.add_member(candidate)
+    }
+    fn remove_member(&self, id: String) -> superba_gui::pages::router::backend::BoxFut<()> {
+        self.0.remove_member(id)
+    }
+    fn install(&self) -> superba_gui::pages::router::backend::BoxFut<()> {
+        self.0.install()
+    }
+    fn restart(&self) -> superba_gui::pages::router::backend::BoxFut<()> {
+        self.0.restart()
+    }
+    fn uninstall(&self) -> superba_gui::pages::router::backend::BoxFut<()> {
+        self.0.uninstall()
+    }
+}
+
+#[test]
+fn simple_router_shows_management_and_only_shows_detailed_usage_while_enabled() {
+    use superba_gui::pages::router::backend::SystemRouter;
+    for size in [[960.0, 640.0], [1280.0, 800.0]] {
+        for locale in [Locale::En, Locale::ZhCn] {
+            for on in [false, true] {
+                let tr = superba_gui::i18n::Tr::new(locale);
+                let service = fake();
+                service.edit_profiles(|set| {
+                    set.settings.router.members = vec![ProfileId::new("krill")]
+                });
+                let mut h =
+                    Harness::new(size, locale, service, true).min_height(Page::Router.min_height());
+                h.data
+                    .profiles
+                    .value
+                    .as_mut()
+                    .unwrap()
+                    .settings
+                    .router
+                    .enabled = on;
+                if on {
+                    let url = "http://127.0.0.1:18431/backend-api/codex"
+                        .parse::<url::Url>()
+                        .unwrap();
+                    let overview = h.data.overview.value.as_mut().unwrap();
+                    overview.router_base_url = Some(url.clone());
+                    overview.config.as_mut().unwrap().openai_base_url = Some(url.to_string());
+                }
+                let mut state = State::with_backend(Arc::new(SimpleRouter(
+                    SystemRouter::for_service(h.service.clone()),
+                )));
+                let f = h.until(
+                    |ui, cx, out| router::show_simple(ui, cx, &mut state, out),
+                    |f| f.has(&tr.t("router.service.restart")) && (!on || loaded(f)),
+                );
+                for key in [
+                    "router.simple.description",
+                    "router.live.uptime",
+                    "router.live.requests",
+                    "router.live.active",
+                    "router.live.capacity",
+                    "router.service.restart",
+                    "router.service.reinstall",
+                    "router.service.uninstall",
+                    "router.doctor.open",
+                    "router.simple.full_mode",
+                ] {
+                    assert!(
+                        f.has(&tr.t(key)),
+                        "{size:?} {locale:?}: {key}\n{}",
+                        f.all_text()
+                    );
+                }
+                assert_eq!(f.has(&tr.t("router.simple.usage_off")), !on);
+                assert_eq!(f.has(&tr.t("usage.tab.recent")), on);
+                assert!(
+                    f.fits() && !f.scrolled,
+                    "{size:?} {locale:?} on={on}: {}",
+                    f.all_text()
+                );
+                let advanced = f.find(&tr.t("router.simple.full_mode")).unwrap();
+                h.click_at(advanced.center());
+                let f = h.frames(5, |ui, cx, out| {
+                    router::show_simple(ui, cx, &mut state, out)
+                });
+                assert!(
+                    f.actions
+                        .iter()
+                        .any(|a| matches!(a, Action::SetSimpleMode(false)))
+                );
+            }
+        }
+    }
+}
+
 const ZH_COLUMNS: [&str; 6] = ["工具", "模型", "状态", "输入", "输出", "费用"];
 const EN_COLUMNS: [&str; 6] = ["Tool", "Model", "Status", "Input", "Output", "Cost"];
 

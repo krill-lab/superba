@@ -55,7 +55,14 @@ impl Selection {
                 self.view.failover_enabled()
             }
             fn fixed_exit(&self) -> Option<Candidate> {
-                self.view.fixed_exit()
+                let members: Vec<_> = self
+                    .selection
+                    .targets
+                    .iter()
+                    .map(|t| t.member)
+                    .filter(|m| self.view.eligible(*m))
+                    .collect();
+                self.view.generation.fixed_exit_for(&members)
             }
             fn members(&self) -> usize {
                 self.view.members()

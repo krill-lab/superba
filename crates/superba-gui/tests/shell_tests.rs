@@ -570,7 +570,7 @@ fn simple_sidebar_page<'a>(
 }
 
 #[test]
-fn simple_sidebar_has_three_codex_destinations_and_pins_superba_at_the_bottom() {
+fn simple_sidebar_has_four_destinations_and_pins_superba_at_the_bottom() {
     use superba_gui::pages::Page;
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
@@ -587,12 +587,14 @@ fn simple_sidebar_has_three_codex_destinations_and_pins_superba_at_the_bottom() 
             let navigation = [
                 tr.t("nav.overview"),
                 tr.t("nav.providers"),
+                tr.t("nav.router"),
                 tr.t("simple.usage.title"),
             ];
             let allowed = [
                 navigation[0].clone(),
                 navigation[1].clone(),
                 navigation[2].clone(),
+                navigation[3].clone(),
                 tr.t("simple.short_simple"),
                 tr.t("simple.short_full"),
                 tr.t("simple.troubleshooting"),
@@ -625,8 +627,9 @@ fn simple_sidebar_has_three_codex_destinations_and_pins_superba_at_the_bottom() 
             let rect = |label: &str| texts.iter().find(|(text, _)| text == label).unwrap().1;
             assert!(rect(&navigation[0]).max.y < rect(&navigation[1]).min.y);
             assert!(rect(&navigation[1]).max.y < rect(&navigation[2]).min.y);
+            assert!(rect(&navigation[2]).max.y < rect(&navigation[3]).min.y);
             assert!(
-                rect(&navigation[2]).max.y < rect(&tr.t("superba.title")).min.y,
+                rect(&navigation[3]).max.y < rect(&tr.t("superba.title")).min.y,
                 "Superba must stay below the main navigation: {texts:?}"
             );
             assert!(rect(&tr.t("simple.short_simple")).max.y < rect(&navigation[0]).min.y);
@@ -641,7 +644,7 @@ fn simple_sidebar_has_three_codex_destinations_and_pins_superba_at_the_bottom() 
 }
 
 #[test]
-fn simple_sidebar_clicks_select_the_three_pages_and_request_full_mode() {
+fn simple_sidebar_clicks_select_all_pages_and_request_full_mode() {
     use superba_gui::pages::{Action, Page};
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
@@ -653,6 +656,7 @@ fn simple_sidebar_clicks_select_the_three_pages_and_request_full_mode() {
         let mut actions = Vec::new();
         for (target, key) in [
             (Page::Providers, "nav.providers"),
+            (Page::Router, "nav.router"),
             (Page::Usage, "simple.usage.title"),
             (Page::Troubleshooting, "simple.troubleshooting"),
             (

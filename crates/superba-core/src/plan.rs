@@ -576,6 +576,10 @@ pub struct SwitchRequest {
     /// Answer to [`PlanChoice::UnknownVersion`]: continue although a version is unknown.
     #[serde(default)]
     pub accept_unknown_versions: bool,
+    /// Explicitly continue this switch without network availability checks.
+    /// Kept on this request only; new switches check the line normally.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ignore_line_status: bool,
     /// Answers to [`PlanChoice::OwnedKeyConflict`] (dotted key path -> resolution).
     #[serde(default)]
     pub key_resolutions: BTreeMap<String, KeyResolution>,
@@ -607,6 +611,7 @@ impl SwitchRequest {
             legacy_sessions: None,
             take_over_foreign_env: None,
             accept_unknown_versions: false,
+            ignore_line_status: false,
             key_resolutions: BTreeMap::new(),
             accept_shared_home: false,
             migration_exclude: Vec::new(),

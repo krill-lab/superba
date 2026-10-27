@@ -36,6 +36,29 @@ fn members() -> Arc<FakeService> {
 }
 
 #[test]
+fn simple_router_navigation_and_advanced_button_open_the_corresponding_mode() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = members();
+        service.edit_profiles(|set| {
+            set.settings.simple_mode = true;
+            set.settings.reduce_motion = true;
+        });
+        let mut h = AppHarness::new(service, locale, Page::Overview);
+        h.click(Some(Role::Tab), &tr.t(Page::Router.title_key()));
+        let tree = h.wait_for(Some(Role::Switch), &tr.t("router.mode_label"));
+        assert!(tree.has(&tr.t("router.simple.description")));
+        assert!(tree.has(&tr.t("router.simple.usage_off")));
+        assert!(
+            tree.find(Some(Role::Switch), &tr.t("router.failover.enabled"))
+                .is_none()
+        );
+        h.click(Some(Role::Button), &tr.t("router.simple.full_mode"));
+        h.wait_for(Some(Role::Switch), &tr.t("router.failover.enabled"));
+    }
+}
+
+#[test]
 fn no_disclosure_for_advanced_or_conversion_and_their_controls_are_named() {
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);

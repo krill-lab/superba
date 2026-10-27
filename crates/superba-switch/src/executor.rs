@@ -2129,6 +2129,9 @@ impl Run<'_> {
     }
 
     async fn verify_auth(&self, session: Option<&AppSession>) -> CheckResult {
+        if self.plan.request.ignore_line_status {
+            return skipped(text("switch.warn.ignore_line_status"));
+        }
         let d = self.deps();
         if !self.pc.auth.is_some_and(AuthMode::needs_authapi_env) {
             return skipped(text("switch.verify.not_applicable"));
@@ -2201,6 +2204,9 @@ impl Run<'_> {
     }
 
     async fn verify_line(&self) -> CheckResult {
+        if self.plan.request.ignore_line_status {
+            return skipped(text("switch.warn.ignore_line_status"));
+        }
         let d = self.deps();
         if self.pc.kept_foreign_auth {
             // GH#5: another tool's credential is not Superba's to test.

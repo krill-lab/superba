@@ -91,6 +91,7 @@ pub(crate) fn request(intent: SwitchIntent, exec: &ExecArgs) -> SwitchRequest {
         legacy_sessions: None,
         take_over_foreign_env: None,
         accept_unknown_versions: false,
+        ignore_line_status: false,
         key_resolutions: Default::default(),
         accept_shared_home: false,
         migration_exclude: Vec::new(),

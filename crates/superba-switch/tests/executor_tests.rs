@@ -830,6 +830,48 @@ async fn full_restart_quits_writes_and_relaunches_through_superba() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn ignored_line_status_survives_a_full_restart_without_network_verification() {
+    let w = no_cdp_world();
+    *w.prober.probe_error.lock().unwrap() = Some(Error::Network {
+        url: OVERSEAS.into(),
+        message: "temporary timeout".into(),
+    });
+    *w.prober.models.lock().unwrap() = Err(Error::Network {
+        url: OVERSEAS.into(),
+        message: "still unavailable".into(),
+    });
+    let sw = w.switcher();
+    let blocked = sw.plan(req("work")).await.unwrap();
+    let forced = blocked
+        .alternatives
+        .into_iter()
+        .find(|a| a.request.ignore_line_status)
+        .unwrap()
+        .request;
+    let plan = sw.plan(forced).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    let decider = ScriptedDecider::with(&[]);
+    let result = sw
+        .execute(plan, allow_full(), decider.clone(), Arc::new(NoEvents))
+        .await
+        .unwrap();
+    assert_eq!(
+        result.status,
+        OutcomeStatus::Switched,
+        "{:?}",
+        result.notices
+    );
+    let verified = result.verification.as_ref().unwrap();
+    assert!(matches!(verified.auth, CheckResult::Skipped { .. }));
+    assert!(matches!(verified.line, CheckResult::Skipped { .. }));
+    assert_eq!(verified.files, CheckResult::Passed);
+    assert_eq!(verified.process, CheckResult::Passed);
+    assert!(w.calls().contains(&"app.quit force=false".to_owned()));
+    assert!(w.calls().iter().any(|c| c.starts_with("app.launch")));
+    assert!(decider.asked_kinds().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
 async fn full_restart_returns_to_the_open_thread() {
     let w = unhealthy_authapi_world();
     let before = w.app.renderer.lock().unwrap().clone();

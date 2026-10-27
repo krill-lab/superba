@@ -160,7 +160,12 @@ async fn disabled_failover_passes_errors_and_edges_without_retry_or_probes() {
     let status = r.status().await;
     assert_eq!(status.totals.failovers, 0);
     assert_eq!(status.members[0].lines[0].failovers_away, 0);
-    assert_eq!(status.members[0].lines[0].last_error, None);
+    assert_eq!(
+        status.members[0].lines[0].last_error.as_deref(),
+        Some("HTTP 503")
+    );
+    assert_eq!(status.members[0].lines[0].state, LineState::Healthy);
+    assert!(status.members[0].lines[0].ttfb_ms.is_some());
     assert_eq!(status.sticky_sessions, 0);
 }
 

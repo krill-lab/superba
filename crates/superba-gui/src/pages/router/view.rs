@@ -462,10 +462,10 @@ fn member_row(
                 }
                 let healthy = m.healthy_lines();
                 let enabled = m.enabled_lines();
-                let status = if manual
-                    || m.lines
-                        .iter()
-                        .all(|l| matches!(l.health, LineHealth::Unknown | LineHealth::Disabled))
+                let status = if m
+                    .lines
+                    .iter()
+                    .all(|l| matches!(l.health, LineHealth::Unknown | LineHealth::Disabled))
                 {
                     Status::Idle
                 } else if healthy == enabled {
@@ -661,11 +661,7 @@ fn member_details(
             LineHealth::Unknown => (Status::Idle, "router.line.unknown"),
             LineHealth::Disabled => (Status::Idle, "router.line.disabled"),
         };
-        let mut state = if manual && line.health != LineHealth::Disabled {
-            cx.tr.t("router.line.unknown")
-        } else {
-            cx.tr.t(key)
-        };
+        let mut state = cx.tr.t(key);
         let mut tip = Vec::new();
         if let Some(metrics) = &line.metrics {
             if !manual
@@ -692,15 +688,14 @@ fn member_details(
                     &[("n", &metrics.active_websockets)],
                 ));
             }
-            if !manual && let Some(err) = &metrics.last_error {
+            if let Some(err) = &metrics.last_error {
                 tip.push(format!("{}: {err}", cx.tr.t("router.line.last_error")));
             }
         }
-        let error = !manual
-            && line
-                .metrics
-                .as_ref()
-                .is_some_and(|m| m.last_error.is_some());
+        let error = line
+            .metrics
+            .as_ref()
+            .is_some_and(|m| m.last_error.is_some());
         let ttfb = line
             .metrics
             .as_ref()
@@ -712,7 +707,7 @@ fn member_details(
             .map_or_else(|| "—".to_owned(), |m| model::count_text(m.requests));
         table.row(ui, size::ROW, i + 1 == n, |ui, col| match col {
             0 => {
-                ui.add(StatusDot::new(if manual { Status::Idle } else { status }));
+                ui.add(StatusDot::new(status));
                 ui.label(Text::small(line_name(&line.id), cx.pal).color(cx.pal.text));
             }
             1 => {

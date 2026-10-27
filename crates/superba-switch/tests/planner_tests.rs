@@ -430,6 +430,45 @@ async fn unreachable_line_blocks() {
 }
 
 #[tokio::test]
+async fn unavailable_line_offers_a_request_scoped_override_without_reprobing() {
+    let w = World::new();
+    *w.prober.probe_error.lock().unwrap() = Some(Error::Network {
+        url: OVERSEAS.into(),
+        message: "temporary timeout".into(),
+    });
+    let blocked = plan(&w, with_line("work", "overseas", Some(AuthMode::Pat))).await;
+    let alternative = blocked
+        .alternatives
+        .iter()
+        .find(|a| a.label.key == "switch.action.ignore_line_status")
+        .unwrap();
+    assert!(alternative.request.ignore_line_status);
+    assert!(
+        matches!(&alternative.request.intent, SwitchIntent::Profile {
+        line_id: Some(line), ..
+    } if line.as_str() == "overseas")
+    );
+    let probes_before = w
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("prober.probe_with_key"))
+        .count();
+    let forced = plan(&w, alternative.request.clone()).await;
+    assert!(!forced.is_blocked(), "{:?}", forced.primary);
+    assert!(forced.config.is_some());
+    assert!(warning_keys(&forced).contains(&"switch.warn.ignore_line_status".into()));
+    assert_eq!(
+        w.calls()
+            .iter()
+            .filter(|c| c.starts_with("prober.probe_with_key"))
+            .count(),
+        probes_before
+    );
+    // The override never becomes a preference for a later switch.
+    assert!(plan(&w, req("work")).await.is_blocked());
+}
+
+#[tokio::test]
 async fn rejected_key_blocks_with_the_access_reason() {
     let w = World::new();
     let mut caps = good_caps("krill", "overseas");
@@ -439,8 +478,15 @@ async fn rejected_key_blocks_with_the_access_reason() {
         .lock()
         .unwrap()
         .insert("overseas".into(), caps);
+    let plan = plan(&w, req("work")).await;
+    assert!(
+        !plan
+            .alternatives
+            .iter()
+            .any(|a| a.request.ignore_line_status)
+    );
     assert_eq!(
-        blocks(&plan(&w, req("work")).await),
+        blocks(&plan),
         vec![BlockReason::KeyRejected {
             line_id: "overseas".into(),
             access: KeyAccess::QuotaExhausted

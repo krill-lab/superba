@@ -135,6 +135,28 @@ fn members_follow_the_saved_order_with_live_lines_or_the_sites_lines() {
     assert_eq!(m[1].lines[0].id, catalog::KRILL_LINE_CDN);
     assert!(m[1].lines.iter().all(|l| l.health == LineHealth::Unknown));
     assert!(members(&RouterView::default(), &sites, &set).is_empty());
+    // With probes off, unknown stays unknown until an actual request supplies
+    // an observation; successful and failed requests keep their real status.
+    view.failover = Some(superba_core::RouterFailover {
+        enabled: false,
+        ..Default::default()
+    });
+    assert_eq!(
+        members(&view, &sites, &set)[0].lines[0].health,
+        LineHealth::Down
+    );
+    view.members[0].lines[0].health = RouterLineHealth::Healthy;
+    view.members[0].lines[0].last_error = None;
+    assert_eq!(
+        members(&view, &sites, &set)[0].lines[0].health,
+        LineHealth::Up
+    );
+    view.members[0].lines[0].requests = 0;
+    view.members[0].lines[0].ttfb_ms = None;
+    assert_eq!(
+        members(&view, &sites, &set)[0].lines[0].health,
+        LineHealth::Unknown
+    );
 }
 
 /// User bug 108: the router runs without a disabled line; the member table

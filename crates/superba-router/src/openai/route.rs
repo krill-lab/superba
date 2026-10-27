@@ -267,8 +267,6 @@ pub(crate) async fn resolve(
         .copied()
         .filter(|i| {
             bound.is_none_or(|id| generation.members[*i].cfg.id == id)
-                && (generation.config.tuning.failover_enabled
-                    || generation.fixed_exit().is_some_and(|c| c.member == *i))
                 && generation
                     .config
                     .upstream_protocol(&generation.members[*i].cfg.id, protocol.into())
@@ -282,6 +280,13 @@ pub(crate) async fn resolve(
         member,
         model: model.unwrap_or_default().to_owned(),
     };
+    if !generation.config.tuning.failover_enabled {
+        return Ok(generation
+            .fixed_exit_for(&serving)
+            .map(|c| target(c.member))
+            .into_iter()
+            .collect());
+    }
     let Some(model) = model.filter(|_| serving.len() > 1) else {
         return Ok(serving.into_iter().map(target).collect());
     };

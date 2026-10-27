@@ -53,14 +53,15 @@ pub(super) async fn count(shared: &Arc<Shared>, parts: &Parts, raw: Bytes) -> Re
     else {
         return estimated(&req);
     };
+    let members: Vec<_> = resolution.targets.iter().map(|t| t.member).collect();
+    let fixed = generation.fixed_exit_for(&members);
     let target = if generation.config.tuning.failover_enabled {
         resolution.targets.first()
     } else {
-        resolution.targets.iter().find(|t| {
-            generation
-                .fixed_exit()
-                .is_some_and(|c| c.member == t.member)
-        })
+        resolution
+            .targets
+            .iter()
+            .find(|t| fixed.is_some_and(|c| c.member == t.member))
     };
     let Some(target) = target else {
         return estimated(&req);
@@ -87,7 +88,7 @@ pub(super) async fn count(shared: &Arc<Shared>, parts: &Parts, raw: Bytes) -> Re
     let body = body.unwrap_or_else(|| Bytes::from(serde_json::to_vec(&req).unwrap_or_default()));
     for (li, line) in member.lines.iter().enumerate() {
         if !generation.config.tuning.failover_enabled {
-            if generation.fixed_exit().is_none_or(|c| c.line != li) {
+            if fixed.is_none_or(|c| c.line != li) {
                 continue;
             }
         } else if !lock(&line.health).is_available(Instant::now()) {

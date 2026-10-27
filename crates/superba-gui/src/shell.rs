@@ -238,7 +238,7 @@ pub fn simple_sidebar(
             ));
         });
     ui.spacing_mut().item_spacing.y = 8.0;
-    for p in [Page::Overview, Page::Providers, Page::Usage] {
+    for p in [Page::Overview, Page::Providers, Page::Router, Page::Usage] {
         // nav_item keeps the existing geometry, keyboard focus and selection.
         let label = (p == Page::Usage).then(|| cx.tr.t("simple.usage.title"));
         if nav_item(

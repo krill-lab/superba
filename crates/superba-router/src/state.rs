@@ -114,6 +114,23 @@ impl Generation {
             .map(|(member, line)| crate::select::Candidate { member, line })
     }
 
+    /// A fixed request constrained to a provider/model/protocol still gets one
+    /// real attempt, even without health data. Keep the selected line when its
+    /// member is allowed; otherwise use the explicitly addressed target's first
+    /// line. This never retries a different provider after an attempt fails.
+    pub fn fixed_exit_for(&self, members: &[usize]) -> Option<crate::select::Candidate> {
+        self.fixed_exit()
+            .filter(|c| members.contains(&c.member))
+            .or_else(|| {
+                members.iter().copied().find_map(|member| {
+                    self.members
+                        .get(member)
+                        .filter(|m| !m.lines.is_empty())
+                        .map(|_| crate::select::Candidate { member, line: 0 })
+                })
+            })
+    }
+
     pub fn failover_reason(
         &self,
         status: http::StatusCode,
@@ -126,15 +143,35 @@ impl Generation {
     }
 
     pub fn hard_failure(&self, c: crate::select::Candidate, reason: impl Into<String>) -> bool {
-        self.config.tuning.failover_enabled
-            && lock(&self.members[c.member].lines[c.line].health)
-                .on_hard_failure(Instant::now(), reason)
+        lock(&self.members[c.member].lines[c.line].health).on_hard_failure(Instant::now(), reason)
     }
 
     pub fn soft_failure(&self, c: crate::select::Candidate, reason: impl Into<String>) -> bool {
-        self.config.tuning.failover_enabled
-            && lock(&self.members[c.member].lines[c.line].health)
-                .on_soft_failure(Instant::now(), reason)
+        lock(&self.members[c.member].lines[c.line].health).on_soft_failure(Instant::now(), reason)
+    }
+
+    /// Record real traffic even when background probes and failover are off.
+    /// Fixed selection never gates a request on these observations.
+    pub fn observe_answer(
+        &self,
+        c: crate::select::Candidate,
+        status: http::StatusCode,
+        ttfb: Duration,
+    ) -> bool {
+        let mut health = lock(&self.members[c.member].lines[c.line].health);
+        if !self.config.tuning.failover_enabled
+            && self
+                .config
+                .tuning
+                .failover_statuses
+                .contains(&status.as_u16())
+        {
+            health.on_soft_failure(Instant::now(), format!("HTTP {}", status.as_u16()));
+            return false;
+        }
+        let was_open = health.open_until().is_some();
+        health.on_success(Instant::now(), Some(ttfb));
+        was_open
     }
 
     /// The pin of a conversation at `now`. With
@@ -615,5 +652,137 @@ impl GaugeGuard {
 impl Drop for GaugeGuard {
     fn drop(&mut self) {
         (self.pick)(&self.shared.totals).fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod fixed_route_tests {
+    use super::*;
+    use crate::config::{MemberConfig, RouterConfig, RouterSecrets};
+    use crate::select::Candidate;
+
+    #[tokio::test]
+    async fn fixed_requests_try_the_addressed_target_without_health_data_or_failover() {
+        let members: Vec<MemberConfig> = ["first", "second"]
+            .into_iter()
+            .map(|id| {
+                serde_json::from_value(serde_json::json!({
+                "id": id, "name": id, "kind": "compatible",
+                "lines": [
+                    {"id": "main", "name": "Main", "base_url": "https://example.invalid/v1"},
+                    {"id": "backup", "name": "Backup", "base_url": "https://example.invalid/backup"}
+                ]
+            })).unwrap()
+            })
+            .collect();
+        let mut config = RouterConfig::new(4321, members);
+        config.tuning.failover_enabled = false;
+        config.tuning.fixed_route = Some(superba_core::RouterFixedRoute {
+            member_id: "first".into(),
+            line_id: "backup".into(),
+        });
+        let keys = config
+            .members
+            .iter()
+            .map(|m| (m.id.clone(), superba_core::Secret::new("test-key")))
+            .collect();
+        let secrets = RouterSecrets::generate(keys);
+        let budget = Budget::new(None, &config.tuning);
+        let generation = Generation::build(1, config, &secrets, &budget, None).unwrap();
+        assert!(
+            generation
+                .members
+                .iter()
+                .flat_map(|m| &m.lines)
+                .all(|l| lock(&l.health).last_ok().is_none())
+        );
+        assert_eq!(
+            generation.fixed_exit_for(&[1, 0]),
+            Some(Candidate { member: 0, line: 1 })
+        );
+        let view = View {
+            generation: &generation,
+            websocket_only: false,
+            route: &crate::compaction::Route::Any,
+        };
+        let fixed = Candidate { member: 0, line: 1 };
+        assert_eq!(
+            crate::select::candidates(&view, None, Instant::now()),
+            vec![fixed]
+        );
+        generation.hard_failure(fixed, "earlier connection failure");
+        assert_eq!(
+            crate::select::candidates(&view, None, Instant::now()),
+            vec![fixed]
+        );
+        let target = crate::claude::route::Target {
+            member: 1,
+            model: "model".into(),
+        };
+        let attempts = || {
+            crate::claude::route::attempts(
+                &generation,
+                std::slice::from_ref(&target),
+                Some(crate::sticky::Pin { member: 0, line: 1 }),
+                Instant::now(),
+            )
+        };
+        assert_eq!(attempts().len(), 1);
+        assert_eq!(attempts()[0].c, Candidate { member: 1, line: 0 });
+        let selected = Candidate { member: 1, line: 0 };
+        assert!(generation.hard_failure(selected, "connect failed"));
+        assert_eq!(attempts()[0].c, Candidate { member: 1, line: 0 });
+        assert!(generation.observe_answer(
+            selected,
+            http::StatusCode::OK,
+            Duration::from_millis(25)
+        ));
+        assert_eq!(
+            lock(&generation.members[1].lines[0].health).state(Instant::now()),
+            crate::health::LineState::Healthy
+        );
+        assert!(
+            lock(&generation.members[1].lines[0].health)
+                .last_ok()
+                .is_some()
+        );
+        assert_eq!(
+            lock(&generation.members[1].lines[0].health).ttfb_ms(),
+            Some(25)
+        );
+        for _ in 0..2 {
+            generation.observe_answer(
+                selected,
+                http::StatusCode::BAD_GATEWAY,
+                Duration::from_millis(30),
+            );
+        }
+        assert!(
+            lock(&generation.members[1].lines[0].health)
+                .last_error()
+                .is_some()
+        );
+        assert_eq!(
+            attempts()[0].c,
+            selected,
+            "a real failure still cannot gate the next fixed request"
+        );
+        let selection = crate::merged_catalog::Selection {
+            targets: vec![crate::merged_catalog::Target {
+                member: 1,
+                upstream: "model".into(),
+                standard: false,
+            }],
+        };
+        assert_eq!(
+            selection.candidates(
+                &generation,
+                &crate::compaction::Route::Any,
+                None,
+                Instant::now()
+            ),
+            vec![Candidate { member: 1, line: 0 }]
+        );
+        assert_eq!(generation.fixed_exit_for(&[]), None);
     }
 }

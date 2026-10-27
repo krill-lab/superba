@@ -38,16 +38,14 @@ pub mod usage;
 
 use std::time::{Duration, Instant};
 
-use egui::{Align, Layout, Rect, RichText, Sense, Ui, vec2};
+use egui::{Align, Layout, Rect, Sense, Ui, vec2};
 use superba_core::{
     BillingSummary, LineCaps, Profile, RestoreTarget, Site, SpeedSupport, SpeedTier, catalog,
 };
 
 use super::{Action, Cx, Page, PageStatus, empty_state, error_state};
 use crate::design::backdrop::Backdrop;
-use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
-use crate::design::tokens::text;
 use crate::design::widgets::{Button, Latency, Text};
 use crate::runtime::ReadTask;
 pub use cards::{GAP, Grid, layout, layout_with};
@@ -259,12 +257,10 @@ fn title_row(ui: &mut Ui, cx: &Cx<'_>) {
         Layout::left_to_right(Align::Center),
         |ui| {
             ui.set_min_height(TITLE_ROW);
-            ui.label(
-                RichText::new(cx.tr.t(Page::Overview.title_key()))
-                    .font(font(text::TITLE_XL, Weight::Semibold))
-                    .color(cx.pal.text)
-                    .extra_letter_spacing(-0.8),
-            );
+            ui.label(Text::page_title(
+                cx.tr.t(Page::Overview.title_key()),
+                cx.pal,
+            ));
             ui.add_space(6.0);
             ui.with_layout(Layout::left_to_right(Align::Max), |ui| {
                 ui.add_space(0.0);

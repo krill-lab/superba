@@ -131,8 +131,14 @@ pub(crate) async fn resolve(
         return Ok(Resolution { model, targets });
     }
     if !generation.config.tuning.failover_enabled {
+        let members: Vec<_> = claude
+            .order
+            .iter()
+            .copied()
+            .filter(|m| claude.member(*m).is_some())
+            .collect();
         let targets = generation
-            .fixed_exit()
+            .fixed_exit_for(&members)
             .filter(|c| claude.member(c.member).is_some())
             .map(|c| Target {
                 member: c.member,
@@ -193,8 +199,9 @@ pub(crate) fn attempts(
     now: Instant,
 ) -> Vec<Attempt> {
     if !generation.config.tuning.failover_enabled {
+        let members: Vec<_> = targets.iter().map(|t| t.member).collect();
         return generation
-            .fixed_exit()
+            .fixed_exit_for(&members)
             .and_then(|c| {
                 targets
                     .iter()

@@ -1317,15 +1317,7 @@ pub fn page_header_with(
         ui.vertical(|ui| {
             ui.set_max_width(left_max);
             ui.spacing_mut().item_spacing.y = 2.0;
-            ui.label(
-                RichText::new(cx.tr.t(page.title_key()))
-                    .font(crate::design::fonts::font(
-                        crate::design::tokens::text::TITLE_XL - 4.0,
-                        crate::design::fonts::Weight::Semibold,
-                    ))
-                    .color(cx.pal.text)
-                    .extra_letter_spacing(-0.6),
-            );
+            ui.label(Text::page_title(cx.tr.t(page.title_key()), cx.pal));
             let label = egui::Label::new(Text::small(subtitle, cx.pal));
             ui.add(if page.is_superba() {
                 label.wrap()

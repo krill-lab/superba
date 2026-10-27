@@ -1,12 +1,10 @@
 //! Codex dashboard: route, lines, provider switcher and usage.
 
-use egui::{Align, Layout, Rect, RichText, ScrollArea, Sense, Ui, vec2};
+use egui::{Align, Layout, Rect, ScrollArea, Sense, Ui, vec2};
 use superba_core::RestoreTarget;
 
 use super::{Action, Cx, Page, State, cards, hero, lines, today};
-use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
-use crate::design::tokens::text;
 use crate::design::widgets::{Button, ListRow, Text};
 
 /// Draw the four-card Codex dashboard for simple mode.
@@ -17,12 +15,10 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
         Layout::left_to_right(Align::Center),
         |ui| {
             ui.set_min_height(super::TITLE_ROW);
-            ui.label(
-                RichText::new(cx.tr.t(Page::Overview.title_key()))
-                    .font(font(text::TITLE_XL, Weight::Semibold))
-                    .color(cx.pal.text)
-                    .extra_letter_spacing(-0.8),
-            );
+            ui.label(Text::page_title(
+                cx.tr.t(Page::Overview.title_key()),
+                cx.pal,
+            ));
         },
     );
     ui.add_space(8.0);

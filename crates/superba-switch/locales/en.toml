@@ -72,6 +72,7 @@ ide_app_servers = "IDE extensions"
 remote = "Remote host {host}"
 
 [switch.action]
+ignore_line_status = "Ignore line status and continue switching"
 switch_now = "Switch now"
 cancel = "Cancel"
 full_restart = "Full restart"
@@ -157,6 +158,7 @@ owned_key_conflict = "{source} changed what Superba manages since it wrote it: {
 shared_home = "These hosts share one home directory: {hosts}. Write it once and restart all of them?"
 
 [switch.warn]
+ignore_line_status = "Line availability checks are skipped for this switch only."
 rollback_changed = "Skipped {count} session restores because their content changed after migration. New content was kept; other recoverable sessions were rolled back."
 windows_force_quit = "ChatGPT was not opened by Superba, so Superba cannot ask it to quit: on Windows it keeps running in the notification area when its window closes. Superba ends its processes right away instead (force quit), without waiting; unsaved input in ChatGPT may be lost."
 line_fallback = "Line {first} cannot be used ({reason}); {line}, the next line of this profile, is used instead."

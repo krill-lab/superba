@@ -203,6 +203,7 @@ impl PageStates {
                 ));
             }
             Page::Providers => pages::providers::show_simple(ui, cx, &mut self.providers, out),
+            Page::Router => pages::router::show_simple(ui, cx, &mut self.router, out),
             Page::Usage => pages::simple_usage::show(ui, cx, &mut self.simple_usage, out),
             Page::Superba(section) => pages::superba::show_simple(
                 ui,
@@ -1617,6 +1618,7 @@ impl SuperbaApp {
                 page,
                 Page::Overview
                     | Page::Providers
+                    | Page::Router
                     | Page::Usage
                     | Page::Sessions
                     | Page::Superba(_)
@@ -1632,7 +1634,11 @@ impl SuperbaApp {
         }
         let page = if self.settings.simple_mode {
             match page {
-                Page::Overview | Page::Providers | Page::Usage | Page::Troubleshooting => page,
+                Page::Overview
+                | Page::Providers
+                | Page::Router
+                | Page::Usage
+                | Page::Troubleshooting => page,
                 Page::Superba(section) => {
                     Page::Superba(if section.tab() == pages::superba::SuperbaTab::Settings {
                         section

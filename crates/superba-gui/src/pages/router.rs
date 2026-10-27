@@ -42,6 +42,7 @@ mod recent;
 pub mod requests;
 pub mod routing;
 mod settings;
+mod simple;
 mod stats;
 pub mod stats_line;
 pub mod timing;
@@ -504,6 +505,11 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     dialogs(ui, cx, state, out);
 }
 
+/// Simple router controls with the shared detailed request log.
+pub fn show_simple(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    simple::show(ui, cx, state, out);
+}
+
 /// Draw the Usage page: where the rows come from, the tabs and their content.
 pub fn show_usage(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     tick(ui, cx, state, out, true);
@@ -524,6 +530,11 @@ pub fn show_usage(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
         }
     });
     usage_banner(ui, cx, state, out);
+    usage_content(ui, cx, state, out);
+    dialogs(ui, cx, state, out);
+}
+
+fn usage_content(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     tab_row(ui, cx, state);
     let rect = ui.available_rect_before_wrap();
     crate::design::layout::fixed(ui, rect, |ui| match state.tab {
@@ -532,7 +543,6 @@ pub fn show_usage(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
         Tab::Active => active::show(ui, cx, state, out),
         Tab::Stats => stats::show(ui, cx, state, out),
     });
-    dialogs(ui, cx, state, out);
 }
 
 /// A one-line banner: a status dot, a line elided to the width (full text in

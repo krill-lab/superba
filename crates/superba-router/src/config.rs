@@ -276,7 +276,8 @@ impl Tuning {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Tuning {
-    /// Use automatic selection, circuit breakers and health probes.
+    /// Use automatic selection, retries and background health probes.
+    /// Real requests record passive health even when this is off.
     pub failover_enabled: bool,
     /// Stable exit used when failover is disabled.
     pub fixed_route: Option<superba_core::RouterFixedRoute>,
