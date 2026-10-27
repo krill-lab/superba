@@ -43,8 +43,8 @@ en = "When `false`, disables feedback uploads and background Guardian review ret
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "1a47c49da857e28a"
 zh_name = "启用反馈"
-zh = "设为 `false` 时关闭反馈流程：终端界面（TUI）的 `/feedback` 只提示已禁用，app-server 拒绝反馈上传请求。默认 `true`。"
-zh_basis = "30fd5956b603d945"
+zh = "设为 `false` 时关闭反馈上传和 Guardian 审查记录的后台留存：终端界面（TUI）的 `/feedback` 只提示已禁用，app-server 拒绝反馈上传请求；显式的本地导出仍可使用。默认 `true`。"
+zh_basis = "1a47c49da857e28a"
 
 ["config:otel"]
 en = "OTEL configuration."

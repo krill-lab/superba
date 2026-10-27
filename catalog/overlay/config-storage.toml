@@ -114,8 +114,8 @@ en = "Directory for log files. Setting this value explicitly also routes the SQL
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "6e806146885c4b7c"
 zh_name = "日志目录"
-zh = "Codex 写日志文件的目录，默认 `$CODEX_HOME/log`（通常是 `~/.codex/log`）。在 `config.toml` 中显式设置后，终端界面（TUI）还会在该目录额外写一份文本日志 `codex-tui.log`。"
-zh_basis = "c86c9b95394c1dc5"
+zh = "Codex 写日志文件的目录，默认 `$CODEX_HOME/log`（通常是 `~/.codex/log`）。显式设置后，SQLite 日志数据库也改存到这里，终端界面（TUI）还会在该目录写一份文本日志 `codex-tui.log`；未设置时 SQLite 日志放在 `sqlite_home`。已有的 SQLite 日志不会自动迁移，管理员要求了 `sqlite_home` 时 SQLite 日志仍留在该目录。"
+zh_basis = "6e806146885c4b7c"
 
 ["config:projects"]
 en = ""
@@ -151,5 +151,5 @@ en = "Seconds a thread must have no subscribers and no activity before app-serve
 en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
 en_hash = "25e8a5112f4c307c"
 zh_name = "空闲会话卸载延迟"
-zh = "一个会话既没有订阅者也没有任何活动多少秒后，app-server 把它从内存中卸载。默认 1800（30 分钟），`0` 表示立即卸载；修改后需重启 app-server 才生效。"
-zh_basis = "c4730accf20de33f"
+zh = "一个会话既没有订阅者也没有任何活动多少秒后，app-server 把它从内存中卸载，`0` 表示立即卸载。默认 60（1 分钟），0.164 及更早版本为 1800（30 分钟）。每个会话加载时读取此值，请求中的配置覆盖按会话生效。"
+zh_basis = "25e8a5112f4c307c"

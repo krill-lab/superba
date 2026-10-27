@@ -208,7 +208,9 @@ zh_basis = ""
 ["config:hooks.PostModelRequest"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "模型请求后钩子"
+zh = "每次模型请求结束后运行的钩子，不支持 `matcher`；输入包含结果状态（`completed`、`failed` 或 `cancelled`）、错误信息和 token 用量。只用于观察，输出仅记入日志，不能改变后续流程。"
+zh_basis = ""
 
 ["config:hooks.PostToolUse"]
 en = ""
@@ -227,7 +229,9 @@ zh_basis = ""
 ["config:hooks.PreModelRequest"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "模型请求前钩子"
+zh = "每次向模型发送请求前运行的钩子，不支持 `matcher`。只用于观察，输出仅记入日志，不能阻止或修改请求。"
+zh_basis = ""
 
 ["config:hooks.PreToolUse"]
 en = ""
@@ -303,7 +307,9 @@ zh_basis = ""
 en = "Approved plugin contents; kept separate for declaration-only clients."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "2fc85240680838d7"
-zh = ""
+zh_name = "已信任的插件内容哈希"
+zh = "用户批准插件钩子时记录的插件内容哈希，与只覆盖钩子定义的 `trusted_hash` 分开保存，以免只认识钩子定义的客户端覆盖它。每次运行插件钩子前都会重新计算插件内容的哈希，不一致时需要重新批准。"
+zh_basis = "2fc85240680838d7"
 
 ["config:hooks.state.<name>.trusted_hash"]
 en = ""

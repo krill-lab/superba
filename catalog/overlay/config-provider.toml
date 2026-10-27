@@ -289,7 +289,9 @@ zh_basis = "2354ce3210d2d9f3"
 en = "Absolute path to a Google ADC credential file. For GCP, overrides GOOGLE_APPLICATION_CREDENTIALS in the auth command's environment only."
 en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
 en_hash = "a0cc919822a6fd10"
-zh = ""
+zh_name = "Google 凭据文件"
+zh = "Google 应用默认凭据（ADC）文件的绝对路径，写相对路径会报错。用于内置 `gcp` 模型供应商时，只在其认证命令（默认调用 `gcloud`）的环境中覆盖 `GOOGLE_APPLICATION_CREDENTIALS`，不影响 Codex 的其他部分。"
+zh_basis = "a0cc919822a6fd10"
 
 ["config:model_providers.<name>.env_http_headers"]
 en = "Optional HTTP headers to include in requests to this provider where the (key, value) pairs are the header name and _environment variable_ whose value should be used. If the environment variable is not set, or the value is empty, the header will not be included in the request."
@@ -427,7 +429,9 @@ zh_basis = ""
 en = "Google Cloud location for the built-in GCP provider. Takes precedence over `GOOGLE_CLOUD_LOCATION`; defaults to `global` when neither is set."
 en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
 en_hash = "908897e4e6078c5f"
-zh = ""
+zh_name = "Google Cloud 区域"
+zh = "内置 `gcp` 模型供应商（Google Cloud Vertex AI）使用的 Google Cloud location，优先于 `GOOGLE_CLOUD_LOCATION` 环境变量；两者都未设置时为 `global`。"
+zh_basis = "908897e4e6078c5f"
 
 ["config:model_providers.<name>.model_catalog_url"]
 en = "Optional full URL for a Codex-native model catalog. When unset, OpenAI discovery uses the Codex backend unless `base_url` overrides the inference endpoint."
@@ -449,7 +453,9 @@ zh_basis = "7c17f14ef3edc623"
 en = "Google Cloud project ID for the built-in GCP provider. Takes precedence over `GOOGLE_CLOUD_PROJECT` when deriving the Vertex AI endpoint."
 en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
 en_hash = "f046b321f9165d5d"
-zh = ""
+zh_name = "Google Cloud 项目 ID"
+zh = "内置 `gcp` 模型供应商使用的 Google Cloud 项目 ID，用来生成 Vertex AI 端点地址，优先于 `GOOGLE_CLOUD_PROJECT` 环境变量。在 `[model_providers.gcp]` 中设置。"
+zh_basis = "f046b321f9165d5d"
 
 ["config:model_providers.<name>.query_params"]
 en = "Optional query parameters to append to the base URL."

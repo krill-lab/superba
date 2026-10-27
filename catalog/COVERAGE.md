@@ -12,10 +12,10 @@ Feature stages from Codex 0.164.0 (linux).
 
 | | Entries | English (official) | English missing | with en_note | Chinese current | Chinese stale | Chinese missing |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| config | 817 | 516 | 301 | 0 | 784 | 10 | 23 |
-| feature | 191 | 4 | 187 | 0 | 175 | 0 | 16 |
-| value | 57 | 57 | 0 | 0 | 54 | 1 | 2 |
-| **all** | 1065 | 577 | 488 | 0 | 1013 | 11 | 41 |
+| config | 817 | 516 | 301 | 0 | 817 | 0 | 0 |
+| feature | 191 | 4 | 187 | 0 | 191 | 0 | 0 |
+| value | 57 | 57 | 0 | 0 | 57 | 0 | 0 |
+| **all** | 1065 | 577 | 488 | 0 | 1065 | 0 | 0 |
 
 Retired entries kept for their written text: 0.
 
@@ -23,30 +23,30 @@ Retired entries kept for their written text: 0.
 
 | | Entries | English (official) | English missing | with en_note | Chinese current | Chinese stale | Chinese missing |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| under development | 74 | 0 | 74 | 0 | 67 | 0 | 7 |
+| under development | 74 | 0 | 74 | 0 | 74 | 0 | 0 |
 | experimental | 4 | 4 | 0 | 0 | 4 | 0 | 0 |
 | stable | 55 | 0 | 55 | 0 | 55 | 0 | 0 |
 | deprecated | 3 | 0 | 3 | 0 | 3 | 0 | 0 |
 | removed | 46 | 0 | 46 | 0 | 46 | 0 | 0 |
-| unknown | 9 | 0 | 9 | 0 | 0 | 0 | 9 |
-| **all features** | 191 | 4 | 187 | 0 | 175 | 0 | 16 |
+| unknown | 9 | 0 | 9 | 0 | 9 | 0 | 0 |
+| **all features** | 191 | 4 | 187 | 0 | 191 | 0 | 0 |
 
 ## By overlay file
 
 | | Entries | English (official) | English missing | with en_note | Chinese current | Chinese stale | Chinese missing |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | `overlay/config-agents.toml` | 16 | 12 | 4 | 0 | 16 | 0 | 0 |
-| `overlay/config-approvals.toml` | 46 | 33 | 13 | 0 | 45 | 0 | 1 |
-| `overlay/config-apps.toml` | 56 | 44 | 12 | 0 | 53 | 0 | 3 |
-| `overlay/config-context.toml` | 45 | 43 | 2 | 0 | 43 | 2 | 0 |
-| `overlay/config-features.toml` | 124 | 43 | 81 | 0 | 116 | 2 | 6 |
-| `overlay/config-interface.toml` | 261 | 244 | 17 | 0 | 252 | 3 | 6 |
-| `overlay/config-mcp.toml` | 61 | 30 | 31 | 0 | 57 | 1 | 3 |
+| `overlay/config-approvals.toml` | 46 | 33 | 13 | 0 | 46 | 0 | 0 |
+| `overlay/config-apps.toml` | 56 | 44 | 12 | 0 | 56 | 0 | 0 |
+| `overlay/config-context.toml` | 45 | 43 | 2 | 0 | 45 | 0 | 0 |
+| `overlay/config-features.toml` | 124 | 43 | 81 | 0 | 124 | 0 | 0 |
+| `overlay/config-interface.toml` | 261 | 244 | 17 | 0 | 261 | 0 | 0 |
+| `overlay/config-mcp.toml` | 61 | 30 | 31 | 0 | 61 | 0 | 0 |
 | `overlay/config-model.toml` | 11 | 8 | 3 | 0 | 11 | 0 | 0 |
 | `overlay/config-other.toml` | 6 | 4 | 2 | 0 | 6 | 0 | 0 |
-| `overlay/config-provider.toml` | 71 | 57 | 14 | 0 | 68 | 0 | 3 |
+| `overlay/config-provider.toml` | 71 | 57 | 14 | 0 | 71 | 0 | 0 |
 | `overlay/config-realtime.toml` | 15 | 9 | 6 | 0 | 15 | 0 | 0 |
-| `overlay/config-storage.toml` | 18 | 14 | 4 | 0 | 16 | 2 | 0 |
-| `overlay/config-telemetry.toml` | 78 | 23 | 55 | 0 | 77 | 1 | 0 |
-| `overlay/config-tools.toml` | 66 | 9 | 57 | 0 | 63 | 0 | 3 |
-| `overlay/features.toml` | 191 | 4 | 187 | 0 | 175 | 0 | 16 |
+| `overlay/config-storage.toml` | 18 | 14 | 4 | 0 | 18 | 0 | 0 |
+| `overlay/config-telemetry.toml` | 78 | 23 | 55 | 0 | 78 | 0 | 0 |
+| `overlay/config-tools.toml` | 66 | 9 | 57 | 0 | 66 | 0 | 0 |
+| `overlay/features.toml` | 191 | 4 | 187 | 0 | 191 | 0 | 0 |

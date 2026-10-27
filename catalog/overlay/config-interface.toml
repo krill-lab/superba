@@ -291,16 +291,16 @@ en = "Copy selected transcript, footer, or composer text when the mouse button i
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "3c0a43c936746fcd"
 zh_name = "选中即复制"
-zh = "松开鼠标时自动复制所选的对话记录或底栏文字。默认 `auto`：直接运行在已知会转发原生复制快捷键的终端（Ghostty 1.2+、macOS 上的 Kitty、Windows Terminal、Windows 上的 VS Code）中时关闭，其余情况（包括未识别的终端以及 tmux/Zellij 内）开启。"
-zh_basis = "e4e4eebc65149316"
+zh = "松开鼠标时自动复制所选的对话记录、底栏或输入框文字。默认 `auto`：直接运行在已知会转发原生复制快捷键的终端（Ghostty 1.2+、macOS 上的 Kitty、Windows Terminal、Windows 上的 VS Code）中时关闭，其余情况（包括未识别的终端、无法识别版本的 Ghostty 以及 tmux/Zellij 内）开启。"
+zh_basis = "3c0a43c936746fcd"
 
 ["config:tui.copy_on_select=always"]
 en = "Copy every nonempty transcript, footer, or composer mouse selection on release."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "ae601512cd4286b5"
 zh_name = "始终选中即复制"
-zh = "只要用鼠标选中了非空的对话记录或底栏文字，松开时就复制。"
-zh_basis = "cfbaca4a2aec5445"
+zh = "只要用鼠标选中了非空的对话记录、底栏或输入框文字，松开时就复制。"
+zh_basis = "ae601512cd4286b5"
 
 ["config:tui.copy_on_select=auto"]
 en = "Use the terminal-specific default."
@@ -323,8 +323,8 @@ en = "Deselect read-only transcript or footer text after Copy on select confirms
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "e269114b1ce608f6"
 zh_name = "复制后取消选中"
-zh = "“选中即复制”确认内容已写入剪贴板后，自动取消对话记录中的选中状态。默认 `false`；“选中即复制”关闭时无效。"
-zh_basis = "96fac46330891c9b"
+zh = "“选中即复制”确认内容已写入剪贴板后，自动取消只读的对话记录或底栏文字的选中状态；可编辑的输入框中的选中保持不变。默认 `false`；“选中即复制”关闭时无效。"
+zh_basis = "e269114b1ce608f6"
 
 ["config:tui.disable_paste_burst"]
 en = "When true, disables burst-paste detection for typed input entirely. All characters are inserted as they are received, and no buffering or placeholder replacement will occur for fast keypress bursts. Overrides the legacy top-level `disable_paste_burst` setting. Defaults to `false`."
@@ -634,7 +634,9 @@ zh_basis = "fa5063d03dc5c811"
 en = "Open saved prompts and slash commands."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "97dda914eeea6515"
-zh = ""
+zh_name = "打开预设输入"
+zh = "打开已保存的提示词和斜杠命令（`[tui.presets]`）菜单。默认 `leader p`（按前导键后再按 `p`），该组合已被其他绑定占用时不设默认。"
+zh_basis = "97dda914eeea6515"
 
 ["config:tui.keymap.chat.previous_permission_mode"]
 en = "Switch to the previous available permission mode."
@@ -949,7 +951,9 @@ zh_basis = "67d38a6e01371eb2"
 en = "Enter keyboard selection mode for the transcript."
 en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
 en_hash = "ca9100434a367cbc"
-zh = ""
+zh_name = "键盘选择对话记录"
+zh = "进入对话记录的键盘选择模式，用键盘选中文字。默认 `leader [`（按前导键后再按 `[`），该组合已被其他绑定占用时不设默认。"
+zh_basis = "ca9100434a367cbc"
 
 ["config:tui.keymap.global.submit"]
 en = "Submit the current composer draft."
@@ -1866,24 +1870,32 @@ zh_basis = "b3e4436d95e2f6d2"
 en = "Saved inputs keyed by a single digit (`0` through `9`)."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "32ced12bd1e6a2e1"
-zh = ""
+zh_name = "预设输入"
+zh = "终端界面（TUI）中保存的可复用输入（提示词或斜杠命令），键为单个数字 `0`–`9`。用 `chat.open_presets` 快捷键打开预设菜单后按对应数字即可调出，也可在菜单中新建、编辑或删除；不支持以 `!` 开头的 Shell 命令。"
+zh_basis = "32ced12bd1e6a2e1"
 
 ["config:tui.presets.<name>"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "单个预设"
+zh = "一个编号预设，表名是 `0`–`9` 中的一个数字，包含必填的 `input` 和可选的 `label`。"
+zh_basis = ""
 
 ["config:tui.presets.<name>.input"]
 en = "Plain-text input, limited to 8,000 UTF-8 bytes."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "7ae78d0658650b10"
-zh = ""
+zh_name = "预设内容"
+zh = "预设的纯文本输入，可以是提示词或斜杠命令，不能为空，最长 8,000 个 UTF-8 字节。"
+zh_basis = "7ae78d0658650b10"
 
 ["config:tui.presets.<name>.label"]
 en = "Optional short name for the picker and shortcut hints."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "22f505c740e5088a"
-zh = ""
+zh_name = "预设名称"
+zh = "可选的简短名称，显示在预设菜单和快捷键提示中。"
+zh_basis = "22f505c740e5088a"
 
 ["config:tui.question_esc_back"]
 en = "Escape returns from async questions to the composer, preserving the answer draft."

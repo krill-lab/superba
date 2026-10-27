@@ -47,7 +47,9 @@ zh_basis = ""
 ["feature:app_server_websocket_compression"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "app-server 连接压缩"
+zh = "让 app-server 的 WebSocket 和 Unix 套接字（UDS）连接与客户端协商使用 zstd 压缩；未开启时不压缩。只影响 app-server 与客户端之间的传输。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:apply_patch_freeform"]
 en = ""
@@ -116,7 +118,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "Bedrock 设置向导"
-zh = "在终端界面（TUI）的登录引导中提供 Amazon Bedrock 设置选项。只在使用内置 `openai` 模型供应商、未显式设置 `model_provider` 且允许 API 登录方式时出现。开发中，默认关闭。"
+zh = "在终端界面（TUI）的登录引导中提供 Amazon Bedrock 设置选项。只在使用内置 `openai` 模型供应商、未显式设置 `model_provider` 且允许 API 登录方式时出现。0.164 起为稳定功能并默认开启。"
 zh_basis = ""
 
 ["feature:browser_annotation_api"]
@@ -297,7 +299,9 @@ zh_basis = ""
 ["feature:critical_path_timing"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "关键路径耗时统计"
+zh = "记录轮次中直接工具调用之间的依赖关系，把轮次耗时拆成推理、自动审查、等待用户、工具执行等关键路径时长，写入轮次的使用统计事件；出现代理间消息时，该轮次的关键路径记为无效。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:current_time_reminder"]
 en = ""
@@ -400,7 +404,9 @@ zh_basis = ""
 ["feature:executor_capability_discovery_v2"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "执行器能力发现 v2"
+zh = "通过 V2 发现协议获取并缓存所选执行环境（执行器）的能力清单，但不发布、也不启用其中的能力；开启后每个轮次开始时，MCP 相关组件会按新清单重新计算。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:experimental_windows_sandbox"]
 en = ""
@@ -475,7 +481,9 @@ zh_basis = ""
 ["feature:guardian_recorded_items"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "转发 Guardian 审查记录"
+zh = "把 Guardian 审查会话内部（通常不对外显示）的条目和中断事件转发给父会话的原始事件观察者，便于客户端记录或展示审查过程。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:guardian_reuse_parent_compaction"]
 en = ""
@@ -522,7 +530,9 @@ zh_basis = ""
 ["feature:guardianv3"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "Guardian V3"
+zh = "启用 Guardian V3 相关集成，也可写成 `[features.guardianv3]` 表并用 `enabled` 开启。依据源码推断：0.166.0-alpha.1 中除配置解析外尚无代码读取此开关，开启后暂无可见效果。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:hooks"]
 en = ""
@@ -598,7 +608,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "增量工具定义"
-zh = "在世界状态中跟踪顶层工具定义，工具变化时只向模型发送增量的上下文更新，而不是整份工具列表。只对使用 Responses Lite 格式的模型生效。开发中，默认关闭。"
+zh = "在世界状态中跟踪顶层工具定义，工具变化时只向模型发送增量的上下文更新，而不是整份工具列表。只对使用 Responses Lite 格式的模型生效。0.164 起为稳定功能并默认开启。"
 zh_basis = ""
 
 ["feature:instant_interrupt"]
@@ -662,19 +672,23 @@ zh_basis = ""
 ["feature:mcp_connection_sharing"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "共享 MCP 连接"
+zh = "自动探测本地 stdio MCP 服务器支持的协议版本，并让多个会话共享符合条件的连接，而不是每个会话各启动一份。`codex_apps` 以及使用运行时凭据或企业托管授权（EMA）的服务器除外。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:mcp_oauth_refresh_coordination"]
 en = ""
 en_hash = ""
 zh_name = "MCP OAuth 协调刷新"
-zh = "MCP 服务器的 OAuth 令牌改由 MCP 客户端（RMCP）通过 Codex 配置的凭据存储来协调刷新，而不是沿用原有的刷新与保存流程。开发中，默认关闭。"
+zh = "MCP 服务器的 OAuth 令牌改由 MCP 客户端（RMCP）通过 Codex 配置的凭据存储来协调刷新，而不是沿用原有的刷新与保存流程。0.164 起为稳定功能并默认开启。"
 zh_basis = ""
 
 ["feature:mcp_tool_list_changed"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "响应 MCP 工具列表变更"
+zh = "MCP 服务器发出工具列表变更通知（`notifications/tools/list_changed`）时，在当前轮次内就刷新该服务器提供给模型的工具，而不是一直沿用启动时的列表；开启后也不再复用未跟踪变更的工具目录缓存。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:memories"]
 en = ""
@@ -728,7 +742,9 @@ zh_basis = ""
 ["feature:multi_env_copy_file"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "跨环境复制文件"
+zh = "向模型提供 `multi_env_copy_file` 工具，在两个不同的执行环境之间按绝对路径复制单个文件，内容不经过模型上下文。两端各按自身权限读写，目标目录必须已存在，中途中断可能留下不完整的文件。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:network_proxy"]
 en_name = "Network proxy"
@@ -777,7 +793,9 @@ zh_basis = ""
 ["feature:plugin_discovery_prefetch"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "预取插件目录"
+zh = "app-server 启动时在后台预先拉取插件目录、精选插件和推荐列表，旧式插件建议读取这份缓存。只使用已安装插件清单的宿主可以关闭它。0.166 起为稳定功能并默认开启。"
+zh_basis = ""
 
 ["feature:plugin_hooks"]
 en = ""
@@ -810,7 +828,9 @@ zh_basis = ""
 ["feature:prediction_preserve_parent_tools"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "预测分叉保留工具声明"
+zh = "app-server 为预测或采样创建的分叉会话禁用 MCP 时，保留从父会话继承的工具声明，并追加一条“本次请求不可用 MCP 工具”的说明，而不是改写工具列表。只对使用 Responses Lite 格式的模型生效。0.166 起为稳定功能并默认开启。"
+zh_basis = ""
 
 ["feature:prefer_mxc"]
 en = ""
@@ -839,14 +859,14 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "实时语音对话"
-zh = "在终端界面（TUI）中启用实时语音对话：用 `/voice` 开始或停止，`/voice settings` 选择音色，需要设备支持语音。0.156 起为稳定功能并默认开启。"
+zh = "已移除（0.164 起）。曾用于在终端界面（TUI）中开关实时语音对话（`/voice`）；现在实时语音对话是否可用不再取决于此开关，设置后被忽略。"
 zh_basis = ""
 
 ["feature:reasoning_effort_override"]
 en = ""
 en_hash = ""
 zh_name = "推理强度变更提示"
-zh = "会话中途切换推理强度时，在请求输入中追加一条可信的配置更新条目，把新的推理强度告知模型。只对内置 OpenAI 模型供应商且模型支持推理强度更新时生效。开发中，默认关闭。"
+zh = "会话中途切换推理强度时，在请求输入中追加一条可信的配置更新条目，把新的推理强度告知模型。只对内置 OpenAI 模型供应商且模型支持推理强度更新时生效。0.166 起为稳定功能并默认开启。"
 zh_basis = ""
 
 ["feature:recommended_plugins"]
@@ -950,7 +970,9 @@ zh_basis = ""
 ["feature:runtime_agent_instances"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "运行时代理实例认证"
+zh = "为 OpenAI 请求认证注册一个临时运行时（runtime agent instance），请求时附带由它签名的运行时断言，`mode` 决定只发断言还是与原凭据一起发。依据源码推断：0.166.0-alpha.1 中这条认证路径尚未接入请求流程。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:runtime_metrics"]
 en = ""
@@ -1018,7 +1040,9 @@ zh_basis = ""
 ["feature:skill_catalog_deltas"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "技能目录增量更新"
+zh = "会话中新增或修改技能时，只把变化部分以增量形式追加到模型上下文，而不是重新渲染整份技能目录；追加内容受累计的上下文预算限制。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:skill_env_var_dependency_prompt"]
 en = ""
@@ -1066,7 +1090,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "提前声明环境工具"
-zh = "在执行环境就绪之前就向模型声明已启用的环境类工具（如 Shell 命令工具）及其参数，让工具列表保持稳定；实际执行仍需要可用的环境并遵守其策略。开发中，默认关闭。"
+zh = "已移除（0.164 起）。曾用于在执行环境就绪之前就向模型声明环境类工具；现在 Codex 总是这样做，此开关不再起作用。"
 zh_basis = ""
 
 ["feature:standalone_web_search"]
@@ -1100,7 +1124,9 @@ zh_basis = ""
 ["feature:subagent_thread_environments"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "子代理继承会话环境"
+zh = "创建子代理时，让它继承父会话配置的执行环境，而不是父会话当前轮次临时选择的环境。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:system_proxy_fallback"]
 en = ""
@@ -1162,7 +1188,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "全屏对话记录（旧）"
-zh = "已弃用，设置后无效果并会给出提示；请改用 `[tui].fullscreen_transcript`。"
+zh = "已移除。曾用于开启全屏对话记录，设置后无效果并会给出提示；请改用 `[tui].fullscreen_transcript`。"
 zh_basis = ""
 
 ["feature:tui_app_server"]
@@ -1175,7 +1201,9 @@ zh_basis = ""
 ["feature:tui_multi_backend"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "TUI 多后端"
+zh = "允许终端界面（TUI）发现多个对话后端并在其间选择。依据源码推断：0.166.0-alpha.1 中除功能注册外尚无代码读取此开关。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:ultrafast_mode"]
 en = ""
@@ -1236,7 +1264,9 @@ zh_basis = ""
 ["feature:untrusted_as_tool_output"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "不可信上下文作为工具输出"
+zh = "客户端随轮次附带的不可信上下文（additional context）改为以单独的具名工具输出交给模型，而不是作为普通消息插入。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:use_agent_identity"]
 en = ""
@@ -1276,7 +1306,9 @@ zh_basis = ""
 ["feature:wake_on_agent_messages"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "代理消息唤醒会话"
+zh = "根会话的上一轮次结束、处于空闲时，收到其他代理（如子代理）发来的消息也会自动开始新的轮次，而不必等待用户输入。只对根会话生效，且当前协作模式须允许自动开始轮次。开发中，默认关闭。"
+zh_basis = ""
 
 ["feature:web_search_cached"]
 en = ""
@@ -1317,7 +1349,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "托管工作树"
-zh = "启用托管的 Git worktree：可用 `/worktree` 在新的工作树中开始或继续会话，会话也会按仓库识别。0.156 起为稳定功能并默认开启。"
+zh = "已移除（0.164 起）。曾用于开关托管的 Git worktree（`/worktree`）；现在该功能是否可用不再取决于此开关，设置后被忽略。"
 zh_basis = ""
 
 ["feature:write_stdin_approval"]

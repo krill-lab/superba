@@ -201,8 +201,8 @@ en = "Generate both versions while v1 is selected; v2 runs alone after cutover."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "2e8d96e0d78d8c26"
 zh_name = "双版本同时生成"
-zh = "同时运行 `v1` 和 `v2` 两套记忆生成流程，但只有 `memories.version` 选中的版本提供给模型。默认 `false`。"
-zh_basis = "039f8b493e501f8a"
+zh = "`memories.version` 为 `v1` 时同时运行 `v1` 和 `v2` 两套记忆生成流程，为切换到 `v2` 预热，但只有 `v1` 提供给模型；切换到 `v2` 后只运行 `v2`。默认 `false`；显式设为 `false` 时，新配置不会自动选用 `v2`。"
+zh_basis = "2e8d96e0d78d8c26"
 
 ["config:memories.extract_model"]
 en = "Model used for thread summarisation."
@@ -281,8 +281,8 @@ en = "Selects the memory pipeline. Fresh profiles default to v2 when memories ar
 en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
 en_hash = "34ecfe3c1edab704"
 zh_name = "记忆流程版本"
-zh = "选择记忆流程版本：`v1`（默认）或 `v2`。两者分别存放在 Codex 主目录下的 `memories` 和 `memories_v2` 目录。"
-zh_basis = "816eb8a1b85020ef"
+zh = "选择记忆流程版本 `v1` 或 `v2`，两者分别存放在 Codex 主目录下的 `memories` 和 `memories_v2` 目录。未设置时，启用记忆且主目录下还没有 `memories` 目录的新配置默认用 `v2`（显式设置 `dual_write = false` 时除外），已有 `v1` 记忆的配置默认用 `v1`。"
+zh_basis = "34ecfe3c1edab704"
 
 ["config:model_auto_compact_token_limit"]
 en = "Token usage threshold triggering auto-compaction of conversation history."

@@ -204,9 +204,9 @@ zh_basis = "8584143d962173b0"
 en = "Deprecated and ignored; asynchronous classification always uses conversations."
 en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
 en_hash = "4eaf418bf74ed2e9"
-zh_name = "后台分类器模式"
-zh = "覆盖 Guardian v2 后台风险分类器的实验模式：`snapshot`（每次单独发送当前快照）或 `conversation`（在持续的分类会话中累积历史）。未设置时先用模型目录的默认值，再回退到 `snapshot`。"
-zh_basis = "e4713b5d224eec23"
+zh_name = "后台分类器模式（已弃用）"
+zh = "已弃用，设置后被忽略并在启动时给出警告：Guardian v2 的后台风险分类现在总是使用持续的分类会话（相当于原来的 `conversation` 模式）。早期版本用它在 `snapshot` 和 `conversation` 两种模式之间切换。"
+zh_basis = "4eaf418bf74ed2e9"
 
 ["config:features.guardianv2.classifier_instructions"]
 en = ""
@@ -394,7 +394,9 @@ zh_basis = "370a884e1d95f27f"
 ["config:features.guardianv3.enabled"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "启用 Guardian V3"
+zh = "开发中：开启 `guardianv3` 功能，与在 `[features]` 中写 `guardianv3 = true` 等效。依据源码推断：0.166.0-alpha.1 中尚无代码读取此开关。"
+zh_basis = ""
 
 ["config:features.imagegenext"]
 en = ""
@@ -534,8 +536,8 @@ en = "Preserve the parent's model-visible history on full forks and append child
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "a64a275f57a3d915"
 zh_name = "分叉时保留父会话前缀"
-zh = "完整分叉子代理时保留父会话中模型可见的历史，并在其后追加子代理指令。默认 `false`；没有可复用上下文基线的旧式压缩仍会重建历史。"
-zh_basis = "b0067d642ca33bd5"
+zh = "完整分叉子代理时保留父会话中模型可见的历史，并在其后追加子代理指令。0.164 起默认 `true`；没有可复用上下文基线的旧式压缩仍会重建历史。"
+zh_basis = "a64a275f57a3d915"
 
 ["config:features.multi_agent_v2.root_agent_usage_hint_text"]
 en = ""
@@ -786,14 +788,16 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "启用会话总预算"
-zh = "开发中：开启 `rollout_budget` 功能，为一个会话及其所有子代理统计共享的加权 token 预算，用完后会话以超出预算的错误结束。开启时必须同时设置 `limit_tokens` 和 `reminder_at_remaining_tokens`。"
+zh = "开发中：开启 `rollout_budget` 功能，为一个会话及其所有子代理统计共享的加权 token 预算，用完后会话以超出预算的错误结束（`enforce_limit = false` 时只提醒、不停止）。开启时必须同时设置 `limit_tokens` 和 `reminder_at_remaining_tokens`。"
 zh_basis = ""
 
 ["config:features.rollout_budget.enforce_limit"]
 en = "Stop when the shared budget is exhausted. Defaults to true."
 en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
 en_hash = "061e2d1f98797b43"
-zh = ""
+zh_name = "预算用完即停止"
+zh = "共享预算耗尽时是否结束会话，默认 `true`。设为 `false` 时只统计用量并按设定提醒模型，不会因超出预算而停止。"
+zh_basis = "061e2d1f98797b43"
 
 ["config:features.rollout_budget.limit_tokens"]
 en = ""
@@ -827,24 +831,32 @@ zh_basis = ""
 ["config:features.runtime_agent_instances.enabled"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "启用运行时代理实例"
+zh = "开发中：开启 `runtime_agent_instances` 功能，与在 `[features]` 中写 `runtime_agent_instances = true` 等效；断言的发送方式由同一表中的 `mode` 选择。"
+zh_basis = ""
 
 ["config:features.runtime_agent_instances.mode"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "运行时断言发送方式"
+zh = "开启运行时代理实例后，请求如何携带运行时断言：`dual_header`（默认，原凭据与断言一起发送，用于迁移期）或 `assertion_only`（只发送断言作为请求凭据）。"
+zh_basis = ""
 
 ["config:features.runtime_agent_instances.mode=assertion_only"]
 en = "Send only the runtime assertion as the request credential."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "366fd8fac4a9450f"
-zh = ""
+zh_name = "仅发送断言"
+zh = "只把运行时断言作为请求凭据发送（`Authorization: AgentAssertion …`），不再附带原有的账号凭据。"
+zh_basis = "366fd8fac4a9450f"
 
 ["config:features.runtime_agent_instances.mode=dual_header"]
 en = "Send the actor credential and a runtime assertion together during migration."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "3217326d75fc5278"
-zh = ""
+zh_name = "凭据与断言同发"
+zh = "迁移期间同时发送原有的账号凭据（`Authorization: Bearer …`）和运行时断言请求头。这是默认方式。"
+zh_basis = "3217326d75fc5278"
 
 ["config:features.sleep_tool.enabled"]
 en = ""

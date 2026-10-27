@@ -35,14 +35,16 @@ en = "OAuth client registered with that enterprise IdP."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "940814395409262d"
 zh_name = "IdP 客户端 ID"
-zh = "在该企业 IdP 中注册的公开 OAuth 客户端 ID，Codex 以此身份向 IdP 发起授权。"
-zh_basis = "879523309ec7c240"
+zh = "在该企业 IdP 中注册的 OAuth 客户端 ID，Codex 以此身份向 IdP 登录和交换令牌。公开客户端只需此项，机密客户端还要设置 `client_secret`。"
+zh_basis = "940814395409262d"
 
 ["config:mcp_enterprise_managed_auth.idp.client_secret"]
 en = "Provisioned client secret for confidential IdP login and token exchange. Omitted for a public client."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "ecac07bfe225f9c6"
-zh = ""
+zh_name = "IdP 客户端密钥"
+zh = "机密（confidential）客户端在 IdP 登录和令牌交换时使用的预配客户端密钥，公开客户端不设置。设置时不能为空。"
+zh_basis = "ecac07bfe225f9c6"
 
 ["config:mcp_enterprise_managed_auth.idp.issuer"]
 en = "Issuer used for enterprise OAuth discovery and identity validation."
@@ -56,7 +58,9 @@ zh_basis = "8eb87c124e5bdbd7"
 en = "Registered EMA client authentication method. Defaults to client_secret_basic when a secret is configured; requires a client secret."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "187fa8818347f247"
-zh = ""
+zh_name = "令牌端点认证方式"
+zh = "企业托管授权（EMA）客户端在令牌端点注册的认证方式：`client_secret_basic`（设置了密钥时的默认值，用 HTTP Basic 认证发送）或 `client_secret_post`（在请求体中发送）。必须同时设置 `client_secret`。"
+zh_basis = "187fa8818347f247"
 
 ["config:mcp_oauth_callback_port"]
 en = "Optional fixed port for the local HTTP callback server used during MCP OAuth login. When unset, Codex will bind to an ephemeral port chosen by the OS."
@@ -341,7 +345,9 @@ zh_basis = "4ee7e15154c35517"
 en = "Registered EMA client authentication method. Defaults to client_secret_basic when a secret is configured; requires a client secret."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
 en_hash = "187fa8818347f247"
-zh = ""
+zh_name = "令牌端点认证方式"
+zh = "企业托管授权（EMA）客户端在令牌端点注册的认证方式：`client_secret_basic`（设置了 `client_secret` 时的默认值）或 `client_secret_post`。只能在 `auth` 为 `ema_auth` 时使用，且必须同时设置 `oauth.client_secret`，否则配置报错。"
+zh_basis = "187fa8818347f247"
 
 ["config:mcp_servers.<name>.oauth_resource"]
 en = ""
