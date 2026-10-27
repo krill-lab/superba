@@ -93,6 +93,9 @@ pub fn site(data: &Data, id: &SiteId) -> Option<Site> {
 
 /// The profile Codex uses now (from the overview).
 pub fn applied_profile_id(data: &Data) -> Option<&ProfileId> {
+    if let Some((profile, _)) = data.router_fixed_exit() {
+        return Some(&profile.id);
+    }
     data.active_state()?.profile_id.as_ref()
 }
 

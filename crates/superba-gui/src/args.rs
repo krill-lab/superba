@@ -47,7 +47,7 @@ superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
   --size WxH    initial window size in points, e.g. 1280x800
   --page NAME   open a page first: overview tools providers models router usage
                 settings sessions hosts claude-code claude-settings dsh opencode
-                pi zcode workbuddy gemini superba
+                pi zcode workbuddy gemini troubleshooting superba
                 updates diagnostics data general appearance network notify
   --command CMD run a command of that page once it has loaded (tooling):
                 e.g. overview wizard, providers import, router doctor
@@ -64,7 +64,7 @@ superba [--theme dark|light] [--lang en|zh-CN] [--size WxH] [--page NAME]
 Subcommands (status, switch, restore, ...) behave like `spb`; see `superba --help`.";
 
 /// Flag names of the pages, in navigation order.
-pub const PAGE_NAMES: [(Page, &str); 25] = [
+pub const PAGE_NAMES: [(Page, &str); 26] = [
     (Page::Overview, "overview"),
     (Page::Tools, "tools"),
     (Page::Providers, "providers"),
@@ -91,6 +91,7 @@ pub const PAGE_NAMES: [(Page, &str); 25] = [
         Page::Tool(superba_core::harness::HarnessId::Gemini),
         "gemini",
     ),
+    (Page::Troubleshooting, "troubleshooting"),
     (Page::Superba(crate::pages::SuperbaSection::Home), "superba"),
     (
         Page::Superba(crate::pages::SuperbaSection::Updates),

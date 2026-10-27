@@ -22,13 +22,12 @@ use super::tap::{AnthropicSse, AnthropicUsage};
 use super::{line, meta, passthrough};
 use crate::config::join_path;
 use crate::forward::{
-    Observed, UpResponse, describe_error, failover_status_in, full, response_headers, set_route,
-    up_response,
+    Observed, UpResponse, describe_error, full, response_headers, set_route, up_response,
 };
 use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_detail, file_limit_in};
 use crate::proxy::{note_line_down, on_answer};
 use crate::select::Candidate;
-use crate::state::{GaugeGuard, Generation, RespBody, Shared, lock};
+use crate::state::{GaugeGuard, Generation, RespBody, Shared};
 use crate::stats::body::{Mode, TapBody};
 use crate::stats::hub::{End, Tracker};
 use crate::stats::tap::{LineSetup, Outcome, TapSummary, render_line};
@@ -55,8 +54,12 @@ fn prepare(
 }
 
 /// Why an answer is a failover reason (502-504, 529, an edge interception).
-fn failover_reason(statuses: &[u16], resp: &reqwest::Response) -> Option<String> {
-    failover_status_in(statuses, resp.status(), resp.headers())
+fn failover_reason(generation: &Generation, resp: &reqwest::Response) -> Option<String> {
+    if !generation.config.tuning.failover_enabled {
+        return None;
+    }
+    generation
+        .failover_reason(resp.status(), resp.headers())
         .or_else(|| (resp.status().as_u16() == 529).then(|| "HTTP 529".to_owned()))
 }
 
@@ -227,13 +230,13 @@ pub(super) async fn messages(
             }
             Err(e) => {
                 let reason = describe_error(&e);
-                let opened = lock(&line.health).on_hard_failure(Instant::now(), reason.clone());
+                let opened = generation.hard_failure(a.c, reason.clone());
                 note_line_down(&shared, &generation, a.c, opened, &reason);
                 (reason, None)
             }
-            Ok(resp) => match failover_reason(&generation.config.tuning.failover_statuses, &resp) {
+            Ok(resp) => match failover_reason(&generation, &resp) {
                 Some(reason) => {
-                    let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
+                    let opened = generation.soft_failure(a.c, reason.clone());
                     note_line_down(&shared, &generation, a.c, opened, &reason);
                     (reason, Some(resp.status().as_u16()))
                 }
@@ -299,7 +302,9 @@ pub(super) async fn messages(
         if let Some(t) = &mut tracker {
             t.attempt_failed(a.c, status, &reason, started.elapsed());
         }
-        line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
+        if generation.config.tuning.failover_enabled {
+            line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
+        }
         failures.push(format!("{label}: {reason}"));
         if i + 1 < total {
             shared.totals.failovers.fetch_add(1, Ordering::Relaxed);
@@ -490,9 +495,7 @@ impl Answer {
 
     /// The upstream broke while its answer was read whole.
     fn broken(&self, tracker: Option<Tracker>, detail: &str) -> Response<RespBody> {
-        let m = &self.generation.members[self.c.member];
-        let l = &m.lines[self.c.line];
-        let opened = lock(&l.health).on_hard_failure(Instant::now(), detail.to_owned());
+        let opened = self.generation.hard_failure(self.c, detail.to_owned());
         note_line_down(&self.shared, &self.generation, self.c, opened, detail);
         if let Some(t) = tracker {
             t.finish(End {

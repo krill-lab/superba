@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="480" height="360" viewBox="0 0 480 360"><defs><linearGradient id="shell" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#FF956D"/><stop offset=".5" stop-color="#FF697E"/><stop offset="1" stop-color="#E94382"/></linearGradient><g id="shrimp" fill="url(#shell)"><path d="M237 122L728 113C802 110 861 162 857 230L826 232C829 178 784 140 728 140L387 133Z"/>
+<path d="M354 167L696 160C752 158 800 187 823 229L790 236C771 203 738 187 693 187Z"/>
+<path d="M527 218H857C852 402 734 557 527 547Z"/>
+<path d="M500 218C418 221 343 253 281 309L500 527Z"/>
+<path d="M259 330C203 389 171 467 168 550H479Z"/>
+<path d="M168 580H477L278 779C211 728 174 655 168 580Z"/>
+<path d="M499 603V834C427 834 363 818 304 793Z"/>
+<path d="M530 603L736 809C670 830 596 841 530 834Z"/><circle cx="668" cy="350" r="95" fill="#FFFDF8"/><circle cx="680" cy="353" r="66" fill="#273548"/><circle cx="700" cy="331" r="20" fill="#FFFDF8"/></g></defs><style>
+.rest-body{animation:work 1.6s infinite;transform-origin:0px 0px}.sip{animation:tap .4s infinite alternate;transform-origin:38px -15px}
+@keyframes work{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-5px) rotate(4deg)}}
+@keyframes tap{to{transform:translate(7px,-9px) rotate(-14deg)}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<ellipse cx="235" cy="323" rx="180" ry="12" fill="#738490" opacity=".12"/>
+<path d="M260 241H422M279 244V314M402 244V314" stroke="#52697C" stroke-width="12" stroke-linecap="round"/>
+<rect x="302" y="120" width="117" height="90" rx="9" fill="#314A5A"/>
+<rect x="310" y="128" width="101" height="72" rx="4" fill="#A3E4D0"/>
+<path d="M326 151L340 162L326 173M352 176H379M358 211V237M337 238H381" fill="none" stroke="#3F786D" stroke-width="6" stroke-linecap="round"/>
+<path d="M283 230H331L338 238H275Z" fill="#8498A8"/>
+<g transform="translate(160 230)"><g class="rest-body">
+<path d="M-16 21L-30 77H-10M23 21L38 77H58" fill="none" stroke="#B65569" stroke-width="12" stroke-linecap="round"/>
+<use xlink:href="#shrimp" transform="translate(-104 -133) scale(.23)"/>
+<path d="M19-62Q66-7 107-8" fill="none" stroke="#D85572" stroke-width="11" stroke-linecap="round"/>
+<g class="sip"><path d="M38-15Q67 13 119-4" fill="none" stroke="#FF8391" stroke-width="12" stroke-linecap="round"/><path d="M116-5L132-27" stroke="#52697C" stroke-width="9" stroke-linecap="round"/><path d="M120-31L142-20" stroke="#E9B83F" stroke-width="16" stroke-linecap="round"/></g>
+<path d="M-12-93Q-10-144 39-145Q87-144 89-94Z" fill="#F5C54A" stroke="#CC942C" stroke-width="4"/>
+<path d="M38-143V-104M-19-94H97" stroke="#FFE88A" stroke-width="10" stroke-linecap="round"/>
+</g></g>
+</svg>

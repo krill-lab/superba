@@ -450,6 +450,12 @@ pub enum RestoreTarget {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum SwitchIntent {
+    /// Reapply this computer's applied configuration without following remote
+    /// hosts. Used by user-triggered troubleshooting repairs.
+    ReapplyConfig,
+    /// Rebuild this computer's config.toml from its applied provider, keeping
+    /// authentication and sessions. Always explicitly confirmed, with backup.
+    ReinitializeConfig,
     /// Switch to a profile, optionally overriding its line and auth mode for this
     /// switch (quick line switch, manual auth under Advanced). The switch service
     /// stores the overrides into the profile after a successful switch.
@@ -478,6 +484,9 @@ pub enum SwitchIntent {
         /// Migration id.
         migration_id: String,
     },
+    /// Roll back every completed migration of this home, newest first, with one
+    /// stop/restart of its Codex consumers.
+    RollbackAllMigrations,
     /// Remove every change Superba made (plan 9.6 uninstall): restore the original
     /// configuration, env values and legacy rc lines, remote markers, launcher
     /// entries; optionally delete backups.
@@ -573,6 +582,10 @@ pub struct SwitchRequest {
     /// Answer to [`PlanChoice::UnknownVersion`]: continue although a version is unknown.
     #[serde(default)]
     pub accept_unknown_versions: bool,
+    /// Explicitly continue this switch without network availability checks.
+    /// Kept on this request only; new switches check the line normally.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ignore_line_status: bool,
     /// Answers to [`PlanChoice::OwnedKeyConflict`] (dotted key path -> resolution).
     #[serde(default)]
     pub key_resolutions: BTreeMap<String, KeyResolution>,
@@ -588,9 +601,22 @@ pub struct SwitchRequest {
     /// no file changes, so it fetches the list again at once (user bug 106).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub refresh_models: bool,
+    /// Explicit local maintenance: do not automatically follow SSH/WSL hosts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub local_only: bool,
+    /// Reset router preferences when enabling it from simple mode.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset_router: bool,
 }
 
 impl SwitchRequest {
+    /// Only a local router enable may discard saved router preferences.
+    pub fn resets_router(&self) -> bool {
+        self.reset_router
+            && self.targets.local
+            && matches!(self.intent, SwitchIntent::Router { enable: true })
+    }
+
     /// A plain local switch to a profile.
     pub fn profile(profile_id: ProfileId) -> Self {
         Self {
@@ -604,10 +630,13 @@ impl SwitchRequest {
             legacy_sessions: None,
             take_over_foreign_env: None,
             accept_unknown_versions: false,
+            ignore_line_status: false,
             key_resolutions: BTreeMap::new(),
             accept_shared_home: false,
             migration_exclude: Vec::new(),
             refresh_models: false,
+            local_only: false,
+            reset_router: false,
         }
     }
 

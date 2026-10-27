@@ -33,6 +33,9 @@ pub(crate) async fn probe_line(
     member: usize,
     line: usize,
 ) {
+    if !generation.config.tuning.failover_enabled {
+        return;
+    }
     let m = &generation.members[member];
     let l = &m.lines[line];
     if l.probing.swap(true, Ordering::AcqRel) {
@@ -117,6 +120,10 @@ pub(crate) async fn health_loop(shared: Arc<Shared>) {
         }
         shared.retry_stats();
         let generation = shared.current();
+        if !generation.config.tuning.failover_enabled {
+            outages = crate::outage::OutageTracker::default();
+            continue;
+        }
         if let Some(dir) = &data_dir {
             for outage in outages.tick(&generation, Instant::now()) {
                 crate::outage::report(dir, &outage);

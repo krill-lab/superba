@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="480" height="360" viewBox="0 0 480 360"><defs><linearGradient id="shell" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#FF956D"/><stop offset=".5" stop-color="#FF697E"/><stop offset="1" stop-color="#E94382"/></linearGradient><g id="shrimp" fill="url(#shell)"><path d="M237 122L728 113C802 110 861 162 857 230L826 232C829 178 784 140 728 140L387 133Z"/>
+<path d="M354 167L696 160C752 158 800 187 823 229L790 236C771 203 738 187 693 187Z"/>
+<path d="M527 218H857C852 402 734 557 527 547Z"/>
+<path d="M500 218C418 221 343 253 281 309L500 527Z"/>
+<path d="M259 330C203 389 171 467 168 550H479Z"/>
+<path d="M168 580H477L278 779C211 728 174 655 168 580Z"/>
+<path d="M499 603V834C427 834 363 818 304 793Z"/>
+<path d="M530 603L736 809C670 830 596 841 530 834Z"/><circle cx="668" cy="350" r="95" fill="#FFFDF8"/><circle cx="680" cy="353" r="66" fill="#273548"/><circle cx="700" cy="331" r="20" fill="#FFFDF8"/></g></defs><style>
+.body-bob{animation:jump .9s infinite ease-in-out}.rest-body{animation:sway .9s infinite ease-in-out;transform-origin:0px 0px}
+@keyframes jump{0%,100%{transform:translateY(0)}50%{transform:translateY(-34px)}}
+@keyframes sway{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<ellipse cx="240" cy="320" rx="84" ry="10" fill="#738490" opacity=".12"/>
+<path d="M55 305L77 252L101 276Z" fill="#F5C54A"/><path d="M425 305L403 252L379 276Z" fill="#FF697E"/>
+<g transform="translate(238 223)"><g class="body-bob"><g class="rest-body">
+<path d="M-25 23L-49 61L-70 50M27 23L45 63L69 50M-33-22Q-80-45-79-79M42-31Q83-62 84-94" fill="none" stroke="#D85572" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+<use xlink:href="#shrimp" transform="translate(-111 -146) scale(.24)"/>
+<path d="M47-29Q60-11 72-29" fill="none" stroke="#813D56" stroke-width="4" stroke-linecap="round"/>
+</g></g></g>
+</svg>

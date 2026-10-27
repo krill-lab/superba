@@ -634,7 +634,38 @@ impl Switcher {
                     .find_map(|site| rules::line_for_origin(site, o))
             })
             .map(|l| l.id.clone());
-        let active = config.as_ref().and_then(|c| c.active.clone());
+        let mut active = config.as_ref().and_then(|c| c.active.clone());
+        // Selecting an exit reloads the router without rewriting Codex's local
+        // endpoint. Use that selection for the provider and account overview.
+        if set.settings.router.enabled
+            && config.as_ref().is_some_and(|c| {
+                c.openai_base_url
+                    .as_deref()
+                    .is_some_and(|u| self.matches_router_endpoint(u))
+            })
+            && let Some(router) = d
+                .router
+                .configuration()
+                .filter(|c| !c.tuning.failover_enabled)
+            && let Some((mi, li)) = router.fixed_exit()
+            && let Some(profile) = set.profiles.iter().find(|p| {
+                superba_router::members::router_id(p.id.as_str()) == router.members[mi].id
+            })
+            && let Some(line) = sites
+                .iter()
+                .find(|s| s.id == profile.site_id)
+                .and_then(|s| {
+                    s.lines.iter().find(|l| {
+                        superba_router::members::router_id(l.id.as_str())
+                            == router.members[mi].lines[li].id
+                    })
+                })
+            && let Some(active) = &mut active
+        {
+            active.profile_id = Some(profile.id.clone());
+            active.site_id = Some(profile.site_id.clone());
+            active.line_id = Some(line.id.clone());
+        }
         let mut processes = processes.unwrap_or_default();
         rules::mark_stale(&mut processes, active.as_ref().map(|a| a.applied_at));
         let binaries = facts.binaries.clone();

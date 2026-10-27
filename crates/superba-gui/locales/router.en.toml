@@ -16,6 +16,14 @@ mode_label = "Router mode"
 [router.section]
 title = "Router"
 
+[router.simple]
+description = "Enable router mode if you need detailed session usage, hot switching between providers, or… you know what you want to use it for."
+remote = "Remote features"
+remote_hint = "Turn this on to use a third-party API while keeping remote features such as Codex on your phone. You need to have signed in to ChatGPT before switching providers."
+advanced = "For advanced local router settings, including failover, switch to"
+full_mode = "Complete mode"
+usage_off = "Enable router mode to see detailed session activity."
+
 [usage.tab]
 routing = "Routing"
 recent = "Recent requests"
@@ -76,6 +84,7 @@ ran_short = "This computer ran short {time} ago: {files} \"too many open files\"
 unlimited = "unlimited"
 
 [router.members]
+fixed_title = "Providers and lines"
 order_hint = "Choose a member first, then try its lines in order."
 rules = "Failover & recovery rules"
 details = "Protocol & line details"
@@ -603,6 +612,10 @@ failed = "Failed"
 
 [router.failover]
 title = "Failover and recovery"
+enabled = "Failover"
+enabled_hint = "When off, use the selected exit without background probes or automatic switching. Real requests still record line health; unknown or failed health never prevents an attempt."
+select_line = "Use this line"
+selected_line = "Current exit"
 caption = "How a failing line is left, when it is tried again and how long a conversation stays on its line. Changes are saved at once and a running router reloads them; Codex needs no restart."
 unknown = "These settings are unavailable until the router is set up. Turn it on or add a member first."
 seconds = " s"

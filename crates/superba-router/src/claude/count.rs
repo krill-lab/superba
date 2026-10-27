@@ -53,7 +53,17 @@ pub(super) async fn count(shared: &Arc<Shared>, parts: &Parts, raw: Bytes) -> Re
     else {
         return estimated(&req);
     };
-    let Some(target) = resolution.targets.first() else {
+    let members: Vec<_> = resolution.targets.iter().map(|t| t.member).collect();
+    let fixed = generation.fixed_exit_for(&members);
+    let target = if generation.config.tuning.failover_enabled {
+        resolution.targets.first()
+    } else {
+        resolution
+            .targets
+            .iter()
+            .find(|t| fixed.is_some_and(|c| c.member == t.member))
+    };
+    let Some(target) = target else {
         return estimated(&req);
     };
     let member = &generation.members[target.member];
@@ -77,7 +87,11 @@ pub(super) async fn count(shared: &Arc<Shared>, parts: &Parts, raw: Bytes) -> Re
     let (body, _) = passthrough::body(&req, mc, &target.model);
     let body = body.unwrap_or_else(|| Bytes::from(serde_json::to_vec(&req).unwrap_or_default()));
     for (li, line) in member.lines.iter().enumerate() {
-        if !lock(&line.health).is_available(Instant::now()) {
+        if !generation.config.tuning.failover_enabled {
+            if fixed.is_none_or(|c| c.line != li) {
+                continue;
+            }
+        } else if !lock(&line.health).is_available(Instant::now()) {
             continue;
         }
         let base = &mc.base[li];
@@ -90,7 +104,12 @@ pub(super) async fn count(shared: &Arc<Shared>, parts: &Parts, raw: Bytes) -> Re
             .body(body.clone())
             .send()
             .await;
-        let Ok(resp) = sent else { continue };
+        let Ok(resp) = sent else {
+            if !generation.config.tuning.failover_enabled {
+                return estimated(&req);
+            }
+            continue;
+        };
         let status = resp.status();
         if status.is_success() {
             if let Ok(bytes) = resp.bytes().await

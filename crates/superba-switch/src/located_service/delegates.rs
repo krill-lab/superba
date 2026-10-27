@@ -9,6 +9,23 @@ use superba_core::*;
 
 #[async_trait]
 impl SwitchService for LocatedService {
+    async fn troubleshooting_check(
+        &self,
+        request: TroubleshootingRequest,
+        progress: TroubleshootingProgressSink,
+    ) -> Result<TroubleshootingReport> {
+        let (service, _lock) = self.read().await?;
+        service.troubleshooting_check(request, progress).await
+    }
+
+    async fn troubleshooting_cleanup(
+        &self,
+        request: TroubleshootingCleanup,
+    ) -> Result<CodexFileSaved> {
+        let (service, _lock) = self.read().await?;
+        service.troubleshooting_cleanup(request).await
+    }
+
     async fn overview(&self) -> Result<Overview> {
         let (service, _lock) = self.read().await?;
         service.overview().await
@@ -460,6 +477,14 @@ impl SwitchService for LocatedService {
     async fn runtime(&self) -> Result<superba_core::runtime::RuntimeView> {
         let (service, _lock) = self.read().await?;
         service.runtime().await
+    }
+
+    async fn switch_turn_activity(
+        &self,
+        targets: Vec<superba_core::TargetId>,
+    ) -> Result<Vec<superba_core::TurnActivity>> {
+        let (service, _lock) = self.read().await?;
+        service.switch_turn_activity(targets).await
     }
 
     async fn stop_processes(

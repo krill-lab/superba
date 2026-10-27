@@ -471,7 +471,7 @@ impl Run<'_> {
         let full = !write_only
             && (matches!(primary, RestartKind::FullAppRestart { .. })
                 || plan.migration.is_some()
-                || self.pc.rollback_migration.is_some());
+                || !self.pc.rollback_migrations.is_empty());
         // Resolve the dependency before quitting or writing. Follow-off and
         // stopped distributions must not be silently taken over or started.
         let legacy_dependency = if !write_only
@@ -773,7 +773,8 @@ impl Run<'_> {
     /// user cancelled (nothing written).
     async fn quit_for_full_restart(&mut self) -> Result<Option<LocalResult>> {
         let d = self.deps().clone();
-        let needs_migration = self.plan.migration.is_some() || self.pc.rollback_migration.is_some();
+        let needs_migration =
+            self.plan.migration.is_some() || !self.pc.rollback_migrations.is_empty();
         if let Some(session) = self.session.clone() {
             self.ev.phase(SwitchPhase::Quitting);
             self.ev.step(SwitchStep::QuitApp, StepStatus::Running);
@@ -1109,6 +1110,9 @@ impl Run<'_> {
             d.router.update(built.config, built.keys).await?;
             match d.profiles.load().await {
                 Ok(mut set) => {
+                    if plan.request.resets_router() {
+                        set.settings.router = superba_core::RouterSettings::simple_defaults();
+                    }
                     set.settings.router.members = members;
                     if let Err(e) = d.profiles.save(&set).await {
                         tracing::warn!(error = %e, "cannot store the router member order");
@@ -1170,9 +1174,18 @@ impl Run<'_> {
             && self.pc.baseline_missing
             && !(self.pc.baseline_released && releases_baseline)
         {
-            d.config
-                .snapshot_baseline(&home, self.pc.baseline_extras.clone())
-                .await?;
+            if config
+                .as_ref()
+                .is_some_and(|p| p.write_mode == superba_core::ConfigWriteMode::Reinitialize)
+            {
+                d.config
+                    .snapshot_reinitialize_baseline(&home, self.pc.baseline_extras.clone())
+                    .await?;
+            } else {
+                d.config
+                    .snapshot_baseline(&home, self.pc.baseline_extras.clone())
+                    .await?;
+            }
         }
 
         match config.as_ref().filter(|c| !c.is_noop()) {
@@ -1259,22 +1272,41 @@ impl Run<'_> {
                         return Err(e);
                     }
                 }
-            } else if let Some(id) = self.pc.rollback_migration.clone() {
+            } else if !self.pc.rollback_migrations.is_empty() {
                 self.ev
                     .step(SwitchStep::MigrateSessions, StepStatus::Running);
                 let progress = SessionEvents::sink(self.events.clone());
-                if let Err(e) = d
-                    .sessions
-                    .rollback_stopped_with_progress(&home, &id, &stopped, progress)
-                    .await
-                {
-                    self.ev.step(
-                        SwitchStep::MigrateSessions,
-                        StepStatus::Failed {
-                            message: e.to_string(),
-                        },
-                    );
-                    return Err(e);
+                let result = if let [id] = self.pc.rollback_migrations.as_slice() {
+                    d.sessions
+                        .rollback_stopped_with_progress(&home, id, &stopped, progress)
+                        .await
+                } else {
+                    d.sessions
+                        .rollback_many_stopped_with_progress(
+                            &home,
+                            &self.pc.rollback_migrations,
+                            &stopped,
+                            progress,
+                        )
+                        .await
+                };
+                let report = match result {
+                    Ok(report) => report,
+                    Err(e) => {
+                        self.ev.step(
+                            SwitchStep::MigrateSessions,
+                            StepStatus::Failed {
+                                message: e.to_string(),
+                            },
+                        );
+                        return Err(e);
+                    }
+                };
+                if report.skipped_changed > 0 {
+                    let warning =
+                        text("switch.warn.rollback_changed").arg("count", report.skipped_changed);
+                    self.ev.log(Severity::Warning, warning.clone());
+                    self.notices.push(Notice::warning(warning));
                 }
                 self.ev.step(SwitchStep::MigrateSessions, StepStatus::Done);
             }
@@ -2109,6 +2141,9 @@ impl Run<'_> {
     }
 
     async fn verify_auth(&self, session: Option<&AppSession>) -> CheckResult {
+        if self.plan.request.ignore_line_status {
+            return skipped(text("switch.warn.ignore_line_status"));
+        }
         let d = self.deps();
         if !self.pc.auth.is_some_and(AuthMode::needs_authapi_env) {
             return skipped(text("switch.verify.not_applicable"));
@@ -2181,6 +2216,9 @@ impl Run<'_> {
     }
 
     async fn verify_line(&self) -> CheckResult {
+        if self.plan.request.ignore_line_status {
+            return skipped(text("switch.warn.ignore_line_status"));
+        }
         let d = self.deps();
         if self.pc.kept_foreign_auth {
             // GH#5: another tool's credential is not Superba's to test.

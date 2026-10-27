@@ -22,6 +22,8 @@ use egui::{
 };
 use superba_core::{AppCodexPin, AuthShape, Overview, SpeedEffect, SpeedTier};
 
+mod simple_view;
+
 use super::todo::{self, Spot, Todo};
 use super::{Action, Cx, Page, caps_latency, latency_text};
 use crate::design::backdrop::Backdrop;
@@ -220,7 +222,11 @@ pub fn model(
         };
         router.tip = format!(
             "{}\n{}",
-            tr.t("overview.hero.router_on_tip"),
+            tr.t(if data.router_failover_enabled() {
+                "overview.hero.router_on_tip"
+            } else {
+                "overview.hero.router_fixed_tip"
+            }),
             tr.t("overview.hero.open_router")
         );
     } else {
@@ -425,6 +431,8 @@ struct Drawn {
     clicked: bool,
     /// The chevron, when the node has a menu.
     chevron: Option<egui::Response>,
+    /// The same node response drives hover, clicks and simple-mode popups.
+    response: egui::Response,
 }
 
 /// Draw one node centred on `center_x`, its tile centred on `tile_y`.
@@ -439,6 +447,8 @@ fn draw_node(
     col_w: f32,
     tint: Color32,
     remotes: usize,
+    interactive: bool,
+    footer: Option<Rect>,
 ) -> Drawn {
     let pal = cx.pal;
     let b = Backdrop::of(ui.ctx());
@@ -466,10 +476,22 @@ fn draw_node(
         pos2(center_x - label_w / 2.0 - 12.0, tile.min.y - 8.0),
         pos2(center_x + label_w / 2.0 + 12.0, label_y + 30.0),
     );
+    let area = footer.map_or(area, |footer| area.union(footer.expand2(vec2(10.0, 6.0))));
     let id = ui.scope_id().with(("overview-hero-node", n.spot));
-    let resp = ui
-        .interact(area, id, Sense::click())
-        .on_hover_cursor(CursorIcon::PointingHand);
+    let resp = ui.interact(
+        area,
+        id,
+        if interactive {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
+    let resp = if interactive {
+        resp.on_hover_cursor(CursorIcon::PointingHand)
+    } else {
+        resp
+    };
     let tip = if n.problems.is_empty() {
         n.tip.clone()
     } else {
@@ -477,8 +499,18 @@ fn draw_node(
     };
     let resp = resp.on_hover_text(tip);
     let label = n.title.clone();
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-    let t = hover_t(ui, &resp);
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            if interactive {
+                egui::Role::Button
+            } else {
+                egui::Role::Label
+            },
+            true,
+            &label,
+        )
+    });
+    let t = if interactive { hover_t(ui, &resp) } else { 0.0 };
     if t > 0.0 {
         ui.painter().rect_filled(
             area,
@@ -606,6 +638,7 @@ fn draw_node(
     Drawn {
         clicked: resp.clicked(),
         chevron,
+        response: resp,
     }
 }
 
@@ -661,6 +694,28 @@ fn latency_pill(ui: &Ui, cx: &Cx<'_>, center: Pos2, latency: Latency) -> Rect {
 
 /// Draw the hero card in `rect`.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Action>) {
+    show_inner(ui, cx, hero, rect, out, false);
+}
+
+/// The Codex-focused route and its compact speed picker.
+pub(super) fn show_simple(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    hero: &Hero,
+    rect: Rect,
+    out: &mut Vec<Action>,
+) {
+    simple_view::show(ui, cx, hero, rect, out);
+}
+
+fn show_inner(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    hero: &Hero,
+    rect: Rect,
+    out: &mut Vec<Action>,
+    simple: bool,
+) {
     let pal = cx.pal;
     let b = Backdrop::of(ui.ctx());
     crate::design::backdrop::panel(ui.painter(), rect, &b);
@@ -767,6 +822,8 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
             col_w,
             tints[i],
             remotes,
+            !simple || i == 2,
+            None,
         ));
     }
     for (i, d) in drawn.iter().enumerate() {
@@ -834,7 +891,7 @@ pub(super) fn provider_popover(
         .show(|ui| {
             // A fixed width: rows fill it instead of the popup growing to them.
             ui.set_width(POPOVER_W);
-            if !cx.data.router_enabled() {
+            if !cx.data.router_failover_enabled() {
                 hot_note(ui, cx, out);
             }
             let account = super::account_lines(cx);
@@ -857,14 +914,14 @@ pub(super) fn provider_popover(
             if let (Some(site), Some(profile)) = (cx.data.active_site(), cx.data.active_profile())
                 && site.lines.len() > 1
             {
-                let routed = cx.data.router_enabled();
+                let routed = cx.data.router_failover_enabled();
                 // Disabled lines (user bug 108) are never used: not listed.
                 let mut lines = crate::pages::shared::ordered_lines(&site, Some(profile));
                 lines.retain(|l| !profile.is_line_disabled(&l.id));
                 let active = if routed {
                     lines.first().map(|l| l.id.clone())
                 } else {
-                    cx.data.active_state().and_then(|a| a.line_id.clone())
+                    crate::pages::shared::applied_line(cx.data, profile)
                 };
                 ui.label(Text::caption(
                     cx.tr.f(

@@ -522,6 +522,42 @@ fn the_menu_follows_chatgpt_the_router_and_a_running_switch() {
 }
 
 #[test]
+fn the_tray_checks_the_fixed_exit_before_a_request_uses_it() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let service = fake();
+    let mut data = rt.block_on(data_of(&service));
+    data.profiles
+        .value
+        .as_mut()
+        .unwrap()
+        .settings
+        .router
+        .enabled = true;
+    data.router_failover = Some(superba_core::RouterFailover {
+        enabled: false,
+        fixed_route: Some(superba_core::RouterFixedRoute {
+            member_id: "krill".into(),
+            line_id: "cdn".into(),
+        }),
+        ..Default::default()
+    });
+    let m = menu::build(&Tr::new(Locale::En), &data, false);
+    for (line, checked) in [("cdn", true), ("overseas", false)] {
+        let action = TrayAction::Switch {
+            profile: "krill".into(),
+            line: Some(line.into()),
+        };
+        let TrayItem::Action {
+            checked: actual, ..
+        } = m.find(&action).unwrap()
+        else {
+            panic!("missing line action")
+        };
+        assert_eq!(*actual, Some(checked));
+    }
+}
+
+#[test]
 fn the_menu_without_providers_or_with_the_official_login() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let tr = Tr::new(Locale::En);
@@ -898,6 +934,7 @@ fn switching_from_the_tray_and_a_question_brings_the_hidden_window_back() {
     rt.block_on(service.save_settings(Settings {
         close_action: Some(CloseAction::Tray),
         countdown_secs: 0,
+        simple_mode: false,
         ..Settings::default()
     }))
     .unwrap();

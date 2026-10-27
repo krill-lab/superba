@@ -398,6 +398,71 @@ fn router_rows_show_preferred_and_current_and_prefer_saves_without_a_switch() {
     }
 }
 
+#[test]
+fn fixed_router_rows_show_one_exit_without_priority_controls() {
+    for size in SIZES {
+        for locale in [Locale::ZhCn, Locale::En] {
+            let tr = Tr::new(locale);
+            let service = fake();
+            let mut h = Harness::new(size, locale, service.clone(), true)
+                .min_height(Page::Providers.min_height());
+            router_mode(&service, &mut h);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(service.edit_router_failover(superba_core::RouterFailover {
+                enabled: false,
+                fixed_route: Some(superba_core::RouterFixedRoute {
+                    member_id: "krill".into(),
+                    line_id: "cn-fast".into(),
+                }),
+                ..Default::default()
+            }))
+            .unwrap();
+            h.reload(&service);
+            let mut state = providers::State::default();
+            let mut asked = Asked::default();
+            let f = page_with(&mut h, &mut state, &mut asked, |f| {
+                f.has(&tr.t("connection.lines.in_use"))
+            });
+            visible(&f, &tr.t("providers.lines.title_fixed"));
+            assert!(f.has(&tr.t("providers.lines.caption_fixed")));
+            assert!(!f.has(&tr.t("providers.lines.caption_direct_applied")));
+            assert!(
+                on_row(
+                    &f,
+                    &tr.t("connection.lines.in_use"),
+                    &line_name(&tr, "cn-fast")
+                )
+                .is_some()
+            );
+            assert!(
+                !f.has(&tr.t("connection.lines.preferred")),
+                "{}",
+                f.all_text()
+            );
+            assert!(!f.has(&tr.t("connection.lines.up")));
+            assert!(!f.has(&tr.t("connection.lines.down")));
+            let button = on_row(&f, &tr.t("connection.lines.use"), &line_name(&tr, "cdn")).unwrap();
+            h.click_at(button.center());
+            page_with(&mut h, &mut state, &mut asked, |_| true);
+            assert_eq!(
+                asked.switches,
+                vec![(ProfileId::new("krill"), Some(LineId::new("cdn")), None)]
+            );
+            assert!(asked.saves.is_empty());
+            assert!(
+                shared::reorder_action(
+                    &h.data,
+                    &krill(&h.data),
+                    ids(&["cn-fast", "overseas", "cdn"]),
+                    1,
+                    0
+                )
+                .is_none()
+            );
+        }
+    }
+}
+
 /// The whole app on the fake: the row's action goes through the shell's switch
 /// flow (plan, the hot-switch countdown with its 立即应用 / Cancel, execute) like
 /// a line picked on the Overview, and the page then shows the new line in use. (The CDN line: the

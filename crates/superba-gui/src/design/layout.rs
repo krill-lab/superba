@@ -82,7 +82,18 @@ pub fn fit_area<R>(ui: &mut Ui, min_h: f32, add: impl FnOnce(&mut Ui) -> R) -> F
         .auto_shrink([false, false])
         .show(ui, |ui| {
             let r = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), min_h));
-            fixed(ui, r, add)
+            let mut content = ui.new_child(
+                UiBuilder::new()
+                    .max_rect(r)
+                    .layout(Layout::top_down(Align::Min)),
+            );
+            // A page can naturally grow beyond its minimum (e.g. the overview's
+            // title plus its card grid). Keep the viewport clip, and register
+            // that full height so the bottom of the final card stays reachable.
+            let inner = add(&mut content);
+            ui.allocate_rect(r.union(content.min_rect()), Sense::hover());
+            ui.add_space(focus::BLEED);
+            inner
         });
     FitResponse {
         inner: out.inner,

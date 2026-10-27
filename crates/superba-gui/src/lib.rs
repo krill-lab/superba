@@ -43,12 +43,14 @@ pub mod instance;
 pub mod launch;
 #[cfg(target_os = "macos")]
 mod macos;
+pub mod mode_switch;
 pub mod movers;
 pub mod notices;
 pub mod pages;
 pub mod runtime;
 pub mod shell;
 pub mod startup;
+pub mod startup_screen;
 pub mod tray;
 
 use std::sync::Arc;

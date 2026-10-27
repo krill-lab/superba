@@ -306,6 +306,10 @@ impl ProfileSet {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// Show the three Codex-focused desktop pages. Full mode remains available
+    /// from the sidebar, and the choice is saved with the other preferences.
+    #[serde(default = "default_true")]
+    pub simple_mode: bool,
     /// Hot-switch countdown in seconds: 0, 3, 5 (default) or 10. `spb` uses 0.
     pub countdown_secs: u8,
     /// Safe mode: never launch the app with a CDP port (no hot switching).
@@ -399,6 +403,7 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            simple_mode: true,
             countdown_secs: 5,
             safe_mode: false,
             default_auth_mode: AuthMode::Pat,

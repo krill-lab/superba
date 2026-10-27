@@ -97,7 +97,7 @@ pub fn sidebar(
     ui.spacing_mut().item_spacing.y = NAV_GAP;
 
     // Superba's own pages sit at the bottom.
-    let pinned = |p: Page| p.is_superba();
+    let pinned = |p: Page| p.is_pinned();
     // A tool's entry only while it is installed (user request 114); the
     // page that is open keeps its entry.
     let main: Vec<Page> = Page::ALL
@@ -128,6 +128,7 @@ pub fn sidebar(
                     *page == p || (page.is_superba() && p.is_superba()),
                     &status(p),
                     metrics.row,
+                    None,
                 ) {
                     *page = p;
                 }
@@ -186,11 +187,72 @@ pub fn sidebar(
                     *page == p || (page.is_superba() && p.is_superba()),
                     &status(p),
                     metrics.row,
+                    None,
                 ) {
                     *page = p;
                 }
             }
         });
+}
+
+/// Codex pages plus Superba's information and settings pinned at the bottom.
+pub fn simple_sidebar(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    page: &mut Page,
+    status: &dyn Fn(Page) -> PageStatus,
+    _out: &mut Vec<Action>,
+) {
+    Panel::bottom("simple-sidebar-footer")
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(egui::Frame::NONE)
+        .show(ui, |ui| {
+            if nav_item(
+                ui,
+                cx,
+                Page::Troubleshooting,
+                *page == Page::Troubleshooting,
+                &status(Page::Troubleshooting),
+                size::NAV_ROW,
+                None,
+            ) {
+                *page = Page::Troubleshooting;
+            }
+            let superba = Page::Superba(crate::pages::SuperbaSection::Home);
+            if nav_item(
+                ui,
+                cx,
+                superba,
+                page.is_superba(),
+                &status(superba),
+                size::NAV_ROW,
+                None,
+            ) {
+                *page = superba;
+            }
+            ui.add_space(8.0);
+            ui.label(Text::caption(
+                format!("v{}", env!("CARGO_PKG_VERSION")),
+                cx.pal,
+            ));
+        });
+    ui.spacing_mut().item_spacing.y = 8.0;
+    for p in [Page::Overview, Page::Providers, Page::Router, Page::Usage] {
+        // nav_item keeps the existing geometry, keyboard focus and selection.
+        let label = (p == Page::Usage).then(|| cx.tr.t("simple.usage.title"));
+        if nav_item(
+            ui,
+            cx,
+            p,
+            *page == p,
+            &status(p),
+            size::NAV_ROW,
+            label.as_deref(),
+        ) {
+            *page = p;
+        }
+    }
 }
 
 /// Row and heading sizes of the sidebar: comfortable, or compact when the
@@ -262,14 +324,19 @@ fn nav_item(
     selected: bool,
     status: &PageStatus,
     height: f32,
+    custom_label: Option<&str>,
 ) -> bool {
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     // The row shows the short label; its accessible name is the page title
     // ("Claude Code 设置", not a second "设置").
-    let label = cx.tr.t(page.nav_key());
-    let name = cx.tr.t(page.sidebar_page().title_key());
+    let label = custom_label
+        .map(str::to_owned)
+        .unwrap_or_else(|| cx.tr.t(page.nav_key()));
+    let name = custom_label
+        .map(str::to_owned)
+        .unwrap_or_else(|| cx.tr.t(page.sidebar_page().title_key()));
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, selected, &name));
     let t = crate::design::widgets::hover_t(ui, &response);
     // Selected: a soft gray rounded rectangle on the window background.

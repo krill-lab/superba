@@ -31,6 +31,9 @@ pub struct Disclosure {
     caption: Option<String>,
     section: bool,
     default_open: bool,
+    open: Option<bool>,
+    status: Option<(String, super::Status)>,
+    max_body_height: Option<f32>,
 }
 
 /// What [`Disclosure::show`] did.
@@ -54,6 +57,9 @@ impl Disclosure {
             caption: None,
             section: false,
             default_open: false,
+            open: None,
+            status: None,
+            max_body_height: None,
         }
     }
 
@@ -76,6 +82,24 @@ impl Disclosure {
         self
     }
 
+    /// Set expansion on this frame, for example when a running stage changes.
+    pub fn open(mut self, open: Option<bool>) -> Self {
+        self.open = open;
+        self
+    }
+
+    /// A compact result badge beside the heading.
+    pub fn status(mut self, label: impl Into<String>, status: super::Status) -> Self {
+        self.status = Some((label.into(), status));
+        self
+    }
+
+    /// Scroll long bodies without moving the following controls off screen.
+    pub fn max_body_height(mut self, height: f32) -> Self {
+        self.max_body_height = Some(height.max(144.0));
+        self
+    }
+
     /// Height of the header line.
     pub fn header_height(&self) -> f32 {
         if self.section {
@@ -88,11 +112,24 @@ impl Disclosure {
     /// Draw the header and, when open, `add` under it (not indented: the body
     /// lines up with the label's left edge's parent column).
     pub fn show<R>(self, ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> DisclosureResponse<R> {
+        self.show_with_header(ui, |_, _| {}, add)
+    }
+
+    /// Add an independent trailing control to the header, even when collapsed.
+    pub fn show_with_header<R>(
+        self,
+        ui: &mut Ui,
+        trailing: impl FnOnce(&mut Ui, Rect),
+        add: impl FnOnce(&mut Ui) -> R,
+    ) -> DisclosureResponse<R> {
         let pal = Palette::of(ui.ctx());
         let id = ui
             .make_persistent_id(self.id_salt)
             .with("superba-disclosure");
         let mut state = CollapsingState::load_with_default_open(ui.ctx(), id, self.default_open);
+        if let Some(open) = self.open {
+            state.set_open(open);
+        }
         let height = self.header_height();
         let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
         let label_font = if self.section {
@@ -120,6 +157,11 @@ impl Disclosure {
         });
         if let Some(c) = &caption {
             hit.max.x += space::S + c.size().x;
+        }
+        if let Some((label, status)) = self.status {
+            let badge =
+                Rect::from_min_max(pos2(hit.max.x + space::S, line.center().y - 10.0), line.max);
+            ui.put(badge, super::Badge::new(label).status(status));
         }
         let header = ui
             .interact(hit, id.with("header"), Sense::click())
@@ -190,7 +232,21 @@ impl Disclosure {
                 focus_ring(ui.painter(), hit, radius::INNER, pal);
             }
         }
-        let inner = state.show_body_unindented(ui, add).map(|body| body.inner);
+        trailing(ui, line);
+        let inner = state
+            .show_body_unindented(ui, |ui| {
+                if let Some(height) = self.max_body_height {
+                    egui::ScrollArea::vertical()
+                        .id_salt(id.with("scroll"))
+                        .max_height(height)
+                        .auto_shrink([false, true])
+                        .show(ui, add)
+                        .inner
+                } else {
+                    add(ui)
+                }
+            })
+            .map(|body| body.inner);
         DisclosureResponse {
             header,
             open: inner.is_some(),

@@ -15,6 +15,14 @@ mode_label = "路由模式"
 [router.section]
 title = "路由"
 
+[router.simple]
+description = "如果你需要追踪会话的详细用量、热切换供应商，或者……你知道自己要用它做什么，可以开启路由模式。"
+remote = "远程功能"
+remote_hint = "当你想使用第三方的 API，但是又想使用 Codex 手机端等远程功能时，请打开此开关，以便保留远程功能。这需要你在切换前完成了 ChatGPT 登录。"
+advanced = "对于本地路由的进阶设置（包括故障转移等），请切换到"
+full_mode = "完整模式"
+usage_off = "请开启路由模式，以便观察详细会话情况。"
+
 [usage.tab]
 routing = "路由"
 recent = "最近请求"
@@ -75,6 +83,7 @@ ran_short = "本机资源在 {time} 前吃紧：出现 {files} 次「打开的�
 unlimited = "不限"
 
 [router.members]
+fixed_title = "供应商与线路"
 order_hint = "先选成员，再按该成员的线路顺序尝试。"
 rules = "故障转移与恢复规则"
 details = "协议与线路详情"
@@ -602,6 +611,10 @@ failed = "失败"
 
 [router.failover]
 title = "故障转移与恢复"
+enabled = "故障转移"
+enabled_hint = "关闭后使用选定出口，不主动探测或自动换线；实际请求仍记录线路状态，未知或失败状态不会阻止尝试。"
+select_line = "切换为此线路"
+selected_line = "当前出口"
 caption = "线路出错时怎样换线、多久后再试，会话在线路上停留多久。修改后立即保存，运行中的路由会重新加载，无需重启 Codex。"
 unknown = "暂时无法读取这些设置，请先开启路由或添加成员。"
 seconds = " 秒"

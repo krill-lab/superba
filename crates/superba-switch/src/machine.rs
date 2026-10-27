@@ -376,6 +376,9 @@ impl SwitchMachine {
                 }
             }
             Input::Turns(busy) => match &mut self.state {
+                MachineState::Countdown { countdown, .. } if busy.is_empty() => {
+                    countdown.resume(now);
+                }
                 MachineState::Countdown { ticket, countdown } if !busy.is_empty() => {
                     let mut countdown = *countdown;
                     countdown.pause(now);
@@ -447,7 +450,7 @@ impl SwitchMachine {
         } else if ticket.needs_confirmation {
             self.state = MachineState::ConfirmFull { ticket };
         } else if ticket.countdown_allowed {
-            if self.countdown.is_zero() {
+            if self.countdown.is_zero() && ticket.busy.is_empty() {
                 self.start(ticket, false, false, false, fx);
             } else {
                 let countdown = Countdown::start(self.countdown, now);

@@ -193,6 +193,13 @@ pub fn editor_action(backup: &CodexFileBackup) -> Action {
 /// Summary counts and restore entry points; every store is listed even if empty.
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     state.poll(ui, cx, out);
+    let anchor = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), 32.0));
+    super::search::anchor(
+        ui,
+        "superba.backups.title",
+        &cx.tr.t("superba.backups.title"),
+        anchor,
+    );
     section_with(ui, cx, &cx.tr.t("superba.backups.title"), None, |ui| {
         if ui
             .add(

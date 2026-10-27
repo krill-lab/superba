@@ -19,12 +19,12 @@ impl Text {
             .extra_letter_spacing(-0.5)
     }
 
-    /// Page title in the compact header: 20 pt semibold, tight tracking.
+    /// Shared page title: 26 pt semibold, tight tracking.
     pub fn page_title(s: impl Into<String>, pal: &Palette) -> RichText {
         RichText::new(s)
-            .font(font(text::H2, Weight::Semibold))
+            .font(font(text::TITLE_XL - 4.0, Weight::Semibold))
             .color(pal.text)
-            .extra_letter_spacing(-0.4)
+            .extra_letter_spacing(-0.6)
     }
 
     /// Flat section heading: 15 pt semibold.

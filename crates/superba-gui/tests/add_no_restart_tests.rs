@@ -344,6 +344,7 @@ fn plan(from: Option<&str>, to: &str, keys: &[&str]) -> SwitchPlan {
         },
         restarts: vec![],
         config: Some(superba_core::ApplyPlan {
+            write_mode: superba_core::ConfigWriteMode::Managed,
             id: "apply".into(),
             codex_home: std::path::PathBuf::from("/tmp/none"),
             generation: 4,

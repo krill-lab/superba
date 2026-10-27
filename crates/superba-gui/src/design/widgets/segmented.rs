@@ -44,6 +44,7 @@ struct Segment<T> {
     tooltip: Option<String>,
     dot: Option<Status>,
     busy: bool,
+    icon: Option<Icon>,
 }
 
 /// The trailing overflow segment of a [`Segmented`] control and its menu.
@@ -110,6 +111,7 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             tooltip: None,
             dot: None,
             busy: false,
+            icon: None,
         });
         self
     }
@@ -128,6 +130,7 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             tooltip: Some(tooltip.into()),
             dot: None,
             busy: false,
+            icon: None,
         });
         self
     }
@@ -146,6 +149,7 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             tooltip: Some(why.into()),
             dot: None,
             busy: false,
+            icon: None,
         });
         self
     }
@@ -159,6 +163,14 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
     /// Small height (28 px).
     pub fn small(mut self) -> Self {
         self.height = size::CONTROL_SM;
+        self
+    }
+
+    /// Leading icon of the option added last.
+    pub fn icon(mut self, icon: Icon) -> Self {
+        if let Some(segment) = self.segments.last_mut() {
+            segment.icon = Some(icon);
+        }
         self
     }
 
@@ -241,6 +253,8 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
                     SPIN_W
                 } else if s.dot.is_some() {
                     DOT_W
+                } else if s.icon.is_some() {
+                    20.0
                 } else {
                     0.0
                 }
@@ -375,14 +389,23 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
         // segments, none under or next to the indicator.
         let indicator = highlighted.map(|sel| {
             let target = rects[sel];
+            let animation = if ui
+                .ctx()
+                .data(|d| d.get_temp::<bool>(Id::unique("superba-reduce-motion")))
+                .unwrap_or(false)
+            {
+                0.0
+            } else {
+                ANIM_SECS
+            };
             let ax = ui.ctx().animate_value_with_time(
                 self.id.with("x"),
                 target.min.x - track.min.x,
-                ANIM_SECS,
+                animation,
             );
             let aw = ui
                 .ctx()
-                .animate_value_with_time(self.id.with("w"), target.width(), ANIM_SECS);
+                .animate_value_with_time(self.id.with("w"), target.width(), animation);
             Rect::from_min_size(
                 pos2(track.min.x + ax, target.min.y),
                 vec2(aw, target.height()),
@@ -444,6 +467,8 @@ impl<'a, T: PartialEq + Clone> Segmented<'a, T> {
             };
             let lead = if seg.busy {
                 Lead::Spinner(color, ui.input(|i| i.time))
+            } else if let Some(icon) = seg.icon {
+                Lead::Icon(icon, color)
             } else {
                 seg.dot.map_or(Lead::None, |s| Lead::Dot(pal.status(s)))
             };
@@ -568,6 +593,7 @@ enum Lead {
     Dot(Color32),
     /// A spinner in this colour, at this time (seconds).
     Spinner(Color32, f64),
+    Icon(Icon, Color32),
 }
 
 /// Paint a segment's content centred in `rect`: an optional status dot or
@@ -584,6 +610,7 @@ fn paint_content(
         Lead::None => 0.0,
         Lead::Dot(_) => DOT_W,
         Lead::Spinner(..) => SPIN_W,
+        Lead::Icon(..) => 20.0,
     };
     let trail = if chevron { CHEVRON_GAP + CHEVRON } else { 0.0 };
     let x = rect.center().x - (lead_w + galley.size().x + trail) / 2.0;
@@ -598,6 +625,12 @@ fn paint_content(
             Rect::from_center_size(pos2(x + 6.0, cy), vec2(12.0, 12.0)),
             c,
             time,
+        ),
+        Lead::Icon(icon, color) => icons::paint(
+            painter,
+            Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0)),
+            icon,
+            color,
         ),
     }
     let lead = lead_w;

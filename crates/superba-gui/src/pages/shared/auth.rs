@@ -90,7 +90,7 @@ pub fn decision_with(
 /// reason on a line without PAT); an explicit mode here would be stored as a
 /// manual choice.
 pub fn switch_action(data: &crate::pages::Data, profile: &Profile, line: &LineId) -> Action {
-    if data.router_enabled()
+    if data.router_failover_enabled()
         && let Some(site) = data.site(&profile.site_id)
     {
         let mut profile = profile.clone();

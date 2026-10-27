@@ -122,6 +122,92 @@ fn context() -> egui::Context {
 }
 
 #[test]
+fn a_slow_background_turn_check_keeps_the_countdown_and_its_title_running() {
+    use std::sync::Arc;
+    use superba_gui::flow::Stage;
+    use support::fake::{FakeOptions, FakeService};
+
+    let service = Arc::new(FakeService::new(FakeOptions::default()));
+    let held = service.hold_turn_read();
+    let mut flow = armed();
+    flow.watch_turns(service.clone(), Duration::from_secs(1));
+    flow.watch_turns(service.clone(), Duration::from_secs(2));
+    let Stage::Armed { countdown, .. } = flow.stage() else {
+        panic!("counting down")
+    };
+    assert!(!countdown.is_paused());
+    assert_eq!(
+        countdown.remaining(Duration::from_secs(2)),
+        Duration::from_secs(3)
+    );
+    let tr = Tr::new(Locale::En);
+    let dest = superba_gui::pages::dest_text(&tr, &Data::default(), &plan().to);
+    let title = tr.f("banner.armed.title", &[("secs", &3_u64), ("dest", &dest)]);
+    let (_, texts) = frame(&context(), &mut flow, &mut BannerState::default(), 1100.0);
+    assert!(texts.contains(&title), "{texts:?}");
+    flow.tick(Duration::from_millis(4999));
+    assert!(flow.take_commands().is_empty());
+    flow.watch_turns(service, Duration::from_secs(5));
+    flow.tick(Duration::from_secs(5));
+    assert!(
+        matches!(flow.take_commands().as_slice(), [Command::Execute { options, .. }] if !options.force_turns)
+    );
+    drop(held);
+}
+
+#[test]
+fn a_background_check_still_pauses_the_remaining_time_when_a_turn_is_busy() {
+    use std::sync::Arc;
+    use superba_core::{ActivitySignal, ThreadActivity, TurnActivity};
+    use superba_gui::flow::Stage;
+    use support::fake::{FakeOptions, FakeService};
+
+    let service = Arc::new(FakeService::new(FakeOptions::default()));
+    let held = service.hold_turn_read();
+    let mut flow = armed();
+    flow.watch_turns(service.clone(), Duration::from_secs(1));
+    held.send(Ok(vec![TurnActivity {
+        target_id: "local".into(),
+        checked_at: Timestamp::EPOCH,
+        complete: true,
+        busy: vec![ThreadActivity {
+            target_id: "local".into(),
+            thread_id: Some("resumed".into()),
+            title: Some("Active conversation".into()),
+            rollout_path: None,
+            last_event_at: Some(Timestamp::EPOCH),
+            signal: ActivitySignal::RolloutTail,
+            originator: None,
+            cwd: None,
+        }],
+    }]))
+    .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while matches!(flow.stage(), Stage::Armed { .. }) {
+        flow.watch_turns(service.clone(), Duration::from_secs(2));
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background activity must arrive"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let Stage::WaitingBeforeSwitch {
+        countdown, busy, ..
+    } = flow.stage()
+    else {
+        panic!("waiting for the busy conversation")
+    };
+    assert!(countdown.is_paused());
+    assert_eq!(busy.len(), 1);
+    assert_eq!(
+        countdown.remaining(Duration::from_secs(60)),
+        Duration::from_secs(3)
+    );
+    flow.tick(Duration::from_secs(60));
+    assert!(flow.take_commands().is_empty());
+}
+
+#[test]
 fn restore_choice_explains_the_default_and_each_button_replans_its_policy() {
     use superba_core::{PlanChoice, ProviderRestore, RestoreTarget, SwitchIntent};
     use support::ui::Harness;
@@ -278,7 +364,7 @@ fn sidebar_texts_with(window: [f32; 2], locale: Locale, tools: bool) -> Vec<(Str
     let data = Data::default();
     let svc = support::idle_service();
     let fonts_report = fonts::FontReport::default();
-    h.settle(&mut |ui: &mut egui::Ui| {
+    let draw = |ui: &mut egui::Ui| {
         egui::Panel::left("nav")
             .exact_size(size::SIDEBAR)
             .resizable(false)
@@ -303,7 +389,33 @@ fn sidebar_texts_with(window: [f32; 2], locale: Locale, tools: bool) -> Vec<(Str
                 };
                 shell::sidebar(ui, &cx, &mut page, &status, &mut actions);
             });
-    })
+    };
+    let mut texts = Vec::new();
+    for _ in 0..2 {
+        let output = h.ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, window.into())),
+                ..Default::default()
+            },
+            draw,
+        );
+        texts = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) => Some((
+                    text.galley.text().to_owned(),
+                    text.galley
+                        .rect
+                        .translate(text.pos.to_vec2())
+                        .intersect(shape.clip_rect),
+                )),
+                _ => None,
+            })
+            .collect();
+        output.drop_without_applying_deltas();
+    }
+    texts
 }
 
 #[test]
@@ -332,16 +444,19 @@ fn the_sidebar_never_draws_pages_under_the_pinned_ones_at_the_minimum_window() {
             let texts = sidebar_texts(window, locale);
             let pinned: Vec<Rect> = Page::ALL
                 .into_iter()
-                .filter(|p| p.is_superba())
+                .filter(|p| p.is_pinned())
                 .map(|p| rect_of(&texts, p))
                 .collect();
             let top_pinned = pinned.iter().map(|r| r.min.y).fold(f32::INFINITY, f32::min);
-            for page in Page::ALL.into_iter().filter(|p| !p.is_superba()) {
+            for page in Page::ALL.into_iter().filter(|p| !p.is_pinned()) {
                 let r = rect_of(&texts, page);
-                // Labels sit centred in their rows: a whole row gap between the
-                // last page and the first pinned one, and no overlap at all.
+                // A short window scrolls the list. Test the visible text,
+                // excluding glyphs outside the scroll area's clip rectangle.
+                if !r.is_positive() {
+                    continue;
+                }
                 assert!(
-                    r.max.y + 12.0 <= top_pinned,
+                    r.max.y <= top_pinned,
                     "{page:?} at {window:?} ({locale:?}) reaches the pinned pages: {r:?} vs {top_pinned}"
                 );
                 assert!(
@@ -395,6 +510,227 @@ fn the_sidebar_never_draws_pages_under_the_pinned_ones_at_the_minimum_window() {
         };
         assert!(y(Page::Models) - y(Page::Providers) >= size::NAV_ROW_COMPACT + size::NAV_GAP);
         assert!(!texts.iter().any(|(t, _)| *t == tr.t("nav.group.others")));
+    }
+}
+
+/// Keep page/action state across real press/release frames inside the app's panel.
+fn simple_sidebar_page<'a>(
+    harness: &'a support::ui::Harness,
+    tr: &'a Tr,
+    data: &'a Data,
+    busy: bool,
+    modal: bool,
+    page: &'a mut superba_gui::pages::Page,
+    actions: &'a mut Vec<superba_gui::pages::Action>,
+) -> impl FnMut(&mut egui::Ui) + 'a {
+    use superba_gui::pages::{Page, PageStatus};
+    let service = support::idle_service();
+    move |ui| {
+        egui::Panel::left("simple-test-nav")
+            .exact_size(size::SIDEBAR)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(shell::sidebar_frame())
+            .show(ui, |ui| {
+                let cx = Cx {
+                    tr,
+                    pal: Palette::of(ui.ctx()),
+                    data,
+                    busy,
+                    now: Timestamp::EPOCH,
+                    fonts: &harness.fonts,
+                    service: &service,
+                    log: &[],
+                };
+                // A dialog from a hidden page must also prevent a mode change.
+                let status = |p: Page| PageStatus {
+                    modal: modal && p == Page::Models,
+                    ..Default::default()
+                };
+                shell::simple_sidebar(ui, &cx, page, &status, actions);
+            });
+        let cx = Cx {
+            tr,
+            pal: Palette::of(ui.ctx()),
+            data,
+            busy,
+            now: Timestamp::EPOCH,
+            fonts: &harness.fonts,
+            service: &service,
+            log: &[],
+        };
+        superba_gui::mode_switch::title_button(
+            ui.ctx(),
+            &cx,
+            true,
+            data.profiles.value.is_some() && !busy && !modal,
+            actions,
+        );
+    }
+}
+
+#[test]
+fn simple_sidebar_has_four_destinations_and_pins_superba_at_the_bottom() {
+    use superba_gui::pages::Page;
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let mut data = Data::default();
+        data.profiles
+            .finish(Ok(superba_core::ProfileSet::default()));
+        for window in [[960.0, 640.0], [1280.0, 800.0]] {
+            let harness = support::ui::Harness::new(window, egui::Theme::Light);
+            let mut page = Page::Overview;
+            let mut actions = Vec::new();
+            let mut show =
+                simple_sidebar_page(&harness, &tr, &data, false, false, &mut page, &mut actions);
+            let texts = harness.settle(&mut show);
+            let navigation = [
+                tr.t("nav.overview"),
+                tr.t("nav.providers"),
+                tr.t("nav.router"),
+                tr.t("simple.usage.title"),
+            ];
+            let allowed = [
+                navigation[0].clone(),
+                navigation[1].clone(),
+                navigation[2].clone(),
+                navigation[3].clone(),
+                tr.t("simple.short_simple"),
+                tr.t("simple.short_full"),
+                tr.t("simple.troubleshooting"),
+                tr.t("superba.title"),
+                format!("v{}", env!("CARGO_PKG_VERSION")),
+            ];
+            assert_eq!(
+                texts.len(),
+                allowed.len(),
+                "{locale:?} {window:?}: {texts:?}"
+            );
+            for label in &allowed {
+                assert_eq!(
+                    texts.iter().filter(|(text, _)| text == label).count(),
+                    1,
+                    "missing or duplicated {label}: {texts:?}"
+                );
+            }
+            let sidebar = Rect::from_min_size(pos2(0.0, 0.0), vec2(size::SIDEBAR, window[1]));
+            for (text, rect) in &texts {
+                assert!(
+                    sidebar.expand(0.5).contains_rect(*rect),
+                    "{text} is outside {window:?}: {rect:?}"
+                );
+                assert!(
+                    allowed.contains(text),
+                    "extra group/page/maintenance entry: {text}"
+                );
+            }
+            let rect = |label: &str| texts.iter().find(|(text, _)| text == label).unwrap().1;
+            assert!(rect(&navigation[0]).max.y < rect(&navigation[1]).min.y);
+            assert!(rect(&navigation[1]).max.y < rect(&navigation[2]).min.y);
+            assert!(rect(&navigation[2]).max.y < rect(&navigation[3]).min.y);
+            assert!(
+                rect(&navigation[3]).max.y < rect(&tr.t("superba.title")).min.y,
+                "Superba must stay below the main navigation: {texts:?}"
+            );
+            assert!(rect(&tr.t("simple.short_simple")).max.y < rect(&navigation[0]).min.y);
+            assert!(
+                rect(&tr.t("simple.short_simple")).max.x < rect(&tr.t("simple.short_full")).min.x
+            );
+            assert!(
+                rect(&tr.t("simple.troubleshooting")).max.y < rect(&tr.t("superba.title")).min.y
+            );
+        }
+    }
+}
+
+#[test]
+fn simple_sidebar_clicks_select_all_pages_and_request_full_mode() {
+    use superba_gui::pages::{Action, Page};
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let mut data = Data::default();
+        data.profiles
+            .finish(Ok(superba_core::ProfileSet::default()));
+        let harness = support::ui::Harness::new([960.0, 640.0], egui::Theme::Dark);
+        let mut page = Page::Overview;
+        let mut actions = Vec::new();
+        for (target, key) in [
+            (Page::Providers, "nav.providers"),
+            (Page::Router, "nav.router"),
+            (Page::Usage, "simple.usage.title"),
+            (Page::Troubleshooting, "simple.troubleshooting"),
+            (
+                Page::Superba(superba_gui::pages::SuperbaSection::Home),
+                "superba.title",
+            ),
+            (Page::Overview, "nav.overview"),
+        ] {
+            {
+                let mut show = simple_sidebar_page(
+                    &harness,
+                    &tr,
+                    &data,
+                    false,
+                    false,
+                    &mut page,
+                    &mut actions,
+                );
+                assert!(
+                    harness.click_text(&tr.t(key), &mut show),
+                    "{key} is not clickable"
+                );
+            }
+            assert_eq!(page, target, "{locale:?} {key}");
+            assert!(
+                actions.is_empty(),
+                "navigation should only change Page: {actions:?}"
+            );
+        }
+        {
+            let mut show =
+                simple_sidebar_page(&harness, &tr, &data, false, false, &mut page, &mut actions);
+            assert!(harness.click_text(&tr.t("simple.short_full"), &mut show));
+        }
+        assert!(
+            matches!(actions.as_slice(), [Action::SetSimpleMode(false)]),
+            "{actions:?}"
+        );
+        assert_eq!(page, Page::Overview);
+    }
+}
+
+#[test]
+fn simple_sidebar_cannot_change_mode_while_busy_in_a_dialog_or_before_loading_settings() {
+    use superba_gui::pages::Page;
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        for (loaded, busy, modal) in [
+            (true, true, false),
+            (true, false, true),
+            (false, false, false),
+        ] {
+            let harness = support::ui::Harness::new([960.0, 640.0], egui::Theme::Light);
+            let mut data = Data::default();
+            if loaded {
+                data.profiles
+                    .finish(Ok(superba_core::ProfileSet::default()));
+            }
+            let mut page = Page::Overview;
+            let mut actions = Vec::new();
+            {
+                let mut show =
+                    simple_sidebar_page(&harness, &tr, &data, busy, modal, &mut page, &mut actions);
+                assert!(
+                    harness.click_text(&tr.t("simple.short_full"), &mut show),
+                    "disabled switch remains visible"
+                );
+            }
+            assert!(
+                actions.is_empty(),
+                "loaded={loaded} busy={busy} modal={modal}: {actions:?}"
+            );
+            assert_eq!(page, Page::Overview);
+        }
     }
 }
 
@@ -528,4 +864,47 @@ fn a_remote_step_is_named_by_the_host_title_not_its_app_id() {
         "Host WSL: Ubuntu-WSL1"
     );
     assert_eq!(shell::step_label(&tr, &step("ssh:devbox")), "Host devbox");
+}
+
+#[test]
+fn mode_ripple_covers_every_corner_and_commits_only_after_coverage() {
+    use superba_gui::mode_switch::{Transition, cover_radius};
+    let ctx = egui::Context::default();
+    let mut transition = Transition::default();
+    for size in [vec2(960.0, 640.0), vec2(1440.0, 900.0)] {
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, size);
+        let origin = pos2(70.0, 16.0);
+        let radius = cover_radius(screen, origin);
+        for p in [
+            screen.left_top(),
+            screen.right_top(),
+            screen.left_bottom(),
+            screen.right_bottom(),
+        ] {
+            assert!(radius >= p.distance(origin));
+        }
+    }
+    let mut at = |time, begin, reduce| {
+        let mut committed = None;
+        let output = ctx.run_ui(
+            egui::RawInput {
+                time: Some(time),
+                ..Default::default()
+            },
+            |_| {
+                if begin {
+                    transition.start(&ctx, true, reduce);
+                }
+                committed = transition.advance(&ctx);
+            },
+        );
+        output.drop_without_applying_deltas();
+        committed
+    };
+    assert_eq!(at(0.0, true, false), None);
+    assert_eq!(at(0.3, false, false), None);
+    assert_eq!(at(0.43, false, false), Some(true));
+    assert_eq!(at(0.6, false, false), None);
+    assert_eq!(at(1.0, false, false), None);
+    assert_eq!(at(1.1, true, true), Some(true));
 }

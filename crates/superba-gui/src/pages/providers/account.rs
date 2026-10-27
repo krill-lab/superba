@@ -99,6 +99,129 @@ fn start(acc: &mut AccountState, cx: &Cx<'_>, p: &Provider, days: u32, refresh: 
     ));
 }
 
+/// Compact account summary between the simple connection and key cards.
+pub(super) fn show_simple(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
+    ui.label(Text::strong(cx.tr.t("providers.simple.account"), cx.pal));
+    if !p.has_key() {
+        ui.label(Text::small(cx.tr.t("providers.no_key"), cx.pal));
+        return;
+    }
+    let Some(profile) = p.profile_id().cloned() else {
+        return;
+    };
+    let acc = state
+        .accounts
+        .entry(profile)
+        .or_insert_with(|| AccountState {
+            days: 7,
+            ..Default::default()
+        });
+    if acc.task.is_none() && acc.days != 7 {
+        acc.days = 7;
+        acc.error = None;
+    }
+    if acc.limited != Some(7) && needs_load(acc, p.site.capabilities.usage_api) {
+        let days = acc.days;
+        start(acc, cx, p, days, false);
+    }
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add(
+                    Button::ghost(cx.tr.t("action.refresh"))
+                        .icon(Icon::Refresh)
+                        .small()
+                        .loading(acc.task.is_some())
+                        .enabled(acc.task.is_none() && !cx.busy),
+                )
+                .clicked()
+            {
+                let days = acc.days;
+                start(acc, cx, p, days, true);
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                status_line(ui, cx, acc)
+            });
+        });
+    });
+    if acc.task.is_some() {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(100));
+    }
+    if let Some(report) = &acc.report {
+        let billing = report.summary.as_ref().and_then(|s| s.billing.as_ref());
+        let mut values = Vec::new();
+        if let Some(b) = billing {
+            if b.unlimited {
+                values.push((
+                    cx.tr.t("providers.account.balance"),
+                    cx.tr.t("sites.balance.unlimited"),
+                ));
+            } else if let Some(balance) = b.remaining {
+                values.push((cx.tr.t("providers.account.balance"), balance.to_string()));
+            } else if let Some(used) = b.used {
+                values.push((cx.tr.t("providers.account.used"), used.to_string()));
+            }
+            if let Some(until) = b.access_until {
+                values.push((cx.tr.t("providers.account.until"), until.utc_date_string()));
+            }
+        }
+        let usage = report.usage.as_ref().filter(|u| u.days == 7);
+        let total = usage.and_then(|u| u.total_cost);
+        if usage.is_some() {
+            values.push((
+                cx.tr.t("providers.simple.spent_week"),
+                total.map_or_else(|| "—".into(), |n| n.to_string()),
+            ));
+            values.push((
+                cx.tr.t("providers.simple.daily_average"),
+                total.map_or_else(
+                    || "—".into(),
+                    |n| Usd::from_micros(n.micros() / 7).to_string(),
+                ),
+            ));
+        }
+        for row in values.chunks(2) {
+            ui.columns(2, |uis| {
+                for (ui, (label, value)) in uis.iter_mut().zip(row) {
+                    ui.label(Text::caption(label, cx.pal));
+                    ui.label(Text::title(value, cx.pal));
+                }
+            });
+        }
+        ui.add_space(8.0);
+        ui.label(Text::caption(
+            cx.tr.t("providers.simple.top_model_week"),
+            cx.pal,
+        ));
+        let top = usage.and_then(|u| {
+            u.models
+                .iter()
+                .filter(|m| m.cost.is_some())
+                .max_by_key(|m| m.cost)
+        });
+        let top = top.map_or_else(
+            || "—".into(),
+            |m| format!("{} · {}", m.model, m.cost.unwrap_or_default()),
+        );
+        ui.add(egui::Label::new(Text::strong(top, cx.pal)).wrap());
+        if values.is_empty() || report.usage_error.is_some() {
+            ui.label(Text::small(
+                report
+                    .summary_error
+                    .as_ref()
+                    .or(report.usage_error.as_ref())
+                    .map_or_else(|| cx.tr.t("sites.balance.none"), |e| error_text(cx.tr, e)),
+                cx.pal,
+            ));
+        }
+    } else if let Some(error) = &acc.error {
+        ui.add(egui::Label::new(Text::small(error_text(cx.tr, error), cx.pal)).wrap());
+    } else {
+        ui.spinner();
+    }
+}
+
 /// Draw the tab.
 pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider) {
     // Test from this tab refreshes the Connection tab's WebSocket / zstd checks.

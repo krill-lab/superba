@@ -1050,6 +1050,7 @@ async fn failover_rules_persist_and_survive_a_new_manager() {
     use superba_router::RouterConfig;
     let _serial = SERIAL.lock().await;
     let up = upstream(Mode::Json(200, r#"{"ok":true}"#)).await;
+    let backup = upstream(Mode::Json(503, r#"{"error":"backup down"}"#)).await;
     let dir = tempfile::tempdir().unwrap();
     let data = DataDir::new(dir.path());
     let manager = RouterManager::new(&data, fake_exe(dir.path()), Box::new(InProcess::default()));
@@ -1057,7 +1058,7 @@ async fn failover_rules_persist_and_survive_a_new_manager() {
         "krill",
         MemberKind::Krill,
         false,
-        vec![line("a", up.base("/up"))],
+        vec![line("a", up.base("/up")), line("b", backup.base("/up"))],
     )]);
     manager
         .enable(&cfg, keys(), Duration::from_secs(10))
@@ -1087,6 +1088,42 @@ async fn failover_rules_persist_and_survive_a_new_manager() {
     assert_eq!(
         RouterConfig::load(again.paths()).unwrap().tuning.failover(),
         rules
+    );
+    let mut manual = rules.clone();
+    manual.enabled = false;
+    manual.fixed_route = Some(superba_core::RouterFixedRoute {
+        member_id: "krill".into(),
+        line_id: "b".into(),
+    });
+    assert!(manager.set_failover(&manual).await.unwrap());
+    let stored = RouterConfig::load(again.paths()).unwrap();
+    assert_eq!(stored.tuning.failover(), manual);
+    let endpoint = manager.endpoint().unwrap();
+    let http = reqwest::Client::builder().no_proxy().build().unwrap();
+    let send = || {
+        http.post(format!("{}/responses", endpoint.base_url))
+            .bearer_auth(endpoint.token.expose())
+            .header("session-id", "same-session")
+            .body("{}")
+            .send()
+    };
+    let resp = send().await.unwrap();
+    assert_eq!(resp.status().as_u16(), 503);
+    assert_eq!(route(&resp), "krill/b");
+    manual.enabled = true;
+    assert!(manager.set_failover(&manual).await.unwrap());
+    assert_eq!(route(&send().await.unwrap()), "krill/a");
+    manual.enabled = false;
+    assert!(manager.set_failover(&manual).await.unwrap());
+    assert_eq!(route(&send().await.unwrap()), "krill/b");
+    manual.fixed_route.as_mut().unwrap().line_id = "missing".into();
+    assert!(manager.set_failover(&manual).await.is_err());
+    assert_eq!(
+        RouterConfig::load(again.paths())
+            .unwrap()
+            .tuning
+            .fixed_route,
+        stored.tuning.fixed_route
     );
     manager.uninstall_service().unwrap();
 }

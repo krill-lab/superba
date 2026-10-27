@@ -442,12 +442,13 @@ fn decide(
         .filter(|c| {
             let m = &g.members[c.member];
             unfit(c.member).is_none()
-                && crate::transport::offers_websocket(
-                    &shared.transports,
-                    &m.cfg,
-                    &m.lines[c.line].cfg,
-                    now,
-                )
+                && (!g.config.tuning.failover_enabled
+                    || crate::transport::offers_websocket(
+                        &shared.transports,
+                        &m.cfg,
+                        &m.lines[c.line].cfg,
+                        now,
+                    ))
         })
         .collect();
     if order.first().map(|c| c.member) != Some(preferred) {

@@ -295,4 +295,29 @@ impl SessionMigrator for CodexSessionMigrator {
         })
         .await
     }
+
+    async fn rollback_many_stopped_with_progress(
+        &self,
+        home: &CodexHome,
+        migration_ids: &[String],
+        stopped: &ConsumersStopped,
+        sink: Arc<dyn SessionProgressSink>,
+    ) -> Result<RollbackReport> {
+        let (home, ids, token) = (home.clone(), migration_ids.to_vec(), stopped.clone());
+        self.blocking(move |m| {
+            let mut titles = std::collections::BTreeMap::new();
+            for id in &ids {
+                titles.extend(progress::ledger_titles(
+                    &m.data_dir,
+                    m.home_dir.as_deref(),
+                    &home,
+                    id,
+                ));
+            }
+            let progress = progress::Progress::new(sink, titles);
+            m.engine_with(&progress)
+                .rollback_many(&home, &ids, Some(&token))
+        })
+        .await
+    }
 }

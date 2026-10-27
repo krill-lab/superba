@@ -165,6 +165,88 @@ fn request_emits_one_plan_command_and_enters_planning() {
 }
 
 #[test]
+fn simple_session_batch_executes_after_planning_but_preserves_wait_and_force_cancellation() {
+    let request = superba_gui::pages::simple_usage::migration_request();
+    let mut plan = full_plan();
+    plan.request = request.clone();
+    let mut flow = Flow::default();
+    assert!(flow.request_session_batch(request.clone(), Duration::ZERO));
+    let (seq, requested) = take_plan(&mut flow);
+    assert_eq!(requested, request);
+    flow.on_planned(seq, Ok(plan.clone()), Duration::from_secs(1));
+    assert_eq!(take_execute(&mut flow).0.id, plan.id);
+    let (tx, mut rx) = oneshot::channel();
+    flow.on_decision(
+        PendingDecision::new(wait_question(), tx),
+        Duration::from_secs(2),
+    );
+    let run = flow.run().unwrap();
+    assert!(run.wait_acknowledged && run.decision.is_some());
+    assert!(rx.try_recv().is_err(), "waiting remains cancellable");
+    flow.decide(Decision::Cancel);
+    assert_eq!(rx.try_recv().unwrap(), Decision::Cancel);
+}
+
+#[test]
+fn simple_batch_stops_consumers_but_never_agrees_to_force_stop() {
+    let request = superba_gui::pages::simple_usage::migration_request();
+    let mut plan = full_plan();
+    plan.request = request.clone();
+    let mut flow = Flow::default();
+    flow.request_session_batch(request, Duration::ZERO);
+    let (seq, _) = take_plan(&mut flow);
+    flow.on_planned(seq, Ok(plan), Duration::ZERO);
+    take_execute(&mut flow);
+    let (tx, mut rx) = oneshot::channel();
+    flow.on_decision(
+        PendingDecision::new(
+            DecisionRequest::CloseConsumers {
+                processes: vec![],
+                busy: vec![],
+            },
+            tx,
+        ),
+        Duration::ZERO,
+    );
+    assert_eq!(rx.try_recv().unwrap(), Decision::StopProcesses);
+    let (tx, mut rx) = oneshot::channel();
+    flow.on_decision(
+        PendingDecision::new(
+            DecisionRequest::ForceStop {
+                processes: vec![],
+                busy: vec![],
+            },
+            tx,
+        ),
+        Duration::ZERO,
+    );
+    assert!(flow.run().unwrap().decision.is_some());
+    assert!(rx.try_recv().is_err());
+    flow.decide(Decision::Cancel);
+    assert_eq!(rx.try_recv().unwrap(), Decision::Cancel);
+}
+
+#[test]
+fn batch_authorization_cannot_confirm_an_unrelated_or_reselected_request() {
+    let request = superba_gui::pages::simple_usage::migration_request();
+    let mut flow = Flow::default();
+    assert!(!flow.request_session_batch(full_plan().request, Duration::ZERO));
+    assert!(flow.take_commands().is_empty());
+    flow.request_session_batch(request.clone(), Duration::ZERO);
+    let (old_seq, _) = take_plan(&mut flow);
+    let next = full_plan();
+    flow.request(next.request.clone(), Duration::from_secs(1));
+    let (seq, _) = take_plan(&mut flow);
+    let mut stale = full_plan();
+    stale.request = request;
+    flow.on_planned(old_seq, Ok(stale), Duration::from_secs(2));
+    assert!(flow.is_planning() && flow.take_commands().is_empty());
+    flow.on_planned(seq, Ok(next), Duration::from_secs(3));
+    assert!(matches!(flow.stage(), Stage::ConfirmFull { .. }));
+    assert!(flow.take_commands().is_empty());
+}
+
+#[test]
 fn hot_countdown_executes_once_at_exactly_five_seconds() {
     let plan = hot_plan();
     let mut flow = planned_flow(5, plan.clone());
@@ -529,7 +611,7 @@ fn plan_without_restart_executes_immediately() {
 }
 
 #[test]
-fn busy_plan_pauses_countdown_until_wait_is_acknowledged() {
+fn busy_plan_pauses_countdown_until_live_activity_confirms_the_conversation_ended() {
     let plan = busy_plan();
     let mut flow = planned_flow(5, plan.clone());
     let Stage::WaitingBeforeSwitch {
@@ -547,8 +629,30 @@ fn busy_plan_pauses_countdown_until_wait_is_acknowledged() {
     flow.tick(Duration::from_secs(40));
     assert!(flow.take_commands().is_empty());
     flow.acknowledge_wait(Duration::from_secs(40));
+    assert!(matches!(flow.stage(), Stage::WaitingBeforeSwitch { .. }));
+    flow.on_turn_activity(
+        &plan.id,
+        &[TurnActivity {
+            target_id: "local".into(),
+            checked_at: Timestamp::EPOCH,
+            busy: vec![],
+            complete: false,
+        }],
+        Duration::from_secs(40),
+    );
+    assert!(matches!(flow.stage(), Stage::WaitingBeforeSwitch { .. }));
+    flow.on_turn_activity(
+        &plan.id,
+        &[TurnActivity {
+            target_id: "local".into(),
+            checked_at: Timestamp::EPOCH,
+            busy: vec![],
+            complete: true,
+        }],
+        Duration::from_secs(40),
+    );
     let Stage::Armed { countdown, .. } = flow.stage() else {
-        panic!("acknowledging wait should resume the countdown");
+        panic!("observing idle conversations should resume the countdown");
     };
     assert!(!countdown.is_paused());
     flow.tick(Duration::from_millis(44900));
@@ -575,6 +679,41 @@ fn switching_now_from_busy_plan_forces_turns() {
     assert!(matches!(flow.stage(), Stage::Running(_)));
     flow.switch_now(Duration::from_secs(2));
     assert!(flow.take_commands().is_empty());
+}
+
+#[test]
+fn a_turn_started_during_the_countdown_pauses_it_and_stale_results_are_ignored() {
+    let plan = hot_plan();
+    let mut flow = planned_flow(5, plan.clone());
+    let activity = TurnActivity {
+        target_id: "local".into(),
+        checked_at: Timestamp::EPOCH,
+        busy: vec![busy_thread("local", "resumed")],
+        complete: true,
+    };
+    flow.on_turn_activity(&plan.id, &[activity], Duration::from_secs(2));
+    let Stage::WaitingBeforeSwitch { countdown, .. } = flow.stage() else {
+        panic!("pause");
+    };
+    assert_eq!(
+        countdown.remaining(Duration::from_secs(60)),
+        Duration::from_secs(3)
+    );
+    flow.tick(Duration::from_secs(60));
+    assert!(flow.take_commands().is_empty());
+    let idle = TurnActivity {
+        target_id: "local".into(),
+        checked_at: Timestamp::EPOCH,
+        busy: vec![],
+        complete: true,
+    };
+    flow.on_turn_activity("discarded-plan", &[idle.clone()], Duration::from_secs(60));
+    assert!(matches!(flow.stage(), Stage::WaitingBeforeSwitch { .. }));
+    flow.on_turn_activity(&plan.id, &[idle], Duration::from_secs(60));
+    flow.tick(Duration::from_millis(62999));
+    assert!(flow.take_commands().is_empty());
+    flow.tick(Duration::from_secs(63));
+    assert_eq!(take_execute(&mut flow).0.id, plan.id);
 }
 
 #[test]

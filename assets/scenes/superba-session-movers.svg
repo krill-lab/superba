@@ -1,11 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
 <title id="title">superba · 会话搬运小队</title>
-<desc id="desc">一只珊瑚色小虾慢慢把会话箱子从左侧搬到右侧，放下后返回；另一只虾坐在椅子里喝咖啡、晃脚休息。十八秒无缝循环。</desc>
+<desc id="desc">一只珊瑚色小虾把会话箱子从左侧搬到右侧，返回时箱子沉入地洞、同时从左侧地洞钻出，接着继续搬运；另一只虾坐在椅子里喝咖啡、晃脚休息。四秒完成一箱的搬运循环。</desc>
 <defs>
  <linearGradient id="paper" x2="0" y2="1"><stop stop-color="#FCFAF6"/><stop offset="1" stop-color="#F3F0EA"/></linearGradient>
  <linearGradient id="shell" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#FF956D"/><stop offset=".5" stop-color="#FF697E"/><stop offset="1" stop-color="#E94382"/></linearGradient>
  <linearGradient id="boxFront" x2=".15" y2="1"><stop stop-color="#F2C798"/><stop offset="1" stop-color="#E4AE79"/></linearGradient>
  <linearGradient id="chair" x2=".7" y2="1"><stop stop-color="#8BBEB6"/><stop offset="1" stop-color="#55958E"/></linearGradient>
+ <radialGradient id="portal"><stop stop-color="#252335"/><stop offset=".7" stop-color="#3D3449"/><stop offset="1" stop-color="#76647D"/></radialGradient>
+ <clipPath id="parcel-floor" clipPathUnits="userSpaceOnUse"><rect width="1440" height="684"/></clipPath>
  <filter id="soft" x="-.3" y="-.5" width="1.6" height="2"><feGaussianBlur stdDeviation="6"/></filter>
  <g id="shrimp" fill="url(#shell)"><path d="M237 122L728 113C802 110 861 162 857 230L826 232C829 178 784 140 728 140L387 133Z"/>
 <path d="M354 167L696 160C752 158 800 187 823 229L790 236C771 203 738 187 693 187Z"/>
@@ -36,24 +38,26 @@
 <style>
  text{font-family:ui-rounded,"SF Pro Rounded","PingFang SC","Microsoft YaHei",sans-serif}
  .mono{font-family:ui-monospace,"SFMono-Regular",Menlo,monospace}
- .travel{animation:travel 18s infinite linear}
- .facing{animation:facing 18s infinite steps(1,end)}
- .body-bob{animation:bob 1.2s infinite ease-in-out}
- .walk-legs{animation:walking 18s infinite steps(1,end)}
- .still-legs{animation:standing 18s infinite steps(1,end)}
- .leg-a{animation:legA 1.2s infinite ease-in-out;transform-origin:0px 26px}
- .leg-b{animation:legB 1.2s infinite ease-in-out;transform-origin:0px 26px}
- .cargo{animation:cargo 18s infinite linear}
- .delivered{opacity:0;animation:delivered 18s infinite steps(1,end)}
- .working-arm{animation:cargo 18s infinite linear}
- .return-arm{opacity:0;animation:returnArm 18s infinite steps(1,end)}
+ .travel{animation:travel 4s infinite linear}
+ .facing{animation:facing 4s infinite steps(1,end)}
+ .body-bob{animation:bob .4s infinite ease-in-out}
+ .walk-legs{animation:walking 4s infinite steps(1,end)}
+ .still-legs{animation:standing 4s infinite steps(1,end)}
+ .leg-a{animation:legA .4s infinite ease-in-out;transform-origin:0px 26px}
+ .leg-b{animation:legB .4s infinite ease-in-out;transform-origin:0px 26px}
+ .cargo{animation:cargo 4s infinite linear}
+ .delivered{opacity:0;animation:delivered 4s infinite steps(1,end),sink 4s infinite cubic-bezier(.42,0,1,1)}
+ .respawn{opacity:0;animation:respawn 4s infinite steps(1,end),rise 4s infinite ease-out}
+ .delivery-mark{opacity:0;animation:deliveryMark 4s infinite linear}
+ .working-arm{animation:cargo 4s infinite linear}
+ .return-arm{opacity:0;animation:returnArm 4s infinite steps(1,end)}
  .rest-body{animation:breathe 4.8s infinite ease-in-out;transform-origin:0px 0px}
  .idle-foot{animation:foot 3.6s infinite ease-in-out;transform-origin:18px 40px}
  .sip{animation:sip 7s infinite ease-in-out;transform-origin:38px -15px}
  .steam{animation:steam 3.8s infinite ease-out;opacity:0}
  .steam.two{animation-delay:1.3s}.steam.three{animation-delay:2.6s}
  .dot{animation:pulse 2s infinite ease-in-out}
- .progress{animation:progress 18s infinite linear;transform-origin:108px 780px}
+ .progress{animation:progress 4s infinite linear;transform-origin:108px 780px}
  @keyframes travel{0%,8%{transform:translateX(0)}46%,59%{transform:translateX(370px)}92%,100%{transform:translateX(0)}}
  @keyframes facing{0%{transform:scaleX(1)}59%{transform:scaleX(-1)}96%{transform:scaleX(1)}100%{transform:scaleX(1)}}
  @keyframes bob{0%,50%,100%{transform:translateY(0)}25%,75%{transform:translateY(-3px)}}
@@ -62,7 +66,11 @@
  @keyframes legA{0%,100%{transform:rotate(14deg)}50%{transform:rotate(-14deg)}}
  @keyframes legB{0%,100%{transform:rotate(-14deg)}50%{transform:rotate(14deg)}}
  @keyframes cargo{0%,8%{opacity:1;transform:translateY(0)}12%,46%{opacity:1;transform:translateY(-16px)}49.999%{opacity:1;transform:translateY(0)}50%,95.999%{opacity:0;transform:translateY(0)}96%,100%{opacity:1;transform:translateY(0)}}
- @keyframes delivered{0%{opacity:0}50%{opacity:1}96%{opacity:0}100%{opacity:0}}
+ @keyframes delivered{0%{opacity:0}50%{opacity:1}82%,100%{opacity:0}}
+ @keyframes sink{0%,59%{transform:translateY(0)}82%,100%{transform:translateY(140px)}}
+ @keyframes respawn{0%{opacity:0}59%{opacity:1}96%,100%{opacity:0}}
+ @keyframes rise{0%,59%{transform:translateY(140px)}88%,100%{transform:translateY(0)}}
+ @keyframes deliveryMark{0%,49.999%{opacity:0}50%,59%{opacity:1}64%,100%{opacity:0}}
  @keyframes returnArm{0%{opacity:0}50%{opacity:1}96%{opacity:0}100%{opacity:0}}
  @keyframes breathe{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-3px) rotate(-1deg)}}
  @keyframes foot{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(9deg)}}
@@ -70,7 +78,7 @@
  @keyframes steam{0%{opacity:0;transform:translateY(3px)}20%{opacity:.55}100%{opacity:0;transform:translateY(-43px)}}
  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
  @keyframes progress{0%,8%{transform:scaleX(.06)}46%,94%{transform:scaleX(1)}96%,100%{transform:scaleX(.06)}}
- @media(prefers-reduced-motion:reduce){*{animation:none!important}.cargo{opacity:1}.delivered,.return-arm,.steam,.walk-legs{opacity:0}.still-legs{opacity:1}}
+ @media(prefers-reduced-motion:reduce){*{animation:none!important}.cargo{opacity:1}.delivered,.respawn,.delivery-mark,.return-arm,.steam,.walk-legs{opacity:0}.still-legs{opacity:1}}
 </style>
 <rect width="1440" height="900" rx="38" fill="url(#paper)"/>
 <!-- Editorial header. -->
@@ -89,11 +97,20 @@
 <g transform="translate(102 586) scale(.73)"><use xlink:href="#crate"/></g>
 <g transform="translate(113 515) scale(.62)"><use xlink:href="#crate"/></g>
 <text x="146" y="716" text-anchor="middle" font-size="12" fill="#A2A399">待搬运</text>
-<!-- Destination shelf and completed parcel. -->
-<rect x="698" y="682" width="198" height="8" rx="4" fill="#D2C4B0"/>
-<path d="M718 676H879" stroke="#CBBCA8" stroke-width="2" stroke-dasharray="5 6"/>
+<!-- Paired ground portals: a parcel sinks at the right and rises at its pickup position. -->
+<g fill="url(#portal)" stroke="#B6A4BB" stroke-width="3">
+ <ellipse cx="422" cy="684" rx="98" ry="14"/>
+ <ellipse cx="792" cy="684" rx="98" ry="14"/>
+</g>
+<g fill="none" stroke="#E0CADF" stroke-width="2" opacity=".65">
+ <path d="M337 679Q422 662 507 679M707 679Q792 662 877 679"/>
+</g>
 <text x="797" y="716" text-anchor="middle" font-size="12" fill="#A2A399">会话归位</text>
-<g class="delivered"><g transform="translate(710 555)"><use xlink:href="#crate"/></g><g transform="translate(830 532)"><circle r="16" fill="#DEEDDC"/><path d="M-7 0L-2 5L7-5" fill="none" stroke="#7EA685" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+<g clip-path="url(#parcel-floor)">
+ <g class="delivered"><g transform="translate(710 555)"><use xlink:href="#crate"/></g></g>
+ <g class="respawn"><g transform="translate(340 555)"><use xlink:href="#crate"/></g></g>
+</g>
+<g class="delivery-mark"><g transform="translate(830 532)"><circle r="16" fill="#DEEDDC"/><path d="M-7 0L-2 5L7-5" fill="none" stroke="#7EA685" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g></g>
 <!-- Worker. All motion stays within the scene, with a pause for unloading. -->
 <g transform="translate(235 582)"><g class="travel">
  <ellipse cx="18" cy="101" rx="84" ry="9" fill="#C3B6AA" opacity=".28"/>

@@ -57,7 +57,7 @@ pub(crate) struct PlanContext {
     pub install_id: Option<String>,
     pub safe_mode: bool,
     pub restart_app: bool,
-    pub rollback_migration: Option<String>,
+    pub rollback_migrations: Vec<String>,
     pub rollback_remote: Option<TargetId>,
     pub uninstall: Option<bool>,
     /// The settings part of the plan (settings plans per home, diff preview).
@@ -128,7 +128,7 @@ impl PlanContext {
             install_id: None,
             safe_mode,
             restart_app: false,
-            rollback_migration: None,
+            rollback_migrations: Vec::new(),
             rollback_remote: None,
             uninstall: None,
             settings: PlanSettings::default(),
@@ -213,7 +213,7 @@ struct Dest {
     env_op: Option<EnvOp>,
     migration: Option<MigrationRequest>,
     restart_app: bool,
-    rollback_migration: Option<String>,
+    rollback_migrations: Vec<String>,
     rollback_remote: Option<TargetId>,
     uninstall: Option<bool>,
     profile_update: Option<ProfileUpdate>,
@@ -685,6 +685,13 @@ impl Switcher {
     }
 
     pub(crate) async fn plan_impl(&self, mut request: SwitchRequest) -> Result<SwitchPlan> {
+        let rebuilding = matches!(request.intent, SwitchIntent::ReinitializeConfig);
+        let local_repair = rebuilding || matches!(request.intent, SwitchIntent::ReapplyConfig);
+        if local_repair && (!request.targets.local || !request.targets.remotes.is_empty()) {
+            return Err(Error::invalid(
+                "configuration reinitialization is local only",
+            ));
+        }
         match &request.intent {
             SwitchIntent::HostSync { .. } => return self.plan_host_sync(request).await,
             SwitchIntent::AppCodexPin { .. } => return self.plan_pin(request).await,
@@ -706,7 +713,8 @@ impl Switcher {
         // WSL distributions (user bug 45) follow by default, also for router on /
         // off, restores and uninstall; plan_remotes adds the ones without a
         // stored setting.
-        let auto_targets = local && request.targets.remotes.is_empty();
+        let auto_targets =
+            local && !local_repair && !request.local_only && request.targets.remotes.is_empty();
         let wsl_follow = auto_targets && crate::wsl::participates(&request.intent);
         let profile_switch = matches!(request.intent, SwitchIntent::Profile { .. });
         let mut followed: Vec<TargetId> = if auto_targets {
@@ -756,7 +764,9 @@ impl Switcher {
             if state.journal_pending {
                 draft.block(BlockReason::JournalPending);
             }
-            if let Some(message) = &state.parse_error {
+            if let Some(message) = &state.parse_error
+                && !rebuilding
+            {
                 draft.block(BlockReason::Unparseable {
                     path: home.config_toml(),
                     message: message.clone(),
@@ -852,7 +862,10 @@ impl Switcher {
         // GH#5: restores, uninstall and hand-offs put back only what Superba
         // still owns; what another tool (or the user) changed since is kept and
         // named in the plan.
-        if local && let Some(resolved) = dest.resolved.as_mut() {
+        if local
+            && !rebuilding
+            && let Some(resolved) = dest.resolved.as_mut()
+        {
             let kept_external = crate::ownership::keep_external(resolved, &state);
             if !kept_external.is_empty() {
                 let source = self.change_attribution(&state).await.source;
@@ -920,7 +933,7 @@ impl Switcher {
         if local
             && let Some(sp) = self
                 .plan_local_settings(
-                    &set, &state, &home, &installs, &binaries, &mut dest, &mut draft,
+                    &set, &state, &home, &installs, &binaries, &mut dest, &mut draft, rebuilding,
                 )
                 .await
         {
@@ -928,7 +941,7 @@ impl Switcher {
         }
 
         // --- sessions (plan 10) --------------------------------------------------
-        if local {
+        if local && !rebuilding {
             self.legacy_sessions(&request, &state, report.as_ref(), &mut dest, &mut draft);
             if let Some(provider) = dest.restore_provider_question.clone() {
                 let migrated_in: u32 = soft(
@@ -964,7 +977,7 @@ impl Switcher {
         };
 
         // --- model catalog (plan 4 #17) ---------------------------------------
-        let model_check = if local && draft.blocks.is_empty() {
+        let model_check = if local && draft.blocks.is_empty() && !request.ignore_line_status {
             let left = model_left_to_config(&state, &set, &sites, baseline.as_ref());
             self.check_model(&request, left, &mut dest, &mut draft)
                 .await
@@ -973,7 +986,7 @@ impl Switcher {
         };
 
         // --- the model Codex runs with across an auth change (user bug 58) --------
-        if local && draft.blocks.is_empty() && dest.writes_local {
+        if local && !rebuilding && draft.blocks.is_empty() && dest.writes_local {
             self.keep_model(
                 &set,
                 &sites,
@@ -1006,7 +1019,12 @@ impl Switcher {
         };
         if local && draft.blocks.is_empty() && dest.writes_local {
             if let Some(resolved) = &dest.resolved {
-                match d.config.plan(&home, resolved).await {
+                let planned = if rebuilding {
+                    d.config.plan_reinitialize(&home, resolved).await
+                } else {
+                    d.config.plan(&home, resolved).await
+                };
+                match planned {
                     Ok(p) => {
                         self.resolve_rendered_auth(&home, &state, &sites, &p, &mut dest)
                             .await?;
@@ -1066,7 +1084,9 @@ impl Switcher {
                 extras.env = snapshots(&r);
                 extras.legacy_env_lines = r.legacy_lines;
             }
-            let certificate_op = if dest.routed {
+            let certificate_op = if rebuilding {
+                None
+            } else if dest.routed {
                 let path =
                     superba_router::RouterPaths::new(&d.ctx.data_dir).client_certificate_pem();
                 Some(EnvOp::Set {
@@ -1100,7 +1120,11 @@ impl Switcher {
             .as_ref()
             .map(|s| s.authapi_env.clone())
             .unwrap_or(EnvObservation::Unknown);
-        let authapi_health = match (&session, needs_authapi, authapi_env.value()) {
+        let authapi_health = match (
+            &session,
+            needs_authapi && !request.ignore_line_status,
+            authapi_env.value(),
+        ) {
             (Some(_), true, Some(origin)) => Some(self.authapi_health(&dest, origin).await),
             _ => None,
         };
@@ -1128,10 +1152,13 @@ impl Switcher {
                         reasons: draft.blocks.clone(),
                     }
                 }
-            } else if dest.hand_off {
+            } else if dest.hand_off
+                || (matches!(request.intent, SwitchIntent::RollbackAllMigrations)
+                    && dest.rollback_migrations.is_empty())
+            {
                 // Nothing of the other tool's is touched and Codex picks up the
                 // configuration at its next start (the other tool restarts it or
-                // asks to).
+                // asks to). An empty rollback batch also needs no restart.
                 if draft.blocks.is_empty() {
                     RestartKind::None
                 } else {
@@ -1158,7 +1185,7 @@ impl Switcher {
             } else {
                 decide_local(&LocalFacts {
                     blocks: draft.blocks.clone(),
-                    migration: migration.is_some() || dest.rollback_migration.is_some(),
+                    migration: migration.is_some() || !dest.rollback_migrations.is_empty(),
                     current_family: state.auth.family(),
                     target_family: dest.auth.map(AuthMode::family),
                     target_needs_authapi: needs_authapi,
@@ -1380,7 +1407,7 @@ impl Switcher {
                 install_id: dest.install_id,
                 safe_mode: set.settings.safe_mode,
                 restart_app: dest.restart_app,
-                rollback_migration: dest.rollback_migration,
+                rollback_migrations: dest.rollback_migrations,
                 rollback_remote: dest.rollback_remote,
                 uninstall: dest.uninstall,
                 settings,
@@ -1644,6 +1671,7 @@ impl Switcher {
         binaries: &[superba_core::CodexBinary],
         dest: &mut Dest,
         draft: &mut Draft,
+        rebuilding: bool,
     ) -> Option<SettingsPlan> {
         let wanted = dest.codex_settings.clone()?;
         let resolved = dest.resolved.as_mut()?;
@@ -1651,7 +1679,11 @@ impl Switcher {
             return None;
         }
         let consumers = local_consumers(dest.install_id.as_deref(), installs, binaries);
-        let bytes = tokio::fs::read(home.config_toml()).await.ok();
+        let bytes = if rebuilding {
+            None
+        } else {
+            tokio::fs::read(home.config_toml()).await.ok()
+        };
         let owned = owned_setting_paths(state, set);
         let local = TargetId::local();
         let input = HomeInput::new(&local, &consumers, self.deps.catalog.as_ref())
@@ -1675,6 +1707,63 @@ impl Switcher {
         draft: &mut Draft,
     ) -> Result<Dest> {
         match &request.intent {
+            SwitchIntent::ReinitializeConfig | SwitchIntent::ReapplyConfig => {
+                let rebuilding = matches!(request.intent, SwitchIntent::ReinitializeConfig);
+                let active = state.active.as_ref().ok_or_else(|| {
+                    Error::invalid("select and apply a provider before rebuilding config.toml")
+                })?;
+                let profile = active
+                    .profile_id
+                    .as_ref()
+                    .and_then(|id| set.profile(id))
+                    .ok_or_else(|| Error::invalid("the applied provider is no longer available"))?;
+                if profile.builtin == Some(BuiltinProfile::Original) {
+                    return Err(Error::invalid(
+                        "select a provider before rebuilding the original configuration",
+                    ));
+                }
+                let mut dest = if profile.builtin == Some(BuiltinProfile::Official) {
+                    self.restore_official(request, Some(profile.id.clone()), draft)
+                        .await
+                } else {
+                    let site = sites
+                        .iter()
+                        .find(|s| s.id == profile.site_id)
+                        .cloned()
+                        .ok_or_else(|| Error::NotFound {
+                            what: format!("site {}", profile.site_id),
+                        })?;
+                    self.token_destination(
+                        request,
+                        profile,
+                        site,
+                        active.line_id.clone(),
+                        active.auth_mode,
+                        Some(set.settings.router.enabled),
+                        pat_version_ok,
+                        draft,
+                    )
+                    .await?
+                };
+                if let Some(resolved) = dest.resolved.as_mut() {
+                    if resolved.model.model.is_none() {
+                        resolved.model.model = state.model.clone();
+                    }
+                }
+                if rebuilding {
+                    dest.env_op = None;
+                }
+                dest.profile_update = None;
+                dest.migration = None;
+                dest.restart_app = rebuilding;
+                if rebuilding {
+                    dest.label = LocalizedText::new(
+                        "troubleshooting.reinitialize",
+                        "Reinitialize configuration",
+                    );
+                }
+                Ok(dest)
+            }
             SwitchIntent::Profile {
                 profile_id,
                 line_id,
@@ -1719,7 +1808,32 @@ impl Switcher {
             }
             SwitchIntent::Router { enable } => {
                 let router = &set.settings.router;
-                let applied = state.active.as_ref().and_then(|a| a.profile_id.as_ref());
+                let fixed = self
+                    .deps
+                    .router
+                    .configuration()
+                    .filter(|_| !request.resets_router())
+                    .filter(|c| !c.tuning.failover_enabled)
+                    .and_then(|c| {
+                        let (mi, li) = c.fixed_exit()?;
+                        let profile = set.profiles.iter().find(|p| {
+                            superba_router::members::router_id(p.id.as_str()) == c.members[mi].id
+                        })?;
+                        let line = sites
+                            .iter()
+                            .find(|s| s.id == profile.site_id)?
+                            .lines
+                            .iter()
+                            .find(|l| {
+                                superba_router::members::router_id(l.id.as_str())
+                                    == c.members[mi].lines[li].id
+                            })?;
+                        Some((profile.id.clone(), line.id.clone()))
+                    });
+                let applied = fixed
+                    .as_ref()
+                    .map(|(profile, _)| profile)
+                    .or_else(|| state.active.as_ref().and_then(|a| a.profile_id.as_ref()));
                 // Turning the router on applies a member whose key the router
                 // can send as an API key (the applied one when it is such a
                 // member): the rule of the Router page and `spb router enable`.
@@ -1756,7 +1870,10 @@ impl Switcher {
                         request,
                         profile,
                         site,
-                        None,
+                        fixed
+                            .as_ref()
+                            .filter(|(id, _)| id == &profile_id)
+                            .map(|(_, line)| line.clone()),
                         None,
                         Some(*enable),
                         pat_version_ok,
@@ -1819,9 +1936,27 @@ impl Switcher {
             }
             SwitchIntent::RollbackMigration { migration_id } => Ok(Dest {
                 label: text("switch.destination.rollback_migration").arg("id", migration_id),
-                rollback_migration: Some(migration_id.clone()),
+                rollback_migrations: vec![migration_id.clone()],
                 ..Dest::default()
             }),
+            SwitchIntent::RollbackAllMigrations => {
+                let home = self.deps.ctx.codex_home();
+                let mut history = self.deps.sessions.history(&home).await?;
+                // Keep the history's newest-first tie order when clocks have
+                // insufficient resolution for two migrations.
+                history.sort_by_key(|receipt| std::cmp::Reverse(receipt.migrated_at));
+                let ids: Vec<String> = history
+                    .into_iter()
+                    .filter(|receipt| !receipt.rolled_back)
+                    .map(|receipt| receipt.id)
+                    .collect();
+                Ok(Dest {
+                    label: text("switch.destination.rollback_all_migrations")
+                        .arg("count", ids.len()),
+                    rollback_migrations: ids,
+                    ..Dest::default()
+                })
+            }
             SwitchIntent::Uninstall {
                 delete_backups,
                 provider,
@@ -1940,9 +2075,13 @@ impl Switcher {
                 None
             }
         };
-        let router_settings = match d.profiles.load().await {
-            Ok(set) => set.settings.router,
-            Err(_) => Default::default(),
+        let router_settings = if request.resets_router() {
+            superba_core::RouterSettings::simple_defaults()
+        } else {
+            match d.profiles.load().await {
+                Ok(set) => set.settings.router,
+                Err(_) => Default::default(),
+            }
         };
         // A WSL distribution follows this computer's routing also when it is
         // switched alone ("Update now", `spb wsl update`: user bug 75), with
@@ -2044,9 +2183,12 @@ impl Switcher {
                     let Some(line) = site.line(line_id).cloned() else {
                         continue;
                     };
-                    let caps = self
-                        .probe_for_switch(&site, &line, key.as_ref(), draft)
-                        .await;
+                    let caps = if request.ignore_line_status {
+                        None
+                    } else {
+                        self.probe_for_switch(&site, &line, key.as_ref(), draft)
+                            .await
+                    };
                     let eval = evaluate_line(&site, &line, caps.as_ref(), choice, pat_version_ok);
                     if eval.blocks.is_empty() || i == last {
                         chosen = Some((line, caps, eval));
@@ -2119,8 +2261,16 @@ impl Switcher {
                 r.line_id = dest.line.as_ref().map(|l| l.id.clone());
                 dest.remote_resolved = Some(r);
             }
-            self.route_through_router(profile, &site, choice, &router_settings, &mut dest, draft)
-                .await;
+            self.route_through_router(
+                profile,
+                &site,
+                choice,
+                &router_settings,
+                request.resets_router(),
+                &mut dest,
+                draft,
+            )
+            .await;
             if !request.targets.local {
                 // Only the distributions are written: the router's members stay.
                 dest.router_update = None;
@@ -2128,6 +2278,7 @@ impl Switcher {
             if let (Some(e), Some(token)) = (dest.endpoints.clone(), dest.key.clone()) {
                 let auth = dest.auth.unwrap_or(AuthMode::Pat);
                 let mut r = resolved(&e, auth, &token);
+                r.line_id = dest.line.as_ref().map(|l| l.id.clone());
                 if auth == AuthMode::MixedOfficial {
                     // Krill's PAT recommendations do not apply to the
                     // official login.
@@ -2205,6 +2356,7 @@ impl Switcher {
         site: &Site,
         choice: AuthChoice,
         router: &superba_core::RouterSettings,
+        reset: bool,
         dest: &mut Dest,
         draft: &mut Draft,
     ) {
@@ -2234,13 +2386,83 @@ impl Switcher {
             draft.block(BlockReason::RouterUnavailable { detail });
             return;
         }
-        let mut members = vec![profile.id.clone()];
-        members.extend(router.members.iter().filter(|m| *m != &profile.id).cloned());
+        let stored = d.router.configuration().filter(|_| !reset);
+        let manual = reset || stored.as_ref().is_some_and(|c| !c.tuning.failover_enabled);
+        let mut members = if manual {
+            router.members.clone()
+        } else {
+            vec![profile.id.clone()]
+        };
+        if manual {
+            if !members.contains(&profile.id) {
+                members.push(profile.id.clone());
+            }
+        } else {
+            members.extend(router.members.iter().filter(|m| *m != &profile.id).cloned());
+        }
         let line = dest
             .profile_update
             .as_ref()
             .and_then(|u| u.line_id.as_ref());
-        if members != router.members || line.is_some() {
+        if manual {
+            let selected = line
+                .cloned()
+                .or_else(|| {
+                    stored
+                        .as_ref()
+                        .and_then(|c| c.tuning.fixed_route.as_ref())
+                        .filter(|r| {
+                            r.member_id == superba_router::members::router_id(profile.id.as_str())
+                        })
+                        .and_then(|r| {
+                            site.lines
+                                .iter()
+                                .find(|l| {
+                                    superba_router::members::router_id(l.id.as_str()) == r.line_id
+                                })
+                                .map(|l| l.id.clone())
+                        })
+                })
+                .or_else(|| profile.enabled_line_ids(site).into_iter().next());
+            let result = async {
+                let selected = selected
+                    .ok_or_else(|| Error::invalid("the selected provider has no enabled line"))?;
+                let selected = site
+                    .line(&selected)
+                    .filter(|l| !profile.is_line_disabled(&l.id))
+                    .ok_or_else(|| {
+                        Error::invalid("the selected exit line is missing or disabled")
+                    })?;
+                let mut set = d.profiles.load().await?;
+                if reset {
+                    set.settings.router = router.clone();
+                }
+                let mut built = self
+                    .build_router_members_with_defaults(&set, &members, reset)
+                    .await?;
+                built.config.tuning.fixed_route = Some(superba_core::RouterFixedRoute {
+                    member_id: superba_router::members::router_id(profile.id.as_str()),
+                    line_id: superba_router::members::router_id(selected.id.as_str()),
+                });
+                built.config.validate()?;
+                Ok::<_, Error>((built, selected.clone()))
+            }
+            .await;
+            match result {
+                Ok((built, selected)) => {
+                    dest.line = Some(selected);
+                    dest.router_update = Some((members, built));
+                    // A fixed exit is stored in router configuration, never as
+                    // a change to the provider's automatic failover order.
+                    if let Some(update) = &mut dest.profile_update {
+                        update.line_id = None;
+                    }
+                }
+                Err(e) => draft.block(BlockReason::RouterUnavailable {
+                    detail: e.to_string(),
+                }),
+            }
+        } else if members != router.members || line.is_some() {
             match d.profiles.load().await {
                 Ok(mut set) => {
                     if let Some(line) = line
@@ -3209,6 +3431,26 @@ impl Switcher {
         dest: &Dest,
         draft: &mut Draft,
     ) {
+        if !request.ignore_line_status
+            && let RestartKind::Blocked { reasons } = primary
+            && !reasons.is_empty()
+            && reasons
+                .iter()
+                .all(|r| matches!(r, BlockReason::LineUnavailable { .. }))
+        {
+            let mut alt = request.clone();
+            alt.ignore_line_status = true;
+            if let SwitchIntent::Profile { line_id, .. } = &mut alt.intent {
+                *line_id = dest.line.as_ref().map(|l| l.id.clone());
+            }
+            draft.alternatives.push(PlanAlternative {
+                label: text("switch.action.ignore_line_status"),
+                request: alt,
+            });
+        }
+        if request.ignore_line_status {
+            draft.warn(text("switch.warn.ignore_line_status"));
+        }
         let SwitchIntent::Profile {
             profile_id,
             line_id,

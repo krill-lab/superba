@@ -741,6 +741,8 @@ impl RouterManager {
         })?;
         let before = config.tuning.clone();
         config.tuning.set_failover(failover)?;
+        config.validate()?;
+        config.reconcile_fixed_exit();
         if config.tuning == before {
             return Ok(false);
         }

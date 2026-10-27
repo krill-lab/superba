@@ -584,6 +584,16 @@ impl Switcher {
         set: &ProfileSet,
         members: &[ProfileId],
     ) -> Result<BuiltMembers> {
+        self.build_router_members_with_defaults(set, members, false)
+            .await
+    }
+
+    pub(crate) async fn build_router_members_with_defaults(
+        &self,
+        set: &ProfileSet,
+        members: &[ProfileId],
+        reset: bool,
+    ) -> Result<BuiltMembers> {
         let sites = all_sites(set, self.deps.ctx.env.as_ref());
         let mut out = Vec::new();
         let mut keys = BTreeMap::new();
@@ -637,7 +647,7 @@ impl Switcher {
         }
         keys.extend(claude.keys);
         let mut config = RouterConfig::new(0, out);
-        if let Some(stored) = self.deps.router.configuration() {
+        if let Some(stored) = self.deps.router.configuration().filter(|_| !reset) {
             config.openai = stored.openai;
             config.gemini = stored.gemini;
             config.translation = stored.translation;
@@ -680,6 +690,19 @@ impl Switcher {
             section.routes.retain(|r| !r.targets.is_empty());
         }
         config.catalog = Some(self.router_catalog_config(set, &config).await);
+        if reset {
+            config.tuning.failover_enabled = false;
+            // Explicit empty sections prevent the manager from restoring the
+            // previous ingress preferences during its normal member update.
+            config.openai.get_or_insert_with(Default::default);
+            config.gemini.get_or_insert_with(Default::default);
+            config.stats = Some(superba_router::stats::StatsConfig::from_settings(
+                &set.settings.router.stats,
+                self.price_table_impl().await?,
+                self.stats_locale(&set.settings),
+            ));
+        }
+        config.reconcile_fixed_exit();
         config.validate()?;
         Ok(BuiltMembers { config, keys })
     }

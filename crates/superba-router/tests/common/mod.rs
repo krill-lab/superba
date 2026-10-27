@@ -106,6 +106,7 @@ pub struct Upstream {
     pub frames: Arc<Mutex<Vec<String>>>,
     /// Close codes received over WebSocket (`None`: a close frame without one).
     pub closes: Arc<Mutex<Vec<Option<u16>>>>,
+    pub probes: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Upstream {
@@ -137,6 +138,7 @@ pub async fn upstream(mode: Mode) -> Upstream {
         mode: Arc::new(Mutex::new(mode)),
         frames: Arc::default(),
         closes: Arc::default(),
+        probes: Arc::default(),
     };
     let state = up.clone();
     tokio::spawn(async move {
@@ -186,7 +188,13 @@ impl Body for ChanBody {
 }
 
 async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBody> {
-    if !req.headers().contains_key("authorization") {
+    if !req.headers().contains_key("authorization")
+        && !req.headers().contains_key("x-api-key")
+        && !req.headers().contains_key("x-goog-api-key")
+    {
+        state
+            .probes
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         return full(401, r#"{"error":{"message":"probe"}}"#);
     }
     let mode = state.mode.lock().unwrap().clone();

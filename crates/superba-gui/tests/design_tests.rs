@@ -193,7 +193,7 @@ fn cjk_candidate_paths_are_absolute() {
 }
 
 /// Every icon, the new dashboard and sidebar ones included.
-const ALL_ICONS: [Icon; 52] = Icon::ALL;
+const ALL_ICONS: [Icon; 53] = Icon::ALL;
 
 fn widget_frame(theme: Theme) {
     let context = egui::Context::default();
@@ -613,6 +613,40 @@ mod v3 {
                 assert_eq!(inner, avail, "exactly the available rectangle");
             }
         }
+    }
+
+    #[test]
+    fn the_scroll_fallback_reaches_the_whole_last_card_when_content_exceeds_its_minimum() {
+        let context = egui::Context::default();
+        let mut last = Rect::NOTHING;
+        let mut clip = Rect::NOTHING;
+        for pass in 0..4 {
+            context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 500.0))),
+                        time: Some(pass as f64),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        layout::fit_area(ui, 600.0, |ui| {
+                            last = Rect::from_min_size(
+                                ui.cursor().min + vec2(0.0, 620.0),
+                                vec2(300.0, 80.0),
+                            );
+                            clip = ui.clip_rect();
+                            ui.painter().rect_filled(last, 12, Color32::WHITE);
+                            ui.allocate_rect(last, Sense::hover());
+                            ui.scroll_to_rect(last, Some(egui::Align::Max));
+                        });
+                    },
+                )
+                .drop_without_applying_deltas();
+        }
+        assert!(
+            clip.contains_rect(last),
+            "last card is cropped at the end: {last:?} vs {clip:?}"
+        );
     }
 
     #[test]

@@ -4,12 +4,10 @@
 mod tap;
 
 use crate::claude::route::{Target, attempts};
-use crate::forward::{
-    Observed, describe_error, failover_status_in, response_headers, set_route, up_response,
-};
+use crate::forward::{Observed, describe_error, response_headers, set_route, up_response};
 use crate::limits::{Admission, Place, file_limit_detail, file_limit_in};
 use crate::proxy::{note_line_down, on_answer};
-use crate::state::{GaugeGuard, RespBody, Shared, lock};
+use crate::state::{GaugeGuard, RespBody, Shared};
 use crate::stats::{
     body::{Mode, TapBody},
     hub::{End, Tracker},
@@ -230,7 +228,6 @@ pub(crate) async fn handle(
     let pin = key.as_deref().and_then(|k| generation.pin(k, now));
     for a in attempts(&generation, &targets, pin, now) {
         let member = &generation.members[a.c.member];
-        let line = &member.lines[a.c.line];
         let target = &targets[a.target];
         let Some(protocol) = generation
             .config
@@ -282,7 +279,7 @@ pub(crate) async fn handle(
             }
             Err(e) => {
                 let reason = describe_error(&e);
-                let opened = lock(&line.health).on_hard_failure(Instant::now(), reason.clone());
+                let opened = generation.hard_failure(a.c, reason.clone());
                 note_line_down(&shared, &generation, a.c, opened, &reason);
                 if let Some(t) = &mut tracker {
                     t.attempt_failed(a.c, None, &reason, begun.elapsed());
@@ -291,12 +288,8 @@ pub(crate) async fn handle(
             }
             Ok(resp) => resp,
         };
-        if let Some(reason) = failover_status_in(
-            &generation.config.tuning.failover_statuses,
-            resp.status(),
-            resp.headers(),
-        ) {
-            let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
+        if let Some(reason) = generation.failover_reason(resp.status(), resp.headers()) {
+            let opened = generation.soft_failure(a.c, reason.clone());
             note_line_down(&shared, &generation, a.c, opened, &reason);
             if let Some(t) = &mut tracker {
                 t.attempt_failed(a.c, Some(resp.status().as_u16()), &reason, begun.elapsed());

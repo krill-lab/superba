@@ -171,7 +171,14 @@ pub fn members(view: &RouterView, sites: &[Site], profiles: &ProfileSet) -> Vec<
                         id: l.id.clone(),
                         name: l.name.clone(),
                         base_url: base_url(&l.id),
-                        health: health_of(l.health),
+                        health: if view.failover.as_ref().is_some_and(|f| !f.enabled)
+                            && l.requests == 0
+                            && l.last_error.is_none()
+                        {
+                            LineHealth::Unknown
+                        } else {
+                            health_of(l.health)
+                        },
                         metrics: Some(LineMetrics {
                             ttfb_ms: l.ttfb_ms,
                             requests: l.requests,

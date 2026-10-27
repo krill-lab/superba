@@ -25,6 +25,139 @@ use superba_gui::movers::svg::{self, LayerKind};
 use superba_gui::movers::{self as movers, render};
 use superba_gui::pages::{Cx, Data};
 use superba_gui::runtime::Command;
+use superba_gui::startup_screen;
+
+#[test]
+fn diagnostic_art_reuses_the_shrimp_and_renders_animated_layers() {
+    let migration = roxmltree::Document::parse(render::SCENE_SVG).unwrap();
+    for source in [
+        include_str!("../../../assets/scenes/superba-diagnostic-worker.svg"),
+        include_str!("../../../assets/scenes/superba-diagnostic-celebration.svg"),
+    ] {
+        let doc = roxmltree::Document::parse(source).unwrap();
+        for id in ["shrimp", "shell"] {
+            let original = migration
+                .descendants()
+                .find(|n| n.attribute("id") == Some(id))
+                .unwrap();
+            let reused = doc
+                .descendants()
+                .find(|n| n.attribute("id") == Some(id))
+                .unwrap();
+            assert_eq!(
+                &render::SCENE_SVG[original.range()],
+                &source[reused.range()]
+            );
+        }
+        let scene = svg::analyse(source).unwrap();
+        assert!(scene.layers.iter().any(|l| l.place.has("rest-body")));
+        for layer in &scene.layers {
+            resvg::usvg::Tree::from_str(&layer.svg, &resvg::usvg::Options::default()).unwrap();
+        }
+    }
+}
+
+#[test]
+fn diagnostic_apology_svg_keeps_the_migration_profile_with_closed_eyes() {
+    let source = include_str!("../../../assets/scenes/superba-diagnostic-apology.svg");
+    let doc = roxmltree::Document::parse(source).unwrap();
+    let migration = roxmltree::Document::parse(render::SCENE_SVG).unwrap();
+    let shrimp = |doc: &roxmltree::Document<'_>| {
+        doc.descendants()
+            .find(|n| n.attribute("id") == Some("shrimp"))
+            .unwrap()
+            .children()
+            .filter(|n| n.has_tag_name("path"))
+            .take(8)
+            .map(|n| n.attribute("d").unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(shrimp(&doc), shrimp(&migration));
+    assert!(
+        doc.descendants()
+            .any(|n| n.attribute("id") == Some("closed-eye"))
+    );
+    let scene = svg::analyse(source).unwrap();
+    assert!(scene.texts.is_empty());
+    let tree = resvg::usvg::Tree::from_str(source, &resvg::usvg::Options::default()).unwrap();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(320, 280).unwrap();
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
+    assert!(pixmap.pixels().iter().any(|p| p.alpha() > 0));
+}
+
+#[test]
+fn startup_art_keeps_the_migration_shrimp_and_has_no_visible_text() {
+    let migration = roxmltree::Document::parse(render::SCENE_SVG).unwrap();
+    let startup = roxmltree::Document::parse(startup_screen::SCENE_SVG).unwrap();
+    for id in ["shrimp", "shell"] {
+        let original = migration
+            .descendants()
+            .find(|n| n.attribute("id") == Some(id))
+            .unwrap();
+        let reused = startup
+            .descendants()
+            .find(|n| n.attribute("id") == Some(id))
+            .unwrap();
+        assert_eq!(
+            &render::SCENE_SVG[original.range()],
+            &startup_screen::SCENE_SVG[reused.range()]
+        );
+    }
+    let scene = startup_screen::scene().expect("the startup SVG parses");
+    assert!(scene.texts.is_empty());
+    assert!(scene.layers.iter().any(|l| l.place.has("sip")));
+    for layer in &scene.layers {
+        resvg::usvg::Tree::from_str(&layer.svg, &resvg::usvg::Options::default()).unwrap();
+    }
+}
+
+#[test]
+fn startup_animation_moves_cached_svg_layers_and_freezes_with_reduced_motion() {
+    let ctx = context();
+    let mut cache = render::SceneCache::default();
+    let scene = startup_screen::scene().unwrap();
+    let mut draw = |time: f64, reduced: bool| {
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            render::paint_scene(
+                ui.painter(),
+                &mut cache,
+                scene,
+                render::View {
+                    origin: pos2(0.0, 0.0),
+                    scale: 1.0,
+                },
+                &startup_screen::pose(time, reduced),
+                &str::to_owned,
+            );
+        });
+        let points: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Mesh(m) => Some(m.vertices.iter().map(|v| v.pos).collect::<Vec<_>>()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(!points.is_empty());
+        assert!(points.iter().all(|p| p.x.is_finite() && p.y.is_finite()));
+        assert!(
+            !output
+                .shapes
+                .iter()
+                .any(|s| matches!(s.shape, egui::Shape::Text(_)))
+        );
+        output.drop_without_applying_deltas();
+        points
+    };
+    assert_ne!(draw(0.0, false), draw(0.9, false));
+    assert_eq!(draw(0.0, true), draw(0.9, true));
+    assert_eq!(cache.renders, 1, "frames reuse SVG textures");
+}
 
 // --- keyframes -------------------------------------------------------------------
 
@@ -42,13 +175,14 @@ fn carry_cycle_positions_at_the_start_the_middle_and_between_keyframes() {
     assert_eq!((p.cargo_opacity, p.cargo_y), (1.0, 0.0));
     assert_eq!((p.delivered, p.return_arm), (0.0, 0.0));
     assert!(close(p.progress_sx, 0.06));
-    // 26 % (4.68 s): walking right, linearly between 8 % (0) and 46 % (370 px).
+    // 26 %: walking right, linearly between 8 % (0) and 46 % (370 px).
     let p = Pose::at(0.26 * f64::from(CYCLE_SECS));
     assert!(close(p.travel_x, 370.0 * 0.18 / 0.38), "{}", p.travel_x);
     assert_eq!((p.walking, p.standing), (1.0, 0.0));
     assert!(close(p.cargo_y, -16.0));
-    // 50 % (9 s): set down at the shelf, the crate delivered, the arm returning.
-    let p = Pose::at(9.0);
+    // 50 %: set down at the shelf, the crate delivered, the arm returning.
+    let cycle = f64::from(CYCLE_SECS);
+    let p = Pose::at(0.5 * cycle);
     assert!(close(p.travel_x, 370.0));
     assert_eq!(p.facing_sx, 1.0);
     assert_eq!(
@@ -58,10 +192,10 @@ fn carry_cycle_positions_at_the_start_the_middle_and_between_keyframes() {
     assert_eq!((p.walking, p.standing), (0.0, 1.0));
     assert!(close(p.progress_sx, 1.0));
     // 59 % turns round (steps(1, end) switches exactly at the keyframe).
-    assert_eq!(Pose::at(0.589 * 18.0).facing_sx, 1.0);
-    assert_eq!(Pose::at(0.59 * 18.0 + 1e-4).facing_sx, -1.0);
+    assert_eq!(Pose::at(0.589 * cycle).facing_sx, 1.0);
+    assert_eq!(Pose::at(0.59 * cycle + 1e-4).facing_sx, -1.0);
     // 76 %: walking back, linearly from 370 px (59 %) to 0 (92 %).
-    let p = Pose::at(0.76 * 18.0);
+    let p = Pose::at(0.76 * cycle);
     assert!(
         close(p.travel_x, 370.0 * (1.0 - 0.17 / 0.33)),
         "{}",
@@ -69,31 +203,94 @@ fn carry_cycle_positions_at_the_start_the_middle_and_between_keyframes() {
     );
     assert_eq!(p.facing_sx, -1.0);
     // 96 %: home again, facing right, a new crate ready.
-    let p = Pose::at(0.961 * 18.0);
+    let p = Pose::at(0.961 * cycle);
     assert_eq!(p.facing_sx, 1.0);
     assert_eq!((p.cargo_opacity, p.delivered), (1.0, 0.0));
     // 8 % -> 12 %: the crate is lifted 16 px, linearly.
-    assert!(close(Pose::at(0.10 * 18.0).cargo_y, -8.0));
+    assert!(close(Pose::at(0.10 * cycle).cargo_y, -8.0));
+}
+
+#[test]
+fn parcels_teleport_during_the_empty_handed_return_and_join_the_next_pickup() {
+    let cycle = f64::from(CYCLE_SECS);
+    let before = Pose::at(0.58 * cycle);
+    assert_eq!(
+        (before.delivered, before.delivered_y, before.respawn),
+        (1.0, 0.0, 0.0)
+    );
+    let midway = Pose::at(0.7 * cycle);
+    assert_eq!(
+        (midway.walking, midway.facing_sx, midway.return_arm),
+        (1.0, -1.0, 1.0)
+    );
+    assert_eq!(
+        (midway.cargo_opacity, midway.delivered, midway.respawn),
+        (0.0, 1.0, 1.0)
+    );
+    assert!((0.0..140.0).contains(&midway.delivered_y));
+    assert!((0.0..140.0).contains(&midway.respawn_y));
+    assert_eq!(midway.delivery_mark, 0.0);
+    let ready = Pose::at(0.9 * cycle);
+    assert_eq!(
+        (ready.delivered, ready.respawn, ready.respawn_y),
+        (0.0, 1.0, 0.0)
+    );
+    assert_eq!(
+        ready.return_arm, 1.0,
+        "the arm stays visible after the box sinks"
+    );
+
+    let scene = render::scene().unwrap();
+    let label = |class| {
+        scene
+            .texts
+            .iter()
+            .find(|t| t.text == "会话" && t.place.has(class))
+            .unwrap()
+    };
+    let rising = label("respawn");
+    let carried = label("cargo");
+    let position = |item: &svg::TextItem, pose: &Pose| {
+        let mut point = resvg::tiny_skia::Point::from_xy(item.x, item.y);
+        item.place.transform(pose).map_point(&mut point);
+        point
+    };
+    let returning = Pose::at(0.959 * cycle);
+    let pickup = Pose::at(0.961 * cycle);
+    assert_eq!(rising.place.opacity(&returning), 1.0);
+    assert_eq!(rising.place.opacity(&pickup), 0.0);
+    assert_eq!(carried.place.opacity(&pickup), 1.0);
+    assert_eq!(position(rising, &returning), position(carried, &pickup));
+    for phase in [0.6, 0.7, 0.81, 0.9] {
+        for class in ["delivered", "respawn"] {
+            assert_eq!(
+                label(class)
+                    .place
+                    .clip_rect(&Pose::at(phase * cycle))
+                    .unwrap()
+                    .bottom(),
+                684.0
+            );
+        }
+    }
 }
 
 #[test]
 fn small_loops_follow_their_easing_and_delays() {
-    // bob: 0 -> -3 px over the first quarter of 1.2 s, ease-in-out.
-    assert!(close(Pose::at(0.3).bob_y, -3.0));
+    // bob: 0 -> -3 px over the first quarter of the step, ease-in-out.
+    let step = f64::from(pose::STEP_SECS);
+    assert!(close(Pose::at(step / 4.0).bob_y, -3.0));
     assert!(
-        close(Pose::at(0.15).bob_y, -1.5),
+        close(Pose::at(step / 8.0).bob_y, -1.5),
         "ease-in-out is symmetric"
     );
-    assert!(
-        Pose::at(0.05).bob_y > -0.5 * 3.0 * (0.05 / 0.3) as f32,
-        "eases in"
-    );
+    assert!(Pose::at(step / 24.0).bob_y > -0.5 * 3.0 / 6.0, "eases in");
     // legs swing in opposition.
     for t in [0.0, 0.2, 0.6, 0.9] {
         let p = Pose::at(t);
         assert!(close(p.leg_a, -p.leg_b));
     }
-    assert!(close(Pose::at(0.6).leg_a, -14.0));
+    assert!(close(Pose::at(step / 2.0).leg_a, -14.0));
     // the second and third steam wisps wait 1.3 s and 2.6 s (base opacity 0).
     let p = Pose::at(1.0);
     assert!(p.steam[0].0 > 0.0);
@@ -118,6 +315,9 @@ fn every_loop_is_continuous_at_its_seam() {
         ("cargo", pose::CARGO_OPACITY),
         ("cargo y", pose::CARGO_Y),
         ("delivered", pose::DELIVERED),
+        ("respawn", pose::RESPAWN),
+        ("delivery mark", pose::DELIVERY_MARK),
+        ("return arm", pose::RETURN_ARM),
         ("progress", pose::PROGRESS_SX),
         ("bob", pose::BOB_Y),
         ("leg a", pose::LEG_A_DEG),
@@ -146,9 +346,21 @@ fn every_loop_is_continuous_at_its_seam() {
     }
     // The steam's rise restarts at 3 px below, but invisibly (opacity 0).
     assert!(pose::STEAM_OPACITY.at(3.8 - 1e-6) < 1e-3);
-    // The whole carry cycle repeats every 18 s.
-    for t in [0.0, 1.7, 9.0, 12.5, 17.99] {
-        let (a, b) = (Pose::at(t), Pose::at(t + 18.0));
+    // Portal translations reset only while both parcels are hidden.
+    assert_eq!((pose::DELIVERED.at(0.0), pose::RESPAWN.at(0.0)), (0.0, 0.0));
+    assert_eq!(
+        (
+            pose::DELIVERED.at(f64::from(CYCLE_SECS) - 1e-6),
+            pose::RESPAWN.at(f64::from(CYCLE_SECS) - 1e-6)
+        ),
+        (0.0, 0.0)
+    );
+    // The whole carry cycle repeats at the faster pace.
+    let cycle = f64::from(CYCLE_SECS);
+    assert!((3.0..=5.0).contains(&cycle));
+    for phase in [0.0, 0.095, 0.5, 0.695, 0.999] {
+        let t = phase * cycle;
+        let (a, b) = (Pose::at(t), Pose::at(t + cycle));
         assert!(close(a.travel_x, b.travel_x) && a.facing_sx == b.facing_sx);
         assert_eq!(
             (a.cargo_opacity, a.delivered, a.walking),
@@ -186,6 +398,10 @@ fn the_still_frame_is_the_svgs_reduced_motion_frame() {
     assert_eq!((p.walking, p.standing), (0.0, 1.0));
     assert_eq!((p.cargo_opacity, p.cargo_y), (1.0, 0.0));
     assert_eq!((p.delivered, p.return_arm), (0.0, 0.0));
+    assert_eq!(
+        (p.respawn, p.delivery_mark, p.delivered_y, p.respawn_y),
+        (0.0, 0.0, 0.0, 0.0)
+    );
     assert_eq!(p.steam, [(0.0, 0.0); 3]);
     assert_eq!(
         (p.breathe_deg, p.foot_deg, p.sip),
@@ -206,6 +422,8 @@ fn the_artwork_splits_into_layers_parts_and_texts() {
     for part in [
         "dot",
         "delivered",
+        "respawn",
+        "delivery-mark",
         "travel",
         "leg-a",
         "leg-b",
@@ -239,9 +457,9 @@ fn the_artwork_splits_into_layers_parts_and_texts() {
         assert!(!l.svg.contains("<text"), "{:?}", l.kind);
         assert!(!l.svg.contains("@keyframes"));
     }
-    // 15 texts in the document, plus the label of each of the four crates.
-    assert_eq!(scene.texts.len(), 19);
-    assert_eq!(scene.texts.iter().filter(|t| t.text == "会话").count(), 4);
+    // 15 texts in the document, plus the label of each of the five crate instances.
+    assert_eq!(scene.texts.len(), 20);
+    assert_eq!(scene.texts.iter().filter(|t| t.text == "会话").count(), 5);
 }
 
 #[test]
@@ -259,11 +477,12 @@ fn texts_move_with_their_parts_and_every_one_is_translated() {
         (p.x, p.y, carried.place.opacity(&pose))
     };
     assert_eq!(at(0.0), (235.0 + 105.0 + 83.0, 582.0 - 27.0 + 83.0, 1.0));
-    let (x, y, _) = at(0.26 * 18.0);
+    let cycle = f64::from(CYCLE_SECS);
+    let (x, y, _) = at(0.26 * cycle);
     assert!(close(x, 423.0 + 370.0 * 0.18 / 0.38) && close(y, 638.0 - 16.0));
-    assert_eq!(at(9.0).2, 0.0, "hidden once delivered");
+    assert_eq!(at(0.5 * cycle).2, 0.0, "hidden once delivered");
     let delivered = crates.iter().find(|t| t.place.has("delivered")).unwrap();
-    assert_eq!(delivered.place.opacity(&Pose::at(9.0)), 1.0);
+    assert_eq!(delivered.place.opacity(&Pose::at(0.5 * cycle)), 1.0);
     assert_eq!(delivered.place.opacity(&Pose::at(1.0)), 0.0);
     // The note is turned 6 degrees.
     let note = scene.texts.iter().find(|t| t.text == "先喝一口").unwrap();
@@ -302,7 +521,7 @@ fn transform_attributes_parse() {
 fn the_port_composites_the_frames_it_should() {
     // A small CPU composite (the same layers and transforms the dialog paints).
     let a = render::composite(&Pose::at(0.0), 0.25).unwrap();
-    let b = render::composite(&Pose::at(9.0), 0.25).unwrap();
+    let b = render::composite(&Pose::at(0.5 * f64::from(CYCLE_SECS)), 0.25).unwrap();
     let still = render::composite(&Pose::still(), 0.25).unwrap();
     assert_eq!((a.width(), a.height()), (360, 225));
     assert_ne!(a.data(), b.data(), "the worker moved");
@@ -313,6 +532,85 @@ fn the_port_composites_the_frames_it_should() {
     let shelf = |p: &resvg::tiny_skia::Pixmap| p.pixel(195, 154).unwrap();
     assert_ne!(shelf(&a), shelf(&b));
     assert_eq!(shelf(&a), shelf(&still));
+}
+
+#[test]
+fn portal_parcels_are_visible_above_the_floor_and_never_below_it() {
+    let pose = Pose::at(0.7 * f64::from(CYCLE_SECS));
+    let frame = render::composite(&pose, 0.5).unwrap();
+    let without_parcels = render::composite(
+        &Pose {
+            delivered: 0.0,
+            respawn: 0.0,
+            ..pose
+        },
+        0.5,
+    )
+    .unwrap();
+    for left in [170, 355] {
+        let mut visible = false;
+        for x in left..left + 82 {
+            for y in 270..342 {
+                visible |= frame.pixel(x, y) != without_parcels.pixel(x, y);
+            }
+            for y in 342..367 {
+                assert_eq!(
+                    frame.pixel(x, y),
+                    without_parcels.pixel(x, y),
+                    "parcel leaked below the floor at {x}, {y}"
+                );
+            }
+        }
+        assert!(visible, "the parcel at {left} is partly above ground");
+    }
+}
+
+#[test]
+fn cached_parcels_and_their_labels_share_the_same_screen_clip() {
+    let ctx = context();
+    let mut cache = render::SceneCache::default();
+    let tr = Tr::new(Locale::ZhCn);
+    for phase in [0.67, 0.75] {
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(900.0, 600.0))),
+                ..Default::default()
+            },
+            |ui| {
+                render::paint(
+                    ui.painter(),
+                    &mut cache,
+                    render::View {
+                        origin: pos2(7.0, 11.0),
+                        scale: 0.5,
+                    },
+                    &Pose::at(phase * f64::from(CYCLE_SECS)),
+                    &|key| tr.t(key).to_owned(),
+                )
+            },
+        );
+        let clipped: Vec<_> = output
+            .shapes
+            .iter()
+            .filter(|s| close(s.clip_rect.max.y, 353.0))
+            .collect();
+        assert_eq!(
+            clipped
+                .iter()
+                .filter(|s| matches!(s.shape, egui::Shape::Mesh(_)))
+                .count(),
+            2
+        );
+        assert_eq!(
+            clipped
+                .iter()
+                .filter(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.text() == "会话"))
+                .count(),
+            2
+        );
+        output.drop_without_applying_deltas();
+    }
+    assert_eq!(cache.renders, 1, "portal motion reuses cached textures");
 }
 
 // --- flow and dialog -------------------------------------------------------------------

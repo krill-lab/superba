@@ -19,7 +19,8 @@ use std::path::{Path, PathBuf};
 
 use superba_core::{
     Clock, CodexHome, ConsumersStopped, DataDir, Error, MigrationItem, MigrationPlan,
-    MigrationReceipt, MigrationRequest, Result, RollbackReport, SessionReport, Timestamp,
+    MigrationReceipt, MigrationRequest, MigrationSelector, Result, RollbackReport, SessionReport,
+    Timestamp,
 };
 use superba_core::{SessionDirection, SessionStage};
 
@@ -239,13 +240,19 @@ impl Engine<'_> {
         let to = plan.request.to_provider.clone();
         let inv = Inventory::load(home, self.home_dir);
         inv.require_complete()?;
-        // Re-resolve against the current state: only the plan's sessions, each
-        // with every source provider the request selects for it.
+        // Explicit previews keep their original items. The simple-mode "all
+        // other providers" operation includes sessions created while consumers
+        // were closing too, once the writer gate makes this inventory stable.
+        let include_new = plan
+            .request
+            .selectors
+            .iter()
+            .any(|selector| matches!(selector, MigrationSelector::OtherProviders { .. }));
         let planned: BTreeSet<&str> = plan.items.iter().map(|i| i.thread_id.as_str()).collect();
         let selected: Vec<Selected> = inv
             .select(&plan.request, self.now(), &|id| self.ledger_for(home, id))?
             .into_iter()
-            .filter(|s| planned.contains(s.thread_id.as_str()))
+            .filter(|s| include_new || planned.contains(s.thread_id.as_str()))
             .collect();
         let work = self.compute_work(&inv, &selected, &to, plan.request.include_archived)?;
         for db in &work.dbs {
@@ -529,6 +536,13 @@ impl Engine<'_> {
                     state: LedgerState::Pending,
                     created_at: self.now(),
                     completed_at: None,
+                    completion_order: ledger::list(self.data_dir)
+                        .iter()
+                        .filter(|entry| entry.ledger.is_for(home.root()))
+                        .map(|entry| entry.ledger.completion_order)
+                        .max()
+                        .unwrap_or(0)
+                        .saturating_add(1),
                     rolled_back_at: None,
                     request: plan.request.clone(),
                     to_provider: plan.request.to_provider.clone(),
@@ -635,6 +649,64 @@ impl Engine<'_> {
         self.rollback_locked(&mut stored, &locks.writers)
     }
 
+    /// Validate the whole batch before writing and keep Codex's writer gate held
+    /// until all ledgers have been restored. The order comes from the planner.
+    pub(crate) fn rollback_many(
+        &self,
+        home: &CodexHome,
+        migration_ids: &[String],
+        token: Option<&ConsumersStopped>,
+    ) -> Result<RollbackReport> {
+        let home = &absolute_home(home);
+        let mut seen = BTreeSet::new();
+        let mut entries = Vec::new();
+        for id in migration_ids {
+            if !seen.insert(id) {
+                continue;
+            }
+            let stored = ledger::load(self.data_dir, id)?;
+            if !stored.ledger.is_for(home.root()) {
+                return Err(Error::invalid(format!(
+                    "session migration {id} belongs to {}",
+                    stored.ledger.codex_home.display()
+                )));
+            }
+            if stored.ledger.state != LedgerState::RolledBack {
+                entries.push(stored);
+            }
+        }
+        if entries.is_empty() {
+            return Ok(RollbackReport::default());
+        }
+        let locks = self.prepare_write(home, token)?;
+        self.check_no_pending(home, None)?;
+        self.progress.batch(entries.iter().map(|entry| {
+            entry
+                .ledger
+                .rollouts
+                .iter()
+                .map(|rollout| rollout.thread_id.as_str())
+                .chain(
+                    entry
+                        .ledger
+                        .databases
+                        .iter()
+                        .flat_map(|db| db.changes.iter().map(|change| change.thread_id.as_str())),
+                )
+                .filter(|id| !id.is_empty())
+                .collect::<BTreeSet<_>>()
+                .len()
+        }));
+        let mut total = RollbackReport::default();
+        for mut stored in entries {
+            let report = self.rollback_locked(&mut stored, &locks.writers)?;
+            total.restored_threads += report.restored_threads;
+            total.restored_rollouts += report.restored_rollouts;
+            total.skipped_changed += report.skipped_changed;
+        }
+        Ok(total)
+    }
+
     fn rollback_locked(&self, stored: &mut Stored, writers: &WriterGate) -> Result<RollbackReport> {
         stored.ledger.state = LedgerState::RollingBack;
         stored.save()?;
@@ -678,7 +750,7 @@ impl Engine<'_> {
     /// [`superba_core::SessionMigrator::history`].
     pub(crate) fn history(&self, home: &CodexHome) -> Vec<MigrationReceipt> {
         let home = absolute_home(home);
-        ledger::list(self.data_dir)
+        let mut entries: Vec<_> = ledger::list(self.data_dir)
             .into_iter()
             .filter(|s| {
                 // Failed attempts (rolled back before completing) are not history.
@@ -689,7 +761,16 @@ impl Engine<'_> {
                         LedgerState::Completed | LedgerState::RolledBack
                     )
             })
-            .map(|s| s.ledger.receipt(&s.dir))
+            .collect();
+        entries.sort_by(|a, b| {
+            b.ledger
+                .completed_at
+                .cmp(&a.ledger.completed_at)
+                .then_with(|| b.ledger.completion_order.cmp(&a.ledger.completion_order))
+        });
+        entries
+            .into_iter()
+            .map(|entry| entry.ledger.receipt(&entry.dir))
             .collect()
     }
 

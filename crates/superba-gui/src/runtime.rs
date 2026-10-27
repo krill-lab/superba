@@ -9,11 +9,15 @@ use std::sync::mpsc;
 
 use superba_core::{
     AuthMode, Decision, DecisionRequest, DoctorFinding, Error, ExecuteOptions, KeyCheck, KeyInput,
-    LineCaps, LineId, MigrationReceipt, Overview, Profile, ProfileSet, RecoveryReport, Result,
-    Secret, SessionReport, Settings, Site, SiteId, SiteKind, SwitchDecider, SwitchEvent,
-    SwitchEvents, SwitchOutcome, SwitchPlan, SwitchRequest, SwitchService, async_trait,
+    LineCaps, LineId, LocalizedText, MigrationReceipt, Overview, Profile, ProfileSet,
+    RecoveryReport, Result, Secret, SessionReport, Settings, Site, SiteId, SiteKind, SwitchDecider,
+    SwitchEvent, SwitchEvents, SwitchOutcome, SwitchPlan, SwitchRequest, SwitchService,
+    async_trait,
 };
 use tokio::sync::{mpsc as tmpsc, oneshot};
+
+mod troubleshooting;
+use troubleshooting::prepare_troubleshooting;
 
 /// A one-shot, read-only background task owned by a page. No credential is
 /// serialized or passed through the activity log.
@@ -147,6 +151,13 @@ pub fn profile_key_task(reference: superba_core::KeyRef) -> ReadTask<Option<Stri
 /// Something the UI asks the backend to do.
 #[derive(Debug)]
 pub enum Command {
+    /// Prepare a page-owned recovery; only the app starts its switch Flow.
+    TroubleshootingRepair {
+        /// Originating run.
+        run: u64,
+        /// Recovery operation.
+        repair: crate::pages::troubleshooting::Repair,
+    },
     /// Reload overview, profiles and sites.
     Refresh,
     /// Reload only the overview (periodic poll).
@@ -315,6 +326,20 @@ impl PendingDecision {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Reply {
+    /// A manually confirmed configuration cleanup completed.
+    TroubleshootingCleaned {
+        /// Originating run.
+        run: u64,
+        /// Cleanup and backup result.
+        result: Result<LocalizedText>,
+    },
+    /// The recovery's preparation finished; plan through the ordinary Flow.
+    TroubleshootingPrepared {
+        /// Originating run.
+        run: u64,
+        /// Request, or the precise preparation failure.
+        result: Result<SwitchRequest>,
+    },
     /// Overview loaded.
     Overview(Result<Overview>),
     /// Profiles loaded.
@@ -386,6 +411,8 @@ pub enum Reply {
     Recovered(Result<RecoveryReport>),
     /// Router watchdog tick finished.
     RouterWatch(Result<superba_core::RouterWatch>),
+    /// Saved routing behavior, also loaded before visiting the Router page.
+    RouterFailover(Result<Option<superba_core::RouterFailover>>),
     /// Settings diff of a computed plan.
     PlanSettings {
         /// Plan id.
@@ -646,13 +673,36 @@ async fn handle(
     last: &LastOverview,
 ) {
     match command {
+        Command::TroubleshootingRepair { run, repair } => {
+            if let crate::pages::troubleshooting::Repair::Cleanup(request) = repair {
+                let count = request.entries.len();
+                let result = service.troubleshooting_cleanup(request).await.map(|saved| {
+                    LocalizedText::new(
+                        "troubleshooting.cleaned",
+                        "Removed {count} configuration entries. Backup: {backup}.",
+                    )
+                    .arg("count", count)
+                    .arg("backup", saved.backup.map(|b| b.id).unwrap_or_default())
+                });
+                out.send(Reply::TroubleshootingCleaned { run, result });
+            } else {
+                let result = prepare_troubleshooting(service.as_ref(), repair).await;
+                out.send(Reply::TroubleshootingPrepared { run, result });
+            }
+        }
         Command::Refresh => {
             let (o, p, s) = after_switches(switches, || async {
                 tokio::join!(service.overview(), service.profile_set(), service.sites())
             })
             .await;
+            let routed = p.as_ref().is_ok_and(|p| p.settings.router.enabled);
             out.send(Reply::Profiles(p));
             out.send(Reply::Sites(s));
+            if routed {
+                out.send(Reply::RouterFailover(
+                    service.router_status().await.map(|v| v.failover),
+                ));
+            }
             out.send(Reply::Overview(o));
         }
         Command::Overview => {
@@ -660,6 +710,11 @@ async fn handle(
                 tokio::join!(service.overview(), service.profile_set())
             })
             .await;
+            if p.as_ref().is_ok_and(|p| p.settings.router.enabled) {
+                out.send(Reply::RouterFailover(
+                    service.router_status().await.map(|v| v.failover),
+                ));
+            }
             // Settings changed outside this window (the CLI, another instance):
             // the UI takes the stored set, so router mode and the cached
             // router reads follow without a restart.
@@ -740,6 +795,7 @@ async fn handle(
                 || matches!(
                     plan.request.intent,
                     superba_core::SwitchIntent::RollbackMigration { .. }
+                        | superba_core::SwitchIntent::RollbackAllMigrations
                 );
             let decider: Arc<dyn SwitchDecider> = Arc::new(GuiDecider(out.clone()));
             let events: Arc<dyn SwitchEvents> = Arc::new(GuiEvents {
@@ -754,6 +810,11 @@ async fn handle(
             tokio::join!(
                 async {
                     let (o, p) = tokio::join!(service.overview(), service.profile_set());
+                    if p.as_ref().is_ok_and(|p| p.settings.router.enabled) {
+                        out.send(Reply::RouterFailover(
+                            service.router_status().await.map(|v| v.failover),
+                        ));
+                    }
                     out.send(Reply::Profiles(p));
                     out.send(Reply::Overview(o));
                 },
@@ -817,6 +878,9 @@ async fn handle(
         Command::Recover => out.send(Reply::Recovered(service.recover().await)),
         Command::RouterWatch => {
             let result = service.router_watch().await;
+            out.send(Reply::RouterFailover(
+                service.router_status().await.map(|v| v.failover),
+            ));
             let switched = matches!(
                 &result,
                 Ok(w) if matches!(

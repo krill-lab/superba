@@ -314,6 +314,118 @@ async fn turning_the_router_on_applies_a_member_never_another_profile() {
     );
 }
 
+#[tokio::test]
+async fn fixed_router_switches_select_an_exit_without_reordering_members_or_lines() {
+    let (w, sw) = users_state().await;
+    execute(&sw, sw.plan(router_on_request()).await.unwrap()).await;
+    let original = sw.profile_set().await.unwrap();
+    let order = original
+        .profile(&ProfileId::new("work"))
+        .unwrap()
+        .line_priority();
+    {
+        let mut written = w.router.written.lock().unwrap();
+        let config = written.last_mut().unwrap();
+        config.tuning.failover_enabled = false;
+        config.reconcile_fixed_exit();
+    }
+    let mut request = req("work");
+    request.intent = SwitchIntent::Profile {
+        profile_id: ProfileId::new("work"),
+        line_id: Some("cdn".into()),
+        auth_mode: None,
+    };
+    let plan = sw.plan(request).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    assert_eq!(plan.to.line_id.as_ref().map(|l| l.as_str()), Some("cdn"));
+    assert_eq!(execute(&sw, plan).await.status, OutcomeStatus::Switched);
+    assert_eq!(
+        sw.profile_set()
+            .await
+            .unwrap()
+            .profile(&ProfileId::new("work"))
+            .unwrap()
+            .line_priority(),
+        order
+    );
+    assert_eq!(
+        w.router
+            .written
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .tuning
+            .fixed_route
+            .as_ref()
+            .unwrap()
+            .line_id,
+        "cdn"
+    );
+    let second = krill_profile("second", Some("overseas"), AuthMode::Pat);
+    sw.save_profile(
+        second,
+        Some(superba_core::Secret::new("nb-second-key-2222")),
+    )
+    .await
+    .unwrap();
+    let plan = sw.plan(req("second")).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    assert_eq!(execute(&sw, plan).await.status, OutcomeStatus::Switched);
+    let set = sw.profile_set().await.unwrap();
+    assert_eq!(
+        set.settings.router.members,
+        vec![ProfileId::new("work"), ProfileId::new("second")]
+    );
+    assert_eq!(
+        w.router
+            .written
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .tuning
+            .fixed_route
+            .as_ref()
+            .unwrap()
+            .member_id,
+        "second"
+    );
+    let active = sw.overview().await.unwrap().active.unwrap();
+    assert_eq!(
+        active.profile_id.as_ref().map(|p| p.as_str()),
+        Some("second")
+    );
+    assert_eq!(
+        active.line_id.as_ref().map(|l| l.as_str()),
+        Some("overseas")
+    );
+    // A selection made on the Router page has no new Codex config generation.
+    // The overview and turning forwarding off still follow that selected exit.
+    w.router
+        .written
+        .lock()
+        .unwrap()
+        .last_mut()
+        .unwrap()
+        .tuning
+        .fixed_route = Some(superba_core::RouterFixedRoute {
+        member_id: "work".into(),
+        line_id: "cdn".into(),
+    });
+    let active = sw.overview().await.unwrap().active.unwrap();
+    assert_eq!(active.profile_id.as_ref().map(|p| p.as_str()), Some("work"));
+    assert_eq!(active.line_id.as_ref().map(|l| l.as_str()), Some("cdn"));
+    let mut off = router_on_request();
+    off.intent = SwitchIntent::Router { enable: false };
+    let plan = sw.plan(off).await.unwrap();
+    assert_eq!(
+        plan.to.profile_id.as_ref().map(|p| p.as_str()),
+        Some("work")
+    );
+    assert_eq!(plan.to.line_id.as_ref().map(|l| l.as_str()), Some("cdn"));
+}
+
 #[test]
 fn the_routed_member_is_the_applied_eligible_member_else_the_first_one() {
     let w = World::new();

@@ -417,10 +417,22 @@ fn zero_countdown_enters_turn_check_without_forcing_or_confirming() {
             busy,
             ..hot_ticket("immediate")
         };
-        assert_eq!(
-            first_plan(&mut machine, &ticket, ms(100)),
-            vec![execute(&ticket, false, false, false)]
-        );
+        let effects = first_plan(&mut machine, &ticket, ms(100));
+        if !ticket.busy.is_empty() {
+            assert!(effects.is_empty());
+            assert!(matches!(
+                machine.state(),
+                MachineState::WaitingForTurn { .. }
+            ));
+            assert!(machine.handle(Input::Tick, ms(10_000)).is_empty());
+            machine.handle(Input::Turns(vec![]), ms(10_000));
+            assert_eq!(
+                machine.handle(Input::Tick, ms(10_000)),
+                vec![execute(&ticket, false, false, false)]
+            );
+        } else {
+            assert_eq!(effects, vec![execute(&ticket, false, false, false)]);
+        }
         assert_state(
             &machine,
             MachineState::Running {
@@ -1539,7 +1551,8 @@ fn permitted_execution(
                 && !matches!(ticket.primary, RestartKind::Blocked { .. })
                 && ticket.choices == 0
                 && !ticket.needs_confirmation
-                && (!ticket.countdown_allowed || countdown_len.is_zero()) =>
+                && (!ticket.countdown_allowed
+                    || (countdown_len.is_zero() && ticket.busy.is_empty())) =>
         {
             Some(("immediate_plan", execute(ticket, false, false, false)))
         }

@@ -145,10 +145,32 @@ pub trait ConfigEngine: Send + Sync {
     async fn snapshot_baseline(&self, home: &CodexHome, extras: BaselineExtras)
     -> Result<Baseline>;
 
+    /// Capture the originals for an explicitly requested config rebuild, even
+    /// when config.toml cannot be parsed. Preserve the original bytes in backup.
+    async fn snapshot_reinitialize_baseline(
+        &self,
+        home: &CodexHome,
+        extras: BaselineExtras,
+    ) -> Result<Baseline> {
+        self.snapshot_baseline(home, extras).await
+    }
+
     /// Compute the change for `desired` (also used for restore: pass
     /// [`crate::ResolvedMode::Official`] or [`crate::ResolvedMode::Original`]).
     /// Never writes.
     async fn plan(&self, home: &CodexHome, desired: &ResolvedProfile) -> Result<ApplyPlan>;
+
+    /// Plan a complete replacement of config.toml from the resolved profile.
+    /// auth.json is preserved. The old file is backed up by the ordinary apply
+    /// transaction, including when its TOML cannot be parsed.
+    async fn plan_reinitialize(
+        &self,
+        home: &CodexHome,
+        desired: &ResolvedProfile,
+    ) -> Result<ApplyPlan> {
+        let _ = (home, desired);
+        Err(Error::not_implemented("reinitialize Codex configuration"))
+    }
 
     /// Execute a plan (journaled). Re-reads the files just before writing and
     /// re-renders if they changed since planning.
@@ -285,6 +307,15 @@ pub trait LineProber: Send + Sync {
     /// (expect 401 + CORS), plus whoami / wham / codex-path probes expecting the
     /// relay's 401 (detects edge interception: `l-block` header + empty 200).
     async fn probe(&self, site: &Site, line: &Line) -> Result<LineCaps>;
+
+    /// One fresh unauthenticated latency sample, without warm-up or retries.
+    /// `None` means the request failed or was intercepted by an edge.
+    async fn latency_sample(&self, site: &Site, line: &Line) -> Result<Option<u32>> {
+        let caps = self.probe(site, line).await?;
+        Ok(caps
+            .latency_ms
+            .filter(|_| caps.reachable && !caps.blocked_by_edge))
+    }
 
     /// Probe all lines of a site concurrently.
     async fn probe_all(&self, site: &Site) -> Result<Vec<LineCaps>>;
@@ -524,6 +555,29 @@ pub trait SessionMigrator: Send + Sync {
     ) -> Result<RollbackReport> {
         let _ = progress;
         self.rollback_stopped(home, migration_id, stopped).await
+    }
+
+    /// Restore several migrations in the supplied order, after the caller stopped
+    /// every Codex consumer. Callers supply newest-first ids so overlapping
+    /// migrations unwind correctly. Implementations may keep their write locks
+    /// for the entire batch. A failure stops before any older migration runs.
+    async fn rollback_many_stopped_with_progress(
+        &self,
+        home: &CodexHome,
+        migration_ids: &[String],
+        stopped: &ConsumersStopped,
+        progress: Arc<dyn SessionProgressSink>,
+    ) -> Result<RollbackReport> {
+        let mut total = RollbackReport::default();
+        for id in migration_ids {
+            let report = self
+                .rollback_stopped_with_progress(home, id, stopped, progress.clone())
+                .await?;
+            total.restored_threads += report.restored_threads;
+            total.restored_rollouts += report.restored_rollouts;
+            total.skipped_changed += report.skipped_changed;
+        }
+        Ok(total)
     }
 }
 
@@ -1593,6 +1647,26 @@ pub trait SwitchService: Send + Sync {
     /// Diagnostics.
     async fn doctor(&self) -> Result<Vec<DoctorFinding>>;
 
+    /// Inspect one troubleshooting problem. Configuration writes, migrations and
+    /// restarts are performed separately through plan/execute.
+    async fn troubleshooting_check(
+        &self,
+        request: crate::TroubleshootingRequest,
+        progress: crate::TroubleshootingProgressSink,
+    ) -> Result<crate::TroubleshootingReport> {
+        let _ = (request, progress);
+        Err(Error::not_implemented("Codex troubleshooting"))
+    }
+
+    /// Remove the reviewed deprecated/ignored config entries with an editor backup.
+    async fn troubleshooting_cleanup(
+        &self,
+        request: crate::TroubleshootingCleanup,
+    ) -> Result<crate::CodexFileSaved> {
+        let _ = request;
+        Err(Error::not_implemented("Codex troubleshooting cleanup"))
+    }
+
     /// The configuration written last versus what every running Codex
     /// consumer of the local home uses, with running turns checked (slower
     /// than [`Self::overview`], which carries the same view without them).
@@ -1600,6 +1674,16 @@ pub trait SwitchService: Send + Sync {
         Err(Error::NotImplemented {
             what: "runtime state".into(),
         })
+    }
+
+    /// Read live turns while a switch countdown is armed. An incomplete result
+    /// must never be treated as evidence that previously busy conversations ended.
+    async fn switch_turn_activity(
+        &self,
+        targets: Vec<crate::TargetId>,
+    ) -> Result<Vec<TurnActivity>> {
+        let _ = targets;
+        Err(Error::not_implemented("switch turn activity"))
     }
 
     /// Stop Codex consumer processes the user picked (the runtime view's

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="280" viewBox="0 0 320 280">
+  <defs>
+    <linearGradient id="shell" x1="0" y1="0" x2=".3" y2="1">
+      <stop stop-color="#FF956D"/><stop offset=".5" stop-color="#FF697E"/><stop offset="1" stop-color="#E94382"/>
+    </linearGradient>
+    <linearGradient id="tear" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#A9E3F7"/><stop offset="1" stop-color="#62B7E7"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="160" cy="257" rx="83" ry="10" fill="#738490" opacity=".12"/>
+  <!-- The migration shrimp in profile, bowing with closed eyes and tears. -->
+  <path d="M137 222L130 249H112M183 222L190 249H208" fill="none" stroke="#B65569" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="rotate(8 160 200)">
+  <g id="shrimp" transform="translate(20 20) scale(.25)" fill="url(#shell)">
+    <path d="M237 122L728 113C802 110 861 162 857 230L826 232C829 178 784 140 728 140L387 133Z"/>
+    <path d="M354 167L696 160C752 158 800 187 823 229L790 236C771 203 738 187 693 187Z"/>
+    <path d="M527 218H857C852 402 734 557 527 547Z"/>
+    <path d="M500 218C418 221 343 253 281 309L500 527Z"/>
+    <path d="M259 330C203 389 171 467 168 550H479Z"/>
+    <path d="M168 580H477L278 779C211 728 174 655 168 580Z"/>
+    <path d="M499 603V834C427 834 363 818 304 793Z"/>
+    <path d="M530 603L736 809C670 830 596 841 530 834Z"/>
+    <path id="closed-eye" d="M603 340Q665 398 729 340M604 343L591 355M728 343L741 354" fill="none" stroke="#813D56" stroke-width="18" stroke-linecap="round"/>
+    <path d="M715 378C705 416 683 441 683 460C683 500 737 500 737 460C737 440 720 411 715 378Z" fill="url(#tear)"/>
+    <path d="M620 392C614 420 598 439 598 453C598 481 636 481 636 453C636 438 623 415 620 392Z" fill="url(#tear)"/>
+  </g>
+  <path d="M199 151Q210 142 219 151" fill="none" stroke="#813D56" stroke-width="3" stroke-linecap="round"/>
+  <path d="M167 154Q176 194 222 190M203 156Q210 177 232 181" fill="none" stroke="#D85572" stroke-width="10" stroke-linecap="round"/>
+  <ellipse cx="223" cy="188" rx="13" ry="9" transform="rotate(16 223 188)" fill="#FFB099"/>
+  <ellipse cx="235" cy="184" rx="12" ry="9" transform="rotate(-16 235 184)" fill="#FF956D"/>
+  </g>
+</svg>

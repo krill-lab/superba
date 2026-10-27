@@ -10,6 +10,7 @@ mod maintenance;
 pub mod network;
 mod preferences;
 pub mod search;
+mod simple;
 pub mod update_settings;
 pub mod updates;
 
@@ -19,6 +20,8 @@ use crate::design::widgets::{UnderlineTab, UnderlineTabs};
 use egui::{Key, Modifiers, Ui};
 pub(crate) use search::row;
 use superba_core::Settings;
+
+pub use simple::show as show_simple;
 
 /// Independently addressable sections; settings sections share one tab.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -181,6 +184,7 @@ pub struct State {
     pub storage: super::data::State,
     rendered: Option<SuperbaSection>,
     preferences: preferences::State,
+    simple: simple::State,
 }
 impl State {
     /// Explicit navigation also repositions an anchor in the already open tab.

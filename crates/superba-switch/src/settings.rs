@@ -129,12 +129,28 @@ impl Switcher {
         let facts = self.monitor.facts().await;
         let installs = facts.installs.clone();
         // The app's pinned Codex reads the home when one is set.
-        let installs = match d.profiles.load().await {
-            Ok(set) => self.effective_installs(installs, &set).await,
-            Err(_) => installs,
+        let (mut installs, install_id) = match d.profiles.load().await {
+            Ok(set) => (
+                self.effective_installs(installs, &set).await,
+                set.settings.preferred_app_id,
+            ),
+            Err(_) => (installs, None),
         };
         let binaries = facts.binaries.clone();
-        let consumers = local_consumers(None, &installs, &binaries);
+        // Installation discovery and CLI discovery can find the same Codex by
+        // different paths. Use the binary's version when the install probe did
+        // not answer, without borrowing a version from another installation.
+        for install in &mut installs {
+            if install.bundled_codex_version.is_none()
+                && let Some(path) = &install.bundled_codex
+            {
+                install.bundled_codex_version = binaries
+                    .iter()
+                    .filter(|binary| crate::versions::same_file(&binary.path, path))
+                    .find_map(|binary| binary.version.clone());
+            }
+        }
+        let consumers = local_consumers(install_id.as_deref(), &installs, &binaries);
         let bytes = tokio::fs::read(d.ctx.codex_home().config_toml()).await.ok();
         (consumers, bytes)
     }

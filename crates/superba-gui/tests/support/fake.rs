@@ -39,6 +39,8 @@ const APP: &str = "/usr/lib/chatgpt/ChatGPT";
 const BUNDLED: &str = "/usr/lib/chatgpt/resources/codex";
 const TIMEOUT: &str = "whoami timed out";
 
+type TurnRead = tokio::sync::oneshot::Receiver<Result<Vec<TurnActivity>>>;
+
 macro_rules! texts {
     ($($name:ident: $key:literal => $fallback:literal;)*) => {
         /// Every non-core i18n key produced by this module, all under `fake.`.
@@ -94,10 +96,18 @@ pub struct FakeOptions {
 /// A self-contained, thread-safe implementation of the GUI's switching backend.
 pub struct FakeService {
     state: Mutex<FakeState>,
+    troubleshooting: Mutex<Option<Result<TroubleshootingReport>>>,
+    troubleshooting_requests: Mutex<Vec<TroubleshootingRequest>>,
+    troubleshooting_progress:
+        Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<TroubleshootingProgress>>>,
     options: FakeOptions,
     next_plan: AtomicU64,
     areas: Areas,
     open_calls: AtomicU64,
+    startup_snapshot_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+    startup_recovery_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+    startup_overview_error: Mutex<Option<Error>>,
+    next_turn_read: Mutex<Option<TurnRead>>,
 }
 
 /// Fake state per page area (`fake/<area>.rs`).
@@ -143,6 +153,28 @@ struct FakeState {
 }
 
 impl FakeService {
+    /// Hold the next background activity read until the test supplies its result.
+    pub fn hold_turn_read(&self) -> tokio::sync::oneshot::Sender<Result<Vec<TurnActivity>>> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        *self.next_turn_read.lock().unwrap() = Some(receiver);
+        sender
+    }
+
+    /// Hold initial reads independently so startup rendering is deterministic.
+    pub fn hold_startup_reads(
+        &self,
+        snapshot: Arc<tokio::sync::Semaphore>,
+        recovery: Arc<tokio::sync::Semaphore>,
+    ) {
+        *self.startup_snapshot_gate.lock().unwrap() = Some(snapshot);
+        *self.startup_recovery_gate.lock().unwrap() = Some(recovery);
+    }
+
+    /// An initial read failure, without accessing the real user environment.
+    pub fn fail_startup_overview(&self, error: Error) {
+        *self.startup_overview_error.lock().unwrap() = Some(error);
+    }
+
     /// Fixture returned by the data block's asynchronous storage scan.
     pub fn set_data_usage(&self, result: Result<superba_core::data::DataUsage>) {
         *self.areas.storage.lock().unwrap() = Some(result);
@@ -152,12 +184,37 @@ impl FakeService {
     pub fn new(options: FakeOptions) -> Self {
         Self {
             state: Mutex::new(FakeState::new(&options)),
+            troubleshooting: Mutex::default(),
+            troubleshooting_requests: Mutex::default(),
+            troubleshooting_progress: Mutex::default(),
             options,
             next_plan: AtomicU64::new(1),
             areas: Areas::default(),
             open_calls: AtomicU64::new(0),
+            startup_snapshot_gate: Mutex::default(),
+            startup_recovery_gate: Mutex::default(),
+            startup_overview_error: Mutex::default(),
+            next_turn_read: Mutex::default(),
         }
         .with_account_summary(true)
+    }
+
+    /// Scripted observations, with no configuration or network IO.
+    pub fn set_troubleshooting(&self, report: Result<TroubleshootingReport>) {
+        *self.troubleshooting.lock().unwrap() = Some(report);
+    }
+
+    pub fn script_troubleshooting_progress(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedSender<TroubleshootingProgress> {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        *self.troubleshooting_progress.lock().unwrap() = Some(receiver);
+        sender
+    }
+
+    /// Diagnostic requests this fixture received.
+    pub fn troubleshooting_requests(&self) -> Vec<TroubleshootingRequest> {
+        self.troubleshooting_requests.lock().unwrap().clone()
     }
 
     /// Choose whether the simulated relay serves the standard billing endpoints
@@ -436,6 +493,9 @@ impl FakeState {
             applied_at: ago(now, 7200),
         });
         let mut profiles = ProfileSet::default();
+        // Existing page and accessibility fixtures exercise the complete interface.
+        // Simple-page tests select their dedicated renderer explicitly.
+        profiles.settings.simple_mode = false;
         if !first {
             profiles
                 .profiles
@@ -1176,6 +1236,7 @@ fn config_plan(before: &ConfigState, after: &ConfigState, plan: &SwitchPlan) -> 
     })
     .collect();
     ApplyPlan {
+        write_mode: superba_core::ConfigWriteMode::Managed,
         id: plan.id.clone(),
         codex_home: HOME.into(),
         generation,
@@ -1203,6 +1264,14 @@ impl FakeState {
         let mut selected = BTreeMap::<String, (u32, u32)>::new();
         for selector in &request.selectors {
             let (source, threads, rollouts) = match selector {
+                MigrationSelector::OtherProviders { except } => {
+                    for (provider, counts) in &self.sessions.by_provider {
+                        if provider != except && provider != &request.to_provider {
+                            selected.insert(provider.clone(), (counts.threads, counts.rollouts));
+                        }
+                    }
+                    continue;
+                }
                 MigrationSelector::Provider { provider }
                 | MigrationSelector::CreatedBetween { provider, .. } => {
                     let counts = self
@@ -1661,6 +1730,56 @@ impl FakeService {
 
 #[superba_core::async_trait]
 impl SwitchService for FakeService {
+    async fn troubleshooting_check(
+        &self,
+        request: TroubleshootingRequest,
+        progress: TroubleshootingProgressSink,
+    ) -> Result<TroubleshootingReport> {
+        self.troubleshooting_requests.lock().unwrap().push(request);
+        let report = self
+            .troubleshooting
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| {
+                Err(Error::not_implemented(
+                    "script a diagnostic answer for this test",
+                ))
+            })?;
+        let scripted = self.troubleshooting_progress.lock().unwrap().take();
+        if let Some(mut scripted) = scripted {
+            while let Some(step) = scripted.recv().await {
+                if !progress(step) {
+                    return Err(Error::Cancelled);
+                }
+            }
+        } else {
+            for check in &report.checks {
+                if !progress(TroubleshootingProgress::Check(check.clone())) {
+                    return Err(Error::Cancelled);
+                }
+            }
+        }
+        Ok(report)
+    }
+
+    async fn switch_turn_activity(&self, targets: Vec<TargetId>) -> Result<Vec<TurnActivity>> {
+        let held = self.next_turn_read.lock().unwrap().take();
+        if let Some(held) = held {
+            return held
+                .await
+                .map_err(|_| Error::other("activity fixture closed"))?;
+        }
+        Ok(targets
+            .into_iter()
+            .map(|target_id| TurnActivity {
+                target_id,
+                checked_at: Timestamp::now(),
+                busy: vec![],
+                complete: true,
+            })
+            .collect())
+    }
     async fn data_usage(&self) -> Result<superba_core::data::DataUsage> {
         self.areas
             .storage
@@ -1675,7 +1794,14 @@ impl SwitchService for FakeService {
     }
 
     async fn overview(&self) -> Result<Overview> {
+        let gate = self.startup_snapshot_gate.lock().unwrap().take();
+        if let Some(gate) = gate {
+            gate.acquire().await.unwrap().forget();
+        }
         self.delay(200).await;
+        if let Some(error) = self.startup_overview_error.lock().unwrap().take() {
+            return Err(error);
+        }
         let s = self.state();
         Ok(Overview {
             generated_at: Timestamp::now(),
@@ -1770,6 +1896,11 @@ impl SwitchService for FakeService {
 
     async fn router_set_conversion(&self, conversion: RouterConversion) -> Result<RouterView> {
         self.edit_router_conversion(conversion).await
+    }
+
+    async fn router_set_mixed_login(&self, on: bool) -> Result<RouterView> {
+        self.edit_profiles(|set| set.settings.router.mixed_login = on);
+        self.router_status().await
     }
 
     async fn router_set_failover(
@@ -2415,6 +2546,10 @@ impl SwitchService for FakeService {
     }
 
     async fn recover(&self) -> Result<RecoveryReport> {
+        let gate = self.startup_recovery_gate.lock().unwrap().take();
+        if let Some(gate) = gate {
+            gate.acquire().await.unwrap().forget();
+        }
         Ok(RecoveryReport::default())
     }
 

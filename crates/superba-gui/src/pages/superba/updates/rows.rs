@@ -141,6 +141,57 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     }
     confirmation(ui, cx, state, out);
 }
+
+/// The simple inventory shares the same update operations and confirmation UI.
+pub fn show_simple(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    state.background(cx, out);
+    let tools = ToolsView::default();
+    let mut entries: Vec<_> = super::items::inventory(cx, state, &tools)
+        .into_iter()
+        .filter(|e| {
+            matches!(
+                e.id,
+                UpdateItem::Superba | UpdateItem::App | UpdateItem::CodexCli
+            )
+        })
+        .collect();
+    if let Some(client) = entries.iter_mut().find(|e| e.id == UpdateItem::App) {
+        client.name = cx.tr.t("simple.superba.codex_client");
+    }
+    ui.horizontal(|ui| {
+        ui.label(Text::section(cx.tr.t("superba.section.updates"), cx.pal));
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add(
+                    Button::ghost(cx.tr.t("action.refresh"))
+                        .icon(Icon::Refresh)
+                        .small()
+                        .enabled(!state.busy()),
+                )
+                .clicked()
+            {
+                state.check_now = true;
+                state.view.invalidate();
+                out.push(Action::CheckSelfUpdate);
+            }
+        });
+    });
+    for entry in &entries {
+        show_row(ui, cx, state, entry, &tools, out);
+    }
+    if ui
+        .add(
+            Button::ghost(cx.tr.t("simple.superba.more_apps"))
+                .small()
+                .enabled(!cx.busy && !state.busy()),
+        )
+        .clicked()
+    {
+        out.push(Action::SetSimpleMode(false));
+    }
+    confirmation(ui, cx, state, out);
+}
+
 fn show_row(
     ui: &mut Ui,
     cx: &Cx<'_>,

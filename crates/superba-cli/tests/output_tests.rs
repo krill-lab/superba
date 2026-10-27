@@ -258,6 +258,7 @@ async fn plan_preview_covers_diffs_and_never_serializes_secret_payloads() {
             "switch.warn.daemon_running",
         )));
         p.config = Some(ApplyPlan {
+            write_mode: superba_core::ConfigWriteMode::Managed,
             id: "config-1".into(),
             codex_home: "/fake/codex".into(),
             generation: 8,

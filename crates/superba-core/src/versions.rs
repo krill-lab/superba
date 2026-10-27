@@ -523,6 +523,14 @@ pub struct CliVersionRow {
     pub action: CliUpdateAction,
 }
 
+impl CliVersionRow {
+    /// Whether Superba owns this CLI's updates instead of its vendor or package manager.
+    pub fn managed_by_superba(&self) -> bool {
+        self.kind == CodexInstallKind::Standalone
+            || matches!(self.action, CliUpdateAction::Install { .. })
+    }
+}
+
 /// One remote host on the Updates page.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteVersionRow {

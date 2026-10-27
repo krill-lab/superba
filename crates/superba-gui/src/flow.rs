@@ -212,6 +212,11 @@ pub struct Flow {
     notices: Vec<FlowNotice>,
     attention: Option<FlowAttention>,
     remote_progress: Vec<(superba_core::TargetId, superba_core::LocalizedText, bool)>,
+    /// The single simple-mode batch click that authorized a full restart.
+    automatic_session_seq: Option<u64>,
+    automatic_session_plan: Option<String>,
+    turn_watch: Option<(String, crate::runtime::ReadTask<Vec<TurnActivity>>)>,
+    next_turn_watch: Duration,
 }
 
 impl Default for Flow {
@@ -232,6 +237,10 @@ impl Flow {
             notices: Vec::new(),
             attention: None,
             remote_progress: Vec::new(),
+            automatic_session_seq: None,
+            automatic_session_plan: None,
+            turn_watch: None,
+            next_turn_watch: Duration::ZERO,
         }
     }
 
@@ -416,7 +425,35 @@ impl Flow {
         if self.is_running() {
             return false;
         }
+        self.automatic_session_seq = None;
+        self.automatic_session_plan = None;
+        self.turn_watch = None;
+        self.next_turn_watch = Duration::ZERO;
         self.feed(Input::Select(request), now);
+        true
+    }
+
+    /// The explicit "migrate all" / "roll back all" click authorizes this one
+    /// batch. Planning, blockers, stopping consumers and backups still apply.
+    pub fn request_session_batch(&mut self, request: SwitchRequest, now: Duration) -> bool {
+        let batch = match &request.intent {
+            SwitchIntent::RollbackAllMigrations => true,
+            SwitchIntent::MigrateSessions { request } => {
+                request.to_provider == superba_core::codex::PROVIDER_OPENAI
+                    && request.include_archived
+                    && request.exclude.is_empty()
+                    && matches!(request.selectors.as_slice(),
+                        [superba_core::MigrationSelector::OtherProviders { except }]
+                        if except == superba_core::codex::PROVIDER_OPENAI)
+            }
+            _ => false,
+        };
+        if !batch || !self.request(request, now) {
+            return false;
+        }
+        if let MachineState::Planning { seq } = self.machine.state() {
+            self.automatic_session_seq = Some(*seq);
+        }
         true
     }
 
@@ -427,6 +464,11 @@ impl Flow {
         result: superba_core::Result<SwitchPlan>,
         now: Duration,
     ) {
+        let automatic = self.automatic_session_seq == Some(seq)
+            && matches!(self.machine.state(), MachineState::Planning { seq: active } if *active == seq);
+        if automatic {
+            self.automatic_session_seq = None;
+        }
         if matches!(self.machine.state(), MachineState::Planning { seq: active } if *active == seq)
         {
             self.remote_progress.clear();
@@ -438,6 +480,10 @@ impl Flow {
                 self.feed(Input::Planned { seq, ticket }, now);
             }
             Err(error) => self.feed(Input::PlanFailed { seq, error }, now),
+        }
+        if automatic && let Stage::ConfirmFull { plan } = self.stage() {
+            self.automatic_session_plan = Some(plan.id.clone());
+            self.confirm_full(false, now);
         }
     }
 
@@ -454,6 +500,74 @@ impl Flow {
         }
         if self.run.as_ref().and_then(|r| r.rollback_remaining(now)) == Some(Duration::ZERO) {
             self.decide(Decision::Rollback);
+        }
+    }
+
+    /// Refresh live conversations during the countdown, including resumed turns.
+    /// Reads run in the background without pausing the timer. Only observed busy
+    /// turns pause it; the plan id isolates late results from a new selection.
+    pub fn watch_turns(
+        &mut self,
+        service: std::sync::Arc<dyn superba_core::SwitchService>,
+        now: Duration,
+    ) {
+        let plan = match self.stage() {
+            Stage::Armed { plan, .. } | Stage::WaitingBeforeSwitch { plan, .. } => plan,
+            _ => {
+                self.turn_watch = None;
+                self.next_turn_watch = Duration::ZERO;
+                return;
+            }
+        };
+        let id = plan.id.clone();
+        let mut targets = Vec::new();
+        if plan.request.targets.local {
+            targets.push(superba_core::TargetId::local());
+        }
+        targets.extend(
+            plan.remotes
+                .iter()
+                .filter(|p| p.blocked.is_empty())
+                .map(|p| p.target_id.clone()),
+        );
+        if self.turn_watch.as_ref().is_some_and(|(old, _)| old != &id) {
+            self.turn_watch = None;
+            self.next_turn_watch = Duration::ZERO;
+        }
+        if let Some(result) = self.turn_watch.as_ref().and_then(|(_, task)| task.poll()) {
+            self.turn_watch = None;
+            if let Ok(activity) = result {
+                self.on_turn_activity(&id, &activity, now);
+            }
+            self.next_turn_watch = now + Duration::from_millis(700);
+        }
+        if self.turn_watch.is_none() && now >= self.next_turn_watch {
+            self.turn_watch = Some((
+                id,
+                crate::runtime::task(async move { service.switch_turn_activity(targets).await }),
+            ));
+        }
+    }
+
+    /// Apply a fresh observation without clearing busy turns on partial failures.
+    pub fn on_turn_activity(&mut self, plan_id: &str, activity: &[TurnActivity], now: Duration) {
+        let old = match self.stage() {
+            Stage::Armed { plan, .. } if plan.id == plan_id => Vec::new(),
+            Stage::WaitingBeforeSwitch { plan, busy, .. } if plan.id == plan_id => busy.to_vec(),
+            _ => return,
+        };
+        let mut busy = if !activity.is_empty() && activity.iter().all(|a| a.complete) {
+            Vec::new()
+        } else {
+            old
+        };
+        for thread in activity.iter().flat_map(|a| &a.busy) {
+            if !busy.contains(thread) {
+                busy.push(thread.clone());
+            }
+        }
+        if !busy.is_empty() || (!activity.is_empty() && activity.iter().all(|a| a.complete)) {
+            self.feed(Input::Turns(busy), now);
         }
     }
 
@@ -690,6 +804,24 @@ impl Flow {
     /// A question from `execute`. Without a running switch the safe default is
     /// answered at once.
     pub fn on_decision(&mut self, decision: PendingDecision, now: Duration) {
+        let automatic_batch = self
+            .run
+            .as_ref()
+            .is_some_and(|run| self.automatic_session_plan.as_ref() == Some(&run.plan.id));
+        let automatic_wait =
+            automatic_batch && matches!(&decision.request, DecisionRequest::WaitForTurns { .. });
+        if automatic_batch {
+            let answer = match &decision.request {
+                DecisionRequest::CloseConsumers { busy, .. } if busy.is_empty() => {
+                    Some(Decision::StopProcesses)
+                }
+                _ => None,
+            };
+            if let Some(answer) = answer {
+                decision.answer(answer);
+                return;
+            }
+        }
         match &mut self.run {
             Some(run) => {
                 run.recovery_deadline =
@@ -701,7 +833,9 @@ impl Flow {
                         run.turns = group_turns(busy);
                     }
                 }
-                run.wait_acknowledged = false;
+                // Keep the pending question alive while waiting: the executor
+                // notices when turns finish, and Cancel/Esc remains available.
+                run.wait_acknowledged = automatic_wait;
                 run.decision = Some(decision);
             }
             None => {
@@ -756,13 +890,10 @@ impl Flow {
         recovering
     }
 
-    /// "Switch when they finish". Before execution (turns found at plan time) this
-    /// resumes the countdown, and `execute` then waits for the turns itself; during
-    /// execution the open question stays open (so force / cancel remain possible).
-    pub fn acknowledge_wait(&mut self, now: Duration) {
-        match &mut self.run {
-            Some(run) => run.wait_acknowledged = true,
-            None => self.feed(Input::Turns(Vec::new()), now),
+    /// Waiting never resumes a countdown while a conversation remains busy.
+    pub fn acknowledge_wait(&mut self, _now: Duration) {
+        if let Some(run) = &mut self.run {
+            run.wait_acknowledged = true;
         }
     }
 

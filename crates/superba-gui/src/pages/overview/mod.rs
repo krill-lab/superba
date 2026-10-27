@@ -29,6 +29,8 @@ pub mod hero;
 pub mod lanes;
 mod lines;
 mod sessions;
+mod simple;
+pub mod simple_speed;
 mod today;
 pub mod todo;
 pub mod tools;
@@ -36,21 +38,20 @@ pub mod usage;
 
 use std::time::{Duration, Instant};
 
-use egui::{Align, Layout, Rect, RichText, Sense, Ui, vec2};
+use egui::{Align, Layout, Rect, Sense, Ui, vec2};
 use superba_core::{
     BillingSummary, LineCaps, Profile, RestoreTarget, Site, SpeedSupport, SpeedTier, catalog,
 };
 
 use super::{Action, Cx, Page, PageStatus, empty_state, error_state};
 use crate::design::backdrop::Backdrop;
-use crate::design::fonts::{Weight, font};
 use crate::design::icons::Icon;
-use crate::design::tokens::text;
 use crate::design::widgets::{Button, Latency, Text};
 use crate::runtime::ReadTask;
 pub use cards::{GAP, Grid, layout, layout_with};
 pub use lines::LineRow;
 pub use sessions::{host_label, usage_command};
+pub use simple::show as show_simple;
 pub use today::{delta_text, figure};
 use usage::Snapshot;
 
@@ -61,6 +62,9 @@ const RELOAD: Duration = Duration::from_secs(20);
 /// Height of the title row.
 pub const TITLE_ROW: f32 = 40.0;
 
+/// Height of the title, its spacing and the dashboard's minimum 600-point grid.
+pub const MIN_HEIGHT: f32 = TITLE_ROW + 16.0 + 600.0;
+
 /// Page state: the dismissed setup card and the dashboard's data.
 #[derive(Debug, Default)]
 pub struct State {
@@ -68,6 +72,8 @@ pub struct State {
     pub empty_dismissed: bool,
     /// The request log and router snapshot.
     pub usage: UsageLoader,
+    /// Codex-only dashboard data for simple mode.
+    pub simple_usage: UsageLoader,
     /// Diagnostics were asked for once (findings feed 待办 and the markers).
     doctor_asked: bool,
 }
@@ -97,6 +103,10 @@ impl UsageLoader {
 
     /// Poll a running read and start one when none ran for [`RELOAD`].
     fn tick(&mut self, ui: &Ui, cx: &Cx<'_>) {
+        self.tick_for(ui, cx, false);
+    }
+
+    fn tick_for(&mut self, ui: &Ui, cx: &Cx<'_>, codex_only: bool) {
         if let Some(task) = &self.task {
             match task.poll() {
                 Some(result) => {
@@ -117,7 +127,13 @@ impl UsageLoader {
             let service = cx.service.clone();
             let now = cx.now;
             let offset = super::local_offset_secs(now).unwrap_or(0);
-            self.task = Some(crate::runtime::task(usage::load(service, now, offset)));
+            self.task = Some(crate::runtime::task(async move {
+                if codex_only {
+                    usage::load_codex(service, now, offset).await
+                } else {
+                    usage::load(service, now, offset).await
+                }
+            }));
             // A failed or empty read is retried on the next interval.
             self.at = Some(Instant::now());
         }
@@ -136,7 +152,10 @@ pub fn command(state: &mut State, _cx: &Cx<'_>, command: &str, out: &mut Vec<Act
         "wizard" => out.push(Action::StartWizard),
         "restore:original" => out.push(Action::restore_original()),
         "restore:official" => out.push(Action::Restore(RestoreTarget::Official)),
-        "refresh" => state.usage.at = None,
+        "refresh" => {
+            state.usage.at = None;
+            state.simple_usage.at = None;
+        }
         other => tracing::debug!(command = other, "unknown overview command"),
     }
 }
@@ -238,12 +257,10 @@ fn title_row(ui: &mut Ui, cx: &Cx<'_>) {
         Layout::left_to_right(Align::Center),
         |ui| {
             ui.set_min_height(TITLE_ROW);
-            ui.label(
-                RichText::new(cx.tr.t(Page::Overview.title_key()))
-                    .font(font(text::TITLE_XL, Weight::Semibold))
-                    .color(cx.pal.text)
-                    .extra_letter_spacing(-0.8),
-            );
+            ui.label(Text::page_title(
+                cx.tr.t(Page::Overview.title_key()),
+                cx.pal,
+            ));
             ui.add_space(6.0);
             ui.with_layout(Layout::left_to_right(Align::Max), |ui| {
                 ui.add_space(0.0);

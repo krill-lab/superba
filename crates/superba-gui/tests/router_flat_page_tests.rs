@@ -36,6 +36,29 @@ fn members() -> Arc<FakeService> {
 }
 
 #[test]
+fn simple_router_navigation_and_advanced_button_open_the_corresponding_mode() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = members();
+        service.edit_profiles(|set| {
+            set.settings.simple_mode = true;
+            set.settings.reduce_motion = true;
+        });
+        let mut h = AppHarness::new(service, locale, Page::Overview);
+        h.click(Some(Role::Tab), &tr.t(Page::Router.title_key()));
+        let tree = h.wait_for(Some(Role::Switch), &tr.t("router.mode_label"));
+        assert!(tree.has(&tr.t("router.simple.description")));
+        assert!(tree.has(&tr.t("router.simple.usage_off")));
+        assert!(
+            tree.find(Some(Role::Switch), &tr.t("router.failover.enabled"))
+                .is_none()
+        );
+        h.click(Some(Role::Button), &tr.t("router.simple.full_mode"));
+        h.wait_for(Some(Role::Switch), &tr.t("router.failover.enabled"));
+    }
+}
+
+#[test]
 fn no_disclosure_for_advanced_or_conversion_and_their_controls_are_named() {
     for locale in [Locale::En, Locale::ZhCn] {
         let tr = Tr::new(locale);
@@ -192,6 +215,58 @@ fn the_failover_rules_are_settings_that_save() {
             service.router_failover().failover_statuses == [429, 502, 503, 504]
         });
         assert!(service.router_failover().return_to_preferred);
+    }
+}
+
+#[test]
+fn disabling_failover_exposes_exit_buttons_and_keeps_the_rules() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = members();
+        service.edit_profiles(|set| {
+            set.profiles
+                .iter_mut()
+                .find(|p| p.id.as_str() == "krill")
+                .unwrap()
+                .id = ProfileId::new("Krill/Mixed");
+            set.settings.router.members[0] = ProfileId::new("Krill/Mixed");
+        });
+        let mut h = AppHarness::new(service.clone(), locale, Page::Router);
+        let toggle = tr.t("router.failover.enabled");
+        h.wait_for(Some(Role::Switch), &toggle);
+        h.click(Some(Role::Switch), &toggle);
+        h.until("failover disabled", |_| !service.router_failover().enabled);
+        let initial = service.router_failover().fixed_route;
+        let tree = h.wait_for(Some(Role::Button), &tr.t("router.failover.select_line"));
+        assert!(!tree.has(&tr.t("router.members.up")));
+        assert!(!tree.has(&tr.t("router.members.down")));
+        assert!(!tree.has(&tr.t("router.members.primary")));
+        assert!(tree.has(&tr.t("router.members.fixed_title")));
+        h.click(Some(Role::Button), &tr.t("router.failover.select_line"));
+        h.until("exit saved", |_| {
+            service.router_failover().fixed_route != initial
+        });
+        assert_eq!(
+            service
+                .router_failover()
+                .fixed_route
+                .as_ref()
+                .unwrap()
+                .member_id,
+            "krill-mixed"
+        );
+        let selected = service.router_failover().fixed_route;
+        h.click(Some(Role::Switch), &toggle);
+        h.until("failover enabled", |_| service.router_failover().enabled);
+        let rules = service.router_failover();
+        assert_eq!(rules.fixed_route, selected);
+        assert_eq!(rules.failover_statuses, [502, 503, 504]);
+        assert_eq!(rules.cooldown_secs, 5);
+        h.click(Some(Role::Switch), &toggle);
+        h.until("fixed exit retained", |_| {
+            !service.router_failover().enabled
+        });
+        assert_eq!(service.router_failover().fixed_route, selected);
     }
 }
 

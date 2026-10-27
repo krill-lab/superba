@@ -61,6 +61,8 @@ mod settings;
 mod sites;
 mod tools;
 mod transports;
+mod troubleshooting;
+mod turn_watch;
 pub mod usage;
 pub mod usage_import;
 pub mod versions;
@@ -1122,8 +1124,30 @@ impl SwitchService for Switcher {
         self.doctor_impl().await
     }
 
+    async fn troubleshooting_check(
+        &self,
+        request: superba_core::TroubleshootingRequest,
+        progress: superba_core::TroubleshootingProgressSink,
+    ) -> Result<superba_core::TroubleshootingReport> {
+        self.troubleshooting_check_impl(request, progress).await
+    }
+
+    async fn troubleshooting_cleanup(
+        &self,
+        request: superba_core::TroubleshootingCleanup,
+    ) -> Result<superba_core::CodexFileSaved> {
+        self.troubleshooting_cleanup_impl(request).await
+    }
+
     async fn runtime(&self) -> Result<superba_core::RuntimeView> {
         self.runtime_impl().await
+    }
+
+    async fn switch_turn_activity(
+        &self,
+        targets: Vec<superba_core::TargetId>,
+    ) -> Result<Vec<superba_core::TurnActivity>> {
+        self.switch_turn_activity_impl(targets).await
     }
 
     async fn codex_file(

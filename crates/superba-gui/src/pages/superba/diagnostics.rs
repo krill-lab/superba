@@ -3,6 +3,7 @@
 
 mod tools;
 pub use tools::State;
+pub(crate) use tools::report;
 
 use egui::{Align, Layout, ScrollArea, Ui};
 use superba_core::paths::display_path;

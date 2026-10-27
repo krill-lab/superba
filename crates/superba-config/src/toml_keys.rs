@@ -299,9 +299,39 @@ impl ConfigDoc {
     /// comment. Unrelated empty tables and the root are never pruned. Missing or
     /// untraversable paths leave the document unchanged.
     pub fn remove(&mut self, path: &str) -> bool {
-        let Some(mut parts) = path_parts(path) else {
+        let Some(parts) = path_parts(path) else {
             return false;
         };
+        self.remove_parts(parts)
+    }
+
+    /// Remove the exact key identified by a validator span, including quoted keys.
+    pub fn remove_key_at(&mut self, start: usize, end: usize) -> bool {
+        fn find(table: &dyn TableLike, range: &Range<usize>) -> Option<Vec<String>> {
+            for (key, item) in table.iter() {
+                let span = table.key(key).and_then(Key::span).or_else(|| item.span());
+                if span.as_ref() == Some(range) {
+                    return Some(vec![key.to_owned()]);
+                }
+                if let Some(child) = item.as_table_like()
+                    && let Some(mut path) = find(child, range)
+                {
+                    path.insert(0, key.to_owned());
+                    return Some(path);
+                }
+            }
+            None
+        }
+        let Ok(parsed) = parse_document(&self.source) else {
+            return false;
+        };
+        let Some(path) = find(parsed.as_table(), &(start..end)) else {
+            return false;
+        };
+        self.remove_parts(path.iter().map(String::as_str).collect())
+    }
+
+    fn remove_parts(&mut self, mut parts: Vec<&str>) -> bool {
         let Ok(parsed) = parse_document(&self.source) else {
             return false;
         };

@@ -79,6 +79,12 @@ pub enum MigrationSelector {
         /// Source provider id.
         provider: String,
     },
+    /// Every session stored under a provider other than `except`.
+    /// Used by simple mode to gather all non-OpenAI providers in one migration.
+    OtherProviders {
+        /// Provider to leave unchanged.
+        except: String,
+    },
     /// Undo a previous migration using its ledger (reverse migration, plan 10.4).
     Ledger {
         /// Migration id.

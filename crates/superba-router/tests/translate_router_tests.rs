@@ -454,6 +454,54 @@ async fn codex_http_reaches_chat_only_member() {
 }
 
 #[tokio::test]
+async fn fixed_websocket_bridge_preserves_upstream_errors() {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
+    let up = anthropic(Arc::new(|_| {
+        Fake::json(
+            503,
+            json!({"error":{"message":"chosen exit unavailable","type":"server_error"}}),
+        )
+    }))
+    .await;
+    let mut cfg = config(&up, Protocol::Chat);
+    cfg.tuning.failover_enabled = false;
+    let r = start(cfg).await;
+    let mut upgrade = r
+        .url("/backend-api/codex/responses")
+        .replacen("http:", "ws:", 1)
+        .into_client_request()
+        .unwrap();
+    upgrade.headers_mut().insert(
+        "authorization",
+        format!("Bearer {ROUTER_TOKEN}").parse().unwrap(),
+    );
+    let (mut socket, _) = tokio_tungstenite::connect_async(upgrade).await.unwrap();
+    let mut body = request(Protocol::Responses, true);
+    body["type"] = "response.create".into();
+    socket
+        .send(Message::Text(body.to_string().into()))
+        .await
+        .unwrap();
+    let frame = tokio::time::timeout(std::time::Duration::from_secs(10), socket.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let Message::Text(text) = frame else {
+        panic!("expected error event")
+    };
+    let event: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(event["type"], "error");
+    assert_eq!(event["status"], 503);
+    assert_eq!(event["error"]["message"], "chosen exit unavailable");
+    assert_eq!(up.seen().len(), 1);
+    assert_eq!(r.status().await.totals.failovers, 0);
+    socket.close(None).await.unwrap();
+    r.handle.shutdown();
+}
+
+#[tokio::test]
 async fn codex_websocket_uses_http_and_replays_local_continuations() {
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::{Message as WsMessage, client::IntoClientRequest};

@@ -280,6 +280,13 @@ pub(crate) async fn resolve(
         member,
         model: model.unwrap_or_default().to_owned(),
     };
+    if !generation.config.tuning.failover_enabled {
+        return Ok(generation
+            .fixed_exit_for(&serving)
+            .map(|c| target(c.member))
+            .into_iter()
+            .collect());
+    }
     let Some(model) = model.filter(|_| serving.len() > 1) else {
         return Ok(serving.into_iter().map(target).collect());
     };

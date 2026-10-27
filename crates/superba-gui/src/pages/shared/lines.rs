@@ -41,6 +41,9 @@ pub fn moved(mut ids: Vec<LineId>, from: usize, to: usize) -> Vec<LineId> {
 /// `profile` is the applied provider; `None` in router mode (the router picks
 /// per request) or for another provider.
 pub fn applied_line(data: &Data, profile: &Profile) -> Option<LineId> {
+    if let Some((exit, line)) = data.router_fixed_exit() {
+        return (exit.id == profile.id).then_some(line);
+    }
     if data.router_enabled() {
         return None;
     }
@@ -66,6 +69,9 @@ pub fn reorder_action(
     from: usize,
     to: usize,
 ) -> Option<Action> {
+    if data.router_enabled() && !data.router_failover_enabled() {
+        return None;
+    }
     let order = moved(ids.clone(), from, to);
     if order == ids {
         return None;

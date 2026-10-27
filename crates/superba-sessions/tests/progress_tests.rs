@@ -314,6 +314,50 @@ async fn rollback_reports_restore_progress_and_cannot_be_stopped() {
 }
 
 #[tokio::test]
+async fn rollback_batch_reports_one_monotonic_operation_and_one_done() {
+    let f = build(8);
+    let m = f.migrator();
+    let first = m.plan(&f.home, &request()).await.unwrap();
+    m.migrate(&f.home, &first).await.unwrap();
+    let next_request = MigrationRequest {
+        to_provider: "another-provider".into(),
+        selectors: vec![MigrationSelector::Provider {
+            provider: "openai".into(),
+        }],
+        include_archived: true,
+        exclude: Vec::new(),
+    };
+    let second = m.plan(&f.home, &next_request).await.unwrap();
+    m.migrate(&f.home, &second).await.unwrap();
+    let expected = (first.items.len() + second.items.len()) as u32;
+    let rec = Recorder::stopping(|_| true);
+    m.rollback_many_stopped_with_progress(
+        &f.home,
+        &[second.id, first.id],
+        &stopped(&f),
+        rec.clone(),
+    )
+    .await
+    .unwrap();
+    let reports = rec.reports();
+    assert!(!reports.is_empty());
+    assert!(reports.iter().all(|report| {
+        report.direction == SessionDirection::Restore
+            && report.total == expected
+            && !report.can_stop
+    }));
+    assert!(reports.windows(2).all(|pair| pair[0].done <= pair[1].done));
+    assert_eq!(
+        reports
+            .iter()
+            .filter(|report| report.stage == SessionStage::Done)
+            .count(),
+        1
+    );
+    assert_eq!(reports.last().unwrap().done, expected);
+}
+
+#[tokio::test]
 async fn plain_migrate_reports_nothing_and_is_unchanged() {
     let f = build(10);
     let m = f.migrator();

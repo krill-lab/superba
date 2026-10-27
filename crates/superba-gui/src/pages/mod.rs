@@ -43,6 +43,7 @@ pub mod notify;
 pub mod overview;
 pub mod superba;
 pub mod tools;
+pub mod troubleshooting;
 pub use superba::SuperbaSection;
 pub mod providers;
 pub mod router;
@@ -50,6 +51,7 @@ pub mod session_browser;
 pub mod sessions;
 pub mod settings;
 pub mod shared;
+pub mod simple_usage;
 pub mod wizard;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -104,6 +106,8 @@ pub enum Page {
     ClaudeSettings,
     /// Superba maintenance and preferences, with a section deep link.
     Superba(SuperbaSection),
+    /// Guided Codex diagnostics, recovery and follow-up advice.
+    Troubleshooting,
     /// One installed coding tool (dsh, opencode, pi, ZCode, WorkBuddy,
     /// Gemini CLI): the Tools page's detail of it as a page of its own; its
     /// sidebar entry shows only when the tool is installed (user request 114).
@@ -151,7 +155,7 @@ pub enum PageLayout {
 
 impl Page {
     /// Sidebar destinations; Superba sections share one pinned entry.
-    pub const ALL: [Page; 18] = [
+    pub const ALL: [Page; 19] = [
         Page::Overview,
         Page::Tools,
         Page::Providers,
@@ -169,11 +173,12 @@ impl Page {
         Page::Tool(HarnessId::ZCode),
         Page::Tool(HarnessId::WorkBuddy),
         Page::Tool(HarnessId::Gemini),
+        Page::Troubleshooting,
         Page::Superba(SuperbaSection::Home),
     ];
 
     /// Every independently addressable page, including all Superba sections.
-    pub const DESTINATIONS: [Page; 25] = [
+    pub const DESTINATIONS: [Page; 26] = [
         Page::Overview,
         Page::Tools,
         Page::Providers,
@@ -191,6 +196,7 @@ impl Page {
         Page::Tool(HarnessId::ZCode),
         Page::Tool(HarnessId::WorkBuddy),
         Page::Tool(HarnessId::Gemini),
+        Page::Troubleshooting,
         Page::Superba(SuperbaSection::Home),
         Page::Superba(SuperbaSection::Updates),
         Page::Superba(SuperbaSection::Diagnostics),
@@ -206,6 +212,11 @@ impl Page {
         matches!(self, Self::Superba(_))
     }
 
+    /// Navigation entries kept above the version at the bottom of the sidebar.
+    pub fn is_pinned(self) -> bool {
+        self.is_superba() || self == Self::Troubleshooting
+    }
+
     /// Canonical target used for the sidebar badge and accessible name.
     pub fn sidebar_page(self) -> Self {
         if self.is_superba() {
@@ -218,7 +229,9 @@ impl Page {
     /// Sidebar group.
     pub fn group(self) -> NavGroup {
         match self {
-            Page::Overview | Page::Tools | Page::Superba(_) => NavGroup::Main,
+            Page::Overview | Page::Tools | Page::Superba(_) | Page::Troubleshooting => {
+                NavGroup::Main
+            }
             Page::Providers | Page::Models | Page::Router | Page::Usage => NavGroup::Connect,
             Page::Settings | Page::Sessions | Page::Hosts => NavGroup::Codex,
             Page::ClaudeCode | Page::ClaudeSettings => NavGroup::Claude,
@@ -233,7 +246,11 @@ impl Page {
 
     /// Minimum content height before the shell uses its short-window fallback.
     pub fn min_height(self) -> f32 {
+        if self == Self::Overview {
+            return overview::MIN_HEIGHT;
+        }
         if self.is_superba()
+            || self == Self::Troubleshooting
             || self == Self::Router
             || self == Self::ClaudeCode
             || self == Self::Tools
@@ -259,6 +276,7 @@ impl Page {
         match self {
             Page::Overview => "nav.overview",
             Page::Tools => "superba.tools.title",
+            Page::Troubleshooting => "simple.troubleshooting",
             Page::Providers => "nav.providers",
             Page::Models => "nav.models",
             Page::Router => "nav.router",
@@ -297,6 +315,7 @@ impl Page {
         match self {
             Page::Overview => "page.overview.subtitle",
             Page::Tools => "superba.tools.subtitle",
+            Page::Troubleshooting => "simple.troubleshooting",
             Page::Providers => "page.providers.subtitle",
             Page::Models => "page.models.subtitle",
             Page::Router => "page.router.subtitle",
@@ -316,6 +335,7 @@ impl Page {
         match self {
             Page::Overview => Icon::Overview,
             Page::Tools => Icon::Tools,
+            Page::Troubleshooting => Icon::Help,
             Page::Providers => Icon::Plug,
             Page::Models => Icon::Model,
             Page::Router => Icon::Route,
@@ -375,6 +395,20 @@ impl Action {
 /// Something a page asks the app to do.
 #[derive(Debug)]
 pub enum Action {
+    /// A troubleshooting run asks the global owner to prepare and plan a repair.
+    TroubleshootingRepair {
+        /// Originating run.
+        run: u64,
+        /// Recovery operation.
+        repair: troubleshooting::Repair,
+    },
+    /// Change the desktop navigation mode and persist it.
+    SetSimpleMode(bool),
+    /// One explicit simple-mode click authorizes the complete session batch.
+    SessionBatch {
+        /// Restore every migration, otherwise move every non-openai session.
+        rollback: bool,
+    },
     /// Navigate.
     Go(Page),
     /// Reload overview, profiles, sites.
@@ -433,6 +467,8 @@ pub enum Action {
     OpenUrl(String),
     /// Copy text.
     Copy(String),
+    /// Copy the shared diagnostic report with the current troubleshooting details.
+    CopyDiagnostics(String),
     /// Load sessions.
     LoadSessions,
     /// Migrate every session of `provider` to `openai` (full restart).
@@ -478,6 +514,8 @@ pub enum Action {
     /// Reload [`Data::versions`] from the cached lists (no online check), e.g.
     /// after an install changed what is installed.
     LoadVersions,
+    /// Refresh both the installed Codex CLI and desktop client against online releases.
+    CheckCodexUpdates,
     /// Open Superba's data directory in the file manager.
     OpenDataDir,
     /// The data pointer changed; refresh shell paths and cached page snapshots.
@@ -586,8 +624,8 @@ pub struct Data {
     pub account: Load<superba_core::AccountReport>,
     /// Last router watchdog state (while router mode is on).
     pub router_watch: Option<superba_core::RouterWatchState>,
-    /// The router's saved failover and recovery rules, from the Router
-    /// page's last snapshot (`None`: not read yet; the defaults apply).
+    /// Saved routing behavior, loaded by the shell at startup and on polls.
+    /// `None` until read (older configurations use the automatic defaults).
     pub router_failover: Option<superba_core::RouterFailover>,
     /// Whether the tray icon is shown (Preferences → Window; item 70).
     pub tray: crate::tray::TrayStatus,
@@ -648,6 +686,42 @@ impl Data {
             .is_some_and(|p| p.settings.router.enabled)
     }
 
+    /// Automatic line selection is distinct from the local forwarding service.
+    pub fn router_failover_enabled(&self) -> bool {
+        self.router_enabled() && self.router_failover.as_ref().is_none_or(|f| f.enabled)
+    }
+
+    /// One configured exit, independent of the last observed request.
+    pub fn router_fixed_exit(&self) -> Option<(&Profile, LineId)> {
+        if !self.router_enabled() || self.router_failover_enabled() {
+            return None;
+        }
+        let set = self.profiles.value.as_ref()?;
+        let route = self.router_failover.as_ref()?.fixed_route.as_ref();
+        let profile = if let Some(route) = route {
+            set.profiles
+                .iter()
+                .find(|p| superba_router::members::router_id(p.id.as_str()) == route.member_id)?
+        } else {
+            set.settings
+                .router
+                .members
+                .iter()
+                .find_map(|id| set.profile(id))?
+        };
+        let site = self.site(&profile.site_id)?;
+        let line = if let Some(route) = route {
+            site.lines
+                .iter()
+                .find(|l| superba_router::members::router_id(l.id.as_str()) == route.line_id)?
+                .id
+                .clone()
+        } else {
+            profile.enabled_line_ids(&site).into_iter().next()?
+        };
+        Some((profile, line))
+    }
+
     /// The settings diff of `plan_id`, when it has arrived.
     pub fn plan_settings_for(&self, plan_id: &str) -> Option<&superba_core::PlanSettings> {
         self.plan_settings
@@ -679,6 +753,19 @@ impl Data {
         if let Some(count) = self.update_inventory_count {
             return count;
         }
+        u32::from(self.self_update_offered().is_some())
+            + self.versions.value.as_ref().map_or(0, |v| {
+                u32::from(v.app.update_available)
+                    + u32::from(
+                        v.cli
+                            .iter()
+                            .any(|r| !matches!(r.action, CliUpdateAction::None)),
+                    )
+            })
+    }
+
+    /// Simple mode counts only Superba, the Codex client and local Codex CLI.
+    pub fn simple_update_count(&self) -> u32 {
         u32::from(self.self_update_offered().is_some())
             + self.versions.value.as_ref().map_or(0, |v| {
                 u32::from(v.app.update_available)
@@ -722,6 +809,9 @@ impl Data {
 
     /// Id of the applied site.
     pub fn active_site_id(&self) -> Option<&SiteId> {
+        if let Some((profile, _)) = self.router_fixed_exit() {
+            return Some(&profile.site_id);
+        }
         self.active_state()?.site_id.as_ref()
     }
 
@@ -732,6 +822,9 @@ impl Data {
 
     /// The official ChatGPT login is applied.
     pub fn official_active(&self) -> bool {
+        if self.router_fixed_exit().is_some() {
+            return false;
+        }
         self.active_site()
             .is_some_and(|s| s.kind == superba_core::SiteKind::Official)
             || self.active_state().is_some_and(|a| {
@@ -766,6 +859,9 @@ impl Data {
     /// The applied key-based provider: the applied profile, else (an older
     /// state without a profile id) the first provider on the applied site.
     pub fn active_profile(&self) -> Option<&Profile> {
+        if let Some((profile, _)) = self.router_fixed_exit() {
+            return Some(profile);
+        }
         let active = self.active_state()?;
         if let Some(id) = &active.profile_id {
             return self.profile(id).filter(|p| p.builtin.is_none());
@@ -1231,15 +1327,7 @@ pub fn page_header_with(
         ui.vertical(|ui| {
             ui.set_max_width(left_max);
             ui.spacing_mut().item_spacing.y = 2.0;
-            ui.label(
-                RichText::new(cx.tr.t(page.title_key()))
-                    .font(crate::design::fonts::font(
-                        crate::design::tokens::text::TITLE_XL - 4.0,
-                        crate::design::fonts::Weight::Semibold,
-                    ))
-                    .color(cx.pal.text)
-                    .extra_letter_spacing(-0.6),
-            );
+            ui.label(Text::page_title(cx.tr.t(page.title_key()), cx.pal));
             let label = egui::Label::new(Text::small(subtitle, cx.pal));
             ui.add(if page.is_superba() {
                 label.wrap()

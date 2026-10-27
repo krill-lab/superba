@@ -361,3 +361,43 @@ hand_off_tip = "Superba puts back only what it still manages, keeps these change
 later = "Not now"
 other_tool = "another tool"
 unset = "(not set)"
+[simple]
+troubleshooting = "Troubleshooting"
+mode_selector = "Interface mode"
+short_simple = "Simple"
+short_full = "Full"
+toggle = "Switch to {mode}"
+mode = "Simple mode"
+enter = "Simple mode"
+leave = "Full mode"
+refresh = "Refresh"
+
+[simple.superba]
+codex_client = "Codex client"
+info = "Information"
+more_apps = "Can't find your app? Try full mode"
+
+[simple.usage]
+per_page = "Requests per page"
+page_size = "{n} per page"
+prev = "Previous page"
+next = "Next page"
+completed = "Completed at"
+title = "Sessions & usage"
+stats = "Last 24 hours"
+requests = "Requests"
+success = "Success rate"
+recent = "Requests · Last 24 hours"
+more = "Load more"
+limit = "Showing the latest 10,000 requests"
+empty = "No Codex requests in the last 24 hours."
+
+[simple.sessions]
+what = "What is this?"
+explanation = "When you use both an official OpenAI subscription and custom APIs, sessions can belong to different providers. After switching providers, you may be unable to continue older conversations. Session migration moves all sessions under OpenAI, so you can continue seamlessly with either the official subscription or API providers such as Krill.\n\nYou can undo the migration at any time."
+title = "Session migration"
+pending = "{n} sessions to move to openai"
+ready = "All sessions are under openai"
+migrate = "Migrate all to openai"
+rollback = "Roll back all"
+hint = "Wait for active requests, back up sessions, and restart Codex automatically."

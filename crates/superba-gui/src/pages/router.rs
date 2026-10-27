@@ -42,6 +42,7 @@ mod recent;
 pub mod requests;
 pub mod routing;
 mod settings;
+mod simple;
 mod stats;
 pub mod stats_line;
 pub mod timing;
@@ -140,6 +141,7 @@ pub enum Dialog {
 /// Page-local state, kept across navigation.
 #[derive(Default)]
 pub struct State {
+    mixed: super::providers::mixed::MixedLogin,
     backend: Option<Arc<dyn RouterBackend>>,
     backend_checked: bool,
     snapshot: Option<Snapshot>,
@@ -370,10 +372,11 @@ impl State {
     /// Turn router mode on or off through the switch flow. Like `spb router
     /// enable`, turning it on first starts (or repairs) the service when the
     /// router is not answering, so the plan is not blocked by a stopped router.
-    fn switch_mode(&mut self, cx: &Cx<'_>, on: bool, out: &mut Vec<Action>) {
-        let Ok(request) = backend::mode_request(cx, on) else {
+    fn switch_mode(&mut self, cx: &Cx<'_>, on: bool, simple: bool, out: &mut Vec<Action>) {
+        let Ok(mut request) = backend::mode_request(cx, on) else {
             return;
         };
+        request.reset_router = on && simple;
         let running = self.snapshot.as_ref().is_none_or(|s| s.live.is_ok());
         if on && !running && self.op.is_none() {
             self.then_plan = Some(request);
@@ -470,11 +473,13 @@ fn address(state: &State, mode: &Mode) -> String {
 fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: bool) {
     prices::poll_calibration(state);
     state.poll(cx, out);
+    let mixed_busy = state.mixed.poll(cx, out);
     if let Some(request) = state.ready_plan.take() {
         out.push(Action::Plan(Box::new(request)));
     }
     state.refresh(cx, false);
-    let busy = state.task.is_some()
+    let busy = mixed_busy
+        || state.task.is_some()
         || state.op.is_some()
         || state.stats_save.is_some()
         || state.clear_task.is_some()
@@ -504,6 +509,11 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) 
     dialogs(ui, cx, state, out);
 }
 
+/// Simple router controls with the shared detailed request log.
+pub fn show_simple(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    simple::show(ui, cx, state, out);
+}
+
 /// Draw the Usage page: where the rows come from, the tabs and their content.
 pub fn show_usage(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     tick(ui, cx, state, out, true);
@@ -524,15 +534,39 @@ pub fn show_usage(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
         }
     });
     usage_banner(ui, cx, state, out);
+    usage_content(ui, cx, state, out, 0);
+    dialogs(ui, cx, state, out);
+}
+
+fn usage_content(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &mut State,
+    out: &mut Vec<Action>,
+    min_rows: usize,
+) {
     tab_row(ui, cx, state);
     let rect = ui.available_rect_before_wrap();
-    crate::design::layout::fixed(ui, rect, |ui| match state.tab {
-        Tab::Recent => recent::show(ui, cx, state, out),
-        Tab::Routing => routing::show(ui, cx, state, out),
-        Tab::Active => active::show(ui, cx, state, out),
-        Tab::Stats => stats::show(ui, cx, state, out),
-    });
-    dialogs(ui, cx, state, out);
+    let add = |ui: &mut Ui| {
+        if min_rows > 0 {
+            ui.set_height(
+                ui.available_height()
+                    .max(recent::min_height(cx, state, min_rows)),
+            );
+        }
+        match state.tab {
+            Tab::Recent => recent::show(ui, cx, state, out, min_rows),
+            Tab::Routing => routing::show(ui, cx, state, out),
+            Tab::Active => active::show(ui, cx, state, out),
+            Tab::Stats => stats::show(ui, cx, state, out),
+        }
+    };
+    if min_rows == 0 {
+        crate::design::layout::fixed(ui, rect, add);
+    } else {
+        // Let the minimum log height extend the simple page's scroll range.
+        ui.scope(add);
+    }
 }
 
 /// A one-line banner: a status dot, a line elided to the width (full text in
@@ -630,7 +664,7 @@ fn switch_button(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Acti
         .on_disabled_hover_text(hint)
         .clicked()
     {
-        state.switch_mode(cx, !on, out);
+        state.switch_mode(cx, !on, false, out);
     }
 }
 
@@ -807,6 +841,9 @@ pub fn recovery_text(
     failover: Option<&superba_core::RouterFailover>,
 ) -> String {
     let f = failover.cloned().unwrap_or_default();
+    if !f.enabled {
+        return tr.t("router.failover.enabled_hint");
+    }
     let idle = if f.sticky_idle_minutes % 60 == 0 {
         tr.f(
             "router.preference.hours",
@@ -858,7 +895,7 @@ fn shared_command(state: &mut State, cx: &Cx<'_>, command: &str) -> bool {
 /// mode switch, `doctor` opens 诊断, plus the shared commands.
 pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     match command {
-        "on" | "off" => state.switch_mode(cx, command == "on", out),
+        "on" | "off" => state.switch_mode(cx, command == "on", false, out),
         "doctor" => doctor::open(state, cx),
         _ => {
             if !shared_command(state, cx, command) {

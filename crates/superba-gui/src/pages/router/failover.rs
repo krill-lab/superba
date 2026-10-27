@@ -14,7 +14,7 @@ use crate::design::widgets::{Status, Text, Toggle};
 use crate::pages::{Cx, section};
 
 /// The rules shown: the edit being saved, else the saved ones.
-fn current(state: &State) -> Option<RouterFailover> {
+pub(super) fn current(state: &State) -> Option<RouterFailover> {
     state
         .failover_draft
         .clone()
@@ -22,7 +22,7 @@ fn current(state: &State) -> Option<RouterFailover> {
 }
 
 /// Save `next` when it differs from what is shown.
-fn save(state: &mut State, cx: &Cx<'_>, next: RouterFailover) {
+pub(super) fn save(state: &mut State, cx: &Cx<'_>, next: RouterFailover) {
     if current(state).as_ref() == Some(&next) || next.validate().is_err() {
         return;
     }
@@ -160,6 +160,40 @@ pub(super) fn section_ui(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
         ui.add_space(space::S);
     }
     let f = saved.unwrap_or_default();
+    crate::pages::superba::row(
+        ui,
+        cx,
+        &cx.tr.t("router.failover.enabled"),
+        &cx.tr.t("router.failover.enabled_hint"),
+        true,
+        |ui| {
+            let mut on = f.enabled;
+            if ui
+                .add(Toggle::new(&mut on, &cx.tr.t("router.failover.enabled")).enabled(enabled))
+                .changed()
+            {
+                let mut next = f.clone();
+                next.enabled = on;
+                if !on
+                    && next.fixed_route.is_none()
+                    && let Some(m) = state.snapshot.as_ref().and_then(|s| s.members.first())
+                    && let Some(l) = m
+                        .lines
+                        .iter()
+                        .find(|l| l.health != super::model::LineHealth::Disabled)
+                {
+                    next.fixed_route = Some(superba_core::RouterFixedRoute {
+                        member_id: superba_router::members::router_id(&m.id),
+                        line_id: superba_router::members::router_id(&l.id),
+                    });
+                }
+                save(state, cx, next);
+            }
+        },
+    );
+    if !f.enabled {
+        return;
+    }
     let secs = cx.tr.t("router.failover.seconds");
     let mins = cx.tr.t("router.failover.minutes");
 
