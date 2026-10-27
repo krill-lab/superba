@@ -98,6 +98,8 @@ pub struct FakeService {
     state: Mutex<FakeState>,
     troubleshooting: Mutex<Option<Result<TroubleshootingReport>>>,
     troubleshooting_requests: Mutex<Vec<TroubleshootingRequest>>,
+    troubleshooting_progress:
+        Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<TroubleshootingProgress>>>,
     options: FakeOptions,
     next_plan: AtomicU64,
     areas: Areas,
@@ -184,6 +186,7 @@ impl FakeService {
             state: Mutex::new(FakeState::new(&options)),
             troubleshooting: Mutex::default(),
             troubleshooting_requests: Mutex::default(),
+            troubleshooting_progress: Mutex::default(),
             options,
             next_plan: AtomicU64::new(1),
             areas: Areas::default(),
@@ -199,6 +202,14 @@ impl FakeService {
     /// Scripted observations, with no configuration or network IO.
     pub fn set_troubleshooting(&self, report: Result<TroubleshootingReport>) {
         *self.troubleshooting.lock().unwrap() = Some(report);
+    }
+
+    pub fn script_troubleshooting_progress(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedSender<TroubleshootingProgress> {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        *self.troubleshooting_progress.lock().unwrap() = Some(receiver);
+        sender
     }
 
     /// Diagnostic requests this fixture received.
@@ -1735,11 +1746,18 @@ impl SwitchService for FakeService {
                     "script a diagnostic answer for this test",
                 ))
             })?;
-        for check in &report.checks {
-            if !progress(TroubleshootingProgress {
-                check: check.clone(),
-            }) {
-                return Err(Error::Cancelled);
+        let scripted = self.troubleshooting_progress.lock().unwrap().take();
+        if let Some(mut scripted) = scripted {
+            while let Some(step) = scripted.recv().await {
+                if !progress(step) {
+                    return Err(Error::Cancelled);
+                }
+            }
+        } else {
+            for check in &report.checks {
+                if !progress(TroubleshootingProgress::Check(check.clone())) {
+                    return Err(Error::Cancelled);
+                }
             }
         }
         Ok(report)

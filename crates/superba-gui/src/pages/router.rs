@@ -372,10 +372,11 @@ impl State {
     /// Turn router mode on or off through the switch flow. Like `spb router
     /// enable`, turning it on first starts (or repairs) the service when the
     /// router is not answering, so the plan is not blocked by a stopped router.
-    fn switch_mode(&mut self, cx: &Cx<'_>, on: bool, out: &mut Vec<Action>) {
-        let Ok(request) = backend::mode_request(cx, on) else {
+    fn switch_mode(&mut self, cx: &Cx<'_>, on: bool, simple: bool, out: &mut Vec<Action>) {
+        let Ok(mut request) = backend::mode_request(cx, on) else {
             return;
         };
+        request.reset_router = on && simple;
         let running = self.snapshot.as_ref().is_none_or(|s| s.live.is_ok());
         if on && !running && self.op.is_none() {
             self.then_plan = Some(request);
@@ -663,7 +664,7 @@ fn switch_button(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Acti
         .on_disabled_hover_text(hint)
         .clicked()
     {
-        state.switch_mode(cx, !on, out);
+        state.switch_mode(cx, !on, false, out);
     }
 }
 
@@ -894,7 +895,7 @@ fn shared_command(state: &mut State, cx: &Cx<'_>, command: &str) -> bool {
 /// mode switch, `doctor` opens 诊断, plus the shared commands.
 pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
     match command {
-        "on" | "off" => state.switch_mode(cx, command == "on", out),
+        "on" | "off" => state.switch_mode(cx, command == "on", false, out),
         "doctor" => doctor::open(state, cx),
         _ => {
             if !shared_command(state, cx, command) {

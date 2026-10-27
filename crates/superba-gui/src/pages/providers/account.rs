@@ -23,11 +23,7 @@ pub const RANGES: [u32; 2] = [7, 30];
 /// Collect finished account loads; true while one runs.
 pub(super) fn poll(state: &mut State) -> bool {
     let mut busy = false;
-    for acc in state
-        .accounts
-        .values_mut()
-        .chain(state.simple_accounts.values_mut())
-    {
+    for acc in state.accounts.values_mut() {
         let Some((days, task)) = &acc.task else {
             continue;
         };
@@ -114,13 +110,17 @@ pub(super) fn show_simple(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provi
         return;
     };
     let acc = state
-        .simple_accounts
+        .accounts
         .entry(profile)
         .or_insert_with(|| AccountState {
             days: 7,
             ..Default::default()
         });
-    if needs_load(acc, p.site.capabilities.usage_api) {
+    if acc.task.is_none() && acc.days != 7 {
+        acc.days = 7;
+        acc.error = None;
+    }
+    if acc.limited != Some(7) && needs_load(acc, p.site.capabilities.usage_api) {
         let days = acc.days;
         start(acc, cx, p, days, false);
     }
@@ -159,6 +159,8 @@ pub(super) fn show_simple(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provi
                 ));
             } else if let Some(balance) = b.remaining {
                 values.push((cx.tr.t("providers.account.balance"), balance.to_string()));
+            } else if let Some(used) = b.used {
+                values.push((cx.tr.t("providers.account.used"), used.to_string()));
             }
             if let Some(until) = b.access_until {
                 values.push((cx.tr.t("providers.account.until"), until.utc_date_string()));
@@ -166,17 +168,19 @@ pub(super) fn show_simple(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provi
         }
         let usage = report.usage.as_ref().filter(|u| u.days == 7);
         let total = usage.and_then(|u| u.total_cost);
-        values.push((
-            cx.tr.t("providers.simple.spent_week"),
-            total.map_or_else(|| "—".into(), |n| n.to_string()),
-        ));
-        values.push((
-            cx.tr.t("providers.simple.daily_average"),
-            total.map_or_else(
-                || "—".into(),
-                |n| Usd::from_micros(n.micros() / 7).to_string(),
-            ),
-        ));
+        if usage.is_some() {
+            values.push((
+                cx.tr.t("providers.simple.spent_week"),
+                total.map_or_else(|| "—".into(), |n| n.to_string()),
+            ));
+            values.push((
+                cx.tr.t("providers.simple.daily_average"),
+                total.map_or_else(
+                    || "—".into(),
+                    |n| Usd::from_micros(n.micros() / 7).to_string(),
+                ),
+            ));
+        }
         for row in values.chunks(2) {
             ui.columns(2, |uis| {
                 for (ui, (label, value)) in uis.iter_mut().zip(row) {
@@ -201,7 +205,7 @@ pub(super) fn show_simple(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provi
             |m| format!("{} · {}", m.model, m.cost.unwrap_or_default()),
         );
         ui.add(egui::Label::new(Text::strong(top, cx.pal)).wrap());
-        if values.is_empty() {
+        if values.is_empty() || report.usage_error.is_some() {
             ui.label(Text::small(
                 report
                     .summary_error

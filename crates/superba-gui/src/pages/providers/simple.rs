@@ -466,7 +466,7 @@ fn key(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Vec<
         let profile = profile
             .cloned()
             .unwrap_or_else(|| new_profile(&p.site, cx.data.site_name(cx.tr, &p.site)));
-        state.simple_accounts.remove(&profile.id);
+        state.accounts.remove(&profile.id);
         state.selected = Some(ProviderId::Profile(profile.id.clone()));
         out.push(Action::SaveProfile {
             profile: Box::new(profile),

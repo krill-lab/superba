@@ -431,10 +431,7 @@ pub fn inventory(cx: &Cx<'_>, state: &State, tools: &ToolsView) -> Vec<Entry> {
         let local = v
             .cli
             .iter()
-            .find(|r| {
-                matches!(r.action, CliUpdateAction::Install { .. })
-                    || r.kind == CodexInstallKind::Standalone
-            })
+            .find(|r| r.managed_by_superba())
             .or(v.cli.first());
         let mut cli = Entry::new(
             UpdateItem::CodexCli,
@@ -454,10 +451,7 @@ pub fn inventory(cx: &Cx<'_>, state: &State, tools: &ToolsView) -> Vec<Entry> {
                 _ => None,
             })
             .or(latest.clone());
-        let managed = local.is_none_or(|r| {
-            r.kind == CodexInstallKind::Standalone
-                || matches!(r.action, CliUpdateAction::Install { .. })
-        });
+        let managed = local.is_none_or(|r| r.managed_by_superba());
         cli.status = if local.is_none() {
             UpdateStatus::Missing
         } else if !managed {

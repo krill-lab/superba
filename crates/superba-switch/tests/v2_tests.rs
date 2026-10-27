@@ -618,6 +618,291 @@ async fn the_settings_view_lists_catalog_rows_with_values_and_hides_advanced_one
     assert!(advanced.rows[1].advanced);
 }
 
+#[tokio::test]
+async fn settings_consumers_use_the_preferred_install_and_its_detected_binary_version() {
+    let w = World::new();
+    let version = CodexVersion::new(0, 162, 0);
+    let mut preferred = w.app.installs.lock().unwrap()[0].clone();
+    preferred.id = "preferred-codex".into();
+    preferred.bundled_codex = Some(w.tmp.path().join("preferred-codex.exe"));
+    preferred.bundled_codex_version = None;
+    w.app
+        .binaries
+        .lock()
+        .unwrap()
+        .push(superba_core::CodexBinary {
+            path: preferred.bundled_codex.clone().unwrap(),
+            version: Some(version.clone()),
+            source: superba_core::InstallSource::AppBundled,
+            path_rank: None,
+        });
+    w.profiles.set.lock().unwrap().settings.preferred_app_id = Some(preferred.id.clone());
+    w.app.installs.lock().unwrap().push(preferred);
+    let sw = switcher_with_catalog(&w);
+    let view = sw
+        .settings_view(SettingsViewRequest::default())
+        .await
+        .unwrap();
+    let app = view
+        .consumers
+        .iter()
+        .find(|consumer| consumer.consumer == superba_core::ConsumerKind::DesktopApp)
+        .unwrap();
+    assert_eq!(app.version, Some(version.clone()));
+    assert_eq!(view.catalog_version, Some(version.clone()));
+
+    // The file editor and troubleshooting read these same consumers.
+    let doc = sw
+        .codex_file(TargetId::local(), superba_core::CodexFileKind::ConfigToml)
+        .await
+        .unwrap();
+    assert_eq!(doc.schema.consumers[0].version, Some(version));
+}
+
+#[tokio::test]
+async fn settings_consumers_do_not_borrow_an_unrelated_cli_version_for_the_app() {
+    let w = World::new();
+    w.app.installs.lock().unwrap()[0].bundled_codex_version = None;
+    let sw = switcher_with_catalog(&w);
+    let view = sw
+        .settings_view(SettingsViewRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(view.consumers[0].version, None);
+    assert_eq!(
+        view.consumers[1].version,
+        Some(CodexVersion::new(0, 162, 0))
+    );
+}
+
+#[tokio::test]
+async fn troubleshooting_config_records_versions_and_compatibility_warnings_from_the_editor() {
+    use superba_core::{TroubleshootingIssue, TroubleshootingRequest, TroubleshootingStatus};
+    let w = World::new();
+    w.profiles
+        .set
+        .lock()
+        .unwrap()
+        .settings
+        .network
+        .online_checks = false;
+    std::fs::create_dir_all(w.ctx.codex_home().root()).unwrap();
+    std::fs::write(
+        w.ctx.codex_home().config_toml(),
+        "model_verbosity = \"low\"\nunknown_option = true\n",
+    )
+    .unwrap();
+    let sw = switcher_with_catalog(&w);
+    let report = sw
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::All,
+                ..Default::default()
+            },
+            Arc::new(|_| true),
+        )
+        .await
+        .unwrap();
+    let versions: Vec<_> = report
+        .checks
+        .iter()
+        .filter(|check| check.id.starts_with("configuration:version:"))
+        .collect();
+    assert_eq!(versions.len(), 2);
+    assert!(versions.iter().all(|check| {
+        check.status == TroubleshootingStatus::Passed
+            && check.detail.key == "troubleshooting.config_version_known"
+    }));
+    assert_eq!(
+        report
+            .checks
+            .iter()
+            .find(|check| check.id == "configuration")
+            .unwrap()
+            .status,
+        TroubleshootingStatus::Warning
+    );
+    assert!(report.checks.iter().any(|check| {
+        check.id.starts_with("configuration:ignored:")
+            && check.status == TroubleshootingStatus::Warning
+            && check.detail.key == "codex_files.unknown_key"
+            && check
+                .detail
+                .args
+                .iter()
+                .any(|(key, value)| key == "path" && value == "unknown_option")
+    }));
+    assert!(!report.config_ok);
+}
+
+#[tokio::test]
+async fn troubleshooting_recheck_keeps_current_app_compatibility_when_cli_version_is_unknown() {
+    use superba_core::*;
+    let w = World::new();
+    w.profiles
+        .set
+        .lock()
+        .unwrap()
+        .settings
+        .network
+        .online_checks = false;
+    for binary in w.app.binaries.lock().unwrap().iter_mut() {
+        if !binary.is_app_copy() {
+            binary.version = None;
+        }
+    }
+    let path = w.ctx.codex_home().config_toml();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "model_verbosity = \"low\"\n").unwrap();
+    let sw = switcher_with_catalog(&w);
+    for _ in 0..2 {
+        let report = sw
+            .troubleshooting_check(
+                TroubleshootingRequest {
+                    issue: TroubleshootingIssue::All,
+                    ..Default::default()
+                },
+                Arc::new(|_| true),
+            )
+            .await
+            .unwrap();
+        let config = report
+            .checks
+            .iter()
+            .find(|c| c.id == "configuration")
+            .unwrap();
+        assert_eq!(config.status, TroubleshootingStatus::Passed);
+        assert!(report.config_ok);
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|c| c.id.starts_with("configuration:version:")
+                    && c.status == TroubleshootingStatus::Unknown),
+            "the unavailable CLI version remains visible separately"
+        );
+    }
+}
+
+#[tokio::test]
+async fn troubleshooting_cleanup_requires_reviewed_file_and_keeps_a_restorable_backup() {
+    use superba_core::*;
+    let w = World::new();
+    w.profiles
+        .set
+        .lock()
+        .unwrap()
+        .settings
+        .network
+        .online_checks = false;
+    let path = w.ctx.codex_home().config_toml();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let original = "# retain this comment\r\nmodel_verbosity = \"low\"\r\nunknown_option = true\r\n\"unknown.name\" = 7\r\n";
+    std::fs::write(&path, original).unwrap();
+    let sw = switcher_with_catalog(&w);
+    let report = sw
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::All,
+                ..Default::default()
+            },
+            Arc::new(|_| true),
+        )
+        .await
+        .unwrap();
+    let cleanup = report.cleanup.unwrap();
+    assert_eq!(cleanup.entries.len(), 2);
+    let changed = format!("{original}# intervening edit\r\n");
+    std::fs::write(&path, &changed).unwrap();
+    assert!(matches!(
+        sw.troubleshooting_cleanup(cleanup.clone()).await,
+        Err(Error::Conflict { .. })
+    ));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), changed);
+    std::fs::write(&path, original).unwrap();
+    let saved = sw.troubleshooting_cleanup(cleanup).await.unwrap();
+    let backup = saved
+        .backup
+        .expect("cleanup saves a pre-image before writing");
+    let restored = sw.codex_file_backup(&backup.id).await.unwrap();
+    assert_eq!(restored.contents.expose(), original.as_bytes());
+    let cleaned = std::fs::read_to_string(path).unwrap();
+    assert!(cleaned.contains("# retain this comment\r\nmodel_verbosity = \"low\"\r\n"));
+    assert!(!cleaned.contains("unknown"));
+}
+
+#[tokio::test]
+async fn troubleshooting_cleanup_includes_deprecated_removed_and_ignored_settings() {
+    use superba_core::*;
+    let w = World::new();
+    w.profiles
+        .set
+        .lock()
+        .unwrap()
+        .settings
+        .network
+        .online_checks = false;
+    let path = w.ctx.codex_home().config_toml();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "old_option = true\nunknown_option = 7\nnew_cli_option = true\ndesktop_option = true\n[features]\nremoved_flag = true\n").unwrap();
+    let snapshot = |version: &str, cli: bool| {
+        let mut old = CatalogKey::new("old_option", SettingKind::Boolean);
+        // Desktop deprecates it while the CLI still recognizes it.
+        old.deprecated_hint = !cli;
+        let mut result = CatalogSnapshot::new(CodexVersion::parse(version).unwrap())
+            .with_key(old)
+            .with_feature(CatalogFeature {
+                key: "removed_flag".into(),
+                config_path: "features.removed_flag".into(),
+                stage: FeatureStage::Removed,
+                default_enabled: false,
+                name: None,
+                menu_description: None,
+            });
+        if cli {
+            result = result.with_key(CatalogKey::new("new_cli_option", SettingKind::Boolean));
+        } else {
+            result = result.with_key(CatalogKey::new("desktop_option", SettingKind::Boolean));
+        }
+        result
+    };
+    let mut deps = w.deps();
+    deps.catalog = Arc::new(StaticCatalog::new([
+        snapshot("0.162.0-alpha.17.2", false),
+        snapshot("0.162.0", true),
+    ]));
+    let sw = Switcher::with_tuning(deps, tuning());
+    let report = sw
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::All,
+                ..Default::default()
+            },
+            Arc::new(|_| true),
+        )
+        .await
+        .unwrap();
+    let cleanup = report.cleanup.unwrap();
+    let paths: Vec<_> = cleanup.entries.iter().map(|e| e.path.as_str()).collect();
+    assert!(paths.contains(&"old_option"));
+    assert!(paths.contains(&"unknown_option"));
+    assert!(paths.contains(&"features.removed_flag"));
+    assert!(
+        paths.contains(&"new_cli_option"),
+        "the current desktop version ignores it even though the CLI still recognizes it"
+    );
+    assert!(
+        !paths.contains(&"desktop_option"),
+        "the current desktop still uses it"
+    );
+    sw.troubleshooting_cleanup(cleanup).await.unwrap();
+    let cleaned = std::fs::read_to_string(path).unwrap();
+    assert!(!cleaned.contains("new_cli_option"));
+    assert!(cleaned.contains("desktop_option = true"));
+    assert!(!cleaned.contains("old_option"));
+    assert!(!cleaned.contains("removed_flag"));
+}
+
 /// Mark `id` as the profile applied on this computer.
 fn applied(w: &World, id: &str) {
     w.config.state.lock().unwrap().active = Some(superba_core::ActiveState {
@@ -1423,6 +1708,72 @@ async fn the_router_intent_stores_router_mode_only_after_the_switch() {
         vec!["overseas".into()] as Vec<superba_core::LineId>,
         "router mode never changes the profile's lines"
     );
+}
+
+#[tokio::test]
+async fn simple_router_enable_resets_preferences_every_time_after_confirmation() {
+    let w = World::new();
+    let sw = w.switcher();
+    sw.router_install(RouterInstallRequest {
+        members: vec![ProfileId::new("work")],
+    })
+    .await
+    .unwrap();
+    for _ in 0..2 {
+        {
+            let mut set = w.profiles.set.lock().unwrap();
+            set.settings.router.stats.record = false;
+            set.settings.router.stats.line.enabled = false;
+            set.settings.router.stats.usage_days = 12;
+            set.settings.router.mixed_login = true;
+        }
+        {
+            let mut written = w.router.written.lock().unwrap();
+            let config = written.last_mut().unwrap();
+            config.tuning.failover_enabled = true;
+            config.tuning.connect_timeout_ms = 9876;
+        }
+        let mut request = req("work");
+        request.intent = SwitchIntent::Router { enable: true };
+        request.reset_router = true;
+        let plan = sw.plan(request).await.unwrap();
+        assert!(
+            !w.profiles
+                .set
+                .lock()
+                .unwrap()
+                .settings
+                .router
+                .stats
+                .line
+                .enabled
+        );
+        sw.execute(
+            plan,
+            ExecuteOptions {
+                allow_full_restart: true,
+                ..Default::default()
+            },
+            Arc::new(SafeDefaults),
+            Arc::new(NoEvents),
+        )
+        .await
+        .unwrap();
+        let settings = w.profiles.set.lock().unwrap().settings.router.clone();
+        let mut expected = superba_core::RouterSettings::simple_defaults();
+        expected.enabled = true;
+        expected.members = vec![ProfileId::new("work")];
+        assert_eq!(settings, expected);
+        let written = w.router.written.lock().unwrap();
+        let config = written.last().unwrap();
+        assert!(!config.tuning.failover_enabled);
+        assert!(config.tuning.fixed_route.is_some());
+        assert_eq!(
+            config.tuning.connect_timeout_ms,
+            superba_router::config::Tuning::default().connect_timeout_ms
+        );
+        assert!(config.stats.as_ref().unwrap().line.is_some());
+    }
 }
 
 #[tokio::test]

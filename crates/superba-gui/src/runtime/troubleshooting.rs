@@ -24,6 +24,11 @@ pub(super) async fn prepare_troubleshooting(
     };
     request.local_only = true;
     request.intent = match repair {
+        Repair::Cleanup(_) => {
+            return Err(Error::invalid(
+                "Configuration cleanup uses the file editor save operation.",
+            ));
+        }
         Repair::Reapply => SwitchIntent::ReapplyConfig,
         Repair::Reinitialize => SwitchIntent::ReinitializeConfig,
         Repair::Restart => SwitchIntent::RestartApp { install_id: None },

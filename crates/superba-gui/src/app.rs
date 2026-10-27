@@ -197,6 +197,8 @@ impl PageStates {
         settings: &mut Settings,
         out: &mut Vec<Action>,
     ) {
+        self.troubleshooting
+            .display_options(true, settings.reduce_motion);
         match page {
             Page::Troubleshooting => {
                 pages::troubleshooting::show(ui, cx, &mut self.troubleshooting, out);
@@ -294,6 +296,8 @@ impl PageStates {
         prefs: &mut Settings,
         out: &mut Vec<Action>,
     ) {
+        self.troubleshooting
+            .display_options(false, prefs.reduce_motion);
         match page {
             Page::Overview => pages::overview::show(ui, cx, &mut self.overview, out),
             Page::Troubleshooting => {
@@ -1135,6 +1139,10 @@ impl SuperbaApp {
                         }
                     }
                 }
+                Reply::TroubleshootingCleaned { run, result } => {
+                    self.pages.troubleshooting.repair_finished(run, result);
+                    self.backend.send(Command::Overview);
+                }
                 Reply::ModelsSaved { result, then } => match result {
                     Ok(report) => {
                         for n in report.notes.iter().filter(|n| n.severity != Severity::Info) {
@@ -1744,9 +1752,14 @@ impl SuperbaApp {
         {
             return;
         }
-        if let Some(request) = planned_request(&action) {
+        if let Some(mut request) = planned_request(&action) {
             if self.pages.troubleshooting.busy() {
                 return;
+            }
+            if self.settings.simple_mode
+                && matches!(request.intent, SwitchIntent::Router { enable: true })
+            {
+                request.reset_router = true;
             }
             let now = self.now();
             if matches!(action, Action::SessionBatch { .. }) {
@@ -1876,6 +1889,13 @@ impl SuperbaApp {
                 ctx.copy_text(text);
                 self.toasts
                     .push(Toast::new(Status::Ok, self.tr.t("toast.copied")));
+            }
+            Action::CopyDiagnostics(details) => {
+                let report = pages::superba::diagnostics::report(
+                    &cx!(self, Palette::of(ctx), false),
+                    &self.pages.superba.diagnostics,
+                );
+                self.handle_action(ctx, Action::Copy(format!("{report}\n\n{details}")));
             }
             Action::LoadSessions => {
                 self.data.sessions.start();

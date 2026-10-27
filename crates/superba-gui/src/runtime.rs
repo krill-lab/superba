@@ -9,9 +9,10 @@ use std::sync::mpsc;
 
 use superba_core::{
     AuthMode, Decision, DecisionRequest, DoctorFinding, Error, ExecuteOptions, KeyCheck, KeyInput,
-    LineCaps, LineId, MigrationReceipt, Overview, Profile, ProfileSet, RecoveryReport, Result,
-    Secret, SessionReport, Settings, Site, SiteId, SiteKind, SwitchDecider, SwitchEvent,
-    SwitchEvents, SwitchOutcome, SwitchPlan, SwitchRequest, SwitchService, async_trait,
+    LineCaps, LineId, LocalizedText, MigrationReceipt, Overview, Profile, ProfileSet,
+    RecoveryReport, Result, Secret, SessionReport, Settings, Site, SiteId, SiteKind, SwitchDecider,
+    SwitchEvent, SwitchEvents, SwitchOutcome, SwitchPlan, SwitchRequest, SwitchService,
+    async_trait,
 };
 use tokio::sync::{mpsc as tmpsc, oneshot};
 
@@ -325,6 +326,13 @@ impl PendingDecision {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Reply {
+    /// A manually confirmed configuration cleanup completed.
+    TroubleshootingCleaned {
+        /// Originating run.
+        run: u64,
+        /// Cleanup and backup result.
+        result: Result<LocalizedText>,
+    },
     /// The recovery's preparation finished; plan through the ordinary Flow.
     TroubleshootingPrepared {
         /// Originating run.
@@ -666,8 +674,21 @@ async fn handle(
 ) {
     match command {
         Command::TroubleshootingRepair { run, repair } => {
-            let result = prepare_troubleshooting(service.as_ref(), repair).await;
-            out.send(Reply::TroubleshootingPrepared { run, result });
+            if let crate::pages::troubleshooting::Repair::Cleanup(request) = repair {
+                let count = request.entries.len();
+                let result = service.troubleshooting_cleanup(request).await.map(|saved| {
+                    LocalizedText::new(
+                        "troubleshooting.cleaned",
+                        "Removed {count} configuration entries. Backup: {backup}.",
+                    )
+                    .arg("count", count)
+                    .arg("backup", saved.backup.map(|b| b.id).unwrap_or_default())
+                });
+                out.send(Reply::TroubleshootingCleaned { run, result });
+            } else {
+                let result = prepare_troubleshooting(service.as_ref(), repair).await;
+                out.send(Reply::TroubleshootingPrepared { run, result });
+            }
         }
         Command::Refresh => {
             let (o, p, s) = after_switches(switches, || async {

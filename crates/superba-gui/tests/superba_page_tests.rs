@@ -46,13 +46,49 @@ fn troubleshooting_has_the_same_cards_in_both_interfaces() {
             });
             assert!(frame.has(&tr.t("troubleshooting.title")));
             assert!(frame.has(&tr.t("troubleshooting.environment")));
+            let facts = frame.find(&tr.t("troubleshooting.fact.config")).unwrap();
+            let common = frame.find(&tr.t("troubleshooting.common")).unwrap();
+            assert!(
+                common.top() - facts.bottom() < 64.0,
+                "environment card must not reserve space below its facts"
+            );
             assert!(frame.has(&tr.t("troubleshooting.issue.request")));
             assert!(frame.has(&tr.t("troubleshooting.issue.policy")));
             assert!(frame.has(&tr.t("troubleshooting.issue.server")));
-            assert!(frame.has(&tr.t("troubleshooting.history")));
+            assert!(!frame.has(&tr.t("troubleshooting.history")));
+            assert!(!frame.has(&tr.t("troubleshooting.how")));
             assert!(frame.actions.is_empty());
         }
     }
+}
+
+#[test]
+fn troubleshooting_simple_mode_rollback_opens_full_mode_config_backups() {
+    use superba_gui::pages::{Action, troubleshooting};
+    let tr = Tr::new(Locale::ZhCn);
+    let mut h = router_harness::Harness::new([1660.0, 1200.0], Locale::ZhCn, service(), true);
+    let mut state = troubleshooting::State::default();
+    let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+    assert!(!frame.has(&tr.t("troubleshooting.rollback_prompt")));
+    state.display_options(true, true);
+    let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+    assert!(frame.has(&tr.t("troubleshooting.rollback_prompt")));
+    let prompt = frame
+        .find(&tr.t("troubleshooting.rollback_prompt"))
+        .unwrap();
+    let button = frame
+        .find(&tr.t("troubleshooting.rollback_config"))
+        .unwrap();
+    assert!((prompt.center().y - button.center().y).abs() <= 1.0);
+    h.click_text(&frame, &tr.t("troubleshooting.rollback_config"));
+    let frame = h.until(
+        |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+        |f| !f.actions.is_empty(),
+    );
+    assert!(matches!(frame.actions.as_slice(), [
+        Action::SetSimpleMode(false),
+        Action::PageCommand { page: Page::Superba(superba_gui::pages::SuperbaSection::Data), command }
+    ] if command == "focus:superba.backups.title"));
 }
 
 #[test]
@@ -90,6 +126,7 @@ fn diagnostic_report(
             title: LocalizedText::new("troubleshooting.check.config", "Configuration"),
             detail: LocalizedText::new("troubleshooting.config_valid", "Checked"),
             status: TroubleshootingStatus::Passed,
+            retry: None,
         }],
         models: Vec::new(),
         legacy_providers: Vec::new(),
@@ -97,6 +134,7 @@ fn diagnostic_report(
         config_ok: true,
         restart_recommended: false,
         can_reinitialize: true,
+        cleanup: None,
     }
 }
 
@@ -117,7 +155,21 @@ fn troubleshooting_500_waits_for_the_only_me_answer_before_checking() {
         }
         superba_gui::pages::troubleshooting::show(ui, cx, &mut state, out);
     });
+    assert!(frame.has(&tr.t("troubleshooting.server_kind")));
+    assert!(!frame.has(&tr.t("troubleshooting.server_only_me")));
+    h.click_text(&frame, &tr.t("troubleshooting.server_401"));
+    let frame = h.settle(|ui, cx, out| {
+        superba_gui::pages::troubleshooting::show(ui, cx, &mut state, out);
+    });
+    assert!(frame.has(&tr.t("troubleshooting.advice.key_valid")));
+    assert!(!frame.has(&tr.t("troubleshooting.server_only_me")));
+    assert!(service.troubleshooting_requests().is_empty());
+    h.click_text(&frame, &tr.t("troubleshooting.server_other"));
+    let frame = h.settle(|ui, cx, out| {
+        superba_gui::pages::troubleshooting::show(ui, cx, &mut state, out);
+    });
     assert!(frame.has(&tr.t("troubleshooting.server_only_me")));
+    assert!(!frame.has("Not confirmed yet"));
     assert!(service.troubleshooting_requests().is_empty());
     h.click_text(&frame, &tr.t("troubleshooting.server_only_me"));
     let frame = h.until(
@@ -131,6 +183,128 @@ fn troubleshooting_500_waits_for_the_only_me_answer_before_checking() {
         superba_core::TroubleshootingIssue::Request
     );
     assert!(frame.actions.is_empty());
+}
+
+#[test]
+fn troubleshooting_drawers_follow_progress_and_allow_manual_expansion() {
+    use superba_core::*;
+    use superba_gui::pages::troubleshooting;
+    for locale in [Locale::En, Locale::ZhCn] {
+        let service = service();
+        let report = diagnostic_report(TroubleshootingIssue::All);
+        let mut config = report.checks[0].clone();
+        config.detail = LocalizedText::new("test.config_detail", "Configuration detail");
+        let mut backend = config.clone();
+        backend.id = "backend:work".into();
+        backend.detail = LocalizedText::new("test.backend_detail", "Backend detail");
+        service.set_troubleshooting(Ok(report));
+        let progress = service.script_troubleshooting_progress();
+        let tr = Tr::new(locale);
+        let mut h = router_harness::Harness::new([1660.0, 1200.0], locale, service.clone(), true);
+        let mut state = troubleshooting::State::default();
+        h.settle(|ui, cx, out| {
+            if !state.busy() {
+                troubleshooting::command(&mut state, cx, "check:all", out);
+            }
+            troubleshooting::show(ui, cx, &mut state, out);
+        });
+        progress
+            .send(TroubleshootingProgress::Configuration)
+            .unwrap();
+        progress
+            .send(TroubleshootingProgress::Check(config))
+            .unwrap();
+        let frame = h.until(
+            |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+            |f| f.has("Configuration detail"),
+        );
+        assert!(!frame.has(&tr.t("troubleshooting.live_log")));
+        progress.send(TroubleshootingProgress::Backend).unwrap();
+        progress
+            .send(TroubleshootingProgress::Check(backend))
+            .unwrap();
+        h.until(
+            |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+            |f| f.has("Backend detail"),
+        );
+        let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+        assert!(!frame.has("Configuration detail"));
+        assert!(frame.fits(), "{}", frame.all_text());
+        h.click_text(
+            &frame,
+            &format!("01  {}", tr.t("troubleshooting.stage.config")),
+        );
+        let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+        assert!(frame.has("Configuration detail"));
+        assert!(frame.has("Backend detail"));
+        drop(progress);
+    }
+}
+
+#[test]
+fn troubleshooting_retry_preserves_other_results_and_sends_one_target() {
+    use superba_core::*;
+    use superba_gui::pages::troubleshooting;
+    let service = service();
+    let mut report = diagnostic_report(TroubleshootingIssue::Request);
+    report.checks.push(TroubleshootingCheck {
+        id: "backend:work".into(),
+        title: LocalizedText::new("test.backend", "Supplier backend"),
+        detail: LocalizedText::new("test.failed", "Connection failed"),
+        status: TroubleshootingStatus::Failed,
+        retry: Some(TroubleshootingRetry::Backend {
+            profile: ProfileId::new("work"),
+            model: Some("gpt-5".into()),
+        }),
+    });
+    service.set_troubleshooting(Ok(report.clone()));
+    let tr = Tr::new(Locale::En);
+    let mut h = router_harness::Harness::new([1660.0, 1200.0], Locale::En, service.clone(), true);
+    let mut state = troubleshooting::State::default();
+    let mut started = false;
+    let frame = h.until(
+        |ui, cx, out| {
+            if !started {
+                troubleshooting::command(&mut state, cx, "check:request", out);
+                started = true;
+            }
+            troubleshooting::show(ui, cx, &mut state, out);
+        },
+        |f| f.has(&tr.t("troubleshooting.retry_check")),
+    );
+    report.checks.remove(0);
+    report.checks[0].status = TroubleshootingStatus::Passed;
+    report.checks[0].detail = LocalizedText::new("test.recovered", "Connection recovered");
+    report.checks[0].retry = None;
+    service.set_troubleshooting(Ok(report));
+    let progress = service.script_troubleshooting_progress();
+    h.click_text(&frame, &tr.t("troubleshooting.retry_check"));
+    let frame = h.until(
+        |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+        |f| f.has(&tr.t("troubleshooting.retrying_check")),
+    );
+    assert!(!frame.has(&tr.t("troubleshooting.check.config")));
+    drop(progress);
+    let frame = h.until(
+        |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+        |f| f.has(&tr.t("troubleshooting.checks_passed")),
+    );
+    assert!(!frame.has(&tr.t("troubleshooting.check.config")));
+    h.click_text(&frame, &tr.t("troubleshooting.stage.backend"));
+    let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+    assert!(frame.has("Connection recovered"));
+    assert!(!frame.has("Connection failed"));
+    assert!(!frame.has(&tr.t("troubleshooting.retry_check")));
+    assert!(frame.actions.is_empty());
+    let requests = service.troubleshooting_requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[1].retry,
+        Some(TroubleshootingRetry::Backend {
+            profile: ProfileId::new("work"),
+            model: Some("gpt-5".into())
+        })
+    );
 }
 
 #[test]
@@ -185,7 +359,277 @@ fn troubleshooting_schedules_only_one_restart_and_waits_for_user_confirmation() 
     assert!(!frame.has(&tr.t("troubleshooting.confirmed")));
     h.click_text(&frame, &tr.t("troubleshooting.resolved"));
     let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
-    assert!(frame.has(&tr.t("troubleshooting.confirmed")));
+    assert!(frame.has(&tr.t("troubleshooting.happy_coding")));
+    let frame = h.frames(295, |ui, cx, out| {
+        troubleshooting::show(ui, cx, &mut state, out)
+    });
+    assert!(
+        !frame
+            .actions
+            .iter()
+            .any(|a| matches!(a, superba_gui::pages::Action::Go(Page::Overview)))
+    );
+    let frame = h.until(
+        |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+        |f| {
+            f.actions
+                .iter()
+                .any(|a| matches!(a, superba_gui::pages::Action::Go(Page::Overview)))
+        },
+    );
+    assert!(
+        frame
+            .actions
+            .iter()
+            .any(|a| matches!(a, superba_gui::pages::Action::Go(Page::Overview)))
+    );
+}
+
+#[test]
+fn troubleshooting_cleanup_stays_collapsed_and_requires_confirmation() {
+    use superba_core::*;
+    use superba_gui::pages::troubleshooting::{self, Repair};
+    let service = service();
+    let mut report = diagnostic_report(TroubleshootingIssue::All);
+    report.checks[0].status = TroubleshootingStatus::Warning;
+    report.checks.push(TroubleshootingCheck {
+        id: "configuration:ignored:0".into(),
+        title: LocalizedText::new("test.obsolete", "obsolete_option"),
+        detail: LocalizedText::new("test.ignored_detail", "Ignored by Codex"),
+        status: TroubleshootingStatus::Warning,
+        retry: None,
+    });
+    report.cleanup = Some(TroubleshootingCleanup {
+        sha256: "reviewed-hash".into(),
+        entries: vec![TroubleshootingConfigEntry {
+            path: "obsolete_option".into(),
+            start: 0,
+            end: 15,
+        }],
+    });
+    service.set_troubleshooting(Ok(report));
+    let tr = Tr::new(Locale::En);
+    let mut h = router_harness::Harness::new([1660.0, 1000.0], Locale::En, service, true);
+    let mut state = troubleshooting::State::default();
+    let mut started = false;
+    let frame = h.until(
+        |ui, cx, out| {
+            if !started {
+                troubleshooting::command(&mut state, cx, "check:all", out);
+                started = true;
+            }
+            troubleshooting::show(ui, cx, &mut state, out);
+        },
+        |f| f.has(&tr.t("troubleshooting.ignored_config")),
+    );
+    assert!(!frame.has("Ignored by Codex"));
+    assert!(
+        frame.has(&tr.t("troubleshooting.cleanup")),
+        "cleanup must be visible while collapsed"
+    );
+    assert!(!frame.has(&tr.t("troubleshooting.next")));
+    let frame = h.frames(12, |ui, cx, out| {
+        troubleshooting::show(ui, cx, &mut state, out)
+    });
+    h.click_text(&frame, &tr.t("troubleshooting.ignored_config"));
+    let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+    assert!(frame.has("Ignored by Codex"), "{}", frame.all_text());
+    h.click_text(&frame, &tr.t("troubleshooting.cleanup"));
+    let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+    assert!(frame.has(&tr.t("troubleshooting.cleanup_warning")));
+    assert!(frame.actions.is_empty());
+    h.click_text(&frame, &tr.t("troubleshooting.cleanup_confirm"));
+    let frame = h.until(
+        |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+        |f| {
+            f.actions.iter().any(|a| {
+                matches!(
+                    a,
+                    superba_gui::pages::Action::TroubleshootingRepair {
+                        repair: Repair::Cleanup(_),
+                        ..
+                    }
+                )
+            })
+        },
+    );
+    assert!(frame.actions.iter().any(|a| matches!(
+        a,
+        superba_gui::pages::Action::TroubleshootingRepair {
+            repair: Repair::Cleanup(_),
+            ..
+        }
+    )));
+}
+
+#[test]
+fn troubleshooting_next_page_has_actions_and_returns_to_problem_selection() {
+    use superba_core::*;
+    use superba_gui::pages::troubleshooting;
+    let service = service();
+    service.set_troubleshooting(Ok(diagnostic_report(TroubleshootingIssue::Stability)));
+    let tr = Tr::new(Locale::ZhCn);
+    let mut h = router_harness::Harness::new([960.0, 800.0], Locale::ZhCn, service, true);
+    let mut state = troubleshooting::State::default();
+    state.display_options(true, true);
+    let mut started = false;
+    let frame = h.until(
+        |ui, cx, out| {
+            if !started {
+                troubleshooting::command(&mut state, cx, "check:stability", out);
+                started = true;
+            }
+            troubleshooting::show(ui, cx, &mut state, out);
+        },
+        |f| f.has(&tr.t("troubleshooting.still_broken")),
+    );
+    h.click_text(&frame, &tr.t("troubleshooting.still_broken"));
+    let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+    assert!(frame.has(&tr.t("troubleshooting.more_actions")));
+    assert!(frame.has(&tr.t("troubleshooting.edit_config")));
+    assert!(frame.has(&tr.t("troubleshooting.copy_diagnostics")));
+    assert!(frame.has(&tr.t("troubleshooting.advice_intro")));
+    assert!(frame.has(&tr.t("troubleshooting.bug")));
+    assert!(frame.fits(), "{}", frame.all_text());
+    h.click_text(&frame, &tr.t("troubleshooting.copy_diagnostics"));
+    let frame = h.until(
+        |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+        |f| !f.actions.is_empty(),
+    );
+    assert!(
+        frame.actions.iter().any(|action| matches!(
+            action,
+            superba_gui::pages::Action::CopyDiagnostics(text)
+                if text.contains(&tr.t("troubleshooting.issue.stability"))
+        )),
+        "{:?}",
+        frame.actions
+    );
+    h.click_text(&frame, &tr.t("troubleshooting.back"));
+    let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+    assert!(frame.has(&tr.t("troubleshooting.issue.stability")));
+    assert!(!frame.has(&tr.t("troubleshooting.still_broken")));
+}
+
+#[test]
+fn troubleshooting_results_scroll_without_moving_recovery_buttons() {
+    use superba_core::*;
+    use superba_gui::pages::troubleshooting;
+    let service = service();
+    let mut report = diagnostic_report(TroubleshootingIssue::All);
+    report.checks = (0..40)
+        .map(|i| TroubleshootingCheck {
+            id: format!("configuration:row:{i}"),
+            title: LocalizedText::new("test.row", format!("Observation {i}")),
+            detail: LocalizedText::new("test.detail", "A configuration observation"),
+            status: TroubleshootingStatus::Warning,
+            retry: None,
+        })
+        .collect();
+    service.set_troubleshooting(Ok(report));
+    let mut h = router_harness::Harness::new([960.0, 640.0], Locale::En, service, true);
+    let mut state = troubleshooting::State::default();
+    let mut started = false;
+    let tr = Tr::new(Locale::En);
+    h.until(
+        |ui, cx, out| {
+            if !started {
+                troubleshooting::command(&mut state, cx, "check:all", out);
+                started = true;
+            }
+            troubleshooting::show(ui, cx, &mut state, out);
+        },
+        |f| f.has("Observation 0"),
+    );
+    let before = h.frames(20, |ui, cx, out| {
+        troubleshooting::show(ui, cx, &mut state, out)
+    });
+    let buttons: Vec<_> = ["resolved", "still_broken", "retry"]
+        .map(|key| {
+            let label = tr.t(&format!("troubleshooting.{key}"));
+            let rect = before.find(&label).unwrap();
+            (label, rect)
+        })
+        .into();
+    h.scroll_at(
+        before
+            .find(&tr.t("troubleshooting.details"))
+            .unwrap()
+            .center(),
+        egui::vec2(0.0, -500.0),
+    );
+    let after = h.frames(30, |ui, cx, out| {
+        troubleshooting::show(ui, cx, &mut state, out)
+    });
+    for (label, rect) in buttons {
+        assert_eq!(
+            after.find(&label).unwrap(),
+            rect,
+            "{label} must stay pinned"
+        );
+    }
+    assert!(
+        after.has("Observation 10"),
+        "the page scroll reaches the expanded drawer body"
+    );
+}
+
+#[test]
+fn troubleshooting_long_stage_scrolls_inside_the_drawer() {
+    use superba_core::*;
+    use superba_gui::pages::troubleshooting;
+    let service = service();
+    service.set_troubleshooting(Ok(diagnostic_report(TroubleshootingIssue::All)));
+    let progress = service.script_troubleshooting_progress();
+    let mut h = router_harness::Harness::new([960.0, 640.0], Locale::ZhCn, service, true);
+    let mut state = troubleshooting::State::default();
+    state.display_options(false, true);
+    let mut started = false;
+    h.settle(|ui, cx, out| {
+        if !started {
+            troubleshooting::command(&mut state, cx, "check:all", out);
+            started = true;
+        }
+        troubleshooting::show(ui, cx, &mut state, out);
+    });
+    for i in 0..30 {
+        progress
+            .send(TroubleshootingProgress::Check(TroubleshootingCheck {
+                id: format!("configuration:{i}"),
+                title: LocalizedText::new("test.row", format!("Check {i}")),
+                detail: LocalizedText::new(
+                    "test.detail",
+                    "A diagnostic observation with useful details",
+                ),
+                status: TroubleshootingStatus::Warning,
+                retry: None,
+            }))
+            .unwrap();
+    }
+    h.until(
+        |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+        |f| f.has("Check 1"),
+    );
+    let frame = h.frames(20, |ui, cx, out| {
+        troubleshooting::show(ui, cx, &mut state, out)
+    });
+    let cancel = frame
+        .find(&Tr::new(Locale::ZhCn).t("troubleshooting.cancel"))
+        .unwrap_or_else(|| {
+            panic!(
+                "cancel missing; page {:?}; used {}; {}",
+                frame.rect,
+                frame.used_bottom,
+                frame.all_text()
+            )
+        });
+    assert!(
+        cancel.bottom() <= frame.rect.bottom(),
+        "{}",
+        frame.all_text()
+    );
+    assert!(frame.scroll_areas >= 2);
+    drop(progress);
 }
 
 #[test]
@@ -203,7 +647,12 @@ fn troubleshooting_missing_model_asks_both_questions_and_offers_the_existing_edi
                 fetched_at: report.checked_at,
                 etag: None,
             },
-            models: Vec::new(),
+            models: (0..8)
+                .map(|i| ModelSpec {
+                    slug: format!("test-model-{i}"),
+                    ..Default::default()
+                })
+                .collect(),
             fallback_reason: None,
             sources: Vec::new(),
         }),
@@ -223,8 +672,48 @@ fn troubleshooting_missing_model_asks_both_questions_and_offers_the_existing_edi
             }
             troubleshooting::show(ui, cx, &mut state, out);
         },
-        |f| f.has(&tr.t("troubleshooting.model_missing")),
+        |f| f.has(&tr.t("troubleshooting.still_broken")),
     );
+    assert!(!frame.has(&tr.t("troubleshooting.next")));
+    assert!(frame.has(&tr.t("troubleshooting.model_restart_prompt")));
+    h.click_text(&frame, &tr.t("troubleshooting.restart_chatgpt"));
+    let frame = h.until(
+        |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+        |f| !f.actions.is_empty(),
+    );
+    let run = frame
+        .actions
+        .iter()
+        .find_map(|a| match a {
+            superba_gui::pages::Action::TroubleshootingRepair {
+                run,
+                repair: troubleshooting::Repair::Restart,
+            } => Some(*run),
+            _ => None,
+        })
+        .expect("uses the existing restart recovery");
+    state.repair_finished(run, Ok(LocalizedText::default()));
+    let frame = h.until(
+        |ui, cx, out| troubleshooting::show(ui, cx, &mut state, out),
+        |f| f.has(&tr.t("troubleshooting.still_broken")),
+    );
+    assert!(!frame.has(&tr.t("troubleshooting.restart_chatgpt")));
+    assert!(
+        service
+            .troubleshooting_requests()
+            .last()
+            .unwrap()
+            .refresh_models
+    );
+    h.click_text(&frame, &tr.t("troubleshooting.still_broken"));
+    let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
+    assert!(frame.has(&tr.t("troubleshooting.next")));
+    let first = frame.find("test-model-0").unwrap();
+    let second = frame.find("test-model-1").unwrap();
+    let last = frame.find("test-model-7").unwrap();
+    assert!((first.top() - second.top()).abs() < 1.0);
+    assert!(second.left() > first.right());
+    assert!(last.top() > first.bottom());
     h.click_text(&frame, &tr.t("troubleshooting.model_missing"));
     let frame = h.settle(|ui, cx, out| troubleshooting::show(ui, cx, &mut state, out));
     assert!(frame.has(&tr.t("troubleshooting.model_new")));

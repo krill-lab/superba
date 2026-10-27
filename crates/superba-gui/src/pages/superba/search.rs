@@ -25,6 +25,7 @@ pub const ROWS: &[(SuperbaSection, &str)] = &[
     (SuperbaSection::Updates, "prefs.updates.channel"),
     (SuperbaSection::Data, "prefs.data.dir"),
     (SuperbaSection::Data, "prefs.data.requests"),
+    (SuperbaSection::Data, "superba.backups.title"),
     (SuperbaSection::Data, "prefs.restore.original"),
     (SuperbaSection::Data, "prefs.restore.official"),
     (SuperbaSection::Data, "settings.uninstall.title"),

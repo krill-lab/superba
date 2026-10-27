@@ -97,6 +97,7 @@ pub(crate) fn request(intent: SwitchIntent, exec: &ExecArgs) -> SwitchRequest {
         migration_exclude: Vec::new(),
         refresh_models: false,
         local_only: false,
+        reset_router: false,
     }
 }
 

@@ -467,6 +467,8 @@ pub enum Action {
     OpenUrl(String),
     /// Copy text.
     Copy(String),
+    /// Copy the shared diagnostic report with the current troubleshooting details.
+    CopyDiagnostics(String),
     /// Load sessions.
     LoadSessions,
     /// Migrate every session of `provider` to `openai` (full restart).

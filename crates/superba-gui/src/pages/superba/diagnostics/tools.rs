@@ -470,7 +470,7 @@ fn probe(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
     }
 }
 
-pub(super) fn report(cx: &Cx<'_>, state: &State) -> String {
+pub(crate) fn report(cx: &Cx<'_>, state: &State) -> String {
     let mut lines = vec![format!(
         "Superba {} · {}",
         env!("CARGO_PKG_VERSION"),

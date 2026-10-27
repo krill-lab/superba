@@ -884,6 +884,14 @@ async fn compatible_site_profiles_use_the_base_path_of_their_site() {
 }
 
 fn troubleshooting_active(w: &World) {
+    // Version inventory is faked; the real self-updater must stay offline.
+    w.profiles
+        .set
+        .lock()
+        .unwrap()
+        .settings
+        .network
+        .online_checks = false;
     w.config.state.lock().unwrap().active = Some(ActiveState {
         profile_id: Some(ProfileId::new("work")),
         site_id: Some(SiteId::new("krill")),
@@ -905,6 +913,60 @@ fn troubleshooting_list() -> superba_core::ModelList {
         fallback_reason: None,
         sources: Vec::new(),
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn troubleshooting_stability_samples_each_line_three_times_and_suggests_faster_line() {
+    use superba_core::*;
+    let w = World::new();
+    troubleshooting_active(&w);
+    let mut slow = good_caps("krill", "overseas");
+    slow.latency_ms = Some(300);
+    w.prober
+        .caps
+        .lock()
+        .unwrap()
+        .insert("overseas".into(), slow);
+    let config = w.ctx.codex_home().config_toml();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(
+        config,
+        "[model_providers.openai]\nsupports_websockets = true\n",
+    )
+    .unwrap();
+    let site = catalog::krill_site();
+    let started = tokio::time::Instant::now();
+    let report = w
+        .switcher()
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::Stability,
+                ..Default::default()
+            },
+            Arc::new(|_| true),
+        )
+        .await
+        .unwrap();
+    for line in &site.lines {
+        assert_eq!(
+            w.calls()
+                .iter()
+                .filter(|s| **s == format!("prober.latency_sample {}", line.id))
+                .count(),
+            3
+        );
+    }
+    assert!(started.elapsed() >= std::time::Duration::from_secs(4 * site.lines.len() as u64));
+    let slow = report
+        .checks
+        .iter()
+        .find(|c| c.id == "stability:line:overseas")
+        .unwrap();
+    assert_eq!(slow.status, TroubleshootingStatus::Warning);
+    assert!(slow.detail.render_fallback().contains("300 ms"));
+    assert!(report.checks.iter().any(|c| c.id == "stability:switch"));
+    assert!(report.checks.iter().any(|c| c.id == "stability:ws"));
+    assert_eq!(*w.config.applied.lock().unwrap(), 0);
 }
 
 #[tokio::test]
@@ -1013,6 +1075,13 @@ async fn troubleshooting_cancellation_stops_before_the_next_provider() {
 async fn troubleshooting_conversation_check_reports_only_non_openai_sources_without_migrating() {
     use superba_core::{TroubleshootingIssue, TroubleshootingRequest};
     let w = World::new();
+    w.profiles
+        .set
+        .lock()
+        .unwrap()
+        .settings
+        .network
+        .online_checks = false;
     *w.sessions.report.lock().unwrap() =
         session_report(w.ctx.codex_home().root(), &[("openai", 3), ("legacy", 4)]);
     let report = w
@@ -1027,8 +1096,187 @@ async fn troubleshooting_conversation_check_reports_only_non_openai_sources_with
         .await
         .unwrap();
     assert_eq!(report.legacy_providers, vec![("legacy".into(), 4)]);
+    for prefix in ["update:app", "update:superba"] {
+        assert!(report.checks.iter().any(|c| c.id.starts_with(prefix)));
+    }
+    let own = report
+        .checks
+        .iter()
+        .find(|c| c.id == "update:superba")
+        .unwrap();
+    assert_eq!(own.status, superba_core::TroubleshootingStatus::Unknown);
+    assert_eq!(own.detail.key, "troubleshooting.version_checks_off");
     assert!(w.sessions.requests.lock().unwrap().is_empty());
     assert!(w.prober.model_list_calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn troubleshooting_versions_follow_the_update_inventory_and_keep_missing_results_unknown() {
+    use superba_core::{
+        AppRelease, CodexRelease, CodexVersion, TroubleshootingIssue, TroubleshootingRequest,
+        TroubleshootingStatus as Status,
+    };
+    let w = World::new();
+    *w.app.cli_kind.lock().unwrap() = superba_core::CodexInstallKind::Standalone;
+    troubleshooting_active(&w);
+    let sw = w.switcher();
+    for (app_version, cli_version, expected) in [
+        ("26.1014", "0.163.0", Status::Warning),
+        ("26.1013", "0.162.0", Status::Passed),
+        ("26.1012", "0.161.0", Status::Passed),
+        ("", "", Status::Unknown),
+    ] {
+        *w.v3.versions.app_latest.lock().unwrap() = (!app_version.is_empty()).then(|| AppRelease {
+            version: app_version.into(),
+            date: None,
+            bundled_codex: None,
+            packages: Vec::new(),
+            store_product_id: None,
+        });
+        *w.v3.versions.releases.lock().unwrap() = if cli_version.is_empty() {
+            Vec::new()
+        } else {
+            vec![CodexRelease {
+                version: CodexVersion::parse(cli_version).unwrap(),
+                tag: format!("rust-v{cli_version}"),
+                date: None,
+                prerelease: false,
+                bundled_by: Vec::new(),
+                sha256: Default::default(),
+            }]
+        };
+        let report = sw
+            .troubleshooting_check(
+                TroubleshootingRequest {
+                    issue: TroubleshootingIssue::Sessions,
+                    ..Default::default()
+                },
+                Arc::new(|_| true),
+            )
+            .await
+            .unwrap();
+        for id in ["update:app", "update:cli:0"] {
+            let check = report.checks.iter().find(|c| c.id == id).unwrap();
+            assert_eq!(
+                check.status, expected,
+                "{id}: {app_version} / {cli_version}"
+            );
+        }
+    }
+    assert!(w.writes().is_empty());
+}
+
+#[tokio::test]
+async fn troubleshooting_skips_vendor_cli_updates_only_with_desktop() {
+    use superba_core::*;
+    for desktop in [true, false] {
+        let w = World::new();
+        troubleshooting_active(&w);
+        *w.v3.versions.fail_releases.lock().unwrap() =
+            Some(Error::invalid("release source unavailable"));
+        if !desktop {
+            w.app.installs.lock().unwrap().clear();
+        }
+        let report = w
+            .switcher()
+            .troubleshooting_check(
+                TroubleshootingRequest {
+                    issue: TroubleshootingIssue::Sessions,
+                    ..Default::default()
+                },
+                Arc::new(|_| true),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            report
+                .checks
+                .iter()
+                .any(|c| c.id.starts_with("update:cli:")),
+            !desktop
+        );
+        assert_eq!(
+            report.checks.iter().any(|c| c
+                .detail
+                .args
+                .iter()
+                .any(|(key, value)| key == "what" && value == "codex")),
+            !desktop
+        );
+    }
+}
+
+#[tokio::test]
+async fn troubleshooting_retries_only_the_selected_network_check() {
+    use superba_core::*;
+    let w = World::new();
+    troubleshooting_active(&w);
+    *w.prober.model_list.lock().unwrap() = Some(Ok(troubleshooting_list()));
+    let sw = w.switcher();
+    let report = sw
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::Request,
+                model: Some("gpt-5".into()),
+                ..Default::default()
+            },
+            Arc::new(|_| true),
+        )
+        .await
+        .unwrap();
+    let failed = report
+        .checks
+        .iter()
+        .find(|c| c.id == "backend:work")
+        .unwrap();
+    assert_eq!(failed.status, TroubleshootingStatus::Failed);
+    let retry = failed.retry.clone().unwrap();
+    w.prober.model_list_calls.lock().unwrap().clear();
+    w.prober.responses_calls.lock().unwrap().clear();
+    *w.prober.responses.lock().unwrap() = Some(Ok(ResponsesProbe {
+        ok: true,
+        status: Some(200),
+        latency_ms: Some(8),
+        compact_ok: None,
+        detail: None,
+    }));
+    let result = sw
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::Request,
+                retry: Some(retry),
+                ..Default::default()
+            },
+            Arc::new(|_| true),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.checks.len(), 1);
+    assert_eq!(result.checks[0].id, "backend:work");
+    assert_eq!(result.checks[0].status, TroubleshootingStatus::Passed);
+    assert!(result.checks[0].retry.is_none());
+    assert!(w.prober.model_list_calls.lock().unwrap().is_empty());
+    assert_eq!(w.prober.responses_calls.lock().unwrap().len(), 1);
+    w.prober.responses_calls.lock().unwrap().clear();
+    let result = sw
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::All,
+                retry: Some(TroubleshootingRetry::Models {
+                    profile: ProfileId::new("work"),
+                }),
+                ..Default::default()
+            },
+            Arc::new(|_| true),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.checks.len(), 1);
+    assert_eq!(result.checks[0].id, "models:work");
+    assert!(result.models[0].refreshed);
+    assert_eq!(w.prober.model_list_calls.lock().unwrap().len(), 1);
+    assert!(w.prober.responses_calls.lock().unwrap().is_empty());
+    assert!(w.writes().is_empty());
 }
 
 #[tokio::test]
@@ -1051,4 +1299,43 @@ async fn troubleshooting_text_only_cases_make_no_network_requests() {
     }
     assert!(w.prober.model_list_calls.lock().unwrap().is_empty());
     assert_eq!(*w.config.applied.lock().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn troubleshooting_api_speed_uses_the_openai_provider_without_model_metadata() {
+    use superba_core::*;
+    for (provider, expected) in [
+        (Some("openai"), TroubleshootingStatus::Passed),
+        (None, TroubleshootingStatus::Passed),
+        (Some("custom"), TroubleshootingStatus::Warning),
+    ] {
+        let w = World::new();
+        troubleshooting_active(&w);
+        w.config.state.lock().unwrap().model_provider = provider.map(str::to_owned);
+        *w.prober.model_list.lock().unwrap() = Some(Ok(troubleshooting_list()));
+        for speed in [SpeedTier::Fast, SpeedTier::Ultrafast] {
+            let report = w
+                .switcher()
+                .troubleshooting_check(
+                    TroubleshootingRequest {
+                        issue: TroubleshootingIssue::Speed,
+                        speed: Some(speed),
+                        ..Default::default()
+                    },
+                    Arc::new(|_| true),
+                )
+                .await
+                .unwrap();
+            let check = report.checks.iter().find(|c| c.id == "speed:work").unwrap();
+            assert_eq!(check.status, expected);
+            assert_eq!(
+                check.detail.key,
+                if expected == TroubleshootingStatus::Passed {
+                    "troubleshooting.speed_openai"
+                } else {
+                    "troubleshooting.speed_provider"
+                }
+            );
+        }
+    }
 }

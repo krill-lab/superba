@@ -1,5 +1,6 @@
 //! Common problems, a separate diagnostic workbench and user-verified results.
 
+mod artwork;
 mod guidance;
 mod view;
 
@@ -15,6 +16,8 @@ use crate::runtime::ReadTask;
 /// A recovery operation, sent to the application's global command/Flow owner.
 #[derive(Clone, Debug)]
 pub enum Repair {
+    /// Remove manually reviewed obsolete config entries with an editor backup.
+    Cleanup(TroubleshootingCleanup),
     /// Reapply the current managed configuration.
     Reapply,
     /// Restart Codex once.
@@ -40,6 +43,8 @@ enum Screen {
     Select,
     Workbench,
     Result,
+    Next,
+    Complete,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -73,6 +78,7 @@ struct Run {
     model_synced: bool,
     sync_model_requested: bool,
     isolated_server: bool,
+    server_unauthorized: Answer,
 }
 
 impl Run {
@@ -88,7 +94,9 @@ impl Run {
             },
             model: self.model.clone(),
             speed: Some(self.speed),
-            refresh_models,
+            refresh_models: refresh_models
+                || (self.issue == TroubleshootingIssue::Models && self.model.is_none()),
+            retry: None,
         }
     }
 }
@@ -97,8 +105,15 @@ impl Run {
 struct Inspection {
     task: ReadTask<TroubleshootingReport>,
     cancelled: Arc<AtomicBool>,
-    progress: Arc<Mutex<Vec<TroubleshootingCheck>>>,
+    progress: Arc<Mutex<Progress>>,
     automatic: bool,
+    retry_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct Progress {
+    backend: bool,
+    checks: Vec<TroubleshootingCheck>,
 }
 
 /// Page state persists across navigation, but diagnostic history is not stored
@@ -112,13 +127,28 @@ pub struct State {
     next_id: u64,
     pending: Option<(u64, Repair)>,
     confirming_reinitialize: bool,
+    confirming_cleanup: bool,
     verification: bool,
     filter: usize,
     model_query: String,
     error: Option<LocalizedText>,
+    drawer_stage: Option<(u64, usize)>,
+    result_revision: u64,
+    completed_at: Option<f64>,
+    verification_automatic: bool,
+    simple_mode: bool,
+    reduce_motion: bool,
+    art: crate::movers::render::SceneCache,
+    celebration: crate::movers::render::SceneCache,
+    advice_art: crate::movers::render::SceneCache,
 }
 
 impl State {
+    /// Match the shell's navigation and animation preferences.
+    pub fn display_options(&mut self, simple_mode: bool, reduce_motion: bool) {
+        self.simple_mode = simple_mode;
+        self.reduce_motion = reduce_motion;
+    }
     /// True while checks or a recovery operation are pending.
     pub fn busy(&self) -> bool {
         self.inspection.is_some() || self.pending.is_some()
@@ -155,6 +185,7 @@ impl State {
             model_synced: false,
             sync_model_requested: false,
             isolated_server: false,
+            server_unauthorized: Answer::Unanswered,
         });
         self.error = None;
         self.model_query.clear();
@@ -164,7 +195,7 @@ impl State {
                 | TroubleshootingIssue::Server
                 | TroubleshootingIssue::Other
         ) {
-            self.screen = Screen::Result;
+            self.screen = Screen::Next;
             self.remember();
         } else {
             self.inspect(cx, true, issue == TroubleshootingIssue::Models, out);
@@ -184,6 +215,30 @@ impl State {
         self.begin_inspection(cx.service.clone(), run.request(refresh_models), automatic);
     }
 
+    fn retry(&mut self, id: &str, cx: &Cx<'_>) {
+        if self.busy() || cx.busy {
+            return;
+        }
+        let Some(run) = &self.run else {
+            return;
+        };
+        let Some(retry) = run
+            .report
+            .as_ref()
+            .and_then(|r| r.checks.iter().find(|c| c.id == id))
+            .and_then(|c| c.retry.clone())
+        else {
+            return;
+        };
+        let mut request = run.request(true);
+        request.retry = Some(retry);
+        self.begin_inspection(cx.service.clone(), request, false);
+        if let Some(inspection) = &mut self.inspection {
+            inspection.retry_id = Some(id.to_owned());
+        }
+        self.screen = Screen::Result;
+    }
+
     fn begin_inspection(
         &mut self,
         service: Arc<dyn SwitchService>,
@@ -194,7 +249,7 @@ impl State {
             return;
         }
         let cancelled = Arc::new(AtomicBool::new(false));
-        let progress = Arc::new(Mutex::new(Vec::new()));
+        let progress = Arc::new(Mutex::new(Progress::default()));
         let stop = cancelled.clone();
         let steps = progress.clone();
         let sink: TroubleshootingProgressSink = Arc::new(move |p| {
@@ -202,7 +257,11 @@ impl State {
                 return false;
             }
             if let Ok(mut steps) = steps.lock() {
-                steps.push(p.check);
+                match p {
+                    TroubleshootingProgress::Configuration => steps.backend = false,
+                    TroubleshootingProgress::Backend => steps.backend = true,
+                    TroubleshootingProgress::Check(check) => steps.checks.push(check),
+                }
             }
             true
         });
@@ -213,7 +272,9 @@ impl State {
             cancelled,
             progress,
             automatic,
+            retry_id: None,
         });
+        self.drawer_stage = None;
         self.screen = Screen::Workbench;
         self.error = None;
     }
@@ -226,6 +287,7 @@ impl State {
             return;
         };
         match repair {
+            Repair::Cleanup(_) => {}
             Repair::Reapply => run.reapplied = true,
             Repair::Restart => run.restarted = true,
             Repair::Migrate => run.migrated = true,
@@ -260,6 +322,7 @@ impl State {
         }
         run.checks.extend(report.checks.clone());
         run.report = Some(report);
+        self.result_revision += 1;
         self.screen = Screen::Result;
         self.remember();
         if automatic && reapply {
@@ -281,11 +344,52 @@ impl State {
         self.history.truncate(5);
     }
 
+    fn finish_retry(&mut self, id: &str, report: TroubleshootingReport) {
+        let Some(run) = &mut self.run else {
+            return;
+        };
+        let Some(current) = &mut run.report else {
+            return;
+        };
+        // Replace only the retried observation; keep other results and recovery state.
+        if !report.checks.is_empty() {
+            let position = current
+                .checks
+                .iter()
+                .position(|c| c.id == id)
+                .unwrap_or(current.checks.len());
+            current
+                .checks
+                .retain(|c| c.id != id && !report.checks.iter().any(|new| new.id == c.id));
+            let position = position.min(current.checks.len());
+            current
+                .checks
+                .splice(position..position, report.checks.clone());
+            run.checks.extend(report.checks);
+            current.checked_at = report.checked_at;
+        }
+        for models in report.models {
+            if let Some(old) = current
+                .models
+                .iter_mut()
+                .find(|m| m.profile_id == models.profile_id)
+            {
+                *old = models;
+            } else {
+                current.models.push(models);
+            }
+        }
+        run.resolved = None;
+        self.result_revision += 1;
+        self.screen = Screen::Result;
+        self.remember();
+    }
+
     /// Called once each frame, including when another page is visible.
     pub fn poll(&mut self, ui: &Ui, cx: &Cx<'_>, out: &mut Vec<Action>) {
         if self.verification && self.pending.is_none() && self.inspection.is_none() {
             self.verification = false;
-            self.inspect(cx, true, false, out);
+            self.inspect(cx, self.verification_automatic, false, out);
         }
         let result = self.inspection.as_ref().and_then(|r| r.task.poll());
         if let Some(result) = result {
@@ -294,7 +398,13 @@ impl State {
                 return;
             }
             match result {
-                Ok(report) => self.finish_inspection(report, inspection.automatic, out),
+                Ok(report) => {
+                    if let Some(id) = inspection.retry_id {
+                        self.finish_retry(&id, report);
+                    } else {
+                        self.finish_inspection(report, inspection.automatic, out);
+                    }
+                }
                 Err(e) => {
                     self.error = Some(e.to_text());
                     self.screen = Screen::Result;
@@ -317,9 +427,13 @@ impl State {
             return;
         };
         match result {
-            Ok(_) => {
+            Ok(message) => {
                 let (key, fallback) = match &repair {
                     Repair::Reapply => ("reapplied", "Reapplied the provider configuration."),
+                    Repair::Cleanup(_) => (
+                        "cleaned",
+                        "Removed the reviewed configuration entries after creating a backup.",
+                    ),
                     Repair::Restart => ("restarted", "Restarted Codex."),
                     Repair::Reinitialize => ("rebuilt", "Backed up and rebuilt config.toml."),
                     Repair::Migrate => ("migrated", "Migrated conversations to openai."),
@@ -332,13 +446,15 @@ impl State {
                         "Synchronized the selected model with Codex.",
                     ),
                 };
-                run.repairs.push(LocalizedText::new(
-                    format!("troubleshooting.{key}"),
-                    fallback,
-                ));
+                run.repairs.push(if matches!(repair, Repair::Cleanup(_)) {
+                    message
+                } else {
+                    LocalizedText::new(format!("troubleshooting.{key}"), fallback)
+                });
                 if matches!(repair, Repair::Official) {
                     self.screen = Screen::Result;
                 } else {
+                    self.verification_automatic = !matches!(repair, Repair::Cleanup(_));
                     self.verification = true;
                 }
             }
@@ -372,6 +488,8 @@ impl State {
             inspection.cancelled.store(true, Ordering::Relaxed);
         }
         self.verification = false;
+        self.completed_at = None;
+        self.confirming_cleanup = false;
         self.screen = Screen::Select;
     }
 }
@@ -397,7 +515,7 @@ pub fn command(state: &mut State, cx: &Cx<'_>, command: &str, out: &mut Vec<Acti
 /// Report page-owned modal state to the shell.
 pub fn status(state: &State) -> PageStatus {
     PageStatus {
-        modal: state.confirming_reinitialize,
+        modal: state.confirming_reinitialize || state.confirming_cleanup,
         ..Default::default()
     }
 }

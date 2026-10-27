@@ -25,6 +25,7 @@ pub struct FakeVersions {
     pub store_dir: PathBuf,
     pub stored: Mutex<Vec<StoredCodex>>,
     pub releases: Mutex<Vec<CodexRelease>>,
+    pub fail_releases: Mutex<Option<Error>>,
     pub app_latest: Mutex<Option<AppRelease>>,
     pub fail_ensure: Mutex<Option<Error>>,
 }
@@ -36,6 +37,7 @@ impl FakeVersions {
             store_dir,
             stored: Mutex::new(Vec::new()),
             releases: Mutex::new(Vec::new()),
+            fail_releases: Mutex::new(None),
             app_latest: Mutex::new(None),
             fail_ensure: Mutex::new(None),
         }
@@ -68,6 +70,9 @@ impl FakeVersions {
 #[async_trait]
 impl VersionStore for FakeVersions {
     async fn codex_releases(&self, _refresh: bool) -> Result<Vec<CodexRelease>> {
+        if let Some(error) = self.fail_releases.lock().unwrap().clone() {
+            return Err(error);
+        }
         Ok(self.releases.lock().unwrap().clone())
     }
 

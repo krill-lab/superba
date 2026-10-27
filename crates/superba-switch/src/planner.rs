@@ -1812,6 +1812,7 @@ impl Switcher {
                     .deps
                     .router
                     .configuration()
+                    .filter(|_| !request.resets_router())
                     .filter(|c| !c.tuning.failover_enabled)
                     .and_then(|c| {
                         let (mi, li) = c.fixed_exit()?;
@@ -2074,9 +2075,13 @@ impl Switcher {
                 None
             }
         };
-        let router_settings = match d.profiles.load().await {
-            Ok(set) => set.settings.router,
-            Err(_) => Default::default(),
+        let router_settings = if request.resets_router() {
+            superba_core::RouterSettings::simple_defaults()
+        } else {
+            match d.profiles.load().await {
+                Ok(set) => set.settings.router,
+                Err(_) => Default::default(),
+            }
         };
         // A WSL distribution follows this computer's routing also when it is
         // switched alone ("Update now", `spb wsl update`: user bug 75), with
@@ -2256,8 +2261,16 @@ impl Switcher {
                 r.line_id = dest.line.as_ref().map(|l| l.id.clone());
                 dest.remote_resolved = Some(r);
             }
-            self.route_through_router(profile, &site, choice, &router_settings, &mut dest, draft)
-                .await;
+            self.route_through_router(
+                profile,
+                &site,
+                choice,
+                &router_settings,
+                request.resets_router(),
+                &mut dest,
+                draft,
+            )
+            .await;
             if !request.targets.local {
                 // Only the distributions are written: the router's members stay.
                 dest.router_update = None;
@@ -2343,6 +2356,7 @@ impl Switcher {
         site: &Site,
         choice: AuthChoice,
         router: &superba_core::RouterSettings,
+        reset: bool,
         dest: &mut Dest,
         draft: &mut Draft,
     ) {
@@ -2372,8 +2386,8 @@ impl Switcher {
             draft.block(BlockReason::RouterUnavailable { detail });
             return;
         }
-        let stored = d.router.configuration();
-        let manual = stored.as_ref().is_some_and(|c| !c.tuning.failover_enabled);
+        let stored = d.router.configuration().filter(|_| !reset);
+        let manual = reset || stored.as_ref().is_some_and(|c| !c.tuning.failover_enabled);
         let mut members = if manual {
             router.members.clone()
         } else {
@@ -2419,8 +2433,13 @@ impl Switcher {
                     .ok_or_else(|| {
                         Error::invalid("the selected exit line is missing or disabled")
                     })?;
-                let set = d.profiles.load().await?;
-                let mut built = self.build_router_members(&set, &members).await?;
+                let mut set = d.profiles.load().await?;
+                if reset {
+                    set.settings.router = router.clone();
+                }
+                let mut built = self
+                    .build_router_members_with_defaults(&set, &members, reset)
+                    .await?;
                 built.config.tuning.fixed_route = Some(superba_core::RouterFixedRoute {
                     member_id: superba_router::members::router_id(profile.id.as_str()),
                     line_id: superba_router::members::router_id(selected.id.as_str()),

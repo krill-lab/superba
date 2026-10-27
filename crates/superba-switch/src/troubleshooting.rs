@@ -1,5 +1,9 @@
 //! User-triggered observations. Repairs remain ordinary, confirmed switches.
 
+mod cleanup;
+mod stability;
+mod versions;
+
 use superba_config::codex_files::{CheckContext, validate};
 use superba_core::*;
 
@@ -20,7 +24,15 @@ fn check(
         title,
         detail,
         status,
+        retry: None,
     }
+}
+
+fn retryable(mut check: TroubleshootingCheck, retry: TroubleshootingRetry) -> TroubleshootingCheck {
+    if check.status != TroubleshootingStatus::Passed {
+        check.retry = Some(retry);
+    }
+    check
 }
 
 fn record(
@@ -29,7 +41,7 @@ fn record(
     check: TroubleshootingCheck,
 ) -> Result<()> {
     report.checks.push(check.clone());
-    if progress(TroubleshootingProgress { check }) {
+    if progress(TroubleshootingProgress::Check(check)) {
         Ok(())
     } else {
         Err(Error::Cancelled)
@@ -65,10 +77,29 @@ impl Switcher {
             config_ok: false,
             restart_recommended: false,
             can_reinitialize: profile.is_some_and(|p| p.builtin != Some(BuiltinProfile::Original)),
+            cleanup: None,
         };
         if matches!(request.issue, Issue::Policy | Issue::Server | Issue::Other) {
             return Ok(report);
         }
+        if let Some(retry) = &request.retry {
+            let provider = set
+                .profile(retry.profile())
+                .ok_or_else(|| Error::invalid("The supplier no longer exists."))?;
+            let mut actual = provider.clone();
+            if report.profile_id.as_ref() == Some(&provider.id) && !report.routed {
+                actual.line_id = report.line_id.clone().or(actual.line_id);
+            }
+            self.troubleshooting_provider(&set, &state, &actual, &request, &mut report, &progress)
+                .await?;
+            return Ok(report);
+        }
+        if !progress(TroubleshootingProgress::Configuration) {
+            return Err(Error::Cancelled);
+        }
+        self.monitor.record(EnvironmentEvent::Refresh);
+        self.troubleshooting_versions(&mut report, &progress)
+            .await?;
         // The first missing-model step refreshes first; configuration is checked
         // after the user identifies a model, or asks for the normal request check.
         let configuration = request.issue != Issue::Sessions
@@ -125,7 +156,7 @@ impl Switcher {
         if matches!(request.issue, Issue::Sessions) {
             return Ok(report);
         }
-        let profiles: Vec<_> = if report.routed {
+        let profiles: Vec<_> = if report.routed && request.issue != Issue::Stability {
             set.settings
                 .router
                 .members
@@ -135,6 +166,9 @@ impl Switcher {
         } else {
             profile.into_iter().collect()
         };
+        if !progress(TroubleshootingProgress::Backend) {
+            return Err(Error::Cancelled);
+        }
         for provider in profiles {
             if provider.is_builtin() {
                 record(
@@ -158,6 +192,10 @@ impl Switcher {
             }
             self.troubleshooting_provider(&set, &state, &actual, &request, &mut report, &progress)
                 .await?;
+            if request.issue == Issue::Stability {
+                self.troubleshooting_stability(&actual, &state, &mut report, &progress)
+                    .await?;
+            }
         }
         if report.routed && configuration {
             match self.router_status_impl().await {
@@ -197,7 +235,12 @@ impl Switcher {
         report.restart_recommended = feature
             && report.config_ok
             && !report.checks.is_empty()
-            && report.checks.iter().all(|c| c.status == Status::Passed);
+            && report
+                .checks
+                .iter()
+                // Update availability does not change feature compatibility.
+                .filter(|c| !c.id.starts_with("update:"))
+                .all(|c| c.status == Status::Passed);
         Ok(report)
     }
 }
@@ -213,6 +256,10 @@ impl Switcher {
         progress: &TroubleshootingProgressSink,
     ) -> Result<()> {
         use TroubleshootingStatus as Status;
+        let retry = request.retry.as_ref();
+        let models_only = matches!(retry, Some(TroubleshootingRetry::Models { .. }));
+        let backend_only = matches!(retry, Some(TroubleshootingRetry::Backend { .. }));
+        let websocket_only = matches!(retry, Some(TroubleshootingRetry::WebSocket { .. }));
         let title = text("check.provider_named", "Supplier backend · {provider}")
             .arg("provider", &profile.name);
         let (site, resolved) = match self.direct_resolution(set, profile).await {
@@ -222,11 +269,31 @@ impl Switcher {
                 record(
                     report,
                     progress,
-                    check(
-                        format!("backend:{}", profile.id),
-                        title,
-                        Status::Failed,
-                        e.to_text(),
+                    retryable(
+                        check(
+                            if models_only {
+                                format!("models:{}", profile.id)
+                            } else if websocket_only {
+                                match retry {
+                                    Some(TroubleshootingRetry::WebSocket {
+                                        line: Some(line),
+                                        ..
+                                    }) => format!("websocket:{}:{line}", profile.id),
+                                    _ => format!("websocket:{}", profile.id),
+                                }
+                            } else {
+                                format!("backend:{}", profile.id)
+                            },
+                            title,
+                            Status::Failed,
+                            e.to_text(),
+                        ),
+                        retry
+                            .cloned()
+                            .unwrap_or_else(|| TroubleshootingRetry::Backend {
+                                profile: profile.id.clone(),
+                                model: request.model.clone(),
+                            }),
                     ),
                 )?;
                 return Ok(());
@@ -235,8 +302,13 @@ impl Switcher {
         let ResolvedMode::Token { endpoints, key, .. } = &resolved.mode else {
             return Ok(());
         };
-        let mut upstream = None;
-        {
+        let mut upstream = self
+            .model_lists
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&profile.id)
+            .cloned();
+        if retry.is_none() || models_only {
             let facts = self.monitor.facts().await;
             let installs = self.effective_installs(facts.installs.clone(), set).await;
             let (app, _) = crate::models::local_codexes(
@@ -253,7 +325,7 @@ impl Switcher {
                     base_url: &endpoints.openai_base_url,
                     key,
                     client_version: version,
-                    refresh: request.refresh_models,
+                    refresh: request.refresh_models || models_only,
                     source: profile.model_source,
                     standard_base: None,
                 })
@@ -267,7 +339,7 @@ impl Switcher {
             };
             let (status, detail) = match fetched {
                 Ok(list) => {
-                    models.refreshed = request.refresh_models
+                    models.refreshed = (request.refresh_models || models_only)
                         && matches!(list.source, ModelListSource::Upstream { .. })
                         && list.fallback_reason.is_none()
                         && (list.sources.is_empty()
@@ -299,21 +371,33 @@ impl Switcher {
             record(
                 report,
                 progress,
-                check(
-                    format!("models:{}", profile.id),
-                    text("check.models_named", "Upstream model list · {provider}")
-                        .arg("provider", &profile.name),
-                    status,
-                    detail,
+                retryable(
+                    check(
+                        format!("models:{}", profile.id),
+                        text("check.models_named", "Upstream model list · {provider}")
+                            .arg("provider", &profile.name),
+                        status,
+                        detail,
+                    ),
+                    TroubleshootingRetry::Models {
+                        profile: profile.id.clone(),
+                    },
                 ),
             )?;
         }
-        if request.issue == TroubleshootingIssue::Models && request.model.is_none() {
+        if models_only
+            || (request.issue == TroubleshootingIssue::Models
+                && request.model.is_none()
+                && retry.is_none())
+        {
             return Ok(());
         }
-        let model = request
-            .model
-            .as_deref()
+        let retry_model = match retry {
+            Some(TroubleshootingRetry::Backend { model, .. }) => model.as_deref(),
+            _ => None,
+        };
+        let model = retry_model
+            .or(request.model.as_deref())
             .or(profile.model.model.as_deref())
             .or(state.model.as_deref())
             .or_else(|| {
@@ -322,72 +406,94 @@ impl Switcher {
                     .and_then(|l| l.models.first())
                     .map(|m| m.slug.as_str())
             });
-        if let Some(model) = model {
-            match self
-                .deps
-                .prober
-                .probe_responses(endpoints, key, site.site_model(model))
-                .await
-            {
-                Ok(result) => {
-                    let detail = text(
-                        "backend_response",
-                        "Responses probe: HTTP {status}. {detail}",
-                    )
-                    .arg(
-                        "status",
-                        result.status.map_or_else(|| "—".into(), |s| s.to_string()),
-                    )
-                    .arg("detail", result.detail.unwrap_or_default());
-                    record(
+        if !websocket_only {
+            let retry_backend = TroubleshootingRetry::Backend {
+                profile: profile.id.clone(),
+                model: model.map(str::to_owned),
+            };
+            if let Some(model) = model {
+                match self
+                    .deps
+                    .prober
+                    .probe_responses(endpoints, key, site.site_model(model))
+                    .await
+                {
+                    Ok(result) => {
+                        let detail = text(
+                            "backend_response",
+                            "Responses probe: HTTP {status}. {detail}",
+                        )
+                        .arg(
+                            "status",
+                            result.status.map_or_else(|| "—".into(), |s| s.to_string()),
+                        )
+                        .arg("detail", result.detail.unwrap_or_default());
+                        record(
+                            report,
+                            progress,
+                            retryable(
+                                check(
+                                    format!("backend:{}", profile.id),
+                                    title,
+                                    if result.ok {
+                                        Status::Passed
+                                    } else {
+                                        Status::Failed
+                                    },
+                                    detail,
+                                ),
+                                retry_backend,
+                            ),
+                        )?;
+                    }
+                    Err(e) => record(
                         report,
                         progress,
-                        check(
-                            format!("backend:{}", profile.id),
-                            title,
-                            if result.ok {
-                                Status::Passed
-                            } else {
-                                Status::Failed
-                            },
-                            detail,
+                        retryable(
+                            check(
+                                format!("backend:{}", profile.id),
+                                title,
+                                Status::Failed,
+                                e.to_text(),
+                            ),
+                            retry_backend,
                         ),
-                    )?;
+                    )?,
                 }
-                Err(e) => record(
+            } else {
+                record(
                     report,
                     progress,
                     check(
                         format!("backend:{}", profile.id),
                         title,
-                        Status::Failed,
-                        e.to_text(),
+                        Status::Unknown,
+                        text(
+                            "model_for_probe",
+                            "No model is available for the Responses probe. Select a model first.",
+                        ),
                     ),
-                )?,
+                )?;
             }
-        } else {
-            record(
-                report,
-                progress,
-                check(
-                    format!("backend:{}", profile.id),
-                    title,
-                    Status::Unknown,
-                    text(
-                        "model_for_probe",
-                        "No model is available for the Responses probe. Select a model first.",
-                    ),
-                ),
-            )?;
         }
-        if matches!(
-            request.issue,
-            TroubleshootingIssue::WebSocket | TroubleshootingIssue::All
-        ) {
+        if backend_only {
+            return Ok(());
+        }
+        if websocket_only
+            || matches!(
+                request.issue,
+                TroubleshootingIssue::WebSocket | TroubleshootingIssue::All
+            )
+        {
             match self
                 .line_transports_impl(LineTransportsRequest {
                     profile: profile.id.clone(),
-                    lines: resolved.line_id.clone().into_iter().collect(),
+                    lines: match retry {
+                        Some(TroubleshootingRetry::WebSocket { line, .. }) => {
+                            line.clone().into_iter().collect()
+                        }
+                        _ => resolved.line_id.clone().into_iter().collect(),
+                    },
                     refresh: TransportRefresh::All,
                 })
                 .await
@@ -402,15 +508,24 @@ impl Switcher {
                         record(
                             report,
                             progress,
-                            check(
-                                format!("websocket:{}:{}", profile.id, line.line_id),
-                                text("check.websocket_named", "WebSocket · {provider} / {line}")
+                            retryable(
+                                check(
+                                    format!("websocket:{}:{}", profile.id, line.line_id),
+                                    text(
+                                        "check.websocket_named",
+                                        "WebSocket · {provider} / {line}",
+                                    )
                                     .arg("provider", &profile.name)
-                                    .arg("line", line.line_id),
-                                status,
-                                text("websocket_result", "{support}. {detail}")
-                                    .arg_text("support", line.websocket.support.text())
-                                    .arg("detail", line.websocket.detail.unwrap_or_default()),
+                                    .arg("line", &line.line_id),
+                                    status,
+                                    text("websocket_result", "{support}. {detail}")
+                                        .arg_text("support", line.websocket.support.text())
+                                        .arg("detail", line.websocket.detail.unwrap_or_default()),
+                                ),
+                                TroubleshootingRetry::WebSocket {
+                                    profile: profile.id.clone(),
+                                    line: Some(line.line_id),
+                                },
                             ),
                         )?;
                     }
@@ -418,66 +533,118 @@ impl Switcher {
                 Ok(_) => record(
                     report,
                     progress,
-                    check(
-                        format!("websocket:{}", profile.id),
-                        text("check.websocket", "WebSocket handshake"),
-                        Status::Unknown,
-                        text(
-                            "websocket_not_checked",
-                            "No enabled upstream line was checked.",
+                    retryable(
+                        check(
+                            format!("websocket:{}", profile.id),
+                            text("check.websocket", "WebSocket handshake"),
+                            Status::Unknown,
+                            text(
+                                "websocket_not_checked",
+                                "No enabled upstream line was checked.",
+                            ),
                         ),
+                        TroubleshootingRetry::WebSocket {
+                            profile: profile.id.clone(),
+                            line: None,
+                        },
                     ),
                 )?,
                 Err(e) => record(
                     report,
                     progress,
-                    check(
-                        format!("websocket:{}", profile.id),
-                        text("check.websocket", "WebSocket handshake"),
-                        Status::Unknown,
-                        e.to_text(),
+                    retryable(
+                        check(
+                            match retry {
+                                Some(TroubleshootingRetry::WebSocket {
+                                    line: Some(line), ..
+                                }) => format!("websocket:{}:{line}", profile.id),
+                                _ => format!("websocket:{}", profile.id),
+                            },
+                            text("check.websocket", "WebSocket handshake"),
+                            Status::Unknown,
+                            e.to_text(),
+                        ),
+                        retry
+                            .cloned()
+                            .unwrap_or_else(|| TroubleshootingRetry::WebSocket {
+                                profile: profile.id.clone(),
+                                line: None,
+                            }),
                     ),
                 )?,
             }
+        }
+        if websocket_only {
+            return Ok(());
         }
         if request.issue == TroubleshootingIssue::Speed {
             let target = request.speed.unwrap_or(SpeedTier::Fast);
             let spec = upstream
                 .as_ref()
                 .and_then(|l| model.and_then(|m| l.model(m)));
-            let (status, detail) = match (upstream.as_ref(), spec) {
-                (Some(list), Some(spec)) if !spec.service_tiers.is_empty() => {
-                    let support = crate::models::speed_support(
-                        target,
-                        list,
-                        model,
-                        false,
-                        state
-                            .active
-                            .as_ref()
-                            .and_then(|a| a.auth_mode)
-                            .is_some_and(|m| m == AuthMode::Pat),
-                        site.capabilities.tier_model_suffix,
-                    );
-                    let (_, app) = support.effect(target);
-                    let ok = matches!(
-                        app,
-                        SpeedEffect::Applies
-                            | SpeedEffect::ViaModelName { .. }
-                            | SpeedEffect::AppMenu
-                    ) && spec.speed_tiers().contains(&target);
+            let api_mode = state
+                .auth
+                .mode()
+                .or_else(|| state.active.as_ref().and_then(|a| a.auth_mode))
+                == Some(AuthMode::ApiKey);
+            let (status, detail) = if api_mode {
+                if state
+                    .model_provider
+                    .as_deref()
+                    .unwrap_or(codex::PROVIDER_OPENAI)
+                    == codex::PROVIDER_OPENAI
+                {
                     (
-                        if ok { Status::Passed } else { Status::Warning },
-                        app.text(),
+                        Status::Passed,
+                        text(
+                            "speed_openai",
+                            "API mode uses the openai provider and supports Fast / UltraFast.",
+                        ),
+                    )
+                } else {
+                    (
+                        Status::Warning,
+                        text(
+                            "speed_provider",
+                            "API mode currently supports Standard speed only. To enable Fast / UltraFast, set model_provider to openai (an OpenAI-compatible provider).",
+                        ),
                     )
                 }
-                _ => (
-                    Status::Unknown,
-                    text(
-                        "speed_unknown",
-                        "The supplier did not publish enough metadata to confirm this model's speed mode. Confirm support with the supplier.",
+            } else {
+                match (upstream.as_ref(), spec) {
+                    (Some(list), Some(spec)) if !spec.service_tiers.is_empty() => {
+                        let support = crate::models::speed_support(
+                            target,
+                            list,
+                            model,
+                            false,
+                            state
+                                .active
+                                .as_ref()
+                                .and_then(|a| a.auth_mode)
+                                .is_some_and(|m| m == AuthMode::Pat),
+                            site.capabilities.tier_model_suffix,
+                        );
+                        let (_, app) = support.effect(target);
+                        let ok = matches!(
+                            app,
+                            SpeedEffect::Applies
+                                | SpeedEffect::ViaModelName { .. }
+                                | SpeedEffect::AppMenu
+                        ) && spec.speed_tiers().contains(&target);
+                        (
+                            if ok { Status::Passed } else { Status::Warning },
+                            app.text(),
+                        )
+                    }
+                    _ => (
+                        Status::Unknown,
+                        text(
+                            "speed_unknown",
+                            "The supplier did not publish enough metadata to confirm this model's speed mode. Confirm support with the supplier.",
+                        ),
                     ),
-                ),
+                }
             };
             record(
                 report,
@@ -514,7 +681,7 @@ impl Switcher {
                 progress,
                 check(
                     "configuration",
-                    text("check.config", "Configuration syntax and version"),
+                    text("check.config", "Configuration syntax and compatibility"),
                     Status::Failed,
                     text(
                         "config_unreadable",
@@ -537,11 +704,81 @@ impl Switcher {
             .iter()
             .filter(|p| p.severity == ProblemSeverity::Error)
             .collect();
-        let known_version = !doc.schema.consumers.is_empty()
-            && doc.schema.consumers.iter().all(|c| c.version.is_some())
-            && doc.schema.catalog.is_some();
+        // The current desktop app determines compatibility, with CLI as the
+        // fallback when no desktop is installed. An unrelated CLI probe must
+        // not turn a clean recheck into "unknown" after warnings are removed.
+        let current_consumer = doc
+            .schema
+            .consumers
+            .iter()
+            .position(|c| c.consumer == ConsumerKind::DesktopApp)
+            .or_else(|| (!doc.schema.consumers.is_empty()).then_some(0));
+        let mut known_version = false;
+        for (index, consumer) in doc.schema.consumers.iter().enumerate() {
+            let snapshot = consumer.version.as_ref().and_then(|version| {
+                doc.schema
+                    .catalog
+                    .as_ref()
+                    .and_then(|catalog| catalog.snapshot(Some(version)))
+            });
+            let (status, detail) = match (&consumer.version, snapshot) {
+                (Some(version), Some(snapshot)) => {
+                    let too_old = matches!(snapshot.matched, CatalogMatch::BelowFloor);
+                    let detail = if too_old {
+                        text("config_catalog_below_floor", "Codex {version} predates the oldest settings catalog ({catalog}); compatibility could not be confirmed.")
+                    } else if snapshot.matched.is_inexact() {
+                        text("config_version_approximate", "Codex {version}; checked against the nearest available settings catalog ({catalog}).")
+                    } else {
+                        text("config_version_known", "Codex {version}; settings catalog {catalog}.")
+                    };
+                    (
+                        if too_old { Status::Unknown } else { Status::Passed },
+                        detail.arg("version", version).arg("catalog", &snapshot.codex_version),
+                    )
+                }
+                (Some(version), None) => (
+                    Status::Unknown,
+                    text("config_catalog_missing", "Codex {version} was detected, but no settings catalog is available for compatibility checks.")
+                        .arg("version", version),
+                ),
+                (None, _) => (
+                    Status::Unknown,
+                    text("config_consumer_version_unknown", "The installed version for {consumer} could not be read. Configuration syntax was checked.")
+                        .arg("consumer", &consumer.label),
+                ),
+            };
+            if current_consumer == Some(index) {
+                known_version = status == Status::Passed;
+            }
+            record(
+                report,
+                progress,
+                check(
+                    format!("configuration:version:{index}"),
+                    text("check.config_version", "Codex version · {consumer}")
+                        .arg("consumer", &consumer.label),
+                    status,
+                    detail,
+                ),
+            )?;
+        }
+        let warnings: Vec<_> = problems
+            .iter()
+            .filter(|p| p.severity == ProblemSeverity::Warning)
+            .collect();
+        let cleanup_entries = cleanup::entries(&doc, &problems);
+        report.cleanup = doc
+            .sha256
+            .as_ref()
+            .filter(|_| !cleanup_entries.is_empty() && doc.read_only.is_none())
+            .map(|sha256| TroubleshootingCleanup {
+                sha256: sha256.clone(),
+                entries: cleanup_entries,
+            });
         let status = if !errors.is_empty() {
             Status::Failed
+        } else if !warnings.is_empty() {
+            Status::Warning
         } else if !known_version {
             Status::Unknown
         } else {
@@ -550,7 +787,9 @@ impl Switcher {
         let detail = match errors.first() {
             Some(p) => text("config_invalid", "{count} configuration errors; first at line {line}, column {column}. Open the configuration editor.")
                 .arg("count", errors.len()).arg("line", p.line).arg("column", p.column),
-            None if !known_version => text("config_version_unknown", "Syntax checked; an installed Codex version/catalog is not available for a complete version check."),
+            None if !warnings.is_empty() => text("config_warnings", "{count} configuration compatibility warnings. Review the items below.")
+                .arg("count", warnings.len()),
+            None if !known_version => text("config_version_unknown", "Syntax checked; configuration compatibility requires the installed Codex version and settings catalog."),
             None => text("config_valid", "Configuration syntax and the installed Codex settings catalog passed."),
         };
         record(
@@ -558,13 +797,45 @@ impl Switcher {
             progress,
             check(
                 "configuration",
-                text("check.config", "Configuration syntax and version"),
+                text("check.config", "Configuration syntax and compatibility"),
                 status,
                 detail,
             ),
         )?;
         report.config_ok = status == Status::Passed;
-        if state.parse_error.is_some() {
+        for (index, problem) in problems
+            .iter()
+            .filter(|problem| problem.severity != ProblemSeverity::Info)
+            .enumerate()
+        {
+            record(
+                report,
+                progress,
+                check(
+                    format!(
+                        "configuration:{}:{index}",
+                        if cleanup::is_cleanup_notice(problem) {
+                            "ignored"
+                        } else {
+                            "problem"
+                        }
+                    ),
+                    text("check.config_entry", "{path}")
+                        .arg("path", problem.path.as_deref().unwrap_or("config.toml")),
+                    if problem.severity == ProblemSeverity::Error {
+                        Status::Failed
+                    } else {
+                        Status::Warning
+                    },
+                    problem.message.clone(),
+                ),
+            )?;
+        }
+        if state.parse_error.is_some()
+            || problems
+                .iter()
+                .any(|problem| problem.kind == ProblemKind::Syntax)
+        {
             return Ok(());
         }
         let managed_bad = state
@@ -611,33 +882,6 @@ impl Switcher {
             managed_bad && profile.is_some_and(|p| !p.is_builtin()) && !state.journal_pending;
         report.config_ok &= !managed_bad;
         let values = superba_config::settings::read_config_values(Some(contents.as_bytes()))?;
-        let issue = report.issue;
-        let relevant = |path: &str| match issue {
-            TroubleshootingIssue::Speed => matches!(
-                path,
-                "features.fast_mode" | "features.ultrafast_mode" | "service_tier"
-            ),
-            TroubleshootingIssue::WebSocket => path.contains("websocket"),
-            _ => false,
-        };
-        for problem in problems.iter().filter(|p| {
-            p.severity == ProblemSeverity::Warning && p.path.as_deref().is_some_and(relevant)
-        }) {
-            report.config_ok = false;
-            record(
-                report,
-                progress,
-                check(
-                    format!("version:{}", problem.path.as_deref().unwrap_or_default()),
-                    text(
-                        "check.feature_version",
-                        "Feature configuration and Codex version",
-                    ),
-                    Status::Warning,
-                    problem.message.clone(),
-                ),
-            )?;
-        }
         if report.issue == TroubleshootingIssue::Speed {
             let feature = if speed == Some(SpeedTier::Ultrafast) {
                 "features.ultrafast_mode"
@@ -712,9 +956,15 @@ impl Switcher {
                     | "codex_home_mismatch"
                     | "openai_env_conflict"
                     | "authapi_other_line"
+                    | "cli_too_old"
             ) {
-                report.config_ok = false;
-                record(report, progress, check(format!("doctor:{}", finding.id), finding.title, Status::Warning,
+                let status = match finding.severity {
+                    Severity::Info => Status::Passed,
+                    Severity::Warning => Status::Warning,
+                    Severity::Danger => Status::Failed,
+                };
+                report.config_ok &= status == Status::Passed;
+                record(report, progress, check(format!("doctor:{}", finding.id), finding.title, status,
                     finding.detail.unwrap_or_else(|| text("doctor_manual", "Review this finding before continuing. Open diagnostics or the configuration editor."))))?;
             }
         }

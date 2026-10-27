@@ -47,6 +47,25 @@ pub(crate) fn with_client_version(mut url: Url, version: &str) -> Url {
 }
 
 impl HttpLineProber {
+    pub(crate) async fn single_latency(&self, site: &Site, line: &Line) -> Option<u32> {
+        let answer = self
+            .get_unauth(
+                &line.origin.join(&site.endpoints.models_unauth),
+                self.config.latency_timeout,
+            )
+            .await;
+        let check = unauth_check(
+            ProbeEndpoint::ModelsUnauth,
+            &answer,
+            &self.config.unauth_expect,
+            site.capabilities.latency_probe,
+        );
+        answer
+            .ok()
+            .filter(|_| !check.edge_blocked)
+            .map(|a| a.elapsed_ms())
+    }
+
     async fn get_unauth(
         &self,
         url: &Url,

@@ -604,9 +604,19 @@ pub struct SwitchRequest {
     /// Explicit local maintenance: do not automatically follow SSH/WSL hosts.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub local_only: bool,
+    /// Reset router preferences when enabling it from simple mode.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset_router: bool,
 }
 
 impl SwitchRequest {
+    /// Only a local router enable may discard saved router preferences.
+    pub fn resets_router(&self) -> bool {
+        self.reset_router
+            && self.targets.local
+            && matches!(self.intent, SwitchIntent::Router { enable: true })
+    }
+
     /// A plain local switch to a profile.
     pub fn profile(profile_id: ProfileId) -> Self {
         Self {
@@ -626,6 +636,7 @@ impl SwitchRequest {
             migration_exclude: Vec::new(),
             refresh_models: false,
             local_only: false,
+            reset_router: false,
         }
     }
 

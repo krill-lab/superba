@@ -496,6 +496,47 @@ async fn providers_fit_both_sizes_and_locales_on_both_tabs() {
     }
 }
 
+#[tokio::test]
+async fn simple_account_reuses_loaded_data_and_displays_used_only_billing() {
+    let service = fake();
+    let data = data_of(&service).await;
+    for used_only in [false, true] {
+        let mut state = providers::State::default();
+        state.select(ProviderId::Profile(ProfileId::new("krill")));
+        let mut acc = account_state(&SiteId::new("krill"), 7);
+        if used_only {
+            acc.report
+                .as_mut()
+                .unwrap()
+                .summary
+                .as_mut()
+                .unwrap()
+                .billing
+                .as_mut()
+                .unwrap()
+                .remaining = None;
+        }
+        state.accounts.insert(ProfileId::new("krill"), acc);
+        let report = render_fit(
+            [1440.0, 1000.0],
+            Locale::ZhCn,
+            egui::Theme::Light,
+            &data,
+            |ui, cx, out| {
+                providers::show_simple(ui, cx, &mut state, out);
+            },
+        );
+        let text = report.all_text();
+        assert!(text.contains("$46.53"), "{text}");
+        assert!(
+            text.contains(if used_only { "$139.42" } else { "$160.58" }),
+            "{text}"
+        );
+        assert!(text.contains("model-13"), "{text}");
+        assert!(state.accounts[&ProfileId::new("krill")].task.is_none());
+    }
+}
+
 #[test]
 fn the_account_tab_fetches_only_without_data_for_the_range_and_keeps_a_report_on_429() {
     let site = SiteId::new("krill");

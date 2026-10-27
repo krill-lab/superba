@@ -26,8 +26,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut 
     let mut model = hero.model.clone();
     model.menu = false;
     model.tip = cx.tr.t("overview.hero.speed_menu");
-    let mut router = hero.router.clone();
-    router.tip = cx.tr.t("overview.hero.router_on_tip");
+    let router = hero.router.clone();
     let nodes = if hero.router_on {
         vec![&client, &router, &provider, &model]
     } else {
@@ -85,7 +84,10 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut 
             col,
             b.chart[i % 2],
             0,
-            matches!(node.spot, Spot::ThisComputer | Spot::Provider | Spot::Model),
+            matches!(
+                node.spot,
+                Spot::ThisComputer | Spot::Router | Spot::Provider | Spot::Model
+            ),
             match node.spot {
                 Spot::ThisComputer => Some(client_footer),
                 Spot::Provider => latency,
@@ -98,6 +100,7 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut 
                     out.push(Action::CheckCodexUpdates)
                 }
                 Spot::Provider => out.push(Action::Go(Page::Providers)),
+                Spot::Router => out.push(Action::Go(Page::Router)),
                 _ => {}
             }
         }

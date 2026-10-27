@@ -89,7 +89,7 @@ fn header(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
                 .on_disabled_hover_text(hint)
                 .changed()
             {
-                state.switch_mode(cx, on, out);
+                state.switch_mode(cx, on, true, out);
             }
         });
     });

@@ -18,6 +18,14 @@ impl SwitchService for LocatedService {
         service.troubleshooting_check(request, progress).await
     }
 
+    async fn troubleshooting_cleanup(
+        &self,
+        request: TroubleshootingCleanup,
+    ) -> Result<CodexFileSaved> {
+        let (service, _lock) = self.read().await?;
+        service.troubleshooting_cleanup(request).await
+    }
+
     async fn overview(&self) -> Result<Overview> {
         let (service, _lock) = self.read().await?;
         service.overview().await

@@ -1132,6 +1132,13 @@ impl SwitchService for Switcher {
         self.troubleshooting_check_impl(request, progress).await
     }
 
+    async fn troubleshooting_cleanup(
+        &self,
+        request: superba_core::TroubleshootingCleanup,
+    ) -> Result<superba_core::CodexFileSaved> {
+        self.troubleshooting_cleanup_impl(request).await
+    }
+
     async fn runtime(&self) -> Result<superba_core::RuntimeView> {
         self.runtime_impl().await
     }

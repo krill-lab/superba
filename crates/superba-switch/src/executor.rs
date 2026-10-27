@@ -1110,6 +1110,9 @@ impl Run<'_> {
             d.router.update(built.config, built.keys).await?;
             match d.profiles.load().await {
                 Ok(mut set) => {
+                    if plan.request.resets_router() {
+                        set.settings.router = superba_core::RouterSettings::simple_defaults();
+                    }
                     set.settings.router.members = members;
                     if let Err(e) = d.profiles.save(&set).await {
                         tracing::warn!(error = %e, "cannot store the router member order");

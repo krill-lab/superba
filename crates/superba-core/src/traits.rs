@@ -308,6 +308,15 @@ pub trait LineProber: Send + Sync {
     /// relay's 401 (detects edge interception: `l-block` header + empty 200).
     async fn probe(&self, site: &Site, line: &Line) -> Result<LineCaps>;
 
+    /// One fresh unauthenticated latency sample, without warm-up or retries.
+    /// `None` means the request failed or was intercepted by an edge.
+    async fn latency_sample(&self, site: &Site, line: &Line) -> Result<Option<u32>> {
+        let caps = self.probe(site, line).await?;
+        Ok(caps
+            .latency_ms
+            .filter(|_| caps.reachable && !caps.blocked_by_edge))
+    }
+
     /// Probe all lines of a site concurrently.
     async fn probe_all(&self, site: &Site) -> Result<Vec<LineCaps>>;
 
@@ -1647,6 +1656,15 @@ pub trait SwitchService: Send + Sync {
     ) -> Result<crate::TroubleshootingReport> {
         let _ = (request, progress);
         Err(Error::not_implemented("Codex troubleshooting"))
+    }
+
+    /// Remove the reviewed deprecated/ignored config entries with an editor backup.
+    async fn troubleshooting_cleanup(
+        &self,
+        request: crate::TroubleshootingCleanup,
+    ) -> Result<crate::CodexFileSaved> {
+        let _ = request;
+        Err(Error::not_implemented("Codex troubleshooting cleanup"))
     }
 
     /// The configuration written last versus what every running Codex

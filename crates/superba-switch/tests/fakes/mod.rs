@@ -729,6 +729,8 @@ pub fn krill_profile(id: &str, line: Option<&str>, auth: AuthMode) -> Profile {
 #[derive(Debug)]
 pub struct FakeProber {
     pub log: Log,
+    pub responses_calls: Mutex<Vec<String>>,
+    pub responses: Mutex<Option<Result<superba_core::ResponsesProbe>>>,
     /// Caps per line id (default: everything works).
     pub caps: Mutex<BTreeMap<String, LineCaps>>,
     pub probe_error: Mutex<Option<Error>>,
@@ -766,6 +768,14 @@ pub fn good_caps(site: &str, line: &str) -> LineCaps {
 
 #[async_trait]
 impl LineProber for FakeProber {
+    async fn latency_sample(&self, site: &Site, line: &Line) -> Result<Option<u32>> {
+        push(&self.log, format!("prober.latency_sample {}", line.id));
+        let caps = self.probe(site, line).await?;
+        Ok(caps
+            .latency_ms
+            .filter(|_| caps.reachable && !caps.blocked_by_edge))
+    }
+
     async fn probe(&self, site: &Site, line: &Line) -> Result<LineCaps> {
         Ok(self
             .caps
@@ -851,9 +861,14 @@ impl LineProber for FakeProber {
         &self,
         _endpoints: &ResolvedEndpoints,
         _key: &Secret,
-        _model: &str,
+        model: &str,
     ) -> Result<superba_core::ResponsesProbe> {
-        Err(Error::not_implemented("fake probe_responses"))
+        self.responses_calls.lock().unwrap().push(model.to_owned());
+        self.responses
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| Err(Error::not_implemented("fake probe_responses")))
     }
 
     async fn account_summary(
@@ -1472,6 +1487,7 @@ impl SessionMigrator for FakeSessions {
 #[derive(Debug)]
 pub struct FakeApp {
     pub log: Log,
+    pub cli_kind: Mutex<superba_core::CodexInstallKind>,
     pub clock: Arc<ManualClock>,
     pub installs: Mutex<Vec<AppInstall>>,
     pub binaries: Mutex<Vec<CodexBinary>>,
@@ -1927,7 +1943,7 @@ impl AppController for FakeApp {
     }
 
     async fn cli_install_kind(&self, _binary: &Path) -> Result<superba_core::CodexInstallKind> {
-        Ok(superba_core::CodexInstallKind::Npm)
+        Ok(*self.cli_kind.lock().unwrap())
     }
 }
 
@@ -2592,6 +2608,7 @@ impl World {
             .insert("profile:work".into(), KEY.into());
         let app = FakeApp {
             log: log.clone(),
+            cli_kind: Mutex::new(superba_core::CodexInstallKind::Npm),
             clock: clock.clone(),
             installs: Mutex::new(vec![AppInstall {
                 id: "chatgpt".into(),
@@ -2687,6 +2704,8 @@ impl World {
             }),
             prober: Arc::new(FakeProber {
                 log: log.clone(),
+                responses_calls: Mutex::default(),
+                responses: Mutex::default(),
                 caps: Mutex::new(BTreeMap::new()),
                 probe_error: Mutex::new(None),
                 authapi: Mutex::new(BTreeMap::new()),

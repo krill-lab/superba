@@ -28,6 +28,68 @@ use superba_gui::runtime::Command;
 use superba_gui::startup_screen;
 
 #[test]
+fn diagnostic_art_reuses_the_shrimp_and_renders_animated_layers() {
+    let migration = roxmltree::Document::parse(render::SCENE_SVG).unwrap();
+    for source in [
+        include_str!("../../../assets/scenes/superba-diagnostic-worker.svg"),
+        include_str!("../../../assets/scenes/superba-diagnostic-celebration.svg"),
+    ] {
+        let doc = roxmltree::Document::parse(source).unwrap();
+        for id in ["shrimp", "shell"] {
+            let original = migration
+                .descendants()
+                .find(|n| n.attribute("id") == Some(id))
+                .unwrap();
+            let reused = doc
+                .descendants()
+                .find(|n| n.attribute("id") == Some(id))
+                .unwrap();
+            assert_eq!(
+                &render::SCENE_SVG[original.range()],
+                &source[reused.range()]
+            );
+        }
+        let scene = svg::analyse(source).unwrap();
+        assert!(scene.layers.iter().any(|l| l.place.has("rest-body")));
+        for layer in &scene.layers {
+            resvg::usvg::Tree::from_str(&layer.svg, &resvg::usvg::Options::default()).unwrap();
+        }
+    }
+}
+
+#[test]
+fn diagnostic_apology_svg_keeps_the_migration_profile_with_closed_eyes() {
+    let source = include_str!("../../../assets/scenes/superba-diagnostic-apology.svg");
+    let doc = roxmltree::Document::parse(source).unwrap();
+    let migration = roxmltree::Document::parse(render::SCENE_SVG).unwrap();
+    let shrimp = |doc: &roxmltree::Document<'_>| {
+        doc.descendants()
+            .find(|n| n.attribute("id") == Some("shrimp"))
+            .unwrap()
+            .children()
+            .filter(|n| n.has_tag_name("path"))
+            .take(8)
+            .map(|n| n.attribute("d").unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(shrimp(&doc), shrimp(&migration));
+    assert!(
+        doc.descendants()
+            .any(|n| n.attribute("id") == Some("closed-eye"))
+    );
+    let scene = svg::analyse(source).unwrap();
+    assert!(scene.texts.is_empty());
+    let tree = resvg::usvg::Tree::from_str(source, &resvg::usvg::Options::default()).unwrap();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(320, 280).unwrap();
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
+    assert!(pixmap.pixels().iter().any(|p| p.alpha() > 0));
+}
+
+#[test]
 fn startup_art_keeps_the_migration_shrimp_and_has_no_visible_text() {
     let migration = roxmltree::Document::parse(render::SCENE_SVG).unwrap();
     let startup = roxmltree::Document::parse(startup_screen::SCENE_SVG).unwrap();

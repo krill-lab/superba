@@ -137,8 +137,6 @@ pub struct State {
     pub(crate) models_task: Option<(ProfileId, ReadTask<ModelsView>)>,
     /// Account data per profile.
     pub accounts: HashMap<ProfileId, AccountState>,
-    /// Simple mode always requests seven days, independently of the advanced tab.
-    pub simple_accounts: HashMap<ProfileId, AccountState>,
     /// Paging of the per-model usage table.
     pub(crate) usage_table: PagedState,
     /// The inline rename in the list.

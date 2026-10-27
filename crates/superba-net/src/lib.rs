@@ -225,6 +225,10 @@ impl LineProber for HttpLineProber {
         Ok(self.probe_line(site, line).await)
     }
 
+    async fn latency_sample(&self, site: &Site, line: &Line) -> Result<Option<u32>> {
+        Ok(self.single_latency(site, line).await)
+    }
+
     async fn probe_all(&self, site: &Site) -> Result<Vec<LineCaps>> {
         let probes = site.lines.iter().map(|line| self.probe_line(site, line));
         Ok(futures_util::future::join_all(probes).await)

@@ -85,6 +85,15 @@ pub struct RouterSettings {
     pub mixed_login: bool,
 }
 
+impl RouterSettings {
+    /// Fresh settings for every explicit enable from simple mode.
+    pub fn simple_defaults() -> Self {
+        let mut settings = Self::default();
+        settings.stats.line.enabled = true;
+        settings
+    }
+}
+
 /// Request recording, the optional stats line and the prices of cost estimates.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
