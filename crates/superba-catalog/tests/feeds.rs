@@ -215,9 +215,16 @@ fn the_builtin_snapshot_verifies_and_carries_every_feed() {
             .iter()
             .all(|r| r.version <= newest.version)
     );
-    let app = &snap.app_versions[0];
-    assert!(app.bundled_codex.is_some());
-    assert!(app.packages.iter().any(|p| p.sha256.is_some()));
+    // Builds are newest first. The newest one may be known only from the
+    // Windows Store or the appcast (no package to read its Codex from), so check
+    // the newest build that ships a checksummed Linux package: the workflow reads
+    // its bundled Codex from that package.
+    let app = snap
+        .app_versions
+        .iter()
+        .find(|a| a.packages.iter().any(|p| p.sha256.is_some()))
+        .expect("a build with a checksummed package");
+    assert!(app.bundled_codex.is_some(), "{}", app.version);
     // Prompts: exact, an alpha of a listed release, a version below every one.
     let p163 = data.prompt(&v("0.163.0")).expect("prompt of 0.163.0");
     assert!(p163.len() > 1000);
@@ -245,14 +252,20 @@ fn the_builtin_snapshot_verifies_and_carries_every_feed() {
             "{model}: {rev}"
         );
     }
-    // The built-in table holds OpenAI's list prices, tier by tier, and the
-    // feed index that lists it carries a valid signature of a trusted key.
+    // The built-in table holds OpenAI's list prices, tier by tier.
     let astra = snap.prices.get("gpt-6-astra").expect("gpt-6-astra priced");
     assert_eq!(astra.input, superba_core::Usd::from_micros(10_000_000));
     for tier in ["priority", "flex", "ultrafast"] {
         assert!(astra.tier_prices.contains_key(tier), "{tier}");
     }
     assert!(snap.prices.get("codex-auto-review").is_none());
+}
+
+// The catalog-update workflow skips this test: automation never signs, so a
+// regenerated feed index is unsigned until a maintainer signs it.
+#[test]
+fn the_builtin_feed_index_carries_a_trusted_signature() {
+    let data = builtin_feeds().unwrap();
     assert!(data.signature().is_valid(), "{:?}", data.signature());
 }
 
