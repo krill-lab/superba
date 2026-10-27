@@ -281,6 +281,12 @@ zh_name = "单个插件"
 zh = "某个插件的设置，表名为完整的 `<插件>@<市场>` ID。"
 zh_basis = ""
 
+["config:plugins.<name>.auto_provision"]
+en = "Provisioning metadata. Omission does not request provisioning. Only applies with `remote_plugin_id` and Plugin Service availability to the requesting user at provisioning time. Effective enablement, trusted provisioning policy, and authentication and authorization restrictions still apply. This value is not trusted authorization and does not trigger provisioning."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "d673cf5b64e3944f"
+zh = ""
+
 ["config:plugins.<name>.enabled"]
 en = "Explicit activation override. Omission inherits the installed-plugin default."
 en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
@@ -410,6 +416,18 @@ en_hash = "6a30a34a860639a0"
 zh_name = "输出 token 上限"
 zh = "该工具输出最多保留给模型的 token 数，超出部分会被截断；实际允许量另加约 20% 的序列化余量。"
 zh_basis = "6a30a34a860639a0"
+
+["config:plugins.<name>.release_id"]
+en = "Release identifier used to pin the remote plugin to a specific release. Omission leaves release selection unchanged. Core stores this metadata without selecting or fetching a release."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "ddcc7ce82bcfd502"
+zh = ""
+
+["config:plugins.<name>.remote_plugin_id"]
+en = "Stable, unique identifier of a ChatGPT-hosted remote plugin. Availability to the requesting user is determined by Plugin Service at provisioning time."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "c6c9d3f8d803ebb9"
+zh = ""
 
 ["config:plugins._default"]
 en = "Defaults for installed plugin activation. Omission preserves source enablement. Explicit plugin enablement settings override this default, but cannot enable an installation disabled by its source."

@@ -197,9 +197,9 @@ zh = "设为 `true` 时，会话一旦用到外部上下文来源（如 MCP 工�
 zh_basis = "09ca57e709a71cbe"
 
 ["config:memories.dual_write"]
-en = "Generate both versions while the selected version supplies context."
-en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
-en_hash = "039f8b493e501f8a"
+en = "Generate both versions while v1 is selected; v2 runs alone after cutover."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "2e8d96e0d78d8c26"
 zh_name = "双版本同时生成"
 zh = "同时运行 `v1` 和 `v2` 两套记忆生成流程，但只有 `memories.version` 选中的版本提供给模型。默认 `false`。"
 zh_basis = "039f8b493e501f8a"
@@ -277,9 +277,9 @@ zh = "设为 `false` 时不在开发者提示词中注入记忆使用说明，�
 zh_basis = "49eec7ec464a8a04"
 
 ["config:memories.version"]
-en = "Selects the memory pipeline; v1 remains the default."
-en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
-en_hash = "816eb8a1b85020ef"
+en = "Selects the memory pipeline. Fresh profiles default to v2 when memories are enabled, unless dual-write is explicitly disabled; existing v1 profiles default to v1."
+en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "34ecfe3c1edab704"
 zh_name = "记忆流程版本"
 zh = "选择记忆流程版本：`v1`（默认）或 `v2`。两者分别存放在 Codex 主目录下的 `memories` 和 `memories_v2` 目录。"
 zh_basis = "816eb8a1b85020ef"

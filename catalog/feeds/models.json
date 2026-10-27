@@ -1,8 +1,8 @@
 {
   "format": 1,
-  "codex_version": "0.163.0",
+  "codex_version": "0.164.0",
   "sources": [
-    "openai/codex rust-v0.163.0: codex-rs/models-manager/models.json",
+    "openai/codex rust-v0.164.0: codex-rs/models-manager/models.json",
     "openai/codex rust-v0.157.1: codex-rs/models-manager/models.json",
     "catalog/models-extra.json"
   ],
@@ -536,6 +536,54 @@
           "id": "priority",
           "name": "Fast",
           "description": "1.5x speed, increased usage"
+        }
+      ],
+      "input_modalities": [
+        "text",
+        "image"
+      ]
+    },
+    {
+      "slug": "gpt-6.1-terra",
+      "display_name": "GPT-6.1 Terra",
+      "description": "GPT-6.1 Terra Codex model.",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 7,
+      "context_window": 500000,
+      "max_context_window": 872000,
+      "reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "effort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "effort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        },
+        {
+          "effort": "max",
+          "description": "Maximum reasoning depth for the hardest problems"
+        },
+        {
+          "effort": "ultra",
+          "description": "Maximum reasoning with automatic task delegation"
+        }
+      ],
+      "default_reasoning_level": "low",
+      "service_tiers": [
+        {
+          "id": "priority",
+          "name": "Fast",
+          "description": "1.5x speed"
         }
       ],
       "input_modalities": [

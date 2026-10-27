@@ -11,6 +11,7 @@ latest_prerelease = true
 # Prereleases included anyway: the builds the desktop app bundles.
 # 0.162.0-alpha.17.2: ChatGPT/Codex desktop app 26.1007 (26.1007.21434, 26.1007.71326).
 # 0.163.0-alpha.10.2: desktop app 26.1013 (26.1013.31256, 26.1013.40934).
-extra_versions = ["0.162.0-alpha.17.2", "0.163.0-alpha.10.2"]
+# 0.164.0-alpha.11.1: desktop app 26.1021 (26.1021.22027).
+extra_versions = ["0.162.0-alpha.17.2", "0.163.0-alpha.10.2", "0.164.0-alpha.11.1"]
 # Versions never included.
 exclude_versions = []

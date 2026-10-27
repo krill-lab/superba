@@ -201,9 +201,9 @@ zh = "Guardian v2 后台分类器以 `conversation` 模式运行时会保留历�
 zh_basis = "8584143d962173b0"
 
 ["config:features.guardianv2.async_classifier_mode"]
-en = "Classifier experiment override. Otherwise use the model default, then snapshots."
-en_source = "openai/codex rust-v0.161.0: codex-rs/core/config.schema.json"
-en_hash = "e4713b5d224eec23"
+en = "Deprecated and ignored; asynchronous classification always uses conversations."
+en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "4eaf418bf74ed2e9"
 zh_name = "后台分类器模式"
 zh = "覆盖 Guardian v2 后台风险分类器的实验模式：`snapshot`（每次单独发送当前快照）或 `conversation`（在持续的分类会话中累积历史）。未设置时先用模型目录的默认值，再回退到 `snapshot`。"
 zh_basis = "e4713b5d224eec23"
@@ -391,6 +391,11 @@ zh_name = "逐行格式"
 zh = "按条编号，每条带角色前缀，正文不做转义（默认）。"
 zh_basis = "370a884e1d95f27f"
 
+["config:features.guardianv3.enabled"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["config:features.imagegenext"]
 en = ""
 en_hash = ""
@@ -525,9 +530,9 @@ zh = "多代理工具只作为模型直接工具提供，不出现在代码模�
 zh_basis = ""
 
 ["config:features.multi_agent_v2.preserve_fork_prefix"]
-en = "Preserve the parent's model-visible history on full forks and append child instructions. Defaults to false. Legacy compaction without a reusable context baseline still rebuilds."
-en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
-en_hash = "b0067d642ca33bd5"
+en = "Preserve the parent's model-visible history on full forks and append child instructions. Defaults to true. Legacy compaction without a reusable context baseline still rebuilds."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "a64a275f57a3d915"
 zh_name = "分叉时保留父会话前缀"
 zh = "完整分叉子代理时保留父会话中模型可见的历史，并在其后追加子代理指令。默认 `false`；没有可复用上下文基线的旧式压缩仍会重建历史。"
 zh_basis = "b0067d642ca33bd5"
@@ -784,6 +789,12 @@ zh_name = "启用会话总预算"
 zh = "开发中：开启 `rollout_budget` 功能，为一个会话及其所有子代理统计共享的加权 token 预算，用完后会话以超出预算的错误结束。开启时必须同时设置 `limit_tokens` 和 `reminder_at_remaining_tokens`。"
 zh_basis = ""
 
+["config:features.rollout_budget.enforce_limit"]
+en = "Stop when the shared budget is exhausted. Defaults to true."
+en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "061e2d1f98797b43"
+zh = ""
+
 ["config:features.rollout_budget.limit_tokens"]
 en = ""
 en_hash = ""
@@ -812,6 +823,28 @@ en_hash = ""
 zh_name = "输出 token 权重"
 zh = "计算预算时模型输出（采样）token 的权重，非负数，默认 1.0。"
 zh_basis = ""
+
+["config:features.runtime_agent_instances.enabled"]
+en = ""
+en_hash = ""
+zh = ""
+
+["config:features.runtime_agent_instances.mode"]
+en = ""
+en_hash = ""
+zh = ""
+
+["config:features.runtime_agent_instances.mode=assertion_only"]
+en = "Send only the runtime assertion as the request credential."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "366fd8fac4a9450f"
+zh = ""
+
+["config:features.runtime_agent_instances.mode=dual_header"]
+en = "Send the actor credential and a runtime assertion together during migration."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "3217326d75fc5278"
+zh = ""
 
 ["config:features.sleep_tool.enabled"]
 en = ""

@@ -1,22 +1,22 @@
 {
   "format": 1,
-  "serial": 3,
-  "generated": "2026-10-20",
+  "serial": 5,
+  "generated": "2026-10-27",
   "files": [
     {
       "path": "app-versions.json",
-      "size": 6207,
-      "sha256": "30f4dd39655cf104d0600df9130944ba1b4839dcd9e886b7a43e1d09986e0371"
+      "size": 9521,
+      "sha256": "94a70cdafc8caa16bece671211caf7827b32b3bfcbff61ab7d16a17f83adec7a"
     },
     {
       "path": "codex-versions.json",
-      "size": 40891,
-      "sha256": "93f7cf7f646545a2995bc9ab3ff5eb7fc68201a9e2f3f6d0208644facbb3b7be"
+      "size": 42501,
+      "sha256": "6373f57efff4379b6e8ae7a6707e42e7d1ec8c850c452fb92ea28be12652cb63"
     },
     {
       "path": "models.json",
-      "size": 15347,
-      "sha256": "47811dbc0aa2b9713c183a36df05e78c4252f192d6a26bef6eae471ae11dc24c"
+      "size": 16661,
+      "sha256": "8296c4439c81d0c58d49c4d537941900ba355906d99e17d9953a93db43887a0d"
     },
     {
       "path": "prices.json",
@@ -35,8 +35,8 @@
     },
     {
       "path": "prompts.json",
-      "size": 2073,
-      "sha256": "36f38588ee8dc1ed468a3d8d2d284624a70b9aa24ac3f13fcbd19f6985e830a3"
+      "size": 2160,
+      "sha256": "5ce66660aed7acf79c8a9f972575edec40b91bf1b574662925de85c9a8798746"
     }
   ]
 }

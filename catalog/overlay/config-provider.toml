@@ -285,6 +285,12 @@ zh_name = "v2 协议"
 zh = "通过 Responses 接口发送 `compaction_trigger` 项，由服务端完成上下文压缩。"
 zh_basis = "2354ce3210d2d9f3"
 
+["config:model_providers.<name>.credential_file"]
+en = "Absolute path to a Google ADC credential file. For GCP, overrides GOOGLE_APPLICATION_CREDENTIALS in the auth command's environment only."
+en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "a0cc919822a6fd10"
+zh = ""
+
 ["config:model_providers.<name>.env_http_headers"]
 en = "Optional HTTP headers to include in requests to this provider where the (key, value) pairs are the header name and _environment variable_ whose value should be used. If the environment variable is not set, or the value is empty, the header will not be included in the request."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
@@ -417,6 +423,12 @@ zh_name = "单个固定请求头"
 zh = "一条请求头：键为请求头名称，值为发送的内容。"
 zh_basis = ""
 
+["config:model_providers.<name>.location"]
+en = "Google Cloud location for the built-in GCP provider. Takes precedence over `GOOGLE_CLOUD_LOCATION`; defaults to `global` when neither is set."
+en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "908897e4e6078c5f"
+zh = ""
+
 ["config:model_providers.<name>.model_catalog_url"]
 en = "Optional full URL for a Codex-native model catalog. When unset, OpenAI discovery uses the Codex backend unless `base_url` overrides the inference endpoint."
 en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
@@ -432,6 +444,12 @@ en_hash = "7c17f14ef3edc623"
 zh_name = "显示名称"
 zh = "该模型供应商在界面中显示的友好名称。注意：名称恰好是 `OpenAI` 时，Codex 会把它当作 OpenAI 供应商对待（依据源码）。"
 zh_basis = "7c17f14ef3edc623"
+
+["config:model_providers.<name>.project_id"]
+en = "Google Cloud project ID for the built-in GCP provider. Takes precedence over `GOOGLE_CLOUD_PROJECT` when deriving the Vertex AI endpoint."
+en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "f046b321f9165d5d"
+zh = ""
 
 ["config:model_providers.<name>.query_params"]
 en = "Optional query parameters to append to the base URL."

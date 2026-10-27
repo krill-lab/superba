@@ -287,17 +287,17 @@ zh = "终端失去焦点后自动生成会话回顾（总结进展和下一步�
 zh_basis = "1938c1c8cd355cbb"
 
 ["config:tui.copy_on_select"]
-en = "Copy selected transcript or footer text when the mouse button is released. Defaults to `auto`: enabled except in direct terminals known to forward their native copy shortcut (Ghostty 1.2+, Kitty on macOS, Windows Terminal, and VS Code on Windows). Unknown terminals, Ghostty without a recognized version, and tmux/Zellij default to copying."
-en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
-en_hash = "e4e4eebc65149316"
+en = "Copy selected transcript, footer, or composer text when the mouse button is released. Defaults to `auto`: enabled except in direct terminals known to forward their native copy shortcut (Ghostty 1.2+, Kitty on macOS, Windows Terminal, and VS Code on Windows). Unknown terminals, Ghostty without a recognized version, and tmux/Zellij default to copying."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "3c0a43c936746fcd"
 zh_name = "选中即复制"
 zh = "松开鼠标时自动复制所选的对话记录或底栏文字。默认 `auto`：直接运行在已知会转发原生复制快捷键的终端（Ghostty 1.2+、macOS 上的 Kitty、Windows Terminal、Windows 上的 VS Code）中时关闭，其余情况（包括未识别的终端以及 tmux/Zellij 内）开启。"
 zh_basis = "e4e4eebc65149316"
 
 ["config:tui.copy_on_select=always"]
-en = "Copy every nonempty transcript or footer mouse selection on release."
-en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
-en_hash = "cfbaca4a2aec5445"
+en = "Copy every nonempty transcript, footer, or composer mouse selection on release."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "ae601512cd4286b5"
 zh_name = "始终选中即复制"
 zh = "只要用鼠标选中了非空的对话记录或底栏文字，松开时就复制。"
 zh_basis = "cfbaca4a2aec5445"
@@ -319,9 +319,9 @@ zh = "松开鼠标时不复制，需要显式执行复制操作。"
 zh_basis = "4a3859751db4e4fb"
 
 ["config:tui.copy_on_select_clear_selection"]
-en = "Deselect transcript text after Copy on select confirms clipboard delivery. Defaults to `false` and has no effect when Copy on select is off."
-en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
-en_hash = "96fac46330891c9b"
+en = "Deselect read-only transcript or footer text after Copy on select confirms delivery. Editable composer selections remain visible. Defaults to `false` and has no effect when Copy on select is off."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "e269114b1ce608f6"
 zh_name = "复制后取消选中"
 zh = "“选中即复制”确认内容已写入剪贴板后，自动取消对话记录中的选中状态。默认 `false`；“选中即复制”关闭时无效。"
 zh_basis = "96fac46330891c9b"
@@ -629,6 +629,12 @@ en_hash = "fa5063d03dc5c811"
 zh_name = "下一个权限模式"
 zh = "切换到下一个可用的权限模式（审批与沙箱的组合预设）。默认未绑定按键。"
 zh_basis = "fa5063d03dc5c811"
+
+["config:tui.keymap.chat.open_presets"]
+en = "Open saved prompts and slash commands."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "97dda914eeea6515"
+zh = ""
 
 ["config:tui.keymap.chat.previous_permission_mode"]
 en = "Switch to the previous available permission mode."
@@ -938,6 +944,12 @@ en_hash = "67d38a6e01371eb2"
 zh_name = "排队发送（全局）"
 zh = "任务运行期间把当前草稿加入待发送队列。这是全局后备绑定，设置了 `composer.queue` 时以后者为准；内置默认 `tab`。"
 zh_basis = "67d38a6e01371eb2"
+
+["config:tui.keymap.global.select_transcript"]
+en = "Enter keyboard selection mode for the transcript."
+en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "ca9100434a367cbc"
+zh = ""
 
 ["config:tui.keymap.global.submit"]
 en = "Submit the current composer draft."
@@ -1849,6 +1861,29 @@ en_hash = "b3e4436d95e2f6d2"
 zh_name = "固定在屏幕底部"
 zh = "把宠物停靠在终端屏幕的物理底部。"
 zh_basis = "b3e4436d95e2f6d2"
+
+["config:tui.presets"]
+en = "Saved inputs keyed by a single digit (`0` through `9`)."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "32ced12bd1e6a2e1"
+zh = ""
+
+["config:tui.presets.<name>"]
+en = ""
+en_hash = ""
+zh = ""
+
+["config:tui.presets.<name>.input"]
+en = "Plain-text input, limited to 8,000 UTF-8 bytes."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "7ae78d0658650b10"
+zh = ""
+
+["config:tui.presets.<name>.label"]
+en = "Optional short name for the picker and shortcut hints."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "22f505c740e5088a"
+zh = ""
 
 ["config:tui.question_esc_back"]
 en = "Escape returns from async questions to the composer, preserving the answer draft."

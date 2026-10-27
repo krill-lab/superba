@@ -110,9 +110,9 @@ zh = "把每条提交的消息都追加到 `history.jsonl`，这是默认值。"
 zh_basis = "d70a8cdd8701040e"
 
 ["config:log_dir"]
-en = "Directory where Codex writes log files. Setting this value explicitly also enables the TUI text log in this directory. Defaults to `$CODEX_HOME/log`."
-en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
-en_hash = "c86c9b95394c1dc5"
+en = "Directory for log files. Setting this value explicitly also routes the SQLite logs database here and enables the TUI text log in this directory. When unset, log files use `$CODEX_HOME/log` and SQLite logs use `sqlite_home`. Existing SQLite logs in `sqlite_home` are not migrated automatically. A managed `sqlite_home` requirement keeps SQLite logs in that required directory."
+en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"
+en_hash = "6e806146885c4b7c"
 zh_name = "日志目录"
 zh = "Codex 写日志文件的目录，默认 `$CODEX_HOME/log`（通常是 `~/.codex/log`）。在 `config.toml` 中显式设置后，终端界面（TUI）还会在该目录额外写一份文本日志 `codex-tui.log`。"
 zh_basis = "c86c9b95394c1dc5"
@@ -147,9 +147,9 @@ zh = "Codex 存放 SQLite 状态数据库（如保存会话索引的 `state_5.sq
 zh_basis = "610e27a605066aff"
 
 ["config:thread_unload_delay_secs"]
-en = "Seconds a thread must have no subscribers and no activity before app-server unloads it. Defaults to 1800 (30 minutes); zero unloads immediately. Changes require a server restart."
-en_source = "openai/codex rust-v0.163.0-alpha.10.2: codex-rs/core/config.schema.json"
-en_hash = "c4730accf20de33f"
+en = "Seconds a thread must have no subscribers and no activity before app-server unloads it. Defaults to 60 (1 minute); zero unloads immediately. Resolved when each thread is loaded; request config overrides apply per thread."
+en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "25e8a5112f4c307c"
 zh_name = "空闲会话卸载延迟"
 zh = "一个会话既没有订阅者也没有任何活动多少秒后，app-server 把它从内存中卸载。默认 1800（30 分钟），`0` 表示立即卸载；修改后需重启 app-server 才生效。"
 zh_basis = "c4730accf20de33f"

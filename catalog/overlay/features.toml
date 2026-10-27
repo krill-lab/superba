@@ -44,6 +44,11 @@ zh_name = "API key 模型发现"
 zh = "使用 API key 认证时，从服务端拉取可用模型目录，用于模型选择等处；关闭后不使用拉取到的目录。只对未自定义 base URL 的官方 OpenAI 接口，或配置了 `model_catalog_url` 的模型供应商生效。0.161 起为稳定功能并默认开启。"
 zh_basis = ""
 
+["feature:app_server_websocket_compression"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:apply_patch_freeform"]
 en = ""
 en_hash = ""
@@ -289,6 +294,11 @@ zh_name = "凭据遮蔽"
 zh = "沙箱内的命令只拿到遮蔽后的凭据占位值，真实凭据由已启用的网络代理在出站请求时注入，凭据来源在 `[features.network_proxy].credentials` 中配置。需要同时启用 `network_proxy` 并使用沙箱，关闭沙箱时不生效并给出警告。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:critical_path_timing"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:current_time_reminder"]
 en = ""
 en_hash = ""
@@ -387,6 +397,11 @@ zh_name = "执行端能力发现"
 zh = "通过一次高层的 exec-server RPC 发现所选根目录中的插件与技能清单（manifest），代替逐项扫描；文件系统受限的沙箱环境无论是否开启都会使用这种方式。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:executor_capability_discovery_v2"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:experimental_windows_sandbox"]
 en = ""
 en_hash = ""
@@ -457,6 +472,11 @@ zh_name = "审查包含 REPL 图片"
 zh = "在自动审查（Guardian）的审查材料中同时加入已完成的 `node_repl` 或 `cua_repl` 代码模式响应里的图片；需要与 `guardian_enhanced_node_repl_transcripts` 一起开启。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:guardian_recorded_items"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:guardian_reuse_parent_compaction"]
 en = ""
 en_hash = ""
@@ -498,6 +518,11 @@ en_hash = ""
 zh_name = "Decisions 对比测量"
 zh = "在 Guardian V2 旁同时运行 Decisions 分类，仅用于对比测量，不改变实际的审批结果。开发中，默认关闭。"
 zh_basis = ""
+
+["feature:guardianv3"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:hooks"]
 en = ""
@@ -634,12 +659,22 @@ zh_name = "MCP 新协议版本"
 zh = "Codex 与 MCP 服务器通信时使用 MCP 协议版本 2026-07-28，关闭时使用旧版协议；内置的 Codex Apps 服务器另由 `codex_apps_mcp_2026_07_28` 控制。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:mcp_connection_sharing"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:mcp_oauth_refresh_coordination"]
 en = ""
 en_hash = ""
 zh_name = "MCP OAuth 协调刷新"
 zh = "MCP 服务器的 OAuth 令牌改由 MCP 客户端（RMCP）通过 Codex 配置的凭据存储来协调刷新，而不是沿用原有的刷新与保存流程。开发中，默认关闭。"
 zh_basis = ""
+
+["feature:mcp_tool_list_changed"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:memories"]
 en = ""
@@ -690,6 +725,11 @@ zh_name = "子代理继承动态工具"
 zh = "多代理 v2 中新派生的子代理继承客户端定义的动态工具。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:multi_env_copy_file"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:network_proxy"]
 en_name = "Network proxy"
 en = "Apply network proxy restrictions to sandboxed sessions that already have network access."
@@ -734,6 +774,11 @@ zh_name = "人格选择"
 zh = "已移除。曾用于在终端界面中选择模型人格（personality）；现在保留为无效键，设置后被忽略，托管配置中的该项也会被跳过。"
 zh_basis = ""
 
+["feature:plugin_discovery_prefetch"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:plugin_hooks"]
 en = ""
 en_hash = ""
@@ -761,6 +806,11 @@ en_hash = ""
 zh_name = "PowerShell 版本信息"
 zh = "在提供给模型的环境信息中加入所选 PowerShell 执行宿主的主、次版本号。开发中，默认关闭。"
 zh_basis = ""
+
+["feature:prediction_preserve_parent_tools"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:prefer_mxc"]
 en = ""
@@ -897,6 +947,11 @@ zh_name = "会话 token 预算"
 zh = "在一个会话的所有代理会话（主代理与子代理）之间共享并跟踪 token 预算，剩余量越过设定阈值时提醒模型。可在 `[features.rollout_budget]` 中设置总额 `limit_tokens`、提醒阈值以及采样 / 预填 token 的权重。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:runtime_agent_instances"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:runtime_metrics"]
 en = ""
 en_hash = ""
@@ -959,6 +1014,11 @@ en_hash = ""
 zh_name = "zsh 执行桥（旧）"
 zh = "已移除。曾把 Shell 工具的执行改走打过补丁的 zsh 执行桥；该后端已删除，现在使用标准 Shell 执行器，设置后会提示删除此项。"
 zh_basis = ""
+
+["feature:skill_catalog_deltas"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:skill_env_var_dependency_prompt"]
 en = ""
@@ -1037,6 +1097,11 @@ zh_name = "子代理默认上下文限制"
 zh = "子代理改用各自模型默认的上下文窗口和自动压缩阈值，不再继承父会话中设置的 `model_context_window` 与 `model_auto_compact_token_limit`。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:subagent_thread_environments"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:system_proxy_fallback"]
 en = ""
 en_hash = ""
@@ -1107,6 +1172,11 @@ zh_name = "TUI 使用 app-server"
 zh = "已移除。终端界面（TUI）现在总是基于 app-server 实现，保留此键只为兼容旧配置。"
 zh_basis = ""
 
+["feature:tui_multi_backend"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:ultrafast_mode"]
 en = ""
 en_hash = ""
@@ -1163,6 +1233,11 @@ zh_name = "统一图片预算"
 zh = "对每张图片使用统一的像素与 token 预算进行预处理，不再依据旧的 detail 提示。只对使用 Responses Lite 格式或支持原始图片细节的模型生效。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:untrusted_as_tool_output"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:use_agent_identity"]
 en = ""
 en_hash = ""
@@ -1197,6 +1272,11 @@ en_hash = ""
 zh_name = "本地图片查看"
 zh = "启用内置的本地图片查看工具，让模型可以把本地图片文件加载进上下文查看。默认开启。"
 zh_basis = ""
+
+["feature:wake_on_agent_messages"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:web_search_cached"]
 en = ""
