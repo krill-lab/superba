@@ -781,3 +781,42 @@ fn only_a_change_of_the_router_settings_invalidates_the_router_reads() {
     assert!(superba_gui::runtime::profiles_changed(None, &new));
     assert!(!superba_gui::runtime::profiles_changed(Some(&new), &new));
 }
+
+#[test]
+fn fixed_exit_settings_load_on_start_and_poll_without_visiting_the_router_page() {
+    use superba_core::SwitchService;
+    let service = Arc::new(FakeService::new(FakeOptions {
+        fast: true,
+        ..Default::default()
+    }));
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let mut settings = rt.block_on(service.profile_set()).unwrap().settings;
+    settings.router.enabled = true;
+    settings.router.members = vec!["krill".into()];
+    rt.block_on(service.save_settings(settings)).unwrap();
+    let mut rules = superba_core::RouterFailover {
+        enabled: false,
+        fixed_route: Some(superba_core::RouterFixedRoute {
+            member_id: "krill".into(),
+            line_id: "cdn".into(),
+        }),
+        ..Default::default()
+    };
+    rt.block_on(service.edit_router_failover(rules.clone()))
+        .unwrap();
+    let backend = Backend::start(service.clone(), Arc::new(|| {})).unwrap();
+    for command in [Command::Refresh, Command::Overview] {
+        backend.send(command);
+        let replies = collect_until(&backend, "initial routing settings", |r| {
+            matches!(r, Reply::Overview(_))
+        });
+        assert!(
+            replies
+                .iter()
+                .any(|r| matches!(r, Reply::RouterFailover(Ok(Some(f))) if f == &rules))
+        );
+        rules.fixed_route.as_mut().unwrap().line_id = "cn-fast".into();
+        rt.block_on(service.edit_router_failover(rules.clone()))
+            .unwrap();
+    }
+}

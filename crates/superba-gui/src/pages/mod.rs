@@ -614,8 +614,8 @@ pub struct Data {
     pub account: Load<superba_core::AccountReport>,
     /// Last router watchdog state (while router mode is on).
     pub router_watch: Option<superba_core::RouterWatchState>,
-    /// The router's saved failover and recovery rules, from the Router
-    /// page's last snapshot (`None`: not read yet; the defaults apply).
+    /// Saved routing behavior, loaded by the shell at startup and on polls.
+    /// `None` until read (older configurations use the automatic defaults).
     pub router_failover: Option<superba_core::RouterFailover>,
     /// Whether the tray icon is shown (Preferences → Window; item 70).
     pub tray: crate::tray::TrayStatus,
@@ -674,6 +674,42 @@ impl Data {
             .value
             .as_ref()
             .is_some_and(|p| p.settings.router.enabled)
+    }
+
+    /// Automatic line selection is distinct from the local forwarding service.
+    pub fn router_failover_enabled(&self) -> bool {
+        self.router_enabled() && self.router_failover.as_ref().is_none_or(|f| f.enabled)
+    }
+
+    /// One configured exit, independent of the last observed request.
+    pub fn router_fixed_exit(&self) -> Option<(&Profile, LineId)> {
+        if !self.router_enabled() || self.router_failover_enabled() {
+            return None;
+        }
+        let set = self.profiles.value.as_ref()?;
+        let route = self.router_failover.as_ref()?.fixed_route.as_ref();
+        let profile = if let Some(route) = route {
+            set.profiles
+                .iter()
+                .find(|p| superba_router::members::router_id(p.id.as_str()) == route.member_id)?
+        } else {
+            set.settings
+                .router
+                .members
+                .iter()
+                .find_map(|id| set.profile(id))?
+        };
+        let site = self.site(&profile.site_id)?;
+        let line = if let Some(route) = route {
+            site.lines
+                .iter()
+                .find(|l| superba_router::members::router_id(l.id.as_str()) == route.line_id)?
+                .id
+                .clone()
+        } else {
+            profile.enabled_line_ids(&site).into_iter().next()?
+        };
+        Some((profile, line))
     }
 
     /// The settings diff of `plan_id`, when it has arrived.
@@ -763,6 +799,9 @@ impl Data {
 
     /// Id of the applied site.
     pub fn active_site_id(&self) -> Option<&SiteId> {
+        if let Some((profile, _)) = self.router_fixed_exit() {
+            return Some(&profile.site_id);
+        }
         self.active_state()?.site_id.as_ref()
     }
 
@@ -773,6 +812,9 @@ impl Data {
 
     /// The official ChatGPT login is applied.
     pub fn official_active(&self) -> bool {
+        if self.router_fixed_exit().is_some() {
+            return false;
+        }
         self.active_site()
             .is_some_and(|s| s.kind == superba_core::SiteKind::Official)
             || self.active_state().is_some_and(|a| {
@@ -807,6 +849,9 @@ impl Data {
     /// The applied key-based provider: the applied profile, else (an older
     /// state without a profile id) the first provider on the applied site.
     pub fn active_profile(&self) -> Option<&Profile> {
+        if let Some((profile, _)) = self.router_fixed_exit() {
+            return Some(profile);
+        }
         let active = self.active_state()?;
         if let Some(id) = &active.profile_id {
             return self.profile(id).filter(|p| p.builtin.is_none());

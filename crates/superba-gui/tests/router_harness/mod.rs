@@ -124,6 +124,9 @@ pub fn data_from(service: &FakeService) -> Data {
         };
         data.overview.finish(service.overview().await);
         data.profiles.finish(service.profile_set().await);
+        if data.router_enabled() {
+            data.router_failover = service.router_status().await.ok().and_then(|v| v.failover);
+        }
         data
     })
 }

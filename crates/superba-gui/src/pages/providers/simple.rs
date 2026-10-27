@@ -172,7 +172,7 @@ fn provider_detail(
 }
 
 fn line_status(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, p: &Provider, out: &mut Vec<Action>) {
-    let current = if cx.data.router_enabled() {
+    let current = if cx.data.router_failover_enabled() {
         state.router.tick(ui, cx);
         p.profile_id()
             .and_then(|id| state.router.route(id))

@@ -1074,6 +1074,14 @@ impl SuperbaApp {
                 },
                 Reply::AppLaunched { origin, result } => self.on_app_launched(ctx, origin, result),
                 Reply::RouterWatch(result) => self.on_router_watch(result),
+                Reply::RouterFailover(Ok(failover)) => {
+                    if self.data.router_failover != failover {
+                        self.data.router_failover = failover;
+                        self.pages.router.invalidate();
+                        self.pages.providers.router.invalidate();
+                    }
+                }
+                Reply::RouterFailover(Err(_)) => {}
                 Reply::PlanSettings { plan_id, result } => match result {
                     Ok(settings) => self.data.plan_settings = Some((plan_id, settings)),
                     Err(superba_core::Error::NotImplemented { .. }) => {}
@@ -2081,11 +2089,13 @@ impl SuperbaApp {
                 ui.ctx().request_repaint();
             }
         }
-        if let Some(f) = self
-            .pages
-            .router
-            .snapshot()
-            .and_then(|s| s.failover.as_ref())
+        if self.page == Page::Router
+            && !self.pages.router.stale()
+            && let Some(f) = self
+                .pages
+                .router
+                .snapshot()
+                .and_then(|s| s.failover.as_ref())
             && self.data.router_failover.as_ref() != Some(f)
         {
             self.data.router_failover = Some(f.clone());

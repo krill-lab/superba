@@ -239,13 +239,17 @@ fn switch_items(tr: &Tr, data: &Data, busy: bool) -> Vec<TrayItem> {
         };
         let name = crate::app::provider_name(tr, profile, &site);
         let is_active = active_profile.as_ref() == Some(&profile.id);
+        let selected = if data.router_failover_enabled() {
+            active.and_then(|a| a.line_id.clone())
+        } else {
+            crate::pages::shared::applied_line(data, profile)
+        };
         if site.lines.len() > 1 {
             let lines = site
                 .lines
                 .iter()
                 .map(|line| {
-                    let current =
-                        is_active && active.is_some_and(|a| a.line_id.as_ref() == Some(&line.id));
+                    let current = is_active && selected.as_ref() == Some(&line.id);
                     TrayItem::check(
                         tr.text(&line.name),
                         TrayAction::Switch {

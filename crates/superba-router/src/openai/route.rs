@@ -267,6 +267,8 @@ pub(crate) async fn resolve(
         .copied()
         .filter(|i| {
             bound.is_none_or(|id| generation.members[*i].cfg.id == id)
+                && (generation.config.tuning.failover_enabled
+                    || generation.fixed_exit().is_some_and(|c| c.member == *i))
                 && generation
                     .config
                     .upstream_protocol(&generation.members[*i].cfg.id, protocol.into())

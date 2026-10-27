@@ -23,6 +23,14 @@ pub struct Candidate {
 
 /// What [`candidates`] needs to know about the configuration and health.
 pub trait Topology {
+    /// Whether automatic candidate selection is enabled.
+    fn failover_enabled(&self) -> bool {
+        true
+    }
+    /// Manually selected exit. Used without consulting health or stickiness.
+    fn fixed_exit(&self) -> Option<Candidate> {
+        None
+    }
     /// Number of members.
     fn members(&self) -> usize;
     /// Number of lines of `member`.
@@ -37,6 +45,13 @@ pub trait Topology {
 
 /// The attempt order for a request pinned to `pin` (if any).
 pub fn candidates(topo: &dyn Topology, pin: Option<Pin>, now: Instant) -> Vec<Candidate> {
+    if !topo.failover_enabled() {
+        return topo
+            .fixed_exit()
+            .filter(|c| topo.eligible(c.member))
+            .into_iter()
+            .collect();
+    }
     let mut order: Vec<Candidate> = Vec::new();
     let pin = pin.filter(|p| p.member < topo.members() && p.line < topo.lines(p.member));
     let pinned_member = pin.map(|p| p.member).filter(|m| topo.eligible(*m));

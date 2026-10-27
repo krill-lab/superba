@@ -5,7 +5,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::task::{Context, Poll};
-use std::time::Instant;
 
 use bytes::Bytes;
 use http::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HOST};
@@ -15,7 +14,7 @@ use http_body_util::{BodyExt, Full};
 use superba_core::codex::EDGE_BLOCK_HEADER;
 
 use crate::limits::Admission;
-use crate::state::{BoxError, GaugeGuard, Generation, RespBody, Shared, lock};
+use crate::state::{BoxError, GaugeGuard, Generation, RespBody, Shared};
 use crate::status::RouteEventKind;
 
 /// Response header naming the member and line that served a request.
@@ -294,7 +293,13 @@ impl<B> Observed<B> {
         let m = &self.generation.members[self.member];
         let l = &m.lines[self.line];
         l.counters.broken_streams.fetch_add(1, Ordering::Relaxed);
-        let opened = lock(&l.health).on_hard_failure(Instant::now(), detail.clone());
+        let opened = self.generation.hard_failure(
+            crate::select::Candidate {
+                member: self.member,
+                line: self.line,
+            },
+            detail.clone(),
+        );
         self.shared.event(
             RouteEventKind::StreamBroken,
             Some(&m.cfg.id),

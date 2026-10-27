@@ -245,6 +245,8 @@ impl Tuning {
     /// The failover and recovery settings in effect.
     pub fn failover(&self) -> superba_core::RouterFailover {
         superba_core::RouterFailover {
+            enabled: self.failover_enabled,
+            fixed_route: self.fixed_route.clone(),
             cooldown_secs: u32::try_from(self.breaker_base_ms / 1000).unwrap_or(u32::MAX),
             max_cooldown_secs: u32::try_from(self.breaker_max_ms / 1000).unwrap_or(u32::MAX),
             failover_statuses: self.failover_statuses.clone(),
@@ -256,6 +258,8 @@ impl Tuning {
     /// Apply failover and recovery settings (validated first).
     pub fn set_failover(&mut self, f: &superba_core::RouterFailover) -> Result<()> {
         f.validate()?;
+        self.failover_enabled = f.enabled;
+        self.fixed_route = f.fixed_route.clone();
         self.breaker_base_ms = u64::from(f.cooldown_secs) * 1000;
         self.breaker_max_ms = u64::from(f.max_cooldown_secs) * 1000;
         let mut statuses = f.failover_statuses.clone();
@@ -272,6 +276,10 @@ impl Tuning {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Tuning {
+    /// Use automatic selection, circuit breakers and health probes.
+    pub failover_enabled: bool,
+    /// Stable exit used when failover is disabled.
+    pub fixed_route: Option<superba_core::RouterFixedRoute>,
     /// TCP + TLS connect timeout per attempt. There is deliberately no
     /// time-to-first-byte timeout: Codex has none and relays may queue.
     pub connect_timeout_ms: u64,
@@ -333,6 +341,8 @@ pub struct Tuning {
 impl Default for Tuning {
     fn default() -> Self {
         Self {
+            failover_enabled: true,
+            fixed_route: None,
             connect_timeout_ms: 4_000,
             sticky_ttl_secs: 2 * 60 * 60,
             sticky_capacity: 4_096,
@@ -397,6 +407,46 @@ impl RouterConfig {
         self.members.iter().find(|m| m.id == id)
     }
 
+    /// Fixed exit, falling back to the first configured Codex line before one
+    /// has been explicitly selected. This never reads runtime health.
+    pub fn fixed_exit(&self) -> Option<(usize, usize)> {
+        if let Some(route) = &self.tuning.fixed_route {
+            let member = self.members.iter().position(|m| m.id == route.member_id)?;
+            let line = self.members[member]
+                .lines
+                .iter()
+                .position(|l| l.id == route.line_id)?;
+            return Some((member, line));
+        }
+        self.members
+            .iter()
+            .enumerate()
+            .find(|(_, m)| self.serves_codex(&m.id) && !m.lines.is_empty())
+            .or_else(|| {
+                self.members
+                    .iter()
+                    .enumerate()
+                    .find(|(_, m)| !m.lines.is_empty())
+            })
+            .map(|(member, _)| (member, 0))
+    }
+
+    /// Retain the exit by stable ids when members are edited or reordered.
+    pub fn reconcile_fixed_exit(&mut self) {
+        if self.tuning.fixed_route.is_some() && self.fixed_exit().is_none() {
+            self.tuning.fixed_route = None;
+        }
+        if !self.tuning.failover_enabled
+            && self.tuning.fixed_route.is_none()
+            && let Some((member, line)) = self.fixed_exit()
+        {
+            self.tuning.fixed_route = Some(superba_core::RouterFixedRoute {
+                member_id: self.members[member].id.clone(),
+                line_id: self.members[member].lines[line].id.clone(),
+            });
+        }
+    }
+
     /// Check every rule; the router refuses to start (or reload) otherwise.
     pub fn validate(&self) -> Result<()> {
         if let Some(catalog) = &self.catalog {
@@ -410,6 +460,11 @@ impl RouterConfig {
         }
         if self.members.is_empty() {
             return Err(Error::invalid("the router needs at least one member"));
+        }
+        if self.tuning.fixed_route.is_some() && self.fixed_exit().is_none() {
+            return Err(Error::invalid(
+                "the fixed router exit must name an existing member and line",
+            ));
         }
         for id in &self.tool_only_members {
             if self.member(id).is_none() {

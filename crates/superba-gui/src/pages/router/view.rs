@@ -75,12 +75,14 @@ pub(super) fn notices(ui: &mut Ui, cx: &Cx<'_>, state: &mut State) {
 /// their line order, how to add one (or, while none can carry traffic, the
 /// fixes), the failover rules; then Claude Code's members when it is routed.
 pub(super) fn members_section(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
-    section(
-        ui,
-        cx,
-        &cx.tr.t("router.members.title"),
-        Some(&cx.tr.t("router.members.order_hint")),
-    );
+    let manual = super::failover::current(state).is_some_and(|f| !f.enabled);
+    let hint = (!manual).then(|| cx.tr.t("router.members.order_hint"));
+    let title = cx.tr.t(if manual {
+        "router.members.fixed_title"
+    } else {
+        "router.members.title"
+    });
+    section(ui, cx, &title, hint.as_deref());
     let snapshot = state.snapshot.clone();
     if let Some(snapshot) = &snapshot {
         members(ui, cx, state, snapshot);
@@ -438,25 +440,32 @@ fn member_row(
     count: usize,
     busy: bool,
 ) {
+    let manual = super::failover::current(state).is_some_and(|f| !f.enabled);
     ui.add_space(space::S);
     // Reserve the action column before laying out names or badges.
-    let actions_w = 3.0 * size::CONTROL_SM + 2.0 * space::XS;
+    let actions_w = if manual {
+        size::CONTROL_SM
+    } else {
+        3.0 * size::CONTROL_SM + 2.0 * space::XS
+    };
     let label_w = (ui.available_width() - actions_w - space::M).max(0.0);
     FormRow::default().label_width(label_w).right().show_with(
         ui,
         |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = space::S;
-                ui.add_sized(
-                    [space::L, size::CONTROL_SM],
-                    egui::Label::new(Text::small(format!("{}", index + 1), cx.pal)),
-                );
+                if !manual {
+                    ui.add_sized(
+                        [space::L, size::CONTROL_SM],
+                        egui::Label::new(Text::small(format!("{}", index + 1), cx.pal)),
+                    );
+                }
                 let healthy = m.healthy_lines();
                 let enabled = m.enabled_lines();
-                let status = if m
-                    .lines
-                    .iter()
-                    .all(|l| matches!(l.health, LineHealth::Unknown | LineHealth::Disabled))
+                let status = if manual
+                    || m.lines
+                        .iter()
+                        .all(|l| matches!(l.health, LineHealth::Unknown | LineHealth::Disabled))
                 {
                     Status::Idle
                 } else if healthy == enabled {
@@ -473,7 +482,9 @@ fn member_row(
                 } else {
                     cx.tr.f("router.members.fallback", &[("n", &index)])
                 };
-                ui.add(Badge::new(priority).outline());
+                if !manual {
+                    ui.add(Badge::new(priority).outline());
+                }
                 if !m.has_key {
                     ui.add(Badge::new(cx.tr.t("router.members.no_key")).status(Status::Error));
                 }
@@ -492,23 +503,25 @@ fn member_row(
                 {
                     state.remove(cx, m.id.clone());
                 }
-                if ui
-                    .add(
-                        IconButton::new(Icon::ArrowDown, cx.tr.t("router.members.down"))
-                            .size(size::CONTROL_SM)
-                            .enabled(!busy && index + 1 < count),
-                    )
-                    .clicked()
+                if !manual
+                    && ui
+                        .add(
+                            IconButton::new(Icon::ArrowDown, cx.tr.t("router.members.down"))
+                                .size(size::CONTROL_SM)
+                                .enabled(!busy && index + 1 < count),
+                        )
+                        .clicked()
                 {
                     state.move_member(cx, index, false);
                 }
-                if ui
-                    .add(
-                        IconButton::new(Icon::ArrowUp, cx.tr.t("router.members.up"))
-                            .size(size::CONTROL_SM)
-                            .enabled(!busy && index > 0),
-                    )
-                    .clicked()
+                if !manual
+                    && ui
+                        .add(
+                            IconButton::new(Icon::ArrowUp, cx.tr.t("router.members.up"))
+                                .size(size::CONTROL_SM)
+                                .enabled(!busy && index > 0),
+                        )
+                        .clicked()
                 {
                     state.move_member(cx, index, true);
                 }
@@ -532,17 +545,19 @@ fn member_row(
     };
     indented(ui, |ui| {
         ui.spacing_mut().item_spacing.y = space::XS;
-        ui.add(
-            egui::Label::new(Text::body(
-                crate::pages::shared::priority_text(
-                    cx.tr,
-                    m.lines.iter().map(|l| line_name(&l.id)),
-                ),
-                cx.pal,
-            ))
-            .wrap(),
-        );
-        if let Some(route) = &m.last_route {
+        if !manual {
+            ui.add(
+                egui::Label::new(Text::body(
+                    crate::pages::shared::priority_text(
+                        cx.tr,
+                        m.lines.iter().map(|l| line_name(&l.id)),
+                    ),
+                    cx.pal,
+                ))
+                .wrap(),
+            );
+        }
+        if !manual && let Some(route) = &m.last_route {
             ui.add(
                 egui::Label::new(Text::small(
                     crate::pages::shared::route_text(cx.tr, route, line_name),
@@ -552,15 +567,27 @@ fn member_row(
             )
             .on_hover_text(cx.tr.t("router.preference.observed"));
         }
-        Disclosure::new("router-member-details", cx.tr.t("router.members.details"))
-            .show(ui, |ui| member_details(ui, cx, m, &line_name));
+        if manual {
+            member_details(ui, cx, state, m, &line_name);
+        } else {
+            Disclosure::new("router-member-details", cx.tr.t("router.members.details"))
+                .show(ui, |ui| member_details(ui, cx, state, m, &line_name));
+        }
     });
     ui.add_space(space::XS);
 }
 
 /// The member's kind and abilities, how it serves each protocol, and its lines
 /// as a table: name with health, address, state, first-token time, requests.
-fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&str) -> String) {
+fn member_details(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    page: &mut State,
+    m: &MemberView,
+    line_name: &dyn Fn(&str) -> String,
+) {
+    let failover = super::failover::current(page);
+    let manual = failover.as_ref().is_some_and(|f| !f.enabled);
     ui.horizontal_wrapped(|ui| {
         ui.add(Badge::new(kind_text(cx, m.kind)).outline());
         if m.websocket {
@@ -595,7 +622,7 @@ fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&
         crate::design::tokens::text::CAPTION,
         crate::design::fonts::Weight::Medium,
     );
-    let headers = [
+    let mut headers = vec![
         cx.tr.t("router.line.col.line"),
         cx.tr.t("router.line.col.address"),
         cx.tr.t("router.line.col.state"),
@@ -613,8 +640,16 @@ fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&
             ),
         )) + space::M
     };
-    let table = Table::new(&[1.0, 1.6, 1.0, 0.0, 0.0])
-        .min_widths(&[0.0, 0.0, 0.0, number_w(&headers[3]), number_w(&headers[4])])
+    let mut weights = vec![1.0, 1.6, 1.0, 0.0, 0.0];
+    let mut minimums = vec![0.0, 0.0, 0.0, number_w(&headers[3]), number_w(&headers[4])];
+    if manual {
+        headers.push(String::new());
+        weights.push(0.0);
+        minimums.push(number_w(&cx.tr.t("router.failover.select_line")) + space::L);
+    }
+    let table = Table::new(&weights)
+        .min_widths(&minimums)
+        .fixed(if manual { &[5] } else { &[] })
         .right_aligned(&[3, 4]);
     table.header(ui, &headers);
     let n = m.lines.len();
@@ -626,10 +661,15 @@ fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&
             LineHealth::Unknown => (Status::Idle, "router.line.unknown"),
             LineHealth::Disabled => (Status::Idle, "router.line.disabled"),
         };
-        let mut state = cx.tr.t(key);
+        let mut state = if manual && line.health != LineHealth::Disabled {
+            cx.tr.t("router.line.unknown")
+        } else {
+            cx.tr.t(key)
+        };
         let mut tip = Vec::new();
         if let Some(metrics) = &line.metrics {
-            if let Some(ms) = metrics.reopens_in_ms
+            if !manual
+                && let Some(ms) = metrics.reopens_in_ms
                 && line.health == LineHealth::Down
             {
                 state = format!(
@@ -640,7 +680,7 @@ fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&
                     )
                 );
             }
-            if metrics.failovers_away > 0 {
+            if !manual && metrics.failovers_away > 0 {
                 tip.push(cx.tr.f(
                     "router.line.failovers",
                     &[("n", &model::count_text(metrics.failovers_away))],
@@ -652,14 +692,15 @@ fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&
                     &[("n", &metrics.active_websockets)],
                 ));
             }
-            if let Some(err) = &metrics.last_error {
+            if !manual && let Some(err) = &metrics.last_error {
                 tip.push(format!("{}: {err}", cx.tr.t("router.line.last_error")));
             }
         }
-        let error = line
-            .metrics
-            .as_ref()
-            .is_some_and(|m| m.last_error.is_some());
+        let error = !manual
+            && line
+                .metrics
+                .as_ref()
+                .is_some_and(|m| m.last_error.is_some());
         let ttfb = line
             .metrics
             .as_ref()
@@ -671,7 +712,7 @@ fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&
             .map_or_else(|| "—".to_owned(), |m| model::count_text(m.requests));
         table.row(ui, size::ROW, i + 1 == n, |ui, col| match col {
             0 => {
-                ui.add(StatusDot::new(status));
+                ui.add(StatusDot::new(if manual { Status::Idle } else { status }));
                 ui.label(Text::small(line_name(&line.id), cx.pal).color(cx.pal.text));
             }
             1 => {
@@ -696,8 +737,45 @@ fn member_details(ui: &mut Ui, cx: &Cx<'_>, m: &MemberView, line_name: &dyn Fn(&
             3 => {
                 ui.label(Text::small(&ttfb, cx.pal));
             }
-            _ => {
+            4 => {
                 ui.label(Text::small(&requests, cx.pal));
+            }
+            _ => {
+                if let Some(f) = &failover {
+                    let selected = f.fixed_route.as_ref().is_some_and(|r| {
+                        r.member_id == superba_router::members::router_id(&m.id)
+                            && r.line_id == superba_router::members::router_id(&line.id)
+                    }) || (f.fixed_route.is_none()
+                        && page
+                            .snapshot
+                            .as_ref()
+                            .and_then(|s| s.members.first())
+                            .is_some_and(|first| {
+                                first.id == m.id
+                                    && first.lines.first().is_some_and(|l| l.id == line.id)
+                            }));
+                    let label = cx.tr.t(if selected {
+                        "router.failover.selected_line"
+                    } else {
+                        "router.failover.select_line"
+                    });
+                    if ui
+                        .add(Button::new(label).small().enabled(
+                            !selected
+                                && page.op.is_none()
+                                && line.health != LineHealth::Disabled
+                                && m.has_key,
+                        ))
+                        .clicked()
+                    {
+                        let mut next = f.clone();
+                        next.fixed_route = Some(superba_core::RouterFixedRoute {
+                            member_id: superba_router::members::router_id(&m.id),
+                            line_id: superba_router::members::router_id(&line.id),
+                        });
+                        super::failover::save(page, cx, next);
+                    }
+                }
             }
         });
     }

@@ -75,7 +75,7 @@ enum Mode {
 
 impl Mode {
     fn of(cx: &Cx<'_>, p: &Provider) -> Self {
-        if cx.data.router_enabled() {
+        if cx.data.router_failover_enabled() {
             let member = p.profile_id().is_some_and(|id| {
                 cx.data
                     .profiles
@@ -194,6 +194,7 @@ pub(super) fn show(
     let many = lines.len() > 1;
     let probing = cx.data.probing_site(&site.id);
     let mode = Mode::of(cx, p);
+    let manual = cx.data.router_enabled() && !cx.data.router_failover_enabled();
     let applied = profile.and_then(|pr| applied_line(cx.data, pr));
     let route = match (mode, profile) {
         (Mode::Router { member: true }, Some(pr)) => {
@@ -262,7 +263,7 @@ pub(super) fn show(
         };
         let name = cx.tr.text(&line.name);
         let mut arrows = |ui: &mut Ui| {
-            if !many {
+            if !many || manual {
                 return;
             }
             let can = profile.is_some() && !cx.busy;
@@ -321,7 +322,9 @@ pub(super) fn show(
             ui.horizontal(|ui| {
                 ui.set_min_height(LINE_H);
                 ui.spacing_mut().item_spacing.x = 8.0;
-                rank(ui, cx, i, off);
+                if !manual {
+                    rank(ui, cx, i, off);
+                }
                 let name_w = (ui.available_width() * 0.26).clamp(110.0, 200.0);
                 ui.allocate_ui_with_layout(
                     vec2(name_w, 40.0),
@@ -357,7 +360,9 @@ pub(super) fn show(
                     ui.horizontal(|ui| {
                         ui.set_min_height(size::CONTROL_SM);
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        rank(ui, cx, i, off);
+                        if !manual {
+                            rank(ui, cx, i, off);
+                        }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             right(ui);
                             ui.add_space(6.0);
@@ -433,15 +438,27 @@ fn header(
             }
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 12.0;
-                ui.label(Text::section(cx.tr.t(mode.title_key()), cx.pal));
+                let title = if cx.data.router_enabled() && !cx.data.router_failover_enabled() {
+                    "providers.lines.title_fixed"
+                } else {
+                    mode.title_key()
+                };
+                ui.label(Text::section(cx.tr.t(title), cx.pal));
                 if mode == (Mode::Router { member: true }) {
                     current_route(ui, cx, site, route);
                 }
             });
         });
     });
-    let caption = cx.tr.t(mode.caption_key());
+    let caption = cx.tr.t(
+        if cx.data.router_enabled() && !cx.data.router_failover_enabled() {
+            "providers.lines.caption_fixed"
+        } else {
+            mode.caption_key()
+        },
+    );
     let hint = match mode {
+        Mode::Direct { .. } if cx.data.router_enabled() => String::new(),
         Mode::Direct { .. } => cx.tr.t("providers.lines.order_hint"),
         Mode::Router { .. } => format!(
             "{}\n{}",
@@ -524,7 +541,9 @@ fn slot(
             Slot::Action {
                 text: cx.tr.t("connection.lines.use"),
                 name: named("connection.lines.use_named"),
-                tip: cx.tr.t(if keyed {
+                tip: cx.tr.t(if keyed && cx.data.router_enabled() {
+                    "providers.lines.caption_fixed"
+                } else if keyed {
                     "connection.lines.use_tip"
                 } else {
                     "providers.use_needs_key"
@@ -667,6 +686,8 @@ fn enable_switch(
         "connection.lines.disable_last"
     } else if off {
         "connection.lines.enable_tip"
+    } else if cx.data.router_enabled() && !cx.data.router_failover_enabled() {
+        "providers.lines.disable_fixed_tip"
     } else {
         "connection.lines.disable_tip"
     });

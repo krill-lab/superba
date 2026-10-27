@@ -51,6 +51,12 @@ impl Selection {
             selection: &'a Selection,
         }
         impl Topology for Selected<'_> {
+            fn failover_enabled(&self) -> bool {
+                self.view.failover_enabled()
+            }
+            fn fixed_exit(&self) -> Option<Candidate> {
+                self.view.fixed_exit()
+            }
             fn members(&self) -> usize {
                 self.view.members()
             }
@@ -134,6 +140,9 @@ pub(crate) async fn targets(
     let snap = { lock(&g.merged_catalog.latest).clone() };
     let snap = match snap {
         Some(s) => s,
+        // A fixed request must not wait for network catalog discovery. Explicit
+        // model-list requests still populate the cache and its aliases.
+        None if !g.config.tuning.failover_enabled => super::Snapshot::default(),
         None => snapshot(g, "client_version=0.163.0").await,
     };
     let (bare, pinned) = namespace(g, &snap, model);

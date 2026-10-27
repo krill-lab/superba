@@ -39,12 +39,8 @@ pub struct LineRow {
 /// upstream. A preference alone does not imply a request used it.
 pub fn rows(cx: &Cx<'_>, site: &Site, snap: Option<&Snapshot>) -> Vec<LineRow> {
     let profile = cx.data.active_profile();
-    let routed = cx.data.router_enabled();
-    let active = cx
-        .data
-        .active_state()
-        .and_then(|a| a.line_id.clone())
-        .filter(|_| !routed);
+    let routed = cx.data.router_failover_enabled();
+    let active = profile.and_then(|p| crate::pages::shared::applied_line(cx.data, p));
     let probing = cx.data.probing_site(&site.id);
     let member = profile.and_then(|p| {
         snap.and_then(|s| s.router.as_ref())
@@ -57,11 +53,12 @@ pub fn rows(cx: &Cx<'_>, site: &Site, snap: Option<&Snapshot>) -> Vec<LineRow> {
         .into_iter()
         .enumerate()
         .map(|(i, line)| {
-            let skipped = member.is_some_and(|m| {
-                m.lines
-                    .iter()
-                    .any(|r| r.id == line.id.as_str() && r.health == RouterLineHealth::Open)
-            });
+            let skipped = routed
+                && member.is_some_and(|m| {
+                    m.lines
+                        .iter()
+                        .any(|r| r.id == line.id.as_str() && r.health == RouterLineHealth::Open)
+                });
             let trace = profile.and_then(|p| {
                 snap.and_then(|s| {
                     s.traces
@@ -89,7 +86,7 @@ pub fn rows(cx: &Cx<'_>, site: &Site, snap: Option<&Snapshot>) -> Vec<LineRow> {
 
 /// Actual latest upstream of this member; never infer it from breaker health.
 pub fn current_text(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Option<String> {
-    if !cx.data.router_enabled() {
+    if !cx.data.router_failover_enabled() {
         return None;
     }
     let profile = cx.data.active_profile()?;
@@ -187,7 +184,7 @@ fn show_inner(
         return;
     };
     let rows = rows(cx, &site, snap);
-    let routed = super::routed_addr(cx).is_some();
+    let routed = cx.data.router_failover_enabled() && super::routed_addr(cx).is_some();
     // Footer: how the order is used.
     let note = if simple {
         tr.t("overview.simple.line_hint")
@@ -198,6 +195,8 @@ fn show_inner(
         format!("{priority}\n{current}")
     } else if rows.len() <= 1 {
         tr.t("overview.lines.single")
+    } else if cx.data.router_enabled() {
+        tr.t("overview.lines.fixed_exit")
     } else {
         tr.t("overview.lines.failover_off")
     };
@@ -312,14 +311,16 @@ fn line_row(ui: &mut Ui, cx: &Cx<'_>, row: &LineRow, r: Rect, routed: bool) -> b
     } else {
         (pal.active, pal.text_muted)
     };
-    p.circle_filled(oc, 10.0, fill);
-    p.text(
-        oc,
-        Align2::CENTER_CENTER,
-        row.order.to_string(),
-        font(text::CAPTION - 1.0, Weight::Semibold),
-        fg,
-    );
+    if !cx.data.router_enabled() || cx.data.router_failover_enabled() {
+        p.circle_filled(oc, 10.0, fill);
+        p.text(
+            oc,
+            Align2::CENTER_CENTER,
+            row.order.to_string(),
+            font(text::CAPTION - 1.0, Weight::Semibold),
+            fg,
+        );
+    }
     if row.latency == Latency::Probing {
         crate::design::icons::spinner(
             p,

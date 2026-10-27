@@ -222,7 +222,11 @@ pub fn model(
         };
         router.tip = format!(
             "{}\n{}",
-            tr.t("overview.hero.router_on_tip"),
+            tr.t(if data.router_failover_enabled() {
+                "overview.hero.router_on_tip"
+            } else {
+                "overview.hero.router_fixed_tip"
+            }),
             tr.t("overview.hero.open_router")
         );
     } else {
@@ -887,7 +891,7 @@ pub(super) fn provider_popover(
         .show(|ui| {
             // A fixed width: rows fill it instead of the popup growing to them.
             ui.set_width(POPOVER_W);
-            if !cx.data.router_enabled() {
+            if !cx.data.router_failover_enabled() {
                 hot_note(ui, cx, out);
             }
             let account = super::account_lines(cx);
@@ -910,14 +914,14 @@ pub(super) fn provider_popover(
             if let (Some(site), Some(profile)) = (cx.data.active_site(), cx.data.active_profile())
                 && site.lines.len() > 1
             {
-                let routed = cx.data.router_enabled();
+                let routed = cx.data.router_failover_enabled();
                 // Disabled lines (user bug 108) are never used: not listed.
                 let mut lines = crate::pages::shared::ordered_lines(&site, Some(profile));
                 lines.retain(|l| !profile.is_line_disabled(&l.id));
                 let active = if routed {
                     lines.first().map(|l| l.id.clone())
                 } else {
-                    cx.data.active_state().and_then(|a| a.line_id.clone())
+                    crate::pages::shared::applied_line(cx.data, profile)
                 };
                 ui.label(Text::caption(
                     cx.tr.f(

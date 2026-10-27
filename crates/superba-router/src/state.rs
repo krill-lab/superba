@@ -108,11 +108,43 @@ pub(crate) struct Generation {
 }
 
 impl Generation {
+    pub fn fixed_exit(&self) -> Option<crate::select::Candidate> {
+        self.config
+            .fixed_exit()
+            .map(|(member, line)| crate::select::Candidate { member, line })
+    }
+
+    pub fn failover_reason(
+        &self,
+        status: http::StatusCode,
+        headers: &http::HeaderMap,
+    ) -> Option<String> {
+        if !self.config.tuning.failover_enabled {
+            return None;
+        }
+        crate::forward::failover_status_in(&self.config.tuning.failover_statuses, status, headers)
+    }
+
+    pub fn hard_failure(&self, c: crate::select::Candidate, reason: impl Into<String>) -> bool {
+        self.config.tuning.failover_enabled
+            && lock(&self.members[c.member].lines[c.line].health)
+                .on_hard_failure(Instant::now(), reason)
+    }
+
+    pub fn soft_failure(&self, c: crate::select::Candidate, reason: impl Into<String>) -> bool {
+        self.config.tuning.failover_enabled
+            && lock(&self.members[c.member].lines[c.line].health)
+                .on_soft_failure(Instant::now(), reason)
+    }
+
     /// The pin of a conversation at `now`. With
     /// [`crate::config::Tuning::return_to_preferred`] a pin on a fallback member
     /// is ignored once a line of an earlier member is available again, so the
     /// conversation goes back to the preferred member.
     pub fn pin(&self, key: &str, now: Instant) -> Option<crate::sticky::Pin> {
+        if !self.config.tuning.failover_enabled {
+            return None;
+        }
         let pin = lock(&self.sticky).get(key, now)?;
         if self.config.tuning.return_to_preferred
             && self
@@ -343,6 +375,12 @@ pub(crate) struct View<'a> {
 }
 
 impl Topology for View<'_> {
+    fn failover_enabled(&self) -> bool {
+        self.generation.config.tuning.failover_enabled
+    }
+    fn fixed_exit(&self) -> Option<crate::select::Candidate> {
+        self.generation.fixed_exit()
+    }
     fn members(&self) -> usize {
         self.generation.members.len()
     }

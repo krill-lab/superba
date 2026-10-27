@@ -565,6 +565,51 @@ fn router_on(data: &mut Data) {
         Some("http://127.0.0.1:18431/backend-api/codex".into());
 }
 
+#[tokio::test]
+async fn fixed_exit_overrides_stale_provider_metadata_in_every_selector() {
+    let mut data = fake_data().await;
+    router_on(&mut data);
+    let mut other = data.active_profile().unwrap().clone();
+    other.id = "Fixed/Backup".into();
+    other.name = "Selected exit".into();
+    data.profiles
+        .value
+        .as_mut()
+        .unwrap()
+        .profiles
+        .push(other.clone());
+    data.router_failover = Some(superba_core::RouterFailover {
+        enabled: false,
+        fixed_route: Some(superba_core::RouterFixedRoute {
+            member_id: "fixed-backup".into(),
+            line_id: "cdn".into(),
+        }),
+        ..Default::default()
+    });
+    assert!(!data.router_failover_enabled());
+    assert!(data.router_enabled());
+    assert_eq!(data.active_profile().unwrap().id, other.id);
+    assert_eq!(
+        superba_gui::pages::shared::applied_line(&data, &other),
+        Some("cdn".into())
+    );
+    let providers = superba_gui::pages::shared::providers::list(&data);
+    assert_eq!(providers.iter().filter(|p| p.applied).count(), 1);
+    assert_eq!(providers[0].profile_id(), Some(&other.id));
+    for locale in [Locale::En, Locale::ZhCn] {
+        with_cx(&data, locale, |cx| {
+            let nodes = hero::model(cx, data.overview.value.as_ref().unwrap(), &[], None);
+            assert!(nodes.provider.title.contains("Selected exit"));
+            assert!(
+                !nodes
+                    .router
+                    .tip
+                    .contains(&cx.tr.t("overview.hero.router_on_tip"))
+            );
+        });
+    }
+}
+
 fn finding(id: &str, severity: Severity, text: &str) -> DoctorFinding {
     DoctorFinding {
         id: id.into(),

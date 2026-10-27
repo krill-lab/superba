@@ -130,6 +130,18 @@ pub(crate) async fn resolve(
             .collect();
         return Ok(Resolution { model, targets });
     }
+    if !generation.config.tuning.failover_enabled {
+        let targets = generation
+            .fixed_exit()
+            .filter(|c| claude.member(c.member).is_some())
+            .map(|c| Target {
+                member: c.member,
+                model: model.clone(),
+            })
+            .into_iter()
+            .collect();
+        return Ok(Resolution { model, targets });
+    }
     let members: Vec<usize> = claude.order.clone();
     // Every member's list at once (a slow provider delays only itself).
     let lists =
@@ -180,6 +192,18 @@ pub(crate) fn attempts(
     pin: Option<Pin>,
     now: Instant,
 ) -> Vec<Attempt> {
+    if !generation.config.tuning.failover_enabled {
+        return generation
+            .fixed_exit()
+            .and_then(|c| {
+                targets
+                    .iter()
+                    .position(|t| t.member == c.member)
+                    .map(|target| Attempt { target, c })
+            })
+            .into_iter()
+            .collect();
+    }
     let lines = |m: usize| generation.members[m].lines.len();
     let mut order = Vec::new();
     let pinned = pin.and_then(|p| {

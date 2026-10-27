@@ -528,11 +528,23 @@ pub struct RouterConversion {
     pub enabled: bool,
 }
 
-/// Failover and recovery rules of the router (persisted in its configuration,
-/// applied with a reload).
+/// Stable member and line selected as the router's fixed exit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouterFixedRoute {
+    /// Stable member id.
+    pub member_id: String,
+    /// Stable line id within the member.
+    pub line_id: String,
+}
+
+/// Failover rules and the manually selected exit when failover is disabled.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RouterFailover {
+    /// Automatically select healthy lines and retry failures.
+    pub enabled: bool,
+    /// Exit used while automatic failover is disabled.
+    pub fixed_route: Option<RouterFixedRoute>,
     /// First cooldown of a failed line, in seconds; doubles on each failure.
     pub cooldown_secs: u32,
     /// Longest cooldown, in seconds.
@@ -549,6 +561,8 @@ pub struct RouterFailover {
 impl Default for RouterFailover {
     fn default() -> Self {
         Self {
+            enabled: true,
+            fixed_route: None,
             cooldown_secs: 5,
             max_cooldown_secs: 60,
             failover_statuses: vec![502, 503, 504],

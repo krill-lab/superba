@@ -680,6 +680,7 @@ impl Switcher {
             section.routes.retain(|r| !r.targets.is_empty());
         }
         config.catalog = Some(self.router_catalog_config(set, &config).await);
+        config.reconcile_fixed_exit();
         config.validate()?;
         Ok(BuiltMembers { config, keys })
     }

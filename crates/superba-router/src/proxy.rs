@@ -27,8 +27,8 @@ use crate::cipher::{self, Plan, Removed};
 use crate::compaction::{self, CompactionInput, Route};
 use crate::config::join_path;
 use crate::forward::{
-    Observed, UpBody, UpResponse, describe_error, empty_responses_answer, failover_status_in,
-    local_busy, request_headers, response_headers, router_error, set_route, up_response,
+    Observed, UpBody, UpResponse, describe_error, empty_responses_answer, local_busy,
+    request_headers, response_headers, router_error, set_route, up_response,
 };
 use crate::limits::{Admission, LOCAL_BUSY_CODE, Place, file_limit_detail, file_limit_in};
 use crate::model_map::map_model;
@@ -784,42 +784,42 @@ async fn proxy_request(
             }
             Err(e) => {
                 let reason = describe_error(&e);
-                let opened = lock(&line.health).on_hard_failure(Instant::now(), reason.clone());
+                let opened = generation.hard_failure(c, reason.clone());
                 note_line_down(&shared, &generation, c, opened, &reason);
                 (reason, None)
             }
-            Ok(resp) => match failover_status_in(
-                &generation.config.tuning.failover_statuses,
-                resp.status(),
-                resp.headers(),
-            )
-            .or_else(|| {
-                // The official plan's own window is spent (or its login
-                // was refused): another member may still serve.
-                (member.cfg.kind == crate::MemberKind::Official
-                    && i + 1 < total
-                    && (crate::official::plan_limit(resp.status())
-                        || resp.status() == StatusCode::UNAUTHORIZED))
+            Ok(resp) => match generation
+                .failover_reason(resp.status(), resp.headers())
+                .or_else(|| {
+                    // The official plan's own window is spent (or its login
+                    // was refused): another member may still serve.
+                    (generation.config.tuning.failover_enabled
+                        && member.cfg.kind == crate::MemberKind::Official
+                        && i + 1 < total
+                        && (crate::official::plan_limit(resp.status())
+                            || resp.status() == StatusCode::UNAUTHORIZED))
+                        .then(|| {
+                            format!(
+                                "official ChatGPT {} (HTTP {})",
+                                if resp.status() == StatusCode::UNAUTHORIZED {
+                                    "login refused"
+                                } else {
+                                    "plan limit reached"
+                                },
+                                resp.status().as_u16()
+                            )
+                        })
+                })
+                .or_else(|| {
+                    (generation.config.tuning.failover_enabled
+                        && empty_responses_answer(&rest, resp.status(), resp.headers()))
                     .then(|| {
                         format!(
-                            "official ChatGPT {} (HTTP {})",
-                            if resp.status() == StatusCode::UNAUTHORIZED {
-                                "login refused"
-                            } else {
-                                "plan limit reached"
-                            },
+                            "intercepted by the line's edge (HTTP {} with an empty body)",
                             resp.status().as_u16()
                         )
                     })
-            })
-            .or_else(|| {
-                empty_responses_answer(&rest, resp.status(), resp.headers()).then(|| {
-                    format!(
-                        "intercepted by the line's edge (HTTP {} with an empty body)",
-                        resp.status().as_u16()
-                    )
-                })
-            }) {
+                }) {
                 Some(reason) => {
                     if resp.status() == StatusCode::UNAUTHORIZED
                         && let (Some(v), Some(t)) = (
@@ -832,7 +832,7 @@ async fn proxy_request(
                     {
                         v.note_refused(t.expose());
                     }
-                    let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
+                    let opened = generation.soft_failure(c, reason.clone());
                     note_line_down(&shared, &generation, c, opened, &reason);
                     (reason, Some(resp.status().as_u16()))
                 }
@@ -939,7 +939,9 @@ async fn proxy_request(
         if let Some(t) = &mut tracker {
             t.attempt_failed(c, status, &reason, started.elapsed());
         }
-        line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
+        if generation.config.tuning.failover_enabled {
+            line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
+        }
         failures.push(format!("{label}: {reason}"));
         if i + 1 < total {
             shared.totals.failovers.fetch_add(1, Ordering::Relaxed);
@@ -1218,11 +1220,15 @@ pub(crate) fn on_answer(
         line_id: line.cfg.id.clone(),
         failed_lines: member.lines[..c.line]
             .iter()
+            .filter(|_| generation.config.tuning.failover_enabled)
             .filter(|l| lock(&l.health).last_error().is_some())
             .map(|l| l.cfg.id.clone())
             .collect(),
     });
     line.counters.requests.fetch_add(1, Ordering::Relaxed);
+    if !generation.config.tuning.failover_enabled {
+        return;
+    }
     let reopened = {
         let mut h = lock(&line.health);
         let was_open = h.open_until().is_some();

@@ -43,7 +43,11 @@ pub(super) fn name(cx: &Cx<'_>, p: &Provider) -> String {
 pub(super) fn auth_label(cx: &Cx<'_>, p: &Provider) -> Option<String> {
     let profile = p.profile.as_ref()?;
     let lines = ordered_lines(&p.site, Some(profile));
-    let primary = lines.first();
+    let selected = crate::pages::shared::applied_line(cx.data, profile);
+    let primary = selected
+        .as_ref()
+        .and_then(|id| lines.iter().find(|l| &l.id == id))
+        .or_else(|| lines.first());
     let caps = primary.and_then(|l| cx.data.site_caps(&p.site.id, &l.id));
     let d = decision_with(&p.site, primary, caps, Some(profile), auto_facts(cx.data));
     d.mode.map(|m| cx.auth_short(m))
@@ -286,7 +290,15 @@ fn status_dot(ui: &mut Ui, cx: &Cx<'_>, p: &Provider) {
 /// Latency of the provider's primary line, when it was probed.
 fn primary_latency(cx: &Cx<'_>, p: &Provider) -> Option<String> {
     let lines = ordered_lines(&p.site, p.profile.as_ref());
-    let caps = cx.data.site_caps(&p.site.id, &lines.first()?.id)?;
+    let selected = p
+        .profile
+        .as_ref()
+        .and_then(|profile| crate::pages::shared::applied_line(cx.data, profile));
+    let line = selected
+        .as_ref()
+        .and_then(|id| lines.iter().find(|l| &l.id == id))
+        .or_else(|| lines.first())?;
+    let caps = cx.data.site_caps(&p.site.id, &line.id)?;
     if !caps.reachable {
         return Some(cx.tr.t("overview.latency.unreachable"));
     }

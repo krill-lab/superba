@@ -195,6 +195,58 @@ fn the_failover_rules_are_settings_that_save() {
     }
 }
 
+#[test]
+fn disabling_failover_exposes_exit_buttons_and_keeps_the_rules() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        let tr = Tr::new(locale);
+        let service = members();
+        service.edit_profiles(|set| {
+            set.profiles
+                .iter_mut()
+                .find(|p| p.id.as_str() == "krill")
+                .unwrap()
+                .id = ProfileId::new("Krill/Mixed");
+            set.settings.router.members[0] = ProfileId::new("Krill/Mixed");
+        });
+        let mut h = AppHarness::new(service.clone(), locale, Page::Router);
+        let toggle = tr.t("router.failover.enabled");
+        h.wait_for(Some(Role::Switch), &toggle);
+        h.click(Some(Role::Switch), &toggle);
+        h.until("failover disabled", |_| !service.router_failover().enabled);
+        let initial = service.router_failover().fixed_route;
+        let tree = h.wait_for(Some(Role::Button), &tr.t("router.failover.select_line"));
+        assert!(!tree.has(&tr.t("router.members.up")));
+        assert!(!tree.has(&tr.t("router.members.down")));
+        assert!(!tree.has(&tr.t("router.members.primary")));
+        assert!(tree.has(&tr.t("router.members.fixed_title")));
+        h.click(Some(Role::Button), &tr.t("router.failover.select_line"));
+        h.until("exit saved", |_| {
+            service.router_failover().fixed_route != initial
+        });
+        assert_eq!(
+            service
+                .router_failover()
+                .fixed_route
+                .as_ref()
+                .unwrap()
+                .member_id,
+            "krill-mixed"
+        );
+        let selected = service.router_failover().fixed_route;
+        h.click(Some(Role::Switch), &toggle);
+        h.until("failover enabled", |_| service.router_failover().enabled);
+        let rules = service.router_failover();
+        assert_eq!(rules.fixed_route, selected);
+        assert_eq!(rules.failover_statuses, [502, 503, 504]);
+        assert_eq!(rules.cooldown_secs, 5);
+        h.click(Some(Role::Switch), &toggle);
+        h.until("fixed exit retained", |_| {
+            !service.router_failover().enabled
+        });
+        assert_eq!(service.router_failover().fixed_route, selected);
+    }
+}
+
 /// alpha.9: the cooldown fields take a value from UI Automation's
 /// ValuePattern.SetValue (text) and from the keyboard, and their steppers
 /// change it by one; out-of-range input is clamped.

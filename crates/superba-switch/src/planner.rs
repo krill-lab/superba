@@ -1722,7 +1722,31 @@ impl Switcher {
             }
             SwitchIntent::Router { enable } => {
                 let router = &set.settings.router;
-                let applied = state.active.as_ref().and_then(|a| a.profile_id.as_ref());
+                let fixed = self
+                    .deps
+                    .router
+                    .configuration()
+                    .filter(|c| !c.tuning.failover_enabled)
+                    .and_then(|c| {
+                        let (mi, li) = c.fixed_exit()?;
+                        let profile = set.profiles.iter().find(|p| {
+                            superba_router::members::router_id(p.id.as_str()) == c.members[mi].id
+                        })?;
+                        let line = sites
+                            .iter()
+                            .find(|s| s.id == profile.site_id)?
+                            .lines
+                            .iter()
+                            .find(|l| {
+                                superba_router::members::router_id(l.id.as_str())
+                                    == c.members[mi].lines[li].id
+                            })?;
+                        Some((profile.id.clone(), line.id.clone()))
+                    });
+                let applied = fixed
+                    .as_ref()
+                    .map(|(profile, _)| profile)
+                    .or_else(|| state.active.as_ref().and_then(|a| a.profile_id.as_ref()));
                 // Turning the router on applies a member whose key the router
                 // can send as an API key (the applied one when it is such a
                 // member): the rule of the Router page and `spb router enable`.
@@ -1759,7 +1783,10 @@ impl Switcher {
                         request,
                         profile,
                         site,
-                        None,
+                        fixed
+                            .as_ref()
+                            .filter(|(id, _)| id == &profile_id)
+                            .map(|(_, line)| line.clone()),
                         None,
                         Some(*enable),
                         pat_version_ok,
@@ -2149,6 +2176,7 @@ impl Switcher {
             if let (Some(e), Some(token)) = (dest.endpoints.clone(), dest.key.clone()) {
                 let auth = dest.auth.unwrap_or(AuthMode::Pat);
                 let mut r = resolved(&e, auth, &token);
+                r.line_id = dest.line.as_ref().map(|l| l.id.clone());
                 if auth == AuthMode::MixedOfficial {
                     // Krill's PAT recommendations do not apply to the
                     // official login.
@@ -2255,13 +2283,78 @@ impl Switcher {
             draft.block(BlockReason::RouterUnavailable { detail });
             return;
         }
-        let mut members = vec![profile.id.clone()];
-        members.extend(router.members.iter().filter(|m| *m != &profile.id).cloned());
+        let stored = d.router.configuration();
+        let manual = stored.as_ref().is_some_and(|c| !c.tuning.failover_enabled);
+        let mut members = if manual {
+            router.members.clone()
+        } else {
+            vec![profile.id.clone()]
+        };
+        if manual {
+            if !members.contains(&profile.id) {
+                members.push(profile.id.clone());
+            }
+        } else {
+            members.extend(router.members.iter().filter(|m| *m != &profile.id).cloned());
+        }
         let line = dest
             .profile_update
             .as_ref()
             .and_then(|u| u.line_id.as_ref());
-        if members != router.members || line.is_some() {
+        if manual {
+            let selected = line
+                .cloned()
+                .or_else(|| {
+                    stored
+                        .as_ref()
+                        .and_then(|c| c.tuning.fixed_route.as_ref())
+                        .filter(|r| {
+                            r.member_id == superba_router::members::router_id(profile.id.as_str())
+                        })
+                        .and_then(|r| {
+                            site.lines
+                                .iter()
+                                .find(|l| {
+                                    superba_router::members::router_id(l.id.as_str()) == r.line_id
+                                })
+                                .map(|l| l.id.clone())
+                        })
+                })
+                .or_else(|| profile.enabled_line_ids(site).into_iter().next());
+            let result = async {
+                let selected = selected
+                    .ok_or_else(|| Error::invalid("the selected provider has no enabled line"))?;
+                let selected = site
+                    .line(&selected)
+                    .filter(|l| !profile.is_line_disabled(&l.id))
+                    .ok_or_else(|| {
+                        Error::invalid("the selected exit line is missing or disabled")
+                    })?;
+                let set = d.profiles.load().await?;
+                let mut built = self.build_router_members(&set, &members).await?;
+                built.config.tuning.fixed_route = Some(superba_core::RouterFixedRoute {
+                    member_id: superba_router::members::router_id(profile.id.as_str()),
+                    line_id: superba_router::members::router_id(selected.id.as_str()),
+                });
+                built.config.validate()?;
+                Ok::<_, Error>((built, selected.clone()))
+            }
+            .await;
+            match result {
+                Ok((built, selected)) => {
+                    dest.line = Some(selected);
+                    dest.router_update = Some((members, built));
+                    // A fixed exit is stored in router configuration, never as
+                    // a change to the provider's automatic failover order.
+                    if let Some(update) = &mut dest.profile_update {
+                        update.line_id = None;
+                    }
+                }
+                Err(e) => draft.block(BlockReason::RouterUnavailable {
+                    detail: e.to_string(),
+                }),
+            }
+        } else if members != router.members || line.is_some() {
             match d.profiles.load().await {
                 Ok(mut set) => {
                     if let Some(line) = line

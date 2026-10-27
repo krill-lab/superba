@@ -75,6 +75,7 @@ ran_short = "本机资源在 {time} 前吃紧：出现 {files} 次「打开的�
 unlimited = "不限"
 
 [router.members]
+fixed_title = "供应商与线路"
 order_hint = "先选成员，再按该成员的线路顺序尝试。"
 rules = "故障转移与恢复规则"
 details = "协议与线路详情"
@@ -602,6 +603,10 @@ failed = "失败"
 
 [router.failover]
 title = "故障转移与恢复"
+enabled = "故障转移"
+enabled_hint = "关闭后仅使用选定出口，不检查线路状态或自动换线。"
+select_line = "切换为此线路"
+selected_line = "当前出口"
 caption = "线路出错时怎样换线、多久后再试，会话在线路上停留多久。修改后立即保存，运行中的路由会重新加载，无需重启 Codex。"
 unknown = "暂时无法读取这些设置，请先开启路由或添加成员。"
 seconds = " 秒"

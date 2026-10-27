@@ -386,6 +386,8 @@ pub enum Reply {
     Recovered(Result<RecoveryReport>),
     /// Router watchdog tick finished.
     RouterWatch(Result<superba_core::RouterWatch>),
+    /// Saved routing behavior, also loaded before visiting the Router page.
+    RouterFailover(Result<Option<superba_core::RouterFailover>>),
     /// Settings diff of a computed plan.
     PlanSettings {
         /// Plan id.
@@ -651,8 +653,14 @@ async fn handle(
                 tokio::join!(service.overview(), service.profile_set(), service.sites())
             })
             .await;
+            let routed = p.as_ref().is_ok_and(|p| p.settings.router.enabled);
             out.send(Reply::Profiles(p));
             out.send(Reply::Sites(s));
+            if routed {
+                out.send(Reply::RouterFailover(
+                    service.router_status().await.map(|v| v.failover),
+                ));
+            }
             out.send(Reply::Overview(o));
         }
         Command::Overview => {
@@ -660,6 +668,11 @@ async fn handle(
                 tokio::join!(service.overview(), service.profile_set())
             })
             .await;
+            if p.as_ref().is_ok_and(|p| p.settings.router.enabled) {
+                out.send(Reply::RouterFailover(
+                    service.router_status().await.map(|v| v.failover),
+                ));
+            }
             // Settings changed outside this window (the CLI, another instance):
             // the UI takes the stored set, so router mode and the cached
             // router reads follow without a restart.
@@ -755,6 +768,11 @@ async fn handle(
             tokio::join!(
                 async {
                     let (o, p) = tokio::join!(service.overview(), service.profile_set());
+                    if p.as_ref().is_ok_and(|p| p.settings.router.enabled) {
+                        out.send(Reply::RouterFailover(
+                            service.router_status().await.map(|v| v.failover),
+                        ));
+                    }
                     out.send(Reply::Profiles(p));
                     out.send(Reply::Overview(o));
                 },
@@ -818,6 +836,9 @@ async fn handle(
         Command::Recover => out.send(Reply::Recovered(service.recover().await)),
         Command::RouterWatch => {
             let result = service.router_watch().await;
+            out.send(Reply::RouterFailover(
+                service.router_status().await.map(|v| v.failover),
+            ));
             let switched = matches!(
                 &result,
                 Ok(w) if matches!(
