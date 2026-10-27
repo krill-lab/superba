@@ -702,7 +702,12 @@ pub fn foreign_on_windows(know_ours: bool, same_owner: Option<bool>, opened: boo
 pub fn snapshot_os(opts: ReadOpts) -> Vec<ProcEntry> {
     use sysinfo::{ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System, UpdateKind};
     let mut sys = System::new();
+    // Without tasks: sysinfo otherwise also reads every thread of every
+    // process (`/proc/<pid>/task/*`) as a process of its own, which the
+    // filter below drops again (user bug 125: tens of MB per snapshot on a
+    // busy Linux machine; Windows lists no tasks).
     let mut kind = ProcessRefreshKind::nothing()
+        .without_tasks()
         .with_cmd(UpdateKind::Always)
         .with_exe(UpdateKind::Always)
         .with_user(UpdateKind::Always);
