@@ -90,6 +90,7 @@ fn user_set() -> ProfileSet {
     });
     set.settings = Settings {
         app_codex: Default::default(),
+        simple_mode: Settings::default().simple_mode,
         hosts: Default::default(),
         network: Default::default(),
         countdown_secs: 10,

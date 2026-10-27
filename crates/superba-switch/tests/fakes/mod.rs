@@ -299,6 +299,7 @@ impl ConfigEngine for FakeConfig {
         };
         let gen_no = *self.applied.lock().unwrap() + 1;
         Ok(ApplyPlan {
+            write_mode: superba_core::ConfigWriteMode::Managed,
             id: format!("apply-{gen_no}"),
             codex_home: home.root().to_path_buf(),
             generation: gen_no,
@@ -1340,6 +1341,15 @@ impl SessionMigrator for FakeSessions {
                     .by_provider
                     .get(provider)
                     .map_or(0, |p| p.distinct),
+                superba_core::MigrationSelector::OtherProviders { except } => self
+                    .report
+                    .lock()
+                    .unwrap()
+                    .by_provider
+                    .iter()
+                    .filter(|(provider, _)| *provider != except)
+                    .map(|(_, counts)| counts.distinct)
+                    .sum(),
                 _ => 1,
             })
             .sum();

@@ -81,6 +81,8 @@ pub(crate) struct GenerationSnapshot {
 /// Everything the renderer needs.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Inputs<'a> {
+    /// Rebuild config.toml rather than editing the existing document.
+    pub write_mode: superba_core::ConfigWriteMode,
     pub files: &'a CodexFiles,
     pub desired: &'a ResolvedProfile,
     pub baseline: Option<&'a Baseline>,
@@ -490,15 +492,22 @@ fn file_change(current: Option<&[u8]>, new: Option<Vec<u8>>) -> FileChange {
 /// The full render.
 pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
     let mut notes = Vec::new();
-    let mut doc = parse_config(inp.files)?;
+    let rebuilding = inp.write_mode == superba_core::ConfigWriteMode::Reinitialize;
+    let mut doc = if rebuilding {
+        ConfigDoc::empty()
+    } else {
+        parse_config(inp.files)?
+    };
     let targets = targets(inp, &doc, &mut notes)?;
     let lw: BTreeMap<&str, Option<&str>> = inp
         .last_written
         .iter()
+        .filter(|_| !rebuilding)
         .map(|s| (s.path.as_str(), s.value.as_deref()))
         .collect();
     let baseline_value = |p: &str| -> Option<Option<String>> {
         inp.baseline
+            .filter(|_| !rebuilding)
             .and_then(|b| b.keys.iter().find(|s| s.path == p))
             .map(|s| s.value.clone())
     };
@@ -648,6 +657,7 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
     };
     // Byte-exact restore of a recorded file when only owned keys differ.
     let exact_source: Option<CodexFiles> = match inp.desired.mode {
+        _ if rebuilding => None,
         ResolvedMode::Original { .. } | ResolvedMode::Release { .. } => inp.original_files.cloned(),
         ResolvedMode::Generation { .. } => {
             inp.generation
@@ -673,7 +683,12 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
     // auth.json.
     let live_auth = inp.files.auth_json.as_ref().map(|b| b.expose());
     let live_shape = authjson::shape(live_auth);
-    let (auth_change_file, auth_change) = match auth_target(inp, &live_shape, &mut notes)? {
+    let auth_target = if rebuilding {
+        AuthTarget::Keep
+    } else {
+        auth_target(inp, &live_shape, &mut notes)?
+    };
+    let (auth_change_file, auth_change) = match auth_target {
         AuthTarget::Keep => (FileChange::Unchanged, None),
         target => {
             let new = match target {
@@ -701,6 +716,14 @@ pub(crate) fn render(inp: &Inputs<'_>) -> Result<Rendered> {
         }
     };
 
+    if rebuilding && let Ok(before) = parse_config(inp.files) {
+        for change in &mut key_changes {
+            change.before = before.get_repr(&change.path);
+        }
+        for key in &mut newly_owned {
+            key.value = before.get_repr(&key.path);
+        }
+    }
     diagnostics(&doc, &mut notes);
     Ok(Rendered {
         files: RenderedFiles {

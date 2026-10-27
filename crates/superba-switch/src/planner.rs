@@ -685,6 +685,13 @@ impl Switcher {
     }
 
     pub(crate) async fn plan_impl(&self, mut request: SwitchRequest) -> Result<SwitchPlan> {
+        let rebuilding = matches!(request.intent, SwitchIntent::ReinitializeConfig);
+        let local_repair = rebuilding || matches!(request.intent, SwitchIntent::ReapplyConfig);
+        if local_repair && (!request.targets.local || !request.targets.remotes.is_empty()) {
+            return Err(Error::invalid(
+                "configuration reinitialization is local only",
+            ));
+        }
         match &request.intent {
             SwitchIntent::HostSync { .. } => return self.plan_host_sync(request).await,
             SwitchIntent::AppCodexPin { .. } => return self.plan_pin(request).await,
@@ -706,7 +713,8 @@ impl Switcher {
         // WSL distributions (user bug 45) follow by default, also for router on /
         // off, restores and uninstall; plan_remotes adds the ones without a
         // stored setting.
-        let auto_targets = local && request.targets.remotes.is_empty();
+        let auto_targets =
+            local && !local_repair && !request.local_only && request.targets.remotes.is_empty();
         let wsl_follow = auto_targets && crate::wsl::participates(&request.intent);
         let profile_switch = matches!(request.intent, SwitchIntent::Profile { .. });
         let mut followed: Vec<TargetId> = if auto_targets {
@@ -756,7 +764,9 @@ impl Switcher {
             if state.journal_pending {
                 draft.block(BlockReason::JournalPending);
             }
-            if let Some(message) = &state.parse_error {
+            if let Some(message) = &state.parse_error
+                && !rebuilding
+            {
                 draft.block(BlockReason::Unparseable {
                     path: home.config_toml(),
                     message: message.clone(),
@@ -852,7 +862,10 @@ impl Switcher {
         // GH#5: restores, uninstall and hand-offs put back only what Superba
         // still owns; what another tool (or the user) changed since is kept and
         // named in the plan.
-        if local && let Some(resolved) = dest.resolved.as_mut() {
+        if local
+            && !rebuilding
+            && let Some(resolved) = dest.resolved.as_mut()
+        {
             let kept_external = crate::ownership::keep_external(resolved, &state);
             if !kept_external.is_empty() {
                 let source = self.change_attribution(&state).await.source;
@@ -920,7 +933,7 @@ impl Switcher {
         if local
             && let Some(sp) = self
                 .plan_local_settings(
-                    &set, &state, &home, &installs, &binaries, &mut dest, &mut draft,
+                    &set, &state, &home, &installs, &binaries, &mut dest, &mut draft, rebuilding,
                 )
                 .await
         {
@@ -928,7 +941,7 @@ impl Switcher {
         }
 
         // --- sessions (plan 10) --------------------------------------------------
-        if local {
+        if local && !rebuilding {
             self.legacy_sessions(&request, &state, report.as_ref(), &mut dest, &mut draft);
             if let Some(provider) = dest.restore_provider_question.clone() {
                 let migrated_in: u32 = soft(
@@ -973,7 +986,7 @@ impl Switcher {
         };
 
         // --- the model Codex runs with across an auth change (user bug 58) --------
-        if local && draft.blocks.is_empty() && dest.writes_local {
+        if local && !rebuilding && draft.blocks.is_empty() && dest.writes_local {
             self.keep_model(
                 &set,
                 &sites,
@@ -1006,7 +1019,12 @@ impl Switcher {
         };
         if local && draft.blocks.is_empty() && dest.writes_local {
             if let Some(resolved) = &dest.resolved {
-                match d.config.plan(&home, resolved).await {
+                let planned = if rebuilding {
+                    d.config.plan_reinitialize(&home, resolved).await
+                } else {
+                    d.config.plan(&home, resolved).await
+                };
+                match planned {
                     Ok(p) => {
                         self.resolve_rendered_auth(&home, &state, &sites, &p, &mut dest)
                             .await?;
@@ -1066,7 +1084,9 @@ impl Switcher {
                 extras.env = snapshots(&r);
                 extras.legacy_env_lines = r.legacy_lines;
             }
-            let certificate_op = if dest.routed {
+            let certificate_op = if rebuilding {
+                None
+            } else if dest.routed {
                 let path =
                     superba_router::RouterPaths::new(&d.ctx.data_dir).client_certificate_pem();
                 Some(EnvOp::Set {
@@ -1651,6 +1671,7 @@ impl Switcher {
         binaries: &[superba_core::CodexBinary],
         dest: &mut Dest,
         draft: &mut Draft,
+        rebuilding: bool,
     ) -> Option<SettingsPlan> {
         let wanted = dest.codex_settings.clone()?;
         let resolved = dest.resolved.as_mut()?;
@@ -1658,7 +1679,11 @@ impl Switcher {
             return None;
         }
         let consumers = local_consumers(dest.install_id.as_deref(), installs, binaries);
-        let bytes = tokio::fs::read(home.config_toml()).await.ok();
+        let bytes = if rebuilding {
+            None
+        } else {
+            tokio::fs::read(home.config_toml()).await.ok()
+        };
         let owned = owned_setting_paths(state, set);
         let local = TargetId::local();
         let input = HomeInput::new(&local, &consumers, self.deps.catalog.as_ref())
@@ -1682,6 +1707,63 @@ impl Switcher {
         draft: &mut Draft,
     ) -> Result<Dest> {
         match &request.intent {
+            SwitchIntent::ReinitializeConfig | SwitchIntent::ReapplyConfig => {
+                let rebuilding = matches!(request.intent, SwitchIntent::ReinitializeConfig);
+                let active = state.active.as_ref().ok_or_else(|| {
+                    Error::invalid("select and apply a provider before rebuilding config.toml")
+                })?;
+                let profile = active
+                    .profile_id
+                    .as_ref()
+                    .and_then(|id| set.profile(id))
+                    .ok_or_else(|| Error::invalid("the applied provider is no longer available"))?;
+                if profile.builtin == Some(BuiltinProfile::Original) {
+                    return Err(Error::invalid(
+                        "select a provider before rebuilding the original configuration",
+                    ));
+                }
+                let mut dest = if profile.builtin == Some(BuiltinProfile::Official) {
+                    self.restore_official(request, Some(profile.id.clone()), draft)
+                        .await
+                } else {
+                    let site = sites
+                        .iter()
+                        .find(|s| s.id == profile.site_id)
+                        .cloned()
+                        .ok_or_else(|| Error::NotFound {
+                            what: format!("site {}", profile.site_id),
+                        })?;
+                    self.token_destination(
+                        request,
+                        profile,
+                        site,
+                        active.line_id.clone(),
+                        active.auth_mode,
+                        Some(set.settings.router.enabled),
+                        pat_version_ok,
+                        draft,
+                    )
+                    .await?
+                };
+                if let Some(resolved) = dest.resolved.as_mut() {
+                    if resolved.model.model.is_none() {
+                        resolved.model.model = state.model.clone();
+                    }
+                }
+                if rebuilding {
+                    dest.env_op = None;
+                }
+                dest.profile_update = None;
+                dest.migration = None;
+                dest.restart_app = rebuilding;
+                if rebuilding {
+                    dest.label = LocalizedText::new(
+                        "troubleshooting.reinitialize",
+                        "Reinitialize configuration",
+                    );
+                }
+                Ok(dest)
+            }
             SwitchIntent::Profile {
                 profile_id,
                 line_id,

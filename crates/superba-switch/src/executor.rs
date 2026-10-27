@@ -1171,9 +1171,18 @@ impl Run<'_> {
             && self.pc.baseline_missing
             && !(self.pc.baseline_released && releases_baseline)
         {
-            d.config
-                .snapshot_baseline(&home, self.pc.baseline_extras.clone())
-                .await?;
+            if config
+                .as_ref()
+                .is_some_and(|p| p.write_mode == superba_core::ConfigWriteMode::Reinitialize)
+            {
+                d.config
+                    .snapshot_reinitialize_baseline(&home, self.pc.baseline_extras.clone())
+                    .await?;
+            } else {
+                d.config
+                    .snapshot_baseline(&home, self.pc.baseline_extras.clone())
+                    .await?;
+            }
         }
 
         match config.as_ref().filter(|c| !c.is_noop()) {

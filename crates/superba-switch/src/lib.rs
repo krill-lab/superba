@@ -61,6 +61,7 @@ mod settings;
 mod sites;
 mod tools;
 mod transports;
+mod troubleshooting;
 mod turn_watch;
 pub mod usage;
 pub mod usage_import;
@@ -1121,6 +1122,14 @@ impl SwitchService for Switcher {
 
     async fn doctor(&self) -> Result<Vec<DoctorFinding>> {
         self.doctor_impl().await
+    }
+
+    async fn troubleshooting_check(
+        &self,
+        request: superba_core::TroubleshootingRequest,
+        progress: superba_core::TroubleshootingProgressSink,
+    ) -> Result<superba_core::TroubleshootingReport> {
+        self.troubleshooting_check_impl(request, progress).await
     }
 
     async fn runtime(&self) -> Result<superba_core::RuntimeView> {

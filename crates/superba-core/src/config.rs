@@ -324,6 +324,17 @@ pub struct PlannedFile {
     pub change: FileChange,
 }
 
+/// How the config file is rendered when executing its plan.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigWriteMode {
+    /// Edit the owned fields, preserving unrelated content.
+    #[default]
+    Managed,
+    /// Rebuild config.toml from scratch, preserving auth.json exactly.
+    Reinitialize,
+}
+
 /// A computed, not yet applied configuration change for one Codex home.
 /// Planning never writes; `apply` re-reads the files and re-renders if they changed.
 ///
@@ -332,6 +343,8 @@ pub struct PlannedFile {
 /// executed. Journals persist their own records.
 #[derive(Clone, Debug, Serialize)]
 pub struct ApplyPlan {
+    /// Full rebuild or ordinary managed-key edit.
+    pub write_mode: ConfigWriteMode,
     /// Unique id (also the journal id).
     pub id: String,
     /// Codex home root.

@@ -355,6 +355,15 @@ impl TomlConfigEngine {
     }
 
     fn snapshot_baseline_sync(&self, root: &Path, extras: BaselineExtras) -> Result<Baseline> {
+        self.snapshot_baseline_for(root, extras, false)
+    }
+
+    fn snapshot_baseline_for(
+        &self,
+        root: &Path,
+        extras: BaselineExtras,
+        rebuilding: bool,
+    ) -> Result<Baseline> {
         let now = self.clock.now();
         state::with_home(self.data(), root, |hs| {
             if let Some(b) = &hs.baseline
@@ -363,7 +372,22 @@ impl TomlConfigEngine {
                 return Ok(b.clone());
             }
             let files = read_files(root)?;
-            let mut b = render::capture_baseline(root, &files, extras, now)?;
+            let mut b = match render::capture_baseline(root, &files, extras.clone(), now) {
+                Ok(b) => b,
+                Err(Error::Parse { .. }) if rebuilding => {
+                    let empty = CodexFiles {
+                        config_toml: None,
+                        auth_json: files.auth_json.clone(),
+                    };
+                    let mut b = render::capture_baseline(root, &empty, extras, now)?;
+                    b.config_sha256 = files
+                        .config_toml
+                        .as_ref()
+                        .map(|b| fsx::sha256_hex(b.expose()));
+                    b
+                }
+                Err(e) => return Err(e),
+            };
             if matches!(b.auth, AuthShape::ChatGpt { .. })
                 && let Some(auth) = &files.auth_json
             {
@@ -597,8 +621,10 @@ impl TomlConfigEngine {
         hs: &HomeState,
         desired: &ResolvedProfile,
         prep: &Prepared,
+        write_mode: superba_core::ConfigWriteMode,
     ) -> Result<Rendered> {
         render::render(&Inputs {
+            write_mode,
             files,
             desired,
             baseline: hs.baseline.as_ref(),
@@ -614,13 +640,22 @@ impl TomlConfigEngine {
     // ----------------------------------------------------------------- plan
 
     fn plan_sync(&self, root: &Path, desired: &ResolvedProfile) -> Result<ApplyPlan> {
+        self.plan_with_mode(root, desired, superba_core::ConfigWriteMode::Managed)
+    }
+
+    fn plan_with_mode(
+        &self,
+        root: &Path,
+        desired: &ResolvedProfile,
+        write_mode: superba_core::ConfigWriteMode,
+    ) -> Result<ApplyPlan> {
         if self.pending(root)? {
             return Err(blocked_pending());
         }
         let files = read_files(root)?;
         let hs = state::read_home(self.data(), root)?;
         let prep = self.prepare(root, &files, &hs, desired)?;
-        let r = self.render_local(&files, &hs, desired, &prep)?;
+        let r = self.render_local(&files, &hs, desired, &prep, write_mode)?;
         let final_auth = after_bytes(
             bytes_of(&files, CodexFileKind::AuthJson),
             &r.files.auth_json,
@@ -669,6 +704,7 @@ impl TomlConfigEngine {
             change,
         };
         Ok(ApplyPlan {
+            write_mode,
             id: uuid::Uuid::new_v4().to_string(),
             codex_home: root.to_path_buf(),
             generation: hs.max_generation + 1,
@@ -695,20 +731,21 @@ impl TomlConfigEngine {
             Error::invalid("this plan carries no desired state (it was not produced by plan())")
         })?;
         let root = plan.codex_home.as_path();
+        let rebuilding = plan.write_mode == superba_core::ConfigWriteMode::Reinitialize;
         if self.pending(root)? {
             return Err(blocked_pending());
         }
         // A restore must keep a released baseline available. Re-capture only
         // when the rendered apply actually takes ownership again below.
         if state::read_home(self.data(), root)?.baseline.is_none() {
-            self.snapshot_baseline_sync(root, BaselineExtras::default())?;
+            self.snapshot_baseline_for(root, BaselineExtras::default(), rebuilding)?;
         }
         let mut attempt = 0;
         loop {
             attempt += 1;
             match self.apply_attempt(plan, desired) {
                 Ok(report) => return Ok(report),
-                Err(TxError::Changed) if attempt < MAX_ATTEMPTS => {
+                Err(TxError::Changed) if !rebuilding && attempt < MAX_ATTEMPTS => {
                     tracing::info!(
                         "Codex files changed while applying; re-reading (attempt {attempt})"
                     );
@@ -735,13 +772,25 @@ impl TomlConfigEngine {
         let now = self.clock.now();
         let scope = StashScope::Local(root.to_path_buf());
         let files = read_files(root)?;
+        if plan.write_mode == superba_core::ConfigWriteMode::Reinitialize
+            && plan.files.iter().any(|file| {
+                file.kind == CodexFileKind::ConfigToml
+                    && file.before_sha256 != bytes_of(&files, file.kind).map(fsx::sha256_hex)
+            })
+        {
+            return Err(TxError::Changed);
+        }
         let hs = state::read_home(self.data(), root)?;
         let prep = self.prepare(root, &files, &hs, desired)?;
-        let r = self.render_local(&files, &hs, desired, &prep)?;
+        let r = self.render_local(&files, &hs, desired, &prep, plan.write_mode)?;
 
         if !r.owned.is_empty() && hs.baseline.as_ref().is_some_and(|b| b.released) {
             tracing::warn!(home = %root.display(), "takeover skipped snapshot_baseline; re-capturing with default extras");
-            self.snapshot_baseline_sync(root, BaselineExtras::default())?;
+            self.snapshot_baseline_for(
+                root,
+                BaselineExtras::default(),
+                plan.write_mode == superba_core::ConfigWriteMode::Reinitialize,
+            )?;
             return self.apply_attempt(plan, desired);
         }
 
@@ -1631,6 +1680,7 @@ impl ConfigEngine for TomlConfigEngine {
     fn render(&self, input: &RenderInput<'_>) -> Result<RenderedFiles> {
         let last_written = input.last_written.unwrap_or(&[]);
         render::render(&Inputs {
+            write_mode: superba_core::ConfigWriteMode::Managed,
             files: input.files,
             desired: input.desired,
             baseline: input.baseline,
@@ -1684,6 +1734,29 @@ impl ConfigEngine for TomlConfigEngine {
         let root = home.root().to_path_buf();
         let desired = desired.clone();
         self.run(move |e| e.plan_sync(&root, &desired)).await
+    }
+
+    async fn snapshot_reinitialize_baseline(
+        &self,
+        home: &CodexHome,
+        extras: BaselineExtras,
+    ) -> Result<Baseline> {
+        let root = home.root().to_path_buf();
+        self.run(move |e| e.snapshot_baseline_for(&root, extras, true))
+            .await
+    }
+
+    async fn plan_reinitialize(
+        &self,
+        home: &CodexHome,
+        desired: &ResolvedProfile,
+    ) -> Result<ApplyPlan> {
+        let root = home.root().to_path_buf();
+        let desired = desired.clone();
+        self.run(move |e| {
+            e.plan_with_mode(&root, &desired, superba_core::ConfigWriteMode::Reinitialize)
+        })
+        .await
     }
 
     async fn apply(&self, plan: &ApplyPlan) -> Result<ApplyReport> {

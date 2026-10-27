@@ -882,3 +882,173 @@ async fn compatible_site_profiles_use_the_base_path_of_their_site() {
         other => panic!("unexpected mode {other:?}"),
     }
 }
+
+fn troubleshooting_active(w: &World) {
+    w.config.state.lock().unwrap().active = Some(ActiveState {
+        profile_id: Some(ProfileId::new("work")),
+        site_id: Some(SiteId::new("krill")),
+        line_id: Some(LineId::new("overseas")),
+        auth_mode: Some(AuthMode::ApiKey),
+        generation: 1,
+        applied_at: Timestamp(T0),
+    });
+}
+
+fn troubleshooting_list() -> superba_core::ModelList {
+    superba_core::ModelList {
+        source: superba_core::ModelListSource::Upstream {
+            path: "/backend-api/codex/models".into(),
+            fetched_at: Timestamp(T0),
+            etag: None,
+        },
+        models: Vec::new(),
+        fallback_reason: None,
+        sources: Vec::new(),
+    }
+}
+
+#[tokio::test]
+async fn troubleshooting_distinguishes_fresh_empty_lists_from_failed_or_fallback_refreshes() {
+    use superba_core::{TroubleshootingIssue, TroubleshootingRequest};
+    let w = World::new();
+    troubleshooting_active(&w);
+    let sw = w.switcher();
+    let request = TroubleshootingRequest {
+        issue: TroubleshootingIssue::Models,
+        refresh_models: true,
+        ..Default::default()
+    };
+    *w.prober.model_list.lock().unwrap() = Some(Ok(troubleshooting_list()));
+    let report = sw
+        .troubleshooting_check(request.clone(), Arc::new(|_| true))
+        .await
+        .unwrap();
+    assert_eq!(report.models.len(), 1);
+    assert!(report.models[0].refreshed);
+    assert!(report.models[0].list.as_ref().unwrap().models.is_empty());
+    assert!(report.models[0].error.is_none());
+    *w.prober.model_list.lock().unwrap() =
+        Some(Err(superba_core::Error::other("supplier offline")));
+    let report = sw
+        .troubleshooting_check(request.clone(), Arc::new(|_| true))
+        .await
+        .unwrap();
+    assert!(!report.models[0].refreshed);
+    assert!(report.models[0].list.is_none());
+    assert!(report.models[0].error.is_some());
+    let mut fallback = troubleshooting_list();
+    fallback.source = superba_core::ModelListSource::Snapshot {
+        codex_version: superba_core::CodexVersion::new(0, 162, 0),
+    };
+    *w.prober.model_list.lock().unwrap() = Some(Ok(fallback));
+    let report = sw
+        .troubleshooting_check(request, Arc::new(|_| true))
+        .await
+        .unwrap();
+    assert!(!report.models[0].refreshed);
+    assert_eq!(*w.profiles.saves.lock().unwrap(), 0);
+    assert_eq!(*w.config.applied.lock().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn troubleshooting_keeps_router_member_lists_separate() {
+    use superba_core::{TroubleshootingIssue, TroubleshootingRequest};
+    let w = World::new();
+    troubleshooting_active(&w);
+    let second = krill_profile("second", Some("cn-fast"), AuthMode::ApiKey);
+    {
+        let mut set = w.profiles.set.lock().unwrap();
+        set.profiles.push(second);
+        set.settings.router.enabled = true;
+        set.settings.router.members = vec![ProfileId::new("work"), ProfileId::new("second")];
+    }
+    w.secrets
+        .map
+        .lock()
+        .unwrap()
+        .insert("profile:second".into(), KEY.into());
+    *w.prober.model_list.lock().unwrap() = Some(Ok(troubleshooting_list()));
+    let report = w
+        .switcher()
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::Models,
+                refresh_models: true,
+                ..Default::default()
+            },
+            Arc::new(|_| true),
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.models.len(), 2);
+    assert_eq!(report.models[0].profile_id, ProfileId::new("work"));
+    assert_eq!(report.models[1].profile_id, ProfileId::new("second"));
+    assert!(report.models.iter().all(|m| m.refreshed));
+    assert_eq!(w.prober.model_list_calls.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn troubleshooting_cancellation_stops_before_the_next_provider() {
+    use superba_core::{TroubleshootingIssue, TroubleshootingRequest};
+    let w = World::new();
+    troubleshooting_active(&w);
+    *w.prober.model_list.lock().unwrap() = Some(Ok(troubleshooting_list()));
+    let result = w
+        .switcher()
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::Models,
+                refresh_models: true,
+                ..Default::default()
+            },
+            Arc::new(|_| false),
+        )
+        .await;
+    assert_eq!(result.unwrap_err(), superba_core::Error::Cancelled);
+    assert_eq!(*w.config.applied.lock().unwrap(), 0);
+    assert_eq!(*w.profiles.saves.lock().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn troubleshooting_conversation_check_reports_only_non_openai_sources_without_migrating() {
+    use superba_core::{TroubleshootingIssue, TroubleshootingRequest};
+    let w = World::new();
+    *w.sessions.report.lock().unwrap() =
+        session_report(w.ctx.codex_home().root(), &[("openai", 3), ("legacy", 4)]);
+    let report = w
+        .switcher()
+        .troubleshooting_check(
+            TroubleshootingRequest {
+                issue: TroubleshootingIssue::Sessions,
+                ..Default::default()
+            },
+            Arc::new(|_| true),
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.legacy_providers, vec![("legacy".into(), 4)]);
+    assert!(w.sessions.requests.lock().unwrap().is_empty());
+    assert!(w.prober.model_list_calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn troubleshooting_text_only_cases_make_no_network_requests() {
+    use superba_core::{TroubleshootingIssue as Issue, TroubleshootingRequest};
+    let w = World::new();
+    for issue in [Issue::Policy, Issue::Server, Issue::Other] {
+        let report = w
+            .switcher()
+            .troubleshooting_check(
+                TroubleshootingRequest {
+                    issue,
+                    ..Default::default()
+                },
+                Arc::new(|_| true),
+            )
+            .await
+            .unwrap();
+        assert!(report.checks.is_empty());
+    }
+    assert!(w.prober.model_list_calls.lock().unwrap().is_empty());
+    assert_eq!(*w.config.applied.lock().unwrap(), 0);
+}

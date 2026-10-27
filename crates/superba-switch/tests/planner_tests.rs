@@ -730,6 +730,29 @@ async fn migrate_sessions_intent_plans_a_migration() {
     assert_eq!(p.migration.as_ref().unwrap().thread_count, 128);
 }
 
+#[tokio::test]
+async fn migrate_all_other_providers_intent_keeps_one_migration_plan() {
+    let w = World::new();
+    let home = w.ctx.codex_home();
+    *w.sessions.report.lock().unwrap() =
+        session_report(home.root(), &[("openai", 3), ("krill", 5), ("custom", 7)]);
+    let mut request = req("work");
+    request.intent = SwitchIntent::MigrateSessions {
+        request: superba_core::MigrationRequest {
+            to_provider: "openai".into(),
+            selectors: vec![MigrationSelector::OtherProviders {
+                except: "openai".into(),
+            }],
+            include_archived: true,
+            exclude: Vec::new(),
+        },
+    };
+    let p = plan(&w, request).await;
+    assert_eq!(p.primary, full(FullRestartReason::SessionMigration));
+    assert_eq!(p.migration.as_ref().unwrap().thread_count, 12);
+    assert!(p.config.is_none());
+}
+
 // --- restore original (plan 9.6 / 10.4) --------------------------------------
 
 #[tokio::test]

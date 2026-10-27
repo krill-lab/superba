@@ -117,6 +117,72 @@ async fn applied_world() -> (World, Switcher) {
 }
 
 #[tokio::test]
+async fn troubleshooting_rebuild_plans_a_malformed_file_and_keeps_authentication() {
+    let (w, sw) = applied_world().await;
+    let home = w.ctx.codex_home();
+    let auth = std::fs::read(home.auth_json()).unwrap();
+    let malformed = "model = [\n[mcp_servers.private]\ncommand = \"private-command\"\n";
+    std::fs::write(home.config_toml(), malformed).unwrap();
+    let mut request = req("work");
+    request.intent = superba_core::SwitchIntent::ReinitializeConfig;
+    request.local_only = true;
+    let plan = sw.plan(request).await.unwrap();
+    assert!(!plan.is_blocked(), "{:?}", plan.primary);
+    assert!(
+        matches!(
+            plan.primary,
+            superba_core::RestartKind::FullAppRestart { .. }
+        ),
+        "{:?}",
+        plan.primary
+    );
+    let config = plan.config.as_ref().unwrap();
+    assert_eq!(
+        config.write_mode,
+        superba_core::ConfigWriteMode::Reinitialize
+    );
+    assert!(config.auth_change.is_none());
+    assert!(plan.migration.is_none());
+    assert!(plan.remotes.is_empty());
+    let outcome = execute(&sw, plan).await;
+    assert_eq!(outcome.status, OutcomeStatus::Switched, "{outcome:?}");
+    assert_eq!(std::fs::read(home.auth_json()).unwrap(), auth);
+    let rebuilt = std::fs::read_to_string(home.config_toml()).unwrap();
+    assert!(rebuilt.contains("model_provider = \"openai\""));
+    assert!(!rebuilt.contains("private-command"));
+    let backups = sw.codex_file_backups(Default::default()).await.unwrap();
+    let mut found = false;
+    for backup in backups {
+        if backup.kind == superba_core::CodexFileKind::ConfigToml {
+            let bytes = sw.codex_file_backup(&backup.id).await.unwrap();
+            found |= bytes.contents.expose() == malformed.as_bytes();
+        }
+    }
+    assert!(found, "the exact malformed file remains recoverable");
+}
+
+#[tokio::test]
+async fn troubleshooting_reapply_never_automatically_follows_remote_hosts() {
+    let (w, sw) = applied_world().await;
+    let remote = remote_host("workstation", Some("ssh-workstation"));
+    w.remote.hosts.lock().unwrap().push(remote.clone());
+    w.profiles
+        .set
+        .lock()
+        .unwrap()
+        .settings
+        .hosts
+        .entry(remote.target_id.clone())
+        .or_default()
+        .choose_follow(true);
+    let mut request = req("work");
+    request.intent = superba_core::SwitchIntent::ReapplyConfig;
+    let plan = sw.plan(request).await.unwrap();
+    assert!(plan.remotes.is_empty());
+    assert!(plan.request.targets.remotes.is_empty());
+}
+
+#[tokio::test]
 async fn saving_providers_other_than_the_applied_one_never_touches_codex() {
     let (w, sw) = applied_world().await;
     let files = codex_files(&w);

@@ -548,7 +548,10 @@ fn usage_content(
     let rect = ui.available_rect_before_wrap();
     let add = |ui: &mut Ui| {
         if min_rows > 0 {
-            ui.set_height(ui.available_height().max(recent::min_height(cx, state, min_rows)));
+            ui.set_height(
+                ui.available_height()
+                    .max(recent::min_height(cx, state, min_rows)),
+            );
         }
         match state.tab {
             Tab::Recent => recent::show(ui, cx, state, out, min_rows),

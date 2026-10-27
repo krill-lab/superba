@@ -9,6 +9,15 @@ use superba_core::*;
 
 #[async_trait]
 impl SwitchService for LocatedService {
+    async fn troubleshooting_check(
+        &self,
+        request: TroubleshootingRequest,
+        progress: TroubleshootingProgressSink,
+    ) -> Result<TroubleshootingReport> {
+        let (service, _lock) = self.read().await?;
+        service.troubleshooting_check(request, progress).await
+    }
+
     async fn overview(&self) -> Result<Overview> {
         let (service, _lock) = self.read().await?;
         service.overview().await

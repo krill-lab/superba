@@ -124,6 +124,121 @@ fn crash_before_staging_is_discarded() {
 }
 
 #[test]
+fn reinitialize_rebuilds_only_config_and_can_restore_malformed_original() {
+    let t = T::new();
+    let desired = t.plan().desired.unwrap();
+    let malformed = "model = [\n[mcp_servers.private]\ncommand = \"private-command\"\n";
+    std::fs::write(t.root.join("config.toml"), malformed).unwrap();
+    let sessions = t.root.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    std::fs::write(
+        sessions.join("conversation.jsonl"),
+        "keep this conversation",
+    )
+    .unwrap();
+    let plan = t
+        .engine
+        .plan_with_mode(
+            &t.root,
+            &desired,
+            superba_core::ConfigWriteMode::Reinitialize,
+        )
+        .unwrap();
+    assert!(plan.auth_change.is_none());
+    assert!(matches!(plan.files[0].change, FileChange::Unchanged));
+    let report = t.engine.apply_sync(&plan).unwrap();
+    assert!(t.config().contains("model_provider = \"openai\""));
+    assert!(!t.config().contains("private-command"));
+    assert_eq!(t.auth(), AUTH);
+    assert_eq!(
+        std::fs::read_to_string(sessions.join("conversation.jsonl")).unwrap(),
+        "keep this conversation"
+    );
+    assert_eq!(report.files.len(), 1);
+    assert_eq!(report.files[0].kind, CodexFileKind::ConfigToml);
+    assert!(report.files[0].backup.is_some());
+    t.engine.rollback_sync(&report).unwrap();
+    assert_eq!(t.config(), malformed);
+    assert_eq!(t.auth(), AUTH);
+}
+
+#[test]
+fn reinitialize_does_not_rebase_over_a_file_changed_after_preview() {
+    let t = T::new();
+    let desired = t.plan().desired.unwrap();
+    let plan = t
+        .engine
+        .plan_with_mode(
+            &t.root,
+            &desired,
+            superba_core::ConfigWriteMode::Reinitialize,
+        )
+        .unwrap();
+    let changed = format!("{CONFIG}\n[desktop]\ntheme = \"light\"\n");
+    std::fs::write(t.root.join("config.toml"), &changed).unwrap();
+    assert!(matches!(
+        t.engine.apply_sync(&plan),
+        Err(Error::Conflict { .. })
+    ));
+    assert_eq!(t.config(), changed);
+    assert_eq!(t.auth(), AUTH);
+}
+
+#[test]
+fn reinitialize_preserves_concurrent_edits_before_publish() {
+    let t = T::new();
+    let desired = t.plan().desired.unwrap();
+    let plan = t
+        .engine
+        .plan_with_mode(
+            &t.root,
+            &desired,
+            superba_core::ConfigWriteMode::Reinitialize,
+        )
+        .unwrap();
+    let target = t.root.join("config.toml");
+    let changed = format!("{CONFIG}\n[desktop]\ntheme = \"light\"\n");
+    let to_write = changed.clone();
+    BEFORE_PUBLISH.with(|h| {
+        *h.borrow_mut() = Some(Box::new(move |p| {
+            if p == target {
+                std::fs::write(p, &to_write).unwrap();
+            }
+        }))
+    });
+    let result = t.engine.apply_sync(&plan);
+    BEFORE_PUBLISH.with(|h| *h.borrow_mut() = None);
+    assert!(matches!(result, Err(Error::Conflict { .. })));
+    assert_eq!(t.config(), changed);
+    assert_eq!(t.auth(), AUTH);
+    assert!(!t.engine.pending(&t.root).unwrap());
+    assert!(t.temps().is_empty());
+}
+
+#[test]
+fn interrupted_reinitialize_recovers_from_its_encrypted_backup() {
+    let t = T::new();
+    let desired = t.plan().desired.unwrap();
+    let plan = t
+        .engine
+        .plan_with_mode(
+            &t.root,
+            &desired,
+            superba_core::ConfigWriteMode::Reinitialize,
+        )
+        .unwrap();
+    CRASH.with(|c| *c.borrow_mut() = Some(Crash::FirstPublish));
+    let result = t.engine.apply_sync(&plan);
+    CRASH.with(|c| *c.borrow_mut() = None);
+    assert!(result.is_err());
+    let recovered = t.engine.recover_sync(&t.root).unwrap();
+    assert!(!recovered.entries.is_empty());
+    assert_eq!(t.auth(), AUTH);
+    assert!(ConfigDoc::parse(t.config().as_bytes()).is_ok());
+    assert!(!t.engine.pending(&t.root).unwrap());
+}
+
+#[test]
 fn crash_after_staging_is_discarded_and_temps_removed() {
     let t = T::new();
     t.crash_apply(Crash::Staged);

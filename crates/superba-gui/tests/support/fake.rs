@@ -96,6 +96,8 @@ pub struct FakeOptions {
 /// A self-contained, thread-safe implementation of the GUI's switching backend.
 pub struct FakeService {
     state: Mutex<FakeState>,
+    troubleshooting: Mutex<Option<Result<TroubleshootingReport>>>,
+    troubleshooting_requests: Mutex<Vec<TroubleshootingRequest>>,
     options: FakeOptions,
     next_plan: AtomicU64,
     areas: Areas,
@@ -180,6 +182,8 @@ impl FakeService {
     pub fn new(options: FakeOptions) -> Self {
         Self {
             state: Mutex::new(FakeState::new(&options)),
+            troubleshooting: Mutex::default(),
+            troubleshooting_requests: Mutex::default(),
             options,
             next_plan: AtomicU64::new(1),
             areas: Areas::default(),
@@ -190,6 +194,16 @@ impl FakeService {
             next_turn_read: Mutex::default(),
         }
         .with_account_summary(true)
+    }
+
+    /// Scripted observations, with no configuration or network IO.
+    pub fn set_troubleshooting(&self, report: Result<TroubleshootingReport>) {
+        *self.troubleshooting.lock().unwrap() = Some(report);
+    }
+
+    /// Diagnostic requests this fixture received.
+    pub fn troubleshooting_requests(&self) -> Vec<TroubleshootingRequest> {
+        self.troubleshooting_requests.lock().unwrap().clone()
     }
 
     /// Choose whether the simulated relay serves the standard billing endpoints
@@ -1211,6 +1225,7 @@ fn config_plan(before: &ConfigState, after: &ConfigState, plan: &SwitchPlan) -> 
     })
     .collect();
     ApplyPlan {
+        write_mode: superba_core::ConfigWriteMode::Managed,
         id: plan.id.clone(),
         codex_home: HOME.into(),
         generation,
@@ -1704,6 +1719,32 @@ impl FakeService {
 
 #[superba_core::async_trait]
 impl SwitchService for FakeService {
+    async fn troubleshooting_check(
+        &self,
+        request: TroubleshootingRequest,
+        progress: TroubleshootingProgressSink,
+    ) -> Result<TroubleshootingReport> {
+        self.troubleshooting_requests.lock().unwrap().push(request);
+        let report = self
+            .troubleshooting
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| {
+                Err(Error::not_implemented(
+                    "script a diagnostic answer for this test",
+                ))
+            })?;
+        for check in &report.checks {
+            if !progress(TroubleshootingProgress {
+                check: check.clone(),
+            }) {
+                return Err(Error::Cancelled);
+            }
+        }
+        Ok(report)
+    }
+
     async fn switch_turn_activity(&self, targets: Vec<TargetId>) -> Result<Vec<TurnActivity>> {
         let held = self.next_turn_read.lock().unwrap().take();
         if let Some(held) = held {

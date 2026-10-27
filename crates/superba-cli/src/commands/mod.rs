@@ -96,6 +96,7 @@ pub(crate) fn request(intent: SwitchIntent, exec: &ExecArgs) -> SwitchRequest {
         accept_shared_home: false,
         migration_exclude: Vec::new(),
         refresh_models: false,
+        local_only: false,
     }
 }
 

@@ -26,8 +26,8 @@ use tracing::Instrument;
 
 use crate::config::join_path;
 use crate::forward::{
-    Observed, describe_error, empty, failover_status_in, local_busy, request_headers,
-    response_headers, router_error, set_route,
+    Observed, describe_error, empty, local_busy, request_headers, response_headers, router_error,
+    set_route,
 };
 use crate::limits::{Admission, ConnSlot, Place, file_limit_detail, file_limit_in};
 use crate::proxy::{note_line_down, on_answer};
@@ -158,7 +158,8 @@ pub(crate) async fn proxy_ws(
     .into_iter()
     .filter(|c| {
         let m = &generation.members[c.member];
-        transport::offers_websocket(&shared.transports, &m.cfg, &m.lines[c.line].cfg, now)
+        !generation.config.tuning.failover_enabled
+            || transport::offers_websocket(&shared.transports, &m.cfg, &m.lines[c.line].cfg, now)
     })
     .collect();
     if order.first().map(|c| c.member) != preferred_member {
@@ -252,7 +253,7 @@ pub(crate) enum Dialed {
 }
 
 /// Open a member socket on the first line of `order` that upgrades, failing
-/// over across the others ([`failover_status_in`]).
+/// over across the others when enabled by the generation.
 pub(crate) async fn dial(
     shared: &Arc<Shared>,
     generation: &Arc<Generation>,
@@ -308,19 +309,31 @@ pub(crate) async fn dial(
                 let reason = describe_error(&e);
                 let opened = lock(&line.health).on_hard_failure(Instant::now(), reason.clone());
                 note_line_down(shared, generation, c, opened, &reason);
-                failed_over(shared, member, line, &mut failures, &label, reason);
+                failed_over(
+                    shared,
+                    generation,
+                    member,
+                    line,
+                    &mut failures,
+                    &label,
+                    reason,
+                );
                 continue;
             }
             Ok(resp) => resp,
         };
-        if let Some(reason) = failover_status_in(
-            &generation.config.tuning.failover_statuses,
-            resp.status(),
-            resp.headers(),
-        ) {
+        if let Some(reason) = generation.failover_reason(resp.status(), resp.headers()) {
             let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
             note_line_down(shared, generation, c, opened, &reason);
-            failed_over(shared, member, line, &mut failures, &label, reason);
+            failed_over(
+                shared,
+                generation,
+                member,
+                line,
+                &mut failures,
+                &label,
+                reason,
+            );
             continue;
         }
         let status = resp.status();
@@ -358,7 +371,15 @@ pub(crate) async fn dial(
                 let reason = format!("upgrade failed: {}", e.without_url());
                 let opened = lock(&line.health).on_hard_failure(Instant::now(), reason.clone());
                 note_line_down(shared, generation, c, opened, &reason);
-                failed_over(shared, member, line, &mut failures, &label, reason);
+                failed_over(
+                    shared,
+                    generation,
+                    member,
+                    line,
+                    &mut failures,
+                    &label,
+                    reason,
+                );
                 continue;
             }
         };
@@ -447,12 +468,17 @@ pub(crate) async fn tunnel<D>(
 
 fn failed_over(
     shared: &Shared,
+    generation: &Generation,
     member: &crate::state::MemberRt,
     line: &crate::state::LineRt,
     failures: &mut Vec<String>,
     label: &str,
     reason: String,
 ) {
+    if !generation.config.tuning.failover_enabled {
+        failures.push(format!("{label}: {reason}"));
+        return;
+    }
     line.counters.failovers_away.fetch_add(1, Ordering::Relaxed);
     shared.totals.failovers.fetch_add(1, Ordering::Relaxed);
     shared.event(

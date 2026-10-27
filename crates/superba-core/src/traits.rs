@@ -145,10 +145,32 @@ pub trait ConfigEngine: Send + Sync {
     async fn snapshot_baseline(&self, home: &CodexHome, extras: BaselineExtras)
     -> Result<Baseline>;
 
+    /// Capture the originals for an explicitly requested config rebuild, even
+    /// when config.toml cannot be parsed. Preserve the original bytes in backup.
+    async fn snapshot_reinitialize_baseline(
+        &self,
+        home: &CodexHome,
+        extras: BaselineExtras,
+    ) -> Result<Baseline> {
+        self.snapshot_baseline(home, extras).await
+    }
+
     /// Compute the change for `desired` (also used for restore: pass
     /// [`crate::ResolvedMode::Official`] or [`crate::ResolvedMode::Original`]).
     /// Never writes.
     async fn plan(&self, home: &CodexHome, desired: &ResolvedProfile) -> Result<ApplyPlan>;
+
+    /// Plan a complete replacement of config.toml from the resolved profile.
+    /// auth.json is preserved. The old file is backed up by the ordinary apply
+    /// transaction, including when its TOML cannot be parsed.
+    async fn plan_reinitialize(
+        &self,
+        home: &CodexHome,
+        desired: &ResolvedProfile,
+    ) -> Result<ApplyPlan> {
+        let _ = (home, desired);
+        Err(Error::not_implemented("reinitialize Codex configuration"))
+    }
 
     /// Execute a plan (journaled). Re-reads the files just before writing and
     /// re-renders if they changed since planning.
@@ -1615,6 +1637,17 @@ pub trait SwitchService: Send + Sync {
 
     /// Diagnostics.
     async fn doctor(&self) -> Result<Vec<DoctorFinding>>;
+
+    /// Inspect one troubleshooting problem. Configuration writes, migrations and
+    /// restarts are performed separately through plan/execute.
+    async fn troubleshooting_check(
+        &self,
+        request: crate::TroubleshootingRequest,
+        progress: crate::TroubleshootingProgressSink,
+    ) -> Result<crate::TroubleshootingReport> {
+        let _ = (request, progress);
+        Err(Error::not_implemented("Codex troubleshooting"))
+    }
 
     /// The configuration written last versus what every running Codex
     /// consumer of the local home uses, with running turns checked (slower

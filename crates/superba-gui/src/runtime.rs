@@ -15,6 +15,9 @@ use superba_core::{
 };
 use tokio::sync::{mpsc as tmpsc, oneshot};
 
+mod troubleshooting;
+use troubleshooting::prepare_troubleshooting;
+
 /// A one-shot, read-only background task owned by a page. No credential is
 /// serialized or passed through the activity log.
 #[derive(Debug)]
@@ -147,6 +150,13 @@ pub fn profile_key_task(reference: superba_core::KeyRef) -> ReadTask<Option<Stri
 /// Something the UI asks the backend to do.
 #[derive(Debug)]
 pub enum Command {
+    /// Prepare a page-owned recovery; only the app starts its switch Flow.
+    TroubleshootingRepair {
+        /// Originating run.
+        run: u64,
+        /// Recovery operation.
+        repair: crate::pages::troubleshooting::Repair,
+    },
     /// Reload overview, profiles and sites.
     Refresh,
     /// Reload only the overview (periodic poll).
@@ -315,6 +325,13 @@ impl PendingDecision {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Reply {
+    /// The recovery's preparation finished; plan through the ordinary Flow.
+    TroubleshootingPrepared {
+        /// Originating run.
+        run: u64,
+        /// Request, or the precise preparation failure.
+        result: Result<SwitchRequest>,
+    },
     /// Overview loaded.
     Overview(Result<Overview>),
     /// Profiles loaded.
@@ -648,6 +665,10 @@ async fn handle(
     last: &LastOverview,
 ) {
     match command {
+        Command::TroubleshootingRepair { run, repair } => {
+            let result = prepare_troubleshooting(service.as_ref(), repair).await;
+            out.send(Reply::TroubleshootingPrepared { run, result });
+        }
         Command::Refresh => {
             let (o, p, s) = after_switches(switches, || async {
                 tokio::join!(service.overview(), service.profile_set(), service.sites())

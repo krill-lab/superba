@@ -157,6 +157,8 @@ pub fn planned_request(action: &Action) -> Option<SwitchRequest> {
 /// contract in [`crate::pages`]).
 #[derive(Debug, Default)]
 pub struct PageStates {
+    /// Guided troubleshooting, shared by both navigation modes.
+    pub troubleshooting: pages::troubleshooting::State,
     /// Overview (its menu and the dismissed empty state).
     pub overview: pages::overview::State,
     /// Providers.
@@ -197,10 +199,7 @@ impl PageStates {
     ) {
         match page {
             Page::Troubleshooting => {
-                ui.label(crate::design::widgets::Text::page_title(
-                    cx.tr.t(page.title_key()),
-                    cx.pal,
-                ));
+                pages::troubleshooting::show(ui, cx, &mut self.troubleshooting, out);
             }
             Page::Providers => pages::providers::show_simple(ui, cx, &mut self.providers, out),
             Page::Router => pages::router::show_simple(ui, cx, &mut self.router, out),
@@ -222,7 +221,7 @@ impl PageStates {
     /// What `page` reports to the shell (default for pages without a module state).
     pub fn status(&self, page: Page) -> PageStatus {
         match page {
-            Page::Troubleshooting => PageStatus::default(),
+            Page::Troubleshooting => pages::troubleshooting::status(&self.troubleshooting),
             Page::Providers => pages::providers::status(&self.providers),
             Page::Models => pages::models::status(&self.models),
             Page::Router => pages::router::status(&self.router),
@@ -255,7 +254,9 @@ impl PageStates {
     /// Run a page command (the shell already navigated to `page`).
     pub fn command(&mut self, page: Page, cx: &Cx<'_>, command: &str, out: &mut Vec<Action>) {
         match page {
-            Page::Troubleshooting => {}
+            Page::Troubleshooting => {
+                pages::troubleshooting::command(&mut self.troubleshooting, cx, command, out)
+            }
             Page::Providers => pages::providers::command(&mut self.providers, cx, command, out),
             Page::Models => pages::models::command(&mut self.models, cx, command, out),
             Page::Router => pages::router::command(&mut self.router, cx, command, out),
@@ -296,10 +297,7 @@ impl PageStates {
         match page {
             Page::Overview => pages::overview::show(ui, cx, &mut self.overview, out),
             Page::Troubleshooting => {
-                ui.label(crate::design::widgets::Text::page_title(
-                    cx.tr.t(page.title_key()),
-                    cx.pal,
-                ));
+                pages::troubleshooting::show(ui, cx, &mut self.troubleshooting, out);
             }
             Page::Providers => pages::providers::show(ui, cx, &mut self.providers, out),
             Page::Models => pages::models::show(ui, cx, &mut self.models, out),
@@ -329,6 +327,8 @@ impl PageStates {
 
 /// The application.
 pub struct SuperbaApp {
+    /// The diagnostic run whose recovery owns the current global Flow.
+    troubleshooting_flow: Option<u64>,
     backend: Backend,
     service: Arc<dyn SwitchService>,
     opts: AppOptions,
@@ -468,6 +468,7 @@ impl SuperbaApp {
             router_watch_busy: false,
             account_loaded_for: None,
             models_loaded_for: None,
+            troubleshooting_flow: None,
             selfupdate_prefs: (true, None),
             had_providers: false,
             pending_key_save: false,
@@ -1123,6 +1124,17 @@ impl SuperbaApp {
                 }
                 Reply::Feeds(r) => self.data.feeds.finish(r),
                 Reply::ModelsView(r) => self.data.active_models.finish(r),
+                Reply::TroubleshootingPrepared { run, result } => {
+                    if self.pages.troubleshooting.pending_run() == Some(run) {
+                        match result {
+                            Ok(request) => {
+                                self.troubleshooting_flow = Some(run);
+                                self.flow.request(request, now);
+                            }
+                            Err(e) => self.pages.troubleshooting.repair_finished(run, Err(e)),
+                        }
+                    }
+                }
                 Reply::ModelsSaved { result, then } => match result {
                     Ok(report) => {
                         for n in report.notes.iter().filter(|n| n.severity != Severity::Info) {
@@ -1273,6 +1285,33 @@ impl SuperbaApp {
 
     fn process_flow_notices(&mut self, ctx: &egui::Context) {
         for notice in self.flow.take_notices() {
+            if let Some(run) = self.troubleshooting_flow.take() {
+                let result = match &notice {
+                    FlowNotice::PlanFailed(e) | FlowNotice::ExecuteFailed { error: e, .. } => {
+                        Err(e.clone())
+                    }
+                    FlowNotice::Finished { outcome, .. } => {
+                        if !matches!(
+                            outcome.restart,
+                            superba_core::RestartKind::None
+                                | superba_core::RestartKind::Blocked { .. }
+                        ) {
+                            self.pages.troubleshooting.repair_restarted(run);
+                        }
+                        if outcome.status == OutcomeStatus::Switched {
+                            Ok(superba_core::LocalizedText::new(
+                                "troubleshooting.repair_done",
+                                "Recovery completed; checking the result again.",
+                            ))
+                        } else {
+                            Err(superba_core::Error::other(
+                                self.tr.t("troubleshooting.repair_incomplete"),
+                            ))
+                        }
+                    }
+                };
+                self.pages.troubleshooting.repair_finished(run, result);
+            }
             match notice {
                 FlowNotice::PlanFailed(e) => {
                     // A switch started from the tray failed: say so on screen.
@@ -1706,6 +1745,9 @@ impl SuperbaApp {
             return;
         }
         if let Some(request) = planned_request(&action) {
+            if self.pages.troubleshooting.busy() {
+                return;
+            }
             let now = self.now();
             if matches!(action, Action::SessionBatch { .. }) {
                 self.flow.request_session_batch(request, now);
@@ -1715,6 +1757,21 @@ impl SuperbaApp {
             return;
         }
         match action {
+            Action::TroubleshootingRepair { run, repair } => {
+                if matches!(self.flow.stage(), crate::flow::Stage::Idle)
+                    && self.pages.troubleshooting.pending_run() == Some(run)
+                {
+                    self.backend
+                        .send(Command::TroubleshootingRepair { run, repair });
+                } else {
+                    self.pages.troubleshooting.repair_finished(
+                        run,
+                        Err(superba_core::Error::invalid(
+                            self.tr.t("troubleshooting.other_operation"),
+                        )),
+                    );
+                }
+            }
             Action::SetSimpleMode(simple) => {
                 if !self.settings_loaded
                     || self.pages.any_modal()
@@ -2056,6 +2113,15 @@ impl SuperbaApp {
     }
 
     fn content(&mut self, ui: &mut egui::Ui, out: &mut Vec<Action>) {
+        self.process_flow_notices(ui.ctx());
+        if let Some(run) = self.troubleshooting_flow
+            && matches!(self.flow.stage(), crate::flow::Stage::Idle)
+        {
+            self.troubleshooting_flow = None;
+            self.pages
+                .troubleshooting
+                .repair_finished(run, Err(superba_core::Error::Cancelled));
+        }
         ui.ctx().data_mut(|data| {
             data.insert_temp(
                 egui::Id::unique("superba-reduce-motion"),
@@ -2063,8 +2129,13 @@ impl SuperbaApp {
             )
         });
         let now = self.now();
-        let busy = self.flow.is_running() || self.flow.is_planning();
+        let busy = !matches!(self.flow.stage(), crate::flow::Stage::Idle)
+            || (self.page != Page::Troubleshooting && self.pages.troubleshooting.busy());
         let pal = Palette::of(ui.ctx());
+        if self.page != Page::Troubleshooting {
+            let cx = cx!(self, pal, busy);
+            self.pages.troubleshooting.poll(ui, &cx, out);
+        }
         if matches!(
             self.page,
             Page::Overview | Page::Superba(pages::SuperbaSection::Home)

@@ -43,6 +43,7 @@ pub mod notify;
 pub mod overview;
 pub mod superba;
 pub mod tools;
+pub mod troubleshooting;
 pub use superba::SuperbaSection;
 pub mod providers;
 pub mod router;
@@ -105,7 +106,7 @@ pub enum Page {
     ClaudeSettings,
     /// Superba maintenance and preferences, with a section deep link.
     Superba(SuperbaSection),
-    /// Reserved troubleshooting page; content will be added separately.
+    /// Guided Codex diagnostics, recovery and follow-up advice.
     Troubleshooting,
     /// One installed coding tool (dsh, opencode, pi, ZCode, WorkBuddy,
     /// Gemini CLI): the Tools page's detail of it as a page of its own; its
@@ -394,6 +395,13 @@ impl Action {
 /// Something a page asks the app to do.
 #[derive(Debug)]
 pub enum Action {
+    /// A troubleshooting run asks the global owner to prepare and plan a repair.
+    TroubleshootingRepair {
+        /// Originating run.
+        run: u64,
+        /// Recovery operation.
+        repair: troubleshooting::Repair,
+    },
     /// Change the desktop navigation mode and persist it.
     SetSimpleMode(bool),
     /// One explicit simple-mode click authorizes the complete session batch.

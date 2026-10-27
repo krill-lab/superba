@@ -3,7 +3,7 @@
 //! used to emulate remote compaction or a stored server-side conversation.
 
 use super::{Invalid, ir::Protocol, routing};
-use crate::forward::{failover_status_in, set_route, up_response};
+use crate::forward::{set_route, up_response};
 use crate::limits::{Admission, ConnSlot};
 use crate::select::{Candidate, candidates};
 use crate::state::{GaugeGuard, Generation, RespBody, Shared, lock};
@@ -256,11 +256,7 @@ where
                 continue;
             }
         };
-        if let Some(reason) = failover_status_in(
-            &generation.config.tuning.failover_statuses,
-            resp.status(),
-            resp.headers(),
-        ) {
+        if let Some(reason) = generation.failover_reason(resp.status(), resp.headers()) {
             let opened = lock(&line.health).on_soft_failure(Instant::now(), reason.clone());
             crate::proxy::note_line_down(shared, generation, c, opened, &reason);
             if let Some(t) = &mut tracker {

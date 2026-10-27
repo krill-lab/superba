@@ -87,6 +87,7 @@ pub mod time;
 pub mod tools;
 pub mod traits;
 pub mod transports;
+pub mod troubleshooting;
 pub mod update_control;
 pub mod usage;
 pub mod versions;
@@ -146,6 +147,7 @@ pub use time::{Clock, Countdown, LocalTime, ManualClock, SystemClock, Timestamp}
 pub use tools::*;
 pub use traits::*;
 pub use transports::*;
+pub use troubleshooting::*;
 pub use update_control::UpdateControl;
 pub use usage::*;
 pub use versions::*;

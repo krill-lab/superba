@@ -450,6 +450,12 @@ pub enum RestoreTarget {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum SwitchIntent {
+    /// Reapply this computer's applied configuration without following remote
+    /// hosts. Used by user-triggered troubleshooting repairs.
+    ReapplyConfig,
+    /// Rebuild this computer's config.toml from its applied provider, keeping
+    /// authentication and sessions. Always explicitly confirmed, with backup.
+    ReinitializeConfig,
     /// Switch to a profile, optionally overriding its line and auth mode for this
     /// switch (quick line switch, manual auth under Advanced). The switch service
     /// stores the overrides into the profile after a successful switch.
@@ -595,6 +601,9 @@ pub struct SwitchRequest {
     /// no file changes, so it fetches the list again at once (user bug 106).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub refresh_models: bool,
+    /// Explicit local maintenance: do not automatically follow SSH/WSL hosts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub local_only: bool,
 }
 
 impl SwitchRequest {
@@ -616,6 +625,7 @@ impl SwitchRequest {
             accept_shared_home: false,
             migration_exclude: Vec::new(),
             refresh_models: false,
+            local_only: false,
         }
     }
 
