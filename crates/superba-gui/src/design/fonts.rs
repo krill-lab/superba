@@ -22,6 +22,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use egui::epaint::text::Blob;
 use egui::{FontData, FontDefinitions, FontFamily, FontId};
 
 /// Geist Regular (400).
@@ -361,18 +362,69 @@ pub fn discover_cjk() -> FontReport {
     pick_cjk(&db)
 }
 
-fn read_face(face: &CjkFace, geist: &[u8]) -> Option<FontData> {
-    let bytes = std::fs::read(&face.path).ok()?;
-    #[cfg(not(target_os = "macos"))]
-    let index = face.index;
-    #[cfg(target_os = "macos")]
-    let (bytes, index) = macos::renderable_face(bytes, face)?;
-    Some(face_data(bytes, index, face, geist))
+/// The system font files behind one set of definitions, each opened once
+/// (user bug 125). A CJK file is 15-80 MB (Microsoft YaHei, Noto Sans CJK,
+/// PingFang), and the regular, medium and bold faces often sit in the same
+/// collection: they share one [`Blob`].
+///
+/// A file is memory-mapped, not read: egui touches only the tables it parses
+/// and the outlines of the glyphs it draws, so only those pages become
+/// resident, and they are the file's own (shared, clean) pages, not private
+/// heap memory. Reading falls back to `std::fs::read` when mapping fails.
+#[derive(Default)]
+pub(super) struct FontFiles {
+    open: std::collections::HashMap<PathBuf, Blob>,
 }
 
-fn face_data(bytes: Vec<u8>, index: u32, face: &CjkFace, geist: &[u8]) -> FontData {
-    let tweak = cjk_tweak(&bytes, index, face.weight, &face.family, geist);
-    FontData::from_blob(Arc::new(bytes), index).tweak(tweak)
+impl FontFiles {
+    /// The bytes of `path`, opened the first time it is asked for.
+    pub(super) fn get(&mut self, path: &Path) -> Option<Blob> {
+        if let Some(blob) = self.open.get(path) {
+            return Some(Arc::clone(blob));
+        }
+        let blob = map_file(path).or_else(|| {
+            let bytes: Blob = Arc::new(std::fs::read(path).ok()?);
+            Some(bytes)
+        })?;
+        self.open.insert(path.to_owned(), Arc::clone(&blob));
+        Some(blob)
+    }
+
+    /// How many distinct files were opened.
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.open.len()
+    }
+}
+
+/// `path` mapped read-only, or `None` when it cannot be mapped (or is empty).
+fn map_file(path: &Path) -> Option<Blob> {
+    let file = std::fs::File::open(path).ok()?;
+    // SAFETY: the mapping is read-only and lives as long as the Blob. The
+    // files are installed system fonts (or the user's fonts that fontconfig
+    // picked): package managers and Windows replace them by writing a new
+    // file, not by changing this one in place, and Windows refuses to change
+    // a mapped file at all. fontdb maps the same files the same way.
+    let map = unsafe { memmap2::Mmap::map(&file) }.ok()?;
+    if map.is_empty() {
+        return None;
+    }
+    Some(Arc::new(map))
+}
+
+fn read_face(files: &mut FontFiles, face: &CjkFace, geist: &[u8]) -> Option<FontData> {
+    let bytes = files.get(&face.path)?;
+    #[cfg(target_os = "macos")]
+    if macos::needs_conversion((*bytes).as_ref(), face.index)? {
+        let (converted, index) = macos::renderable_face((*bytes).as_ref().to_vec(), face)?;
+        return Some(face_data(Arc::new(converted), index, face, geist));
+    }
+    Some(face_data(bytes, face.index, face, geist))
+}
+
+fn face_data(bytes: Blob, index: u32, face: &CjkFace, geist: &[u8]) -> FontData {
+    let tweak = cjk_tweak((*bytes).as_ref(), index, face.weight, &face.family, geist);
+    FontData::from_blob(bytes, index).tweak(tweak)
 }
 
 mod alignment;
@@ -388,7 +440,8 @@ use alignment::cjk_tweak;
 
 /// Build the font definitions: Geist weights first, the CJK faces as fallbacks.
 pub fn definitions(report: &FontReport) -> FontDefinitions {
-    definitions_with(report, read_face)
+    let mut files = FontFiles::default();
+    definitions_with(report, |face, geist| read_face(&mut files, face, geist))
 }
 
 fn definitions_with(

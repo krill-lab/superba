@@ -40,6 +40,7 @@ superba-versions.workspace = true
 anyhow.workspace = true
 egui.workspace = true
 fontdb.workspace = true
+memmap2.workspace = true
 skrifa.workspace = true
 open.workspace = true
 resvg.workspace = true

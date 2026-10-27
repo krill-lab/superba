@@ -2,7 +2,7 @@
 //! cannot decode that private outline format. Ask the OS for the selected
 //! face/weight's quadratic paths and cache a local static TTF for egui.
 
-use std::{collections::BTreeMap, ffi::c_void, ptr};
+use std::{collections::BTreeMap, ffi::c_void, ptr, sync::Arc};
 
 use core_foundation::{
     array::{CFArray, CFArrayRef},
@@ -326,6 +326,13 @@ extern "C" fn path_element(info: *mut c_void, element: *const PathElement) {
     }
 }
 
+/// Whether the face at `index` of `bytes` is in the private `hvgl` outline
+/// format egui cannot draw (`None`: not a readable font).
+pub(super) fn needs_conversion(bytes: &[u8], index: u32) -> Option<bool> {
+    let font = FontRef::from_index(bytes, index).ok()?;
+    Some(font.table_data(Tag::new(b"hvgl")).is_some())
+}
+
 pub(super) fn renderable_face(bytes: Vec<u8>, face: &CjkFace) -> Option<(Vec<u8>, u32)> {
     let font = FontRef::from_index(&bytes, face.index).ok()?;
     if font.table_data(Tag::new(b"hvgl")).is_none() {
@@ -402,13 +409,13 @@ fn cached_definitions(
     convert: bool,
 ) -> (egui::FontDefinitions, bool) {
     let mut deferred = false;
+    let mut files = super::FontFiles::default();
     let definitions = super::definitions_with(report, |face, geist| {
         if let Some(bytes) = cache.and_then(|cache| cache.read(face)) {
-            return Some(super::face_data(bytes, 0, face, geist));
+            return Some(super::face_data(Arc::new(bytes), 0, face, geist));
         }
-        let bytes = std::fs::read(&face.path).ok()?;
-        let font = FontRef::from_index(&bytes, face.index).ok()?;
-        if font.table_data(Tag::new(b"hvgl")).is_none() {
+        let bytes = files.get(&face.path)?;
+        if !needs_conversion((*bytes).as_ref(), face.index)? {
             return Some(super::face_data(bytes, face.index, face, geist));
         }
         if !convert {
@@ -422,7 +429,7 @@ fn cached_definitions(
             Some(cache) => cache.convert(face, encode),
             None => encode(),
         }?;
-        Some(super::face_data(bytes, 0, face, geist))
+        Some(super::face_data(Arc::new(bytes), 0, face, geist))
     });
     (definitions, deferred)
 }

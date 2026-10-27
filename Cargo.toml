@@ -139,6 +139,8 @@ wgpu = { version = "30", default-features = false, features = ["std", "dx12"] }
 egui = "0.37"
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
 fontdb = "0.24"
+# System CJK font files are mapped, not read into the heap (superba-gui fonts, user bug 125).
+memmap2 = "0.9"
 # Match egui's metric selection (OS/2 vs hhea) when aligning fallback fonts.
 skrifa = "0.44"
 core-foundation = "0.10"

@@ -71,3 +71,35 @@ fn conversion_failure_keeps_the_fallback() {
     }
     assert_eq!(fonts.report(), &fallback);
 }
+
+/// User bug 125: a CJK collection backs several weights (Noto Sans CJK's
+/// variable file, PingFang, YaHei); its 15-80 MB are opened once, mapped,
+/// and shared by every face instead of read into the heap per weight.
+#[test]
+fn a_font_file_backing_several_weights_is_opened_once() {
+    use crate::design::fonts::{FontFiles, definitions_with, read_face};
+
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/fonts/Geist-Regular.ttf");
+    let face = |weight| CjkFace {
+        family: "Test Sans".into(),
+        path: path.clone(),
+        index: 0,
+        weight,
+    };
+    let report = FontReport {
+        cjk_regular: Some(face(400)),
+        cjk_medium: Some(face(500)),
+        cjk_bold: Some(face(700)),
+    };
+    let mut files = FontFiles::default();
+    let defs = definitions_with(&report, |f, geist| read_face(&mut files, f, geist));
+    assert_eq!(files.len(), 1);
+    let bytes = |name: &str| defs.font_data[name].bytes().as_ptr();
+    assert_eq!(bytes("cjk-regular"), bytes("cjk-medium"));
+    assert_eq!(bytes("cjk-regular"), bytes("cjk-bold"));
+    assert_eq!(
+        defs.font_data["cjk-bold"].bytes(),
+        std::fs::read(&path).unwrap().as_slice()
+    );
+}
