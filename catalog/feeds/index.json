@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "serial": 5,
+  "serial": 6,
   "generated": "2026-10-27",
   "files": [
     {
@@ -20,8 +20,8 @@
     },
     {
       "path": "prices.json",
-      "size": 34165,
-      "sha256": "31b56dcf8ec9a275c7337fd58f79562cbe4e0499be745649f419f1e855292d1d"
+      "size": 35381,
+      "sha256": "93b603d55d2960102a8f54f3957daf5d13940ebd56948335cc484720cdbb6534"
     },
     {
       "path": "prompts/0fae6672.md",
