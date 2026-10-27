@@ -8,6 +8,8 @@
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    // Before any thread starts (user bug 125).
+    superba_gui::memory::limit_arenas();
     let args: Vec<_> = std::env::args_os().collect();
     // The second stage of an update: swap files, restart the router, start the
     // new Superba, once the process that downloaded it has exited.

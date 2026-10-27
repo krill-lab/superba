@@ -43,6 +43,7 @@ pub mod instance;
 pub mod launch;
 #[cfg(target_os = "macos")]
 mod macos;
+pub mod memory;
 pub mod movers;
 pub mod notices;
 pub mod pages;
