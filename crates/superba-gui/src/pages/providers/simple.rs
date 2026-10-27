@@ -3,7 +3,7 @@
 use egui::{Align, Layout, ScrollArea, Ui};
 use superba_core::{KeyInput, Secret, SiteKind};
 
-use super::{KeyEdit, State, account, detail, list};
+use super::{KeyEdit, State, account, detail, list, mixed};
 use crate::design::icons::Icon;
 use crate::design::layout::{self, Track};
 use crate::design::tokens::{size, space};
@@ -166,6 +166,30 @@ fn provider_detail(
     Card::new()
         .padding(12)
         .show(ui, |ui| account::show_simple(ui, cx, state, p));
+    if p.site.kind == SiteKind::Krill {
+        Card::new().padding(12).show(ui, |ui| {
+            if cx.data.router_enabled() {
+                mixed::show_simple(
+                    ui,
+                    cx,
+                    &mut state.mixed,
+                    out,
+                    "providers.simple.remote_on",
+                    None,
+                );
+            } else {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(Text::body(cx.tr.t("providers.simple.remote_off"), cx.pal));
+                    if ui
+                        .add(Button::new(cx.tr.t("providers.simple.enable_router")).small())
+                        .clicked()
+                    {
+                        out.push(Action::Go(Page::Router));
+                    }
+                });
+            }
+        });
+    }
     Card::new()
         .padding(12)
         .show(ui, |ui| key(ui, cx, state, p, out));

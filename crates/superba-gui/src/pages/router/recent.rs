@@ -487,12 +487,23 @@ pub(super) fn load_facets(cx: &Cx<'_>, r: &mut Recent, range: Range) {
     }
 }
 
-pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+pub(super) fn show(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &mut State,
+    out: &mut Vec<Action>,
+    min_rows: usize,
+) {
     state.recent.poll(cx, out);
     load(cx, state);
     filters(ui, cx, state);
     ui.add_space(6.0);
-    let rect = ui.available_rect_before_wrap();
+    let mut rect = ui.available_rect_before_wrap();
+    if min_rows > 0 {
+        // Measure after the filters: wrapped controls must not take space
+        // away from the minimum number of complete request rows.
+        rect.set_height(rect.height().max(min_height(cx, state, min_rows)));
+    }
     let side = if state.recent.collapsed {
         COLLAPSED_WIDTH
     } else if rect.width() >= 1100.0 {
@@ -500,12 +511,14 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     } else {
         150.0
     };
-    layout::columns(ui, &[Track::Fixed(side), Track::Fill], 12.0, |ui, i| {
-        if i == 0 {
-            sidebar(ui, cx, state);
-        } else {
-            main(ui, cx, state, out);
-        }
+    layout::fixed(ui, rect, |ui| {
+        layout::columns(ui, &[Track::Fixed(side), Track::Fill], 12.0, |ui, i| {
+            if i == 0 {
+                sidebar(ui, cx, state);
+            } else {
+                main(ui, cx, state, out);
+            }
+        });
     });
 }
 
@@ -556,6 +569,20 @@ const ROW_GAP: f32 = 6.0;
 /// detail pane grows.
 const MIN_LOG: f32 =
     crate::design::tokens::size::TABLE_HEADER + 4.0 * crate::design::widgets::log_table::ROW_HEIGHT;
+
+/// Minimum log column height, including the header, pinned totals, toolbar
+/// and any open detail pane. Filter rows are measured separately above it.
+pub(super) fn min_height(cx: &Cx<'_>, state: &State, rows: usize) -> f32 {
+    let log = crate::design::tokens::size::TABLE_HEADER + (rows + 1) as f32 * log_table::ROW_HEIGHT;
+    let mut height = log + ROW_GAP + toolbar::HEIGHT;
+    if state.tab == super::Tab::Recent
+        && !state.recent.detail_hidden
+        && state.recent.selected_index().is_some()
+    {
+        height += ROW_GAP + detail_height(cx, state, f32::INFINITY);
+    }
+    height
+}
 
 /// Height of the detail pane when the log and the pane share `room` points: what
 /// the user dragged it to, else its content (title, tabs and the two rows of 通用

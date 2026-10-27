@@ -8,11 +8,11 @@
 //! and takes effect with the next switch to a routed provider; the status line
 //! says which state the computer is in and offers that switch.
 
-use egui::Ui;
+use egui::{Align, Layout, Ui};
 use superba_core::{AuthMode, AuthShape, ProfileId, RouterView, Timestamp};
 
 use crate::design::fonts::{Weight, font};
-use crate::design::tokens::text;
+use crate::design::tokens::{space, text};
 use crate::design::widgets::{Button, FormRow, Status, StatusDot, Text, Toggle};
 use crate::pages::{Action, Cx};
 use crate::runtime::ReadTask;
@@ -30,6 +30,24 @@ pub(crate) struct MixedLogin {
 }
 
 impl MixedLogin {
+    fn value(&self, cx: &Cx<'_>) -> bool {
+        self.pending.unwrap_or_else(|| {
+            cx.data
+                .profiles
+                .value
+                .as_ref()
+                .is_some_and(|p| p.settings.router.mixed_login)
+        })
+    }
+
+    fn save(&mut self, cx: &Cx<'_>, on: bool) {
+        self.pending = Some(on);
+        let service = cx.service.clone();
+        self.task = Some(crate::runtime::task(async move {
+            service.router_set_mixed_login(on).await
+        }));
+    }
+
     /// Collect a finished save; true while one runs.
     pub(crate) fn poll(&mut self, cx: &Cx<'_>, out: &mut Vec<Action>) -> bool {
         let Some(task) = &self.task else {
@@ -111,12 +129,7 @@ pub(crate) fn stale_days(last_refresh: Option<Timestamp>, now: Timestamp) -> Opt
 
 /// The setting row and its status line.
 pub(crate) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut MixedLogin, out: &mut Vec<Action>) {
-    let profiles = cx.data.profiles.value.as_ref();
-    let stored = profiles.is_some_and(|p| p.settings.router.mixed_login);
-    let mut on = state.pending.unwrap_or(stored);
-    let overview = cx.data.overview.value.as_ref();
-    let config = overview.and_then(|o| o.config.as_ref());
-    let stash = overview.and_then(|o| o.login_stash.as_ref());
+    let mut on = state.value(cx);
     let label = cx.tr.t("providers.mixed.toggle");
     let changed = FormRow::new(Text::small(&label, cx.pal).font(font(text::SMALL, Weight::Medium)))
         .label_width(0.0)
@@ -135,12 +148,51 @@ pub(crate) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut MixedLogin, out: &mut V
         .wrap(),
     );
     if changed {
-        state.pending = Some(on);
-        let service = cx.service.clone();
-        state.task = Some(crate::runtime::task(async move {
-            service.router_set_mixed_login(on).await
-        }));
+        state.save(cx, on);
     }
+    show_status(ui, cx, on, out);
+}
+
+/// Simple mode shares the setting and apply flow, but requires router mode.
+pub(crate) fn show_simple(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &mut MixedLogin,
+    out: &mut Vec<Action>,
+    label_key: &str,
+    hint_key: Option<&str>,
+) {
+    let mut on = state.value(cx);
+    let label = cx.tr.t(label_key);
+    ui.horizontal(|ui| {
+        let width = (ui.available_width() - 36.0 - space::L).max(0.0);
+        ui.vertical(|ui| {
+            ui.set_width(width);
+            ui.add(egui::Label::new(Text::body(&label, cx.pal)).wrap());
+        });
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add(
+                    Toggle::new(&mut on, &label)
+                        .enabled(cx.data.router_enabled() && !cx.busy && state.task.is_none()),
+                )
+                .on_disabled_hover_text(cx.tr.t("providers.mixed.router_off"))
+                .changed()
+            {
+                state.save(cx, on);
+            }
+        });
+    });
+    if let Some(key) = hint_key {
+        ui.add(egui::Label::new(Text::small(cx.tr.t(key), cx.pal)).wrap());
+    }
+    show_status(ui, cx, on, out);
+}
+
+fn show_status(ui: &mut Ui, cx: &Cx<'_>, on: bool, out: &mut Vec<Action>) {
+    let overview = cx.data.overview.value.as_ref();
+    let config = overview.and_then(|o| o.config.as_ref());
+    let stash = overview.and_then(|o| o.login_stash.as_ref());
     let facts = Facts {
         on,
         router_on: cx.data.router_enabled(),

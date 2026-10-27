@@ -2169,6 +2169,9 @@ impl SuperbaApp {
             );
             let min_height = if self.settings.simple_mode && page == Page::Usage {
                 pages::simple_usage::MIN_HEIGHT
+            } else if self.settings.simple_mode && page == Page::Router {
+                // The simple router owns its page scroll area and log minimum.
+                0.0
             } else {
                 page.min_height()
             };

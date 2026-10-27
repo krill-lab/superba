@@ -29,7 +29,7 @@ mod detail;
 pub mod form;
 mod lines;
 mod list;
-mod mixed;
+pub(crate) mod mixed;
 pub mod ops;
 mod simple;
 mod transports;

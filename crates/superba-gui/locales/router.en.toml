@@ -18,6 +18,8 @@ title = "Router"
 
 [router.simple]
 description = "Enable router mode if you need detailed session usage, hot switching between providers, or… you know what you want to use it for."
+remote = "Remote features"
+remote_hint = "Turn this on to use a third-party API while keeping remote features such as Codex on your phone. You need to have signed in to ChatGPT before switching providers."
 advanced = "For advanced local router settings, including failover, switch to"
 full_mode = "Complete mode"
 usage_off = "Enable router mode to see detailed session activity."

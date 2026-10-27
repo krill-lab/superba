@@ -11,7 +11,29 @@ use crate::pages::{Action, Cx, Page, divider};
 pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     let on = mode(cx).is_router();
     tick(ui, cx, state, out, on);
+    egui::ScrollArea::vertical()
+        .id_salt("simple-router-page")
+        .auto_shrink([false, false])
+        .show_viewport(ui, |ui, viewport| {
+            // Keep the remaining height finite so the log can fill a tall
+            // window, while its minimum can grow the page's scroll range.
+            ui.set_max_height(viewport.height());
+            content(ui, cx, state, out, on);
+        });
+    dialogs(ui, cx, state, out);
+}
+
+fn content(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, on: bool) {
     header(ui, cx, state, out);
+    gap(ui, cx);
+    crate::pages::providers::mixed::show_simple(
+        ui,
+        cx,
+        &mut state.mixed,
+        out,
+        "router.simple.remote",
+        Some("router.simple.remote_hint"),
+    );
     gap(ui, cx);
     super::view::notices(ui, cx, state);
     super::eligibility::panel(ui, cx, state, out);
@@ -28,14 +50,13 @@ pub(super) fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     });
     gap(ui, cx);
     if on {
-        usage_content(ui, cx, state, out);
+        usage_content(ui, cx, state, out, 13);
     } else {
         ui.add_space(space::L);
         ui.vertical_centered(|ui| {
             ui.label(Text::muted(cx.tr.t("router.simple.usage_off"), cx.pal));
         });
     }
-    dialogs(ui, cx, state, out);
 }
 
 fn gap(ui: &mut Ui, cx: &Cx<'_>) {

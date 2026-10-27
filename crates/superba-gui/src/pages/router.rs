@@ -141,6 +141,7 @@ pub enum Dialog {
 /// Page-local state, kept across navigation.
 #[derive(Default)]
 pub struct State {
+    mixed: super::providers::mixed::MixedLogin,
     backend: Option<Arc<dyn RouterBackend>>,
     backend_checked: bool,
     snapshot: Option<Snapshot>,
@@ -471,11 +472,13 @@ fn address(state: &State, mode: &Mode) -> String {
 fn tick(ui: &Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>, usage: bool) {
     prices::poll_calibration(state);
     state.poll(cx, out);
+    let mixed_busy = state.mixed.poll(cx, out);
     if let Some(request) = state.ready_plan.take() {
         out.push(Action::Plan(Box::new(request)));
     }
     state.refresh(cx, false);
-    let busy = state.task.is_some()
+    let busy = mixed_busy
+        || state.task.is_some()
         || state.op.is_some()
         || state.stats_save.is_some()
         || state.clear_task.is_some()
@@ -530,19 +533,36 @@ pub fn show_usage(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Act
         }
     });
     usage_banner(ui, cx, state, out);
-    usage_content(ui, cx, state, out);
+    usage_content(ui, cx, state, out, 0);
     dialogs(ui, cx, state, out);
 }
 
-fn usage_content(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+fn usage_content(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &mut State,
+    out: &mut Vec<Action>,
+    min_rows: usize,
+) {
     tab_row(ui, cx, state);
     let rect = ui.available_rect_before_wrap();
-    crate::design::layout::fixed(ui, rect, |ui| match state.tab {
-        Tab::Recent => recent::show(ui, cx, state, out),
-        Tab::Routing => routing::show(ui, cx, state, out),
-        Tab::Active => active::show(ui, cx, state, out),
-        Tab::Stats => stats::show(ui, cx, state, out),
-    });
+    let add = |ui: &mut Ui| {
+        if min_rows > 0 {
+            ui.set_height(ui.available_height().max(recent::min_height(cx, state, min_rows)));
+        }
+        match state.tab {
+            Tab::Recent => recent::show(ui, cx, state, out, min_rows),
+            Tab::Routing => routing::show(ui, cx, state, out),
+            Tab::Active => active::show(ui, cx, state, out),
+            Tab::Stats => stats::show(ui, cx, state, out),
+        }
+    };
+    if min_rows == 0 {
+        crate::design::layout::fixed(ui, rect, add);
+    } else {
+        // Let the minimum log height extend the simple page's scroll range.
+        ui.scope(add);
+    }
 }
 
 /// A one-line banner: a status dot, a line elided to the width (full text in

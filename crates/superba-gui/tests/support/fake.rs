@@ -1839,6 +1839,11 @@ impl SwitchService for FakeService {
         self.edit_router_conversion(conversion).await
     }
 
+    async fn router_set_mixed_login(&self, on: bool) -> Result<RouterView> {
+        self.edit_profiles(|set| set.settings.router.mixed_login = on);
+        self.router_status().await
+    }
+
     async fn router_set_failover(
         &self,
         failover: superba_core::RouterFailover,

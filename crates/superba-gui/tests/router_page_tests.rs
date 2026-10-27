@@ -135,6 +135,8 @@ fn simple_router_shows_management_and_only_shows_detailed_usage_while_enabled() 
                 );
                 for key in [
                     "router.simple.description",
+                    "router.simple.remote",
+                    "router.simple.remote_hint",
                     "router.live.uptime",
                     "router.live.requests",
                     "router.live.active",
@@ -167,6 +169,113 @@ fn simple_router_shows_management_and_only_shows_detailed_usage_while_enabled() 
                     f.actions
                         .iter()
                         .any(|a| matches!(a, Action::SetSimpleMode(false)))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn simple_remote_features_require_router_mode_and_share_the_provider_setting() {
+    for locale in [Locale::En, Locale::ZhCn] {
+        for router_on in [false, true] {
+            let service = fake();
+            service.edit_profiles(|set| set.settings.router.enabled = router_on);
+            let mut h = Harness::new([1280.0, 1200.0], locale, service.clone(), true)
+                .min_height(Page::Router.min_height());
+            let tr = superba_gui::i18n::Tr::new(locale);
+            let mut state = State::with_backend(Arc::new(
+                superba_gui::pages::router::backend::SystemRouter::for_service(h.service.clone()),
+            ));
+            let frame = h.settle(|ui, cx, out| router::show_simple(ui, cx, &mut state, out));
+            let label = frame.find(&tr.t("router.simple.remote")).unwrap();
+            h.click_at(egui::pos2(frame.rect.max.x - 18.0, label.center().y));
+            h.frames(5, |ui, cx, out| {
+                router::show_simple(ui, cx, &mut state, out)
+            });
+            if router_on {
+                h.until(
+                    |ui, cx, out| router::show_simple(ui, cx, &mut state, out),
+                    |_| {
+                        router_harness::data_from(&service)
+                            .profiles
+                            .value
+                            .unwrap()
+                            .settings
+                            .router
+                            .mixed_login
+                    },
+                );
+            }
+            h.reload(&service);
+            assert_eq!(
+                h.data
+                    .profiles
+                    .value
+                    .as_ref()
+                    .unwrap()
+                    .settings
+                    .router
+                    .mixed_login,
+                router_on
+            );
+
+            let mut providers = superba_gui::pages::providers::State::default();
+            providers.select(superba_gui::pages::shared::providers::ProviderId::Profile(
+                ProfileId::new("krill"),
+            ));
+            let frame = h.settle(|ui, cx, out| {
+                superba_gui::pages::providers::show_simple(ui, cx, &mut providers, out)
+            });
+            let key = if router_on {
+                "providers.simple.remote_on"
+            } else {
+                "providers.simple.enable_router"
+            };
+            let label = frame.find(&tr.t(key)).unwrap();
+            let key_card = frame.find(&tr.t("providers.key.replace")).unwrap();
+            assert!(label.max.y < key_card.min.y, "{}", frame.all_text());
+            let pos = if router_on {
+                egui::pos2(frame.rect.max.x - 12.0 - 18.0, label.center().y)
+            } else {
+                label.center()
+            };
+            h.click_at(pos);
+            let frame = h.frames(5, |ui, cx, out| {
+                superba_gui::pages::providers::show_simple(ui, cx, &mut providers, out)
+            });
+            if router_on {
+                h.until(
+                    |ui, cx, out| {
+                        superba_gui::pages::providers::show_simple(ui, cx, &mut providers, out)
+                    },
+                    |_| {
+                        !router_harness::data_from(&service)
+                            .profiles
+                            .value
+                            .unwrap()
+                            .settings
+                            .router
+                            .mixed_login
+                    },
+                );
+                h.reload(&service);
+                assert!(
+                    !h.data
+                        .profiles
+                        .value
+                        .as_ref()
+                        .unwrap()
+                        .settings
+                        .router
+                        .mixed_login
+                );
+            } else {
+                assert!(
+                    frame
+                        .actions
+                        .iter()
+                        .any(|a| matches!(a, Action::Go(Page::Router)))
                 );
             }
         }
