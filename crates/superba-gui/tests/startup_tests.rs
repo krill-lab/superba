@@ -33,6 +33,29 @@ fn each_platform_uses_its_renderer() {
     );
 }
 
+/// User bug 125: wgpu's defaults reserve 128 MB / 64 MB Direct3D 12 memory
+/// blocks and a million-entry descriptor heap, system memory on WARP and
+/// integrated GPUs; egui needs a few textures.
+#[cfg(windows)]
+#[test]
+fn the_direct3d_device_asks_for_little_memory() {
+    use superba_gui::startup::{VIEW_DESCRIPTORS, lean_device};
+
+    let options = superba_gui::startup::native_options(Gpu::Any);
+    assert_eq!(
+        options.wgpu_options.surface.desired_maximum_frame_latency,
+        Some(1)
+    );
+    let desc = lean_device(wgpu::DeviceDescriptor::default());
+    assert!(matches!(desc.memory_hints, wgpu::MemoryHints::MemoryUsage));
+    assert_eq!(
+        desc.required_limits.max_non_sampler_bindings,
+        VIEW_DESCRIPTORS
+    );
+    // Never above what wgpu would have asked for.
+    assert!(VIEW_DESCRIPTORS <= wgpu::Limits::default().max_non_sampler_bindings);
+}
+
 #[test]
 fn the_gui_log_is_started_over_at_every_start() {
     let dir = tempfile::tempdir().unwrap();

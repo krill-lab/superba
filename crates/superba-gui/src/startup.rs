@@ -111,14 +111,44 @@ fn wgpu_options(gpu: Gpu) -> eframe::NativeOptions {
     if gpu == Gpu::Software {
         setup.native_adapter_selector = Some(Arc::new(software_adapter));
     }
+    // Memory (user bug 125): egui draws a few textures and small vertex
+    // buffers, but wgpu's defaults are sized for games. See [`lean_device`].
+    let device_descriptor = Arc::clone(&setup.device_descriptor);
+    setup.device_descriptor = Arc::new(move |adapter| lean_device(device_descriptor(adapter)));
     eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: WgpuConfiguration {
             wgpu_setup: setup.into(),
+            // One frame queued instead of two: one swap-chain buffer fewer
+            // (a full window of pixels; egui's own choice for light GUIs).
+            surface: eframe::egui_wgpu::SurfaceConfig::LOW_LATENCY,
             ..WgpuConfiguration::default()
         },
         ..eframe::NativeOptions::default()
     }
+}
+
+/// Shader-visible view descriptors the Direct3D 12 device reserves. wgpu's
+/// default (`Limits::max_non_sampler_bindings`, 1 000 000) is one descriptor
+/// heap of 32-64 MB; egui binds one view per texture (the font atlas, icons,
+/// the movers scene's layers: tens to a few hundred).
+#[cfg(windows)]
+pub const VIEW_DESCRIPTORS: u32 = 65_536;
+
+/// egui's device request with memory-lean settings (user bug 125):
+/// - `MemoryHints::MemoryUsage`: the Direct3D 12 sub-allocator starts with
+///   8 MB device / 4 MB upload blocks instead of 128 MB / 64 MB. On WARP
+///   (software rendering, user bug 43) and integrated GPUs those blocks are
+///   system memory, and the last block of each kind is never given back.
+/// - [`VIEW_DESCRIPTORS`] instead of a million shader-visible descriptors.
+#[cfg(windows)]
+pub fn lean_device(mut desc: wgpu::DeviceDescriptor<'static>) -> wgpu::DeviceDescriptor<'static> {
+    desc.memory_hints = wgpu::MemoryHints::MemoryUsage;
+    desc.required_limits.max_non_sampler_bindings = desc
+        .required_limits
+        .max_non_sampler_bindings
+        .min(VIEW_DESCRIPTORS);
+    desc
 }
 
 /// The software (WARP) adapter that can draw into the window.
