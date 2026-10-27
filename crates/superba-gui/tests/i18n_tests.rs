@@ -116,7 +116,7 @@ fn looks_like_key(text: &str) -> bool {
     // Numbers (including versions), URLs, paths and empty segments fail the
     // alphabet check below. Bare file names need an explicit suffix exclusion.
     if [
-        ".json", ".toml", ".ttc", ".ttf", ".jsonl", ".sqlite", ".com",
+        ".json", ".toml", ".ttc", ".ttf", ".jsonl", ".sqlite", ".com", ".icns", ".png",
     ]
     .iter()
     .any(|suffix| text.ends_with(suffix))

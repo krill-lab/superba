@@ -74,6 +74,7 @@ impl State {
                 self.loaded = true;
                 match result {
                     Ok(view) => {
+                        installed_apps(&view);
                         self.view = Some(view);
                         self.error = None;
                     }
@@ -178,6 +179,37 @@ impl State {
         Ok(())
     }
 }
+/// Point the tool icons at the desktop apps installed here: an app whose
+/// logo Superba does not ship shows its own icon (WorkBuddy and WorkBuddy AI
+/// share one, the first installed).
+fn installed_apps(view: &superba_core::ToolsView) {
+    let mut apps: Vec<(&'static str, Option<(std::path::PathBuf, &'static str)>)> = Vec::new();
+    for id in ToolId::ALL {
+        let app = view
+            .row(id.core())
+            .and_then(|r| {
+                r.installs.iter().find(|i| {
+                    matches!(
+                        i.kind,
+                        ToolInstallKind::App | ToolInstallKind::SystemPackage
+                    )
+                })
+            })
+            .map(|i| (i.path.clone(), id.as_str()));
+        match apps.iter_mut().find(|(m, _)| *m == id.monogram()) {
+            Some((_, slot)) => {
+                if slot.is_none() {
+                    *slot = app;
+                }
+            }
+            None => apps.push((id.monogram(), app)),
+        }
+    }
+    for (monogram, app) in apps {
+        crate::design::tool_icons::installed_app(monogram, app);
+    }
+}
+
 impl ToolsSource for ServiceTools {
     fn view(&self, cx: &Cx<'_>) -> ToolsView {
         let mut state = self.0.lock().unwrap_or_else(|p| p.into_inner());

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 4 4">
+  <!-- The pi logo as earendil-works/pi draws it (MIT, see README.md): a 4 x 4 grid of square pixels in its fixed brand colors. -->
+  <path fill="#E48A7A" d="M0 0H3V2H2V1H0Z"/>
+  <path fill="#4F8EB3" d="M0 1H1V2H2V3H1V4H0Z"/>
+  <path fill="#EAB65D" d="M3 2H4V4H3Z"/>
+</svg>

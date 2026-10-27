@@ -1,6 +1,7 @@
 //! The real Superba update page with isolated fixtures. No real tool is probed.
 //! `--tool-root ROOT` reads actual tool files in ROOT/home with caches in ROOT/data.
 //! `cargo run -p superba-gui --example updates_gallery -- --zh --dark --narrow --output FILE`
+//! (`--scale 2` for a 2x capture, `--installed-app wb=PATH` for an installed app's icon)
 #![allow(dead_code)]
 #[path = "../tests/support/mod.rs"]
 mod support;
@@ -215,6 +216,15 @@ fn main() -> eframe::Result {
             superba_gui::pages::superba::updates::tools::ToolId::Zcode,
         ));
     }
+    // `--installed-app wb=PATH`: the icon of that app installed at PATH.
+    if let Some(a) = args.windows(2).find(|a| a[0] == "--installed-app")
+        && let Some((monogram, path)) = a[1].split_once('=')
+    {
+        superba_gui::design::tool_icons::installed_app(
+            Box::leak(monogram.to_owned().into_boxed_str()),
+            Some((PathBuf::from(path), "workbuddy")),
+        );
+    }
     let gallery = Gallery {
         data,
         service,
@@ -234,6 +244,11 @@ fn main() -> eframe::Result {
     };
     let dark = has("--dark");
     let narrow = has("--narrow");
+    let scale: f32 = args
+        .windows(2)
+        .find(|a| a[0] == "--scale")
+        .and_then(|a| a[1].parse().ok())
+        .unwrap_or(1.0);
     eframe::run_native(
         "Superba updates",
         eframe::NativeOptions {
@@ -257,7 +272,7 @@ fn main() -> eframe::Result {
             );
             let mut gallery = gallery;
             gallery.fonts = Some(fonts::install(&cc.egui_ctx));
-            cc.egui_ctx.set_pixels_per_point(1.0);
+            cc.egui_ctx.set_pixels_per_point(scale);
             Ok(Box::new(gallery))
         }),
     )

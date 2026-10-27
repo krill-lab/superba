@@ -1,6 +1,7 @@
 //! The one way a tool is labelled outside the Tools and Updates pages: its
-//! icon tile (the official logo where one is licensed, else the monogram;
-//! [`crate::design::tool_icons`]) before its name. Usage (requests, the tool
+//! icon tile (the official logo where one is licensed, an installed desktop
+//! app's own icon, else the monogram; [`crate::design::tool_icons`]) before
+//! its name. Usage (requests, the tool
 //! filter, stats, session groups) and the Router's entry table use it, so a
 //! new view picks the icons up by calling these helpers.
 

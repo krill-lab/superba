@@ -6,6 +6,7 @@ pub mod backdrop;
 pub mod elide;
 pub mod fonts;
 pub mod icons;
+pub mod installed_icon;
 pub mod layout;
 pub mod style;
 pub mod tokens;
