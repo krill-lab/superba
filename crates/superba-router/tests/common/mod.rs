@@ -85,6 +85,9 @@ pub enum Mode {
     PathReply(PathReply),
     /// 200 + JSON body after a delay (a slow answer holding both sockets).
     Slow(Duration, &'static str),
+    /// A WebSocket upgrade answered like [`Mode::WsScript`], any other request
+    /// like [`Mode::PathReply`] (a member with a catalog and WebSocket).
+    WsOrPath(PathReply, WsScript),
 }
 
 /// Answer of [`Mode::Reply`].
@@ -191,6 +194,11 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
         .headers()
         .get("upgrade")
         .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"websocket"));
+    let mode = match mode {
+        Mode::WsOrPath(_, script) if is_ws => Mode::WsScript(script),
+        Mode::WsOrPath(reply, _) => Mode::PathReply(reply),
+        mode => mode,
+    };
     let on_upgrade = is_ws.then(|| hyper::upgrade::on(&mut req));
     let (parts, body) = req.into_parts();
     let body = body
@@ -238,6 +246,7 @@ async fn handle(state: Upstream, mut req: Request<Incoming>) -> Response<FakeBod
                 .insert("content-type", "application/json".parse().unwrap());
             response
         }
+        Mode::WsOrPath(..) => unreachable!("chosen above"),
         Mode::JsonHeader(status, body, name, value) => {
             let mut r = full(status, body);
             r.headers_mut()

@@ -14,6 +14,9 @@
 //!   the previous response ended); the tap may hold the end of the final answer
 //!   and inject the stats line. A terminal event (`response.completed`,
 //!   `failed`, `incomplete`, `error`) finishes that request's row.
+//! - Under the merged catalog each `response.create` is first checked against
+//!   the socket's member ([`crate::ws_catalog::frame`]); the member's own model
+//!   names apply last, as on the HTTP path ([`crate::model_map`]).
 //!
 //! The socket stays pinned to its line; closing either side closes the other.
 //! Both legs end gracefully (close frame, FIN, the peer's rest read and dropped,
@@ -126,15 +129,27 @@ fn text(bytes: Bytes) -> Option<Message> {
     Utf8Bytes::try_from(bytes).ok().map(Message::Text)
 }
 
-/// Relay frames between Codex (`down`) and the member (`up`) until either side
-/// closes.
-pub(crate) async fn relay<D, U>(down: D, up: U, ctx: RelayCtx)
+/// Codex's leg of an upgraded connection, bounded like the member's.
+pub(crate) async fn downstream<D>(io: D, max_message: usize) -> WebSocketStream<D>
 where
+    D: AsyncRead + AsyncWrite + Unpin,
+{
+    WebSocketStream::from_raw_socket(io, Role::Server, Some(config(max_message))).await
+}
+
+/// Relay frames between Codex (`down`) and the member (`up`) until either side
+/// closes. `first` is a frame Codex sent before the member was dialed
+/// ([`crate::ws_catalog`]): it is handled as if it arrived now.
+pub(crate) async fn relay<D, U>(
+    down: WebSocketStream<D>,
+    up: U,
+    ctx: RelayCtx,
+    first: Option<Utf8Bytes>,
+) where
     D: AsyncRead + AsyncWrite + Unpin + Send,
     U: AsyncRead + AsyncWrite + Unpin + Send,
 {
     let limit = ctx.generation.config.tuning.max_body_bytes;
-    let down = WebSocketStream::from_raw_socket(down, Role::Server, Some(config(limit))).await;
     let up = WebSocketStream::from_raw_socket(up, Role::Client, Some(config(limit))).await;
     let (mut down_tx, mut down_rx) = down.split();
     let (mut up_tx, mut up_rx) = up.split();
@@ -152,18 +167,25 @@ where
         let ctx = ctx.clone();
         let oversize = oversize.clone();
         let (down_rx, up_tx) = (&mut down_rx, &mut up_tx);
+        let mut first = first;
+        // Under the merged catalog each frame's model is checked against the
+        // socket's member first.
+        let routed = ctx.generation.config.catalog.is_some();
         async move {
             loop {
-                let msg = tokio::select! {
-                    msg = down_rx.next() => msg,
-                    () = oversize.notify.notified() => {
-                        let _ = up_tx.send(close_too_big()).await;
-                        break;
-                    }
+                let msg = match first.take() {
+                    Some(t) => Some(Ok(Message::Text(t))),
+                    None => tokio::select! {
+                        msg = down_rx.next() => msg,
+                        () = oversize.notify.notified() => {
+                            let _ = up_tx.send(close_too_big()).await;
+                            break;
+                        }
+                    },
                 };
                 let Some(msg) = msg else { break };
                 match msg {
-                    Ok(Message::Text(t)) => match client_text(&ctx, &queue, t) {
+                    Ok(Message::Text(t)) => match routed_text(&ctx, &queue, t, routed).await {
                         Client::Forward(out) => {
                             if up_tx.send(out).await.is_err() {
                                 break;
@@ -314,7 +336,7 @@ where
 /// its peer has not read yet: after a message over the limit, whose rest is
 /// still unread, Codex there saw "connection reset" instead of 1009 (message
 /// too big).
-async fn linger<S>(ws: &mut WebSocketStream<S>)
+pub(crate) async fn linger<S>(ws: &mut WebSocketStream<S>)
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -331,7 +353,7 @@ where
 }
 
 /// What to do with a client frame.
-enum Client {
+pub(crate) enum Client {
     /// Send this to the member.
     Forward(Message),
     /// Do not forward; answer Codex with this frame.
@@ -342,8 +364,14 @@ enum Client {
 }
 
 /// A `response.create` frame the socket's member must not get
-/// ([`crate::compaction`]): `None` when it may.
-fn compaction_detour(ctx: &RelayCtx, m: &meta::RequestMeta, t0: Instant) -> Option<Client> {
+/// ([`crate::compaction`]): `None` when it may. A member it moves to also
+/// serves the frame's model (`selection`, under the merged catalog).
+fn compaction_detour(
+    ctx: &RelayCtx,
+    m: &meta::RequestMeta,
+    t0: Instant,
+    selection: Option<&crate::merged_catalog::Selection>,
+) -> Option<Client> {
     let generation = &ctx.generation;
     let route = crate::compaction::route(
         &generation.member_facts(),
@@ -366,43 +394,30 @@ fn compaction_detour(ctx: &RelayCtx, m: &meta::RequestMeta, t0: Instant) -> Opti
             None,
             Some(message.clone()),
         );
-        let tracker = ctx
-            .shared
-            .stats
-            .track(ctx.generation.clone(), m.clone(), t0, now_ms());
-        tracker.finish(End {
-            status: Some(RequestStatus::Http {
-                status: *status,
-                code: Some((*code).into()),
-            }),
-            error: Some(message.chars().take(300).collect()),
-            ..End::default()
-        });
-        let event = serde_json::json!({
-            "type": "error",
-            "status": status,
-            "error": {
-                "type": "invalid_request_error",
-                "code": code,
-                "message": format!("Superba local router: {message}"),
-            }
-        });
-        return Some(Client::Reply(Message::Text(event.to_string().into())));
+        return Some(Client::Reply(refused(
+            &ctx.shared,
+            &ctx.generation,
+            m.clone(),
+            t0,
+            (*status, code, message),
+        )));
     }
     // Pin the conversation to a member that may serve it, then make Codex
     // reconnect: the new handshake goes there.
     let now = Instant::now();
-    let target = crate::select::candidates(
-        &crate::state::View {
-            generation,
-            websocket_only: false,
-            route: &route,
-        },
-        None,
-        now,
-    )
-    .into_iter()
-    .next()?;
+    let order = match selection {
+        Some(s) => s.candidates(generation, &route, None, now),
+        None => crate::select::candidates(
+            &crate::state::View {
+                generation,
+                websocket_only: false,
+                route: &route,
+            },
+            None,
+            now,
+        ),
+    };
+    let target = order.into_iter().next()?;
     if let Some(key) = crate::sticky::session_key(&ctx.handshake) {
         lock(&generation.sticky).set(
             &key,
@@ -432,6 +447,57 @@ fn compaction_detour(ctx: &RelayCtx, m: &meta::RequestMeta, t0: Instant) -> Opti
         code: CloseCode::Restart,
         reason: "compacted conversation moves to its provider".into(),
     }))))
+}
+
+/// The `error` event the router answers a frame with itself.
+fn error_event(status: u16, code: &str, message: &str) -> Message {
+    let event = serde_json::json!({
+        "type": "error",
+        "status": status,
+        "error": {
+            "type": "invalid_request_error",
+            "code": code,
+            "message": format!("Superba local router: {message}"),
+        }
+    });
+    Message::Text(event.to_string().into())
+}
+
+/// A frame the router answers itself with `(status, code, message)`: recorded
+/// (with a `stats` section) like the HTTP path's refusal, answered with an
+/// `error` event.
+pub(crate) fn refused(
+    shared: &Arc<Shared>,
+    generation: &Arc<Generation>,
+    m: meta::RequestMeta,
+    t0: Instant,
+    (status, code, message): (u16, &str, &str),
+) -> Message {
+    if generation.config.stats.is_some() {
+        let tracker = shared.stats.track(generation.clone(), m, t0, now_ms());
+        tracker.finish(End {
+            status: Some(RequestStatus::Http {
+                status,
+                code: Some(code.into()),
+            }),
+            error: Some(message.chars().take(300).collect()),
+            ..End::default()
+        });
+    }
+    error_event(status, code, message)
+}
+
+/// A client text frame: under the merged catalog checked against the
+/// socket's member first ([`crate::ws_catalog::frame`]), then
+/// [`client_text`].
+async fn routed_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes, routed: bool) -> Client {
+    if !routed {
+        return client_text(ctx, queue, t, None);
+    }
+    match crate::ws_catalog::frame(ctx, t).await {
+        Ok((t, selection)) => client_text(ctx, queue, t, selection.as_ref()),
+        Err(client) => client,
+    }
 }
 
 /// The member refused ciphertexts of the oldest open request: its refusal is
@@ -503,7 +569,14 @@ fn removed_of(
 }
 
 /// A client frame: track and strip `response.create`, pass everything else.
-fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Client {
+/// The member's own model names apply last, as on the HTTP path
+/// ([`crate::model_map`]).
+fn client_text(
+    ctx: &RelayCtx,
+    queue: &Queue,
+    t: Utf8Bytes,
+    selection: Option<&crate::merged_catalog::Selection>,
+) -> Client {
     let bytes: Bytes = t.clone().into();
     // Privacy shaping is independent of recording and applies before a
     // frame can be forwarded or retained for a retry.
@@ -512,15 +585,23 @@ fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Client {
         .map(Utf8Bytes::from)
         .unwrap_or(t);
     let bytes: Bytes = t.clone().into();
+    let member = &ctx.generation.members[ctx.answered.member].cfg;
+    let limit = ctx.generation.config.tuning.max_body_bytes;
+    let mapped = |t: Utf8Bytes| {
+        let bytes: Bytes = t.clone().into();
+        crate::model_map::map_model(&bytes, &HeaderMap::new(), &member.model_map, limit)
+            .and_then(text)
+            .unwrap_or(Message::Text(t))
+    };
     if ctx.generation.config.stats.is_none() {
-        return Client::Forward(Message::Text(t));
+        return Client::Forward(mapped(t));
     }
     if sniff_type(&bytes) != Some("response.create") {
         return Client::Forward(Message::Text(t));
     }
     let t0 = Instant::now();
     let mut m = meta::peek_frame(&ctx.handshake, &bytes);
-    if let Some(detour) = compaction_detour(ctx, &m, t0) {
+    if let Some(detour) = compaction_detour(ctx, &m, t0, selection) {
         return detour;
     }
     let out = match strip::strip(&bytes) {
@@ -532,7 +613,6 @@ fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Client {
     };
     // Ciphertexts another provider made: what this member refused before is
     // left out ([`crate::cipher`]).
-    let member = &ctx.generation.members[ctx.answered.member].cfg;
     let scan = crate::cipher::scan(&out);
     let (out, ciphers, left_out) = if scan.is_empty() {
         (out, None, None)
@@ -552,7 +632,10 @@ fn client_text(ctx: &RelayCtx, queue: &Queue, t: Utf8Bytes) -> Client {
             None => (out, Some(sent), None),
         }
     };
-    let send = text(out).unwrap_or(Message::Text(t));
+    let send = match Utf8Bytes::try_from(out) {
+        Ok(out) => mapped(out),
+        Err(_) => Message::Text(t),
+    };
     let mut tracker = ctx
         .shared
         .stats

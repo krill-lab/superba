@@ -23,7 +23,7 @@ use crate::config::RouterConfig;
 use crate::state::{Generation, lock, unix_ms};
 
 pub(crate) use probe::test;
-pub(crate) use route::{Selection, select};
+pub(crate) use route::{Selection, select, targets};
 
 /// Per-provider catalog choices (credentials are stored separately).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
