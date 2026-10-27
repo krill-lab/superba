@@ -22,9 +22,11 @@ name: Codex catalog update
 # branch to the public feeds repository; it is off until that repository exists
 # (repository variable SUPERBA_FEEDS_PUBLISH=true and secret FEEDS_DEPLOY_KEY).
 #
-# Pull requests opened with GITHUB_TOKEN do not trigger other workflows; set the
-# CATALOG_BOT_TOKEN secret (GitHub App or fine-grained token with contents and
-# pull-requests write) if CI must run on them.
+# Pull requests opened with GITHUB_TOKEN do not trigger other workflows. The
+# pull-request job uses the krill-release GitHub App when the repository variable
+# CATALOG_APP_CLIENT_ID and the secret CATALOG_APP_PRIVATE_KEY are set (the App
+# needs contents and pull-requests write), else the CATALOG_BOT_TOKEN secret
+# (fine-grained token with the same permissions), else GITHUB_TOKEN.
 
 on:
   schedule:
@@ -229,16 +231,24 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - id: app-token
+        if: ${{ vars.CATALOG_APP_CLIENT_ID != '' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.CATALOG_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CATALOG_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          token: ${{ secrets.CATALOG_BOT_TOKEN || github.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.CATALOG_BOT_TOKEN || github.token }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: catalog-update
           path: ${{ runner.temp }}/in
       - name: Open or update the pull request
         env:
-          GH_TOKEN: ${{ secrets.CATALOG_BOT_TOKEN || github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.CATALOG_BOT_TOKEN || github.token }}
           LATEST: ${{ needs.regenerate.outputs.latest }}
         run: |
           set -euo pipefail
