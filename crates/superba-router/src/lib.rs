@@ -146,6 +146,7 @@ mod proxy;
 mod server;
 mod state;
 mod ws;
+mod ws_catalog;
 mod ws_relay;
 
 pub use admin::{ADMIN_PREFIX, VERSION};

@@ -398,6 +398,9 @@ pub(crate) struct Shared {
     pub stats: Arc<StatsHub>,
     /// zstd and WebSocket refusals met at run time (kept across reloads).
     pub transports: crate::transport::TransportMemory,
+    /// Sessions whose next WebSocket handshake gets 426: a frame of theirs
+    /// needed HTTP Responses ([`crate::ws_catalog`]).
+    pub ws_http: crate::ws_catalog::HttpSessions,
     /// Admissions, connection places and local shortages.
     pub limits: Limits,
     /// When to try opening the request log again (it failed for want of

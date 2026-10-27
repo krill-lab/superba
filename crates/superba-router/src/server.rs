@@ -137,6 +137,7 @@ impl RouterServer {
             shutdown,
             stats,
             transports: crate::transport::TransportMemory::default(),
+            ws_http: crate::ws_catalog::HttpSessions::default(),
             limits: Limits::new(budget),
             stats_retry: Mutex::new(None),
             wsl_bound: Mutex::new(Vec::new()),
@@ -874,15 +875,6 @@ async fn dispatch(
     } else if openai.is_some() {
         crate::openai::handle(shared, req, rest, admission).await
     } else if ws::is_upgrade(&req) {
-        if shared.current().config.catalog.is_some() {
-            // The model is inside the first WebSocket frame. Negotiate HTTP
-            // so namespace and capability checks precede upstream selection.
-            return router_error(
-                StatusCode::UPGRADE_REQUIRED,
-                "model_routing_http",
-                "model-based routing requires HTTP Responses",
-            );
-        }
         ws::proxy_ws(shared, req, rest, admission).await
     } else if req.method() == http::Method::GET && rest.trim_end_matches('/') == "/models" {
         crate::catalog::handle(shared, req, rest, admission).await

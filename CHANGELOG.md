@@ -5,6 +5,11 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [Unreleased]
+
+### Fixed
+- The local router serves Codex over WebSocket again (user bug 122). Every install routes by model through the merged catalog, and since then every WebSocket handshake was answered with 426, so Codex logged "Falling back from WebSockets to HTTPS transport" and used HTTP every turn. The router now accepts the handshake and lets each `response.create` frame's model choose the member, as an HTTP request's does (provider namespaces, aliases, upstream and per-provider model names, failover across WebSocket lines). A later turn whose model another provider serves reconnects there. A model WebSocket cannot carry (a standard-endpoint or protocol-converted provider, one without WebSocket, router compaction capsules) closes the socket for Codex to reconnect, and that reconnect gets the 426 that moves the session to HTTP. The request log records these turns as WebSocket requests on the line that served them.
+
 ## [0.1.1-alpha.11] - 2026-10-26
 
 ### Fixed

@@ -51,6 +51,10 @@ history then reports `compaction_key_unavailable`. Preserve the vault and its
 keyring when copying/backing up an installation. Corruption never regenerates
 an existing keyring. Embedded in-memory routers have ephemeral test keys.
 
-Mixed catalogs and installations with compaction keys return WebSocket 426 so
-Codex falls back to HTTP with complete input. This prevents hidden connection
-state from bypassing capsule validation. Native HTTP compaction stays native.
+Without the merged catalog, installations with compaction keys return
+WebSocket 426 so Codex falls back to HTTP with complete input. Under the catalog
+a WebSocket frame that carries a capsule, or whose model goes to a synthetic
+(standard) target, closes the socket and the session's reconnect gets 426
+(`ws_catalog.rs`); a new socket always starts with complete input, so no hidden
+connection state bypasses capsule validation. Native HTTP compaction stays
+native.

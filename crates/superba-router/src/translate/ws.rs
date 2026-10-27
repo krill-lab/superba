@@ -3,7 +3,7 @@
 //! used to emulate remote compaction or a stored server-side conversation.
 
 use super::{Invalid, ir::Protocol, routing};
-use crate::forward::{empty, failover_status_in, set_route, up_response};
+use crate::forward::{failover_status_in, set_route, up_response};
 use crate::limits::{Admission, ConnSlot};
 use crate::select::{Candidate, candidates};
 use crate::state::{GaugeGuard, Generation, RespBody, Shared, lock};
@@ -15,7 +15,7 @@ use crate::stats::{
 };
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
-use http::{Response, StatusCode, request::Parts};
+use http::{Response, request::Parts};
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
 use serde_json::{Value, json};
@@ -26,7 +26,6 @@ use tokio_tungstenite::{
     WebSocketStream,
     tungstenite::{
         Message,
-        handshake::derive_accept_key,
         protocol::{Role, WebSocketConfig},
     },
 };
@@ -40,49 +39,10 @@ pub(crate) fn upgrade(
     admission: Admission,
     preferred: Candidate,
 ) -> Response<RespBody> {
-    let key = match parts
-        .headers
-        .get("sec-websocket-key")
-        .and_then(|v| v.to_str().ok())
-    {
-        Some(k) => k,
-        None => {
-            return crate::forward::router_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_websocket",
-                "missing WebSocket key",
-            );
-        }
+    let mut response = match crate::ws::accept(&parts.headers) {
+        Ok(response) => response,
+        Err(refusal) => return *refusal,
     };
-    if parts
-        .headers
-        .get("sec-websocket-version")
-        .is_none_or(|v| v != "13")
-    {
-        return crate::forward::router_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_websocket",
-            "WebSocket version 13 is required",
-        );
-    }
-    let mut response = Response::new(empty());
-    *response.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
-    response
-        .headers_mut()
-        .insert("connection", http::HeaderValue::from_static("Upgrade"));
-    response
-        .headers_mut()
-        .insert("upgrade", http::HeaderValue::from_static("websocket"));
-    let Ok(accept) = http::HeaderValue::from_str(&derive_accept_key(key.as_bytes())) else {
-        return crate::forward::router_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_websocket",
-            "invalid WebSocket key",
-        );
-    };
-    response
-        .headers_mut()
-        .insert("sec-websocket-accept", accept);
     set_route(
         response.headers_mut(),
         &generation.label(preferred.member, preferred.line),

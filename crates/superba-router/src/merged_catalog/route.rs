@@ -26,6 +26,14 @@ impl Selection {
             .any(|t| t.member == member && t.standard)
     }
 
+    /// The model name `member` gets, when it is a target.
+    pub(crate) fn upstream(&self, member: usize) -> Option<&str> {
+        self.targets
+            .iter()
+            .find(|t| t.member == member)
+            .map(|t| t.upstream.as_str())
+    }
+
     pub(crate) fn base(&self, g: &Generation, c: Candidate) -> Option<url::Url> {
         self.standard(c.member)
             .then(|| cache::standard_base(g, c.member, c.line))
@@ -94,37 +102,66 @@ pub(crate) async fn select(
     let Some(model) = request["model"].as_str().map(str::to_owned) else {
         return Ok((body, None));
     };
+    let Some(selection) = targets(g, &model)
+        .await
+        .map_err(|r| Box::new(router_error(r.status, r.code, r.message)))?
+    else {
+        return Ok((body, None));
+    };
+    let upstream = selection.targets.first().map(|t| t.upstream.as_str());
+    if let Some(upstream) = upstream {
+        request["model"] = Value::String(upstream.into());
+    }
+    let bytes = serde_json::to_vec(&request).expect("request JSON");
+    Ok((Bytes::from(bytes), Some(selection)))
+}
+
+/// Why a requested model has no route.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Refusal {
+    pub status: StatusCode,
+    pub code: &'static str,
+    pub message: &'static str,
+}
+
+/// The targets of a requested model (an HTTP body's or a WebSocket frame's),
+/// or `None` when the catalog does not route it (the request keeps the
+/// member order).
+pub(crate) async fn targets(
+    g: &Arc<Generation>,
+    model: &str,
+) -> Result<Option<Selection>, Refusal> {
     let snap = { lock(&g.merged_catalog.latest).clone() };
     let snap = match snap {
         Some(s) => s,
         None => snapshot(g, "client_version=0.163.0").await,
     };
-    let (bare, pinned) = namespace(g, &snap, &model);
+    let (bare, pinned) = namespace(g, &snap, model);
     if pinned.as_ref().is_some_and(Vec::is_empty) {
-        return Err(Box::new(router_error(
-            StatusCode::NOT_FOUND,
-            "unknown_provider",
-            "unknown provider namespace",
-        )));
+        return Err(Refusal {
+            status: StatusCode::NOT_FOUND,
+            code: "unknown_provider",
+            message: "unknown provider namespace",
+        });
     }
     // An alias has its own single target; a bare id fails over in member order.
     let mut targets = snap
         .routes
-        .get(&model)
+        .get(model)
         .cloned()
         .or_else(|| snap.routes.get(bare).cloned())
         .unwrap_or_default();
     if let Some(members) = &pinned {
         targets.retain(|t| members.contains(&t.member));
     }
-    let known = snap.all.contains_key(bare) || snap.all.contains_key(&model);
+    let known = snap.all.contains_key(bare) || snap.all.contains_key(model);
     if targets.is_empty() {
         if known {
-            return Err(Box::new(router_error(
-                StatusCode::CONFLICT,
-                "model_not_verified",
-                "model is pending, failed its tool probe, or has no enabled protocol route; test it on the Models page",
-            )));
+            return Err(Refusal {
+                status: StatusCode::CONFLICT,
+                code: "model_not_verified",
+                message: "model is pending, failed its tool probe, or has no enabled protocol route; test it on the Models page",
+            });
         }
         match &pinned {
             // A model the pinned provider does not list goes to it unchanged.
@@ -138,13 +175,10 @@ pub(crate) async fn select(
                     })
                     .collect();
             }
-            None => return Ok((body, None)),
+            None => return Ok(None),
         }
     }
-    let upstream = targets.first().map(|t| t.upstream.as_str()).unwrap_or(bare);
-    request["model"] = Value::String(upstream.into());
-    let bytes = serde_json::to_vec(&request).expect("request JSON");
-    Ok((Bytes::from(bytes), Some(Selection { targets })))
+    Ok(Some(Selection { targets }))
 }
 
 /// The requested name and the members it is pinned to. A real upstream id
