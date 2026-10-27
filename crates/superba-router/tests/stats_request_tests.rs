@@ -168,6 +168,54 @@ fn the_request_peek_reads_headers_body_and_client_metadata() {
 }
 
 #[test]
+fn a_websocket_frame_is_classified_by_its_own_metadata_not_the_handshake() {
+    // Codex opens the socket for its warm-up: the handshake header says
+    // prewarm, the later frames carry their own turn metadata.
+    let handshake = headers(
+        Some("Codex Desktop"),
+        Some(turn_metadata("t0", "prewarm", "user")),
+    );
+    let frame = |extra: Value| {
+        let mut v = json!({"type": "response.create", "model": "gpt-x", "input": []});
+        for (k, val) in extra.as_object().unwrap() {
+            v[k] = val.clone();
+        }
+        serde_json::to_vec(&v).unwrap()
+    };
+    let m = meta::peek_frame(
+        &handshake,
+        &frame(json!({"generate": false,
+            "client_metadata": {"x-codex-turn-metadata": turn_metadata("t0", "prewarm", "user")}})),
+    );
+    assert_eq!(m.request_kind, Some(RequestKind::Prewarm));
+    assert!(m.prewarm);
+    let m = meta::peek_frame(
+        &handshake,
+        &frame(
+            json!({"client_metadata": {"x-codex-turn-metadata": turn_metadata("t1", "turn", "user")}}),
+        ),
+    );
+    assert_eq!(m.request_kind, Some(RequestKind::Turn));
+    assert_eq!(m.turn_id.as_deref(), Some("t1"));
+    assert!(!m.prewarm);
+    // A frame without its own metadata falls back to the handshake's; only
+    // a `generate: false` frame is a warm-up.
+    let m = meta::peek_frame(&handshake, &frame(json!({})));
+    assert_eq!(m.request_kind, Some(RequestKind::Turn));
+    assert_eq!(m.turn_id.as_deref(), Some("t0"));
+    let m = meta::peek_frame(&handshake, &frame(json!({"generate": false})));
+    assert_eq!(m.request_kind, Some(RequestKind::Prewarm));
+    // HTTP keeps the header first.
+    let m = meta::peek(
+        &handshake,
+        &frame(
+            json!({"client_metadata": {"x-codex-turn-metadata": turn_metadata("t1", "turn", "user")}}),
+        ),
+    );
+    assert_eq!(m.request_kind, Some(RequestKind::Prewarm));
+}
+
+#[test]
 fn the_gating_matrix_follows_the_spike_rules() {
     let desktop_only = StatsLineConfig {
         template: "⚡ {tps}".into(),

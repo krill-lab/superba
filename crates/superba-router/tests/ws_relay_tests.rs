@@ -104,6 +104,12 @@ async fn connect(r: &Router) -> (Ws, http::Response<Option<Vec<u8>>>) {
         "openai-beta",
         "responses_websockets=2026-02-06".parse().unwrap(),
     );
+    // Codex opens the socket for its warm-up: the handshake carries that
+    // request's turn metadata, the frames their own.
+    h.insert(
+        "x-codex-turn-metadata",
+        turn_metadata("t0", "prewarm", "user").parse().unwrap(),
+    );
     h.insert(
         "sec-websocket-extensions",
         "permessage-deflate; client_max_window_bits"
@@ -250,6 +256,9 @@ async fn frames_are_relayed_with_the_line_and_without_deflate() {
         .filter(|r| r.request_kind == Some(RequestKind::Turn))
         .collect();
     assert_eq!(turns.len(), 3);
+    let mut turn_ids: Vec<_> = turns.iter().filter_map(|r| r.turn_id.as_deref()).collect();
+    turn_ids.sort_unstable();
+    assert_eq!(turn_ids, ["t1", "t2", "t3"], "each frame's own turn");
     assert!(
         turns
             .iter()

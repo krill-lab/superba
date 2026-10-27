@@ -192,13 +192,18 @@ pub fn from_headers(headers: &HeaderMap) -> RequestMeta {
 fn peek_with(headers: &HeaderMap, body: &[u8], transport: RequestTransport) -> RequestMeta {
     let originator = short(header(headers, "originator"));
     let peek: BodyPeek<'_> = serde_json::from_slice(body).unwrap_or_default();
-    let turn_json = header(headers, TURN_METADATA_HEADER)
-        .map(Cow::Borrowed)
-        .or_else(|| {
-            peek.client_metadata
-                .as_ref()
-                .and_then(|c| c.turn_metadata.clone())
-        });
+    let from_header = || header(headers, TURN_METADATA_HEADER).map(Cow::Borrowed);
+    let from_body = || {
+        peek.client_metadata
+            .as_ref()
+            .and_then(|c| c.turn_metadata.clone())
+    };
+    // A WebSocket's handshake header describes the request that opened it
+    // (Codex's warm-up): each frame's own `client_metadata` comes first.
+    let turn_json = match transport {
+        RequestTransport::WebSocket => from_body().or_else(from_header),
+        _ => from_header().or_else(from_body),
+    };
     let turn: Option<TurnMetadata> = turn_json
         .as_deref()
         .and_then(|j| serde_json::from_str(j).ok());
@@ -208,9 +213,17 @@ fn peek_with(headers: &HeaderMap, body: &[u8], transport: RequestTransport) -> R
         .or_else(|| short(header(headers, "thread-id")))
         .or_else(|| short(header(headers, "session-id")));
     let (harness, harness_version) = attribution(headers, RequestHarness::Codex);
+    let prewarm = peek.generate == Some(false);
     let request_kind = turn
         .as_ref()
-        .and_then(|t| t.request_kind.as_deref().map(request_kind));
+        .and_then(|t| t.request_kind.as_deref().map(request_kind))
+        .map(|kind| match transport {
+            // On a WebSocket the warm-up is the `generate: false` frame: a
+            // frame that generates is not one, whatever the handshake said.
+            RequestTransport::WebSocket if prewarm => RequestKind::Prewarm,
+            RequestTransport::WebSocket if kind == RequestKind::Prewarm => RequestKind::Turn,
+            _ => kind,
+        });
     let thread_source = turn
         .as_ref()
         .and_then(|t| short(t.thread_source.as_ref().and_then(serde_json::Value::as_str)));
@@ -243,7 +256,7 @@ fn peek_with(headers: &HeaderMap, body: &[u8], transport: RequestTransport) -> R
         service_tier: short(peek.service_tier.as_deref()),
         prompt_cache_key: short(peek.prompt_cache_key.as_deref()),
         continuation: peek.previous_response_id.is_some_and(|p| !p.is_empty()),
-        prewarm: peek.generate == Some(false),
+        prewarm,
         structured_output,
         transport,
         stripped: 0,

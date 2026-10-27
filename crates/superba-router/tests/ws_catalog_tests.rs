@@ -18,7 +18,9 @@ use superba_core::{DataDir, RequestKind, RequestQuery, RequestRow, RequestTransp
 use superba_router::merged_catalog::{CatalogConfig, MemberCatalog};
 use superba_router::openai::{OpenAiConfig, OpenAiEndpoint, OpenAiMember};
 use superba_router::paths::RouterPaths;
-use superba_router::{MemberKind, Reader, RouterConfig, RouterServer, StatsConfig};
+use superba_router::{
+    MemberKind, Reader, RouterConfig, RouterServer, StatsConfig, StatsLineConfig,
+};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
@@ -137,6 +139,12 @@ fn handshake(r: &Router) -> http::Request<()> {
         "openai-beta",
         "responses_websockets=2026-02-06".parse().unwrap(),
     );
+    // Codex opens the socket for its warm-up: the handshake carries that
+    // request's turn metadata, the frames their own.
+    h.insert(
+        "x-codex-turn-metadata",
+        turn_metadata("t0", "prewarm", "user").parse().unwrap(),
+    );
     req
 }
 
@@ -234,7 +242,17 @@ async fn a_single_member_serves_the_catalog_model_over_websocket() {
     let a = krill(&["gpt-a"]).await;
     let dir = tempfile::tempdir().unwrap();
     let paths = RouterPaths::new(&DataDir::new(dir.path()));
-    let r = boot(production(vec![krill_member("alpha", &a)]), &paths).await;
+    let mut cfg = production(vec![krill_member("alpha", &a)]);
+    cfg.stats = Some(StatsConfig {
+        line: Some(StatsLineConfig {
+            template: "⚡ {tps} tok/s".into(),
+            style: Default::default(),
+            originators: vec!["Codex Desktop".into()],
+            harnesses: superba_router::stats::default_line_harnesses(),
+        }),
+        ..StatsConfig::default()
+    });
+    let r = boot(cfg, &paths).await;
 
     let mut ws = connect(&r).await;
     assert_eq!(dials(&a), 0, "the member is dialed for the first frame");
@@ -258,7 +276,10 @@ async fn a_single_member_serves_the_catalog_model_over_websocket() {
         assert_eq!(row.model.as_deref(), Some("gpt-a"));
     }
     assert_eq!(rows[0].request_kind, Some(RequestKind::Prewarm));
+    assert!(!rows[0].injected);
     assert_eq!(rows[1].request_kind, Some(RequestKind::Turn));
+    assert_eq!(rows[1].turn_id.as_deref(), Some("t1"));
+    assert!(rows[1].injected, "the turn gets the stats line");
     assert_eq!(rows[1].input_tokens, Some(4002));
     r.handle.shutdown();
 }
