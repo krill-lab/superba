@@ -8,7 +8,7 @@ mod support;
 use std::sync::Arc;
 
 use egui::{Event, PointerButton, Rect, pos2};
-use superba_core::{Locale, ProfileSet, SwitchService, Timestamp};
+use superba_core::{Locale, Overview, ProfileSet, SwitchService, Timestamp};
 use superba_gui::design::{Palette, fonts, style};
 use superba_gui::i18n::Tr;
 use superba_gui::pages::settings::model::{Model, Rail, Release};
@@ -36,9 +36,20 @@ async fn data(service: &FakeService) -> Data {
 }
 
 fn model(data: &Data) -> Model {
+    model_with(data, data.overview.value.clone())
+}
+
+/// The model with no local Codex: the list follows the catalog's latest
+/// release, so the newest releases' keys are entries whatever Codex the fake
+/// reports.
+fn latest_model(data: &Data) -> Model {
+    model_with(data, None)
+}
+
+fn model_with(data: &Data, overview: Option<Overview>) -> Model {
     let profiles: ProfileSet = data.profiles.value.clone().unwrap();
     let input = Input {
-        overview: data.overview.value.clone(),
+        overview,
         profiles: Some(profiles),
         profile: None,
     };
@@ -63,7 +74,7 @@ fn state(model: Model) -> State {
 async fn the_shipped_catalog_lists_its_newest_releases_newest_first() {
     let service = fake();
     let data = data(&service).await;
-    let m = model(&data);
+    let m = latest_model(&data);
     assert!(!m.releases.is_empty());
     assert!(m.releases.len() <= source::NEW_RELEASES);
     let versions: Vec<superba_core::CodexVersion> = m
@@ -239,7 +250,7 @@ fn click_row(data: &Data, st: &mut State, target: &str) -> bool {
 async fn clicking_a_new_key_selects_it_in_the_detail_pane() {
     let service = fake();
     let data = data(&service).await;
-    let mut m = model(&data);
+    let mut m = latest_model(&data);
     // Only keys with an entry, so the second row is near the top.
     let known = m.clone();
     for r in &mut m.releases {
