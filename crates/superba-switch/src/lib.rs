@@ -24,6 +24,7 @@
 //! pass fakes through [`SwitcherDeps`] directly.
 
 mod account;
+mod chatgpt;
 pub mod ciphers;
 pub mod claude;
 mod claude_router;
@@ -565,6 +566,22 @@ pub fn default_service(ctx: LocalContext) -> Arc<dyn SwitchService> {
 
 #[async_trait]
 impl SwitchService for Switcher {
+    async fn chatgpt_accounts(&self) -> Result<Vec<superba_core::ChatGptAccount>> {
+        self.managed_chatgpt_accounts().await
+    }
+    async fn chatgpt_import_current(&self) -> Result<superba_core::ChatGptAccount> {
+        self.import_chatgpt_login().await
+    }
+    async fn chatgpt_add_account(
+        &self,
+        events: superba_core::ChatGptLoginEvents,
+    ) -> Result<superba_core::ChatGptAccount> {
+        self.add_chatgpt_login(events).await
+    }
+    async fn chatgpt_quota(&self, id: &str) -> Result<superba_core::ChatGptQuota> {
+        self.read_chatgpt_quota(id).await
+    }
+
     async fn overview(&self) -> Result<Overview> {
         self.overview_impl().await
     }

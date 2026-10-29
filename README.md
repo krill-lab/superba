@@ -31,6 +31,8 @@ Geist look).
 
 ## Features
 
+- **Multiple ChatGPT accounts.** Add or save official logins under Providers, inspect each account's five-hour and weekly remaining limits, and switch accounts through the existing preview/restart/rollback flow. Click the Overview provider tile to pick an account or provider. Managed account switches stay on this computer. See [the account guide](docs/chatgpt-accounts.md).
+
 - **Hot switching.** Change the line (Krill: China Express, Overseas,
   Multi-carrier CDN) or the auth mode while the desktop app keeps running: the
   app's Codex core restarts in about a second, the window, the open

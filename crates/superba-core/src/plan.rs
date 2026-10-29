@@ -558,6 +558,9 @@ pub enum LegacySessionChoice {
 pub struct SwitchRequest {
     /// What to do.
     pub intent: SwitchIntent,
+    /// Exact managed ChatGPT account, only valid with a local official-login switch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chatgpt_account_id: Option<String>,
     /// Where.
     #[serde(default)]
     pub targets: TargetSelection,
@@ -599,6 +602,7 @@ impl SwitchRequest {
                 line_id: None,
                 auth_mode: None,
             },
+            chatgpt_account_id: None,
             targets: TargetSelection::default(),
             model_override: None,
             legacy_sessions: None,

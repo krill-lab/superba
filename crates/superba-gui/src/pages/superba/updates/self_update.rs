@@ -362,13 +362,29 @@ fn notes_box(ui: &mut Ui, cx: &Cx<'_>, notes: &str) {
         });
 }
 
+/// Localized check details, shared by the compact inventory and expanded panel.
+pub(super) fn check_detail(cx: &Cx<'_>, view: &SelfUpdateView) -> Option<String> {
+    let detail = view.detail.as_deref()?;
+    if detail != "rate limited" {
+        return Some(detail.into());
+    }
+    Some(match view.limited_until {
+        Some(until) if until > cx.now => cx.tr.f(
+            "updates.superba.rate_limited_until",
+            &[("time", &crate::pages::clock_time(until, false))],
+        ),
+        Some(_) => cx.tr.t("updates.superba.rate_limit_elapsed"),
+        None => cx.tr.t("updates.superba.rate_limited_retry"),
+    })
+}
+
 /// The state line when there is no newer release to talk about.
 fn quiet_line(cx: &Cx<'_>, view: &SelfUpdateView) -> Option<String> {
     Some(match view.status {
         SelfUpdateStatus::PageUnavailable => cx.tr.t("updates.superba.page_unavailable"),
         SelfUpdateStatus::CheckFailed => cx.tr.f(
             "updates.superba.check_failed",
-            &[("reason", &view.detail.clone().unwrap_or_default())],
+            &[("reason", &check_detail(cx, view).unwrap_or_default())],
         ),
         SelfUpdateStatus::OnlineChecksOff => cx.tr.t("superba.network.online_off"),
         SelfUpdateStatus::NotChecked => cx.tr.t("updates.superba.not_checked"),
@@ -520,11 +536,15 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut SelfState, out: &mut Vec<Actio
     if let Some(note) = no_downgrade_note(cx.tr, &view) {
         ui.add(egui::Label::new(Text::caption(note, cx.pal)).wrap());
     }
-    if let Some(t) = view.limited_until {
+    if let Some(t) = view.limited_until.filter(|t| *t > cx.now) {
         ui.add(
             egui::Label::new(Text::caption(
                 cx.tr.f(
-                    "updates.superba.rate_limited",
+                    if view.latest.is_some() {
+                        "updates.superba.rate_limited"
+                    } else {
+                        "updates.superba.rate_limited_until"
+                    },
                     &[("time", &crate::pages::clock_time(t, false))],
                 ),
                 cx.pal,

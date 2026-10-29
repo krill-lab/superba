@@ -221,6 +221,8 @@ pub struct LoginInfo {
     pub email: Option<String>,
     /// ChatGPT account id.
     pub account_id: Option<String>,
+    /// Subscription claim, used only as a display label, never to infer limits.
+    pub plan_type: Option<String>,
     /// `last_refresh`.
     pub last_refresh: Option<Timestamp>,
     /// id_token `exp`.
@@ -295,6 +297,12 @@ fn login_info_from(m: &Map<String, Value>) -> LoginInfo {
         },
         email,
         account_id,
+        plan_type: auth_claims
+            .and_then(|a| a.get("chatgpt_plan_type"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned),
         last_refresh,
         id_token_exp,
     }
