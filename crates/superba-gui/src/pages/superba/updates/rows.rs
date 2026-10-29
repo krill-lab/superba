@@ -26,6 +26,19 @@ pub enum Filter {
 /// Page body (the enclosing Superba rail owns scrolling).
 pub fn show(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
     state.background(cx, out);
+    if let Some(wait) = cx
+        .data
+        .selfupdate
+        .value
+        .as_ref()
+        .and_then(|v| v.limited_until)
+        .filter(|until| *until > cx.now)
+        .and_then(|until| until.duration_since(cx.now))
+    {
+        // Restore Retry when the server's cooldown ends, even on an idle page.
+        ui.ctx()
+            .request_repaint_after(wait.min(Duration::from_secs(60)));
+    }
     // Leave space for the enclosing rail's floating vertical scrollbar.
     ui.set_max_width((ui.available_width() - 8.0).max(0.0));
     let tools = state.tools.view(cx);

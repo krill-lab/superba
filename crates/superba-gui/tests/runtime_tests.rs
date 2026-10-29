@@ -422,51 +422,69 @@ fn take_outcome(backend: &Backend) -> (SwitchOutcome, Vec<Reply>) {
 }
 
 fn refreshed_line(backend: &Backend, line: &str) {
+    let mut accounts = false;
     let mut profiles = false;
     let mut overview = false;
-    collect_until(backend, "post-execution Profiles and Overview", |reply| {
-        match reply {
-            Reply::Profiles(result) => {
-                let set = result.as_ref().expect("profiles refresh succeeds");
-                assert_eq!(
-                    set.profile(&"krill".into())
-                        .unwrap()
-                        .line_id
-                        .as_ref()
-                        .unwrap()
-                        .as_str(),
-                    line
-                );
-                profiles = true;
+    collect_until(
+        backend,
+        "post-execution accounts, Profiles and Overview",
+        |reply| {
+            match reply {
+                Reply::ChatGptAccounts(result) => {
+                    assert!(
+                        result
+                            .as_ref()
+                            .expect("accounts refresh succeeds")
+                            .is_empty()
+                    );
+                    accounts = true;
+                }
+                Reply::Profiles(result) => {
+                    let set = result.as_ref().expect("profiles refresh succeeds");
+                    assert_eq!(
+                        set.profile(&"krill".into())
+                            .unwrap()
+                            .line_id
+                            .as_ref()
+                            .unwrap()
+                            .as_str(),
+                        line
+                    );
+                    profiles = true;
+                }
+                Reply::Overview(result) => {
+                    let snapshot = result.as_ref().expect("overview refresh succeeds");
+                    assert_eq!(
+                        snapshot
+                            .active
+                            .as_ref()
+                            .unwrap()
+                            .line_id
+                            .as_ref()
+                            .unwrap()
+                            .as_str(),
+                        line
+                    );
+                    overview = true;
+                }
+                other => panic!("unexpected reply after Executed: {other:?}"),
             }
-            Reply::Overview(result) => {
-                let snapshot = result.as_ref().expect("overview refresh succeeds");
-                assert_eq!(
-                    snapshot
-                        .active
-                        .as_ref()
-                        .unwrap()
-                        .line_id
-                        .as_ref()
-                        .unwrap()
-                        .as_str(),
-                    line
-                );
-                overview = true;
-            }
-            other => panic!("unexpected reply after Executed: {other:?}"),
-        }
-        profiles && overview
-    });
+            accounts && profiles && overview
+        },
+    );
 }
 
 #[test]
-fn refresh_returns_profiles_sites_and_overview() {
+fn refresh_returns_accounts_profiles_sites_and_overview() {
     let backend = backend(false);
     backend.send(Command::Refresh);
     let mut received = BTreeSet::new();
     collect_until(&backend, "all refresh replies", |reply| {
         match reply {
+            Reply::ChatGptAccounts(result) => {
+                assert!(result.as_ref().expect("accounts load succeeds").is_empty());
+                received.insert("accounts");
+            }
             Reply::Profiles(result) => {
                 let profiles = result.as_ref().expect("profiles load succeeds");
                 assert!(profiles.profile(&"krill".into()).is_some());
@@ -489,9 +507,12 @@ fn refresh_returns_profiles_sites_and_overview() {
             }
             other => panic!("unexpected refresh reply: {other:?}"),
         }
-        received.len() == 3
+        received.len() == 4
     });
-    assert_eq!(received, BTreeSet::from(["profiles", "sites", "overview"]));
+    assert_eq!(
+        received,
+        BTreeSet::from(["accounts", "profiles", "sites", "overview"])
+    );
 }
 
 #[test]

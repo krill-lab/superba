@@ -246,6 +246,7 @@ remote_failed = "{host}: {detail}"
 foreign_auth = "auth.json belongs to another tool; its key is not tested"
 
 [switch.destination]
+chatgpt_account = "ChatGPT · {email}"
 router = "{site} via the local router"
 profile = "{site} · {line} · {mode}"
 profile_no_line = "{site} · {mode}"
