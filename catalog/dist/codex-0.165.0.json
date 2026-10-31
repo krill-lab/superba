@@ -1,15 +1,15 @@
 {
   "catalog_format": 1,
-  "codex_version": "0.166.0-alpha.1",
+  "codex_version": "0.165.0",
   "source": {
     "repo": "openai/codex",
-    "tag": "rust-v0.166.0-alpha.1",
-    "commit": "f2ed5dc90e514b59c2334f3bafb9b0250cc3e038",
-    "prerelease": true,
+    "tag": "rust-v0.165.0",
+    "commit": "360319d8dee62d87e2d59fc0c21805d79519cfed",
+    "prerelease": false,
     "files": {
-      "codex-rs/core/config.schema.json": "a1b54e6bccf05c380af38bd45284500abc999b57",
+      "codex-rs/core/config.schema.json": "7a96817c9ed504719f79940bcf3af1c5a9995c41",
       "codex-rs/features/src/legacy.rs": "3e6df58ed1852665c58c3173550d18dbe43f2d06",
-      "codex-rs/features/src/lib.rs": "29234609c883987d8717ac2b8280bed4b8c33b40"
+      "codex-rs/features/src/lib.rs": "8576b876930528436f8fec8acbbe238e6ad47568"
     }
   },
   "config_keys": [
@@ -1570,13 +1570,6 @@
       ]
     },
     {
-      "path": "features.critical_path_timing",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
       "path": "features.current_time_reminder",
       "kind": "bool_or_table",
       "types": [
@@ -1886,9 +1879,8 @@
           "value": "conversation"
         }
       ],
-      "description": "Deprecated and ignored; asynchronous classification always uses conversations.",
-      "definition": "AsyncClassifierMode",
-      "deprecated_hint": true
+      "description": "Classifier mode override. Otherwise use the model default, then conversation.",
+      "definition": "AsyncClassifierMode"
     },
     {
       "path": "features.guardianv2.classifier_instructions",
@@ -2269,13 +2261,6 @@
     },
     {
       "path": "features.mcp_2026_07_28",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.mcp_connection_sharing",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2838,13 +2823,6 @@
       ]
     },
     {
-      "path": "features.plugin_discovery_prefetch",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
       "path": "features.plugin_hooks",
       "kind": "boolean",
       "types": [
@@ -3029,14 +3007,6 @@
       ]
     },
     {
-      "path": "features.rollout_budget.enforce_limit",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ],
-      "description": "Stop when the shared budget is exhausted. Defaults to true."
-    },
-    {
       "path": "features.rollout_budget.limit_tokens",
       "kind": "integer",
       "types": [
@@ -3164,13 +3134,6 @@
     },
     {
       "path": "features.shell_zsh_fork",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.skill_catalog_deltas",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -3511,13 +3474,6 @@
     },
     {
       "path": "features.unified_image_budget",
-      "kind": "boolean",
-      "types": [
-        "boolean"
-      ]
-    },
-    {
-      "path": "features.untrusted_as_tool_output",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -5198,15 +5154,6 @@
       "under_map": true
     },
     {
-      "path": "model_providers.<name>.credential_file",
-      "kind": "string",
-      "types": [
-        "string"
-      ],
-      "description": "Absolute path to a Google ADC credential file. For GCP, overrides GOOGLE_APPLICATION_CREDENTIALS in the auth command's environment only.",
-      "under_map": true
-    },
-    {
       "path": "model_providers.<name>.env_http_headers",
       "kind": "map",
       "types": [
@@ -5386,15 +5333,6 @@
       "under_map": true
     },
     {
-      "path": "model_providers.<name>.location",
-      "kind": "string",
-      "types": [
-        "string"
-      ],
-      "description": "Google Cloud location for the built-in GCP provider. Takes precedence over `GOOGLE_CLOUD_LOCATION`; defaults to `global` when neither is set.",
-      "under_map": true
-    },
-    {
       "path": "model_providers.<name>.model_catalog_url",
       "kind": "string",
       "types": [
@@ -5412,15 +5350,6 @@
       "default": "",
       "default_source": "schema",
       "description": "Friendly display name.",
-      "under_map": true
-    },
-    {
-      "path": "model_providers.<name>.project_id",
-      "kind": "string",
-      "types": [
-        "string"
-      ],
-      "description": "Google Cloud project ID for the built-in GCP provider. Takes precedence over `GOOGLE_CLOUD_PROJECT` when deriving the Vertex AI endpoint.",
       "under_map": true
     },
     {
@@ -7346,7 +7275,7 @@
       ],
       "format": "uint64",
       "minimum": 0.0,
-      "description": "Seconds a thread must have no subscribers and no activity before app-server unloads it. Defaults to 60 (1 minute); zero unloads immediately. Resolved when each thread is loaded; request config overrides apply per thread."
+      "description": "Seconds a thread must have no subscribers and no activity before app-server unloads it. Defaults to 1800 (30 minutes); zero unloads immediately. Resolved when each thread is loaded; request config overrides apply per thread."
     },
     {
       "path": "tool_output_token_limit",
@@ -7789,7 +7718,6 @@
           "open_external_editor": null,
           "open_transcript": null,
           "queue": null,
-          "select_transcript": null,
           "submit": null,
           "toggle_fast_mode": null,
           "toggle_raw_output": null,
@@ -8552,7 +8480,6 @@
         "open_external_editor": null,
         "open_transcript": null,
         "queue": null,
-        "select_transcript": null,
         "submit": null,
         "toggle_fast_mode": null,
         "toggle_raw_output": null,
@@ -8650,16 +8577,6 @@
         "array"
       ],
       "description": "Queue the current composer draft while a task is running.",
-      "definition": "KeybindingsSpec"
-    },
-    {
-      "path": "tui.keymap.global.select_transcript",
-      "kind": "union",
-      "types": [
-        "string",
-        "array"
-      ],
-      "description": "Enter keyboard selection mode for the transcript.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -10538,14 +10455,6 @@
       "rustdoc": "Mask credentials and inject them through an already enabled network proxy."
     },
     {
-      "key": "critical_path_timing",
-      "config_path": "features.critical_path_timing",
-      "variant": "CriticalPathTiming",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Capture internal direct-tool dependency paths for turn attribution."
-    },
-    {
       "key": "current_time_reminder",
       "config_path": "features.current_time_reminder",
       "variant": "CurrentTimeReminder",
@@ -10966,14 +10875,6 @@
       "rustdoc": "Enable MCP protocol version 2026-07-28 support."
     },
     {
-      "key": "mcp_connection_sharing",
-      "config_path": "features.mcp_connection_sharing",
-      "variant": "McpConnectionSharing",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Discover and share eligible local stdio connections across chats."
-    },
-    {
       "key": "mcp_oauth_refresh_coordination",
       "config_path": "features.mcp_oauth_refresh_coordination",
       "variant": "McpOAuthRefreshCoordination",
@@ -11105,14 +11006,6 @@
       "stage": "removed",
       "default_enabled": false,
       "rustdoc": "Removed compatibility flag retained as a no-op."
-    },
-    {
-      "key": "plugin_discovery_prefetch",
-      "config_path": "features.plugin_discovery_prefetch",
-      "variant": "PluginDiscoveryPrefetch",
-      "stage": "stable",
-      "default_enabled": true,
-      "rustdoc": "Prefetch the plugin directory, featured plugins, and recommendations at app-server startup. Inventory-only hosts can disable this. Legacy suggestions read the cached directory."
     },
     {
       "key": "plugin_hooks",
@@ -11397,14 +11290,6 @@
       "rustdoc": "Removed compatibility flag for the retired patched zsh backend."
     },
     {
-      "key": "skill_catalog_deltas",
-      "config_path": "features.skill_catalog_deltas",
-      "variant": "SkillCatalogDeltas",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Append skill additions and edits within a cumulative context budget."
-    },
-    {
       "key": "skill_env_var_dependency_prompt",
       "config_path": "features.skill_env_var_dependency_prompt",
       "variant": "SkillEnvVarDependencyPrompt",
@@ -11653,14 +11538,6 @@
       "rustdoc": "Apply one shared pixel and token budget to every image, regardless of legacy detail hints."
     },
     {
-      "key": "untrusted_as_tool_output",
-      "config_path": "features.untrusted_as_tool_output",
-      "variant": "UntrustedAsToolOutput",
-      "stage": "under_development",
-      "default_enabled": false,
-      "rustdoc": "Render client-supplied untrusted context as standalone named tool outputs."
-    },
-    {
       "key": "use_agent_identity",
       "config_path": "features.use_agent_identity",
       "variant": "UseAgentIdentity",
@@ -11859,7 +11736,7 @@
     "AppsConfigToml": "App/connector settings loaded from `config.toml`.",
     "AppsDefaultConfig": "Default settings that apply to all apps.",
     "AskForApproval": "Determines the conditions under which the user is consulted to approve running the command proposed by Codex.",
-    "AsyncClassifierMode": "Legacy classifier modes retained for configuration and model-catalog compatibility.",
+    "AsyncClassifierMode": "Async classifier experiment, resolved once for each parent task.",
     "AuthCredentialsStoreMode": "Determine where Codex should store CLI auth credentials.",
     "AutoCompactTokenLimitScope": "Selects which part of the active context is charged against `model_auto_compact_token_limit`.",
     "AwsAuthRefreshConfig": "Command used to refresh AWS credentials for a model provider.",

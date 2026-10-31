@@ -281,6 +281,105 @@ zh_name = "单个插件"
 zh = "某个插件的设置，表名为完整的 `<插件>@<市场>` ID。"
 zh_basis = ""
 
+["config:plugins.<name>.apps"]
+en = "Connector-wide app settings keyed by connector ID. Ignored when this plugin is disabled by configuration. Explicit top-level app fields win."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "d69c206ed6d02e8e"
+zh = ""
+
+["config:plugins.<name>.apps.<name>"]
+en = ""
+en_hash = ""
+zh = ""
+
+["config:plugins.<name>.apps.<name>.approvals_reviewer"]
+en = "Reviewer for approval prompts from this app, overriding the thread default."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "b38bbf79ba0eb844"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.default_tools_approval_mode"]
+en = "Approval mode for tools in this app unless a tool override exists."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "66f2f8fb8edf55e2"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.default_tools_enabled"]
+en = "Whether tools are enabled by default for this app."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "e5747ecff9d60d6b"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.destructive_enabled"]
+en = "Whether tools with `destructive_hint = true` are allowed for this app."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "a0811be1525a7d9a"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.enabled"]
+en = "When `false`, Codex does not surface this app."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "af00155456eaa16d"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.links"]
+en = "Per-account approval settings keyed by link ID."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "bab0a1f72e116617"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.links.<name>"]
+en = ""
+en_hash = ""
+zh = ""
+
+["config:plugins.<name>.apps.<name>.links.<name>.approvals_reviewer"]
+en = "Reviewer for approval prompts from this account, overriding the app default."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "c314d3334a7f6fc3"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.links.<name>.default_tools_approval_mode"]
+en = "Approval mode for this account unless a tool override exists."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "159a20ae54895e2a"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.omit_tools_from"]
+en = "Model-facing surfaces from which this connector's tools must be omitted, in addition to any server-level omissions. `None` leaves lower-priority configuration unchanged; an empty list clears connector-level omissions."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "b3b57397a8629177"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.open_world_enabled"]
+en = "Whether tools with `open_world_hint = true` are allowed for this app."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "3adc83c7ea178186"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.tools"]
+en = "Per-tool settings for this app."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "5ea3afdb7d150f1f"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.tools.<name>"]
+en = ""
+en_hash = ""
+zh = ""
+
+["config:plugins.<name>.apps.<name>.tools.<name>.approval_mode"]
+en = "Approval mode for this tool."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "fd322b11a5de8d57"
+zh = ""
+
+["config:plugins.<name>.apps.<name>.tools.<name>.enabled"]
+en = "Whether this tool is enabled. `Some(true)` explicitly allows this tool."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "d7c0e6929d66b051"
+zh = ""
+
 ["config:plugins.<name>.auto_provision"]
 en = "Provisioning metadata. Omission does not request provisioning. Only applies with `remote_plugin_id` and Plugin Service availability to the requesting user at provisioning time. Effective enablement, trusted provisioning policy, and authentication and authorization restrictions still apply. This value is not trusted authorization and does not trigger provisioning."
 en_source = "openai/codex rust-v0.164.0-alpha.11.1: codex-rs/core/config.schema.json"

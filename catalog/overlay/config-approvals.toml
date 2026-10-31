@@ -178,7 +178,7 @@ zh_basis = "6f8d0bbde4d240c6"
 
 ["config:auto_review.timeout_ms"]
 en = "Overall Guardian review budget in milliseconds, including setup and retries. Defaults to 90,000. Set to 0 to wait without a review deadline; cancellation and independent transport timeouts still apply."
-en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.165.0: codex-rs/core/config.schema.json"
 en_hash = "57123cf6c477f740"
 zh_name = "自动审核超时"
 zh = "一次自动审核的总时限（毫秒），包含准备和重试，默认 90,000（90 秒）；超时的审核不会批准该动作。设为 `0` 表示不设审核期限，但取消操作和各自独立的传输超时仍然有效。"

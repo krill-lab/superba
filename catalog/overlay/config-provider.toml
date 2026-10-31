@@ -253,6 +253,12 @@ zh_name = "供应商能力覆盖"
 zh = "为自定义的 Responses 兼容模型供应商声明可选的 API 能力：联网搜索能否访问实时网络、远程压缩协议。没写的能力保持该供应商原有的默认值，模型和轮次设置还可能进一步收紧。"
 zh_basis = "e6f532a8a348208a"
 
+["config:model_providers.<name>.capabilities.cyber_access_programs"]
+en = "Whether the provider accepts explicit `access_programs.cyber` selections. Defaults to enabled for the built-in OpenAI provider and disabled otherwise. This does not grant program access or change authentication."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "272b1fa5b1a329a8"
+zh = ""
+
 ["config:model_providers.<name>.capabilities.external_web_access"]
 en = "Whether hosted web search may access the live web."
 en_source = "openai/codex rust-v0.162.0-alpha.17.2: codex-rs/core/config.schema.json"
@@ -287,7 +293,7 @@ zh_basis = "2354ce3210d2d9f3"
 
 ["config:model_providers.<name>.credential_file"]
 en = "Absolute path to a Google ADC credential file. For GCP, overrides GOOGLE_APPLICATION_CREDENTIALS in the auth command's environment only."
-en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
 en_hash = "a0cc919822a6fd10"
 zh_name = "Google 凭据文件"
 zh = "Google 应用默认凭据（ADC）文件的绝对路径，写相对路径会报错。用于内置 `gcp` 模型供应商时，只在其认证命令（默认调用 `gcloud`）的环境中覆盖 `GOOGLE_APPLICATION_CREDENTIALS`，不影响 Codex 的其他部分。"
@@ -354,9 +360,28 @@ zh_name = "网关客户端 ID"
 zh = "在网关的 OAuth 服务中注册的客户端 ID，不能为空。"
 zh_basis = ""
 
+["config:model_providers.<name>.gateway_oauth.credentials_store"]
+en = "Where Codex stores this gateway's OAuth credentials. Defaults to the keyring-backed store."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "804173f17c81ec25"
+zh = ""
+
+["config:model_providers.<name>.gateway_oauth.credentials_store=file"]
+en = "Store credentials in plaintext in `$CODEX_HOME/secrets/gateway_oauth.json`."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "f2f76c0f1759a7f1"
+zh = ""
+
+["config:model_providers.<name>.gateway_oauth.credentials_store=keyring"]
+en = "Encrypt credentials using a passphrase kept in the OS keyring."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "76be041c2f4b17c4"
+zh = ""
+
 ["config:model_providers.<name>.gateway_oauth.delivery"]
-en = ""
-en_hash = ""
+en = "Omit to send the gateway token via the Authorization header"
+en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
+en_hash = "2dc835de015df9cc"
 zh_name = "网关令牌附加方式"
 zh = '网关令牌如何附加到请求上：`kind = "header"` 时放进指定的请求头，`kind = "cookie"` 时放进指定名称的 Cookie。'
 zh_basis = ""
@@ -427,16 +452,21 @@ zh_basis = ""
 
 ["config:model_providers.<name>.location"]
 en = "Google Cloud location for the built-in GCP provider. Takes precedence over `GOOGLE_CLOUD_LOCATION`; defaults to `global` when neither is set."
-en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
 en_hash = "908897e4e6078c5f"
 zh_name = "Google Cloud 区域"
 zh = "内置 `gcp` 模型供应商（Google Cloud Vertex AI）使用的 Google Cloud location，优先于 `GOOGLE_CLOUD_LOCATION` 环境变量；两者都未设置时为 `global`。"
 zh_basis = "908897e4e6078c5f"
 
 ["config:model_providers.<name>.model_catalog_url"]
-en = "Optional full URL for a Codex-native model catalog. When unset, OpenAI discovery uses the Codex backend unless `base_url` overrides the inference endpoint."
-en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
-en_hash = "e977b1a10d0efe8a"
+en = """
+Optional full URL for a Codex-native model catalog. When unset, OpenAI discovery uses the Codex backend unless `base_url` overrides the inference endpoint. The endpoint must serve the Codex catalog format, not the public `/v1/models` API.
+
+For built-in OpenAI, set this under `[model_providers.openai]`; other non-default provider overrides are rejected. The URL must use HTTPS and an allowed ChatGPT host. Other hosts require a custom provider. Inference still uses `openai_base_url`.
+
+Catalog requests use the provider's credentials, including an API key or ChatGPT access token. Only configure an endpoint you trust with those credentials. Setting this URL does not grant catalog access or guarantee that the endpoint accepts a regional API key. Existing discovery gates and entitlement checks apply."""
+en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
+en_hash = "60ce312788738c19"
 zh_name = "模型目录地址"
 zh = "Codex 原生格式模型目录的完整 URL。不设置时模型列表从 `<base_url>/models` 获取（OpenAI 内置供应商未改 `base_url` 时走 Codex 后端）；设置后改从此地址获取，且不跟随重定向。"
 zh_basis = "e977b1a10d0efe8a"
@@ -451,7 +481,7 @@ zh_basis = "7c17f14ef3edc623"
 
 ["config:model_providers.<name>.project_id"]
 en = "Google Cloud project ID for the built-in GCP provider. Takes precedence over `GOOGLE_CLOUD_PROJECT` when deriving the Vertex AI endpoint."
-en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
 en_hash = "f046b321f9165d5d"
 zh_name = "Google Cloud 项目 ID"
 zh = "内置 `gcp` 模型供应商使用的 Google Cloud 项目 ID，用来生成 Vertex AI 端点地址，优先于 `GOOGLE_CLOUD_PROJECT` 环境变量。在 `[model_providers.gcp]` 中设置。"
