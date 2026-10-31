@@ -79,6 +79,11 @@ zh_name = "应用连接器"
 zh = "启用应用连接器（Apps，即 ChatGPT 账号中的连接器），通过内置的 Codex Apps MCP 服务器把它们作为工具提供给模型，可用 `/apps` 管理。只在使用 ChatGPT 账号登录时生效，API key 登录无效。默认开启；旧键名 `connectors` 仍被接受。"
 zh_basis = ""
 
+["feature:apps_early_resource_discovery"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:apps_mcp_path_override"]
 en = ""
 en_hash = ""
@@ -190,6 +195,11 @@ en_hash = ""
 zh_name = "代码模式宿主 gRPC"
 zh = "Codex 与自己启动的代码模式宿主进程之间改用基于标准输入输出的 gRPC 通信，替代默认的通信方式。开发中，默认关闭。"
 zh_basis = ""
+
+["feature:code_mode_host_output_truncation"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:code_mode_interrupt"]
 en = ""
@@ -436,6 +446,11 @@ zh_name = "Fast 模式"
 zh = '允许使用 Fast 服务档位：配置中的 `service_tier = "fast"`（请求中发送 `priority`）只有开启时才生效，终端界面也会提供切换 Fast 模式的选项和快捷键。关闭后 Fast 档位设置会被忽略；Ultra Fast 档位由 `ultrafast_mode` 单独控制。默认开启。'
 zh_basis = ""
 
+["feature:gcp_setup_wizard"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:goals"]
 en = ""
 en_hash = ""
@@ -470,6 +485,11 @@ en_hash = ""
 zh_name = "Guardian 扩展原型"
 zh = "已移除。曾用于启用由扩展实现的同步 Guardian 审查器原型；该原型未被采用并已删除，设置后被忽略。"
 zh_basis = ""
+
+["feature:guardian_native_multi_agent_history"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:guardian_node_repl_transcript_images"]
 en = ""
@@ -604,6 +624,11 @@ zh_name = "应用内语音对话"
 zh = "桌面 app 的管理开关：是否允许在桌面 app 中使用语音（Voice）对话；允许并不代表一定可用，还取决于账号和服务端支持。应由管理员在托管配置（requirements）中设置；Codex CLI 本身不读取它。默认开启。"
 zh_basis = ""
 
+["feature:incremental_exec_tools"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:incremental_tools"]
 en = ""
 en_hash = ""
@@ -617,6 +642,11 @@ en_hash = ""
 zh_name = "即时打断"
 zh = "回复生成过程中用户发送新输入时，立即打断当前响应，并让前台的代码模式观察结果尽快让出，以便马上处理新输入。虽处于开发中，0.162 起的正式版默认开启（桌面 app 自带的 0.162.0-alpha.17.2 中默认关闭）。"
 zh_basis = ""
+
+["feature:interrupt_on_cancel"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:item_ids"]
 en = ""
@@ -776,6 +806,11 @@ zh_name = "通知中省略媒体"
 zh = "app-server 发给客户端的条目通知中省略内联的图片和音频内容。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:omit_skill_descriptions"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:output_token_replay"]
 en = ""
 en_hash = ""
@@ -926,8 +961,10 @@ zh = "已移除。曾用于在记录进历史前缩放所有内联图片；现�
 zh_basis = ""
 
 ["feature:respect_system_proxy"]
-en = ""
-en_hash = ""
+en_name = "System proxy"
+en = "Use macOS or Windows system proxy settings for Codex requests."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/features/src/lib.rs (experimental menu text)"
+en_hash = "e03822c873fa5d7d"
 zh_name = "遵循系统代理"
 zh = "Codex 自己的网络客户端改为遵循系统代理设置：依次使用系统 / PAC / WPAD 配置、环境变量中的代理，最后直连。关闭时使用 HTTP 库（reqwest）的默认代理行为。开发中，默认关闭。"
 zh_basis = ""
@@ -1037,6 +1074,11 @@ zh_name = "zsh 执行桥（旧）"
 zh = "已移除。曾把 Shell 工具的执行改走打过补丁的 zsh 执行桥；该后端已删除，现在使用标准 Shell 执行器，设置后会提示删除此项。"
 zh_basis = ""
 
+["feature:simplified_selection_hints"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:skill_catalog_deltas"]
 en = ""
 en_hash = ""
@@ -1128,6 +1170,11 @@ zh_name = "子代理继承会话环境"
 zh = "创建子代理时，让它继承父会话配置的执行环境，而不是父会话当前轮次临时选择的环境。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:suppress_model_change_announcements"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:system_proxy_fallback"]
 en = ""
 en_hash = ""
@@ -1197,6 +1244,11 @@ en_hash = ""
 zh_name = "TUI 使用 app-server"
 zh = "已移除。终端界面（TUI）现在总是基于 app-server 实现，保留此键只为兼容旧配置。"
 zh_basis = ""
+
+["feature:tui_extensions_statusline"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:tui_multi_backend"]
 en = ""

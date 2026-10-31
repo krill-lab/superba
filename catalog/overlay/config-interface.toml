@@ -949,7 +949,7 @@ zh_basis = "67d38a6e01371eb2"
 
 ["config:tui.keymap.global.select_transcript"]
 en = "Enter keyboard selection mode for the transcript."
-en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
 en_hash = "ca9100434a367cbc"
 zh_name = "键盘选择对话记录"
 zh = "进入对话记录的键盘选择模式，用键盘选中文字。默认 `leader [`（按前导键后再按 `[`），该组合已被其他绑定占用时不设默认。"

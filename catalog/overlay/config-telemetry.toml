@@ -221,6 +221,12 @@ zh_name = "记录 Guardian 评估"
 zh = "是否把已完成的 Guardian（自动审批审查）评估写入 OTLP 日志。默认 `false`，且只有 `otel.exporter` 设为 `otlp-http` 或 `otlp-grpc` 时才生效；评估理由可能包含敏感内容，每条最多记录 64 KiB。"
 zh_basis = "f8bfbe35b29c6daa"
 
+["config:otel.log_sse_deltas"]
+en = "Log successful SSE events whose kind ends in `.delta`. Defaults to true. Disabling this preserves errors, completion events, and metrics."
+en_source = "openai/codex rust-v0.167.0-alpha.1: codex-rs/core/config.schema.json"
+en_hash = "98afd6170d2c72f8"
+zh = ""
+
 ["config:otel.log_user_prompt"]
 en = "Log user prompt in traces"
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"

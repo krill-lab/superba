@@ -148,7 +148,7 @@ zh_basis = "610e27a605066aff"
 
 ["config:thread_unload_delay_secs"]
 en = "Seconds a thread must have no subscribers and no activity before app-server unloads it. Defaults to 60 (1 minute); zero unloads immediately. Resolved when each thread is loaded; request config overrides apply per thread."
-en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
 en_hash = "25e8a5112f4c307c"
 zh_name = "空闲会话卸载延迟"
 zh = "一个会话既没有订阅者也没有任何活动多少秒后，app-server 把它从内存中卸载，`0` 表示立即卸载。默认 60（1 分钟），0.164 及更早版本为 1800（30 分钟）。每个会话加载时读取此值，请求中的配置覆盖按会话生效。"
