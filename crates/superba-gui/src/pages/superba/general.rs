@@ -119,6 +119,28 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, settings: &mut Settings, out: &mut Vec<Act
     let before = settings.clone();
     autostart_section(ui, cx, settings, out);
     ui.add_space(24.0);
+    Card::new().flat().show(ui, |ui| {
+        row(
+            ui,
+            cx,
+            &cx.tr.t("app_lock.title"),
+            &cx.tr.t("app_lock.description"),
+            false,
+            |ui| {
+                if ui
+                    .add(
+                        Button::new(cx.tr.t("app_lock.configure"))
+                            .small()
+                            .enabled(!cx.busy),
+                    )
+                    .clicked()
+                {
+                    out.push(Action::AppLockSettings);
+                }
+            },
+        );
+    });
+    ui.add_space(24.0);
     section(ui, cx, &cx.tr.t("settings.switching"), None);
     Card::new().flat().show(ui, |ui| {
         row(

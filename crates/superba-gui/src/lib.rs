@@ -31,6 +31,7 @@
 #![warn(missing_docs)]
 
 pub mod app;
+mod app_lock;
 pub mod args;
 pub mod cadence;
 pub mod chrome;

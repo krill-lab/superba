@@ -31,6 +31,11 @@ Geist look).
 
 ## Features
 
+- **Management window password.** Choose a password prompt whenever the window
+  opens or once per computer boot (Linux). Configure it under Superba > Settings
+  > General; background routing keeps running while locked. See the
+  [mode behavior and protection scope](docs/management-window-password.md).
+
 - **Hot switching.** Change the line (Krill: China Express, Overseas,
   Multi-carrier CDN) or the auth mode while the desktop app keeps running: the
   app's Codex core restarts in about a second, the window, the open

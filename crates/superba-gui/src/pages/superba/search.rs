@@ -5,6 +5,7 @@ use egui::{Id, Rect, Sense, Ui};
 
 /// Every preference row the inline filter and `focus:` deep links know.
 pub const ROWS: &[(SuperbaSection, &str)] = &[
+    (SuperbaSection::General, "app_lock.title"),
     (SuperbaSection::General, "settings.countdown.title"),
     (SuperbaSection::General, "settings.safe_mode.title"),
     (SuperbaSection::General, "settings.open_on_start.title"),

@@ -282,6 +282,7 @@ impl PageStates {
 
 /// The application.
 pub struct SuperbaApp {
+    app_lock: crate::app_lock::AppLock,
     backend: Backend,
     service: Arc<dyn SwitchService>,
     opts: AppOptions,
@@ -388,6 +389,7 @@ impl SuperbaApp {
             BannerState::restore_risk_memory(&ctx, true);
         }
         let mut app = Self {
+            app_lock: crate::app_lock::AppLock::load(),
             backend,
             service,
             tr: Tr::new(locale),
@@ -525,6 +527,10 @@ impl SuperbaApp {
     /// The entry point of every "Open ChatGPT with Superba" (the hero, the
     /// palette, toasts, other starts, the start-up preference).
     pub(crate) fn launch_app(&mut self, origin: crate::launch::LaunchOrigin) {
+        if self.app_lock.is_locked() && !matches!(origin, crate::launch::LaunchOrigin::Startup) {
+            self.life.show();
+            return;
+        }
         self.data.launching_app = true;
         self.backend.send(Command::LaunchApp(origin));
     }
@@ -1588,6 +1594,9 @@ impl SuperbaApp {
     }
 
     fn handle_action(&mut self, ctx: &egui::Context, action: Action) {
+        if self.app_lock.is_locked() {
+            return;
+        }
         if self.pages.superba.storage.busy()
             && !matches!(action, Action::OpenDataDir | Action::DataLocationChanged(_))
         {
@@ -1599,6 +1608,7 @@ impl SuperbaApp {
             return;
         }
         match action {
+            Action::AppLockSettings => self.app_lock.open_settings(),
             // Planned above.
             Action::Switch { .. }
             | Action::Restore(_)
@@ -2093,13 +2103,26 @@ impl SuperbaApp {
 impl eframe::App for SuperbaApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.app_lock.poll(&ctx);
         self.fonts.poll(&ctx);
         self.handle_instance_requests();
         self.handle_replies(&ctx);
         self.tray_tick(&ctx);
+        if self.app_lock.is_locked() {
+            crate::chrome::drag_areas(ui);
+            self.app_lock.locked_ui(ui, &self.tr);
+            self.tray_prompt(&ctx);
+            crate::chrome::overlay(&ctx, &self.tr);
+            // The router watchdog and background notifications keep running.
+            self.run_cadence(&ctx, false);
+            self.tray_finish(&ctx);
+            return;
+        }
         let now = self.now();
         // Let Escape/Enter win over a countdown expiring in this same frame.
-        self.keyboard(&ctx);
+        if !self.app_lock.dialog_open() {
+            self.keyboard(&ctx);
+        }
         self.flow.tick(now);
         self.request_attention(&ctx);
 
@@ -2237,6 +2260,7 @@ impl eframe::App for SuperbaApp {
         }
         self.process_flow_notices(&ctx);
         self.request_attention(&ctx);
+        self.app_lock.settings_ui(&ctx, &self.tr);
 
         // The shell's own reads and the window's next wake-up.
         self.run_cadence(&ctx, true);
@@ -2248,6 +2272,7 @@ impl eframe::App for SuperbaApp {
     /// handled and the router watchdog keeps ticking; nothing else is read and
     /// the window is not woken up for anything else.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.app_lock.poll(ctx);
         self.fonts.poll(ctx);
         let visible = ctx.input(|i| i.viewport().visible()).unwrap_or(true);
         if visible {
@@ -2257,6 +2282,11 @@ impl eframe::App for SuperbaApp {
         self.handle_instance_requests();
         self.handle_replies(ctx);
         self.tray_tick(ctx);
+        if self.app_lock.is_locked() {
+            self.run_cadence(ctx, false);
+            self.tray_finish(ctx);
+            return;
+        }
         // A switch chosen in the tray while the window hides: nobody sees a
         // countdown to cancel, so it starts at once (questions bring the
         // window back, `tray_tick`).

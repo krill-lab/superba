@@ -16,8 +16,16 @@ impl SuperbaApp {
     /// Show the tray icon (once, from [`SuperbaApp::new`]).
     pub(super) fn start_tray(&mut self, ctx: &egui::Context) {
         let busy = self.tray_busy();
-        let menu = menu::build(&self.tr, &self.data, busy);
-        let tooltip = menu::tooltip(&self.tr, &self.data);
+        let menu = if self.app_lock.is_locked() {
+            self.app_lock.tray_menu(&self.tr)
+        } else {
+            menu::build(&self.tr, &self.data, busy)
+        };
+        let tooltip = if self.app_lock.is_locked() {
+            self.tr.t("app_lock.locked")
+        } else {
+            menu::tooltip(&self.tr, &self.data)
+        };
         self.tray = match &self.opts.tray {
             TrayOption::Off => Tray::disabled(),
             TrayOption::System => Tray::start(ctx, menu, tooltip),
@@ -115,6 +123,15 @@ impl SuperbaApp {
     }
 
     fn on_tray_event(&mut self, ctx: &egui::Context, event: TrayEvent) {
+        // Guard the event itself as well as hiding its menu item: an event
+        // queued just before the window locked must not bypass the password.
+        if self.app_lock.is_locked()
+            && matches!(&event,
+            TrayEvent::Action(action) if !matches!(action, TrayAction::Open | TrayAction::Quit))
+        {
+            self.show_window(ctx);
+            return;
+        }
         match event {
             TrayEvent::Activate | TrayEvent::Action(TrayAction::Open) => self.show_window(ctx),
             TrayEvent::HostLost => self.life.tray_lost(),
@@ -170,6 +187,7 @@ impl SuperbaApp {
                     ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 }
                 WindowCommand::Hide => {
+                    self.app_lock.window_closed();
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                     crate::tray::set_in_dock(false);
                 }
@@ -179,6 +197,7 @@ impl SuperbaApp {
                     ctx.request_repaint();
                 }
                 WindowCommand::Close => {
+                    self.app_lock.window_closed();
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     ctx.request_repaint();
                 }
@@ -190,13 +209,24 @@ impl SuperbaApp {
                     self.backend
                         .send(super::Command::SaveSettings(self.settings.clone()));
                 }
-                WindowCommand::RelaunchHidden => crate::tray::request_relaunch_hidden(),
+                WindowCommand::RelaunchHidden => {
+                    self.app_lock.window_closed();
+                    crate::tray::request_relaunch_hidden();
+                }
             }
         }
         if self.tray.menu().is_some() {
             let busy = self.tray_busy();
-            let menu = menu::build(&self.tr, &self.data, busy);
-            let tooltip = menu::tooltip(&self.tr, &self.data);
+            let menu = if self.app_lock.is_locked() {
+                self.app_lock.tray_menu(&self.tr)
+            } else {
+                menu::build(&self.tr, &self.data, busy)
+            };
+            let tooltip = if self.app_lock.is_locked() {
+                self.tr.t("app_lock.locked")
+            } else {
+                menu::tooltip(&self.tr, &self.data)
+            };
             self.tray.update(menu, tooltip);
         }
     }

@@ -98,6 +98,7 @@ pub struct FakeService {
     next_plan: AtomicU64,
     areas: Areas,
     open_calls: AtomicU64,
+    router_watch_calls: AtomicU64,
 }
 
 /// Fake state per page area (`fake/<area>.rs`).
@@ -156,6 +157,7 @@ impl FakeService {
             next_plan: AtomicU64::new(1),
             areas: Areas::default(),
             open_calls: AtomicU64::new(0),
+            router_watch_calls: AtomicU64::new(0),
         }
         .with_account_summary(true)
     }
@@ -213,6 +215,11 @@ impl FakeService {
     /// How often `open_app` was called (GH#7).
     pub fn open_app_calls(&self) -> u64 {
         self.open_calls.load(Ordering::SeqCst)
+    }
+
+    /// Watchdog calls, including while the management window is locked.
+    pub fn router_watch_calls(&self) -> u64 {
+        self.router_watch_calls.load(Ordering::SeqCst)
     }
 
     /// Store the router model list mode in the saved settings (a direct
@@ -2593,6 +2600,7 @@ impl SwitchService for FakeService {
     }
 
     async fn router_watch(&self) -> superba_core::Result<superba_core::RouterWatch> {
+        self.router_watch_calls.fetch_add(1, Ordering::SeqCst);
         Err(superba_core::Error::not_implemented(
             "SwitchService::router_watch",
         ))

@@ -375,6 +375,8 @@ impl Action {
 /// Something a page asks the app to do.
 #[derive(Debug)]
 pub enum Action {
+    /// Configure the local management-window password.
+    AppLockSettings,
     /// Navigate.
     Go(Page),
     /// Reload overview, profiles, sites.
