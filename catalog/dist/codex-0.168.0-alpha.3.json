@@ -1,15 +1,15 @@
 {
   "catalog_format": 1,
-  "codex_version": "0.166.0-alpha.1",
+  "codex_version": "0.168.0-alpha.3",
   "source": {
     "repo": "openai/codex",
-    "tag": "rust-v0.166.0-alpha.1",
-    "commit": "f2ed5dc90e514b59c2334f3bafb9b0250cc3e038",
+    "tag": "rust-v0.168.0-alpha.3",
+    "commit": "c983513c1fc79e6a19bc009b3b6e08fbe9ab5367",
     "prerelease": true,
     "files": {
-      "codex-rs/core/config.schema.json": "a1b54e6bccf05c380af38bd45284500abc999b57",
+      "codex-rs/core/config.schema.json": "3ad4a9d9da1ffa0e0f089d83d5a597ab283c0e19",
       "codex-rs/features/src/legacy.rs": "3e6df58ed1852665c58c3173550d18dbe43f2d06",
-      "codex-rs/features/src/lib.rs": "29234609c883987d8717ac2b8280bed4b8c33b40"
+      "codex-rs/features/src/lib.rs": "65a43d8157bfc9a1de2207ff3b7e5f6d964bf19a"
     }
   },
   "config_keys": [
@@ -207,7 +207,7 @@
       "types": [
         "boolean"
       ],
-      "description": "Whether to allow shell command approval requests, including inline `with_additional_permissions` and `require_escalated` requests."
+      "description": "Whether to allow sandbox escalation approval requests, including inline `with_additional_permissions` and `require_escalated` requests. Dangerous commands can still request approval within existing permissions."
     },
     {
       "path": "approval_policy.granular.skill_approval",
@@ -633,6 +633,14 @@
         "string"
       ],
       "description": "Experimental replacement for the history-retrieval instructions when history tools and Apps are enabled. Omitted or blank values use the built-in prompt."
+    },
+    {
+      "path": "auto_review.experimental_denial_reconsideration_prompt",
+      "kind": "string",
+      "types": [
+        "string"
+      ],
+      "description": "Developer message used when `features.guardian_denial_reconsideration` is enabled. Omitted or blank values use the built-in prompt. Maximum 1,000 UTF-8 bytes."
     },
     {
       "path": "auto_review.experimental_policy_template",
@@ -1166,6 +1174,13 @@
       ]
     },
     {
+      "path": "features.agent_message_board_mcp",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.analytics_plan_history",
       "kind": "boolean",
       "types": [
@@ -1216,6 +1231,13 @@
     },
     {
       "path": "features.apps",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.apps_early_resource_discovery",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -1334,6 +1356,13 @@
       ]
     },
     {
+      "path": "features.cli_resume_account_check",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.code_mode",
       "kind": "bool_or_table",
       "types": [
@@ -1428,6 +1457,13 @@
     },
     {
       "path": "features.code_mode_host_grpc",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.code_mode_host_output_truncation",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -1784,6 +1820,13 @@
       ]
     },
     {
+      "path": "features.gcp_setup_wizard",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.goals",
       "kind": "boolean",
       "types": [
@@ -1805,6 +1848,13 @@
       ]
     },
     {
+      "path": "features.guardian_denial_reconsideration",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.guardian_enhanced_node_repl_transcripts",
       "kind": "boolean",
       "types": [
@@ -1813,6 +1863,20 @@
     },
     {
       "path": "features.guardian_ext",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.guardian_include_additional_context",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.guardian_native_multi_agent_history",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2011,6 +2075,62 @@
       "maximum": 1.0
     },
     {
+      "path": "features.guardianv2.sync_elastic_budgeting",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Enable elastic allocation for synchronous Guardian requests. Defaults to false."
+    },
+    {
+      "path": "features.guardianv2.sync_elastic_sections",
+      "kind": "map",
+      "types": [
+        "object"
+      ],
+      "description": "Named section limits, decoded and validated by Guardian when the switch is enabled."
+    },
+    {
+      "path": "features.guardianv2.sync_elastic_sections.<name>",
+      "kind": "table",
+      "types": [
+        "object"
+      ],
+      "definition": "GuardianElasticSectionConfigToml",
+      "under_map": true
+    },
+    {
+      "path": "features.guardianv2.sync_elastic_sections.<name>.max_section_entry_tokens",
+      "kind": "integer",
+      "types": [
+        "integer"
+      ],
+      "format": "uint",
+      "minimum": 0.0,
+      "under_map": true
+    },
+    {
+      "path": "features.guardianv2.sync_elastic_sections.<name>.max_total_section_tokens",
+      "kind": "integer",
+      "types": [
+        "integer"
+      ],
+      "format": "uint",
+      "minimum": 0.0,
+      "description": "Upper bound for the section's allocation. Omit to use the global request budget as the upper bound.",
+      "under_map": true
+    },
+    {
+      "path": "features.guardianv2.sync_elastic_sections.<name>.min_total_section_tokens",
+      "kind": "integer",
+      "types": [
+        "integer"
+      ],
+      "format": "uint",
+      "minimum": 0.0,
+      "under_map": true
+    },
+    {
       "path": "features.guardianv2.thread_context",
       "kind": "boolean",
       "types": [
@@ -2142,6 +2262,13 @@
       ]
     },
     {
+      "path": "features.hosted_search_policy",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.image_detail_original",
       "kind": "boolean",
       "types": [
@@ -2150,6 +2277,13 @@
     },
     {
       "path": "features.image_generation",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.image_generation_animation",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2212,6 +2346,13 @@
       ]
     },
     {
+      "path": "features.incremental_exec_tools",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.incremental_tools",
       "kind": "boolean",
       "types": [
@@ -2220,6 +2361,13 @@
     },
     {
       "path": "features.instant_interrupt",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.interrupt_on_cancel",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -2824,6 +2972,13 @@
       ]
     },
     {
+      "path": "features.omit_skill_descriptions",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.output_token_replay",
       "kind": "boolean",
       "types": [
@@ -3170,6 +3325,13 @@
       ]
     },
     {
+      "path": "features.simplified_selection_hints",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.skill_catalog_deltas",
       "kind": "boolean",
       "types": [
@@ -3282,6 +3444,13 @@
     },
     {
       "path": "features.subagent_thread_environments",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.suppress_model_change_announcements",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -3454,7 +3623,21 @@
       ]
     },
     {
+      "path": "features.tui_extensions_statusline",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
       "path": "features.tui_multi_backend",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ]
+    },
+    {
+      "path": "features.tui_workspace",
       "kind": "boolean",
       "types": [
         "boolean"
@@ -4742,6 +4925,14 @@
       "description": "Model used for memory consolidation."
     },
     {
+      "path": "memories.consolidation_service_tier",
+      "kind": "string",
+      "types": [
+        "string"
+      ],
+      "description": "Service tier for memory consolidation. Defaults to Standard (`\"default\"`)."
+    },
+    {
       "path": "memories.dedicated_tools",
       "kind": "boolean",
       "types": [
@@ -5169,6 +5360,15 @@
       "under_map": true
     },
     {
+      "path": "model_providers.<name>.capabilities.cyber_access_programs",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Whether the provider accepts explicit `access_programs.cyber` selections. Defaults to enabled for the built-in OpenAI provider and disabled otherwise. This does not grant program access or change authentication.",
+      "under_map": true
+    },
+    {
       "path": "model_providers.<name>.capabilities.external_web_access",
       "kind": "boolean",
       "types": [
@@ -5277,11 +5477,38 @@
       "under_map": true
     },
     {
+      "path": "model_providers.<name>.gateway_oauth.credentials_store",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "keyring",
+          "description": "Encrypt credentials using a passphrase kept in the OS keyring."
+        },
+        {
+          "value": "file",
+          "description": "Store credentials in plaintext in `$CODEX_HOME/secrets/gateway_oauth.json`."
+        }
+      ],
+      "description": "Where Codex stores this gateway's OAuth credentials. Defaults to the keyring-backed store.",
+      "definition": "OAuthCredentialsStore",
+      "under_map": true
+    },
+    {
       "path": "model_providers.<name>.gateway_oauth.delivery",
       "kind": "union",
       "types": [
         "object"
       ],
+      "default": {
+        "kind": "header",
+        "name": "Authorization",
+        "scheme": "Bearer"
+      },
+      "default_source": "schema",
+      "description": "Omit to send the gateway token via the Authorization header",
       "definition": "GatewayOAuthDelivery",
       "under_map": true,
       "discriminator": "kind"
@@ -5300,6 +5527,8 @@
           "value": "cookie"
         }
       ],
+      "default": "header",
+      "default_source": "parent",
       "under_map": true,
       "variant_of": [
         "model_providers.<name>.gateway_oauth.delivery:kind=header",
@@ -5312,6 +5541,8 @@
       "types": [
         "string"
       ],
+      "default": "Authorization",
+      "default_source": "parent",
       "under_map": true,
       "variant_of": [
         "model_providers.<name>.gateway_oauth.delivery:kind=header",
@@ -5400,7 +5631,7 @@
       "types": [
         "string"
       ],
-      "description": "Optional full URL for a Codex-native model catalog. When unset, OpenAI discovery uses the Codex backend unless `base_url` overrides the inference endpoint.",
+      "description": "Optional full URL for a Codex-native model catalog. When unset, OpenAI discovery uses the Codex backend unless `base_url` overrides the inference endpoint. The endpoint must serve the Codex catalog format, not the public `/v1/models` API.\n\nFor built-in OpenAI, set this under `[model_providers.openai]`; other non-default provider overrides are rejected. The URL must use HTTPS and an allowed ChatGPT host. Other hosts require a custom provider. Inference still uses `openai_base_url`.\n\nCatalog requests use the provider's credentials, including an API key or ChatGPT access token. Only configure an endpoint you trust with those credentials. Setting this URL does not grant catalog access or guarantee that the endpoint accepts a regional API key. Existing discovery gates and entitlement checks apply.",
       "under_map": true
     },
     {
@@ -6052,6 +6283,14 @@
       "description": "Opt in to logging completed Guardian assessments to an OTLP log exporter. Defaults to false. Rationales can be sensitive and are capped at 64 KiB."
     },
     {
+      "path": "otel.log_sse_deltas",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Log successful SSE events whose kind ends in `.delta`. Defaults to true. Disabling this preserves errors, completion events, and metrics."
+    },
+    {
       "path": "otel.log_user_prompt",
       "kind": "boolean",
       "types": [
@@ -6296,10 +6535,6 @@
       "types": [
         "object"
       ],
-      "default": {
-        "max_bytes": 2048
-      },
-      "default_source": "schema",
       "description": "Byte limit for tool-result log output; independent of model-visible output.",
       "definition": "ToolResultLogConfig"
     },
@@ -6629,6 +6864,233 @@
         "object"
       ],
       "definition": "PluginConfig",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps",
+      "kind": "map",
+      "types": [
+        "object"
+      ],
+      "description": "Connector-wide app settings keyed by connector ID. Ignored when this plugin is disabled by configuration. Explicit top-level app fields win.",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>",
+      "kind": "table",
+      "types": [
+        "object"
+      ],
+      "definition": "AppConfig",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.approvals_reviewer",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "user"
+        },
+        {
+          "value": "auto_review"
+        },
+        {
+          "value": "guardian_subagent"
+        }
+      ],
+      "description": "Reviewer for approval prompts from this app, overriding the thread default.",
+      "definition": "ApprovalsReviewer",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.default_tools_approval_mode",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "auto"
+        },
+        {
+          "value": "prompt"
+        },
+        {
+          "value": "writes"
+        },
+        {
+          "value": "approve"
+        }
+      ],
+      "description": "Approval mode for tools in this app unless a tool override exists.",
+      "definition": "AppToolApproval",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.default_tools_enabled",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Whether tools are enabled by default for this app.",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.destructive_enabled",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Whether tools with `destructive_hint = true` are allowed for this app.",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.enabled",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "default": true,
+      "default_source": "schema",
+      "description": "When `false`, Codex does not surface this app.",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.links",
+      "kind": "map",
+      "types": [
+        "object"
+      ],
+      "description": "Per-account approval settings keyed by link ID.",
+      "definition": "AppLinksConfig",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.links.<name>",
+      "kind": "table",
+      "types": [
+        "object"
+      ],
+      "definition": "AppLinkConfig",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.links.<name>.approvals_reviewer",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "user"
+        },
+        {
+          "value": "auto_review"
+        },
+        {
+          "value": "guardian_subagent"
+        }
+      ],
+      "description": "Reviewer for approval prompts from this account, overriding the app default.",
+      "definition": "ApprovalsReviewer",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.links.<name>.default_tools_approval_mode",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "auto"
+        },
+        {
+          "value": "prompt"
+        },
+        {
+          "value": "writes"
+        },
+        {
+          "value": "approve"
+        }
+      ],
+      "description": "Approval mode for this account unless a tool override exists.",
+      "definition": "AppToolApproval",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.omit_tools_from",
+      "kind": "array",
+      "types": [
+        "array"
+      ],
+      "items": "ToolExposureSurface",
+      "description": "Model-facing surfaces from which this connector's tools must be omitted, in addition to any server-level omissions. `None` leaves lower-priority configuration unchanged; an empty list clears connector-level omissions.",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.open_world_enabled",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Whether tools with `open_world_hint = true` are allowed for this app.",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.tools",
+      "kind": "map",
+      "types": [
+        "object"
+      ],
+      "description": "Per-tool settings for this app.",
+      "definition": "AppToolsConfig",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.tools.<name>",
+      "kind": "table",
+      "types": [
+        "object"
+      ],
+      "definition": "AppToolConfig",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.tools.<name>.approval_mode",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "auto"
+        },
+        {
+          "value": "prompt"
+        },
+        {
+          "value": "writes"
+        },
+        {
+          "value": "approve"
+        }
+      ],
+      "description": "Approval mode for this tool.",
+      "definition": "AppToolApproval",
+      "under_map": true
+    },
+    {
+      "path": "plugins.<name>.apps.<name>.tools.<name>.enabled",
+      "kind": "boolean",
+      "types": [
+        "boolean"
+      ],
+      "description": "Whether this tool is enabled. `Some(true)` explicitly allows this tool.",
       "under_map": true
     },
     {
@@ -7397,6 +7859,23 @@
       "definition": "ToolsToml"
     },
     {
+      "path": "tools.client_search_provider",
+      "kind": "enum",
+      "types": [
+        "string"
+      ],
+      "enum_values": [
+        {
+          "value": "standalone"
+        },
+        {
+          "value": "search_mcp"
+        }
+      ],
+      "description": "Client provider preference when the model does not select a provider.",
+      "definition": "WebSearchProvider"
+    },
+    {
       "path": "tools.experimental_request_user_input",
       "kind": "table",
       "types": [
@@ -7614,6 +8093,31 @@
       "description": "Deselect read-only transcript or footer text after Copy on select confirms delivery. Editable composer selections remain visible. Defaults to `false` and has no effect when Copy on select is off."
     },
     {
+      "path": "tui.default_hosts",
+      "kind": "map",
+      "types": [
+        "object"
+      ],
+      "schema_default": {},
+      "description": "Preferred hosts for new conversations, indexed by project and local user identity. Read from the user configuration only; values are never endpoints or credentials."
+    },
+    {
+      "path": "tui.default_hosts.<name>",
+      "kind": "map",
+      "types": [
+        "object"
+      ],
+      "under_map": true
+    },
+    {
+      "path": "tui.default_hosts.<name>.<name>",
+      "kind": "string",
+      "types": [
+        "string"
+      ],
+      "under_map": true
+    },
+    {
       "path": "tui.disable_paste_burst",
       "kind": "boolean",
       "types": [
@@ -7780,10 +8284,16 @@
           "yank": null
         },
         "global": {
+          "change_host": null,
           "clear_terminal": null,
           "copy": null,
           "find_transcript": null,
           "focus_activity": null,
+          "focus_main_composer": null,
+          "focus_pane_left": null,
+          "focus_pane_right": null,
+          "focus_sidebar_content": null,
+          "hide_pane": null,
           "leader": null,
           "open_agents": null,
           "open_external_editor": null,
@@ -8543,10 +9053,16 @@
         "object"
       ],
       "schema_default": {
+        "change_host": null,
         "clear_terminal": null,
         "copy": null,
         "find_transcript": null,
         "focus_activity": null,
+        "focus_main_composer": null,
+        "focus_pane_left": null,
+        "focus_pane_right": null,
+        "focus_sidebar_content": null,
+        "hide_pane": null,
         "leader": null,
         "open_agents": null,
         "open_external_editor": null,
@@ -8561,6 +9077,16 @@
         "toggle_vim_mode": null
       },
       "definition": "TuiGlobalKeymap"
+    },
+    {
+      "path": "tui.keymap.global.change_host",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Change where a new conversation runs.",
+      "definition": "KeybindingsSpec"
     },
     {
       "path": "tui.keymap.global.clear_terminal",
@@ -8600,6 +9126,56 @@
         "array"
       ],
       "description": "Focus activity groups in the owned transcript to inspect their details.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.global.focus_main_composer",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Focus the main conversation composer.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.global.focus_pane_left",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Focus the parent conversation.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.global.focus_pane_right",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Focus the open side conversation.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.global.focus_sidebar_content",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Focus the side conversation, or hide it when already focused.",
+      "definition": "KeybindingsSpec"
+    },
+    {
+      "path": "tui.keymap.global.hide_pane",
+      "kind": "union",
+      "types": [
+        "string",
+        "array"
+      ],
+      "description": "Hide the focused sidebar pane.",
       "definition": "KeybindingsSpec"
     },
     {
@@ -9837,6 +10413,9 @@
           "value": "osc9"
         },
         {
+          "value": "osc777"
+        },
+        {
           "value": "bel"
         }
       ],
@@ -10091,6 +10670,18 @@
       "description": "Show startup tooltips in the TUI welcome screen. Defaults to `true`."
     },
     {
+      "path": "tui.sidebar_width_percent",
+      "kind": "integer",
+      "types": [
+        "integer"
+      ],
+      "format": "uint8",
+      "minimum": 1.0,
+      "maximum": 99.0,
+      "schema_default": null,
+      "description": "Preferred docked sidebar width as a percentage of the terminal. Defaults to one third."
+    },
+    {
       "path": "tui.status_line",
       "kind": "array",
       "types": [
@@ -10221,6 +10812,14 @@
       "rustdoc": "Enable shared discussion tools for an agent tree."
     },
     {
+      "key": "agent_message_board_mcp",
+      "config_path": "features.agent_message_board_mcp",
+      "variant": "AgentMessageBoardMcp",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Expose a tree-scoped in-memory message board through HTTP MCP."
+    },
+    {
       "key": "analytics_plan_history",
       "config_path": "features.analytics_plan_history",
       "variant": "AnalyticsPlanHistory",
@@ -10287,6 +10886,14 @@
       "stage": "stable",
       "default_enabled": true,
       "rustdoc": "Enable apps."
+    },
+    {
+      "key": "apps_early_resource_discovery",
+      "config_path": "features.apps_early_resource_discovery",
+      "variant": "AppsEarlyResourceDiscovery",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Let host-owned Apps catalog reads overlap the initial tool inventory."
     },
     {
       "key": "apps_mcp_path_override",
@@ -10386,6 +10993,14 @@
       "rustdoc": "Enable Daybreak controls and automatic access-program selection in CLI clients."
     },
     {
+      "key": "cli_resume_account_check",
+      "config_path": "features.cli_resume_account_check",
+      "variant": "CliResumeAccountCheck",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Restrict CLI resume of attributed local threads to their creator."
+    },
+    {
       "key": "code_mode",
       "config_path": "features.code_mode",
       "variant": "CodeMode",
@@ -10416,6 +11031,14 @@
       "stage": "under_development",
       "default_enabled": false,
       "rustdoc": "Use gRPC over stdio for the process-owned code-mode host."
+    },
+    {
+      "key": "code_mode_host_output_truncation",
+      "config_path": "features.code_mode_host_output_truncation",
+      "variant": "CodeModeHostOutputTruncation",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Truncate output in the process-owned code-mode host before sending it to Core."
     },
     {
       "key": "code_mode_interrupt",
@@ -10453,9 +11076,9 @@
       "key": "code_mode_tool_description_first",
       "config_path": "features.code_mode_tool_description_first",
       "variant": "CodeModeToolDescriptionFirst",
-      "stage": "under_development",
+      "stage": "removed",
       "default_enabled": false,
-      "rustdoc": "Put each tool's description before its namespace description in Code Mode."
+      "rustdoc": "Removed compatibility flag for Code Mode tool description ordering."
     },
     {
       "key": "code_mode_tool_search",
@@ -10597,8 +11220,8 @@
       "key": "deferred_tool_world_state",
       "config_path": "features.deferred_tool_world_state",
       "variant": "DeferredToolWorldState",
-      "stage": "under_development",
-      "default_enabled": false,
+      "stage": "stable",
+      "default_enabled": true,
       "rustdoc": "Describe deferred tool namespaces in the model-visible world state."
     },
     {
@@ -10698,6 +11321,14 @@
       "rustdoc": "Enable Fast mode selection in the TUI and request layer."
     },
     {
+      "key": "gcp_setup_wizard",
+      "config_path": "features.gcp_setup_wizard",
+      "variant": "GcpSetupWizard",
+      "stage": "stable",
+      "default_enabled": false,
+      "rustdoc": "Offer Google Cloud Vertex AI setup during TUI sign-in onboarding."
+    },
+    {
       "key": "goals",
       "config_path": "features.goals",
       "variant": "Goals",
@@ -10722,6 +11353,14 @@
       "rustdoc": "Give Guardian access to the root conversation's message history tools."
     },
     {
+      "key": "guardian_denial_reconsideration",
+      "config_path": "features.guardian_denial_reconsideration",
+      "variant": "GuardianDenialReconsideration",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Reconsider a synchronous Guardian denial once before publishing it."
+    },
+    {
       "key": "guardian_enhanced_node_repl_transcripts",
       "config_path": "features.guardian_enhanced_node_repl_transcripts",
       "variant": "GuardianEnhancedNodeReplTranscripts",
@@ -10736,6 +11375,22 @@
       "stage": "removed",
       "default_enabled": false,
       "rustdoc": "Removed compatibility flag for the unused Guardian extension prototype."
+    },
+    {
+      "key": "guardian_include_additional_context",
+      "config_path": "features.guardian_include_additional_context",
+      "variant": "GuardianIncludeAdditionalContext",
+      "stage": "stable",
+      "default_enabled": true,
+      "rustdoc": "Include standalone additional-context tool outputs in Guardian review history."
+    },
+    {
+      "key": "guardian_native_multi_agent_history",
+      "config_path": "features.guardian_native_multi_agent_history",
+      "variant": "GuardianNativeMultiAgentHistory",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Review state-changing MAv2 calls and preserve native calls in Guardian history."
     },
     {
       "key": "guardian_node_repl_transcript_images",
@@ -10818,6 +11473,14 @@
       "rustdoc": "Enable Claude-style lifecycle hooks loaded from hooks.json files."
     },
     {
+      "key": "hosted_search_policy",
+      "config_path": "features.hosted_search_policy",
+      "variant": "HostedSearchPolicy",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Let the host authorize MCP search independently of native search through per-turn policy."
+    },
+    {
       "key": "image_detail_original",
       "config_path": "features.image_detail_original",
       "variant": "ImageDetailOriginal",
@@ -10832,6 +11495,14 @@
       "stage": "stable",
       "default_enabled": true,
       "rustdoc": "Enable extension-backed image generation."
+    },
+    {
+      "key": "image_generation_animation",
+      "config_path": "features.image_generation_animation",
+      "variant": "ImageGenerationAnimation",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Allow the image-generation tool to request a backend-assembled GIF."
     },
     {
       "key": "image_resize_notice",
@@ -10890,6 +11561,14 @@
       "rustdoc": "Allow in-app Voice in desktop apps.  Requirements-only gate: this should be set from requirements, not user config. Permission does not establish Voice availability or provider support."
     },
     {
+      "key": "incremental_exec_tools",
+      "config_path": "features.incremental_exec_tools",
+      "variant": "IncrementalExecTools",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Diff CodeModeOnly exec definitions within the incremental tool catalog."
+    },
+    {
       "key": "incremental_tools",
       "config_path": "features.incremental_tools",
       "variant": "IncrementalTools",
@@ -10904,6 +11583,14 @@
       "stage": "under_development",
       "default_enabled": true,
       "rustdoc": "Preempt responses and yield foreground code-mode observations on new user input."
+    },
+    {
+      "key": "interrupt_on_cancel",
+      "config_path": "features.interrupt_on_cancel",
+      "variant": "InterruptOnCancel",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Interrupt upstream inference when a turn is cancelled."
     },
     {
       "key": "item_ids",
@@ -11017,7 +11704,7 @@
       "key": "multi_agent",
       "config_path": "features.multi_agent",
       "variant": "Collab",
-      "stage": "stable",
+      "stage": "deprecated",
       "default_enabled": true,
       "rustdoc": "Enable collab tools."
     },
@@ -11089,6 +11776,14 @@
       "stage": "under_development",
       "default_enabled": false,
       "rustdoc": "Omit inline image and audio content from app-server item notifications."
+    },
+    {
+      "key": "omit_skill_descriptions",
+      "config_path": "features.omit_skill_descriptions",
+      "variant": "OmitSkillDescriptions",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Omit descriptions from the model-visible available-skills catalog."
     },
     {
       "key": "output_token_replay",
@@ -11267,8 +11962,12 @@
       "key": "respect_system_proxy",
       "config_path": "features.respect_system_proxy",
       "variant": "RespectSystemProxy",
-      "stage": "under_development",
+      "stage": "experimental",
       "default_enabled": false,
+      "experimental": {
+        "name": "System proxy",
+        "menu_description": "Use macOS or Windows system proxy settings for Codex requests."
+      },
       "rustdoc": "Respect host system proxy settings for Codex-owned network clients."
     },
     {
@@ -11299,8 +11998,8 @@
       "key": "retain_client_tool_outputs",
       "config_path": "features.retain_client_tool_outputs",
       "variant": "RetainClientToolOutputs",
-      "stage": "under_development",
-      "default_enabled": false,
+      "stage": "stable",
+      "default_enabled": true,
       "rustdoc": "Honor client-requested tool-output retention across context windows."
     },
     {
@@ -11395,6 +12094,14 @@
       "stage": "removed",
       "default_enabled": false,
       "rustdoc": "Removed compatibility flag for the retired patched zsh backend."
+    },
+    {
+      "key": "simplified_selection_hints",
+      "config_path": "features.simplified_selection_hints",
+      "variant": "SimplifiedSelectionHints",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Use concise developer hints for explicitly selected plugins."
     },
     {
       "key": "skill_catalog_deltas",
@@ -11501,6 +12208,14 @@
       "rustdoc": "Inherit configured thread environments instead of temporary turn selections."
     },
     {
+      "key": "suppress_model_change_announcements",
+      "config_path": "features.suppress_model_change_announcements",
+      "variant": "SuppressModelChangeAnnouncements",
+      "stage": "stable",
+      "default_enabled": false,
+      "rustdoc": "Suppress the model ID announcement in incremental context after a model switch."
+    },
+    {
       "key": "system_proxy_fallback",
       "config_path": "features.system_proxy_fallback",
       "variant": "SystemProxyFallback",
@@ -11581,12 +12296,28 @@
       "rustdoc": "Removed compatibility flag. The TUI now always uses the app-server implementation."
     },
     {
+      "key": "tui_extensions_statusline",
+      "config_path": "features.tui_extensions_statusline",
+      "variant": "TuiExtensionsStatusLine",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Render the configured status line through the experimental TUI Extensions renderer."
+    },
+    {
       "key": "tui_multi_backend",
       "config_path": "features.tui_multi_backend",
       "variant": "TuiMultiBackend",
       "stage": "under_development",
       "default_enabled": false,
       "rustdoc": "Allow the TUI to discover and select among multiple conversation backends."
+    },
+    {
+      "key": "tui_workspace",
+      "config_path": "features.tui_workspace",
+      "variant": "TuiWorkspace",
+      "stage": "under_development",
+      "default_enabled": false,
+      "rustdoc": "Enable workspace behavior for side conversations in the owned TUI."
     },
     {
       "key": "ultrafast_mode",
@@ -11648,8 +12379,8 @@
       "key": "unified_image_budget",
       "config_path": "features.unified_image_budget",
       "variant": "UnifiedImageBudget",
-      "stage": "under_development",
-      "default_enabled": false,
+      "stage": "stable",
+      "default_enabled": true,
       "rustdoc": "Apply one shared pixel and token budget to every image, regardless of legacy detail hints."
     },
     {
@@ -11926,6 +12657,7 @@
     "TuiVimSearchKeymap": "Search motions shared by Vim normal and operator-pending input.",
     "TuiVimTextObjectKeymap": "Vim text-object keybindings for modal editing inside text areas.",
     "Verbosity": "Controls output length/detail on GPT-5 models via the Responses API. Serialized with lowercase values to match the OpenAI API.",
+    "WebSearchProvider": "Provider preference selected by the resolved model catalog entry.",
     "WireApi": "Wire protocol that the provider speaks."
   }
 }

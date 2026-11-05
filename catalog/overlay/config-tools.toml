@@ -393,6 +393,12 @@ zh_name = "工具设置"
 zh = "内置工具的细项设置：联网搜索参数（`tools.web_search`）、向用户提问工具 `request_user_input` 和计划工具 `update_plan` 的开关。"
 zh_basis = "59ee1c2298648b51"
 
+["config:tools.client_search_provider"]
+en = "Client provider preference when the model does not select a provider."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "201e13f7ec46e3a9"
+zh = ""
+
 ["config:tools.experimental_request_user_input"]
 en = ""
 en_hash = ""

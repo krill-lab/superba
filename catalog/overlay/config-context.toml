@@ -180,6 +180,12 @@ zh_name = "记忆整合模型"
 zh = "第二阶段把零散记忆整合为全局记忆时使用的模型。未设置时使用当前模型供应商推荐的模型。"
 zh_basis = "90d7572a600a06e9"
 
+["config:memories.consolidation_service_tier"]
+en = 'Service tier for memory consolidation. Defaults to Standard (`"default"`).'
+en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
+en_hash = "56b6577127dbceed"
+zh = ""
+
 ["config:memories.dedicated_tools"]
 en = "When `true`, expose dedicated memory tools through the extension tool surface."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
@@ -278,7 +284,7 @@ zh_basis = "49eec7ec464a8a04"
 
 ["config:memories.version"]
 en = "Selects the memory pipeline. Fresh profiles default to v2 when memories are enabled, unless dual-write is explicitly disabled; existing v1 profiles default to v1."
-en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.165.0: codex-rs/core/config.schema.json"
 en_hash = "34ecfe3c1edab704"
 zh_name = "记忆流程版本"
 zh = "选择记忆流程版本 `v1` 或 `v2`，两者分别存放在 Codex 主目录下的 `memories` 和 `memories_v2` 目录。未设置时，启用记忆且主目录下还没有 `memories` 目录的新配置默认用 `v2`（显式设置 `dual_write = false` 时除外），已有 `v1` 记忆的配置默认用 `v1`。"

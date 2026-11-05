@@ -65,9 +65,9 @@ zh = "是否允许由执行策略（execpolicy）中 `prompt` 规则触发的审
 zh_basis = "0c3bee0c63af47c1"
 
 ["config:approval_policy.granular.sandbox_approval"]
-en = "Whether to allow shell command approval requests, including inline `with_additional_permissions` and `require_escalated` requests."
-en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
-en_hash = "7b7bc1f86644efe1"
+en = "Whether to allow sandbox escalation approval requests, including inline `with_additional_permissions` and `require_escalated` requests. Dangerous commands can still request approval within existing permissions."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "d5ead3985f58588e"
 zh_name = "Shell 命令审批"
 zh = "是否允许 shell 命令的审批请求，包括在命令中直接申请 `with_additional_permissions` 或 `require_escalated` 的提权请求；`false` 时这些请求会被自动拒绝。"
 zh_basis = "7b7bc1f86644efe1"
@@ -152,6 +152,12 @@ zh_name = "历史检索提示词（实验）"
 zh = "实验性：启用历史工具和应用（Apps）时，用来替换自动审核内置的历史检索说明；留空或不设置则使用内置提示词。"
 zh_basis = "e0e6c77f0ad3b973"
 
+["config:auto_review.experimental_denial_reconsideration_prompt"]
+en = "Developer message used when `features.guardian_denial_reconsideration` is enabled. Omitted or blank values use the built-in prompt. Maximum 1,000 UTF-8 bytes."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "1e91082428bdd158"
+zh = ""
+
 ["config:auto_review.experimental_policy_template"]
 en = "Experimental full Guardian prompt template containing the tenant policy placeholder."
 en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
@@ -178,7 +184,7 @@ zh_basis = "6f8d0bbde4d240c6"
 
 ["config:auto_review.timeout_ms"]
 en = "Overall Guardian review budget in milliseconds, including setup and retries. Defaults to 90,000. Set to 0 to wait without a review deadline; cancellation and independent transport timeouts still apply."
-en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.165.0: codex-rs/core/config.schema.json"
 en_hash = "57123cf6c477f740"
 zh_name = "自动审核超时"
 zh = "一次自动审核的总时限（毫秒），包含准备和重试，默认 90,000（90 秒）；超时的审核不会批准该动作。设为 `0` 表示不设审核期限，但取消操作和各自独立的传输超时仍然有效。"

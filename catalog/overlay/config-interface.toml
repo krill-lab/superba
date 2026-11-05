@@ -326,6 +326,22 @@ zh_name = "复制后取消选中"
 zh = "“选中即复制”确认内容已写入剪贴板后，自动取消只读的对话记录或底栏文字的选中状态；可编辑的输入框中的选中保持不变。默认 `false`；“选中即复制”关闭时无效。"
 zh_basis = "e269114b1ce608f6"
 
+["config:tui.default_hosts"]
+en = "Preferred hosts for new conversations, indexed by project and local user identity. Read from the user configuration only; values are never endpoints or credentials."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "b97d068da11e60e9"
+zh = ""
+
+["config:tui.default_hosts.<name>"]
+en = ""
+en_hash = ""
+zh = ""
+
+["config:tui.default_hosts.<name>.<name>"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["config:tui.disable_paste_burst"]
 en = "When true, disables burst-paste detection for typed input entirely. All characters are inserted as they are received, and no buffering or placeholder replacement will occur for fast keypress bursts. Overrides the legacy top-level `disable_paste_burst` setting. Defaults to `false`."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
@@ -875,6 +891,12 @@ zh_name = "全局快捷键"
 zh = "在任何界面都可用的快捷键；具体上下文（如 `composer`）没有覆盖同名动作时使用这里的绑定。每项可设为单个按键、按键列表，或用空列表解除绑定。"
 zh_basis = ""
 
+["config:tui.keymap.global.change_host"]
+en = "Change where a new conversation runs."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "939152b8e04e338b"
+zh = ""
+
 ["config:tui.keymap.global.clear_terminal"]
 en = "Clear the terminal UI."
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
@@ -906,6 +928,36 @@ en_hash = "24fdf976ffe8e898"
 zh_name = "聚焦活动分组"
 zh = "在 Codex 接管的全屏对话记录中聚焦到活动分组，以便查看其详情。默认 `f4`；该键已被自定义绑定占用时不使用默认值。"
 zh_basis = "24fdf976ffe8e898"
+
+["config:tui.keymap.global.focus_main_composer"]
+en = "Focus the main conversation composer."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "58e7462fc2b90479"
+zh = ""
+
+["config:tui.keymap.global.focus_pane_left"]
+en = "Focus the parent conversation."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "fe1c04fbc7836d1b"
+zh = ""
+
+["config:tui.keymap.global.focus_pane_right"]
+en = "Focus the open side conversation."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "d583dfa18bb62bca"
+zh = ""
+
+["config:tui.keymap.global.focus_sidebar_content"]
+en = "Focus the side conversation, or hide it when already focused."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "a1f770b75fcd6e1c"
+zh = ""
+
+["config:tui.keymap.global.hide_pane"]
+en = "Hide the focused sidebar pane."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "1a437e0cbc72d737"
+zh = ""
 
 ["config:tui.keymap.global.leader"]
 en = "Prefix for persistent, context-aware shortcut menus."
@@ -949,7 +1001,7 @@ zh_basis = "67d38a6e01371eb2"
 
 ["config:tui.keymap.global.select_transcript"]
 en = "Enter keyboard selection mode for the transcript."
-en_source = "openai/codex rust-v0.166.0-alpha.1: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
 en_hash = "ca9100434a367cbc"
 zh_name = "键盘选择对话记录"
 zh = "进入对话记录的键盘选择模式，用键盘选中文字。默认 `leader [`（按前导键后再按 `[`），该组合已被其他绑定占用时不设默认。"
@@ -2040,6 +2092,12 @@ en_hash = "bf695b76e48b4b9e"
 zh_name = "启动小提示"
 zh = "在 TUI 欢迎屏幕上显示使用小提示，默认 `true`。"
 zh_basis = "bf695b76e48b4b9e"
+
+["config:tui.sidebar_width_percent"]
+en = "Preferred docked sidebar width as a percentage of the terminal. Defaults to one third."
+en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_hash = "ff50d50bb440d0bd"
+zh = ""
 
 ["config:tui.status_line"]
 en = """
