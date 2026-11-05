@@ -182,7 +182,7 @@ zh_basis = "90d7572a600a06e9"
 
 ["config:memories.consolidation_service_tier"]
 en = 'Service tier for memory consolidation. Defaults to Standard (`"default"`).'
-en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.166.0-alpha.6: codex-rs/core/config.schema.json"
 en_hash = "56b6577127dbceed"
 zh = ""
 

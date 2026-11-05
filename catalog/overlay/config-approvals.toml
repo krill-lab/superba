@@ -66,7 +66,7 @@ zh_basis = "0c3bee0c63af47c1"
 
 ["config:approval_policy.granular.sandbox_approval"]
 en = "Whether to allow sandbox escalation approval requests, including inline `with_additional_permissions` and `require_escalated` requests. Dangerous commands can still request approval within existing permissions."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "d5ead3985f58588e"
 zh_name = "Shell 命令审批"
 zh = "是否允许 shell 命令的审批请求，包括在命令中直接申请 `with_additional_permissions` 或 `require_escalated` 的提权请求；`false` 时这些请求会被自动拒绝。"
@@ -154,7 +154,7 @@ zh_basis = "e0e6c77f0ad3b973"
 
 ["config:auto_review.experimental_denial_reconsideration_prompt"]
 en = "Developer message used when `features.guardian_denial_reconsideration` is enabled. Omitted or blank values use the built-in prompt. Maximum 1,000 UTF-8 bytes."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "1e91082428bdd158"
 zh = ""
 

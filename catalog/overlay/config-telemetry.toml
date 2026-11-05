@@ -223,7 +223,7 @@ zh_basis = "f8bfbe35b29c6daa"
 
 ["config:otel.log_sse_deltas"]
 en = "Log successful SSE events whose kind ends in `.delta`. Defaults to true. Disabling this preserves errors, completion events, and metrics."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "98afd6170d2c72f8"
 zh = ""
 

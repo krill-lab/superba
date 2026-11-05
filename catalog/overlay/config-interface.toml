@@ -328,7 +328,7 @@ zh_basis = "e269114b1ce608f6"
 
 ["config:tui.default_hosts"]
 en = "Preferred hosts for new conversations, indexed by project and local user identity. Read from the user configuration only; values are never endpoints or credentials."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "b97d068da11e60e9"
 zh = ""
 
@@ -893,7 +893,7 @@ zh_basis = ""
 
 ["config:tui.keymap.global.change_host"]
 en = "Change where a new conversation runs."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "939152b8e04e338b"
 zh = ""
 
@@ -913,6 +913,12 @@ zh_name = "复制最近回复"
 zh = "把代理的最近一条回复复制到剪贴板。默认 `ctrl-o`。"
 zh_basis = "3166d080f1a039ce"
 
+["config:tui.keymap.global.equalize_pane_widths"]
+en = "Equalize visible pane widths."
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_hash = "b3efefb2001bd302"
+zh = ""
+
 ["config:tui.keymap.global.find_transcript"]
 en = "Find text in the full transcript."
 en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
@@ -931,31 +937,31 @@ zh_basis = "24fdf976ffe8e898"
 
 ["config:tui.keymap.global.focus_main_composer"]
 en = "Focus the main conversation composer."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "58e7462fc2b90479"
 zh = ""
 
 ["config:tui.keymap.global.focus_pane_left"]
 en = "Focus the parent conversation."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "fe1c04fbc7836d1b"
 zh = ""
 
 ["config:tui.keymap.global.focus_pane_right"]
 en = "Focus the open side conversation."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "d583dfa18bb62bca"
 zh = ""
 
 ["config:tui.keymap.global.focus_sidebar_content"]
 en = "Focus the side conversation, or hide it when already focused."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "a1f770b75fcd6e1c"
 zh = ""
 
 ["config:tui.keymap.global.hide_pane"]
 en = "Hide the focused sidebar pane."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "1a437e0cbc72d737"
 zh = ""
 
@@ -966,6 +972,30 @@ en_hash = "421bfee37aefffab"
 zh_name = "前导键"
 zh = "前导键（leader）：按下后弹出随上下文变化的快捷菜单，其他动作可绑定成 `leader c` 这样的形式。默认 `ctrl-x`（`ctrl-x` 已被其他绑定占用时不设默认）；每个绑定只能是单个按键（不能是按键序列，可列出多个备选），且须带 `ctrl`/`alt` 或为非字符键。"
 zh_basis = "421bfee37aefffab"
+
+["config:tui.keymap.global.maximize_pane_width"]
+en = "Maximize the focused pane width."
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_hash = "ec4fde5b316f14fa"
+zh = ""
+
+["config:tui.keymap.global.minimize_pane_width"]
+en = "Minimize the focused pane width."
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_hash = "ed53d10276d3bb43"
+zh = ""
+
+["config:tui.keymap.global.move_divider_left"]
+en = "Move the divider left when the side pane has focus."
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_hash = "217afb266d736329"
+zh = ""
+
+["config:tui.keymap.global.move_divider_right"]
+en = "Move the divider right when the side pane has focus."
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_hash = "2b84542912e32842"
+zh = ""
 
 ["config:tui.keymap.global.open_agents"]
 en = "Open the shared agent-session overview."
@@ -999,9 +1029,15 @@ zh_name = "排队发送（全局）"
 zh = "任务运行期间把当前草稿加入待发送队列。这是全局后备绑定，设置了 `composer.queue` 时以后者为准；内置默认 `tab`。"
 zh_basis = "67d38a6e01371eb2"
 
+["config:tui.keymap.global.resize_panes"]
+en = "Enter keyboard resize mode for visible dividers."
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_hash = "7c2ce9685d01a1bf"
+zh = ""
+
 ["config:tui.keymap.global.select_transcript"]
 en = "Enter keyboard selection mode for the transcript."
-en_source = "openai/codex rust-v0.166.0: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.166.0-alpha.6: codex-rs/core/config.schema.json"
 en_hash = "ca9100434a367cbc"
 zh_name = "键盘选择对话记录"
 zh = "进入对话记录的键盘选择模式，用键盘选中文字。默认 `leader [`（按前导键后再按 `[`），该组合已被其他绑定占用时不设默认。"
@@ -1022,6 +1058,12 @@ en_hash = "05255b713d94dc07"
 zh_name = "切换 Fast 模式"
 zh = "开关 Fast 模式（Fast 服务档）。默认未绑定按键。"
 zh_basis = "05255b713d94dc07"
+
+["config:tui.keymap.global.toggle_pane_zoom"]
+en = "Zoom or restore the focused pane."
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_hash = "ac2a66f212e53884"
+zh = ""
 
 ["config:tui.keymap.global.toggle_raw_output"]
 en = "Toggle raw scrollback mode for copy-friendly transcript selection."
@@ -2095,7 +2137,7 @@ zh_basis = "bf695b76e48b4b9e"
 
 ["config:tui.sidebar_width_percent"]
 en = "Preferred docked sidebar width as a percentage of the terminal. Defaults to one third."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "ff50d50bb440d0bd"
 zh = ""
 

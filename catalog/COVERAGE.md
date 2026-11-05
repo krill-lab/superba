@@ -12,10 +12,10 @@ Feature stages from Codex 0.166.0 (linux).
 
 | | Entries | English (official) | English missing | with en_note | Chinese current | Chinese stale | Chinese missing |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| config | 856 | 548 | 308 | 0 | 814 | 3 | 39 |
-| feature | 208 | 5 | 203 | 0 | 190 | 1 | 17 |
+| config | 863 | 555 | 308 | 0 | 814 | 3 | 46 |
+| feature | 210 | 5 | 205 | 0 | 190 | 1 | 19 |
 | value | 59 | 59 | 0 | 0 | 57 | 0 | 2 |
-| **all** | 1123 | 612 | 511 | 0 | 1061 | 4 | 58 |
+| **all** | 1132 | 619 | 513 | 0 | 1061 | 4 | 67 |
 
 Retired entries kept for their written text: 0.
 
@@ -28,8 +28,8 @@ Retired entries kept for their written text: 0.
 | stable | 58 | 0 | 58 | 0 | 58 | 0 | 0 |
 | deprecated | 3 | 0 | 3 | 0 | 3 | 0 | 0 |
 | removed | 47 | 0 | 47 | 0 | 47 | 0 | 0 |
-| unknown | 14 | 0 | 14 | 0 | 0 | 0 | 14 |
-| **all features** | 208 | 5 | 203 | 0 | 190 | 1 | 17 |
+| unknown | 16 | 0 | 16 | 0 | 0 | 0 | 16 |
+| **all features** | 210 | 5 | 205 | 0 | 190 | 1 | 19 |
 
 ## By overlay file
 
@@ -40,7 +40,7 @@ Retired entries kept for their written text: 0.
 | `overlay/config-apps.toml` | 73 | 58 | 15 | 0 | 56 | 0 | 17 |
 | `overlay/config-context.toml` | 46 | 44 | 2 | 0 | 45 | 0 | 1 |
 | `overlay/config-features.toml` | 130 | 46 | 84 | 0 | 124 | 0 | 6 |
-| `overlay/config-interface.toml` | 271 | 252 | 19 | 0 | 261 | 0 | 10 |
+| `overlay/config-interface.toml` | 278 | 259 | 19 | 0 | 261 | 0 | 17 |
 | `overlay/config-mcp.toml` | 61 | 30 | 31 | 0 | 61 | 0 | 0 |
 | `overlay/config-model.toml` | 11 | 8 | 3 | 0 | 11 | 0 | 0 |
 | `overlay/config-other.toml` | 6 | 4 | 2 | 0 | 6 | 0 | 0 |
@@ -49,4 +49,4 @@ Retired entries kept for their written text: 0.
 | `overlay/config-storage.toml` | 18 | 14 | 4 | 0 | 18 | 0 | 0 |
 | `overlay/config-telemetry.toml` | 79 | 24 | 55 | 0 | 78 | 0 | 1 |
 | `overlay/config-tools.toml` | 67 | 10 | 57 | 0 | 66 | 0 | 1 |
-| `overlay/features.toml` | 208 | 5 | 203 | 0 | 190 | 1 | 17 |
+| `overlay/features.toml` | 210 | 5 | 205 | 0 | 190 | 1 | 19 |

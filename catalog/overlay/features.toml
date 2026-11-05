@@ -110,6 +110,11 @@ zh_name = "后台预压缩"
 zh = "在上下文用量达到前台自动压缩阈值之前，提前在后台准备远程压缩结果，到时直接采用，减少压缩上下文时的等待。默认在用量达到上下文窗口的 65% 时开始，可用 `[features.async_compaction]` 中的 `model_async_compact_threshold_percent`（1–100）调整；只在模型供应商支持远程压缩 v2 且未启用 `token_budget` 时生效。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:async_compaction_root_only"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:auth_elicitation"]
 en = ""
 en_hash = ""
@@ -273,6 +278,11 @@ en_hash = ""
 zh_name = "协作模式"
 zh = "已移除。曾用于启用协作模式（Plan 计划模式与 Default 默认模式）；现在协作模式总是开启，保留此键只为兼容旧配置。"
 zh_basis = ""
+
+["feature:command_sessions_world_state"]
+en = ""
+en_hash = ""
+zh = ""
 
 ["feature:compaction_image_budget"]
 en = ""
@@ -993,7 +1003,7 @@ zh_basis = ""
 ["feature:respect_system_proxy"]
 en_name = "System proxy"
 en = "Use macOS or Windows system proxy settings for Codex requests."
-en_source = "openai/codex rust-v0.168.0-alpha.3: codex-rs/features/src/lib.rs (experimental menu text)"
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/features/src/lib.rs (experimental menu text)"
 en_hash = "e03822c873fa5d7d"
 zh_name = "遵循系统代理"
 zh = "Codex 自己的网络客户端改为遵循系统代理设置：依次使用系统 / PAC / WPAD 配置、环境变量中的代理，最后直连。关闭时使用 HTTP 库（reqwest）的默认代理行为。开发中，默认关闭。"
