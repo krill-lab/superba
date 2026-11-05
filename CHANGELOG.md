@@ -5,13 +5,15 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
-## [Unreleased]
+## [0.1.1-alpha.13] - 2026-11-06
 
 ### Added
-- Tools show their own icons wherever they are listed (sidebar, Tools, Updates, Router, Usage): Codex, Gemini CLI, ZCode and pi join dsh and opencode, each from the vendor's MIT or Apache-2.0 repository (sources and licenses in the third-party notices). Claude Code shows Anthropic's Claude mark, only to identify it. WorkBuddy, whose logo is not published under a license that allows redistribution, shows the icon of the copy installed on the computer (read from the app itself, never shipped).
+- Every tool shows its own icon: Codex, Gemini CLI, ZCode and pi join dsh and opencode with official MIT/Apache-2.0 assets, WorkBuddy uses the installed app's icon, and Claude Code shows Anthropic's Claude mark only to identify the tool. Sources and licenses are recorded in the third-party notices.
+- The catalog and setting descriptions are updated to Codex 0.168.0-alpha.4, while retaining 0.166.0-alpha.6 bundled with desktop app 26.1029. All 1132 settings and feature flags have current Chinese descriptions, with none missing or stale.
 
 ### Fixed
-- Codex turns over the router's WebSocket are recorded as turns again, not warm-ups (user bug 123). Every frame on a socket took its turn metadata from the handshake, which describes Codex's warm-up, so each WebSocket request was logged as `prewarm` under the warm-up's turn and never got the stats line. Each `response.create` frame now reads its own `client_metadata` first, with the handshake only as a fallback, and only a `generate: false` frame counts as a warm-up.
+- Usage no longer undercounts turns carried over the router's WebSocket (user bug 123). Each `response.create` frame takes its own `client_metadata` instead of inheriting the handshake's warm-up metadata, so turns are included in usage statistics; server-side billing was never affected.
+- The Superba window uses less memory in four places (user bug 125): CJK fallback fonts are memory-mapped once per file and shared across weights; Windows uses smaller Direct3D 12 allocation blocks, 65,536 view descriptors and one queued frame; Linux/glibc uses at most two malloc arenas; and Overview process snapshots skip each process's threads.
 
 ## [0.1.1-alpha.12] - 2026-10-27
 
