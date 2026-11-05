@@ -30,47 +30,74 @@ fn fixture() -> Fixture {
     f
 }
 
-/// A child process whose executable is named `codex` (a copy of `sleep`).
+/// A child process whose executable is named `codex` (a copy of this test binary).
 #[cfg(target_os = "linux")]
 struct FakeCodex(std::process::Child);
 
 #[cfg(target_os = "linux")]
 impl FakeCodex {
     fn spawn(f: &Fixture, codex_home: &std::path::Path) -> Self {
-        use std::os::unix::process::CommandExt;
         let bin = f.tmp.path().join("bin");
         fs::create_dir_all(&bin).unwrap();
         let exe = bin.join("codex");
-        if !exe.exists() {
-            let sleep = ["/bin/sleep", "/usr/bin/sleep"]
-                .into_iter()
-                .find(|p| std::path::Path::new(p).exists())
-                .expect("sleep binary");
-            fs::copy(sleep, &exe).unwrap();
-        }
+        // Renaming a multicall coreutils binary breaks its utility dispatch,
+        // even with argv[0] overridden on Ubuntu 26.04.
+        fs::copy(std::env::current_exe().unwrap(), &exe)
+            .expect("fake codex fixture: cannot copy the test binary");
+        let ready = bin.join("ready");
         // Another test thread forking while the copy's write fd is still open
         // makes exec fail with ETXTBSY for a moment: retry briefly.
         let mut attempts = 0;
         let child = loop {
             attempts += 1;
             match std::process::Command::new(&exe)
-                .arg0("sleep")
-                .arg("60")
+                .args(["--ignored", "--exact", "fake_codex_sleeper", "--nocapture"])
                 .env_clear()
                 .env("HOME", &f.home_dir)
                 .env("CODEX_HOME", codex_home)
+                .env("SUPERBA_TEST_FAKE_CODEX_READY", &ready)
+                .stdout(std::process::Stdio::null())
                 .spawn()
             {
                 Ok(child) => break child,
                 Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && attempts < 40 => {
                     std::thread::sleep(Duration::from_millis(50));
                 }
-                Err(e) => panic!("cannot start the fake codex: {e}"),
+                Err(e) => panic!("fake codex fixture: cannot start the child: {e}"),
             }
         };
-        // Let the kernel publish the new process image.
-        std::thread::sleep(Duration::from_millis(200));
-        FakeCodex(child)
+        let mut fake = FakeCodex(child);
+        for _ in 0..500 {
+            let status = fake.0.try_wait().expect("fake codex fixture: cannot wait");
+            assert!(
+                status.is_none(),
+                "fake codex fixture: child exited: {status:?}"
+            );
+            if ready.is_file() {
+                assert_eq!(
+                    fs::read_link(format!("/proc/{}/exe", fake.0.id()))
+                        .expect("fake codex fixture: executable is not visible"),
+                    fs::canonicalize(&exe).unwrap(),
+                    "fake codex fixture: unexpected executable"
+                );
+                return fake;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("fake codex fixture: child did not become ready within 5 seconds");
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "helper process started only by FakeCodex::spawn"]
+fn fake_codex_sleeper() {
+    let Some(ready) = std::env::var_os("SUPERBA_TEST_FAKE_CODEX_READY") else {
+        return;
+    };
+    fs::write(ready, b"ready").expect("fake codex fixture: cannot signal readiness");
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
     }
 }
 

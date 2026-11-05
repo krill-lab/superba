@@ -153,6 +153,30 @@ fn the_in_use_error_says_what_to_do() {
 }
 
 #[cfg(target_os = "linux")]
+struct OwnedChild(std::process::Child);
+
+#[cfg(target_os = "linux")]
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "helper process started only by a_running_program_marks_its_entry_in_use"]
+fn fake_codex_sleeper() {
+    let Some(ready) = std::env::var_os("SUPERBA_TEST_FAKE_CODEX_READY") else {
+        return;
+    };
+    std::fs::write(ready, b"ready").expect("fake codex fixture: cannot signal readiness");
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
+    }
+}
+
+#[cfg(target_os = "linux")]
 #[test]
 fn a_running_program_marks_its_entry_in_use() {
     let tmp = tempfile::tempdir().unwrap();
@@ -162,9 +186,49 @@ fn a_running_program_marks_its_entry_in_use() {
     entry(&dirs, "0.160.0");
     let dir = dirs.entry(&v("0.160.0"), TARGET);
     let exe = dir.join("bin").join(exe_name(TARGET));
-    std::fs::copy("/bin/sleep", &exe).unwrap();
+    // Use our own helper, independent of system multicall binary dispatch.
+    std::fs::copy(std::env::current_exe().unwrap(), &exe)
+        .expect("fake codex fixture: cannot copy the test binary");
     assert_eq!(store::entry_in_use(&dir, TARGET), None);
-    let mut child = std::process::Command::new(&exe).arg("30").spawn().unwrap();
+    let ready = tmp.path().join("ready");
+    let mut attempts = 0;
+    let mut child = loop {
+        attempts += 1;
+        match std::process::Command::new(&exe)
+            .args(["--ignored", "--exact", "fake_codex_sleeper", "--nocapture"])
+            .env("SUPERBA_TEST_FAKE_CODEX_READY", &ready)
+            .stdout(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(child) => break OwnedChild(child),
+            // A concurrent fork can briefly inherit the copy's write fd.
+            Err(e) if e.kind() == io::ErrorKind::ExecutableFileBusy && attempts < 40 => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => panic!("fake codex fixture: cannot start the child: {e}"),
+        }
+    };
+    for _ in 0..500 {
+        let status = child.0.try_wait().expect("fake codex fixture: cannot wait");
+        assert!(
+            status.is_none(),
+            "fake codex fixture: child exited: {status:?}"
+        );
+        if ready.is_file() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        ready.is_file(),
+        "fake codex fixture: child did not become ready within 5 seconds"
+    );
+    assert_eq!(
+        std::fs::read_link(format!("/proc/{}/exe", child.0.id()))
+            .expect("fake codex fixture: executable is not visible"),
+        std::fs::canonicalize(&exe).unwrap(),
+        "fake codex fixture: unexpected executable"
+    );
     // The new process's image is visible at once in /proc.
     let mut why = None;
     for _ in 0..50 {
@@ -176,10 +240,8 @@ fn a_running_program_marks_its_entry_in_use() {
     }
     // Removing it is refused, and nothing is moved or deleted.
     let removed = store::remove_dir(&dir);
-    child.kill().unwrap();
-    child.wait().unwrap();
     assert!(matches!(removed, Err(Error::Locked { .. })), "{removed:?}");
     assert!(dir.join(VERIFIED_MARKER).is_file());
     let why = why.expect("the running program is found");
-    assert!(why.contains(&child.id().to_string()), "{why}");
+    assert!(why.contains(&child.0.id().to_string()), "{why}");
 }

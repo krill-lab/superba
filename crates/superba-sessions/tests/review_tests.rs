@@ -411,28 +411,71 @@ impl Drop for OwnedChild {
 }
 
 #[cfg(target_os = "linux")]
+#[test]
+#[ignore = "helper process started only by relative_process_home_bypasses_guard"]
+fn fake_codex_sleeper() {
+    let Some(ready) = std::env::var_os("SUPERBA_TEST_FAKE_CODEX_READY") else {
+        return;
+    };
+    fs::write(ready, b"ready").expect("fake codex fixture: cannot signal readiness");
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
+    }
+}
+
+#[cfg(target_os = "linux")]
 #[tokio::test]
 async fn relative_process_home_bypasses_guard() {
     let f = one(Thread::new(1, "krill"));
     let m = f.migrator();
     let plan = m.plan(&f.home, &request("krill", "openai")).await.unwrap();
     let executable = f.tmp.path().join("codex");
-    let sleep = ["/bin/sleep", "/usr/bin/sleep"]
-        .into_iter()
-        .find(|p| std::path::Path::new(p).is_file())
-        .unwrap();
-    fs::copy(sleep, &executable).unwrap();
-    let mut child = OwnedChild(
-        std::process::Command::new(&executable)
-            .arg("60")
+    // Use our own helper, independent of system multicall binary dispatch.
+    fs::copy(std::env::current_exe().unwrap(), &executable)
+        .expect("fake codex fixture: cannot copy the test binary");
+    let ready = f.tmp.path().join("ready");
+    let mut attempts = 0;
+    let mut child = loop {
+        attempts += 1;
+        match std::process::Command::new(&executable)
+            .args(["--ignored", "--exact", "fake_codex_sleeper", "--nocapture"])
             .current_dir(f.tmp.path())
             .env_clear()
             .env("HOME", &f.home_dir)
             .env("CODEX_HOME", "home/.codex")
+            .env("SUPERBA_TEST_FAKE_CODEX_READY", &ready)
+            .stdout(std::process::Stdio::null())
             .spawn()
-            .unwrap(),
+        {
+            Ok(child) => break OwnedChild(child),
+            // A concurrent fork can briefly inherit the copy's write fd.
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && attempts < 40 => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => panic!("fake codex fixture: cannot start the child: {e}"),
+        }
+    };
+    for _ in 0..500 {
+        let status = child.0.try_wait().expect("fake codex fixture: cannot wait");
+        assert!(
+            status.is_none(),
+            "fake codex fixture: child exited: {status:?}"
+        );
+        if ready.is_file() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        ready.is_file(),
+        "fake codex fixture: child did not become ready within 5 seconds"
     );
-    assert!(child.0.try_wait().unwrap().is_none());
+    assert_eq!(
+        fs::read_link(format!("/proc/{}/exe", child.0.id()))
+            .expect("fake codex fixture: executable is not visible"),
+        fs::canonicalize(&executable).unwrap(),
+        "fake codex fixture: unexpected executable"
+    );
     let result = m.migrate(&f.home, &plan).await;
     assert!(
         result.as_ref().is_err_and(|e| e.code() == "locked"),
