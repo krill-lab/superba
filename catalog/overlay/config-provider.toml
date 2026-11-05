@@ -257,7 +257,9 @@ zh_basis = "e6f532a8a348208a"
 en = "Whether the provider accepts explicit `access_programs.cyber` selections. Defaults to enabled for the built-in OpenAI provider and disabled otherwise. This does not grant program access or change authentication."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "272b1fa5b1a329a8"
-zh = ""
+zh_name = "网络安全计划支持"
+zh = "依据源码推断，声明该模型供应商是否支持显式选择并转发 `access_programs.cyber`；未设置时仅供应商 ID 为 `openai` 才默认支持。它不授予计划资格，也不改变认证方式；API 密钥会话还需启用 `features.api_key_cyber_access_programs`。"
+zh_basis = "272b1fa5b1a329a8"
 
 ["config:model_providers.<name>.capabilities.external_web_access"]
 en = "Whether hosted web search may access the live web."
@@ -364,27 +366,33 @@ zh_basis = ""
 en = "Where Codex stores this gateway's OAuth credentials. Defaults to the keyring-backed store."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "804173f17c81ec25"
-zh = ""
+zh_name = "网关凭据存储方式"
+zh = "依据源码推断，选择网关 OAuth 凭据的本地保存方式，默认 `keyring`：用操作系统钥匙串保存的口令加密凭据文件。`file` 改为在 `$CODEX_HOME/secrets/gateway_oauth.json` 中明文保存，独立于主账号凭据存储设置。"
+zh_basis = "804173f17c81ec25"
 
 ["config:model_providers.<name>.gateway_oauth.credentials_store=file"]
 en = "Store credentials in plaintext in `$CODEX_HOME/secrets/gateway_oauth.json`."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "f2f76c0f1759a7f1"
-zh = ""
+zh_name = "网关明文凭据文件"
+zh = "依据源码推断，将网关 OAuth 令牌按凭据标识保存在 `$CODEX_HOME/secrets/gateway_oauth.json` 中，读取和更新直接使用此文件。文件内容不加密。"
+zh_basis = "f2f76c0f1759a7f1"
 
 ["config:model_providers.<name>.gateway_oauth.credentials_store=keyring"]
 en = "Encrypt credentials using a passphrase kept in the OS keyring."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "76be041c2f4b17c4"
-zh = ""
+zh_name = "网关加密凭据文件"
+zh = "依据源码推断，将网关 OAuth 凭据加密保存在 `$CODEX_HOME/secrets/gateway_oauth.age`，加密口令单独存入操作系统钥匙串。这是默认方式；钥匙串访问失败会报错，不会自动改写明文文件。"
+zh_basis = "76be041c2f4b17c4"
 
 ["config:model_providers.<name>.gateway_oauth.delivery"]
 en = "Omit to send the gateway token via the Authorization header"
 en_source = "openai/codex rust-v0.166.0-alpha.6: codex-rs/core/config.schema.json"
 en_hash = "2dc835de015df9cc"
 zh_name = "网关令牌附加方式"
-zh = '网关令牌如何附加到请求上：`kind = "header"` 时放进指定的请求头，`kind = "cookie"` 时放进指定名称的 Cookie。'
-zh_basis = ""
+zh = '依据源码推断，指定网关 OAuth 令牌如何附加到请求：省略时使用 `Authorization: Bearer <token>`；`kind = "header"` 时在指定请求头中发送 `<scheme> <token>`，`kind = "cookie"` 时发送指定名称的 Cookie。'
+zh_basis = "2dc835de015df9cc"
 
 ["config:model_providers.<name>.gateway_oauth.delivery.kind"]
 en = ""
@@ -468,8 +476,8 @@ Catalog requests use the provider's credentials, including an API key or ChatGPT
 en_source = "openai/codex rust-v0.166.0-alpha.6: codex-rs/core/config.schema.json"
 en_hash = "60ce312788738c19"
 zh_name = "模型目录地址"
-zh = "Codex 原生格式模型目录的完整 URL。不设置时模型列表从 `<base_url>/models` 获取（OpenAI 内置供应商未改 `base_url` 时走 Codex 后端）；设置后改从此地址获取，且不跟随重定向。"
-zh_basis = "e977b1a10d0efe8a"
+zh = "依据源码推断，指定提供 Codex 原生模型目录的完整 URL，设置后从此地址获取模型列表且拒绝重定向，不能直接使用普通的 `/v1/models` 响应。内置 OpenAI 可在 `model_providers.openai` 下覆盖此项，但地址必须使用 HTTPS 和受允许的 ChatGPT 主机，推理请求仍由 `openai_base_url` 控制。目录请求会携带该供应商的认证信息，配置此地址不会授予访问资格。"
+zh_basis = "60ce312788738c19"
 
 ["config:model_providers.<name>.name"]
 en = "Friendly display name."

@@ -68,9 +68,9 @@ zh_basis = "0c3bee0c63af47c1"
 en = "Whether to allow sandbox escalation approval requests, including inline `with_additional_permissions` and `require_escalated` requests. Dangerous commands can still request approval within existing permissions."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "d5ead3985f58588e"
-zh_name = "Shell 命令审批"
-zh = "是否允许 shell 命令的审批请求，包括在命令中直接申请 `with_additional_permissions` 或 `require_escalated` 的提权请求；`false` 时这些请求会被自动拒绝。"
-zh_basis = "7b7bc1f86644efe1"
+zh_name = "沙箱提权审批"
+zh = "依据源码推断，控制是否允许沙箱权限升级审批，包括命令中的 `with_additional_permissions` 和 `require_escalated` 请求；设为 `false` 会拒绝这类请求。危险命令若不申请额外权限，仍可能在现有权限内要求审批；执行规则触发的审批另由 `rules` 控制。"
+zh_basis = "d5ead3985f58588e"
 
 ["config:approval_policy.granular.skill_approval"]
 en = "Whether to allow approval prompts triggered by skill script execution."
@@ -156,7 +156,9 @@ zh_basis = "e0e6c77f0ad3b973"
 en = "Developer message used when `features.guardian_denial_reconsideration` is enabled. Omitted or blank values use the built-in prompt. Maximum 1,000 UTF-8 bytes."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "1e91082428bdd158"
-zh = ""
+zh_name = "拒绝复核提示词"
+zh = "依据源码推断，启用 `features.guardian_denial_reconsideration` 后，用这段开发者指令让 Guardian 对同一操作的拒绝结论再复核一次。省略或仅含空白时使用内置提示词；去除首尾空白后超过 1000 个 UTF-8 字节会导致配置加载失败，提示词不授予新的操作权限。"
+zh_basis = "1e91082428bdd158"
 
 ["config:auto_review.experimental_policy_template"]
 en = "Experimental full Guardian prompt template containing the tenant policy placeholder."

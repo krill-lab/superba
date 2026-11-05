@@ -330,17 +330,23 @@ zh_basis = "e269114b1ce608f6"
 en = "Preferred hosts for new conversations, indexed by project and local user identity. Read from the user configuration only; values are never endpoints or credentials."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "b97d068da11e60e9"
-zh = ""
+zh_name = "项目默认运行主机"
+zh = "依据源码推断，保存新会话按项目和本地用户身份选择的默认运行主机，仅从用户配置读取。内容是已发现主机的标识，不是连接地址或凭据；切换新会话的运行主机会更新对应记录。"
+zh_basis = "b97d068da11e60e9"
 
 ["config:tui.default_hosts.<name>"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "项目主机偏好"
+zh = "依据源码推断，以项目的信任路径标识为表名，为该项目保存不同用户身份的默认运行主机。创建新会话时先定位项目，再查找当前用户的记录。"
+zh_basis = ""
 
 ["config:tui.default_hosts.<name>.<name>"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "用户主机偏好"
+zh = "依据源码推断，记录某项目中一个用户身份对应的主机标识；ChatGPT 用户使用 `chatgpt:<用户 ID>`，无 ChatGPT 账号的本地配置使用 `local`。新会话据此优先选择仍可用的已发现主机。"
+zh_basis = ""
 
 ["config:tui.disable_paste_burst"]
 en = "When true, disables burst-paste detection for typed input entirely. All characters are inserted as they are received, and no buffering or placeholder replacement will occur for fast keypress bursts. Overrides the legacy top-level `disable_paste_burst` setting. Defaults to `false`."
@@ -895,7 +901,9 @@ zh_basis = ""
 en = "Change where a new conversation runs."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "939152b8e04e338b"
-zh = ""
+zh_name = "切换运行主机键"
+zh = "依据源码推断，自定义切换新会话运行主机的快捷键；只有界面显示新会话主机选择控件时才响应。它在可用主机间切换新会话的后端。"
+zh_basis = "939152b8e04e338b"
 
 ["config:tui.keymap.global.clear_terminal"]
 en = "Clear the terminal UI."
@@ -917,7 +925,9 @@ zh_basis = "3166d080f1a039ce"
 en = "Equalize visible pane widths."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "b3efefb2001bd302"
-zh = ""
+zh_name = "均分窗格宽度键"
+zh = "依据源码推断，自定义将终端工作区的两个可见窗格调为等宽的快捷键；宽度仍受各窗格最小列数约束。调整结果会保存到 `tui.sidebar_width_percent`。"
+zh_basis = "b3efefb2001bd302"
 
 ["config:tui.keymap.global.find_transcript"]
 en = "Find text in the full transcript."
@@ -939,31 +949,41 @@ zh_basis = "24fdf976ffe8e898"
 en = "Focus the main conversation composer."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "58e7462fc2b90479"
-zh = ""
+zh_name = "聚焦主输入框键"
+zh = "依据源码推断，自定义回到主会话输入框的快捷键；在侧边会话中会先返回父会话，并清除浏览或选择状态。需要启用终端工作区并使用由 Codex 管理的全屏界面。"
+zh_basis = "58e7462fc2b90479"
 
 ["config:tui.keymap.global.focus_pane_left"]
 en = "Focus the parent conversation."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "fe1c04fbc7836d1b"
-zh = ""
+zh_name = "聚焦左侧窗格键"
+zh = "依据源码推断，自定义从侧边会话切回父会话窗格的快捷键；没有可达的父会话时保持当前焦点。仅在终端工作区的会话焦点切换可用时响应。"
+zh_basis = "fe1c04fbc7836d1b"
 
 ["config:tui.keymap.global.focus_pane_right"]
 en = "Focus the open side conversation."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "d583dfa18bb62bca"
-zh = ""
+zh_name = "聚焦右侧窗格键"
+zh = "依据源码推断，自定义从父会话切到已打开侧边会话窗格的快捷键；侧边窗格未打开时保持当前焦点。仅在终端工作区的会话焦点切换可用时响应。"
+zh_basis = "d583dfa18bb62bca"
 
 ["config:tui.keymap.global.focus_sidebar_content"]
 en = "Focus the side conversation, or hide it when already focused."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "a1f770b75fcd6e1c"
-zh = ""
+zh_name = "聚焦侧边会话键"
+zh = "依据源码推断，自定义终端工作区中切入侧边会话的快捷键；已聚焦侧边会话时再次触发会隐藏该侧边窗格。没有可切换的侧边会话时不响应。"
+zh_basis = "a1f770b75fcd6e1c"
 
 ["config:tui.keymap.global.hide_pane"]
 en = "Hide the focused sidebar pane."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "1a437e0cbc72d737"
-zh = ""
+zh_name = "隐藏侧边窗格键"
+zh = "依据源码推断，自定义隐藏当前聚焦的侧边会话窗格并返回父会话的快捷键，保留该会话以便之后继续使用。需要终端工作区中已聚焦侧边会话。"
+zh_basis = "1a437e0cbc72d737"
 
 ["config:tui.keymap.global.leader"]
 en = "Prefix for persistent, context-aware shortcut menus."
@@ -977,25 +997,33 @@ zh_basis = "421bfee37aefffab"
 en = "Maximize the focused pane width."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "ec4fde5b316f14fa"
-zh = ""
+zh_name = "最大窗格宽度键"
+zh = "依据源码推断，自定义将当前聚焦窗格扩展到允许的最大宽度的快捷键，同时为另一窗格保留最小宽度。需要终端工作区中已有打开的窗格，调整结果会保存。"
+zh_basis = "ec4fde5b316f14fa"
 
 ["config:tui.keymap.global.minimize_pane_width"]
 en = "Minimize the focused pane width."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "ed53d10276d3bb43"
-zh = ""
+zh_name = "最小窗格宽度键"
+zh = "依据源码推断，自定义将当前聚焦窗格缩到允许的最小宽度的快捷键，不会关闭窗格。需要终端工作区中已有打开的窗格，调整结果会保存。"
+zh_basis = "ed53d10276d3bb43"
 
 ["config:tui.keymap.global.move_divider_left"]
 en = "Move the divider left when the side pane has focus."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "217afb266d736329"
-zh = ""
+zh_name = "左移窗格分隔线键"
+zh = "依据源码推断，自定义将窗格分隔线向左移动的快捷键，仅在侧边会话获得焦点时生效。每次按终端宽度约 2％ 的步长扩大侧边窗格，并保存宽度设置。"
+zh_basis = "217afb266d736329"
 
 ["config:tui.keymap.global.move_divider_right"]
 en = "Move the divider right when the side pane has focus."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "2b84542912e32842"
-zh = ""
+zh_name = "右移窗格分隔线键"
+zh = "依据源码推断，自定义将窗格分隔线向右移动的快捷键，仅在侧边会话获得焦点时生效。每次按终端宽度约 2％ 的步长缩小侧边窗格，并保存宽度设置。"
+zh_basis = "2b84542912e32842"
 
 ["config:tui.keymap.global.open_agents"]
 en = "Open the shared agent-session overview."
@@ -1033,7 +1061,9 @@ zh_basis = "67d38a6e01371eb2"
 en = "Enter keyboard resize mode for visible dividers."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "7c2ce9685d01a1bf"
-zh = ""
+zh_name = "调整窗格宽度键"
+zh = "依据源码推断，自定义进入终端工作区窗格宽度调整模式的快捷键。模式内用左右方向键或 `h`、`l` 移动一列，配合 `Shift` 的方向键移动十列；`Enter` 或 `Esc` 都会结束调整并保存已预览的宽度。"
+zh_basis = "7c2ce9685d01a1bf"
 
 ["config:tui.keymap.global.select_transcript"]
 en = "Enter keyboard selection mode for the transcript."
@@ -1063,7 +1093,9 @@ zh_basis = "05255b713d94dc07"
 en = "Zoom or restore the focused pane."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "ac2a66f212e53884"
-zh = ""
+zh_name = "窗格放大切换键"
+zh = "依据源码推断，自定义将当前聚焦窗格单独放大显示或恢复分栏的快捷键；放大时暂时不绘制另一窗格，不修改已保存的宽度。需要终端工作区中已有打开的窗格。"
+zh_basis = "ac2a66f212e53884"
 
 ["config:tui.keymap.global.toggle_raw_output"]
 en = "Toggle raw scrollback mode for copy-friendly transcript selection."
@@ -1911,7 +1943,7 @@ en = "Notification method to use for terminal notifications. Defaults to `auto`.
 en_source = "openai/codex rust-v0.155.0: codex-rs/core/config.schema.json"
 en_hash = "cb0194be63661045"
 zh_name = "终端通知方式"
-zh = "发送终端通知的方式：`auto`（默认）在 Ghostty、iTerm2、Kitty、Warp、WezTerm 中使用 OSC 9 桌面通知，其他终端使用 BEL 响铃；也可固定为 `osc9` 或 `bel`。"
+zh = "依据源码推断，选择终端通知协议：`auto`（默认）在 Ghostty、iTerm2、Kitty、Warp、WezTerm 中使用 OSC 9，其他终端使用 BEL 响铃。也可固定为 `osc9`、`osc777` 或 `bel`；`osc777` 发送带 Codex 标题和正文的通知，需要终端支持该协议。"
 zh_basis = "cb0194be63661045"
 
 ["config:tui.notifications"]
@@ -2139,7 +2171,9 @@ zh_basis = "bf695b76e48b4b9e"
 en = "Preferred docked sidebar width as a percentage of the terminal. Defaults to one third."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "ff50d50bb440d0bd"
-zh = ""
+zh_name = "侧边窗格宽度比例"
+zh = "依据源码推断，指定终端工作区侧边会话窗格占终端宽度的百分比，未设置时约为三分之一。实际宽度会保证侧边窗格至少 36 列、父会话至少 64 列；拖动分隔线或用快捷键调宽会保存新的比例。"
+zh_basis = "ff50d50bb440d0bd"
 
 ["config:tui.status_line"]
 en = """

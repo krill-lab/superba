@@ -184,7 +184,9 @@ zh_basis = "90d7572a600a06e9"
 en = 'Service tier for memory consolidation. Defaults to Standard (`"default"`).'
 en_source = "openai/codex rust-v0.166.0-alpha.6: codex-rs/core/config.schema.json"
 en_hash = "56b6577127dbceed"
-zh = ""
+zh_name = "记忆整合服务档位"
+zh = "依据源码推断，指定第二阶段记忆整合子代理使用的服务档位，覆盖它从主会话继承的 `service_tier`；未设置时使用标准档 `default`。仅影响记忆整合请求，不改变主会话的档位，实际可用档位仍受模型和服务端支持限制。"
+zh_basis = "56b6577127dbceed"
 
 ["config:memories.dedicated_tools"]
 en = "When `true`, expose dedicated memory tools through the extension tool surface."

@@ -1,7 +1,7 @@
 {
   "index_format": 1,
   "catalog_format": 1,
-  "serial": 15,
+  "serial": 17,
   "generated": "2026-11-05",
   "repo": "openai/codex",
   "latest": "0.166.0",
@@ -345,28 +345,28 @@
     },
     {
       "path": "overlay/config-approvals.toml",
-      "sha256": "054b95b37091bf6754589f90dbb1e4804de98af0e0c4ce7ad8c57627ffeef14b",
-      "size": 21491
+      "sha256": "0ccef1d9d607634c9c08bcc79a14662d350dbfe198fbc16fbc3c9ea7bdd7d4c9",
+      "size": 22012
     },
     {
       "path": "overlay/config-apps.toml",
-      "sha256": "e3d24ab519c26b226bcc1066a1400f67544bb0be9cc51fe30ce87ef108a9d237",
-      "size": 26807
+      "sha256": "b17b287285dcfa194386c04a955eb1464bfa9b69a69500ebf0ae66190eb06d0b",
+      "size": 32148
     },
     {
       "path": "overlay/config-context.toml",
-      "sha256": "61d2d9fa0c387baffddbd3fe0b6275e339fcf7ad82baf7bbca39a8e14043e6e9",
-      "size": 22535
+      "sha256": "0f58b4d405cbc03369e6642734ee30790a220f7bcd9d90e3c70fa28a1d0735ae",
+      "size": 22891
     },
     {
       "path": "overlay/config-features.toml",
-      "sha256": "77c1a8410219500a96022fa2b23d7530ce1b93d697ba258b1407c6473f7b4202",
-      "size": 44619
+      "sha256": "5450028bd1c9074555da6a31ec98390ac6206304fbce790ddb1e829ca52a20c5",
+      "size": 46549
     },
     {
       "path": "overlay/config-interface.toml",
-      "sha256": "275bbe52dd8b4a12542c4ca17ccf203e50340108565939b5cb142c0fbbc56bbd",
-      "size": 106623
+      "sha256": "6d6f7c0bf0d08575bed03ac8a8027d9fc8b81726919470f99d287075490e0dc4",
+      "size": 111328
     },
     {
       "path": "overlay/config-mcp.toml",
@@ -385,8 +385,8 @@
     },
     {
       "path": "overlay/config-provider.toml",
-      "sha256": "9c2dd58a6b1c5df15c3406238cad4ccad316af36ed80c887b3f5a679b8053e6e",
-      "size": 34606
+      "sha256": "0e2f74a887f21946b216391a34ac7de03ae94077c56c287b658b664c4fd7c6ea",
+      "size": 36184
     },
     {
       "path": "overlay/config-realtime.toml",
@@ -400,18 +400,18 @@
     },
     {
       "path": "overlay/config-telemetry.toml",
-      "sha256": "18eee0f011e25e5da3f0319125a20843c37f74b99b798ce1adc3edf7ab71d1ca",
-      "size": 25423
+      "sha256": "b4782ec688871893088d5dc7b76b2de07ada05e9b89004aa65fa424870aa5b0a",
+      "size": 25707
     },
     {
       "path": "overlay/config-tools.toml",
-      "sha256": "58802fdf8832c8b4a69e38cf2b5e43490e5025e2dee4a76b3767769c70a3612f",
-      "size": 21487
+      "sha256": "e1d2bde92cecc1e720ee84f416477e57268fbcabf8e3c7c934d23a830522fab3",
+      "size": 21843
     },
     {
       "path": "overlay/features.toml",
-      "sha256": "46c403336d82d51896fc64265883f8dfb8652235ac3e23ae2cc6581d8b338da7",
-      "size": 63126
+      "sha256": "5e4cd59bb722307e4ab33e009f2b6364285b77eb1602fa93bda597f8410727b4",
+      "size": 68938
     }
   ]
 }

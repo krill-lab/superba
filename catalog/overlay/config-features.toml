@@ -314,34 +314,46 @@ zh_basis = ""
 en = "Enable elastic allocation for synchronous Guardian requests. Defaults to false."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "fe55a37c04e5de2f"
-zh = ""
+zh_name = "同步审查弹性预算"
+zh = "依据源码推断，使同步 Guardian 审查按各上下文分区的最低配额和上限分配 token，并将剩余空间分给仍有需求的分区；默认关闭。启用时必须提供非空且有效的 `sync_elastic_sections`，否则配置加载失败。"
+zh_basis = "fe55a37c04e5de2f"
 
 ["config:features.guardianv2.sync_elastic_sections"]
 en = "Named section limits, decoded and validated by Guardian when the switch is enabled."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "de93dfe1fcbea700"
-zh = ""
+zh_name = "同步审查分区预算"
+zh = "依据源码推断，为同步 Guardian 弹性预算指定各类审查材料的配额，仅在 `sync_elastic_budgeting = true` 时解析和校验。分区名必须受支持，不能用别名重复指定同一分区；计入未列出分区的默认配额后，最低配额总和必须恰好为 128000 个 token。"
+zh_basis = "de93dfe1fcbea700"
 
 ["config:features.guardianv2.sync_elastic_sections.<name>"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "单个审查分区预算"
+zh = "依据源码推断，为一个指定分区设置最低总配额、单条文本上限和可选总上限，例如 `transcript_messages`、`transcript_tools` 或 `previous_reviews`。分配时优先保留必需材料；未列出的分区使用同步审查默认配额。"
+zh_basis = ""
 
 ["config:features.guardianv2.sync_elastic_sections.<name>.max_section_entry_tokens"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "审查单条文本上限"
+zh = "依据源码推断，限制该分区每条上下文文本的估算 token 数，包含包装和省略标记；完整操作、图片及不透明原生载荷另按分区和请求预算计入。必须大于零，且不能超过该分区最低总配额或当前实现的 9000 个 token 文本传递上限。"
+zh_basis = ""
 
 ["config:features.guardianv2.sync_elastic_sections.<name>.max_total_section_tokens"]
 en = "Upper bound for the section's allocation. Omit to use the global request budget as the upper bound."
 en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
 en_hash = "c8b6cb34a2998370"
-zh = ""
+zh_name = "审查分区总量上限"
+zh = "依据源码推断，限制该分区在共享剩余预算时最多可分得的 token 数，不得小于其 `min_total_section_tokens`。省略时以整次审查请求可用预算为上限。"
+zh_basis = "c8b6cb34a2998370"
 
 ["config:features.guardianv2.sync_elastic_sections.<name>.min_total_section_tokens"]
 en = ""
 en_hash = ""
-zh = ""
+zh_name = "审查分区最低配额"
+zh = "依据源码推断，为该分区预留按实际需求使用的最低 token 配额，剩余空间才参与弹性分配。必须大于零且不少于单条文本上限；所有分区的有效最低配额总和必须恰好为 128000 个 token。"
+zh_basis = ""
 
 ["config:features.guardianv2.transcript"]
 en = ""
