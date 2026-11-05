@@ -437,7 +437,10 @@ mod imp {
         sys.refresh_processes_specifics(
             ProcessesToUpdate::Some(&[spid]),
             true,
-            ProcessRefreshKind::nothing().with_exe(UpdateKind::Always),
+            // Only this process's facts are used, so do not read its Linux threads.
+            ProcessRefreshKind::nothing()
+                .without_tasks()
+                .with_exe(UpdateKind::Always),
         );
         match sys.process(spid) {
             Some(p) => ProcFacts {

@@ -28,7 +28,10 @@ pub fn under(dir: &Path) -> Vec<Proc> {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
-        ProcessRefreshKind::nothing().with_exe(UpdateKind::Always),
+        // Skip Linux threads at the source; the filter below only accepts processes.
+        ProcessRefreshKind::nothing()
+            .without_tasks()
+            .with_exe(UpdateKind::Always),
     );
     let root = norm(dir);
     let root = root.trim_end_matches('/');
@@ -59,7 +62,10 @@ pub fn stop(procs: &[Proc], grace: Duration) -> Vec<Proc> {
         sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
-            ProcessRefreshKind::nothing().with_exe(UpdateKind::Always),
+            // Only process IDs are checked and signalled, never their Linux threads.
+            ProcessRefreshKind::nothing()
+                .without_tasks()
+                .with_exe(UpdateKind::Always),
         );
     };
     let alive = |sys: &System, p: &Proc| {

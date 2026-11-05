@@ -38,7 +38,10 @@ fn stop_router_processes_once(dir: &Path) -> usize {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
-        ProcessRefreshKind::nothing().with_exe(UpdateKind::Always),
+        // Stop and count processes, without reading each Linux thread as a process.
+        ProcessRefreshKind::nothing()
+            .without_tasks()
+            .with_exe(UpdateKind::Always),
     );
     let mut killed = 0;
     for process in sys.processes().values() {

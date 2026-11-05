@@ -229,6 +229,13 @@ fn a_running_program_marks_its_entry_in_use() {
         std::fs::canonicalize(&exe).unwrap(),
         "fake codex fixture: unexpected executable"
     );
+    assert!(
+        std::fs::read_dir(format!("/proc/{}/task", child.0.id()))
+            .expect("fake codex fixture: threads are not visible")
+            .count()
+            > 1,
+        "fake codex fixture: the libtest child must have multiple threads"
+    );
     // The new process's image is visible at once in /proc.
     let mut why = None;
     for _ in 0..50 {
@@ -243,5 +250,11 @@ fn a_running_program_marks_its_entry_in_use() {
     assert!(matches!(removed, Err(Error::Locked { .. })), "{removed:?}");
     assert!(dir.join(VERIFIED_MARKER).is_file());
     let why = why.expect("the running program is found");
-    assert!(why.contains(&child.0.id().to_string()), "{why}");
+    let expected = format!("process {} runs a program from it", child.0.id());
+    assert_eq!(why, expected);
+    // Each scan has a fresh process map: its iteration order must never let a
+    // Linux thread ID stand in for the owning process ID (user bug 128).
+    for _ in 0..16 {
+        assert_eq!(store::entry_in_use(&dir, TARGET), Some(expected.clone()));
+    }
 }

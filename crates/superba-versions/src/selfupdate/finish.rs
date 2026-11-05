@@ -137,7 +137,8 @@ pub fn process_alive(pid: u32) -> bool {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[pid]),
         true,
-        ProcessRefreshKind::nothing(),
+        // Only this process's existence matters, not its Linux threads.
+        ProcessRefreshKind::nothing().without_tasks(),
     );
     sys.process(pid).is_some()
 }

@@ -437,6 +437,7 @@ pub(crate) fn live_codex_processes(home: &CodexHome, lock_files: &[PathBuf]) -> 
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
+        // Skip Linux threads at the source; the filter below only accepts processes.
         ProcessRefreshKind::nothing()
             .without_tasks()
             .with_exe(UpdateKind::OnlyIfNotSet)

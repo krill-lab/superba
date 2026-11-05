@@ -863,7 +863,8 @@ pub fn liveness(pid: u32, started_at: Option<Timestamp>) -> Liveness {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[spid]),
         true,
-        ProcessRefreshKind::nothing(),
+        // Only this process's liveness matters, not its Linux threads.
+        ProcessRefreshKind::nothing().without_tasks(),
     );
     let Some(p) = sys.process(spid) else {
         return Liveness::Gone;
@@ -908,7 +909,8 @@ fn signal(pid: u32, sig: sysinfo::Signal) -> bool {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[spid]),
         true,
-        ProcessRefreshKind::nothing(),
+        // Signal this process only, without reading its Linux threads.
+        ProcessRefreshKind::nothing().without_tasks(),
     );
     match sys.process(spid) {
         Some(p) => match p.kill_with(sig) {

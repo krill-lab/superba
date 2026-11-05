@@ -272,7 +272,10 @@ pub fn entry_in_use(dir: &Path, target: &str) -> Option<String> {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
-        ProcessRefreshKind::nothing().with_exe(UpdateKind::Always),
+        // Linux tasks have their own IDs; report the owning process, not a thread.
+        ProcessRefreshKind::nothing()
+            .without_tasks()
+            .with_exe(UpdateKind::Always),
     );
     if let Some(p) = sys
         .processes()
