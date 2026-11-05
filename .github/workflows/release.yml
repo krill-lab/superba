@@ -126,7 +126,7 @@ jobs:
             target: x86_64-unknown-linux-musl
             arch: x86_64
           - name: macos-universal
-            runner: macos-14
+            runner: macos-15
             platform: macos
             target: aarch64-apple-darwin
             arch: universal
@@ -270,7 +270,7 @@ jobs:
   # (sign-macos: plus dmgbuild, pinned by hash, before any signing material exists).
   sign-macos:
     needs: [prepare, build]
-    runs-on: macos-14
+    runs-on: macos-15
     environment: release-signing
     permissions:
       contents: read

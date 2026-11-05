@@ -263,12 +263,12 @@ jobs:
   # build, ad-hoc signed instead of Developer ID + notarization): the layout with
   # dmgbuild, then the files with hdiutil and ditto, read back with `macos-dmg.sh
   # inspect`. Then opens its window in Finder and takes screenshots in light and dark
-  # appearance, here (macOS 14, as the release) and in dmg-finder (macOS 15, 26).
+  # appearance, here (macOS 15, as the release) and in dmg-finder (macOS 15, 26).
   # Manual runs only:
   #   gh workflow run ci.yml --ref <branch> -f dmg_only=true
   dmg-package:
     if: ${{ github.event_name == 'workflow_dispatch' && !inputs.msi_only }}
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -313,7 +313,7 @@ jobs:
             | tee dmg-test/layout.txt
           ls -l dmg-test
       - name: Open the window in Finder (light and dark)
-        run: scripts/release/test-dmg.sh dmg-test/*.dmg dmg-test/macos-14
+        run: scripts/release/test-dmg.sh dmg-test/*.dmg dmg-test/macos-15
       - name: Keep the DMG, its layout and the screenshots
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
