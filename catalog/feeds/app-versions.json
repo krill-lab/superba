@@ -2,6 +2,113 @@
   "format": 1,
   "releases": [
     {
+      "version": "26.1029.70936",
+      "store_product_id": "9PLM9XGG6VKS"
+    },
+    {
+      "version": "26.1029.61003",
+      "date": 1793733021000,
+      "bundled_codex": "0.166.0-alpha.6",
+      "packages": [
+        {
+          "os": "linux",
+          "kind": "deb",
+          "arch": "amd64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.1029.61003_amd64.deb",
+          "sha256": "f3af8afec5d25c228eb6f4dbd9cfde0fea7ca5e4b42aff0145a1ded273d01b2d",
+          "size": 558314862
+        },
+        {
+          "os": "linux",
+          "kind": "deb",
+          "arch": "arm64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.1029.61003_arm64.deb",
+          "sha256": "4719adfb33fe68e7becdb8169cea5945a297ebb7e3aa9966de7c2a945242bc2b",
+          "size": 534737658
+        },
+        {
+          "os": "linux",
+          "kind": "rpm",
+          "arch": "aarch64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/linux/rpm/aarch64/chatgpt-26.1029.61003-1.aarch64.rpm",
+          "sha256": "9c603d85477f6670150fc2f6a494eecb5b95bc006acc9bb14e1db6fd1d0d83db",
+          "size": 596348613
+        },
+        {
+          "os": "linux",
+          "kind": "rpm",
+          "arch": "x86_64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/linux/rpm/x86_64/chatgpt-26.1029.61003-1.x86_64.rpm",
+          "sha256": "356b08f0b300c388c0150eb169a398e8ea831cab7ddb24ecfa0cdb5750d093a4",
+          "size": 621826837
+        },
+        {
+          "os": "macos",
+          "kind": "mac_zip",
+          "arch": "arm64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.1029.61003.zip",
+          "size": 813396380,
+          "signature": "Qz7NGgktYvJamUjNETrbLvVQ25Loaisn67IsyCLVqcFXm3PKzc1czdptgiGRDmz+o5QnzBxv4joe0FOxvy24CA=="
+        }
+      ]
+    },
+    {
+      "version": "26.1027.61615",
+      "date": 1793583856000,
+      "packages": [
+        {
+          "os": "macos",
+          "kind": "mac_zip",
+          "arch": "arm64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.1027.61615.zip",
+          "size": 764978106,
+          "signature": "22+1x1KKzn8K0OWcDAGJfkvrgfQXlr4qRECJOfrv7OnzVTUAwr7k7TMTzrJTL+opc8AnB6n2AckBqSEa6nfQDw=="
+        }
+      ]
+    },
+    {
+      "version": "26.1027.51404",
+      "date": 1793490271000,
+      "packages": [
+        {
+          "os": "macos",
+          "kind": "mac_zip",
+          "arch": "arm64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.1027.51404.zip",
+          "size": 764974997,
+          "signature": "mXbfHfk918y3HpyCCobovVYDVPPhyKBwk/r7SLkqgQWnVek+dzIFgAIVRlpWslBNrmllWNEAEl94qZrkxxYhDQ=="
+        }
+      ]
+    },
+    {
+      "version": "26.1027.30824",
+      "date": 1793297006000,
+      "packages": [
+        {
+          "os": "macos",
+          "kind": "mac_zip",
+          "arch": "arm64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.1027.30824.zip",
+          "size": 764868937,
+          "signature": "xd2ItxKNq2uidYYVfM/GoRRZwr/kPhS9/hGkpjBGKAfeRwuifnXuq40+B5SXqMuiexMiLXhAvTgkMulyfyJCDg=="
+        }
+      ]
+    },
+    {
+      "version": "26.1023.51421",
+      "date": 1793147230000,
+      "packages": [
+        {
+          "os": "macos",
+          "kind": "mac_zip",
+          "arch": "arm64",
+          "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.1023.51421.zip",
+          "size": 748022821,
+          "signature": "NeXrVWTVA4CgtdQlA6hMP/d7yfdfE9VRqch5+dpe0Z48A7CzyKjHZ4eXjyWSePwC3JlbSpDC+mPU21GiZ+zdDg=="
+        }
+      ]
+    },
+    {
       "version": "26.1021.31345",
       "store_product_id": "9PLM9XGG6VKS"
     },

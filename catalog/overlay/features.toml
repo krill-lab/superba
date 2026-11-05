@@ -21,6 +21,13 @@ zh_name = "代理留言板"
 zh = "为同一代理树中的多个代理提供共享留言板工具（频道、主题帖、发帖、阅读与搜索），供子代理之间交流。仅在同时启用 `multi_agent_v2` 且会话会持久保存时生效；临时会话需另行配置内存或远程留言板。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:agent_message_board_mcp"]
+en = ""
+en_hash = ""
+zh_name = "代理留言板服务"
+zh = "依据源码推断，在启用多代理第二版且没有显式留言板连接时，为同一代理树通过 HTTP MCP 提供内存留言板，可用于临时会话。开发中，默认关闭；此模式不依赖本地数据库持久化留言。"
+zh_basis = ""
+
 ["feature:analytics_plan_history"]
 en_name = "Analytics plan history"
 en = "Preview five-hour and weekly allowance history for consumer accounts in /analytics."
@@ -79,6 +86,13 @@ zh_name = "应用连接器"
 zh = "启用应用连接器（Apps，即 ChatGPT 账号中的连接器），通过内置的 Codex Apps MCP 服务器把它们作为工具提供给模型，可用 `/apps` 管理。只在使用 ChatGPT 账号登录时生效，API key 登录无效。默认开启；旧键名 `connectors` 仍被接受。"
 zh_basis = ""
 
+["feature:apps_early_resource_discovery"]
+en = ""
+en_hash = ""
+zh_name = "应用资源提前发现"
+zh = "依据源码推断，允许宿主管理的 Codex Apps MCP 服务器在初始工具清单尚未加载完时提供已初始化连接，让应用资源目录读取与工具发现重叠进行。开发中，默认关闭；不影响普通 MCP 服务器的启动路径。"
+zh_basis = ""
+
 ["feature:apps_mcp_path_override"]
 en = ""
 en_hash = ""
@@ -98,6 +112,13 @@ en = ""
 en_hash = ""
 zh_name = "后台预压缩"
 zh = "在上下文用量达到前台自动压缩阈值之前，提前在后台准备远程压缩结果，到时直接采用，减少压缩上下文时的等待。默认在用量达到上下文窗口的 65% 时开始，可用 `[features.async_compaction]` 中的 `model_async_compact_threshold_percent`（1–100）调整；只在模型供应商支持远程压缩 v2 且未启用 `token_budget` 时生效。开发中，默认关闭。"
+zh_basis = ""
+
+["feature:async_compaction_root_only"]
+en = ""
+en_hash = ""
+zh_name = "仅主会话后台压缩"
+zh = "依据源码推断，把后台预备压缩限制在根会话，子代理不再启动该流程。开发中，默认关闭；仍需启用 `async_compaction`、关闭 `token_budget`，并由供应商支持远程压缩第二版。"
 zh_basis = ""
 
 ["feature:auth_elicitation"]
@@ -163,6 +184,13 @@ zh_name = "CLI Daybreak 控制"
 zh = "在 Codex CLI（终端界面和 `codex exec`）中启用 Daybreak：提供 `/daybreak` 开关，并在每个轮次按模型公布的访问计划自动选择标准计划或 Daybreak 网络安全计划（cyber access program）。Daybreak 需要 ChatGPT 账号或 OpenAI API key，且只能配合 OpenAI 模型供应商使用。0.163 起为稳定功能并默认开启。"
 zh_basis = ""
 
+["feature:cli_resume_account_check"]
+en = ""
+en_hash = ""
+zh_name = "恢复会话账号校验"
+zh = "依据源码推断，终端界面（TUI）或 `codex exec` 恢复或附加到有本地会话记录的会话时，检查记录中的创建者是否与当前 ChatGPT 用户及工作区匹配，不匹配则拒绝恢复。开发中，默认关闭；未记录创建者、API 密钥认证及其他客户端不受此检查影响。"
+zh_basis = ""
+
 ["feature:code_mode"]
 en = ""
 en_hash = ""
@@ -189,6 +217,13 @@ en = ""
 en_hash = ""
 zh_name = "代码模式宿主 gRPC"
 zh = "Codex 与自己启动的代码模式宿主进程之间改用基于标准输入输出的 gRPC 通信，替代默认的通信方式。开发中，默认关闭。"
+zh_basis = ""
+
+["feature:code_mode_host_output_truncation"]
+en = ""
+en_hash = ""
+zh_name = "代码宿主输出截断"
+zh = "依据源码推断，让 Codex 内置的独立代码模式宿主在将输出传回核心进程前执行截断，创建会话时使用服务端截断模式。开发中，默认关闭；外部注入的代码模式会话供应器自行决定其输出设置。"
 zh_basis = ""
 
 ["feature:code_mode_interrupt"]
@@ -252,6 +287,13 @@ en = ""
 en_hash = ""
 zh_name = "协作模式"
 zh = "已移除。曾用于启用协作模式（Plan 计划模式与 Default 默认模式）；现在协作模式总是开启，保留此键只为兼容旧配置。"
+zh_basis = ""
+
+["feature:command_sessions_world_state"]
+en = ""
+en_hash = ""
+zh_name = "命令会话状态同步"
+zh = "依据源码推断，将仍保留的命令会话标识和运行状态放入发给模型的上下文状态，状态变化时才追加更新，最多列出 16 个会话。没有可用的 `write_stdin` 工具时会标记不能轮询；开发中，默认关闭。"
 zh_basis = ""
 
 ["feature:compaction_image_budget"]
@@ -348,8 +390,8 @@ zh_basis = ""
 ["feature:deferred_tool_world_state"]
 en = ""
 en_hash = ""
-zh_name = "延迟工具状态说明"
-zh = "在模型可见的“世界状态”上下文中列出延迟加载的工具命名空间（例如需要通过工具搜索才会加载的 MCP 工具），工具搜索本身的描述中则不再列出这些来源。开发中，默认关闭。"
+zh_name = "延迟工具状态目录"
+zh = "依据源码推断，在模型可见的上下文状态中列出延迟加载的工具命名空间，同时从工具搜索的说明中省略这些来源。稳定，默认开启。"
 zh_basis = ""
 
 ["feature:elevated_windows_sandbox"]
@@ -436,6 +478,13 @@ zh_name = "Fast 模式"
 zh = '允许使用 Fast 服务档位：配置中的 `service_tier = "fast"`（请求中发送 `priority`）只有开启时才生效，终端界面也会提供切换 Fast 模式的选项和快捷键。关闭后 Fast 档位设置会被忽略；Ultra Fast 档位由 `ultrafast_mode` 单独控制。默认开启。'
 zh_basis = ""
 
+["feature:gcp_setup_wizard"]
+en = ""
+en_hash = ""
+zh_name = "谷歌云配置向导"
+zh = "依据源码推断，在终端登录引导中提供 Google Cloud Vertex AI 配置入口，收集项目、区域和凭据文件并提交配置请求。稳定，默认关闭；仅在使用内嵌 app-server、当前供应商为 `openai`、需要登录且允许 API 认证时提供该入口。"
+zh_basis = ""
+
 ["feature:goals"]
 en = ""
 en_hash = ""
@@ -457,6 +506,13 @@ zh_name = "审查读取对话历史"
 zh = "让自动审查（Guardian）可以使用根会话的消息历史工具，查阅主对话内容来判断审批请求。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:guardian_denial_reconsideration"]
+en = ""
+en_hash = ""
+zh_name = "自动审查拒绝复核"
+zh = "依据源码推断，同步 Guardian 审查拒绝操作后，在原有截止时间和授权范围内再复核一次，取得有效的第二次判断后才发布最终结果。超时或复核失败保留原拒绝，取消则中止；开发中，默认关闭。"
+zh_basis = ""
+
 ["feature:guardian_enhanced_node_repl_transcripts"]
 en = ""
 en_hash = ""
@@ -469,6 +525,20 @@ en = ""
 en_hash = ""
 zh_name = "Guardian 扩展原型"
 zh = "已移除。曾用于启用由扩展实现的同步 Guardian 审查器原型；该原型未被采用并已删除，设置后被忽略。"
+zh_basis = ""
+
+["feature:guardian_include_additional_context"]
+en = ""
+en_hash = ""
+zh_name = "审查附加上下文"
+zh = "依据源码推断，让 Guardian 的审查历史包含标记为 `additional_context_tool_output` 的独立工具补充输出；关闭时从提供给审查器的历史中滤除这些项。稳定，默认开启。"
+zh_basis = ""
+
+["feature:guardian_native_multi_agent_history"]
+en = ""
+en_hash = ""
+zh_name = "原生多代理审查记录"
+zh = "依据源码推断，将多代理第二版的创建、发消息等工具调用作为原生调用记录提供给 Guardian，并为这些工具启用原生调用审查；异步评分也使用相应设置。开发中，默认关闭，工具命名空间取自多代理配置。"
 zh_basis = ""
 
 ["feature:guardian_node_repl_transcript_images"]
@@ -541,6 +611,13 @@ zh_name = "生命周期钩子"
 zh = "启用类似 Claude Code 的生命周期钩子：从 `hooks.json` 文件加载钩子，在会话、工具调用等生命周期事件发生时运行，可用 `/hooks` 查看和管理。默认开启；旧键名 `codex_hooks` 仍被接受。"
 zh_basis = ""
 
+["feature:hosted_search_policy"]
+en = ""
+en_hash = ""
+zh_name = "宿主搜索策略"
+zh = "依据源码推断，允许宿主在轮次请求中为应用 MCP 搜索提供独立策略，即使原生联网搜索被设为禁用，也可按宿主提供的模式解析搜索上下文。应用连接器必须可用，组织限制及域名等约束仍会校验；开发中，默认关闭。"
+zh_basis = ""
+
 ["feature:image_detail_original"]
 en = ""
 en_hash = ""
@@ -553,6 +630,13 @@ en = ""
 en_hash = ""
 zh_name = "图片生成"
 zh = "启用由扩展提供的图片生成工具，让模型可以生成图片。需要模型供应商支持图片生成，ChatGPT 免费套餐不可用。默认开启；旧键名 `imagegenext` 仍被接受。"
+zh_basis = ""
+
+["feature:image_generation_animation"]
+en = ""
+en_hash = ""
+zh_name = "图片生成动画"
+zh = "依据源码推断，在图片生成工具中开放 `gif` 参数和动画说明，将 GIF 输出请求交给后端处理；关闭时隐藏该参数并拒绝包含它的调用。开发中，默认关闭，仍需图片生成工具本身可用。"
 zh_basis = ""
 
 ["feature:image_resize_notice"]
@@ -604,6 +688,13 @@ zh_name = "应用内语音对话"
 zh = "桌面 app 的管理开关：是否允许在桌面 app 中使用语音（Voice）对话；允许并不代表一定可用，还取决于账号和服务端支持。应由管理员在托管配置（requirements）中设置；Codex CLI 本身不读取它。默认开启。"
 zh_basis = ""
 
+["feature:incremental_exec_tools"]
+en = ""
+en_hash = ""
+zh_name = "执行工具增量目录"
+zh = "依据源码推断，此开关为代码模式执行工具的增量目录预留；Codex 0.168.0-alpha.4 仅登记开关，未发现工具目录生成逻辑读取它。开发中，默认关闭。"
+zh_basis = ""
+
 ["feature:incremental_tools"]
 en = ""
 en_hash = ""
@@ -616,6 +707,13 @@ en = ""
 en_hash = ""
 zh_name = "即时打断"
 zh = "回复生成过程中用户发送新输入时，立即打断当前响应，并让前台的代码模式观察结果尽快让出，以便马上处理新输入。虽处于开发中，0.162 起的正式版默认开启（桌面 app 自带的 0.162.0-alpha.17.2 中默认关闭）。"
+zh_basis = ""
+
+["feature:interrupt_on_cancel"]
+en = ""
+en_hash = ""
+zh_name = "取消时中断推理"
+zh = "依据源码推断，取消轮次且模型响应尚未完成时，尝试向上游发送带截止时间的取消指令。仅适用于使用 `responses_lite` 且响应流提供中断通道的模型；开发中，默认关闭。"
 zh_basis = ""
 
 ["feature:item_ids"]
@@ -714,8 +812,8 @@ zh_basis = ""
 ["feature:multi_agent"]
 en = ""
 en_hash = ""
-zh_name = "子代理"
-zh = "启用子代理（协作工具）：模型可以派生子代理并行处理任务、向它们发送消息并等待结果，终端界面中可用 `/agents` 等命令管理。如果模型元数据或 `multi_agent_v2` 指定了多代理版本，以它们为准。默认开启；旧键名 `collab` 仍被接受。"
+zh_name = "子代理协作（已弃用）"
+zh = "已弃用，原用于启用第一版子代理协作工具；现在使用 `agents.enabled` 设置子代理可用性，多代理版本由模型配置或 `multi_agent_v2` 决定，旧开关仅在缺少版本指定时作为兼容回退（依据源码推断）。"
 zh_basis = ""
 
 ["feature:multi_agent_mode"]
@@ -774,6 +872,13 @@ en = ""
 en_hash = ""
 zh_name = "通知中省略媒体"
 zh = "app-server 发给客户端的条目通知中省略内联的图片和音频内容。开发中，默认关闭。"
+zh_basis = ""
+
+["feature:omit_skill_descriptions"]
+en = ""
+en_hash = ""
+zh_name = "省略技能目录说明"
+zh = "依据源码推断，从发给模型的技能目录和目录增量中省略技能描述，保留名称、位置等定位信息，并同步调整目录使用提示。不会删除技能文件内容；开发中，默认关闭。"
 zh_basis = ""
 
 ["feature:output_token_replay"]
@@ -926,11 +1031,13 @@ zh = "已移除。曾用于在记录进历史前缩放所有内联图片；现�
 zh_basis = ""
 
 ["feature:respect_system_proxy"]
-en = ""
-en_hash = ""
+en_name = "System proxy"
+en = "Use macOS or Windows system proxy settings for Codex requests."
+en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/features/src/lib.rs (experimental menu text)"
+en_hash = "e03822c873fa5d7d"
 zh_name = "遵循系统代理"
-zh = "Codex 自己的网络客户端改为遵循系统代理设置：依次使用系统 / PAC / WPAD 配置、环境变量中的代理，最后直连。关闭时使用 HTTP 库（reqwest）的默认代理行为。开发中，默认关闭。"
-zh_basis = ""
+zh = "依据源码推断，让 Codex 网络请求优先使用 macOS 或 Windows 的系统代理决定，包括系统明确要求的直连；只有无法取得系统决定时才回退到环境变量代理，再无代理则直连。其他系统使用环境变量回退；关闭时采用网络库默认代理行为。实验性，默认关闭。"
+zh_basis = "e03822c873fa5d7d"
 
 ["feature:responses_websockets"]
 en = ""
@@ -957,7 +1064,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "保留客户端工具输出"
-zh = "跨上下文窗口（例如压缩之后）时，按客户端的要求保留指定的工具输出。开发中，默认关闭。"
+zh = "依据源码推断，在远程压缩和跨上下文窗口处理时，保留客户端明确标记需要留存的工具输出，避免将它们当作普通旧工具结果改写或丢弃。稳定，默认开启。"
 zh_basis = ""
 
 ["feature:rollout_budget"]
@@ -1035,6 +1142,13 @@ en = ""
 en_hash = ""
 zh_name = "zsh 执行桥（旧）"
 zh = "已移除。曾把 Shell 工具的执行改走打过补丁的 zsh 执行桥；该后端已删除，现在使用标准 Shell 执行器，设置后会提示删除此项。"
+zh_basis = ""
+
+["feature:simplified_selection_hints"]
+en = ""
+en_hash = ""
+zh_name = "简化插件选择提示"
+zh = "依据源码推断，用户显式选择插件时，若插件有技能、可用的应用连接器或 MCP 服务器，就把发给模型的详细能力说明简化为一句提示，说明所选插件并要求使用其可用技能和工具完成请求。开发中，默认关闭。"
 zh_basis = ""
 
 ["feature:skill_catalog_deltas"]
@@ -1128,6 +1242,13 @@ zh_name = "子代理继承会话环境"
 zh = "创建子代理时，让它继承父会话配置的执行环境，而不是父会话当前轮次临时选择的环境。开发中，默认关闭。"
 zh_basis = ""
 
+["feature:suppress_model_change_announcements"]
+en = ""
+en_hash = ""
+zh_name = "隐藏模型切换提示"
+zh = "依据源码推断，使用增量工具上下文时，切换模型不再向模型发送标明新模型 ID 的提示；模型指令内容发生变化时仍会更新指令。稳定，默认关闭，不控制终端界面的模型显示。"
+zh_basis = ""
+
 ["feature:system_proxy_fallback"]
 en = ""
 en_hash = ""
@@ -1198,11 +1319,25 @@ zh_name = "TUI 使用 app-server"
 zh = "已移除。终端界面（TUI）现在总是基于 app-server 实现，保留此键只为兼容旧配置。"
 zh_basis = ""
 
+["feature:tui_extensions_statusline"]
+en = ""
+en_hash = ""
+zh_name = "扩展状态栏渲染"
+zh = "依据源码推断，将终端状态栏切换为 TUI 扩展渲染器，继续使用已配置的状态项目和颜色设置；关闭时使用原生渲染器。开发中，默认关闭。"
+zh_basis = ""
+
 ["feature:tui_multi_backend"]
 en = ""
 en_hash = ""
 zh_name = "TUI 多后端"
 zh = "允许终端界面（TUI）发现多个对话后端并在其间选择。依据源码推断：0.166.0-alpha.1 中除功能注册外尚无代码读取此开关。开发中，默认关闭。"
+zh_basis = ""
+
+["feature:tui_workspace"]
+en = ""
+en_hash = ""
+zh_name = "终端会话工作区"
+zh = "依据源码推断，在由 Codex 管理的全屏终端界面中保留主会话和侧边会话的视图，支持窗格焦点切换、隐藏、分栏及宽度调整。开发中，默认关闭；普通终端滚动输出模式不启用这些工作区行为。"
 zh_basis = ""
 
 ["feature:ultrafast_mode"]
@@ -1258,7 +1393,7 @@ zh_basis = ""
 en = ""
 en_hash = ""
 zh_name = "统一图片预算"
-zh = "对每张图片使用统一的像素与 token 预算进行预处理，不再依据旧的 detail 提示。只对使用 Responses Lite 格式或支持原始图片细节的模型生效。开发中，默认关闭。"
+zh = "依据源码推断，按统一的像素与 token 预算预处理图片，而不是仅按旧的图片细节档位选择缩放策略。稳定，默认开启；仅对使用 Responses Lite 格式或支持原始图片细节的模型生效。"
 zh_basis = ""
 
 ["feature:untrusted_as_tool_output"]

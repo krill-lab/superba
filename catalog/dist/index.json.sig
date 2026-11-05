@@ -4,7 +4,7 @@
     {
       "key_id": "044ecd9ca3481d4f",
       "algorithm": "ed25519",
-      "signature": "ND8+woiS6PJLRHLXAZESaR5qwYFq+jYF3VzOOO3Hnk+YkfXH/4vEAdRyFeX1nUNA1sThUwcnmw2MnUNN1fC4Cw=="
+      "signature": "99/g42QHqSaVeRVDLC/PnagTQbNb34X88UoBB2H7Y6bF2hnGKIAXoOeenAiguivO56LJWk7QK23H6Wl1CeASDA=="
     }
   ]
 }
