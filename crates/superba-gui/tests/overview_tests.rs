@@ -1281,6 +1281,44 @@ fn maintenance_todos_share_tool_update_failures_and_notification_deep_links() {
     });
 }
 
+#[tokio::test]
+async fn clicking_the_provider_tile_opens_accounts_and_selects_an_exact_account() {
+    let mut data = fake_data().await;
+    data.chatgpt_accounts
+        .finish(Ok(vec![superba_core::ChatGptAccount {
+            id: "managed-b".into(),
+            email: "b@example.test".into(),
+            plan_type: None,
+            added_at: Timestamp(1),
+            active: false,
+        }]));
+    let harness = Harness::new([1280.0, 800.0], egui::Theme::Light);
+    let tr = Tr::new(Locale::ZhCn);
+    let title = with_cx(&data, Locale::ZhCn, |cx| {
+        hero::model(cx, data.overview.value.as_ref().unwrap(), &[], None)
+            .provider
+            .title
+    });
+    let mut state = overview::State::default();
+    state.usage = UsageLoader::preloaded(busy_snapshot());
+    let mut out = Vec::new();
+    {
+        let mut paint = page!(&data, &tr, &harness.fonts, &mut state, &mut out);
+        assert!(harness.click_text(&title, &mut paint));
+        let texts = harness.settle(&mut paint);
+        assert!(
+            texts.iter().any(|(text, _)| text == "b@example.test"),
+            "{texts:?}"
+        );
+        assert!(harness.click_text("b@example.test", &mut paint));
+    }
+    assert!(!out.iter().any(|a| matches!(a, Action::Go(Page::Providers))));
+    assert!(
+        out.iter()
+            .any(|a| matches!(a, Action::SwitchChatGptAccount(id) if id == "managed-b"))
+    );
+}
+
 // --- Every tool (user request 118) ---------------------------------------------------------------
 
 /// A row of `harness` with its own session id (no Codex cache key).

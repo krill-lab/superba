@@ -48,6 +48,8 @@ pub mod app;
 pub mod auth;
 pub mod autostart;
 pub mod caps;
+pub mod chatgpt;
+pub use chatgpt::*;
 pub mod catalog;
 pub mod claude;
 pub mod codex;

@@ -112,6 +112,15 @@ pub fn local_request(intent: SwitchIntent) -> SwitchRequest {
 /// restarting, migrating, uninstalling and explicit plans. Saving a profile,
 /// a site or settings never plans anything by itself.
 pub fn planned_request(action: &Action) -> Option<SwitchRequest> {
+    if let Action::SwitchChatGptAccount(id) = action {
+        let mut request = local_request(SwitchIntent::Profile {
+            profile_id: ProfileId::new(catalog::PROFILE_OFFICIAL),
+            line_id: None,
+            auth_mode: None,
+        });
+        request.chatgpt_account_id = Some(id.clone());
+        return Some(request);
+    }
     let intent = match action {
         Action::Switch {
             profile,
@@ -781,6 +790,16 @@ impl SuperbaApp {
             ctx.request_repaint_after(Duration::from_millis(100));
             return;
         }
+        {
+            let pal = Palette::of(ctx);
+            let busy = self.flow.is_running() || self.flow.is_planning();
+            let cx = cx!(self, pal, busy);
+            let mut actions = Vec::new();
+            self.pages.providers.background(ctx, &cx, &mut actions);
+            for action in actions {
+                self.handle_action(ctx, action);
+            }
+        }
         if !self.data.router_enabled() && !self.data.claude_routed() {
             self.data.router_watch = None;
         }
@@ -883,6 +902,7 @@ impl SuperbaApp {
         for reply in self.backend.drain() {
             let now = self.now();
             match reply {
+                Reply::ChatGptAccounts(r) => self.data.chatgpt_accounts.finish(r),
                 Reply::Overview(r) => {
                     self.pages
                         .superba
@@ -1601,6 +1621,7 @@ impl SuperbaApp {
         match action {
             // Planned above.
             Action::Switch { .. }
+            | Action::SwitchChatGptAccount(_)
             | Action::Restore(_)
             | Action::Plan(_)
             | Action::RestartApp
@@ -2245,8 +2266,8 @@ impl eframe::App for SuperbaApp {
 
     /// Runs before every `ui` and alone while the window is hidden or
     /// minimised (eframe calls no `ui` then): the backend's answers keep being
-    /// handled and the router watchdog keeps ticking; nothing else is read and
-    /// the window is not woken up for anything else.
+    /// handled, the router watchdog keeps ticking and managed ChatGPT quotas
+    /// refresh without showing the window.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.fonts.poll(ctx);
         let visible = ctx.input(|i| i.viewport().visible()).unwrap_or(true);

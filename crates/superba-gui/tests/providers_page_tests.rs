@@ -10,6 +10,298 @@
 
 mod support;
 
+fn quota_tick(
+    data: &Data,
+    service: &Arc<dyn SwitchService>,
+    state: &mut providers::State,
+    ctx: &egui::Context,
+    seconds: i64,
+    busy: bool,
+) {
+    with_cx(data, service, Locale::En, |cx| {
+        let cx = Cx {
+            now: Timestamp(seconds * 1000),
+            busy,
+            ..*cx
+        };
+        state.background(ctx, &cx, &mut Vec::new());
+    });
+}
+
+async fn settle_quota(
+    data: &Data,
+    service: &Arc<dyn SwitchService>,
+    state: &mut providers::State,
+    ctx: &egui::Context,
+    seconds: i64,
+    busy: bool,
+) {
+    for _ in 0..30 {
+        quota_tick(data, service, state, ctx, seconds, busy);
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+fn quota_accounts(data: &mut Data, ids: &[&str]) {
+    data.chatgpt_accounts.finish(Ok(ids
+        .iter()
+        .map(|id| superba_core::ChatGptAccount {
+            id: (*id).into(),
+            email: format!("{id}@example.test"),
+            plan_type: None,
+            added_at: Timestamp(1),
+            active: false,
+        })
+        .collect()));
+}
+
+#[tokio::test]
+async fn all_saved_accounts_refresh_every_minute_without_rendering_the_provider_page() {
+    let fake = fake();
+    let mut data = data_of(&fake).await;
+    quota_accounts(&mut data, &["a", "b"]);
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let ctx = egui::Context::default();
+    let mut state = providers::State::default();
+    settle_quota(&data, &service, &mut state, &ctx, 0, false).await;
+    let mut calls = fake.chatgpt_quota_calls();
+    calls.sort();
+    assert_eq!(calls, ["a", "b"]);
+    settle_quota(&data, &service, &mut state, &ctx, 59, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+    settle_quota(&data, &service, &mut state, &ctx, 60, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 4);
+    // Returning after a long sleep runs one refresh, never a backlog of missed ticks.
+    settle_quota(&data, &service, &mut state, &ctx, 600, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 6);
+    quota_accounts(&mut data, &[]);
+    settle_quota(&data, &service, &mut state, &ctx, 660, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 6);
+}
+
+#[tokio::test]
+async fn quota_refresh_does_not_overlap_and_pauses_new_queries_during_switches() {
+    let fake = fake();
+    let mut data = data_of(&fake).await;
+    quota_accounts(&mut data, &["a"]);
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    fake.gate_chatgpt_quota(Some(gate.clone()));
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let ctx = egui::Context::default();
+    let mut state = providers::State::default();
+    settle_quota(&data, &service, &mut state, &ctx, 0, false).await;
+    settle_quota(&data, &service, &mut state, &ctx, 60, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 1);
+    gate.add_permits(1);
+    fake.gate_chatgpt_quota(None);
+    settle_quota(&data, &service, &mut state, &ctx, 61, true).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 1);
+    settle_quota(&data, &service, &mut state, &ctx, 61, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+    settle_quota(&data, &service, &mut state, &ctx, 120, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+}
+
+#[tokio::test]
+async fn failed_automatic_refresh_keeps_the_last_quota_and_retries_next_minute() {
+    let fake = fake();
+    let mut data = data_of(&fake).await;
+    quota_accounts(&mut data, &["a"]);
+    let service: Arc<dyn SwitchService> = fake.clone();
+    let harness = support::ui::Harness::new([1060.0, 760.0], egui::Theme::Light);
+    let mut state = providers::State::default();
+    state.select(ProviderId::Profile("official".into()));
+    settle_quota(&data, &service, &mut state, &harness.ctx, 0, false).await;
+    fake.fail_chatgpt_quota(true);
+    settle_quota(&data, &service, &mut state, &harness.ctx, 60, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+    let texts = harness.settle(&mut |ui| {
+        with_cx(&data, &service, Locale::En, |cx| {
+            let cx = Cx {
+                now: Timestamp(60_000),
+                ..*cx
+            };
+            providers::show(ui, &cx, &mut state, &mut Vec::new());
+        });
+    });
+    let text = texts
+        .iter()
+        .map(|(t, _)| t.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        text.contains("69%") && text.contains("fixture quota unavailable"),
+        "{text}"
+    );
+    settle_quota(&data, &service, &mut state, &harness.ctx, 119, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 2);
+    fake.fail_chatgpt_quota(false);
+    settle_quota(&data, &service, &mut state, &harness.ctx, 120, false).await;
+    assert_eq!(fake.chatgpt_quota_calls().len(), 3);
+}
+
+#[tokio::test]
+async fn chatgpt_accounts_show_individual_limits_and_switch_the_selected_identity() {
+    let service = fake();
+    let mut data = data_of(&service).await;
+    data.chatgpt_accounts.finish(Ok(vec![
+        superba_core::ChatGptAccount {
+            id: "a".into(),
+            email: "a@example.test".into(),
+            plan_type: None,
+            added_at: Timestamp(1),
+            active: false,
+        },
+        superba_core::ChatGptAccount {
+            id: "b".into(),
+            email: "b@example.test".into(),
+            plan_type: None,
+            added_at: Timestamp(2),
+            active: false,
+        },
+    ]));
+    let service: Arc<dyn SwitchService> = service;
+    let mut state = providers::State::default();
+    state.select(shared::providers::ProviderId::Profile(ProfileId::new(
+        "official",
+    )));
+    let (_, text) = drive(&data, service.clone(), &mut state, Locale::ZhCn, |_, _| {
+        false
+    });
+    for expected in [
+        "a@example.test",
+        "b@example.test",
+        "5 小时",
+        "每周",
+        "剩余 100%",
+        "剩余 69%",
+        "添加账号",
+    ] {
+        assert!(text.contains(expected), "missing {expected}: {text}");
+    }
+    let harness = support::ui::Harness::new([1060.0, 760.0], egui::Theme::Light);
+    let mut actions = Vec::new();
+    {
+        let mut paint = |ui: &mut egui::Ui| {
+            with_cx(&data, &service, Locale::ZhCn, |cx| {
+                providers::show(ui, cx, &mut state, &mut actions)
+            })
+        };
+        assert!(harness.click_last_text("切换到此账号", &mut paint));
+    }
+    let request = actions
+        .iter()
+        .find_map(superba_gui::app::planned_request)
+        .unwrap();
+    assert_eq!(request.chatgpt_account_id.as_deref(), Some("b"));
+    assert!(request.targets.local && request.targets.remotes.is_empty());
+}
+
+#[tokio::test]
+async fn weekly_only_account_shows_live_subscription_without_a_five_hour_placeholder() {
+    let service = fake();
+    let mut data = data_of(&service).await;
+    data.chatgpt_accounts
+        .finish(Ok(vec![superba_core::ChatGptAccount {
+            id: "weekly-only".into(),
+            email: "weekly@example.test".into(),
+            plan_type: Some("plus".into()),
+            added_at: Timestamp(1),
+            active: false,
+        }]));
+    let service: Arc<dyn SwitchService> = service;
+    for (locale, weekly, five_hour) in [
+        (Locale::ZhCn, "每周", "5 小时"),
+        (Locale::En, "Weekly", "5 hours"),
+    ] {
+        let mut state = providers::State::default();
+        state.select(ProviderId::Profile("official".into()));
+        let mut frames = 0;
+        let (_, text) = drive(&data, service.clone(), &mut state, locale, |_, _| {
+            frames += 1;
+            frames > 20
+        });
+        assert!(
+            text.contains("Free") && text.contains(weekly) && text.contains("69%"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("Plus") && !text.contains(five_hour),
+            "{text}"
+        );
+        // The layout remains within the provider pane at both supported sizes.
+        for size in SIZES {
+            let report = render_fit(size, locale, egui::Theme::Light, &data, |ui, cx, out| {
+                providers::show(ui, cx, &mut state, out)
+            });
+            assert!(
+                report.beyond_right().is_empty(),
+                "{:?}",
+                report.beyond_right()
+            );
+            assert!(report.whole("Free") && report.whole(weekly));
+        }
+    }
+}
+
+#[tokio::test]
+async fn weekly_limits_stay_in_the_same_column_for_mixed_account_windows() {
+    let service = fake();
+    let mut data = data_of(&service).await;
+    data.chatgpt_accounts
+        .finish(Ok(["both-windows", "prolite-weekly"]
+            .into_iter()
+            .map(|id| superba_core::ChatGptAccount {
+                id: id.into(),
+                email: format!("{id}@example.test"),
+                plan_type: None,
+                added_at: Timestamp(1),
+                active: false,
+            })
+            .collect()));
+    let service: Arc<dyn SwitchService> = service;
+    for (locale, weekly, five_hour) in [
+        (Locale::ZhCn, "每周", "5 小时"),
+        (Locale::En, "Weekly", "5 hours"),
+    ] {
+        let mut state = providers::State::default();
+        state.select(ProviderId::Profile("official".into()));
+        let mut frames = 0;
+        drive(&data, service.clone(), &mut state, locale, |_, _| {
+            frames += 1;
+            frames > 20
+        });
+        for size in [[1280.0, 800.0], [1600.0, 1000.0]] {
+            let report = render_fit(size, locale, egui::Theme::Light, &data, |ui, cx, out| {
+                providers::show(ui, cx, &mut state, out)
+            });
+            let weeks: Vec<_> = report
+                .text_shapes
+                .iter()
+                .filter(|(t, _, _)| t == weekly)
+                .map(|(_, r, _)| r)
+                .collect();
+            let hours: Vec<_> = report
+                .text_shapes
+                .iter()
+                .filter(|(t, _, _)| t == five_hour)
+                .map(|(_, r, _)| r)
+                .collect();
+            assert_eq!(weeks.len(), 2, "{}", report.all_text());
+            assert_eq!(hours.len(), 1);
+            assert!(
+                (weeks[0].min.x - weeks[1].min.x).abs() < 1.0,
+                "{size:?}: {weeks:?}"
+            );
+            assert!(weeks[1].min.x > hours[0].max.x);
+            assert!(report.beyond_right().is_empty());
+            assert!(report.whole("Pro Lite") && report.whole("Plus"));
+            assert!(!report.all_text().contains("套餐读取失败"));
+            assert!(!report.all_text().contains("Plan unavailable"));
+        }
+    }
+}
+
 use superba_core::{
     AccountReport, AccountSummary, AuthChoice, AuthMode, BillingSummary, CodexPath, DailyUsage,
     LineCaps, LineId, Locale, ModelUsage, ProfileId, SiteId, SwitchService, Timestamp, UsageReport,

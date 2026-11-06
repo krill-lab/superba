@@ -44,6 +44,29 @@ fn cx(setting: Option<CloseAction>, hide: Option<HideSupport>, unset: Unset) -> 
 
 const TRAY: Option<HideSupport> = Some(HideSupport::InPlace);
 
+#[test]
+fn managed_account_quotas_are_queried_without_opening_the_hidden_window() {
+    let service = fake();
+    service.set_chatgpt_accounts(vec![superba_core::ChatGptAccount {
+        id: "a".into(),
+        email: "a@example.test".into(),
+        plan_type: None,
+        added_at: superba_core::Timestamp(1),
+        active: false,
+    }]);
+    let mut h = app(
+        service.clone(),
+        TrayOption::Simulated(Sink::default()),
+        true,
+    );
+    h.until("quota queried while hidden", |_| {
+        !service.chatgpt_quota_calls().is_empty()
+    });
+    assert!(!h.visible());
+    assert!(h.app().is_hidden_in_tray());
+    assert_eq!(service.chatgpt_quota_calls(), ["a"]);
+}
+
 // ---------------------------------------------------------------------------
 // The state machine.
 

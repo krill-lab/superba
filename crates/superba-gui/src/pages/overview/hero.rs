@@ -248,7 +248,7 @@ pub fn model(
                 _ => None,
             })
             .unwrap_or_else(|| tr.t("overview.account.official"));
-        provider.menu = !data.providers().is_empty();
+        provider.menu = true;
     } else if let Some(h) = overview.config.as_ref().and_then(|c| c.handed_off.as_ref()) {
         // GH#5: another tool manages Codex; Superba owns nothing.
         provider.title = tr.f(
@@ -256,7 +256,7 @@ pub fn model(
             &[("tool", &crate::external::tool_name(cx, &h.to))],
         );
         provider.detail = tr.t("overview.hero.handed_off_detail");
-        provider.menu = !data.providers().is_empty();
+        provider.menu = true;
     } else if let (Some(p), Some(s)) = (profile, &site) {
         let name = crate::app::provider_name(tr, p, s);
         let line = super::lines::effective(cx, snap)
@@ -278,9 +278,11 @@ pub fn model(
         provider.ghost = true;
         provider.title = tr.t("overview.hero.no_provider");
         provider.detail = tr.t("overview.hero.no_provider_detail");
-        provider.menu = !data.providers().is_empty();
+        provider.menu = true;
     }
-    provider.tip = tr.t(if provider.ghost && data.providers().is_empty() {
+    provider.tip = tr.t(if provider.menu {
+        "overview.hero.switch_menu"
+    } else if provider.ghost && data.providers().is_empty() {
         "overview.hero.start_wizard"
     } else {
         "overview.hero.open_providers"
@@ -423,6 +425,7 @@ fn marker(ui: &Ui, tile: Rect, status: Status, ring: Color32) {
 struct Drawn {
     /// Node clicked (open its page).
     clicked: bool,
+    body: egui::Response,
     /// The chevron, when the node has a menu.
     chevron: Option<egui::Response>,
 }
@@ -605,6 +608,7 @@ fn draw_node(
     });
     Drawn {
         clicked: resp.clicked(),
+        body: resp,
         chevron,
     }
 }
@@ -770,7 +774,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
         ));
     }
     for (i, d) in drawn.iter().enumerate() {
-        if d.clicked {
+        if d.clicked && i != 2 {
             out.push(match i {
                 0 => Action::Go(Page::Superba(crate::pages::SuperbaSection::Updates)),
                 1 => Action::Go(Page::Router),
@@ -785,6 +789,7 @@ pub fn show(ui: &mut Ui, cx: &Cx<'_>, hero: &Hero, rect: Rect, out: &mut Vec<Act
     {
         out.push(action);
     }
+    provider_popover(&drawn[2].body, cx, hero.current_line.as_deref(), out);
     if let Some(c) = &drawn[2].chevron {
         provider_popover(c, cx, hero.current_line.as_deref(), out);
     }
@@ -926,6 +931,32 @@ pub(super) fn provider_popover(
                         out.push(crate::pages::shared::switch_action(
                             cx.data, profile, &line.id,
                         ));
+                    }
+                }
+                ui.separator();
+            }
+            if let Some(accounts) = cx
+                .data
+                .chatgpt_accounts
+                .value
+                .as_ref()
+                .filter(|a| !a.is_empty())
+            {
+                ui.label(Text::caption(cx.tr.t("chatgpt.title"), cx.pal));
+                for account in accounts {
+                    let active = account.active && cx.data.official_active();
+                    if row(
+                        ui,
+                        !cx.busy && !active,
+                        active,
+                        account.email.clone(),
+                        cx.tr.t(if active {
+                            "chatgpt.in_use"
+                        } else {
+                            "chatgpt.switch"
+                        }),
+                    ) {
+                        out.push(Action::SwitchChatGptAccount(account.id.clone()));
                     }
                 }
                 ui.separator();

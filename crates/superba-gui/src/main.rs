@@ -1,9 +1,9 @@
 //! `superba`: the Superba desktop GUI. `superba <subcommand>` behaves like `spb`.
 
-// Release builds on Windows use the GUI subsystem (no console window flashes up
-// when the app is started from the Start menu). Subcommands then attach to the
-// parent console, see `attach_parent_console`.
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+// Windows desktop builds always use the GUI subsystem, including development
+// builds distributed for testing. Subcommands attach to the parent console;
+// see `attach_parent_console`.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::process::ExitCode;
 

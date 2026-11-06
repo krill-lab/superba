@@ -86,6 +86,7 @@ pub(crate) async fn site(rt: &Runtime, out: &Output, id: &str) -> Result<Site> {
 pub(crate) fn request(intent: SwitchIntent, exec: &ExecArgs) -> SwitchRequest {
     SwitchRequest {
         intent,
+        chatgpt_account_id: None,
         targets: exec.targets(),
         model_override: None,
         legacy_sessions: None,

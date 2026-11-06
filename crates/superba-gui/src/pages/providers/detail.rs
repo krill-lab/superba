@@ -41,7 +41,10 @@ pub(super) fn show(
     header(ui, cx, state, p, out);
     ui.add_space(10.0);
     if p.kind == ProviderKind::Official {
-        official(ui, cx, state, out);
+        egui::ScrollArea::vertical()
+            .id_salt("chatgpt-accounts-detail")
+            .auto_shrink([false, false])
+            .show(ui, |ui| official(ui, cx, state, out));
         return;
     }
     let account = p.has_key() && p.profile.is_some();
@@ -331,6 +334,8 @@ pub(super) fn start_checks(state: &mut State, cx: &Cx<'_>, p: &Provider, key: Ke
 
 /// The official login: what it does, switch to it, restore the original.
 fn official(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Action>) {
+    super::chatgpt::show(ui, cx, &mut state.chatgpt, out);
+    ui.separator();
     ui.add(egui::Label::new(Text::body(cx.tr.t("providers.official.body"), cx.pal)).wrap());
     ui.add_space(8.0);
     let stash = match cx

@@ -154,6 +154,18 @@ impl Palette {
         }
     }
 
+    /// Vivid quota fills, distinct from the quieter general status dots.
+    pub fn quota_fill(&self, remaining: f64) -> Color32 {
+        match (self.dark, remaining <= 10.0, remaining <= 20.0) {
+            (true, true, _) => hex(0xFB7185),
+            (false, true, _) => hex(0xEF4444),
+            (true, _, true) => hex(0xFBBF24),
+            (false, _, true) => hex(0xE89B0C),
+            (true, _, _) => hex(0x34D399),
+            (false, _, _) => hex(0x17AB5A),
+        }
+    }
+
     /// A translucent tint of `color` for subtle badge backgrounds.
     pub fn tint(&self, color: Color32) -> Color32 {
         let alpha = if self.dark { 38 } else { 26 };

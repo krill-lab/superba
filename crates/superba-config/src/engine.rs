@@ -175,7 +175,7 @@ fn after_bytes(current: Option<&[u8]>, change: &FileChange) -> Option<Vec<u8>> {
 fn site_kind_of(mode: &ResolvedMode) -> Option<SiteKind> {
     match mode {
         ResolvedMode::Token { site_kind, .. } => Some(*site_kind),
-        ResolvedMode::Official => Some(SiteKind::Official),
+        ResolvedMode::Official | ResolvedMode::ChatGptAccount { .. } => Some(SiteKind::Official),
         _ => None,
     }
 }
@@ -691,6 +691,7 @@ impl TomlConfigEngine {
     // ---------------------------------------------------------------- apply
 
     fn apply_sync(&self, plan: &ApplyPlan) -> Result<ApplyReport> {
+        let _credential_lock = crate::chatgpt::Accounts::new(self.ctx.clone()).lock_live()?;
         let desired = plan.desired.as_ref().ok_or_else(|| {
             Error::invalid("this plan carries no desired state (it was not produced by plan())")
         })?;
@@ -731,6 +732,17 @@ impl TomlConfigEngine {
         plan: &ApplyPlan,
         desired: &ResolvedProfile,
     ) -> std::result::Result<ApplyReport, TxError> {
+        // Planning can precede a quota token rotation. Resolve the selected
+        // identity again under the credential-write lock on every attempt.
+        let mut current_desired = desired.clone();
+        if let ResolvedMode::ChatGptAccount {
+            account_id,
+            auth_json,
+        } = &mut current_desired.mode
+        {
+            *auth_json = crate::chatgpt::Accounts::new(self.ctx.clone()).load(account_id)?;
+        }
+        let desired = &current_desired;
         let root = plan.codex_home.as_path();
         let now = self.clock.now();
         let scope = StashScope::Local(root.to_path_buf());
@@ -776,6 +788,14 @@ impl TomlConfigEngine {
             && let Some(live) = &files.auth_json
         {
             self.stash.put(&scope, live, now)?;
+            let accounts = crate::chatgpt::Accounts::new(self.ctx.clone());
+            if accounts
+                .list(Some(live))?
+                .iter()
+                .any(|account| account.active)
+            {
+                accounts.put(live, now)?;
+            }
         }
         self.record_first_writes(root, &files, &r.files)?;
         self.extend_baseline(root, &r)?;
@@ -1164,7 +1184,7 @@ impl TomlConfigEngine {
         if !exact && fw.kind == CodexFileKind::AuthJson {
             return Err(Error::other("changed since the switch, left as is"));
         }
-        let before = match (&fw.before_sha256, &fw.backup) {
+        let mut before = match (&fw.before_sha256, &fw.backup) {
             (None, _) => None,
             (Some(hash), Some(path)) => {
                 let bytes = self
@@ -1180,6 +1200,19 @@ impl TomlConfigEngine {
             }
             (Some(_), None) => return Err(Error::other("no backup")),
         };
+        // A helper may rotate the outgoing account while another account is
+        // active. Roll back to that identity without reviving its old tokens.
+        if fw.kind == CodexFileKind::AuthJson
+            && let Some(info) = before
+                .as_ref()
+                .and_then(|auth| authjson::login_info(auth.expose()))
+        {
+            match crate::chatgpt::Accounts::new(self.ctx.clone()).load(&info.identity) {
+                Ok(latest) => before = Some(latest),
+                Err(Error::NotFound { .. }) => {}
+                Err(error) => return Err(error),
+            }
+        }
         let contents = if exact {
             before
         } else {
@@ -1252,7 +1285,10 @@ impl TomlConfigEngine {
                 after_sha256: contents.as_ref().map(|b| fsx::sha256_hex(b.expose())),
                 temp: None,
                 backup: None,
-                source: if exact && contents.is_some() {
+                source: if exact
+                    && contents.as_ref().is_some_and(|bytes| {
+                        Some(fsx::sha256_hex(bytes.expose())) == fw.before_sha256
+                    }) {
                     fw.backup.clone()
                 } else {
                     None
@@ -1263,6 +1299,7 @@ impl TomlConfigEngine {
     }
 
     fn rollback_sync(&self, report: &ApplyReport) -> Result<()> {
+        let _credential_lock = crate::chatgpt::Accounts::new(self.ctx.clone()).lock_live()?;
         let root = report.codex_home.as_path();
         if self.pending(root)? {
             return Err(blocked_pending());
@@ -1417,6 +1454,7 @@ impl TomlConfigEngine {
     // ------------------------------------------------------------- recovery
 
     fn recover_sync(&self, root: &Path) -> Result<RecoveryReport> {
+        let _credential_lock = crate::chatgpt::Accounts::new(self.ctx.clone()).lock_live()?;
         let mut report = RecoveryReport::default();
         for entry in journal::list(self.data(), Some(root))? {
             let action = self.recover_entry(&entry)?;

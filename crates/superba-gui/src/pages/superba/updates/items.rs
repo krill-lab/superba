@@ -287,8 +287,13 @@ pub fn inventory(cx: &Cx<'_>, state: &State, tools: &ToolsView) -> Vec<Entry> {
         if v.status == SelfUpdateStatus::OnlineChecksOff {
             own_row.description = cx.tr.t("superba.network.online_off");
         }
-        if let Some(detail) = &v.detail {
-            own_row.description.clone_from(detail);
+        if let Some(detail) = super::self_update::check_detail(cx, v) {
+            own_row.description = detail;
+        }
+        if matches!(own_row.operation, Some(Operation::Check))
+            && v.limited_until.is_some_and(|until| until > cx.now)
+        {
+            own_row.operation = None;
         }
         if v.no_package {
             own_row.description = cx.tr.t("updates.superba.no_package");

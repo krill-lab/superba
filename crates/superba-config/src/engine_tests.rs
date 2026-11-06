@@ -17,6 +17,195 @@ use crate::keystore::ENV_SUPERBA_SECRET_BACKEND;
 const CONFIG: &str = "model = \"gpt-5.5\"\n\n[mcp_servers.fs]\ncommand = \"mcp-fs\"\n";
 const AUTH: &str = "{\"OPENAI_API_KEY\": \"someone-elses-key-0042\"}";
 
+#[test]
+fn chatgpt_account_switch_replaces_a_live_login_and_rolls_back_exactly() {
+    let t = T::new();
+    let login = |id: &str| {
+        SecretBytes::new(serde_json::to_vec(&serde_json::json!({
+        "auth_mode":"chatgpt", "tokens":{"id_token":{"email":format!("{id}@example.test"),"sub":id},
+        "account_id":id,"access_token":format!("access-{id}"),"refresh_token":format!("refresh-{id}")}
+    })).unwrap())
+    };
+    let a = login("a");
+    let b = login("b");
+    std::fs::write(t.root.join("auth.json"), a.expose()).unwrap();
+    let accounts = crate::chatgpt::Accounts::new(t.engine.ctx.clone());
+    let account_a = accounts.put(&a, Timestamp(1)).unwrap();
+    let account_b = accounts.put(&b, Timestamp(1)).unwrap();
+    let desired = ResolvedProfile {
+        profile_id: Some(ProfileId::new("official")),
+        site_id: Some(SiteId::new("official")),
+        line_id: None,
+        model_catalog: None,
+        model: Default::default(),
+        key_resolutions: Default::default(),
+        settings: Default::default(),
+        mode: ResolvedMode::ChatGptAccount {
+            account_id: account_b.id,
+            auth_json: b.clone(),
+        },
+    };
+    let before = t.config();
+    let plan = t.engine.plan_sync(&t.root, &desired).unwrap();
+    assert_eq!(
+        t.auth().as_bytes(),
+        a.expose(),
+        "planning never writes the live login"
+    );
+    assert!(plan.auth_change.as_ref().unwrap().stash_login);
+    let report = t.engine.apply_sync(&plan).unwrap();
+    assert_eq!(
+        t.auth().as_bytes(),
+        b.expose(),
+        "the existing official-login keep rule must not suppress an explicit account switch"
+    );
+    assert_eq!(accounts.load(&account_a.id).unwrap(), a);
+    t.engine.rollback_sync(&report).unwrap();
+    assert_eq!(t.config(), before);
+    assert_eq!(t.auth().as_bytes(), a.expose());
+}
+
+#[test]
+fn chatgpt_account_switch_uses_the_latest_credential_after_planning() {
+    for refresh_live in [false, true] {
+        let t = T::new();
+        let login = |id: &str, token: &str| {
+            SecretBytes::new(serde_json::to_vec(&serde_json::json!({
+                "auth_mode":"chatgpt",
+                "tokens":{"account_id":id,"id_token":{"email":format!("{id}@example.test"),"sub":id},
+                    "access_token":token,"refresh_token":format!("refresh-{token}")}
+            })).unwrap())
+        };
+        let a = login("a", "access-a");
+        let b = login("b", "access-b-before");
+        let refreshed = login("b", "access-b-after");
+        std::fs::write(t.root.join("auth.json"), a.expose()).unwrap();
+        let accounts = crate::chatgpt::Accounts::new(t.engine.ctx.clone());
+        let account = accounts.put(&b, Timestamp(1)).unwrap();
+        let desired = ResolvedProfile {
+            profile_id: Some(ProfileId::new("official")),
+            site_id: Some(SiteId::new("official")),
+            line_id: None,
+            model_catalog: None,
+            model: Default::default(),
+            key_resolutions: Default::default(),
+            settings: Default::default(),
+            mode: ResolvedMode::ChatGptAccount {
+                account_id: account.id,
+                auth_json: b,
+            },
+        };
+        let plan = t.engine.plan_sync(&t.root, &desired).unwrap();
+        // A quota helper can finish while a planned switch waits for running turns.
+        if refresh_live {
+            std::fs::write(t.root.join("auth.json"), refreshed.expose()).unwrap();
+        } else {
+            accounts.put(&refreshed, Timestamp(2)).unwrap();
+        }
+        t.engine.apply_sync(&plan).unwrap();
+        assert_eq!(
+            t.auth().as_bytes(),
+            refreshed.expose(),
+            "a planned account switch must not replay credentials rotated before execution"
+        );
+    }
+}
+
+#[test]
+fn quota_refreshes_are_locked_out_while_auth_is_published_or_rolled_back() {
+    let t = T::new();
+    let plan = t.plan();
+    let auth = t.root.join("auth.json");
+    let lock_path = t
+        .engine
+        .ctx
+        .data_dir
+        .secrets_dir()
+        .join("chatgpt-live.lock");
+    let checks = std::rc::Rc::new(std::cell::Cell::new(0));
+    let published = checks.clone();
+    BEFORE_PUBLISH.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move |path| {
+            if path == auth {
+                let competing_writer = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&lock_path)
+                    .unwrap();
+                assert!(matches!(
+                    competing_writer.try_lock(),
+                    Err(std::fs::TryLockError::WouldBlock)
+                ));
+                published.set(published.get() + 1);
+            }
+        }));
+    });
+    let report = t.engine.apply_sync(&plan).unwrap();
+    t.engine.rollback_sync(&report).unwrap();
+    BEFORE_PUBLISH.with(|hook| *hook.borrow_mut() = None);
+    assert_eq!(checks.get(), 2);
+    crate::chatgpt::Accounts::new(t.engine.ctx.clone())
+        .lock_live()
+        .unwrap();
+}
+
+#[test]
+fn account_rollback_keeps_tokens_rotated_while_the_account_was_inactive() {
+    for crash in [false, true] {
+        let t = T::new();
+        let login = |id: &str, token: &str| {
+            SecretBytes::new(serde_json::to_vec(&serde_json::json!({
+                "auth_mode":"chatgpt",
+                "tokens":{"account_id":id,"id_token":{"email":format!("{id}@example.test"),"sub":id},
+                    "access_token":token,"refresh_token":format!("refresh-{token}")}
+            })).unwrap())
+        };
+        let a = login("a", "old-a");
+        let refreshed = login("a", "rotated-a");
+        let b = login("b", "current-b");
+        let config = format!("openai_base_url = \"https://relay.example.test/v1/\"\n{CONFIG}");
+        std::fs::write(t.root.join("config.toml"), &config).unwrap();
+        std::fs::write(t.root.join("auth.json"), a.expose()).unwrap();
+        let accounts = crate::chatgpt::Accounts::new(t.engine.ctx.clone());
+        let account_a = accounts.put(&a, Timestamp(1)).unwrap();
+        let account_b = accounts.put(&b, Timestamp(1)).unwrap();
+        let desired = ResolvedProfile {
+            profile_id: Some(ProfileId::new("official")),
+            site_id: Some(SiteId::new("official")),
+            line_id: None,
+            model_catalog: None,
+            model: Default::default(),
+            key_resolutions: Default::default(),
+            settings: Default::default(),
+            mode: ResolvedMode::ChatGptAccount {
+                account_id: account_b.id,
+                auth_json: b,
+            },
+        };
+        let plan = t.engine.plan_sync(&t.root, &desired).unwrap();
+        let report = t.engine.apply_sync(&plan).unwrap();
+        accounts.save_refresh(&a, &refreshed, Timestamp(2)).unwrap();
+        if crash {
+            CRASH.with(|hook| *hook.borrow_mut() = Some(Crash::FirstPublish));
+            let rollback = t.engine.rollback_sync(&report);
+            CRASH.with(|hook| *hook.borrow_mut() = None);
+            assert!(rollback.is_err());
+            // Recovery must use the refreshed encrypted source if temp files vanish.
+            for name in t.temps() {
+                std::fs::remove_file(t.root.join(name)).unwrap();
+            }
+            t.engine.recover_sync(&t.root).unwrap();
+        } else {
+            t.engine.rollback_sync(&report).unwrap();
+        }
+        assert_eq!(t.auth().as_bytes(), refreshed.expose());
+        assert_eq!(t.config(), config);
+        assert!(!t.engine.pending(&t.root).unwrap());
+        std::fs::remove_file(t.root.join("auth.json")).unwrap();
+        assert_eq!(accounts.load(&account_a.id).unwrap(), refreshed);
+    }
+}
+
 struct T {
     _tmp: tempfile::TempDir,
     engine: TomlConfigEngine,

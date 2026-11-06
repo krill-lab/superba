@@ -1037,6 +1037,28 @@ impl SwitchDecider for SafeDefaults {
 /// switch flow: plan -> (UI countdown / confirmation) -> execute -> verify.
 #[async_trait]
 pub trait SwitchService: Send + Sync {
+    /// Managed official accounts; views contain no credentials.
+    async fn chatgpt_accounts(&self) -> Result<Vec<crate::ChatGptAccount>> {
+        Err(Error::not_implemented("ChatGPT accounts"))
+    }
+    /// Save the current official login (or Superba's saved official login).
+    async fn chatgpt_import_current(&self) -> Result<crate::ChatGptAccount> {
+        Err(Error::not_implemented("save ChatGPT login"))
+    }
+    /// Add a login in an isolated Codex home, reporting the browser URL.
+    async fn chatgpt_add_account(
+        &self,
+        events: crate::ChatGptLoginEvents,
+    ) -> Result<crate::ChatGptAccount> {
+        let _ = events;
+        Err(Error::not_implemented("add ChatGPT account"))
+    }
+    /// Read one account's subscription limits using Codex's own auth client.
+    async fn chatgpt_quota(&self, id: &str) -> Result<crate::ChatGptQuota> {
+        let _ = id;
+        Err(Error::not_implemented("ChatGPT limits"))
+    }
+
     /// Active data directory and its fixed locator (does not scan session files).
     async fn data_where(&self) -> Result<crate::data::DataLocation> {
         Err(Error::not_implemented("data location"))

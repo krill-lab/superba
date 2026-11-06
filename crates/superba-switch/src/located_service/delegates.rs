@@ -9,6 +9,23 @@ use superba_core::*;
 
 #[async_trait]
 impl SwitchService for LocatedService {
+    async fn chatgpt_accounts(&self) -> Result<Vec<ChatGptAccount>> {
+        let (service, _lock) = self.read().await?;
+        service.chatgpt_accounts().await
+    }
+    async fn chatgpt_import_current(&self) -> Result<ChatGptAccount> {
+        let (service, _lock) = self.read().await?;
+        service.chatgpt_import_current().await
+    }
+    async fn chatgpt_add_account(&self, events: ChatGptLoginEvents) -> Result<ChatGptAccount> {
+        let (service, _lock) = self.read().await?;
+        service.chatgpt_add_account(events).await
+    }
+    async fn chatgpt_quota(&self, id: &str) -> Result<ChatGptQuota> {
+        let (service, _lock) = self.read().await?;
+        service.chatgpt_quota(id).await
+    }
+
     async fn overview(&self) -> Result<Overview> {
         let (service, _lock) = self.read().await?;
         service.overview().await

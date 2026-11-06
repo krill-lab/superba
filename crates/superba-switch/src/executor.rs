@@ -2071,6 +2071,22 @@ impl Run<'_> {
             if live == &f.after_sha256 {
                 continue;
             }
+            // An in-flight quota helper can rotate the selected login after
+            // apply. Verify its exact identity rather than replaying old tokens
+            // or treating that legitimate refresh as an account-switch failure.
+            if f.kind == CodexFileKind::AuthJson
+                && let Some(superba_core::ResolvedMode::ChatGptAccount { account_id, .. }) = self
+                    .plan
+                    .config
+                    .as_ref()
+                    .and_then(|p| p.desired.as_ref())
+                    .map(|d| &d.mode)
+                && let Ok(Some(auth)) = self.sw.live_chatgpt_auth().await
+                && superba_config::authjson::login_info(auth.expose())
+                    .is_some_and(|info| &info.identity == account_id)
+            {
+                continue;
+            }
             // The desktop app writes its own keys to config.toml at any time
             // (`[desktop]` settings, bundled `[mcp_servers.*]`), also right after a
             // restart (seen in the e2e runs). Superba owns only its keys there: the
