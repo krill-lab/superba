@@ -191,6 +191,44 @@ impl DesktopAppController {
         self
     }
 
+    /// Retry a denied WindowsApps probe using a byte-identical copy that the
+    /// app has already relocated. Do not change the recorded app install or pin
+    /// an unrelated CLI; only this isolated model query uses the copy.
+    #[cfg(windows)]
+    async fn relocated_debug_models(
+        &self,
+        binary: &Path,
+        catalog: Option<&Path>,
+        binary_sha: &str,
+        original_error: Error,
+    ) -> Result<String> {
+        let Some(local) = self.ctx.env.var_os("LOCALAPPDATA") else {
+            return Err(original_error);
+        };
+        let (bin, local, sha) = (
+            binary.to_path_buf(),
+            PathBuf::from(local),
+            binary_sha.to_owned(),
+        );
+        let caches = self.caches.clone();
+        let copies = tokio::task::spawn_blocking(move || {
+            codexbin::relocated_codex_copies(&bin, &local, &sha, &caches)
+        })
+        .await
+        .map_err(blocking_err)?;
+        for copy in copies {
+            tracing::debug!(original = %binary.display(), relocated = %copy.display(),
+                "retrying a denied WindowsApps model query with an identical copy");
+            match codexbin::debug_models(&copy, catalog, codexbin::DEBUG_MODELS_TIMEOUT).await {
+                // A second copy may be runnable. A process that starts but
+                // refuses the catalog must report that failure, not fall back.
+                Err(Error::Io { ref path, .. }) if path == &copy => continue,
+                result => return result,
+            }
+        }
+        Err(original_error)
+    }
+
     /// The context this controller was created with.
     pub fn context(&self) -> &LocalContext {
         &self.ctx
@@ -1185,7 +1223,16 @@ impl AppController for DesktopAppController {
         if let Some(out) = self.caches.debug_models(&key) {
             return Ok(out);
         }
-        let out = codexbin::debug_models(binary, catalog, codexbin::DEBUG_MODELS_TIMEOUT).await?;
+        let result = codexbin::debug_models(binary, catalog, codexbin::DEBUG_MODELS_TIMEOUT).await;
+        #[cfg(windows)]
+        let result = match result {
+            Err(error) if codexbin::packaged_spawn_denied(binary, &error) => {
+                self.relocated_debug_models(binary, catalog, &key.0, error)
+                    .await
+            }
+            result => result,
+        };
+        let out = result?;
         self.caches.put_debug_models(key, out.clone());
         Ok(out)
     }

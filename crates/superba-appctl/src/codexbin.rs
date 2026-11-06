@@ -89,11 +89,9 @@ pub async fn debug_models(
             Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && attempt < 10 => {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
-            Err(e) => {
-                return Err(Error::Process {
-                    message: format!("cannot run {}: {e}", binary.display()),
-                });
-            }
+            // Keep the spawn failure structured: the controller may retry a
+            // WindowsApps executable through its identical relocated copy.
+            Err(e) => return Err(Error::io(binary, &e)),
         }
     };
     let mut stdout = child.stdout.take();
@@ -161,6 +159,46 @@ pub async fn debug_models(
         message: "output is not UTF-8".into(),
     })
 }
+
+/// Only an actual spawn denial of the packaged executable permits relocation.
+/// A catalog parse error, a timeout or a denied scratch directory must not
+/// silently select another executable.
+#[cfg(any(windows, test))]
+pub(crate) fn packaged_spawn_denied(binary: &Path, error: &Error) -> bool {
+    crate::appx::in_windows_apps(binary)
+        && matches!(error, Error::Io { path, kind, .. }
+            if path == binary && kind == "PermissionDenied")
+}
+
+/// Copies the Windows app has already extracted, verified against the packaged
+/// executable's content hash. Equal size or version alone is not enough: the
+/// exact binary supplies the model schema and preflights the generated catalog.
+/// Called on a blocking thread; hashes use the controller's existing cache.
+#[cfg(any(windows, test))]
+pub(crate) fn relocated_codex_copies(
+    binary: &Path,
+    local_app_data: &Path,
+    expected_sha: &str,
+    caches: &Caches,
+) -> Vec<PathBuf> {
+    if !crate::appx::in_windows_apps(binary) {
+        return Vec::new();
+    }
+    let Ok(original) = fs::metadata(binary) else {
+        return Vec::new();
+    };
+    crate::appx::relocated_codex_candidates(local_app_data)
+        .into_iter()
+        .filter(|copy| {
+            fs::metadata(copy).is_ok_and(|m| m.len() == original.len())
+                && caches.binary_sha(copy).is_ok_and(|sha| sha == expected_sha)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+#[path = "../tests/common/relocated_models.rs"]
+mod relocated_models_tests;
 
 /// Identity of a file for caches: canonical path, size and modification time.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
