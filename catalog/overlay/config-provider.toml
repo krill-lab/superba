@@ -255,7 +255,7 @@ zh_basis = "e6f532a8a348208a"
 
 ["config:model_providers.<name>.capabilities.cyber_access_programs"]
 en = "Whether the provider accepts explicit `access_programs.cyber` selections. Defaults to enabled for the built-in OpenAI provider and disabled otherwise. This does not grant program access or change authentication."
-en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.167.0: codex-rs/core/config.schema.json"
 en_hash = "272b1fa5b1a329a8"
 zh_name = "网络安全计划支持"
 zh = "依据源码推断，声明该模型供应商是否支持显式选择并转发 `access_programs.cyber`；未设置时仅供应商 ID 为 `openai` 才默认支持。它不授予计划资格，也不改变认证方式；API 密钥会话还需启用 `features.api_key_cyber_access_programs`。"
@@ -341,9 +341,9 @@ zh = "直接写在配置文件里、用于 `Authorization: Bearer <token>` 请�
 zh_basis = "a596e9a5158615bd"
 
 ["config:model_providers.<name>.gateway_oauth"]
-en = "Secondary OAuth credentials required by the provider's gateway."
-en_source = "openai/codex rust-v0.156.0: codex-rs/core/config.schema.json"
-en_hash = "d4b95f28e4219114"
+en = "Gateway access token from OAuth or a credential export command."
+en_source = "openai/codex rust-v0.169.0-alpha.2: codex-rs/core/config.schema.json"
+en_hash = "5f2f603c0e989f8a"
 zh_name = "网关 OAuth 凭据"
 zh = "模型供应商前置网关要求的第二套 OAuth 凭据，与主认证一起发送。Codex 通过浏览器授权码流程（PKCE）登录并自动刷新令牌，再按 `delivery` 以请求头或 Cookie 附加；必须设置 `base_url`，不能与 AWS 认证同时使用。"
 zh_basis = "d4b95f28e4219114"
@@ -362,9 +362,33 @@ zh_name = "网关客户端 ID"
 zh = "在网关的 OAuth 服务中注册的客户端 ID，不能为空。"
 zh_basis = ""
 
+["config:model_providers.<name>.gateway_oauth.credential_export"]
+en = "Command that prints a gateway access token."
+en_source = "openai/codex rust-v0.169.0-alpha.2: codex-rs/core/config.schema.json"
+en_hash = "1cfe348038fa7773"
+zh = ""
+
+["config:model_providers.<name>.gateway_oauth.credential_export.args"]
+en = "Arguments passed to the credential export command."
+en_source = "openai/codex rust-v0.169.0-alpha.2: codex-rs/core/config.schema.json"
+en_hash = "3a4a69643a7edcb5"
+zh = ""
+
+["config:model_providers.<name>.gateway_oauth.credential_export.command"]
+en = "Executable to invoke directly, without a shell."
+en_source = "openai/codex rust-v0.169.0-alpha.2: codex-rs/core/config.schema.json"
+en_hash = "c1830668c666e6c6"
+zh = ""
+
+["config:model_providers.<name>.gateway_oauth.credential_export.timeout_ms"]
+en = "Maximum time to wait for the credential export command to complete."
+en_source = "openai/codex rust-v0.169.0-alpha.2: codex-rs/core/config.schema.json"
+en_hash = "c5aed7271a748a56"
+zh = ""
+
 ["config:model_providers.<name>.gateway_oauth.credentials_store"]
 en = "Where Codex stores this gateway's OAuth credentials. Defaults to the keyring-backed store."
-en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.167.0: codex-rs/core/config.schema.json"
 en_hash = "804173f17c81ec25"
 zh_name = "网关凭据存储方式"
 zh = "依据源码推断，选择网关 OAuth 凭据的本地保存方式，默认 `keyring`：用操作系统钥匙串保存的口令加密凭据文件。`file` 改为在 `$CODEX_HOME/secrets/gateway_oauth.json` 中明文保存，独立于主账号凭据存储设置。"
@@ -372,7 +396,7 @@ zh_basis = "804173f17c81ec25"
 
 ["config:model_providers.<name>.gateway_oauth.credentials_store=file"]
 en = "Store credentials in plaintext in `$CODEX_HOME/secrets/gateway_oauth.json`."
-en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.167.0: codex-rs/core/config.schema.json"
 en_hash = "f2f76c0f1759a7f1"
 zh_name = "网关明文凭据文件"
 zh = "依据源码推断，将网关 OAuth 令牌按凭据标识保存在 `$CODEX_HOME/secrets/gateway_oauth.json` 中，读取和更新直接使用此文件。文件内容不加密。"
@@ -380,7 +404,7 @@ zh_basis = "f2f76c0f1759a7f1"
 
 ["config:model_providers.<name>.gateway_oauth.credentials_store=keyring"]
 en = "Encrypt credentials using a passphrase kept in the OS keyring."
-en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.167.0: codex-rs/core/config.schema.json"
 en_hash = "76be041c2f4b17c4"
 zh_name = "网关加密凭据文件"
 zh = "依据源码推断，将网关 OAuth 凭据加密保存在 `$CODEX_HOME/secrets/gateway_oauth.age`，加密口令单独存入操作系统钥匙串。这是默认方式；钥匙串访问失败会报错，不会自动改写明文文件。"
@@ -414,6 +438,12 @@ en_hash = ""
 zh_name = "认证方案前缀"
 zh = '仅 `kind = "header"` 时使用：写在令牌前面的认证方案，默认 `Bearer`，即发送 `Bearer <token>`。'
 zh_basis = ""
+
+["config:model_providers.<name>.gateway_oauth.device_authorization_url"]
+en = "Optional device endpoint used when the terminal cannot open a browser for gateway sign-in."
+en_source = "openai/codex rust-v0.169.0-alpha.2: codex-rs/core/config.schema.json"
+en_hash = "c8f6ec94739b236b"
+zh = ""
 
 ["config:model_providers.<name>.gateway_oauth.redirect_port"]
 en = ""
