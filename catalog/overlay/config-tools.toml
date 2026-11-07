@@ -395,7 +395,7 @@ zh_basis = "59ee1c2298648b51"
 
 ["config:tools.client_search_provider"]
 en = "Client provider preference when the model does not select a provider."
-en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/core/config.schema.json"
+en_source = "openai/codex rust-v0.169.0-alpha.2: codex-rs/core/config.schema.json"
 en_hash = "201e13f7ec46e3a9"
 zh_name = "客户端搜索提供方式"
 zh = "依据源码推断，当模型未指定搜索提供方式时，使用最高优先级配置中的客户端偏好：`standalone` 选择独立搜索，`search_mcp` 使用客户端提供的 MCP 搜索。模型自己的选择优先；受管理配置强制的原生搜索也优先于本项。"

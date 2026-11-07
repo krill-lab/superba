@@ -702,6 +702,11 @@ zh_name = "增量工具定义"
 zh = "在世界状态中跟踪顶层工具定义，工具变化时只向模型发送增量的上下文更新，而不是整份工具列表。只对使用 Responses Lite 格式的模型生效。0.164 起为稳定功能并默认开启。"
 zh_basis = ""
 
+["feature:incremental_tools_legacy"]
+en = ""
+en_hash = ""
+zh = ""
+
 ["feature:instant_interrupt"]
 en = ""
 en_hash = ""
@@ -1033,7 +1038,7 @@ zh_basis = ""
 ["feature:respect_system_proxy"]
 en_name = "System proxy"
 en = "Use macOS or Windows system proxy settings for Codex requests."
-en_source = "openai/codex rust-v0.168.0-alpha.4: codex-rs/features/src/lib.rs (experimental menu text)"
+en_source = "openai/codex rust-v0.167.0: codex-rs/features/src/lib.rs (experimental menu text)"
 en_hash = "e03822c873fa5d7d"
 zh_name = "遵循系统代理"
 zh = "依据源码推断，让 Codex 网络请求优先使用 macOS 或 Windows 的系统代理决定，包括系统明确要求的直连；只有无法取得系统决定时才回退到环境变量代理，再无代理则直连。其他系统使用环境变量回退；关闭时采用网络库默认代理行为。实验性，默认关闭。"
