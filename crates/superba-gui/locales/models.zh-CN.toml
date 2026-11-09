@@ -2,6 +2,11 @@
 # models.en.toml with the same {placeholders} (tests/i18n_tests.rs).
 
 [models]
+catalog_stale.title = "Codex 的模型目录已过期：新增 {new} 个，{removed} 个已不再提供"
+catalog_stale.missing = "尚未进入 Codex 目录：{models}"
+catalog_stale.removed = "供应商已不再列出：{models}"
+catalog_stale.tip = "重新应用 {provider}：按供应商当前的模型列表重建 Codex 读取的目录，Codex 热重启。不点应用就不会改动配置。"
+catalog_stale.pending_tip = "请先保存或丢弃当前改动；保存时会连同新列表一起应用。"
 catalog.builtin = "内置目录"
 catalog.codex = "Codex 目录"
 catalog.standard_known = "标准列表（已知模型）"
@@ -166,6 +171,7 @@ same_tip = "按 {model} 发给上游。点击设置其他名称。"
 edit_tip = "上游名称：{name}。点击编辑。"
 
 [models.state]
+missing_catalog_tip = "此模型尚不在 Codex 的模型目录中，立即应用后 Codex 才能在模型选择器中显示它。"
 applied = "已应用"
 applied_tip = "Codex 正在使用这些值。"
 next_switch = "切换后生效"

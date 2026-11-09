@@ -675,6 +675,10 @@ pub async fn applied_models(home: &superba_core::CodexHome) -> AppliedModels {
     };
     out.context_window = count(superba_core::codex::config_keys::MODEL_CONTEXT_WINDOW);
     out.auto_compact = count(superba_core::codex::config_keys::MODEL_AUTO_COMPACT_TOKEN_LIMIT);
+    out.model = doc
+        .get_str(superba_core::codex::config_keys::MODEL)
+        .map(|m| m.trim().to_owned())
+        .filter(|m| !m.is_empty());
     let Some(path) = doc
         .get_str(superba_core::codex::config_keys::MODEL_CATALOG_JSON)
         .filter(|p| !p.trim().is_empty())

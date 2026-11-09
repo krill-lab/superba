@@ -388,10 +388,11 @@ async fn applied_values_are_read_from_config_toml_and_the_file_it_names() {
     // A relative path resolves against the Codex home, as Codex does.
     std::fs::write(
         home.config_toml(),
-        "model_catalog_json = \"superba/models-0a1b2c3d.json\"\nmodel_context_window = 400_000\nmodel_auto_compact_token_limit = 300000\n",
+        "model = \"gpt-5.5\"\nmodel_catalog_json = \"superba/models-0a1b2c3d.json\"\nmodel_context_window = 400_000\nmodel_auto_compact_token_limit = 300000\n",
     )
     .unwrap();
     let applied = applied_models(&home).await;
+    assert_eq!(applied.model.as_deref(), Some("gpt-5.5"));
     assert_eq!(applied.context_window, Some(400_000));
     assert_eq!(applied.auto_compact, Some(300_000));
     assert_eq!(
@@ -441,4 +442,144 @@ async fn hidden_override_reaches_catalog_and_unhiding_drops_an_unneeded_catalog(
     let plan = switch(&sw).await;
     write_config(&w, &plan);
     assert!(applied_models(&w.ctx.codex_home()).await.catalog.is_none());
+}
+
+/// Krill's own list (Codex-native entries) from the bundled dump: astra, and
+/// with `terra` the GPT-6.1 Terra a later fetch adds. Terra carries the fields
+/// newer upstream entries have (a client version above this Codex, plans);
+/// Codex filters a catalog only on `visibility` and `supported_in_api`.
+fn krill_native(terra: bool) -> superba_core::ModelList {
+    let bundled: serde_json::Value = serde_json::from_str(BUNDLED).unwrap();
+    let astra = bundled["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["slug"] == "gpt-6-astra")
+        .unwrap()
+        .clone();
+    let mut entries = vec![astra.clone()];
+    if terra {
+        let mut t = astra;
+        t["slug"] = "gpt-6.1-terra".into();
+        t["display_name"] = "GPT-6.1 Terra".into();
+        t["minimal_client_version"] = serde_json::json!([0, 999, 0]);
+        t["available_in_plans"] = serde_json::json!(["pro", "team"]);
+        entries.push(t);
+    }
+    superba_core::ModelList {
+        source: superba_core::ModelListSource::Upstream {
+            path: "/backend-api/codex/models?client_version=0.162.0".into(),
+            fetched_at: superba_core::Timestamp(0),
+            etag: None,
+        },
+        models: entries
+            .iter()
+            .filter_map(superba_switch::models::spec_from_entry)
+            .collect(),
+        fallback_reason: None,
+        sources: Vec::new(),
+    }
+}
+
+/// GH#26 / user bug 132: a custom window makes the switch write a static
+/// catalog file; a model the provider lists later is reported as missing from
+/// it (nothing is rewritten on its own), and the next apply puts it in with its
+/// upstream entry intact, visible in Codex's picker.
+#[tokio::test]
+async fn a_model_the_provider_adds_later_reaches_the_catalog_at_the_next_apply() {
+    let w = World::new();
+    set_profile(&w, api_key);
+    *w.prober.model_list.lock().unwrap() = Some(Ok(krill_native(false)));
+    let sw = switcher(&w);
+    sw.save_models(ModelsEdit {
+        set: [("gpt-6-astra".to_owned(), custom(Some(400_000), None))].into(),
+        ..ModelsEdit::default()
+    })
+    .await
+    .unwrap();
+    let plan = switch(&sw).await;
+    write_config(&w, &plan);
+    let first = plan
+        .config
+        .as_ref()
+        .and_then(|c| c.desired.as_ref())
+        .and_then(|d| d.model_catalog.clone())
+        .expect("a catalog file");
+    let v = view(&sw).await;
+    assert!(v.catalog_changes().is_empty(), "{:?}", v.catalog_changes());
+
+    // The provider now lists Terra: the page sees it, Codex's file does not.
+    *w.prober.model_list.lock().unwrap() = Some(Ok(krill_native(true)));
+    let v = view(&sw).await;
+    assert!(v.missing_from_catalog(spec(&v, "gpt-6.1-terra")));
+    assert!(!v.missing_from_catalog(spec(&v, "gpt-6-astra")));
+    assert_eq!(v.catalog_changes().missing, ["gpt-6.1-terra"]);
+    assert_eq!(
+        v.applied.as_ref().unwrap().catalog.as_deref(),
+        Some(first.as_path()),
+        "reading the list rewrites nothing"
+    );
+
+    // "Apply now" is a switch to the applied profile: a new file with Terra.
+    let plan = switch(&sw).await;
+    write_config(&w, &plan);
+    let path = plan
+        .config
+        .as_ref()
+        .and_then(|c| c.desired.as_ref())
+        .and_then(|d| d.model_catalog.clone())
+        .unwrap();
+    assert_ne!(path, first);
+    let file: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let terra = file["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["slug"] == "gpt-6.1-terra")
+        .expect("Terra in the catalog");
+    assert_eq!(terra["visibility"], "list");
+    assert_eq!(terra["supported_in_api"], true);
+    assert_eq!(terra["display_name"], "GPT-6.1 Terra");
+    assert_eq!(
+        terra["minimal_client_version"],
+        serde_json::json!([0, 999, 0])
+    );
+    assert_eq!(
+        terra["available_in_plans"],
+        serde_json::json!(["pro", "team"])
+    );
+    let v = view(&sw).await;
+    assert!(v.catalog_changes().is_empty(), "{:?}", v.catalog_changes());
+    let applied = v.applied.unwrap();
+    assert!(!applied.models["gpt-6.1-terra"].hidden);
+    assert_eq!(applied.models["gpt-6-astra"].context_window, Some(400_000));
+
+    // Terra leaves the provider's list again: reported as no longer listed.
+    *w.prober.model_list.lock().unwrap() = Some(Ok(krill_native(false)));
+    let v = view(&sw).await;
+    assert_eq!(v.catalog_changes().removed, ["gpt-6.1-terra"]);
+}
+
+/// The provider's own list without any per-model value: no catalog file, so
+/// Codex reads the provider's list itself and nothing can be missing.
+#[tokio::test]
+async fn without_per_model_values_codex_reads_the_providers_list_itself() {
+    let w = World::new();
+    set_profile(&w, api_key);
+    *w.prober.model_list.lock().unwrap() = Some(Ok(krill_native(false)));
+    let sw = switcher(&w);
+    let plan = switch(&sw).await;
+    write_config(&w, &plan);
+    assert_eq!(
+        plan.config
+            .as_ref()
+            .and_then(|c| c.desired.as_ref())
+            .and_then(|d| d.model_catalog.clone()),
+        None
+    );
+    *w.prober.model_list.lock().unwrap() = Some(Ok(krill_native(true)));
+    let v = view(&sw).await;
+    assert!(v.applied.as_ref().unwrap().catalog.is_none());
+    assert!(!v.missing_from_catalog(spec(&v, "gpt-6.1-terra")));
+    assert!(v.catalog_changes().is_empty());
 }

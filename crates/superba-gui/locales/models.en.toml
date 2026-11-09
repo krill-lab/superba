@@ -3,6 +3,11 @@
 # defined in another area file (tests/i18n_tests.rs).
 
 [models]
+catalog_stale.title = "Codex's model list is out of date: {new} new, {removed} no longer listed"
+catalog_stale.missing = "Not in Codex's catalog yet: {models}"
+catalog_stale.removed = "No longer listed by the provider: {models}"
+catalog_stale.tip = "Apply {provider} again: the catalog Codex reads is rebuilt from the provider's current list and Codex restarts (hot). Nothing changes until you apply."
+catalog_stale.pending_tip = "Save or discard your edits first; saving applies them together with the new list."
 catalog.builtin = "Bundled"
 catalog.codex = "Codex catalog"
 catalog.standard_known = "Standard list (known model)"
@@ -167,6 +172,7 @@ same_tip = "Sent upstream as {model}. Click to set another name."
 edit_tip = "Upstream name: {name}. Click to edit."
 
 [models.state]
+missing_catalog_tip = "This model is missing from Codex's model catalog. Apply now so Codex can offer it in the model picker."
 applied = "Applied"
 applied_tip = "Codex uses these values now."
 next_switch = "Next switch"

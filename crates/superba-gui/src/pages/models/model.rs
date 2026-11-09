@@ -637,9 +637,9 @@ pub fn row_state(saved: &Saved<'_>, pending: &Pending, slug: &str, active: bool)
                 && differs(m)
         })
     } else {
-        saved
-            .spec(slug)
-            .is_some_and(|m| differs(m) || hiding_differs(saved, m))
+        saved.spec(slug).is_some_and(|m| {
+            differs(m) || hiding_differs(saved, m) || saved.view.missing_from_catalog(m)
+        })
     };
     match (pending_apply, custom) {
         (true, _) => RowState::NotApplied,

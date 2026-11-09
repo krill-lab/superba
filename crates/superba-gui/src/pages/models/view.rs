@@ -106,6 +106,7 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     // What keeps the providers' models out of Codex, next to the mode
     // (user bug 106).
     super::catalog::guidance_row(ui, cx, state, &view, out);
+    catalog_changes_row(ui, cx, state, &saved, out);
     let body = ui.available_rect_before_wrap();
     // A narrow page (the 960 px window) puts the list source (the router's
     // filters) on a row of its own above the default model / effort / speed
@@ -154,6 +155,80 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         price_dialog(ui.ctx(), cx, state, &saved);
     }
     super::prices::tools_dialog(ui.ctx(), cx, &mut state.price_tools, state.prices.as_ref());
+}
+
+/// The provider's list changed since Codex's static catalog file was written
+/// (user bug 132): a new model Codex cannot offer, or entries the provider no
+/// longer lists. Only a notice with "Apply now"; the configuration is never
+/// rewritten on its own.
+fn catalog_changes_row(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &State,
+    saved: &Saved<'_>,
+    out: &mut Vec<Action>,
+) {
+    let view = saved.view;
+    if !view_applied(cx, view) || view.read_only {
+        return;
+    }
+    let changes = view.catalog_changes();
+    if changes.is_empty() {
+        return;
+    }
+    let provider = super::provider_name(cx, &view.profile_id);
+    let mut detail = Vec::new();
+    if !changes.missing.is_empty() {
+        detail.push(cx.tr.f(
+            "models.catalog_stale.missing",
+            &[("models", &changes.missing.join(", "))],
+        ));
+    }
+    if !changes.removed.is_empty() {
+        detail.push(cx.tr.f(
+            "models.catalog_stale.removed",
+            &[("models", &changes.removed.join(", "))],
+        ));
+    }
+    let ready = state.pending.is_empty();
+    let tip = if ready {
+        cx.tr
+            .f("models.catalog_stale.tip", &[("provider", &provider)])
+    } else {
+        cx.tr.t("models.catalog_stale.pending_tip")
+    };
+    let title = cx.tr.f(
+        "models.catalog_stale.title",
+        &[
+            ("new", &changes.missing.len()),
+            ("removed", &changes.removed.len()),
+        ],
+    );
+    let detail = detail.join(" · ");
+    let label = cx.tr.t("models.apply_now");
+    let (_, row) = ui.allocate_space(vec2(ui.available_width(), super::catalog::GUIDANCE_H));
+    let enabled = ready && !cx.busy && state.saving.is_none();
+    let clicked = ui
+        .add_enabled_ui(enabled, |ui| {
+            crate::design::widgets::AttentionRow {
+                id: 132,
+                title: &title,
+                detail: Some(&detail),
+                label: &label,
+                tip: &tip,
+                icon: Icon::Warning,
+                color: cx.pal.status(Status::Warn),
+            }
+            .show_at(ui, row)
+        })
+        .inner;
+    if clicked && enabled {
+        out.push(Action::Switch {
+            profile: view.profile_id.clone(),
+            line: None,
+            auth: None,
+        });
+    }
 }
 
 /// Page header: provider picker, search and refresh on the right.
@@ -1515,8 +1590,16 @@ fn state_badge(
         S::NotApplied => (
             "models.state.not_applied",
             cx.pal.link,
-            cx.tr
-                .f("models.state.not_applied_tip", &[("provider", &provider())]),
+            if rc
+                .saved
+                .spec(slug)
+                .is_some_and(|m| rc.saved.view.missing_from_catalog(m))
+            {
+                cx.tr.t("models.state.missing_catalog_tip")
+            } else {
+                cx.tr
+                    .f("models.state.not_applied_tip", &[("provider", &provider())])
+            },
         ),
         S::Applied => (
             "models.state.applied",

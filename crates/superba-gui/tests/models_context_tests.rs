@@ -697,3 +697,73 @@ async fn upstream_hidden_rows_cannot_be_unhidden_and_unsupported_profiles_offer_
     let texts = page.right_click_row(&slug);
     assert!(!has(&texts, "Hide") && !has(&texts, "Unhide"));
 }
+
+/// GH#26 / user bug 132: Codex reads a catalog file written before the
+/// provider listed a model. The row says "Not applied" (why: in its tooltip),
+/// it counts towards "apply now", and a notice above the list offers to
+/// rebuild the file; nothing is applied without a click, and not over edits
+/// that are not saved.
+#[tokio::test]
+async fn a_model_missing_from_codex_catalog_waits_for_apply_now() {
+    let mut page = Page::new(false).await;
+    page.fake
+        .save_models(ModelsEdit {
+            profile_id: Some(ProfileId::new("krill")),
+            set: [(
+                "gpt-5.5".to_owned(),
+                ModelOverride {
+                    context_window: Some(200_000),
+                    ..ModelOverride::default()
+                },
+            )]
+            .into(),
+            ..ModelsEdit::default()
+        })
+        .await
+        .unwrap();
+    page.fake.apply_models(&ProfileId::new("krill"));
+    page.command("refresh");
+    page.wait(|p, _| {
+        p.state
+            .view()
+            .and_then(|v| v.applied.as_ref())
+            .is_some_and(|a| a.catalog.is_some())
+    });
+    assert!(!has(&page.settle(), "Apply now"));
+    // The provider now lists gpt-6-luna, the file Codex reads does not.
+    let mut view = page.state.view().unwrap().clone();
+    view.applied.as_mut().unwrap().models.remove("gpt-6-luna");
+    page.state.set_view(view.clone());
+    let texts = page.settle();
+    let notice = "Codex's model list is out of date: 1 new, 0 no longer listed";
+    assert!(has(&texts, notice), "{}", all(&texts));
+    assert!(
+        has(&texts, "Not in Codex's catalog yet: gpt-6-luna"),
+        "{}",
+        all(&texts)
+    );
+    assert!(has(&texts, "Saved, not used by Codex yet: 1"));
+    assert!(page.row("gpt-6-luna").contains(&"Not applied".into()));
+    assert!(page.row("gpt-6-sol").iter().all(|t| t != "Not applied"));
+    assert!(page.take_actions().is_empty(), "nothing applied on its own");
+    // The notice's button (the topmost "Apply now") applies the provider.
+    let top = |texts: &Texts| {
+        texts
+            .iter()
+            .filter(|(t, _)| t == "Apply now")
+            .map(|(_, r)| *r)
+            .min_by(|a, b| a.min.y.total_cmp(&b.min.y))
+            .unwrap()
+    };
+    let notice_y = find(&texts, notice).unwrap().center().y;
+    let button = top(&texts);
+    assert!((button.center().y - notice_y).abs() < 30.0);
+    page.click(button.center());
+    assert_eq!(switches(&page.take_actions()), 1);
+    // Unsaved edits first: the notice's button waits for them.
+    page.enter("gpt-5.5", CONTEXT, "180k");
+    let texts = page.settle();
+    assert!(has(&texts, notice));
+    page.click(top(&texts).center());
+    assert_eq!(switches(&page.take_actions()), 0);
+}

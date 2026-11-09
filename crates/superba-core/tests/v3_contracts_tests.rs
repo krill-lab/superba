@@ -434,6 +434,7 @@ fn models_view_edit_and_report_round_trip() {
         notes: vec![Notice::warning(LocalizedText::new("a.b", "frozen"))],
         per_model: true,
         applied: Some(AppliedModels {
+            model: Some("gpt-6-astra".into()),
             context_window: None,
             auto_compact: Some(300_000),
             catalog: Some("/home/u/.codex/superba/models-0a1b2c3d.json".into()),
