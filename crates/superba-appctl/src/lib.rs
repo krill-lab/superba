@@ -30,6 +30,7 @@ pub mod daemon;
 pub mod install;
 pub mod launch;
 pub mod launcher;
+mod onboarding;
 pub mod osproc;
 pub mod owner;
 pub mod package;
@@ -703,8 +704,12 @@ impl AppController for DesktopAppController {
         let spawn_spec = spec.clone();
         let spawn_install = install.clone();
         let log = self.launch_log_path();
+        let state_home = app_codex_home.clone();
         // LaunchServices may take several seconds to expose the new main pid.
         let spawned = tokio::task::spawn_blocking(move || {
+            // After the running-instance check, before any platform starts the
+            // app (user bug 129). Never fails the launch; see `onboarding`.
+            onboarding::seed(&state_home);
             launch::spawn(&spawn_spec, &spawn_install, Some(&log))
         })
         .await
