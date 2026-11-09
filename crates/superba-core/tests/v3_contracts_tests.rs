@@ -440,6 +440,7 @@ fn models_view_edit_and_report_round_trip() {
             models: [(
                 "gpt-6-astra".to_owned(),
                 AppliedModel {
+                    hidden: false,
                     context_window: Some(400_000),
                     max_context_window: Some(872_000),
                     auto_compact: None,

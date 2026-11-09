@@ -96,6 +96,16 @@ impl Pending {
         }
     }
 
+    /// Change the user's visibility override, preserving the row's other edits.
+    pub fn set_hidden(&mut self, saved: &Saved<'_>, slug: &str, hidden: bool) {
+        if !saved.view.per_model || saved.view.read_only || saved.spec(slug).is_none() {
+            return;
+        }
+        let mut o = self.override_of(saved, slug);
+        o.hidden = hidden;
+        self.set_override(saved, slug, o);
+    }
+
     /// The picker mode after the pending edits.
     pub fn picker(&self, saved: &Saved<'_>) -> ModelPicker {
         self.picker.unwrap_or(saved.view.picker)
@@ -419,8 +429,12 @@ pub fn shown_price(
 
 /// Hidden from the picker by default (shown with "Show hidden models").
 pub fn hidden(spec: &ModelSpec, o: &ModelOverride) -> bool {
-    o.hidden
-        || !spec.supported_in_api
+    o.hidden || upstream_hidden(spec)
+}
+
+/// Hidden by the upstream list, independently of the user's override.
+pub fn upstream_hidden(spec: &ModelSpec) -> bool {
+    !spec.supported_in_api
         || !matches!(
             spec.visibility,
             ModelVisibility::List | ModelVisibility::Other
@@ -559,7 +573,7 @@ pub fn unused_custom(saved: &Saved<'_>, pending: &Pending, slug: &str) -> bool {
         return false;
     }
     let o = pending.override_of(saved, slug);
-    o.context_window.is_some() || o.auto_compact.is_some()
+    o.context_window.is_some() || o.auto_compact.is_some() || o.hidden
 }
 
 /// Where a row stands between editing and Codex.
@@ -596,7 +610,9 @@ pub fn row_state(saved: &Saved<'_>, pending: &Pending, slug: &str, active: bool)
         d.context_window.is_some() || d.auto_compact.is_some()
     } else {
         let o = saved.override_of(slug);
-        o.context_window.is_some() || o.auto_compact.is_some()
+        o.context_window.is_some()
+            || o.auto_compact.is_some()
+            || (saved.view.router_catalog.is_none() && o.hidden)
     };
     if !active {
         return if custom {
@@ -621,13 +637,35 @@ pub fn row_state(saved: &Saved<'_>, pending: &Pending, slug: &str, active: bool)
                 && differs(m)
         })
     } else {
-        saved.spec(slug).is_some_and(differs)
+        saved
+            .spec(slug)
+            .is_some_and(|m| differs(m) || hiding_differs(saved, m))
     };
     match (pending_apply, custom) {
         (true, _) => RowState::NotApplied,
         (false, true) => RowState::Applied,
         (false, false) => RowState::Quiet,
     }
+}
+
+/// The saved hiding of a direct provider's model differs from what Codex reads:
+/// its catalog entry when a file is in use, else the provider's own flags. A
+/// model the file lacks is not compared here (Codex cannot offer it at all).
+fn hiding_differs(saved: &Saved<'_>, m: &ModelSpec) -> bool {
+    if saved.view.router_catalog.is_some() || !saved.view.per_model {
+        return false;
+    }
+    let Some(a) = saved.view.applied.as_ref() else {
+        return false;
+    };
+    let applied = match &a.catalog {
+        None => upstream_hidden(m),
+        Some(_) => match a.models.get(&m.slug) {
+            Some(e) => e.hidden,
+            None => return false,
+        },
+    };
+    applied != hidden(m, &saved.override_of(&m.slug))
 }
 
 /// Saved rows Codex does not use yet on the applied provider.

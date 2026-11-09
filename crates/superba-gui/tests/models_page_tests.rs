@@ -818,3 +818,97 @@ async fn invalid_input_blocks_saving_and_names_the_limit() {
     assert_eq!(models_page::status(&state).pending, 1);
     let _ = ModelPicker::CodexDefault;
 }
+
+#[tokio::test]
+async fn direct_hiding_tracks_unsaved_saved_applied_and_unhidden_states() {
+    use model::RowState;
+    use superba_core::{AppliedModel, AppliedModels, ModelSpec, ModelVisibility};
+    let mut view = krill_view(&service()).await;
+    view.per_model = true;
+    view.list.models = vec![
+        ModelSpec::new("visible"),
+        ModelSpec {
+            visibility: ModelVisibility::Hide,
+            ..ModelSpec::new("upstream")
+        },
+    ];
+    view.overrides.clear();
+    view.applied = Some(AppliedModels::default());
+    let map = BTreeMap::new();
+    let prices = BTreeMap::new();
+    macro_rules! saved {
+        ($view:expr) => {
+            Saved {
+                view: $view,
+                model_map: &map,
+                prices: &prices,
+            }
+        };
+    }
+    let mut pending = Pending::default();
+    pending.set_hidden(&saved!(&view), "visible", true);
+    assert!(pending.edit(&saved!(&view)).set["visible"].hidden);
+    assert_eq!(
+        model::row_state(&saved!(&view), &pending, "visible", true),
+        RowState::Unsaved
+    );
+    assert_eq!(model::hidden_count(&saved!(&view), &pending), 2);
+    view.overrides = pending.edit(&saved!(&view)).set;
+    pending.rebase(&saved!(&view));
+    assert_eq!(
+        model::row_state(&saved!(&view), &pending, "visible", true),
+        RowState::NotApplied
+    );
+    assert_eq!(model::not_applied_count(&saved!(&view), &pending), 1);
+    assert_eq!(
+        model::row_state(&saved!(&view), &pending, "visible", false),
+        RowState::NextSwitch
+    );
+    view.applied = Some(AppliedModels {
+        catalog: Some("models.json".into()),
+        models: [
+            (
+                "visible".into(),
+                AppliedModel {
+                    hidden: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "upstream".into(),
+                AppliedModel {
+                    hidden: true,
+                    ..Default::default()
+                },
+            ),
+        ]
+        .into(),
+        ..Default::default()
+    });
+    assert_eq!(
+        model::row_state(&saved!(&view), &pending, "visible", true),
+        RowState::Applied
+    );
+    assert_eq!(model::not_applied_count(&saved!(&view), &pending), 0);
+    // A model the catalog file lacks is not compared by its hiding: Codex
+    // cannot offer it either way.
+    let mut lacking = view.clone();
+    lacking.applied.as_mut().unwrap().models.remove("visible");
+    assert_eq!(
+        model::row_state(&saved!(&lacking), &pending, "visible", true),
+        RowState::Applied
+    );
+    pending.set_hidden(&saved!(&view), "visible", false);
+    view.overrides.clear();
+    pending.rebase(&saved!(&view));
+    assert_eq!(
+        model::row_state(&saved!(&view), &pending, "visible", true),
+        RowState::NotApplied
+    );
+    assert_eq!(model::not_applied_count(&saved!(&view), &pending), 1);
+    assert_eq!(model::hidden_count(&saved!(&view), &pending), 1);
+    // Profiles without per-model support cannot acquire ineffective overrides.
+    view.per_model = false;
+    pending.set_hidden(&saved!(&view), "visible", true);
+    assert!(pending.is_empty());
+}

@@ -170,6 +170,7 @@ fn applied_values_come_from_the_catalog_file_and_the_all_models_keys() {
         models: BTreeMap::from([(
             "gpt-5.5".to_owned(),
             AppliedModel {
+                hidden: false,
                 context_window: Some(200_000),
                 max_context_window: Some(272_000),
                 auto_compact: Some(150_000),
@@ -203,10 +204,28 @@ fn applied_values_come_from_the_catalog_file_and_the_all_models_keys() {
     assert_eq!(
         e,
         AppliedModel {
+            hidden: false,
             context_window: Some(200_000),
             max_context_window: Some(272_000),
             auto_compact: None
         }
     );
     assert!(AppliedModel::from_entry(&serde_json::json!({"slug": " "})).is_none());
+}
+
+#[test]
+fn applied_catalog_visibility_tracks_upstream_and_user_hiding() {
+    for (visibility, supported, hidden) in [
+        ("list", true, false),
+        ("hide", true, true),
+        ("none", true, true),
+        ("list", false, true),
+        ("future", true, false),
+    ] {
+        let (_, entry) = AppliedModel::from_entry(&serde_json::json!({
+            "slug": "gpt-test", "visibility": visibility, "supported_in_api": supported
+        }))
+        .unwrap();
+        assert_eq!(entry.hidden, hidden, "{visibility}, {supported}");
+    }
 }

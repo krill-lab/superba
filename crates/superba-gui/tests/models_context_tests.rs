@@ -440,7 +440,7 @@ async fn reset_restores_the_default() {
         .map(|(_, r)| *r)
         .unwrap();
     let y = page.cell("gpt-5.5", CONTEXT).y;
-    page.click(pos2(price.min.x + 176.0 + 14.0, y));
+    page.click(pos2(price.min.x + 176.0 + 28.0 + 4.0 + 12.0, y));
     let row = page.row("gpt-5.5");
     for text in ["272K", "244.8K", "Unsaved"] {
         assert!(row.contains(&text.to_owned()), "{text}: {row:?}");
@@ -602,4 +602,98 @@ async fn saved_values_codex_does_not_use_yet_offer_apply_now() {
     );
     page.click_text("Apply now");
     assert_eq!(switches(&page.take_actions()), 1);
+}
+
+impl Page {
+    fn show_hidden(&mut self) {
+        let texts = self.settle();
+        let count = texts
+            .iter()
+            .find(|(t, _)| t.starts_with("Hidden models ("))
+            .unwrap()
+            .1;
+        self.click(pos2(count.min.x - 22.0, count.center().y));
+    }
+
+    fn right_click_row(&mut self, slug: &str) -> Texts {
+        let texts = self.settle();
+        let pos = find(&texts, slug).unwrap().center();
+        let event = |pressed| Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        self.frame(vec![Event::PointerMoved(pos), event(true)]);
+        self.frame(vec![event(false)]);
+        self.settle()
+    }
+}
+
+#[tokio::test]
+async fn direct_row_menu_hides_saves_and_unhides_through_the_pending_flow() {
+    let mut page = Page::new(false).await;
+    let texts = page.right_click_row("gpt-5.5");
+    assert!(has(&texts, "Hide"), "{}", all(&texts));
+    page.click_text("Hide");
+    page.show_hidden();
+    assert!(page.row("gpt-5.5").contains(&"Unsaved".into()));
+    page.click_text("Save & apply");
+    page.wait(|p, _| {
+        !p.fake.models_edits().is_empty()
+            && p.state
+                .view()
+                .is_some_and(|v| v.overrides.get("gpt-5.5").is_some_and(|o| o.hidden))
+    });
+    assert!(page.fake.models_edits()[0].set["gpt-5.5"].hidden);
+    assert!(page.row("gpt-5.5").contains(&"Not applied".into()));
+    assert!(has(&page.settle(), "Apply now"));
+    page.right_click_row("gpt-5.5");
+    page.click_text("Unhide");
+    assert!(page.row("gpt-5.5").contains(&"Unsaved".into()));
+    page.click_text("Save & apply");
+    page.wait(|p, _| p.fake.models_edits().len() == 2);
+    assert!(!page.fake.models_edits()[1].set["gpt-5.5"].hidden);
+    assert!(page.fake.router_catalog_saves().is_empty());
+}
+
+#[tokio::test]
+async fn direct_eye_button_hides_a_row() {
+    let mut page = Page::new(false).await;
+    // The eye is the first icon of the actions column, right of the price.
+    let texts = page.settle();
+    let price = texts
+        .iter()
+        .find(|(t, _)| t.starts_with("Price"))
+        .map(|(_, r)| *r)
+        .unwrap();
+    let y = page.cell("gpt-5.5", CONTEXT).y;
+    page.click(pos2(price.min.x + 176.0 + 14.0, y));
+    page.show_hidden();
+    let row = page.row("gpt-5.5");
+    assert!(row.contains(&"Unsaved".into()), "{row:?}");
+    assert!(row.iter().any(|t| t.contains("hidden")), "{row:?}");
+    page.click_text("Save & apply");
+    page.wait(|p, _| !p.fake.models_edits().is_empty());
+    assert!(page.fake.models_edits()[0].set["gpt-5.5"].hidden);
+}
+
+#[tokio::test]
+async fn upstream_hidden_rows_cannot_be_unhidden_and_unsupported_profiles_offer_no_hide() {
+    let mut page = Page::new(false).await;
+    let mut view = page.state.view().unwrap().clone();
+    view.list.models[0].visibility = superba_core::ModelVisibility::Hide;
+    let slug = view.list.models[0].slug.clone();
+    page.state.set_view(view.clone());
+    page.show_hidden();
+    let texts = page.right_click_row(&slug);
+    assert!(has(&texts, "Hidden upstream"), "{}", all(&texts));
+    assert!(!has(&texts, "Unhide"));
+    page.click_text("Hidden upstream");
+    assert!(!has(&page.settle(), "Unsaved"));
+    page.key(Key::Escape);
+    view.per_model = false;
+    page.state.set_view(view);
+    let texts = page.right_click_row(&slug);
+    assert!(!has(&texts, "Hide") && !has(&texts, "Unhide"));
 }

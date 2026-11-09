@@ -92,7 +92,7 @@ impl FakeService {
         let catalog = per_model
             && p.model_overrides
                 .values()
-                .any(|o| o.context_window.is_some() || o.auto_compact.is_some());
+                .any(|o| o.context_window.is_some() || o.auto_compact.is_some() || o.hidden);
         let applied = if catalog {
             AppliedModels {
                 catalog: Some("/fake/.codex/superba/models-0a1b2c3d.json".into()),
@@ -103,6 +103,12 @@ impl FakeService {
                         (
                             m.slug.clone(),
                             AppliedModel {
+                                hidden: p.model_overrides.get(&m.slug).is_some_and(|o| o.hidden)
+                                    || !m.supported_in_api
+                                    || matches!(
+                                        m.visibility,
+                                        ModelVisibility::Hide | ModelVisibility::None
+                                    ),
                                 context_window: l.window,
                                 max_context_window: l.max.max(l.window),
                                 auto_compact: l.compact_limit,

@@ -32,6 +32,7 @@ fn view_with_overrides(per_model: bool) -> ModelsView {
             (
                 "gpt-6-astra".to_owned(),
                 AppliedModel {
+                    hidden: false,
                     context_window: Some(400_000),
                     max_context_window: Some(872_000),
                     auto_compact: Some(300_000),
@@ -40,6 +41,7 @@ fn view_with_overrides(per_model: bool) -> ModelsView {
             (
                 "gpt-6-luna".to_owned(),
                 AppliedModel {
+                    hidden: false,
                     context_window: Some(272_000),
                     max_context_window: Some(872_000),
                     auto_compact: None,

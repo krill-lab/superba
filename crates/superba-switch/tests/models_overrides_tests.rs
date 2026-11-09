@@ -193,6 +193,7 @@ async fn an_override_round_trips_through_the_store_the_catalog_file_and_the_appl
     assert_eq!(
         entry("gpt-5.5"),
         AppliedModel {
+            hidden: false,
             context_window: Some(200_000),
             max_context_window: Some(272_000),
             auto_compact: Some(150_000),
@@ -406,4 +407,38 @@ async fn applied_values_are_read_from_config_toml_and_the_file_it_names() {
         ["gpt-5.5"]
     );
     assert_eq!(applied.models["gpt-5.5"].auto_compact, Some(150_000));
+}
+
+#[tokio::test]
+async fn hidden_override_reaches_catalog_and_unhiding_drops_an_unneeded_catalog() {
+    let w = World::new();
+    set_profile(&w, api_key);
+    let sw = switcher(&w);
+    sw.save_models(ModelsEdit {
+        set: [(
+            "gpt-5.5".into(),
+            ModelOverride {
+                hidden: true,
+                ..Default::default()
+            },
+        )]
+        .into(),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let plan = switch(&sw).await;
+    write_config(&w, &plan);
+    let applied = applied_models(&w.ctx.codex_home()).await;
+    assert!(applied.catalog.is_some());
+    assert!(applied.models["gpt-5.5"].hidden);
+    sw.save_models(ModelsEdit {
+        reset: vec!["gpt-5.5".into()],
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let plan = switch(&sw).await;
+    write_config(&w, &plan);
+    assert!(applied_models(&w.ctx.codex_home()).await.catalog.is_none());
 }

@@ -881,6 +881,9 @@ pub struct AppliedModels {
 /// One entry of the catalog file Codex reads.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppliedModel {
+    /// Hidden by the catalog's visibility or API support flag.
+    #[serde(default)]
+    pub hidden: bool,
     /// `context_window`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
@@ -905,6 +908,14 @@ impl AppliedModel {
         Some((
             slug.to_owned(),
             AppliedModel {
+                hidden: o
+                    .get("supported_in_api")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(false)
+                    || matches!(
+                        o.get("visibility").and_then(serde_json::Value::as_str),
+                        Some("hide" | "none")
+                    ),
                 context_window: n("context_window"),
                 max_context_window: n("max_context_window"),
                 auto_compact: n("auto_compact_token_limit"),
