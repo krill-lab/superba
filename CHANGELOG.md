@@ -5,6 +5,23 @@ All notable changes to Superba are documented here. The format follows
 [Semantic Versioning](https://semver.org/): later releases increment the patch
 number; the minor number changes only for breaking changes.
 
+## [0.1.1-alpha.14] - 2026-11-10
+
+### Added
+- Projects the ChatGPT desktop app dropped can be brought back (user bugs 135, 136): Superba lists the folders still in the app-server's project list (and, unticked, folders only seen in chats), you tick the ones to restore, and they are written back the next time Superba starts the app, after a backup.
+- A per-provider "Turn off OpenAI telemetry" switch (user bug 137), off by default.
+
+### Fixed
+- Desktop app 26.1103 no longer loses every project and shows the onboarding page on each PAT launch (user bugs 135, 136): before Superba starts the app it folds the per-account project state back (backup in `backups/app-state/`) and sets the onboarding-completed flag when it is missing (user bug 129), in the CODEX_HOME the launched app actually reads.
+- The desktop app's Chinese UI no longer needs a proxy on every launch (user bug 137): Superba stopped writing `analytics.enabled = false` for PAT, which kept the app from caching its remote language switch. Old Krill profiles drop the old preset once, and the active provider is re-applied once (config only, no restart).
+- macOS self-update finishes when the window is hidden, minimised or covered, a bundle replaced but not yet restarted is reported as installed, and an old failure no longer sticks on the Updates page or its badge after a manual install (user bug 130, GH#28).
+- Direct providers can hide models from the row's eye button or right-click menu, and models hidden upstream are labelled separately (user bug 131, GH#27).
+- A model the provider adds later is marked pending and offered through "Apply now", with a banner when Codex's catalog is out of date (user bug 132, GH#26).
+- A router-prefixed model name left in config.toml is restored to its plain name when the line lists no models (GH#16).
+
+### Known issues
+- Archiving a chat in the desktop app fails under PAT sign-in (user bug 134): an app-side limitation. Switching Krill's auth to API Key works around it.
+
 ## [0.1.1-alpha.13] - 2026-11-06
 
 ### Added
