@@ -344,6 +344,18 @@ impl DesktopAppController {
                 .find(|p| p.location == location)
                 .and_then(|p| p.value)
                 .filter(|v| !v.is_empty());
+            // Stored as written: an unexpanded `%USERPROFILE%\.codex`
+            // (REG_EXPAND_SZ), a literal `$HOME/.codex` or a relative path
+            // would resolve against Superba's working directory.
+            if let Some(value) = &session
+                && !Path::new(value).is_absolute()
+            {
+                tracing::warn!(
+                    %value,
+                    "the session's CODEX_HOME is not an absolute path; onboarding state not seeded"
+                );
+                return None;
+            }
         }
         launched_codex_home(
             app_env,
@@ -1532,6 +1544,15 @@ mod tests {
     #[tokio::test]
     async fn launched_codex_home_reads_the_session_env_the_app_starts_with() {
         use superba_core::EnvLocation::{Launchctl, WindowsUserEnv};
+        // An absolute path on this platform for a Unix-style one.
+        let abs = |s: &str| {
+            if cfg!(windows) {
+                format!("C:{s}")
+            } else {
+                s.to_owned()
+            }
+        };
+        let session_value = abs("/session");
         let tmp = tempfile::tempdir().unwrap();
         let mut ctx = LocalContext::for_tests(tmp.path());
         ctx.env = Arc::new(superba_core::MapEnv::new().with("CODEX_HOME", "/superba-only"));
@@ -1591,12 +1612,27 @@ mod tests {
         ] {
             let set = plain
                 .clone()
-                .with_session_env(FakeSession::with(location.clone(), Some("/session")));
+                .with_session_env(FakeSession::with(location.clone(), Some(&session_value)));
             let unset = plain
                 .clone()
                 .with_session_env(FakeSession::with(location.clone(), None));
             // The session's value, never Superba's own.
-            assert_eq!(root(&set, env, &options, &none, user).await, p("/session"));
+            assert_eq!(
+                root(&set, env, &options, &none, user).await,
+                p(&session_value)
+            );
+            // Not absolute (unexpanded REG_EXPAND_SZ, a shell variable, a
+            // relative path): nothing is seeded.
+            for value in [r"%USERPROFILE%\.codex", "$HOME/.codex", "codex", ".codex"] {
+                let odd = plain
+                    .clone()
+                    .with_session_env(FakeSession::with(location.clone(), Some(value)));
+                assert_eq!(
+                    root(&odd, env, &options, &none, user).await,
+                    None,
+                    "{value}"
+                );
+            }
             assert_eq!(
                 root(&unset, env, &options, &none, user).await,
                 p("/home/u/.codex")
@@ -1625,7 +1661,7 @@ mod tests {
         let launch_only = |location| {
             plain
                 .clone()
-                .with_session_env(FakeSession::with(location, Some("/session")))
+                .with_session_env(FakeSession::with(location, Some(&session_value)))
         };
         let mac = launch_only(Launchctl);
         let l = AppEnv::LaunchOnly;
@@ -1635,12 +1671,15 @@ mod tests {
             p("/passed")
         );
         // ... but a removal cannot be passed, so the session's value stays.
-        assert_eq!(root(&mac, l, &removed, &none, user).await, p("/session"));
+        assert_eq!(
+            root(&mac, l, &removed, &none, user).await,
+            p(&session_value)
+        );
         // An isolated home: the app's home moves, the session's CODEX_HOME stays.
         let iso_set = BTreeMap::from([("HOME".to_owned(), "/iso".to_owned())]);
         assert_eq!(
             root(&mac, l, &isolated, &iso_set, Path::new("/iso")).await,
-            p("/session")
+            p(&session_value)
         );
         let mac_unset = plain
             .clone()
@@ -1655,7 +1694,7 @@ mod tests {
         // Activation passes nothing of the launch.
         assert_eq!(
             root(&win, a, &options_passed, &passed, user).await,
-            p("/session")
+            p(&session_value)
         );
         // MSIX refuses an isolated home: nothing is seeded.
         assert_eq!(

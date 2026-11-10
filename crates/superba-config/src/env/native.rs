@@ -135,6 +135,26 @@ impl NativeEnv for SystemNativeEnv {
     }
 }
 
+/// `launchctl getenv <var>` through `run` (exit success, stdout). An unset
+/// variable prints nothing; a non-zero exit also means "not set" (no value to
+/// report), so it never becomes an error that hides the default. Only failing
+/// to run launchctl at all is an error (user bug 129: the desktop's
+/// `CODEX_HOME` is read this way before every `open`).
+#[cfg(any(target_os = "macos", test))]
+fn launchctl_getenv(
+    var: &str,
+    run: impl FnOnce(&[&str]) -> std::io::Result<(bool, Vec<u8>)>,
+) -> Result<Option<String>> {
+    let (ok, stdout) = run(&["getenv", var]).map_err(|e| Error::Process {
+        message: format!("launchctl getenv: {e}"),
+    })?;
+    if !ok {
+        return Ok(None);
+    }
+    let v = String::from_utf8_lossy(&stdout).trim().to_owned();
+    Ok((!v.is_empty()).then_some(v))
+}
+
 /// macOS: `launchctl getenv/setenv/unsetenv` affect apps launched by launchd from
 /// now on (Dock, Finder, `open`) for the current login session. The LaunchAgent
 /// written next to it re-applies the value at every login.
@@ -162,8 +182,12 @@ mod macos {
     }
 
     pub(super) fn getenv(var: &str) -> Result<Option<String>> {
-        let v = launchctl(&["getenv", var])?;
-        Ok((!v.is_empty()).then_some(v))
+        super::launchctl_getenv(var, |args| {
+            superba_core::process::command("/bin/launchctl")
+                .args(args)
+                .output()
+                .map(|out| (out.status.success(), out.stdout))
+        })
     }
 
     pub(super) fn setenv(var: &str, value: &str) -> Result<()> {
@@ -249,5 +273,48 @@ mod windows {
                 &mut result,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::launchctl_getenv;
+
+    #[test]
+    fn launchctl_getenv_reads_set_unset_and_failed_runs() {
+        let run = |ok: bool, out: &'static [u8]| {
+            move |args: &[&str]| {
+                assert_eq!(args, ["getenv", "CODEX_HOME"]);
+                Ok((ok, out.to_vec()))
+            }
+        };
+        assert_eq!(
+            launchctl_getenv("CODEX_HOME", run(true, b"/Users/u/codex\n")).unwrap(),
+            Some("/Users/u/codex".into())
+        );
+        // Unset: empty output, whatever the exit status.
+        assert_eq!(
+            launchctl_getenv("CODEX_HOME", run(true, b"")).unwrap(),
+            None
+        );
+        assert_eq!(
+            launchctl_getenv("CODEX_HOME", run(true, b"\n")).unwrap(),
+            None
+        );
+        assert_eq!(
+            launchctl_getenv("CODEX_HOME", run(false, b"")).unwrap(),
+            None
+        );
+        assert_eq!(
+            launchctl_getenv("CODEX_HOME", run(false, b"/stale\n")).unwrap(),
+            None
+        );
+        // Only launchctl not running at all is an error.
+        assert!(
+            launchctl_getenv("CODEX_HOME", |_: &[&str]| Err(std::io::Error::from(
+                std::io::ErrorKind::NotFound
+            )))
+            .is_err()
+        );
     }
 }
