@@ -1079,6 +1079,21 @@ impl SuperbaApp {
                     }
                     Err(e) => self.error_toast(self.tr.t("toast.models_failed"), &e),
                 },
+                Reply::AnalyticsReapply(notes) => {
+                    // User bug 137 (remove after alpha.14+N): shown like the
+                    // start-up repairs, then confirmed so it is settled.
+                    for n in &notes {
+                        let status = match n.severity {
+                            Severity::Info => Status::Ok,
+                            Severity::Warning => Status::Warn,
+                            _ => Status::Error,
+                        };
+                        let text = pages::localize_text(&self.tr, &self.data, &n.text);
+                        self.log(status, text.clone());
+                        self.toasts.push(Toast::new(status, text));
+                    }
+                    self.backend.send(Command::AnalyticsReapplyDelivered);
+                }
                 Reply::Recovered(r) => match r {
                     Ok(report) => {
                         if report.entries.is_empty() {

@@ -1827,6 +1827,12 @@ pub trait SwitchService: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// The window showed what [`Self::analytics_reapply`] returned: only now
+    /// is its outcome settled (until then the next start shows it again).
+    async fn analytics_reapply_delivered(&self) -> Result<()> {
+        Ok(())
+    }
+
     /// Compute a plan; never writes.
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan>;
 

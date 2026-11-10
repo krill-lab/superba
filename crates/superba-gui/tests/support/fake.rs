@@ -119,6 +119,18 @@ struct Areas {
     tools: Mutex<tools::State>,
     import: Mutex<import::State>,
     notify: Mutex<notify::State>,
+    reapply: Mutex<Reapply>,
+}
+
+/// User bug 137's one-time re-apply (remove after alpha.14+N).
+#[derive(Debug, Default)]
+struct Reapply {
+    /// What `recover` answers instead of an empty report.
+    recover_error: Option<Error>,
+    /// Notices owed until delivered.
+    notes: Vec<superba_core::Notice>,
+    /// `analytics_reapply_delivered` calls.
+    delivered: usize,
 }
 
 struct FakeState {
@@ -143,6 +155,23 @@ struct FakeState {
 }
 
 impl FakeService {
+    /// User bug 137: `recover` fails with `error` (another Superba holds the
+    /// lock); `analytics_reapply` answers `notes` until they are delivered.
+    pub fn set_analytics_reapply(
+        &self,
+        recover_error: Option<Error>,
+        notes: Vec<superba_core::Notice>,
+    ) {
+        let mut r = self.areas.reapply.lock().unwrap();
+        r.recover_error = recover_error;
+        r.notes = notes;
+    }
+
+    /// How often the window confirmed the re-apply's notices.
+    pub fn analytics_reapply_delivered_calls(&self) -> usize {
+        self.areas.reapply.lock().unwrap().delivered
+    }
+
     /// Fixture returned by the data block's asynchronous storage scan.
     pub fn set_data_usage(&self, result: Result<superba_core::data::DataUsage>) {
         *self.areas.storage.lock().unwrap() = Some(result);
@@ -2415,7 +2444,21 @@ impl SwitchService for FakeService {
     }
 
     async fn recover(&self) -> Result<RecoveryReport> {
-        Ok(RecoveryReport::default())
+        match self.areas.reapply.lock().unwrap().recover_error.clone() {
+            Some(e) => Err(e),
+            None => Ok(RecoveryReport::default()),
+        }
+    }
+
+    async fn analytics_reapply(&self) -> Result<Vec<superba_core::Notice>> {
+        Ok(self.areas.reapply.lock().unwrap().notes.clone())
+    }
+
+    async fn analytics_reapply_delivered(&self) -> Result<()> {
+        let mut r = self.areas.reapply.lock().unwrap();
+        r.delivered += 1;
+        r.notes.clear();
+        Ok(())
     }
 
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan> {

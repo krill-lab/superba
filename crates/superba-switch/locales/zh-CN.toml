@@ -324,6 +324,7 @@ reapplied = "Superba 已重新应用 {profile}，不再关闭 OpenAI 遥测（�
 reapply_retry = "Superba 未能重新应用 {profile} 来取消关闭 OpenAI 遥测：{reason} 下次启动时会再试一次；手动切换到这个供应商也能解决。"
 reapply_given_up = "Superba 未能重新应用 {profile} 来取消关闭 OpenAI 遥测：{reason} 不会再自动尝试，请手动切换到这个供应商一次。"
 switch_once = "Superba 没有自动重新应用 {profile} 来取消关闭 OpenAI 遥测：那样还会改动别的内容（已保存但尚未应用的改动，或路由模式）。请手动切换到这个供应商一次来应用。"
+store_unreadable = "Superba 无法读取供应商配置，未能完成取消关闭 OpenAI 遥测：{reason} 下次启动时会再试。"
 
 [switch.models]
 service_tier_old_codex = "{consumer} 的 Codex 版本为 {version}，只认 service_tier = \"fast\" 或 \"flex\"；为了让它仍能读取 config.toml，Superba 不写入 service_tier = \"{tier}\"。"

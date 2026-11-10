@@ -620,6 +620,11 @@ impl SwitchService for LocatedService {
         service.analytics_reapply().await
     }
 
+    async fn analytics_reapply_delivered(&self) -> Result<()> {
+        let (service, _lock) = self.read().await?;
+        service.analytics_reapply_delivered().await
+    }
+
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan> {
         let (service, _lock) = self.read().await?;
         service.plan(request).await

@@ -104,7 +104,7 @@ async fn only_krill_profiles_with_the_old_preset_lose_it_and_the_run_is_recorded
         set.settings.analytics_reapply,
         Some(superba_core::AnalyticsReapply {
             profiles: vec![ProfileId::new("krill-old")],
-            failed_once: false,
+            ..Default::default()
         })
     );
     // Recorded on disk at once.

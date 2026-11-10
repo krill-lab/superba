@@ -50,7 +50,7 @@ impl JsonProfileStore {
             if !changed.is_empty() {
                 set.settings.analytics_reapply = Some(superba_core::AnalyticsReapply {
                     profiles: changed,
-                    failed_once: false,
+                    ..Default::default()
                 });
             }
             if let Err(e) = fsx::write_json(&path, &set) {

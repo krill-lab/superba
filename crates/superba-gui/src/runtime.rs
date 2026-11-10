@@ -229,8 +229,10 @@ pub enum Command {
     /// Open ChatGPT through Superba, or bring it forward, or report that it
     /// needs a reopen (GH#7, [`crate::launch`]).
     LaunchApp(crate::launch::LaunchOrigin),
-    /// Start-up recovery.
+    /// Start-up recovery (then, user bug 137, the one-time re-apply).
     Recover,
+    /// The window showed [`Reply::AnalyticsReapply`] (user bug 137).
+    AnalyticsReapplyDelivered,
     /// Identity and balance (and, when `request.usage` is set, the usage report).
     Account(superba_core::AccountRequest),
     /// One router watchdog tick (falls back to direct mode when the router stays
@@ -384,6 +386,9 @@ pub enum Reply {
     },
     /// Recovery finished.
     Recovered(Result<RecoveryReport>),
+    /// User bug 137's one-time re-apply has news for the user; confirm with
+    /// [`Command::AnalyticsReapplyDelivered`] once shown.
+    AnalyticsReapply(Vec<superba_core::Notice>),
     /// Router watchdog tick finished.
     RouterWatch(Result<superba_core::RouterWatch>),
     /// Settings diff of a computed plan.
@@ -815,18 +820,20 @@ async fn handle(
             out.send(Reply::Overview(o));
         }
         Command::Recover => {
-            let mut result = service.recover().await;
+            out.send(Reply::Recovered(service.recover().await));
             // Once per start of the window (user bug 137; remove after
-            // alpha.14+N): its notices show with the recovery's.
+            // alpha.14+N), whatever the recovery answered: its notices go out
+            // on their own, and the window confirms them once shown.
             match service.analytics_reapply().await {
-                Ok(notes) => {
-                    if let Ok(report) = &mut result {
-                        report.notices.extend(notes);
-                    }
-                }
+                Ok(notes) if !notes.is_empty() => out.send(Reply::AnalyticsReapply(notes)),
+                Ok(_) => {}
                 Err(e) => tracing::warn!(error = %e, "user bug 137 re-apply"),
             }
-            out.send(Reply::Recovered(result))
+        }
+        Command::AnalyticsReapplyDelivered => {
+            if let Err(e) = service.analytics_reapply_delivered().await {
+                tracing::warn!(error = %e, "user bug 137 re-apply: cannot settle");
+            }
         }
         Command::RouterWatch => {
             let result = service.router_watch().await;

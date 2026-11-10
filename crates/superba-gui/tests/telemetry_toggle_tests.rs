@@ -239,3 +239,31 @@ fn in_the_app_the_switch_starts_off_and_follows_the_saved_profile() {
     let krill = saved.profile(&ProfileId::new("krill")).unwrap();
     assert!(krill.codex_settings.openai_telemetry_off());
 }
+
+/// User bug 137's one-time re-apply at the window's start: its notice shows
+/// even when the start-up recovery fails (another Superba holds the lock),
+/// and only once it was shown does the window confirm it, which settles it.
+#[test]
+fn the_re_apply_notice_shows_even_when_the_recovery_fails_then_is_confirmed() {
+    let service = fake();
+    let note = superba_core::Notice::info(
+        superba_core::LocalizedText::new(
+            "switch.analytics.reapplied",
+            "Superba applied {profile} again",
+        )
+        .arg("profile", "Krill"),
+    );
+    service.set_analytics_reapply(
+        Some(superba_core::Error::Locked {
+            what: "state".into(),
+        }),
+        vec![note],
+    );
+    let mut h = AppHarness::new(service.clone(), Locale::En, Page::Providers);
+    h.until("the re-apply notice is shown", |t| {
+        t.has_containing("Superba applied Krill again")
+    });
+    h.until("and confirmed", |_| {
+        service.analytics_reapply_delivered_calls() == 1
+    });
+}

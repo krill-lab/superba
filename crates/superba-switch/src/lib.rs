@@ -1216,6 +1216,11 @@ impl SwitchService for Switcher {
         Ok(self.analytics_reapply_impl().await)
     }
 
+    async fn analytics_reapply_delivered(&self) -> Result<()> {
+        self.refuse_elevated()?;
+        self.analytics_reapply_delivered_impl().await
+    }
+
     async fn plan(&self, request: SwitchRequest) -> Result<SwitchPlan> {
         self.plan_with_events(request, Arc::new(superba_core::NoEvents))
             .await

@@ -399,6 +399,13 @@ pub struct AnalyticsReapply {
     /// A re-apply failed once already: the next failure gives up.
     #[serde(default, skip_serializing_if = "is_false")]
     pub failed_once: bool,
+    /// The outcome's notice, not yet shown to the user: shown again at the
+    /// next start until the window confirms it was shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undelivered: Option<crate::Notice>,
+    /// Nothing more to do once [`Self::undelivered`] was shown.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub finished: bool,
 }
 
 fn default_true() -> bool {

@@ -24,6 +24,8 @@ use superba_core::{
 };
 use superba_switch::Switcher;
 
+const BUNDLED: &str =
+    include_str!("../../superba-models/tests/fixtures/bundled-0.162.0-alpha.17.2.json");
 const ORIGINAL: &str = "# original\nmodel = \"gpt-5.5\"\n";
 const USER_OFF: &str = "# original\nmodel = \"gpt-5.5\"\n\n[analytics]\nenabled = false # mine\n";
 
@@ -38,6 +40,12 @@ impl Rig {
     /// Superba up to alpha.13: `work` (applied) and maybe `spare` carry the
     /// old preset; `work` was applied, so `config.toml` holds its `false`.
     async fn old_superba(original: &str, work_has_preset: bool) -> Self {
+        Self::old_superba_with(original, work_has_preset, false).await
+    }
+
+    /// `with_catalog`: `work` has a model override, so its switch writes a
+    /// model catalog file (real catalog builder, the app's bundled list).
+    async fn old_superba_with(original: &str, work_has_preset: bool, with_catalog: bool) -> Self {
         let mut w = World::new();
         let codex = w.tmp.path().join("codex-home");
         w.ctx.env = Arc::new(
@@ -56,6 +64,16 @@ impl Rig {
         let mut old_preset = CodexSettings::krill_recommended();
         old_preset.set_openai_telemetry_off(true);
         let work = set.profiles.iter_mut().find(|p| p.id == "work").unwrap();
+        assert_eq!(work.auth_choice(), superba_core::AuthChoice::Auto);
+        if with_catalog {
+            work.model_overrides.insert(
+                "gpt-5.5".to_owned(),
+                superba_core::ModelOverride {
+                    context_window: Some(200_000),
+                    ..Default::default()
+                },
+            );
+        }
         work.codex_settings = if work_has_preset {
             old_preset.clone()
         } else {
@@ -74,6 +92,10 @@ impl Rig {
             Arc::new(MemoryNativeEnv::new()),
         ));
         let mut deps = w.deps();
+        if with_catalog {
+            *w.app.bundled_dump.lock().unwrap() = BUNDLED.to_owned();
+            deps.models = Arc::new(superba_switch::models::ModelsCrate);
+        }
         deps.config = engine;
         deps.env = env;
         deps.profiles = Arc::new(store.clone());
@@ -165,7 +187,19 @@ impl Rig {
         );
         let notes = self.sw.analytics_reapply().await.unwrap();
         assert!(notes.len() <= 1, "{notes:?}");
+        // The window showed them.
+        self.sw.analytics_reapply_delivered().await.unwrap();
         notes
+    }
+
+    /// `profiles.json` without the re-apply's own record.
+    async fn store_snapshot(&self) -> (String, String) {
+        let mut set = self.store.load().await.unwrap();
+        set.settings.analytics_reapply = None;
+        (
+            serde_json::to_string_pretty(&set.profiles).unwrap(),
+            serde_json::to_string(&set.last_selected).unwrap(),
+        )
     }
 
     async fn owed(&self) -> Option<superba_core::AnalyticsReapply> {
@@ -378,6 +412,7 @@ async fn an_unreadable_state_keeps_the_debt_and_says_so() {
     let saved = std::fs::read(&state).unwrap();
     std::fs::write(&state, b"{ not json").unwrap();
     let notes = rig.sw.analytics_reapply().await.unwrap();
+    rig.sw.analytics_reapply_delivered().await.unwrap();
     let keys: Vec<_> = notes
         .iter()
         .map(|n| (n.severity, n.text.key.clone()))
@@ -439,4 +474,145 @@ async fn router_mode_asks_for_a_switch_instead() {
     );
     assert_eq!(rig.config(), before, "nothing written");
     assert_eq!(rig.owed().await, None);
+}
+
+#[tokio::test]
+async fn the_profile_store_is_not_touched() {
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    // Another provider was selected last; `work`'s auth is Automatic.
+    let mut set = rig.store.load().await.unwrap();
+    set.last_selected = Some(ProfileId::new("spare"));
+    rig.store.save(&set).await.unwrap();
+    let mut set = rig.store.load().await.unwrap();
+    set.settings.analytics_reapply = None;
+    let before = rig.store_snapshot().await;
+    assert_eq!(
+        rig.start().await,
+        [(Severity::Info, "switch.analytics.reapplied".to_owned())]
+    );
+    assert_eq!(rig.analytics(), None);
+    assert_eq!(
+        rig.store_snapshot().await,
+        before,
+        "profiles and last selection"
+    );
+    let work = rig.store.load().await.unwrap();
+    let work = work.profile(&ProfileId::new("work")).unwrap();
+    assert_eq!(work.auth_choice(), superba_core::AuthChoice::Auto);
+}
+
+#[tokio::test]
+async fn an_unshown_notice_comes_back_at_the_next_start_and_nothing_runs_twice() {
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    // First start: the recovery fails or the window closes before showing it.
+    let first = rig.sw.analytics_reapply().await.unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].text.key, "switch.analytics.reapplied");
+    assert_eq!(rig.analytics(), None, "written once");
+    let owed = rig.owed().await.expect("kept until shown");
+    assert_eq!(owed.undelivered.as_ref(), Some(&first[0]));
+    // Next start: the same notice, nothing written.
+    let config = rig.config();
+    assert_eq!(rig.sw.analytics_reapply().await.unwrap(), first);
+    assert_eq!(rig.config(), config);
+    // Shown: settled.
+    rig.sw.analytics_reapply_delivered().await.unwrap();
+    assert_eq!(rig.owed().await, None);
+    assert!(rig.sw.analytics_reapply().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_unshown_failure_is_shown_again_before_its_one_retry() {
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    let saved = rig.w.secrets.map.lock().unwrap().clone();
+    rig.w.secrets.map.lock().unwrap().clear();
+    let first = rig.sw.analytics_reapply().await.unwrap();
+    assert_eq!(first[0].text.key, "switch.analytics.reapply_retry");
+    // Not shown: the next start shows it again; the retry is not used up.
+    *rig.w.secrets.map.lock().unwrap() = saved;
+    assert_eq!(rig.sw.analytics_reapply().await.unwrap(), first);
+    assert_eq!(rig.analytics(), Some(false));
+    rig.sw.analytics_reapply_delivered().await.unwrap();
+    let owed = rig.owed().await.expect("one retry left");
+    assert!(owed.failed_once && owed.undelivered.is_none());
+    // The retry (key back) works.
+    assert_eq!(
+        rig.start().await,
+        [(Severity::Info, "switch.analytics.reapplied".to_owned())]
+    );
+    assert_eq!(rig.owed().await, None);
+}
+
+#[tokio::test]
+async fn a_catalog_file_the_write_would_create_stops_it() {
+    let rig = Rig::old_superba_with(ORIGINAL, true, true).await;
+    let config = rig.config();
+    let line = config
+        .lines()
+        .find(|l| l.starts_with("model_catalog_json"))
+        .unwrap_or_else(|| panic!("a catalog file: {config}"))
+        .to_owned();
+    let path = line.split('"').nth(1).unwrap().to_owned();
+    let file = if std::path::Path::new(&path).is_absolute() {
+        std::path::PathBuf::from(&path)
+    } else {
+        rig.codex.join(&path)
+    };
+    assert!(file.exists(), "{}", file.display());
+    // Unchanged profile and file: the catalog writes nothing, the key goes.
+    let bytes = std::fs::read(&file).unwrap();
+    std::fs::remove_file(&file).unwrap();
+    // The file is gone: re-applying would create it again, so nothing is written.
+    let before = rig.config();
+    assert_eq!(
+        rig.start().await,
+        [(Severity::Warning, "switch.analytics.switch_once".to_owned())]
+    );
+    assert_eq!(rig.config(), before);
+    assert!(!file.exists(), "not created");
+    drop(bytes);
+}
+
+#[tokio::test]
+async fn an_unchanged_catalog_file_does_not_stop_it() {
+    let rig = Rig::old_superba_with(ORIGINAL, true, true).await;
+    let before = rig.config();
+    let catalogs = |dir: &std::path::Path| -> Vec<(std::path::PathBuf, Vec<u8>)> {
+        let mut out: Vec<_> = walk(dir)
+            .into_iter()
+            .filter(|p| {
+                p.extension().is_some_and(|e| e == "json")
+                    && p.to_string_lossy().contains("models-")
+            })
+            .map(|p| {
+                let b = std::fs::read(&p).unwrap();
+                (p, b)
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    let files = catalogs(&rig.codex);
+    assert!(!files.is_empty(), "a catalog file");
+    assert_eq!(
+        rig.start().await,
+        [(Severity::Info, "switch.analytics.reapplied".to_owned())]
+    );
+    assert_eq!(without_analytics(&before), without_analytics(&rig.config()));
+    assert_eq!(catalogs(&rig.codex), files, "same files, same bytes");
+}
+
+fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                out.extend(walk(&p));
+            } else {
+                out.push(p);
+            }
+        }
+    }
+    out
 }
