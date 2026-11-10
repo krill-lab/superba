@@ -592,3 +592,66 @@ async fn the_menu_and_hints_are_in_chinese() {
     page.click_last("删除");
     assert!(page.texts().iter().any(|t| t == "删除「Krill 2」"));
 }
+
+#[tokio::test]
+async fn editing_a_plain_http_base_url_clears_its_confirmation() {
+    let service = fake();
+    let base = url::Url::parse("http://192.168.1.20:8080/v1").unwrap();
+    let mut site =
+        superba_switch::new_compatible_site(SiteId::new("lan"), "LAN HTTP", &base).unwrap();
+    site.allow_plain_http = true;
+    service.save_site(site.clone()).await.unwrap();
+    let mut profile = shared::new_profile(&site, "LAN HTTP".into());
+    profile.id = ProfileId::new("lan");
+    service
+        .save_profile(profile, Some(superba_core::Secret::new("sk-lan")))
+        .await
+        .unwrap();
+    let data = data_of(&service).await;
+    let page = Page::new(data, service.clone(), Locale::En);
+    page.state
+        .borrow_mut()
+        .select(ProviderId::Profile(ProfileId::new("lan")));
+    page.settle();
+    let consent = |page: &Page| page.state.borrow().base_url_edit().map(|(_, _, c)| c);
+    // The saved consent is shown as given while the URL is untouched.
+    assert_eq!(consent(&page), Some(true));
+    page.idle(3);
+    assert_eq!(consent(&page), Some(true));
+    // Typing into the Base URL field withdraws it until it is ticked again.
+    // The last drawn copy is the field (the detail header shows the URL too).
+    page.click_last("http://192.168.1.20:8080/v1");
+    page.type_text("2");
+    let state = page.state.borrow();
+    let (_, text, confirmed) = state.base_url_edit().unwrap();
+    assert_ne!(
+        text, "http://192.168.1.20:8080/v1",
+        "the field took the edit"
+    );
+    assert!(!confirmed);
+}
+
+#[tokio::test]
+async fn editing_the_add_dialogs_url_clears_the_plain_http_confirmation() {
+    let (service, data) = setup().await;
+    let page = Page::new(data, service.clone(), Locale::En);
+    {
+        let mut d = providers::AddDialog::new();
+        d.step = providers::AddStep::Custom;
+        d.name = "LAN".into();
+        d.url = "http://192.168.1.20:8080/v1".into();
+        d.allow_plain_http = true;
+        page.state.borrow_mut().add = Some(d);
+    }
+    page.settle();
+    assert!(page.state.borrow().add.as_ref().unwrap().allow_plain_http);
+    page.click_last("http://192.168.1.20:8080/v1");
+    page.type_text("2");
+    let state = page.state.borrow();
+    let d = state.add.as_ref().unwrap();
+    assert_ne!(
+        d.url, "http://192.168.1.20:8080/v1",
+        "the field took the edit"
+    );
+    assert!(!d.allow_plain_http);
+}

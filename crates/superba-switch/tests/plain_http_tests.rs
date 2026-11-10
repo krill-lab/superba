@@ -174,3 +174,22 @@ async fn switch_to_http_list_models_and_send_direct() {
 async fn switch_to_http_list_models_and_send_through_router() {
     exercise(true).await;
 }
+
+#[tokio::test]
+async fn probing_an_unconfirmed_plain_http_site_sends_nothing() {
+    let upstream = MockServer::start(|_| MockResponse::json(200, json!({"data": []}))).await;
+    let base = url::Url::parse(&format!(
+        "{}/v1",
+        upstream.origin().replace("127.0.0.1", "[::ffff:127.0.0.1]")
+    ))
+    .unwrap();
+    let w = World::new();
+    let mut deps = w.deps();
+    deps.prober = Arc::new(upstream::prober());
+    let sw = Switcher::with_tuning(deps, Tuning::default());
+    let site = superba_switch::new_compatible_site("lan".into(), "LAN", &base).unwrap();
+    sw.save_site(site.clone()).await.unwrap();
+    let caps = sw.probe_lines(&site.id).await.unwrap();
+    assert!(caps.iter().all(|c| !c.reachable), "{caps:?}");
+    assert!(upstream.recorded().is_empty(), "{:?}", upstream.recorded());
+}

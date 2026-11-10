@@ -3,7 +3,10 @@
 //! Every request goes through [`Http::send`], which
 //! - never follows redirects (a redirect is reported, not followed, so a key never
 //!   reaches a second origin),
-//! - requires HTTPS, loopback HTTP, or the owning custom site's explicit HTTP consent,
+//! - sends nothing at all (keyed or not) to plain http off this machine unless the
+//!   owning custom site has explicit HTTP consent ([`ensure_transport`]), and
+//!   sends such consented plain-http requests directly, never through a proxy,
+//! - attaches a key only to HTTPS, loopback HTTP or such a consented origin,
 //! - reads at most a bounded number of body bytes,
 //! - and returns a [`Transport`] failure whose message never contains the key.
 
@@ -246,6 +249,19 @@ pub(crate) fn is_loopback_url(url: &Url) -> bool {
     }
 }
 
+/// Transport rule for every request, with or without a key: plain http off this
+/// machine needs the owning custom site's explicit consent. An unconfirmed plain
+/// http line gets no request at all, not even an unauthenticated probe.
+pub(crate) fn ensure_transport(url: &Url, allow_plain_http: bool) -> Result<()> {
+    if url.scheme() == "http" && !is_loopback_url(url) && !allow_plain_http {
+        return Err(Error::invalid(format!(
+            "plain HTTP to {} is not confirmed for this provider",
+            display_url(url)
+        )));
+    }
+    Ok(())
+}
+
 /// Key scoping rule: a key may only be sent to https, or to plain http on a
 /// loopback host (tests and local forwarders), and never inside the URL (no
 /// userinfo, and the key must not appear in the URL, percent-encoded or not).
@@ -372,7 +388,10 @@ impl Http {
     }
 
     fn pick(&self, url: &Url, ws: bool) -> std::result::Result<&reqwest::Client, Transport> {
-        let c = match (is_loopback_url(url), ws) {
+        // Plain http (loopback, or a consented custom site) never goes through
+        // a proxy: an HTTP proxy would see the key and the conversation too.
+        let direct = is_loopback_url(url) || url.scheme() == "http";
+        let c = match (direct, ws) {
             (true, false) => &self.direct,
             (false, false) => &self.proxied,
             (true, true) => &self.ws_direct,
@@ -386,6 +405,10 @@ impl Http {
 
     /// Send one request. Key scoping is enforced here as well as by callers.
     pub async fn send(&self, req: Request<'_>) -> std::result::Result<Answer, Transport> {
+        ensure_transport(&req.url, req.allow_plain_http).map_err(|e| Transport {
+            kind: TransportKind::Other,
+            message: e.to_string(),
+        })?;
         if let Some(key) = req.key {
             ensure_key_target(&req.url, key, req.allow_plain_http).map_err(|e| Transport {
                 kind: TransportKind::Other,
@@ -514,6 +537,10 @@ impl Http {
         limit: usize,
     ) -> std::result::Result<Handshake, Transport> {
         use reqwest::header::{CONNECTION, SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_VERSION, UPGRADE};
+        ensure_transport(url, allow_plain_http).map_err(|e| Transport {
+            kind: TransportKind::Other,
+            message: e.to_string(),
+        })?;
         ensure_key_target(url, key, allow_plain_http).map_err(|e| Transport {
             kind: TransportKind::Other,
             message: e.to_string(),

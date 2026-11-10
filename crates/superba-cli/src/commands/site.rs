@@ -67,9 +67,11 @@ fn parse_url(value: &str, out: &Output) -> Result<url::Url> {
     let loopback = superba_core::Origin::parse(&url.origin().ascii_serialization())
         .is_ok_and(|o| o.is_loopback());
     if url.scheme() == "http" && !loopback {
+        // Only scheme, host and port: the typed URL may carry userinfo or a
+        // key in its query.
         return Err(usage(
             out,
-            text("cli.error.plain_http").arg("url", value.trim()),
+            text("cli.error.plain_http").arg("url", url.origin().ascii_serialization()),
         ));
     }
     Ok(url)

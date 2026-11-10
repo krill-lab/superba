@@ -93,11 +93,11 @@ pub(crate) struct Generation {
     pub router_token: Secret,
     pub members: Vec<MemberRt>,
     /// Upstream client for HTTP requests (HTTP/1.1 or h2).
-    pub http: reqwest::Client,
+    pub http: Upstream,
     /// Upstream client for WebSocket handshakes (HTTP/1.1 only).
-    pub ws: reqwest::Client,
+    pub ws: Upstream,
     /// Client for unauthenticated health probes (with a total timeout).
-    pub probe: reqwest::Client,
+    pub probe: Upstream,
     pub sticky: Mutex<StickyTable>,
     /// The Claude Code ingress of this configuration.
     pub claude: Option<crate::claude::rt::ClaudeRt>,
@@ -212,9 +212,9 @@ impl Generation {
             .map(|c| crate::claude::rt::ClaudeRt::build(c, &config, secrets))
             .transpose()?;
         let openai = crate::openai::rt::OpenAiRt::build(&config);
-        let http = build_client(&config, ClientKind::Http, budget)?;
-        let ws = build_client(&config, ClientKind::WebSocket, budget)?;
-        let probe = build_client(&config, ClientKind::Probe, budget)?;
+        let http = Upstream::build(&config, ClientKind::Http, budget)?;
+        let ws = Upstream::build(&config, ClientKind::WebSocket, budget)?;
+        let probe = Upstream::build(&config, ClientKind::Probe, budget)?;
         Ok(Self {
             number,
             sticky: Mutex::new(StickyTable::new(
@@ -288,10 +288,60 @@ enum ClientKind {
     Probe,
 }
 
+/// An upstream client. Requests to plain-http upstreams (loopback, or a member
+/// whose custom site has explicit HTTP consent) bypass the system proxy: an
+/// HTTP proxy would see the member's key and the conversation in clear text.
+/// Everything else (and every other use, through `Deref`) uses the configured
+/// client.
+pub(crate) struct Upstream {
+    configured: reqwest::Client,
+    /// Without any proxy; `None` when the configured client has none either.
+    direct: Option<reqwest::Client>,
+}
+
+impl Upstream {
+    fn build(config: &RouterConfig, kind: ClientKind, budget: &Budget) -> Result<Self> {
+        let configured = build_client(config, kind, budget, config.use_system_proxy)?;
+        let direct = config
+            .use_system_proxy
+            .then(|| build_client(config, kind, budget, false))
+            .transpose()?;
+        Ok(Self { configured, direct })
+    }
+
+    /// The client for `url`.
+    pub(crate) fn for_url(&self, url: &url::Url) -> &reqwest::Client {
+        match &self.direct {
+            Some(direct) if url.scheme() == "http" => direct,
+            _ => &self.configured,
+        }
+    }
+
+    pub(crate) fn get(&self, url: url::Url) -> reqwest::RequestBuilder {
+        self.for_url(&url).get(url)
+    }
+
+    pub(crate) fn post(&self, url: url::Url) -> reqwest::RequestBuilder {
+        self.for_url(&url).post(url)
+    }
+
+    pub(crate) fn request(&self, method: http::Method, url: url::Url) -> reqwest::RequestBuilder {
+        self.for_url(&url).request(method, url)
+    }
+}
+
+impl std::ops::Deref for Upstream {
+    type Target = reqwest::Client;
+    fn deref(&self) -> &reqwest::Client {
+        &self.configured
+    }
+}
+
 fn build_client(
     config: &RouterConfig,
     kind: ClientKind,
     budget: &Budget,
+    proxy: bool,
 ) -> Result<reqwest::Client> {
     let t = &config.tuning;
     // Idle upstream connections hold descriptors too: capped per host, closed
@@ -310,7 +360,7 @@ fn build_client(
         .tcp_keepalive(Duration::from_secs(30))
         .tcp_nodelay(true)
         .pool_idle_timeout(Duration::from_secs(t.pool_idle_timeout_secs));
-    if !config.use_system_proxy {
+    if !proxy {
         b = b.no_proxy();
     }
     if let Some(path) = &config.extra_ca_file {

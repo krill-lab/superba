@@ -87,6 +87,51 @@ async fn site_add_leaves_plain_http_consent_to_the_app() {
     assert_eq!(code, 0, "{stderr}");
 }
 
+#[tokio::test]
+async fn plain_http_errors_never_echo_credentials_or_queries() {
+    let service = FakeService::new();
+    let (code, stdout, stderr) = invoke(
+        service.clone(),
+        &[
+            "site",
+            "add",
+            "lan",
+            "--base-url",
+            "http://user:hunter2@192.168.1.20:8080/v1?api_key=sk-leak",
+        ],
+    )
+    .await;
+    assert_ne!(code, 0);
+    let all = format!("{stdout}{stderr}");
+    assert!(all.contains("http://192.168.1.20:8080"), "{all}");
+    for secret in ["hunter2", "user:", "sk-leak", "api_key"] {
+        assert!(!all.contains(secret), "{secret}: {all}");
+    }
+}
+
+#[tokio::test]
+async fn site_edit_leaves_plain_http_consent_to_the_app() {
+    let service = FakeService::new();
+    compatible(&service);
+    let (code, _, stderr) = invoke(
+        service.clone(),
+        &[
+            "site",
+            "edit",
+            "acme",
+            "--base-url",
+            "http://192.168.1.20:8080/v1",
+        ],
+    )
+    .await;
+    assert_ne!(code, 0);
+    assert!(stderr.contains("unencrypted HTTP"), "{stderr}");
+    assert!(!service.calls().names.contains(&"save_site"));
+    let saved = service.sites.lock().unwrap();
+    let acme = saved.iter().find(|s| s.id.as_str() == "acme").unwrap();
+    assert_eq!(acme.lines[0].origin.as_str(), "https://api.acme.example");
+}
+
 fn compatible(service: &FakeService) {
     let base = url::Url::parse("https://api.acme.example/v1").unwrap();
     let site = superba_switch::new_compatible_site(SiteId::new("acme"), "Acme", &base).unwrap();

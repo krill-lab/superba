@@ -122,8 +122,13 @@ Conventions:
   carry a key (`ApplyPlan::desired`, `RemotePlan::desired`) skip it when serialized.
   Foreign command lines are shown only through `app::redact_argv`.
 - **Key scoping.** `LineProber` sends a site's key only to that site's origins
-  (`check_authapi` refuses others), never over plain http except loopback, and
-  never follows redirects on authenticated requests.
+  (`check_authapi` refuses others) and never follows redirects on authenticated
+  requests. Plain http is used only on loopback, or for a user-created
+  OpenAI-compatible (API key only) site whose `allow_plain_http` consent the user
+  gave explicitly (user bug 133 / GH#24), and then only to that site's own saved
+  origins. Without that consent a non-loopback http line gets no request at all,
+  keyed or not (probes included), and router members of such a site are refused.
+  Consented plain-http requests bypass the system proxy (§9).
 - **Observations vs. decisions.** Component results are observations;
   `superba-switch` derives decisions (e.g. it sets `ProcessInfo::stale` from start
   times and the generation history, applies the version table, groups shared
@@ -1175,10 +1180,18 @@ home, a remote host or a WSL distribution through four `SwitchService` methods
   tools using that site's saved origins, and never authorizes an unrelated endpoint.
   Built-in sites and PAT retain their HTTPS requirement. Imported HTTP addresses
   remain HTTP with consent off and a prompt to confirm in provider settings; they
-  cannot send keys or be switched to until confirmed. HTTP probes keep HTTP and
-  WebSocket connections use `ws://`; redirects are never followed. Consent is
-  given only in the app's provider forms: `spb site add/edit` refuses non-loopback
-  HTTP.
+  cannot send keys or be switched to until confirmed. Nothing rewrites http to
+  https or back: probes of an http site use http, and its WebSocket check is the
+  same-scheme HTTP/1.1 Upgrade handshake on the http:// URL (what a `ws://` URL
+  means on the wire); redirects are never followed. An unconfirmed non-loopback
+  http line gets no request at all, not even an unauthenticated probe
+  (`Http::send` refuses it before any network I/O). Plain-http requests (probes
+  and router forwarding) always connect directly, never through the system or
+  environment proxy, so the clear-text hop is only between this machine and the
+  confirmed host. A restore applies consent only when exactly one site owns the
+  restored origin, so one site's consent never covers another site's key.
+  Consent is given only in the app's provider forms: `spb site add/edit` refuses
+  non-loopback HTTP (its error shows only scheme, host and port).
 - Keys are never logged, never placed on command lines (remote writes use stdin),
   and are stored in the keyring.
 - `auth.json` is written 0600; stashes and backups of logins are encrypted

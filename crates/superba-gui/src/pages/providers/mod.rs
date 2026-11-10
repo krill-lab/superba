@@ -115,6 +115,7 @@ pub struct State {
     pub(crate) key_edit: Option<KeyEdit>,
     /// Edited base URL of a custom site: (site, text).
     pub(crate) base_url: Option<(SiteId, String)>,
+    /// Plain HTTP confirmed for the edited base URL.
     pub(crate) allow_plain_http: bool,
     /// Saving the base URL.
     pub(crate) base_url_task: Option<ReadTask<Profile>>,
@@ -180,6 +181,14 @@ impl State {
     /// The entry being renamed in the list and the typed name.
     pub fn renaming(&self) -> Option<(&ProviderId, &str)> {
         self.rename.as_ref().map(|r| (&r.provider, r.text.as_str()))
+    }
+
+    /// The custom site's Base URL as edited on its connection tab, and whether
+    /// plain HTTP is confirmed for it there.
+    pub fn base_url_edit(&self) -> Option<(&SiteId, &str, bool)> {
+        self.base_url
+            .as_ref()
+            .map(|(site, text)| (site, text.as_str(), self.allow_plain_http))
     }
 
     /// The entry whose delete confirmation is open.

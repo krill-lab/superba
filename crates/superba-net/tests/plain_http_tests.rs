@@ -155,7 +155,7 @@ async fn unconfirmed_http_sends_no_keys_and_consent_enables_every_probe() {
         recorded
             .iter()
             .any(|r| r.header("upgrade") == Some("websocket")),
-        "plain HTTP upgrade is a ws:// handshake"
+        "the WebSocket probe is a same-scheme HTTP Upgrade over http://"
     );
     assert!(
         recorded
@@ -218,4 +218,33 @@ async fn http_consent_keeps_redirects_credentials_pat_and_other_origins_blocked(
     assert!(p.probe_responses(&pat, &key, "test-model").await.is_err());
     site.kind = superba_core::SiteKind::Krill;
     assert!(p.list_models_for_site(&site, &base, &key).await.is_err());
+}
+
+#[tokio::test]
+async fn an_unconfirmed_plain_http_line_gets_no_request_at_all() {
+    // Not even the unauthenticated latency and endpoint probes the providers
+    // page and auto-probe run: the line stays unreachable without network I/O.
+    let server = MockServer::start(|r| match r.path.as_str() {
+        "/v1/models" => MockResponse::json(200, json!({"data": [{"id": "test-model"}]})),
+        _ => MockResponse::empty(401),
+    })
+    .await;
+    let base = base(&server);
+    let mut site = superba_net::new_compatible_site("lan".into(), "LAN", &base).unwrap();
+    let prober = prober();
+    let line = site.lines[0].clone();
+    let caps = prober.probe(&site, &line).await.unwrap();
+    assert!(!caps.reachable, "{caps:?}");
+    assert!(server.recorded().is_empty(), "{:?}", server.recorded());
+    // Consent turns the same probe on.
+    site.allow_plain_http = true;
+    let caps = prober.probe(&site, &line).await.unwrap();
+    assert!(caps.reachable, "{caps:?}");
+    assert!(!server.recorded().is_empty());
+    assert!(
+        server
+            .recorded()
+            .iter()
+            .all(|r| r.header("authorization").is_none())
+    );
 }

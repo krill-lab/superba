@@ -2767,11 +2767,7 @@ impl Switcher {
         else {
             return Ok(());
         };
-        let owner = sites.iter().find(|site| {
-            site.lines
-                .iter()
-                .any(|l| l.origin.url().origin() == base.origin())
-        });
+        let owner = plain_http_owner(sites, &base);
         let mut endpoints = match owner {
             Some(site) if auth == AuthMode::ApiKey => {
                 ResolvedEndpoints::for_site_base_url(site, &base)?
@@ -3505,5 +3501,48 @@ mod launch_tests {
         ] {
             assert_eq!(launch_cdp_mode(safe_mode, is_root), expected);
         }
+    }
+}
+
+/// The one site whose consent may cover a restored plain-http `base`: the
+/// only site with a line on that origin. A restore carries no site id, so when
+/// several sites share the origin none of them is chosen; one site's consent
+/// never covers another site's key.
+pub(crate) fn plain_http_owner<'a>(sites: &'a [Site], base: &url::Url) -> Option<&'a Site> {
+    let mut owners = sites.iter().filter(|site| {
+        site.lines
+            .iter()
+            .any(|l| l.origin.url().origin() == base.origin())
+    });
+    match (owners.next(), owners.next()) {
+        (Some(site), None) => Some(site),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod plain_http_owner_tests {
+    use super::*;
+
+    #[test]
+    fn one_sites_consent_never_covers_another_site_on_the_same_origin() {
+        let base = url::Url::parse("http://192.168.1.20:8080/v1").unwrap();
+        let mut a = crate::new_compatible_site("a".into(), "A", &base).unwrap();
+        a.allow_plain_http = true;
+        let b = crate::new_compatible_site("b".into(), "B", &base).unwrap();
+        // Alone, A owns its origin and its consent applies.
+        let only_a = [a.clone()];
+        let owner = plain_http_owner(&only_a, &base).unwrap();
+        assert!(ResolvedEndpoints::for_site_base_url(owner, &base).is_ok());
+        // With B (unconfirmed) on the same origin, in either order, nobody is
+        // the owner: the strict rule refuses the plain-http endpoints.
+        for sites in [[a.clone(), b.clone()], [b.clone(), a.clone()]] {
+            assert!(plain_http_owner(&sites, &base).is_none());
+            assert!(ResolvedEndpoints::for_base_url(&base).is_err());
+        }
+        // B alone stays unconfirmed.
+        let only_b = [b];
+        let owner = plain_http_owner(&only_b, &base).unwrap();
+        assert!(ResolvedEndpoints::for_site_base_url(owner, &base).is_err());
     }
 }

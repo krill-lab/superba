@@ -696,4 +696,22 @@ mod plain_http_tests {
         builtin.allow_plain_http = true;
         assert!(validate_site(&builtin).is_err());
     }
+
+    #[test]
+    fn a_compatible_site_that_also_offers_pat_never_gets_plain_http() {
+        let base = Url::parse("http://192.168.1.2:8000/v1").unwrap();
+        let mut site = new_compatible_site("lan".into(), "LAN", &base).unwrap();
+        site.allow_plain_http = true;
+        assert!(site.allows_plain_http());
+        for modes in [vec![AuthMode::ApiKey, AuthMode::Pat], vec![AuthMode::Pat]] {
+            site.capabilities.auth_modes = modes.clone();
+            assert!(!site.allows_plain_http(), "{modes:?}");
+            assert!(!site.allows_plain_http_for(&base), "{modes:?}");
+            assert!(validate_site(&site).is_err(), "{modes:?}");
+            assert!(
+                ResolvedEndpoints::for_site_base_url(&site, &base).is_err(),
+                "{modes:?}"
+            );
+        }
+    }
 }
