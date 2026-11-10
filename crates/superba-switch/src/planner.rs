@@ -6,7 +6,7 @@
 //! still being written) degrade to a warning; only the configuration engine is
 //! mandatory, because nothing can be written without it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use superba_core::{
     AppSession, ApplyPlan, AuthApiHealth, AuthMode, BaselineExtras, BlockReason, BuiltinProfile,
@@ -966,7 +966,8 @@ impl Switcher {
         // --- model catalog (plan 4 #17) ---------------------------------------
         let model_check = if local && draft.blocks.is_empty() {
             let left = model_left_to_config(&state, &set, &sites, baseline.as_ref());
-            self.check_model(&request, left, &mut dest, &mut draft)
+            let prefixes = router_prefixes(&set, &sites);
+            self.check_model(&request, left, &prefixes, &mut dest, &mut draft)
                 .await
         } else {
             None
@@ -2610,11 +2611,13 @@ impl Switcher {
     }
 
     /// `left_to_config`: the model Codex runs with when the destination
-    /// profile sets none ([`model_left_to_config`]).
+    /// profile sets none ([`model_left_to_config`]); `prefixes`: the router's
+    /// provider segments ([`router_prefixes`]).
     async fn check_model(
         &self,
         request: &SwitchRequest,
         left_to_config: Option<String>,
+        prefixes: &BTreeSet<String>,
         dest: &mut Dest,
         draft: &mut Draft,
     ) -> Option<ModelCheck> {
@@ -2647,7 +2650,28 @@ impl Switcher {
                     .arg("mapped", &current),
             );
         }
+        // Without the line's list to check against (GH#16): a name the router
+        // gave the model (`krill/gpt-6.1-sol`, left in `config.toml` after the
+        // router was turned off) goes back to the model's own name, which is
+        // what the line serves; other names are left as they are.
+        let unprefix = |resolved: &mut ResolvedProfile, draft: &mut Draft| {
+            if request.model_override.is_some() {
+                return;
+            }
+            let Some(bare) = strip_router_prefix(&current, prefixes) else {
+                return;
+            };
+            let bare = site.site_model(bare).to_owned();
+            resolved.model.model = Some(bare.clone());
+            draft.warn(
+                text("switch.warn.model_unprefixed")
+                    .arg_text("site", site.name.clone())
+                    .arg("model", &current)
+                    .arg("replacement", &bare),
+            );
+        };
         if !site.capabilities.model_catalog {
+            unprefix(resolved, draft);
             return None;
         }
         let models = match self
@@ -2657,9 +2681,13 @@ impl Switcher {
             .await
         {
             Ok(m) if !m.is_empty() => m,
-            Ok(_) => return None,
+            Ok(_) => {
+                unprefix(resolved, draft);
+                return None;
+            }
             Err(e) => {
                 draft.skipped("models", &e);
+                unprefix(resolved, draft);
                 return None;
             }
         };
@@ -3449,6 +3477,60 @@ fn snapshots(r: &superba_core::EnvReport) -> Vec<EnvSnapshot> {
             value: p.value.clone(),
         })
         .collect()
+}
+
+/// The provider segments the router puts before a model name it publishes for
+/// one member (`krill/gpt-6.1-sol`, catalog mode "prefixed"): the names saved
+/// for the members, and what the router derives for a member without one (its
+/// ASCII name, the main part of its lines' domain, its member id).
+/// [`strip_router_prefix`] also accepts the router's `-provider` and `-<n>`
+/// variants of these.
+pub fn router_prefixes(set: &ProfileSet, sites: &[Site]) -> BTreeSet<String> {
+    use superba_router::members::router_id;
+    use superba_router::merged_catalog::{domain_slug, provider_slug};
+    let catalog = &set.settings.router.catalog;
+    let mut out: BTreeSet<String> = catalog.provider_slugs.values().cloned().collect();
+    for p in &set.profiles {
+        let id = router_id(p.id.as_str());
+        if !set.settings.router.members.contains(&p.id) && !catalog.provider_slugs.contains_key(&id)
+        {
+            continue;
+        }
+        out.insert(id);
+        let name = p.name.trim();
+        if name.is_ascii() {
+            out.insert(provider_slug(name));
+        }
+        if let Some(site) = sites.iter().find(|s| s.id == p.site_id) {
+            out.extend(
+                site.lines
+                    .iter()
+                    .filter_map(|l| domain_slug(l.origin.url())),
+            );
+        }
+    }
+    out.retain(|s| !s.is_empty());
+    out
+}
+
+/// The model behind a router provider segment (`krill/gpt-6.1-sol` ->
+/// `gpt-6.1-sol`) when the segment is one of `prefixes` (or the router's
+/// `-provider` / `-<n>` variant of one). Model ids of their own may contain
+/// `/` (`openai/gpt-oss`), so an unknown segment is never removed.
+pub fn strip_router_prefix<'a>(model: &'a str, prefixes: &BTreeSet<String>) -> Option<&'a str> {
+    let (segment, bare) = model.split_once('/')?;
+    if bare.trim().is_empty() {
+        return None;
+    }
+    let numbered = segment
+        .rsplit_once('-')
+        .filter(|(_, n)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        .map_or(segment, |(base, _)| base);
+    let known = [segment, numbered]
+        .into_iter()
+        .flat_map(|s| [s, s.strip_suffix("-provider").unwrap_or(s)])
+        .any(|s| prefixes.contains(s));
+    known.then_some(bare)
 }
 
 /// Up to three replacement models: the model itself when `current` names it
