@@ -203,8 +203,17 @@ impl Switcher {
             return Err((id, Skip::Failed(text("switch.outcome.failed"))));
         };
         // The profile store stays as it is: no line order, auth choice or
-        // last selection is recorded for this write.
+        // last selection is recorded for this write. Nothing is deleted
+        // either: no catalog record (whose commit prunes unreferenced
+        // `superba/models-*.json` files), no pruning of the switch journal or
+        // of older switch backups.
         pc.profile_update = None;
+        pc.catalog_record = None;
+        pc.keep_history = true;
+        let mut plan = plan;
+        if let Some(c) = plan.config.as_mut() {
+            c.keep_history = true;
+        }
         self.remember_plan(plan.id.clone(), pc);
         let outcome = self
             .execute_impl(

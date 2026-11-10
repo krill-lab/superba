@@ -364,6 +364,7 @@ fn plan(from: Option<&str>, to: &str, keys: &[&str]) -> SwitchPlan {
             notes: vec![],
             desired: None,
             releases_ownership: false,
+            keep_history: false,
         }),
         env: None,
         certificate_env: None,

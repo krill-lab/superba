@@ -685,6 +685,7 @@ impl TomlConfigEngine {
             notes,
             desired: Some(desired.clone()),
             releases_ownership,
+            keep_history: false,
         })
     }
 
@@ -963,7 +964,9 @@ impl TomlConfigEngine {
 
         self.commit(&jentry)?;
         journal::remove(self.data(), &jentry.id)?;
-        if let Err(e) = self.prune_backups(root) {
+        if !plan.keep_history
+            && let Err(e) = self.prune_backups(root)
+        {
             tracing::warn!("pruning old switch backups failed: {e}");
         }
         Ok(ApplyReport {

@@ -616,3 +616,88 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     }
     out
 }
+
+/// Files in a directory (none when it does not exist), sorted.
+fn listing(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = walk(dir);
+    out.sort();
+    out
+}
+
+#[tokio::test]
+async fn an_unreferenced_catalog_file_survives_byte_for_byte() {
+    let rig = Rig::old_superba_with(ORIGINAL, true, true).await;
+    let config = rig.config();
+    let path = config
+        .lines()
+        .find(|l| l.starts_with("model_catalog_json"))
+        .and_then(|l| l.split('"').nth(1))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| panic!("a catalog file: {config}"));
+    let path = if path.is_absolute() {
+        path
+    } else {
+        rig.codex.join(path)
+    };
+    // A file an earlier switch left behind that nothing names any more (a
+    // normal switch prunes such files once it records its catalog).
+    let stale = path.with_file_name("models-0000000000000000.json");
+    std::fs::write(&stale, b"{\"stale\": true}\n").unwrap();
+    let before = listing(path.parent().unwrap());
+    let current = std::fs::read(&path).unwrap();
+    assert_eq!(
+        rig.start().await,
+        [(Severity::Info, "switch.analytics.reapplied".to_owned())]
+    );
+    assert_eq!(rig.analytics(), None);
+    assert_eq!(std::fs::read(&stale).unwrap(), b"{\"stale\": true}\n");
+    assert_eq!(std::fs::read(&path).unwrap(), current);
+    assert_eq!(listing(path.parent().unwrap()), before);
+}
+
+#[tokio::test]
+async fn no_switch_backup_or_journal_entry_is_pruned() {
+    let rig = Rig::old_superba(ORIGINAL, true).await;
+    let data = &rig.w.ctx.data_dir;
+    // An old switch backup a normal switch would prune (older than the
+    // newest generations kept).
+    let homes: Vec<_> = std::fs::read_dir(data.switch_backups_dir())
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    assert_eq!(homes.len(), 1, "{homes:?}");
+    let old = homes[0].join("g000000-stale");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join("config.toml"), b"old").unwrap();
+    // More finished journal entries than the journal keeps.
+    let journal = superba_switch::journal::SwitchJournal::new(data);
+    let sample = listing(journal.dir())
+        .into_iter()
+        .find(|p| p.extension().is_some_and(|e| e == "json"))
+        .expect("a journal entry of the old switch");
+    let entry: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&sample).unwrap()).unwrap();
+    for i in 0..40 {
+        let mut e = entry.clone();
+        let id = format!("00000000old{i:02}");
+        e["id"] = serde_json::Value::String(id.clone());
+        std::fs::write(
+            journal.dir().join(format!("{id}.json")),
+            serde_json::to_vec(&e).unwrap(),
+        )
+        .unwrap();
+    }
+    let journal_before = listing(journal.dir());
+    assert!(journal_before.len() > superba_switch::journal::KEEP_FINISHED);
+    assert_eq!(
+        rig.start().await,
+        [(Severity::Info, "switch.analytics.reapplied".to_owned())]
+    );
+    assert_eq!(rig.analytics(), None);
+    assert_eq!(std::fs::read(old.join("config.toml")).unwrap(), b"old");
+    let journal_after = listing(journal.dir());
+    for p in &journal_before {
+        assert!(journal_after.contains(p), "pruned: {}", p.display());
+    }
+}

@@ -1218,6 +1218,7 @@ fn config_plan(before: &ConfigState, after: &ConfigState, plan: &SwitchPlan) -> 
         notes: vec![],
         desired: None,
         releases_ownership: false,
+        keep_history: false,
     }
 }
 
