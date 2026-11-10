@@ -151,13 +151,9 @@ impl Setup {
     /// A LAN site with consent and a loopback site, both router members, with
     /// the router installed and serving.
     async fn new() -> Self {
-        let lan_up = MockServer::start(serve).await;
+        let lan_up = MockServer::start_off_loopback(serve).await;
         let local_up = MockServer::start(serve).await;
-        let lan_base = url::Url::parse(&format!(
-            "{}/v1",
-            lan_up.origin().replace("127.0.0.1", "[::ffff:127.0.0.1]")
-        ))
-        .unwrap();
+        let lan_base = url::Url::parse(&format!("{}/v1", lan_up.origin())).unwrap();
         let local_base = url::Url::parse(&format!("{}/v1", local_up.origin())).unwrap();
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("router")).unwrap();

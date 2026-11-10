@@ -16,18 +16,14 @@ use superba_switch::{Switcher, Tuning};
 use upstream::{MockResponse, MockServer};
 
 async fn exercise(routed: bool) {
-    let upstream = MockServer::start(|r| match r.path.as_str() {
+    let upstream = MockServer::start_off_loopback(|r| match r.path.as_str() {
         "/v1/models" => MockResponse::json(200, json!({"data": [{"id": "gpt-5.5"}]})),
         "/v1/responses" => MockResponse::sse(upstream::COMPLETED_SSE),
         "/v1/responses/compact" => MockResponse::json(200, json!({"output": []})),
         _ => MockResponse::empty(404),
     })
     .await;
-    let base = url::Url::parse(&format!(
-        "{}/v1",
-        upstream.origin().replace("127.0.0.1", "[::ffff:127.0.0.1]")
-    ))
-    .unwrap();
+    let base = url::Url::parse(&format!("{}/v1", upstream.origin())).unwrap();
     let w = World::new();
     // Never enumerate or restart a real app: only the filesystem/config engine,
     // prober and HTTP router are real in this integration test.
@@ -177,12 +173,9 @@ async fn switch_to_http_list_models_and_send_through_router() {
 
 #[tokio::test]
 async fn probing_an_unconfirmed_plain_http_site_sends_nothing() {
-    let upstream = MockServer::start(|_| MockResponse::json(200, json!({"data": []}))).await;
-    let base = url::Url::parse(&format!(
-        "{}/v1",
-        upstream.origin().replace("127.0.0.1", "[::ffff:127.0.0.1]")
-    ))
-    .unwrap();
+    let upstream =
+        MockServer::start_off_loopback(|_| MockResponse::json(200, json!({"data": []}))).await;
+    let base = url::Url::parse(&format!("{}/v1", upstream.origin())).unwrap();
     let w = World::new();
     let mut deps = w.deps();
     deps.prober = Arc::new(upstream::prober());
@@ -225,13 +218,9 @@ async fn revoking_consent_takes_the_member_out_of_the_running_router_before_savi
         "/v1/responses" => MockResponse::sse(upstream::COMPLETED_SSE),
         _ => MockResponse::empty(404),
     };
-    let lan_up = MockServer::start(serve).await;
+    let lan_up = MockServer::start_off_loopback(serve).await;
     let local_up = MockServer::start(serve).await;
-    let lan_base = url::Url::parse(&format!(
-        "{}/v1",
-        lan_up.origin().replace("127.0.0.1", "[::ffff:127.0.0.1]")
-    ))
-    .unwrap();
+    let lan_base = url::Url::parse(&format!("{}/v1", lan_up.origin())).unwrap();
     let local_base = url::Url::parse(&format!("{}/v1", local_up.origin())).unwrap();
     let w = World::new();
     *w.app.session.lock().unwrap() = None;

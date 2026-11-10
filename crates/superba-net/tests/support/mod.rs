@@ -117,8 +117,19 @@ impl MockResponse {
 
 pub struct MockServer {
     address: SocketAddr,
+    /// Host written in [`MockServer::origin`] instead of the bound address.
+    host: Option<String>,
     pub requests: Arc<Mutex<Vec<RecordedRequest>>>,
     task: JoinHandle<()>,
+}
+
+/// This machine's own address on the interface of its default route (never
+/// loopback). A UDP `connect` only picks the route; no packet is sent.
+pub fn own_lan_address() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("192.0.2.1:9").ok()?;
+    let ip = socket.local_addr().ok()?.ip();
+    (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
 }
 
 impl MockServer {
@@ -126,7 +137,32 @@ impl MockServer {
     where
         F: Fn(&RecordedRequest) -> MockResponse + Send + Sync + 'static,
     {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        Self::start_at("127.0.0.1:0", None, handler).await
+    }
+
+    /// A mock whose origin Superba does not classify as loopback, so plain
+    /// http to it needs a site's consent, while every request stays on this
+    /// machine: it listens on this machine's own LAN address. Without one,
+    /// an IPv4-mapped IPv6 address of 127.0.0.1 stands in on Linux and macOS
+    /// (Windows' IPv6 sockets are v6-only and cannot connect to it).
+    pub async fn start_off_loopback<F>(handler: F) -> Self
+    where
+        F: Fn(&RecordedRequest) -> MockResponse + Send + Sync + 'static,
+    {
+        match own_lan_address() {
+            Some(ip) => Self::start_at(&SocketAddr::new(ip, 0).to_string(), None, handler).await,
+            None if cfg!(windows) => panic!(
+                "no non-loopback address on this machine (no default route) for the plain-http mock"
+            ),
+            None => Self::start_at("127.0.0.1:0", Some("[::ffff:127.0.0.1]".into()), handler).await,
+        }
+    }
+
+    async fn start_at<F>(bind: &str, host: Option<String>, handler: F) -> Self
+    where
+        F: Fn(&RecordedRequest) -> MockResponse + Send + Sync + 'static,
+    {
+        let listener = TcpListener::bind(bind).await.unwrap();
         let address = listener.local_addr().unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&requests);
@@ -153,13 +189,17 @@ impl MockServer {
         });
         Self {
             address,
+            host,
             requests,
             task,
         }
     }
 
     pub fn origin(&self) -> String {
-        format!("http://{}", self.address)
+        match &self.host {
+            Some(host) => format!("http://{host}:{}", self.address.port()),
+            None => format!("http://{}", self.address),
+        }
     }
 
     pub fn count(&self, path: &str) -> usize {

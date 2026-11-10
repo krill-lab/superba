@@ -11,18 +11,14 @@ use support::*;
 use url::Url;
 
 fn base(server: &MockServer) -> Url {
-    // IPv4-mapped IPv6 reaches the local fixture without external DNS/network,
-    // but is deliberately not classified as a loopback URL by the safety rule.
-    Url::parse(&format!(
-        "{}/v1",
-        server.origin().replace("127.0.0.1", "[::ffff:127.0.0.1]")
-    ))
-    .unwrap()
+    // `MockServer::start_off_loopback`: on this machine, but not a loopback
+    // URL for the safety rule.
+    Url::parse(&format!("{}/v1", server.origin())).unwrap()
 }
 
 #[tokio::test]
 async fn unconfirmed_http_sends_no_keys_and_consent_enables_every_probe() {
-    let server = MockServer::start(|r| match r.path.as_str() {
+    let server = MockServer::start_off_loopback(|r| match r.path.as_str() {
         "/v1/models" => MockResponse::json(200, json!({"data": [{"id": "test-model"}]})),
         "/v1/responses" => MockResponse::sse(COMPLETED_SSE),
         "/v1/responses/compact" => MockResponse::json(200, json!({"output": []})),
@@ -193,9 +189,10 @@ async fn unconfirmed_http_sends_no_keys_and_consent_enables_every_probe() {
 async fn http_consent_keeps_redirects_credentials_pat_and_other_origins_blocked() {
     let destination = MockServer::start(|_| MockResponse::empty(200)).await;
     let location = format!("{}/v1/models", destination.origin());
-    let server =
-        MockServer::start(move |_| MockResponse::empty(302).with_header("Location", &location))
-            .await;
+    let server = MockServer::start_off_loopback(move |_| {
+        MockResponse::empty(302).with_header("Location", &location)
+    })
+    .await;
     let base = base(&server);
     let mut site = superba_net::new_compatible_site("lan".into(), "LAN", &base).unwrap();
     site.allow_plain_http = true;
@@ -224,7 +221,7 @@ async fn http_consent_keeps_redirects_credentials_pat_and_other_origins_blocked(
 async fn an_unconfirmed_plain_http_line_gets_no_request_at_all() {
     // Not even the unauthenticated latency and endpoint probes the providers
     // page and auto-probe run: the line stays unreachable without network I/O.
-    let server = MockServer::start(|r| match r.path.as_str() {
+    let server = MockServer::start_off_loopback(|r| match r.path.as_str() {
         "/v1/models" => MockResponse::json(200, json!({"data": [{"id": "test-model"}]})),
         _ => MockResponse::empty(401),
     })
