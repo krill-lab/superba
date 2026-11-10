@@ -341,15 +341,53 @@ impl Switcher {
             Some(slot) => *slot = site.clone(),
             None => set.custom_sites.push(site.clone()),
         }
-        self.deps.profiles.save(&set).await?;
         // Router members on this site carry its lines and model map.
-        if set
-            .settings
-            .router
-            .members
-            .iter()
-            .any(|id| set.profile(id).is_some_and(|p| p.site_id == site.id))
-        {
+        let routed = |set: &superba_core::ProfileSet| {
+            set.settings
+                .router
+                .members
+                .iter()
+                .any(|id| set.profile(id).is_some_and(|p| p.site_id == site.id))
+        };
+        // Any member of the running router on this site: a Codex member, or a
+        // provider only Claude Code or a tool routes through it.
+        let in_router = || {
+            self.deps.router.configuration().is_some_and(|c| {
+                set.profiles.iter().any(|p| {
+                    p.site_id == site.id
+                        && c.members
+                            .iter()
+                            .any(|m| m.id == superba_router::members::router_id(p.id.as_str()))
+                })
+            })
+        };
+        if site.needs_plain_http_consent() && (routed(&set) || in_router()) {
+            // Consent was withdrawn (or never given, e.g. a re-import) while
+            // the site is a router member. Its members leave the router, and
+            // the router is rewritten first: if that fails nothing is saved,
+            // so the router never keeps forwarding a key to a plain-http
+            // upstream whose site is no longer confirmed.
+            let site_id = site.id.clone();
+            let profiles = set.profiles.clone();
+            set.settings
+                .router
+                .members
+                .retain(|id| !profiles.iter().any(|p| &p.id == id && p.site_id == site_id));
+            tracing::warn!(
+                site = %site.id,
+                "plain HTTP is not confirmed: the site's providers leave the local router"
+            );
+            self.resync_router_members(&set).await.map_err(|e| {
+                Error::other(format!(
+                    "nothing was saved: the local router could not drop the provider \
+                     whose plain HTTP is no longer confirmed: {e}"
+                ))
+            })?;
+            self.deps.profiles.save(&set).await?;
+            return Ok(site);
+        }
+        self.deps.profiles.save(&set).await?;
+        if routed(&set) {
             self.resync_router_members(&set).await?;
         }
         Ok(site)

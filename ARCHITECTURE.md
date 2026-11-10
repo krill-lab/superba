@@ -1190,6 +1190,11 @@ home, a remote host or a WSL distribution through four `SwitchService` methods
   environment proxy, so the clear-text hop is only between this machine and the
   confirmed host. A restore applies consent only when exactly one site owns the
   restored origin, so one site's consent never covers another site's key.
+  Saving a site that is a router member (Codex, Claude Code or a tool) without
+  the consent its plain-http lines need (consent withdrawn, or a re-import,
+  which never imports consent) first rewrites the router without that site's
+  members, persisted and reloaded, and only then saves the site; if the router
+  cannot be rewritten, nothing is saved.
   Consent is given only in the app's provider forms: `spb site add/edit` refuses
   non-loopback HTTP (its error shows only scheme, host and port).
 - Keys are never logged, never placed on command lines (remote writes use stdin),

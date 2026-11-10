@@ -922,6 +922,8 @@ pub struct FakeRouter {
     /// The whole configurations written, in order.
     pub written: Mutex<Vec<RouterConfig>>,
     pub fail_install: Mutex<Option<Error>>,
+    /// Make `rewrite` fail (nothing is written).
+    pub fail_rewrite: Mutex<Option<Error>>,
     /// Request log rows served by `requests`.
     pub page: Mutex<superba_core::RequestPage>,
     /// Stats settings handed to the router.
@@ -961,6 +963,7 @@ impl FakeRouter {
             configs: Mutex::new(Vec::new()),
             written: Mutex::new(Vec::new()),
             fail_install: Mutex::new(None),
+            fail_rewrite: Mutex::new(None),
             page: Mutex::new(superba_core::RequestPage::default()),
             stats_configured: Mutex::new(Vec::new()),
             stats_locales: Mutex::new(Vec::new()),
@@ -1081,6 +1084,9 @@ impl RouterControl for FakeRouter {
         config: RouterConfig,
         keys: BTreeMap<String, Secret>,
     ) -> Result<RouterEndpointInfo> {
+        if let Some(e) = self.fail_rewrite.lock().unwrap().clone() {
+            return Err(e);
+        }
         self.record("rewrite", &config, &keys);
         self.info()
     }

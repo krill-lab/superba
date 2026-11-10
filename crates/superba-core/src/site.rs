@@ -70,6 +70,17 @@ impl Site {
             && self.lines.iter().all(|l| l.source == LineSource::User)
     }
 
+    /// The site has a plain-http line off this machine that it may not use:
+    /// no consent (yet), or a site that can never have it. Nothing is sent
+    /// there, and it cannot be a router member.
+    pub fn needs_plain_http_consent(&self) -> bool {
+        !self.allows_plain_http()
+            && self
+                .lines
+                .iter()
+                .any(|l| l.origin.url().scheme() == "http" && !l.origin.is_loopback())
+    }
+
     /// Consent applies only to this site's saved origins, never an unrelated
     /// endpoint override, model source or tool URL.
     pub fn allows_plain_http_for(&self, url: &Url) -> bool {

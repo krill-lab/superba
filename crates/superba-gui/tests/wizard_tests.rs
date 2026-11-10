@@ -718,3 +718,57 @@ async fn detect_counts_the_hosts_the_app_knows_and_how_many_are_online() {
         );
     }
 }
+
+#[tokio::test]
+async fn editing_the_custom_url_clears_the_plain_http_confirmation() {
+    let service = fake(true);
+    let data = data_of(&service).await;
+    let dyn_service: Arc<dyn SwitchService> = service.clone();
+    let mut w = Wizard::start(&data);
+    w.select_preset(&data, catalog::PRESET_CUSTOM);
+    w.step = Step::Credentials;
+    w.custom_name = "LAN".into();
+    w.custom_url = "http://192.168.1.20:8080/v1".into();
+    w.allow_plain_http = true;
+    let mut out = Vec::new();
+    let harness = Harness::new([1280.0, 800.0], egui::Theme::Dark);
+    let tr = Tr::new(Locale::En);
+    let mut frame = |w: &mut Wizard, events: Vec<egui::Event>| {
+        harness.frame(events, &mut |ui| {
+            let cx = Cx {
+                tr: &tr,
+                pal: Palette::of(ui.ctx()),
+                data: &data,
+                busy: false,
+                now: Timestamp::now(),
+                fonts: &harness.fonts,
+                service: &dyn_service,
+                log: &[],
+            };
+            let _ = wizard::show(ui.ctx(), &cx, w, &mut out);
+        })
+    };
+    frame(&mut w, Vec::new());
+    let texts = frame(&mut w, Vec::new());
+    assert!(w.allow_plain_http, "untouched, the confirmation stays");
+    let (_, field) = texts
+        .iter()
+        .rev()
+        .find(|(t, _)| t == "http://192.168.1.20:8080/v1")
+        .unwrap_or_else(|| panic!("URL field not drawn: {texts:?}"));
+    let pos = field.center();
+    let button = |pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::default(),
+    };
+    frame(&mut w, vec![egui::Event::PointerMoved(pos), button(true)]);
+    frame(&mut w, vec![button(false)]);
+    frame(&mut w, vec![egui::Event::Text("2".into())]);
+    assert_ne!(
+        w.custom_url, "http://192.168.1.20:8080/v1",
+        "the field took the edit"
+    );
+    assert!(!w.allow_plain_http);
+}
