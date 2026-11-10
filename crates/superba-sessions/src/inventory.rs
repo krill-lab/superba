@@ -51,7 +51,16 @@ pub(crate) fn sqlite_dirs(
 /// Top-level `sqlite_home` string of `config.toml`, if any.
 fn config_sqlite_home(path: &Path) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
-    let table: toml::Table = text.parse().ok()?;
+    let table: toml::Table = match text.parse() {
+        Ok(t) => t,
+        Err(error) => {
+            // Codex itself refuses such a file; say why its `sqlite_home`
+            // is not looked at (a Windows path written unescaped into a
+            // "..." string is the usual cause).
+            tracing::warn!(path = %path.display(), %error, "config.toml is not valid TOML; its sqlite_home is ignored");
+            return None;
+        }
+    };
     let value = table.get("sqlite_home")?.as_str()?.trim();
     (!value.is_empty()).then(|| value.to_owned())
 }

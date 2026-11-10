@@ -22,7 +22,7 @@
 //!
 //! The databases are read while Codex may write them. Every statement is its
 //! own short read (no transaction spanning them), each waits at most
-//! [`PROBE_BUSY_TIMEOUT`] for a writer's lock, and all of one database's
+//! [`PROBE_BUSY_TIMEOUT`] of wall-clock time for a writer's lock, and all of one database's
 //! reads stop at [`PROBE_DEADLINE`] (a progress handler interrupts a long
 //! query), so neither the overview nor Codex's writer is held up for long.
 
@@ -167,22 +167,72 @@ fn probe(path: &Path, limits: ProbeLimits) -> superba_core::Result<Probed> {
     // Interrupts a statement still running at the deadline.
     conn.progress_handler(1_000, Some(move || Instant::now() >= deadline))
         .map_err(err)?;
+    // Waits for a writer's lock end by the wall clock (see `wait_for_lock`).
+    conn.busy_handler(Some(wait_for_lock)).map_err(err)?;
+    let _clear = BusyUntil::clear_on_drop();
     // Before each statement: wait no longer than what is left.
-    let budget = |conn: &Connection| -> rusqlite::Result<()> {
-        let left = deadline.saturating_duration_since(Instant::now());
+    let budget = |_: &Connection| -> rusqlite::Result<()> {
+        let now = Instant::now();
+        let left = deadline.saturating_duration_since(now);
         if left.is_zero() {
             return Err(rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_INTERRUPT),
                 Some("probe deadline reached".into()),
             ));
         }
-        conn.busy_timeout(left.min(limits.busy))
+        BusyUntil::set(now + left.min(limits.busy));
+        Ok(())
     };
     budget(&conn).map_err(err)?;
     let have = tables(&conn).map_err(err)?;
     let projects = budget(&conn).and_then(|()| read_projects(&conn, &have));
     let chats = budget(&conn).and_then(|()| read_chat_folders(&conn, &have));
     Ok(Probed { projects, chats })
+}
+
+/// How long one wait for a writer's lock sleeps before the lock is tried
+/// again.
+const BUSY_STEP: Duration = Duration::from_millis(10);
+
+thread_local! {
+    /// When the statement being run on this thread stops waiting for a
+    /// writer's lock (the busy handler is a plain `fn`, it cannot capture).
+    static BUSY_UNTIL: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+}
+
+struct BusyUntil;
+
+impl BusyUntil {
+    fn set(until: Instant) {
+        BUSY_UNTIL.with(|c| c.set(Some(until)));
+    }
+
+    fn clear_on_drop() -> Self {
+        BusyUntil
+    }
+}
+
+impl Drop for BusyUntil {
+    fn drop(&mut self) {
+        BUSY_UNTIL.with(|c| c.set(None));
+    }
+}
+
+/// SQLite's own busy timeout counts the sleeps it asks for (1, 2, 5, 10 ...
+/// ms), not the time that passes: where a sleep overshoots (timer
+/// coalescing on macOS, a loaded machine), 500 ms of requested sleeps took
+/// 1.5 s on a macOS runner. This handler compares the wall clock with the
+/// statement's limit, so a wait ends at most one short sleep after it.
+fn wait_for_lock(_count: i32) -> bool {
+    let Some(until) = BUSY_UNTIL.with(std::cell::Cell::get) else {
+        return false;
+    };
+    let now = Instant::now();
+    if now >= until {
+        return false;
+    }
+    std::thread::sleep((until - now).min(BUSY_STEP));
+    true
 }
 
 /// One project row of the app-server's list.
