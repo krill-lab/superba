@@ -860,6 +860,91 @@ pub struct ModelsView {
     pub applied: Option<AppliedModels>,
 }
 
+/// How the provider's current list differs from the static catalog file Codex
+/// reads ([`ModelsView::catalog_changes`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ModelCatalogChanges {
+    /// Visible upstream models absent from Codex's catalog.
+    pub missing: Vec<String>,
+    /// Catalog entries no longer offered upstream.
+    pub removed: Vec<String>,
+}
+
+impl ModelCatalogChanges {
+    /// Nothing needs to be refreshed.
+    pub fn is_empty(&self) -> bool {
+        self.missing.is_empty() && self.removed.is_empty()
+    }
+}
+
+impl ModelsView {
+    /// A visible model of the provider's own list that the applied static
+    /// catalog file lacks, so Codex cannot offer it until the catalog is
+    /// rebuilt (user bug 132). Only a direct provider whose list came from the
+    /// provider itself: a fallback list cannot tell that the provider's
+    /// catalog changed, and the router serves its list live.
+    pub fn missing_from_catalog(&self, spec: &ModelSpec) -> bool {
+        self.per_model
+            && self.router_catalog.is_none()
+            && matches!(self.list.source, ModelListSource::Upstream { .. })
+            && spec.supported_in_api
+            && matches!(
+                spec.visibility,
+                ModelVisibility::List | ModelVisibility::Other
+            )
+            && !self.overrides.get(&spec.slug).is_some_and(|o| o.hidden)
+            && self
+                .applied
+                .as_ref()
+                .is_some_and(|a| a.catalog.is_some() && !a.models.contains_key(&spec.slug))
+    }
+
+    /// How the provider's current list differs from the static catalog file
+    /// Codex reads (empty without one, see [`Self::missing_from_catalog`]).
+    /// The entries the catalog builder adds on its own are not "removed": the
+    /// configured model and the `<slug>-fast` / `<slug>-ultrafast` names of
+    /// listed models.
+    pub fn catalog_changes(&self) -> ModelCatalogChanges {
+        let mut changes = ModelCatalogChanges::default();
+        if !self.per_model
+            || self.router_catalog.is_some()
+            || !matches!(self.list.source, ModelListSource::Upstream { .. })
+        {
+            return changes;
+        }
+        let Some(applied) = self.applied.as_ref().filter(|a| a.catalog.is_some()) else {
+            return changes;
+        };
+        changes.missing = self
+            .list
+            .models
+            .iter()
+            .filter(|m| self.missing_from_catalog(m))
+            .map(|m| m.slug.clone())
+            .collect();
+        let configured = |slug: &str| {
+            [self.defaults.model.as_deref(), applied.model.as_deref()]
+                .into_iter()
+                .flatten()
+                .any(|m| m == slug)
+        };
+        let tier_name = |slug: &str| {
+            SpeedTier::ALL.into_iter().any(|t| {
+                t.model_suffix()
+                    .and_then(|sfx| slug.strip_suffix(sfx))
+                    .is_some_and(|base| self.list.model(base).is_some() || configured(base))
+            })
+        };
+        changes.removed = applied
+            .models
+            .keys()
+            .filter(|slug| self.list.model(slug).is_none() && !configured(slug) && !tier_name(slug))
+            .cloned()
+            .collect();
+        changes
+    }
+}
+
 /// What Codex reads now for the applied profile's models: the all-models keys
 /// of `config.toml` and the entries of the catalog file it names.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -870,6 +955,9 @@ pub struct AppliedModels {
     /// `model_auto_compact_token_limit`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_compact: Option<u64>,
+    /// `model` (the configured model, which the catalog file always carries).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     /// `model_catalog_json` (`None` = Codex uses its own or the provider's list).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog: Option<PathBuf>,
@@ -881,6 +969,9 @@ pub struct AppliedModels {
 /// One entry of the catalog file Codex reads.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppliedModel {
+    /// Hidden by the catalog's visibility or API support flag.
+    #[serde(default)]
+    pub hidden: bool,
     /// `context_window`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
@@ -905,6 +996,14 @@ impl AppliedModel {
         Some((
             slug.to_owned(),
             AppliedModel {
+                hidden: o
+                    .get("supported_in_api")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(false)
+                    || matches!(
+                        o.get("visibility").and_then(serde_json::Value::as_str),
+                        Some("hide" | "none")
+                    ),
                 context_window: n("context_window"),
                 max_context_window: n("max_context_window"),
                 auto_compact: n("auto_compact_token_limit"),

@@ -172,6 +172,7 @@ remotes = "Remote hosts {hosts} switch too; turns and commands running there are
 cross_site = "Conversations started on another provider carry content only that provider can read (hidden reasoning, sub-agent tasks, encrypted tool results). Continuing one here can stop with “invalid_encrypted_content”: continue it on the provider it was started with, start a new conversation, or turn on the router — it leaves out what this provider cannot read and sends the turn again."
 ciphertext_elsewhere = "{count} conversations used in the last {days} days were last continued on “{provider}”. They carry content only “{provider}” can read (hidden reasoning, sub-agent tasks, encrypted tool results), so continuing them on “{site}” can stop with “invalid_encrypted_content”. Continue them on “{provider}”, start a new conversation, or turn on the router — it leaves out what “{site}” cannot read and sends the turn again."
 model_missing = "“{site}” does not offer your current model {model}; {replacement} is used after the switch."
+model_unprefixed = "“{site}” could not be asked for its models; {model} is the router's name for a model, so {replacement} is written as the model."
 model_mapped = "“{site}” serves your model {model} as {mapped}; {mapped} is written as the model."
 authapi_line = "Auth still goes through the line “{line}” ChatGPT was started with (checked: working). It follows the current line after the next full restart."
 pat_fallback = "{line}: {reason} Your API key is used instead."

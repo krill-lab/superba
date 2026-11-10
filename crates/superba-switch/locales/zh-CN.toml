@@ -171,6 +171,7 @@ remotes = "远程主机 {hosts} 也会切换；远端正在运行的回合和命
 cross_site = "在其他服务商上开始的对话带有只有该服务商能读取的内容（隐藏的推理、子 agent 任务、加密的工具结果）。在这里继续可能报 invalid_encrypted_content：请切回开始它的服务商继续、新开对话，或打开路由——它会去掉当前服务商读不了的内容后重发。"
 ciphertext_elsewhere = "最近 {days} 天用过的 {count} 个对话最后是在“{provider}”上继续的，其中有只有“{provider}”能读取的内容（隐藏的推理、子 agent 任务、加密的工具结果），在“{site}”上继续可能报 invalid_encrypted_content。请切回“{provider}”继续、新开对话，或打开路由——它会去掉“{site}”读不了的内容后重发。"
 model_missing = "「{site}」没有你当前用的模型 {model}，切换后改用 {replacement}。"
+model_unprefixed = "无法从「{site}」获取模型列表；{model} 是路由给模型起的名字，配置中的模型改回 {replacement}。"
 model_mapped = "「{site}」上你的模型 {model} 名为 {mapped}，配置中的模型会写成 {mapped}。"
 authapi_line = "认证仍走 app 启动时的「{line}」线路（已检测可用），下次完全重启后跟随当前线路。"
 pat_fallback = "{line}：{reason}已改用你的 API Key。"

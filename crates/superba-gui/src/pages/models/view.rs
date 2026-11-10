@@ -47,8 +47,7 @@ const PICK_W: f32 = 28.0;
 const VALUE_NARROW: f32 = FIELD_W_NARROW + space::S;
 /// The reset button (an icon in the actions column).
 const RESET_W: f32 = 24.0;
-/// The actions column without the router: the reset button, wide enough for
-/// its header.
+/// The actions column without the router: visibility and reset.
 const ACTIONS_W: f32 = 56.0;
 /// The actions column with the router: show in Codex, Test and reset at the
 /// small control height. Wide enough for "Test" in a loading state.
@@ -107,6 +106,7 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
     // What keeps the providers' models out of Codex, next to the mode
     // (user bug 106).
     super::catalog::guidance_row(ui, cx, state, &view, out);
+    catalog_changes_row(ui, cx, state, &saved, out);
     let body = ui.available_rect_before_wrap();
     // A narrow page (the 960 px window) puts the list source (the router's
     // filters) on a row of its own above the default model / effort / speed
@@ -155,6 +155,80 @@ pub(super) fn page(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, out: &mut Vec<Ac
         price_dialog(ui.ctx(), cx, state, &saved);
     }
     super::prices::tools_dialog(ui.ctx(), cx, &mut state.price_tools, state.prices.as_ref());
+}
+
+/// The provider's list changed since Codex's static catalog file was written
+/// (user bug 132): a new model Codex cannot offer, or entries the provider no
+/// longer lists. Only a notice with "Apply now"; the configuration is never
+/// rewritten on its own.
+fn catalog_changes_row(
+    ui: &mut Ui,
+    cx: &Cx<'_>,
+    state: &State,
+    saved: &Saved<'_>,
+    out: &mut Vec<Action>,
+) {
+    let view = saved.view;
+    if !view_applied(cx, view) || view.read_only {
+        return;
+    }
+    let changes = view.catalog_changes();
+    if changes.is_empty() {
+        return;
+    }
+    let provider = super::provider_name(cx, &view.profile_id);
+    let mut detail = Vec::new();
+    if !changes.missing.is_empty() {
+        detail.push(cx.tr.f(
+            "models.catalog_stale.missing",
+            &[("models", &changes.missing.join(", "))],
+        ));
+    }
+    if !changes.removed.is_empty() {
+        detail.push(cx.tr.f(
+            "models.catalog_stale.removed",
+            &[("models", &changes.removed.join(", "))],
+        ));
+    }
+    let ready = state.pending.is_empty();
+    let tip = if ready {
+        cx.tr
+            .f("models.catalog_stale.tip", &[("provider", &provider)])
+    } else {
+        cx.tr.t("models.catalog_stale.pending_tip")
+    };
+    let title = cx.tr.f(
+        "models.catalog_stale.title",
+        &[
+            ("new", &changes.missing.len()),
+            ("removed", &changes.removed.len()),
+        ],
+    );
+    let detail = detail.join(" · ");
+    let label = cx.tr.t("models.apply_now");
+    let (_, row) = ui.allocate_space(vec2(ui.available_width(), super::catalog::GUIDANCE_H));
+    let enabled = ready && !cx.busy && state.saving.is_none();
+    let clicked = ui
+        .add_enabled_ui(enabled, |ui| {
+            crate::design::widgets::AttentionRow {
+                id: 132,
+                title: &title,
+                detail: Some(&detail),
+                label: &label,
+                tip: &tip,
+                icon: Icon::Warning,
+                color: cx.pal.status(Status::Warn),
+            }
+            .show_at(ui, row)
+        })
+        .inner;
+    if clicked && enabled {
+        out.push(Action::Switch {
+            profile: view.profile_id.clone(),
+            line: None,
+            auth: None,
+        });
+    }
 }
 
 /// Page header: provider picker, search and refresh on the right.
@@ -929,7 +1003,25 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
         prices,
         ..
     } = state;
-    PagedTable::new(("models", &view.profile_id), columns, total, table)
+    let mut rc = RowCx {
+        cx,
+        saved,
+        pending,
+        buffers,
+        rejected,
+        errors: &errors,
+        read_only,
+        custom,
+        active,
+        narrow,
+        priced: plan.iter().any(|(c, _)| *c == Col::Price),
+        edits: &mut edits,
+        focus: focus.as_ref(),
+        table: prices.as_ref(),
+        testing: testing.as_deref(),
+        catalog_busy,
+    };
+    let response = PagedTable::new(("models", &view.profile_id), columns, total, table)
         .label(cx.tr.t(Page::Models.title_key()))
         .header(headers)
         .truncate_headers()
@@ -948,26 +1040,20 @@ fn table(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
             } else {
                 RowRef::Model(models[row - 1])
             };
-            let mut rc = RowCx {
-                cx,
-                saved,
-                pending,
-                buffers,
-                rejected,
-                errors: &errors,
-                read_only,
-                custom,
-                active,
-                narrow,
-                priced: plan.iter().any(|(c, _)| *c == Col::Price),
-                edits: &mut edits,
-                focus: focus.as_ref(),
-                table: prices.as_ref(),
-                testing: testing.as_deref(),
-                catalog_busy,
-            };
             cell(ui, &mut rc, &r, plan[col].0);
         });
+    for (row, response) in response.rows {
+        let slug = if row == 0 {
+            ALL_MODELS
+        } else {
+            &models[row - 1].slug
+        };
+        // No empty pop-up on rows without an action (the all-models row
+        // without values of its own).
+        if has_row_menu(&rc, slug) {
+            response.context_menu(|ui| row_menu(ui, &mut rc, slug));
+        }
+    }
     for e in edits {
         apply_edit(cx, state, saved, e);
     }
@@ -1216,7 +1302,12 @@ fn model_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, m: &ModelSpec) {
     if name != m.slug {
         parts.push(name);
     }
-    if model::hidden(m, &o) {
+    if o.hidden {
+        parts.push(cx.tr.t("models.hidden"));
+    }
+    if model::upstream_hidden(m) && rc.saved.view.router_catalog.is_none() {
+        parts.push(cx.tr.t("models.upstream_hidden"));
+    } else if !o.hidden && model::hidden(m, &o) {
         parts.push(cx.tr.t("models.hidden"));
     }
     if rc.narrow {
@@ -1274,35 +1365,25 @@ fn model_cell(ui: &mut Ui, rc: &mut RowCx<'_, '_>, m: &ModelSpec) {
 }
 
 /// The row's actions in the last column, one line at the small control
-/// height, always in the same order and place: show in Codex, Test (router),
-/// reset (only when the row has its own values).
+/// height, always in the same order and place: show in Codex (the router, and
+/// direct providers whose per-model values reach Codex), Test (router), reset
+/// (only when the row has its own values).
 fn actions(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str) {
     let cx = rc.cx;
     ui.spacing_mut().item_spacing.x = space::XS;
-    if slug != ALL_MODELS
-        && rc.saved.view.router_catalog.is_some()
-        && let Some(m) = rc.saved.spec(slug)
-    {
-        let visible = !model::hidden(m, &rc.pending.override_of(rc.saved, slug));
-        let tip = cx.tr.f(
-            if visible {
-                "models.router.visible_tip"
-            } else {
-                "models.router.hidden_tip"
-            },
-            &[("model", &slug)],
-        );
-        if ui
+    if let Some((visible, enabled, tip)) = visibility_action(rc, slug)
+        && ui
             .add(
                 IconButton::new(if visible { Icon::Eye } else { Icon::EyeOff }, tip)
                     .size(size::CONTROL_SM)
                     .checked(visible)
-                    .enabled(!rc.read_only && !rc.catalog_busy),
+                    .enabled(enabled),
             )
             .clicked()
-        {
-            rc.edits.push(Edit::Visible(slug.to_owned(), !visible));
-        }
+    {
+        rc.edits.push(Edit::Visible(slug.to_owned(), !visible));
+    }
+    if slug != ALL_MODELS && rc.saved.view.router_catalog.is_some() {
         let testing = rc.testing == Some(slug);
         if ui
             .add(
@@ -1327,6 +1408,95 @@ fn actions(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str) {
         {
             rc.edits.push(Edit::Reset(slug.to_owned()));
         }
+    }
+}
+
+/// The same visibility action for the eye button and the row menu. Upstream
+/// hiding is never presented as a user override that can be undone.
+fn visibility_action(rc: &RowCx<'_, '_>, slug: &str) -> Option<(bool, bool, String)> {
+    let view = rc.saved.view;
+    let routed = view.router_catalog.is_some();
+    if !routed && !view.per_model {
+        return None;
+    }
+    let m = rc.saved.spec(slug)?;
+    let o = rc.pending.override_of(rc.saved, slug);
+    let upstream = !routed && model::upstream_hidden(m) && !o.hidden;
+    let visible = if routed {
+        !model::hidden(m, &o)
+    } else {
+        !o.hidden
+    };
+    let key = if upstream {
+        "models.upstream_hidden_tip"
+    } else {
+        match (routed, visible) {
+            (true, true) => "models.router.visible_tip",
+            (true, false) => "models.router.hidden_tip",
+            (false, true) => "models.hide_tip",
+            (false, false) => "models.unhide_tip",
+        }
+    };
+    Some((
+        visible && !upstream,
+        !rc.read_only && !rc.catalog_busy && !upstream,
+        rc.cx.tr.f(key, &[("model", &slug)]),
+    ))
+}
+
+fn has_row_menu(rc: &RowCx<'_, '_>, slug: &str) -> bool {
+    visibility_action(rc, slug).is_some()
+        || (slug != ALL_MODELS && rc.saved.view.router_catalog.is_some())
+        || rc.pending.overridden(rc.saved, slug)
+}
+
+/// The row's right-click menu: the actions of its actions column.
+fn row_menu(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str) {
+    let cx = rc.cx;
+    if let Some((visible, enabled, tip)) = visibility_action(rc, slug) {
+        let upstream = rc.saved.view.router_catalog.is_none()
+            && rc.saved.spec(slug).is_some_and(model::upstream_hidden)
+            && !rc.pending.override_of(rc.saved, slug).hidden;
+        let label = if upstream {
+            "models.upstream_hidden"
+        } else if visible {
+            "models.hide"
+        } else {
+            "models.unhide"
+        };
+        if ui
+            .add_enabled(enabled, egui::Button::new(cx.tr.t(label)))
+            .on_hover_text(tip)
+            .clicked()
+        {
+            rc.edits.push(Edit::Visible(slug.to_owned(), !visible));
+            ui.close();
+        }
+    }
+    if slug != ALL_MODELS
+        && rc.saved.view.router_catalog.is_some()
+        && ui
+            .add_enabled(
+                !rc.read_only && rc.testing.is_none(),
+                egui::Button::new(cx.tr.t("models.catalog.test")),
+            )
+            .on_hover_text(cx.tr.t("models.router.test_tip"))
+            .clicked()
+    {
+        rc.edits.push(Edit::Test(slug.to_owned()));
+        ui.close();
+    }
+    if rc.pending.overridden(rc.saved, slug)
+        && ui
+            .add_enabled(!rc.read_only, egui::Button::new(cx.tr.t("models.reset")))
+            .on_hover_text(
+                cx.tr
+                    .f("models.reset_of", &[("model", &label_of(cx, slug))]),
+            )
+            .clicked()
+    {
+        rc.edits.push(Edit::Reset(slug.to_owned()));
+        ui.close();
     }
 }
 
@@ -1420,8 +1590,16 @@ fn state_badge(
         S::NotApplied => (
             "models.state.not_applied",
             cx.pal.link,
-            cx.tr
-                .f("models.state.not_applied_tip", &[("provider", &provider())]),
+            if rc
+                .saved
+                .spec(slug)
+                .is_some_and(|m| rc.saved.view.missing_from_catalog(m))
+            {
+                cx.tr.t("models.state.missing_catalog_tip")
+            } else {
+                cx.tr
+                    .f("models.state.not_applied_tip", &[("provider", &provider())])
+            },
         ),
         S::Applied => (
             "models.state.applied",
@@ -1816,7 +1994,11 @@ fn upstream(ui: &mut Ui, rc: &mut RowCx<'_, '_>, slug: &str, value: String) {
 fn apply_edit(cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>, edit: Edit) {
     match edit {
         Edit::Visible(slug, visible) => {
-            super::catalog::visibility(state, cx, saved.view, slug, visible);
+            if saved.view.router_catalog.is_some() {
+                super::catalog::visibility(state, cx, saved.view, slug, visible);
+            } else {
+                state.pending.set_hidden(saved, &slug, !visible);
+            }
         }
         Edit::Test(slug) => super::catalog::test(state, cx, slug),
         Edit::Reset(slug) => {
@@ -1997,7 +2179,8 @@ fn bottom(ui: &mut Ui, cx: &Cx<'_>, state: &mut State, saved: &Saved<'_>) {
             ui.add(Toggle::new(
                 &mut state.show_hidden,
                 cx.tr.t("models.show_hidden"),
-            ));
+            ))
+            .on_hover_text(cx.tr.t("models.show_hidden_tip"));
             ui.label(Text::small(
                 cx.tr.f("models.show_hidden_n", &[("n", &hidden)]),
                 cx.pal,

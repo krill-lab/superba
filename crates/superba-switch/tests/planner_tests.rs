@@ -1204,3 +1204,154 @@ async fn nothing_to_write_and_a_current_core_needs_no_restart() {
     let p = sw.plan(req("keyed")).await.unwrap();
     assert!(p.primary.is_hot(), "{:?}", p.primary);
 }
+
+/// GH#16: the router's name for a model (`<provider>/<model>`) stays in
+/// `config.toml` after the router is turned off. Without the line's list to
+/// check it against (the list cannot be read, is empty, or the site has none)
+/// a provider segment the router uses goes back to the model's own name, with
+/// a warning; a segment that is not the router's is part of the model's id.
+#[tokio::test]
+async fn a_router_prefix_is_removed_when_the_line_lists_no_models() {
+    use superba_switch::planner::{router_prefixes, strip_router_prefix};
+    let configured = |p: &SwitchPlan| {
+        p.config
+            .as_ref()
+            .and_then(|c| c.desired.as_ref())
+            .and_then(|d| d.model.model.clone())
+    };
+    let unprefixed = |p: &SwitchPlan| {
+        p.warnings
+            .iter()
+            .find(|w| w.text.key == "switch.warn.model_unprefixed")
+            .map(|w| (w.severity, w.text.args.clone()))
+    };
+    let lists: [std::result::Result<Vec<String>, Error>; 2] =
+        [Err(Error::other("the line did not answer")), Ok(Vec::new())];
+    for list in lists {
+        let w = World::new();
+        w.profiles.set.lock().unwrap().settings.router.members = vec![ProfileId::new("work")];
+        w.config.state.lock().unwrap().model = Some("work/gpt-6.1-sol".into());
+        *w.prober.models.lock().unwrap() = list;
+        let p = plan(&w, req("work")).await;
+        assert_eq!(configured(&p).as_deref(), Some("gpt-6.1-sol"));
+        let (severity, args) = unprefixed(&p).expect("the change is named");
+        assert_eq!(severity, superba_core::Severity::Warning);
+        assert!(args.contains(&("model".to_owned(), "work/gpt-6.1-sol".to_owned())));
+        assert!(args.contains(&("replacement".to_owned(), "gpt-6.1-sol".to_owned())));
+    }
+
+    // A site without a model list: the same, and the router's name for this
+    // member comes from the domain of its line.
+    let w = World::new();
+    {
+        let base = url::Url::parse("https://api.example.com/v1").unwrap();
+        let mut site = superba_switch::new_compatible_site(
+            superba_core::SiteId::new("example"),
+            "Example",
+            &base,
+        )
+        .unwrap();
+        site.capabilities.model_catalog = false;
+        let mut p = krill_profile("compat", None, AuthMode::ApiKey);
+        p.name = "公司线路".into();
+        p.site_id = superba_core::SiteId::new("example");
+        p.base_url_override = Some(base);
+        let mut set = w.profiles.set.lock().unwrap();
+        set.custom_sites.push(site);
+        set.profiles.push(p);
+        set.settings.router.members = vec![ProfileId::new("compat")];
+    }
+    w.secrets
+        .map
+        .lock()
+        .unwrap()
+        .insert("profile:compat".into(), "sk-compat-key-1234".into());
+    w.config.state.lock().unwrap().model = Some("example/gpt-6.1-sol".into());
+    let p = plan(&w, req("compat")).await;
+    assert_eq!(
+        configured(&p).as_deref(),
+        Some("gpt-6.1-sol"),
+        "{:?}",
+        p.warnings
+    );
+    assert!(unprefixed(&p).is_some());
+
+    // A saved provider slug of a member (the router's "krill" namespace).
+    let w = World::new();
+    {
+        let mut set = w.profiles.set.lock().unwrap();
+        set.settings.router.members = vec![ProfileId::new("work")];
+        set.settings
+            .router
+            .catalog
+            .provider_slugs
+            .insert("work".into(), "krill".into());
+    }
+    w.config.state.lock().unwrap().model = Some("krill/gpt-6.1-sol".into());
+    *w.prober.models.lock().unwrap() = Err(Error::other("offline"));
+    let p = plan(&w, req("work")).await;
+    assert_eq!(configured(&p).as_deref(), Some("gpt-6.1-sol"));
+
+    // An id with a slash of its own is kept, and so is a choice the user made.
+    let w = World::new();
+    w.profiles.set.lock().unwrap().settings.router.members = vec![ProfileId::new("work")];
+    w.config.state.lock().unwrap().model = Some("openai/gpt-oss".into());
+    *w.prober.models.lock().unwrap() = Err(Error::other("offline"));
+    let p = plan(&w, req("work")).await;
+    assert_eq!(unprefixed(&p), None);
+    assert_ne!(configured(&p).as_deref(), Some("gpt-oss"));
+
+    let set = w.profiles.set.lock().unwrap().clone();
+    let prefixes = router_prefixes(&set, &[]);
+    assert!(prefixes.contains("work"), "{prefixes:?}");
+    assert_eq!(
+        strip_router_prefix("work/gpt-5.5", &prefixes),
+        Some("gpt-5.5")
+    );
+    assert_eq!(
+        strip_router_prefix("work-2/gpt-5.5", &prefixes),
+        Some("gpt-5.5")
+    );
+    assert_eq!(
+        strip_router_prefix("work-provider/gpt-5.5", &prefixes),
+        Some("gpt-5.5")
+    );
+    assert_eq!(strip_router_prefix("openai/gpt-oss", &prefixes), None);
+    assert_eq!(strip_router_prefix("work/", &prefixes), None);
+    assert_eq!(strip_router_prefix("gpt-5.5", &prefixes), None);
+}
+
+/// GH#16: a model the request names explicitly is the user's choice: the
+/// router-prefix strip leaves it alone and says nothing, also when it is
+/// itself spelled with a router member's segment.
+#[tokio::test]
+async fn an_explicit_model_choice_is_never_unprefixed() {
+    for (chosen, lists) in [
+        ("gpt-5.5", Err(Error::other("the line did not answer"))),
+        ("gpt-5.5", Ok(Vec::new())),
+        (
+            "work/gpt-6.1-sol",
+            Err(Error::other("the line did not answer")),
+        ),
+        ("work/gpt-6.1-sol", Ok(Vec::new())),
+    ] {
+        let w = World::new();
+        w.profiles.set.lock().unwrap().settings.router.members = vec![ProfileId::new("work")];
+        w.config.state.lock().unwrap().model = Some("work/gpt-6.1-sol".into());
+        *w.prober.models.lock().unwrap() = lists;
+        let mut r = req("work");
+        r.model_override = Some(chosen.into());
+        let p = plan(&w, r).await;
+        let configured = p
+            .config
+            .as_ref()
+            .and_then(|c| c.desired.as_ref())
+            .and_then(|d| d.model.model.clone());
+        assert_eq!(configured.as_deref(), Some(chosen));
+        assert!(
+            !warning_keys(&p).contains(&"switch.warn.model_unprefixed".to_owned()),
+            "{chosen}: {:?}",
+            p.warnings
+        );
+    }
+}
