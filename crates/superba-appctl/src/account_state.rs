@@ -46,27 +46,43 @@ const BACKUP_PREFIX: &str = "global-state-";
 pub enum LoginKind {
     /// ChatGPT tokens: the app has an account owner.
     ChatGpt,
-    /// Personal access token or API key without ChatGPT tokens: no owner.
+    /// Personal access token or API key: never an owner.
     Token,
-    /// Missing, unreadable or unrecognised (credentials in a keyring, ...).
+    /// Missing, unreadable or unrecognised (credentials in a keyring,
+    /// Bedrock, ...).
     Unknown,
 }
 
-/// Classify `auth.json` bytes.
+/// Classify `auth.json` bytes the way Codex picks its auth mode
+/// (`AuthDotJson::resolved_mode`): an explicit `auth_mode` wins; otherwise a
+/// personal access token, then Bedrock credentials, then an API key, and only
+/// then ChatGPT tokens. So a personal access token is a token login whatever
+/// `tokens` holds: Codex ignores them and never hands the app a JWT.
 pub fn login_kind(auth_json: &[u8]) -> LoginKind {
     let Ok(Value::Object(auth)) = serde_json::from_slice::<Value>(auth_json) else {
         return LoginKind::Unknown;
     };
-    if auth.get("tokens").is_some_and(|t| !t.is_null()) {
-        return LoginKind::ChatGpt;
+    match auth.get("auth_mode") {
+        None | Some(Value::Null) => {}
+        Some(Value::String(mode)) => {
+            return match mode.as_str() {
+                "apikey" | "personalAccessToken" => LoginKind::Token,
+                "chatgpt" | "chatgptAuthTokens" => LoginKind::ChatGpt,
+                _ => LoginKind::Unknown,
+            };
+        }
+        Some(_) => return LoginKind::Unknown,
     }
-    let present = |key: &str| {
-        auth.get(key)
-            .and_then(Value::as_str)
-            .is_some_and(|s| !s.trim().is_empty())
-    };
-    if present("personal_access_token") || present("OPENAI_API_KEY") {
+    // Codex deserialises these as `Option`s: present means non-null.
+    let present = |key: &str| auth.get(key).is_some_and(|v| !v.is_null());
+    if present("personal_access_token") {
         LoginKind::Token
+    } else if present("bedrock_api_key") || present("bedrock_access_keys") {
+        LoginKind::Unknown
+    } else if present("OPENAI_API_KEY") {
+        LoginKind::Token
+    } else if present("tokens") {
+        LoginKind::ChatGpt
     } else {
         LoginKind::Unknown
     }
@@ -161,7 +177,8 @@ pub enum Outcome {
 
 /// Before a launch into `home` (the app is not running): with a token login,
 /// [`flatten`] its global state, keeping a copy of the original in
-/// `backup_dir`. A file the app cannot parse is left for its `.bak` fallback
+/// `backup_dir` (owner-only on Unix; written before the state file is
+/// replaced, so a failed replacement still leaves the copy). A file the app cannot parse is left for its `.bak` fallback
 /// (an error); the app's `.bak` file is never touched.
 pub fn prepare(home: &CodexHome, backup_dir: &Path, now: Timestamp) -> Result<Outcome> {
     match fs::read(home.auth_json()) {
@@ -243,7 +260,15 @@ fn write_backup(dir: &Path, bytes: &[u8], now: Timestamp) -> Result<PathBuf> {
         }
         ms += 1;
     };
-    fs::write(&path, bytes).map_err(|e| Error::io(&path, &e))?;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    // Owner-only, like `auth.json`: the file lists the user's folders.
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut file = options.open(&path).map_err(|e| Error::io(&path, &e))?;
+    file.write_all(bytes).map_err(|e| Error::io(&path, &e))?;
+    file.sync_all().map_err(|e| Error::io(&path, &e))?;
+    drop(file);
     let mut kept: Vec<(i64, PathBuf)> = fs::read_dir(dir)
         .map_err(|e| Error::io(dir, &e))?
         .filter_map(|entry| {

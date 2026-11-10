@@ -63,28 +63,84 @@ fn keys(v: &Value) -> Vec<&str> {
     v.as_object().unwrap().keys().map(String::as_str).collect()
 }
 
+/// PAT auth.json with ChatGPT-shaped tokens next to it (what a line issuing
+/// an id_token at PAT sign-in would produce): Codex still picks the PAT.
+const PAT_WITH_TOKENS: &str = r#"{"personal_access_token":"nb_test","OPENAI_API_KEY":"nb_test","tokens":{"id_token":"a.b.c","access_token":"a.b.c","refresh_token":"r","account_id":"acc"},"last_refresh":"2026-11-10T00:00:00Z"}"#;
+
 #[test]
 fn login_kinds() {
     assert_eq!(login_kind(PAT.as_bytes()), LoginKind::Token);
     assert_eq!(login_kind(API_KEY.as_bytes()), LoginKind::Token);
     assert_eq!(login_kind(CHATGPT.as_bytes()), LoginKind::ChatGpt);
-    // Mixed login keeps the ChatGPT tokens; an API key next to them does not
-    // make it a token login.
-    let mixed = r#"{"OPENAI_API_KEY":"sk","tokens":{"id_token":"x"}}"#;
-    assert_eq!(login_kind(mixed.as_bytes()), LoginKind::ChatGpt);
-    assert_eq!(
-        login_kind(br#"{"OPENAI_API_KEY":"sk","tokens":null}"#),
-        LoginKind::Token
-    );
-    for unknown in [
-        &b""[..],
-        b"{}",
-        b"[]",
-        b"not json",
-        br#"{"OPENAI_API_KEY":" "}"#,
+    // Codex's precedence (AuthDotJson::resolved_mode): explicit auth_mode,
+    // then personal access token, Bedrock, API key, and ChatGPT tokens last.
+    for (auth, kind) in [
+        (
+            r#"{"OPENAI_API_KEY":null,"tokens":{"id_token":"x"}}"#,
+            LoginKind::ChatGpt,
+        ),
+        (r#"{"OPENAI_API_KEY":"sk","tokens":null}"#, LoginKind::Token),
+        (
+            r#"{"OPENAI_API_KEY":"sk","tokens":{"id_token":"x"}}"#,
+            LoginKind::Token,
+        ),
+        (
+            r#"{"auth_mode":"chatgpt","OPENAI_API_KEY":"sk","tokens":{"id_token":"x"}}"#,
+            LoginKind::ChatGpt,
+        ),
+        (r#"{"auth_mode":"chatgptAuthTokens"}"#, LoginKind::ChatGpt),
+        (
+            r#"{"auth_mode":"personalAccessToken","personal_access_token":"p","tokens":{"id_token":"x"}}"#,
+            LoginKind::Token,
+        ),
+        (
+            r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk","tokens":{"id_token":"x"}}"#,
+            LoginKind::Token,
+        ),
+        (
+            r#"{"auth_mode":"agentIdentity","OPENAI_API_KEY":"sk"}"#,
+            LoginKind::Unknown,
+        ),
+        (
+            r#"{"auth_mode":7,"OPENAI_API_KEY":"sk"}"#,
+            LoginKind::Unknown,
+        ),
+        (
+            r#"{"bedrock_api_key":{"k":"v"},"OPENAI_API_KEY":"sk"}"#,
+            LoginKind::Unknown,
+        ),
+        (
+            r#"{"bedrock_access_keys":{"k":"v"},"tokens":{"id_token":"x"}}"#,
+            LoginKind::Unknown,
+        ),
+        (r#"{"OPENAI_API_KEY":" "}"#, LoginKind::Token),
     ] {
+        assert_eq!(login_kind(auth.as_bytes()), kind, "{auth}");
+    }
+    for unknown in [&b""[..], b"{}", b"[]", b"not json", br#"{"tokens":null}"#] {
         assert_eq!(login_kind(unknown), LoginKind::Unknown, "{unknown:?}");
     }
+}
+
+#[test]
+fn a_personal_access_token_wins_over_chatgpt_tokens() {
+    assert_eq!(login_kind(PAT_WITH_TOKENS.as_bytes()), LoginKind::Token);
+    let mut patched: Value = serde_json::from_str(PAT_WITH_TOKENS).unwrap();
+    patched["auth_mode"] = Value::Null;
+    assert_eq!(
+        login_kind(&serde_json::to_vec(&patched).unwrap()),
+        LoginKind::Token
+    );
+    // And such a home gets the fold before a launch.
+    let original = serde_json::to_vec(&broken_state()).unwrap();
+    let h = home(Some(PAT_WITH_TOKENS), Some(&original));
+    assert!(matches!(
+        prepare(&h.home, &h.backups, Timestamp::from_millis(5)).unwrap(),
+        Outcome::Flattened { stashes: 1, .. }
+    ));
+    let state: Value =
+        serde_json::from_slice(&fs::read(h.home.global_state_json()).unwrap()).unwrap();
+    assert!(state.get(ACCOUNT_STATE_KEY).is_none());
 }
 
 #[test]
@@ -373,4 +429,132 @@ fn prepare_writes_through_a_symlinked_state_file() {
     let state: Value = serde_json::from_slice(&fs::read(&target).unwrap()).unwrap();
     assert!(state.get(ACCOUNT_STATE_KEY).is_none());
     assert_eq!(state["local-projects"].as_object().unwrap().len(), 3);
+}
+
+/// Two ChatGPT accounts stashed (`hA` first, `hB` second) with the same
+/// project id under different names, different selected projects and
+/// different values for the same atom; the top level holds a PAT project.
+fn two_account_state() -> Value {
+    json!({
+        ACCOUNT_STATE_KEY: {
+            "owner": null,
+            "inactive": {
+                "hA": {
+                    "atoms": {"x": "from-a"},
+                    "globals": {
+                        "electron-saved-workspace-roots": ["/a1", "/shared"],
+                        "local-projects": {
+                            "p1": {"id": "p1", "name": "alpha-name", "rootPaths": ["/shared"]},
+                            "p2": {"id": "p2", "name": "only-a", "rootPaths": ["/a1"]}
+                        },
+                        "project-order": ["p1", "p2"],
+                        "selected-project": {"type": "local", "projectId": "p1"}
+                    }
+                },
+                "hB": {
+                    "atoms": {"x": "from-b", "y": "only-b"},
+                    "globals": {
+                        "electron-saved-workspace-roots": ["/shared", "/b1"],
+                        "local-projects": {
+                            "p1": {"id": "p1", "name": "beta-name", "rootPaths": ["/shared"], "color": "blue"},
+                            "p3": {"id": "p3", "name": "only-b", "rootPaths": ["/b1"]}
+                        },
+                        "project-order": ["p3", "p1"],
+                        "selected-project": {"type": "local", "projectId": "p3"}
+                    }
+                }
+            }
+        },
+        "local-projects": {"p9": {"id": "p9", "name": "pat", "rootPaths": ["/c1"]}},
+        "electron-saved-workspace-roots": ["/c1"]
+    })
+}
+
+#[test]
+fn conflicting_stashes_keep_every_project_and_the_original_in_the_backup() {
+    let original = serde_json::to_vec_pretty(&two_account_state()).unwrap();
+    let h = home(Some(PAT), Some(&original));
+    let Outcome::Flattened { stashes, backup } =
+        prepare(&h.home, &h.backups, Timestamp::from_millis(7)).unwrap()
+    else {
+        panic!("not flattened");
+    };
+    assert_eq!(stashes, 2);
+    // The backup holds every owner's stash byte for byte.
+    assert_eq!(fs::read(&backup).unwrap(), original);
+    let state: Value =
+        serde_json::from_slice(&fs::read(h.home.global_state_json()).unwrap()).unwrap();
+    // No project entry is lost: every id of both accounts and the PAT one.
+    assert_eq!(keys(&state["local-projects"]), ["p9", "p1", "p2", "p3"]);
+    assert_eq!(
+        state["electron-saved-workspace-roots"],
+        json!(["/c1", "/a1", "/shared", "/b1"])
+    );
+    assert_eq!(state["project-order"], json!(["p1", "p2", "p3"]));
+    // Conflicting leaves: the first stash in the file wins, the second only
+    // fills what is missing (p1 keeps alpha's name and gains beta's colour).
+    assert_eq!(
+        state["local-projects"]["p1"],
+        json!({"id": "p1", "name": "alpha-name", "rootPaths": ["/shared"], "color": "blue"})
+    );
+    assert_eq!(state["selected-project"]["projectId"], "p1");
+    assert_eq!(
+        state["electron-persisted-atom-state"],
+        json!({"x": "from-a", "y": "only-b"})
+    );
+    assert!(state.get(ACCOUNT_STATE_KEY).is_none());
+}
+
+/// The copy must exist before the state file is replaced: when the
+/// replacement fails, the backup is already there and the state is intact.
+#[cfg(unix)]
+#[test]
+fn the_backup_is_written_before_the_state_file_is_replaced() {
+    use std::os::unix::fs::PermissionsExt;
+    let original = serde_json::to_vec(&broken_state()).unwrap();
+    let h = home(Some(PAT), Some(&original));
+    // A read-only Codex home: the temporary file for the replacement cannot
+    // be created there. (Root ignores the mode; nothing to test then.)
+    fs::set_permissions(h.home.root(), fs::Permissions::from_mode(0o500)).unwrap();
+    let writable = fs::write(h.home.root().join("probe"), b"").is_ok();
+    let result = prepare(&h.home, &h.backups, Timestamp::from_millis(9));
+    fs::set_permissions(h.home.root(), fs::Permissions::from_mode(0o700)).unwrap();
+    if writable {
+        eprintln!("skipped: running with permission overrides");
+        return;
+    }
+    assert!(result.is_err());
+    assert_eq!(fs::read(h.home.global_state_json()).unwrap(), original);
+    assert_eq!(backups(&h.backups), ["global-state-9.json"]);
+    assert_eq!(
+        fs::read(h.backups.join("global-state-9.json")).unwrap(),
+        original
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn backups_are_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let original = serde_json::to_vec(&broken_state()).unwrap();
+    let h = home(Some(PAT), Some(&original));
+    // A permissive umask-independent state file mode must not leak into it.
+    fs::set_permissions(
+        h.home.global_state_json(),
+        fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    let Outcome::Flattened { backup, .. } =
+        prepare(&h.home, &h.backups, Timestamp::from_millis(3)).unwrap()
+    else {
+        panic!("not flattened");
+    };
+    let mode = fs::metadata(&backup).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+    // The state file keeps its own mode.
+    let mode = fs::metadata(h.home.global_state_json())
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o644);
 }
