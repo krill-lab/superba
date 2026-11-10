@@ -766,6 +766,7 @@ impl Switcher {
             external,
             claude_routed: self.claude_routed(),
             router_base_url: d.router.endpoint().ok().map(|e| e.base_url),
+            lost_projects: self.lost_projects_overview(&home).await,
         })
     }
 

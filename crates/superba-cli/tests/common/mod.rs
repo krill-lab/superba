@@ -365,6 +365,7 @@ pub fn overview() -> Overview {
         baseline_captured: true,
         claude_routed: false,
         router_base_url: None,
+        lost_projects: None,
         baseline_at: None,
         login_stash: None,
         runtime: None,

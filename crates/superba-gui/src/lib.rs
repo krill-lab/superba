@@ -41,6 +41,7 @@ pub mod i18n;
 pub mod in_effect;
 pub mod instance;
 pub mod launch;
+pub mod lost_projects;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod memory;

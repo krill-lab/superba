@@ -256,6 +256,14 @@ pub enum Command {
     SelfUpdateSkip(Option<String>),
     /// The last update attempt's problem was shown: do not announce it again.
     SelfUpdateAcknowledge,
+    /// Answer the offer of project folders ChatGPT dropped, then reload the
+    /// overview.
+    AnswerLostProjects {
+        /// The list answered.
+        fingerprint: String,
+        /// The answer.
+        answer: superba_core::LostProjectsAnswer,
+    },
     /// State of the feeds (`refresh` = fetch now).
     Feeds {
         /// Fetch now.
@@ -317,6 +325,9 @@ impl PendingDecision {
 pub enum Reply {
     /// Overview loaded.
     Overview(Result<Overview>),
+    /// The offer of dropped project folders was answered (`true` = folders
+    /// were queued to come back).
+    LostProjectsAnswered(Result<bool>),
     /// Profiles loaded.
     Profiles(Result<ProfileSet>),
     /// Sites loaded.
@@ -867,6 +878,18 @@ async fn handle(
         }
         Command::SelfUpdateSkip(version) => {
             out.send(Reply::SelfUpdate(service.self_update_skip(version).await));
+        }
+        Command::AnswerLostProjects {
+            fingerprint,
+            answer,
+        } => {
+            let restore = matches!(answer, superba_core::LostProjectsAnswer::Restore { .. });
+            let result = service
+                .answer_lost_projects(fingerprint, answer)
+                .await
+                .map(|()| restore);
+            out.send(Reply::LostProjectsAnswered(result));
+            out.send(Reply::Overview(service.overview().await));
         }
         Command::SelfUpdateAcknowledge => {
             out.send(Reply::SelfUpdate(service.self_update_acknowledge().await));

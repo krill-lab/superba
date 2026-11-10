@@ -7,7 +7,10 @@
 //!   Windows MSIX) and Codex CLI binaries ([`clibin`]); which program a Codex
 //!   path really runs (the macOS launcher and its `CodexCLI.app` target, [`codexid`]);
 //! - launch with loopback CDP and injected environment ([`launch`]), launch records
-//!   in `DataDir::app_sessions_json` ([`store`]);
+//!   in `DataDir::app_sessions_json` ([`store`]); before a launch without a
+//!   ChatGPT sign-in, the app's account-scoped state is folded back so its
+//!   projects survive ([`account_state`]), and folders the user picked to
+//!   bring back are written into its project list ([`project_restore`]);
 //! - a minimal CDP client ([`cdp`]) with listener ownership checks ([`owner`]);
 //! - hot restart through `superba_core::codex::hot_restart_js`, verified by a new
 //!   app-server child of the app main process; graceful quit ([`quit`]);
@@ -20,6 +23,7 @@
 //! Platform code sits behind `cfg(target_os = ...)`; Linux is the reference and the
 //! only platform exercised end to end.
 
+pub mod account_state;
 pub mod activity;
 pub mod appx;
 pub mod cdp;
@@ -35,6 +39,7 @@ pub mod osproc;
 pub mod owner;
 pub mod package;
 pub mod procs;
+pub mod project_restore;
 pub mod quit;
 pub mod renderer;
 pub mod stop;
@@ -310,7 +315,8 @@ impl DesktopAppController {
 
     /// The reader of the login session's environment, which an app started by
     /// LaunchServices or MSIX activation gets instead of Superba's. Without
-    /// one such launches do not seed the onboarding flag (user bug 129).
+    /// one such launches leave the desktop state alone: no onboarding flag (user
+    /// bug 129), no account-state fold or restored folders (user bugs 135/136).
     pub fn with_session_env(mut self, persister: Arc<dyn superba_core::EnvPersister>) -> Self {
         self.session_env = SessionEnv(Some(persister));
         self
@@ -328,13 +334,13 @@ impl DesktopAppController {
         let mut session = None;
         if let Some(location) = app_env.session_location() {
             let Some(persister) = &self.session_env.0 else {
-                tracing::debug!("no session environment reader; onboarding state not seeded");
+                tracing::debug!("no session environment reader; desktop state not prepared");
                 return None;
             };
             let report = match persister.inspect(superba_core::codex::ENV_CODEX_HOME).await {
                 Ok(report) => report,
                 Err(error) => {
-                    tracing::warn!(%error, "could not read the session's CODEX_HOME; onboarding state not seeded");
+                    tracing::warn!(%error, "could not read the session's CODEX_HOME; desktop state not prepared");
                     return None;
                 }
             };
@@ -352,7 +358,7 @@ impl DesktopAppController {
             {
                 tracing::warn!(
                     %value,
-                    "the session's CODEX_HOME is not an absolute path; onboarding state not seeded"
+                    "the session's CODEX_HOME is not an absolute path; desktop state not prepared"
                 );
                 return None;
             }
@@ -863,22 +869,33 @@ impl AppController for DesktopAppController {
             env = ?spec.env_set.keys().collect::<Vec<_>>(),
             "launching the desktop app"
         );
-        // The home whose onboarding flag the app will read (user bug 129).
+        // The home whose desktop state the app will read (user bugs 129, 135,
+        // 136): the fold, the restored folders and the onboarding flag all go
+        // there.
         let probe_install = install.clone();
         let app_env = tokio::task::spawn_blocking(move || AppEnv::of(&probe_install))
             .await
             .map_err(blocking_err)?;
-        let seed_home = self
+        let state_home = self
             .launched_codex_home(app_env, options, &spec.env_set, &app_home)
             .await;
         let spawn_spec = spec.clone();
         let spawn_install = install.clone();
         let log = self.launch_log_path();
+        let state_backups = self.ctx.data_dir.app_state_backups_dir();
+        let app_state = self.ctx.data_dir.app_state_dir();
         // LaunchServices may take several seconds to expose the new main pid.
         let spawned = tokio::task::spawn_blocking(move || {
             // After the running-instance check, before any platform starts the
-            // app (user bug 129). Never fails the launch; see `onboarding`.
-            if let Some(home) = &seed_home {
+            // app, in the home the started app reads its desktop state from.
+            // First the account-state fold and the folders queued to come back
+            // (user bugs 135/136), then the onboarding flag (user bug 129):
+            // two sequential atomic replacements of the same file, the second
+            // reading what the first wrote, so neither loses the other's
+            // change. Each fails on its own without stopping the other, and
+            // neither ever fails the launch.
+            if let Some(home) = &state_home {
+                account_state::seed(home, &state_backups, &app_state);
                 onboarding::seed(home);
             }
             launch::spawn(&spawn_spec, &spawn_install, Some(&log))

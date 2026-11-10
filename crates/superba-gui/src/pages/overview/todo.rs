@@ -63,6 +63,9 @@ pub enum TodoKind {
     NotifyHooks,
     /// GH#5: another tool changed what Superba manages.
     ExternalChange,
+    /// ChatGPT dropped project folders Superba can bring back (user bugs
+    /// 135/136 follow-up).
+    LostProjects,
 }
 
 /// One entry of the list.
@@ -93,7 +96,7 @@ impl Todo {
             TodoKind::RouterDown | TodoKind::RouterDirect | TodoKind::MemberDown => {
                 "overview.todo.fix.router"
             }
-            TodoKind::ExternalChange => "overview.todo.fix.review",
+            TodoKind::ExternalChange | TodoKind::LostProjects => "overview.todo.fix.review",
             TodoKind::HotSwitchOff => "overview.todo.fix.reopen",
             _ => "overview.todo.fix.view",
         })
@@ -127,6 +130,7 @@ impl Todo {
                 Action::Go(Page::Superba(crate::pages::SuperbaSection::Diagnostics))
             }
             TodoKind::ExternalChange => Action::ShowExternal,
+            TodoKind::LostProjects => Action::ShowLostProjects,
             TodoKind::HotSwitchOff => Action::RestartApp,
             TodoKind::NotifyHooks => Action::PageCommand {
                 page: Page::Superba(crate::pages::SuperbaSection::Notify),
@@ -225,6 +229,23 @@ pub fn todos(cx: &Cx<'_>, snap: Option<&Snapshot>) -> Vec<Todo> {
                 }
             }
         }
+    }
+
+    // Project folders ChatGPT dropped (user bugs 135/136 follow-up).
+    if let Some(l) = data
+        .overview
+        .value
+        .as_ref()
+        .and_then(|o| o.lost_projects.as_ref())
+    {
+        let n = l.candidates.iter().filter(|c| c.recommended()).count();
+        push(todo(
+            TodoKind::LostProjects,
+            Status::Warn,
+            tr.f("overview.todo.lost_projects", &[("n", &n)]),
+            Some(tr.t("overview.todo.lost_projects_detail")),
+            Some(Spot::ThisComputer),
+        ));
     }
 
     // GH#5: what another tool changed in what Superba manages.

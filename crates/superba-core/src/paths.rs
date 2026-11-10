@@ -260,7 +260,8 @@ impl CodexHome {
 /// `first-write`, `switch`, `login-stash`, `rc` backups and `secrets/`;
 /// `superba-switch` owns `state.lock` (held for a whole execution) and
 /// `journal/switch/`; `superba-sessions` owns `backups/migrate-*`;
-/// `superba-appctl` owns `app-sessions.json`; `superba-remote` owns `remote/`;
+/// `superba-appctl` owns `app-sessions.json`, `app-state/` and `backups/app-state/`;
+/// `superba-remote` owns `remote/`;
 /// `superba-router` owns `router/`; `superba-catalog` owns `feeds/`;
 /// `superba-versions` owns `codex/` and `downloads/`; binaries own `logs/`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -360,6 +361,18 @@ impl DataDir {
     /// before each save of Superba's file editor, and its index).
     pub fn editor_backups_dir(&self) -> PathBuf {
         self.backups_dir().join("editor")
+    }
+
+    /// `backups/app-state/` (the desktop app's `.codex-global-state.json` as it
+    /// was before Superba folded its account-scoped state back in).
+    pub fn app_state_backups_dir(&self) -> PathBuf {
+        self.backups_dir().join("app-state")
+    }
+
+    /// `app-state/`: what Superba queues for the desktop app's own state
+    /// (owned by `superba-appctl`).
+    pub fn app_state_dir(&self) -> PathBuf {
+        self.root.join("app-state")
     }
 
     /// `backups/login-stash/` (encrypted ChatGPT logins).

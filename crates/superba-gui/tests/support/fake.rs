@@ -140,6 +140,10 @@ struct FakeState {
     last_routes: BTreeMap<ProfileId, RouterLineRoute>,
     /// GH#5: what another tool changed (the overview's `external`).
     external: Option<superba_core::ExternalChange>,
+    /// Project folders the app dropped (the overview's `lost_projects`).
+    lost_projects: Option<superba_core::LostProjects>,
+    /// Answers given to the lost-projects offer.
+    lost_project_answers: Vec<(String, superba_core::LostProjectsAnswer)>,
 }
 
 impl FakeService {
@@ -177,6 +181,16 @@ impl FakeService {
         let mut c = self.areas.claude.lock().unwrap();
         c.router_base_url = base_url;
         c.router = view;
+    }
+
+    /// Project folders the app dropped, offered on the overview.
+    pub fn set_lost_projects(&self, lost: Option<superba_core::LostProjects>) {
+        self.state().lost_projects = lost;
+    }
+
+    /// Answers the GUI gave to the lost-projects offer, in order.
+    pub fn lost_project_answers(&self) -> Vec<(String, superba_core::LostProjectsAnswer)> {
+        self.state().lost_project_answers.clone()
     }
 
     /// GH#5: report a change another tool made in the overview.
@@ -637,6 +651,8 @@ impl FakeState {
             router_installed: false,
             last_routes: BTreeMap::new(),
             external: None,
+            lost_projects: None,
+            lost_project_answers: Vec::new(),
         }
     }
 
@@ -1661,6 +1677,17 @@ impl FakeService {
 
 #[superba_core::async_trait]
 impl SwitchService for FakeService {
+    async fn answer_lost_projects(
+        &self,
+        fingerprint: String,
+        answer: superba_core::LostProjectsAnswer,
+    ) -> Result<()> {
+        let mut s = self.state();
+        s.lost_project_answers.push((fingerprint, answer));
+        s.lost_projects = None;
+        Ok(())
+    }
+
     async fn data_usage(&self) -> Result<superba_core::data::DataUsage> {
         self.areas
             .storage
@@ -1703,6 +1730,7 @@ impl SwitchService for FakeService {
             }),
             notices: vec![],
             external: s.external.clone(),
+            lost_projects: s.lost_projects.clone(),
             runtime: None,
         })
     }

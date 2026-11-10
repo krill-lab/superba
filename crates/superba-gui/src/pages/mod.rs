@@ -447,6 +447,15 @@ pub enum Action {
     StartWizard,
     /// GH#5: show what another tool changed in what Superba manages.
     ShowExternal,
+    /// Show the project folders ChatGPT dropped (user bugs 135/136).
+    ShowLostProjects,
+    /// Answer the offer of dropped project folders.
+    AnswerLostProjects {
+        /// The list answered.
+        fingerprint: String,
+        /// The answer.
+        answer: superba_core::LostProjectsAnswer,
+    },
     /// Set the speed tier of a key-based profile (`ModelDefaults::speed`) and,
     /// when it is the applied profile, plan the switch that applies it (hot
     /// restart, v0.3 §11).
