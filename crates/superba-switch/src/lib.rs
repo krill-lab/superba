@@ -209,9 +209,11 @@ impl SwitcherDeps {
         let settings = settings_catalog(&ctx.data_dir);
         let config: Arc<dyn ConfigEngine> =
             Arc::new(superba_config::TomlConfigEngine::new(ctx.clone()));
+        let env: Arc<dyn superba_core::EnvPersister> =
+            Arc::new(superba_config::ShellEnvPersister::new(ctx.clone()));
         Self {
             autostart: Arc::new(superba_config::autostart::Manager::new(&ctx)),
-            env: Arc::new(superba_config::ShellEnvPersister::new(ctx.clone())),
+            env: env.clone(),
             secrets: Arc::new(superba_config::KeyringSecretStore::new(ctx.clone())),
             profiles: Arc::new(superba_config::JsonProfileStore::new(ctx.clone())),
             // Usage reports are rate-limited by the site (Krill: 10 per hour), so
@@ -230,7 +232,11 @@ impl SwitcherDeps {
                 superba_sessions::CodexSessionMigrator::new(ctx.data_dir.clone())
                     .with_home_dir(ctx.home_dir.clone()),
             ),
-            app: Arc::new(superba_appctl::DesktopAppController::new(ctx.clone())),
+            // An app started by LaunchServices or MSIX activation gets the login
+            // session's environment, which the persister reads (user bug 129).
+            app: Arc::new(
+                superba_appctl::DesktopAppController::new(ctx.clone()).with_session_env(env),
+            ),
             remote: Arc::new(
                 superba_remote::SshRemoteHosts::new(config.clone(), ctx.data_dir.clone())
                     .with_home_dir(ctx.home_dir.clone()),
